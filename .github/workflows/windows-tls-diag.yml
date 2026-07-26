@@ -76,10 +76,73 @@ jobs:
         working-directory: apps/server
         run: pnpm exec vitest run src/tls/manual-provider.spec.ts --reporter=verbose
 
+      # ── ROUND 2 ────────────────────────────────────────────────────────
+      # Round 1 (A–E above) came back ALL GREEN, including the control:
+      # in isolation these two specs pass on windows-latest under every
+      # pool mode. So the crash is NOT intrinsic to them — it is an
+      # INTERACTION with the rest of the suite (88 other files run first,
+      # sequentially, many of them binding sockets and spawning children).
+      #
+      # The remaining question is whether that interaction is pool-shaped.
+      # These steps run the FULL apps/server suite — the only context in
+      # which the crash has ever reproduced — under forks (control) and
+      # threads. That needs the gate's real setup, hence Postgres/ffmpeg
+      # below.
+      - name: Set up Postgres 18 (D18 — port 5442)
+        uses: ikalnytskyi/action-setup-postgres@c4dda34aae1c821e3a771b68b73b13af3198a7ee # v8
+        with:
+          username: loombre
+          password: loombre
+          database: loombre
+          port: "5442"
+          postgres-version: "18"
+
+      - name: Migrate + seed database
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm db:migrate
+          pnpm db:seed
+
+      - name: Install ffmpeg
+        run: choco install ffmpeg -y --no-progress
+
+      - name: Generate media fixtures
+        shell: bash
+        run: node scripts/gen-media-fixtures.mjs
+
+      - name: "F: FULL apps/server suite, default forks pool — reproduces the crash?"
+        continue-on-error: true
+        working-directory: apps/server
+        env:
+          PGHOST: 127.0.0.1
+          PGPORT: "5442"
+          PGUSER: loombre
+          PGPASSWORD: loombre
+          DATABASE_URL: postgres://loombre:loombre@127.0.0.1:5442/loombre
+          LOOMBRE_TEST_TIME_SCALE: "3"
+        run: pnpm exec vitest run
+
+      - name: "G: FULL apps/server suite, --pool=threads"
+        continue-on-error: true
+        working-directory: apps/server
+        env:
+          PGHOST: 127.0.0.1
+          PGPORT: "5442"
+          PGUSER: loombre
+          PGPASSWORD: loombre
+          DATABASE_URL: postgres://loombre:loombre@127.0.0.1:5442/loombre
+          LOOMBRE_TEST_TIME_SCALE: "3"
+        run: pnpm exec vitest run --pool=threads
+
       - name: How to read this run
         if: always()
         shell: bash
         run: |
-          echo "A crashed but B passed  -> pool/teardown issue: switch these specs (or apps/server) to threads."
-          echo "A and B both crashed    -> native Node/OpenSSL TLS crash on Windows: the code, not the runner."
-          echo "D/E isolate whether one spec or both are responsible."
+          echo "ROUND 1 (A-E, isolation): all green -> the two specs are fine on their own."
+          echo "ROUND 2 (F/G, full suite) is the discriminator:"
+          echo "  F red, G green -> fork-pool interaction at scale: move apps/server to the threads pool."
+          echo "  F red, G red   -> suite-cumulative resource exhaustion (Windows ephemeral ports / handles),"
+          echo "                    independent of pool; next step is bisecting which earlier suite leaks."
+          echo "  F green        -> the crash needs the FULL gate context (turbo, other packages first),"
+          echo "                    not just the full apps/server suite."

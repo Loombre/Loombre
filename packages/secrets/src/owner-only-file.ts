@@ -14,123 +14,21 @@
 //               stripped + a single explicit owner-only full-control ACE,
 //               applied with icacls.
 //
-// This module is the CANONICAL implementation for the two secret writers
-// that can reach it — this package's own file0600 backend (JWT HMAC keys
-// et al) and apps/server/src/tls/fs-secret.ts (TLS PRIVATE KEYS). A third,
-// architecturally-mandated copy lives in packages/provisioning-pg/src/
-// secret/windows-acl.ts: that package must not depend on this one (see its
-// header), and @loombre/provisioning is a pure contract package, so there
-// is no shared home all three can reach. Keep the three in sync.
+// This module is the file-WRITING half; the ACL itself comes from
+// ./windows-acl.ts, which is the single home for every Windows ACL this
+// codebase sets and which exposes the `ownerOnly` policy used here
+// alongside the more permissive `serviceReadable` policy the IPC lane
+// needs. Two secret writers reach this module — this package's own
+// file0600 backend (JWT HMAC keys et al) and apps/server/src/tls/
+// fs-secret.ts (TLS PRIVATE KEYS). packages/provisioning-pg keeps its own
+// copy: that package must not depend on this one (see its header) and
+// @loombre/provisioning is a pure contract package, so there is no shared
+// home all three can reach — keep the two in sync.
 
 import { chmodSync, writeFileSync } from "node:fs";
-import { execFileSync } from "node:child_process";
-import { userInfo } from "node:os";
-import { SecretAclError } from "./errors.js";
+import { applyOwnerOnlyDacl, isWindowsHost } from "./windows-acl.js";
 
 export const SECRET_FILE_MODE = 0o600;
-
-/** True when POSIX mode bits are meaningless on this host. */
-export function isWindowsHost(platform: NodeJS.Platform = process.platform): boolean {
-  return platform === "win32";
-}
-
-/**
- * The icacls principal for the account this process runs as: `*<SID>` when
- * the SID is resolvable, else the plain account name. Exported so the
- * Windows CI assertions can name the same principal they expect to find in
- * the resulting DACL.
- *
- * The SID is preferred because an account NAME can be ambiguous on a
- * domain-joined machine (local `alice` vs domain `alice`); a SID cannot.
- * icacls accepts a SID when prefixed with `*`.
- */
-export function currentUserPrincipal(): string {
-  try {
-    // `whoami /user /fo csv /nh` prints: "DOMAIN\user","S-1-5-21-..."
-    const out = execFileSync("whoami", ["/user", "/fo", "csv", "/nh"], {
-      encoding: "utf8",
-      windowsHide: true,
-    });
-    const sid = /S-1-[\d-]+/.exec(out)?.[0];
-    if (sid) return `*${sid}`;
-  } catch {
-    // Fall through to the account-name form below.
-  }
-  return userInfo().username;
-}
-
-/**
- * Strip inherited ACEs and grant full control to exactly one principal —
- * the account this process runs as. Throws SecretAclError on failure.
- *
- * `/inheritance:r` removes inherited ACEs outright (not `:d`, which would
- * COPY them), so entries like BUILTIN\Users do not survive. `/grant:r`
- * replaces rather than adds to any existing grant for that principal.
- *
- * Deliberate consequence: Administrators and SYSTEM are NOT granted. They
- * can still take ownership (inherent to Windows), but cannot read the file
- * as-is. If the server is later run under a DIFFERENT Windows account than
- * the one that wrote the secret, that account cannot read it — see
- * STATE.md's platform note.
- */
-export function applyOwnerOnlyDacl(filePath: string): void {
-  const principal = currentUserPrincipal();
-  const icacls = (args: string[]): string => {
-    try {
-      return execFileSync("icacls", [filePath, ...args], {
-        encoding: "utf8",
-        windowsHide: true,
-        stdio: ["ignore", "pipe", "pipe"],
-      });
-    } catch (cause) {
-      throw new SecretAclError(filePath, principal, cause);
-    }
-  };
-
-  icacls(["/inheritance:r", "/grant:r", `${principal}:F`]);
-
-  // Those two flags alone are NOT enough, which the first windows-latest
-  // run of this code proved: it left three ACEs behind. `/inheritance:r`
-  // removes only INHERITED entries, and `/grant:r` replaces only the NAMED
-  // principal's entry — so any OTHER principal holding an EXPLICIT ACE
-  // (SYSTEM and Administrators, typically) survives both. Enumerate what is
-  // actually left and remove everything that is not us.
-  const me = userInfo().username;
-  for (const other of daclPrincipals(filePath, icacls([]))) {
-    if (!sameAccount(other, me)) icacls(["/remove:g", other]);
-  }
-
-  // Verify the postcondition rather than assuming it. This is a
-  // confidentiality control: if the DACL is not exactly one ACE, the
-  // guarantee this function exists to make has not been made.
-  const remaining = daclPrincipals(filePath, icacls([]));
-  if (remaining.length !== 1 || !sameAccount(remaining[0]!, me)) {
-    throw new SecretAclError(filePath, principal, new Error(`DACL is not owner-only after hardening: [${remaining.join(", ")}]`));
-  }
-}
-
-/** Principal names from `icacls <path>` output ("DOMAIN\\user:(F)" ->
- *  "DOMAIN\\user"). The first line is prefixed with the file path, which is
- *  stripped. Matched on the "principal:(FLAGS)" shape so the trailing
- *  localized summary line is ignored. */
-function daclPrincipals(filePath: string, aclText: string): string[] {
-  const names: string[] = [];
-  for (const rawLine of aclText.split(/\r?\n/)) {
-    let line = rawLine.trim();
-    if (!line) continue;
-    if (line.startsWith(filePath)) line = line.slice(filePath.length).trim();
-    const matched = /^(.+?):\([A-Z]/.exec(line);
-    if (matched) names.push(matched[1]!.trim());
-  }
-  return names;
-}
-
-/** True when an ACL principal ("DOMAIN\\alice", "alice") names this
- *  account. Compared on the leaf so a domain prefix does not matter. */
-function sameAccount(aclPrincipal: string, username: string): boolean {
-  const leaf = aclPrincipal.includes("\\") ? aclPrincipal.slice(aclPrincipal.lastIndexOf("\\") + 1) : aclPrincipal;
-  return leaf.toLowerCase() === username.toLowerCase();
-}
 
 /**
  * Write `contents` to `filePath` with owner-only access on every platform.
