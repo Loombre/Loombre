@@ -1,4 +1,4 @@
-# LICENSE-INTENT.md
+# Licensing intent & provenance
 
 ## Current status
 
