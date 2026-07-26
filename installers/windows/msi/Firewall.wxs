@@ -23,10 +23,12 @@
   Port is $(var.ServerPort) — the SAME preprocessor variable Services.wxs's
   LoombreServer Environment RegistryValue uses for PORT, so the firewall
   rule and the service's actual listen port can never drift apart from a
-  single edit in Package.wxs's <?define ServerPort?>.
+  single edit in ServerPort.wxi (a shared include: WiX defines are
+  per-source-file, so a Package.wxs define never reaches this file).
 -->
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
      xmlns:fw="http://wixtoolset.org/schemas/v4/wxs/firewall">
+  <?include ServerPort.wxi ?>
   <Fragment>
     <ComponentGroup Id="FirewallComponents" Directory="INSTALLFOLDER">
       <Component Id="cmp.FirewallException" Guid="*">

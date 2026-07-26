@@ -72,6 +72,7 @@
   without &quot; escaping.
 -->
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <?include ServerPort.wxi ?>
   <Fragment>
     <ComponentGroup Id="ServiceComponents" Directory="SVCHOSTDIR">
       <!-- ONE component, TWO ServiceInstall/ServiceControl pairs: both
