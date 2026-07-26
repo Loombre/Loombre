@@ -31,8 +31,24 @@ function writeScript(name: string, contents: string): string {
   return path;
 }
 
+// WINDOWS: the script-fixture cases below are POSIX-only, and that reflects
+// a real product limitation rather than a test shortcut. runDnsHook spawns
+// the operator's hook path DIRECTLY (no shell — deliberately, since the
+// hook receives attacker-influenceable record values). On Windows that
+// means:
+//   * a `#!/bin/sh` script cannot be executed at all (spawn EFTYPE — what
+//     the first windows-latest CI run hit), and
+//   * `.cmd`/`.bat` cannot be spawned without `shell: true`, which Node
+//     has refused since the CVE-2024-27980 batch-file fix.
+// So today a Windows operator's LOOMBRE_ACME_DNS_HOOK must be a native
+// executable; no script fixture can stand in for one here. Enabling
+// `.cmd` hooks would mean reintroducing a shell into this spawn, which is
+// a security decision for the owner, not a test fix — logged in STATE.md.
+// The spawn-failure case below is NOT gated: it must hold everywhere.
+const POSIX_ONLY_SCRIPT_HOOKS = process.platform !== "win32";
+
 describe("runDnsHook", () => {
-  it("resolves when the script exits 0, passing action/record/value as argv", async () => {
+  it.runIf(POSIX_ONLY_SCRIPT_HOOKS)("resolves when the script exits 0, passing action/record/value as argv", async () => {
     const outPath = join(dir, "out.json");
     const script = writeScript(
       "hook.sh",
@@ -44,7 +60,7 @@ describe("runDnsHook", () => {
     expect(readFileSync(outPath, "utf8")).toBe("set|_acme-challenge.example.com|the-txt-value");
   });
 
-  it("also exposes action/record/value via env vars", async () => {
+  it.runIf(POSIX_ONLY_SCRIPT_HOOKS)("also exposes action/record/value via env vars", async () => {
     const outPath = join(dir, "env-out.txt");
     const script = writeScript(
       "hook-env.sh",
@@ -55,7 +71,7 @@ describe("runDnsHook", () => {
     expect(readFileSync(outPath, "utf8")).toBe("clear|_acme-challenge.example.com|value-2");
   });
 
-  it("rejects with stderr content when the script exits nonzero", async () => {
+  it.runIf(POSIX_ONLY_SCRIPT_HOOKS)("rejects with stderr content when the script exits nonzero", async () => {
     const script = writeScript("fail.sh", `#!/bin/sh\necho "provider API rejected the record" 1>&2\nexit 1\n`);
     await expect(runDnsHook(script, "set", "_acme-challenge.example.com", "v")).rejects.toThrow(
       /provider API rejected the record/,
@@ -66,7 +82,7 @@ describe("runDnsHook", () => {
     await expect(runDnsHook(join(dir, "nope.sh"), "set", "r", "v")).rejects.toThrow();
   });
 
-  it("rejects on timeout and kills the hung process", async () => {
+  it.runIf(POSIX_ONLY_SCRIPT_HOOKS)("rejects on timeout and kills the hung process", async () => {
     const script = writeScript("hang.sh", `#!/bin/sh\nsleep 30\n`);
     await expect(runDnsHook(script, "set", "r", "v", { timeoutMs: 100 })).rejects.toThrow(/timed out/);
   });

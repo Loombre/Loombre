@@ -2,6 +2,7 @@
 // Loombre :: apps/server/src/tls/storage.spec.ts
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { join } from "node:path";
 import { acmeAccountKeyPath, acmeCertKeyPath, acmeCertPath, resolveDataDir, tlsDir } from "./storage.js";
 
 describe("resolveDataDir", () => {
@@ -29,11 +30,16 @@ describe("resolveDataDir", () => {
 });
 
 describe("tls path helpers", () => {
+  // These helpers build HOST-NATIVE paths (node:path join), so expectations
+  // are join()-built rather than POSIX literals — the literal form passed on
+  // ubuntu/macOS and failed the first windows-latest CI run
+  // ('\data\tls' vs '/data/tls'). Native separators on Windows are correct:
+  // these paths are opened and written for real.
   it("all live under <dataDir>/tls", () => {
-    expect(tlsDir("/data")).toBe("/data/tls");
-    expect(acmeAccountKeyPath("/data")).toBe("/data/tls/acme-account-key.pem");
-    expect(acmeCertKeyPath("/data")).toBe("/data/tls/acme-cert-key.pem");
-    expect(acmeCertPath("/data")).toBe("/data/tls/acme-cert.pem");
+    expect(tlsDir("/data")).toBe(join("/data", "tls"));
+    expect(acmeAccountKeyPath("/data")).toBe(join("/data", "tls", "acme-account-key.pem"));
+    expect(acmeCertKeyPath("/data")).toBe(join("/data", "tls", "acme-cert-key.pem"));
+    expect(acmeCertPath("/data")).toBe(join("/data", "tls", "acme-cert.pem"));
   });
 
   it("account key / cert / cert key are three distinct files", () => {
