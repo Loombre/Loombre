@@ -1,0 +1,64 @@
+name: direct-play — ac3 6ch within cap, device declares passthrough:true — flag is a no-op for a non-bitstream codec
+why: "Inline device sets ac3's passthrough field to true (unusual but structurally valid). Since ac3 is never subject to Stage D rule 3's codec gate (truehd/dtshd only), the passthrough value — true OR false — never affects the outcome; the stream copies purely because it's within the channel cap."
+input:
+  media:
+    fileId: file-0226
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 6000000000
+    overallBitrateBps: 6000000
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 41
+        width: 1920
+        height: 1080
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 5000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: ac3
+        channels: 6
+        sampleRate: 48000
+        bitrateBps: 384000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device:
+    profileId: inline-ac3-passthrough-true
+    directPlayContainers: [mp4]
+    hls: { container: fmp4, supportsFmp4: true, lowLatency: false }
+    video:
+      - codec: h264
+        maxProfile: high
+        maxLevel: 41
+        maxBitDepth: 8
+        maxWidth: 1920
+        maxHeight: 1080
+        maxFrameRate: 60
+        maxBitrateBps: null
+    hdr: { hdr10: false, hlg: false, dolbyVision: false }
+    audio:
+      - codec: ac3
+        maxChannels: 6
+        passthrough: true
+    subtitles: { renderText: [], hlsVtt: false, renderImage: false }
+    maxStreamBitrateBps: null
+  network: { fixture: networks.local }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.software-only }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: direct-play
+  reasons: []

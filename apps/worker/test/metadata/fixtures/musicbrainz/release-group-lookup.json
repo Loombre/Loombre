@@ -1,0 +1,8 @@
+{
+  "id": "5968a262-a839-3153-b71a-b829f0b0d7dd",
+  "title": "Nevermind",
+  "first-release-date": "1991-09-24",
+  "primary-type": "Album",
+  "genres": [{ "name": "grunge" }],
+  "artist-credit": [{ "name": "Nirvana", "artist": { "id": "5b11f4ce-a62d-471e-81fc-a69a8278c7da" } }]
+}

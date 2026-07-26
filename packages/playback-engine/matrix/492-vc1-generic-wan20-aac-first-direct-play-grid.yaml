@@ -1,0 +1,51 @@
+name: 'direct-play — vc1-generic × wan-20mbps × aac-first-audio: legacy VC-1 mkv genuinely direct-plays'
+why: 'Grid combo (vc1-generic × wan-20mbps × aac-first-audio): vc1 entry''s null profile/level vacuous,
+  1080p30 at the entry ceiling, mkv direct-playable, 10.5M ≤ 20M.'
+input:
+  media:
+    fileId: file-492
+    container: mkv
+    durationMs: 6000000
+    sizeBytes: 7875000000
+    overallBitrateBps: 10500000
+    video:
+    - index: 0
+      codec: vc1
+      profile: null
+      level: null
+      width: 1920
+      height: 1080
+      bitDepth: 8
+      frameRate: 29.97
+      bitrateBps: 10000000
+      hdr: none
+      dvProfile: null
+      dvBlCompatId: null
+      interlaced: false
+    audio:
+    - index: 1
+      codec: aac
+      channels: 6
+      sampleRate: 48000
+      bitrateBps: 384000
+      language: eng
+      isDefault: true
+      hasAtmos: false
+    subtitle: []
+  device:
+    fixture: devices.vc1-generic
+  network:
+    fixture: networks.wan-20mbps
+  policy:
+    fixture: policies.aac-first-audio
+  caps:
+    fixture: caps.software-only
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: direct-play
+  reasons: []
+  container: source

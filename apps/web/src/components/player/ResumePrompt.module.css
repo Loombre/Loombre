@@ -1,0 +1,36 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.stopped {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-sm);
+}
+
+/* Mobile hard line: touch targets never below 44px (see e.g.
+   shell/MobileTabBar.module.css, shell/AppShell.module.css for the same
+   per-component pattern — Button.module.css's own min-height is 20px,
+   sized for desktop's denser chrome, not the phone-sheet form this
+   composes into via SheetOrModal). 767.98px is the shared mobile-
+   breakpoint literal (tokens.css "Mobile chrome layout" note). */
+@media (width <= 767.98px) {
+  .actions {
+    flex-direction: column-reverse;
+  }
+
+  .actions button {
+    min-height: 44px;
+    width: 100%;
+  }
+}

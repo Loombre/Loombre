@@ -1,0 +1,58 @@
+name: transcode — subtitle burn-in (Stage E) forces video transcode; full-hw still routes it normally
+why: >
+  pgs subtitle + device.renderImage:false forces burn-in, which forces video.action='transcode' even though Stage B alone would have copied (h264 1080p within web-chrome's caps) — proving Stage G engages on ANY upstream cause of video transcoding, not just Stage B/C/F. full-hw's nvenc covers h264 decode+encode -> hw-encoder-selected:nvenc.
+
+input:
+  media:
+    fileId: gen-file
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 6000000000
+    overallBitrateBps: 5000000
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 41
+        width: 1920
+        height: 1080
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 5000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 160000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle:
+      - index: 2
+        codec: pgs
+        language: eng
+        isForced: false
+        isDefault: false
+        isExternal: false
+        externalPath: null
+  device: { fixture: devices.web-chrome }
+  network: { fixture: networks.local }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.full-hw }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: 2
+  mode: stream
+
+expect:
+  decision: transcode
+  reasons:
+    - subtitle-format-requires-burn-in
+    - video-transcode-for-subtitle-burn-in
+    - hw-encoder-selected:nvenc

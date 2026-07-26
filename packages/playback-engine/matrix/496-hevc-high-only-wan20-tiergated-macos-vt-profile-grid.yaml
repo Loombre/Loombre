@@ -1,0 +1,73 @@
+name: 'transcode — hevc-high-only × wan-20mbps × tiergated-t1 × macos-vt: unrankable-profile conservative
+  transcode routes onto VideoToolbox'
+why: 'Grid combo (hevc-high-only × wan-20mbps × tiergated-t1 × macos-vt): main10 vs the non-ladder-member
+  ''high'' cap triggers the conservative exceeds rule (Stage B interpretation, case 098''s rule) — the
+  only blocking reason — and rule (i) videotoolbox covers hevc decode + the h264 targets (no tone-map
+  needed, SDR). Ladder: 8M rung dropped by the 5M source bitrate. Deliberate future-proof exception: the
+  unrankable profile pair (the driver).'
+input:
+  media:
+    fileId: file-496
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 4125000000
+    overallBitrateBps: 5500000
+    video:
+    - index: 0
+      codec: hevc
+      profile: main10
+      level: 123
+      width: 1920
+      height: 1080
+      bitDepth: 10
+      frameRate: 29.97
+      bitrateBps: 5000000
+      hdr: none
+      dvProfile: null
+      dvBlCompatId: null
+      interlaced: false
+    audio:
+    - index: 1
+      codec: aac
+      channels: 2
+      sampleRate: 48000
+      bitrateBps: 128000
+      language: eng
+      isDefault: true
+      hasAtmos: false
+    subtitle: []
+  device:
+    fixture: devices.hevc-high-only
+  network:
+    fixture: networks.wan-20mbps
+  policy:
+    fixture: policies.tiergated-t1
+  caps:
+    fixture: caps.macos-vt
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: transcode
+  reasons:
+  - video-profile-unsupported
+  - hw-encoder-selected:videotoolbox
+  ladder:
+  - heightPx: 1080
+    videoBitrateBps: 4000000
+    audioBitrateBps: 160000
+    codec: h264
+  - heightPx: 720
+    videoBitrateBps: 3000000
+    audioBitrateBps: 160000
+    codec: h264
+  - heightPx: 480
+    videoBitrateBps: 1500000
+    audioBitrateBps: 160000
+    codec: h264
+  - heightPx: 360
+    videoBitrateBps: 800000
+    audioBitrateBps: 160000
+    codec: h264

@@ -1,0 +1,51 @@
+name: "transcode (refused) — tone-map-refused-by-policy: Stage G never runs at all, ladder stays [], no hw/software-fallback reason"
+why: >
+  hdr10 mismatch + software-only caps (no hardware tone-map anywhere) + t0-default (allowToneMapCpu tier-gated, tier 0 -> refuses) -> Stage C's OWN refusal check (stages/hdr.ts, STATE.md P3.9(b)) fires tone-map-refused-by-policy BEFORE Stage G is even reached. Binding interpretation constraint 1 (this step): Stage G runs ONLY when NOT refused — reasons carries EXACTLY [hdr-tone-map-required, tone-map-refused-by-policy], no hw-encoder-selected/software-fallback of any kind, and ladder stays [] (not merely tier-capped-to-empty).
+
+input:
+  media:
+    fileId: gen-file
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 6000000000
+    overallBitrateBps: 5000000
+    video:
+      - index: 0
+        codec: hevc
+        profile: main10
+        level: 123
+        width: 1920
+        height: 1080
+        bitDepth: 10
+        frameRate: 23.976
+        bitrateBps: 5000000
+        hdr: hdr10
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 160000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device: { fixture: devices.hevc-sdr }
+  network: { fixture: networks.local }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.software-only }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+
+expect:
+  decision: transcode
+  reasons:
+    - hdr-tone-map-required
+    - tone-map-refused-by-policy
+  ladder: []

@@ -1,0 +1,53 @@
+name: direct-play — hevc/SDR source under the 4Mbps remote network cap (hevc-sdr device variety)
+why: >
+  Control/variety case for the 4Mbps tier: hevc source with hdr 'none'
+  (vacuous pass on Stage C, since the source itself isn't HDR — hevc-sdr's
+  own SDR-only device flags never even get consulted) fully within
+  hevc-sdr's caps; overallBitrateBps (3.8Mbps) stays under wan-4mbps's cap
+  -> Stage F stays silent -> direct-play.
+
+input:
+  media:
+    fileId: file-0378
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 2850000000
+    overallBitrateBps: 3800000
+    video:
+      - index: 0
+        codec: hevc
+        profile: main10
+        level: 153
+        width: 1920
+        height: 1080
+        bitDepth: 10
+        frameRate: 23.976
+        bitrateBps: 3500000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 160000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device: { fixture: devices.hevc-sdr }
+  network: { fixture: networks.wan-4mbps }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.software-only }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+
+expect:
+  decision: direct-play
+  reasons: []
+  container: source

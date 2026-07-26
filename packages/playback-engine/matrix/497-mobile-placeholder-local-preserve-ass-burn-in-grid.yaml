@@ -1,0 +1,74 @@
+name: 'transcode — mobile-placeholder × local × preserve-ass-styling: ass + preserveAssStyling burns in
+  on the mobile hlsVtt device; 720p source dodges the tier cap'
+why: 'Grid combo (mobile-placeholder × local × preserve-ass-styling): the hls-vtt cascade IS reachable
+  (mobile hlsVtt:true + policy hls-vtt) so preserveAssStyling''s override fires subtitle-burn-in-for-styling
+  (contrast with 477 where the cascade never opened). Burn-in forces the video transcode; software route;
+  tier 0 but 720p < 1080 → no cap. Ladder: 720/3M dropped by the 2.5M source bitrate, device 8M cap moot.
+  Deliberate future-proof exception: the styling-preserving burn-in (the driver).'
+input:
+  media:
+    fileId: file-497
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 2175000000
+    overallBitrateBps: 2900000
+    video:
+    - index: 0
+      codec: h264
+      profile: high
+      level: 41
+      width: 1280
+      height: 720
+      bitDepth: 8
+      frameRate: 29.97
+      bitrateBps: 2500000
+      hdr: none
+      dvProfile: null
+      dvBlCompatId: null
+      interlaced: false
+    audio:
+    - index: 1
+      codec: aac
+      channels: 2
+      sampleRate: 48000
+      bitrateBps: 128000
+      language: eng
+      isDefault: true
+      hasAtmos: false
+    subtitle:
+    - index: 2
+      codec: ass
+      language: eng
+      isForced: false
+      isDefault: false
+      isExternal: false
+      externalPath: null
+  device:
+    fixture: devices.mobile-placeholder
+  network:
+    fixture: networks.local
+  policy:
+    fixture: policies.preserve-ass-styling
+  caps:
+    fixture: caps.software-only
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: 2
+  mode: stream
+expect:
+  decision: transcode
+  reasons:
+  - subtitle-burn-in-for-styling
+  - video-transcode-for-subtitle-burn-in
+  - software-fallback:encode
+  subtitleStrategy: burn-in
+  ladder:
+  - heightPx: 480
+    videoBitrateBps: 1500000
+    audioBitrateBps: 160000
+    codec: h264
+  - heightPx: 360
+    videoBitrateBps: 800000
+    audioBitrateBps: 160000
+    codec: h264

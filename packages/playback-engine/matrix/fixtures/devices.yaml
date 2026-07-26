@@ -1,0 +1,662 @@
+# Shared DeviceProfile fixtures for matrix cases (docs/PLAYBACK.md §2.2).
+# Referenced from case files via `{ fixture: "devices.<key>" }`.
+
+# Generic evergreen browser client: broad codec support, no HDR-plus-Atmos
+# passthrough, renders WebVTT natively, burns in image subs.
+web-chrome:
+  profileId: web-chrome
+  directPlayContainers: [mp4, webm]
+  hls: { container: fmp4, supportsFmp4: true, lowLatency: false }
+  video:
+    - codec: h264
+      maxProfile: high
+      maxLevel: 52
+      maxBitDepth: 8
+      maxWidth: 3840
+      maxHeight: 2160
+      maxFrameRate: 60
+      maxBitrateBps: 50000000
+    - codec: vp9
+      maxProfile: null
+      maxLevel: null
+      maxBitDepth: 10
+      maxWidth: 3840
+      maxHeight: 2160
+      maxFrameRate: 60
+      maxBitrateBps: 50000000
+  hdr: { hdr10: true, hlg: true, dolbyVision: false }
+  audio:
+    - codec: aac
+      maxChannels: 6
+      passthrough: false
+    - codec: opus
+      maxChannels: 6
+      passthrough: false
+    # Decodable but no bitstream passthrough — exercises Stage D.3.
+    - codec: truehd
+      maxChannels: 8
+      passthrough: false
+    - codec: ac3
+      maxChannels: 6
+      passthrough: false
+  subtitles: { renderText: [webvtt], hlsVtt: true, renderImage: false }
+  maxStreamBitrateBps: null
+
+# Tier-0-style constrained smart TV: h264-only, 1080p SDR, stereo, mp4
+# direct-play only (docs/PLAYBACK.md §10 dimension list).
+constrained-tv:
+  profileId: constrained-tv
+  directPlayContainers: [mp4]
+  hls: { container: ts, supportsFmp4: false, lowLatency: false }
+  video:
+    - codec: h264
+      maxProfile: high
+      maxLevel: 41
+      maxBitDepth: 8
+      maxWidth: 1920
+      maxHeight: 1080
+      maxFrameRate: 30
+      maxBitrateBps: 20000000
+  hdr: { hdr10: false, hlg: false, dolbyVision: false }
+  audio:
+    - codec: aac
+      maxChannels: 2
+      passthrough: false
+  subtitles: { renderText: [], hlsVtt: false, renderImage: false }
+  maxStreamBitrateBps: 20000000
+
+# HEVC-decode-capable client that is SDR-only (case 5): main10 profile is
+# within device limits, but no HDR10/HLG/DV flag is set, forcing tone-map.
+hevc-sdr:
+  profileId: hevc-sdr-client
+  directPlayContainers: [mp4]
+  hls: { container: fmp4, supportsFmp4: true, lowLatency: false }
+  video:
+    - codec: hevc
+      maxProfile: main10
+      maxLevel: 153
+      maxBitDepth: 10
+      maxWidth: 3840
+      maxHeight: 2160
+      maxFrameRate: 60
+      maxBitrateBps: 80000000
+  hdr: { hdr10: false, hlg: false, dolbyVision: false }
+  audio:
+    - codec: aac
+      maxChannels: 6
+      passthrough: false
+  subtitles: { renderText: [], hlsVtt: false, renderImage: false }
+  maxStreamBitrateBps: null
+
+# HEVC-decode-capable client with HDR10 support but no Dolby Vision (case 10):
+# a DV profile 8 HDR10-compatible base layer strips to HDR10 rather than
+# tone-mapping.
+hevc-hdr10-only:
+  profileId: hevc-hdr10-client
+  directPlayContainers: [mp4]
+  hls: { container: fmp4, supportsFmp4: true, lowLatency: false }
+  video:
+    - codec: hevc
+      maxProfile: main10
+      maxLevel: 153
+      maxBitDepth: 10
+      maxWidth: 3840
+      maxHeight: 2160
+      maxFrameRate: 60
+      maxBitrateBps: 80000000
+  hdr: { hdr10: true, hlg: true, dolbyVision: false }
+  audio:
+    - codec: aac
+      maxChannels: 6
+      passthrough: false
+  subtitles: { renderText: [], hlsVtt: false, renderImage: false }
+  maxStreamBitrateBps: null
+
+# Safari-class client (docs/PLAYBACK.md §10 device-profile dimension names
+# "web-chrome, web-safari, constrained-tv, mobile-placeholder" — web-safari
+# was the only one of those four missing from this fixture file, added here
+# additively per Phase 3 Step 2a's matrix instructions). Distinguishing
+# feature exercised by the container matrix: mp4 AND mov both direct-play
+# (Safari's <video> natively supports .mov/QuickTime-flavored mp4), broad
+# hevc/HDR10/HLG/DolbyVision + h264 support, fmp4-only HLS (supportsFmp4:
+# true, same axis value as web-chrome — the ts-hls axis is covered by
+# constrained-tv instead).
+web-safari:
+  profileId: web-safari
+  directPlayContainers: [mp4, mov]
+  hls: { container: fmp4, supportsFmp4: true, lowLatency: false }
+  video:
+    - codec: h264
+      maxProfile: high
+      maxLevel: 52
+      maxBitDepth: 8
+      maxWidth: 3840
+      maxHeight: 2160
+      maxFrameRate: 60
+      maxBitrateBps: 50000000
+    - codec: hevc
+      maxProfile: main10
+      maxLevel: 153
+      maxBitDepth: 10
+      maxWidth: 3840
+      maxHeight: 2160
+      maxFrameRate: 60
+      maxBitrateBps: 80000000
+  hdr: { hdr10: true, hlg: true, dolbyVision: true }
+  audio:
+    - codec: aac
+      maxChannels: 6
+      passthrough: false
+    - codec: ac3
+      maxChannels: 6
+      passthrough: false
+    - codec: eac3
+      maxChannels: 6
+      passthrough: true
+  subtitles: { renderText: [webvtt], hlsVtt: true, renderImage: false }
+  maxStreamBitrateBps: null
+
+# --- Phase 3 Step 2b (Stage B — video) additive fixtures -------------------
+# Added because no existing fixture exercises av1/mpeg2/vc1/mpeg4 codec
+# support, a concrete (non-null) vp9 profile/level cap, or an hevc device
+# whose declared maxProfile isolates the profile-ladder ambiguity resolution
+# (stages/video.ts's documented PROFILE_LADDERS) from the level/resolution/
+# framerate axes. Every one of these is a genuinely new axis matrix/README.md's
+# case-authoring rule can't exercise with the five Step-2a fixtures above.
+
+# AV1-capable client with a concrete (non-null) level cap, so av1 profile/
+# level/resolution/framerate can each be isolated as "the deciding axis"
+# (av1 has no documented profile ladder — stages/video.ts's "exact-string-
+# match-or-exceeds" fallback applies to it).
+av1-generic:
+  profileId: av1-generic
+  directPlayContainers: [mp4, webm]
+  hls: { container: fmp4, supportsFmp4: true, lowLatency: false }
+  video:
+    - codec: av1
+      maxProfile: null
+      maxLevel: 40
+      maxBitDepth: 10
+      maxWidth: 3840
+      maxHeight: 2160
+      maxFrameRate: 60
+      maxBitrateBps: 50000000
+  hdr: { hdr10: false, hlg: false, dolbyVision: false }
+  audio:
+    - codec: aac
+      maxChannels: 6
+      passthrough: false
+  subtitles: { renderText: [], hlsVtt: false, renderImage: false }
+  maxStreamBitrateBps: null
+
+# MPEG-2-capable client (broadcast-style ts direct-play), concrete maxProfile
+# "main" (mpeg2 has no ladder either — exact-string-match-or-exceeds) so a
+# profile mismatch can be exercised, plus a 8-bit maxBitDepth ceiling so a
+# 10-bit mpeg2 stream isolates video-bitdepth-unsupported.
+mpeg2-generic:
+  profileId: mpeg2-generic
+  directPlayContainers: [ts, mp4]
+  hls: { container: ts, supportsFmp4: false, lowLatency: false }
+  video:
+    - codec: mpeg2
+      maxProfile: main
+      maxLevel: null
+      maxBitDepth: 8
+      maxWidth: 1920
+      maxHeight: 1080
+      maxFrameRate: 30
+      maxBitrateBps: 20000000
+  hdr: { hdr10: false, hlg: false, dolbyVision: false }
+  audio:
+    - codec: aac
+      maxChannels: 6
+      passthrough: false
+  subtitles: { renderText: [], hlsVtt: false, renderImage: false }
+  maxStreamBitrateBps: 20000000
+
+# VC-1-capable client (legacy WMV/VC-1, typically mkv/ts-muxed) — exercises
+# the "vc1/mpeg4/unknown codec cases" coverage requirement's direct-play
+# (codec genuinely supported) half.
+vc1-generic:
+  profileId: vc1-generic
+  directPlayContainers: [mkv, ts]
+  hls: { container: fmp4, supportsFmp4: true, lowLatency: false }
+  video:
+    - codec: vc1
+      maxProfile: null
+      maxLevel: null
+      maxBitDepth: 8
+      maxWidth: 1920
+      maxHeight: 1080
+      maxFrameRate: 30
+      maxBitrateBps: 20000000
+  hdr: { hdr10: false, hlg: false, dolbyVision: false }
+  audio:
+    - codec: aac
+      maxChannels: 6
+      passthrough: false
+  subtitles: { renderText: [], hlsVtt: false, renderImage: false }
+  maxStreamBitrateBps: null
+
+# MPEG-4 Part 2 (DivX/Xvid-era, typically avi-muxed) client — the direct-play
+# half of the vc1/mpeg4/unknown coverage requirement.
+mpeg4-generic:
+  profileId: mpeg4-generic
+  directPlayContainers: [avi, mp4]
+  hls: { container: fmp4, supportsFmp4: true, lowLatency: false }
+  video:
+    - codec: mpeg4
+      maxProfile: null
+      maxLevel: null
+      maxBitDepth: 8
+      maxWidth: 1280
+      maxHeight: 720
+      maxFrameRate: 30
+      maxBitrateBps: 8000000
+  hdr: { hdr10: false, hlg: false, dolbyVision: false }
+  audio:
+    - codec: aac
+      maxChannels: 6
+      passthrough: false
+  subtitles: { renderText: [], hlsVtt: false, renderImage: false }
+  maxStreamBitrateBps: null
+
+# vp9 client with a CONCRETE (non-null) maxProfile/maxLevel — web-chrome's
+# vp9 entry (fixture above) declares both null (permanently vacuous), which
+# can't exercise the vp9 profile ladder (profile0 < profile2, stages/video.ts)
+# or a vp9 level boundary at all.
+vp9-profile0-only:
+  profileId: vp9-profile0-only
+  directPlayContainers: [webm]
+  hls: { container: fmp4, supportsFmp4: true, lowLatency: false }
+  video:
+    - codec: vp9
+      maxProfile: profile0
+      maxLevel: 41
+      maxBitDepth: 8
+      maxWidth: 1920
+      maxHeight: 1080
+      maxFrameRate: 30
+      maxBitrateBps: 20000000
+  hdr: { hdr10: false, hlg: false, dolbyVision: false }
+  audio:
+    - codec: aac
+      maxChannels: 6
+      passthrough: false
+  subtitles: { renderText: [], hlsVtt: false, renderImage: false }
+  maxStreamBitrateBps: null
+
+# hevc client capped at the LADDER-RANKED "main" profile (stages/video.ts's
+# hevc ladder: main < main10) — isolates a genuine ladder-ranked profile
+# exceed (main10 stream vs this device) from the bitDepth/level/resolution/
+# framerate axes (all otherwise generous here).
+hevc-main-only:
+  profileId: hevc-main-only
+  directPlayContainers: [mp4]
+  hls: { container: fmp4, supportsFmp4: true, lowLatency: false }
+  video:
+    - codec: hevc
+      maxProfile: main
+      maxLevel: 153
+      maxBitDepth: 10
+      maxWidth: 1920
+      maxHeight: 1080
+      maxFrameRate: 30
+      maxBitrateBps: 20000000
+  hdr: { hdr10: false, hlg: false, dolbyVision: false }
+  audio:
+    - codec: aac
+      maxChannels: 6
+      passthrough: false
+  subtitles: { renderText: [], hlsVtt: false, renderImage: false }
+  maxStreamBitrateBps: null
+
+# hevc client declaring maxProfile "high" — NOT a member of the hevc ladder
+# (main, main10). Deliberately exercises stages/video.ts's rule-5
+# CONSERVATIVE fallback (a stream profile compared against a device
+# maxProfile where at least one side isn't a ladder member, and the two
+# strings aren't identical, is always treated as "exceeds") rather than the
+# ladder-ranked comparison hevc-main-only exercises above.
+hevc-high-only:
+  profileId: hevc-high-only
+  directPlayContainers: [mp4]
+  hls: { container: fmp4, supportsFmp4: true, lowLatency: false }
+  video:
+    - codec: hevc
+      maxProfile: high
+      maxLevel: 153
+      maxBitDepth: 10
+      maxWidth: 3840
+      maxHeight: 2160
+      maxFrameRate: 60
+      maxBitrateBps: 80000000
+  hdr: { hdr10: false, hlg: false, dolbyVision: false }
+  audio:
+    - codec: aac
+      maxChannels: 6
+      passthrough: false
+  subtitles: { renderText: [], hlsVtt: false, renderImage: false }
+  maxStreamBitrateBps: null
+
+# Audio-only device capped at stereo FLAC (case 9, music library client).
+flac-stereo:
+  profileId: flac-stereo-client
+  directPlayContainers: [flac, mp3, m4a, ogg, wav]
+  hls: { container: fmp4, supportsFmp4: true, lowLatency: false }
+  video: []
+  hdr: { hdr10: false, hlg: false, dolbyVision: false }
+  audio:
+    - codec: flac
+      maxChannels: 2
+      passthrough: false
+  subtitles: { renderText: [], hlsVtt: false, renderImage: false }
+  maxStreamBitrateBps: null
+
+# --- Phase 3 Step 2c (Stage C — HDR) additive fixtures --------------------
+# Added because the mission's device hdr-flag combo dimension
+# ("hdr10-only, hlg-only, DV-capable, SDR-only") needs a device that is
+# hdr10-true/hlg-false and one that is hdr10-false/hlg-true IN ISOLATION —
+# `devices.hevc-hdr10-only` (above, Phase 3 Step 2b/2a vintage) actually
+# declares BOTH hdr10:true AND hlg:true (it exists for the DV-strip-vs-
+# HDR10 scenario, not to isolate the hdr10 flag from the hlg flag), and
+# `devices.hevc-sdr` declares all three false. Neither can exercise "hlg
+# source vs an hdr10-but-not-hlg device" or "hdr10 source vs an hlg-but-
+# not-hdr10 device" — the two flags need to be independently false/true to
+# prove stages/hdr.ts checks EACH flag on its own axis rather than treating
+# "any HDR flag" as sufficient.
+
+# Strictly hdr10-only: hdr10 true, hlg AND dolbyVision false.
+hevc-hdr10-strict:
+  profileId: hevc-hdr10-strict-client
+  directPlayContainers: [mp4]
+  hls: { container: fmp4, supportsFmp4: true, lowLatency: false }
+  video:
+    - codec: hevc
+      maxProfile: main10
+      maxLevel: 153
+      maxBitDepth: 10
+      maxWidth: 3840
+      maxHeight: 2160
+      maxFrameRate: 60
+      maxBitrateBps: 80000000
+  hdr: { hdr10: true, hlg: false, dolbyVision: false }
+  audio:
+    - codec: aac
+      maxChannels: 6
+      passthrough: false
+  subtitles: { renderText: [], hlsVtt: false, renderImage: false }
+  maxStreamBitrateBps: null
+
+# Strictly hlg-only: hlg true, hdr10 AND dolbyVision false.
+hevc-hlg-only:
+  profileId: hevc-hlg-only-client
+  directPlayContainers: [mp4]
+  hls: { container: fmp4, supportsFmp4: true, lowLatency: false }
+  video:
+    - codec: hevc
+      maxProfile: main10
+      maxLevel: 153
+      maxBitDepth: 10
+      maxWidth: 3840
+      maxHeight: 2160
+      maxFrameRate: 60
+      maxBitrateBps: 80000000
+  hdr: { hdr10: false, hlg: true, dolbyVision: false }
+  audio:
+    - codec: aac
+      maxChannels: 6
+      passthrough: false
+  subtitles: { renderText: [], hlsVtt: false, renderImage: false }
+  maxStreamBitrateBps: null
+
+# --- Phase 3 Step 2d (Stage D — Audio) additive fixtures --------------------
+# Added because no existing fixture declares a bitstream-passthrough-capable
+# TrueHD/DTS-HD audio entry (`passthrough: true`) or a plain (non-HD) DTS
+# entry — every existing truehd-capable device (web-chrome) declares
+# `passthrough: false` specifically to exercise Stage D.3's transcode path
+# (seed case 004). This is the passthrough-TRUE counterpart, so Stage D.3's
+# copy branch (docs/PLAYBACK.md §3: "copy ONLY when device entry has
+# passthrough:true") has a device that can actually take it. Broad generous
+# h264 video cap (mirrors web-chrome's) so it composes cleanly with any of
+# the audio-focused matrix cases.
+passthrough-capable:
+  profileId: passthrough-capable-client
+  directPlayContainers: [mp4, mkv]
+  hls: { container: fmp4, supportsFmp4: true, lowLatency: false }
+  video:
+    - codec: h264
+      maxProfile: high
+      maxLevel: 52
+      maxBitDepth: 8
+      maxWidth: 3840
+      maxHeight: 2160
+      maxFrameRate: 60
+      maxBitrateBps: 50000000
+  hdr: { hdr10: true, hlg: true, dolbyVision: false }
+  audio:
+    - codec: aac
+      maxChannels: 8
+      passthrough: false
+    # Bitstream passthrough — Stage D.3's copy branch.
+    - codec: truehd
+      maxChannels: 8
+      passthrough: true
+    - codec: dtshd
+      maxChannels: 8
+      passthrough: true
+    # Plain (non-HD) DTS — Stage D.3 never applies to this codec regardless
+    # of the passthrough flag's value (binding interpretation: "Plain `dts`
+    # is NOT DTS-HD — rules 1/2 only").
+    - codec: dts
+      maxChannels: 6
+      passthrough: false
+    - codec: ac3
+      maxChannels: 6
+      passthrough: false
+    - codec: opus
+      maxChannels: 8
+      passthrough: false
+  subtitles: { renderText: [webvtt], hlsVtt: true, renderImage: false }
+  maxStreamBitrateBps: null
+
+# Device declaring ONLY aac (no opus, no truehd/dtshd) — exercises Stage
+# D.4's assembly fallback rule when `policy.audioTranscodeCodecPriority`
+# prefers opus but the device never declares it (binding interpretation
+# constraint 4: "first of policy.audioTranscodeCodecPriority present in
+# device.audio").
+aac-only-no-opus:
+  profileId: aac-only-no-opus-client
+  directPlayContainers: [mp4]
+  hls: { container: fmp4, supportsFmp4: true, lowLatency: false }
+  video:
+    - codec: h264
+      maxProfile: high
+      maxLevel: 41
+      maxBitDepth: 8
+      maxWidth: 1920
+      maxHeight: 1080
+      maxFrameRate: 60
+      maxBitrateBps: null
+  hdr: { hdr10: false, hlg: false, dolbyVision: false }
+  audio:
+    - codec: aac
+      maxChannels: 6
+      passthrough: false
+  subtitles: { renderText: [], hlsVtt: false, renderImage: false }
+  maxStreamBitrateBps: null
+
+# --- Phase 3 Step 2e (Stage E — Subtitles) additive fixtures ----------------
+# Added because no existing fixture declares MORE than one TEXT subtitle
+# codec in `renderText` (web-chrome/web-safari both declare only [webvtt]),
+# and NONE declares `renderImage: true` at all — both are needed to isolate
+# the TEXT (b)/IMAGE embed branches (docs/PLAYBACK.md §3 Stage E) from the
+# hls-vtt branch and from the burn-in fallback, across every TEXT codec.
+
+# `hlsVtt: true` AND renders every TEXT codec natively — lets a single
+# fixture cover BOTH sides of the TEXT cascade's (a) condition (device flag
+# true) for every codec, paired with either a hls-vtt-preferring or
+# burn-in-preferring policy fixture below to select which literal branch
+# fires (docs/PLAYBACK.md §3 Stage E TEXT tree, cascade order — binding
+# interpretation constraint 3).
+text-all-capable:
+  profileId: text-all-capable-client
+  directPlayContainers: [mp4, mkv]
+  hls: { container: fmp4, supportsFmp4: true, lowLatency: false }
+  video:
+    - codec: h264
+      maxProfile: high
+      maxLevel: 52
+      maxBitDepth: 8
+      maxWidth: 3840
+      maxHeight: 2160
+      maxFrameRate: 60
+      maxBitrateBps: 50000000
+  hdr: { hdr10: false, hlg: false, dolbyVision: false }
+  audio:
+    - codec: aac
+      maxChannels: 6
+      passthrough: false
+  subtitles: { renderText: [subrip, ass, webvtt, mov_text], hlsVtt: true, renderImage: false }
+  maxStreamBitrateBps: null
+
+# Same TEXT-codec coverage as `text-all-capable` but `hlsVtt: false` — proves
+# the cascade's (a) condition is a genuine AND (device flag alone, absent a
+# hls-vtt-preferring policy, is not sufficient) and isolates the (b) embed
+# branch ("device renders codec natively in directPlayContainer") on its own.
+text-embed-capable:
+  profileId: text-embed-capable-client
+  directPlayContainers: [mp4, mkv]
+  hls: { container: fmp4, supportsFmp4: true, lowLatency: false }
+  video:
+    - codec: h264
+      maxProfile: high
+      maxLevel: 52
+      maxBitDepth: 8
+      maxWidth: 3840
+      maxHeight: 2160
+      maxFrameRate: 60
+      maxBitrateBps: 50000000
+  hdr: { hdr10: false, hlg: false, dolbyVision: false }
+  audio:
+    - codec: aac
+      maxChannels: 6
+      passthrough: false
+  subtitles: { renderText: [subrip, ass, webvtt, mov_text], hlsVtt: false, renderImage: false }
+  maxStreamBitrateBps: null
+
+# --- Phase 3 Step 2f (Stage F — bitrate/ladder) additive fixture -----------
+# A device with a genuinely restrictive, non-null `maxStreamBitrateBps`
+# (docs/PLAYBACK.md §2.2: "device hard cap — TV SoC limits"). The two
+# existing non-null-cap fixtures (`constrained-tv`, `mpeg2-generic`) both
+# declare 20,000,000 — generous enough that it never actually drops a rung
+# from the §7 default ladder table (whose highest rung is 16,000,000), so
+# neither can exercise Stage F's device-cap reason/construction rules
+# meaningfully. This fixture's cap (500,000) sits BELOW even the default
+# table's lowest rung (360p/800,000), so it doubles as the fixture used both
+# for "local + exceeds device cap -> reason fires" cases (the Stage F REASON
+# rule only needs `overallBitrateBps > maxStreamBitrateBps`, any non-null
+# value below it works) and for "every rung dropped by the device cap alone
+# -> keep only the lowest rung" ladder-construction cases (§7's "keep at
+# least the lowest rung" fallback). Video/audio/hdr entries are otherwise as
+# generous as `web-chrome` so this fixture never contaminates Stage
+# A/B/C/D/E's own reasons when used in a Stage-F-focused case.
+bitrate-capped-device:
+  profileId: bitrate-capped-device-client
+  directPlayContainers: [mp4, mkv, webm, mov]
+  hls: { container: fmp4, supportsFmp4: true, lowLatency: false }
+  video:
+    - codec: h264
+      maxProfile: high
+      maxLevel: 52
+      maxBitDepth: 8
+      maxWidth: 3840
+      maxHeight: 2160
+      maxFrameRate: 60
+      maxBitrateBps: null
+    - codec: hevc
+      maxProfile: main10
+      maxLevel: 153
+      maxBitDepth: 10
+      maxWidth: 3840
+      maxHeight: 2160
+      maxFrameRate: 60
+      maxBitrateBps: null
+  hdr: { hdr10: true, hlg: true, dolbyVision: true }
+  audio:
+    - codec: aac
+      maxChannels: 6
+      passthrough: false
+    - codec: opus
+      maxChannels: 6
+      passthrough: false
+  subtitles: { renderText: [webvtt], hlsVtt: true, renderImage: false }
+  maxStreamBitrateBps: 500000
+
+# `renderImage: true` — no existing fixture sets this (every prior fixture
+# declares it false), so nothing could exercise the IMAGE tree's embed branch
+# ("device.subtitles.renderImage && container playable -> 'embed'") until
+# now.
+image-render-capable:
+  profileId: image-render-capable-client
+  directPlayContainers: [mp4, mkv]
+  hls: { container: fmp4, supportsFmp4: true, lowLatency: false }
+  video:
+    - codec: h264
+      maxProfile: high
+      maxLevel: 52
+      maxBitDepth: 8
+      maxWidth: 3840
+      maxHeight: 2160
+      maxFrameRate: 60
+      maxBitrateBps: 50000000
+  hdr: { hdr10: false, hlg: false, dolbyVision: false }
+  audio:
+    - codec: aac
+      maxChannels: 6
+      passthrough: false
+  subtitles: { renderText: [], hlsVtt: false, renderImage: true }
+  maxStreamBitrateBps: null
+
+# --- Phase 3 step 7 (adversarial spec audit) additive fixture --------------
+# docs/PLAYBACK.md §10's device-profile dimension names FOUR profiles:
+# "web-chrome, web-safari, constrained-tv (h264-only 1080p SDR 2ch),
+# mobile-placeholder" — mobile-placeholder was the only one that never
+# became a fixture (the Step-2a comment above web-safari even noted the
+# four-name list while adding only web-safari). Added here per the audit's
+# coverage table; exercised by cases 468-470, 485-486, 497, 501-502.
+# Shape: a phone-class client — mp4-only direct play, fmp4 HLS, h264 AND
+# hevc capped at 1080p60, HDR10 but no HLG/DV, stereo-only aac+opus, native
+# WebVTT rendering, and a REALISTIC non-null maxStreamBitrateBps (8 Mbps
+# SoC/battery cap) so mobile cases genuinely exercise the §2.2 device hard
+# cap alongside the network dimension.
+mobile-placeholder:
+  profileId: mobile-placeholder
+  directPlayContainers: [mp4]
+  hls: { container: fmp4, supportsFmp4: true, lowLatency: false }
+  video:
+    - codec: h264
+      maxProfile: high
+      maxLevel: 42
+      maxBitDepth: 8
+      maxWidth: 1920
+      maxHeight: 1080
+      maxFrameRate: 60
+      maxBitrateBps: null
+    - codec: hevc
+      maxProfile: main10
+      maxLevel: 123
+      maxBitDepth: 10
+      maxWidth: 1920
+      maxHeight: 1080
+      maxFrameRate: 60
+      maxBitrateBps: null
+  hdr: { hdr10: true, hlg: false, dolbyVision: false }
+  audio:
+    - codec: aac
+      maxChannels: 2
+      passthrough: false
+    - codec: opus
+      maxChannels: 2
+      passthrough: false
+  subtitles: { renderText: [webvtt], hlsVtt: true, renderImage: false }
+  maxStreamBitrateBps: 8000000

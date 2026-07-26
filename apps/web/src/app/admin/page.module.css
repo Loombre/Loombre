@@ -1,0 +1,94 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+}
+
+/* H19 (W3 fidelity audit): dashboard header — dc:580's own literal,
+   `font-stretch:114%;font-weight:800;font-size:26px` for the "Dashboard"
+   title (--wdth-title/--weight-black/--text-xl match it exactly) plus a
+   mono status line built from REAL /system/info fields only (version,
+   uptime) — dc:582's fixture hostname ("LOOMBRE-01") and "POSTGRES OK"
+   have no backing endpoint anywhere in this codebase and are omitted, not
+   invented (see page.tsx's header comment). */
+.headerRow {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-md);
+  flex-wrap: wrap;
+}
+
+.heading {
+  margin: 0;
+  font-stretch: var(--wdth-title);
+  font-weight: var(--weight-black);
+  font-size: var(--text-xl);
+}
+
+.statusLine {
+  font-family: var(--font-mono);
+  font-size: var(--mono-sm);
+  letter-spacing: var(--track-mono-wide);
+  text-transform: uppercase;
+  color: var(--color-text-subtle);
+}
+
+.body {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: var(--space-lg);
+  align-items: start;
+}
+
+.column {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+}
+
+/* Deliberately NOT composed with ui/Card.module.css's `.card` (that class's
+   own padding would need `!important` to override reliably, since CSS
+   Modules gives no guaranteed cross-file cascade order) — this duplicates
+   Card's small visual recipe directly instead. */
+.collapsibleCard {
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+
+.collapsibleSummary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-md);
+  cursor: pointer;
+  list-style: none;
+  font-family: var(--font-mono);
+  font-size: var(--mono-lg);
+  text-transform: uppercase;
+  letter-spacing: var(--track-mono-wide);
+  color: var(--color-text-muted);
+}
+
+.collapsibleSummary::-webkit-details-marker {
+  display: none;
+}
+
+.collapsibleBody {
+  padding: 0 var(--space-md) var(--space-md);
+}
+
+.gapNote {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--color-text-subtle);
+}
+
+@media (width <= 767.98px) {
+  .body {
+    grid-template-columns: 1fr;
+  }
+}

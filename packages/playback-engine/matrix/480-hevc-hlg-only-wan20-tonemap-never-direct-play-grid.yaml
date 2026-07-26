@@ -1,0 +1,52 @@
+name: 'direct-play — hevc-hlg-only × wan-20mbps × tonemap-never: an HLG 2160p source matches the hlg-only
+  flag; the never-tone-map policy is indifferent when no tone-map is needed'
+why: 'Grid combo (hevc-hlg-only × wan-20mbps × tonemap-never): Stage C''s flag match (hlg source, hlg:true
+  device) is a silent copy, so allowToneMapCpu ''never'' has nothing to refuse; 14.5M under the 20M cap.'
+input:
+  media:
+    fileId: file-480
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 10875000000
+    overallBitrateBps: 14500000
+    video:
+    - index: 0
+      codec: hevc
+      profile: main10
+      level: 150
+      width: 3840
+      height: 2160
+      bitDepth: 10
+      frameRate: 24
+      bitrateBps: 14000000
+      hdr: hlg
+      dvProfile: null
+      dvBlCompatId: null
+      interlaced: false
+    audio:
+    - index: 1
+      codec: aac
+      channels: 2
+      sampleRate: 48000
+      bitrateBps: 256000
+      language: eng
+      isDefault: true
+      hasAtmos: false
+    subtitle: []
+  device:
+    fixture: devices.hevc-hlg-only
+  network:
+    fixture: networks.wan-20mbps
+  policy:
+    fixture: policies.tonemap-never
+  caps:
+    fixture: caps.software-only
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: direct-play
+  reasons: []
+  container: source

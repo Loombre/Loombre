@@ -1,0 +1,88 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-xs);
+  border: 1px solid transparent;
+  border-radius: var(--radius-pill);
+  padding: var(--space-xs) var(--space-lg);
+  min-height: 20px;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  cursor: pointer;
+  transition:
+    transform var(--motion-fast) var(--ease-out),
+    background-color var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-fast) var(--ease-out),
+    border-color var(--motion-fast) var(--ease-out);
+}
+
+.button:active {
+  transform: scale(0.97);
+  transition-duration: calc(var(--motion-fast) / 2);
+}
+
+.button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.primary {
+  background: var(--color-accent);
+  color: var(--color-accent-text);
+}
+
+.primary:hover:not(:disabled) {
+  background: var(--color-accent-hover);
+  box-shadow: var(--shadow-md);
+}
+
+.primary:active:not(:disabled) {
+  background: var(--color-accent-active);
+}
+
+.secondary {
+  background: var(--color-surface);
+  color: var(--text);
+  border-color: var(--border);
+}
+
+.secondary:hover:not(:disabled) {
+  background: var(--color-surface-hover);
+}
+
+.ghost {
+  background: transparent;
+  color: var(--text);
+}
+
+.ghost:hover:not(:disabled) {
+  background: var(--color-surface-hover);
+}
+
+/* Danger — additive variant (Phosphor registry/provider-key destructive
+   confirms, design/phosphor/README.md "Interactions & behavior → Provider
+   keys": "Remove requires a confirm step in a danger-tinted block").
+   Filled, not outlined, so a destructive confirm reads as maximally
+   deliberate next to the ghost/secondary Cancel beside it. */
+.danger {
+  background: var(--color-danger);
+  color: #fff;
+}
+
+.danger:hover:not(:disabled) {
+  filter: brightness(1.1);
+}
+
+.danger:active:not(:disabled) {
+  filter: brightness(0.95);
+}
+
+.iconOnly {
+  border-radius: var(--radius-full);
+  padding: var(--space-xs);
+  min-height: 40px;
+  min-width: 40px;
+}

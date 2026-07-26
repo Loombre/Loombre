@@ -1,0 +1,51 @@
+name: transcode — hdr:dv with dvProfile:null, vs hevc-sdr (non-DV device) — conservative profile-5 branch
+why: "Binding interpretation constraint 2: dvProfile null with no compatible base proven -> treated conservatively as the profile-5 branch. device.dolbyVision false -> dv-profile5-requires-tonemap, with detail noting the unexpected/null profile value (see test/stages/hdr.spec.ts for the detail-string assertion; this case schema only asserts the reason code). t1-cpu-tonemap avoids refusal. why (Phase 3 §11 step 3, Stage G arrival, STATE.md P3.2 regression law): this case's caps fixture has no hardware backend covering this route, so Stage G now routes full software (`software-fallback:encode`).\n"
+input:
+  media:
+    fileId: file-183
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 5000000000
+    overallBitrateBps: 5192000
+    video:
+      - index: 0
+        codec: hevc
+        profile: main10
+        level: 123
+        width: 1920
+        height: 1080
+        bitDepth: 10
+        frameRate: 23.976
+        bitrateBps: 5000000
+        hdr: dv
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 192000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device:
+    fixture: devices.hevc-sdr
+  network:
+    fixture: networks.local
+  policy:
+    fixture: policies.t1-cpu-tonemap
+  caps:
+    fixture: caps.software-only
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: transcode
+  reasons:
+    - dv-profile5-requires-tonemap
+    - software-fallback:encode

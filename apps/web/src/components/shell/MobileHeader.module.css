@@ -1,0 +1,97 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+
+/* Mobile large-title header (Wave 1 W1a). Hidden by default (desktop/
+   tablet); shown only below the mobile breakpoint (767.98px literal — see
+   tokens.css's "Mobile chrome layout" note on why it can't be a var() in
+   an @media condition). Height (--mobile-header-height, tokens.css) MUST
+   stay in sync with AppShell.module.css's mobile .main padding-top. */
+
+.header {
+  composes: glass from global;
+  position: fixed;
+  inset: 0 0 auto;
+  z-index: 30;
+  display: none;
+  flex-direction: column;
+  padding: calc(var(--space-xs) + env(safe-area-inset-top, 0)) var(--space-md) var(--space-sm);
+  padding-left: calc(var(--space-md) + env(safe-area-inset-left, 0));
+  padding-right: calc(var(--space-md) + env(safe-area-inset-right, 0));
+  gap: var(--space-2xs);
+}
+
+@media (width <= 767.98px) {
+  .header {
+    display: flex;
+  }
+}
+
+.topRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 44px;
+  gap: var(--space-sm);
+}
+
+/* H8 fix (Wave-3 fidelity audit): back chevron + label read as an accent
+   action, not plain text — the Icon's stroke inherits `color` via
+   currentColor, so this one property fixes both. */
+.backButton {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3xs);
+  min-height: 44px;
+  padding: var(--space-2xs) var(--space-sm) var(--space-2xs) var(--space-2xs);
+  margin-left: calc(var(--space-2xs) * -1);
+  border: none; /* Wave 2 (lane L8): also used as a real <button> (zone-back mode) */
+  background: transparent;
+  border-radius: var(--radius-pill);
+  color: var(--color-accent);
+  text-decoration: none; /* UA anchor underline */
+  cursor: pointer;
+  transition: background-color var(--motion-fast) var(--ease-out);
+}
+
+.backButton:hover {
+  background: var(--fill-3);
+}
+
+.backLabel {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+}
+
+.topRowControls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2xs);
+  margin-left: auto;
+}
+
+.titleBlock {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3xs);
+  padding-top: var(--space-2xs);
+}
+
+.title {
+  margin: 0;
+  font-family: var(--font-sans);
+  font-stretch: var(--wdth-title);
+  font-weight: var(--weight-black);
+  font-size: var(--text-2xl);
+  letter-spacing: -0.02em;
+  line-height: var(--leading-tight);
+  color: var(--text);
+  text-wrap: pretty;
+}
+
+.subtitle {
+  font-family: var(--font-mono);
+  font-size: var(--mono-sm);
+  font-weight: var(--weight-medium);
+  letter-spacing: var(--track-mono);
+  text-transform: uppercase;
+  color: var(--muted);
+}

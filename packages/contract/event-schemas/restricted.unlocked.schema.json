@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://loombre.com/schemas/events/restricted.unlocked.schema.json",
+  "title": "RestrictedUnlockedPayload",
+  "description": "Payload for envelope.type === 'restricted.unlocked'. STATE.md P2.8: emitted when a user successfully completes POST /restricted/unlock (gate 5, docs/PLAN.md §6.4). USER-SCOPED delivery — see restricted.locked.schema.json's description; the same rules apply here (packages/db/src/query/events.ts's USER_ONLY_TYPES, packages/db/src/query/identity.ts writes this in the same transaction as the user_settings.restricted_unlocked_until_ms update).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["userId"],
+  "properties": {
+    "userId": { "type": "string", "format": "uuid" }
+  }
+}

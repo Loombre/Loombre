@@ -1,0 +1,2329 @@
+{
+  "generatedFrom": "packages/plugin-protocol/src (do not hand-edit — run `pnpm --filter @loombre/plugin-protocol run generate`)",
+  "protocolVersion": 1,
+  "schemas": {
+    "ManifestEnvelope": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "protocolVersion": {
+          "type": "number",
+          "const": 1
+        },
+        "capabilities": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "const": "metadata-provider"
+                  },
+                  "mediaKinds": {
+                    "minItems": 1,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "movie",
+                        "tv",
+                        "music"
+                      ]
+                    }
+                  },
+                  "contentClass": {
+                    "type": "string",
+                    "enum": [
+                      "general",
+                      "restricted"
+                    ]
+                  },
+                  "endpoints": {
+                    "type": "object",
+                    "properties": {
+                      "search": {
+                        "type": "string",
+                        "pattern": "^\\/(?![/\\\\])"
+                      },
+                      "details": {
+                        "type": "string",
+                        "pattern": "^\\/(?![/\\\\])"
+                      },
+                      "images": {
+                        "type": "string",
+                        "pattern": "^\\/(?![/\\\\])"
+                      }
+                    },
+                    "required": [
+                      "search",
+                      "details",
+                      "images"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "type",
+                  "mediaKinds",
+                  "contentClass",
+                  "endpoints"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "const": "event-subscriber"
+                  },
+                  "eventTypes": {
+                    "minItems": 1,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "delivery": {
+                    "type": "object",
+                    "properties": {
+                      "endpoint": {
+                        "type": "string",
+                        "pattern": "^\\/(?![/\\\\])"
+                      }
+                    },
+                    "required": [
+                      "endpoint"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "contentClass": {
+                    "type": "string",
+                    "enum": [
+                      "general",
+                      "restricted"
+                    ]
+                  }
+                },
+                "required": [
+                  "type",
+                  "eventTypes",
+                  "delivery",
+                  "contentClass"
+                ],
+                "additionalProperties": false
+              }
+            ]
+          }
+        },
+        "configSchema": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1
+        },
+        "publisher": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "name",
+        "version",
+        "protocolVersion",
+        "capabilities",
+        "configSchema",
+        "description",
+        "publisher"
+      ],
+      "additionalProperties": false,
+      "$defs": {
+        "__schema0": {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "object"
+            },
+            "description": {
+              "type": "string",
+              "minLength": 1
+            },
+            "properties": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema1"
+              }
+            },
+            "required": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": {
+              "type": "boolean",
+              "const": false
+            }
+          },
+          "required": [
+            "type",
+            "properties",
+            "additionalProperties"
+          ],
+          "additionalProperties": false
+        },
+        "__schema1": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "string"
+                },
+                "description": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "enum": {
+                  "minItems": 1,
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "const": {
+                  "type": "string"
+                },
+                "minLength": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "maxLength": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "default": {
+                  "type": "string"
+                },
+                "secret": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "type"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "number",
+                    "integer"
+                  ]
+                },
+                "description": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "minimum": {
+                  "type": "number"
+                },
+                "maximum": {
+                  "type": "number"
+                },
+                "default": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "type"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "boolean"
+                },
+                "description": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "default": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "type"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "array"
+                },
+                "description": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "items": {
+                  "$ref": "#/$defs/__schema1"
+                },
+                "minItems": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "maxItems": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                }
+              },
+              "required": [
+                "type",
+                "items"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "$ref": "#/$defs/__schema0"
+            }
+          ]
+        }
+      }
+    },
+    "ConfigSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "object"
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1
+        },
+        "properties": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          }
+        },
+        "required": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": {
+          "type": "boolean",
+          "const": false
+        }
+      },
+      "required": [
+        "type",
+        "properties",
+        "additionalProperties"
+      ],
+      "additionalProperties": false,
+      "$defs": {
+        "__schema0": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "string"
+                },
+                "description": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "enum": {
+                  "minItems": 1,
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "const": {
+                  "type": "string"
+                },
+                "minLength": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "maxLength": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "default": {
+                  "type": "string"
+                },
+                "secret": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "type"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "number",
+                    "integer"
+                  ]
+                },
+                "description": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "minimum": {
+                  "type": "number"
+                },
+                "maximum": {
+                  "type": "number"
+                },
+                "default": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "type"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "boolean"
+                },
+                "description": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "default": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "type"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "array"
+                },
+                "description": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "items": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "minItems": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "maxItems": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                }
+              },
+              "required": [
+                "type",
+                "items"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "$ref": "#"
+            }
+          ]
+        }
+      }
+    },
+    "Capability": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "metadata-provider"
+            },
+            "mediaKinds": {
+              "minItems": 1,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "movie",
+                  "tv",
+                  "music"
+                ]
+              }
+            },
+            "contentClass": {
+              "type": "string",
+              "enum": [
+                "general",
+                "restricted"
+              ]
+            },
+            "endpoints": {
+              "type": "object",
+              "properties": {
+                "search": {
+                  "type": "string",
+                  "pattern": "^\\/(?![/\\\\])"
+                },
+                "details": {
+                  "type": "string",
+                  "pattern": "^\\/(?![/\\\\])"
+                },
+                "images": {
+                  "type": "string",
+                  "pattern": "^\\/(?![/\\\\])"
+                }
+              },
+              "required": [
+                "search",
+                "details",
+                "images"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "type",
+            "mediaKinds",
+            "contentClass",
+            "endpoints"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "event-subscriber"
+            },
+            "eventTypes": {
+              "minItems": 1,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "delivery": {
+              "type": "object",
+              "properties": {
+                "endpoint": {
+                  "type": "string",
+                  "pattern": "^\\/(?![/\\\\])"
+                }
+              },
+              "required": [
+                "endpoint"
+              ],
+              "additionalProperties": false
+            },
+            "contentClass": {
+              "type": "string",
+              "enum": [
+                "general",
+                "restricted"
+              ]
+            }
+          },
+          "required": [
+            "type",
+            "eventTypes",
+            "delivery",
+            "contentClass"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "MetadataProviderCapability": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "metadata-provider"
+        },
+        "mediaKinds": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "movie",
+              "tv",
+              "music"
+            ]
+          }
+        },
+        "contentClass": {
+          "type": "string",
+          "enum": [
+            "general",
+            "restricted"
+          ]
+        },
+        "endpoints": {
+          "type": "object",
+          "properties": {
+            "search": {
+              "type": "string",
+              "pattern": "^\\/(?![/\\\\])"
+            },
+            "details": {
+              "type": "string",
+              "pattern": "^\\/(?![/\\\\])"
+            },
+            "images": {
+              "type": "string",
+              "pattern": "^\\/(?![/\\\\])"
+            }
+          },
+          "required": [
+            "search",
+            "details",
+            "images"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "type",
+        "mediaKinds",
+        "contentClass",
+        "endpoints"
+      ],
+      "additionalProperties": false
+    },
+    "EventSubscriberCapability": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "event-subscriber"
+        },
+        "eventTypes": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "delivery": {
+          "type": "object",
+          "properties": {
+            "endpoint": {
+              "type": "string",
+              "pattern": "^\\/(?![/\\\\])"
+            }
+          },
+          "required": [
+            "endpoint"
+          ],
+          "additionalProperties": false
+        },
+        "contentClass": {
+          "type": "string",
+          "enum": [
+            "general",
+            "restricted"
+          ]
+        }
+      },
+      "required": [
+        "type",
+        "eventTypes",
+        "delivery",
+        "contentClass"
+      ],
+      "additionalProperties": false
+    },
+    "MetadataProviderSearchRequest": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "mediaKind": {
+          "type": "string",
+          "enum": [
+            "movie",
+            "tv",
+            "music"
+          ]
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "year": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9999
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "entityKind": {
+          "type": "string",
+          "enum": [
+            "artist",
+            "album",
+            "track"
+          ]
+        }
+      },
+      "required": [
+        "mediaKind",
+        "title"
+      ],
+      "additionalProperties": false
+    },
+    "MetadataProviderSearchResponse": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "results": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "ref": {
+                "type": "object",
+                "properties": {
+                  "provider": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "externalId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "mediaKind": {
+                    "type": "string",
+                    "enum": [
+                      "movie",
+                      "tv",
+                      "music"
+                    ]
+                  },
+                  "seasonNumber": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "episodeNumber": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "entityKind": {
+                    "type": "string",
+                    "enum": [
+                      "artist",
+                      "album",
+                      "track"
+                    ]
+                  }
+                },
+                "required": [
+                  "provider",
+                  "externalId",
+                  "mediaKind"
+                ],
+                "additionalProperties": false
+              },
+              "title": {
+                "type": "string",
+                "minLength": 1
+              },
+              "year": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9999
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "overview": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "popularity": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "ref",
+              "title"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "results"
+      ],
+      "additionalProperties": false
+    },
+    "MetadataProviderDetailsRequest": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "ref": {
+          "type": "object",
+          "properties": {
+            "provider": {
+              "type": "string",
+              "minLength": 1
+            },
+            "externalId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "mediaKind": {
+              "type": "string",
+              "enum": [
+                "movie",
+                "tv",
+                "music"
+              ]
+            },
+            "seasonNumber": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "episodeNumber": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "entityKind": {
+              "type": "string",
+              "enum": [
+                "artist",
+                "album",
+                "track"
+              ]
+            }
+          },
+          "required": [
+            "provider",
+            "externalId",
+            "mediaKind"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "ref"
+      ],
+      "additionalProperties": false
+    },
+    "MetadataProviderDetailsResponse": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "details": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "title": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "sortTitle": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "year": {
+                  "anyOf": [
+                    {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9999
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "overview": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "communityRating": {
+                  "anyOf": [
+                    {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 10
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "contentRating": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "genres": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "tags": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "people": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "role": {
+                        "type": "string",
+                        "enum": [
+                          "actor",
+                          "director",
+                          "writer",
+                          "artist",
+                          "album_artist",
+                          "performer",
+                          "guest"
+                        ]
+                      },
+                      "order": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "credit": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "name",
+                      "role",
+                      "order"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "providerIds": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {
+                    "type": "string"
+                  }
+                },
+                "itemType": {
+                  "type": "string",
+                  "const": "movie"
+                },
+                "tagline": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "runtimeMs": {
+                  "anyOf": [
+                    {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "title",
+                "sortTitle",
+                "year",
+                "overview",
+                "communityRating",
+                "contentRating",
+                "genres",
+                "tags",
+                "people",
+                "providerIds",
+                "itemType",
+                "tagline",
+                "runtimeMs"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "title": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "sortTitle": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "year": {
+                  "anyOf": [
+                    {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9999
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "overview": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "communityRating": {
+                  "anyOf": [
+                    {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 10
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "contentRating": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "genres": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "tags": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "people": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "role": {
+                        "type": "string",
+                        "enum": [
+                          "actor",
+                          "director",
+                          "writer",
+                          "artist",
+                          "album_artist",
+                          "performer",
+                          "guest"
+                        ]
+                      },
+                      "order": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "credit": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "name",
+                      "role",
+                      "order"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "providerIds": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {
+                    "type": "string"
+                  }
+                },
+                "itemType": {
+                  "type": "string",
+                  "const": "series"
+                },
+                "status": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "enum": [
+                        "continuing",
+                        "ended",
+                        "cancelled"
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "airDateMs": {
+                  "anyOf": [
+                    {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "title",
+                "sortTitle",
+                "year",
+                "overview",
+                "communityRating",
+                "contentRating",
+                "genres",
+                "tags",
+                "people",
+                "providerIds",
+                "itemType",
+                "status",
+                "airDateMs"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "title": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "sortTitle": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "year": {
+                  "anyOf": [
+                    {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9999
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "overview": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "communityRating": {
+                  "anyOf": [
+                    {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 10
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "contentRating": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "genres": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "tags": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "people": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "role": {
+                        "type": "string",
+                        "enum": [
+                          "actor",
+                          "director",
+                          "writer",
+                          "artist",
+                          "album_artist",
+                          "performer",
+                          "guest"
+                        ]
+                      },
+                      "order": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "credit": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "name",
+                      "role",
+                      "order"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "providerIds": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {
+                    "type": "string"
+                  }
+                },
+                "itemType": {
+                  "type": "string",
+                  "const": "season"
+                },
+                "seasonNumber": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                }
+              },
+              "required": [
+                "title",
+                "sortTitle",
+                "year",
+                "overview",
+                "communityRating",
+                "contentRating",
+                "genres",
+                "tags",
+                "people",
+                "providerIds",
+                "itemType",
+                "seasonNumber"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "title": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "sortTitle": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "year": {
+                  "anyOf": [
+                    {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9999
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "overview": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "communityRating": {
+                  "anyOf": [
+                    {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 10
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "contentRating": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "genres": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "tags": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "people": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "role": {
+                        "type": "string",
+                        "enum": [
+                          "actor",
+                          "director",
+                          "writer",
+                          "artist",
+                          "album_artist",
+                          "performer",
+                          "guest"
+                        ]
+                      },
+                      "order": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "credit": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "name",
+                      "role",
+                      "order"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "providerIds": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {
+                    "type": "string"
+                  }
+                },
+                "itemType": {
+                  "type": "string",
+                  "const": "episode"
+                },
+                "seasonNumber": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "episodeNumber": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "airDateMs": {
+                  "anyOf": [
+                    {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "title",
+                "sortTitle",
+                "year",
+                "overview",
+                "communityRating",
+                "contentRating",
+                "genres",
+                "tags",
+                "people",
+                "providerIds",
+                "itemType",
+                "seasonNumber",
+                "episodeNumber",
+                "airDateMs"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "title": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "sortTitle": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "year": {
+                  "anyOf": [
+                    {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9999
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "overview": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "communityRating": {
+                  "anyOf": [
+                    {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 10
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "contentRating": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "genres": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "tags": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "people": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "role": {
+                        "type": "string",
+                        "enum": [
+                          "actor",
+                          "director",
+                          "writer",
+                          "artist",
+                          "album_artist",
+                          "performer",
+                          "guest"
+                        ]
+                      },
+                      "order": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "credit": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "name",
+                      "role",
+                      "order"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "providerIds": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {
+                    "type": "string"
+                  }
+                },
+                "itemType": {
+                  "type": "string",
+                  "const": "artist"
+                }
+              },
+              "required": [
+                "title",
+                "sortTitle",
+                "year",
+                "overview",
+                "communityRating",
+                "contentRating",
+                "genres",
+                "tags",
+                "people",
+                "providerIds",
+                "itemType"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "title": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "sortTitle": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "year": {
+                  "anyOf": [
+                    {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9999
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "overview": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "communityRating": {
+                  "anyOf": [
+                    {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 10
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "contentRating": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "genres": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "tags": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "people": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "role": {
+                        "type": "string",
+                        "enum": [
+                          "actor",
+                          "director",
+                          "writer",
+                          "artist",
+                          "album_artist",
+                          "performer",
+                          "guest"
+                        ]
+                      },
+                      "order": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "credit": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "name",
+                      "role",
+                      "order"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "providerIds": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {
+                    "type": "string"
+                  }
+                },
+                "itemType": {
+                  "type": "string",
+                  "const": "album"
+                }
+              },
+              "required": [
+                "title",
+                "sortTitle",
+                "year",
+                "overview",
+                "communityRating",
+                "contentRating",
+                "genres",
+                "tags",
+                "people",
+                "providerIds",
+                "itemType"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "title": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "sortTitle": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "year": {
+                  "anyOf": [
+                    {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9999
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "overview": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "communityRating": {
+                  "anyOf": [
+                    {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 10
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "contentRating": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "genres": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "tags": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "people": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "role": {
+                        "type": "string",
+                        "enum": [
+                          "actor",
+                          "director",
+                          "writer",
+                          "artist",
+                          "album_artist",
+                          "performer",
+                          "guest"
+                        ]
+                      },
+                      "order": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "credit": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "name",
+                      "role",
+                      "order"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "providerIds": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {
+                    "type": "string"
+                  }
+                },
+                "itemType": {
+                  "type": "string",
+                  "const": "track"
+                },
+                "trackNumber": {
+                  "anyOf": [
+                    {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "discNumber": {
+                  "anyOf": [
+                    {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "durationMs": {
+                  "anyOf": [
+                    {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "title",
+                "sortTitle",
+                "year",
+                "overview",
+                "communityRating",
+                "contentRating",
+                "genres",
+                "tags",
+                "people",
+                "providerIds",
+                "itemType",
+                "trackNumber",
+                "discNumber",
+                "durationMs"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        }
+      },
+      "required": [
+        "details"
+      ],
+      "additionalProperties": false
+    },
+    "MetadataProviderImagesRequest": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "ref": {
+          "type": "object",
+          "properties": {
+            "provider": {
+              "type": "string",
+              "minLength": 1
+            },
+            "externalId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "mediaKind": {
+              "type": "string",
+              "enum": [
+                "movie",
+                "tv",
+                "music"
+              ]
+            },
+            "seasonNumber": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "episodeNumber": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "entityKind": {
+              "type": "string",
+              "enum": [
+                "artist",
+                "album",
+                "track"
+              ]
+            }
+          },
+          "required": [
+            "provider",
+            "externalId",
+            "mediaKind"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "ref"
+      ],
+      "additionalProperties": false
+    },
+    "MetadataProviderImagesResponse": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "images": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "poster",
+                  "backdrop",
+                  "logo",
+                  "disc",
+                  "thumb"
+                ]
+              },
+              "url": {
+                "type": "string",
+                "minLength": 1
+              },
+              "width": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "height": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "url"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "images"
+      ],
+      "additionalProperties": false
+    },
+    "EventSubscriberBatch": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "batchId": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        },
+        "events": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+              },
+              "type": {
+                "type": "string",
+                "minLength": 1
+              },
+              "occurredAtMs": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "payload": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              }
+            },
+            "required": [
+              "id",
+              "type",
+              "occurredAtMs",
+              "payload"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "gapReport": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "detectedAtMs": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "gaps": {
+                  "minItems": 1,
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "fromMs": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "toMs": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "reason": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "required": [
+                      "fromMs",
+                      "toMs",
+                      "reason"
+                    ],
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "required": [
+                "detectedAtMs",
+                "gaps"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "batchId",
+        "events",
+        "gapReport"
+      ],
+      "additionalProperties": false
+    },
+    "Problem": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "type": {
+          "default": "about:blank",
+          "type": "string",
+          "minLength": 1
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 599
+        },
+        "detail": {
+          "type": "string"
+        },
+        "instance": {
+          "type": "string"
+        },
+        "code": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "title",
+        "status"
+      ],
+      "additionalProperties": {}
+    }
+  }
+}

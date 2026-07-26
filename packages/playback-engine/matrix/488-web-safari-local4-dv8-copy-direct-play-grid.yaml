@@ -1,0 +1,53 @@
+name: 'direct-play — web-safari × local-4mbps × preserve-ass-styling: DV profile 8 copies natively on
+  a dolbyVision device (strip never considered)'
+why: 'Grid combo (web-safari × local-4mbps × preserve-ass-styling): device.dolbyVision:true short-circuits
+  the dv7/8 branch BEFORE any compat-BL/strip logic (§3''s first clause), the local network forgives 12M
+  > 4M (null device cap), and the ass-preserving policy is indifferent with no subtitle selected.'
+input:
+  media:
+    fileId: file-488
+    container: mov
+    durationMs: 6000000
+    sizeBytes: 9000000000
+    overallBitrateBps: 12000000
+    video:
+    - index: 0
+      codec: hevc
+      profile: main10
+      level: 150
+      width: 1920
+      height: 1080
+      bitDepth: 10
+      frameRate: 23.976
+      bitrateBps: 11000000
+      hdr: dv
+      dvProfile: 8
+      dvBlCompatId: 1
+      interlaced: false
+    audio:
+    - index: 1
+      codec: eac3
+      channels: 6
+      sampleRate: 48000
+      bitrateBps: 256000
+      language: eng
+      isDefault: true
+      hasAtmos: false
+    subtitle: []
+  device:
+    fixture: devices.web-safari
+  network:
+    fixture: networks.local-4mbps
+  policy:
+    fixture: policies.preserve-ass-styling
+  caps:
+    fixture: caps.software-only
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: direct-play
+  reasons: []
+  container: source

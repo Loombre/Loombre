@@ -1,0 +1,51 @@
+name: "transcode — full-hw route at T0 with a 2160p source: STILL no tier cap (reinforces 388 at the 2160p boundary)"
+why: >
+  Same point as case 388 (hw routes are never tier-capped) but at 2160p instead of 1080p, removing any doubt that the '>=1080' height threshold might somehow interact differently at the top of the range. full-hw's nvenc routes normally (hw-encoder-selected:nvenc); ladderMaxVideoBitrateBps stays bounded by the 20Mbps network cap, not narrowed to 480p-only.
+
+input:
+  media:
+    fileId: gen-file
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 6000000000
+    overallBitrateBps: 25000000
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 52
+        width: 3840
+        height: 2160
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 18000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 160000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device: { fixture: devices.web-safari }
+  network: { fixture: networks.wan-20mbps }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.full-hw }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+
+expect:
+  decision: transcode
+  reasons:
+    - bitrate-exceeds-network
+    - hw-encoder-selected:nvenc
+  ladderMaxVideoBitrateBps: 20000000

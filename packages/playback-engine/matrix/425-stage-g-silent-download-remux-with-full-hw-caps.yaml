@@ -1,0 +1,50 @@
+name: "remux (download mode, container-only change) — full-hw caps present: Stage G silent"
+why: >
+  mode=download + a container-only mismatch (mkv vs web-chrome) with every stream otherwise compatible -> decision='remux' (§3 Final assembly), video.action stays 'copy' -> Stage G never runs. reasons stays EXACTLY [container-not-direct-playable], proving Stage G is indifferent to mode just as it is to every other non-video-transcode path.
+
+input:
+  media:
+    fileId: gen-file
+    container: mkv
+    durationMs: 6000000
+    sizeBytes: 6000000000
+    overallBitrateBps: 5000000
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 41
+        width: 1920
+        height: 1080
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 5000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 160000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device: { fixture: devices.web-chrome }
+  network: { fixture: networks.local }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.full-hw }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: download
+
+expect:
+  decision: remux
+  reasons:
+    - container-not-direct-playable
+  container: mp4

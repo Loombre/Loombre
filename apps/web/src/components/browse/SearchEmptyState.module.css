@@ -1,0 +1,79 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+
+.wrap {
+  display: flex;
+  flex-direction: column;
+}
+
+.recentRow {
+  margin-top: var(--space-md);
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+}
+
+.recentLabel {
+  font-family: var(--font-mono);
+  font-size: var(--mono-sm);
+  letter-spacing: var(--track-mono-wide);
+  color: var(--color-text-subtle);
+}
+
+.pill {
+  padding: var(--space-3xs) var(--space-md);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  background: none;
+  cursor: pointer;
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+  min-height: 30px;
+}
+
+.pill:hover,
+.pill:focus-visible {
+  color: var(--color-accent);
+  border-color: var(--color-accent-border);
+}
+
+.ghostWrap {
+  margin-top: var(--space-3xl);
+  text-align: center;
+  color: #3a3e45;
+}
+
+.ghost {
+  font-stretch: var(--wdth-title);
+  font-weight: 900;
+  font-size: 40px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgb(255 255 255 / 5%);
+  user-select: none;
+}
+
+.ghostSub {
+  font-family: var(--font-mono);
+  font-size: var(--mono-sm);
+  letter-spacing: var(--track-mono-wide);
+  color: var(--color-text-hint);
+  margin-top: var(--space-xs);
+}
+
+@media (width <= 767.98px) {
+  .ghostWrap {
+    margin-top: var(--space-2xl);
+  }
+
+  .ghost {
+    font-size: 30px;
+  }
+
+  /* U2/mobile-targets rule: 44px minimum on a phone, even though the
+     desktop pill (30px, matching the prototype's compact chip exactly)
+     is a pointer-only affordance. */
+  .pill {
+    min-height: 44px;
+  }
+}

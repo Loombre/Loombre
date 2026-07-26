@@ -1,0 +1,46 @@
+name: transcode — flac codec absent from web-chrome's device.audio (non-music)
+why: "web-chrome declares no flac entry; a non-music flac stream (e.g. a movie with a lossless commentary track) fires audio-codec-unsupported alone. Non-music variant contrasts with the music-mode flac cases (seed 009, case 247) where the container/device pairing is music-focused."
+input:
+  media:
+    fileId: file-0240
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 6000000000
+    overallBitrateBps: 6300000
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 41
+        width: 1920
+        height: 1080
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 5000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: flac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 900000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device: { fixture: devices.web-chrome }
+  network: { fixture: networks.local }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.software-only }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: transcode
+  reasons:
+    - audio-codec-unsupported

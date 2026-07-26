@@ -1,0 +1,24 @@
+{
+  "scenario": "remux (download mode, container-only change) — progressive mp4 output, no HLS muxer",
+  "args": [
+    "-hide_banner",
+    "-loglevel",
+    "warning",
+    "-nostdin",
+    "-i",
+    "{INPUT}",
+    "-map",
+    "0:v:0",
+    "-map",
+    "0:a:0",
+    "-c:v",
+    "copy",
+    "-c:a",
+    "copy",
+    "-movflags",
+    "+faststart",
+    "-f",
+    "mp4",
+    "{SESSION_DIR}/download.mp4"
+  ]
+}

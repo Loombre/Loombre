@@ -1,0 +1,50 @@
+name: direct-play — mp4 DV profile 8.1 (compat BL) vs hevc-hdr10-only (mp4 direct-play -> strip does NOT fire; MANDATORY constraint-3 case)
+why: "MANDATORY per binding interpretation constraint 3: 'Add a direct-play counterpart case (mp4 + dv8 compat-BL + hdr10-capable mp4-direct-play device -> direct-play, reasons: [])'. mp4 IS in hevc-hdr10-only's directPlayContainers, so the file is served untouched — no strip happens, so no dv-stripped-to-hdr10 reason. direct-play, reasons=[]."
+input:
+  media:
+    fileId: file-175
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 5000000000
+    overallBitrateBps: 15384000
+    video:
+      - index: 0
+        codec: hevc
+        profile: main10
+        level: 123
+        width: 3840
+        height: 2160
+        bitDepth: 10
+        frameRate: 23.976
+        bitrateBps: 15000000
+        hdr: dv
+        dvProfile: 8
+        dvBlCompatId: 1
+        interlaced: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 6
+        sampleRate: 48000
+        bitrateBps: 384000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device:
+    fixture: devices.hevc-hdr10-only
+  network:
+    fixture: networks.local
+  policy:
+    fixture: policies.t0-default
+  caps:
+    fixture: caps.software-only
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: direct-play
+  reasons: []
+  container: source

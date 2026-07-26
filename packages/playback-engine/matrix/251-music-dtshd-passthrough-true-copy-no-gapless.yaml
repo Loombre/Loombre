@@ -1,0 +1,43 @@
+name: direct-play — music mode, dtshd passthrough:true copies untouched — true direct-play, gapless fully preserved
+why: "Inline device's directPlayContainers include flac (Stage A silent) and declares a dtshd entry with passthrough:true at the stream's own channel count — Stage D copies, and since the OVERALL decision is genuinely direct-play (no repackage at all), gapless is fully preserved, not merely 'not degraded'."
+input:
+  media:
+    fileId: file-0251
+    container: flac
+    durationMs: 300000
+    sizeBytes: 90000000
+    overallBitrateBps: 2400000
+    video: []
+    audio:
+      - index: 0
+        codec: dtshd
+        channels: 8
+        sampleRate: 48000
+        bitrateBps: 2400000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device:
+    profileId: inline-music-dtshd-passthrough
+    directPlayContainers: [flac]
+    hls: { container: fmp4, supportsFmp4: true, lowLatency: false }
+    video: []
+    hdr: { hdr10: false, hlg: false, dolbyVision: false }
+    audio:
+      - codec: dtshd
+        maxChannels: 8
+        passthrough: true
+    subtitles: { renderText: [], hlsVtt: false, renderImage: false }
+    maxStreamBitrateBps: null
+  network: { fixture: networks.local }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.software-only }
+  selection:
+    videoStreamIndex: null
+    audioStreamIndex: 0
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: direct-play
+  reasons: []

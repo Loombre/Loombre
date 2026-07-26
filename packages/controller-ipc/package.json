@@ -1,0 +1,29 @@
+{
+  "name": "@loombre/controller-ipc",
+  "version": "0.1.0",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "description": "Versioned local control-plane contract between platform controller apps (Windows tray, macOS menubar) and the server/worker pair — loopback-only, never the public /v1 REST contract. Types + JSON-schema fixtures only — no I/O, no implementation.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "lint": "eslint src test --max-warnings=0",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@loombre/provisioning": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "24.13.3",
+    "ajv": "^8.20.0"
+  }
+}

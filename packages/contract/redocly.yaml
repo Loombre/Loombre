@@ -1,0 +1,16 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Loombre :: packages/contract/redocly.yaml
+#
+# telemetry: off — CLAUDE.md invariant 7 (no telemetry/phone-home, ever).
+# The docs build already set REDOCLY_TELEMETRY=off on its child process;
+# the `redocly lint` gate step had NO opt-out anywhere in its chain
+# (caught during the supported-latest sweep) — config-level off covers
+# every redocly invocation from this package on every platform, with no
+# Windows-hostile env-prefix in npm scripts.
+#
+# extends: recommended — pins the ruleset the contract has always been
+# linted with (the CLI's no-config default), so a future default-ruleset
+# change in the CLI can't silently alter what "zero warnings" means.
+extends:
+  - recommended
+telemetry: off

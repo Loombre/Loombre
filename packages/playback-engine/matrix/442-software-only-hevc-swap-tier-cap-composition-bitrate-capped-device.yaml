@@ -1,0 +1,55 @@
+name: transcode — hevc-swap AND tier-cap compose under software-only + a restrictive device cap
+why: >
+  bitrate-capped-device declares an hevc entry (swap applies) but ALSO a tight 500,000bps maxStreamBitrateBps. Stage F fires bitrate-exceeds-network (overallBitrateBps 25Mbps over the 20Mbps network cap — the device cap alone doesn't produce a Stage F REASON since evaluateBitrate never reads it, per stages/ladder.ts's own documented scope; only buildLadder's rule (d) does). Stage F's buildLadder rule (d) evaluates the POST-swap (x0.75) bitrates against the device cap and collapses everything to the single lowest (post-swap) rung; Stage G's tier cap (tier 0, 1080p source, software-only route) then finds that single rung ALREADY <=480p, so NO further change happens (software-fallback:encode WITHOUT tier-capped) — a genuinely different fixture/network combination from case 434's plain (non-swapped) equivalent, exercising the swap+device-cap+tier-cap three-way interaction specifically.
+
+input:
+  media:
+    fileId: gen-file
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 6000000000
+    overallBitrateBps: 25000000
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 41
+        width: 1920
+        height: 1080
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 18000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 160000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device: { fixture: devices.bitrate-capped-device }
+  network: { fixture: networks.wan-20mbps }
+  policy: { fixture: policies.hevc-preferred }
+  caps: { fixture: caps.software-only }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+
+expect:
+  decision: transcode
+  reasons:
+    - bitrate-exceeds-network
+    - software-fallback:encode
+  ladder:
+    - heightPx: 360
+      videoBitrateBps: 600000
+      audioBitrateBps: 160000
+      codec: hevc

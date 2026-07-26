@@ -1,0 +1,68 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+
+.card {
+  position: relative;
+  height: 196px;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+
+  /* Missing-artwork fallback gradient (S5) — same two-stop recipe as
+     DetailPoster.module.css's .poster/SceneBanner.module.css's .banner,
+     under this component's own --card-glow custom property. */
+  background: radial-gradient(120% 120% at 30% 0%, color-mix(in srgb, var(--card-glow, var(--color-dominant-fallback)) 55%, transparent), var(--color-dominant-fallback));
+  margin-bottom: var(--space-sm);
+}
+
+.backdrop {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* Missing-artwork fallback letter (S5) — same oversized/translucent
+   recipe as DetailPoster.module.css's .initial. No fallback title text
+   here — .text .title already renders the real title over every state
+   (see MobileSceneCard.tsx's header). */
+.initial {
+  position: absolute;
+  top: -10px;
+  right: var(--space-sm);
+  font-family: var(--font-sans);
+  font-stretch: var(--wdth-poster);
+  font-weight: var(--weight-black);
+  font-size: 120px;
+  line-height: 1;
+  color: rgb(255 255 255 / 13%);
+  user-select: none;
+}
+
+.scrim {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgb(11 12 15 / 0%) 40%, rgb(11 12 15 / 90%) 100%);
+}
+
+.text {
+  position: absolute;
+  left: var(--space-sm);
+  right: var(--space-sm);
+  bottom: var(--space-sm);
+}
+
+.title {
+  font-stretch: var(--wdth-title);
+  font-weight: var(--weight-black);
+  font-size: var(--text-xl);
+  line-height: var(--leading-tight);
+  margin-bottom: var(--space-3xs);
+}
+
+.meta {
+  font-family: var(--font-mono);
+  font-size: var(--mono-xs);
+  letter-spacing: var(--track-mono);
+  color: var(--color-text-muted);
+}

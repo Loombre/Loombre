@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://loombre.com/schemas/events/plugin.health-changed.schema.json",
+  "title": "PluginHealthChangedPayload",
+  "description": "Payload for envelope.type === 'plugin.health-changed'. Loombre Plugin Protocol (LPP) v1, Lane W2 (LD4/LD7): emitted in the SAME transaction as a plugins.health_state column change (packages/db/src/query/plugins.ts's setPluginHealthAndEmit), exactly on a state TRANSITION — never on a health check that reconfirms the same state. envelope.actorUserId is always null (system-originated: health checks run without a human actor in the loop). ADMIN-ONLY delivery, mirroring settings.updated exactly.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["pluginId", "name", "previousState", "newState", "changedAtMs"],
+  "properties": {
+    "pluginId": {
+      "type": "string",
+      "format": "uuid",
+      "description": "The plugins.id row whose health_state changed."
+    },
+    "name": {
+      "type": "string",
+      "description": "The plugin's current name."
+    },
+    "previousState": {
+      "type": "string",
+      "enum": ["unknown", "healthy", "unhealthy"],
+      "description": "plugins.health_state before this check."
+    },
+    "newState": {
+      "type": "string",
+      "enum": ["unknown", "healthy", "unhealthy"],
+      "description": "plugins.health_state after this check."
+    },
+    "changedAtMs": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Epoch ms of the health check that produced this transition."
+    }
+  }
+}

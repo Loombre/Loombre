@@ -1,0 +1,172 @@
+#!/usr/bin/env node
+// SPDX-License-Identifier: AGPL-3.0-only
+// Loombre :: scripts/docs/gen-settings-reference.mjs
+//
+// Addendum A, lane D1 (STATE.md "## Addendum A", deliverable 4) — the REAL
+// generator for the admin-guide settings reference page, reading
+// packages/shared/src/settings-registry.ts's SETTINGS_REGISTRY (lane S1,
+// landed 4a65fab) directly. Supersedes this file's original stub (it
+// printed a "pending lane S1" placeholder; the seam is now live).
+//
+// RUNTIME: must be invoked via `tsx` (node_modules/.bin/tsx), not plain
+// `node` — see scripts/docs/build.mjs's call site. The registry is
+// TypeScript source with no committed compiled output (packages/shared
+// builds to a gitignored dist/), and this lane decided AGAINST importing
+// dist/: relying on dist/ would make this generator's correctness depend
+// on an implicit ordering guarantee (some earlier `pnpm gate` step, e.g.
+// typecheck's turbo `^build` dependency, happening to have built
+// packages/shared first) that this script has no way to verify or enforce
+// itself, and would silently read STALE compiled output if
+// packages/shared's source changed without a rebuild in between — a real
+// risk while lane S3 is concurrently editing settings-registry.ts
+// (requiresRestart flips, per the orchestrator's own note). Importing the
+// .ts source directly via tsx has neither problem: it's always current,
+// with no ordering dependency on any other gate step. tsx is already a
+// root devDependency (no new install).
+//
+// COMMITTED, NOT HAND-EDITED: docs/admin-guide/settings-reference.md IS
+// committed to the repo (git-tracked, same as any other doc page) — it is
+// NOT a build artifact excluded from version control. `pnpm docs:build`
+// regenerates it from the registry on every run, then scripts/docs/build.mjs's
+// drift check (`git diff --exit-code` against the committed copy) fails the
+// build if regenerating produced different content than what's committed —
+// that check is exactly what depends on this file being committed in the
+// first place. This is the no-drift guarantee: the page can never diverge
+// from the registry, because any divergence fails the build until the
+// regenerated file is re-committed. Never hand-edit it directly; edit
+// packages/shared/src/settings-registry.ts and re-run `pnpm docs:build`.
+//
+// SCOPE: admin-guide/settings-reference.md covers scope:'ui' entries only
+// (the ones an admin can actually see/edit in the settings screen once
+// lane S2 builds it) — scope:'env-only' entries have no UI surface at all
+// and belong to the Operator Guide's env-reference page instead
+// (gen-env-reference.mjs), which also lists the env-PIN variable for every
+// UI entry that carries one (the operator-facing half of the same fact
+// this page states from the admin side).
+//
+// REGISTER: entry.description is reproduced VERBATIM (not paraphrased) —
+// explicit instruction from the orchestrator so the eventual settings
+// screen (lane S2, reading this same registry) and this documentation page
+// can never show different wording for the same setting. This is a
+// deliberate, logged exception to the Admin Guide's usual "plain language
+// only" register: some descriptions carry technical terms undiluted. Every
+// OTHER piece of text on this page (headings, category grouping, the
+// restart/lock explanations) is written in plain admin language.
+
+import { writeFileSync, mkdirSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { SETTINGS_REGISTRY } from "../../packages/shared/src/settings-registry.js";
+import { ADMIN_CATEGORY_ORDER, ADMIN_CATEGORY_TITLES, titleFor, slugify } from "./lib/settings-titles.mjs";
+import { formatDefaultWithTiers } from "./lib/settings-format.mjs";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const REPO_ROOT = join(__dirname, "..", "..");
+const OUTPUT_PATH = join(REPO_ROOT, "docs", "admin-guide", "settings-reference.md");
+
+const uiEntries = SETTINGS_REGISTRY.filter((entry) => entry.scope === "ui");
+
+const byCategory = new Map();
+for (const entry of uiEntries) {
+  if (!byCategory.has(entry.category)) byCategory.set(entry.category, []);
+  byCategory.get(entry.category).push(entry);
+}
+
+const knownCategories = new Set(ADMIN_CATEGORY_ORDER);
+const unmappedCategories = [...byCategory.keys()].filter((c) => !knownCategories.has(c));
+if (unmappedCategories.length > 0) {
+  console.warn(
+    `gen-settings-reference: WARNING — categor${unmappedCategories.length === 1 ? "y" : "ies"} not in ` +
+      `ADMIN_CATEGORY_ORDER (scripts/docs/lib/settings-titles.mjs), appended at the end with a generic ` +
+      `heading: ${unmappedCategories.join(", ")}. Add a friendly title/blurb for full presentation quality.`,
+  );
+}
+const categoryOrder = [...ADMIN_CATEGORY_ORDER.filter((c) => byCategory.has(c)), ...unmappedCategories];
+
+function renderSetting(entry) {
+  const title = titleFor(entry.key);
+  const lines = [`### ${title}`, "", `<small>Setting key: \`${entry.key}\`</small>`, ""];
+
+  lines.push(entry.description, "");
+
+  lines.push(`- **Default:** ${formatDefaultWithTiers(entry)}`);
+  if (entry.tierDefaults) {
+    lines.push(
+      "  (varies by hardware tier — see [Install: system requirements](/install/#system-requirements) for what Tier 0/1/2 mean)",
+    );
+  }
+  lines.push(
+    entry.requiresRestart
+      ? "- **Applies:** after a restart. Saving this shows a reminder banner until the server restarts."
+      : "- **Applies:** immediately — no restart needed.",
+  );
+  if (entry.caution) {
+    lines.push(`- **Note:** ${entry.caution}`);
+  }
+  if (entry.envVar) {
+    lines.push(
+      `- **Can be locked:** if \`${entry.envVar}\` is set by whoever installed Loombre, this setting becomes fixed to that value and shows as controlled by the environment here — ask them, or see the [Operator Guide's environment reference](/ops/env-reference).`,
+    );
+  }
+  lines.push("");
+  return lines.join("\n");
+}
+
+const lines = [
+  "# Settings reference",
+  "",
+  "<!-- GENERATED by scripts/docs/gen-settings-reference.mjs from",
+  "     packages/shared/src/settings-registry.ts (SETTINGS_REGISTRY) — do not",
+  "     edit by hand, edits are overwritten on the next `pnpm docs:build`.",
+  "     Setting descriptions below are reproduced VERBATIM from the registry",
+  "     (the same text the settings screen renders) — see this script's",
+  "     header comment for why. -->",
+  "",
+  "Every setting Loombre's settings screen lets you change, grouped the way " +
+    "the screen groups them, generated directly from the same source the " +
+    "settings screen itself reads — so this page can never drift from what " +
+    "you actually see there.",
+  "",
+  "## How to read this page",
+  "",
+  "- **Applies immediately** means the change takes effect right away.",
+  "- **Applies after a restart** means Loombre saves your change now but " +
+    "keeps using the old value until the server restarts — you'll see a " +
+    "reminder banner in the meantime. Nothing currently playing is ever " +
+    "interrupted by this.",
+  "- **Can be locked** means whoever installed Loombre can fix a setting to " +
+    "one value from outside the settings screen. When that's done, this " +
+    "screen shows the setting as controlled by the environment and you " +
+    "can't change it here — ask them if you need it changed.",
+  "",
+];
+
+for (const category of categoryOrder) {
+  const meta = ADMIN_CATEGORY_TITLES[category] ?? {
+    title: category,
+    blurb: "",
+  };
+  lines.push(`## ${meta.title}`, "");
+  if (meta.blurb) lines.push(meta.blurb, "");
+  const entries = byCategory.get(category);
+  for (const entry of entries) {
+    lines.push(renderSetting(entry));
+  }
+}
+
+mkdirSync(dirname(OUTPUT_PATH), { recursive: true });
+writeFileSync(OUTPUT_PATH, lines.join("\n").replace(/\n{3,}/g, "\n\n") + "\n");
+
+console.log(
+  `gen-settings-reference: wrote ${uiEntries.length} setting(s) across ${categoryOrder.length} categor${categoryOrder.length === 1 ? "y" : "ies"} -> docs/admin-guide/settings-reference.md`,
+);
+
+// Sanity check only (not a hard gate): flags a heading whose slug would be
+// empty, which would make an env-reference.md cross-link to it silently
+// break. Cheap to assert here rather than a full test file for a doc
+// generator.
+for (const entry of uiEntries) {
+  if (entry.envVar && !slugify(titleFor(entry.key))) {
+    console.warn(`gen-settings-reference: WARNING — empty anchor slug for "${entry.key}", cross-links will break.`);
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://loombre.com/schemas/events/playback.started.schema.json",
+  "title": "PlaybackStartedPayload",
+  "description": "Payload for envelope.type === 'playback.started'. Emitted when a playback session transitions to 'active' (docs/PLAYBACK.md §9).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["sessionId", "itemId", "deviceId", "decision", "startedAtMs"],
+  "properties": {
+    "sessionId": { "type": "string", "format": "uuid" },
+    "itemId": { "type": "string", "format": "uuid" },
+    "deviceId": { "type": "string", "format": "uuid" },
+    "decision": {
+      "type": "string",
+      "enum": ["direct-play", "direct-stream", "remux", "transcode"],
+      "description": "Mirrors PlaybackPlan.decision (packages/contract/openapi.yaml)."
+    },
+    "startedAtMs": { "type": "integer", "minimum": 0 }
+  }
+}

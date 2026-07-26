@@ -1,0 +1,59 @@
+name: 'transcode (disabled) — allowTranscode:false bites on the bitrate path too: Stage F''s blocking
+  reason stands, Stage G (and its tier cap) never runs, empty outputs'
+why: 'step 7b F1 fix (P3.2 flip of the step-7a audit pin; second arm of the 451 set): a network-driven
+  transcode (12M overall vs 4M WAN) under transcode-disabled keeps Stage F''s bitrate-exceeds-network
+  blocking reason but the assembly-level disabled verdict lands LAST and Stage G is SKIPPED — no software-fallback:encode,
+  no software-fallback:tier-capped (there is no route and no ladder to cap), ladder [], ffmpegArgs [],
+  video/audio target fields unset. Proves the knob bites on EVERY escalation path, not just Stage B''s.
+  Deliberate future-proof exception: overall bitrate exceeds the network cap (the would-be transcode
+  driver).'
+input:
+  media:
+    fileId: file-452
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 9000000000
+    overallBitrateBps: 12000000
+    video:
+    - index: 0
+      codec: h264
+      profile: high
+      level: 41
+      width: 1920
+      height: 1080
+      bitDepth: 8
+      frameRate: 23.976
+      bitrateBps: 11500000
+      hdr: none
+      dvProfile: null
+      dvBlCompatId: null
+      interlaced: false
+    audio:
+    - index: 1
+      codec: aac
+      channels: 2
+      sampleRate: 48000
+      bitrateBps: 192000
+      language: eng
+      isDefault: true
+      hasAtmos: false
+    subtitle: []
+  device:
+    fixture: devices.web-chrome
+  network:
+    fixture: networks.wan-4mbps
+  policy:
+    fixture: policies.transcode-disabled
+  caps:
+    fixture: caps.software-only
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: transcode
+  reasons:
+  - bitrate-exceeds-network
+  - transcode-disabled-by-policy
+  ladder: []

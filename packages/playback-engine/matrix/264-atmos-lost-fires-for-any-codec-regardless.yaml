@@ -1,0 +1,47 @@
+name: transcode — flac stream with hasAtmos:true, codec unsupported — atmos-lost fires regardless of codec
+why: "An atypical but structurally valid combination (flac doesn't realistically carry Atmos, but AudioStream.hasAtmos is just a bool field the stage trusts as input) — web-chrome declares no flac entry, so rule 1 fires audio-codec-unsupported; audio-atmos-lost is appended because the stage's own verdict is transcode, regardless of which rule fired or which codec is involved (binding interpretation constraint 3 is codec-agnostic)."
+input:
+  media:
+    fileId: file-0264
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 6000000000
+    overallBitrateBps: 6300000
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 41
+        width: 1920
+        height: 1080
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 5000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: flac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 900000
+        language: eng
+        isDefault: true
+        hasAtmos: true
+    subtitle: []
+  device: { fixture: devices.web-chrome }
+  network: { fixture: networks.local }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.software-only }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: transcode
+  reasons:
+    - audio-codec-unsupported
+    - audio-atmos-lost

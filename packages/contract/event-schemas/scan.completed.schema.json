@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://loombre.com/schemas/events/scan.completed.schema.json",
+  "title": "ScanCompletedPayload",
+  "description": "Payload for envelope.type === 'scan.completed'. Emitted when a library scan job (docs/PLAN.md §8.1) finishes, successfully or not.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["jobId", "libraryId", "full", "itemsAdded", "itemsUpdated", "itemsRemoved", "durationMs", "completedAtMs", "status"],
+  "properties": {
+    "jobId": { "type": "string", "format": "uuid" },
+    "libraryId": { "type": "string", "format": "uuid" },
+    "full": { "type": "boolean" },
+    "itemsAdded": { "type": "integer", "minimum": 0 },
+    "itemsUpdated": { "type": "integer", "minimum": 0 },
+    "itemsRemoved": { "type": "integer", "minimum": 0 },
+    "durationMs": { "type": "integer", "minimum": 0 },
+    "status": { "type": "string", "enum": ["succeeded", "failed", "partial"] },
+    "errorMessage": { "type": ["string", "null"] },
+    "completedAtMs": { "type": "integer", "minimum": 0 }
+  }
+}

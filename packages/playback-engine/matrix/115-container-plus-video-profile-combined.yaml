@@ -1,0 +1,53 @@
+name: transcode — mkv (not in web-chrome's list) + h264 high10 profile exceeds — Stage A + Stage B combined
+why: |
+  Container mismatch (Stage A, severity direct-stream) combines with a video-profile-unsupported rule-3 exceed (Stage B, severity transcode) — the aggregated decision is transcode (max severity), with both reasons present in stage order (container first, then video). why (Phase 3 §11 step 3, Stage G arrival, STATE.md P3.2 regression law): this case's caps fixture has no hardware backend covering this route, so Stage G now routes full software (`software-fallback:encode`).
+input:
+  media:
+    fileId: file-115
+    container: mkv
+    durationMs: 6000000
+    sizeBytes: 5000000000
+    overallBitrateBps: 5160000
+    video:
+      - index: 0
+        codec: h264
+        profile: high10
+        level: 30
+        width: 1280
+        height: 720
+        bitDepth: 8
+        frameRate: 24
+        bitrateBps: 5000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 160000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device:
+    fixture: devices.web-chrome
+  network:
+    fixture: networks.local
+  policy:
+    fixture: policies.t0-default
+  caps:
+    fixture: caps.software-only
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: transcode
+  reasons:
+    - container-not-direct-playable
+    - video-profile-unsupported
+    - software-fallback:encode

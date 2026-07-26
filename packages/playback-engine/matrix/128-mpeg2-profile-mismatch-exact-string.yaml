@@ -1,0 +1,52 @@
+name: transcode — mpeg2 profile 'high' vs mpeg2-generic (maxProfile 'main') — exact-string-match-or-exceeds
+why: |
+  mpeg2 has no documented ladder; a non-matching profile string always fires video-profile-unsupported under the exact-string-match-or-exceeds fallback. why (Phase 3 §11 step 3, Stage G arrival, STATE.md P3.2 regression law): this case's caps fixture has no hardware backend covering this route, so Stage G now routes full software (`software-fallback:encode`).
+input:
+  media:
+    fileId: file-128
+    container: ts
+    durationMs: 6000000
+    sizeBytes: 5000000000
+    overallBitrateBps: 5160000
+    video:
+      - index: 0
+        codec: mpeg2
+        profile: high
+        level: null
+        width: 1280
+        height: 720
+        bitDepth: 8
+        frameRate: 25
+        bitrateBps: 5000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 160000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device:
+    fixture: devices.mpeg2-generic
+  network:
+    fixture: networks.local
+  policy:
+    fixture: policies.t0-default
+  caps:
+    fixture: caps.software-only
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: transcode
+  reasons:
+    - video-profile-unsupported
+    - software-fallback:encode

@@ -1,0 +1,423 @@
+# LOOMBRE — PLAYBACK ENGINE SPECIFICATION
+### Authoritative annex to TECHNICAL_DEVELOPMENT_PLAN.md (v1.1) — governs plan §7
+
+> **Status:** v1.0 approved-pending-owner-review. Place as `docs/PLAYBACK.md` in
+> the repo beside `docs/PLAN.md`. The Phase 3 orchestration prompt is generated
+> from this document. Where this spec and implementation convenience conflict,
+> the spec wins; proposed spec changes are PRs against this file, never silent
+> code divergence.
+
+---
+
+## 0. Design laws
+
+1. **Purity.** `plan()` performs no I/O, reads no environment, calls no clock.
+   Everything it needs arrives as arguments; identical inputs produce a
+   byte-identical serialized plan (stable JSON key ordering).
+2. **Direct-play bias.** The engine must *prove* a deviation. Every step away
+   from serving the original file requires an emitted `PlanReason`. If no
+   reason fires, the decision is `direct-play` — this is enforced by a
+   property test, not convention.
+3. **Reasons are the contract.** A plan without complete reasons is a bug even
+   if playback works. Reasons drive diagnostics, admin UI ("why is this
+   transcoding?"), matrix assertions, and regression triage.
+4. **Verified capabilities only.** The engine never assumes hardware support;
+   it consumes the `VerifiedCapabilities` snapshot produced by self-tests
+   (§8). Driver marketing is not capability.
+5. **Tier-0 respect.** Policies default to protecting small machines: refuse
+   CPU-melting paths with a reason rather than degrade the whole server.
+
+## 1. Function signature & module layout
+
+```ts
+// packages/playback-engine/src/index.ts
+export function plan(input: PlanInput): PlaybackPlan;
+
+export interface PlanInput {
+  media: MediaInfo;                  // from media_files + media_streams rows
+  device: DeviceProfile;             // client-declared, validated, cached on devices.profile
+  network: NetworkConditions;
+  policy: ServerPolicy;              // instance + per-user knobs, resolved by caller
+  caps: VerifiedCapabilities;        // hardware self-test results snapshot
+  selection: TrackSelection;         // resolved BEFORE plan() (see §3.0)
+  mode: 'stream' | 'download';       // download reserved: may emit 'remux'
+}
+```
+Internal layout (each stage a pure module with its own matrix cases):
+`select/` (track resolution helpers used by caller), `stages/container.ts`,
+`stages/video.ts`, `stages/hdr.ts`, `stages/audio.ts`, `stages/subtitle.ts`,
+`stages/ladder.ts`, `stages/hardware.ts`, `args/builder.ts`, `reasons.ts`,
+`types.ts`. No file imports NestJS, node:fs, node:os, or Date.
+
+## 2. Input type contracts (complete)
+
+### 2.1 MediaInfo
+```ts
+interface MediaInfo {
+  fileId: string;
+  container: Container;              // 'mp4'|'mkv'|'webm'|'avi'|'ts'|'mov'|'flac'|'mp3'|'ogg'|'m4a'|'wav'
+  durationMs: number;
+  sizeBytes: number;
+  overallBitrateBps: number;         // size/duration derived if probe lacks it
+  video: VideoStream[];              // may be empty (music)
+  audio: AudioStream[];
+  subtitle: SubtitleStream[];
+}
+interface VideoStream {
+  index: number;
+  codec: 'h264'|'hevc'|'av1'|'vp9'|'mpeg2'|'vc1'|'mpeg4'|'unknown';
+  profile: string | null;            // e.g. 'high','main10'
+  level: number | null;              // e.g. 41 for 4.1
+  width: number; height: number;
+  bitDepth: 8|10|12;
+  frameRate: number;                 // rational resolved to float, 3 decimals
+  bitrateBps: number | null;
+  hdr: 'none'|'hdr10'|'hlg'|'dv';    // from color_transfer + side data
+  dvProfile: number | null;          // 5|7|8 when hdr==='dv'
+  dvBlCompatId: number | null;       // 8.1 HDR10-compatible base layer detection
+  interlaced: boolean;
+}
+interface AudioStream {
+  index: number;
+  codec: 'aac'|'ac3'|'eac3'|'truehd'|'dts'|'dtshd'|'flac'|'opus'|'mp3'|'vorbis'|'pcm'|'unknown';
+  channels: number; sampleRate: number;
+  bitrateBps: number | null;
+  language: string | null;           // ISO 639-2
+  isDefault: boolean;
+  hasAtmos: boolean;                 // TrueHD/EAC3 JOC side data
+}
+interface SubtitleStream {
+  index: number;
+  codec: 'subrip'|'ass'|'webvtt'|'mov_text'|'pgs'|'vobsub'|'dvbsub'|'unknown';
+  language: string | null;
+  isForced: boolean; isDefault: boolean; isExternal: boolean;
+  externalPath: string | null;       // sidecar files, pre-resolved by caller
+}
+```
+**Kind partition:** `codec in {subrip, ass, webvtt, mov_text}` = TEXT;
+`{pgs, vobsub, dvbsub}` = IMAGE. `unknown` of either kind → treat as IMAGE
+(conservative: burn-in path) with reason `subtitle-codec-unknown`.
+
+### 2.2 DeviceProfile (client-declared at login; server-validated against schema)
+```ts
+interface DeviceProfile {
+  profileId: string;                 // e.g. 'web-chrome', 'web-safari'
+  directPlayContainers: Container[];
+  hls: { container: 'fmp4'|'ts'; supportsFmp4: boolean; lowLatency: boolean };
+  video: Array<{
+    codec: VideoStream['codec'];
+    maxProfile: string | null; maxLevel: number | null;
+    maxBitDepth: 8|10; maxWidth: number; maxHeight: number;
+    maxFrameRate: number; maxBitrateBps: number | null;
+  }>;
+  hdr: { hdr10: boolean; hlg: boolean; dolbyVision: boolean };
+  audio: Array<{
+    codec: AudioStream['codec']; maxChannels: number;
+    passthrough: boolean;            // bitstream passthrough (TrueHD/DTS-HD)
+  }>;
+  subtitles: { renderText: SubtitleStream['codec'][]; hlsVtt: boolean;
+               renderImage: boolean };
+  maxStreamBitrateBps: number | null; // device hard cap (TV SoC limits)
+}
+```
+Web clients build this by MSE `isTypeSupported`/`canPlayType` probing at login;
+the server rejects profiles failing schema validation (never "best guess" a
+malformed profile — reason the request as 422 upstream, not inside `plan()`).
+
+### 2.3 NetworkConditions
+```ts
+interface NetworkConditions {
+  maxBitrateBps: number;   // min(user setting, measured estimate, device cap)
+  isLocal: boolean;        // RFC1918/loopback source — relaxes bitrate rung cap only
+}
+```
+
+### 2.4 ServerPolicy (resolved defaults shown)
+```ts
+interface ServerPolicy {
+  allowTranscode: boolean;                 // true
+  allowToneMapCpu: 'always'|'never'|'tier-gated';  // 'tier-gated' (T0 → never)
+  tier: 0|1|2;
+  preferredTextSubMode: 'hls-vtt'|'burn-in';       // 'hls-vtt'
+  preserveAssStyling: boolean;             // false → ASS converts to VTT
+  audioTranscodeCodecPriority: ('opus'|'aac')[];   // ['opus','aac'] filtered by device
+  maxSimultaneousTranscodes: number;       // tier-derived, overridable
+  ladderRungs: LadderRung[];               // instance ladder table (§7)
+  segmentDurationSec: 6;                   // fixed v1
+  hevcEncodePreferred: boolean;            // true when caps verify hevc encode
+}
+```
+
+### 2.5 VerifiedCapabilities — see §8 for how it is produced
+```ts
+interface VerifiedCapabilities {
+  backends: Array<{
+    backend: 'videotoolbox'|'qsv'|'vaapi'|'nvenc'|'amf'|'d3d11va'|'software';
+    decode: VideoStream['codec'][];
+    encode: ('h264'|'hevc'|'av1')[];
+    toneMap: ('opencl'|'vulkan'|'videotoolbox'|'cuda'|'none')[];
+    verifiedAtMs: number;
+  }>;
+}
+```
+
+### 2.6 TrackSelection (resolved by session service BEFORE plan(); rules here so
+they are testable): video = first non-thumbnail video stream unless user pins;
+audio = user pin → else language-pref match → else `isDefault` → else index 0;
+subtitle = user pin → else forced-flag stream matching audio language (auto)
+→ else none. Selection emits no reasons; it is input.
+
+## 3. The decision algorithm (ordered; later stages may upgrade, never
+downgrade, the transcode requirement)
+
+Stage order is normative. Each stage returns `{verdict, reasons[]}` and the
+final decision is the max severity across stages:
+`direct-play < direct-stream < transcode` (`remux` only in download mode).
+
+**Stage A — Container.** If `media.container ∈ device.directPlayContainers`
+AND every SELECTED stream is playable as-is (checked by later stages returning
+copy verdicts) → candidate `direct-play`. Otherwise container repackaging is
+required → at least `direct-stream`, reason `container-not-direct-playable`.
+(A is re-evaluated after B–E: direct-play requires ALL of B–E to be `copy`.)
+
+**Stage B — Video.**
+1. Interlaced source → transcode (deinterlace), reason `video-interlaced`.
+2. Codec not in device.video → transcode, `video-codec-unsupported`.
+3. Codec supported but profile/level/bitDepth/resolution/framerate exceeds the
+   device entry → transcode, one reason per exceeded axis:
+   `video-profile-unsupported` | `video-level-exceeds-device` |
+   `video-bitdepth-unsupported` | `video-resolution-exceeds-device` |
+   `video-framerate-exceeds-device`.
+4. Else verdict `copy`.
+
+**Stage C — HDR (only when B verdict is copy or transcode-with-copy-possible).**
+Evaluated on source `hdr`:
+- `dv` profile 5 (no compatible base): device.dolbyVision → copy; else
+  tone-map REQUIRED, reason `dv-profile5-requires-tonemap`.
+- `dv` profile 7/8: device.dolbyVision → copy; else if dvBlCompatId marks an
+  HDR10-compatible BL and device.hdr10 → copy base layer with reason
+  `dv-stripped-to-hdr10` (metadata strip in arg builder, no re-encode);
+  else tone-map required, `hdr-tone-map-required`.
+- `hdr10`/`hlg`: device supports matching flag → copy; else tone-map required,
+  `hdr-tone-map-required`.
+Tone-map required → transcode. Method chosen in Stage G; if Stage G yields no
+hardware method and `allowToneMapCpu` resolves to never →
+**decision = `unplayable-as-requested`**? No: the engine NEVER emits
+unplayable; it emits transcode with `ladder: []` and reason
+`tone-map-refused-by-policy`, and the session layer surfaces the failure. This
+keeps the output contract total.
+
+**Stage D — Audio (per selected stream).**
+1. Codec unsupported by device → transcode audio, `audio-codec-unsupported`.
+2. Channels > device max for that codec → transcode audio (downmix to device
+   max, standard mixdown matrices, no dynamic-range compression by default),
+   `audio-channels-exceed-device`.
+3. TrueHD/DTS-HD: copy ONLY when device entry has `passthrough:true`; else
+   transcode, `audio-passthrough-unsupported`. Atmos flag lost on transcode →
+   additional informational reason `audio-atmos-lost`.
+4. Target codec = first of `policy.audioTranscodeCodecPriority` present in
+   device.audio. Target bitrate: 2ch→160k, 6ch→384k, 8ch→512k (opus scales
+   0.75×). Sample rate preserved ≤48k, else resample 48k.
+5. Music mode (no video streams): FLAC/ALAC copy when supported; gapless
+   requires `direct-play` or fmp4 `direct-stream` — a music transcode carries
+   reason `gapless-degraded` so clients can warn.
+
+**Stage E — Subtitles (selected subtitle only; none selected → verdict none).**
+```
+TEXT codec:
+  device.subtitles.hlsVtt && policy.preferredTextSubMode==='hls-vtt'
+      → 'hls-vtt' (segmented WebVTT side-track; ASS loses styling →
+        add reason 'subtitle-styling-lost' when codec==='ass'
+        unless policy.preserveAssStyling → then 'burn-in',
+        reason 'subtitle-burn-in-for-styling')
+  device renders codec natively in directPlayContainer → 'embed' (copy)
+  else → 'burn-in', reason 'subtitle-format-requires-burn-in'
+IMAGE codec (pgs|vobsub|dvbsub|unknown):
+  device.subtitles.renderImage && container playable → 'embed'
+  else → 'burn-in', reason 'subtitle-format-requires-burn-in'
+```
+`burn-in` FORCES video transcode (adds `video-transcode-for-subtitle-burn-in`
+if B verdict was copy). `hls-vtt` and `none` never force video work.
+
+**Stage F — Bitrate & ladder (§7).** If final video verdict is copy AND
+`overallBitrateBps > network.maxBitrateBps` → transcode video, reason
+`bitrate-exceeds-network` (unless `network.isLocal` and bitrate ≤ device cap).
+Ladder is constructed whenever the decision is transcode.
+
+**Stage G — Hardware routing (only when transcoding video).** See §8.3 for
+selection. Emits `hw-encoder-selected:<backend>` informational reason or
+`software-fallback:<cause>`.
+
+**Final assembly.** Decision:
+- all stages copy/none + container direct-playable → `direct-play`
+- all streams copy but container repackage needed → `direct-stream`
+  (HLS, `-c copy` all mapped streams)
+- any stream transcoded → `transcode`
+- mode==='download' and container-only change → `remux` (progressive file)
+Plan always includes: every fired reason (ordered by stage, then axis),
+per-track actions, subtitle strategy, ladder (may be empty for copy/audio-only
+decisions), and ffmpegArgs per §6 (empty array for `direct-play`).
+
+## 4. Reason taxonomy (closed enum; additions are contract PRs)
+
+Blocking-class: `container-not-direct-playable`, `video-codec-unsupported`,
+`video-profile-unsupported`, `video-level-exceeds-device`,
+`video-bitdepth-unsupported`, `video-resolution-exceeds-device`,
+`video-framerate-exceeds-device`, `video-interlaced`,
+`hdr-tone-map-required`, `dv-profile5-requires-tonemap`,
+`tone-map-refused-by-policy`, `audio-codec-unsupported`,
+`audio-channels-exceed-device`, `audio-passthrough-unsupported`,
+`subtitle-format-requires-burn-in`, `subtitle-burn-in-for-styling`,
+`video-transcode-for-subtitle-burn-in`, `bitrate-exceeds-network`,
+`subtitle-codec-unknown`, `transcode-disabled-by-policy`.
+Informational-class: `dv-stripped-to-hdr10`, `subtitle-styling-lost`,
+`audio-atmos-lost`, `gapless-degraded`, `hw-encoder-selected:*`,
+`software-fallback:*`.
+Every reason carries `{ code, streamIndex?, detail? }`; matrix cases assert on
+codes, golden tests on full objects.
+
+## 5. Output contract
+
+```ts
+interface PlaybackPlan {
+  decision: 'direct-play'|'direct-stream'|'remux'|'transcode';
+  reasons: PlanReason[];             // REQUIRED, may be [] only for direct-play
+  container: 'source'|'fmp4-hls'|'ts-hls'|'mp4';
+  video:    { action:'copy'|'transcode'|'none'; targetCodec?; encoder?; toneMap?: ToneMapMethod };
+  audio:    { action:'copy'|'transcode'|'none'; targetCodec?; targetChannels?; targetBitrateBps? };
+  subtitle: { strategy:'none'|'embed'|'hls-vtt'|'burn-in'; streamIndex? };
+  ladder: LadderRung[];
+  ffmpegArgs: string[];              // §6; tokens, not paths
+  engineVersion: string;             // semver of decision ruleset, for audit rows
+}
+```
+Serialization for storage/golden tests: `JSON.stringify` with recursively
+sorted keys (`stableStringify` in shared).
+
+## 6. FFmpeg argument construction (deterministic)
+
+**Canonical segment order (never varies):**
+1. Global: `-hide_banner -loglevel warning -nostdin`
+2. Input decode accel (backend-specific, §8.3 table)
+3. Seek: `-ss {SEEK_SECONDS}` BEFORE `-i` (fast keyframe seek) when present
+4. `-i {INPUT}` (+ second `-i {SUBTITLE_SIDECAR}` when external burn-in)
+5. Mapping: `-map 0:v:{n}` `-map 0:a:{n}` (+ sub map for embed)
+6. Filtergraph (single `-filter_complex` when any of: deinterlace → scale →
+   tonemap → subtitle overlay; fixed filter order exactly as listed)
+7. Video encode block (codec, preset/quality per backend table, level, GOP:
+   `-g {2×fps}` keyframe-aligned to `-force_key_frames expr:gte(t,n_forced*{SEG_DUR})`)
+8. Audio encode/copy block
+9. Output: HLS muxer flags — `-f hls -hls_time {SEG_DUR} -hls_playlist_type
+   event -hls_segment_type {fmp4|mpegts} -hls_fmp4_init_filename init.mp4
+   -start_number {START_SEG} -hls_segment_filename {SESSION_DIR}/s%06d.m4s
+   {SESSION_DIR}/media.m3u8`
+**Tokens** (`{INPUT}`,`{SESSION_DIR}`,`{SEEK_SECONDS}`,`{START_SEG}`,`{SEG_DUR}`)
+are substituted by the session layer — the pure engine never sees real paths.
+Golden-file tests snapshot the token form. Flag values derive only from plan
+inputs; any new flag requires a golden update in the same PR.
+
+## 7. Bitrate ladder
+
+`LadderRung { heightPx, videoBitrateBps, audioBitrateBps, codec }`.
+Instance default table (policy-overridable):
+2160p/16M/hevc · 1080p/8M · 1080p/4M · 720p/3M · 480p/1.5M · 360p/0.8M
+(h264 below 2160 unless `hevcEncodePreferred` and device hevc → hevc, −25% bitrate).
+Construction rules: never exceed source height; never exceed source bitrate;
+drop rungs above `network.maxBitrateBps` (keep at least the lowest rung);
+master playlist lists all surviving rungs; **each rung is a lazily started
+transcode pipeline** — only the initially selected rung starts; a client ABR
+switch starts the sibling rung at the requested segment. `isLocal` networks
+skip the network cap but honor device caps.
+
+## 8. Hardware acceleration
+
+### 8.1 Verification self-tests (worker, first boot + `loombre probe` + driver change)
+For each candidate backend on the platform: run bundled ffmpeg against
+generated `lavfi testsrc2` inputs — (a) decode test per codec (2 s clip,
+assert frame count), (b) encode test per codec (assert valid bitstream via
+re-probe), (c) tone-map test (HDR10 synthetic → SDR, assert output transfer).
+Timeout 20 s per test; any failure or timeout = capability absent. Results →
+`VerifiedCapabilities`, persisted with ffmpeg build hash; invalidated when the
+bundled ffmpeg or GPU/driver fingerprint changes. Known quirk regressions
+(e.g. iHD VDENC low-power gaps) are just failed self-tests — no quirk lists.
+
+### 8.2 Backend candidates by platform
+macOS: videotoolbox → software. Windows: nvenc → qsv → amf → d3d11va(decode-
+only) → software. Linux: nvenc → qsv → vaapi → software.
+
+### 8.3 Selection & pipelines
+Choose the first backend (platform order) whose VERIFIED caps cover BOTH the
+required decode codec and target encode codec; else first covering encode with
+software decode (`software-fallback:decode`); else full software
+(`software-fallback:encode`) — gated on tier: T0 full-software transcode of
+≥1080p sources → allowed only for the ≤480p rungs, higher rungs dropped with
+reason `software-fallback:tier-capped`. Tone-map method preference per
+backend: videotoolbox→`videotoolbox`; nvenc→`cuda`; qsv/vaapi→`opencl`(else
+`vulkan`); software→CPU zscale only if `allowToneMapCpu` resolves true.
+Decode/encode stay on one device (no hw→sw→hw bounces) except when the
+filtergraph requires download (subtitle burn-in on vaapi: hwdownload →
+overlay → hwupload, exactly once).
+
+## 9. Session execution layer (apps/server playback module + worker)
+
+State machine: `created → starting → active ⇄ suspended → seeking → active …
+→ ended | failed(errorCode)`.
+- **Start:** plan tokens substituted; session dir under transcode staging
+  (NVMe path from config); first playlist request blocks ≤ 8 s for init +
+  first segment, else 503-retry-after (client shows buffering).
+- **Segment-ahead throttle:** monitor produced-vs-requested segment index;
+  when ahead > 10 segments (60 s), suspend encode (SIGSTOP on POSIX; on
+  Windows, NtSuspendProcess via job object helper); resume at ahead ≤ 5.
+  Throttling is mandatory — a T0 box must never spend CPU racing ahead of a
+  paused viewer.
+- **Seek:** target inside produced range → serve. Outside → kill pipeline,
+  restart with `{SEEK_SECONDS}=target` and `{START_SEG}` continuing the
+  numbering, playlist gains `EXT-X-DISCONTINUITY`. Old segments beyond a
+  retention window (120 s behind live edge) are deleted.
+- **Heartbeat:** client progress PUT doubles as heartbeat; no heartbeat for
+  90 s → suspend; 15 min → end session, delete dir, emit `playback.ended`.
+- **Concurrency:** global semaphore = `maxSimultaneousTranscodes`; admission
+  beyond it fails the session create with a typed 429 (`transcode-slots-
+  exhausted`) — clients fall back to a lower-bitrate direct attempt or queue.
+- **Audit:** the serialized plan + engineVersion stored on the session row at
+  create; ffmpeg stderr tail (last 4 KB ring) stored on failure.
+- **Direct-play** sessions bypass all of this: range-request file serving with
+  progress heartbeats only.
+
+## 10. Test matrix requirements (Phase 3 exit ≥ 500 cases)
+
+Dimensions (coverage minimums): video codec {h264,hevc,av1,vp9,mpeg2} ×
+bitDepth {8,10} × hdr {none,hdr10,hlg,dv5,dv8.1} × interlaced ·
+audio {aac,ac3,eac3,truehd,dts,flac,opus} × channels {2,6,8} ×
+passthrough {y,n} · subtitle {none,srt,ass,pgs,vobsub,external-srt} ·
+container {mp4,mkv,ts,avi} · device profiles {web-chrome, web-safari,
+constrained-tv (h264-only 1080p SDR 2ch), mobile-placeholder} ·
+network {local, 20M, 4M, 1M} · policy {T0 defaults, T2 defaults,
+transcode-disabled}.
+**Mandatory property tests:** (1) determinism — 1,000 random valid inputs,
+plan twice, byte-equal; (2) direct-play bias — construct inputs where every
+stage passes, assert decision===direct-play and reasons===[]; (3) totality —
+random inputs never throw, always yield schema-valid plans; (4) reason
+completeness — decision!==direct-play ⇒ ≥1 blocking-class reason.
+**Golden args:** 25 canonical scenarios snapshot full token-form ffmpegArgs.
+**Regression law:** any PR flipping an existing case's decision or reasons
+must edit that case file in the same PR with a `why:` comment.
+**Session integration tests** (not pure): real ffmpeg against generated
+fixtures (testsrc2-derived, checked in as a generator script, not binaries):
+start→first-segment latency, seek-restart numbering, throttle suspend/resume,
+heartbeat teardown — run on all three OS CI runners.
+
+## 11. Phase 3 implementation order (the orchestration prompt will encode this)
+
+1. Types + reasons + stableStringify + matrix runner upgrades (property-test
+   harness) — everything red.
+2. Stages A→F one at a time, each landing with its dimension's matrix cases
+   (target ~60–80 cases/stage), direct-play-bias property green from stage A.
+3. Ladder + Stage G against a FAKED VerifiedCapabilities fixture set.
+4. Arg builder + 25 goldens.
+5. Hardware self-test probe (worker) on real machines: your T2 Linux box
+   (NVENC+QSV paths), the M3 Max (VideoToolbox), Windows runner (NVENC/AMF).
+6. Session layer + integration tests; wire `/playback/plan` and session
+   endpoints to the engine; conformance stays green throughout.
+Each step is a STATE.md freeze boundary; the matrix count is tracked in
+STATE.md as a burn-up, not vibes.

@@ -1,0 +1,296 @@
+# Installing Loombre with Docker (recommended)
+
+Docker is the friction-free path because it sidesteps the entire "unsigned
+installer" trust conversation the native installers require (see
+[windows.md](windows.md) for that story) — a Docker image's integrity is
+provable by its content digest and, once an image is published under a
+release tag, a cosign signature over that digest (see "Verifying the
+image" below — the signing pipeline itself is already wired into
+`.github/workflows/release.yml`; no tagged release has been published
+yet). No SmartScreen, no Gatekeeper quarantine, no code-signing
+certificate to not-buy.
+
+## Prerequisites
+
+- Docker Engine 24+ with the Compose plugin (`docker compose version` should
+  print a v2.x line — this doc uses Compose v2 syntax throughout, not the
+  standalone `docker-compose` v1 binary).
+- A host with **at least 1 GB RAM free** beyond what Postgres + Loombre need
+  under load (docs/PLAN.md §9.2's Tier-0 budget: ≤500 MB idle for
+  server+worker+embedded-PG combined; add Postgres's own baseline here since
+  this is a separate `postgres:18` container, not the embedded-PG path).
+- Nothing else needs installing on the host — Node, ffmpeg, and every native
+  dependency (sharp, argon2id hashing, etc.) ship inside the image.
+
+## Quickstart
+
+```bash
+git clone https://github.com/Loombre/Loombre.git   # or your own release checkout
+cd loombre
+
+cp installers/docker/loombre.env.example installers/docker/loombre.env
+$EDITOR installers/docker/loombre.env   # set POSTGRES_PASSWORD and LOOMBRE_JWT_SECRET at minimum
+
+# 1) bring up Postgres and wait for it to report healthy
+docker compose -f docker-compose.prod.yml --env-file installers/docker/loombre.env up -d postgres
+
+# 2) apply the schema (also the upgrade command — see "Migrating / upgrading" below)
+docker compose -f docker-compose.prod.yml --env-file installers/docker/loombre.env run --rm server \
+  node packages/db/scripts/migrate.mjs migrate
+
+# 3) bring up the server + worker
+docker compose -f docker-compose.prod.yml --env-file installers/docker/loombre.env up -d
+```
+
+Only two files are actually needed to run Loombre this way —
+`docker-compose.prod.yml` and `installers/docker/loombre.env.example` — a
+full `git clone` is simply the easiest way to get both today. It also
+happens to be required right now regardless, since no published image
+exists yet (see "Pulling a published image" below): building `server`/
+`worker` from source needs the whole repository as build context, not just
+those two files.
+
+Loombre is now reachable at `http://<this host>:3001` (or whatever
+`LOOMBRE_PORT` you set in `loombre.env`). The first-run web setup wizard
+(welcome → admin creation → library paths → hardware probe → restricted
+content → restore-from-backup → done) runs the first time you open it —
+see `docs/admin-guide/wizard.md` for the full walkthrough; there is no
+default admin account and no manual `docker exec` step required to create
+one.
+
+**Pulling a published image** (once a tagged release publishes images —
+none has been published yet as of this writing):
+
+```bash
+export LOOMBRE_IMAGE=ghcr.io/loombre/loombre:v0.9.0
+docker compose -f docker-compose.prod.yml --env-file installers/docker/loombre.env pull
+```
+
+Until published images are available, `docker compose ... up -d` builds from
+source automatically the first time (the `build:` section in `docker-compose.prod.yml`),
+which is what the Quickstart above does implicitly.
+
+## What gets started
+
+| Service | Image | Role |
+|---|---|---|
+| `postgres` | `postgres:18.4` | Catalog database (D1: Postgres-only, no embedded-PG path in the Docker distribution — see [External Postgres](#running-against-an-external-postgres) below) |
+| `server` | built from the repo-root `Dockerfile` | HTTP API + web-facing surfaces (`node apps/server/dist/main.js`) |
+| `worker` | **same image as `server`**, different `command:` | Scanner, probe, metadata, image pipeline, transcode runtime (`node apps/worker/dist/index.js`) |
+
+`server` and `worker` are two containers built from **one image** — see the
+Dockerfile's own header comment for why (short version: they share their
+entire dependency graph; a second image would duplicate every layer except
+two small `dist/` directories, for a solo-maintainer project where keeping
+both processes in exact version lockstep matters more than that marginal
+pull-size saving).
+
+Only `server`'s HTTP port is published to the host. `postgres` and `worker`
+are reachable only from inside the compose network — there is nothing to
+port-forward for either.
+
+## Environment variables
+
+Every variable `docker-compose.prod.yml` reads is documented, with its
+default and which service consumes it, in
+[`installers/docker/loombre.env.example`](https://github.com/Loombre/Loombre/blob/main/installers/docker/loombre.env.example) —
+copy it to `loombre.env` (gitignored) rather than editing the example in
+place. The two you cannot skip:
+
+- `POSTGRES_PASSWORD` — no default; compose refuses to start without it.
+- `LOOMBRE_JWT_SECRET` — no default in the compose file's own validation, and
+  while the server itself *can* boot without it (P1.9 zero-config boot
+  derives an ephemeral random secret and logs a loud warning), doing that in
+  a multi-process deployment means the server and worker processes sign
+  with different secrets on every restart and every previously issued
+  access token is invalidated — always set this for anything beyond a
+  five-minute local trial. Generate one with `openssl rand -base64 48`.
+
+Everything else (CORS origins, trust-proxy, performance tier, transcode
+concurrency, TMDB/TVDB provider keys, …) has a sane default and is
+documented inline in the example file.
+
+## Migrating / upgrading
+
+The **same command** is both the first-run migration step and the upgrade
+step for every future release — there is no separate "upgrade" tooling to
+learn:
+
+```bash
+docker compose -f docker-compose.prod.yml --env-file installers/docker/loombre.env run --rm server \
+  node packages/db/scripts/migrate.mjs migrate
+```
+
+This runs `packages/db`'s migration runner **inside the compose network**,
+as a one-shot container built from the same image `server`/`worker` run
+from — so it always uses exactly the migrations that ship with whatever
+version of the image you're upgrading to, applies every migration not yet
+recorded as applied (`schema_migrations` table), and exits. Run it:
+
+1. Once, before the very first `up -d` (the Quickstart above).
+2. Again, every time you pull/build a newer image, **before** restarting
+   `server`/`worker` on that newer image — e.g.:
+
+   ```bash
+   docker compose -f docker-compose.prod.yml --env-file installers/docker/loombre.env build
+   docker compose -f docker-compose.prod.yml --env-file installers/docker/loombre.env run --rm server \
+     node packages/db/scripts/migrate.mjs migrate
+   docker compose -f docker-compose.prod.yml --env-file installers/docker/loombre.env up -d
+   ```
+
+Migrations are additive-only in normal operation (docs/PLAN.md §4.2) — this
+is not a destructive step. `docker compose ... run --rm server node
+packages/db/scripts/migrate.mjs status` prints which migrations are applied
+without changing anything, if you want to check first.
+
+Loombre's own admin UI separately notifies you when a newer **signed release
+manifest** is available (STATE.md P4.3) — it never downloads or applies
+anything automatically; pulling/building a new image and running the
+migration above is still a step you take.
+
+## Running against an external Postgres
+
+The `postgres` service in `docker-compose.prod.yml` is not required — it
+exists for convenience. To point Loombre at a Postgres instance you already
+run and manage:
+
+1. Remove (or don't start) the `postgres` service.
+2. Set `DATABASE_URL` directly in your env file to your own instance's
+   connection string, overriding the `postgres://...@postgres:5432/...`
+   value the compose file otherwise assembles from `POSTGRES_*`.
+3. Run the same [migration command](#migrating--upgrading) against it once.
+
+This is the `ProvisioningStatus: 'external'` path (`packages/provisioning`)
+— the server behaves identically either way; it never probes or manages a
+Postgres instance it didn't provision itself.
+
+## Media library paths
+
+`docker-compose.prod.yml` documents bind-mount examples (commented out) on
+both `server` and `worker` — **both containers need the same host media
+paths mounted at the same container-side paths**, since the scanner records
+paths as given and both processes resolve them the same way:
+
+```yaml
+    volumes:
+      - loombre_data:/data
+      - /path/to/your/movies:/media/movies:ro
+      - /path/to/your/tv:/media/tv:ro
+      - /path/to/your/music:/media/music:ro
+```
+
+Read-only (`:ro`) is the recommended posture — Loombre never writes into
+your media directories (D8: NFO/sidecar files are scanner *inputs* only,
+never written). Add your real library paths via the first-run wizard (or
+`POST /libraries` directly) after the containers are up, pointing at the
+container-side path (`/media/movies`, above), not the host path.
+
+## Reverse proxy + TLS (the real deployment)
+
+`docker-compose.prod.yml` deliberately publishes only `server`'s own HTTP
+port — putting it directly on the internet unproxied is not the recommended
+posture for anything beyond local/LAN use. The documented v1 remote-access
+path is plain HTTP behind a reverse proxy you already run and trust (nginx,
+Caddy, Traefik) that terminates TLS, with `LOOMBRE_TRUST_PROXY` set so the
+auth rate limiter and anomaly log see real client IPs (README.md's "Remote
+access" section has a working nginx snippet and explains exactly what
+`LOOMBRE_TRUST_PROXY` does and why it's off by default).
+
+A full reverse-proxy + ACME/TLS operations guide lives in **docs/ops**
+— see `docs/ops/reverse-proxy.md` and `docs/ops/acme.md` — pointer left
+here rather than duplicating that content.
+
+## Verifying the image
+
+### Locally built images
+
+```bash
+docker inspect --format='{{index .RepoDigests 0}}' loombre:latest
+```
+
+This prints the image's content digest — the same `sha256:...` value across
+any host pulling the same built image. If you built it locally, this proves
+bit-for-bit reproducibility.
+
+### Published images (once released)
+
+Loombre Docker images are cosign-signed using GitHub's OIDC identity:
+
+```bash
+# Install cosign first: https://docs.sigstore.dev/cosign/installation/
+
+cosign verify \
+  --certificate-identity-regexp "^https://github.com/Loombre/Loombre/" \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  ghcr.io/loombre/loombre:v0.9.0
+```
+
+This proves the image was built by Loombre's own CI from the exact commit
+tagged in the repository — no key file needed (cosign uses GitHub's OIDC
+token as the trust root).
+
+## Building multi-arch images yourself
+
+```bash
+installers/docker/build.sh                # linux/amd64 + linux/arm64, both verified in CI
+installers/docker/build.sh --load          # single-platform (host arch), loads into `docker images`
+installers/docker/build.sh loombre-amd64    # one arch only
+```
+
+See `installers/docker/docker-bake.hcl` for the full target definitions.
+Both architectures were built and booted end-to-end — see
+`installers/docker/BUILD-NOTES.md` for image sizes,
+version pins, and native-dependency findings from that run.
+
+## Data locations
+
+| What | Where |
+|---|---|
+| Postgres data | named volume `loombre_pgdata` |
+| Application data (image variants, transcode staging) | named volume `loombre_data`, mounted at `/data` in both containers |
+| Your media | wherever you bind-mount it (see [Media library paths](#media-library-paths)) — never copied, never modified |
+
+`docker compose -f docker-compose.prod.yml down` (without `-v`) stops
+everything and **leaves both named volumes intact** — your catalog and
+media stay put across restarts/upgrades. `down -v` additionally destroys
+`loombre_pgdata`/`loombre_data` — only use it when you actually mean to wipe
+the instance (this is exactly what `installers/docker/smoke.mjs` does at
+the end of every run, on its own dedicated `loombre_i2` project, never on an
+instance you're actually using).
+
+## Crash reports
+
+Loombre never sends crash data anywhere automatically (no telemetry, ever).
+Both `server` and `worker` write local crash files under `/data/crashes`
+inside the container — i.e. `loombre_data:/data/crashes` on the host side of
+the named volume (see "Data locations" above) — viewable from the admin
+System panel (`docs/admin-guide/capability-report.md`'s "Crash files"
+section) or directly from the volume. `docker compose logs server` /
+`docker compose logs worker` capture normal stdout/stderr regardless, and
+are the first thing to check today.
+
+## Troubleshooting
+
+- **`POSTGRES_PASSWORD must be set` / `LOOMBRE_JWT_SECRET must be set`
+  errors from `docker compose`.** You're missing `--env-file
+  installers/docker/loombre.env` on the command, or haven't copied
+  `loombre.env.example` to `loombre.env` and filled it in yet.
+- **`server` never reports healthy.** `docker compose -f
+  docker-compose.prod.yml logs server` — a common cause before the first
+  migration run is simply that the schema doesn't exist yet; run
+  [the migration command](#migrating--upgrading). The healthcheck itself
+  only probes `GET /healthz` (a liveness check, not a DB check — see
+  `apps/server/src/gateway/health.controller.ts`), so a server reporting
+  healthy with an unmigrated database is expected, not a bug; catalog
+  requests are what will fail until you migrate.
+- **`worker` container exits immediately.** `docker compose -f
+  docker-compose.prod.yml logs worker` — almost always `DATABASE_URL`
+  unreachable (Postgres not healthy yet, or an external-Postgres
+  `DATABASE_URL` that's wrong). Worker's own boot log names the specific
+  connection failure.
+- **Scanned library shows zero files despite a correct bind mount.** Confirm
+  the bind-mount path matches what you gave the library in Loombre exactly
+  (container-side path, e.g. `/media/movies` — see [Media library
+  paths](#media-library-paths)), and that both `server` and `worker` mount
+  it identically.
+

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<tvshow>
+  <title>Late Night Signal</title>
+  <sorttitle>Late Night Signal</sorttitle>
+  <year>2019</year>
+  <plot>A radio host uncovers something she shouldn't have.</plot>
+  <mpaa>TV-14</mpaa>
+  <genre>Drama</genre>
+  <genre>Mystery</genre>
+  <tag>radio</tag>
+  <actor>
+    <name>Ada Lin</name>
+    <role>Host</role>
+    <order>0</order>
+  </actor>
+  <uniqueid type="tvdb">99887</uniqueid>
+  <premiered>2019-10-01</premiered>
+</tvshow>

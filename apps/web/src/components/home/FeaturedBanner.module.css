@@ -1,0 +1,567 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+
+/* design/phosphor/README.md §Screens -> Home. Breakpoint: 767.98px, the
+   SAME literal used everywhere else in this app (tokens.css "Mobile chrome
+   layout" is the source of truth — @media conditions can't consume var()).
+
+   Geometry lesson honored here (README: "cost three rounds to get right"):
+   the header row (dots/arrows) and the body row (poster/text) are SIBLING
+   flex children stacked VERTICALLY (column) — never a grid column reserved
+   for the controls next to the text. That row/column separation is what
+   makes a long title colliding with the control cluster geometrically
+   impossible, and it's why the two rules below (min-height, not height;
+   line-clamp + overflow-wrap on the title) are enough on their own without
+   any manual collision-avoidance math. */
+
+.banner {
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--color-border-subtle);
+  background: var(--color-bg-raised);
+
+  /* min-height (never height) so a long, clamped title can only grow the
+     banner up to the clamp's own bound — never get clipped. */
+  min-height: 252px;
+  max-height: 282px;
+  padding: 16px 28px 22px;
+}
+
+@media (width <= 767.98px) {
+  .banner {
+    height: 232px;
+    min-height: 0;
+    max-height: none;
+    padding: 0;
+    border-radius: var(--radius-lg);
+  }
+}
+
+/* ── Artwork layers (background, z-order via DOM order + explicit z-index) ── */
+
+.artStack {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+}
+
+.artLayer {
+  position: absolute;
+  inset: 0;
+  opacity: 1;
+}
+
+/* The "previous" layer only — always carries data-visible (true/false);
+   the "current" layer never gets this attribute at all, so it stays at
+   the base rule's constant opacity:1, permanently under the previous
+   layer, revealing it as the previous one fades away. */
+.artLayer[data-visible] {
+  z-index: 1;
+  transition: opacity 260ms var(--ease-out);
+}
+
+.artLayer[data-visible="false"] {
+  opacity: 0;
+}
+
+.sceneFallback {
+  position: absolute;
+  inset: 0;
+
+  /* Missing-artwork fallback ONLY (README "Assets"), same recipe as
+     app/styleguide/page.module.css's .demoTileGradient. */
+  background: linear-gradient(160deg, #3a4656 0%, #1f2630 60%, #14171c 100%);
+}
+
+.sceneImage {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .artLayer[data-visible] {
+    transition: none;
+  }
+}
+
+/* ── Scanlines + scrim (chrome, above art, below foreground content) ── */
+
+.scanlinesLayer {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background: var(--scanlines);
+  opacity: 1;
+}
+
+/* L7 hook (U7, scanlines preference — this lane just makes it possible to
+   flip off without touching this component's structure). */
+.banner[data-scanlines="false"] .scanlinesLayer {
+  opacity: 0;
+}
+
+.scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--color-bg) 95%, transparent) 0%,
+    color-mix(in srgb, var(--color-bg) 78%, transparent) 46%,
+    color-mix(in srgb, var(--color-bg) 10%, transparent) 84%
+  );
+}
+
+@media (width <= 767.98px) {
+  .scrim {
+    background: linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--color-bg) 15%, transparent) 22%,
+      color-mix(in srgb, var(--color-bg) 94%, transparent) 100%
+    );
+  }
+}
+
+/* ── Header row: 30px, dot/arrow cluster right-aligned (desktop) ── */
+
+.headerRow {
+  position: relative;
+  z-index: 3;
+  height: 30px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+
+@media (width <= 767.98px) {
+  .headerRow {
+    /* Pass-through wrapper on mobile — .dots positions itself directly
+       against .banner (the nearest POSITIONED ancestor once this and
+       .bodyRow/.contentStack go position:static below), matching the
+       prototype's "dots top-right" absolute placement over the art. */
+    position: static;
+    height: auto;
+    margin-bottom: 0;
+  }
+}
+
+.dots {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+@media (width <= 767.98px) {
+  .dots {
+    position: absolute;
+    top: 14px;
+    right: 15px;
+    z-index: 4;
+  }
+}
+
+.dot {
+  width: 6px;
+  height: 6px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-pill);
+  background: var(--color-border-strong);
+  cursor: pointer;
+  transition:
+    width var(--motion-base) var(--ease-out),
+    background var(--motion-base) var(--ease-out);
+}
+
+.dot[data-active="true"] {
+  width: 18px;
+  background: var(--color-accent);
+}
+
+.arrows {
+  display: flex;
+  gap: 6px;
+}
+
+@media (width <= 767.98px) {
+  /* README §Mobile lists dots only — no arrow controls on the phone form. */
+  .arrows {
+    display: none;
+  }
+}
+
+.arrowButton {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border-radius: var(--radius-full);
+  background: rgb(11 12 15 / 50%);
+  border: 1px solid var(--color-border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: var(--color-text-muted);
+  backdrop-filter: blur(4px);
+  transition:
+    color var(--motion-fast) var(--ease-out),
+    border-color var(--motion-fast) var(--ease-out);
+}
+
+.arrowButton:hover,
+.arrowButton:focus-visible {
+  color: var(--color-text);
+  border-color: var(--color-border-strong);
+}
+
+/* ── Body row: flex:1, poster + text column (desktop) ── */
+
+.bodyRow {
+  position: relative;
+  z-index: 3;
+  flex: 1;
+  min-height: 0;
+}
+
+@media (width <= 767.98px) {
+  .bodyRow {
+    position: static;
+    flex: none;
+  }
+}
+
+.contentStack {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+@media (width <= 767.98px) {
+  .contentStack {
+    position: static;
+    width: auto;
+    height: auto;
+  }
+}
+
+.contentLayer {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+
+.contentLayer[data-visible="false"] {
+  opacity: 0;
+}
+
+.contentLayer[data-visible] {
+  z-index: 1;
+  transition: opacity 260ms var(--ease-out);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .contentLayer[data-visible] {
+    transition: none;
+  }
+}
+
+@media (width <= 767.98px) {
+  .contentLayer {
+    /* Bottom-anchored over the art (no poster on mobile — see .poster
+       below) — resolves against .banner itself once .bodyRow/.contentStack
+       are position:static above. Shorthand order: top/right/bottom/left. */
+    inset: auto 15px 14px;
+    z-index: 4;
+  }
+}
+
+/* ── Poster (118x177, desktop only) ── */
+
+.poster {
+  position: relative;
+  flex-shrink: 0;
+  width: 118px;
+  height: 177px;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  box-shadow: var(--shadow-lg);
+  background: var(--color-dominant-fallback);
+}
+
+@media (width <= 767.98px) {
+  .poster {
+    display: none;
+  }
+}
+
+.posterArt,
+.posterFallback {
+  position: absolute;
+  inset: 0;
+}
+
+.posterFallback {
+  background: linear-gradient(160deg, #3a4656 0%, #1f2630 60%, #14171c 100%);
+}
+
+.posterInitial {
+  position: absolute;
+  top: -10px;
+  right: -5px;
+  font-family: var(--font-sans);
+  font-stretch: var(--wdth-poster);
+  font-weight: var(--weight-black);
+  font-size: 88px;
+  line-height: 1;
+  color: rgb(255 255 255 / 13%);
+  user-select: none;
+}
+
+.posterPlaceholder,
+.posterImage {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0;
+  transition: opacity var(--motion-slow) var(--ease-out);
+}
+
+.posterPlaceholder {
+  opacity: 1;
+  filter: saturate(1.1);
+}
+
+.posterPlaceholder[data-loaded="true"] {
+  opacity: 0;
+}
+
+.posterImage[data-loaded="true"] {
+  opacity: 1;
+}
+
+/* ── Text column ── */
+
+.textColumn {
+  flex: 1;
+  min-width: 0;
+  max-width: 620px;
+  display: flex;
+  flex-direction: column;
+}
+
+@media (width <= 767.98px) {
+  .textColumn {
+    max-width: none;
+  }
+}
+
+.eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--mono-md);
+  font-weight: var(--weight-medium);
+  letter-spacing: var(--track-mono-wide);
+  color: var(--color-accent);
+  margin-bottom: 9px;
+}
+
+.eyebrowDot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-full);
+  background: var(--color-accent);
+  flex-shrink: 0;
+}
+
+.eyebrowText {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@media (width <= 767.98px) {
+  .eyebrow {
+    font-size: var(--mono-sm);
+    font-weight: var(--weight-semibold);
+  }
+}
+
+/* Title: 40px display, font-stretch DISPLAY width (README + tokens.css:
+   --wdth-display is explicitly "movie/series display titles"). min-height
+   (not height) on .banner plus this clamp is the OTHER half of the
+   geometry lesson: a long title bounds the banner at ~282px instead of
+   growing unboundedly or getting clipped. */
+.title {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  font-family: var(--font-sans);
+  font-stretch: var(--wdth-display);
+  font-weight: var(--weight-black);
+  font-size: 40px;
+  line-height: var(--leading-display);
+  letter-spacing: 0.01em;
+  text-transform: uppercase;
+  color: var(--color-text);
+  text-decoration: none;
+  margin-bottom: 9px;
+  cursor: pointer;
+}
+
+.title:hover,
+.title:focus-visible {
+  color: var(--color-text);
+  text-decoration: underline;
+}
+
+@media (width <= 767.98px) {
+  .title {
+    font-size: 23px;
+    line-height: 1.06;
+    margin-bottom: 7px;
+  }
+}
+
+.specLine {
+  font-family: var(--font-mono);
+  font-size: var(--mono-lg);
+  font-weight: var(--weight-medium);
+  letter-spacing: var(--track-mono);
+  color: var(--color-text-muted);
+  margin-bottom: 9px;
+}
+
+@media (width <= 767.98px) {
+  .specLine {
+    font-size: var(--mono-md);
+    margin-bottom: 13px;
+  }
+}
+
+.blurb {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  font-size: var(--text-base);
+  color: var(--color-text-secondary);
+  line-height: var(--leading-normal);
+  text-wrap: pretty;
+  margin: 0 0 16px;
+}
+
+@media (width <= 767.98px) {
+  /* Not shown on the mobile form — README §Mobile's featured banner lists
+     eyebrow/title/spec-line/pills only, no blurb. */
+  .blurb {
+    display: none;
+  }
+}
+
+/* ── Pills — white-space:nowrap so a label can't wrap inside the pill
+   (the geometry lesson's third clause). 38px desktop / 44px mobile touch
+   target (README "mobile touch targets never below 44px"). ── */
+
+.pillRow {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.pillPrimary,
+.pillSecondary,
+.pillGhost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  height: 38px;
+  box-sizing: border-box;
+  border-radius: var(--radius-pill);
+  font-family: var(--font-sans);
+  white-space: nowrap;
+  text-decoration: none;
+  cursor: pointer;
+  border: none;
+}
+
+.pillPrimary {
+  background: var(--color-accent);
+  color: var(--color-accent-text);
+  padding: 0 19px;
+  font-size: 13px;
+  font-weight: var(--weight-semibold);
+  transition: filter var(--motion-fast) var(--ease-out);
+}
+
+.pillPrimary:hover,
+.pillPrimary:focus-visible {
+  filter: brightness(1.1);
+}
+
+.pillSecondary {
+  background: var(--fill-3);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+  padding: 0 19px;
+  font-size: 12.5px;
+  font-weight: var(--weight-medium);
+  transition: background var(--motion-fast) var(--ease-out);
+}
+
+.pillSecondary:hover,
+.pillSecondary:focus-visible {
+  background: var(--fill-5);
+}
+
+@media (width <= 767.98px) {
+  /* README §Mobile: Play + watchlist pills only. The title link is the
+     mobile form's "open detail" affordance. */
+  .pillSecondary {
+    display: none;
+  }
+}
+
+.pillGhost {
+  background: transparent;
+  color: var(--color-text-muted);
+  border: 1px solid var(--color-border);
+  padding: 0 16px;
+  font-size: 12px;
+  font-weight: var(--weight-medium);
+}
+
+.pillGhost:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+@media (width <= 767.98px) {
+  .pillPrimary,
+  .pillGhost {
+    height: 44px;
+    font-size: 14.5px;
+  }
+}

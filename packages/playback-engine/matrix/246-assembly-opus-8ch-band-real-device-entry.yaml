@@ -1,0 +1,55 @@
+name: transcode — assembly opus target capped by a REAL 8ch device entry (not the priority[0] fallback path)
+why: >
+  passthrough-capable's ac3 entry caps at 6 channels; an 8ch ac3 stream
+  fires audio-channels-exceed-device alone. Assembly gap (schema can't
+  assert audio fields): targetCodec='opus' (present in device.audio, a
+  REAL entry this time, contrasting with case 244's no-entry fallback
+  path); that entry's maxChannels=8, so targetChannels=min(8,8)=8 (capped
+  by the real entry, not left uncapped); the >=7ch band bitrate (512000)
+  scales 0.75x for opus -> targetBitrateBps=384000 — the SAME final number
+  as case 244, arrived at via the ordinary (non-fallback) branch. Verified
+  precisely by test/stages/audio.spec.ts.
+input:
+  media:
+    fileId: file-0246
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 6000000000
+    overallBitrateBps: 6000000
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 41
+        width: 1920
+        height: 1080
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 5000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: ac3
+        channels: 8
+        sampleRate: 48000
+        bitrateBps: 640000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device: { fixture: devices.passthrough-capable }
+  network: { fixture: networks.local }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.software-only }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: transcode
+  reasons:
+    - audio-channels-exceed-device

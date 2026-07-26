@@ -1,0 +1,53 @@
+name: direct-play — overall EXACTLY equal to the network cap passes (exceeds is strict >)
+why: >
+  Boundary case for `media.overallBitrateBps > network.maxBitrateBps`
+  (binding interpretation constraint 2): overall is EXACTLY 4,000,000, the
+  same value as wan-4mbps's own maxBitrateBps — "exceeds" is strict `>`, so
+  an exact match does not fire. Network is non-local, so this isolates the
+  boundary cleanly without any isLocal/device-cap interaction.
+
+input:
+  media:
+    fileId: file-0374
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 3000000000
+    overallBitrateBps: 4000000
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 41
+        width: 1920
+        height: 1080
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 3800000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 160000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device: { fixture: devices.web-chrome }
+  network: { fixture: networks.wan-4mbps }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.software-only }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+
+expect:
+  decision: direct-play
+  reasons: []
+  container: source

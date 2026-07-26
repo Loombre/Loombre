@@ -1,0 +1,50 @@
+name: "transcode — T0 + tier-gated (would normally refuse) + full-hw caps: NOT refused, because full-hw verifies a real hardware tone-map method"
+why: >
+  t0-default's allowToneMapCpu is 'tier-gated' at tier 0, which ALONE would refuse (matches case 144's mandatory refused scenario under software-only) — but stages/hdr.ts's isToneMapRefused ALSO requires noHardwareToneMap across every caps.backends entry, and full-hw's nvenc verifies 'cuda' -> refusal never fires. Stage C fires hdr-tone-map-required alone (no tone-map-refused-by-policy), and Stage G proceeds normally: hw-encoder-selected:nvenc.
+
+input:
+  media:
+    fileId: gen-file
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 6000000000
+    overallBitrateBps: 5000000
+    video:
+      - index: 0
+        codec: hevc
+        profile: main10
+        level: 123
+        width: 1920
+        height: 1080
+        bitDepth: 10
+        frameRate: 23.976
+        bitrateBps: 5000000
+        hdr: hdr10
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 160000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device: { fixture: devices.hevc-sdr }
+  network: { fixture: networks.local }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.full-hw }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+
+expect:
+  decision: transcode
+  reasons:
+    - hdr-tone-map-required
+    - hw-encoder-selected:nvenc

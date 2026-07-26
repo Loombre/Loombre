@@ -1,0 +1,20 @@
+{
+  // Deliberate deviation from the repo's usual src-only tsconfig (see e.g.
+  // packages/shared, packages/jobs): this package's fixture tests carry
+  // TypeScript type-level assertions (expectTypeOf + `@ts-expect-error`)
+  // proving the exported closed-enum TYPES agree with the JSON-schema
+  // `enum` arrays. Those assertions are only load-bearing if something
+  // actually runs `tsc` over test/ — vitest's esbuild transform strips
+  // types without checking them, and the base tsconfig.json's
+  // `include: ["src"]` never sees test/ at all. This second project is
+  // noEmit-only and is chained into the package's own `typecheck` script
+  // (see package.json), so `pnpm gate`'s typecheck step enforces it same
+  // as any other compile error.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": ".",
+    "declaration": false
+  },
+  "include": ["src", "test"]
+}

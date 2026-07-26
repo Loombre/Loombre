@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<installer-gui-script minSpecVersion="1">
+    <title>Loombre __VERSION__</title>
+    <organization>com.loombre</organization>
+    <domains enable_anywhere="false" enable_currentUserHome="false" enable_localSystem="true"/>
+    <options customize="never" require-scripts="true" rootVolumeOnly="true"/>
+    <welcome file="welcome.txt" mime-type="text/plain"/>
+    <readme file="readme.txt" mime-type="text/plain"/>
+
+    <!--
+      UNSIGNED build (P4.1 — no Apple notarization/Developer ID anywhere in
+      this lane). Gatekeeper WILL block first-open; see docs/install/macos.md
+      for the full walkthrough. This is documented, not hidden.
+    -->
+
+    <choices-outline>
+        <line choice="com.loombre.choice"/>
+    </choices-outline>
+    <choice id="com.loombre.choice" title="Loombre Server" visible="false">
+        <pkg-ref id="com.loombre.pkg"/>
+    </choice>
+    <pkg-ref id="com.loombre.pkg" version="__VERSION__" onConclusion="none">__PKG_FILENAME__</pkg-ref>
+</installer-gui-script>

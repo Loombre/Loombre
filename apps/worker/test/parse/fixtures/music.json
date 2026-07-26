@@ -1,0 +1,1043 @@
+[
+  {
+    "path": "Artist/Album/01 Track.flac",
+    "kind": "music",
+    "expected": {
+      "artist": "Artist",
+      "album": "Album",
+      "discNumber": null,
+      "trackNumber": 1,
+      "title": "Track",
+      "confidence": "high",
+      "reasons": [
+        "dir:artist-album",
+        "matched:track-title"
+      ]
+    },
+    "note": "canonical, flac"
+  },
+  {
+    "path": "Artist/Album/02 Another Track.mp3",
+    "kind": "music",
+    "expected": {
+      "artist": "Artist",
+      "album": "Album",
+      "discNumber": null,
+      "trackNumber": 2,
+      "title": "Another Track",
+      "confidence": "high",
+      "reasons": [
+        "dir:artist-album",
+        "matched:track-title"
+      ]
+    },
+    "note": "canonical, mp3, multi-word title"
+  },
+  {
+    "path": "Radiohead/OK Computer/01 Airbag.flac",
+    "kind": "music",
+    "expected": {
+      "artist": "Radiohead",
+      "album": "OK Computer",
+      "discNumber": null,
+      "trackNumber": 1,
+      "title": "Airbag",
+      "confidence": "high",
+      "reasons": [
+        "dir:artist-album",
+        "matched:track-title"
+      ]
+    },
+    "note": "realistic artist/album"
+  },
+  {
+    "path": "Radiohead/OK Computer/02 Paranoid Android.flac",
+    "kind": "music",
+    "expected": {
+      "artist": "Radiohead",
+      "album": "OK Computer",
+      "discNumber": null,
+      "trackNumber": 2,
+      "title": "Paranoid Android",
+      "confidence": "high",
+      "reasons": [
+        "dir:artist-album",
+        "matched:track-title"
+      ]
+    },
+    "note": "realistic, long title"
+  },
+  {
+    "path": "Daft Punk/Discovery/01 One More Time.mp3",
+    "kind": "music",
+    "expected": {
+      "artist": "Daft Punk",
+      "album": "Discovery",
+      "discNumber": null,
+      "trackNumber": 1,
+      "title": "One More Time",
+      "confidence": "high",
+      "reasons": [
+        "dir:artist-album",
+        "matched:track-title"
+      ]
+    },
+    "note": "realistic artist/album"
+  },
+  {
+    "path": "Pink Floyd/The Dark Side of the Moon/01 Speak to Me.flac",
+    "kind": "music",
+    "expected": {
+      "artist": "Pink Floyd",
+      "album": "The Dark Side of the Moon",
+      "discNumber": null,
+      "trackNumber": 1,
+      "title": "Speak to Me",
+      "confidence": "high",
+      "reasons": [
+        "dir:artist-album",
+        "matched:track-title"
+      ]
+    },
+    "note": "long album name"
+  },
+  {
+    "path": "Artist/Album/1 Track.flac",
+    "kind": "music",
+    "expected": {
+      "artist": "Artist",
+      "album": "Album",
+      "discNumber": null,
+      "trackNumber": 1,
+      "title": "Track",
+      "confidence": "high",
+      "reasons": [
+        "dir:artist-album",
+        "matched:track-title"
+      ]
+    },
+    "note": "single-digit track number, no leading zero"
+  },
+  {
+    "path": "Artist/Album/10 Track.flac",
+    "kind": "music",
+    "expected": {
+      "artist": "Artist",
+      "album": "Album",
+      "discNumber": null,
+      "trackNumber": 10,
+      "title": "Track",
+      "confidence": "high",
+      "reasons": [
+        "dir:artist-album",
+        "matched:track-title"
+      ]
+    },
+    "note": "two-digit track number"
+  },
+  {
+    "path": "Artist/Album/99 Track.flac",
+    "kind": "music",
+    "expected": {
+      "artist": "Artist",
+      "album": "Album",
+      "discNumber": null,
+      "trackNumber": 99,
+      "title": "Track",
+      "confidence": "high",
+      "reasons": [
+        "dir:artist-album",
+        "matched:track-title"
+      ]
+    },
+    "note": "boundary two-digit track number"
+  },
+  {
+    "path": "Artist/Album/001 Track.flac",
+    "kind": "music",
+    "expected": {
+      "artist": "Artist",
+      "album": "Album",
+      "discNumber": null,
+      "trackNumber": 1,
+      "title": "Track",
+      "confidence": "high",
+      "reasons": [
+        "dir:artist-album",
+        "matched:track-title"
+      ]
+    },
+    "note": "three-digit zero-padded track number"
+  },
+  {
+    "path": "Artist/Album (2005)/1-01 Track.mp3",
+    "kind": "music",
+    "expected": {
+      "artist": "Artist",
+      "album": "Album",
+      "discNumber": 1,
+      "trackNumber": 1,
+      "title": "Track",
+      "confidence": "high",
+      "reasons": [
+        "dir:artist-album",
+        "year:stripped-from-album-dir",
+        "matched:disc-track"
+      ]
+    },
+    "note": "disc-track composite + year-suffixed album dir (mission example)"
+  },
+  {
+    "path": "Artist/Album (1998)/2-05 Another Track.flac",
+    "kind": "music",
+    "expected": {
+      "artist": "Artist",
+      "album": "Album",
+      "discNumber": 2,
+      "trackNumber": 5,
+      "title": "Another Track",
+      "confidence": "high",
+      "reasons": [
+        "dir:artist-album",
+        "year:stripped-from-album-dir",
+        "matched:disc-track"
+      ]
+    },
+    "note": "disc 2, year-suffixed album"
+  },
+  {
+    "path": "Artist/Album/1-01 Track.flac",
+    "kind": "music",
+    "expected": {
+      "artist": "Artist",
+      "album": "Album",
+      "discNumber": 1,
+      "trackNumber": 1,
+      "title": "Track",
+      "confidence": "high",
+      "reasons": [
+        "dir:artist-album",
+        "matched:disc-track"
+      ]
+    },
+    "note": "disc-track composite, no year in album dir"
+  },
+  {
+    "path": "Various Artists/Compilation (2010)/3-12 Some Song.mp3",
+    "kind": "music",
+    "expected": {
+      "artist": "Various Artists",
+      "album": "Compilation",
+      "discNumber": 3,
+      "trackNumber": 12,
+      "title": "Some Song",
+      "confidence": "high",
+      "reasons": [
+        "dir:artist-album",
+        "year:stripped-from-album-dir",
+        "matched:disc-track"
+      ]
+    },
+    "note": "disc 3, compilation-style artist"
+  },
+  {
+    "path": "Artist/Album/Disc 1/01 Track.flac",
+    "kind": "music",
+    "expected": {
+      "artist": "Artist",
+      "album": "Album",
+      "discNumber": 1,
+      "trackNumber": 1,
+      "title": "Track",
+      "confidence": "high",
+      "reasons": [
+        "dir:disc",
+        "dir:artist-album",
+        "matched:track-title"
+      ]
+    },
+    "note": "'Disc 1' directory"
+  },
+  {
+    "path": "Artist/Album/Disc 2/05 Track.flac",
+    "kind": "music",
+    "expected": {
+      "artist": "Artist",
+      "album": "Album",
+      "discNumber": 2,
+      "trackNumber": 5,
+      "title": "Track",
+      "confidence": "high",
+      "reasons": [
+        "dir:disc",
+        "dir:artist-album",
+        "matched:track-title"
+      ]
+    },
+    "note": "'Disc 2' directory"
+  },
+  {
+    "path": "Artist/Album/CD1/01 Track.flac",
+    "kind": "music",
+    "expected": {
+      "artist": "Artist",
+      "album": "Album",
+      "discNumber": 1,
+      "trackNumber": 1,
+      "title": "Track",
+      "confidence": "high",
+      "reasons": [
+        "dir:disc",
+        "dir:artist-album",
+        "matched:track-title"
+      ]
+    },
+    "note": "'CD1' directory, no space"
+  },
+  {
+    "path": "Artist/Album/CD2/03 Track.flac",
+    "kind": "music",
+    "expected": {
+      "artist": "Artist",
+      "album": "Album",
+      "discNumber": 2,
+      "trackNumber": 3,
+      "title": "Track",
+      "confidence": "high",
+      "reasons": [
+        "dir:disc",
+        "dir:artist-album",
+        "matched:track-title"
+      ]
+    },
+    "note": "'CD2' directory"
+  },
+  {
+    "path": "Artist/Album/cd1/01 track.mp3",
+    "kind": "music",
+    "expected": {
+      "artist": "Artist",
+      "album": "Album",
+      "discNumber": 1,
+      "trackNumber": 1,
+      "title": "track",
+      "confidence": "high",
+      "reasons": [
+        "dir:disc",
+        "dir:artist-album",
+        "matched:track-title"
+      ]
+    },
+    "note": "lowercase 'cd1' directory"
+  },
+  {
+    "path": "Artist/Album/Disc01/02 Track.flac",
+    "kind": "music",
+    "expected": {
+      "artist": "Artist",
+      "album": "Album",
+      "discNumber": 1,
+      "trackNumber": 2,
+      "title": "Track",
+      "confidence": "high",
+      "reasons": [
+        "dir:disc",
+        "dir:artist-album",
+        "matched:track-title"
+      ]
+    },
+    "note": "zero-padded 'Disc01' directory"
+  },
+  {
+    "path": "The Beatles/The Beatles (White Album)/Disc 1/01 Back in the U.S.S.R..flac",
+    "kind": "music",
+    "expected": {
+      "artist": "The Beatles",
+      "album": "The Beatles (White Album)",
+      "discNumber": 1,
+      "trackNumber": 1,
+      "title": "Back in the U.S.S.R",
+      "confidence": "high",
+      "reasons": [
+        "dir:disc",
+        "dir:artist-album",
+        "matched:track-title"
+      ]
+    },
+    "note": "multi-disc classic album, disc 1"
+  },
+  {
+    "path": "The Beatles/The Beatles (White Album)/Disc 2/01 Birthday.flac",
+    "kind": "music",
+    "expected": {
+      "artist": "The Beatles",
+      "album": "The Beatles (White Album)",
+      "discNumber": 2,
+      "trackNumber": 1,
+      "title": "Birthday",
+      "confidence": "high",
+      "reasons": [
+        "dir:disc",
+        "dir:artist-album",
+        "matched:track-title"
+      ]
+    },
+    "note": "multi-disc classic album, disc 2"
+  },
+  {
+    "path": "Pink Floyd/The Wall/CD1/01 In the Flesh.flac",
+    "kind": "music",
+    "expected": {
+      "artist": "Pink Floyd",
+      "album": "The Wall",
+      "discNumber": 1,
+      "trackNumber": 1,
+      "title": "In the Flesh",
+      "confidence": "high",
+      "reasons": [
+        "dir:disc",
+        "dir:artist-album",
+        "matched:track-title"
+      ]
+    },
+    "note": "multi-disc, CD-style dir, disc 1"
+  },
+  {
+    "path": "Pink Floyd/The Wall/CD2/01 Hey You.flac",
+    "kind": "music",
+    "expected": {
+      "artist": "Pink Floyd",
+      "album": "The Wall",
+      "discNumber": 2,
+      "trackNumber": 1,
+      "title": "Hey You",
+      "confidence": "high",
+      "reasons": [
+        "dir:disc",
+        "dir:artist-album",
+        "matched:track-title"
+      ]
+    },
+    "note": "multi-disc, CD-style dir, disc 2"
+  },
+  {
+    "path": "Artist/Album/Track Without Number.flac",
+    "kind": "music",
+    "expected": {
+      "artist": "Artist",
+      "album": "Album",
+      "discNumber": null,
+      "trackNumber": null,
+      "title": "Track Without Number",
+      "confidence": "medium",
+      "reasons": [
+        "dir:artist-album",
+        "track:absent"
+      ]
+    },
+    "note": "no leading track number at all"
+  },
+  {
+    "path": "Artist/Album/Intro.mp3",
+    "kind": "music",
+    "expected": {
+      "artist": "Artist",
+      "album": "Album",
+      "discNumber": null,
+      "trackNumber": null,
+      "title": "Intro",
+      "confidence": "medium",
+      "reasons": [
+        "dir:artist-album",
+        "track:absent"
+      ]
+    },
+    "note": "single-word title, no track number"
+  },
+  {
+    "path": "Artist/Album/Bonus Track.flac",
+    "kind": "music",
+    "expected": {
+      "artist": "Artist",
+      "album": "Album",
+      "discNumber": null,
+      "trackNumber": null,
+      "title": "Bonus Track",
+      "confidence": "medium",
+      "reasons": [
+        "dir:artist-album",
+        "track:absent"
+      ]
+    },
+    "note": "no track number, multi-word"
+  },
+  {
+    "path": "Various Artists/Best Of/Untitled.mp3",
+    "kind": "music",
+    "expected": {
+      "artist": "Various Artists",
+      "album": "Best Of",
+      "discNumber": null,
+      "trackNumber": null,
+      "title": "Untitled",
+      "confidence": "medium",
+      "reasons": [
+        "dir:artist-album",
+        "track:absent"
+      ]
+    },
+    "note": "no track number, generic artist"
+  },
+  {
+    "path": "Artist - Album - 01 - Track.mp3",
+    "kind": "music",
+    "expected": {
+      "artist": "Artist",
+      "album": "Album",
+      "discNumber": null,
+      "trackNumber": 1,
+      "title": "Track",
+      "confidence": "high",
+      "reasons": [
+        "matched:flat-artist-album-track"
+      ]
+    },
+    "note": "flat form, mission example"
+  },
+  {
+    "path": "Daft Punk - Discovery - 03 - Digital Love.mp3",
+    "kind": "music",
+    "expected": {
+      "artist": "Daft Punk",
+      "album": "Discovery",
+      "discNumber": null,
+      "trackNumber": 3,
+      "title": "Digital Love",
+      "confidence": "high",
+      "reasons": [
+        "matched:flat-artist-album-track"
+      ]
+    },
+    "note": "flat form, realistic"
+  },
+  {
+    "path": "Pink Floyd - The Wall - 12 - Comfortably Numb.flac",
+    "kind": "music",
+    "expected": {
+      "artist": "Pink Floyd",
+      "album": "The Wall",
+      "discNumber": null,
+      "trackNumber": 12,
+      "title": "Comfortably Numb",
+      "confidence": "high",
+      "reasons": [
+        "matched:flat-artist-album-track"
+      ]
+    },
+    "note": "flat form, realistic, longer title"
+  },
+  {
+    "path": "Artist - Album - 1 - Track.mp3",
+    "kind": "music",
+    "expected": {
+      "artist": "Artist",
+      "album": "Album",
+      "discNumber": null,
+      "trackNumber": 1,
+      "title": "Track",
+      "confidence": "high",
+      "reasons": [
+        "matched:flat-artist-album-track"
+      ]
+    },
+    "note": "flat form, single-digit track"
+  },
+  {
+    "path": "Artist - Album - 99 - Track.mp3",
+    "kind": "music",
+    "expected": {
+      "artist": "Artist",
+      "album": "Album",
+      "discNumber": null,
+      "trackNumber": 99,
+      "title": "Track",
+      "confidence": "high",
+      "reasons": [
+        "matched:flat-artist-album-track"
+      ]
+    },
+    "note": "flat form, two-digit boundary track"
+  },
+  {
+    "path": "Artist - Track Without Album - 05.mp3",
+    "kind": "music",
+    "expected": {
+      "artist": null,
+      "album": null,
+      "discNumber": null,
+      "trackNumber": null,
+      "title": "Artist - Track Without Album - 05",
+      "confidence": "low",
+      "reasons": [
+        "track:absent"
+      ]
+    },
+    "note": "flat form without album segment (3-part: artist - track - number)"
+  },
+  {
+    "path": "Artist/Album (2000)/Disc 1/1-01 Opening.flac",
+    "kind": "music",
+    "expected": {
+      "artist": "Artist",
+      "album": "Album",
+      "discNumber": 1,
+      "trackNumber": 1,
+      "title": "Opening",
+      "confidence": "high",
+      "reasons": [
+        "dir:disc",
+        "dir:artist-album",
+        "year:stripped-from-album-dir",
+        "matched:disc-track"
+      ]
+    },
+    "note": "disc dir AND composite prefix agree (composite wins, dir redundant)"
+  },
+  {
+    "path": "Artist/Album (2000)/Disc 2/2-01 Closing.flac",
+    "kind": "music",
+    "expected": {
+      "artist": "Artist",
+      "album": "Album",
+      "discNumber": 2,
+      "trackNumber": 1,
+      "title": "Closing",
+      "confidence": "high",
+      "reasons": [
+        "dir:disc",
+        "dir:artist-album",
+        "year:stripped-from-album-dir",
+        "matched:disc-track"
+      ]
+    },
+    "note": "disc dir AND composite prefix agree on disc 2"
+  },
+  {
+    "path": "Björk/Vespertine/03 Undo.flac",
+    "kind": "music",
+    "expected": {
+      "artist": "Björk",
+      "album": "Vespertine",
+      "discNumber": null,
+      "trackNumber": 3,
+      "title": "Undo",
+      "confidence": "high",
+      "reasons": [
+        "dir:artist-album",
+        "matched:track-title"
+      ]
+    },
+    "note": "unicode artist (mission example)"
+  },
+  {
+    "path": "Sigur Rós/Ágætis byrjun/01 Svefn-g-englar.flac",
+    "kind": "music",
+    "expected": {
+      "artist": "Sigur Rós",
+      "album": "Ágætis byrjun",
+      "discNumber": null,
+      "trackNumber": 1,
+      "title": "Svefn-g-englar",
+      "confidence": "high",
+      "reasons": [
+        "dir:artist-album",
+        "matched:track-title"
+      ]
+    },
+    "note": "unicode artist and album, accented chars"
+  },
+  {
+    "path": "坂本龍一/戦場のメリークリスマス/01 Merry Christmas Mr. Lawrence.flac",
+    "kind": "music",
+    "expected": {
+      "artist": "坂本龍一",
+      "album": "戦場のメリークリスマス",
+      "discNumber": null,
+      "trackNumber": 1,
+      "title": "Merry Christmas Mr. Lawrence",
+      "confidence": "high",
+      "reasons": [
+        "dir:artist-album",
+        "matched:track-title"
+      ]
+    },
+    "note": "unicode CJK artist and album"
+  },
+  {
+    "path": "Мумий Тролль/Морская/01 Владивосток 2000.mp3",
+    "kind": "music",
+    "expected": {
+      "artist": "Мумий Тролль",
+      "album": "Морская",
+      "discNumber": null,
+      "trackNumber": 1,
+      "title": "Владивосток 2000",
+      "confidence": "high",
+      "reasons": [
+        "dir:artist-album",
+        "matched:track-title"
+      ]
+    },
+    "note": "unicode Cyrillic artist/album/title"
+  },
+  {
+    "path": "방탄소년단/맵 오브 더 솔 7/01 Interlude Shadow.mp3",
+    "kind": "music",
+    "expected": {
+      "artist": "방탄소년단",
+      "album": "맵 오브 더 솔 7",
+      "discNumber": null,
+      "trackNumber": 1,
+      "title": "Interlude Shadow",
+      "confidence": "high",
+      "reasons": [
+        "dir:artist-album",
+        "matched:track-title"
+      ]
+    },
+    "note": "unicode Korean artist/album"
+  },
+  {
+    "path": "Zaz/Paris/05 Sous le Ciel de Paris.mp3",
+    "kind": "music",
+    "expected": {
+      "artist": "Zaz",
+      "album": "Paris",
+      "discNumber": null,
+      "trackNumber": 5,
+      "title": "Sous le Ciel de Paris",
+      "confidence": "high",
+      "reasons": [
+        "dir:artist-album",
+        "matched:track-title"
+      ]
+    },
+    "note": "accented Latin artist/album"
+  },
+  {
+    "path": "Artist/01 Track.flac",
+    "kind": "music",
+    "expected": {
+      "artist": "Artist",
+      "album": null,
+      "discNumber": null,
+      "trackNumber": 1,
+      "title": "Track",
+      "confidence": "medium",
+      "reasons": [
+        "dir:artist-only",
+        "matched:track-title"
+      ]
+    },
+    "note": "single directory level: artist only, no album"
+  },
+  {
+    "path": "Radiohead/Creep.mp3",
+    "kind": "music",
+    "expected": {
+      "artist": "Radiohead",
+      "album": null,
+      "discNumber": null,
+      "trackNumber": null,
+      "title": "Creep",
+      "confidence": "low",
+      "reasons": [
+        "dir:artist-only",
+        "track:absent"
+      ]
+    },
+    "note": "single directory level, no track number"
+  },
+  {
+    "path": "Artist/Album/01_Track.flac",
+    "kind": "music",
+    "expected": {
+      "artist": "Artist",
+      "album": "Album",
+      "discNumber": null,
+      "trackNumber": 1,
+      "title": "Track",
+      "confidence": "high",
+      "reasons": [
+        "dir:artist-album",
+        "matched:track-title"
+      ]
+    },
+    "note": "underscore separator between track number and title"
+  },
+  {
+    "path": "Artist/Album/01-Track.flac",
+    "kind": "music",
+    "expected": {
+      "artist": "Artist",
+      "album": "Album",
+      "discNumber": null,
+      "trackNumber": 1,
+      "title": "Track",
+      "confidence": "high",
+      "reasons": [
+        "dir:artist-album",
+        "matched:track-title"
+      ]
+    },
+    "note": "hyphen separator between track number and title"
+  },
+  {
+    "path": "Artist/Album/01.Track.flac",
+    "kind": "music",
+    "expected": {
+      "artist": "Artist",
+      "album": "Album",
+      "discNumber": null,
+      "trackNumber": 1,
+      "title": "Track",
+      "confidence": "high",
+      "reasons": [
+        "dir:artist-album",
+        "matched:track-title"
+      ]
+    },
+    "note": "dot separator between track number and title"
+  },
+  {
+    "path": "Artist/Album/01   Track.flac",
+    "kind": "music",
+    "expected": {
+      "artist": "Artist",
+      "album": "Album",
+      "discNumber": null,
+      "trackNumber": 1,
+      "title": "Track",
+      "confidence": "high",
+      "reasons": [
+        "dir:artist-album",
+        "matched:track-title"
+      ]
+    },
+    "note": "multiple spaces collapse to a single space"
+  },
+  {
+    "path": "Artist/Album/01 Track.mp3",
+    "kind": "music",
+    "expected": {
+      "artist": "Artist",
+      "album": "Album",
+      "discNumber": null,
+      "trackNumber": 1,
+      "title": "Track",
+      "confidence": "high",
+      "reasons": [
+        "dir:artist-album",
+        "matched:track-title"
+      ]
+    },
+    "note": "mp3"
+  },
+  {
+    "path": "Artist/Album/01 Track.m4a",
+    "kind": "music",
+    "expected": {
+      "artist": "Artist",
+      "album": "Album",
+      "discNumber": null,
+      "trackNumber": 1,
+      "title": "Track",
+      "confidence": "high",
+      "reasons": [
+        "dir:artist-album",
+        "matched:track-title"
+      ]
+    },
+    "note": "m4a"
+  },
+  {
+    "path": "Artist/Album/01 Track.ogg",
+    "kind": "music",
+    "expected": {
+      "artist": "Artist",
+      "album": "Album",
+      "discNumber": null,
+      "trackNumber": 1,
+      "title": "Track",
+      "confidence": "high",
+      "reasons": [
+        "dir:artist-album",
+        "matched:track-title"
+      ]
+    },
+    "note": "ogg"
+  },
+  {
+    "path": "Artist/Album/01 Track.opus",
+    "kind": "music",
+    "expected": {
+      "artist": "Artist",
+      "album": "Album",
+      "discNumber": null,
+      "trackNumber": 1,
+      "title": "Track",
+      "confidence": "high",
+      "reasons": [
+        "dir:artist-album",
+        "matched:track-title"
+      ]
+    },
+    "note": "opus"
+  },
+  {
+    "path": "Artist/Album/01 Track.wav",
+    "kind": "music",
+    "expected": {
+      "artist": "Artist",
+      "album": "Album",
+      "discNumber": null,
+      "trackNumber": 1,
+      "title": "Track",
+      "confidence": "high",
+      "reasons": [
+        "dir:artist-album",
+        "matched:track-title"
+      ]
+    },
+    "note": "wav"
+  },
+  {
+    "path": "Artist/Album/01 Track.alac",
+    "kind": "music",
+    "expected": {
+      "artist": "Artist",
+      "album": "Album",
+      "discNumber": null,
+      "trackNumber": 1,
+      "title": "Track",
+      "confidence": "high",
+      "reasons": [
+        "dir:artist-album",
+        "matched:track-title"
+      ]
+    },
+    "note": "alac"
+  },
+  {
+    "path": "Artist/Album/01 Track.wma",
+    "kind": "music",
+    "expected": {
+      "artist": "Artist",
+      "album": "Album",
+      "discNumber": null,
+      "trackNumber": 1,
+      "title": "Track",
+      "confidence": "high",
+      "reasons": [
+        "dir:artist-album",
+        "matched:track-title"
+      ]
+    },
+    "note": "wma"
+  },
+  {
+    "path": "Artist/Album/01 Track.ape",
+    "kind": "music",
+    "expected": {
+      "artist": "Artist",
+      "album": "Album",
+      "discNumber": null,
+      "trackNumber": 1,
+      "title": "Track",
+      "confidence": "high",
+      "reasons": [
+        "dir:artist-album",
+        "matched:track-title"
+      ]
+    },
+    "note": "ape (lossless)"
+  },
+  {
+    "path": "",
+    "kind": "music",
+    "expected": null,
+    "note": "empty path -> null"
+  },
+  {
+    "path": "01.mp3",
+    "kind": "music",
+    "expected": {
+      "artist": null,
+      "album": null,
+      "discNumber": null,
+      "trackNumber": null,
+      "title": "01",
+      "confidence": "low",
+      "reasons": [
+        "track:absent"
+      ]
+    },
+    "note": "flat file, only a track number, no title text at all -> track number requires trailing text, so this is track-absent whole-stem title '01'"
+  },
+  {
+    "path": "Artist/Album/.DS_Store",
+    "kind": "music",
+    "expected": {
+      "artist": "Artist",
+      "album": "Album",
+      "discNumber": null,
+      "trackNumber": null,
+      "title": "DS_Store",
+      "confidence": "medium",
+      "reasons": [
+        "dir:artist-album",
+        "track:absent"
+      ]
+    },
+    "note": "hidden file: parseMusicPath itself does not filter this (classifyAuxiliary's job, called first by the scanner) — still returns a deterministic guess"
+  },
+  {
+    "path": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.flac",
+    "kind": "music",
+    "expected": {
+      "artist": null,
+      "album": null,
+      "discNumber": null,
+      "trackNumber": null,
+      "title": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "confidence": "low",
+      "reasons": [
+        "track:absent"
+      ]
+    },
+    "note": "absurdly long filename, no track number, no dirs"
+  },
+  {
+    "path": "....flac",
+    "kind": "music",
+    "expected": null,
+    "note": "only separator punctuation -> null"
+  },
+  {
+    "path": "Artist//Album//01 Track.flac",
+    "kind": "music",
+    "expected": {
+      "artist": "Artist",
+      "album": "Album",
+      "discNumber": null,
+      "trackNumber": 1,
+      "title": "Track",
+      "confidence": "high",
+      "reasons": [
+        "dir:artist-album",
+        "matched:track-title"
+      ]
+    },
+    "note": "doubled slashes -> empty segments dropped, same result as clean path"
+  }
+]

@@ -1,0 +1,91 @@
+name: 'direct-stream — hls-vtt subtitle side-track over a ts-hls (supportsFmp4:false) repackage: the VTT
+  strategy is container-agnostic'
+why: 'Audit coverage gap: every existing hls-vtt direct-stream case (326 et al) rode an fmp4-hls device;
+  §3 Stage E''s hls-vtt branch never consults device.hls.container, so a ts-segment HLS device with hlsVtt:true
+  must yield the identical strategy — pinned with expect.container ts-hls + subtitleStrategy hls-vtt together.
+  Inline device: ts HLS, hlsVtt true, renderText [], generous h264/aac.'
+input:
+  media:
+    fileId: file-464
+    container: mkv
+    durationMs: 6000000
+    sizeBytes: 3900000000
+    overallBitrateBps: 5200000
+    video:
+    - index: 0
+      codec: h264
+      profile: high
+      level: 41
+      width: 1920
+      height: 1080
+      bitDepth: 8
+      frameRate: 23.976
+      bitrateBps: 5000000
+      hdr: none
+      dvProfile: null
+      dvBlCompatId: null
+      interlaced: false
+    audio:
+    - index: 1
+      codec: aac
+      channels: 2
+      sampleRate: 48000
+      bitrateBps: 192000
+      language: eng
+      isDefault: true
+      hasAtmos: false
+    subtitle:
+    - index: 2
+      codec: subrip
+      language: eng
+      isForced: false
+      isDefault: false
+      isExternal: false
+      externalPath: null
+  device:
+    profileId: audit-ts-hlsvtt
+    directPlayContainers:
+    - mp4
+    hls:
+      container: ts
+      supportsFmp4: false
+      lowLatency: false
+    video:
+    - codec: h264
+      maxProfile: high
+      maxLevel: 52
+      maxBitDepth: 8
+      maxWidth: 3840
+      maxHeight: 2160
+      maxFrameRate: 60
+      maxBitrateBps: null
+    hdr:
+      hdr10: false
+      hlg: false
+      dolbyVision: false
+    audio:
+    - codec: aac
+      maxChannels: 6
+      passthrough: false
+    subtitles:
+      renderText: []
+      hlsVtt: true
+      renderImage: false
+    maxStreamBitrateBps: null
+  network:
+    fixture: networks.local
+  policy:
+    fixture: policies.t0-default
+  caps:
+    fixture: caps.software-only
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: 2
+  mode: stream
+expect:
+  decision: direct-stream
+  reasons:
+  - container-not-direct-playable
+  subtitleStrategy: hls-vtt
+  container: ts-hls

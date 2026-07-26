@@ -1,0 +1,56 @@
+name: 'direct-stream — allowTranscode:false leaves a container-only repackage untouched (boundary control
+  for 451/452: the now-live knob is indifferent exactly where it SHOULD be indifferent)'
+why: 'step 7b F1 fix (expectation UNCHANGED, exactly as this case''s original why: predicted — only this
+  prose updated): the knob is now consumed in final assembly, and its documented boundary is "repackaging
+  is not transcoding" — the disabled check fires ONLY on an aggregated ''transcode'' decision, so a copy-only
+  HLS repackage (direct-stream) proceeds untouched under allowTranscode:false. Completes the boundary
+  set with 505 (download remux likewise unaffected) and 489 (direct-play).'
+input:
+  media:
+    fileId: file-453
+    container: mkv
+    durationMs: 6000000
+    sizeBytes: 3900000000
+    overallBitrateBps: 5200000
+    video:
+    - index: 0
+      codec: h264
+      profile: high
+      level: 41
+      width: 1920
+      height: 1080
+      bitDepth: 8
+      frameRate: 23.976
+      bitrateBps: 5000000
+      hdr: none
+      dvProfile: null
+      dvBlCompatId: null
+      interlaced: false
+    audio:
+    - index: 1
+      codec: aac
+      channels: 2
+      sampleRate: 48000
+      bitrateBps: 192000
+      language: eng
+      isDefault: true
+      hasAtmos: false
+    subtitle: []
+  device:
+    fixture: devices.web-chrome
+  network:
+    fixture: networks.local
+  policy:
+    fixture: policies.transcode-disabled
+  caps:
+    fixture: caps.software-only
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: direct-stream
+  reasons:
+  - container-not-direct-playable
+  container: fmp4-hls

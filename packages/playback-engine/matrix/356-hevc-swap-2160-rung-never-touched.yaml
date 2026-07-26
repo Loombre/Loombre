@@ -1,0 +1,61 @@
+name: transcode — the 2160p rung is NEVER swapped, even under an hevc-preferred policy + hevc-capable device
+why: >
+  Proves the swap step explicitly excludes the 2160p rung ("the 2160 rung in the default table is already hevc" — §7): hevcEncodePreferred true + an hevc-capable device (web-safari), but the SOURCE height is only 1080p, so rule (a) drops the 2160p rung regardless of swap eligibility — there is no way to observe its bitrate changing because it never survives to be reported at all. Every SURVIVING rung (1080p and below) carries the swapped ×0.75 bitrate and codec hevc, confirming the swap DID run; the 2160p rung's absence (not a still-16,000,000 hevc rung) is the pin. Driven via Stage B's interlaced reason so Stage F contributes no reason. why (Phase 3 §11 step 3, Stage G arrival, STATE.md P3.2 regression law): this case's caps fixture has no hardware backend covering this route, so Stage G now routes full software (`software-fallback:encode`); tier 0 + a >=1080p selected source additionally trips the tier cap, narrowing the surviving ladder to <=480p rungs (`software-fallback:tier-capped`). expect.ladder is tightened accordingly to the now-tier-capped surviving rungs.
+
+input:
+  media:
+    fileId: file-0356
+    container: mov
+    durationMs: 6000000
+    sizeBytes: 7500000000
+    overallBitrateBps: 10000000
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 52
+        width: 1920
+        height: 1080
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 10000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: true
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 160000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device: { fixture: devices.web-safari }
+  network: { fixture: networks.local }
+  policy: { fixture: policies.hevc-preferred }
+  caps: { fixture: caps.software-only }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+
+expect:
+  decision: transcode
+  reasons:
+    - video-interlaced
+    - software-fallback:encode
+    - software-fallback:tier-capped
+  container: fmp4-hls
+  ladder:
+    - heightPx: 480
+      videoBitrateBps: 1125000
+      audioBitrateBps: 160000
+      codec: hevc
+    - heightPx: 360
+      videoBitrateBps: 600000
+      audioBitrateBps: 160000
+      codec: hevc

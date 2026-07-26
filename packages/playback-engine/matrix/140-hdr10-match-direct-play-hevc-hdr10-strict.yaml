@@ -1,0 +1,50 @@
+name: direct-play — mp4 hevc main10 2160p HDR10 + aac 6ch, hevc-hdr10-strict (hdr10:true, hlg:false)
+why: "Stage C (docs/PLAYBACK.md §3): source hdr is hdr10 and device.hdr.hdr10 is true (hevc-hdr10-strict deliberately declares hlg:false/dolbyVision:false to isolate the hdr10 flag from the other two) — matching-flag copy is silent, no reason. mp4 is in the device's directPlayContainers and every other axis is within caps, so the decision is direct-play with reasons=[]."
+input:
+  media:
+    fileId: file-140
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 5000000000
+    overallBitrateBps: 15384000
+    video:
+      - index: 0
+        codec: hevc
+        profile: main10
+        level: 123
+        width: 3840
+        height: 2160
+        bitDepth: 10
+        frameRate: 23.976
+        bitrateBps: 15000000
+        hdr: hdr10
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 6
+        sampleRate: 48000
+        bitrateBps: 384000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device:
+    fixture: devices.hevc-hdr10-strict
+  network:
+    fixture: networks.local
+  policy:
+    fixture: policies.t0-default
+  caps:
+    fixture: caps.software-only
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: direct-play
+  reasons: []
+  container: source

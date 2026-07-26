@@ -1,0 +1,35 @@
+# Shared NetworkConditions fixtures (docs/PLAYBACK.md §2.3).
+
+local:
+  maxBitrateBps: 1000000000
+  isLocal: true
+
+wan-4mbps:
+  maxBitrateBps: 4000000
+  isLocal: false
+
+# --- Phase 3 Step 2f (Stage F — bitrate/ladder) additive fixtures ----------
+# docs/PLAYBACK.md §10's network dimension names four tiers: "local, 20M,
+# 4M, 1M". `local` and `wan-4mbps` (seed case 006's own fixture) already
+# exist above; these two complete the set.
+
+wan-20mbps:
+  maxBitrateBps: 20000000
+  isLocal: false
+
+wan-1mbps:
+  maxBitrateBps: 1000000
+  isLocal: false
+
+# `isLocal: true` with a REALISTIC (non-huge) cap — distinct from `local`
+# above (which uses an effectively-unlimited 1,000,000,000 cap and is
+# load-bearing for many existing container/video/audio/subtitle-stage cases
+# that must never trip Stage F incidentally; changing it would be a
+# regression-law violation across dozens of unrelated cases). This fixture
+# exists specifically so Stage F's `isLocal`-skips-network-cap and
+# local-but-exceeds-device-cap cases can use ordinary, realistic bitrate
+# numbers (tens of Mbps) instead of needing an absurd >1 Gbps overallBitrateBps
+# just to exceed `local`'s cap.
+local-4mbps:
+  maxBitrateBps: 4000000
+  isLocal: true

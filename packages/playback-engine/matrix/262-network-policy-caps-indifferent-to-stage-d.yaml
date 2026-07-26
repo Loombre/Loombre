@@ -1,0 +1,47 @@
+name: transcode — Stage D's reasons are indifferent to network/policy/caps variety
+why: "Same web-chrome truehd 6ch passthrough:false scenario as case 208/261, but paired with wan-4mbps network, t1-cpu-tonemap policy, and full-hw caps instead of the usual local/t0-default/software-only trio — Stage D's evaluateAudio signature never even receives network/policy/caps, so the fired reason is identical regardless (mirrors cases 059-062's Stage-A/B/C indifference pattern). why (Phase 3 Step 2f amendment): overallBitrateBps lowered from 7500000 to 3200000 (still the original video+audio stream bitrates, only the whole-file derived rate changed) so it stays <= wan-4mbps's 4,000,000 cap — Stage F (bitrate/ladder) is now real and would otherwise ALSO fire bitrate-exceeds-network on this case's original number purely because of the network fixture choice this case deliberately makes for Stage-D-indifference purposes, contaminating the reason list this case exists to pin. The case's own point (Stage D's reason is unaffected by network/policy/caps variety) is unchanged and still exercised."
+input:
+  media:
+    fileId: file-0262
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 6000000000
+    overallBitrateBps: 3200000
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 41
+        width: 1920
+        height: 1080
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 5000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: truehd
+        channels: 6
+        sampleRate: 48000
+        bitrateBps: 2500000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device: { fixture: devices.web-chrome }
+  network: { fixture: networks.wan-4mbps }
+  policy: { fixture: policies.t1-cpu-tonemap }
+  caps: { fixture: caps.full-hw }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: transcode
+  container: fmp4-hls
+  reasons:
+    - audio-passthrough-unsupported

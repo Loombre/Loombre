@@ -1,0 +1,52 @@
+name: 'direct-play — web-chrome × wan-20mbps × tonemap-never: 2160p60 10-bit HDR10 vp9 webm at 18.5M —
+  everything genuinely fits'
+why: 'Grid combo (web-chrome × wan-20mbps × tonemap-never): vp9 entry''s null profile/level are vacuous,
+  10-bit ≤ 10, hdr10 matches web-chrome''s flag (nothing for the never-policy to refuse), 18.5M ≤ 20M.'
+input:
+  media:
+    fileId: file-487
+    container: webm
+    durationMs: 6000000
+    sizeBytes: 13875000000
+    overallBitrateBps: 18500000
+    video:
+    - index: 0
+      codec: vp9
+      profile: null
+      level: null
+      width: 3840
+      height: 2160
+      bitDepth: 10
+      frameRate: 60
+      bitrateBps: 18000000
+      hdr: hdr10
+      dvProfile: null
+      dvBlCompatId: null
+      interlaced: false
+    audio:
+    - index: 1
+      codec: opus
+      channels: 6
+      sampleRate: 48000
+      bitrateBps: 384000
+      language: eng
+      isDefault: true
+      hasAtmos: false
+    subtitle: []
+  device:
+    fixture: devices.web-chrome
+  network:
+    fixture: networks.wan-20mbps
+  policy:
+    fixture: policies.tonemap-never
+  caps:
+    fixture: caps.software-only
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: direct-play
+  reasons: []
+  container: source

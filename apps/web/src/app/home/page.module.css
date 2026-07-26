@@ -1,0 +1,15 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xl);
+}
+
+/* WatchlistPosterCard is width:100% (both its hosts size it) — this rail
+   is a horizontal flex scroller (Row.module.css's .scroller), so each card
+   needs an explicit fixed width + no-shrink, matching
+   components/home/PosterCard.module.css's own .tile sizing exactly. */
+.watchlistCell {
+  width: 160px;
+  flex-shrink: 0;
+}

@@ -1,0 +1,17 @@
+{
+  "status": "success",
+  "data": {
+    "id": 79488,
+    "name": "Late Night Signal",
+    "overview": "A radio host uncovers something she shouldn't have.",
+    "score": 512.3,
+    "status": { "name": "Continuing" },
+    "firstAired": "2019-10-01",
+    "genres": [{ "name": "Drama" }, { "name": "Mystery" }],
+    "characters": [
+      { "name": "Ada Lin", "personName": "Ada Lin", "peopleType": "Actor", "sort": 0 },
+      { "name": null, "personName": "Sam Reyes", "peopleType": "Director", "sort": 1 }
+    ],
+    "seasons": [{ "number": 1, "type": { "type": "official" } }]
+  }
+}

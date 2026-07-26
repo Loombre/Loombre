@@ -1,0 +1,61 @@
+name: 'direct-play — web-chrome × local-4mbps × hevc-preferred: srt rides as an hls-vtt side-track on
+  an otherwise untouched direct-play'
+why: 'Grid combo (web-chrome × local-4mbps × hevc-preferred): the hls-vtt strategy never escalates (case
+  278''s rule) — direct-play with reasons [] and strategy hls-vtt; hevc-preferred irrelevant without a
+  ladder.'
+input:
+  media:
+    fileId: file-494
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 2550000000
+    overallBitrateBps: 3400000
+    video:
+    - index: 0
+      codec: h264
+      profile: high
+      level: 41
+      width: 1920
+      height: 1080
+      bitDepth: 8
+      frameRate: 23.976
+      bitrateBps: 3000000
+      hdr: none
+      dvProfile: null
+      dvBlCompatId: null
+      interlaced: false
+    audio:
+    - index: 1
+      codec: aac
+      channels: 2
+      sampleRate: 48000
+      bitrateBps: 128000
+      language: eng
+      isDefault: true
+      hasAtmos: false
+    subtitle:
+    - index: 2
+      codec: subrip
+      language: eng
+      isForced: false
+      isDefault: false
+      isExternal: false
+      externalPath: null
+  device:
+    fixture: devices.web-chrome
+  network:
+    fixture: networks.local-4mbps
+  policy:
+    fixture: policies.hevc-preferred
+  caps:
+    fixture: caps.software-only
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: 2
+  mode: stream
+expect:
+  decision: direct-play
+  reasons: []
+  subtitleStrategy: hls-vtt
+  container: source

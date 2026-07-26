@@ -1,0 +1,50 @@
+name: remux — mkv h264 1080p + aac 2ch, web-chrome, mode=download (container-only change)
+why: "Final assembly (docs/PLAYBACK.md §3, quoted verbatim): \"mode==='download' and container-only change → remux (progressive file)\". mkv is not in web-chrome's directPlayContainers, and every SELECTED stream is copy-eligible under Stages B-F's stubs, so the ONLY fired reason is container-not-direct-playable — exactly a \"container-only change\" — and mode=download turns the decision from direct-stream into remux. Every selected stream is constructed genuinely within the paired device's declared caps on every axis (matrix/README.md's case-authoring rule), so this case's expected outcome survives once Stages B-F land."
+input:
+  media:
+    fileId: file-0052
+    container: mkv
+    durationMs: 6000000
+    sizeBytes: 5000000000
+    overallBitrateBps: 5500000
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 41
+        width: 1920
+        height: 1080
+        bitDepth: 8
+        frameRate: 24
+        bitrateBps: 5000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 160000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device:
+    fixture: devices.web-chrome
+  network:
+    fixture: networks.local
+  policy:
+    fixture: policies.t0-default
+  caps:
+    fixture: caps.software-only
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: download
+expect:
+  decision: remux
+  reasons:
+    - container-not-direct-playable

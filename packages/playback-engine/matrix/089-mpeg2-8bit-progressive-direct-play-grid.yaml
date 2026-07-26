@@ -1,0 +1,49 @@
+name: direct-play — mpeg2 8-bit progressive, mpeg2-generic (Stage B grid 17/20)
+why: mpeg2's profile 'main' exact-matches mpeg2-generic's maxProfile, and every other axis (level vacuous, bitDepth/resolution/framerate) is within caps; ts container also direct-plays.
+input:
+  media:
+    fileId: file-089
+    container: ts
+    durationMs: 6000000
+    sizeBytes: 5000000000
+    overallBitrateBps: 5160000
+    video:
+      - index: 0
+        codec: mpeg2
+        profile: main
+        level: null
+        width: 1920
+        height: 1080
+        bitDepth: 8
+        frameRate: 25
+        bitrateBps: 5000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 160000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device:
+    fixture: devices.mpeg2-generic
+  network:
+    fixture: networks.local
+  policy:
+    fixture: policies.t0-default
+  caps:
+    fixture: caps.software-only
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: direct-play
+  reasons: []

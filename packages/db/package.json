@@ -1,0 +1,46 @@
+{
+  "name": "@loombre/db",
+  "version": "0.1.0",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "description": "Loombre PostgreSQL schema, migrations, seed data, and the mandatory restricted-content query guard.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./internal": {
+      "types": "./dist/internal/index.d.ts",
+      "default": "./dist/internal/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "db:migrate": "node scripts/migrate.mjs migrate",
+    "db:reset": "node scripts/migrate.mjs reset",
+    "db:status": "node scripts/migrate.mjs status",
+    "db:migrate-check": "node scripts/migrate.mjs migrate-check",
+    "db:generate-schema": "node scripts/migrate.mjs generate-schema",
+    "db:seed": "node seed/seed.mjs",
+    "db:seed-large": "node seed/seed-large.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "kysely": "^0.29.4",
+    "pg": "^8.22.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.3",
+    "@types/pg": "^8.20.0",
+    "typescript": "^6.0.3",
+    "tsx": "^4.23.1",
+    "vitest": "^4.1.10"
+  }
+}

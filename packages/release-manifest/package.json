@@ -1,0 +1,26 @@
+{
+  "name": "@loombre/release-manifest",
+  "version": "0.1.0",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "description": "Release manifest format (P4.3) + the minisign signing decision (README.md) + a zero-new-dependency ed25519/minisign verification function built on node:crypto. Types + JSON-schema fixtures + the pure verify function only — no fetch, no fs.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "lint": "eslint src test --max-warnings=0",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "24.13.3",
+    "ajv": "^8.20.0"
+  }
+}

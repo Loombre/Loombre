@@ -1,0 +1,22 @@
+{
+  "id": 1399,
+  "name": "Game of Thrones",
+  "original_name": "Game of Thrones",
+  "first_air_date": "2011-04-17",
+  "overview": "Seven noble families fight for control of the mythical land of Westeros.",
+  "vote_average": 8.4,
+  "status": "Ended",
+  "genres": [
+    { "id": 10765, "name": "Sci-Fi & Fantasy" },
+    { "id": 18, "name": "Drama" }
+  ],
+  "credits": {
+    "cast": [{ "name": "Emilia Clarke", "character": "Daenerys Targaryen", "order": 0 }],
+    "crew": [{ "name": "David Benioff", "job": "Creator", "department": "Writing" }]
+  },
+  "images": {
+    "posters": [{ "file_path": "/got-poster.jpg", "width": 2000, "height": 3000 }],
+    "backdrops": [{ "file_path": "/got-backdrop.jpg", "width": 3840, "height": 2160 }],
+    "logos": []
+  }
+}

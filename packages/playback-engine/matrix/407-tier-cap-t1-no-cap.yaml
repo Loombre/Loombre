@@ -1,0 +1,67 @@
+name: "transcode — T1 + software-only + a 1080p+ source: NO tier cap (tier gate is T0-only)"
+why: >
+  Same hevc-vs-constrained-tv codec-unsupported shape as case 405 (1080p source), but policy is tiergated-t1 (tier 1, not 0) -> docs/PLAYBACK.md §8.3's tier cap ('T0 full-software transcode...') never fires at tier 1. reasons carries software-fallback:encode WITHOUT tier-capped, and the surviving ladder keeps its full pre-cap shape ([1080p/4M,720p/3M,480p/1.5M,360p/0.8M], pinned exactly).
+
+input:
+  media:
+    fileId: gen-file
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 6000000000
+    overallBitrateBps: 6600000
+    video:
+      - index: 0
+        codec: hevc
+        profile: main10
+        level: 123
+        width: 1920
+        height: 1080
+        bitDepth: 10
+        frameRate: 23.976
+        bitrateBps: 5500000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 160000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device: { fixture: devices.constrained-tv }
+  network: { fixture: networks.local }
+  policy: { fixture: policies.tiergated-t1 }
+  caps: { fixture: caps.software-only }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+
+expect:
+  decision: transcode
+  reasons:
+    - video-codec-unsupported
+    - software-fallback:encode
+  ladder:
+    - heightPx: 1080
+      videoBitrateBps: 4000000
+      audioBitrateBps: 160000
+      codec: h264
+    - heightPx: 720
+      videoBitrateBps: 3000000
+      audioBitrateBps: 160000
+      codec: h264
+    - heightPx: 480
+      videoBitrateBps: 1500000
+      audioBitrateBps: 160000
+      codec: h264
+    - heightPx: 360
+      videoBitrateBps: 800000
+      audioBitrateBps: 160000
+      codec: h264

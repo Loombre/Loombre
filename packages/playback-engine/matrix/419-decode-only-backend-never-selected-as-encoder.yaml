@@ -1,0 +1,51 @@
+name: transcode — a genuinely decode-only backend (empty encode[]) is NEVER selected as an encoder, even with vacuously-empty ladder targets
+why: >
+  policies.empty-ladder declares ladderRungs:[] -> buildLadder returns [] -> Stage G's target-codec set is vacuously []. decode-only-guard's SOLE hardware backend (d3d11va-shaped: broad decode, empty encode) would satisfy `targets.every(...)` trivially since there are no targets to fail on — WITHOUT the defensive `encode.length > 0` guard (binding interpretation 2), it would be wrongly picked. With the guard, it is correctly skipped in both rule (i) and rule (ii) (its own encode never covers anything), so this falls through to rule (iii): software-fallback:encode. tier 1 (empty-ladder's own tier) -> no tier cap either. bitrate-exceeds-network (Stage F) forces the transcode itself.
+
+input:
+  media:
+    fileId: gen-file
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 6000000000
+    overallBitrateBps: 40000000
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 41
+        width: 1920
+        height: 1080
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 5000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 160000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device: { fixture: devices.web-chrome }
+  network: { fixture: networks.wan-4mbps }
+  policy: { fixture: policies.empty-ladder }
+  caps: { fixture: caps.decode-only-guard }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+
+expect:
+  decision: transcode
+  reasons:
+    - bitrate-exceeds-network
+    - software-fallback:encode
+  ladder: []

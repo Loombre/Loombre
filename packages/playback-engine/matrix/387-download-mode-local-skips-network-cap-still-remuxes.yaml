@@ -1,0 +1,57 @@
+name: remux (mode=download) — local network skipping its own cap lets an otherwise container-only change actually remux
+why: >
+  Contrast with 386: identical container-mismatch shape (mkv -> repackage,
+  mode=download), but network is local-4mbps (isLocal true) and
+  device.maxStreamBitrateBps is null, so bitrate-exceeds-network does NOT
+  fire (the unless-clause holds) even though overall (40Mbps) vastly
+  exceeds local-4mbps's own cap — the ONLY blocking reason is
+  container-not-direct-playable, so the container-only-change predicate
+  holds and mode=download correctly remuxes to a progressive mp4.
+
+input:
+  media:
+    fileId: file-0387
+    container: mkv
+    durationMs: 7500000
+    sizeBytes: 37500000000
+    overallBitrateBps: 40000000
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 41
+        width: 1920
+        height: 1080
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 38000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 192000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device: { fixture: devices.web-chrome }
+  network: { fixture: networks.local-4mbps }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.software-only }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: download
+
+expect:
+  decision: remux
+  reasons:
+    - container-not-direct-playable
+  container: mp4
+  ladder: []

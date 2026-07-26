@@ -1,0 +1,50 @@
+name: transcode — a hardware backend covers decode+encode fully but has NO tone-map method -> falls through ALL THE WAY to full software
+why: >
+  hw-no-tonemap's nvenc genuinely covers hevc decode + the ladder's h264/hevc targets (rule (i)'s decode/encode test would pass), but tone-mapping is required (hdr10 mismatch) and nvenc's own toneMap array is empty -> constraint 3's fall-through skips it in rule (i); rule (ii) re-checks the SAME nvenc entry (encode-covers + software-decodes-hevc both hold) but again finds no usable method -> falls through again -> rule (iii) full software fires (software-fallback:encode), with cpu-zscale (t1-cpu-tonemap allows it).
+
+input:
+  media:
+    fileId: gen-file
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 6000000000
+    overallBitrateBps: 8200000
+    video:
+      - index: 0
+        codec: hevc
+        profile: main10
+        level: 123
+        width: 1920
+        height: 1080
+        bitDepth: 10
+        frameRate: 23.976
+        bitrateBps: 7000000
+        hdr: hdr10
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 160000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device: { fixture: devices.hevc-sdr }
+  network: { fixture: networks.local }
+  policy: { fixture: policies.t1-cpu-tonemap }
+  caps: { fixture: caps.hw-no-tonemap }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+
+expect:
+  decision: transcode
+  reasons:
+    - hdr-tone-map-required
+    - software-fallback:encode

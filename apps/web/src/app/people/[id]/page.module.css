@@ -1,0 +1,76 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xl);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-lg);
+}
+
+.portrait {
+  width: 140px;
+  height: 140px;
+  border-radius: var(--radius-full);
+  object-fit: cover;
+  background: var(--color-dominant-fallback);
+  flex-shrink: 0;
+}
+
+/* S1 fix (Wave-3 fidelity audit): 40px is the prototype's own Person h1
+   size (design/phosphor/Loombre Phosphor.dc.html's #isPerson h1), a
+   deliberate exception to the other screens' shared --text-xl H1 size —
+   literal, not tokenized, since no scale step lands on 40. */
+.name {
+  font-size: 40px;
+  font-stretch: var(--wdth-title);
+  font-weight: var(--weight-black);
+  margin: 0;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.sectionHeading {
+  font-size: var(--text-lg);
+  font-weight: var(--weight-semibold);
+  margin: 0;
+}
+
+.notFound {
+  border-radius: var(--radius-lg);
+  border: 1px dashed var(--border);
+  padding: var(--space-2xl);
+  color: var(--muted);
+  text-align: center;
+}
+
+.notFoundInline {
+  color: var(--muted);
+}
+
+/* Both breakpoints (U2 — one responsive tree): narrower portrait + stacked
+   header below the mobile breakpoint rather than a fixed 140px forcing the
+   name column to wrap awkwardly at 392px. */
+@media (width <= 767.98px) {
+  .header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-md);
+  }
+
+  .portrait {
+    width: 96px;
+    height: 96px;
+  }
+
+  .name {
+    font-size: var(--text-lg);
+  }
+}

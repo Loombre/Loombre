@@ -1,0 +1,51 @@
+name: transcode — mp4 hevc main10 1080p HDR10 vs hevc-sdr, T0-default policy + software-only caps → tone-map REFUSED (STATE.md P3.9(b) mandatory case)
+why: "MANDATORY per STATE.md P3.9(b): T0-default policy (allowToneMapCpu tier-gated, tier 0) + caps software-only (no backend has a non-empty toneMap array) + an HDR10 source needing tone-map on an SDR-capable-codec device (hevc-sdr decodes hevc fine, just has no HDR flags) → tone-map is REFUSED per docs/PLAYBACK.md §3's total-output-contract passage: transcode, reasons [hdr-tone-map-required, tone-map-refused-by-policy] (branch reason first, per binding interpretation constraint 5), and the plan's ladder stays [] (pinned by a dedicated unit test in test/stages/hdr.spec.ts, since this case schema cannot assert an empty ladder directly)."
+input:
+  media:
+    fileId: file-144
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 5000000000
+    overallBitrateBps: 5192000
+    video:
+      - index: 0
+        codec: hevc
+        profile: main10
+        level: 123
+        width: 1920
+        height: 1080
+        bitDepth: 10
+        frameRate: 23.976
+        bitrateBps: 5000000
+        hdr: hdr10
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 192000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device:
+    fixture: devices.hevc-sdr
+  network:
+    fixture: networks.local
+  policy:
+    fixture: policies.t0-default
+  caps:
+    fixture: caps.software-only
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: transcode
+  reasons:
+    - hdr-tone-map-required
+    - tone-map-refused-by-policy

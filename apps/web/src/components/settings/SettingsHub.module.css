@@ -1,0 +1,98 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+.hub {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.group {
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--radius-lg);
+  background: var(--fill-2);
+  overflow: hidden;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
+  min-height: 44px;
+  border-bottom: 1px solid var(--color-border-subtle);
+  color: var(--text);
+  font-size: var(--text-md);
+  text-decoration: none; /* UA anchor underline — H9 regression (W0's fix was .navItem-scoped only) */
+  transition: background-color var(--motion-fast) var(--ease-out);
+}
+
+.row:hover,
+.row:active {
+  background: var(--fill-3);
+}
+
+.group > .row:last-child {
+  border-bottom: none;
+}
+
+.rowLabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rowEnd {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  flex-shrink: 0;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3xs);
+  padding: 2px var(--space-xs);
+  border-radius: var(--radius-pill);
+  background: var(--fill-4);
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: var(--mono-sm);
+  letter-spacing: var(--track-mono);
+  text-transform: uppercase;
+}
+
+.badge[data-live="true"] {
+  background: var(--color-accent-tint);
+  color: var(--color-accent);
+}
+
+.liveDot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-full);
+  background: currentcolor;
+  animation: loombre-hub-pulse 1.6s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .liveDot {
+    animation: none;
+  }
+}
+
+@keyframes loombre-hub-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.3;
+  }
+}
+
+.chevron {
+  color: var(--color-text-subtle);
+}

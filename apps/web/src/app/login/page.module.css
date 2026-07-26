@@ -1,0 +1,141 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+
+/* Phosphor H1 retheme (design/phosphor/dc:2632-2663). ONE responsive tree
+   (U2) — the rules below reflow the same markup at the shared 767.98px
+   breakpoint (AppShell/MovieDetailScreen convention, tokens.css "Mobile
+   chrome layout"); there is no separate mobile branch in page.tsx. */
+
+.page {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-2xl) var(--space-lg);
+  background:
+    radial-gradient(70% 50% at 50% -10%, color-mix(in srgb, var(--color-accent) 7%, transparent), transparent 70%),
+    var(--color-bg);
+}
+
+/* STATE.md "Blaze logo rollout" G1/D2 — stacked lockup: BlazeMark above
+   the wordmark, replacing the former pulsing accent-dot (its class +
+   keyframes deleted along with their reduced-motion rule — there's nothing
+   left to collapse; the exact identifiers are deliberately not named here,
+   the brand:pulse-dot gate bans them from apps/ source, comments included). */
+.brand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-xs);
+  margin-bottom: var(--space-xs);
+}
+
+.wordmark {
+  font-family: var(--font-sans);
+  font-stretch: var(--wdth-wordmark);
+
+  /* weight-800-over-900 law (W3 fidelity-audit conflict 5): build follows
+     the README, not the pre-Blaze retheme's 900 guess. */
+  font-weight: var(--weight-black);
+  font-size: 30px;
+  letter-spacing: 0.24em;
+
+  /* D2's stacked-lockup optical centering — the wordmark's own left
+     letter-spacing needs a matching left inset or it reads off-center
+     under the mark above it. */
+  padding-left: 0.24em;
+  text-transform: uppercase;
+  color: var(--color-text);
+}
+
+.tagline {
+  font-family: var(--font-mono);
+  font-size: var(--mono-lg);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--color-text-subtle);
+  margin-bottom: var(--space-2xl);
+  text-align: center;
+}
+
+/* Pill / SWITCH / server-input styling lives in ServerIndicator.module.css
+   (that component is its own file so it can be jsdom-tested without a
+   router/auth-store — see its header). */
+.serverRow {
+  margin-bottom: var(--space-2xl);
+  display: flex;
+  justify-content: center;
+  width: 100%;
+}
+
+.form {
+  width: 100%;
+  max-width: 340px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.formHeading {
+  font-family: var(--font-mono);
+  font-size: var(--mono-md);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--color-text-subtle);
+  text-align: center;
+  margin-bottom: var(--space-2xs);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2xs);
+}
+
+.label {
+  font-family: var(--font-mono);
+  font-size: var(--mono-sm);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-text-subtle);
+}
+
+.error {
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--color-danger) 12%, transparent);
+  color: var(--color-danger);
+  padding: var(--space-sm);
+  font-size: var(--text-sm);
+}
+
+.submit {
+  width: 100%;
+  min-height: 48px;
+  font-size: var(--text-base);
+  margin-top: var(--space-2xs);
+}
+
+.footnote {
+  font-family: var(--font-mono);
+  font-size: var(--mono-xs);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--color-text-hint);
+  text-align: center;
+  margin-top: var(--space-sm);
+}
+
+@media (width <= 767.98px) {
+  .wordmark {
+    font-size: 24px;
+  }
+
+  .tagline {
+    font-size: var(--mono-md);
+    margin-bottom: var(--space-xl);
+  }
+
+  .serverRow {
+    margin-bottom: var(--space-xl);
+  }
+}

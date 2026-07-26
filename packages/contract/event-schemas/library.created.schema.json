@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://loombre.com/schemas/events/library.created.schema.json",
+  "title": "LibraryCreatedPayload",
+  "description": "Payload for envelope.type === 'library.created'. Emitted when a new libraries row is created via the admin library-management API (docs/PLAN.md §6.1).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["libraryId", "name", "mediaKind", "contentClass", "createdAtMs"],
+  "properties": {
+    "libraryId": { "type": "string", "format": "uuid" },
+    "name": { "type": "string" },
+    "mediaKind": { "type": "string", "enum": ["movie", "tv", "music"] },
+    "contentClass": { "type": "string", "enum": ["general", "restricted"] },
+    "createdAtMs": { "type": "integer", "minimum": 0 }
+  }
+}

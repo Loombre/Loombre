@@ -1,0 +1,61 @@
+name: transcode — a low-bitrate 2160p source drops the two highest ladder rungs by bitrate alone
+why: >
+  §7 construction rule (b) ("never exceed source bitrate") isolated: source height is 2160p (rule (a) drops nothing), but its bitrate (5Mbps) is far below the 2160p (16Mbps) and 1080p/8Mbps rungs, so both are dropped purely on bitrate grounds — the 1080p/4Mbps rung survives (4M <= 5M). Driven via Stage B's interlaced reason (network/device generous) so Stage F contributes no reason, isolating rule (b) alone. why (Phase 3 §11 step 3, Stage G arrival, STATE.md P3.2 regression law): this case's caps fixture has no hardware backend covering this route, so Stage G now routes full software (`software-fallback:encode`); tier 0 + a >=1080p selected source additionally trips the tier cap, narrowing the surviving ladder to <=480p rungs (`software-fallback:tier-capped`). expect.ladder is tightened accordingly to the now-tier-capped surviving rungs.
+
+input:
+  media:
+    fileId: file-0348
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 3750000000
+    overallBitrateBps: 5000000
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 52
+        width: 3840
+        height: 2160
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 5000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: true
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 160000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device: { fixture: devices.web-chrome }
+  network: { fixture: networks.local }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.software-only }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+
+expect:
+  decision: transcode
+  reasons:
+    - video-interlaced
+    - software-fallback:encode
+    - software-fallback:tier-capped
+  container: fmp4-hls
+  ladder:
+    - heightPx: 480
+      videoBitrateBps: 1500000
+      audioBitrateBps: 160000
+      codec: h264
+    - heightPx: 360
+      videoBitrateBps: 800000
+      audioBitrateBps: 160000
+      codec: h264

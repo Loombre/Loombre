@@ -1,0 +1,51 @@
+name: transcode — overall ONE bps over the device cap fires (companion to 373's exact-equal pass)
+why: >
+  The other side of 373's boundary: overall (500,001) is one bps ABOVE bitrate-capped-device's cap (500,000) — withinDeviceCap is now false, so even with isLocal true the unless-clause fails and bitrate-exceeds-network fires. Network cap (100,000, isLocal true) is the same shape as 373's. why (Phase 3 §11 step 3, Stage G arrival, STATE.md P3.2 regression law): this case's caps fixture has no hardware backend covering this route, so Stage G now routes full software (`software-fallback:encode`).
+
+input:
+  media:
+    fileId: file-0382
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 375000750
+    overallBitrateBps: 500001
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 41
+        width: 1920
+        height: 1080
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 450000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 48000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device: { fixture: devices.bitrate-capped-device }
+  network: { maxBitrateBps: 100000, isLocal: true }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.software-only }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+
+expect:
+  decision: transcode
+  reasons:
+    - bitrate-exceeds-network
+    - software-fallback:encode
+  container: fmp4-hls

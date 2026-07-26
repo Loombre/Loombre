@@ -1,0 +1,52 @@
+name: 'direct-play — mobile-placeholder × wan-4mbps × t0-default: 1080p h264 + opus stereo at 3.9M under
+  the 4M cap'
+why: 'mobile-placeholder × wan-4mbps grid combo: 3.9M ≤ 4M (strictly-greater fires, boundary respected),
+  opus 2ch within the mobile stereo cap.'
+input:
+  media:
+    fileId: file-485
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 2925000000
+    overallBitrateBps: 3900000
+    video:
+    - index: 0
+      codec: h264
+      profile: high
+      level: 41
+      width: 1920
+      height: 1080
+      bitDepth: 8
+      frameRate: 29.97
+      bitrateBps: 3500000
+      hdr: none
+      dvProfile: null
+      dvBlCompatId: null
+      interlaced: false
+    audio:
+    - index: 1
+      codec: opus
+      channels: 2
+      sampleRate: 48000
+      bitrateBps: 128000
+      language: eng
+      isDefault: true
+      hasAtmos: false
+    subtitle: []
+  device:
+    fixture: devices.mobile-placeholder
+  network:
+    fixture: networks.wan-4mbps
+  policy:
+    fixture: policies.t0-default
+  caps:
+    fixture: caps.software-only
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: direct-play
+  reasons: []
+  container: source

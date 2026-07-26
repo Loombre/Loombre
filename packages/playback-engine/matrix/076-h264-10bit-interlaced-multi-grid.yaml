@@ -1,0 +1,53 @@
+name: "transcode — h264 10-bit INTERLACED vs constrained-tv (Stage B grid 4/20: rule 1 + rule 3 bitDepth multi-reason)"
+why: "Same pairing as case 075 with interlaced:true added: rule 1 (interlaced) and rule 3 (bitDepth) both fire, in stage-order (interlaced first, per docs/PLAYBACK.md §4 'ordered by stage, then axis' and the seed-002/007 rule interaction). why (Phase 3 §11 step 3, Stage G arrival, STATE.md P3.2 regression law): this case's caps fixture has no hardware backend covering this route, so Stage G now routes full software (`software-fallback:encode`); tier 0 + a >=1080p selected source additionally trips the tier cap, narrowing the surviving ladder to <=480p rungs (`software-fallback:tier-capped`).\n"
+input:
+  media:
+    fileId: file-076
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 5000000000
+    overallBitrateBps: 5160000
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 35
+        width: 1920
+        height: 1080
+        bitDepth: 10
+        frameRate: 25
+        bitrateBps: 5000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: true
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 160000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device:
+    fixture: devices.constrained-tv
+  network:
+    fixture: networks.local
+  policy:
+    fixture: policies.t0-default
+  caps:
+    fixture: caps.software-only
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: transcode
+  reasons:
+    - video-interlaced
+    - video-bitdepth-unsupported
+    - software-fallback:encode
+    - software-fallback:tier-capped

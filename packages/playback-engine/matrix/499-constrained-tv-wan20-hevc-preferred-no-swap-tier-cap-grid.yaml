@@ -1,0 +1,65 @@
+name: 'transcode — constrained-tv × wan-20mbps × hevc-preferred: hevc source unsupported; the preferred
+  swap NEVER applies (no device hevc entry) and the T0 software route tier-caps the 1080p ladder'
+why: 'Grid combo (constrained-tv × wan-20mbps × hevc-preferred × software-only): hevcEncodePreferred:true
+  is inert without a device hevc entry (case 355''s rule) so every rung stays h264 at x1.0 bitrate; the
+  8M stream keeps 1080p/8M, then tier 0 + 1080p source + rule-(iii) route trims to the ≤480 pair with
+  tier-capped fired. Deliberate future-proof exception: hevc outside constrained-tv''s caps (the driver).'
+input:
+  media:
+    fileId: file-499
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 6300000000
+    overallBitrateBps: 8400000
+    video:
+    - index: 0
+      codec: hevc
+      profile: main
+      level: 120
+      width: 1920
+      height: 1080
+      bitDepth: 8
+      frameRate: 24
+      bitrateBps: 8000000
+      hdr: none
+      dvProfile: null
+      dvBlCompatId: null
+      interlaced: false
+    audio:
+    - index: 1
+      codec: aac
+      channels: 2
+      sampleRate: 48000
+      bitrateBps: 128000
+      language: eng
+      isDefault: true
+      hasAtmos: false
+    subtitle: []
+  device:
+    fixture: devices.constrained-tv
+  network:
+    fixture: networks.wan-20mbps
+  policy:
+    fixture: policies.hevc-preferred
+  caps:
+    fixture: caps.software-only
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: transcode
+  reasons:
+  - video-codec-unsupported
+  - software-fallback:encode
+  - software-fallback:tier-capped
+  ladder:
+  - heightPx: 480
+    videoBitrateBps: 1500000
+    audioBitrateBps: 160000
+    codec: h264
+  - heightPx: 360
+    videoBitrateBps: 800000
+    audioBitrateBps: 160000
+    codec: h264

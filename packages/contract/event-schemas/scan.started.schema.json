@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://loombre.com/schemas/events/scan.started.schema.json",
+  "title": "ScanStartedPayload",
+  "description": "Payload for envelope.type === 'scan.started'. Emitted when a library scan job (docs/PLAN.md §8.1) transitions to active, before any items are processed. Paired with scan.completed for the same jobId.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["jobId", "libraryId", "full", "startedAtMs"],
+  "properties": {
+    "jobId": { "type": "string", "format": "uuid" },
+    "libraryId": { "type": "string", "format": "uuid" },
+    "full": { "type": "boolean" },
+    "startedAtMs": { "type": "integer", "minimum": 0 }
+  }
+}

@@ -1,0 +1,40 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  max-width: 640px;
+}
+
+.heading {
+  margin: 0;
+  font-size: var(--text-xl);
+  font-weight: var(--weight-semibold);
+}
+
+.helpText {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--muted);
+  line-height: var(--leading-normal);
+}
+
+.errorText {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--color-danger);
+}
+
+.advancedLink {
+  align-self: flex-start;
+  font-family: var(--font-mono);
+  font-size: var(--mono-lg);
+  letter-spacing: var(--track-mono);
+  text-transform: uppercase;
+  color: var(--color-accent);
+  text-decoration: none; /* UA anchor underline — H9 regression (W0's fix was .navItem-scoped only); this is nav-like mono-label chrome, not body copy */
+}
+
+.advancedLink:hover {
+  color: var(--color-accent-hover);
+}

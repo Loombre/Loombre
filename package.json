@@ -1,0 +1,50 @@
+{
+  "name": "loombre",
+  "version": "0.9.0",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "packageManager": "pnpm@11.17.0",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "dev": "docker compose -f docker-compose.dev.yml up -d && turbo run dev",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "test:matrix": "pnpm --filter @loombre/playback-engine run test:matrix",
+    "perf:t0": "node scripts/perf-t0.mjs",
+    "perf:web-budget": "node scripts/perf-web-budget.mjs",
+    "perf:lighthouse": "pnpm --filter @loombre/web run lighthouse",
+    "perf:baseline-check": "node scripts/perf-baseline-check.mjs",
+    "db:migrate": "pnpm --filter @loombre/db run db:migrate",
+    "db:reset": "pnpm --filter @loombre/db run db:reset",
+    "db:seed": "pnpm --filter @loombre/db run db:seed",
+    "db:seed-large": "pnpm --filter @loombre/db run db:seed-large",
+    "db:migrate-check": "pnpm --filter @loombre/db run db:migrate-check",
+    "lpp:conform": "pnpm --filter @loombre/plugin-protocol run conform",
+    "grep-gates": "node scripts/grep-gates.mjs",
+    "docs:build": "node scripts/docs/build.mjs",
+    "docs:dev": "vitepress dev docs --port 4750",
+    "docs:register-lint": "node scripts/docs/register-lint.mjs",
+    "gate": "node scripts/gate.mjs",
+    "stamp-version": "node scripts/release/stamp-version.mjs",
+    "embed-public-key": "node scripts/release/embed-public-key.mjs",
+    "release:test": "node --test \"scripts/release/test/**/*.test.mjs\"",
+    "scripts:test": "node --test \"scripts/*.test.mjs\" \"scripts/release/test/**/*.test.mjs\""
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@loombre/db": "workspace:*",
+    "dependency-cruiser": "18.1.0",
+    "eslint": "10.8.0",
+    "license-checker-rseidelsohn": "5.0.1",
+    "tsx": "4.23.1",
+    "turbo": "2.10.7",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.65.0",
+    "vitepress": "^1.6.4",
+    "vitest": "4.1.10"
+  }
+}

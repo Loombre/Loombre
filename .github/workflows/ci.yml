@@ -1,0 +1,468 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  # Manual trigger (see the billed-minutes note on the gate job). The os
+  # input allows validating a single expensive leg (windows 2x, macos 10x)
+  # without paying for the whole matrix.
+  workflow_dispatch:
+    inputs:
+      os:
+        description: "Gate matrix legs to run"
+        type: choice
+        default: all
+        options: [all, ubuntu, ubuntu-windows, ubuntu-macos]
+
+env:
+  # D18: dev-compose Postgres binds host port 5442 by default; CI mirrors
+  # that so local + CI configs never drift.
+  PGHOST: 127.0.0.1
+  PGPORT: "5442"
+  PGUSER: loombre
+  PGPASSWORD: loombre
+  PGDATABASE: loombre
+  DATABASE_URL: postgres://loombre:loombre@127.0.0.1:5442/loombre
+  # Pinned oasdiff release (CLAUDE.md gate step "oasdiff") — keep in sync
+  # across all three per-OS install steps below.
+  OASDIFF_VERSION: "1.26.0"
+
+jobs:
+  gate:
+    name: gate (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      # BILLED-MINUTES ECONOMY (private repo, 2000 min/month; macOS bills 10x
+      # and Windows 2x — one full 3-OS push costs ~130+ billed minutes):
+      # ordinary pushes run ubuntu only; the Windows/macOS legs run when the
+      # commit message carries [full-ci] or the workflow is dispatched
+      # manually. macOS is additionally covered by real-hardware runs on
+      # owner hardware; use [full-ci] at phase
+      # boundaries and before releases, not per-commit.
+      # NOTE: this MUST live in strategy.matrix (github context available),
+      # not a job-level `if` (matrix context is NOT available there — a
+      # matrix.os reference kills the whole workflow file at parse time,
+      # zero jobs created; bitten once at 30095735973).
+      matrix:
+        os: ${{ github.event_name == 'workflow_dispatch' && ((inputs.os == 'ubuntu' && fromJSON('["ubuntu-latest"]')) || (inputs.os == 'ubuntu-windows' && fromJSON('["ubuntu-latest", "windows-latest"]')) || (inputs.os == 'ubuntu-macos' && fromJSON('["ubuntu-latest", "macos-latest"]')) || fromJSON('["ubuntu-latest", "windows-latest", "macos-latest"]')) || (contains(github.event.head_commit.message, '[full-ci]') && fromJSON('["ubuntu-latest", "windows-latest", "macos-latest"]') || fromJSON('["ubuntu-latest"]')) }}
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # oasdiff (gate step) diffs the current contract against `main` —
+          # needs full history, not just the tip commit.
+          fetch-depth: 0
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+        # No explicit version: reads the "packageManager" field in
+        # package.json so every OS installs the exact same pinned pnpm.
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install oasdiff (ubuntu)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -sSL -o oasdiff.tar.gz \
+            "https://github.com/oasdiff/oasdiff/releases/download/v${OASDIFF_VERSION}/oasdiff_${OASDIFF_VERSION}_linux_amd64.tar.gz"
+          tar -xzf oasdiff.tar.gz oasdiff
+          chmod +x oasdiff
+          sudo mv oasdiff /usr/local/bin/oasdiff
+          rm -f oasdiff.tar.gz
+          oasdiff --version
+
+      - name: Install oasdiff (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsSL -o oasdiff.tar.gz \
+            "https://github.com/oasdiff/oasdiff/releases/download/v${OASDIFF_VERSION}/oasdiff_${OASDIFF_VERSION}_darwin_all.tar.gz"
+          tar -xzf oasdiff.tar.gz oasdiff
+          chmod +x oasdiff
+          sudo mv oasdiff /usr/local/bin/oasdiff
+          rm -f oasdiff.tar.gz
+          oasdiff --version
+
+      - name: Install oasdiff (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -sSL -o oasdiff.tar.gz \
+            "https://github.com/oasdiff/oasdiff/releases/download/v${OASDIFF_VERSION}/oasdiff_${OASDIFF_VERSION}_windows_amd64.tar.gz"
+          tar -xzf oasdiff.tar.gz oasdiff.exe
+          mkdir -p "${RUNNER_TEMP}/oasdiff-bin"
+          mv oasdiff.exe "${RUNNER_TEMP}/oasdiff-bin/oasdiff.exe"
+          rm -f oasdiff.tar.gz
+          echo "${RUNNER_TEMP}/oasdiff-bin" >> "$GITHUB_PATH"
+
+      - name: Set up Postgres 18 (D18 — port 5442)
+        id: postgres
+        uses: ikalnytskyi/action-setup-postgres@c4dda34aae1c821e3a771b68b73b13af3198a7ee # v8
+        with:
+          username: loombre
+          password: loombre
+          database: loombre
+          port: "5442"
+          postgres-version: "18"
+
+      - name: Migrate + seed database
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm db:migrate
+          pnpm db:seed
+
+      # Phase 3 step 7 finding: ffmpeg was NEVER installed on runners, so
+      # every ffmpeg-gated suite (probe/session/subtitle/battery
+      # integration) silently describe.skipIf-skipped on all 3 OSes while
+      # the Phase 3 exit gate requires "session integration green on 3 OS
+      # runners". Installed via each OS's package manager (current stable;
+      # full pinned/vendored bundling remains Phase 4 packaging per P3.5 —
+      # any version skew surfaces as probe self-test differences by design).
+      # LOOMBRE_REQUIRE_FFMPEG=1 (job step env below) makes an unresolvable
+      # ffmpeg a HARD test failure instead of a skip, so a runner
+      # misconfiguration can never masquerade as green again.
+      - name: Install ffmpeg (ubuntu)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - name: Install ffmpeg (macOS)
+        if: runner.os == 'macOS'
+        run: brew install ffmpeg
+      - name: Install ffmpeg (Windows)
+        if: runner.os == 'Windows'
+        run: choco install ffmpeg -y --no-progress
+
+      - name: Generate media fixtures (lavfi — scripts/gen-media-fixtures.mjs)
+        shell: bash
+        run: node scripts/gen-media-fixtures.mjs
+
+      - name: dep-audit — pnpm audit --prod, gated against audit-allowlist.json (STATE.md P4.15)
+        if: runner.os == 'Linux'
+        shell: bash
+        # ubuntu-only: dependency advisories are resolved from the ONE
+        # shared pnpm-lock.yaml, not platform-specific — running this on
+        # all 3 OS legs would just triple the npm-registry audit calls for
+        # an identical result (same reasoning as the pubkey-consistency
+        # step below). `pnpm gate` (next step) ALSO runs this exact check
+        # internally (scripts/gate.mjs's own dep-audit step, right after
+        # license-check) — this standalone step exists so a vulnerable/
+        # unallowlisted dependency fails FAST and with its own clearly-
+        # labeled red X in the Actions UI, rather than waiting through the
+        # entire gate run to discover it buried in that step's log.
+        run: node scripts/dep-audit.mjs
+
+      - name: pnpm gate
+        env:
+          LOOMBRE_REQUIRE_FFMPEG: "1"
+          # 3-core virtualized runners miss the integration suites'
+          # real-hardware-calibrated deadlines; scale patience, not
+          # assertions (session.integration.spec.ts). macos-latest is the
+          # slowest observed by far (first paced segment >60s vs ~2s on
+          # real hardware) — it gets 10x.
+          LOOMBRE_TEST_TIME_SCALE: ${{ runner.os == 'macOS' && '10' || '3' }}
+        run: pnpm gate
+
+      # scripts/ is not a pnpm workspace, so turbo-run tests never reach
+      # these suites (fetch-ffmpeg, fetch-embedded-pg, dep-audit, release
+      # tooling) — run them explicitly.
+      - name: scripts + release tooling tests
+        run: pnpm scripts:test
+
+      - name: pubkey three-location consistency (P4.9)
+        if: runner.os == 'Linux'
+        shell: bash
+        # The minisign public key must be byte-identical across its three
+        # published locations (repo keys/minisign.pub, docs/install, release
+        # notes template) so a key-substitution attack requires compromising
+        # all of them. release.yml runs this too; running it here means a PR
+        # touching any location fails fast, not at tag time. ubuntu-only:
+        # the check is platform-independent text comparison.
+        run: node scripts/release/check-pubkey-consistency.mjs
+
+      - name: scan smoke — 500-file generated library (Phase 1 wave 4)
+        shell: bash
+        # Cross-OS scan correctness: unicode names, mixed-case extensions,
+        # editions/multi-part, ~230-char deep paths, junk classification,
+        # idempotent rescan. Correctness (not perf) — hard-fails on any
+        # mismatch. See scripts/scan-smoke.mjs.
+        run: node scripts/scan-smoke.mjs
+
+      - name: playback matrix burn-up (docs/PLAYBACK.md §11 step 1, STATE.md P3.9d)
+        shell: bash
+        # matrix/burnup.json is now the single source of truth for each
+        # case's expected status (green|red) — matrix.spec.ts asserts every
+        # case's ACTUAL status (does plan() throw NotImplementedError, or
+        # does it match the case's full expect block?) against the
+        # manifest, and hard-fails on any decision/reasons mismatch or
+        # non-NotImplementedError throw regardless of the manifest. A plain
+        # `pnpm test:matrix` is therefore meaningfully green today (0 green
+        # / 10 red / 10 total) AND stays meaningful as stages land — no
+        # more inverted expected-failure step to swap out later.
+        run: pnpm test:matrix
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # gate-node-next (N1/N2 runtime policy, supported-latest sweep 2026-07-25):
+  # the full gate on the CURRENT (non-LTS) Node line, NON-BLOCKING by
+  # design — its job is to accumulate months of green (or red-with-
+  # evidence) history so the October-2026 Node 26 LTS switch is a routine
+  # Renovate PR, not a project. continue-on-error keeps a red run from
+  # failing the workflow; push-to-main only (not PRs) per the billed-
+  # minutes economy above — ubuntu only, ~one extra gate run per batched
+  # push. When Node 26 goes LTS and the pins move to it, point this job at
+  # the next Current line (27) per the standing N2 policy.
+  # ─────────────────────────────────────────────────────────────────────────
+  gate-node-next:
+    name: gate (ubuntu, node-current 26, non-blocking)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    continue-on-error: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+
+      - name: Set up Node.js (Current line)
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "26"
+          cache: pnpm
+
+      - name: Install dependencies
+        # --engine-strict=false: root engines pins the SHIPPING floor
+        # (>=24); this evidence lane deliberately runs ahead of it.
+        run: pnpm install --frozen-lockfile --config.engine-strict=false
+
+      - name: Install oasdiff
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -sSL -o oasdiff.tar.gz \
+            "https://github.com/oasdiff/oasdiff/releases/download/v${OASDIFF_VERSION}/oasdiff_${OASDIFF_VERSION}_linux_amd64.tar.gz"
+          tar -xzf oasdiff.tar.gz oasdiff
+          chmod +x oasdiff
+          sudo mv oasdiff /usr/local/bin/oasdiff
+          rm -f oasdiff.tar.gz
+
+      - name: Set up Postgres 18 (D18 — port 5442)
+        uses: ikalnytskyi/action-setup-postgres@c4dda34aae1c821e3a771b68b73b13af3198a7ee # v8
+        with:
+          username: loombre
+          password: loombre
+          database: loombre
+          port: "5442"
+          postgres-version: "18"
+
+      - name: Migrate + seed database
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm db:migrate
+          pnpm db:seed
+
+      - name: Install ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
+      - name: Generate media fixtures
+        shell: bash
+        run: node scripts/gen-media-fixtures.mjs
+
+      - name: pnpm gate
+        env:
+          LOOMBRE_REQUIRE_FFMPEG: "1"
+          LOOMBRE_TEST_TIME_SCALE: "3"
+        run: pnpm gate
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Perf jobs (STATE.md P2.6, docs/PLAN.md §9, D15): ENFORCING from Phase 2.
+  # These are separate required jobs (not folded into `pnpm gate`, which is
+  # a CLAUDE.md-documented step list owned by a different concurrent work
+  # stream) but are just as blocking — a red perf job fails the PR the same
+  # as a red gate job. ubuntu-only: perf numbers are hardware/OS-sensitive
+  # enough that a 3-OS matrix here would mostly measure runner noise, not
+  # real regressions, at 3x the cost.
+  # ─────────────────────────────────────────────────────────────────────────
+
+  perf-t0:
+    name: perf-t0 (ubuntu, enforcing)
+    runs-on: ubuntu-latest
+    # D15: Tier-0 perf budgets flip from warn-only (Phase 0/1) to ENFORCING
+    # in Phase 2 — no continue-on-error, this job blocks merges.
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # scripts/perf-baseline-check.mjs diffs perf/baselines.json
+          # against `main` — needs full history, not just the tip commit.
+          fetch-depth: 0
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Set up Postgres 18 (D18 — port 5442)
+        id: postgres
+        uses: ikalnytskyi/action-setup-postgres@c4dda34aae1c821e3a771b68b73b13af3198a7ee # v8
+        with:
+          username: loombre
+          password: loombre
+          database: loombre
+          port: "5442"
+          postgres-version: "18"
+
+      - name: Migrate + seed database (base + 50k-item large library)
+        shell: bash
+        # db:seed-large is additive on top of db:seed (needs the admin/
+        # casual users it creates) — see packages/db/seed/seed-large.mjs's
+        # own header. ~7s for 50k movies.
+        run: |
+          set -euo pipefail
+          pnpm db:migrate
+          pnpm db:seed
+          pnpm db:seed-large
+
+      - name: Build server
+        # The "..." selector builds @loombre/server AND its workspace
+        # dependencies (in dependency order) — @loombre/shared/sdk/jobs are
+        # dist-based (their package.json exports point at ./dist), so
+        # server's emit build needs their .d.ts built first. Building server
+        # alone fails to resolve @loombre/shared on a fresh checkout.
+        run: pnpm --filter "@loombre/server..." run build
+
+      - name: Run T0 perf harness (ENFORCING — nonzero exit on any budget breach)
+        run: pnpm perf:t0
+
+      - name: Check perf/baselines.json changes carry a reason
+        run: pnpm perf:baseline-check
+
+      - name: Upload perf baseline artifact
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: t0-baseline-${{ github.run_id }}
+          path: perf/t0-baseline.json
+          if-no-files-found: warn
+
+  perf-web-budget:
+    name: perf-web-budget (ubuntu, enforcing)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Web bundle budget — /browse first-load JS <= 200 KB gz (ENFORCING)
+        # Builds apps/web itself (see scripts/perf-web-budget.mjs).
+        run: pnpm perf:web-budget
+
+      - name: Upload bundle budget result artifact
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: web-budget-result-${{ github.run_id }}
+          path: perf/web-budget-result.json
+          if-no-files-found: warn
+
+  perf-lighthouse:
+    name: perf-lighthouse (ubuntu, enforcing)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Set up Postgres 18 (D18 — port 5442)
+        id: postgres
+        uses: ikalnytskyi/action-setup-postgres@c4dda34aae1c821e3a771b68b73b13af3198a7ee # v8
+        with:
+          username: loombre
+          password: loombre
+          database: loombre
+          port: "5442"
+          postgres-version: "18"
+
+      - name: Migrate + seed database
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm db:migrate
+          pnpm db:seed
+
+      - name: Build + start API server (parity with a real deployment — see apps/web/lighthouserc.cjs for why /login itself doesn't call it yet)
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm --filter "@loombre/server..." run build
+          NODE_OPTIONS="--import tsx" PORT=3001 DATABASE_URL="$DATABASE_URL" \
+            node apps/server/dist/main.js > server.log 2>&1 &
+          echo $! > server.pid
+          for _ in $(seq 1 30); do
+            curl -sf http://127.0.0.1:3001/healthz && break
+            sleep 1
+          done
+          curl -sf http://127.0.0.1:3001/healthz || (cat server.log && exit 1)
+
+      - name: Build apps/web
+        run: pnpm --filter @loombre/web run build
+
+      - name: Lighthouse — /login performance >= 0.90, throttled mobile (ENFORCING)
+        run: pnpm perf:lighthouse
+
+      - name: Stop API server
+        if: always()
+        shell: bash
+        run: kill "$(cat server.pid)" 2>/dev/null || true
+
+      - name: Upload Lighthouse reports artifact
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: lighthouse-reports-${{ github.run_id }}
+          path: apps/web/.lighthouseci/
+          if-no-files-found: warn

@@ -1,0 +1,96 @@
+#!/bin/sh
+# Loombre :: installers/macos/pkg/scripts/postinstall
+#
+# Runs after the payload is laid down (pkgbuild --install-location /).
+# 1. Creates the `_loombre` system service account + group if absent
+#    (idempotent — a `dscl . -read` existence check first).
+# 2. Creates/repairs ownership+mode on the app-data and log directories
+#    (installers/macos/LAYOUT.md is the authoritative table).
+# 3. Seeds config/loombre.env once (never overwritten on upgrade — an
+#    operator's DATABASE_URL edits must survive a `pkg` upgrade).
+# 4. Marks the bin/ shims + fetched runtime binaries executable (pkgbuild
+#    payload permissions can be lossy across some staging tools; this is
+#    belt-and-suspenders, cheap and idempotent).
+# 5. Bootstraps (loads) both LaunchDaemons so the service is live
+#    immediately, without requiring a reboot.
+#
+# Runs as root (Installer.app / `installer(8)` always run scripts as root).
+set -eu
+
+APP_SUPPORT="/Library/Application Support/Loombre"
+LOG_DIR="/Library/Logs/Loombre"
+OPT_DIR="/opt/loombre"
+
+# --- 1. service account -----------------------------------------------
+if ! dscl . -read /Users/_loombre >/dev/null 2>&1; then
+  echo "loombre postinstall: creating _loombre service account"
+  # Standard macOS "hidden system account" recipe (same shape as _postgres,
+  # _www): UniqueID in the system range, no login shell, no real home dir.
+  NEXT_UID=$(dscl . -list /Users UniqueID | awk '{print $2}' | awk '$1<500 && $1>200 {print}' | sort -n | tail -1)
+  NEXT_UID=${NEXT_UID:-200}
+  NEXT_UID=$((NEXT_UID + 1))
+
+  dscl . -create /Users/_loombre
+  dscl . -create /Users/_loombre UserShell /usr/bin/false
+  dscl . -create /Users/_loombre RealName "Loombre Service Account"
+  dscl . -create /Users/_loombre UniqueID "$NEXT_UID"
+  dscl . -create /Users/_loombre PrimaryGroupID "$NEXT_UID"
+  dscl . -create /Users/_loombre NFSHomeDirectory /var/empty
+  dscl . -create /Groups/_loombre PrimaryGroupID "$NEXT_UID"
+  dscl . -create /Groups/_loombre RealName "Loombre Service Group"
+  dscl . -appendo /Groups/_loombre GroupMembership _loombre 2>/dev/null || true
+  # IsHidden keeps the account off the login window / Users & Groups list.
+  dscl . -create /Users/_loombre IsHidden 1
+else
+  echo "loombre postinstall: _loombre service account already exists"
+fi
+
+# --- 2. directories ------------------------------------------------------
+mkdir -p "$APP_SUPPORT/db" "$APP_SUPPORT/config" "$APP_SUPPORT/secrets" "$APP_SUPPORT/ipc"
+mkdir -p "$LOG_DIR"
+
+chown -R _loombre:_loombre "$APP_SUPPORT"
+chmod 0750 "$APP_SUPPORT"
+chmod 0750 "$APP_SUPPORT/db" "$APP_SUPPORT/ipc" "$APP_SUPPORT/config"
+chmod 0700 "$APP_SUPPORT/secrets"
+
+chown -R _loombre:_loombre "$LOG_DIR"
+chmod 0755 "$LOG_DIR"
+
+chown -R root:wheel "$OPT_DIR"
+
+# --- 3. config seed (create-once, never clobber on upgrade) -------------
+CONFIG_ENV="$APP_SUPPORT/config/loombre.env"
+if [ ! -f "$CONFIG_ENV" ]; then
+  cat > "$CONFIG_ENV" <<'EOF'
+# Loombre server/worker environment overrides.
+# Sourced by /opt/loombre/current/bin/loombre-{server,worker} at every start.
+# This file is created once at install time and NEVER touched by upgrades —
+# edits here survive `pkg` reinstalls/upgrades.
+#
+# Uncomment and edit to point at your own PostgreSQL instance
+# (D1: "external Postgres via one env var" is a first-class, equally
+# tested path — see docs/install/macos.md):
+#
+#   DATABASE_URL=postgres://loombre:yourpassword@127.0.0.1:5432/loombre
+#
+# PORT=3001
+EOF
+  chown _loombre:_loombre "$CONFIG_ENV"
+  chmod 0640 "$CONFIG_ENV"
+fi
+
+# --- 4. executable bits ---------------------------------------------------
+chmod 0755 "$OPT_DIR/current/bin/loombre-server" "$OPT_DIR/current/bin/loombre-worker" 2>/dev/null || true
+chmod 0755 "$OPT_DIR/current/runtime/node/bin/node" 2>/dev/null || true
+chmod 0755 "$OPT_DIR/current/runtime/ffmpeg/ffmpeg" "$OPT_DIR/current/runtime/ffmpeg/ffprobe" 2>/dev/null || true
+
+# --- 5. load the daemons ---------------------------------------------------
+for PLIST in /Library/LaunchDaemons/com.loombre.server.plist /Library/LaunchDaemons/com.loombre.worker.plist; do
+  if [ -f "$PLIST" ]; then
+    echo "loombre postinstall: bootstrapping $PLIST"
+    launchctl bootstrap system "$PLIST" 2>&1 || echo "loombre postinstall: WARNING bootstrap failed for $PLIST (may already be loaded)"
+  fi
+done
+
+exit 0

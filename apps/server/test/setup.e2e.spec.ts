@@ -1,0 +1,302 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Loombre :: apps/server/test/setup.e2e.spec.ts
+//
+// HTTP-level end-to-end coverage for GET /setup/state + POST
+// /setup/first-admin (STATE.md P4.6/P4.10, lane C). Self-sufficient (own
+// ensureTestDatabase suffix, own reset — deliberately WITHOUT seed.mjs: the
+// whole point of this file is a genuinely empty `users` table, a fresh
+// install's real starting condition), same convention as
+// libraries.e2e.spec.ts/admin-sessions.e2e.spec.ts.
+//
+// Covers the task spec directly:
+//   1. Empty-DB happy path: state true -> create -> 201 with real tokens
+//      that work on an authenticated call -> state false -> second create
+//      404.
+//   2. Race safety: many concurrent POST /setup/first-admin calls against
+//      an empty table yield exactly one 201, everyone else 404 (HTTP-level
+//      corroboration of packages/db/test/setup-first-admin.spec.ts's
+//      lower-level proof).
+//   3. Byte-identical 404: the post-populated 404 body is compared, byte
+//      for byte, against a real hit on NotFoundController's `*splat`
+//      catch-all (apps/server/src/gateway/not-found.controller.ts) — not
+//      just schema-shape-valid, the literal same JSON.
+//   4. Client-side validation floor (422s) mirroring FirstAdminRequest's
+//      contract minimums (username/email/password required, password
+//      minLength 8).
+//
+// Rate limiting (STATE.md P4.15): NOT covered here — see
+// apps/server/src/setup/setup.controller.ts's TODO(G1-limiter). G1 owns
+// the reusable limiter this wave; this suite intentionally does not stand
+// up a parallel one just to test it.
+
+import "reflect-metadata";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { spawnSync } from "node:child_process";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import request from "supertest";
+import { NestFactory } from "@nestjs/core";
+import type { INestApplication } from "@nestjs/common";
+import { ensureTestDatabase } from "@loombre/db";
+import { AppModule } from "../src/app.module.js";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const DB_PKG_ROOT = path.resolve(__dirname, "../../../packages/db");
+const BASE_DATABASE_URL = process.env["DATABASE_URL"] ?? "postgres://loombre:loombre@localhost:5442/loombre";
+
+function run(script: string, args: string[], databaseUrl: string) {
+  const result = spawnSync(process.execPath, [script, ...args], {
+    cwd: DB_PKG_ROOT,
+    env: { ...process.env, DATABASE_URL: databaseUrl },
+    encoding: "utf8",
+  });
+  if (result.status !== 0) {
+    throw new Error(`${script} ${args.join(" ")} failed (exit ${result.status}):\n${result.stdout}\n${result.stderr}`);
+  }
+  return result.stdout;
+}
+
+let app: INestApplication;
+let databaseUrl: string;
+
+beforeAll(async () => {
+  process.env["LOOMBRE_JWT_SECRET"] = "setup-e2e-test-secret-not-for-production";
+  // Both setup routes carry the per-IP "setup" rate limiter (P4.15 /
+  // security-review M1). These functional + race tests all originate from
+  // one loopback IP and fire many requests (incl. 10 concurrent in the race
+  // test), so an effectively-unlimited ceiling keeps the limiter from
+  // interfering with what they DO test — the dedicated "rate limiting"
+  // describe at the bottom boots its own app with a low ceiling and proves
+  // the 429 fires.
+  process.env["LOOMBRE_RATE_SETUP"] = "100000";
+  databaseUrl = await ensureTestDatabase(BASE_DATABASE_URL, "setup_e2e_test");
+  process.env["DATABASE_URL"] = databaseUrl;
+
+  // STATE.md Addendum A (lane S2): the schema must exist BEFORE the first
+  // app.init() now — AppModule wires SettingsModule, whose SettingsService
+  // reads server_settings from OnApplicationBootstrap (fires exactly once,
+  // during this app.init() call). Every OTHER e2e suite already migrates
+  // before booting; this file previously only reset in beforeEach (AFTER
+  // the one-time app.init() below), which happened to be harmless before
+  // any service queried the DB at boot time. resetEmpty() below still runs
+  // before every individual test, unaffected.
+  run(path.join(DB_PKG_ROOT, "scripts", "migrate.mjs"), ["reset"], databaseUrl);
+
+  app = await NestFactory.create(AppModule, { logger: false });
+  await app.init();
+});
+
+afterAll(async () => {
+  await app.close();
+});
+
+/** Every test in this file wants to start from a genuinely empty `users`
+ *  table — reset WITHOUT seeding, unlike every other e2e suite here. */
+function resetEmpty(): void {
+  run(path.join(DB_PKG_ROOT, "scripts", "migrate.mjs"), ["reset"], databaseUrl);
+}
+
+describe("GET /setup/state (public)", () => {
+  beforeEach(resetEmpty);
+
+  it("needsSetup: true on a freshly reset, unseeded database", async () => {
+    const res = await request(app.getHttpServer()).get("/setup/state");
+    expect(res.status).toBe(200);
+    expect(res.headers["content-type"]).toMatch(/^application\/json/);
+    expect(res.body).toEqual({ needsSetup: true });
+  });
+
+  it("needsSetup: false once a user exists", async () => {
+    const created = await request(app.getHttpServer()).post("/setup/first-admin").send({
+      username: "wizard-admin",
+      email: "wizard-admin@loombre.local",
+      password: "correct-horse-battery-staple",
+    });
+    expect(created.status).toBe(201);
+
+    const res = await request(app.getHttpServer()).get("/setup/state");
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ needsSetup: false });
+  });
+
+  it("is reachable with NO Authorization header (public route, not a 401 wall)", async () => {
+    const res = await request(app.getHttpServer()).get("/setup/state").unset("Authorization");
+    expect(res.status).toBe(200);
+  });
+});
+
+describe("POST /setup/first-admin (public until the first user, then permanently inert)", () => {
+  beforeEach(resetEmpty);
+
+  it("empty-DB happy path end to end: create -> 201 real tokens -> authenticated call works -> state flips -> second create 404", async () => {
+    const stateBefore = await request(app.getHttpServer()).get("/setup/state");
+    expect(stateBefore.body).toEqual({ needsSetup: true });
+
+    const created = await request(app.getHttpServer()).post("/setup/first-admin").send({
+      username: "wizard-admin",
+      email: "wizard-admin@loombre.local",
+      password: "correct-horse-battery-staple",
+      displayName: "Wizard Admin",
+    });
+
+    expect(created.status).toBe(201);
+    expect(created.headers["content-type"]).toMatch(/^application\/json/);
+    expect(created.body.user).toMatchObject({
+      username: "wizard-admin",
+      email: "wizard-admin@loombre.local",
+      isAdmin: true,
+    });
+    expect(typeof created.body.user.id).toBe("string");
+    expect(created.body.tokens).toMatchObject({
+      accessToken: expect.any(String),
+      refreshToken: expect.any(String),
+      accessTokenExpiresAtMs: expect.any(Number),
+      deviceId: expect.any(String),
+    });
+
+    // The minted access token is REAL — it authenticates an ordinary
+    // request exactly like a login-issued one would (task spec: "returns
+    // 201 {user, tokens} (real TokenPair via the existing token service +
+    // device-row creation like login does)").
+    const me = await request(app.getHttpServer())
+      .get("/users/me")
+      .set("Authorization", `Bearer ${created.body.tokens.accessToken}`);
+    expect(me.status).toBe(200);
+    expect(me.body.username).toBe("wizard-admin");
+    expect(me.body.isAdmin).toBe(true);
+
+    const stateAfter = await request(app.getHttpServer()).get("/setup/state");
+    expect(stateAfter.body).toEqual({ needsSetup: false });
+
+    const secondCreate = await request(app.getHttpServer()).post("/setup/first-admin").send({
+      username: "second-admin",
+      email: "second-admin@loombre.local",
+      password: "another-long-enough-password",
+    });
+    expect(secondCreate.status).toBe(404);
+  });
+
+  it("is reachable with NO Authorization header on an empty instance (public, not a 401 wall)", async () => {
+    const res = await request(app.getHttpServer())
+      .post("/setup/first-admin")
+      .unset("Authorization")
+      .send({ username: "wizard-admin", email: "wizard-admin@loombre.local", password: "correct-horse-battery" });
+    expect(res.status).toBe(201);
+  });
+
+  describe("validation floor mirrors FirstAdminRequest (422, no row written)", () => {
+    it("missing username -> 422", async () => {
+      const res = await request(app.getHttpServer())
+        .post("/setup/first-admin")
+        .send({ email: "a@loombre.local", password: "correct-horse-battery" });
+      expect(res.status).toBe(422);
+      const state = await request(app.getHttpServer()).get("/setup/state");
+      expect(state.body).toEqual({ needsSetup: true });
+    });
+
+    it("missing email -> 422", async () => {
+      const res = await request(app.getHttpServer())
+        .post("/setup/first-admin")
+        .send({ username: "wizard-admin", password: "correct-horse-battery" });
+      expect(res.status).toBe(422);
+    });
+
+    it("missing password -> 422", async () => {
+      const res = await request(app.getHttpServer())
+        .post("/setup/first-admin")
+        .send({ username: "wizard-admin", email: "a@loombre.local" });
+      expect(res.status).toBe(422);
+    });
+
+    it("password shorter than 8 chars -> 422 (FirstAdminRequest.password minLength: 8)", async () => {
+      const res = await request(app.getHttpServer())
+        .post("/setup/first-admin")
+        .send({ username: "wizard-admin", email: "a@loombre.local", password: "short1" });
+      expect(res.status).toBe(422);
+    });
+  });
+
+  describe("byte-identical 404 once the instance is configured (P1 restricted-404 pattern)", () => {
+    it("matches NotFoundController's *splat catch-all body EXACTLY, byte for byte", async () => {
+      const firstAdmin = await request(app.getHttpServer()).post("/setup/first-admin").send({
+        username: "wizard-admin",
+        email: "wizard-admin@loombre.local",
+        password: "correct-horse-battery-staple",
+      });
+      expect(firstAdmin.status).toBe(201);
+      const adminToken: string = firstAdmin.body.tokens.accessToken;
+
+      const secondCreate = await request(app.getHttpServer()).post("/setup/first-admin").send({
+        username: "someone-else",
+        email: "someone-else@loombre.local",
+        password: "another-long-enough-password",
+      });
+      // The catch-all itself sits BEHIND AuthGuard (it is not in
+      // PUBLIC_ROUTES — only the literal, documented routes are) — an
+      // unauthenticated hit never reaches NotFoundController's handler at
+      // all, it gets AuthGuard's 401 wall first. A valid Bearer token is
+      // required to observe the REAL catch-all body this test compares
+      // against; POST /setup/first-admin's own 404 above needs no such
+      // token because it is registered public.
+      const unknownRoute = await request(app.getHttpServer())
+        .get("/this-route-does-not-exist-at-all")
+        .set("Authorization", `Bearer ${adminToken}`);
+
+      expect(secondCreate.status).toBe(404);
+      expect(unknownRoute.status).toBe(404);
+      expect(secondCreate.headers["content-type"]).toBe(unknownRoute.headers["content-type"]);
+      // Literal byte-for-byte body equality — not just schema-valid shape.
+      expect(secondCreate.text).toBe(unknownRoute.text);
+      expect(JSON.parse(secondCreate.text)).toEqual({ type: "about:blank", title: "Not Found", status: 404 });
+    });
+
+    it("a bodyless POST after the instance is configured is STILL 404, never 422 (existence check wins first)", async () => {
+      const firstAdmin = await request(app.getHttpServer()).post("/setup/first-admin").send({
+        username: "wizard-admin",
+        email: "wizard-admin@loombre.local",
+        password: "correct-horse-battery-staple",
+      });
+      expect(firstAdmin.status).toBe(201);
+
+      const res = await request(app.getHttpServer()).post("/setup/first-admin").send();
+      expect(res.status).toBe(404);
+    });
+  });
+
+  describe("race safety: concurrent calls against an empty table", () => {
+    it("two concurrent POSTs: exactly one 201, exactly one 404", async () => {
+      const [a, b] = await Promise.all([
+        request(app.getHttpServer())
+          .post("/setup/first-admin")
+          .send({ username: "race-a", email: "race-a@loombre.local", password: "correct-horse-battery-a" }),
+        request(app.getHttpServer())
+          .post("/setup/first-admin")
+          .send({ username: "race-b", email: "race-b@loombre.local", password: "correct-horse-battery-b" }),
+      ]);
+
+      const statuses = [a.status, b.status].sort();
+      expect(statuses).toEqual([201, 404]);
+
+      const state = await request(app.getHttpServer()).get("/setup/state");
+      expect(state.body).toEqual({ needsSetup: false });
+    });
+
+    it("ten concurrent POSTs: exactly one 201, the rest 404", async () => {
+      const requests = Array.from({ length: 10 }, (_, i) =>
+        request(app.getHttpServer())
+          .post("/setup/first-admin")
+          .send({
+            username: `race-many-${i}`,
+            email: `race-many-${i}@loombre.local`,
+            password: `correct-horse-battery-${i}`,
+          }),
+      );
+      const results = await Promise.all(requests);
+      const created = results.filter((r) => r.status === 201);
+      const notFound = results.filter((r) => r.status === 404);
+
+      expect(created).toHaveLength(1);
+      expect(notFound).toHaveLength(9);
+    });
+  });
+});
