@@ -11,7 +11,7 @@
  * glue, deliberately thin so the actually-tricky logic stays unit
  * testable without a real ffmpeg process or database.
  */
-import { readFile, unlink, writeFile } from "node:fs/promises";
+import { readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { DbOrTx } from "@loombre/db/internal";
 import {
@@ -273,7 +273,24 @@ export async function runTranscodeSession(deps: RunSessionDeps, sessionId: strin
       for (const runDirName of pruned.runDirsToDelete) {
         await deleteRunDir(stagingRoot, sessionDir, join(sessionDir, runDirName)).catch(() => undefined);
       }
-      await writeFile(join(sessionDir, "media.m3u8"), renderServedPlaylist(servedState), "utf8");
+      // ATOMIC rewrite (write-temp-then-rename), not a plain writeFile:
+      // this served playlist is rewritten on EVERY loop iteration while a
+      // real client is polling GET /playback/sessions/{id}/hls/media.m3u8.
+      // writeFile opens with O_TRUNC, so a concurrent reader can observe
+      // the file empty (between truncate and write) or partially written.
+      // apps/server's hls-file.controller.ts already refuses a zero-length
+      // read and re-polls, which is why this never surfaced as a client
+      // bug — but that guard cannot detect a NON-empty partial playlist,
+      // and the race also made session.integration.spec.ts flaky on slow
+      // CI runners (it read '' where '#EXTM3U' was expected). rename(2) is
+      // atomic within a directory on POSIX, and Node's rename replaces an
+      // existing destination on Windows too (MOVEFILE_REPLACE_EXISTING),
+      // so readers now see either the previous complete playlist or the
+      // next one — never a torn state.
+      const playlistPath = join(sessionDir, "media.m3u8");
+      const playlistTmpPath = `${playlistPath}.tmp`;
+      await writeFile(playlistTmpPath, renderServedPlaylist(servedState), "utf8");
+      await rename(playlistTmpPath, playlistPath);
     }
 
     // Seek-restart (binding constraint 5) takes priority over throttle —
