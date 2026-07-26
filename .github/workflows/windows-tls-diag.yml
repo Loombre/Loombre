@@ -135,14 +135,52 @@ jobs:
           LOOMBRE_TEST_TIME_SCALE: "3"
         run: pnpm exec vitest run --pool=threads
 
+      # ── ROUND 3 ────────────────────────────────────────────────────────
+      # Round 2: F (full apps/server suite, standalone) PASSED. So the
+      # crash needs the GATE context, not the suite. turbo.json's `test`
+      # dependsOn ["^build", "^test"] — a package waits for its
+      # DEPENDENCIES' tests, but apps/server and apps/worker depend on
+      # neither each other, so turbo runs BOTH suites CONCURRENTLY at its
+      # default concurrency of 10. Each package is carefully sequential
+      # INTERNALLY (fileParallelism: false, precisely because live-DB specs
+      # must not race) — but nothing serializes them against EACH OTHER.
+      # On a 2-core Windows runner that means real ffmpeg transcodes and
+      # worker threads (apps/worker) running at the same instant as real
+      # https servers, Nest apps and WebSockets (apps/server).
+      #
+      # H reproduces that collision; I serializes it. Scoped to the two
+      # colliding packages so this answers in minutes rather than a full
+      # gate run.
+      - name: "H: turbo test, server+worker CONCURRENT (default) — reproduces the crash?"
+        continue-on-error: true
+        env:
+          PGHOST: 127.0.0.1
+          PGPORT: "5442"
+          PGUSER: loombre
+          PGPASSWORD: loombre
+          DATABASE_URL: postgres://loombre:loombre@127.0.0.1:5442/loombre
+          LOOMBRE_TEST_TIME_SCALE: "3"
+        run: pnpm exec turbo run test --filter=@loombre/server --filter=@loombre/worker
+
+      - name: "I: same two packages, --concurrency=1 (serialized)"
+        continue-on-error: true
+        env:
+          PGHOST: 127.0.0.1
+          PGPORT: "5442"
+          PGUSER: loombre
+          PGPASSWORD: loombre
+          DATABASE_URL: postgres://loombre:loombre@127.0.0.1:5442/loombre
+          LOOMBRE_TEST_TIME_SCALE: "3"
+        run: pnpm exec turbo run test --filter=@loombre/server --filter=@loombre/worker --concurrency=1
+
       - name: How to read this run
         if: always()
         shell: bash
         run: |
-          echo "ROUND 1 (A-E, isolation): all green -> the two specs are fine on their own."
-          echo "ROUND 2 (F/G, full suite) is the discriminator:"
-          echo "  F red, G green -> fork-pool interaction at scale: move apps/server to the threads pool."
-          echo "  F red, G red   -> suite-cumulative resource exhaustion (Windows ephemeral ports / handles),"
-          echo "                    independent of pool; next step is bisecting which earlier suite leaks."
-          echo "  F green        -> the crash needs the FULL gate context (turbo, other packages first),"
-          echo "                    not just the full apps/server suite."
+          echo "ROUND 1 (A-E, isolation):        all green -> the two specs are fine on their own."
+          echo "ROUND 2 (F/G, full suite alone): F green   -> the suite is fine on its own; the GATE context matters."
+          echo "ROUND 3 (H/I) is the discriminator:"
+          echo "  H red, I green -> cross-package turbo concurrency on a 2-core Windows runner is the cause."
+          echo "                    Fix: serialize the test task on Windows (--concurrency=1), NOT a test change."
+          echo "  H green        -> the collision needs even more of the gate (web/db suites too, or the"
+          echo "                    codegen/lint/typecheck steps running before test). Widen the filter next."
