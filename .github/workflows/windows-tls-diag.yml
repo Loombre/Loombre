@@ -173,14 +173,49 @@ jobs:
           LOOMBRE_TEST_TIME_SCALE: "3"
         run: pnpm exec turbo run test --filter=@loombre/server --filter=@loombre/worker --concurrency=1
 
+      # ── ROUND 4 ────────────────────────────────────────────────────────
+      # Round 3: H passed — server+worker concurrent is NOT enough. The
+      # remaining untested delta vs the failing gate runs is the FULL
+      # package fan-out: `turbo run test` with no filter runs EVERY suite
+      # concurrently — including apps/web (84 jsdom files, the most
+      # memory-hungry thing in the tree) and packages/db — on a 2-core/8GB
+      # runner. An OOM-killed vitest fork surfaces as exactly "Worker
+      # exited unexpectedly" with no JS error attached, which matches every
+      # failing gate log. J is byte-for-byte the gate's test step
+      # (scripts/gate.mjs runs `turbo run test`); K is the serialized
+      # control.
+      - name: "J: turbo run test, ALL packages, default concurrency — the gate's actual test step"
+        continue-on-error: true
+        env:
+          PGHOST: 127.0.0.1
+          PGPORT: "5442"
+          PGUSER: loombre
+          PGPASSWORD: loombre
+          DATABASE_URL: postgres://loombre:loombre@127.0.0.1:5442/loombre
+          LOOMBRE_TEST_TIME_SCALE: "3"
+          LOOMBRE_REQUIRE_FFMPEG: "1"
+        run: pnpm exec turbo run test
+
+      - name: "K: turbo run test, ALL packages, --concurrency=1"
+        continue-on-error: true
+        env:
+          PGHOST: 127.0.0.1
+          PGPORT: "5442"
+          PGUSER: loombre
+          PGPASSWORD: loombre
+          DATABASE_URL: postgres://loombre:loombre@127.0.0.1:5442/loombre
+          LOOMBRE_TEST_TIME_SCALE: "3"
+          LOOMBRE_REQUIRE_FFMPEG: "1"
+        run: pnpm exec turbo run test --concurrency=1
+
       - name: How to read this run
         if: always()
         shell: bash
         run: |
-          echo "ROUND 1 (A-E, isolation):        all green -> the two specs are fine on their own."
-          echo "ROUND 2 (F/G, full suite alone): F green   -> the suite is fine on its own; the GATE context matters."
-          echo "ROUND 3 (H/I) is the discriminator:"
-          echo "  H red, I green -> cross-package turbo concurrency on a 2-core Windows runner is the cause."
-          echo "                    Fix: serialize the test task on Windows (--concurrency=1), NOT a test change."
-          echo "  H green        -> the collision needs even more of the gate (web/db suites too, or the"
-          echo "                    codegen/lint/typecheck steps running before test). Widen the filter next."
+          echo "ROUND 1 (A-E):  specs fine in isolation.   ROUND 2 (F/G): suite fine alone."
+          echo "ROUND 3 (H/I):  server+worker concurrent fine. ROUND 4 (J/K) is the discriminator:"
+          echo "  J red, K green -> full-fan-out concurrency (likely memory) on the 2-core runner is the cause."
+          echo "                    Fix: --concurrency=1 (or 2) for the test step on Windows in gate/ci. No test changes."
+          echo "  J red, K red   -> something about running EVERY suite on this runner, independent of concurrency."
+          echo "  J green        -> the crash needs gate steps BEFORE test (codegen/lint/typecheck) or is"
+          echo "                    probabilistic — rerun J a few times before concluding anything."
