@@ -18,10 +18,42 @@
 // writes landing moments apart) — we want ONE reload of the (now
 // consistent) pair, not a hot-swap mid-write with a torn read.
 
-import { watch, type FSWatcher } from "node:fs";
+import { watch, realpathSync, type FSWatcher } from "node:fs";
 import { basename, dirname } from "node:path";
 import { readFileSync } from "node:fs";
 import type { CertificateMaterial } from "./secure-context.js";
+
+/**
+ * Canonicalize a directory path before handing it to fs.watch.
+ *
+ * WINDOWS CRASH GUARD, found by the first windows-latest CI runs of this
+ * suite (STATE.md P4.21): if the watched path contains a DOS 8.3 short-name
+ * component (`C:\Users\RUNNER~1\...` — exactly what os.tmpdir() returns on
+ * GitHub runners, and what an operator's %TEMP%-derived or legacy-tool-
+ * emitted cert path can contain too), libuv's fs-event backend ABORTS THE
+ * WHOLE PROCESS on the first event it delivers:
+ *
+ *     Assertion failed: !_wcsnicmp(filename, dir, dirlen),
+ *       file src\win\fs-event.c, line 72
+ *
+ * — a C-level assert comparing the event's long-form path against the
+ * short-form directory string it was given, not a catchable JS error. For
+ * a production server in LOOMBRE_TLS_MODE=manual this is a hard crash, so
+ * it must be prevented here rather than documented. realpathSync.native()
+ * resolves short names to their long form on Windows (and resolves
+ * symlinks everywhere — also better for watching: certbot's live/ dir IS
+ * symlinks). Falls back to the caller's spelling when resolution fails
+ * (path doesn't exist yet); fs.watch then reports its own error through
+ * the watcher's error handler as before, instead of this helper throwing
+ * a new kind of setup failure.
+ */
+function canonicalWatchDir(dir: string): string {
+  try {
+    return realpathSync.native(dir);
+  } catch {
+    return dir;
+  }
+}
 
 export interface ManualTlsPaths {
   certPath: string;
@@ -78,8 +110,10 @@ export function watchManualCertificate(
 
   const watchedNames = new Set([basename(paths.certPath), basename(paths.keyPath)]);
   if (paths.caPath !== undefined) watchedNames.add(basename(paths.caPath));
-  const watchedDirs = new Set([dirname(paths.certPath), dirname(paths.keyPath)]);
-  if (paths.caPath !== undefined) watchedDirs.add(dirname(paths.caPath));
+  // Canonicalized (see canonicalWatchDir): two spellings of the same
+  // directory also correctly collapse into ONE watcher here.
+  const watchedDirs = new Set([canonicalWatchDir(dirname(paths.certPath)), canonicalWatchDir(dirname(paths.keyPath))]);
+  if (paths.caPath !== undefined) watchedDirs.add(canonicalWatchDir(dirname(paths.caPath)));
 
   let lastKnown: CertificateMaterial | undefined;
   try {
