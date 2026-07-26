@@ -23,6 +23,7 @@ One page per pillar, each with its own diagram:
 - **[Playback engine & matrix law](architecture/playback-engine.md)**
 - **[Jobs, worker & outbox](architecture/jobs-worker.md)**
 - **[Packaging & release](architecture/packaging-release.md)**
+- **[Performance budgets](architecture/performance-budgets.md)**
 
 ## Deep dives
 
