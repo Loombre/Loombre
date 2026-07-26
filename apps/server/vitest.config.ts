@@ -8,10 +8,27 @@
 // against the same database — so this package also forces sequential file
 // execution.
 
+// CI-runner time scaling, the same mechanism apps/worker/vitest.config.ts
+// and the transcode integration suites already use (ci.yml sets
+// LOOMBRE_TEST_TIME_SCALE=3, macOS 10; turbo passes it through globalEnv).
+//
+// HOOKS are the binding constraint here, not tests: nearly every e2e suite
+// in this package resets and reseeds a live database from its beforeAll by
+// spawning packages/db's migrate.mjs + seed.mjs. Vitest's fixed 10s default
+// hookTimeout is comfortable on real hardware and NOT comfortable on a
+// windows-latest runner — repeated Windows gate runs failed with
+// "Hook timed out in 10000ms", and a hook killed mid-setup takes its fork
+// down with it, which is what surfaced as the "Worker exited unexpectedly"
+// pool errors in those same runs (all 943 tests passed; the run failed
+// anyway). Locally the scale is 1, so both limits keep their stock values.
 import { defineConfig } from "vitest/config";
+
+const TIME_SCALE = Math.max(1, Number(process.env["LOOMBRE_TEST_TIME_SCALE"] ?? "1") || 1);
 
 export default defineConfig({
   test: {
     fileParallelism: false,
+    testTimeout: 5_000 * TIME_SCALE,
+    hookTimeout: 10_000 * TIME_SCALE,
   },
 });
