@@ -5,12 +5,13 @@
 // not mocked), real 0600 file permission assertion, real idempotency
 // (second call returns the SAME key, doesn't regenerate).
 
-import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ensureAccountKey } from "./account-key.js";
 import { acmeAccountKeyPath } from "../storage.js";
+import { assertOwnerOnlyFile } from "../test-support/assert-owner-only.js";
 
 let dataDir: string;
 beforeEach(() => {
@@ -33,10 +34,9 @@ describe("ensureAccountKey", () => {
     expect(result.secretRef).toEqual({ backend: "file0600", key: acmeAccountKeyPath(dataDir) });
   });
 
-  it("persists the key file with 0600 permissions", async () => {
+  it("persists the key file owner-only (0600 on POSIX; owner-only DACL on Windows)", async () => {
     await ensureAccountKey(dataDir);
-    const mode = statSync(acmeAccountKeyPath(dataDir)).mode & 0o777;
-    expect(mode).toBe(0o600);
+    assertOwnerOnlyFile(acmeAccountKeyPath(dataDir));
   });
 
   it("is idempotent: a second call loads the SAME key instead of generating a new one", async () => {
