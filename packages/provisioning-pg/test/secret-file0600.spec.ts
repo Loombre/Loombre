@@ -54,12 +54,12 @@ describe("file0600 backend", () => {
       // (1) Inheritance stripped: icacls marks inherited ACEs "(I)". After
       //     /inheritance:r there must be none — this is what keeps broad
       //     parent-directory grants off the secret.
-      expect(acl).not.toMatch(/\(I\)/);
+      expect(acl, acl).not.toMatch(/\(I\)/);
 
       // (2) No broad principals survived.
-      expect(acl).not.toMatch(/BUILTIN\\Users/i);
-      expect(acl).not.toMatch(/\bEveryone\b/i);
-      expect(acl).not.toMatch(/Authenticated Users/i);
+      expect(acl, acl).not.toMatch(/BUILTIN\\Users/i);
+      expect(acl, acl).not.toMatch(/\bEveryone\b/i);
+      expect(acl, acl).not.toMatch(/Authenticated Users/i);
 
       // (3) Exactly ONE ACE, granting full control. icacls prints the path
       //     and first ACE on line 1, then one ACE per continuation line,
@@ -71,13 +71,13 @@ describe("file0600 backend", () => {
         .split(/\r?\n/)
         .map((l) => l.trim())
         .filter((l) => /:\([A-Z]/.test(l));
-      expect(aceLines).toHaveLength(1);
-      expect(aceLines[0]).toMatch(/:\(F\)$/);
+      expect(aceLines, acl).toHaveLength(1);
+      expect(aceLines[0], acl).toMatch(/:\(F\)$/);
 
       // (4) That one ACE belongs to the account this process runs as.
       const principal = currentUserPrincipal();
       const bareName = principal.startsWith("*") ? userInfo().username : principal;
-      expect(aceLines[0]!.toLowerCase()).toContain(bareName.toLowerCase());
+      expect(aceLines[0]!.toLowerCase(), acl).toContain(bareName.toLowerCase());
     } else {
       const mode = statSync(keyPath).mode & 0o777;
       expect(mode).toBe(0o600);
@@ -102,8 +102,8 @@ describe("file0600 backend", () => {
     expect(second.value).toBe(first.value); // content untouched
 
     const acl = readAcl(keyPath);
-    expect(acl).not.toMatch(/BUILTIN\\Users|S-1-5-32-545/i); // broad grant revoked
-    expect(acl.split(/\r?\n/).filter((l) => /:\([A-Z]/.test(l.trim()))).toHaveLength(1);
+    expect(acl, acl).not.toMatch(/BUILTIN\\Users|S-1-5-32-545/i); // broad grant revoked
+    expect(acl.split(/\r?\n/).filter((l) => /:\([A-Z]/.test(l.trim())), acl).toHaveLength(1);
   });
 
   it("resolve() reads back exactly what generate() wrote", async () => {
