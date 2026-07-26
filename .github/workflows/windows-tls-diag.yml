@@ -73,4 +73,6 @@ jobs:
       - name: Summary
         if: always()
         shell: bash
-        run: echo "Read the VERDICT: lines above — three PASSes mean the canonicalWatchDir fix holds at the crash site; the real ci.yml windows leg is the final authority."
+        run: |
+          echo "Read the VERDICT lines above — three PASSes mean the canonicalWatchDir fix holds at the crash site."
+          echo "The real ci.yml windows leg is the final authority."
