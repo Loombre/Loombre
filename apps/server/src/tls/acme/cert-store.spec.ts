@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Loombre :: apps/server/src/tls/acme/cert-store.spec.ts
 
-import { mkdtempSync, rmSync, statSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { generateSelfSignedCert, type SelfSignedCert } from "../test-support/self-signed-cert.js";
 import { acmeCertKeyPath, acmeCertPath } from "../storage.js";
 import { loadPersistedCertificate, persistIssuedCertificate } from "./cert-store.js";
+import { assertOwnerOnlyFile } from "../test-support/assert-owner-only.js";
 
 let dataDir: string;
 let selfSigned: SelfSignedCert;
@@ -52,20 +53,20 @@ describe("persistIssuedCertificate + loadPersistedCertificate round-trip", () =>
     expect(loaded!.notAfterMs - loaded!.notBeforeMs).toBeLessThan(25 * 60 * 60 * 1000);
   });
 
-  it("persists both files 0600", () => {
+  it("persists both files owner-only (0600 on POSIX; owner-only DACL on Windows)", () => {
     persistIssuedCertificate(dataDir, { certPem: selfSigned.cert, keyPem: selfSigned.key, notBeforeMs: 0, notAfterMs: 0 });
-    expect(statSync(acmeCertPath(dataDir)).mode & 0o777).toBe(0o600);
-    expect(statSync(acmeCertKeyPath(dataDir)).mode & 0o777).toBe(0o600);
+    assertOwnerOnlyFile(acmeCertPath(dataDir));
+    assertOwnerOnlyFile(acmeCertKeyPath(dataDir));
   });
 
-  it("re-persisting (renewal) overwrites and stays 0600", () => {
+  it("re-persisting (renewal) overwrites and stays owner-only", () => {
     persistIssuedCertificate(dataDir, { certPem: selfSigned.cert, keyPem: selfSigned.key, notBeforeMs: 0, notAfterMs: 0 });
     const renewed = generateSelfSignedCert("renewed.loombre.test");
     try {
       persistIssuedCertificate(dataDir, { certPem: renewed.cert, keyPem: renewed.key, notBeforeMs: 0, notAfterMs: 0 });
       const loaded = loadPersistedCertificate(dataDir);
       expect(loaded?.certPem).toBe(renewed.cert);
-      expect(statSync(acmeCertPath(dataDir)).mode & 0o777).toBe(0o600);
+      assertOwnerOnlyFile(acmeCertPath(dataDir));
     } finally {
       renewed.cleanup();
     }

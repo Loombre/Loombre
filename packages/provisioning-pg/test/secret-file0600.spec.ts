@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { describe, expect, it, afterEach } from "vitest";
 import { mkdtempSync, rmSync, statSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { execFileSync } from "node:child_process";
+import { tmpdir, userInfo } from "node:os";
 import { join } from "node:path";
 import { createFile0600Backend } from "../src/secret/file0600.js";
+import { currentUserPrincipal } from "../src/secret/windows-acl.js";
 import { generateSecret, resolveSecret } from "../src/secret/resolve.js";
 import { UnsupportedSecretBackendError } from "../src/errors.js";
 
@@ -18,19 +20,26 @@ function scratchDir(): string {
   return dir;
 }
 
-// POSIX permission bits are a POSIX concept: Node's chmod on Windows only
-// toggles the read-only attribute, so a file written with mode 0o600 reads
-// back as 0o666 there (the first windows-latest CI run failed on exactly
-// that: "expected 438 to be 384"). The backend's chmod call is correct and
-// unchanged — Windows simply does not implement the bits. Confidentiality
-// of the superuser secret on Windows rests on the ACLs of the per-user app-
-// data directory it lives in, NOT on this mode; see STATE.md's platform-
-// limitation note. The assertion is therefore host-aware rather than
-// skipped, so the POSIX guarantee stays enforced where it is real.
+// The backend makes ONE guarantee — owner-only access — expressed
+// differently per platform, so the assertions are host-aware rather than
+// skipped (see src/secret/file0600.ts's header):
+//
+//   POSIX   — 0600 mode bits.
+//   Windows — POSIX bits do not exist (chmod only toggles the read-only
+//             attribute; stat() reports 0o666, which is what the first
+//             windows-latest CI run failed on: "expected 438 to be 384"),
+//             so the guarantee is an explicit owner-only DACL instead.
+//             The Windows branch below is the CI assertion that the ACL we
+//             set is the ACL actually on disk.
 const IS_WINDOWS = process.platform === "win32";
 
+/** icacls output for one file, minus its trailing summary line. */
+function readAcl(path: string): string {
+  return execFileSync("icacls", [path], { encoding: "utf8", windowsHide: true });
+}
+
 describe("file0600 backend", () => {
-  it("generates a real random secret and writes it with owner-only POSIX bits (POSIX hosts)", async () => {
+  it("generates a real random secret and writes it owner-only (0600 on POSIX; owner-only DACL on Windows)", async () => {
     const dir = scratchDir();
     const keyPath = join(dir, "nested", "superuser.secret");
     const backend = createFile0600Backend();
@@ -39,16 +48,62 @@ describe("file0600 backend", () => {
     expect(ref).toEqual({ backend: "file0600", key: keyPath });
     expect(value.length).toBeGreaterThan(20);
 
-    const mode = statSync(keyPath).mode & 0o777;
     if (IS_WINDOWS) {
-      // No POSIX bits to assert; prove the file exists and is readable back
-      // (the round-trip test below covers content) and that nothing made it
-      // executable, which Windows DOES surface.
-      expect(mode & 0o111).toBe(0);
+      const acl = readAcl(keyPath);
+
+      // (1) Inheritance stripped: icacls marks inherited ACEs "(I)". After
+      //     /inheritance:r there must be none — this is what keeps broad
+      //     parent-directory grants off the secret.
+      expect(acl).not.toMatch(/\(I\)/);
+
+      // (2) No broad principals survived.
+      expect(acl).not.toMatch(/BUILTIN\\Users/i);
+      expect(acl).not.toMatch(/\bEveryone\b/i);
+      expect(acl).not.toMatch(/Authenticated Users/i);
+
+      // (3) Exactly ONE ACE, granting full control. icacls prints the path
+      //     and first ACE on line 1, then one ACE per continuation line,
+      //     then a summary line. ACEs are matched POSITIVELY on the
+      //     "principal:(FLAGS)" shape rather than by filtering the summary
+      //     out by its English text, so this does not depend on the
+      //     runner's display language.
+      const aceLines = acl
+        .split(/\r?\n/)
+        .map((l) => l.trim())
+        .filter((l) => /:\([A-Z]/.test(l));
+      expect(aceLines).toHaveLength(1);
+      expect(aceLines[0]).toMatch(/:\(F\)$/);
+
+      // (4) That one ACE belongs to the account this process runs as.
+      const principal = currentUserPrincipal();
+      const bareName = principal.startsWith("*") ? userInfo().username : principal;
+      expect(aceLines[0]!.toLowerCase()).toContain(bareName.toLowerCase());
     } else {
+      const mode = statSync(keyPath).mode & 0o777;
       expect(mode).toBe(0o600);
       expect(mode & 0o077).toBe(0); // no group/other access, stated explicitly
     }
+  });
+
+  it.runIf(IS_WINDOWS)("re-asserts the owner-only DACL on the idempotent path (repairs a secret written before the hardening landed)", async () => {
+    const dir = scratchDir();
+    const keyPath = join(dir, "superuser.secret");
+    const backend = createFile0600Backend();
+    const first = await backend.generate(keyPath);
+
+    // Simulate a pre-hardening file by granting a broad principal:
+    // BUILTIN\Users by its well-known SID (S-1-5-32-545), so this does not
+    // depend on the runner's display language OR on the temp directory
+    // happening to carry inheritable ACEs.
+    execFileSync("icacls", [keyPath, "/grant", "*S-1-5-32-545:(R)"], { encoding: "utf8", windowsHide: true });
+    expect(readAcl(keyPath)).toMatch(/BUILTIN\\Users|S-1-5-32-545/i);
+
+    const second = await backend.generate(keyPath);
+    expect(second.value).toBe(first.value); // content untouched
+
+    const acl = readAcl(keyPath);
+    expect(acl).not.toMatch(/BUILTIN\\Users|S-1-5-32-545/i); // broad grant revoked
+    expect(acl.split(/\r?\n/).filter((l) => /:\([A-Z]/.test(l.trim()))).toHaveLength(1);
   });
 
   it("resolve() reads back exactly what generate() wrote", async () => {
