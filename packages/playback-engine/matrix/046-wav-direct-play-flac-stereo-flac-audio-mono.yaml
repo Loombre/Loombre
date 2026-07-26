@@ -1,0 +1,36 @@
+name: direct-play — wav container, FLAC audio 1ch, flac-stereo
+why: "Stage A (docs/PLAYBACK.md §3): wav IS in flac-stereo's directPlayContainers, and every SELECTED stream is copy-eligible under Stages B-F's current permissive stubs, so the decision is direct-play with reasons=[]. Every selected stream is constructed genuinely within the paired device's declared caps on every axis (matrix/README.md's case-authoring rule), so this case's expected outcome survives once Stages B-F land. Music mode (no video streams), mono source."
+input:
+  media:
+    fileId: file-0046
+    container: wav
+    durationMs: 200000
+    sizeBytes: 15000000
+    overallBitrateBps: 550000
+    video: []
+    audio:
+      - index: 0
+        codec: flac
+        channels: 1
+        sampleRate: 48000
+        bitrateBps: 500000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device:
+    fixture: devices.flac-stereo
+  network:
+    fixture: networks.local
+  policy:
+    fixture: policies.t0-default
+  caps:
+    fixture: caps.software-only
+  selection:
+    videoStreamIndex: null
+    audioStreamIndex: 0
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: direct-play
+  reasons: []

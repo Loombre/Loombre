@@ -1,0 +1,53 @@
+name: transcode — assembly opus target at the <=2ch band, exact 0.75x bitrate (120000)
+why: >
+  truehd 2ch passthrough:false on web-chrome fires audio-passthrough-unsupported
+  alone (channels well under the cap). Assembly gap (schema can't assert
+  audio fields): targetCodec='opus' (present, policy priority [opus, aac]);
+  opus's maxChannels=6, so targetChannels=min(2,6)=2; the <=2ch band
+  bitrate (160000) scales 0.75x for opus -> targetBitrateBps=120000 (the
+  exact figure named in this step's binding instructions). Verified
+  precisely by test/stages/audio.spec.ts.
+input:
+  media:
+    fileId: file-0245
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 6000000000
+    overallBitrateBps: 5400000
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 41
+        width: 1920
+        height: 1080
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 5000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: truehd
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 400000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device: { fixture: devices.web-chrome }
+  network: { fixture: networks.local }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.software-only }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: transcode
+  reasons:
+    - audio-passthrough-unsupported

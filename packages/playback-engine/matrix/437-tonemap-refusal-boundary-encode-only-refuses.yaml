@@ -1,0 +1,51 @@
+name: transcode (refused) — the SAME T0 tier-gated policy DOES refuse under encode-only caps (no verified tone-map anywhere)
+why: >
+  Contrast with 436: encode-only's nvenc AND software entries both declare toneMap:[] — noHardwareToneMap is true, and t0-default's tier-gated-at-tier-0 refuses -> tone-map-refused-by-policy fires, Stage G never runs (ladder stays []), proving the refusal boundary depends on caps.backends' verified tone-map coverage as a WHOLE, not merely on whether SOME backend happens to cover decode/encode for this media.
+
+input:
+  media:
+    fileId: gen-file
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 6000000000
+    overallBitrateBps: 5000000
+    video:
+      - index: 0
+        codec: hevc
+        profile: main10
+        level: 123
+        width: 1920
+        height: 1080
+        bitDepth: 10
+        frameRate: 23.976
+        bitrateBps: 5000000
+        hdr: hdr10
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 160000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device: { fixture: devices.hevc-sdr }
+  network: { fixture: networks.local }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.encode-only }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+
+expect:
+  decision: transcode
+  reasons:
+    - hdr-tone-map-required
+    - tone-map-refused-by-policy
+  ladder: []

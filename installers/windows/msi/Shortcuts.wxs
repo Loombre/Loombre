@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Loombre :: installers/windows/msi/Shortcuts.wxs
+
+  Start Menu shortcut for the tray controller + a per-machine autostart
+  registration (HKLM Run key — per-machine because this whole install is
+  per-machine, ALLUSERS=1 via Package/@Scope in Package.wxs; a per-user Run
+  key would need a per-user install context this product doesn't use). The
+  tray is what a user is meant to actually SEE after install; the two
+  Windows services start themselves independently at boot regardless of
+  whether any user ever logs in or the tray ever runs (Start="auto" in
+  Services.wxs) — the tray is a status/control surface over them, not their
+  supervisor.
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Fragment>
+    <ComponentGroup Id="ShortcutComponents">
+      <Component Id="cmp.StartMenuShortcut" Directory="APPLICATIONPROGRAMSFOLDER" Guid="*">
+        <Shortcut
+          Id="shortcut.LoombreTray"
+          Name="Loombre"
+          Description="Loombre tray controller — status, start/stop, open web client."
+          Target="[TRAYDIR]Loombre.Tray.exe"
+          WorkingDirectory="TRAYDIR" />
+        <!-- A Component that only contains a Shortcut still needs its own
+             KeyPath and needs the Start Menu folder cleaned up on
+             uninstall when it's the last thing in it. -->
+        <RemoveFolder Id="rmf.ApplicationProgramsFolder" Directory="APPLICATIONPROGRAMSFOLDER" On="uninstall" />
+        <RegistryValue
+          Root="HKCU"
+          Key="Software\Loombre"
+          Name="StartMenuShortcutInstalled"
+          Type="integer"
+          Value="1"
+          KeyPath="yes" />
+      </Component>
+
+      <Component Id="cmp.TrayAutostart" Directory="TRAYDIR" Guid="*">
+        <!-- HKLM Run key (all-users autostart) rather than HKCU: this is a
+             per-machine install (Package/@Scope="perMachine" in
+             Package.wxs) with no per-user install context, and the tray is
+             a lightweight status client any interactively-logged-in user
+             on the machine should see, not a per-account preference. -->
+        <RegistryValue
+          Root="HKLM"
+          Key="SOFTWARE\Microsoft\Windows\CurrentVersion\Run"
+          Name="LoombreTray"
+          Type="string"
+          Value="&quot;[TRAYDIR]Loombre.Tray.exe&quot;"
+          KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+  </Fragment>
+</Wix>

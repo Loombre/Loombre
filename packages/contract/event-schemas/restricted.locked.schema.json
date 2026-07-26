@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://loombre.com/schemas/events/restricted.locked.schema.json",
+  "title": "RestrictedLockedPayload",
+  "description": "Payload for envelope.type === 'restricted.locked'. STATE.md P2.8: emitted when a user's gate-5 restricted-content unlock ends — either explicitly (POST /restricted/lock) or because it expired. USER-SCOPED delivery: the websocket broadcaster (apps/server/src/gateway/ws-broadcaster.service.ts) delivers this ONLY to sockets authenticated as `userId` below, never broadcast to other viewers (packages/db/src/query/events.ts's USER_ONLY_TYPES) — unlike item-scoped events, there is no library/content_class guard question here, only 'is this socket this user's own'. The expiry case is synthesized directly by the broadcaster from a per-socket ViewerContext transition and is NEVER written to the events outbox table (see that service's header for why) — an explicit lock DOES get a real outbox row via this schema, written in the same transaction as the user_settings update (packages/db/src/query/identity.ts).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["userId"],
+  "properties": {
+    "userId": { "type": "string", "format": "uuid" }
+  }
+}

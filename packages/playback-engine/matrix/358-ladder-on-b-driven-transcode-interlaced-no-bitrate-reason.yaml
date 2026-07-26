@@ -1,0 +1,53 @@
+name: transcode — Stage B (interlaced) drives the transcode; Stage F fires no reason but still caps the ladder
+why: >
+  Mission category "ladder-on-B/C/E-driven transcodes": video is already transcoding for an UNRELATED reason (interlaced source, Stage B), so `videoAlreadyTranscoding` suppresses evaluateBitrate's own reason entirely — reasons are exactly [video-interlaced], NOT [video-interlaced, bitrate-exceeds-network], EVEN THOUGH overallBitrateBps (10Mbps) genuinely exceeds wan-4mbps's 4Mbps cap (a broken suppression would have added the bitrate reason here) — but `buildLadder` still runs (video.action is 'transcode') and still applies that same network cap: the 1080p/8Mbps rung is dropped, proving the ladder is capped independent of whether Stage F's OWN reason fired. why (Phase 3 §11 step 3, Stage G arrival, STATE.md P3.2 regression law): this case's caps fixture has no hardware backend covering this route, so Stage G now routes full software (`software-fallback:encode`); tier 0 + a >=1080p selected source additionally trips the tier cap, narrowing the surviving ladder to <=480p rungs (`software-fallback:tier-capped`).
+
+input:
+  media:
+    fileId: file-0358
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 7500000000
+    overallBitrateBps: 10000000
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 52
+        width: 1920
+        height: 1080
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 10000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: true
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 160000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device: { fixture: devices.web-chrome }
+  network: { fixture: networks.wan-4mbps }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.software-only }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+
+expect:
+  decision: transcode
+  reasons:
+    - video-interlaced
+    - software-fallback:encode
+    - software-fallback:tier-capped
+  container: fmp4-hls
+  ladderMaxVideoBitrateBps: 4000000

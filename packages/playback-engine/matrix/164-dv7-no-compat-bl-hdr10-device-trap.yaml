@@ -1,0 +1,51 @@
+name: transcode — DV profile 7, no compat BL, vs hevc-hdr10-strict (hdr10:true alone is NOT sufficient without a compat BL)
+why: "TRAP case proving the AND logic in the strip branch: device.hdr.hdr10 is true (hevc-hdr10-strict) but dvBlCompatId is null (no compatible base layer proven) -> still hdr-tone-map-required, NOT dv-stripped-to-hdr10. hdr10 support alone never substitutes for an actual compatible base layer. why (Phase 3 §11 step 3, Stage G arrival, STATE.md P3.2 regression law): this case's caps fixture has no hardware backend covering this route, so Stage G now routes full software (`software-fallback:encode`).\n"
+input:
+  media:
+    fileId: file-164
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 5000000000
+    overallBitrateBps: 15384000
+    video:
+      - index: 0
+        codec: hevc
+        profile: main10
+        level: 123
+        width: 3840
+        height: 2160
+        bitDepth: 10
+        frameRate: 23.976
+        bitrateBps: 15000000
+        hdr: dv
+        dvProfile: 7
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 6
+        sampleRate: 48000
+        bitrateBps: 384000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device:
+    fixture: devices.hevc-hdr10-strict
+  network:
+    fixture: networks.local
+  policy:
+    fixture: policies.t1-cpu-tonemap
+  caps:
+    fixture: caps.software-only
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: transcode
+  reasons:
+    - hdr-tone-map-required
+    - software-fallback:encode

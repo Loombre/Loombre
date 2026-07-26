@@ -1,0 +1,61 @@
+name: transcode — hevcEncodePreferred false means h264 stays unchanged even though the device has an hevc entry
+why: >
+  Control for 353: IDENTICAL media/network/device/caps — the ONLY change is the policy, from `hevc-preferred` to `t0-default` (hevcEncodePreferred false). Without the swap, the 1080p/8Mbps rung stays at its original bitrate and is DROPPED by the same 7Mbps network cap that 353's swapped 6Mbps rung survived — proving the swap, not some other factor, is what rescued it there. Ladder stays h264 throughout. why (Phase 3 §11 step 3, Stage G arrival, STATE.md P3.2 regression law): this case's caps fixture has no hardware backend covering this route, so Stage G now routes full software (`software-fallback:encode`); tier 0 + a >=1080p selected source additionally trips the tier cap, narrowing the surviving ladder to <=480p rungs (`software-fallback:tier-capped`). expect.ladder is tightened accordingly to the now-tier-capped surviving rungs.
+
+input:
+  media:
+    fileId: file-0354
+    container: mov
+    durationMs: 6000000
+    sizeBytes: 15000000000
+    overallBitrateBps: 20000000
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 52
+        width: 3840
+        height: 2160
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 20000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 160000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device: { fixture: devices.web-safari }
+  network: { maxBitrateBps: 7000000, isLocal: false }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.software-only }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+
+expect:
+  decision: transcode
+  reasons:
+    - bitrate-exceeds-network
+    - software-fallback:encode
+    - software-fallback:tier-capped
+  container: fmp4-hls
+  ladder:
+    - heightPx: 480
+      videoBitrateBps: 1500000
+      audioBitrateBps: 160000
+      codec: h264
+    - heightPx: 360
+      videoBitrateBps: 800000
+      audioBitrateBps: 160000
+      codec: h264

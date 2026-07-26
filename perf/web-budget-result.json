@@ -1,0 +1,81 @@
+{
+  "recordedAtMs": 1785035508243,
+  "route": "/browse",
+  "method": "gzip(level 9) of every external .js file the served /browse HTML references (script src + preload hints, noModule polyfills excluded), summed",
+  "totalGzipBytes": 169493,
+  "totalRawBytes": 549538,
+  "budgetGzipBytes": 204800,
+  "breachedBudget": false,
+  "chunks": [
+    {
+      "file": "static/chunks/415455d7-8fae8e7a4747df30.js",
+      "rawBytes": 199868,
+      "gzipBytes": 62740
+    },
+    {
+      "file": "static/chunks/1290-7f86aadc5cdd6678.js",
+      "rawBytes": 222837,
+      "gzipBytes": 61169
+    },
+    {
+      "file": "static/chunks/7258-dfe8fac0241d45b9.js",
+      "rawBytes": 39394,
+      "gzipBytes": 11752
+    },
+    {
+      "file": "static/chunks/app/layout-418292787146fb57.js",
+      "rawBytes": 15838,
+      "gzipBytes": 6118
+    },
+    {
+      "file": "static/chunks/9018-bd5b22a82a3a57a2.js",
+      "rawBytes": 15759,
+      "gzipBytes": 5470
+    },
+    {
+      "file": "static/chunks/app/browse/page-aea8003f5af2d3ea.js",
+      "rawBytes": 10976,
+      "gzipBytes": 4363
+    },
+    {
+      "file": "static/chunks/9894-e6e1ebf833911308.js",
+      "rawBytes": 8731,
+      "gzipBytes": 3550
+    },
+    {
+      "file": "static/chunks/3721-f519aca3b11fef30.js",
+      "rawBytes": 9038,
+      "gzipBytes": 3227
+    },
+    {
+      "file": "static/chunks/7770-0c65036362fe6a5e.js",
+      "rawBytes": 7168,
+      "gzipBytes": 3107
+    },
+    {
+      "file": "static/chunks/1297-e95936442e65e5d6.js",
+      "rawBytes": 7330,
+      "gzipBytes": 2672
+    },
+    {
+      "file": "static/chunks/6289-6f13c5cf55726fc1.js",
+      "rawBytes": 6782,
+      "gzipBytes": 2468
+    },
+    {
+      "file": "static/chunks/webpack-1954f4c3a56578c8.js",
+      "rawBytes": 4830,
+      "gzipBytes": 2328
+    },
+    {
+      "file": "static/chunks/app/not-found-bd126ec06a284d73.js",
+      "rawBytes": 460,
+      "gzipBytes": 297
+    },
+    {
+      "file": "static/chunks/main-app-bf0c19017812dd40.js",
+      "rawBytes": 527,
+      "gzipBytes": 232
+    }
+  ]
+}

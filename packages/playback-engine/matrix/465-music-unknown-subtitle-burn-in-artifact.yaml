@@ -1,0 +1,53 @@
+name: 'transcode — music-mode file with an unknown-codec subtitle selected: burn-in forced on a video-less
+  plan (unknown-override × music artifact composition)'
+why: 'Composes two pinned behaviors never before combined: §2.1''s unknown-kind conservative burn-in override
+  (cases 298/299) on a MUSIC file (video []), where Stage E''s literal rule text appends video-transcode-for-subtitle-burn-in
+  although §5 video.action stays ''none'' (the Step-2e surfaced artifact, case 320''s why). Audio (flac
+  2ch, within flac-stereo caps) copies, so no gapless-degraded; ladder stays [] (video.action is not ''transcode'').
+  A subtitle stream inside a flac container is §2.1-structurally valid (the type imposes no container-stream
+  coherence).'
+input:
+  media:
+    fileId: file-465
+    container: flac
+    durationMs: 6000000
+    sizeBytes: 750000000
+    overallBitrateBps: 1000000
+    video: []
+    audio:
+    - index: 0
+      codec: flac
+      channels: 2
+      sampleRate: 48000
+      bitrateBps: 900000
+      language: eng
+      isDefault: true
+      hasAtmos: false
+    subtitle:
+    - index: 1
+      codec: unknown
+      language: eng
+      isForced: false
+      isDefault: false
+      isExternal: false
+      externalPath: null
+  device:
+    fixture: devices.flac-stereo
+  network:
+    fixture: networks.local
+  policy:
+    fixture: policies.t0-default
+  caps:
+    fixture: caps.software-only
+  selection:
+    videoStreamIndex: null
+    audioStreamIndex: 0
+    subtitleStreamIndex: 1
+  mode: stream
+expect:
+  decision: transcode
+  reasons:
+  - subtitle-codec-unknown
+  - video-transcode-for-subtitle-burn-in
+  subtitleStrategy: burn-in
+  ladder: []

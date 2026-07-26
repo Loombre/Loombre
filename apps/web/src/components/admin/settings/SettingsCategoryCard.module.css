@@ -1,0 +1,88 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+
+/* Phosphor: one bordered, translucent-fill box per category (README's
+   Advanced Server card — border rgba(255,255,255,.07), radius 14px,
+   background rgba(255,255,255,.015)); mapped to the nearest tokens
+   (--color-border-subtle / --radius-md / --fill-1). Padding leaves no
+   bottom gap under the last field's own bottom padding, matching the
+   prototype's "18px 20px 6px" (asymmetric bottom). */
+.card {
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--fill-1);
+  padding: var(--space-md) var(--space-lg) var(--space-3xs);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-3xs);
+  flex-wrap: wrap;
+}
+
+.title {
+  margin: 0;
+  font-stretch: 112%;
+  font-weight: var(--weight-black);
+  font-size: var(--text-base);
+}
+
+.meta {
+  font-family: var(--font-mono);
+  font-size: var(--mono-md);
+  letter-spacing: var(--track-mono);
+  color: var(--color-text-hint);
+}
+
+.resetCategory {
+  margin-left: auto;
+}
+
+.errorText {
+  margin: 0 0 var(--space-sm);
+  font-size: var(--text-xs);
+  color: var(--color-danger);
+}
+
+.empty {
+  margin: 0;
+  padding: var(--space-xl) 0 var(--space-lg);
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: var(--mono-md);
+  letter-spacing: var(--track-mono-wide);
+  color: var(--color-text-hint);
+  border-top: 1px solid var(--color-border-subtle);
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Desktop: fields share this ONE box, separated by a plain top hairline —
+   a stable universal-child selector so it never has to reference
+   SettingField's own (module-hashed) class name. */
+.list > * + * {
+  border-top: 1px solid var(--color-border-subtle);
+}
+
+@media (width <= 767.98px) {
+  /* Mobile: the shared box recedes (the prototype boxes each KEY
+     individually instead, see SettingField.module.css) — strip this
+     container's own chrome down to just the header above a plain stack. */
+  .card {
+    border: none;
+    background: none;
+    padding: 0;
+  }
+
+  .list {
+    gap: var(--space-sm);
+  }
+
+  .list > * + * {
+    border-top: none;
+  }
+}

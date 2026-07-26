@@ -1,0 +1,49 @@
+name: direct-play — mp4 h264 1080p (3.5Mbps, within the 4Mbps wan cap) + aac 2ch, web-chrome, wan-4mbps network
+why: Stage F (bitrate vs network cap) is still a permissive stub, so a low-bitrate stream well under the network cap direct-plays exactly as it would over 'local' — this case is deliberately kept UNDER the cap so it remains correct once Stage F lands (future-proofing rule), unlike seed case 006 which deliberately exceeds it.
+input:
+  media:
+    fileId: file-0059
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 5000000000
+    overallBitrateBps: 3500000
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 41
+        width: 1920
+        height: 1080
+        bitDepth: 8
+        frameRate: 24
+        bitrateBps: 3300000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 160000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device:
+    fixture: devices.web-chrome
+  network:
+    fixture: networks.wan-4mbps
+  policy:
+    fixture: policies.t0-default
+  caps:
+    fixture: caps.software-only
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: direct-play
+  reasons: []

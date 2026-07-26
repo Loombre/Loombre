@@ -1,0 +1,55 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3xs);
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  padding: var(--space-2xs) var(--space-xs);
+  border-radius: var(--radius-sm);
+}
+
+.row:nth-child(odd) {
+  background: var(--fill-1, var(--color-surface-hover));
+}
+
+.type {
+  font-family: var(--font-mono);
+  font-size: var(--mono-md);
+  letter-spacing: var(--track-mono);
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Cheap MED (W3 fidelity audit): per-kind colouring, restricted.* only —
+   see EventLogPanel.tsx's eventKindTone for why this doesn't invent a
+   taxonomy beyond the real event-type prefix. */
+.type[data-tone="warning"] {
+  color: var(--color-warning);
+}
+
+.time {
+  font-family: var(--font-mono);
+  font-size: var(--mono-sm);
+  color: var(--color-text-subtle);
+  white-space: nowrap;
+}
+
+.empty {
+  margin: 0;
+  padding: var(--space-sm) var(--space-xs);
+  font-size: var(--text-sm);
+  color: var(--muted);
+}

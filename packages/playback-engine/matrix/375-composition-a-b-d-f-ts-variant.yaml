@@ -1,0 +1,54 @@
+name: transcode — composition A+B+D+F, ts-hls variant (constrained-tv device)
+why: >
+  Container/device variety on the same four-stage composition shape as 367: container mismatch (avi, Stage A — constrained-tv only direct-plays mp4), video-codec-unsupported (vp9 vs constrained-tv's h264-only device.video, Stage B), audio-channels-exceed-device (aac 6ch vs constrained-tv's 2ch cap, Stage D), and Stage F's ladder (capped by the paired wan-4mbps network) — with the escalated container now ts-hls (constrained-tv's device.hls.supportsFmp4 is false), distinct from 367's fmp4-hls result. why (Phase 3 §11 step 3, Stage G arrival, STATE.md P3.2 regression law): this case's caps fixture has no hardware backend covering this route, so Stage G now routes full software (`software-fallback:encode`).
+
+input:
+  media:
+    fileId: file-0375
+    container: avi
+    durationMs: 6000000
+    sizeBytes: 7500000000
+    overallBitrateBps: 10000000
+    video:
+      - index: 0
+        codec: vp9
+        profile: null
+        level: null
+        width: 1280
+        height: 720
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 9000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 6
+        sampleRate: 48000
+        bitrateBps: 384000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device: { fixture: devices.constrained-tv }
+  network: { fixture: networks.wan-4mbps }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.software-only }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+
+expect:
+  decision: transcode
+  reasons:
+    - container-not-direct-playable
+    - video-codec-unsupported
+    - audio-channels-exceed-device
+    - software-fallback:encode
+  container: ts-hls
+  ladderMaxVideoBitrateBps: 4000000

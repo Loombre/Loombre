@@ -1,0 +1,59 @@
+name: "transcode — D-then-E informational reason order: audio-atmos-lost (Stage D) precedes subtitle-styling-lost (Stage E)"
+why: >
+  web-chrome's truehd entry declares passthrough:false and this stream's channels (8) sit exactly at its maxChannels cap, so ONLY rule 3 fires (audio-passthrough-unsupported) with hasAtmos:true appending the informational audio-atmos-lost. An ass subtitle under hls-vtt (device.hlsVtt + t0-default) simultaneously appends the informational subtitle-styling-lost. mp4 keeps Stage A quiet, proving cross-stage reason ordering holds for TWO different stages' informational reasons in the same plan, not just within Stage E.
+
+input:
+  media:
+    fileId: file-0311
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 6000000000
+    overallBitrateBps: 5200000
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 41
+        width: 1920
+        height: 1080
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 5000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: truehd
+        channels: 8
+        sampleRate: 48000
+        bitrateBps: 192000
+        language: eng
+        isDefault: true
+        hasAtmos: true
+    subtitle:
+      - index: 2
+        codec: ass
+        language: eng
+        isForced: false
+        isDefault: false
+        isExternal: false
+        externalPath: null
+  device: { fixture: devices.web-chrome }
+  network: { fixture: networks.local }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.software-only }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: 2
+  mode: stream
+
+expect:
+  decision: transcode
+  reasons:
+    - audio-passthrough-unsupported
+    - audio-atmos-lost
+    - subtitle-styling-lost
+  subtitleStrategy: hls-vtt

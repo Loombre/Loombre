@@ -1,0 +1,45 @@
+name: direct-stream — music mode, container mismatch into fmp4-hls, audio itself copies — NO gapless-degraded
+why: "Inline device directPlayContainers excludes ogg (Stage A fires container-not-direct-playable), but its vorbis entry accommodates the stream fully, so Stage D's own verdict is copy, not transcode — gapless-degraded never fires even though the OVERALL decision is direct-stream (binding interpretation constraint 5: gapless-degraded is gated on THIS STAGE's own transcode verdict, not the plan's decision). hls.supportsFmp4:true -> container fmp4-hls."
+input:
+  media:
+    fileId: file-0249
+    container: ogg
+    durationMs: 240000
+    sizeBytes: 6000000
+    overallBitrateBps: 192000
+    video: []
+    audio:
+      - index: 0
+        codec: vorbis
+        channels: 2
+        sampleRate: 44100
+        bitrateBps: 192000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device:
+    profileId: inline-music-fmp4
+    directPlayContainers: [flac]
+    hls: { container: fmp4, supportsFmp4: true, lowLatency: false }
+    video: []
+    hdr: { hdr10: false, hlg: false, dolbyVision: false }
+    audio:
+      - codec: vorbis
+        maxChannels: 2
+        passthrough: false
+    subtitles: { renderText: [], hlsVtt: false, renderImage: false }
+    maxStreamBitrateBps: null
+  network: { fixture: networks.local }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.software-only }
+  selection:
+    videoStreamIndex: null
+    audioStreamIndex: 0
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: direct-stream
+  container: fmp4-hls
+  reasons:
+    - container-not-direct-playable

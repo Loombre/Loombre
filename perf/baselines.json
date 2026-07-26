@@ -1,0 +1,87 @@
+{
+  "$rule": "Every entry below is a hand-curated performance-budget ledger, NOT a script-regenerated file (contrast perf/t0-baseline.json and perf/web-budget-result.json, which ARE overwritten wholesale by every `pnpm perf:t0` / `pnpm perf:web-budget` run). If a PR changes ANY field of an entry in this file (budget value, lastMeasured*, status, enforced) vs the version on `main`, that entry's `reason` string MUST also change in the same diff \u2014 scripts/perf-baseline-check.mjs enforces this in CI's perf-t0 job and fails the build otherwise. This exists so a budget can never be quietly loosened (or a regression quietly baselined-away) without a human explaining why in the commit itself. See README.md 'Performance budgets' for the full policy.",
+  "recordedAtMs": 1784848389657,
+  "budgets": [
+    {
+      "id": "server.idleRssBytes",
+      "description": "Idle RSS of the server process alone, docs/PLAN.md \u00a79.2 ('server process alone <= 220 MB'). Hard-enforced by scripts/perf-t0.mjs.",
+      "enforced": true,
+      "budgetBytes": 230686720,
+      "lastMeasuredBytes": 154370048,
+      "status": "pass",
+      "reason": "Phase 2/P2.6 initial enforcement baseline. Measured locally (macOS, dev hardware) via `pnpm perf:t0` against the 50k-item `pnpm db:seed-large` library, immediately after server boot + 500ms settle, before any HTTP traffic. Observed range across 4 local reruns: 144.4-154.4 MiB, vs 220 MiB budget \u2014 comfortable headroom."
+    },
+    {
+      "id": "stack.idleRssBytesDocumented",
+      "description": "docs/PLAN.md \u00a79.2 'Idle RSS (server + worker + embedded PG) <= 500 MB' stack figure. Reported by scripts/perf-t0.mjs as server+worker RSS ONLY (embedded PG doesn't exist yet \u2014 D1: it's a Phase-4 packaging concern; today's PG is the external dev-compose container, not part of this Node stack) \u2014 informational, NOT hard-enforced, since it structurally can't represent the full number it's named after.",
+      "enforced": false,
+      "budgetBytes": 524288000,
+      "lastMeasuredBytes": 407879680,
+      "status": "pass (informational)",
+      "reason": "Phase 2/P2.6 initial baseline. server(144-154 MiB) + worker(242-261 MiB, best-effort tsx-run measurement) ~= 386-410 MiB vs the documented 500 MiB stack figure. Not hard-enforced pending embedded-PG packaging (Phase 4)."
+    },
+    {
+      "id": "endpoint.browsePageList.p95Ms",
+      "description": "GET /movies?libraryId=...&limit=200 (the /browse route's data endpoint) p95 over HTTP, docs/PLAN.md \u00a79.2 hot path 'browse page'. 200 samples cycling through 41 real keyset-paginated pages walked across the 50k-item Large Library. Hard-enforced.",
+      "enforced": true,
+      "budgetMs": 100,
+      "lastMeasuredMs": 10.49,
+      "status": "pass",
+      "reason": "First ENFORCING CI run breached (209.8ms on ubuntu @50k): listCatalogItems used the (library_id,item_type) index then filtered+sorted the whole 50k-row library per page, and the OR-form keyset was a per-row Filter so deep pages re-walked their whole prefix. Fixed: migration 0009 composite keyset indexes + ROW-comparison cursor (Index Cond seek, EXPLAIN-verified 0.06ms). Re-measured 10.49ms locally 2026-07-24."
+    },
+    {
+      "id": "endpoint.itemDetail.p95Ms",
+      "description": "GET /movies/{id} p95 over HTTP, docs/PLAN.md \u00a79.2 hot path 'item detail'. 200 samples, each a distinct item id drawn from across the 50k-item library. Hard-enforced.",
+      "enforced": true,
+      "budgetMs": 100,
+      "lastMeasuredMs": 6.83,
+      "status": "pass",
+      "reason": "Phase 2/P2.6 initial enforcement baseline, measured via `pnpm perf:t0` against db:seed-large (50k movies). Observed range across 4 local reruns: 1.6-2.3ms vs 100ms budget. Updated 2026-07-23: 2.32ms -> 6.83ms after detail people[]/mediaFiles[] joins landed (includeDetail opt-in, gap-closure ede9d33) \u2014 still 14x under budget."
+    },
+    {
+      "id": "endpoint.continueWatching.p95Ms",
+      "description": "GET /home/continue-watching p95 over HTTP, docs/PLAN.md \u00a79.2 hot path 'continue-watching'. Viewer-scoped, not library-size-scoped by design (progress rows come from the small base db:seed, not db:seed-large). Hard-enforced.",
+      "enforced": true,
+      "budgetMs": 100,
+      "lastMeasuredMs": 2.450125,
+      "status": "pass",
+      "reason": "Phase 2/P2.6 initial enforcement baseline, measured via `pnpm perf:t0`. Observed range across 4 local reruns: 1.9-2.5ms vs 100ms budget."
+    },
+    {
+      "id": "endpoint.searchAsYouType.p95Ms",
+      "description": "GET /search?q=... p95 over HTTP, docs/PLAN.md \u00a79.2 hot path 'search-as-you-type'. 200 samples cycling through 20 real title-adjective query terms against the 50k-item library. Hard-enforced.",
+      "enforced": true,
+      "budgetMs": 100,
+      "lastMeasuredMs": 21.77,
+      "status": "pass",
+      "reason": "Phase 2 gap-closure fix (commit ede9d33): migration 0008 pg_trgm GIN expression indexes on people.name::text/tags.name::text + searchCatalog restructured from OR/correlated-EXISTS into a UNION of three independently-planned branches. p95 159.1ms -> 22.59ms; re-measured 21.77ms post-0009 @50k seed (leak suite unchanged, 25th dedup test added). Re-measured 2026-07-23 via pnpm perf:t0."
+    },
+    {
+      "id": "scan.throughputFilesPerMin",
+      "description": "Scanner throughput (walk+hash+parse+db-write) over 500 deterministic fake movie files, docs/PLAN.md \u00a79.2 'scan throughput >= 200 files/min on HDD'. Hard-enforced (was warn-only through Phase 1, D15 flips this in Phase 2).",
+      "enforced": true,
+      "budgetFilesPerMin": 200,
+      "lastMeasuredFilesPerMin": 16816.79,
+      "status": "pass",
+      "reason": "Phase 2/P2.6 flip from warn-only to enforced. Measured via `pnpm perf:t0` on macOS dev hardware (not the T0 HDD reference target, hence the huge headroom vs the 200 files/min floor) \u2014 observed 15.8k-16.8k files/min across 4 local reruns, consistent with Phase 1's warn-only ~13k-16.5k figures."
+    },
+    {
+      "id": "web.browseFirstLoadJsGzipBytes",
+      "description": "apps/web /browse route's first-load JS, gzip-measured from the external .js files the served /browse HTML references (script src + preload hints; next start on loopback \u2014 see scripts/perf-web-budget.mjs header for method and for why the Next-15-era app-build-manifest.json method died), docs/PLAN.md \u00a79.3 '<= 200 KB gzipped JS on the browse route'. Hard-enforced.",
+      "enforced": true,
+      "budgetBytes": 204800,
+      "lastMeasuredBytes": 169493,
+      "status": "pass",
+      "reason": "Blaze logo rollout W2 re-proof 2026-07-25 (clean re-measure via `node scripts/perf-web-budget.mjs`, apps/web /browse): the prior 156,159 B stamp was stale \u2014 it was the Next-16 sweep's stamp (commit 8098258) and was never re-stamped across the Phosphor Wave-3/fix-wave/FX3 landings that ran afterward, which measured 164,846 B then 166,802 B without updating this ledger entry. Blaze's own W0 foundation lane proved it contributes 0 B in isolation (stash-isolated re-measure against the pre-Blaze tree reproduced the byte-identical 166,802 B chunk list). Blaze's real cost lands in W1, when Sidebar.tsx started consuming <BlazeMark> for the sidebar lockup (D8): +2,691 B over the 166,802 B pre-Blaze figure. Total accounted drift: 156,159 -> 166,802 (Phosphor W3/fix-wave/FX3, +10,643 B, unrelated to this rollout) -> 169,493 (this stamp, +2,691 B Blaze Sidebar/BlazeMark cost). Still 17.2% under the 200 KB budget. No app-code cause left unattributed."
+    },
+    {
+      "id": "web.lighthousePerformanceScore",
+      "description": "Lighthouse performance category score for apps/web's /login route (see apps/web/lighthouserc.cjs header for why /login and not /home \u2014 LHCI navigates unauthenticated, /home redirects to /login), LHCI default throttled mobile profile, docs/PLAN.md \u00a79.3 'Lighthouse perf >= 90 in CI on a throttled profile'. Audited WITH all motion/ambient/glass enabled (P2.11 law \u2014 no test-mode stripping exists in apps/web). Hard-enforced via lighthouserc.cjs's assert block.",
+      "enforced": true,
+      "budgetScore": 0.9,
+      "lastMeasuredScore": 1.0,
+      "status": "pass",
+      "reason": "Phase 2/P2.6 initial enforcement baseline. Real local `pnpm perf:lighthouse` runs (macOS, Chrome, 2 separate 3-run sessions, 6 runs total) against /login: performance score 1.0/1.0 on every single run (LCP ~1.9s, TBT 0-10ms, CLS 0) vs 0.90 budget."
+    }
+  ]
+}

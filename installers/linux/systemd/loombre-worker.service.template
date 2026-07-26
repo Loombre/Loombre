@@ -1,0 +1,42 @@
+[Unit]
+Description=Loombre background worker (scan/probe/transcode/metadata/import jobs)
+Documentation=https://github.com/Loombre/Loombre
+After=network.target network-online.target loombre-server.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=__LOOMBRE_USER__
+Group=__LOOMBRE_USER__
+EnvironmentFile=__CONFIG_DIR__/loombre.env
+WorkingDirectory=__DATA_DIR__
+ExecStart=__PREFIX__/bin/loombre-worker
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+
+# Hardening — mirrors loombre-server.service.template; see that file for
+# rationale. ReadWritePaths covers the same data dir (scan/transcode
+# output, blurhash cache, hwcaps snapshots all live under it).
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=__DATA_DIR__
+PrivateTmp=true
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+RestrictNamespaces=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RemoveIPC=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+[Install]
+WantedBy=multi-user.target

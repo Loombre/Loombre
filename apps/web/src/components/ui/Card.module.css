@@ -1,0 +1,25 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+.card {
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  border: 1px solid var(--border);
+  padding: var(--space-lg);
+  box-shadow: var(--shadow-sm);
+}
+
+/* S4 fix (Wave-3 fidelity audit): background is now per-instance (a
+   per-label hue, Card.tsx's inline style) — light text (var(--color-text),
+   not --color-accent-text's dark-on-amber) since an oklch(0.5 ...) hued
+   fill needs light text for contrast, unlike the flat light-amber fill
+   this replaces. --radius-full is unchanged. */
+.avatar {
+  border-radius: var(--radius-full);
+  color: var(--color-text);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: var(--weight-semibold);
+  font-size: var(--text-sm);
+  overflow: hidden;
+  flex-shrink: 0;
+}

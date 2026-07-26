@@ -1,0 +1,34 @@
+name: transcode — music mode, mp3 codec absent from flac-stereo's device.audio — gapless-degraded
+why: "flac-stereo's directPlayContainers include mp3 (Stage A stays silent — container itself is fine), but device.audio only declares flac. A selected mp3 stream fires audio-codec-unsupported (rule 1), and because this is a music-mode Stage-D transcode, gapless-degraded is appended."
+input:
+  media:
+    fileId: file-0248
+    container: mp3
+    durationMs: 240000
+    sizeBytes: 6000000
+    overallBitrateBps: 192000
+    video: []
+    audio:
+      - index: 0
+        codec: mp3
+        channels: 2
+        sampleRate: 44100
+        bitrateBps: 192000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device: { fixture: devices.flac-stereo }
+  network: { fixture: networks.local }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.software-only }
+  selection:
+    videoStreamIndex: null
+    audioStreamIndex: 0
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: transcode
+  reasons:
+    - audio-codec-unsupported
+    - gapless-degraded

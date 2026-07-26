@@ -1,0 +1,33 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+.scrollArea {
+  position: relative;
+  overflow: hidden auto;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+}
+
+.track {
+  position: relative;
+  width: 100%;
+}
+
+.row {
+  position: absolute;
+  inset: 0 0 auto;
+  width: 100%;
+  border-bottom: 1px solid var(--border-subtle, var(--border));
+}
+
+.row:last-child {
+  border-bottom: none;
+}
+
+.loadingMore {
+  position: sticky;
+  bottom: 0;
+  padding: var(--space-xs);
+  text-align: center;
+  font-size: var(--text-xs);
+  color: var(--muted);
+  background: var(--color-surface);
+}

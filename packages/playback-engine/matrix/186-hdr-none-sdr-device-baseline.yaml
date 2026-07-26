@@ -1,0 +1,49 @@
+name: direct-play — hdr:none source vs hevc-sdr (all HDR flags false) — vacuous pass, never mismatches
+why: "PIN: hdr==='none' is a vacuous pass BEFORE any hdr10/hlg/dv branch is even considered (stages/hdr.ts). An incorrect implementation that instead treated 'none' as 'matches nothing' would wrongly fire hdr-tone-map-required here, since device.hdr.hdr10/hlg are both false — this case catches exactly that class of bug. direct-play, reasons=[]."
+input:
+  media:
+    fileId: file-186
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 5000000000
+    overallBitrateBps: 5192000
+    video:
+      - index: 0
+        codec: hevc
+        profile: main10
+        level: 123
+        width: 1920
+        height: 1080
+        bitDepth: 10
+        frameRate: 23.976
+        bitrateBps: 5000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 192000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device:
+    fixture: devices.hevc-sdr
+  network:
+    fixture: networks.local
+  policy:
+    fixture: policies.t0-default
+  caps:
+    fixture: caps.software-only
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: direct-play
+  reasons: []

@@ -1,0 +1,85 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+
+.pill {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  padding: var(--space-xs) var(--space-md);
+  background: var(--fill-1);
+  min-height: 44px;
+  max-width: 100%;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.pillDot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-full);
+  background: var(--color-accent);
+  flex-shrink: 0;
+}
+
+.pillText {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--mono-lg);
+  letter-spacing: var(--track-mono);
+  color: var(--color-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.switchLink {
+  border: none;
+  background: none;
+  padding: 0 0 0 var(--space-sm);
+  margin-left: var(--space-2xs);
+  border-left: 1px solid var(--color-border);
+  font-family: var(--font-mono);
+  font-size: var(--mono-md);
+  letter-spacing: var(--track-mono);
+  text-transform: uppercase;
+  color: var(--color-text-subtle);
+  cursor: pointer;
+  flex-shrink: 0;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+}
+
+.switchLink:hover,
+.switchLink:focus-visible {
+  color: var(--color-accent);
+}
+
+.serverField {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2xs);
+  width: 100%;
+  max-width: 340px;
+}
+
+.serverFieldRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.serverInput {
+  flex: 1;
+  min-width: 0;
+}
+
+.label {
+  font-family: var(--font-mono);
+  font-size: var(--mono-sm);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-text-subtle);
+}

@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Plain net8.0, no RuntimeIdentifier, no Windows dependency: holds
+    exactly the pure argument-parsing logic (ServiceOptions) split out of
+    LoombreServiceHost so LoombreServiceHost.Tests can build and run on ANY
+    OS (including this macOS build-only host) without pulling in the
+    win-x64 self-contained runtime pack the actual service exe requires —
+    mirrors installers/windows/tray's Loombre.Tray.Ipc / Loombre.Tray split
+    for the same reason.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>Loombre.ServiceHost</RootNamespace>
+    <AssemblyName>Loombre.ServiceHost.Core</AssemblyName>
+  </PropertyGroup>
+
+</Project>

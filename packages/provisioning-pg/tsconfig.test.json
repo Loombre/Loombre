@@ -1,0 +1,13 @@
+{
+  // Same deviation as packages/provisioning/tsconfig.test.json (adopted
+  // convention per STATE.md Wave-0 freeze note): this package's test/
+  // directory is chained into `typecheck` via a second noEmit-only project
+  // so `pnpm gate`'s typecheck step covers it too, not just src/.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": ".",
+    "declaration": false
+  },
+  "include": ["src", "test"]
+}

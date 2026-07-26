@@ -1,0 +1,118 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+.header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: var(--space-md);
+}
+
+.title {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--mono-lg);
+  text-transform: uppercase;
+  letter-spacing: var(--track-mono-wide);
+  color: var(--color-text-muted);
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2xs);
+  padding: var(--space-sm) var(--space-md);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-subtle);
+}
+
+.main {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  flex-wrap: wrap;
+}
+
+.modeBadge {
+  font-family: var(--font-mono);
+  font-size: var(--mono-sm);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--track-mono);
+  padding: var(--space-3xs) var(--space-xs);
+  border-radius: var(--radius-sm);
+  background: var(--fill-3);
+  color: var(--muted);
+}
+
+.modeBadge[data-mode="direct-play"] {
+  color: var(--color-success);
+  background: color-mix(in srgb, var(--color-success) 14%, transparent);
+}
+
+/* S3 fix (Wave-3 fidelity audit): transcode renders warning-amber, not
+   accent (prototype's modeC/modeBg for a non-direct-play stream —
+   design/phosphor/Loombre Phosphor.dc.html's `streams` fixture). */
+.modeBadge[data-mode="transcode"] {
+  color: var(--color-warning);
+  background: color-mix(in srgb, var(--color-warning) 14%, transparent);
+}
+
+.itemTitle {
+  font-weight: var(--weight-medium);
+  color: var(--text);
+}
+
+.hiddenChip {
+  font-size: var(--text-xs);
+  color: var(--color-warning);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.meta {
+  display: flex;
+  gap: var(--space-xs);
+  font-size: var(--text-xs);
+  color: var(--color-text-subtle);
+}
+
+/* S3 fix (Wave-3 fidelity audit): the WHY band is warning-amber, not
+   accent — the exact prototype recipe (`background:rgba(224,165,72,.08);
+   border:1px solid rgba(224,165,72,.25);color:#E0A548`) transplanted onto
+   this toggle, since it's the app's closest analogue to the prototype's
+   always-visible "WHY: {reason}" band (this build's WHY content is an
+   expand/collapse rather than always-on, a structural choice out of this
+   fix's scope — only the color law was flagged). */
+.whyToggle {
+  align-self: flex-start;
+  background: color-mix(in srgb, var(--color-warning) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-warning) 25%, transparent);
+  border-radius: var(--radius-sm);
+  padding: var(--space-3xs) var(--space-xs);
+  font-family: var(--font-mono);
+  font-size: var(--mono-sm);
+  letter-spacing: var(--track-mono);
+  color: var(--color-warning);
+  cursor: pointer;
+  text-transform: uppercase;
+}
+
+.empty {
+  margin: 0;
+  padding: var(--space-md);
+  font-size: var(--text-sm);
+  color: var(--muted);
+}
+
+@media (width <= 767.98px) {
+  .whyToggle {
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+  }
+}

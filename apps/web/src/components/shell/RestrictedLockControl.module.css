@@ -1,0 +1,46 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+
+/* Owned by this lane (P2.8) — deliberately its own module rather than
+   editing the shell-owned AppShell.module.css. Mirrors AppShell.module.css's
+   .iconButton sizing so it sits visually identical in the topbar, plus an
+   accent treatment while unlocked (P2.11: accent color reserved for
+   interactive/now-playing states — amber under Phosphor, U1). */
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-full);
+  border: none;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  transition:
+    background-color var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out);
+}
+
+.button:hover {
+  background: var(--color-surface-hover);
+}
+
+.button[data-unlocked="true"] {
+  color: var(--color-accent);
+}
+
+.button[data-unlocked="true"]:hover {
+  background: var(--color-accent-tint);
+}
+
+/* Mobile hard line: touch targets never below 44px. This control is
+   reused as-is (README item 3: "restyled/re-docked — do NOT touch its
+   logic") in MobileHeader.tsx; only its own CSS module changes, and only
+   below the mobile breakpoint — desktop keeps 40px. */
+@media (width <= 767.98px) {
+  .button {
+    width: 44px;
+    height: 44px;
+  }
+}

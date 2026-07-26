@@ -1,0 +1,61 @@
+name: 'transcode — T0 software route, 1080p source, single-720p-rung instance ladder: the tier filter
+  empties it, the rescue restores the SAME rung, software-fallback:tier-capped must NOT fire'
+why: 'Pins stages/hardware.ts binding interpretation 4''s sameLadder comparison at matrix level (previously
+  unit-only; audit coverage gap): a pre-cap ladder that is already exactly ONE rung above 480p rescues
+  back to that identical rung — nothing was actually removed from what the client gets, so the informational
+  tier-capped reason is suppressed even though the intermediate filter step momentarily produced []. Deliberate
+  future-proof exception: vc1 outside web-chrome''s caps (the driver).'
+input:
+  media:
+    fileId: file-462
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 3900000000
+    overallBitrateBps: 5200000
+    video:
+    - index: 0
+      codec: vc1
+      profile: null
+      level: null
+      width: 1920
+      height: 1080
+      bitDepth: 8
+      frameRate: 23.976
+      bitrateBps: 5000000
+      hdr: none
+      dvProfile: null
+      dvBlCompatId: null
+      interlaced: false
+    audio:
+    - index: 1
+      codec: aac
+      channels: 2
+      sampleRate: 48000
+      bitrateBps: 192000
+      language: eng
+      isDefault: true
+      hasAtmos: false
+    subtitle: []
+  device:
+    fixture: devices.web-chrome
+  network:
+    fixture: networks.wan-20mbps
+  policy:
+    fixture: policies.only-720p-ladder
+  caps:
+    fixture: caps.software-only
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: transcode
+  reasons:
+  - video-codec-unsupported
+  - software-fallback:encode
+  ladder:
+  - heightPx: 720
+    videoBitrateBps: 3000000
+    audioBitrateBps: 160000
+    codec: h264

@@ -1,0 +1,27 @@
+{
+  "name": "@loombre/sdk",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Generated TypeScript client for the Loombre API. Types and operation list are generated from packages/contract/openapi.yaml — never hand-write src/generated/*; src/client.ts and src/index.ts are the hand-authored, stable wrapper around them.",
+  "type": "module",
+  "license": "AGPL-3.0-only",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "drift-check": "pnpm --filter @loombre/contract codegen && git diff --exit-code -- src/generated"
+  },
+  "devDependencies": {
+    "typescript": "^6.0.3"
+  }
+}

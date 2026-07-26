@@ -1,0 +1,53 @@
+name: 'remux — mobile-placeholder × wan-20mbps download: in-caps mkv streams remux to a progressive mp4'
+why: 'Grid combo closing the mobile-placeholder set: download mode + container-only change (blocking set
+  exactly {container-not-direct-playable}) on the §10 dimension list''s last unexercised device — progressive
+  mp4 remux.'
+input:
+  media:
+    fileId: file-502
+    container: mkv
+    durationMs: 6000000
+    sizeBytes: 3150000000
+    overallBitrateBps: 4200000
+    video:
+    - index: 0
+      codec: h264
+      profile: high
+      level: 41
+      width: 1920
+      height: 1080
+      bitDepth: 8
+      frameRate: 29.97
+      bitrateBps: 4000000
+      hdr: none
+      dvProfile: null
+      dvBlCompatId: null
+      interlaced: false
+    audio:
+    - index: 1
+      codec: aac
+      channels: 2
+      sampleRate: 48000
+      bitrateBps: 128000
+      language: eng
+      isDefault: true
+      hasAtmos: false
+    subtitle: []
+  device:
+    fixture: devices.mobile-placeholder
+  network:
+    fixture: networks.wan-20mbps
+  policy:
+    fixture: policies.t0-default
+  caps:
+    fixture: caps.software-only
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: download
+expect:
+  decision: remux
+  reasons:
+  - container-not-direct-playable
+  container: mp4

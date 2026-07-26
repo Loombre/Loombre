@@ -1,0 +1,38 @@
+name: direct-stream — flac music in an mkv container (not in flac-stereo's list) — Stage B still vacuous
+why: Container mismatch (mkv is not in flac-stereo's directPlayContainers) fires container-not-direct-playable, but Stage B still contributes nothing (no video streams at all) — decision stops at direct-stream, never transcode.
+input:
+  media:
+    fileId: file-118
+    container: mkv
+    durationMs: 6000000
+    sizeBytes: 5000000000
+    overallBitrateBps: 900000
+    video: []
+    audio:
+      - index: 0
+        codec: flac
+        channels: 2
+        sampleRate: 44100
+        bitrateBps: 900000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device:
+    fixture: devices.flac-stereo
+  network:
+    fixture: networks.local
+  policy:
+    fixture: policies.t0-default
+  caps:
+    fixture: caps.software-only
+  selection:
+    videoStreamIndex: null
+    audioStreamIndex: 0
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: direct-stream
+  reasons:
+    - container-not-direct-playable
+  container: fmp4-hls

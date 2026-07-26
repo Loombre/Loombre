@@ -1,0 +1,82 @@
+name: transcode — multi-video file; the SELECTED first stream (interlaced mpeg2) fires while the in-caps
+  second stream stays invisible to every stage
+why: 'Multi-video counterpart to 454: selection picks the OUT-of-caps stream 0 (mpeg2, interlaced — Stage
+  B rules 1+2 both fire in order) while the fully-in-caps h264 stream 1 must not rescue anything. 720p
+  source keeps the tier cap silent; software-only caps route rule (iii). Deliberate future-proof exception:
+  the SELECTED stream is out of caps (the transcode driver).'
+input:
+  media:
+    fileId: file-455
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 3900000000
+    overallBitrateBps: 5200000
+    video:
+    - index: 0
+      codec: mpeg2
+      profile: main
+      level: null
+      width: 1280
+      height: 720
+      bitDepth: 8
+      frameRate: 23.976
+      bitrateBps: 5000000
+      hdr: none
+      dvProfile: null
+      dvBlCompatId: null
+      interlaced: true
+    - index: 1
+      codec: h264
+      profile: high
+      level: 41
+      width: 1920
+      height: 1080
+      bitDepth: 8
+      frameRate: 23.976
+      bitrateBps: 5000000
+      hdr: none
+      dvProfile: null
+      dvBlCompatId: null
+      interlaced: false
+    audio:
+    - index: 2
+      codec: aac
+      channels: 2
+      sampleRate: 48000
+      bitrateBps: 192000
+      language: eng
+      isDefault: true
+      hasAtmos: false
+    subtitle: []
+  device:
+    fixture: devices.web-chrome
+  network:
+    fixture: networks.local
+  policy:
+    fixture: policies.t0-default
+  caps:
+    fixture: caps.software-only
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 2
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: transcode
+  reasons:
+  - video-interlaced
+  - video-codec-unsupported
+  - software-fallback:encode
+  ladder:
+  - heightPx: 720
+    videoBitrateBps: 3000000
+    audioBitrateBps: 160000
+    codec: h264
+  - heightPx: 480
+    videoBitrateBps: 1500000
+    audioBitrateBps: 160000
+    codec: h264
+  - heightPx: 360
+    videoBitrateBps: 800000
+    audioBitrateBps: 160000
+    codec: h264

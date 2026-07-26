@@ -1,0 +1,48 @@
+name: "direct-play — full-hw caps present but nothing transcodes: Stage G contributes nothing"
+why: >
+  Every stage genuinely passes (h264 1080p within web-chrome's caps, aac stereo within caps, no subtitle, bitrate within network) -> decision direct-play, reasons []. full-hw caps are attached to prove their mere PRESENCE never leaks an hw-encoder-selected reason onto a non-transcoding plan — Stage G's gate is video.action==='transcode', not "a hardware backend happens to exist".
+
+input:
+  media:
+    fileId: gen-file
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 6000000000
+    overallBitrateBps: 5000000
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 41
+        width: 1920
+        height: 1080
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 5000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 160000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device: { fixture: devices.web-chrome }
+  network: { fixture: networks.local }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.full-hw }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+
+expect:
+  decision: direct-play
+  reasons: []

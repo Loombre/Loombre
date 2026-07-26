@@ -1,0 +1,55 @@
+name: direct-play — local network SKIPS its own bitrate cap (device cap null)
+why: >
+  PINNED: docs/PLAYBACK.md §2.3 "isLocal — relaxes bitrate rung cap only" /
+  §3 Stage F "unless network.isLocal and bitrate <= device cap". overall
+  (40Mbps) vastly exceeds local-4mbps's OWN cap (4Mbps), but network.isLocal
+  is true AND device.maxStreamBitrateBps is null (unconstrained, so
+  "bitrate <= device cap" trivially holds) -> the unless-clause holds ->
+  bitrate-exceeds-network does NOT fire. Every other stage passes within
+  web-chrome's caps -> decision is direct-play, reasons [].
+
+input:
+  media:
+    fileId: file-0335
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 30000000000
+    overallBitrateBps: 40000000
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 52
+        width: 1920
+        height: 1080
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 38000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 160000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device: { fixture: devices.web-chrome }
+  network: { fixture: networks.local-4mbps }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.software-only }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+
+expect:
+  decision: direct-play
+  reasons: []
+  container: source

@@ -1,0 +1,56 @@
+name: transcode (Stage B driven) — network cap below every rung forces keep-lowest, Stage F contributes no reason
+why: >
+  Mirrors 341, isolating rule (e) via the NETWORK cap instead of the device cap, still on a Stage-B-driven transcode (interlaced) so Stage F's own reason never evaluates. network.maxBitrateBps is 500,000 (below even the 360p/800,000 rung), non-local, so rule (c) drops every rung; rule (e) keeps exactly the table's lowest-bitrate rung despite it still nominally exceeding the network cap too. device.maxStreamBitrateBps is null (web-chrome), proving rule (e) doesn't need BOTH caps engaged simultaneously — either one alone dropping everything is sufficient. Reasons are EXACTLY [video-interlaced] (videoAlreadyTranscoding suppresses Stage F's own check entirely). why (Phase 3 §11 step 3, Stage G arrival, STATE.md P3.2 regression law): this case's caps fixture has no hardware backend covering this route, so Stage G now routes full software (`software-fallback:encode`).
+
+input:
+  media:
+    fileId: file-0342
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 15000000000
+    overallBitrateBps: 20000000
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 52
+        width: 3840
+        height: 2160
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 20000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: true
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 160000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device: { fixture: devices.web-chrome }
+  network: { maxBitrateBps: 500000, isLocal: false }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.software-only }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+
+expect:
+  decision: transcode
+  reasons:
+    - video-interlaced
+    - software-fallback:encode
+  container: fmp4-hls
+  ladder:
+    - heightPx: 360
+      videoBitrateBps: 800000
+      audioBitrateBps: 160000
+      codec: h264

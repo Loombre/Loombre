@@ -1,0 +1,140 @@
+{
+  "manifestSchemaVersion": 1,
+  "pinnedAtMs": 1784986800000,
+  "pinnedAtIso": "2026-07-25T13:40:00Z",
+  "sourcing": {
+    "decision": "theseus-rs/postgresql-binaries (GitHub Releases)",
+    "evaluated": [
+      {
+        "candidate": "zonky/embedded-postgres-binaries (Maven Central, io.zonky.test.postgres)",
+        "verdict": "REJECTED",
+        "why": "Real jar downloaded and inspected for darwin-arm64v8 17.10.0 (embedded-postgres-binaries-darwin-arm64v8-17.10.0.jar, sha256 b8c73288326af937b632208110b1d629c404ebef7519f8bcc7fd72404c68a36a) — contains only postgres/initdb/pg_ctl. NO psql, pg_isready, pg_controldata, pg_dumpall, pg_restore, pg_upgrade. Zonky's own use case (JDBC-driven Java tests) never needs client tools, so they are not built. This repo's verify step forbids a `pg` driver outside packages/db (CLAUDE.md invariant 4), so health polling and dump/restore MUST shell out to real client binaries — zonky's set is structurally insufficient, not just inconvenient."
+      },
+      {
+        "candidate": "EDB installers (get.enterprisedb.com '-binaries' zip/tar.gz)",
+        "verdict": "REJECTED",
+        "why": "Confirmed reachable (HTTP 200) and downloaded postgresql-17.10-1-osx-binaries.zip in full: 358,193,796 bytes. This is the full EDB One-Click payload (pgAdmin4, StackBuilder, docs, etc.), not a minimal binaries-only bundle — 28x the size actually needed, mixed licensing (pgAdmin GPL + EDB StackBuilder terms bundled alongside core PG), and no generic tarball at all for Linux (the linux '-binaries.tar.gz' URL pattern 403'd; EDB's Linux path is apt/yum-repo only). Wrong shape for a T0-budget (docs/PLAN.md §9.2, idle RSS <=500MB) embedded install."
+      },
+      {
+        "candidate": "postgresql.org source or distro packages",
+        "verdict": "REJECTED",
+        "why": "postgresql.org ships source tarballs and distro-specific packages (apt/yum/Homebrew), not portable pre-built binaries for all five target platforms from one source — would require building PG from source per-platform in CI, which is a materially bigger lift than fetching a pinned prebuilt artifact and contradicts P4.2's 'per-platform pinned binaries' framing (implies fetch-not-build)."
+      },
+      {
+        "candidate": "theseus-rs/postgresql-binaries (GitHub Releases, github.com/theseus-rs/postgresql-binaries)",
+        "verdict": "CHOSEN",
+        "why": "Real end-to-end verification performed on this host (darwin-arm64, real network): downloaded postgresql-17.10.0-aarch64-apple-darwin.tar.gz (12,711,817 bytes), independently sha256'd (e15b5d3b86363d51fe06c9f26ee1d35d09b13951be82641b8f4b2d0e06e2c51e), matched the release's own published .sha256 sidecar AND GitHub's server-computed asset digest — three independent confirmations of the same bytes. Archive contains the FULL client toolset (postgres, initdb, pg_ctl, psql, pg_dump, pg_dumpall, pg_isready, pg_controldata, pg_restore, pg_upgrade, pg_basebackup, ...) under bin/, plus lib/share/include. Verified live: initdb (scram-sha-256, en_US.UTF-8, UTF8), postmaster start on both a unix socket AND TCP loopback (listen_addresses restricted), pg_isready, psql connect+query, pg_ctl status/stop, pg_dumpall -> fresh initdb -> psql restore round-trip with real row-count verification (500 rows), and pg_controldata's real output on two induced corruption modes (truncated pg_control -> short-read error; bit-flipped pg_control -> 'Calculated CRC checksum does not match' warning, exit 0) — see packages/provisioning-pg/src/corruption.ts for how these exact text signatures are classified. Small (11-51 MB per platform archive), covers all five installer-lane targets 1:1 via Rust target triples, PostgreSQL-License core (permissive, AGPL-3.0-compatible) plus theseus-rs's own ISC-equivalent wrapper LICENSE for the build/release tooling. Actively maintained (release cadence tracks upstream PG minors; 18.4.0 already published ahead of our 17.x pin, 16.x still published for the upgrade-test pin below)."
+      }
+    ],
+    "licenseNote": "Two license layers, both permissive and AGPL-3.0-compatible in spirit: (1) the PostgreSQL binaries themselves are covered by the PostgreSQL License (MIT/BSD-style, https://opensource.org/licenses/postgresql) per each archive's bundled LICENSE/COPYRIGHT files, confirmed by direct inspection of the extracted darwin-arm64 17.10.0 and 16.14.0 archives; (2) theseus-rs's own packaging/build scripts carry an ISC-equivalent permissive license (bundled LICENSE file, 'Copyright (c) 2024, Theseus ... Permission to use, copy, modify, and distribute ...'). NEITHER is 'PostgreSQL License' or this exact ISC wording on LICENSE-INTENT.md's literal allow-list string set (MIT/ISC/BSD-2/BSD-3/Apache-2.0/AGPL-3.0/GPL-3.0/LGPL-3.0/MPL-2.0/0BSD/BlueOak-1.0.0/CC0-1.0/CC-BY-4.0/Unlicense/Python-2.0/WTFPL) because that allow-list is enforced by `license-checker` over npm package.json metadata, and these are fetched binaries (script + child_process/fs only, per this lane's LOCKFILE FROZEN constraint), never an npm dependency — license-checker never sees them, same structural gap ffmpeg-manifest.json's provenance block already flagged for lane I1's ffmpeg vendoring. DISCOVERY for the owner / lane W3 (AGPL readiness report): LICENSE-INTENT.md needs a 'Vendored non-npm binaries' section (ffmpeg from I1 + these PostgreSQL binaries) recording both are permissively licensed by manual inspection, not CI-scanned. Not edited here — out of this lane's ownership."
+  },
+  "defaultVersion": "18.4.0",
+  "pgMajorFloor": 17,
+  "versions": {
+    "18.4.0": {
+      "purpose": "Current pinned minor for fresh provisioning (N4 supported-latest sweep 2026-07-25: PostgreSQL 18 GA adopted; PROVISIONING_REQUEST_MIN_PG_MAJOR stays 17 — external 17.x servers remain accepted). This is the version scripts/fetch-embedded-pg.mjs fetches by default.",
+      "platforms": {
+        "linux-x64": {
+          "target": "x86_64-unknown-linux-gnu",
+          "url": "https://github.com/theseus-rs/postgresql-binaries/releases/download/18.4.0/postgresql-18.4.0-x86_64-unknown-linux-gnu.tar.gz",
+          "archiveFormat": "tar.gz",
+          "archiveTopDir": "postgresql-18.4.0-x86_64-unknown-linux-gnu",
+          "sha256": "65c06cf318b9a57525d842d658d6d18cd461d12b3a89b57d6d8ed7cccbe2db53",
+          "sizeBytes": 12155442,
+          "verification": "publisher .sha256 sidecar, fetched over HTTPS from the same GitHub release (supported-latest sweep 2026-07-25; build host is darwin-arm64 — same posture as the 17.10.0 pins below)"
+        },
+        "linux-arm64": {
+          "target": "aarch64-unknown-linux-gnu",
+          "url": "https://github.com/theseus-rs/postgresql-binaries/releases/download/18.4.0/postgresql-18.4.0-aarch64-unknown-linux-gnu.tar.gz",
+          "archiveFormat": "tar.gz",
+          "archiveTopDir": "postgresql-18.4.0-aarch64-unknown-linux-gnu",
+          "sha256": "569984d426365c6ca3c197d2b3a999b73161ff1f3abc963824a8c3624620e5dd",
+          "sizeBytes": 11955841,
+          "verification": "publisher .sha256 sidecar, fetched over HTTPS from the same GitHub release (supported-latest sweep 2026-07-25; build host is darwin-arm64 — same posture as the 17.10.0 pins below)"
+        },
+        "windows-x64": {
+          "target": "x86_64-pc-windows-msvc",
+          "url": "https://github.com/theseus-rs/postgresql-binaries/releases/download/18.4.0/postgresql-18.4.0-x86_64-pc-windows-msvc.zip",
+          "archiveFormat": "zip",
+          "archiveTopDir": "postgresql-18.4.0-x86_64-pc-windows-msvc",
+          "sha256": "01f97a2f7ca1dde0f53a7b57e5fe10e1530d700b1bc99b96fa62dae0935c6617",
+          "sizeBytes": 54033263,
+          "verification": "publisher .sha256 sidecar, fetched over HTTPS from the same GitHub release (supported-latest sweep 2026-07-25; build host is darwin-arm64 — same posture as the 17.10.0 pins below)"
+        },
+        "macos-arm64": {
+          "target": "aarch64-apple-darwin",
+          "url": "https://github.com/theseus-rs/postgresql-binaries/releases/download/18.4.0/postgresql-18.4.0-aarch64-apple-darwin.tar.gz",
+          "archiveFormat": "tar.gz",
+          "archiveTopDir": "postgresql-18.4.0-aarch64-apple-darwin",
+          "sha256": "1b68828f524b638a24918e258b173d0f16773547a0d3b83d9ba74473b61649f2",
+          "sizeBytes": 13054902,
+          "verification": "independently downloaded in full and sha256d on this build host (darwin-arm64) during the supported-latest sweep — matches the publisher .sha256 sidecar exactly; archive listing inspected (LICENSE + bin/ present); live-exercised by the 17->18 upgrade-path dogfood on this host (see upgrade.integration.spec.ts)"
+        },
+        "macos-x64": {
+          "target": "x86_64-apple-darwin",
+          "url": "https://github.com/theseus-rs/postgresql-binaries/releases/download/18.4.0/postgresql-18.4.0-x86_64-apple-darwin.tar.gz",
+          "archiveFormat": "tar.gz",
+          "archiveTopDir": "postgresql-18.4.0-x86_64-apple-darwin",
+          "sha256": "cbc38067a795d10bbddc730e61c835df0b351c36a7bd2544d388790fcf50aa4d",
+          "sizeBytes": 13464717,
+          "verification": "publisher .sha256 sidecar, fetched over HTTPS from the same GitHub release (supported-latest sweep 2026-07-25; build host is darwin-arm64 — same posture as the 17.10.0 pins below)"
+        }
+      }
+    },
+    "17.10.0": {
+      "purpose": "UPGRADE-PATH INTEGRATION TEST + external-server floor line (N4 sweep 2026-07-25: superseded as the fresh-provision default by 18.4.0 above; retained as the FROM side of the real 17->18 dump/restore upgrade proof, and as the newest minor of the oldest supported external major — PROVISIONING_REQUEST_MIN_PG_MAJOR=17).",
+      "platforms": {
+        "linux-x64": {
+          "target": "x86_64-unknown-linux-gnu",
+          "url": "https://github.com/theseus-rs/postgresql-binaries/releases/download/17.10.0/postgresql-17.10.0-x86_64-unknown-linux-gnu.tar.gz",
+          "archiveFormat": "tar.gz",
+          "archiveTopDir": "postgresql-17.10.0-x86_64-unknown-linux-gnu",
+          "sha256": "333937dac26a33d367810b0db20892bbca6cf244f670e26f54f3e0b57dcb50b6",
+          "sizeBytes": 11752668,
+          "verification": "publisher .sha256 sidecar, fetched over HTTPS from the same GitHub release (not independently re-downloaded+hashed by this lane — build host is darwin-arm64; see linux glibc-baseline note below)"
+        },
+        "linux-arm64": {
+          "target": "aarch64-unknown-linux-gnu",
+          "url": "https://github.com/theseus-rs/postgresql-binaries/releases/download/17.10.0/postgresql-17.10.0-aarch64-unknown-linux-gnu.tar.gz",
+          "archiveFormat": "tar.gz",
+          "archiveTopDir": "postgresql-17.10.0-aarch64-unknown-linux-gnu",
+          "sha256": "c3b75d86f6a86ea3e44d37c26eb020eac42981fc4610369e24a792b45d9d9f86",
+          "sizeBytes": 11554016,
+          "verification": "publisher .sha256 sidecar (see linux-x64 note)"
+        },
+        "windows-x64": {
+          "target": "x86_64-pc-windows-msvc",
+          "url": "https://github.com/theseus-rs/postgresql-binaries/releases/download/17.10.0/postgresql-17.10.0-x86_64-pc-windows-msvc.zip",
+          "archiveFormat": "zip",
+          "archiveTopDir": "postgresql-17.10.0-x86_64-pc-windows-msvc",
+          "sha256": "aeadd50fe282a39ef87809bda9a1e01213aa411e34c889a70f9f9bb27e3ecbfe",
+          "sizeBytes": 50859030,
+          "verification": "independently downloaded (this lane's own darwin host) and sha256'd — matches the publisher .sha256 sidecar exactly. Full zip listing inspected: postgresql-17.10.0-x86_64-pc-windows-msvc/bin/{postgres,initdb,pg_ctl,psql,pg_isready,pg_controldata,pg_dumpall}.exe all present."
+        },
+        "macos-arm64": {
+          "target": "aarch64-apple-darwin",
+          "url": "https://github.com/theseus-rs/postgresql-binaries/releases/download/17.10.0/postgresql-17.10.0-aarch64-apple-darwin.tar.gz",
+          "archiveFormat": "tar.gz",
+          "archiveTopDir": "postgresql-17.10.0-aarch64-apple-darwin",
+          "sha256": "e15b5d3b86363d51fe06c9f26ee1d35d09b13951be82641b8f4b2d0e06e2c51e",
+          "sizeBytes": 12711817,
+          "verification": "independently downloaded and sha256'd on this lane's own build host (darwin-arm64) — THE platform this lane's integration tests actually run against. Full real-binary smoke performed: initdb, postmaster start (unix socket + TCP loopback), pg_isready, psql connect/query, pg_ctl status/stop, pg_dumpall+restore round-trip, pg_controldata on both a healthy and two corrupted control-file states."
+        },
+        "macos-x64": {
+          "target": "x86_64-apple-darwin",
+          "url": "https://github.com/theseus-rs/postgresql-binaries/releases/download/17.10.0/postgresql-17.10.0-x86_64-apple-darwin.tar.gz",
+          "archiveFormat": "tar.gz",
+          "archiveTopDir": "postgresql-17.10.0-x86_64-apple-darwin",
+          "sha256": "737c0e14bd2f1546aaf728153851cfee2d93e682520eb87ba0576a08ec6d9789",
+          "sizeBytes": 13106247,
+          "verification": "publisher .sha256 sidecar, fetched over HTTPS from the same GitHub release (not independently re-downloaded — this lane's host is arm64, runs the arm64 binaries natively)"
+        }
+      }
+    }
+  },
+  "notes": {
+    "archiveLayout": "Every archive (tar.gz and zip alike) extracts to a single top-level directory named exactly `archiveTopDir` above, containing bin/ lib/ share/ include/ LICENSE COPYRIGHT README.md — verified identically across the darwin-arm64 tar.gz and the windows-x64 zip (full listing inspected). scripts/fetch-embedded-pg.mjs's extraction step strips this top directory so the vendor dir always ends up as `<vendorDir>/<platform>/<version>/{bin,lib,share,include}` regardless of source archive naming.",
+    "linuxGlibcBaseline": "linux-x64/linux-arm64 above are the 'gnu' (glibc-linked) target triples — the right default for desktop/server distros (installer lanes I1/I2's target). theseus-rs also publishes 'musl' variants (x86_64-unknown-linux-musl, aarch64-unknown-linux-musl) for Alpine-style bases; not pinned here since neither I1 (tarball+systemd) nor I2 (Docker, own Dockerfile/base-image choice) asked for musl in their dispatch — DISCOVERY for I2 if the production Docker image ever moves to an Alpine base.",
+    "windowsArchiveChoice": "theseus-rs publishes BOTH .tar.gz and .zip for windows-x64; .zip pinned here as the more Windows-native format (no tar/gzip dependency assumption on the extraction side for I3's MSI build)."
+  }
+}

@@ -1,0 +1,122 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+
+/* Phosphor shell chrome: sidebar + topbar stay floating glass chrome,
+   position:fixed over the document's scroll, so their backdrop-filter
+   samples real content passing underneath as the page scrolls (not a
+   static grid region). .main is offset by padding to sit clear of the
+   fixed bars.
+
+   The sidebar itself (210px desktop / 76px collapsed, U3) lives in
+   Sidebar.module.css — .topbar's left inset and .main's left padding
+   below MUST stay in sync with that file's two widths, at the same
+   breakpoint, or the topbar/content sit under the wrong edge.
+
+   Wave 1 (W1a) responsive breakpoint (README "Responsive strategy" /
+   STATE.md U2): below the mobile breakpoint the desktop .topbar/.sidebar
+   chrome is CSS-hidden and MobileHeader/MobileTabBar (own modules) take
+   over; .main's padding swaps to their heights instead of the desktop
+   64px topbar + 210px/76px sidebar. 767.98px is a repeated literal in
+   every file that needs it (tokens.css's "Mobile chrome layout" note
+   explains why it isn't a var()) — keep AppShell.module.css,
+   Sidebar.module.css, MobileHeader.module.css and MobileTabBar.module.css
+   in sync by hand. No dead zone: 768px is the exact tablet-icon-rail
+   cutover, 1280px the exact full-sidebar cutover — verified in-browser at
+   both boundaries ±1px (freeze report). */
+
+.shell {
+  min-height: 100vh;
+}
+
+/* Own chrome, not `.glass` (W3 fidelity audit S6 — U8 reserves `.glass`
+   for exactly two surfaces, the mobile tab bar + now-playing bar; the
+   desktop topbar isn't one of them). dc:80's own topbar literal is
+   `rgba(11,12,15,.85)` + `blur(14px)` — --color-bg is literally
+   `#0b0c0f` = `rgb(11 12 15)`, so `color-mix(in srgb, var(--color-bg) 85%,
+   transparent)` reproduces that rgba exactly from the existing token
+   rather than a second hardcoded hex; no new token was needed for the
+   fill. The 14px blur has no existing var (--chrome-blur is 20px and
+   scoped to `.glass` specifically) and is a single-consumer value, so it
+   stays a literal rather than growing tokens.css for one call site. The
+   border drops from `.glass`'s all-around --chrome-edge to a bottom-only
+   hairline matching dc:80's own `border-bottom:1px solid
+   rgba(255,255,255,.06)` (~= --color-border-subtle, 7%). */
+.topbar {
+  position: fixed;
+  inset: 0 0 auto 210px;
+  height: 64px;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-sm);
+  padding: 0 var(--space-lg);
+  background: color-mix(in srgb, var(--color-bg) 85%, transparent);
+  backdrop-filter: blur(14px);
+  border-bottom: 1px solid var(--color-border-subtle);
+}
+
+@supports not (
+  (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))
+) {
+  .topbar {
+    background: var(--color-bg);
+  }
+}
+
+.main {
+  padding: var(--space-xl);
+  padding-left: calc(210px + var(--space-xl));
+  padding-top: calc(64px + var(--space-xl));
+  overflow-x: hidden;
+}
+
+@media (width <= 1279.98px) {
+  .topbar {
+    inset: 0 0 auto 76px;
+  }
+
+  .main {
+    padding-left: calc(76px + var(--space-xl));
+  }
+}
+
+@media (width <= 767.98px) {
+  .topbar {
+    display: none;
+  }
+
+  .main {
+    padding: var(--space-md) var(--space-md) calc(var(--space-md) + var(--mobile-tabbar-height) + env(safe-area-inset-bottom, 0));
+    padding-top: calc(var(--mobile-header-height) + env(safe-area-inset-top, 0) + var(--space-md));
+    padding-left: calc(var(--space-md) + env(safe-area-inset-left, 0));
+    padding-right: calc(var(--space-md) + env(safe-area-inset-right, 0));
+  }
+}
+
+.iconButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-full);
+  border: none;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  transition: background-color var(--motion-fast) var(--ease-out);
+}
+
+.iconButton:hover {
+  background: var(--color-surface-hover);
+}
+
+/* Mobile hard line: touch targets never below 44px (UserMenu's avatar
+   trigger, reused as-is in MobileHeader — see that file). Desktop keeps
+   40px; only the mobile header context needs the bump. */
+@media (width <= 767.98px) {
+  .iconButton {
+    width: 44px;
+    height: 44px;
+  }
+}

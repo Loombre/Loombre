@@ -1,0 +1,45 @@
+name: direct-play — eac3 6ch Atmos within web-safari's cap, passthrough:true — copies, Atmos preserved
+why: "eac3 6ch is exactly at web-safari's cap and eac3 is never subject to rule 3, so the stream copies regardless of the passthrough flag's value; with the stage's own verdict never reaching transcode, audio-atmos-lost does not fire despite hasAtmos:true."
+input:
+  media:
+    fileId: file-0230
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 6000000000
+    overallBitrateBps: 5900000
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 41
+        width: 1920
+        height: 1080
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 5000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: eac3
+        channels: 6
+        sampleRate: 48000
+        bitrateBps: 448000
+        language: eng
+        isDefault: true
+        hasAtmos: true
+    subtitle: []
+  device: { fixture: devices.web-safari }
+  network: { fixture: networks.local }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.software-only }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: direct-play
+  reasons: []

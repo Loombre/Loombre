@@ -1,0 +1,114 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+
+.toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-lg);
+}
+
+.searchRow {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+}
+
+/* H17 fix (Wave-3 fidelity audit): zone search focus reads as a WARNING
+   ring, never accent — the zone keeps its own warning colour language
+   (README, verbatim, same rationale as .pill's active-fill comment below).
+   A zone-scoped descendant selector rather than an Input.module.css
+   change (per the fix wave's own instruction) — the extra `input` type
+   selector also guarantees this wins over Input.module.css's
+   `.input:focus-visible` regardless of which CSS Modules file the bundler
+   places later in the cascade (both rules are otherwise the same
+   specificity). */
+.searchRow input:focus-visible {
+  border-color: var(--color-warning);
+}
+
+.pillRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2xs);
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding-bottom: var(--space-3xs);
+}
+
+.pillRow::-webkit-scrollbar {
+  display: none;
+}
+
+.divider {
+  flex: 0 0 auto;
+  width: 1px;
+  height: 20px;
+  background: var(--color-border);
+  margin: 0 var(--space-2xs);
+}
+
+/* Active fill is --color-warning with dark text — NOT --color-accent
+   (design/phosphor/README.md, verbatim: "not accent — the zone keeps its
+   warning colour"). S2 fix (Wave-3 fidelity audit, mono-label law): genre
+   and 4K/HDR filter chips are mono labels like every other chip in the
+   app (prototype: `font:600 9px 'IBM Plex Mono';letter-spacing:.1em`),
+   not sans text-sm — this is the SAME .pill class the "All" pill, every
+   genre pill, and the 4K/HDR toggles all share. */
+.pill {
+  flex: 0 0 auto;
+  border: 1px solid var(--color-border);
+  background: transparent;
+  color: var(--color-text-secondary);
+  border-radius: var(--radius-pill);
+  padding: var(--space-2xs) var(--space-md);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--track-mono);
+  text-transform: uppercase;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background-color var(--motion-fast) var(--ease-out),
+    border-color var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out);
+}
+
+.pill[data-active="true"] {
+  background: var(--color-warning);
+  border-color: var(--color-warning);
+  color: var(--color-warning-text);
+}
+
+.pill:not([data-active="true"]):hover {
+  border-color: var(--color-warning);
+  color: var(--color-text);
+}
+
+.sortChip {
+  flex: 0 0 auto;
+  border: 1px solid var(--color-border);
+  background: var(--fill-2);
+  color: var(--color-text);
+  border-radius: var(--radius-pill);
+  padding: var(--space-2xs) var(--space-md);
+  font-family: var(--font-mono);
+  font-size: var(--mono-md);
+  letter-spacing: var(--track-mono);
+  text-transform: uppercase;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: border-color var(--motion-fast) var(--ease-out);
+}
+
+.sortChip:hover {
+  border-color: var(--color-warning);
+}
+
+.readout {
+  font-family: var(--font-mono);
+  font-size: var(--mono-sm);
+  letter-spacing: var(--track-mono);
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}

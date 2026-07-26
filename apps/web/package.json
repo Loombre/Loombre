@@ -1,0 +1,36 @@
+{
+  "name": "@loombre/web",
+  "version": "0.0.1",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "scripts": {
+    "dev": "next dev --webpack",
+    "build": "next build --webpack",
+    "start": "next start -p 3000",
+    "lint": "eslint src --max-warnings=0 && stylelint \"src/**/*.css\"",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "lighthouse": "npx --yes @lhci/cli@0.15.1 autorun --config=./lighthouserc.cjs"
+  },
+  "dependencies": {
+    "@loombre/sdk": "workspace:*",
+    "blurhash": "2.0.5",
+    "hls.js": "1.6.16",
+    "lucide-react": "1.26.0",
+    "next": "16.2.11",
+    "react": "19.2.8",
+    "react-dom": "19.2.8"
+  },
+  "devDependencies": {
+    "@loombre/playback-engine": "workspace:*",
+    "@types/node": "24.13.3",
+    "@types/react": "19.2.17",
+    "@types/react-dom": "19.2.3",
+    "ajv": "^8.20.0",
+    "jsdom": "^29.1.1",
+    "stylelint": "^17.14.1",
+    "stylelint-config-standard": "^40.0.0",
+    "typescript": "6.0.3",
+    "vitest": "4.1.10"
+  }
+}

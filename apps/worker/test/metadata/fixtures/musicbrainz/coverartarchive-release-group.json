@@ -1,0 +1,15 @@
+{
+  "images": [
+    {
+      "types": ["Front"],
+      "front": true,
+      "image": "https://coverartarchive.org/release/rel-1/123456.jpg",
+      "thumbnails": {
+        "250": "https://coverartarchive.org/release/rel-1/123456-250.jpg",
+        "500": "https://coverartarchive.org/release/rel-1/123456-500.jpg",
+        "small": "https://coverartarchive.org/release/rel-1/123456-250.jpg",
+        "large": "https://coverartarchive.org/release/rel-1/123456-500.jpg"
+      }
+    }
+  ]
+}

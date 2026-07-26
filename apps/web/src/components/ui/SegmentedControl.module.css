@@ -1,0 +1,33 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+.track {
+  display: inline-flex;
+  gap: var(--space-3xs);
+  padding: var(--space-3xs);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface);
+  border: 1px solid var(--border);
+}
+
+.segment {
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  border-radius: var(--radius-pill);
+  padding: var(--space-2xs) var(--space-md);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  cursor: pointer;
+  transition:
+    background-color var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out);
+}
+
+.segment[data-active="true"] {
+  background: var(--color-accent);
+  color: var(--color-accent-text);
+}
+
+.segment:not([data-active="true"]):hover {
+  background: var(--color-surface-hover);
+  color: var(--text);
+}

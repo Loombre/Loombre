@@ -1,0 +1,8 @@
+{
+  "id": "9dd17fa8-3078-4c81-b3c7-9d6e6b0dbc1c",
+  "title": "Smells Like Teen Spirit",
+  "length": 301000,
+  "artist-credit": [{ "name": "Nirvana", "artist": { "id": "5b11f4ce-a62d-471e-81fc-a69a8278c7da" } }],
+  "first-release-date": "1991-09-10",
+  "releases": [{ "id": "rel-1", "media": [{ "position": 1, "track-offset": 0, "tracks": [{ "position": 1, "number": "1" }] }] }]
+}

@@ -1,0 +1,52 @@
+name: transcode — Stage C (hdr-tone-map-required, NOT refused) drives the transcode; Stage F fires no reason but still caps the ladder
+why: >
+  Mission category "ladder-on-B/C/E-driven transcodes", the Stage-C variant: an hdr10 source vs an SDR-only device (hevc-sdr) needs tone-mapping; `t1-cpu-tonemap`'s allowToneMapCpu 'always' means it is NOT refused (distinct from the refused matrix-level case, 365), so Stage C alone verdicts transcode with exactly [hdr-tone-map-required] — no refusal reason, no bitrate reason (videoAlreadyTranscoding suppresses Stage F even though overallBitrateBps genuinely exceeds the paired 4Mbps network cap). buildLadder still runs and still applies that cap: the 1080p/8Mbps rung is dropped. why (Phase 3 §11 step 3, Stage G arrival, STATE.md P3.2 regression law): this case's caps fixture has no hardware backend covering this route, so Stage G now routes full software (`software-fallback:encode`).
+
+input:
+  media:
+    fileId: file-0359
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 7500000000
+    overallBitrateBps: 10000000
+    video:
+      - index: 0
+        codec: hevc
+        profile: main10
+        level: 153
+        width: 1920
+        height: 1080
+        bitDepth: 10
+        frameRate: 23.976
+        bitrateBps: 10000000
+        hdr: hdr10
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 160000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device: { fixture: devices.hevc-sdr }
+  network: { fixture: networks.wan-4mbps }
+  policy: { fixture: policies.t1-cpu-tonemap }
+  caps: { fixture: caps.software-only }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+
+expect:
+  decision: transcode
+  reasons:
+    - hdr-tone-map-required
+    - software-fallback:encode
+  container: fmp4-hls
+  ladderMaxVideoBitrateBps: 4000000

@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://loombre.com/schemas/events/watchlist.added.schema.json",
+  "title": "WatchlistAddedPayload",
+  "description": "Payload for envelope.type === 'watchlist.added'. Phosphor Wave 2 lane L3: emitted when a user adds an item to their watchlist (PUT /watchlist/{itemId}), in the SAME transaction as the watchlists row insert (packages/db/src/query/watchlist.ts's addToWatchlistAndEmit). USER-SCOPED delivery: the websocket broadcaster (apps/server/src/gateway/ws-broadcaster.service.ts) delivers this ONLY to sockets authenticated as `userId` below, never broadcast to other viewers (packages/db/src/query/events.ts's USER_ONLY_TYPES) — this is deliberately NOT item-visibility-gated the way item.added/item.updated are: it is private to the acting user regardless of who else can see the underlying item, which is what makes the watchlist sync across a single user's own devices/tabs (design/phosphor README.md's 'Shared client state: watchlist ... must sync across devices via the events socket') without ever telling a DIFFERENT user what the first user watchlisted.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["userId", "itemId"],
+  "properties": {
+    "userId": { "type": "string", "format": "uuid" },
+    "itemId": { "type": "string", "format": "uuid" }
+  }
+}

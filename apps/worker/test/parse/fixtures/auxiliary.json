@@ -1,0 +1,260 @@
+[
+  {
+    "path": "Movie (2010)/Featurettes/Making Of.mkv",
+    "kind": "auxiliary",
+    "expected": "extra",
+    "note": "'Featurettes' extras dir"
+  },
+  {
+    "path": "Movie (2010)/Behind The Scenes/Interview.mkv",
+    "kind": "auxiliary",
+    "expected": "extra",
+    "note": "'Behind The Scenes' extras dir"
+  },
+  {
+    "path": "Movie (2010)/Extras/Bonus.mkv",
+    "kind": "auxiliary",
+    "expected": "extra",
+    "note": "'Extras' extras dir"
+  },
+  {
+    "path": "Movie (2010)/Trailers/Teaser.mkv",
+    "kind": "auxiliary",
+    "expected": "extra",
+    "note": "'Trailers' extras dir"
+  },
+  {
+    "path": "Movie (2010)/Interviews/Cast Interview.mkv",
+    "kind": "auxiliary",
+    "expected": "extra",
+    "note": "'Interviews' extras dir"
+  },
+  {
+    "path": "Movie (2010)/Deleted Scenes/Cut Scene.mkv",
+    "kind": "auxiliary",
+    "expected": "extra",
+    "note": "'Deleted Scenes' extras dir"
+  },
+  {
+    "path": "Movie (2010)/Shorts/Short Film.mkv",
+    "kind": "auxiliary",
+    "expected": "extra",
+    "note": "'Shorts' extras dir"
+  },
+  {
+    "path": "Movie (2010)/Other/Misc.mkv",
+    "kind": "auxiliary",
+    "expected": "extra",
+    "note": "'Other' extras dir"
+  },
+  {
+    "path": "Movie (2010)/featurettes/Making Of.mkv",
+    "kind": "auxiliary",
+    "expected": "extra",
+    "note": "lowercase extras dir name"
+  },
+  {
+    "path": "Movie (2010)/FEATURETTES/Making Of.mkv",
+    "kind": "auxiliary",
+    "expected": "extra",
+    "note": "uppercase extras dir name"
+  },
+  {
+    "path": "Movie (2010)/behind the scenes/Interview.mkv",
+    "kind": "auxiliary",
+    "expected": "extra",
+    "note": "lowercase multi-word extras dir"
+  },
+  {
+    "path": "Show/Season 01/Featurettes/Cast Q&A.mkv",
+    "kind": "auxiliary",
+    "expected": "extra",
+    "note": "extras dir nested under a TV season dir"
+  },
+  {
+    "path": "Movie (2010)/Extras/Sub/Making Of.mkv",
+    "kind": "auxiliary",
+    "expected": "extra",
+    "note": "extras dir higher up the chain, deeper nesting still detected"
+  },
+  {
+    "path": "Movie (2010)/sample.mkv",
+    "kind": "auxiliary",
+    "expected": "sample",
+    "note": "'sample' as whole filename"
+  },
+  {
+    "path": "Movie (2010)/Movie.sample.mkv",
+    "kind": "auxiliary",
+    "expected": "sample",
+    "note": "'sample' token within a dotted filename"
+  },
+  {
+    "path": "Movie (2010)/Movie-sample.mkv",
+    "kind": "auxiliary",
+    "expected": "sample",
+    "note": "'sample' token, hyphen-bounded"
+  },
+  {
+    "path": "Movie (2010)/Sample/Movie.mkv",
+    "kind": "auxiliary",
+    "expected": "sample",
+    "note": "'Sample' directory"
+  },
+  {
+    "path": "Movie (2010)/Samples/Movie.mkv",
+    "kind": "auxiliary",
+    "expected": "sample",
+    "note": "'Samples' directory (plural)"
+  },
+  {
+    "path": "Movie (2010)/SAMPLE.MKV",
+    "kind": "auxiliary",
+    "expected": "sample",
+    "note": "uppercase 'SAMPLE.MKV' whole filename"
+  },
+  {
+    "path": "Movie (2010)/Movie Sample.mkv",
+    "kind": "auxiliary",
+    "expected": "sample",
+    "note": "'Sample' as a separate space-bounded word"
+  },
+  {
+    "path": "Movie (2010)/.DS_Store",
+    "kind": "auxiliary",
+    "expected": "ignored",
+    "note": "macOS Finder metadata file"
+  },
+  {
+    "path": "Movie (2010)/._Movie (2010).mkv",
+    "kind": "auxiliary",
+    "expected": "ignored",
+    "note": "macOS AppleDouble sidecar (leading '._')"
+  },
+  {
+    "path": "Movie (2010)/Thumbs.db",
+    "kind": "auxiliary",
+    "expected": "ignored",
+    "note": "Windows thumbnail cache (any case)"
+  },
+  {
+    "path": "Movie (2010)/thumbs.db",
+    "kind": "auxiliary",
+    "expected": "ignored",
+    "note": "Windows thumbnail cache, lowercase"
+  },
+  {
+    "path": "Movie (2010)/desktop.ini",
+    "kind": "auxiliary",
+    "expected": "ignored",
+    "note": "Windows folder config file"
+  },
+  {
+    "path": "Show/Season 01/.gitkeep",
+    "kind": "auxiliary",
+    "expected": "ignored",
+    "note": "arbitrary dotfile"
+  },
+  {
+    "path": "Movie (2010)/Movie (2010).nfo",
+    "kind": "auxiliary",
+    "expected": "ignored",
+    "note": "NFO sidecar"
+  },
+  {
+    "path": "Movie (2010)/Movie (2010).srt",
+    "kind": "auxiliary",
+    "expected": "ignored",
+    "note": "subtitle sidecar"
+  },
+  {
+    "path": "Movie (2010)/Movie (2010).en.srt",
+    "kind": "auxiliary",
+    "expected": "ignored",
+    "note": "language-tagged subtitle sidecar"
+  },
+  {
+    "path": "Movie (2010)/poster.jpg",
+    "kind": "auxiliary",
+    "expected": "ignored",
+    "note": "artwork image"
+  },
+  {
+    "path": "Movie (2010)/folder.png",
+    "kind": "auxiliary",
+    "expected": "ignored",
+    "note": "folder artwork image"
+  },
+  {
+    "path": "Movie (2010)/readme.txt",
+    "kind": "auxiliary",
+    "expected": "ignored",
+    "note": "plain text file"
+  },
+  {
+    "path": "Movie (2010)/Movie (2010).sub",
+    "kind": "auxiliary",
+    "expected": "ignored",
+    "note": "VobSub subtitle track"
+  },
+  {
+    "path": "Movie (2010)/Movie (2010).idx",
+    "kind": "auxiliary",
+    "expected": "ignored",
+    "note": "VobSub index file"
+  },
+  {
+    "path": "Movie (2010)/Featurettes/.DS_Store",
+    "kind": "auxiliary",
+    "expected": "ignored",
+    "note": "hidden file wins over extras-dir classification"
+  },
+  {
+    "path": "Movie (2010)/Featurettes/poster.jpg",
+    "kind": "auxiliary",
+    "expected": "ignored",
+    "note": "non-media extension wins over extras-dir classification"
+  },
+  {
+    "path": "Movie (2010)/Sample/.DS_Store",
+    "kind": "auxiliary",
+    "expected": "ignored",
+    "note": "hidden file wins over sample-dir classification"
+  },
+  {
+    "path": "Movie (2010)/Movie (2010).mkv",
+    "kind": "auxiliary",
+    "expected": null,
+    "note": "ordinary movie file -> null"
+  },
+  {
+    "path": "Show/Season 01/Show.S01E01.mkv",
+    "kind": "auxiliary",
+    "expected": null,
+    "note": "ordinary TV episode file -> null"
+  },
+  {
+    "path": "Artist/Album/01 Track.flac",
+    "kind": "auxiliary",
+    "expected": null,
+    "note": "ordinary music file -> null"
+  },
+  {
+    "path": "Movie (2010)/Movie (2010).mp4",
+    "kind": "auxiliary",
+    "expected": null,
+    "note": "ordinary movie file, mp4 -> null"
+  },
+  {
+    "path": "",
+    "kind": "auxiliary",
+    "expected": null,
+    "note": "empty path -> null"
+  },
+  {
+    "path": "Movie (2010)/",
+    "kind": "auxiliary",
+    "expected": null,
+    "note": "directory-only path with trailing slash resolves to the last real segment as filename (documented ambiguity, same as parse layer)"
+  }
+]

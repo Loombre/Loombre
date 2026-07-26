@@ -1,0 +1,69 @@
+name: direct-play — multi-video file (§2.1 allows VideoStream[]); the SELECTED second stream is fully
+  in caps while the unselected first stream is wildly out — no stage may look past the selection
+why: 'First multi-video-stream case in the matrix (audit coverage gap: §2.1''s video array and §2.6''s
+  ''selection picks one'' had no case with MORE than one video stream). Stream 0 is hevc main10 10-bit
+  2160p60 HDR10 — four axes outside web-chrome''s caps — but selection picks stream 1 (h264 high@41 1080p
+  8-bit SDR, fully within), so every stage''s SELECTED-stream-only scoping (stages/video.ts, hdr.ts, ladder.ts)
+  must yield direct-play []. Deliberate future-proof exception: the UNSELECTED stream 0 is out of caps
+  by design (the case''s entire point).'
+input:
+  media:
+    fileId: file-454
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 4500000000
+    overallBitrateBps: 6000000
+    video:
+    - index: 0
+      codec: hevc
+      profile: main10
+      level: 153
+      width: 3840
+      height: 2160
+      bitDepth: 10
+      frameRate: 60
+      bitrateBps: 25000000
+      hdr: hdr10
+      dvProfile: null
+      dvBlCompatId: null
+      interlaced: false
+    - index: 1
+      codec: h264
+      profile: high
+      level: 41
+      width: 1920
+      height: 1080
+      bitDepth: 8
+      frameRate: 23.976
+      bitrateBps: 5000000
+      hdr: none
+      dvProfile: null
+      dvBlCompatId: null
+      interlaced: false
+    audio:
+    - index: 2
+      codec: aac
+      channels: 2
+      sampleRate: 48000
+      bitrateBps: 192000
+      language: eng
+      isDefault: true
+      hasAtmos: false
+    subtitle: []
+  device:
+    fixture: devices.web-chrome
+  network:
+    fixture: networks.local
+  policy:
+    fixture: policies.t0-default
+  caps:
+    fixture: caps.software-only
+  selection:
+    videoStreamIndex: 1
+    audioStreamIndex: 2
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: direct-play
+  reasons: []
+  container: source

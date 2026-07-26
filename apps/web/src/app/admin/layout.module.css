@@ -1,0 +1,14 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  max-width: 1100px;
+}
+
+.heading {
+  margin: 0;
+  font-size: var(--text-2xl);
+  font-stretch: var(--wdth-title);
+  font-weight: var(--weight-black);
+}

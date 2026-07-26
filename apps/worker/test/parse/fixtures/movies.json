@@ -1,0 +1,2043 @@
+[
+  {
+    "path": "The Matrix (1999)/The Matrix (1999).mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "The Matrix",
+      "year": 1999,
+      "edition": null,
+      "partNumber": null,
+      "extras": false,
+      "confidence": "high",
+      "reasons": [
+        "matched:title-year-paren"
+      ]
+    },
+    "note": "canonical paren, nested dir mirrors filename"
+  },
+  {
+    "path": "Se7en (1995)/Se7en (1995).mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "Se7en",
+      "year": 1995,
+      "edition": null,
+      "partNumber": null,
+      "extras": false,
+      "confidence": "high",
+      "reasons": [
+        "matched:title-year-paren"
+      ]
+    },
+    "note": "canonical paren, digit-in-title"
+  },
+  {
+    "path": "Heat (1995)/Heat (1995).mp4",
+    "kind": "movie",
+    "expected": {
+      "title": "Heat",
+      "year": 1995,
+      "edition": null,
+      "partNumber": null,
+      "extras": false,
+      "confidence": "high",
+      "reasons": [
+        "matched:title-year-paren"
+      ]
+    },
+    "note": "canonical paren, short title, mp4"
+  },
+  {
+    "path": "Parasite (2019)/Parasite (2019).mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "Parasite",
+      "year": 2019,
+      "edition": null,
+      "partNumber": null,
+      "extras": false,
+      "confidence": "high",
+      "reasons": [
+        "matched:title-year-paren"
+      ]
+    },
+    "note": "canonical paren"
+  },
+  {
+    "path": "Whiplash (2014)/Whiplash (2014).mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "Whiplash",
+      "year": 2014,
+      "edition": null,
+      "partNumber": null,
+      "extras": false,
+      "confidence": "high",
+      "reasons": [
+        "matched:title-year-paren"
+      ]
+    },
+    "note": "canonical paren"
+  },
+  {
+    "path": "Arrival (2016)/Arrival (2016).mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "Arrival",
+      "year": 2016,
+      "edition": null,
+      "partNumber": null,
+      "extras": false,
+      "confidence": "high",
+      "reasons": [
+        "matched:title-year-paren"
+      ]
+    },
+    "note": "canonical paren"
+  },
+  {
+    "path": "Coco (2017)/Coco (2017).mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "Coco",
+      "year": 2017,
+      "edition": null,
+      "partNumber": null,
+      "extras": false,
+      "confidence": "high",
+      "reasons": [
+        "matched:title-year-paren"
+      ]
+    },
+    "note": "canonical paren"
+  },
+  {
+    "path": "Up (2009)/Up (2009).mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "Up",
+      "year": 2009,
+      "edition": null,
+      "partNumber": null,
+      "extras": false,
+      "confidence": "high",
+      "reasons": [
+        "matched:title-year-paren"
+      ]
+    },
+    "note": "very short title"
+  },
+  {
+    "path": "Her (2013)/Her (2013).mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "Her",
+      "year": 2013,
+      "edition": null,
+      "partNumber": null,
+      "extras": false,
+      "confidence": "high",
+      "reasons": [
+        "matched:title-year-paren"
+      ]
+    },
+    "note": "very short title"
+  },
+  {
+    "path": "Room (2015)/Room (2015).mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "Room",
+      "year": 2015,
+      "edition": null,
+      "partNumber": null,
+      "extras": false,
+      "confidence": "high",
+      "reasons": [
+        "matched:title-year-paren"
+      ]
+    },
+    "note": "short title"
+  },
+  {
+    "path": "Moon (2009)/Moon (2009).mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "Moon",
+      "year": 2009,
+      "edition": null,
+      "partNumber": null,
+      "extras": false,
+      "confidence": "high",
+      "reasons": [
+        "matched:title-year-paren"
+      ]
+    },
+    "note": "short title"
+  },
+  {
+    "path": "Jaws (1975)/Jaws (1975).avi",
+    "kind": "movie",
+    "expected": {
+      "title": "Jaws",
+      "year": 1975,
+      "edition": null,
+      "partNumber": null,
+      "extras": false,
+      "confidence": "high",
+      "reasons": [
+        "matched:title-year-paren"
+      ]
+    },
+    "note": "avi container"
+  },
+  {
+    "path": "Alien (1979)/Alien (1979).mov",
+    "kind": "movie",
+    "expected": {
+      "title": "Alien",
+      "year": 1979,
+      "edition": null,
+      "partNumber": null,
+      "extras": false,
+      "confidence": "high",
+      "reasons": [
+        "matched:title-year-paren"
+      ]
+    },
+    "note": "mov container"
+  },
+  {
+    "path": "The Godfather (1972)/The Godfather (1972).mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "The Godfather",
+      "year": 1972,
+      "edition": null,
+      "partNumber": null,
+      "extras": false,
+      "confidence": "high",
+      "reasons": [
+        "matched:title-year-paren"
+      ]
+    },
+    "note": "canonical, article in title"
+  },
+  {
+    "path": "The Godfather Part II (1974)/The Godfather Part II (1974).mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "The Godfather Part II",
+      "year": 1974,
+      "edition": null,
+      "partNumber": null,
+      "extras": false,
+      "confidence": "high",
+      "reasons": [
+        "matched:title-year-paren"
+      ]
+    },
+    "note": "roman numeral part is part of TITLE not partNumber (no cd/pt/disc keyword)"
+  },
+  {
+    "path": "No Country for Old Men (2007)/No Country for Old Men (2007).mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "No Country for Old Men",
+      "year": 2007,
+      "edition": null,
+      "partNumber": null,
+      "extras": false,
+      "confidence": "high",
+      "reasons": [
+        "matched:title-year-paren"
+      ]
+    },
+    "note": "long title"
+  },
+  {
+    "path": "Amélie (2001)/Amélie (2001).mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "Amélie",
+      "year": 2001,
+      "edition": null,
+      "partNumber": null,
+      "extras": false,
+      "confidence": "high",
+      "reasons": [
+        "matched:title-year-paren"
+      ]
+    },
+    "note": "unicode accented title"
+  },
+  {
+    "path": "Léon The Professional (1994)/Léon The Professional (1994).mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "Léon The Professional",
+      "year": 1994,
+      "edition": null,
+      "partNumber": null,
+      "extras": false,
+      "confidence": "high",
+      "reasons": [
+        "matched:title-year-paren"
+      ]
+    },
+    "note": "unicode accented title"
+  },
+  {
+    "path": "千と千尋の神隠し (2001)/千と千尋の神隠し (2001).mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "千と千尋の神隠し",
+      "year": 2001,
+      "edition": null,
+      "partNumber": null,
+      "extras": false,
+      "confidence": "high",
+      "reasons": [
+        "matched:title-year-paren"
+      ]
+    },
+    "note": "unicode CJK title"
+  },
+  {
+    "path": "It (2017)/It (2017).mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "It",
+      "year": 2017,
+      "edition": null,
+      "partNumber": null,
+      "extras": false,
+      "confidence": "high",
+      "reasons": [
+        "matched:title-year-paren"
+      ]
+    },
+    "note": "case-collision: title case"
+  },
+  {
+    "path": "IT (2017)/IT (2017).mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "IT",
+      "year": 2017,
+      "edition": null,
+      "partNumber": null,
+      "extras": false,
+      "confidence": "high",
+      "reasons": [
+        "matched:title-year-paren"
+      ]
+    },
+    "note": "case-collision: all caps, distinct from 'It (2017)'"
+  },
+  {
+    "path": "Up (1926)/Up (1926).mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "Up",
+      "year": 1926,
+      "edition": null,
+      "partNumber": null,
+      "extras": false,
+      "confidence": "high",
+      "reasons": [
+        "matched:title-year-paren"
+      ]
+    },
+    "note": "boundary year just above MIN_YEAR"
+  },
+  {
+    "path": "Movie (2099)/Movie (2099).mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "Movie",
+      "year": 2099,
+      "edition": null,
+      "partNumber": null,
+      "extras": false,
+      "confidence": "high",
+      "reasons": [
+        "matched:title-year-paren"
+      ]
+    },
+    "note": "boundary year at MAX_YEAR"
+  },
+  {
+    "path": "Primer/Primer.mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "Primer",
+      "year": null,
+      "edition": null,
+      "partNumber": null,
+      "extras": false,
+      "confidence": "low",
+      "reasons": [
+        "year:none-found"
+      ]
+    },
+    "note": "no year anywhere, flat dir+file"
+  },
+  {
+    "path": "The Room/The Room.mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "The Room",
+      "year": null,
+      "edition": null,
+      "partNumber": null,
+      "extras": false,
+      "confidence": "low",
+      "reasons": [
+        "year:none-found"
+      ]
+    },
+    "note": "no year, article title"
+  },
+  {
+    "path": "Unknown Film Title.mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "Unknown Film Title",
+      "year": null,
+      "edition": null,
+      "partNumber": null,
+      "extras": false,
+      "confidence": "low",
+      "reasons": [
+        "year:none-found"
+      ]
+    },
+    "note": "no year, no dir"
+  },
+  {
+    "path": "Inception (2010) 1080p BluRay x264-GROUP.mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "Inception",
+      "year": 2010,
+      "edition": null,
+      "partNumber": null,
+      "extras": false,
+      "confidence": "high",
+      "reasons": [
+        "matched:title-year-paren",
+        "group:trailing-stripped",
+        "noise:tokens-stripped"
+      ]
+    },
+    "note": "space-separated noise + trailing group"
+  },
+  {
+    "path": "Inception (2010) 2160p WEB-DL x265 HDR10-GROUP.mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "Inception",
+      "year": 2010,
+      "edition": null,
+      "partNumber": null,
+      "extras": false,
+      "confidence": "high",
+      "reasons": [
+        "matched:title-year-paren",
+        "group:trailing-stripped",
+        "noise:tokens-stripped"
+      ]
+    },
+    "note": "4K HDR noise stack"
+  },
+  {
+    "path": "Inception (2010) REMUX 1080p DTS-HD-GROUP.mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "Inception",
+      "year": 2010,
+      "edition": null,
+      "partNumber": null,
+      "extras": false,
+      "confidence": "high",
+      "reasons": [
+        "matched:title-year-paren",
+        "group:trailing-stripped",
+        "noise:tokens-stripped"
+      ]
+    },
+    "note": "remux + dts-hd"
+  },
+  {
+    "path": "Inception.2010.1080p.BluRay.x264-GROUP.mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "Inception",
+      "year": 2010,
+      "edition": null,
+      "partNumber": null,
+      "extras": false,
+      "confidence": "medium",
+      "reasons": [
+        "matched:title-year-dotted",
+        "group:trailing-stripped",
+        "noise:tokens-stripped"
+      ]
+    },
+    "note": "dotted noise + trailing group"
+  },
+  {
+    "path": "Inception.2010.720p.WEBRip.AAC2.0.x264-GROUP.mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "Inception",
+      "year": 2010,
+      "edition": null,
+      "partNumber": null,
+      "extras": false,
+      "confidence": "medium",
+      "reasons": [
+        "matched:title-year-dotted",
+        "group:trailing-stripped",
+        "noise:tokens-stripped"
+      ]
+    },
+    "note": "dotted noise, audio channel token"
+  },
+  {
+    "path": "The.Matrix.1999.1080p.mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "The Matrix",
+      "year": 1999,
+      "edition": null,
+      "partNumber": null,
+      "extras": false,
+      "confidence": "medium",
+      "reasons": [
+        "matched:title-year-dotted",
+        "noise:tokens-stripped"
+      ]
+    },
+    "note": "dotted, single noise token after year (mission example)"
+  },
+  {
+    "path": "The.Matrix.1999.PROPER.1080p.BluRay.x264-GROUP.mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "The Matrix",
+      "year": 1999,
+      "edition": null,
+      "partNumber": null,
+      "extras": false,
+      "confidence": "medium",
+      "reasons": [
+        "matched:title-year-dotted",
+        "group:trailing-stripped",
+        "noise:tokens-stripped"
+      ]
+    },
+    "note": "dotted with PROPER release tag"
+  },
+  {
+    "path": "Movie Title (2015) [1080p] [BluRay] [x264] - GROUP.mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "Movie Title",
+      "year": 2015,
+      "edition": null,
+      "partNumber": null,
+      "extras": false,
+      "confidence": "high",
+      "reasons": [
+        "matched:title-year-paren",
+        "noise:bracket-stripped"
+      ]
+    },
+    "note": "bracketed noise tokens"
+  },
+  {
+    "path": "Movie Title (2015) HDTV XviD-GROUP.mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "Movie Title",
+      "year": 2015,
+      "edition": null,
+      "partNumber": null,
+      "extras": false,
+      "confidence": "high",
+      "reasons": [
+        "matched:title-year-paren",
+        "group:trailing-stripped",
+        "noise:tokens-stripped"
+      ]
+    },
+    "note": "older codec/source combo"
+  },
+  {
+    "path": "Movie Title (2015) DVDRip DivX-GROUP.mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "Movie Title",
+      "year": 2015,
+      "edition": null,
+      "partNumber": null,
+      "extras": false,
+      "confidence": "high",
+      "reasons": [
+        "matched:title-year-paren",
+        "group:trailing-stripped",
+        "noise:tokens-stripped"
+      ]
+    },
+    "note": "DVDRip/DivX combo"
+  },
+  {
+    "path": "Movie Title (2012) UNRATED 720p BluRay DTS x264-GROUP.mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "Movie Title",
+      "year": 2012,
+      "edition": null,
+      "partNumber": null,
+      "extras": false,
+      "confidence": "high",
+      "reasons": [
+        "matched:title-year-paren",
+        "group:trailing-stripped",
+        "noise:tokens-stripped"
+      ]
+    },
+    "note": "UNRATED with no dash prefix is generic noise, NOT an edition (dash-suffix rule requires an actual '-')"
+  },
+  {
+    "path": "Movie Title (2012) - UNRATED 720p BluRay DTS x264-GROUP.mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "Movie Title",
+      "year": 2012,
+      "edition": "UNRATED",
+      "partNumber": null,
+      "extras": false,
+      "confidence": "high",
+      "reasons": [
+        "matched:title-year-paren",
+        "edition:dash-suffix",
+        "group:trailing-stripped",
+        "noise:tokens-stripped"
+      ]
+    },
+    "note": "UNRATED WITH a dash prefix IS an edition"
+  },
+  {
+    "path": "Movie (2015) 480p HDTV x264-GROUP.mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "Movie",
+      "year": 2015,
+      "edition": null,
+      "partNumber": null,
+      "extras": false,
+      "confidence": "high",
+      "reasons": [
+        "matched:title-year-paren",
+        "group:trailing-stripped",
+        "noise:tokens-stripped"
+      ]
+    },
+    "note": "480p resolution token"
+  },
+  {
+    "path": "Movie (2015) 576p PDTV x264-GROUP.mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "Movie",
+      "year": 2015,
+      "edition": null,
+      "partNumber": null,
+      "extras": false,
+      "confidence": "high",
+      "reasons": [
+        "matched:title-year-paren",
+        "group:trailing-stripped",
+        "noise:tokens-stripped"
+      ]
+    },
+    "note": "576p/PDTV combo"
+  },
+  {
+    "path": "Movie (2015) 4320p BluRay x265-GROUP.mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "Movie",
+      "year": 2015,
+      "edition": null,
+      "partNumber": null,
+      "extras": false,
+      "confidence": "high",
+      "reasons": [
+        "matched:title-year-paren",
+        "group:trailing-stripped",
+        "noise:tokens-stripped"
+      ]
+    },
+    "note": "8K resolution token"
+  },
+  {
+    "path": "Movie (2015) CAM x264-GROUP.mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "Movie",
+      "year": 2015,
+      "edition": null,
+      "partNumber": null,
+      "extras": false,
+      "confidence": "high",
+      "reasons": [
+        "matched:title-year-paren",
+        "group:trailing-stripped",
+        "noise:tokens-stripped"
+      ]
+    },
+    "note": "CAM source"
+  },
+  {
+    "path": "Movie (2015) TC x264-GROUP.mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "Movie",
+      "year": 2015,
+      "edition": null,
+      "partNumber": null,
+      "extras": false,
+      "confidence": "high",
+      "reasons": [
+        "matched:title-year-paren",
+        "group:trailing-stripped",
+        "noise:tokens-stripped"
+      ]
+    },
+    "note": "TC (telecine) source"
+  },
+  {
+    "path": "Movie (2015) R5 x264-GROUP.mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "Movie",
+      "year": 2015,
+      "edition": null,
+      "partNumber": null,
+      "extras": false,
+      "confidence": "high",
+      "reasons": [
+        "matched:title-year-paren",
+        "group:trailing-stripped",
+        "noise:tokens-stripped"
+      ]
+    },
+    "note": "R5 source"
+  },
+  {
+    "path": "Movie (2015) 1080p BluRay TrueHD Atmos x264-GROUP.mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "Movie",
+      "year": 2015,
+      "edition": null,
+      "partNumber": null,
+      "extras": false,
+      "confidence": "high",
+      "reasons": [
+        "matched:title-year-paren",
+        "group:trailing-stripped",
+        "noise:tokens-stripped"
+      ]
+    },
+    "note": "TrueHD Atmos audio"
+  },
+  {
+    "path": "Movie (2015) 1080p BluRay DTS-HD MA x264-GROUP.mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "Movie",
+      "year": 2015,
+      "edition": null,
+      "partNumber": null,
+      "extras": false,
+      "confidence": "high",
+      "reasons": [
+        "matched:title-year-paren",
+        "group:trailing-stripped",
+        "noise:tokens-stripped"
+      ]
+    },
+    "note": "DTS-HD noise token (MA left in title-adjacent noise, not in vocab)"
+  },
+  {
+    "path": "Movie (2015) 1080p BluRay HDR10+ x265-GROUP.mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "Movie",
+      "year": 2015,
+      "edition": null,
+      "partNumber": null,
+      "extras": false,
+      "confidence": "high",
+      "reasons": [
+        "matched:title-year-paren",
+        "group:trailing-stripped",
+        "noise:tokens-stripped"
+      ]
+    },
+    "note": "HDR10+ color token"
+  },
+  {
+    "path": "Movie (2015) 1080p BluRay DoVi x265-GROUP.mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "Movie",
+      "year": 2015,
+      "edition": null,
+      "partNumber": null,
+      "extras": false,
+      "confidence": "high",
+      "reasons": [
+        "matched:title-year-paren",
+        "group:trailing-stripped",
+        "noise:tokens-stripped"
+      ]
+    },
+    "note": "DoVi color token"
+  },
+  {
+    "path": "Movie (2015) 1080p BluRay MULTi DUAL x264-GROUP.mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "Movie",
+      "year": 2015,
+      "edition": null,
+      "partNumber": null,
+      "extras": false,
+      "confidence": "high",
+      "reasons": [
+        "matched:title-year-paren",
+        "group:trailing-stripped",
+        "noise:tokens-stripped"
+      ]
+    },
+    "note": "MULTi/DUAL audio-language tags"
+  },
+  {
+    "path": "Movie (2015) REPACK 1080p BluRay x264-GROUP.mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "Movie",
+      "year": 2015,
+      "edition": null,
+      "partNumber": null,
+      "extras": false,
+      "confidence": "high",
+      "reasons": [
+        "matched:title-year-paren",
+        "group:trailing-stripped",
+        "noise:tokens-stripped"
+      ]
+    },
+    "note": "REPACK release tag"
+  },
+  {
+    "path": "Movie (2015) INTERNAL 1080p BluRay x264-GROUP.mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "Movie",
+      "year": 2015,
+      "edition": null,
+      "partNumber": null,
+      "extras": false,
+      "confidence": "high",
+      "reasons": [
+        "matched:title-year-paren",
+        "group:trailing-stripped",
+        "noise:tokens-stripped"
+      ]
+    },
+    "note": "INTERNAL release tag"
+  },
+  {
+    "path": "Movie (2015) 1080p AMZN WEB-DL DDP5.1 x264-GROUP.mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "Movie",
+      "year": 2015,
+      "edition": null,
+      "partNumber": null,
+      "extras": false,
+      "confidence": "high",
+      "reasons": [
+        "matched:title-year-paren",
+        "group:trailing-stripped",
+        "noise:tokens-stripped"
+      ]
+    },
+    "note": "AMZN streaming-service tag + DDP5.1 audio"
+  },
+  {
+    "path": "Movie (2015) 1080p DSNP WEB-DL x264-GROUP.mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "Movie",
+      "year": 2015,
+      "edition": null,
+      "partNumber": null,
+      "extras": false,
+      "confidence": "high",
+      "reasons": [
+        "matched:title-year-paren",
+        "group:trailing-stripped",
+        "noise:tokens-stripped"
+      ]
+    },
+    "note": "DSNP streaming-service tag"
+  },
+  {
+    "path": "Movie (2015) 1080p ATVP WEB-DL x264-GROUP.mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "Movie",
+      "year": 2015,
+      "edition": null,
+      "partNumber": null,
+      "extras": false,
+      "confidence": "high",
+      "reasons": [
+        "matched:title-year-paren",
+        "group:trailing-stripped",
+        "noise:tokens-stripped"
+      ]
+    },
+    "note": "ATVP streaming-service tag"
+  },
+  {
+    "path": "Blade Runner (1982) {edition-Director's Cut}.mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "Blade Runner",
+      "year": 1982,
+      "edition": "Director's Cut",
+      "partNumber": null,
+      "extras": false,
+      "confidence": "high",
+      "reasons": [
+        "matched:title-year-paren",
+        "edition:edition-brace"
+      ]
+    },
+    "note": "edition brace edition, straight apostrophe"
+  },
+  {
+    "path": "Blade Runner (1982) {edition-Final Cut} Bluray-1080p.mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "Blade Runner",
+      "year": 1982,
+      "edition": "Final Cut",
+      "partNumber": null,
+      "extras": false,
+      "confidence": "high",
+      "reasons": [
+        "matched:title-year-paren",
+        "edition:edition-brace",
+        "noise:tokens-stripped"
+      ]
+    },
+    "note": "edition brace edition + trailing noise"
+  },
+  {
+    "path": "Kingdom of Heaven {edition-Ultimate Edition} (2005).mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "Kingdom of Heaven",
+      "year": 2005,
+      "edition": "Ultimate Edition",
+      "partNumber": null,
+      "extras": false,
+      "confidence": "high",
+      "reasons": [
+        "matched:title-year-paren",
+        "edition:edition-brace"
+      ]
+    },
+    "note": "edition brace BEFORE year"
+  },
+  {
+    "path": "Aliens (1986) {edition-Special Edition} 1080p.mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "Aliens",
+      "year": 1986,
+      "edition": "Special Edition",
+      "partNumber": null,
+      "extras": false,
+      "confidence": "high",
+      "reasons": [
+        "matched:title-year-paren",
+        "edition:edition-brace",
+        "noise:tokens-stripped"
+      ]
+    },
+    "note": "edition brace + trailing noise, no group"
+  },
+  {
+    "path": "Blade Runner (1982) - Director's Cut.mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "Blade Runner",
+      "year": 1982,
+      "edition": "Director's Cut",
+      "partNumber": null,
+      "extras": false,
+      "confidence": "high",
+      "reasons": [
+        "matched:title-year-paren",
+        "edition:dash-suffix"
+      ]
+    },
+    "note": "dash-suffix edition"
+  },
+  {
+    "path": "Blade Runner (1982) - Director’s Cut.mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "Blade Runner",
+      "year": 1982,
+      "edition": "Director’s Cut",
+      "partNumber": null,
+      "extras": false,
+      "confidence": "high",
+      "reasons": [
+        "matched:title-year-paren",
+        "edition:dash-suffix"
+      ]
+    },
+    "note": "dash-suffix edition, curly apostrophe"
+  },
+  {
+    "path": "Kingdom of Heaven (2005) - Ultimate Edition 1080p BluRay x264-GROUP.mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "Kingdom of Heaven",
+      "year": 2005,
+      "edition": "Ultimate Edition",
+      "partNumber": null,
+      "extras": false,
+      "confidence": "high",
+      "reasons": [
+        "matched:title-year-paren",
+        "edition:dash-suffix",
+        "group:trailing-stripped",
+        "noise:tokens-stripped"
+      ]
+    },
+    "note": "dash-suffix edition + trailing noise + group"
+  },
+  {
+    "path": "Apocalypse Now (1979) - Redux.mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "Apocalypse Now",
+      "year": 1979,
+      "edition": null,
+      "partNumber": null,
+      "extras": false,
+      "confidence": "high",
+      "reasons": [
+        "matched:title-year-paren"
+      ]
+    },
+    "note": "'Redux' is NOT in the closed edition keyword list -> no edition captured"
+  },
+  {
+    "path": "Movie (2010) - Extended Cut.mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "Movie",
+      "year": 2010,
+      "edition": "Extended Cut",
+      "partNumber": null,
+      "extras": false,
+      "confidence": "high",
+      "reasons": [
+        "matched:title-year-paren",
+        "edition:dash-suffix"
+      ]
+    },
+    "note": "'extended' must not be eaten by generic noise stripping"
+  },
+  {
+    "path": "Movie (2010) - Extended Edition 1080p.mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "Movie",
+      "year": 2010,
+      "edition": "Extended Edition",
+      "partNumber": null,
+      "extras": false,
+      "confidence": "high",
+      "reasons": [
+        "matched:title-year-paren",
+        "edition:dash-suffix",
+        "noise:tokens-stripped"
+      ]
+    },
+    "note": "extended edition + trailing noise"
+  },
+  {
+    "path": "Movie (2010) - Theatrical Cut.mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "Movie",
+      "year": 2010,
+      "edition": "Theatrical Cut",
+      "partNumber": null,
+      "extras": false,
+      "confidence": "high",
+      "reasons": [
+        "matched:title-year-paren",
+        "edition:dash-suffix"
+      ]
+    },
+    "note": "theatrical cut edition"
+  },
+  {
+    "path": "Movie (2010) - Remastered.mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "Movie",
+      "year": 2010,
+      "edition": "Remastered",
+      "partNumber": null,
+      "extras": false,
+      "confidence": "high",
+      "reasons": [
+        "matched:title-year-paren",
+        "edition:dash-suffix"
+      ]
+    },
+    "note": "remastered edition"
+  },
+  {
+    "path": "Movie (2010) - Anniversary Edition.mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "Movie",
+      "year": 2010,
+      "edition": "Anniversary Edition",
+      "partNumber": null,
+      "extras": false,
+      "confidence": "high",
+      "reasons": [
+        "matched:title-year-paren",
+        "edition:dash-suffix"
+      ]
+    },
+    "note": "anniversary edition"
+  },
+  {
+    "path": "Movie (2010) - IMAX Edition.mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "Movie",
+      "year": 2010,
+      "edition": "IMAX Edition",
+      "partNumber": null,
+      "extras": false,
+      "confidence": "high",
+      "reasons": [
+        "matched:title-year-paren",
+        "edition:dash-suffix"
+      ]
+    },
+    "note": "imax edition"
+  },
+  {
+    "path": "Movie (2010) - Uncut.mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "Movie",
+      "year": 2010,
+      "edition": "Uncut",
+      "partNumber": null,
+      "extras": false,
+      "confidence": "high",
+      "reasons": [
+        "matched:title-year-paren",
+        "edition:dash-suffix"
+      ]
+    },
+    "note": "uncut edition"
+  },
+  {
+    "path": "Movie (2010) - Final Cut.mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "Movie",
+      "year": 2010,
+      "edition": "Final Cut",
+      "partNumber": null,
+      "extras": false,
+      "confidence": "high",
+      "reasons": [
+        "matched:title-year-paren",
+        "edition:dash-suffix"
+      ]
+    },
+    "note": "final cut edition"
+  },
+  {
+    "path": "Movie (2010) - Criterion Edition.mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "Movie",
+      "year": 2010,
+      "edition": "Criterion Edition",
+      "partNumber": null,
+      "extras": false,
+      "confidence": "high",
+      "reasons": [
+        "matched:title-year-paren",
+        "edition:dash-suffix"
+      ]
+    },
+    "note": "criterion edition"
+  },
+  {
+    "path": "Kill Bill (2003) cd1.mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "Kill Bill",
+      "year": 2003,
+      "edition": null,
+      "partNumber": 1,
+      "extras": false,
+      "confidence": "high",
+      "reasons": [
+        "matched:title-year-paren",
+        "part:cd"
+      ]
+    },
+    "note": "cd1"
+  },
+  {
+    "path": "Kill Bill (2003) cd2.mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "Kill Bill",
+      "year": 2003,
+      "edition": null,
+      "partNumber": 2,
+      "extras": false,
+      "confidence": "high",
+      "reasons": [
+        "matched:title-year-paren",
+        "part:cd"
+      ]
+    },
+    "note": "cd2"
+  },
+  {
+    "path": "Kill Bill (2003) CD1.mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "Kill Bill",
+      "year": 2003,
+      "edition": null,
+      "partNumber": 1,
+      "extras": false,
+      "confidence": "high",
+      "reasons": [
+        "matched:title-year-paren",
+        "part:cd"
+      ]
+    },
+    "note": "CD1 uppercase"
+  },
+  {
+    "path": "Movie (2010) part1.mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "Movie",
+      "year": 2010,
+      "edition": null,
+      "partNumber": 1,
+      "extras": false,
+      "confidence": "high",
+      "reasons": [
+        "matched:title-year-paren",
+        "part:part"
+      ]
+    },
+    "note": "part1"
+  },
+  {
+    "path": "Movie (2010) Part 2.mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "Movie",
+      "year": 2010,
+      "edition": null,
+      "partNumber": 2,
+      "extras": false,
+      "confidence": "high",
+      "reasons": [
+        "matched:title-year-paren",
+        "part:part"
+      ]
+    },
+    "note": "Part 2 spaced"
+  },
+  {
+    "path": "Movie (2010) pt.1.mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "Movie",
+      "year": 2010,
+      "edition": null,
+      "partNumber": 1,
+      "extras": false,
+      "confidence": "high",
+      "reasons": [
+        "matched:title-year-paren",
+        "part:pt"
+      ]
+    },
+    "note": "pt.1 dotted"
+  },
+  {
+    "path": "Movie (2010) pt2.mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "Movie",
+      "year": 2010,
+      "edition": null,
+      "partNumber": 2,
+      "extras": false,
+      "confidence": "high",
+      "reasons": [
+        "matched:title-year-paren",
+        "part:pt"
+      ]
+    },
+    "note": "pt2 no dot"
+  },
+  {
+    "path": "Movie (2010) disc1.mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "Movie",
+      "year": 2010,
+      "edition": null,
+      "partNumber": 1,
+      "extras": false,
+      "confidence": "high",
+      "reasons": [
+        "matched:title-year-paren",
+        "part:disc"
+      ]
+    },
+    "note": "disc1"
+  },
+  {
+    "path": "Movie (2010) Disc 2.mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "Movie",
+      "year": 2010,
+      "edition": null,
+      "partNumber": 2,
+      "extras": false,
+      "confidence": "high",
+      "reasons": [
+        "matched:title-year-paren",
+        "part:disc"
+      ]
+    },
+    "note": "Disc 2 spaced"
+  },
+  {
+    "path": "Movie (2010) cd1 1080p BluRay-GROUP.mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "Movie",
+      "year": 2010,
+      "edition": null,
+      "partNumber": 1,
+      "extras": false,
+      "confidence": "high",
+      "reasons": [
+        "matched:title-year-paren",
+        "part:cd",
+        "group:trailing-stripped",
+        "noise:tokens-stripped"
+      ]
+    },
+    "note": "cd1 + trailing noise + group"
+  },
+  {
+    "path": "2001 A Space Odyssey (1968)/2001 A Space Odyssey (1968).mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "2001 A Space Odyssey",
+      "year": 1968,
+      "edition": null,
+      "partNumber": null,
+      "extras": false,
+      "confidence": "high",
+      "reasons": [
+        "matched:title-year-paren"
+      ]
+    },
+    "note": "leading number looks like a year but is title"
+  },
+  {
+    "path": "1917 (2019)/1917 (2019).mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "1917",
+      "year": 2019,
+      "edition": null,
+      "partNumber": null,
+      "extras": false,
+      "confidence": "high",
+      "reasons": [
+        "matched:title-year-paren"
+      ]
+    },
+    "note": "title IS a year-shaped number"
+  },
+  {
+    "path": "Blade Runner 2049 (2017)/Blade Runner 2049 (2017).mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "Blade Runner 2049",
+      "year": 2017,
+      "edition": null,
+      "partNumber": null,
+      "extras": false,
+      "confidence": "high",
+      "reasons": [
+        "matched:title-year-paren"
+      ]
+    },
+    "note": "in-title number stays in title, real year in parens"
+  },
+  {
+    "path": "2012 (2009)/2012 (2009).mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "2012",
+      "year": 2009,
+      "edition": null,
+      "partNumber": null,
+      "extras": false,
+      "confidence": "high",
+      "reasons": [
+        "matched:title-year-paren"
+      ]
+    },
+    "note": "title is a year, release year different"
+  },
+  {
+    "path": "300 (2006)/300 (2006).mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "300",
+      "year": 2006,
+      "edition": null,
+      "partNumber": null,
+      "extras": false,
+      "confidence": "high",
+      "reasons": [
+        "matched:title-year-paren"
+      ]
+    },
+    "note": "numeric title, non-year-shaped number"
+  },
+  {
+    "path": "9 (2009)/9 (2009).mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "9",
+      "year": 2009,
+      "edition": null,
+      "partNumber": null,
+      "extras": false,
+      "confidence": "high",
+      "reasons": [
+        "matched:title-year-paren"
+      ]
+    },
+    "note": "single-digit numeric title"
+  },
+  {
+    "path": "V for Vendetta (2005)/V for Vendetta (2005).mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "V for Vendetta",
+      "year": 2005,
+      "edition": null,
+      "partNumber": null,
+      "extras": false,
+      "confidence": "high",
+      "reasons": [
+        "matched:title-year-paren"
+      ]
+    },
+    "note": "control: no numeric trap"
+  },
+  {
+    "path": "Se7en (1995) 1080p BluRay x264-GROUP.mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "Se7en",
+      "year": 1995,
+      "edition": null,
+      "partNumber": null,
+      "extras": false,
+      "confidence": "high",
+      "reasons": [
+        "matched:title-year-paren",
+        "group:trailing-stripped",
+        "noise:tokens-stripped"
+      ]
+    },
+    "note": "digit-substitution title + noise"
+  },
+  {
+    "path": "The.Dark.Knight.2008.1080p.BluRay.x264-GROUP.mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "The Dark Knight",
+      "year": 2008,
+      "edition": null,
+      "partNumber": null,
+      "extras": false,
+      "confidence": "medium",
+      "reasons": [
+        "matched:title-year-dotted",
+        "group:trailing-stripped",
+        "noise:tokens-stripped"
+      ]
+    },
+    "note": "classic dotted scene name"
+  },
+  {
+    "path": "Interstellar.2014.2160p.UHD.BluRay.x265-GROUP.mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "Interstellar",
+      "year": 2014,
+      "edition": null,
+      "partNumber": null,
+      "extras": false,
+      "confidence": "medium",
+      "reasons": [
+        "matched:title-year-dotted",
+        "group:trailing-stripped",
+        "noise:tokens-stripped"
+      ]
+    },
+    "note": "dotted 4K"
+  },
+  {
+    "path": "Get.Out.2017.720p.WEBRip.x264-GROUP.mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "Get Out",
+      "year": 2017,
+      "edition": null,
+      "partNumber": null,
+      "extras": false,
+      "confidence": "medium",
+      "reasons": [
+        "matched:title-year-dotted",
+        "group:trailing-stripped",
+        "noise:tokens-stripped"
+      ]
+    },
+    "note": "dotted webrip"
+  },
+  {
+    "path": "Parasite.2019.KOREAN.1080p.BluRay.x264-GROUP.mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "Parasite",
+      "year": 2019,
+      "edition": null,
+      "partNumber": null,
+      "extras": false,
+      "confidence": "medium",
+      "reasons": [
+        "matched:title-year-dotted",
+        "group:trailing-stripped",
+        "noise:tokens-stripped"
+      ]
+    },
+    "note": "dotted with language-ish token kept in title (not in noise vocab)"
+  },
+  {
+    "path": "Amélie (2001) 1080p BluRay x264-GROUP.mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "Amélie",
+      "year": 2001,
+      "edition": null,
+      "partNumber": null,
+      "extras": false,
+      "confidence": "high",
+      "reasons": [
+        "matched:title-year-paren",
+        "group:trailing-stripped",
+        "noise:tokens-stripped"
+      ]
+    },
+    "note": "unicode title + noise"
+  },
+  {
+    "path": "千と千尋の神隠し (2001) 1080p BluRay-GROUP.mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "千と千尋の神隠し",
+      "year": 2001,
+      "edition": null,
+      "partNumber": null,
+      "extras": false,
+      "confidence": "high",
+      "reasons": [
+        "matched:title-year-paren",
+        "group:trailing-stripped",
+        "noise:tokens-stripped"
+      ]
+    },
+    "note": "unicode CJK + noise"
+  },
+  {
+    "path": "Mission Impossible - Fallout (2018)/Mission Impossible - Fallout (2018).mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "Mission Impossible - Fallout",
+      "year": 2018,
+      "edition": null,
+      "partNumber": null,
+      "extras": false,
+      "confidence": "high",
+      "reasons": [
+        "matched:title-year-paren"
+      ]
+    },
+    "note": "colon-style dash already in title, must not be misread as edition dash-suffix"
+  },
+  {
+    "path": "Star Wars Episode IV - A New Hope (1977)/Star Wars Episode IV - A New Hope (1977).mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "Star Wars Episode IV - A New Hope",
+      "year": 1977,
+      "edition": null,
+      "partNumber": null,
+      "extras": false,
+      "confidence": "high",
+      "reasons": [
+        "matched:title-year-paren"
+      ]
+    },
+    "note": "long subtitle after dash, not an edition keyword -> stays in title... resolved by year split only"
+  },
+  {
+    "path": "Spider-Man Into the Spider-Verse (2018)/Spider-Man Into the Spider-Verse (2018).mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "Spider-Man Into the Spider-Verse",
+      "year": 2018,
+      "edition": null,
+      "partNumber": null,
+      "extras": false,
+      "confidence": "high",
+      "reasons": [
+        "matched:title-year-paren"
+      ]
+    },
+    "note": "hyphen inside title words"
+  },
+  {
+    "path": "Ocean's Eleven (2001)/Ocean's Eleven (2001).mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "Ocean's Eleven",
+      "year": 2001,
+      "edition": null,
+      "partNumber": null,
+      "extras": false,
+      "confidence": "high",
+      "reasons": [
+        "matched:title-year-paren"
+      ]
+    },
+    "note": "apostrophe in title"
+  },
+  {
+    "path": "WALL·E (2008)/WALL·E (2008).mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "WALL·E",
+      "year": 2008,
+      "edition": null,
+      "partNumber": null,
+      "extras": false,
+      "confidence": "high",
+      "reasons": [
+        "matched:title-year-paren"
+      ]
+    },
+    "note": "interpunct punctuation in title"
+  },
+  {
+    "path": "Zack Snyder's Justice League (2021)/Zack Snyder's Justice League (2021).mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "Zack Snyder's Justice League",
+      "year": 2021,
+      "edition": null,
+      "partNumber": null,
+      "extras": false,
+      "confidence": "high",
+      "reasons": [
+        "matched:title-year-paren"
+      ]
+    },
+    "note": "possessive apostrophe title, no edition"
+  },
+  {
+    "path": "Top Gun Maverick (2022)/Top Gun Maverick (2022).mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "Top Gun Maverick",
+      "year": 2022,
+      "edition": null,
+      "partNumber": null,
+      "extras": false,
+      "confidence": "high",
+      "reasons": [
+        "matched:title-year-paren"
+      ]
+    },
+    "note": "no colon, two-word subtitle"
+  },
+  {
+    "path": "John Wick Chapter 3 - Parabellum (2019)/John Wick Chapter 3 - Parabellum (2019).mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "John Wick Chapter 3 - Parabellum",
+      "year": 2019,
+      "edition": null,
+      "partNumber": null,
+      "extras": false,
+      "confidence": "high",
+      "reasons": [
+        "matched:title-year-paren"
+      ]
+    },
+    "note": "digit mid-title + dash-subtitle, not edition"
+  },
+  {
+    "path": "Movies/Action/The Matrix (1999)/The Matrix (1999).mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "The Matrix",
+      "year": 1999,
+      "edition": null,
+      "partNumber": null,
+      "extras": false,
+      "confidence": "high",
+      "reasons": [
+        "matched:title-year-paren"
+      ]
+    },
+    "note": "extra parent dirs above the movie dir, immediate parent still wins"
+  },
+  {
+    "path": "Movies/Sci-Fi/Favorites/Arrival (2016)/Arrival (2016).mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "Arrival",
+      "year": 2016,
+      "edition": null,
+      "partNumber": null,
+      "extras": false,
+      "confidence": "high",
+      "reasons": [
+        "matched:title-year-paren"
+      ]
+    },
+    "note": "three levels of ancestor dirs"
+  },
+  {
+    "path": "The Matrix (1999)/movie.mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "The Matrix",
+      "year": 1999,
+      "edition": null,
+      "partNumber": null,
+      "extras": false,
+      "confidence": "medium",
+      "reasons": [
+        "matched:title-year-paren",
+        "year:from-directory"
+      ]
+    },
+    "note": "generic filename, year+title come entirely from directory"
+  },
+  {
+    "path": "The Matrix (1999)/The.Matrix.1080p.BluRay.x264-GROUP.mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "The Matrix",
+      "year": 1999,
+      "edition": null,
+      "partNumber": null,
+      "extras": false,
+      "confidence": "medium",
+      "reasons": [
+        "matched:title-year-paren",
+        "year:from-directory"
+      ]
+    },
+    "note": "filename lacks year -> falls back to directory year+title, filename noise ignored since dir wins wholesale"
+  },
+  {
+    "path": "Movie (2010) {edition-Extended Cut} cd1.mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "Movie",
+      "year": 2010,
+      "edition": "Extended Cut",
+      "partNumber": 1,
+      "extras": false,
+      "confidence": "high",
+      "reasons": [
+        "matched:title-year-paren",
+        "edition:edition-brace",
+        "part:cd"
+      ]
+    },
+    "note": "edition brace edition + multi-part together"
+  },
+  {
+    "path": "Movie (2010) - Special Edition cd2 1080p BluRay x264-GROUP.mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "Movie",
+      "year": 2010,
+      "edition": "Special Edition",
+      "partNumber": 2,
+      "extras": false,
+      "confidence": "high",
+      "reasons": [
+        "matched:title-year-paren",
+        "part:cd",
+        "edition:dash-suffix",
+        "group:trailing-stripped",
+        "noise:tokens-stripped"
+      ]
+    },
+    "note": "dash edition + part + noise + group all together"
+  },
+  {
+    "path": "Movie (2010) - Unrated Cut.mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "Movie",
+      "year": 2010,
+      "edition": "Unrated Cut",
+      "partNumber": null,
+      "extras": false,
+      "confidence": "high",
+      "reasons": [
+        "matched:title-year-paren",
+        "edition:dash-suffix"
+      ]
+    },
+    "note": "unrated cut (distinct keyword from bare 'unrated')"
+  },
+  {
+    "path": "기생충 (2019)/기생충 (2019).mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "기생충",
+      "year": 2019,
+      "edition": null,
+      "partNumber": null,
+      "extras": false,
+      "confidence": "high",
+      "reasons": [
+        "matched:title-year-paren"
+      ]
+    },
+    "note": "unicode Korean title"
+  },
+  {
+    "path": "娘惹 (2020)/娘惹 (2020).mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "娘惹",
+      "year": 2020,
+      "edition": null,
+      "partNumber": null,
+      "extras": false,
+      "confidence": "high",
+      "reasons": [
+        "matched:title-year-paren"
+      ]
+    },
+    "note": "unicode Chinese title"
+  },
+  {
+    "path": "Дылда (2019)/Дылда (2019).mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "Дылда",
+      "year": 2019,
+      "edition": null,
+      "partNumber": null,
+      "extras": false,
+      "confidence": "high",
+      "reasons": [
+        "matched:title-year-paren"
+      ]
+    },
+    "note": "unicode Cyrillic title"
+  },
+  {
+    "path": "Movie (2010) Part10.mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "Movie",
+      "year": 2010,
+      "edition": null,
+      "partNumber": 10,
+      "extras": false,
+      "confidence": "high",
+      "reasons": [
+        "matched:title-year-paren",
+        "part:part"
+      ]
+    },
+    "note": "two-digit part number"
+  },
+  {
+    "path": "Movie (2010) DISC1.mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "Movie",
+      "year": 2010,
+      "edition": null,
+      "partNumber": 1,
+      "extras": false,
+      "confidence": "high",
+      "reasons": [
+        "matched:title-year-paren",
+        "part:disc"
+      ]
+    },
+    "note": "DISC1 all caps"
+  },
+  {
+    "path": "1080p.BluRay.x264-GROUP.mkv",
+    "kind": "movie",
+    "expected": null,
+    "note": "pure noise, no title at all -> null"
+  },
+  {
+    "path": "x264.mkv",
+    "kind": "movie",
+    "expected": null,
+    "note": "single noise token as whole stem -> null"
+  },
+  {
+    "path": ".mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "mkv",
+      "year": null,
+      "edition": null,
+      "partNumber": null,
+      "extras": false,
+      "confidence": "low",
+      "reasons": [
+        "year:none-found"
+      ]
+    },
+    "note": "leading-dot filename: splitExtension treats it as a dotfile stem 'mkv' (not empty) since hidden-file filtering is classifyAuxiliary's job, called before the scanner ever reaches parseMoviePath"
+  },
+  {
+    "path": "",
+    "kind": "movie",
+    "expected": null,
+    "note": "empty path -> null"
+  },
+  {
+    "path": "Movie Title.mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "Movie Title",
+      "year": null,
+      "edition": null,
+      "partNumber": null,
+      "extras": false,
+      "confidence": "low",
+      "reasons": [
+        "year:none-found"
+      ]
+    },
+    "note": "no year, no noise: whole stem is the title, low confidence"
+  },
+  {
+    "path": "Some Random Home Video.mp4",
+    "kind": "movie",
+    "expected": {
+      "title": "Some Random Home Video",
+      "year": null,
+      "edition": null,
+      "partNumber": null,
+      "extras": false,
+      "confidence": "low",
+      "reasons": [
+        "year:none-found"
+      ]
+    },
+    "note": "no year, plausible title, low confidence"
+  },
+  {
+    "path": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa (2010).mkv",
+    "kind": "movie",
+    "expected": {
+      "title": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "year": 2010,
+      "edition": null,
+      "partNumber": null,
+      "extras": false,
+      "confidence": "high",
+      "reasons": [
+        "matched:title-year-paren"
+      ]
+    },
+    "note": "absurdly long title, still parses"
+  },
+  {
+    "path": "....mkv",
+    "kind": "movie",
+    "expected": null,
+    "note": "only separator punctuation, empty stem -> null"
+  }
+]

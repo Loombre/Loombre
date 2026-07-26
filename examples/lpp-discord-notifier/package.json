@@ -1,0 +1,12 @@
+{
+  "name": "lpp-discord-notifier",
+  "version": "0.1.0",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "description": "LPP v1 reference event-subscriber plugin (packages/plugin-protocol Lane W1 exit proof). Node stdlib only, zero dependencies — verifies the X-LPP-Signature HMAC/timestamp scheme and forwards each delivered event as a formatted message to a configured webhook URL.",
+  "main": "server.mjs",
+  "scripts": {
+    "start": "node server.mjs"
+  }
+}

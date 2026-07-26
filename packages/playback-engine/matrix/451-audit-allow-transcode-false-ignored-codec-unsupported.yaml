@@ -1,0 +1,61 @@
+name: 'transcode (disabled) — policy allowTranscode:false now bites: a codec-unsupported source yields
+  the refused-style empty transcode, blocking reason transcode-disabled-by-policy LAST'
+why: 'step 7b F1 fix (P3.2 flip of the step-7a audit pin, whose why: anticipated exactly this): the §2.4
+  knob is consumed in final assembly — aggregated decision ''transcode'' + allowTranscode:false keeps
+  decision ''transcode'' (§3''s "the engine NEVER emits unplayable" total-output pattern) and mirrors
+  the tone-map-refused shape: transcode-disabled-by-policy appended LAST (assembly-level policy verdict,
+  after every stage''s reasons — it is NOT a stage axis), ladder [], ffmpegArgs [], video encoder/targetCodec/toneMap
+  unset, Stage G SKIPPED entirely (no software-fallback:encode fires — nothing is routed). §4''s previously
+  unemittable blocking code is now real, closing the audit''s closed-enum divergence. 720p source keeps
+  the (never-reached) tier cap out of frame. Deliberate future-proof exception: vc1 is outside web-chrome''s
+  caps (the would-be transcode driver).'
+input:
+  media:
+    fileId: file-451
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 3900000000
+    overallBitrateBps: 5200000
+    video:
+    - index: 0
+      codec: vc1
+      profile: null
+      level: null
+      width: 1280
+      height: 720
+      bitDepth: 8
+      frameRate: 23.976
+      bitrateBps: 5000000
+      hdr: none
+      dvProfile: null
+      dvBlCompatId: null
+      interlaced: false
+    audio:
+    - index: 1
+      codec: aac
+      channels: 2
+      sampleRate: 48000
+      bitrateBps: 192000
+      language: eng
+      isDefault: true
+      hasAtmos: false
+    subtitle: []
+  device:
+    fixture: devices.web-chrome
+  network:
+    fixture: networks.wan-20mbps
+  policy:
+    fixture: policies.transcode-disabled
+  caps:
+    fixture: caps.software-only
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: transcode
+  reasons:
+  - video-codec-unsupported
+  - transcode-disabled-by-policy
+  ladder: []

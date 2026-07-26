@@ -1,0 +1,33 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "globalEnv": [
+    "DATABASE_URL",
+    "LOOMBRE_TEST_TIME_SCALE",
+    "LOOMBRE_REQUIRE_FFMPEG",
+    "LOOMBRE_FFMPEG",
+    "LOOMBRE_FFPROBE"
+  ],
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "outputs": ["dist/**", ".next/**", "!.next/cache/**"]
+    },
+    "dev": {
+      "dependsOn": ["^build"],
+      "cache": false,
+      "persistent": true
+    },
+    "lint": {
+      "outputs": []
+    },
+    "typecheck": {
+      "dependsOn": ["^build"],
+      "outputs": []
+    },
+    "test": {
+      "dependsOn": ["^build", "^test"],
+      "outputs": [],
+      "cache": false
+    }
+  }
+}

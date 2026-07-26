@@ -1,0 +1,57 @@
+name: "direct-stream — external .srt (codec subrip, isExternal true) resolves through hls-vtt exactly like an embedded stream"
+why: >
+  The tree treats an external sidecar identically to an embedded stream OF THE SAME CODEC (constraint 8) — codec subrip is ordinary TEXT regardless of isExternal/externalPath. text-all-capable's hlsVtt + t0-default's hls-vtt policy fire cascade (a) -> 'hls-vtt'. avi is not in text-all-capable's directPlayContainers, so Stage A alone drives the direct-stream decision; subrip carries no styling-loss reason (that's ass-only).
+
+input:
+  media:
+    fileId: file-0301
+    container: avi
+    durationMs: 6000000
+    sizeBytes: 6000000000
+    overallBitrateBps: 5200000
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 41
+        width: 1920
+        height: 1080
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 5000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 192000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle:
+      - index: 2
+        codec: subrip
+        language: eng
+        isForced: false
+        isDefault: false
+        isExternal: true
+        externalPath: "/sidecars/movie.srt"
+  device: { fixture: devices.text-all-capable }
+  network: { fixture: networks.local }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.software-only }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: 2
+  mode: stream
+
+expect:
+  decision: direct-stream
+  reasons:
+    - container-not-direct-playable
+  subtitleStrategy: hls-vtt

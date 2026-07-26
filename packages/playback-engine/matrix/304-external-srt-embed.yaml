@@ -1,0 +1,56 @@
+name: "direct-play — external .srt embeds (copy) when the device renders subrip natively and the container is direct-playable"
+why: >
+  text-embed-capable has hlsVtt:false (so (a) never fires) but declares subrip in renderText, and mp4 is direct-playable -> cascade (b) embed. Rounds out all four subtitle strategies (hls-vtt / direct-play+hls-vtt / burn-in / embed) exercised against an external sidecar stream.
+
+input:
+  media:
+    fileId: file-0304
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 6000000000
+    overallBitrateBps: 5200000
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 41
+        width: 1920
+        height: 1080
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 5000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 192000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle:
+      - index: 2
+        codec: subrip
+        language: eng
+        isForced: false
+        isDefault: false
+        isExternal: true
+        externalPath: "/sidecars/movie.srt"
+  device: { fixture: devices.text-embed-capable }
+  network: { fixture: networks.local }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.software-only }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: 2
+  mode: stream
+
+expect:
+  decision: direct-play
+  reasons: []
+  subtitleStrategy: embed

@@ -1,0 +1,75 @@
+name: "transcode — the SAME 2160p scenario WITH hevc-preferred: the swap collapses the target set to a SINGLE codec (hevc)"
+why: >
+  Contrast with 415: hevc-preferred (hevcEncodePreferred:true) + web-safari (declares an hevc device.video entry) -> stages/ladder.ts's swap converts every sub-2160p rung to hevc too (x0.75 bitrate), so ALL six surviving rungs are hevc — target codecs collapse to the SINGLE set {hevc}, not a multi-codec case. full-hw's nvenc trivially covers it (hw-encoder-selected:nvenc) — pinned via expect.ladder to prove the swapped (all-hevc, x0.75) table, not the unswapped one from 415.
+
+input:
+  media:
+    fileId: gen-file
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 6000000000
+    overallBitrateBps: 25000000
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 52
+        width: 3840
+        height: 2160
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 18000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 160000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device: { fixture: devices.web-safari }
+  network: { fixture: networks.wan-20mbps }
+  policy: { fixture: policies.hevc-preferred }
+  caps: { fixture: caps.full-hw }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+
+expect:
+  decision: transcode
+  reasons:
+    - bitrate-exceeds-network
+    - hw-encoder-selected:nvenc
+  ladder:
+    - heightPx: 2160
+      videoBitrateBps: 16000000
+      audioBitrateBps: 384000
+      codec: hevc
+    - heightPx: 1080
+      videoBitrateBps: 6000000
+      audioBitrateBps: 384000
+      codec: hevc
+    - heightPx: 1080
+      videoBitrateBps: 3000000
+      audioBitrateBps: 160000
+      codec: hevc
+    - heightPx: 720
+      videoBitrateBps: 2250000
+      audioBitrateBps: 160000
+      codec: hevc
+    - heightPx: 480
+      videoBitrateBps: 1125000
+      audioBitrateBps: 160000
+      codec: hevc
+    - heightPx: 360
+      videoBitrateBps: 600000
+      audioBitrateBps: 160000
+      codec: hevc

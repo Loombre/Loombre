@@ -1,0 +1,53 @@
+name: direct-play — two audio streams, selection picks the valid one by INDEX, not array position
+why: "media.audio lists the unsupported truehd stream FIRST (index 5) and the valid aac stream SECOND (index 2) — selection.audioStreamIndex=2 must resolve by index, not position, to the aac stream (within web-chrome's cap). If Stage D mistakenly evaluated array position 0 instead of the matching index, this would wrongly fire audio-passthrough-unsupported + audio-atmos-lost."
+input:
+  media:
+    fileId: file-0253
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 6000000000
+    overallBitrateBps: 8000000
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 41
+        width: 1920
+        height: 1080
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 5000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 5
+        codec: truehd
+        channels: 8
+        sampleRate: 48000
+        bitrateBps: 3000000
+        language: eng
+        isDefault: false
+        hasAtmos: true
+      - index: 2
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 160000
+        language: spa
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device: { fixture: devices.web-chrome }
+  network: { fixture: networks.local }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.software-only }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 2
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: direct-play
+  reasons: []

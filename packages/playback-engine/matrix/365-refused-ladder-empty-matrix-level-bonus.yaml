@@ -1,0 +1,60 @@
+name: transcode (tone-map refused) — ladder is [] at the MATRIX level (expect.ladder bonus)
+why: >
+  Re-pins Step 2c's refused ⇒ ladder-[] contract (STATE.md P3.9(b),
+  test/stages/hdr.spec.ts's original unit-level pin, now also extended
+  there for Step 2f) at the MATRIX-CASE level via the expect.ladder bonus:
+  hdr10 source vs an SDR-only device (hevc-sdr), t0-default policy
+  (allowToneMapCpu tier-gated @ tier 0) + software-only caps (no hardware
+  tone-map method) -> hdr-tone-map-required THEN tone-map-refused-by-policy
+  — the plan's ladder must be EXACTLY [] even though t0-default's
+  ladderRungs is the real, non-empty §7 default table (mirrors seed case
+  144's scenario shape, constructed fresh rather than editing that seed).
+
+input:
+  media:
+    fileId: file-0365
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 3750000000
+    overallBitrateBps: 5000000
+    video:
+      - index: 0
+        codec: hevc
+        profile: main10
+        level: 153
+        width: 1920
+        height: 1080
+        bitDepth: 10
+        frameRate: 23.976
+        bitrateBps: 5000000
+        hdr: hdr10
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 160000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device: { fixture: devices.hevc-sdr }
+  network: { fixture: networks.local }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.software-only }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+
+expect:
+  decision: transcode
+  reasons:
+    - hdr-tone-map-required
+    - tone-map-refused-by-policy
+  container: fmp4-hls
+  ladder: []

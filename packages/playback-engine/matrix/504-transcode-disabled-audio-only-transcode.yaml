@@ -1,0 +1,59 @@
+name: 'transcode (disabled) — audio-only transcode (vorbis unsupported, video copies) under allowTranscode:false:
+  the disabled verdict applies to AUDIO transcoding too, audio target fields unset'
+why: 'step 7b F1 new pin (disabled + audio-only-transcode): transcoding audio is transcoding — the aggregated
+  ''transcode'' decision here is driven purely by Stage D (vorbis outside web-chrome''s audio caps; the
+  h264 video copies), and the disabled check fires identically: transcode-disabled-by-policy LAST, ladder
+  [] (it already would be — video isn''t transcoding), ffmpegArgs [] (load-bearing: the audio target codec/channels/bitrate
+  fields are STRIPPED per the F1 shape — nothing will be transcoded, so reporting targets would be false
+  — and the arg builder must therefore never be invoked; probe-verified, pinned in test/plan.spec.ts).'
+input:
+  media:
+    fileId: file-504
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 3900000000
+    overallBitrateBps: 5200000
+    video:
+    - index: 0
+      codec: h264
+      profile: high
+      level: 41
+      width: 1920
+      height: 1080
+      bitDepth: 8
+      frameRate: 23.976
+      bitrateBps: 5000000
+      hdr: none
+      dvProfile: null
+      dvBlCompatId: null
+      interlaced: false
+    audio:
+    - index: 1
+      codec: vorbis
+      channels: 2
+      sampleRate: 48000
+      bitrateBps: 192000
+      language: eng
+      isDefault: true
+      hasAtmos: false
+    subtitle: []
+  device:
+    fixture: devices.web-chrome
+  network:
+    fixture: networks.local
+  policy:
+    fixture: policies.transcode-disabled
+  caps:
+    fixture: caps.software-only
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: transcode
+  reasons:
+  - audio-codec-unsupported
+  - transcode-disabled-by-policy
+  ladder: []
+  container: fmp4-hls

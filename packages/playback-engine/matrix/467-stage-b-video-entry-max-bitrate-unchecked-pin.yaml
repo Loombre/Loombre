@@ -1,0 +1,85 @@
+name: AUDIT direct-play — a video ENTRY's maxBitrateBps (§2.2) far below the stream's bitrate does NOT
+  fire any Stage B reason (as-implemented pin; spec-PR candidate)
+why: 'Step-7 audit pin of a Step-2b logged interpretation that never got a matrix case: §2.2''s per-entry
+  maxBitrateBps is deliberately unchecked by Stage B (no §4 code exists for it; §3 rule 3''s axis list
+  omits bitrate; Stage F owns the only bitrate dimension and reads device.maxStreamBitrateBps, not the
+  entry field). An 8M h264 stream against an entry declaring maxBitrateBps 2M — with the DEVICE-level
+  cap null and the network local — must be direct-play []. Candidate docs/PLAYBACK.md clarification: either
+  give the entry field semantics (a new §4 code) or drop it from §2.2. Inline device isolates the entry
+  cap as the only unusual axis.'
+input:
+  media:
+    fileId: file-467
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 6150000000
+    overallBitrateBps: 8200000
+    video:
+    - index: 0
+      codec: h264
+      profile: high
+      level: 41
+      width: 1920
+      height: 1080
+      bitDepth: 8
+      frameRate: 23.976
+      bitrateBps: 8000000
+      hdr: none
+      dvProfile: null
+      dvBlCompatId: null
+      interlaced: false
+    audio:
+    - index: 1
+      codec: aac
+      channels: 2
+      sampleRate: 48000
+      bitrateBps: 192000
+      language: eng
+      isDefault: true
+      hasAtmos: false
+    subtitle: []
+  device:
+    profileId: audit-entry-bitrate-cap
+    directPlayContainers:
+    - mp4
+    hls:
+      container: fmp4
+      supportsFmp4: true
+      lowLatency: false
+    video:
+    - codec: h264
+      maxProfile: high
+      maxLevel: 52
+      maxBitDepth: 8
+      maxWidth: 3840
+      maxHeight: 2160
+      maxFrameRate: 60
+      maxBitrateBps: 2000000
+    hdr:
+      hdr10: false
+      hlg: false
+      dolbyVision: false
+    audio:
+    - codec: aac
+      maxChannels: 6
+      passthrough: false
+    subtitles:
+      renderText: []
+      hlsVtt: false
+      renderImage: false
+    maxStreamBitrateBps: null
+  network:
+    fixture: networks.local
+  policy:
+    fixture: policies.t0-default
+  caps:
+    fixture: caps.software-only
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: direct-play
+  reasons: []
+  container: source

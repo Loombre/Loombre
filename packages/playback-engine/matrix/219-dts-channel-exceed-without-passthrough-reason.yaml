@@ -1,0 +1,46 @@
+name: transcode — plain dts 8ch exceeds a 6ch cap, but NO audio-passthrough-unsupported (dts is NOT dts-hd)
+why: "passthrough-capable's dts entry caps at 6 channels; the stream carries 8. Stage D rule 2 fires audio-channels-exceed-device, but rule 3 never fires for plain dts regardless of the device's passthrough:false flag — the key contrast proof against case 210's dtshd twin (which fires BOTH reasons under the identical 8-vs-6 shape)."
+input:
+  media:
+    fileId: file-0219
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 6000000000
+    overallBitrateBps: 8000000
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 41
+        width: 1920
+        height: 1080
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 5000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: dts
+        channels: 8
+        sampleRate: 48000
+        bitrateBps: 2000000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device: { fixture: devices.passthrough-capable }
+  network: { fixture: networks.local }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.software-only }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: transcode
+  reasons:
+    - audio-channels-exceed-device

@@ -1,0 +1,148 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+.bar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  margin-bottom: var(--space-md);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  flex-wrap: wrap;
+}
+
+.searchField {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 0 1 220px;
+  min-width: 160px;
+}
+
+.searchIcon {
+  position: absolute;
+  left: var(--space-sm);
+  color: var(--muted);
+  pointer-events: none;
+}
+
+.searchInput {
+  width: 100%;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--color-border);
+  background: var(--fill-3);
+  color: var(--text);
+  padding: var(--space-xs) var(--space-sm) var(--space-xs) calc(var(--space-lg) + var(--space-2xs));
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  outline: none;
+  transition: border-color var(--motion-fast) var(--ease-out);
+}
+
+.searchInput::placeholder {
+  color: var(--muted);
+}
+
+.searchInput:focus-visible {
+  border-color: var(--color-accent);
+}
+
+.pillRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2xs);
+  flex: 1 1 auto;
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2xs);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  padding: var(--space-2xs) var(--space-sm);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition:
+    background-color var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out),
+    border-color var(--motion-fast) var(--ease-out);
+}
+
+.pill:hover {
+  background: var(--fill-3);
+}
+
+.pill[data-active] {
+  background: var(--color-accent-tint);
+  border-color: var(--color-accent-border);
+  color: var(--color-accent);
+}
+
+.pillLock {
+  flex-shrink: 0;
+}
+
+.pillLabel {
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+}
+
+.pillCount {
+  font-family: var(--font-mono);
+  font-size: var(--mono-xs);
+  color: var(--color-text-hint);
+}
+
+.pill[data-active] .pillCount {
+  color: var(--color-accent);
+}
+
+.hint {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--mono-xs);
+  letter-spacing: var(--track-mono);
+  color: var(--color-text-hint);
+  line-height: var(--leading-normal);
+}
+
+/* Mobile (README §Screens → Mobile, U2/U3 767.98px literal — see
+   AppShell.module.css's own note for why this can't be a var()): the
+   search field goes full-width and boxed (radius-md, not a pill) per the
+   prototype's mobAdvanced filter row; the pill row becomes a single
+   horizontally-scrolling strip so N categories never wrap into a wall of
+   pills on a 392px viewport. */
+@media (width <= 767.98px) {
+  .row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .searchField {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .searchInput {
+    border-radius: var(--radius-md);
+    background: var(--fill-2);
+    padding: var(--space-sm) var(--space-sm) var(--space-sm) calc(var(--space-lg) + var(--space-2xs));
+    min-height: 44px;
+  }
+
+  .pillRow {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding-bottom: var(--space-3xs);
+  }
+
+  .pill {
+    flex-shrink: 0;
+    white-space: nowrap;
+    min-height: 44px;
+  }
+}

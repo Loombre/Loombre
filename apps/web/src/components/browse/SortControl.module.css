@@ -1,0 +1,13 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+.track {
+  composes: track from "../ui/SegmentedControl.module.css";
+}
+
+.segment {
+  composes: segment from "../ui/SegmentedControl.module.css";
+}
+
+.segment:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}

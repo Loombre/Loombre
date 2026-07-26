@@ -1,0 +1,51 @@
+name: transcode — hevc-sdr HDR10 mismatch, allowToneMapCpu:never (tier 2) + software-only caps → refused regardless of tier
+why: "'never' unconditionally refuses when no caps backend has a hardware tone-map method, REGARDLESS of tier (binding interpretation constraint 4 — only 'tier-gated' cares about tier, and only at tier 0). tonemap-never's tier is 2, proving tier does not rescue a 'never' policy the way it would a 'tier-gated' one."
+input:
+  media:
+    fileId: file-146
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 5000000000
+    overallBitrateBps: 5192000
+    video:
+      - index: 0
+        codec: hevc
+        profile: main10
+        level: 123
+        width: 1920
+        height: 1080
+        bitDepth: 10
+        frameRate: 23.976
+        bitrateBps: 5000000
+        hdr: hdr10
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 192000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device:
+    fixture: devices.hevc-sdr
+  network:
+    fixture: networks.local
+  policy:
+    fixture: policies.tonemap-never
+  caps:
+    fixture: caps.software-only
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: transcode
+  reasons:
+    - hdr-tone-map-required
+    - tone-map-refused-by-policy

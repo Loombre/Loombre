@@ -1,0 +1,52 @@
+name: transcode — mkv + DV profile 8 no-compat-BL trap vs hevc-hdr10-strict — container reason co-occurs with a genuine tone-map-required (not a strip)
+why: "Generalizes the 'container in/out of directPlayContainers' dimension beyond the strip-only-reason case: here the container ALSO mismatches (mkv not in hevc-hdr10-strict's [mp4]) while Stage C fires a genuine hdr-tone-map-required (compat-BL trap, not a strip, since dvBlCompatId is null). reasons: [container-not-direct-playable, hdr-tone-map-required], stage order preserved. t1-cpu-tonemap avoids a 3rd reason. why (Phase 3 §11 step 3, Stage G arrival, STATE.md P3.2 regression law): this case's caps fixture has no hardware backend covering this route, so Stage G now routes full software (`software-fallback:encode`).\n"
+input:
+  media:
+    fileId: file-203
+    container: mkv
+    durationMs: 6000000
+    sizeBytes: 5000000000
+    overallBitrateBps: 15384000
+    video:
+      - index: 0
+        codec: hevc
+        profile: main10
+        level: 123
+        width: 3840
+        height: 2160
+        bitDepth: 10
+        frameRate: 23.976
+        bitrateBps: 15000000
+        hdr: dv
+        dvProfile: 8
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 6
+        sampleRate: 48000
+        bitrateBps: 384000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device:
+    fixture: devices.hevc-hdr10-strict
+  network:
+    fixture: networks.local
+  policy:
+    fixture: policies.t1-cpu-tonemap
+  caps:
+    fixture: caps.software-only
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: transcode
+  reasons:
+    - container-not-direct-playable
+    - hdr-tone-map-required
+    - software-fallback:encode

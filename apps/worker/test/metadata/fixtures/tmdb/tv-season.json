@@ -1,0 +1,26 @@
+{
+  "id": 3624,
+  "season_number": 1,
+  "name": "Season 1",
+  "overview": "Lord Stark is drawn into the intrigues of the king's court.",
+  "episodes": [
+    {
+      "episode_number": 1,
+      "name": "Winter Is Coming",
+      "overview": "Lord Stark is troubled by disturbing reports from the Night's Watch.",
+      "air_date": "2011-04-17",
+      "vote_average": 8.1,
+      "crew": [{ "name": "Tim Van Patten", "job": "Director", "department": "Directing" }],
+      "guest_stars": [{ "name": "Sean Bean", "character": "Eddard Stark", "order": 0 }]
+    },
+    {
+      "episode_number": 2,
+      "name": "The Kingsroad",
+      "overview": "While Bran recovers from his fall, Ned takes only his daughters to King's Landing.",
+      "air_date": "2011-04-24",
+      "vote_average": 7.8,
+      "crew": [],
+      "guest_stars": []
+    }
+  ]
+}

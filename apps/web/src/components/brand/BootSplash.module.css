@@ -1,0 +1,244 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+
+/* Loombre :: apps/web/src/components/brand/BootSplash.module.css
+   STATE.md "Blaze logo rollout" Lane B — rebuilt from the motion reference
+   design/blaze/assets/loombre-splash.html. Fidelity map (reference line ->
+   here), every value copied verbatim unless noted:
+
+     .scan                -> .scan       (--scanlines-splash, G3: the
+                                          splash-scoped recipe, NOT the
+                                          app-wide --scanlines)
+     .stack                -> .stack     (gap: 22px)
+     .mark (svg, flash)     -> .mark      (D4 exception: filter animation,
+                                          permitted ONLY here)
+     .rig (enter)           -> .rig
+     .blaze                 -> .blaze
+     .core (flicker)        -> .core
+     .word (up)             -> .word
+     .boot / .boot div      -> .boot / .bootLine (stagger via nth-child,
+                                          identical mechanism)
+     .boot span:last-child  -> .bootValue
+
+   Color-function notation: the reference writes legacy `rgba(255,180,84,
+   .85)`; this file writes the equivalent modern `rgb(255 180 84 / 85%)`
+   (stylelint-config-standard's default `color-function-notation: modern`
+   — same computed color, zero visual difference, called out honestly in
+   the Lane B freeze report rather than silently "fixed"). */
+
+.splash {
+  position: fixed;
+  inset: 0;
+
+  /* No z-index TOKEN exists in this codebase (Toast/Overlay's own overlays
+     hardcode the literal too) — 100 matches their "top of stack" value;
+     the splash covers the whole app at the earliest boot moment, before
+     anything else meaningful is mounted, so this rarely matters in
+     practice. */
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-bg-splash);
+  overflow: hidden;
+}
+
+.scan {
+  position: fixed;
+  inset: 0;
+  background: var(--scanlines-splash);
+  pointer-events: none;
+}
+
+.stack {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 22px;
+}
+
+/* ── Mark: one-shot bloom flash (D4 exception) ─────────────────────────
+   The ONLY filter animation in the whole app — see this component's
+   header and BootSplash.test.tsx's D4 scope-pin test. */
+.mark {
+  animation: loombre-boot-splash-flash 1.4s ease both;
+}
+
+.rig {
+  transform-box: view-box;
+  transform-origin: 50% 85%;
+  animation: loombre-boot-splash-enter 0.9s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.blaze {
+  transform-box: view-box;
+  transform-origin: 50% 84%;
+  animation: loombre-boot-splash-blaze 1.05s ease-in-out 0.9s infinite;
+}
+
+.core {
+  transform-box: view-box;
+  transform-origin: 50% 68%;
+  animation: loombre-boot-splash-flicker 0.72s ease-in-out 0.9s infinite;
+}
+
+.word {
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-stretch: var(--wdth-wordmark);
+  font-weight: var(--weight-black);
+  font-size: 28px;
+  letter-spacing: 0.24em;
+  padding-left: 0.24em;
+  animation: loombre-boot-splash-up 0.7s cubic-bezier(0.22, 1, 0.36, 1) 0.5s both;
+}
+
+.boot {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 290px;
+  font-family: var(--font-mono);
+  font-size: var(--mono-md);
+  font-weight: var(--weight-medium);
+  letter-spacing: 0.12em;
+  color: var(--color-text-subtle);
+}
+
+.bootLine {
+  display: flex;
+  justify-content: space-between;
+  opacity: 0;
+  animation: loombre-boot-splash-up 0.5s ease both;
+}
+
+.bootValue {
+  color: var(--brand-amber);
+}
+
+.boot > .bootLine:nth-child(1) {
+  animation-delay: 1s;
+}
+
+.boot > .bootLine:nth-child(2) {
+  animation-delay: 1.35s;
+}
+
+.boot > .bootLine:nth-child(3) {
+  animation-delay: 1.7s;
+}
+
+@keyframes loombre-boot-splash-enter {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.9);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes loombre-boot-splash-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes loombre-boot-splash-blaze {
+  0%,
+  100% {
+    transform: scale(1, 1) rotate(0);
+  }
+
+  20% {
+    transform: scale(0.94, 1.07) rotate(-2.4deg);
+  }
+
+  45% {
+    transform: scale(1.06, 0.92) rotate(1.6deg);
+  }
+
+  70% {
+    transform: scale(0.95, 1.05) rotate(-1.2deg);
+  }
+
+  85% {
+    transform: scale(1.03, 0.97) rotate(0.8deg);
+  }
+}
+
+@keyframes loombre-boot-splash-flicker {
+  0%,
+  100% {
+    transform: scale(1, 1);
+  }
+
+  25% {
+    transform: scale(0.96, 1.05) rotate(-1.5deg);
+  }
+
+  50% {
+    transform: scale(1.04, 0.94);
+  }
+
+  75% {
+    transform: scale(0.97, 1.03) rotate(1.2deg);
+  }
+}
+
+@keyframes loombre-boot-splash-flash {
+  0% {
+    filter: brightness(1) drop-shadow(0 0 0 rgb(255 180 84 / 0%));
+  }
+
+  35% {
+    filter: brightness(2.1) drop-shadow(0 0 26px rgb(255 180 84 / 85%));
+  }
+
+  100% {
+    filter: brightness(1) drop-shadow(0 0 13px rgb(255 180 84 / 40%));
+  }
+}
+
+/* ── Reduced motion (D10/G6) ────────────────────────────────────────────
+   One-shots (entrance/bloom/wordmark+log rise) collapse to a near-instant
+   .01s with 0s delay — matching the reference's own
+   `@media (prefers-reduced-motion: reduce){*{animation-duration:.01s
+   !important;animation-delay:0s !important}}` collapse. Class-level
+   selectors (not the reference's blanket `*`) are required here so this
+   beats app/globals.css's global `* { animation-duration: 100ms
+   !important }` clamp (lines 64-71): both declarations carry !important,
+   so the tiebreaker is specificity, and a class selector always outranks
+   the universal selector — the mechanism G6 calls out by name.
+
+   The infinite idles (blaze/flicker) do NOT get a duration collapse —
+   `animation-duration: .01s` on an `infinite` animation still keeps the
+   compositor repainting ~100 times/second, which is exactly what
+   prefers-reduced-motion exists to stop. `animation: none` settles them on
+   their base (0%) transform instead — visually the same static mark the
+   reference's .01s collapse produces (a full 1.05s/0.72s cycle finishing
+   in 10ms is imperceptible from "stopped"), with zero ongoing compositor
+   work. This reading of D10 is orchestrator-adjudicated per the Lane B
+   brief — flagged again in the freeze report. */
+@media (prefers-reduced-motion: reduce) {
+  .rig,
+  .mark,
+  .word,
+  .bootLine {
+    animation-duration: 0.01s !important;
+    animation-delay: 0s !important;
+  }
+
+  .blaze,
+  .core {
+    animation: none !important;
+  }
+}

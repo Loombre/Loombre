@@ -1,0 +1,56 @@
+name: "direct-play — ASS subtitle embeds (copy) when the device renders it natively — no styling-lost reason at all"
+why: >
+  text-embed-capable declares hlsVtt:false (so (a) never fires) but renderText includes ass, and mp4 is direct-playable -> cascade (b) fires: 'embed'. An embed is a literal stream copy, so ASS styling survives wholesale — subtitle-styling-lost (an (a)-branch-only reason) never fires here, distinguishing embed from hls-vtt for the same codec.
+
+input:
+  media:
+    fileId: file-0281
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 6000000000
+    overallBitrateBps: 5200000
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 41
+        width: 1920
+        height: 1080
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 5000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 192000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle:
+      - index: 2
+        codec: ass
+        language: eng
+        isForced: false
+        isDefault: false
+        isExternal: false
+        externalPath: null
+  device: { fixture: devices.text-embed-capable }
+  network: { fixture: networks.local }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.software-only }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: 2
+  mode: stream
+
+expect:
+  decision: direct-play
+  reasons: []
+  subtitleStrategy: embed

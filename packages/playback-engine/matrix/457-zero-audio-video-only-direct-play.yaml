@@ -1,0 +1,46 @@
+name: 'direct-play — video-only file (media.audio === [], null audio selection): Stage D vacuous, everything
+  else in caps'
+why: 'First zero-audio-stream VIDEO case in the matrix (audit coverage gap: §2.1 allows an empty audio
+  array on a video file — silent clips, camera footage — and every existing audio-empty case was music-mode
+  or device-side). Stage D''s vacuous pass (audioStreamIndex null, media.audio empty) plus §5 audio.action
+  ''none'' (unit-level fact, documented here) must not disturb direct-play.'
+input:
+  media:
+    fileId: file-457
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 3900000000
+    overallBitrateBps: 5200000
+    video:
+    - index: 0
+      codec: h264
+      profile: high
+      level: 41
+      width: 1920
+      height: 1080
+      bitDepth: 8
+      frameRate: 23.976
+      bitrateBps: 5000000
+      hdr: none
+      dvProfile: null
+      dvBlCompatId: null
+      interlaced: false
+    audio: []
+    subtitle: []
+  device:
+    fixture: devices.web-chrome
+  network:
+    fixture: networks.local
+  policy:
+    fixture: policies.t0-default
+  caps:
+    fixture: caps.software-only
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: null
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: direct-play
+  reasons: []
+  container: source

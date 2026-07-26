@@ -1,0 +1,10 @@
+{
+  // See packages/provisioning/tsconfig.test.json for the full rationale.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": ".",
+    "declaration": false
+  },
+  "include": ["src", "test"]
+}

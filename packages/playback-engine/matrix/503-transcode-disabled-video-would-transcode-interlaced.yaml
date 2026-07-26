@@ -1,0 +1,59 @@
+name: 'transcode (disabled) — interlaced source under allowTranscode:false: Stage B''s blocking reason
+  stands, transcode-disabled-by-policy lands LAST, refused-style empty outputs'
+why: 'step 7b F1 new pin (disabled + would-transcode video, a DIFFERENT Stage-B driver than 451''s codec-unsupported):
+  interlaced h264 fires video-interlaced (transcode), the aggregated decision is ''transcode'', and the
+  assembly-level disabled check converts it to the refused-style shape — decision stays ''transcode''
+  (§3''s total-output contract; the engine never emits unplayable), transcode-disabled-by-policy appended
+  LAST after every stage''s reasons, ladder [], ffmpegArgs [], Stage G skipped (no routing reason). Container
+  reports the would-be HLS target (fmp4) exactly like the tone-map-refused family (case 466''s pin).'
+input:
+  media:
+    fileId: file-503
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 3900000000
+    overallBitrateBps: 5200000
+    video:
+    - index: 0
+      codec: h264
+      profile: high
+      level: 41
+      width: 1920
+      height: 1080
+      bitDepth: 8
+      frameRate: 29.97
+      bitrateBps: 5000000
+      hdr: none
+      dvProfile: null
+      dvBlCompatId: null
+      interlaced: true
+    audio:
+    - index: 1
+      codec: aac
+      channels: 2
+      sampleRate: 48000
+      bitrateBps: 192000
+      language: eng
+      isDefault: true
+      hasAtmos: false
+    subtitle: []
+  device:
+    fixture: devices.web-chrome
+  network:
+    fixture: networks.local
+  policy:
+    fixture: policies.transcode-disabled
+  caps:
+    fixture: caps.software-only
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: transcode
+  reasons:
+  - video-interlaced
+  - transcode-disabled-by-policy
+  ladder: []
+  container: fmp4-hls

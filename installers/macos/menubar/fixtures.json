@@ -1,0 +1,160 @@
+{
+  "_comment": "Loombre :: installers/macos/menubar/fixtures.json — canonical JSON fixture VALUES for the @loombre/controller-ipc contract (packages/controller-ipc/src/*.ts, frozen 2026-07-24), validated against the package's real Ajv schemas by verify-fixtures.mjs in this directory. Tests/LoombreIPCKitTests/Fixtures.swift copies these literals verbatim (with a header pointing back here) because Swift cannot import the TS/JSON-schema constants directly. Run `node installers/macos/menubar/verify-fixtures.mjs` after editing either file — it is the sync check.",
+
+  "discoveryFile": {
+    "port": 54217,
+    "host": "127.0.0.1",
+    "pid": 4242,
+    "startedAtMs": 1732400000000
+  },
+
+  "processInfoRunning": {
+    "state": "running",
+    "pid": 4242,
+    "startedAtMs": 1732400000000,
+    "version": "0.0.1"
+  },
+
+  "processInfoStopped": {
+    "state": "stopped",
+    "pid": null,
+    "startedAtMs": null,
+    "version": "0.0.1"
+  },
+
+  "processInfoCrashed": {
+    "state": "crashed",
+    "pid": null,
+    "startedAtMs": 1732400000000,
+    "version": "0.0.1"
+  },
+
+  "provisioningStatusExternal": {
+    "state": "external",
+    "pgVersion": null,
+    "dataDir": null,
+    "lastCheckMs": 1732400000000
+  },
+
+  "provisioningStatusReady": {
+    "state": "ready",
+    "pgVersion": "17.4",
+    "dataDir": "/Library/Application Support/Loombre/db",
+    "lastCheckMs": 1732400000000,
+    "detail": "ok"
+  },
+
+  "statusResponseHealthy": {
+    "ipcContractVersion": 1,
+    "server": {
+      "state": "running",
+      "pid": 4242,
+      "startedAtMs": 1732400000000,
+      "version": "0.0.1"
+    },
+    "worker": {
+      "state": "running",
+      "pid": 4243,
+      "startedAtMs": 1732400000000,
+      "version": "0.0.1"
+    },
+    "webUrl": "http://localhost:3001",
+    "provisioning": {
+      "state": "external",
+      "pgVersion": null,
+      "dataDir": null,
+      "lastCheckMs": 1732400000000
+    }
+  },
+
+  "statusResponseStopped": {
+    "ipcContractVersion": 1,
+    "server": {
+      "state": "stopped",
+      "pid": null,
+      "startedAtMs": null,
+      "version": "0.0.1"
+    },
+    "worker": {
+      "state": "stopped",
+      "pid": null,
+      "startedAtMs": null,
+      "version": "0.0.1"
+    },
+    "webUrl": null,
+    "provisioning": {
+      "state": "external",
+      "pgVersion": null,
+      "dataDir": null,
+      "lastCheckMs": 1732400000000
+    }
+  },
+
+  "statusResponseCrashed": {
+    "ipcContractVersion": 1,
+    "server": {
+      "state": "crashed",
+      "pid": null,
+      "startedAtMs": 1732400000000,
+      "version": "0.0.1"
+    },
+    "worker": {
+      "state": "running",
+      "pid": 4243,
+      "startedAtMs": 1732400000000,
+      "version": "0.0.1"
+    },
+    "webUrl": null,
+    "provisioning": {
+      "state": "corrupt",
+      "pgVersion": "17.4",
+      "dataDir": "/Library/Application Support/Loombre/db",
+      "lastCheckMs": 1732400000000,
+      "detail": "checksum-failure"
+    }
+  },
+
+  "errorBodyUnauthorized": {
+    "title": "Unauthorized",
+    "status": 401,
+    "code": "unauthorized",
+    "detail": "Bearer token missing or invalid"
+  },
+
+  "errorBodyServerAlreadyRunning": {
+    "title": "Server already running",
+    "status": 409,
+    "code": "server-already-running"
+  },
+
+  "serverActionResponseAccepted": {
+    "accepted": true,
+    "state": "starting"
+  },
+
+  "serverActionResponseNoop": {
+    "accepted": false,
+    "state": "running"
+  },
+
+  "openWebTargetResponse": {
+    "url": "http://localhost:3001"
+  },
+
+  "crashFilesResponse": {
+    "files": [
+      {
+        "path": "/Library/Application Support/Loombre/crash/2026-07-24T00-00-00.log",
+        "mtimeMs": 1732400000000
+      },
+      {
+        "path": "/Library/Application Support/Loombre/crash/2026-07-20T11-30-00.log",
+        "mtimeMs": 1731900000000
+      }
+    ]
+  },
+
+  "crashFilesResponseEmpty": {
+    "files": []
+  }
+}

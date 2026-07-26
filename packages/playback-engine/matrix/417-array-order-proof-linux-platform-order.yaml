@@ -1,0 +1,50 @@
+name: transcode — three hw backends could ALL serve this route; the FIRST array entry (nvenc) wins
+why: >
+  linux-platform-order lists nvenc, qsv, vaapi, software in that order, ALL verifying full decode+encode+tonemap coverage for this scenario (hdr10 mismatch) — a correct implementation must pick nvenc (array position 0), never qsv/vaapi, proving 'platform order' (docs/PLAYBACK.md §8.2) is modeled purely as caps.backends' own array order (binding interpretation 1), not some other tie-break. hw-encoder-selected:nvenc with video.toneMap='cuda'.
+
+input:
+  media:
+    fileId: gen-file
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 6000000000
+    overallBitrateBps: 8200000
+    video:
+      - index: 0
+        codec: hevc
+        profile: main10
+        level: 123
+        width: 1920
+        height: 1080
+        bitDepth: 10
+        frameRate: 23.976
+        bitrateBps: 7000000
+        hdr: hdr10
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 160000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device: { fixture: devices.hevc-sdr }
+  network: { fixture: networks.local }
+  policy: { fixture: policies.t1-cpu-tonemap }
+  caps: { fixture: caps.linux-platform-order }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+
+expect:
+  decision: transcode
+  reasons:
+    - hdr-tone-map-required
+    - hw-encoder-selected:nvenc

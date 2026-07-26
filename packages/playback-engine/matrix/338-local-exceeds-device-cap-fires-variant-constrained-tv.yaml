@@ -1,0 +1,53 @@
+name: transcode — local network exceeds constrained-tv's existing 20Mbps device cap
+why: >
+  Same PIN as 337 (local + exceeds a non-null device cap -> fires), using the PRE-EXISTING constrained-tv fixture's own maxStreamBitrateBps (20,000,000) instead of the new bitrate-capped-device fixture, proving the rule isn't overfit to one cap magnitude. overall (25Mbps) exceeds both local-4mbps's cap (4Mbps, irrelevant) and the device's 20Mbps cap -> fires. Ladder: rule (a) drops the 2160p/1080p rungs (source is 1080p); rule (b) (15Mbps source) keeps 8/4/3/1.5/0.8Mbps... — wait height 1080p keeps the 1080p rungs too; the point here is rule (c) is skipped (isLocal) and rule (d)'s 20Mbps device cap doesn't narrow the remaining rungs any further (its own max, 8Mbps, already fits) — surviving max stays 8,000,000. Container is ts-hls (constrained-tv's device.hls.supportsFmp4 is false). why (Phase 3 §11 step 3, Stage G arrival, STATE.md P3.2 regression law): this case's caps fixture has no hardware backend covering this route, so Stage G now routes full software (`software-fallback:encode`); tier 0 + a >=1080p selected source additionally trips the tier cap, narrowing the surviving ladder to <=480p rungs (`software-fallback:tier-capped`).
+
+input:
+  media:
+    fileId: file-0338
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 18750000000
+    overallBitrateBps: 25000000
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 41
+        width: 1920
+        height: 1080
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 15000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 128000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device: { fixture: devices.constrained-tv }
+  network: { fixture: networks.local-4mbps }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.software-only }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+
+expect:
+  decision: transcode
+  reasons:
+    - bitrate-exceeds-network
+    - software-fallback:encode
+    - software-fallback:tier-capped
+  container: ts-hls
+  ladderMaxVideoBitrateBps: 8000000

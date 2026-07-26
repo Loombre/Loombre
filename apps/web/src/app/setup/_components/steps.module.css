@@ -1,0 +1,173 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+
+/* Shared layout for every wizard step (STATE.md P2.7/P2.20 tokens only). */
+
+.step {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.iconBadge {
+  width: 48px;
+  height: 48px;
+  border-radius: var(--radius-full);
+  background: var(--color-accent-tint);
+  color: var(--color-accent);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.title {
+  font-size: var(--text-2xl);
+  font-weight: var(--weight-bold);
+  margin: 0;
+  line-height: var(--leading-tight);
+}
+
+.subtitle {
+  font-size: var(--text-lg);
+  font-weight: var(--weight-semibold);
+  margin: 0;
+}
+
+.body {
+  color: var(--muted);
+  font-size: var(--text-sm);
+  line-height: var(--leading-normal);
+  margin: 0;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2xs);
+}
+
+.fieldRow {
+  display: flex;
+  gap: var(--space-sm);
+  align-items: flex-end;
+}
+
+.fieldRow > .field {
+  flex: 1;
+}
+
+.label {
+  font-size: var(--text-xs);
+  color: var(--muted);
+  font-weight: var(--weight-medium);
+}
+
+.hint {
+  font-size: var(--text-xs);
+  color: var(--color-text-subtle);
+}
+
+.fieldError {
+  font-size: var(--text-xs);
+  color: var(--color-danger);
+}
+
+.error {
+  border-radius: var(--radius-sm);
+  background: var(--color-accent-tint);
+  color: var(--color-accent);
+  padding: var(--space-sm);
+  font-size: var(--text-sm);
+}
+
+.info {
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-hover);
+  color: var(--text);
+  padding: var(--space-sm);
+  font-size: var(--text-sm);
+  border: 1px solid var(--border);
+}
+
+.success {
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--color-success) 16%, transparent);
+  color: var(--color-success);
+  padding: var(--space-sm);
+  font-size: var(--text-sm);
+}
+
+.actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-sm);
+  margin-top: var(--space-sm);
+}
+
+.actionsEnd {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-sm);
+  margin-top: var(--space-sm);
+}
+
+.pathList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.pathRow {
+  display: flex;
+  gap: var(--space-xs);
+  align-items: center;
+}
+
+.pathRow > * {
+  flex: 1;
+}
+
+.removePathButton {
+  flex: none;
+}
+
+.addPathButton {
+  align-self: flex-start;
+}
+
+.reportGrid {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.backendCard {
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--color-surface);
+  padding: var(--space-sm) var(--space-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2xs);
+}
+
+.backendName {
+  font-weight: var(--weight-semibold);
+  font-size: var(--text-sm);
+}
+
+.backendChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3xs);
+}
+
+
+.dropzone {
+  border-radius: var(--radius-lg);
+  border: 1px dashed var(--border);
+  padding: var(--space-xl);
+  text-align: center;
+  color: var(--muted);
+  font-size: var(--text-sm);
+}

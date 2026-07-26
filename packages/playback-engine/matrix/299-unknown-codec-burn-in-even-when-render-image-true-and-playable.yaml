@@ -1,0 +1,60 @@
+name: "transcode — unknown codec STILL burns in even when device.renderImage is true AND the container is direct-playable"
+why: >
+  image-render-capable declares renderImage:true and mp4 is direct-playable — exactly the condition that would embed a genuine pgs/vobsub/dvbsub stream — yet 'unknown' is REPLACED into the burn-in path unconditionally (constraint 5): the IMAGE tree's embed branch is never even consulted for this codec. Stage A/B/D all copy/direct-play here, so the ONLY reasons are subtitle-codec-unknown + video-transcode-for-subtitle-burn-in, pinning that the override is not merely 'usually wins' but absolute. why (Phase 3 §11 step 3, Stage G arrival, STATE.md P3.2 regression law): this case's caps fixture has no hardware backend covering this route, so Stage G now routes full software (`software-fallback:encode`); tier 0 + a >=1080p selected source additionally trips the tier cap, narrowing the surviving ladder to <=480p rungs (`software-fallback:tier-capped`).
+
+input:
+  media:
+    fileId: file-0299
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 6000000000
+    overallBitrateBps: 5200000
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 41
+        width: 1920
+        height: 1080
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 5000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 192000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle:
+      - index: 2
+        codec: unknown
+        language: eng
+        isForced: false
+        isDefault: false
+        isExternal: false
+        externalPath: null
+  device: { fixture: devices.image-render-capable }
+  network: { fixture: networks.local }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.software-only }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: 2
+  mode: stream
+
+expect:
+  decision: transcode
+  reasons:
+    - subtitle-codec-unknown
+    - video-transcode-for-subtitle-burn-in
+    - software-fallback:encode
+    - software-fallback:tier-capped
+  subtitleStrategy: burn-in

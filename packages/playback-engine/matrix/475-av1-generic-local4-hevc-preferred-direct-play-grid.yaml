@@ -1,0 +1,53 @@
+name: 'direct-play — av1-generic × local-4mbps × hevc-preferred: 2160p60 av1 at 26M overall; isLocal skips
+  the 4M cap (device cap null)'
+why: 'Grid combo (av1-generic × local-4mbps × hevc-preferred): §3 Stage F''s unless-clause holds — isLocal
+  with a null device cap forgives 26M >> 4M — and the hevc-preferred policy is indifferent on a direct-play
+  path (the swap only exists inside ladder construction).'
+input:
+  media:
+    fileId: file-475
+    container: webm
+    durationMs: 6000000
+    sizeBytes: 19500000000
+    overallBitrateBps: 26000000
+    video:
+    - index: 0
+      codec: av1
+      profile: null
+      level: null
+      width: 3840
+      height: 2160
+      bitDepth: 10
+      frameRate: 60
+      bitrateBps: 25000000
+      hdr: none
+      dvProfile: null
+      dvBlCompatId: null
+      interlaced: false
+    audio:
+    - index: 1
+      codec: aac
+      channels: 6
+      sampleRate: 48000
+      bitrateBps: 384000
+      language: eng
+      isDefault: true
+      hasAtmos: false
+    subtitle: []
+  device:
+    fixture: devices.av1-generic
+  network:
+    fixture: networks.local-4mbps
+  policy:
+    fixture: policies.hevc-preferred
+  caps:
+    fixture: caps.software-only
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: direct-play
+  reasons: []
+  container: source

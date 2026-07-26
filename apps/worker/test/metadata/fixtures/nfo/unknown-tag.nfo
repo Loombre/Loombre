@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<movie>
+  <title>Widely Tagged</title>
+  <year>2011</year>
+  <genre>Documentary</genre>
+  <fileinfo>
+    <streamdetails>
+      <video>
+        <codec>h264</codec>
+      </video>
+    </streamdetails>
+  </fileinfo>
+  <thumb aspect="poster" preview="/thumb-preview.jpg">/thumb.jpg</thumb>
+  <customtagfromsomeotherapp>opaque-value</customtagfromsomeotherapp>
+  <trailer>https://example.invalid/trailer.mp4</trailer>
+  <uniqueid type="tmdb">55</uniqueid>
+</movie>

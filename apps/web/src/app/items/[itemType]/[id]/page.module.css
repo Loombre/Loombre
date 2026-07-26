@@ -1,0 +1,77 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xl);
+}
+
+.metaLine {
+  display: flex;
+  gap: var(--space-md);
+  flex-wrap: wrap;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+.tagline {
+  font-style: italic;
+  color: var(--color-text-muted);
+  margin: 0;
+}
+
+.chips {
+  display: flex;
+  gap: var(--space-2xs);
+  flex-wrap: wrap;
+}
+
+.overview {
+  margin: 0;
+  max-width: 60ch;
+  color: var(--text);
+  line-height: var(--leading-normal);
+}
+
+.backLink {
+  color: var(--color-accent);
+  text-decoration: none;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  width: fit-content;
+}
+
+.backLink:hover {
+  text-decoration: underline;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.sectionHeading {
+  font-size: var(--text-lg);
+  font-weight: var(--weight-semibold);
+  margin: 0;
+}
+
+.seasonList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.peopleScroller {
+  display: flex;
+  gap: var(--space-md);
+  overflow-x: auto;
+  padding-bottom: var(--space-xs);
+  scroll-snap-type: x proximity;
+}
+
+.versionsList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3xs);
+}

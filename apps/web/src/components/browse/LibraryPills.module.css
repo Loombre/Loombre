@@ -1,0 +1,14 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+
+/* Reuses the shared SegmentedControl visual recipe via CSS Modules
+   composition (read-only reuse — components/ui is a shared UI primitive,
+   not edited here) so library pills and the sort control look identical. */
+
+.track {
+  composes: track from "../ui/SegmentedControl.module.css";
+  flex-wrap: wrap;
+}
+
+.segment {
+  composes: segment from "../ui/SegmentedControl.module.css";
+}

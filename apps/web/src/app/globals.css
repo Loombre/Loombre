@@ -1,0 +1,86 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+@import "../styles/tokens.css";
+@import "../styles/fonts.css";
+@import "../styles/glass.css";
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  line-height: var(--leading-normal);
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: inherit;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+}
+
+img,
+svg {
+  display: block;
+  max-width: 100%;
+}
+
+/* ── Focus rings — animate in, inherit the target's own radius (P2.10) ── */
+:focus {
+  outline: none;
+}
+
+:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus-ring);
+  border-radius: inherit;
+  animation: loombre-focus-in var(--motion-fast) var(--ease-spring);
+}
+
+@keyframes loombre-focus-in {
+  from {
+    box-shadow: 0 0 0 0 var(--color-focus);
+  }
+
+  to {
+    box-shadow: var(--shadow-focus-ring);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 100ms !important;
+    transition-duration: 100ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Wave-1 reconciliation: below the mobile breakpoint the single
+   bottom-center toast must clear the bottom tab bar. The toast viewport
+   (components/ui/Toast) mounts in the ROOT layout via AppProviders —
+   ABOVE every per-route AppShell — so its --toast-offset-bottom seam has
+   to be set at root level, not by shell CSS. 767.98px is the shared
+   mobile-breakpoint literal (tokens.css "Mobile chrome layout"). */
+@media (width <= 767.98px) {
+  :root {
+    --toast-offset-bottom: calc(
+      var(--mobile-tabbar-height) + env(safe-area-inset-bottom, 0px) + var(--space-sm)
+    );
+  }
+}

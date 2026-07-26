@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<movie>
+  <title>Amélie au pays des merveilles: 東京物語</title>
+  <sorttitle>Amelie au pays des merveilles</sorttitle>
+  <year>2003</year>
+  <plot>Café, naïveté, and a journey — with emoji: 🎬🍿.</plot>
+  <mpaa>PG</mpaa>
+  <genre>Comédie</genre>
+  <actor>
+    <name>François Dupont</name>
+    <role>Le héros</role>
+    <order>0</order>
+  </actor>
+  <uniqueid type="tmdb">778</uniqueid>
+  <premiered>2003-03-05</premiered>
+</movie>

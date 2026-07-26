@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Loombre :: installers/windows/tray/Loombre.Tray.Ipc
+
+    The testable half of the tray controller — everything that talks to
+    the FROZEN packages/controller-ipc contract (HTTP client + wire
+    models + discovery-file reading), with ZERO WinForms/UI dependency.
+    Plain net8.0 (not -windows): runs on any OS, including this macOS
+    build-only host, so `dotnet test` here is real signal, not deferred to
+    the Wave 3 Windows VM the way the tray's actual UI necessarily is.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>Loombre.Tray.Ipc</RootNamespace>
+    <AssemblyName>Loombre.Tray.Ipc</AssemblyName>
+  </PropertyGroup>
+
+</Project>

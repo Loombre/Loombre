@@ -1,0 +1,65 @@
+name: transcode — ac3 6ch exceeds a 2ch-capped inline device — downmix
+why: "Inline device caps ac3 at 2 channels; a 6ch ac3 stream fires audio-channels-exceed-device alone (ac3 is never subject to rule 3)."
+input:
+  media:
+    fileId: file-0224
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 6000000000
+    overallBitrateBps: 5800000
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 41
+        width: 1920
+        height: 1080
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 5000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: ac3
+        channels: 6
+        sampleRate: 48000
+        bitrateBps: 384000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device:
+    profileId: inline-ac3-limited
+    directPlayContainers: [mp4]
+    hls: { container: fmp4, supportsFmp4: true, lowLatency: false }
+    video:
+      - codec: h264
+        maxProfile: high
+        maxLevel: 41
+        maxBitDepth: 8
+        maxWidth: 1920
+        maxHeight: 1080
+        maxFrameRate: 60
+        maxBitrateBps: null
+    hdr: { hdr10: false, hlg: false, dolbyVision: false }
+    audio:
+      - codec: ac3
+        maxChannels: 2
+        passthrough: false
+    subtitles: { renderText: [], hlsVtt: false, renderImage: false }
+    maxStreamBitrateBps: null
+  network: { fixture: networks.local }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.software-only }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: transcode
+  reasons:
+    - audio-channels-exceed-device

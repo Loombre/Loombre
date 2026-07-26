@@ -1,0 +1,62 @@
+name: 'transcode — 240p source sits below EVERY instance rung: §7 rule (a) drops the whole table, keep-lowest
+  rescues exactly the 360p rung'
+why: 'Audit coverage gap: every existing keep-lowest case reached rule (e) via the bitrate caps (341/342)
+  or a 360p source (345); none proved the SOURCE-HEIGHT rule alone can drop all six rungs. A 426x240 source
+  (every rung heightPx > 240) forces (a) to drop everything — including the 360p rung whose 800k bitrate
+  would otherwise survive the 900k source bitrate — and rule (e) keeps the post-swap table''s lowest rung
+  even though it still violates (a). 240p < 1080 keeps the tier cap out. Deliberate future-proof exception:
+  vc1 outside web-chrome''s caps (the driver).'
+input:
+  media:
+    fileId: file-461
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 750000000
+    overallBitrateBps: 1000000
+    video:
+    - index: 0
+      codec: vc1
+      profile: null
+      level: null
+      width: 426
+      height: 240
+      bitDepth: 8
+      frameRate: 23.976
+      bitrateBps: 900000
+      hdr: none
+      dvProfile: null
+      dvBlCompatId: null
+      interlaced: false
+    audio:
+    - index: 1
+      codec: aac
+      channels: 2
+      sampleRate: 48000
+      bitrateBps: 192000
+      language: eng
+      isDefault: true
+      hasAtmos: false
+    subtitle: []
+  device:
+    fixture: devices.web-chrome
+  network:
+    fixture: networks.local
+  policy:
+    fixture: policies.t0-default
+  caps:
+    fixture: caps.software-only
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: transcode
+  reasons:
+  - video-codec-unsupported
+  - software-fallback:encode
+  ladder:
+  - heightPx: 360
+    videoBitrateBps: 800000
+    audioBitrateBps: 160000
+    codec: h264

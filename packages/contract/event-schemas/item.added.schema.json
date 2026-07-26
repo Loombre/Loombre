@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://loombre.com/schemas/events/item.added.schema.json",
+  "title": "ItemAddedPayload",
+  "description": "Payload for envelope.type === 'item.added'. Emitted by the scanner when a new catalog_items row is created (docs/PLAN.md §4.3, §8.1).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["itemId", "libraryId", "itemType", "contentClass", "addedAtMs"],
+  "properties": {
+    "itemId": { "type": "string", "format": "uuid" },
+    "libraryId": { "type": "string", "format": "uuid" },
+    "itemType": {
+      "type": "string",
+      "enum": ["movie", "series", "season", "episode", "artist", "album", "track"]
+    },
+    "contentClass": { "type": "string", "enum": ["general", "restricted"] },
+    "parentId": {
+      "type": ["string", "null"],
+      "format": "uuid",
+      "description": "e.g. seriesId for a season, seasonId for an episode, albumId for a track; null for top-level items."
+    },
+    "addedAtMs": { "type": "integer", "minimum": 0 }
+  }
+}

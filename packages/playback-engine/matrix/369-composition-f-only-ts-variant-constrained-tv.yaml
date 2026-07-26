@@ -1,0 +1,53 @@
+name: transcode — F is the ONLY reason on an otherwise direct-playable file (seed 006 pattern, ts variant)
+why: >
+  The ts variant of the mission's "F is the ONLY reason" requirement: constrained-tv's device.hls.supportsFmp4 is false, so the escalated container is ts-hls (not fmp4-hls, distinct from seed 006 and case 368). h264/1080p/aac-2ch source fully within constrained-tv's caps; only overallBitrateBps (22Mbps) exceeding wan-4mbps's cap (4Mbps, non-local) escalates — bitrate-exceeds-network alone. why (Phase 3 §11 step 3, Stage G arrival, STATE.md P3.2 regression law): this case's caps fixture has no hardware backend covering this route, so Stage G now routes full software (`software-fallback:encode`); tier 0 + a >=1080p selected source additionally trips the tier cap, narrowing the surviving ladder to <=480p rungs (`software-fallback:tier-capped`).
+
+input:
+  media:
+    fileId: file-0369
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 16500000000
+    overallBitrateBps: 22000000
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 41
+        width: 1920
+        height: 1080
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 20000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 128000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device: { fixture: devices.constrained-tv }
+  network: { fixture: networks.wan-4mbps }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.software-only }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+
+expect:
+  decision: transcode
+  reasons:
+    - bitrate-exceeds-network
+    - software-fallback:encode
+    - software-fallback:tier-capped
+  container: ts-hls
+  ladderMaxVideoBitrateBps: 4000000

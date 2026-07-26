@@ -1,0 +1,52 @@
+name: 'direct-play — passthrough-capable × wan-20mbps × t0-default: DTS-HD 8ch bitstream passthrough copies
+  in mkv'
+why: 'Grid combo (passthrough-capable × wan-20mbps × t0-default): Stage D.3''s dtshd copy branch (passthrough:true,
+  at the 8ch cap) with everything else in caps — 12.5M ≤ 20M, mkv direct-playable on this device.'
+input:
+  media:
+    fileId: file-493
+    container: mkv
+    durationMs: 6000000
+    sizeBytes: 9375000000
+    overallBitrateBps: 12500000
+    video:
+    - index: 0
+      codec: h264
+      profile: high
+      level: 41
+      width: 1920
+      height: 1080
+      bitDepth: 8
+      frameRate: 23.976
+      bitrateBps: 11000000
+      hdr: none
+      dvProfile: null
+      dvBlCompatId: null
+      interlaced: false
+    audio:
+    - index: 1
+      codec: dtshd
+      channels: 8
+      sampleRate: 48000
+      bitrateBps: 1500000
+      language: eng
+      isDefault: true
+      hasAtmos: false
+    subtitle: []
+  device:
+    fixture: devices.passthrough-capable
+  network:
+    fixture: networks.wan-20mbps
+  policy:
+    fixture: policies.t0-default
+  caps:
+    fixture: caps.software-only
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: direct-play
+  reasons: []
+  container: source

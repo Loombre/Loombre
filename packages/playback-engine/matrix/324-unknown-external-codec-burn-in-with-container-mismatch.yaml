@@ -1,0 +1,61 @@
+name: "transcode — unknown codec via an EXTERNAL sidecar, combined with a container mismatch -> burn-in override + container reason, exact stage order"
+why: >
+  isExternal/externalPath make no difference to the unknown-codec override (constraint 5/8): this external sidecar still burns in with subtitle-codec-unknown REPLACING subtitle-format-requires-burn-in, appended after Stage A's container-not-direct-playable (mkv is not in web-chrome's directPlayContainers) and before video-transcode-for-subtitle-burn-in (Stage B copies). why (Phase 3 §11 step 3, Stage G arrival, STATE.md P3.2 regression law): this case's caps fixture has no hardware backend covering this route, so Stage G now routes full software (`software-fallback:encode`); tier 0 + a >=1080p selected source additionally trips the tier cap, narrowing the surviving ladder to <=480p rungs (`software-fallback:tier-capped`).
+
+input:
+  media:
+    fileId: file-0324
+    container: mkv
+    durationMs: 6000000
+    sizeBytes: 6000000000
+    overallBitrateBps: 5200000
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 41
+        width: 1920
+        height: 1080
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 5000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 192000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle:
+      - index: 2
+        codec: unknown
+        language: eng
+        isForced: false
+        isDefault: false
+        isExternal: true
+        externalPath: "/sidecars/unknown.sub"
+  device: { fixture: devices.web-chrome }
+  network: { fixture: networks.local }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.software-only }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: 2
+  mode: stream
+
+expect:
+  decision: transcode
+  reasons:
+    - container-not-direct-playable
+    - subtitle-codec-unknown
+    - video-transcode-for-subtitle-burn-in
+    - software-fallback:encode
+    - software-fallback:tier-capped
+  subtitleStrategy: burn-in

@@ -1,0 +1,51 @@
+name: transcode — 'unknown' source codec matches NO backend's decode list (hw or software) -> full software (rule iii)
+why: >
+  'unknown' is also unsupported by web-chrome's device.video list (Stage B fires video-codec-unsupported first). The closed VideoCodec enum's 'unknown' member is never listed in ANY caps fixture's decode array (hw or software) either — rules (i) and (ii) both require decode coverage somewhere, so this falls straight to rule (iii) full software even under full-hw caps, proving 'unknown' is handled totally (docs/PLAYBACK.md §10 property 3) rather than crashing. tier 0 + 1080p -> tier cap also fires (software-fallback:tier-capped after software-fallback:encode).
+
+input:
+  media:
+    fileId: gen-file
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 6000000000
+    overallBitrateBps: 5000000
+    video:
+      - index: 0
+        codec: unknown
+        profile: null
+        level: null
+        width: 1920
+        height: 1080
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 5000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 160000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device: { fixture: devices.web-chrome }
+  network: { fixture: networks.local }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.full-hw }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+
+expect:
+  decision: transcode
+  reasons:
+    - video-codec-unsupported
+    - software-fallback:encode
+    - software-fallback:tier-capped

@@ -1,0 +1,51 @@
+name: transcode — hevc-sdr HLG mismatch, allowToneMapCpu:never + full-hw caps (nvenc cuda tone-map exists) → NOT refused
+why: "full-hw's nvenc backend declares toneMap:[cuda] (non-empty) — a hardware tone-map method exists, so even though the policy is 'never', refusal's first conjunct (no backend has a non-empty toneMap array) is false. Not refused. why (Phase 3 §11 step 3, Stage G arrival, STATE.md P3.2 regression law): this case's caps fixture verifies a real hardware backend for the selected stream's codec + surviving ladder targets, so Stage G now selects it (`hw-encoder-selected:nvenc`).\n"
+input:
+  media:
+    fileId: file-153
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 5000000000
+    overallBitrateBps: 5192000
+    video:
+      - index: 0
+        codec: hevc
+        profile: main10
+        level: 123
+        width: 1920
+        height: 1080
+        bitDepth: 10
+        frameRate: 23.976
+        bitrateBps: 5000000
+        hdr: hlg
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 192000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device:
+    fixture: devices.hevc-sdr
+  network:
+    fixture: networks.local
+  policy:
+    fixture: policies.tonemap-never
+  caps:
+    fixture: caps.full-hw
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: transcode
+  reasons:
+    - hdr-tone-map-required
+    - hw-encoder-selected:nvenc

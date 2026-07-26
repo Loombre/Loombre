@@ -1,0 +1,57 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+
+/* P2.11 ambient depth: heavily blurred/darkened backdrop + dominant-color
+   glow, used both by the player's idle/paused state and the unavailable
+   screen. Static filter (not animated), so this stays outside the P2.10
+   "compositor-only for continuous animation" constraint — it's one paint,
+   not a running animation. */
+
+.wrap {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: var(--color-bg);
+  z-index: 0;
+}
+
+.image {
+  position: absolute;
+  inset: -5%;
+  width: 110%;
+  height: 110%;
+  object-fit: cover;
+  filter: blur(48px) saturate(1.2) brightness(0.55);
+  transform: scale(1.08);
+}
+
+/* Scanlines preference (Wave 2 L7, README "Other" — default ON): CSS-only
+   toggle via the root [data-scanlines="off"] attribute, no per-component
+   JS. Paints above the blurred image, below the glow/scrim — relies on
+   DOM order (this file never uses z-index; siblings paint in source
+   order within .wrap), same as every other layer here. */
+.scanlines {
+  position: absolute;
+  inset: 0;
+  background: var(--scanlines);
+  pointer-events: none;
+}
+
+:root[data-scanlines="off"] .scanlines {
+  display: none;
+}
+
+.glow {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    ellipse at 50% 30%,
+    color-mix(in srgb, var(--glow-color, var(--color-dominant-fallback)) 45%, transparent) 0%,
+    transparent 65%
+  );
+}
+
+.scrim {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgb(0 0 0 / 25%) 0%, rgb(0 0 0 / 55%) 65%, rgb(0 0 0 / 80%) 100%);
+}

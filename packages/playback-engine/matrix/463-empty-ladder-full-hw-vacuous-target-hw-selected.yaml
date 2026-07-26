@@ -1,0 +1,59 @@
+name: 'AUDIT transcode — empty instance ladder + full-hw caps: the vacuous target set still selects the
+  REAL hw encoder (encode-capability guard''s other half), ladder stays [], ffmpegArgs degenerate-empty'
+why: 'Companion to 419 (which proved a decode-only backend is NOT vacuously selected): with genuinely
+  encode-capable nvenc and zero ladder targets, rule (i) fires normally — hw-encoder-selected:nvenc with
+  decode coverage of the h264 source. Pins the Step-4 surfaced empty-policy.ladderRungs degenerate at
+  matrix level from the hw side: decision ''transcode'' with ladder [] and (unit-level facts, probe-verified,
+  documented in the audit report) video.targetCodec UNSET and ffmpegArgs [] — ''nothing to run''. Candidate
+  §7 clarification (an instance ladder should likely never be admin-configurable to empty) remains open.
+  Deliberate future-proof exception: overall bitrate exceeds the network cap (the transcode driver).'
+input:
+  media:
+    fileId: file-463
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 9000000000
+    overallBitrateBps: 12000000
+    video:
+    - index: 0
+      codec: h264
+      profile: high
+      level: 41
+      width: 1920
+      height: 1080
+      bitDepth: 8
+      frameRate: 23.976
+      bitrateBps: 11500000
+      hdr: none
+      dvProfile: null
+      dvBlCompatId: null
+      interlaced: false
+    audio:
+    - index: 1
+      codec: aac
+      channels: 2
+      sampleRate: 48000
+      bitrateBps: 192000
+      language: eng
+      isDefault: true
+      hasAtmos: false
+    subtitle: []
+  device:
+    fixture: devices.web-chrome
+  network:
+    fixture: networks.wan-4mbps
+  policy:
+    fixture: policies.empty-ladder
+  caps:
+    fixture: caps.full-hw
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: transcode
+  reasons:
+  - bitrate-exceeds-network
+  - hw-encoder-selected:nvenc
+  ladder: []

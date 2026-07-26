@@ -1,0 +1,162 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Loombre :: installers/windows/msi/Services.wxs
+
+  ==========================================================================
+  THE "ask": does a raw <ServiceInstall> pointed at node.exe work, or does
+  this need a service-wrapper exe? ANSWER: a wrapper IS needed. Evidence:
+  ==========================================================================
+
+  The Windows Service Control Manager (SCM) requires the process it starts
+  to call StartServiceCtrlDispatcher and register a control handler
+  (SetServiceCtrlHandler) within a short timeout, then to report
+  SERVICE_RUNNING via SetServiceStatus, and to respond to a later
+  SERVICE_CONTROL_STOP by actually stopping and reporting SERVICE_STOPPED.
+  node.exe is a plain console-subsystem executable — it implements NONE of
+  that protocol. Registering `node.exe dist/main.js` directly via
+  <ServiceInstall> would let SCM successfully CreateProcess it, but the
+  process never calls StartServiceCtrlDispatcher, so SCM treats the start
+  as failed/hung and — worse for the "clean stop" half of the ask — SCM has
+  no way to deliver SERVICE_CONTROL_STOP to it at all (there is no signal
+  registered to receive it), so a `net stop LoombreServer` / service-panel
+  stop would fall through to SCM's hard-kill timeout on every single stop.
+  This is not a Loombre-specific problem; it is exactly the reason tools
+  like NSSM and WinSW exist for wrapping arbitrary executables as services.
+
+  DECISION: a small, FULLY-OWNED wrapper (LoombreServiceHost.exe, see
+  installers/windows/service-host/) is added rather than pulling in a
+  third-party service-wrapper binary. Reasoning, so this isn't a silently
+  added binary (the explicit instruction this file is answering):
+    1. We are already building a C# tray controller for this same lane, so
+       the .NET 8 toolchain is not new surface — reusing it for one more
+       small project is cheap, and keeps the wrapper auditable/fully-owned
+       per CLAUDE.md's "fully owned platform" posture, rather than adding
+       an unsigned third-party .exe on top of Loombre's own unsigned
+       posture (P4.1) — one unfamiliar unsigned binary is a strictly worse
+       trust story than a second unsigned binary we wrote and can explain.
+    2. It correctly implements ServiceBase (SCM protocol) AND translates a
+       stop request into a CTRL_BREAK_EVENT delivered to the child's
+       console (Windows' nearest equivalent to POSIX SIGTERM for a
+       console-subsystem child — see LoombreHostedService.cs's header for
+       the full mechanism and why AttachConsole/FreeConsole is needed), so
+       `net stop LoombreServer` gets an actual graceful-shutdown attempt
+       before the wrapper falls back to killing the process tree.
+    3. Node.js on win32 DOES support a 'SIGBREAK' process event specifically
+       for CTRL_BREAK_EVENT (see LoombreHostedService.cs) — but apps/server
+       and apps/worker do not yet register a win32 SIGBREAK handler
+       (STATE.md P4.14 added POSIX SIGTERM only, which Windows silently
+       no-ops on an externally-delivered kill). Until that handler lands,
+       Loombre's Windows services stop via the wrapper's graceful-then-kill
+       TIMEOUT path (still bounded, still non-destructive to on-disk state
+       for the same reasons a hard container/VM stop already has to be
+       safe) rather than a true graceful drain. FLAGGED for the owning
+       lane, not silently patched around here (out of this lane's
+       ownership: apps/server/src, apps/worker/src).
+
+  ==========================================================================
+  THE OTHER "ask": ServiceInstall/@Arguments quoting.
+  ==========================================================================
+
+  ServiceInstall's Arguments attribute is a Windows-Installer "Formatted"
+  string: [DirectoryId] tokens are resolved to the installed, ABSOLUTE,
+  trailing-backslash path at install time (the same mechanism any Formatted
+  MSI field uses — this is not WiX-specific magic). Because
+  Program Files\Loombre contains a space, every path-shaped argument is
+  wrapped in ITS OWN literal double quotes inside the Arguments value so
+  LoombreServiceHost's Main(string[] args) receives each one as a single
+  argv element (the .NET runtime already applies standard Windows
+  command-line unquoting to what SCM hands it — see
+  installers/windows/service-host/ServiceOptions.cs's header for why no
+  custom quote-parsing lives on our side). XML attributes below are
+  single-quoted specifically so the double quotes can be written literally
+  without &quot; escaping.
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Fragment>
+    <ComponentGroup Id="ServiceComponents" Directory="SVCHOSTDIR">
+      <!-- ONE component, TWO ServiceInstall/ServiceControl pairs: both
+           Windows services launch the SAME shared LoombreServiceHost.exe
+           binary (it takes its target executable + args on its own
+           command line, see Services.wxs's header + ServiceOptions.cs),
+           so there is exactly one file to install/service/remove and the
+           two service registrations live and die with it atomically. -->
+      <Component Id="cmp.ServiceHost" Guid="*">
+        <File Id="file.LoombreServiceHost" Source="$(var.SvcHostDir)\LoombreServiceHost.exe" KeyPath="yes" />
+
+        <!-- ==================== LoombreServer ==================== -->
+        <ServiceInstall
+          Id="svc.LoombreServer"
+          Name="LoombreServer"
+          DisplayName="Loombre Server"
+          Description="Loombre media server (catalog API + playback; also serves the web client — see Directories.wxs's WEBDIR comment for the current staging-vs-serving caveat)."
+          Start="auto"
+          Type="ownProcess"
+          ErrorControl="normal"
+          Account="LocalSystem"
+          Arguments='--name LoombreServer --exe "[NODEDIR]node.exe" --arg "[SERVERDIR]dist\main.js" --cwd "[SERVERDIR]" --log "[APPDATA_LOGS]server.log" --envfile "[APPDATA_DATA]server.env" --stop-timeout-ms 10000' />
+        <ServiceControl
+          Id="svcctl.LoombreServer"
+          Name="LoombreServer"
+          Start="install"
+          Stop="both"
+          Remove="uninstall"
+          Wait="yes" />
+
+        <!-- ==================== LoombreWorker ==================== -->
+        <ServiceInstall
+          Id="svc.LoombreWorker"
+          Name="LoombreWorker"
+          DisplayName="Loombre Worker"
+          Description="Loombre background worker (scan/probe/transcode/metadata job consumers)."
+          Start="auto"
+          Type="ownProcess"
+          ErrorControl="normal"
+          Account="LocalSystem"
+          Arguments='--name LoombreWorker --exe "[NODEDIR]node.exe" --arg "[WORKERDIR]dist\index.js" --cwd "[WORKERDIR]" --log "[APPDATA_LOGS]worker.log" --envfile "[APPDATA_DATA]worker.env" --stop-timeout-ms 15000' />
+        <ServiceControl
+          Id="svcctl.LoombreWorker"
+          Name="LoombreWorker"
+          Start="install"
+          Stop="both"
+          Remove="uninstall"
+          Wait="yes" />
+
+        <!-- PORT / LOOMBRE_DATA_DIR / NODE_ENV are the only env vars this
+             installer can responsibly set at INSTALL time — see this
+             element's own comment. DATABASE_URL is deliberately ABSENT:
+             apps/server/src/common/db.provider.ts resolves it from
+             process.env.DATABASE_URL with a DEV-ONLY fallback
+             (postgres://loombre:loombre@localhost:5442/loombre) that must
+             NEVER be what a real Windows install runs against. The correct
+             source for a real install's DATABASE_URL is embedded-PG's
+             generated credentials via the P4.7 SecretRef/DPAPI seam
+             (lane B + P4.17), resolved by apps/server AT BOOT, not baked
+             in by this MSI at install time (the whole point of SecretRef
+             is that the installer never sees a plaintext credential). As
+             of this build lane B's boot-time wiring had not landed —
+             flagged in the I3 report as a real, currently-open gap: a
+             Windows install today would boot LoombreServer against the DEV
+             DEFAULT unless something else sets DATABASE_URL first.
+             LOOMBRE_TRUST_PROXY is deliberately left UNSET here too (README.md:
+             it is an operator opt-in for their own trusted reverse-proxy
+             config, never an installer default). Per-service REG_MULTI_SZ
+             Environment values use MSI's documented "[~]"-as-null-separator
+             RegistryValue convention for Type="multiString" — no trailing
+             "[~]" after the LAST entry, or MSI writes a spurious empty
+             trailing string into the REG_MULTI_SZ. -->
+        <RegistryValue
+          Root="HKLM"
+          Key="SYSTEM\CurrentControlSet\Services\LoombreServer"
+          Name="Environment"
+          Type="multiString"
+          Value="NODE_ENV=production[~]PORT=$(var.ServerPort)[~]LOOMBRE_DATA_DIR=[APPDATA_DATA]" />
+        <RegistryValue
+          Root="HKLM"
+          Key="SYSTEM\CurrentControlSet\Services\LoombreWorker"
+          Name="Environment"
+          Type="multiString"
+          Value="NODE_ENV=production[~]LOOMBRE_DATA_DIR=[APPDATA_DATA][~]LOOMBRE_FFMPEG=[FFMPEGDIR]ffmpeg.exe[~]LOOMBRE_FFPROBE=[FFMPEGDIR]ffprobe.exe" />
+      </Component>
+    </ComponentGroup>
+  </Fragment>
+</Wix>

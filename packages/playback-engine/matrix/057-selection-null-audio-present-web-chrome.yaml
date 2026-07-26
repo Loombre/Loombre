@@ -1,0 +1,49 @@
+name: direct-play — mp4 h264 1080p + aac 2ch present but audioStreamIndex null (only video selected), web-chrome
+why: "Selection-null edge case, audio side: an audio stream EXISTS but selection.audioStreamIndex is null. Decision stays direct-play (Stage A is unaffected by selection); audio.action resolves to 'none' rather than 'copy' (architecture requirement 3), verified by test/plan.spec.ts."
+input:
+  media:
+    fileId: file-0057
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 5000000000
+    overallBitrateBps: 5500000
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 41
+        width: 1920
+        height: 1080
+        bitDepth: 8
+        frameRate: 24
+        bitrateBps: 5000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 160000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device:
+    fixture: devices.web-chrome
+  network:
+    fixture: networks.local
+  policy:
+    fixture: policies.t0-default
+  caps:
+    fixture: caps.software-only
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: null
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: direct-play
+  reasons: []

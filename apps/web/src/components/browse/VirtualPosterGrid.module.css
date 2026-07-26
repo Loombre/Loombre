@@ -1,0 +1,42 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+.scrollArea {
+  position: relative;
+  flex: 1;
+  min-height: 320px;
+  overflow: hidden auto;
+  outline: none;
+  border-radius: var(--radius-lg);
+}
+
+.track {
+  position: relative;
+  width: 100%;
+}
+
+.cell {
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+
+.empty {
+  border-radius: var(--radius-lg);
+  border: 1px dashed var(--border);
+  padding: var(--space-xl);
+  color: var(--muted);
+  text-align: center;
+}
+
+.skeletonGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+  gap: var(--space-md);
+  flex: 1;
+  align-content: start;
+}
+
+.skeletonCell {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2xs);
+}

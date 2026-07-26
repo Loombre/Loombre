@@ -1,0 +1,50 @@
+name: transcode (download mode) — full-hw routes identically regardless of mode
+why: >
+  Same codec-unsupported scenario as case 428's shape (hevc vs constrained-tv) but mode='download' and full-hw caps instead of encode-only: `routeHardware`'s signature has no `mode` input at all, so its chosen route is identical regardless — full-hw's nvenc verifies hevc decode + the ladder's h264 targets, so rule (i) fires directly: hw-encoder-selected:nvenc (contrast with 428's software-fallback:decode under encode-only caps for the SAME media/device pairing) — proving mode-indifference explicitly.
+
+input:
+  media:
+    fileId: gen-file
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 6000000000
+    overallBitrateBps: 6600000
+    video:
+      - index: 0
+        codec: hevc
+        profile: main10
+        level: 123
+        width: 1920
+        height: 1080
+        bitDepth: 10
+        frameRate: 23.976
+        bitrateBps: 5500000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 160000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device: { fixture: devices.constrained-tv }
+  network: { fixture: networks.local }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.full-hw }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: download
+
+expect:
+  decision: transcode
+  reasons:
+    - video-codec-unsupported
+    - hw-encoder-selected:nvenc

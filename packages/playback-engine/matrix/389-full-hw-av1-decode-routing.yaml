@@ -1,0 +1,50 @@
+name: transcode — full-hw routes av1 DECODE through nvenc (encode targets stay h264/hevc per the ladder table)
+why: >
+  Source codec is av1; full-hw's nvenc verifies av1 decode AND h264/hevc/av1 encode. Stage F fires bitrate-exceeds-network (forcing the ladder to build); the surviving ladder's targets are h264/hevc (the §7 table never emits av1 rungs) — nvenc covers both, so rule (i) fires hw-encoder-selected:nvenc with av1 DECODE + h264 ENCODE, proving decode/encode routing are independent axes.
+
+input:
+  media:
+    fileId: gen-file
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 6000000000
+    overallBitrateBps: 25000000
+    video:
+      - index: 0
+        codec: av1
+        profile: null
+        level: 30
+        width: 1920
+        height: 1080
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 18000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 160000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device: { fixture: devices.av1-generic }
+  network: { fixture: networks.wan-20mbps }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.full-hw }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+
+expect:
+  decision: transcode
+  reasons:
+    - bitrate-exceeds-network
+    - hw-encoder-selected:nvenc

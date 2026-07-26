@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://loombre.com/schemas/events/watchlist.removed.schema.json",
+  "title": "WatchlistRemovedPayload",
+  "description": "Payload for envelope.type === 'watchlist.removed'. Phosphor Wave 2 lane L3: emitted when a user removes an item from their watchlist (DELETE /watchlist/{itemId}) and a row was actually deleted (a no-op remove of an item never watchlisted emits nothing — see packages/db/src/query/watchlist.ts's removeFromWatchlistAndEmit), in the SAME transaction as the delete. USER-SCOPED delivery — see watchlist.added.schema.json's description; the same rules apply here (packages/db/src/query/events.ts's USER_ONLY_TYPES).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["userId", "itemId"],
+  "properties": {
+    "userId": { "type": "string", "format": "uuid" },
+    "itemId": { "type": "string", "format": "uuid" }
+  }
+}
