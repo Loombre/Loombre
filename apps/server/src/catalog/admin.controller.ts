@@ -50,7 +50,8 @@ import { forbidden, notFound, unprocessableEntity } from "../gateway/problem.exc
 import { requireUuidParam } from "../gateway/require-uuid-param.js";
 import { sanitizeInstancePath } from "../gateway/sanitize-instance.js";
 import type { AuthenticatedRequest } from "../gateway/auth.guard.js";
-import { DbProvider } from "../common/db.provider.js";
+import { DbProvider, type LoombreDb } from "../common/db.provider.js";
+import { requireLiveAdmin } from "../common/require-live-admin.js";
 import { ViewerContextProvider } from "../common/viewer-context.provider.js";
 import { JobQueueProvider } from "../common/job-queue.provider.js";
 import { UpdateCheckService } from "../common/update-check/update-check.service.js";
@@ -76,10 +77,14 @@ function mapJob(row: JobRow) {
   };
 }
 
-function requireAdmin(req: AuthenticatedRequest): void {
+// L2 (pre-public hardening): claim fast-fail, then a FRESH DB re-read via
+// requireLiveAdmin — the JWT isAdmin claim alone can be stale for up to the
+// access token's 15-minute lifetime after a demotion.
+async function requireAdmin(db: LoombreDb, req: AuthenticatedRequest): Promise<void> {
   if (!req.user?.isAdmin) {
     throw forbidden("Admin privileges are required for this operation.", req.originalUrl);
   }
+  await requireLiveAdmin(db, req.user.userId, req.originalUrl);
 }
 
 function mapOs(platform: NodeJS.Platform): "linux" | "macos" | "windows" {
@@ -131,7 +136,7 @@ export class AdminController {
 
   @Get("admin/jobs")
   async listJobs(@Query() query: Record<string, unknown>, @Req() req: AuthenticatedRequest) {
-    requireAdmin(req);
+    await requireAdmin(this.dbProvider.db, req);
     const { cursor, limit } = parseListQuery(query);
     const page = await listJobsAdmin(this.dbProvider.db, {
       ...(cursor !== undefined ? { cursor } : {}),
@@ -142,7 +147,7 @@ export class AdminController {
 
   @Get("admin/jobs/:id")
   async getJob(@Param("id") id: string, @Req() req: AuthenticatedRequest) {
-    requireAdmin(req);
+    await requireAdmin(this.dbProvider.db, req);
     requireUuidParam(id, "Job not found.", req.originalUrl);
     const job = await getJobAdmin(this.dbProvider.db, id);
     if (!job) {
@@ -153,7 +158,7 @@ export class AdminController {
 
   @Get("admin/sessions")
   async listSessions(@Query() query: Record<string, unknown>, @Req() req: AuthenticatedRequest) {
-    requireAdmin(req);
+    await requireAdmin(this.dbProvider.db, req);
     const ctx = await resolveViewer(this.viewerContextProvider, req);
     const { cursor, limit } = parseListQuery(query);
     const page = await listActiveSessionsAdmin(this.dbProvider.db, ctx, {
@@ -165,7 +170,7 @@ export class AdminController {
 
   @Get("system/info")
   async getSystemInfo(@Req() req: AuthenticatedRequest) {
-    requireAdmin(req);
+    await requireAdmin(this.dbProvider.db, req);
     // Wave 1c (Phosphor retheme, "contract enablers" lane): storagePool —
     // every library's root paths (admin-only, unfiltered by
     // ViewerContext — see listLibraryPathsAdmin's own doc comment for why
@@ -197,13 +202,13 @@ export class AdminController {
 
   @Get("system/update")
   async getSystemUpdate(@Req() req: AuthenticatedRequest) {
-    requireAdmin(req);
+    await requireAdmin(this.dbProvider.db, req);
     return this.updateCheckService.getUpdateInfo();
   }
 
   @Get("admin/capabilities")
   async getAdminCapabilities(@Req() req: AuthenticatedRequest) {
-    requireAdmin(req);
+    await requireAdmin(this.dbProvider.db, req);
     const currentPlatform = os.platform();
     if (!isHwPlatform(currentPlatform)) {
       // Unsupported platform for hw-capability probing at all (matches
@@ -238,15 +243,15 @@ export class AdminController {
   }
 
   @Get("admin/crash-files")
-  listCrashFiles(@Req() req: AuthenticatedRequest) {
-    requireAdmin(req);
+  async listCrashFiles(@Req() req: AuthenticatedRequest) {
+    await requireAdmin(this.dbProvider.db, req);
     const { dataDir } = resolveAppPaths(process.platform, process.env);
     return { items: listCrashFileMetas(dataDir) };
   }
 
   @Get("admin/crash-files/:name")
-  getCrashFile(@Param("name") name: string, @Req() req: AuthenticatedRequest, @Res() res: Response): void {
-    requireAdmin(req);
+  async getCrashFile(@Param("name") name: string, @Req() req: AuthenticatedRequest, @Res() res: Response): Promise<void> {
+    await requireAdmin(this.dbProvider.db, req);
     // Reject BEFORE ever touching the filesystem with a caller-supplied
     // name — readCrashFileContent re-checks this same pattern internally
     // (defense in depth, admin-crash-files.ts's header), but the 404 here
@@ -268,7 +273,7 @@ export class AdminController {
 
   @Get("admin/logs/tail")
   async getAdminLogsTail(@Query() query: Record<string, unknown>, @Req() req: AuthenticatedRequest) {
-    requireAdmin(req);
+    await requireAdmin(this.dbProvider.db, req);
     const lines = parseLinesQuery(query["lines"]);
     return tailLogFile(process.env["LOOMBRE_LOG_FILE"], lines);
   }
@@ -281,7 +286,7 @@ export class AdminController {
     @Query() query: Record<string, unknown>,
     @Req() req: AuthenticatedRequest,
   ) {
-    requireAdmin(req);
+    await requireAdmin(this.dbProvider.db, req);
     requireUuidParam(id, "Library not found.", req.originalUrl);
     // Admin-bypass existence check (matches scanLibrary/putLibraryPermissions
     // precedent, libraries.controller.ts) — the LIST itself is still
@@ -313,7 +318,7 @@ export class AdminController {
   @Post("admin/items/:id/match-search")
   @HttpCode(HttpStatus.ACCEPTED)
   async searchItemMatchCandidates(@Param("id") id: string, @Req() req: AuthenticatedRequest) {
-    requireAdmin(req);
+    await requireAdmin(this.dbProvider.db, req);
     requireUuidParam(id, "Item not found.", req.originalUrl);
     const item = await getEnrichableCatalogItemForAdmin(this.dbProvider.db, id);
     if (!item) {
@@ -330,7 +335,7 @@ export class AdminController {
     @Body() rawBody: Record<string, unknown> | undefined,
     @Req() req: AuthenticatedRequest,
   ) {
-    requireAdmin(req);
+    await requireAdmin(this.dbProvider.db, req);
     requireUuidParam(id, "Item not found.", req.originalUrl);
     const instance = req.originalUrl;
     const item = await getEnrichableCatalogItemForAdmin(this.dbProvider.db, id);

@@ -36,7 +36,8 @@ import { nowMs as clockNowMs } from "@loombre/shared";
 import { forbidden, notFound, unprocessableEntity } from "../gateway/problem.exception.js";
 import { requireUuidParam } from "../gateway/require-uuid-param.js";
 import type { AuthenticatedRequest } from "../gateway/auth.guard.js";
-import { DbProvider } from "../common/db.provider.js";
+import { DbProvider, type LoombreDb } from "../common/db.provider.js";
+import { requireLiveAdmin } from "../common/require-live-admin.js";
 import { ViewerContextProvider } from "../common/viewer-context.provider.js";
 import { JobQueueProvider } from "../common/job-queue.provider.js";
 import { isRestrictedContentEnabled } from "../common/capabilities.js";
@@ -103,10 +104,14 @@ async function mapLibrariesWithCounts(
   });
 }
 
-function requireAdmin(req: AuthenticatedRequest): void {
+// L2 (pre-public hardening): claim fast-fail, then a FRESH DB re-read via
+// requireLiveAdmin — the JWT isAdmin claim alone can be stale for up to the
+// access token's 15-minute lifetime after a demotion.
+async function requireAdmin(db: LoombreDb, req: AuthenticatedRequest): Promise<void> {
   if (!req.user?.isAdmin) {
     throw forbidden("Admin privileges are required for this operation.", req.originalUrl);
   }
+  await requireLiveAdmin(db, req.user.userId, req.originalUrl);
 }
 
 const VALID_MEDIA_KINDS = new Set(["movie", "tv", "music"]);
@@ -135,7 +140,7 @@ export class LibrariesController {
 
   @Post("libraries")
   async createLibrary(@Body() rawBody: Record<string, unknown> | undefined, @Req() req: AuthenticatedRequest) {
-    requireAdmin(req);
+    await requireAdmin(this.dbProvider.db, req);
     const body = rawBody ?? {};
     const instance = req.originalUrl;
 
@@ -193,7 +198,7 @@ export class LibrariesController {
     @Body() rawBody: Record<string, unknown> | undefined,
     @Req() req: AuthenticatedRequest,
   ) {
-    requireAdmin(req);
+    await requireAdmin(this.dbProvider.db, req);
     requireUuidParam(id, "Library not found.", req.originalUrl);
     const body = rawBody ?? {};
     const instance = req.originalUrl;
@@ -227,7 +232,7 @@ export class LibrariesController {
 
   @Delete("libraries/:id")
   async deleteLibrary(@Param("id") id: string, @Req() req: AuthenticatedRequest) {
-    requireAdmin(req);
+    await requireAdmin(this.dbProvider.db, req);
     requireUuidParam(id, "Library not found.", req.originalUrl);
     const existing = await getLibraryByIdAdmin(this.dbProvider.db, id);
     if (!existing) {
@@ -242,7 +247,7 @@ export class LibrariesController {
     @Body() rawBody: Record<string, unknown> | undefined,
     @Req() req: AuthenticatedRequest,
   ) {
-    requireAdmin(req);
+    await requireAdmin(this.dbProvider.db, req);
     requireUuidParam(id, "Library not found.", req.originalUrl);
     const existing = await getLibraryByIdAdmin(this.dbProvider.db, id);
     if (!existing) {
@@ -255,7 +260,7 @@ export class LibrariesController {
 
   @Get("libraries/:id/permissions")
   async getLibraryPermissions(@Param("id") id: string, @Req() req: AuthenticatedRequest) {
-    requireAdmin(req);
+    await requireAdmin(this.dbProvider.db, req);
     requireUuidParam(id, "Library not found.", req.originalUrl);
     const existing = await getLibraryByIdAdmin(this.dbProvider.db, id);
     if (!existing) {
@@ -271,7 +276,7 @@ export class LibrariesController {
     @Body() rawBody: Record<string, unknown> | undefined,
     @Req() req: AuthenticatedRequest,
   ) {
-    requireAdmin(req);
+    await requireAdmin(this.dbProvider.db, req);
     requireUuidParam(id, "Library not found.", req.originalUrl);
     const instance = req.originalUrl;
     const existing = await getLibraryByIdAdmin(this.dbProvider.db, id);

@@ -22,7 +22,7 @@ import { parseLppManifest, type LppEventSubscriberCapability } from "@loombre/pl
 import { getPluginById, updatePluginEventGrantsAndEmit, type PluginRow } from "@loombre/db";
 import { DbProvider } from "../common/db.provider.js";
 import { conflict, notFound, unprocessableEntity } from "../gateway/problem.exception.js";
-import { requireLiveAdmin } from "../settings/require-live-admin.js";
+import { requireLiveAdmin } from "../common/require-live-admin.js";
 
 @Injectable()
 export class AdminPluginGrantsService {
