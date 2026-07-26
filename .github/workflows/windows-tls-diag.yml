@@ -1,25 +1,45 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 #
 # DIAGNOSTIC, manual-dispatch only — not part of the gate, never runs on
-# push or PR.
+# push or PR. Investigating STATE.md P4.21: in real ci.yml gate runs on
+# windows-latest, src/tls/manual-provider.spec.ts and runtime.spec.ts never
+# report; their vitest fork dies ("Worker exited unexpectedly"), 4/4 runs.
 #
-# Question it answers (STATE.md P4.21): on windows-latest, two apps/server
-# specs — src/tls/manual-provider.spec.ts and src/tls/runtime.spec.ts —
-# never report at all; their vitest fork dies with "Worker exited
-# unexpectedly" while every other file passes. Both create a REAL
-# https.Server and perform a REAL TLS handshake. Two candidate causes,
-# which this run separates:
+# VERDICTS SO FAR (each round eliminated a hypothesis):
+#   Round 1 (A–E): both specs pass IN ISOLATION under forks, threads,
+#     --no-isolate, and each alone. Not intrinsically broken; not pool-mode.
+#   Round 2 (F/G): the FULL apps/server suite passes standalone under both
+#     pools. Not a suite-internal interaction.
+#   Round 3 (H/I): apps/server + apps/worker via turbo, concurrent and
+#     serialized, both pass. Not two-package concurrency.
+#   Round 4 (J/K): unfiltered `turbo run test` (the gate's test step, ALL
+#     packages concurrent) passes, as does --concurrency=1. Not full
+#     fan-out concurrency either — at least not under THIS workflow's
+#     conditions.
 #
-#   A. A native crash (Node/OpenSSL TLS on Windows) inside the test
-#      process. Then the failure follows the CODE, and it will reproduce
-#      under every pool mode — including threads.
-#   B. A vitest fork-pool teardown / handle-leak interaction. Then the
-#      failure follows the POOL, and --pool=threads (or --no-isolate)
-#      will pass while the default forks pool crashes.
+# ROUND 5 — the two remaining deltas vs the real failing context:
+#   1. PRE-TEST GATE STEPS: the real gate runs codegen → sdk-drift →
+#      oasdiff → depcruise → runtime-imports → license-check → dep-audit →
+#      lint → typecheck before test (hundreds of node/tsc/eslint process
+#      spawns of churn).
+#   2. SHELL: ci.yml runs `pnpm gate` under `shell: bash` (Git Bash/MSYS).
+#      Rounds 1–4 ran under the Windows default shell (pwsh). MSYS
+#      mediates process trees and signal delivery differently — exactly
+#      the layer a fork's "unexpected exit" lives in.
 #
-# Each step is continue-on-error so ALL configurations report in one run
-# rather than the first red one masking the rest. Read the summary at the
-# end of the job log.
+#   L1/L2: `pnpm gate` under bash — byte-identical to the failing CI step,
+#          twice, for a reproduction-rate sample.
+#   M:     the test step alone under bash — isolates the shell variable
+#          from the pre-test-steps variable.
+#
+# How to read:
+#   L red, M red    -> bash shell + test step suffices: the shell is the delta.
+#   L red, M green  -> pre-test gate steps are the delta; bisect them next.
+#   L green ×2      -> cannot reproduce outside the real ci.yml job even
+#                      byte-identically; compare with the parallel real-CI
+#                      dispatch — if that failed again, the delta is the
+#                      ci.yml job definition itself (env/matrix), else the
+#                      failure is probabilistic and needs rate data.
 name: windows-tls-diag
 
 on:
@@ -27,7 +47,7 @@ on:
 
 jobs:
   diag:
-    name: windows TLS fork-crash diagnosis
+    name: windows TLS fork-crash diagnosis (round 5)
     runs-on: windows-latest
     steps:
       - name: Checkout
@@ -45,49 +65,6 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # apps/server imports built workspace packages (@loombre/secrets et al),
-      # so the dependency graph must be built before vitest can resolve them.
-      - name: Build workspace dependencies
-        run: pnpm build
-
-      - name: "A: default pool (forks + isolate) — the CONTROL, expected to crash"
-        continue-on-error: true
-        working-directory: apps/server
-        run: pnpm exec vitest run src/tls/manual-provider.spec.ts src/tls/runtime.spec.ts --reporter=verbose
-
-      - name: "B: --pool=threads"
-        continue-on-error: true
-        working-directory: apps/server
-        run: pnpm exec vitest run src/tls/manual-provider.spec.ts src/tls/runtime.spec.ts --pool=threads --reporter=verbose
-
-      - name: "C: forks, --no-isolate"
-        continue-on-error: true
-        working-directory: apps/server
-        run: pnpm exec vitest run src/tls/manual-provider.spec.ts src/tls/runtime.spec.ts --no-isolate --reporter=verbose
-
-      # Which of the two files is responsible — one, or both independently?
-      - name: "D: runtime.spec.ts alone (default pool)"
-        continue-on-error: true
-        working-directory: apps/server
-        run: pnpm exec vitest run src/tls/runtime.spec.ts --reporter=verbose
-
-      - name: "E: manual-provider.spec.ts alone (default pool)"
-        continue-on-error: true
-        working-directory: apps/server
-        run: pnpm exec vitest run src/tls/manual-provider.spec.ts --reporter=verbose
-
-      # ── ROUND 2 ────────────────────────────────────────────────────────
-      # Round 1 (A–E above) came back ALL GREEN, including the control:
-      # in isolation these two specs pass on windows-latest under every
-      # pool mode. So the crash is NOT intrinsic to them — it is an
-      # INTERACTION with the rest of the suite (88 other files run first,
-      # sequentially, many of them binding sockets and spawning children).
-      #
-      # The remaining question is whether that interaction is pool-shaped.
-      # These steps run the FULL apps/server suite — the only context in
-      # which the crash has ever reproduced — under forks (control) and
-      # threads. That needs the gate's real setup, hence Postgres/ffmpeg
-      # below.
       - name: Set up Postgres 18 (D18 — port 5442)
         uses: ikalnytskyi/action-setup-postgres@c4dda34aae1c821e3a771b68b73b13af3198a7ee # v8
         with:
@@ -99,6 +76,8 @@ jobs:
 
       - name: Migrate + seed database
         shell: bash
+        env:
+          DATABASE_URL: postgres://loombre:loombre@127.0.0.1:5442/loombre
         run: |
           set -euo pipefail
           pnpm db:migrate
@@ -111,111 +90,51 @@ jobs:
         shell: bash
         run: node scripts/gen-media-fixtures.mjs
 
-      - name: "F: FULL apps/server suite, default forks pool — reproduces the crash?"
+      - name: "L1: pnpm gate under bash — byte-identical to the failing CI step"
         continue-on-error: true
-        working-directory: apps/server
+        shell: bash
         env:
           PGHOST: 127.0.0.1
           PGPORT: "5442"
           PGUSER: loombre
           PGPASSWORD: loombre
           DATABASE_URL: postgres://loombre:loombre@127.0.0.1:5442/loombre
-          LOOMBRE_TEST_TIME_SCALE: "3"
-        run: pnpm exec vitest run
-
-      - name: "G: FULL apps/server suite, --pool=threads"
-        continue-on-error: true
-        working-directory: apps/server
-        env:
-          PGHOST: 127.0.0.1
-          PGPORT: "5442"
-          PGUSER: loombre
-          PGPASSWORD: loombre
-          DATABASE_URL: postgres://loombre:loombre@127.0.0.1:5442/loombre
-          LOOMBRE_TEST_TIME_SCALE: "3"
-        run: pnpm exec vitest run --pool=threads
-
-      # ── ROUND 3 ────────────────────────────────────────────────────────
-      # Round 2: F (full apps/server suite, standalone) PASSED. So the
-      # crash needs the GATE context, not the suite. turbo.json's `test`
-      # dependsOn ["^build", "^test"] — a package waits for its
-      # DEPENDENCIES' tests, but apps/server and apps/worker depend on
-      # neither each other, so turbo runs BOTH suites CONCURRENTLY at its
-      # default concurrency of 10. Each package is carefully sequential
-      # INTERNALLY (fileParallelism: false, precisely because live-DB specs
-      # must not race) — but nothing serializes them against EACH OTHER.
-      # On a 2-core Windows runner that means real ffmpeg transcodes and
-      # worker threads (apps/worker) running at the same instant as real
-      # https servers, Nest apps and WebSockets (apps/server).
-      #
-      # H reproduces that collision; I serializes it. Scoped to the two
-      # colliding packages so this answers in minutes rather than a full
-      # gate run.
-      - name: "H: turbo test, server+worker CONCURRENT (default) — reproduces the crash?"
-        continue-on-error: true
-        env:
-          PGHOST: 127.0.0.1
-          PGPORT: "5442"
-          PGUSER: loombre
-          PGPASSWORD: loombre
-          DATABASE_URL: postgres://loombre:loombre@127.0.0.1:5442/loombre
-          LOOMBRE_TEST_TIME_SCALE: "3"
-        run: pnpm exec turbo run test --filter=@loombre/server --filter=@loombre/worker
-
-      - name: "I: same two packages, --concurrency=1 (serialized)"
-        continue-on-error: true
-        env:
-          PGHOST: 127.0.0.1
-          PGPORT: "5442"
-          PGUSER: loombre
-          PGPASSWORD: loombre
-          DATABASE_URL: postgres://loombre:loombre@127.0.0.1:5442/loombre
-          LOOMBRE_TEST_TIME_SCALE: "3"
-        run: pnpm exec turbo run test --filter=@loombre/server --filter=@loombre/worker --concurrency=1
-
-      # ── ROUND 4 ────────────────────────────────────────────────────────
-      # Round 3: H passed — server+worker concurrent is NOT enough. The
-      # remaining untested delta vs the failing gate runs is the FULL
-      # package fan-out: `turbo run test` with no filter runs EVERY suite
-      # concurrently — including apps/web (84 jsdom files, the most
-      # memory-hungry thing in the tree) and packages/db — on a 2-core/8GB
-      # runner. An OOM-killed vitest fork surfaces as exactly "Worker
-      # exited unexpectedly" with no JS error attached, which matches every
-      # failing gate log. J is byte-for-byte the gate's test step
-      # (scripts/gate.mjs runs `turbo run test`); K is the serialized
-      # control.
-      - name: "J: turbo run test, ALL packages, default concurrency — the gate's actual test step"
-        continue-on-error: true
-        env:
-          PGHOST: 127.0.0.1
-          PGPORT: "5442"
-          PGUSER: loombre
-          PGPASSWORD: loombre
-          DATABASE_URL: postgres://loombre:loombre@127.0.0.1:5442/loombre
-          LOOMBRE_TEST_TIME_SCALE: "3"
           LOOMBRE_REQUIRE_FFMPEG: "1"
+          LOOMBRE_TEST_TIME_SCALE: "3"
+        run: pnpm gate
+
+      - name: "L2: pnpm gate under bash — second sample"
+        continue-on-error: true
+        shell: bash
+        env:
+          PGHOST: 127.0.0.1
+          PGPORT: "5442"
+          PGUSER: loombre
+          PGPASSWORD: loombre
+          DATABASE_URL: postgres://loombre:loombre@127.0.0.1:5442/loombre
+          LOOMBRE_REQUIRE_FFMPEG: "1"
+          LOOMBRE_TEST_TIME_SCALE: "3"
+        run: pnpm gate
+
+      - name: "M: turbo run test under bash — test step alone, shell isolated"
+        continue-on-error: true
+        shell: bash
+        env:
+          PGHOST: 127.0.0.1
+          PGPORT: "5442"
+          PGUSER: loombre
+          PGPASSWORD: loombre
+          DATABASE_URL: postgres://loombre:loombre@127.0.0.1:5442/loombre
+          LOOMBRE_REQUIRE_FFMPEG: "1"
+          LOOMBRE_TEST_TIME_SCALE: "3"
         run: pnpm exec turbo run test
-
-      - name: "K: turbo run test, ALL packages, --concurrency=1"
-        continue-on-error: true
-        env:
-          PGHOST: 127.0.0.1
-          PGPORT: "5442"
-          PGUSER: loombre
-          PGPASSWORD: loombre
-          DATABASE_URL: postgres://loombre:loombre@127.0.0.1:5442/loombre
-          LOOMBRE_TEST_TIME_SCALE: "3"
-          LOOMBRE_REQUIRE_FFMPEG: "1"
-        run: pnpm exec turbo run test --concurrency=1
 
       - name: How to read this run
         if: always()
         shell: bash
         run: |
-          echo "ROUND 1 (A-E):  specs fine in isolation.   ROUND 2 (F/G): suite fine alone."
-          echo "ROUND 3 (H/I):  server+worker concurrent fine. ROUND 4 (J/K) is the discriminator:"
-          echo "  J red, K green -> full-fan-out concurrency (likely memory) on the 2-core runner is the cause."
-          echo "                    Fix: --concurrency=1 (or 2) for the test step on Windows in gate/ci. No test changes."
-          echo "  J red, K red   -> something about running EVERY suite on this runner, independent of concurrency."
-          echo "  J green        -> the crash needs gate steps BEFORE test (codegen/lint/typecheck) or is"
-          echo "                    probabilistic — rerun J a few times before concluding anything."
+          echo "L red, M red   -> the bash/MSYS shell is the delta."
+          echo "L red, M green -> pre-test gate steps are the delta; bisect next."
+          echo "L green x2     -> compare the parallel real-CI windows dispatch; if that failed,"
+          echo "                  the ci.yml job definition is the delta; if it passed too, the"
+          echo "                  failure is probabilistic — gather rate data before any fix."
