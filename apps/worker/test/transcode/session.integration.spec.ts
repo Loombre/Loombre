@@ -359,7 +359,26 @@ describe.skipIf(!ffmpegAvailable)("transcode session runtime integration (real f
     const run0Dir = join(row.staging_dir!, "run0");
     expect(existsSync(join(run0Dir, "init.mp4"))).toBe(true);
     expect(existsSync(join(run0Dir, "s000000.m4s"))).toBe(true);
-    const servedPlaylist = readFileSync(join(row.staging_dir!, "media.m3u8"), "utf8");
+
+    // The DB row flips to active BEFORE the loop's served-playlist rewrite,
+    // so the playlist is a separately-observable side effect — poll for it
+    // rather than assuming it exists the instant the row lands (the same
+    // thing apps/server's hls-file.controller.ts does before serving it).
+    // The runner now writes it atomically, so any content observed here is
+    // COMPLETE; this wait is about ordering, not tearing. Assertions below
+    // are unchanged.
+    const servedPlaylist = await waitFor(
+      async () => {
+        let text = "";
+        try {
+          text = readFileSync(join(row.staging_dir!, "media.m3u8"), "utf8");
+        } catch {
+          return undefined; // not written yet
+        }
+        return text.includes("#EXTM3U") ? text : undefined;
+      },
+      { timeoutMs: 10_000 * TIME_SCALE, label: "served playlist written", diag: () => sessionDiag(raw, sessionId) },
+    );
     expect(servedPlaylist).toContain("#EXTM3U");
     expect(servedPlaylist).toContain("run0/s000000.m4s");
 
