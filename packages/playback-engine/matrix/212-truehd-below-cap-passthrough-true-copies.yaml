@@ -1,0 +1,45 @@
+name: direct-play — truehd 6ch below the passthrough-capable device's 8ch cap, passthrough:true
+why: "Further passthrough-true coverage at a non-boundary channel count (below cap, not exactly at it) — confirms the copy branch holds generally, not just at the exact 8ch/8ch boundary case 206 exercises."
+input:
+  media:
+    fileId: file-0212
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 6000000000
+    overallBitrateBps: 7500000
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 41
+        width: 1920
+        height: 1080
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 5000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: truehd
+        channels: 6
+        sampleRate: 48000
+        bitrateBps: 2500000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device: { fixture: devices.passthrough-capable }
+  network: { fixture: networks.local }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.software-only }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: direct-play
+  reasons: []

@@ -1,0 +1,166 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+
+/* Self-contained poster-tile recipe (deliberately not composed from
+   components/home/PosterCard.module.css — that component's focus target is
+   an inner non-interactive div; this one IS the interactive/focusable
+   element (an <a>), which needs its own focus-ring radius rule). Visual
+   language matches PosterCard exactly: blurhash crossfade, compositor-only
+   hover lift, --radius-md, --shadow-md hover glow (P2.7/P2.10; the ember-
+   tinted --shadow-ember-bloom token was retired under Phosphor, U1). */
+
+.tile {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2xs);
+  width: 100%;
+  text-decoration: none;
+  color: inherit;
+  outline: none;
+}
+
+.imageWrap {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 2 / 3;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: var(--color-dominant-fallback);
+  transform: translateY(0) scale(1);
+  transition:
+    transform var(--motion-base) var(--ease-spring),
+    box-shadow var(--motion-base) var(--ease-spring);
+  will-change: transform;
+}
+
+/* S7 poster signature (W3 fidelity audit): translateY(-4px) only, no
+   scale (unspecified in the dc); ring + shadow match the dc's shared
+   poster-hover literal exactly — see components/home/PosterCard.module.css's
+   identical rule for the full citation. */
+.tile:hover .imageWrap,
+.tile:focus-visible .imageWrap {
+  transform: translateY(-4px);
+  box-shadow:
+    0 12px 32px rgb(0 0 0 / 50%),
+    0 0 0 1px color-mix(in srgb, var(--color-accent) 45%, transparent);
+}
+
+/* S7 poster signature: inner hairline + in-artwork title — see
+   components/home/PosterCard.module.css's identical rules for the dc
+   citation. Added ADDITIONALLY to the existing below-caption title/
+   subtitle, which the dc also renders on this exact surface (Browse
+   grid, dc:274-284). */
+.imageWrap::after {
+  content: "";
+  position: absolute;
+  inset: 7px;
+  border: 1px solid rgb(255 255 255 / 16%);
+  border-radius: var(--radius-sm);
+  pointer-events: none;
+}
+
+.artTitle {
+  position: absolute;
+  left: 13px;
+  right: 13px;
+  bottom: 11px;
+  font-stretch: 108%;
+  font-weight: var(--weight-black);
+  font-size: var(--text-sm);
+  line-height: var(--leading-tight);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  text-shadow: 0 1px 8px rgb(0 0 0 / 50%);
+  color: var(--color-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* P2.11 now-playing pulse — same recipe as components/home/PosterCard.module.css
+   (static box-shadow ring, opacity-only animation, collapses under
+   prefers-reduced-motion instead of just speeding up). */
+.imageWrap::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow:
+    0 0 0 2px var(--color-accent),
+    0 0 18px 2px var(--color-accent-subtle);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--motion-fast) var(--ease-out);
+}
+
+.imageWrap[data-now-playing="true"]::before {
+  opacity: 0.35;
+  animation: now-playing-pulse 1.8s var(--ease-out) infinite;
+}
+
+@keyframes now-playing-pulse {
+  0%,
+  100% {
+    opacity: 0.3;
+  }
+
+  50% {
+    opacity: 0.85;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .imageWrap[data-now-playing="true"]::before {
+    animation: none;
+    opacity: 0.5;
+  }
+}
+
+.tile:focus-visible {
+  border-radius: var(--radius-md);
+}
+
+.placeholder,
+.image {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: inherit;
+}
+
+.placeholder {
+  opacity: 1;
+  transition: opacity var(--motion-slow) var(--ease-out);
+  filter: saturate(1.1);
+}
+
+.placeholder[data-loaded="true"] {
+  opacity: 0;
+}
+
+.image {
+  opacity: 0;
+  transition: opacity var(--motion-slow) var(--ease-out);
+}
+
+.image[data-loaded="true"] {
+  opacity: 1;
+}
+
+.title {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.subtitle {
+  font-size: var(--text-xs);
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

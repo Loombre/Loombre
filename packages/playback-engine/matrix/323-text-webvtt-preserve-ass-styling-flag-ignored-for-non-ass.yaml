@@ -1,0 +1,56 @@
+name: "direct-play — preserveAssStyling true has NO EFFECT on a non-ass TEXT codec (webvtt) — cascade (a) still yields plain hls-vtt, reason-free"
+why: >
+  preserve-ass-styling's preserveAssStyling:true only ever matters inside the (a) branch's ass-specific exception (codec==='ass' && policy.preserveAssStyling) — for webvtt the flag is read but never applies, so strategy stays 'hls-vtt' with zero reasons (not the ass-only subtitle-styling-lost, and definitely not a burn-in-for-styling override).
+
+input:
+  media:
+    fileId: file-0323
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 6000000000
+    overallBitrateBps: 5200000
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 41
+        width: 1920
+        height: 1080
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 5000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 192000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle:
+      - index: 2
+        codec: webvtt
+        language: eng
+        isForced: false
+        isDefault: false
+        isExternal: false
+        externalPath: null
+  device: { fixture: devices.text-all-capable }
+  network: { fixture: networks.local }
+  policy: { fixture: policies.preserve-ass-styling }
+  caps: { fixture: caps.software-only }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: 2
+  mode: stream
+
+expect:
+  decision: direct-play
+  reasons: []
+  subtitleStrategy: hls-vtt

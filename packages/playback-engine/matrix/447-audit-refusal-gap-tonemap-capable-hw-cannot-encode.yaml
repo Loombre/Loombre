@@ -1,0 +1,64 @@
+name: transcode (refused) — hdr10 vs SDR device; caps carry a toneMap-capable nvenc that cannot encode
+  the h264 targets; CPU tone-map 'never' → route-level refusal fires (step-7a refusal-gap arm A, FIXED)
+why: 'step 7b F2 fix (P3.2 flip of the step-7a audit pin, whose why: block was written to be replaced):
+  refusal is now decided at ROUTE level in src/plan.ts''s Stage G assembly from stages/hardware.ts''s
+  full §8.3 resolution — stages/hdr.ts''s caps-global heuristic is deleted. nvenc''s non-empty toneMap
+  [cuda] no longer suppresses refusal: rules (i)/(ii) skip nvenc on encode coverage (encode [av1] cannot
+  cover the h264 target set), rule (iii) lands on software, and allowToneMapCpu ''never'' resolves no
+  CPU method — tone-map required with NO usable method anywhere on the route ⇒ REFUSED per §3 verbatim
+  ("if Stage G yields no hardware method and allowToneMapCpu resolves to never → …it emits transcode with
+  ladder: [] and reason tone-map-refused-by-policy"). Shape identical to seed 144: branch reason first,
+  refusal directly after, ladder [], NO hw/software-fallback reason (nothing was selected), ffmpegArgs
+  [] and video.encoder/targetCodec/toneMap unset (pinned in test/stages/hdr.spec.ts arm A). The pre-fix
+  pin shipped an un-tone-mapped HDR10 stream to an SDR device with a real 4-rung ladder. Deliberate
+  future-proof exception: the hdr10-vs-SDR mismatch is the case''s point.'
+input:
+  media:
+    fileId: file-447
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 3894000000
+    overallBitrateBps: 5192000
+    video:
+    - index: 0
+      codec: hevc
+      profile: main10
+      level: 123
+      width: 1920
+      height: 1080
+      bitDepth: 10
+      frameRate: 23.976
+      bitrateBps: 5000000
+      hdr: hdr10
+      dvProfile: null
+      dvBlCompatId: null
+      interlaced: false
+    audio:
+    - index: 1
+      codec: aac
+      channels: 2
+      sampleRate: 48000
+      bitrateBps: 192000
+      language: eng
+      isDefault: true
+      hasAtmos: false
+    subtitle: []
+  device:
+    fixture: devices.hevc-sdr
+  network:
+    fixture: networks.wan-20mbps
+  policy:
+    fixture: policies.tonemap-never
+  caps:
+    fixture: caps.tonemap-no-encode
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: transcode
+  reasons:
+  - hdr-tone-map-required
+  - tone-map-refused-by-policy
+  ladder: []

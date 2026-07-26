@@ -1,0 +1,52 @@
+name: transcode — mpeg2 PROGRESSIVE vs web-chrome (no mpeg2 entry), container matches — rule 2 isolated, contrast with seed 007
+why: |
+  Unlike seed case 007 (ts container mismatch + interlaced + codec-unsupported), this stream is progressive and the container (mp4) matches web-chrome's list — isolating video-codec-unsupported alone. why (Phase 3 §11 step 3, Stage G arrival, STATE.md P3.2 regression law): this case's caps fixture has no hardware backend covering this route, so Stage G now routes full software (`software-fallback:encode`).
+input:
+  media:
+    fileId: file-135
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 5000000000
+    overallBitrateBps: 5160000
+    video:
+      - index: 0
+        codec: mpeg2
+        profile: main
+        level: null
+        width: 1280
+        height: 720
+        bitDepth: 8
+        frameRate: 25
+        bitrateBps: 5000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 160000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device:
+    fixture: devices.web-chrome
+  network:
+    fixture: networks.local
+  policy:
+    fixture: policies.t0-default
+  caps:
+    fixture: caps.software-only
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: transcode
+  reasons:
+    - video-codec-unsupported
+    - software-fallback:encode

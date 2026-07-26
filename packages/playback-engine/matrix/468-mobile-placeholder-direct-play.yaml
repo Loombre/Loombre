@@ -1,0 +1,53 @@
+name: 'direct-play — mobile-placeholder (§10''s fourth named device profile, first exercised here): h264
+  1080p30 + aac stereo mp4 fully within caps'
+why: '§10''s device dimension names four profiles; mobile-placeholder had no fixture and zero cases until
+  this audit (coverage gap). Baseline direct-play: every axis within the new fixture''s caps (1080p ≤
+  1080p, 4M stream ≤ 8M device cap, aac 2ch ≤ 2ch, mp4 direct-playable).'
+input:
+  media:
+    fileId: file-468
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 3150000000
+    overallBitrateBps: 4200000
+    video:
+    - index: 0
+      codec: h264
+      profile: high
+      level: 41
+      width: 1920
+      height: 1080
+      bitDepth: 8
+      frameRate: 29.97
+      bitrateBps: 4000000
+      hdr: none
+      dvProfile: null
+      dvBlCompatId: null
+      interlaced: false
+    audio:
+    - index: 1
+      codec: aac
+      channels: 2
+      sampleRate: 48000
+      bitrateBps: 192000
+      language: eng
+      isDefault: true
+      hasAtmos: false
+    subtitle: []
+  device:
+    fixture: devices.mobile-placeholder
+  network:
+    fixture: networks.wan-20mbps
+  policy:
+    fixture: policies.t0-default
+  caps:
+    fixture: caps.software-only
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: direct-play
+  reasons: []
+  container: source

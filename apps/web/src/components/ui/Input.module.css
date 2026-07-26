@@ -1,0 +1,42 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+.input {
+  width: 100%;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border);
+  background: var(--color-surface);
+  color: var(--text);
+  padding: var(--space-sm) var(--space-lg);
+  font-size: var(--text-base);
+  transition:
+    border-color var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-fast) var(--ease-out);
+}
+
+.input::placeholder {
+  color: var(--muted);
+}
+
+.input:hover {
+  border-color: var(--color-text-subtle);
+}
+
+.input:focus-visible {
+  border-color: var(--color-accent);
+}
+
+.searchField {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.searchIcon {
+  position: absolute;
+  left: var(--space-md);
+  color: var(--muted);
+  pointer-events: none;
+}
+
+.searchField .input {
+  padding-left: calc(var(--space-lg) + var(--space-lg));
+}

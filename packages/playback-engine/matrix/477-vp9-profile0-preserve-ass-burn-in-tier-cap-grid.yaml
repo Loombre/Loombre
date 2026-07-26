@@ -1,0 +1,76 @@
+name: 'transcode — vp9-profile0-only × wan-4mbps × preserve-ass-styling: ass burns in via the FORMAT reason
+  (no hlsVtt device), T0 software route tier-caps the 1080p ladder'
+why: 'Grid combo proving preserveAssStyling is irrelevant when cascade (a) never fires (vp9-profile0-only
+  declares hlsVtt:false and renders no text codecs): ass falls to the (c) burn-in branch with subtitle-format-requires-burn-in
+  — NOT subtitle-burn-in-for-styling, which requires the hls-vtt branch to have been reachable. Burn-in
+  forces the video transcode; software route + tier 0 + 1080p source trims [720/3M,480/1.5M,360/0.8M]
+  (post source-bitrate-3M drops) to the ≤480p pair, firing tier-capped. Deliberate future-proof exception:
+  the selected ass subtitle is un-renderable on this device (the driver).'
+input:
+  media:
+    fileId: file-477
+    container: webm
+    durationMs: 6000000
+    sizeBytes: 2550000000
+    overallBitrateBps: 3400000
+    video:
+    - index: 0
+      codec: vp9
+      profile: profile0
+      level: 41
+      width: 1920
+      height: 1080
+      bitDepth: 8
+      frameRate: 29.97
+      bitrateBps: 3000000
+      hdr: none
+      dvProfile: null
+      dvBlCompatId: null
+      interlaced: false
+    audio:
+    - index: 1
+      codec: aac
+      channels: 2
+      sampleRate: 48000
+      bitrateBps: 128000
+      language: eng
+      isDefault: true
+      hasAtmos: false
+    subtitle:
+    - index: 2
+      codec: ass
+      language: eng
+      isForced: false
+      isDefault: false
+      isExternal: false
+      externalPath: null
+  device:
+    fixture: devices.vp9-profile0-only
+  network:
+    fixture: networks.wan-4mbps
+  policy:
+    fixture: policies.preserve-ass-styling
+  caps:
+    fixture: caps.software-only
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: 2
+  mode: stream
+expect:
+  decision: transcode
+  reasons:
+  - subtitle-format-requires-burn-in
+  - video-transcode-for-subtitle-burn-in
+  - software-fallback:encode
+  - software-fallback:tier-capped
+  subtitleStrategy: burn-in
+  ladder:
+  - heightPx: 480
+    videoBitrateBps: 1500000
+    audioBitrateBps: 160000
+    codec: h264
+  - heightPx: 360
+    videoBitrateBps: 800000
+    audioBitrateBps: 160000
+    codec: h264

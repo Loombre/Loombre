@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<episodedetails>
+  <title>Static</title>
+  <season>1</season>
+  <episode>3</episode>
+  <plot>The signal returns at 2am.</plot>
+  <actor>
+    <name>Ada Lin</name>
+    <role>Host</role>
+    <order>0</order>
+  </actor>
+  <uniqueid type="tvdb">778899</uniqueid>
+  <premiered>2019-10-15</premiered>
+</episodedetails>

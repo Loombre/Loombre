@@ -1,0 +1,48 @@
+name: transcode — container mismatch (Stage A) + audio codec unsupported (Stage D), exact stage order
+why: "mkv is not in web-chrome's directPlayContainers (Stage A fires); the same file's selected vorbis stream has no web-chrome device.audio entry (Stage D rule 1 fires). Reasons appear in exact stage order: [container-not-direct-playable, audio-codec-unsupported]."
+input:
+  media:
+    fileId: file-0254
+    container: mkv
+    durationMs: 6000000
+    sizeBytes: 6000000000
+    overallBitrateBps: 5300000
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 41
+        width: 1920
+        height: 1080
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 5000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: vorbis
+        channels: 2
+        sampleRate: 44100
+        bitrateBps: 128000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device: { fixture: devices.web-chrome }
+  network: { fixture: networks.local }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.software-only }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: transcode
+  container: fmp4-hls
+  reasons:
+    - container-not-direct-playable
+    - audio-codec-unsupported

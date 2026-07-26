@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://loombre.com/schemas/events/job.updated.schema.json",
+  "title": "JobUpdatedPayload",
+  "description": "Payload for envelope.type === 'job.updated'. Emitted at job-ledger status transitions (queued→active→completed/failed) so the admin jobs dashboard is live via the events socket instead of polling (STATE.md P4.13, Phase 4 deliverable D). Deliberately status-transition-granular, not progress-tick-granular: per-tick progress would flood the outbox on long scans; `progress` carries whatever the transition knew, and consumers poll GET /admin/jobs/{id} for finer detail while a job is active. `jobType` additively gained 'pg-upgrade' (STATE.md Phase 4 Open item, the boot-time embedded-PG major-upgrade audit row written directly via packages/jobs's createLedger export — never a real dispatched pg-boss job, see that package's PgUpgradeJobPayload doc comment).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["jobId", "jobType", "status", "updatedAtMs"],
+  "properties": {
+    "jobId": { "type": "string", "format": "uuid" },
+    "jobType": { "type": "string", "enum": ["scan", "probe", "image", "metadata", "metadata-search", "import", "hwprobe", "subtitle-extract", "transcode", "image-backfill", "pg-upgrade"] },
+    "status": { "type": "string", "enum": ["queued", "active", "completed", "failed"] },
+    "progress": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "current": { "type": "integer", "minimum": 0 },
+        "total": { "type": ["integer", "null"], "minimum": 0 },
+        "phase": { "type": ["string", "null"] }
+      },
+      "required": ["current", "total", "phase"]
+    },
+    "errorMessage": { "type": ["string", "null"] },
+    "updatedAtMs": { "type": "integer", "minimum": 0 }
+  }
+}

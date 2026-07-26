@@ -1,0 +1,21 @@
+{
+  "status": "success",
+  "data": {
+    "episodes": [
+      {
+        "seasonNumber": 1,
+        "number": 3,
+        "name": "Static",
+        "overview": "The signal returns at 2am.",
+        "aired": "2019-10-15"
+      },
+      {
+        "seasonNumber": 1,
+        "number": 1,
+        "name": "Pilot",
+        "overview": "A late shift changes everything.",
+        "aired": "2019-10-01"
+      }
+    ]
+  }
+}

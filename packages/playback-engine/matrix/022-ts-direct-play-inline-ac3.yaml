@@ -1,0 +1,80 @@
+name: direct-play — ts h264 1080p + ac3 2ch, inline device with ts in directPlayContainers
+why: "Stage A: no SHARED device fixture lists ts in directPlayContainers (constrained-tv's `ts` only appears as its HLS repackage container, not a direct-play one), so this case defines an inline DeviceProfile that does, to cover the ts-in-list axis. Every selected stream is constructed genuinely within the paired device's declared caps on every axis (matrix/README.md's case-authoring rule), so this case's expected outcome survives once Stages B-F land."
+input:
+  media:
+    fileId: file-0022
+    container: ts
+    durationMs: 6000000
+    sizeBytes: 5000000000
+    overallBitrateBps: 5500000
+    video:
+      - index: 0
+        codec: h264
+        profile: null
+        level: null
+        width: 1920
+        height: 1080
+        bitDepth: 8
+        frameRate: 24
+        bitrateBps: 5000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: ac3
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 160000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device:
+    profileId: inline-ts-capable
+    directPlayContainers:
+      - ts
+    hls:
+      container: ts
+      supportsFmp4: false
+      lowLatency: false
+    video:
+      - codec: h264
+        maxProfile: null
+        maxLevel: null
+        maxBitDepth: 8
+        maxWidth: 1920
+        maxHeight: 1080
+        maxFrameRate: 30
+        maxBitrateBps: null
+    hdr:
+      hdr10: false
+      hlg: false
+      dolbyVision: false
+    audio:
+      - codec: ac3
+        maxChannels: 2
+        passthrough: false
+      - codec: eac3
+        maxChannels: 6
+        passthrough: true
+    subtitles:
+      renderText: []
+      hlsVtt: false
+      renderImage: false
+    maxStreamBitrateBps: null
+  network:
+    fixture: networks.local
+  policy:
+    fixture: policies.t0-default
+  caps:
+    fixture: caps.software-only
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: direct-play
+  reasons: []

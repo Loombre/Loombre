@@ -1,0 +1,52 @@
+name: transcode — av1 (codec unsupported by hevc-sdr) + HDR10 mismatch — BOTH stages' reasons fire, in stage order
+why: "KEY case for binding interpretation constraint 1 (Stage C evaluates regardless of Stage B's verdict): Stage B already forces transcode via video-codec-unsupported (hevc-sdr's device.video only declares an hevc entry — av1 has none), which would let a naive 'Stage C only runs when Stage B is copy or copy-possible' reading skip Stage C entirely. The real engine evaluates Stage C anyway: the same stream is ALSO hdr10 against a device with hdr.hdr10:false, so hdr-tone-map-required fires too. reasons: [video-codec-unsupported, hdr-tone-map-required], stage order (B then C). t1-cpu-tonemap avoids a third reason (refusal) so this case isolates exactly the B+C composition. why (Phase 3 §11 step 3, Stage G arrival, STATE.md P3.2 regression law): this case's caps fixture has no hardware backend covering this route, so Stage G now routes full software (`software-fallback:encode`).\n"
+input:
+  media:
+    fileId: file-190
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 5000000000
+    overallBitrateBps: 5192000
+    video:
+      - index: 0
+        codec: av1
+        profile: null
+        level: null
+        width: 1920
+        height: 1080
+        bitDepth: 10
+        frameRate: 23.976
+        bitrateBps: 5000000
+        hdr: hdr10
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 192000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device:
+    fixture: devices.hevc-sdr
+  network:
+    fixture: networks.local
+  policy:
+    fixture: policies.t1-cpu-tonemap
+  caps:
+    fixture: caps.software-only
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: transcode
+  reasons:
+    - video-codec-unsupported
+    - hdr-tone-map-required
+    - software-fallback:encode

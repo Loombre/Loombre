@@ -1,0 +1,57 @@
+name: "direct-play — external .srt, mp4 direct-playable, device could ALSO embed it natively -> cascade still picks hls-vtt first"
+why: >
+  text-all-capable both has hlsVtt:true AND declares subrip in renderText, with mp4 direct-playable -- embed (branch (b)) would have been fully available on every axis. Cascade order still checks (a) first: device.hlsVtt && policy hls-vtt both hold, so strategy is 'hls-vtt' regardless of embed's availability (constraint 8's 'direct-play+hls-vtt' external requirement). subrip carries no informational reason, so the whole plan is direct-play and reason-free.
+
+input:
+  media:
+    fileId: file-0302
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 6000000000
+    overallBitrateBps: 5200000
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 41
+        width: 1920
+        height: 1080
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 5000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 192000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle:
+      - index: 2
+        codec: subrip
+        language: eng
+        isForced: false
+        isDefault: false
+        isExternal: true
+        externalPath: "/sidecars/movie.srt"
+  device: { fixture: devices.text-all-capable }
+  network: { fixture: networks.local }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.software-only }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: 2
+  mode: stream
+
+expect:
+  decision: direct-play
+  reasons: []
+  subtitleStrategy: hls-vtt
+  container: source

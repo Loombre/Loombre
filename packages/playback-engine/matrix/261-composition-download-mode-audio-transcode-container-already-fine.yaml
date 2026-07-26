@@ -1,0 +1,47 @@
+name: transcode — mode=download, container already direct-playable, audio-only transcode still wins (never remux)
+why: "Container mp4 is in web-chrome's directPlayContainers (Stage A silent), so the ONLY reason at all is Stage D's audio-passthrough-unsupported (truehd 6ch, passthrough:false). The aggregated verdict is 'transcode' (not 'direct-stream'), so the container-only-change predicate — which only ever fires when the aggregated verdict is exactly 'direct-stream' — never applies; mode=download changes nothing here."
+input:
+  media:
+    fileId: file-0261
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 6000000000
+    overallBitrateBps: 7500000
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 41
+        width: 1920
+        height: 1080
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 5000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: truehd
+        channels: 6
+        sampleRate: 48000
+        bitrateBps: 2500000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device: { fixture: devices.web-chrome }
+  network: { fixture: networks.local }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.software-only }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: download
+expect:
+  decision: transcode
+  container: fmp4-hls
+  reasons:
+    - audio-passthrough-unsupported

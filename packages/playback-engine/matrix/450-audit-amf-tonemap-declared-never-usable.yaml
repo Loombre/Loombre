@@ -1,0 +1,74 @@
+name: AUDIT transcode — amf declares a verified opencl toneMap but §8.3's preference table has no amf
+  row → amf can never satisfy a tone-map requirement; falls through to software cpu-zscale
+why: 'Pins stages/hardware.ts binding interpretation 3''s amf/d3d11va branch (previously defensive-only,
+  fixture-unexercised): §8.3''s method table names only videotoolbox/nvenc/qsv/vaapi/software, so an amf
+  backend — even one declaring a verified toneMap method — is treated as never able to tone-map. amf covers
+  decode+encode for this route yet both rule (i) and (ii) fall through on method resolution; rule (iii)
+  software + ''always'' CPU policy yields cpu-zscale. Reasons [hdr-tone-map-required, software-fallback:encode].
+  Deliberate future-proof exception: hdr10 vs SDR.'
+input:
+  media:
+    fileId: file-450
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 3894000000
+    overallBitrateBps: 5192000
+    video:
+    - index: 0
+      codec: hevc
+      profile: main10
+      level: 123
+      width: 1920
+      height: 1080
+      bitDepth: 10
+      frameRate: 23.976
+      bitrateBps: 5000000
+      hdr: hdr10
+      dvProfile: null
+      dvBlCompatId: null
+      interlaced: false
+    audio:
+    - index: 1
+      codec: aac
+      channels: 2
+      sampleRate: 48000
+      bitrateBps: 192000
+      language: eng
+      isDefault: true
+      hasAtmos: false
+    subtitle: []
+  device:
+    fixture: devices.hevc-sdr
+  network:
+    fixture: networks.wan-20mbps
+  policy:
+    fixture: policies.t1-cpu-tonemap
+  caps:
+    fixture: caps.amf-tonemap-declared
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: transcode
+  reasons:
+  - hdr-tone-map-required
+  - software-fallback:encode
+  ladder:
+  - heightPx: 1080
+    videoBitrateBps: 4000000
+    audioBitrateBps: 160000
+    codec: h264
+  - heightPx: 720
+    videoBitrateBps: 3000000
+    audioBitrateBps: 160000
+    codec: h264
+  - heightPx: 480
+    videoBitrateBps: 1500000
+    audioBitrateBps: 160000
+    codec: h264
+  - heightPx: 360
+    videoBitrateBps: 800000
+    audioBitrateBps: 160000
+    codec: h264

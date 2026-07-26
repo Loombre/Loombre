@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Loombre :: installers/windows/msi/Files.wxs
+
+  Payload harvesting. Every one of these trees is large, deep (node_modules)
+  and CHANGES EVERY BUILD — hand-authoring a <File> element per file is not
+  "authoring" for a tree this shape, so this uses WiX v4's glob-harvesting
+  <Files Include="…\**" /> element (a genuine v4 feature, not a v3 heat.exe
+  workaround): <ComponentGroup Directory="…"> + <Files Include> recursively
+  creates one Component+File per matched file AND the nested Directory
+  entries needed to preserve the source tree's relative structure under the
+  target directory — exactly what a pruned production node_modules tree
+  needs.
+
+  All seven $(var.*) preprocessor variables are supplied by build-msi.mjs's
+  `wix build -d Name=value` invocation (see that script's header for the
+  exact staging paths). Every one of them MUST point at an already-staged,
+  already-populated directory before `wix build` runs — this file performs
+  no fetching/building itself (CLAUDE.md invariant 6 spirit: no I/O in
+  authoring, orchestration lives in the build script).
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Fragment>
+    <ComponentGroup Id="ServerFiles" Directory="SERVERDIR">
+      <Files Include="$(var.ServerDistDir)\**" />
+    </ComponentGroup>
+  </Fragment>
+
+  <Fragment>
+    <ComponentGroup Id="WorkerFiles" Directory="WORKERDIR">
+      <Files Include="$(var.WorkerDistDir)\**" />
+    </ComponentGroup>
+  </Fragment>
+
+  <Fragment>
+    <ComponentGroup Id="WebFiles" Directory="WEBDIR">
+      <Files Include="$(var.WebDistDir)\**" />
+    </ComponentGroup>
+  </Fragment>
+
+  <Fragment>
+    <ComponentGroup Id="NodeRuntimeFiles" Directory="NODEDIR">
+      <Files Include="$(var.NodeRuntimeDir)\**" />
+    </ComponentGroup>
+  </Fragment>
+
+  <Fragment>
+    <!-- $(var.FfmpegDir) is build-msi.mjs's fetchFfmpegWindows() result:
+         lane I1's SHARED scripts/fetch-ffmpeg.mjs (landed; verified and
+         wired to its real CLI, not a guessed one) fetching the pinned
+         windows-x64 ffmpeg/ffprobe pair from installers/ffmpeg-manifest.json
+         into vendor/ffmpeg/windows-x64. If that script is ever absent
+         (e.g. a partial checkout), build-msi.mjs falls back to a
+         marker-file placeholder so `wix build` never fails on a missing
+         source root — an installer built from that fallback installs
+         successfully but cannot transcode, surfaced loudly in the build
+         script's console output, not hidden here. -->
+    <ComponentGroup Id="FfmpegFiles" Directory="FFMPEGDIR">
+      <Files Include="$(var.FfmpegDir)\**" />
+    </ComponentGroup>
+  </Fragment>
+
+  <Fragment>
+    <!-- Same pattern as FfmpegFiles: $(var.EmbeddedPgDir) is
+         fetchEmbeddedPgWindows()'s result — lane B's SHARED, landed
+         scripts/fetch-embedded-pg.mjs fetching windows-x64 PostgreSQL
+         (manifest.defaultVersion) into
+         vendor/embedded-pg/windows-x64/<version>. Same marker-file
+         fallback if that script is ever absent. -->
+    <ComponentGroup Id="EmbeddedPgFiles" Directory="PGDIR">
+      <Files Include="$(var.EmbeddedPgDir)\**" />
+    </ComponentGroup>
+  </Fragment>
+
+  <Fragment>
+    <!-- installers/windows/tray's `dotnet publish` output. Self-contained
+         + PublishSingleFile means this is normally exactly one .exe (plus,
+         depending on trimming settings, a handful of native satellite
+         files) — still globbed rather than hand-listed so a publish-output
+         shape change (e.g. ReadyToRun composite images) never silently
+         drops a required file. -->
+    <ComponentGroup Id="TrayFiles" Directory="TRAYDIR">
+      <Files Include="$(var.TrayPublishDir)\**" />
+    </ComponentGroup>
+  </Fragment>
+</Wix>

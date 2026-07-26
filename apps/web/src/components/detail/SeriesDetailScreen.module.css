@@ -1,0 +1,106 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+
+.page {
+  display: flex;
+  flex-direction: column;
+}
+
+.mobileOnly {
+  display: none;
+}
+
+@media (width <= 767.98px) {
+  .desktopOnly {
+    display: none;
+  }
+
+  .mobileOnly {
+    display: block;
+  }
+}
+
+/* ── Desktop ───────────────────────────────────────────────────────── */
+
+.bannerEyebrow {
+  font-family: var(--font-mono);
+  font-size: var(--mono-md);
+  font-weight: var(--weight-medium);
+  letter-spacing: var(--track-mono-wide);
+  color: var(--color-accent);
+  margin-bottom: var(--space-xs);
+}
+
+.bannerTitle {
+  margin: 0;
+  font-stretch: var(--wdth-display);
+  font-weight: var(--weight-black);
+  font-size: 54px;
+  line-height: 0.96;
+  text-transform: uppercase;
+}
+
+.content {
+  padding: var(--space-md) var(--space-xl) 0;
+}
+
+.blurb {
+  margin: 0 0 var(--space-md);
+  max-width: 640px;
+  font-size: var(--text-base);
+  color: var(--color-text-secondary);
+  text-wrap: pretty;
+}
+
+.actionRow {
+  display: flex;
+  gap: var(--space-sm);
+  align-items: center;
+  margin-bottom: var(--space-lg);
+}
+
+.primaryButton {
+  composes: button primary from "../ui/Button.module.css";
+  text-decoration: none;
+  width: fit-content;
+}
+
+.syncReadout {
+  margin-left: var(--space-2xs);
+  font-family: var(--font-mono);
+  font-size: var(--mono-md);
+  letter-spacing: var(--track-mono);
+  color: var(--color-text-subtle);
+}
+
+.seasonRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-md);
+}
+
+.seasonMeta {
+  font-family: var(--font-mono);
+  font-size: var(--mono-sm);
+  letter-spacing: var(--track-mono);
+  color: var(--color-text-subtle);
+}
+
+.episodeList {
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Mobile ────────────────────────────────────────────────────────── */
+
+.mobilePrimaryButton {
+  composes: button primary from "../ui/Button.module.css";
+  width: 100%;
+  min-height: 48px;
+  text-decoration: none;
+  margin-bottom: var(--space-sm);
+}
+
+.mobileSeasonRow {
+  margin-bottom: var(--space-sm);
+}

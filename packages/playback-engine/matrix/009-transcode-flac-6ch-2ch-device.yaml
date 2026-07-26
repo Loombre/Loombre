@@ -1,0 +1,42 @@
+name: transcode — flac container, FLAC 5.1 (6ch) music, device caps FLAC at 2ch
+why: >
+  Music mode (no video streams). Container is flac and IS in the device's
+  directPlayContainers, so Stage A never fires. Stage D rule 2: the device
+  supports the flac codec but caps channels at 2, and the source is 6ch, so
+  audio downmixes with audio-channels-exceed-device. Stage D rule 5: because
+  this is a music-mode transcode (not direct-play/fmp4 direct-stream),
+  gapless playback degrades, adding gapless-degraded.
+
+input:
+  media:
+    fileId: file-0009
+    container: flac
+    durationMs: 300000
+    sizeBytes: 65000000
+    overallBitrateBps: 1750000
+    video: []
+    audio:
+      - index: 0
+        codec: flac
+        channels: 6
+        sampleRate: 96000
+        bitrateBps: 1700000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device: { fixture: devices.flac-stereo }
+  network: { fixture: networks.local }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.software-only }
+  selection:
+    videoStreamIndex: null
+    audioStreamIndex: 0
+    subtitleStreamIndex: null
+  mode: stream
+
+expect:
+  decision: transcode
+  reasons:
+    - audio-channels-exceed-device
+    - gapless-degraded

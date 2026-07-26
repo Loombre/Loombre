@@ -1,0 +1,34 @@
+name: transcode — music mode, flac 8ch exceeds flac-stereo's 2ch cap — gapless-degraded
+why: "Music-mode variant of seed 009 at a different channel count (8ch instead of 6ch) — Stage D rule 2 fires audio-channels-exceed-device, and because this is a music-mode Stage-D transcode, gapless-degraded is appended."
+input:
+  media:
+    fileId: file-0247
+    container: flac
+    durationMs: 300000
+    sizeBytes: 70000000
+    overallBitrateBps: 1900000
+    video: []
+    audio:
+      - index: 0
+        codec: flac
+        channels: 8
+        sampleRate: 96000
+        bitrateBps: 1900000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device: { fixture: devices.flac-stereo }
+  network: { fixture: networks.local }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.software-only }
+  selection:
+    videoStreamIndex: null
+    audioStreamIndex: 0
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: transcode
+  reasons:
+    - audio-channels-exceed-device
+    - gapless-degraded

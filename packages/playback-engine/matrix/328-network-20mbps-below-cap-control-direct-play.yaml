@@ -1,0 +1,53 @@
+name: direct-play — h264 1080p under the 20Mbps remote network cap
+why: >
+  Control case for 327: identical device/network/policy/caps, but
+  overallBitrateBps (15Mbps) stays under network.maxBitrateBps (20Mbps), so
+  Stage F does not fire — every other stage also passes within web-chrome's
+  caps, so the decision is direct-play with zero reasons (future-proofing:
+  proves the 20Mbps tier doesn't fire indiscriminately).
+
+input:
+  media:
+    fileId: file-0328
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 11250000000
+    overallBitrateBps: 15000000
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 52
+        width: 1920
+        height: 1080
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 14500000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 160000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device: { fixture: devices.web-chrome }
+  network: { fixture: networks.wan-20mbps }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.software-only }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+
+expect:
+  decision: direct-play
+  reasons: []
+  container: source

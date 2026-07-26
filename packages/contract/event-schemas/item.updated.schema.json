@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://loombre.com/schemas/events/item.updated.schema.json",
+  "title": "ItemUpdatedPayload",
+  "description": "Payload for envelope.type === 'item.updated'. Emitted when an existing catalog_items row (or a satellite/provenance field belonging to it) changes — rescans, provider refreshes, and editorial edits alike (docs/PLAN.md §4.3, §8.1).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["itemId", "libraryId", "itemType", "contentClass", "changedFields", "updatedAtMs"],
+  "properties": {
+    "itemId": { "type": "string", "format": "uuid" },
+    "libraryId": { "type": "string", "format": "uuid" },
+    "itemType": {
+      "type": "string",
+      "enum": ["movie", "series", "season", "episode", "artist", "album", "track"]
+    },
+    "contentClass": { "type": "string", "enum": ["general", "restricted"] },
+    "changedFields": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Names of the fields that changed on this item (e.g. 'title', 'overview', 'communityRating')."
+    },
+    "updatedAtMs": { "type": "integer", "minimum": 0 }
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "name": "@loombre/plugin-host",
+  "version": "0.1.0",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "description": "Loombre Plugin Protocol (LPP) v1 host core (Lane W2/LD2): transport-pure logic with injected fetch/clock — hardenedFetch (SSRF guard), the manifest client, the circuit-breaker state machine, header/secret injection composition, and callPlugin. No NestJS, no DB, no keyring imports — apps/server/src/plugins wires this against real infrastructure.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "lint": "eslint src test --max-warnings=0",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@loombre/plugin-protocol": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "24.13.3",
+    "typescript": "6.0.3",
+    "vitest": "4.1.10"
+  }
+}

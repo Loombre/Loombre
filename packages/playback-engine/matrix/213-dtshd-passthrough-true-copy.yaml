@@ -1,0 +1,45 @@
+name: direct-play — dtshd 8ch, passthrough-capable device (Stage D.3 copy branch, DTS-HD side)
+why: "DTS-HD counterpart to case 206 — device declares dtshd passthrough:true at the exact 8ch cap boundary, so the bitstream copies untouched. hasAtmos stays false throughout every DTS-HD case in this matrix — docs/PLAYBACK.md §2.1 scopes real Atmos/JOC carriage to TrueHD/EAC3 only."
+input:
+  media:
+    fileId: file-0213
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 6000000000
+    overallBitrateBps: 8500000
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 41
+        width: 1920
+        height: 1080
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 5000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: dtshd
+        channels: 8
+        sampleRate: 48000
+        bitrateBps: 3000000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device: { fixture: devices.passthrough-capable }
+  network: { fixture: networks.local }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.software-only }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: direct-play
+  reasons: []

@@ -1,0 +1,50 @@
+name: transcode — full-hw's nvenc does NOT decode vc1, so Stage G falls back to software decode (rule ii)
+why: >
+  full-hw's nvenc decode list excludes vc1; nvenc's encode still covers the ladder's h264 targets and software decodes vc1, so rule (ii) fires software-fallback:decode with encoder=nvenc. Stage F fires bitrate-exceeds-network (25Mbps over the 20Mbps network cap) to force the transcode.
+
+input:
+  media:
+    fileId: gen-file
+    container: mkv
+    durationMs: 6000000
+    sizeBytes: 6000000000
+    overallBitrateBps: 25000000
+    video:
+      - index: 0
+        codec: vc1
+        profile: null
+        level: null
+        width: 1920
+        height: 1080
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 18000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 160000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device: { fixture: devices.vc1-generic }
+  network: { fixture: networks.wan-20mbps }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.full-hw }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+
+expect:
+  decision: transcode
+  reasons:
+    - bitrate-exceeds-network
+    - software-fallback:decode

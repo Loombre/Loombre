@@ -1,0 +1,53 @@
+name: 'direct-play — mpeg2-generic × wan-20mbps × aac-first-audio: broadcast-style 1080p mpeg2 ts at 15.5M
+  under both 20M caps'
+why: 'Grid combo (mpeg2-generic × wan-20mbps × aac-first-audio): exact-string profile match (main == main,
+  mpeg2 has no ladder), 15.5M under the network AND the device''s 20M maxStreamBitrateBps, ts direct-playable
+  — the policy''s aac-first priority is indifferent when nothing transcodes.'
+input:
+  media:
+    fileId: file-476
+    container: ts
+    durationMs: 6000000
+    sizeBytes: 11625000000
+    overallBitrateBps: 15500000
+    video:
+    - index: 0
+      codec: mpeg2
+      profile: main
+      level: null
+      width: 1920
+      height: 1080
+      bitDepth: 8
+      frameRate: 29.97
+      bitrateBps: 15000000
+      hdr: none
+      dvProfile: null
+      dvBlCompatId: null
+      interlaced: false
+    audio:
+    - index: 1
+      codec: aac
+      channels: 2
+      sampleRate: 48000
+      bitrateBps: 256000
+      language: eng
+      isDefault: true
+      hasAtmos: false
+    subtitle: []
+  device:
+    fixture: devices.mpeg2-generic
+  network:
+    fixture: networks.wan-20mbps
+  policy:
+    fixture: policies.aac-first-audio
+  caps:
+    fixture: caps.software-only
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: direct-play
+  reasons: []
+  container: source

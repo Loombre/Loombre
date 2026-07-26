@@ -1,0 +1,81 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+
+.card {
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-sm);
+  padding: var(--space-sm) var(--space-md);
+  background: var(--fill-1);
+}
+
+.card[data-default="true"] {
+  border-color: var(--color-accent-border);
+}
+
+.headRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  margin-bottom: var(--space-2xs);
+}
+
+.name {
+  font-family: var(--font-mono);
+  font-size: var(--mono-lg);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--track-mono);
+  color: var(--color-text-muted);
+}
+
+.card[data-default="true"] .name {
+  color: var(--color-text);
+}
+
+.defaultBadge {
+  font-family: var(--font-mono);
+  font-size: var(--mono-xs);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--track-mono);
+  background: var(--color-accent);
+  color: var(--color-accent-text);
+  padding: 2px var(--space-xs);
+  border-radius: var(--radius-pill);
+}
+
+.size {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: var(--mono-md);
+  color: var(--color-text-subtle);
+  white-space: nowrap;
+}
+
+.specs {
+  font-family: var(--font-mono);
+  font-size: var(--mono-md);
+  letter-spacing: 0.06em;
+  color: var(--color-text-muted);
+  margin-bottom: var(--space-xs);
+}
+
+.path {
+  font-family: var(--font-mono);
+  font-size: var(--mono-sm);
+  letter-spacing: 0.06em;
+  color: var(--color-text-hint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@media (width <= 767.98px) {
+  .card {
+    border-radius: var(--radius-md);
+    padding: var(--space-sm) var(--space-md);
+  }
+
+  .path {
+    white-space: normal;
+    word-break: break-all;
+    line-height: var(--leading-dense);
+  }
+}

@@ -1,0 +1,343 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+
+/* Desktop (default): borderless two-column row sharing the category's one
+   box (SettingsCategoryCard.module.css owns the inter-field hairline via
+   `.list > * + *`) — info column left, editor column right, exactly the
+   prototype's flex:1 1 320px / flex:0 1 300px split. */
+.field {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm) var(--space-lg);
+  padding: var(--space-md) 0;
+}
+
+.info {
+  flex: 1 1 320px;
+  min-width: 0;
+}
+
+.editorCol {
+  flex: 0 1 300px;
+  min-width: 230px;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-2xs);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2xs) var(--space-xs);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-2xs);
+}
+
+.key {
+  font-family: var(--font-mono);
+  font-size: var(--mono-lg);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.02em;
+  color: var(--color-text);
+  overflow-wrap: anywhere;
+}
+
+.sourcePill,
+.restartPill {
+  display: inline-flex;
+  align-items: center;
+  border-radius: var(--radius-pill);
+  padding: var(--space-3xs) var(--space-sm);
+  font-family: var(--font-mono);
+  font-size: var(--mono-xs);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--track-mono);
+  text-transform: uppercase;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+
+/* Source tones — exact mapping the Phosphor registry card uses (README
+   §Interactions "Registry editing" + the prototype's own regRow():
+   environment (env pin winning) = warning amber, database (a stored
+   override) = accent, default (untouched) = the --color-text-subtle
+   AA-exception tier — never the ONLY signal here, since it's always
+   paired with the literal word "default" (U4). */
+.sourcePill[data-source="environment"] {
+  color: var(--color-warning);
+  border-color: color-mix(in srgb, var(--color-warning) 32%, transparent);
+  background: color-mix(in srgb, var(--color-warning) 7%, transparent);
+}
+
+.sourcePill[data-source="database"] {
+  color: var(--color-accent);
+  border-color: var(--color-accent-border);
+  background: color-mix(in srgb, var(--color-accent) 8%, transparent);
+}
+
+.sourcePill[data-source="default"] {
+  color: var(--color-text-subtle);
+  border-color: var(--color-border);
+  background: transparent;
+}
+
+.restartPill {
+  color: var(--color-warning);
+  border-color: color-mix(in srgb, var(--color-warning) 30%, transparent);
+  background: transparent;
+}
+
+.description {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--muted);
+  line-height: var(--leading-dense);
+  text-wrap: pretty;
+}
+
+.caution {
+  margin: var(--space-xs) 0 0;
+  padding-left: var(--space-sm);
+  border-left: 2px solid color-mix(in srgb, var(--color-warning) 50%, transparent);
+  font-size: var(--text-xs);
+  color: var(--color-warning);
+  line-height: var(--leading-dense);
+}
+
+.factRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  flex-wrap: wrap;
+  margin-top: var(--space-xs);
+  font-family: var(--font-mono);
+  font-size: var(--mono-xs);
+  letter-spacing: var(--track-mono);
+  color: var(--color-text-hint);
+}
+
+.fact {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3xs);
+  white-space: nowrap;
+}
+
+.factValue {
+  color: var(--color-text-muted);
+}
+
+.factValueCurrent {
+  color: var(--color-text-secondary);
+}
+
+.lockedDisplay {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
+  border-radius: var(--radius-sm);
+  background: var(--fill-2);
+  border: 1px solid var(--color-border-subtle);
+  color: var(--muted);
+}
+
+.lockedText {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3xs);
+  min-width: 0;
+}
+
+.lockedValue {
+  font-family: var(--font-mono);
+  font-size: var(--mono-lg);
+  font-weight: var(--weight-semibold);
+  color: var(--color-text);
+  word-break: break-all;
+}
+
+.lockedCaption {
+  font-size: var(--text-xs);
+  color: var(--color-text-subtle);
+  line-height: var(--leading-dense);
+}
+
+.editor {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.boolRow {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-sm);
+  cursor: pointer;
+}
+
+.boolLabel {
+  font-family: var(--font-mono);
+  font-size: var(--mono-md);
+  letter-spacing: var(--track-mono);
+  color: var(--muted);
+}
+
+.numberRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+}
+
+.stepButton {
+  flex-shrink: 0;
+  width: 30px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition:
+    color var(--motion-fast) var(--ease-out),
+    border-color var(--motion-fast) var(--ease-out);
+}
+
+.stepButton:hover {
+  color: var(--text);
+  border-color: var(--text);
+}
+
+.numberInput {
+  flex: 1;
+  min-width: 0;
+  background: var(--fill-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: var(--space-xs) var(--space-sm);
+  color: var(--color-text);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  text-align: center;
+  outline: none;
+  transition: border-color var(--motion-fast) var(--ease-out);
+}
+
+/* Element+class selectors below (input.stringInput / textarea.jsonEditor)
+   deliberately outrank the shared ui/Input.module.css `.input` rule's
+   specificity (0,1,0 -> 0,1,1) so this pane can override its pill radius
+   for the registry's rectangular field controls WITHOUT editing the
+   shared component or reaching for !important. */
+input.stringInput {
+  border-radius: var(--radius-sm);
+  background: var(--fill-3);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+}
+
+.numberInput[data-state="dirty"],
+input.stringInput[data-state="dirty"],
+textarea.jsonEditor[data-state="dirty"] {
+  border-color: color-mix(in srgb, var(--color-accent) 45%, transparent);
+}
+
+.numberInput[data-state="error"],
+input.stringInput[data-state="error"],
+textarea.jsonEditor[data-state="error"] {
+  border-color: color-mix(in srgb, var(--color-danger) 55%, transparent);
+}
+
+textarea.jsonEditor {
+  min-height: 104px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  background: var(--color-bg);
+  color: var(--color-text-secondary);
+  padding: var(--space-sm) var(--space-md);
+  font-family: var(--font-mono);
+  font-size: var(--mono-md);
+  line-height: var(--leading-dense);
+  resize: vertical;
+  outline: none;
+  transition: border-color var(--motion-fast) var(--ease-out);
+}
+
+.errorText {
+  margin: 0;
+  text-align: right;
+  font-family: var(--font-mono);
+  font-size: var(--mono-md);
+  color: var(--color-danger);
+}
+
+.savedText {
+  margin: 0;
+  text-align: right;
+  font-family: var(--font-mono);
+  font-size: var(--mono-sm);
+  letter-spacing: var(--track-mono);
+  color: var(--color-accent);
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-xs);
+}
+
+/* Mobile (README §Screens → Mobile, 767.98px literal — see
+   AppShell.module.css's own note): the prototype boxes each KEY
+   individually here (the shared category box recedes to just a header,
+   SettingsCategoryCard.module.css's own media query), single-column
+   stack, current-value fact dropped (the widget already shows it), and
+   every interactive control grows to the 44px touch floor. */
+@media (width <= 767.98px) {
+  .field {
+    flex-direction: column;
+    border: 1px solid var(--color-border-subtle);
+    border-radius: var(--radius-md);
+    background: var(--fill-1);
+    padding: var(--space-md);
+  }
+
+  .info,
+  .editorCol {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .factValueCurrent,
+  .factCurrent {
+    display: none;
+  }
+
+  .boolRow {
+    justify-content: space-between;
+    min-height: 44px;
+  }
+
+  .stepButton {
+    width: 44px;
+    height: 44px;
+  }
+
+  .numberInput {
+    font-size: var(--text-base);
+    padding: var(--space-sm);
+  }
+
+  input.stringInput {
+    min-height: 44px;
+  }
+
+  .errorText,
+  .savedText {
+    text-align: left;
+  }
+}

@@ -1,0 +1,196 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+
+.row {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  gap: var(--space-md);
+  padding: var(--space-sm) var(--space-xs);
+  border: none;
+  border-bottom: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-sm);
+  background: none;
+  text-align: left;
+  text-decoration: none;
+  color: inherit;
+  cursor: pointer;
+  transition: background-color var(--motion-fast) var(--ease-out);
+}
+
+.row:hover,
+.row:focus-visible {
+  background: var(--fill-3);
+}
+
+.index {
+  flex-shrink: 0;
+  width: 30px;
+  font-family: var(--font-mono);
+  font-size: var(--mono-lg);
+  font-weight: var(--weight-semibold);
+  color: var(--color-text-subtle);
+}
+
+.thumbWrap {
+  position: relative;
+  flex-shrink: 0;
+  width: 128px;
+  height: 72px;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+
+  /* Missing-artwork fallback gradient (S5) — same two-stop recipe as
+     DetailPoster.module.css's .poster/SceneBanner.module.css's .banner/
+     MobileSceneCard.module.css's .card, under this component's own
+     --thumb-glow custom property. */
+  background: radial-gradient(120% 120% at 30% 0%, color-mix(in srgb, var(--thumb-glow, var(--color-dominant-fallback)) 55%, transparent), var(--color-dominant-fallback));
+  border: 1px solid var(--color-border-subtle);
+}
+
+.thumb {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* Missing-artwork fallback letter (S5) — same oversized/translucent
+   recipe as DetailPoster.module.css's .initial, sized for this thumbnail. */
+.thumbInitial {
+  position: absolute;
+  top: -8px;
+  right: -4px;
+  font-family: var(--font-sans);
+  font-stretch: var(--wdth-poster);
+  font-weight: var(--weight-black);
+  font-size: 56px;
+  line-height: 1;
+  color: rgb(255 255 255 / 13%);
+  user-select: none;
+}
+
+@media (width <= 767.98px) {
+  .thumbInitial {
+    font-size: 32px;
+  }
+}
+
+/* H13: play-glyph hover scrim (design/phosphor prototype's episode row —
+   the glyph and a rgba(11,12,15,.45) backing both fade in TOGETHER as one
+   box, not the glyph alone with nothing behind it). */
+.playScrim {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgb(11 12 15 / 45%);
+  opacity: 0;
+  transition: opacity var(--motion-fast) var(--ease-out);
+}
+
+.row:hover .playScrim,
+.row:focus-visible .playScrim {
+  opacity: 1;
+}
+
+.playIcon {
+  color: #fff;
+}
+
+.sliverTrack {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 3px;
+  background: rgb(255 255 255 / 20%);
+}
+
+.sliverFill {
+  display: block;
+  height: 100%;
+  background: var(--color-accent);
+}
+
+.info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.title {
+  font-size: var(--text-base);
+  font-weight: var(--weight-bold);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.meta {
+  font-family: var(--font-mono);
+  font-size: var(--mono-sm);
+  letter-spacing: 0.06em;
+  color: var(--color-text-subtle);
+}
+
+.watchedBadge {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3xs);
+  font-family: var(--font-mono);
+  font-size: var(--mono-xs);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--track-mono);
+  color: var(--color-accent);
+}
+
+.unseenDot {
+  flex-shrink: 0;
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-full);
+  background: rgb(255 255 255 / 25%);
+}
+
+/* H13: accent-outlined "RESUME mm:ss" pill — design/phosphor prototype's
+   exact recipe (font 500 9px mono, .1em tracking, accent text on a
+   accent-tinted-transparent 1px border, pill radius). */
+.resumeBadge {
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: var(--mono-xs);
+  font-weight: var(--weight-medium);
+  letter-spacing: var(--track-mono);
+  color: var(--color-accent);
+  border: 1px solid color-mix(in srgb, var(--color-accent) 50%, transparent);
+  border-radius: var(--radius-pill);
+  padding: var(--space-3xs) var(--space-xs);
+  white-space: nowrap;
+}
+
+@media (width <= 767.98px) {
+  .row {
+    border: 1px solid var(--color-border-subtle);
+    border-radius: var(--radius-md);
+    background: var(--fill-1);
+    margin-bottom: var(--space-xs);
+    padding: var(--space-sm);
+  }
+
+  .index {
+    width: auto;
+  }
+
+  .thumbWrap {
+    width: 62px;
+    height: 38px;
+    border-radius: var(--radius-sm);
+  }
+
+  .title {
+    font-size: var(--text-sm);
+  }
+}

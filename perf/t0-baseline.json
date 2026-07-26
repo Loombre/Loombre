@@ -1,0 +1,43 @@
+{
+  "recordedAtMs": 1784854114611,
+  "seed": {
+    "libraryName": "Large Library",
+    "libraryId": "019f9198-2a3a-76d8-ade2-1c28a72a4424"
+  },
+  "idleRss": {
+    "serverBytes": 155500544,
+    "workerBytes": 254754816,
+    "stackBytes": 410255360,
+    "workerMeasurementFailure": null
+  },
+  "endpoints": {
+    "browsePageList": {
+      "p95Ms": 10.491208,
+      "sampleCount": 200
+    },
+    "itemDetail": {
+      "p95Ms": 6.968584,
+      "sampleCount": 200
+    },
+    "continueWatching": {
+      "p95Ms": 2.096959,
+      "sampleCount": 200
+    },
+    "searchAsYouType": {
+      "p95Ms": 21.7665,
+      "sampleCount": 200
+    }
+  },
+  "scanThroughput": {
+    "filesPerMin": 15388.077702098357,
+    "filesProcessed": 500,
+    "durationMs": 1949.56125
+  },
+  "budgets": {
+    "serverIdleRssBytes": 230686720,
+    "stackIdleRssBytesDocumented": 524288000,
+    "endpointP95Ms": 100,
+    "scanThroughputFilesPerMin": 200
+  },
+  "breaches": []
+}

@@ -1,0 +1,47 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Loombre :: installers/windows/service-host/LoombreServiceHost
+
+    Generic Windows Service wrapper around a plain child process (node.exe
+    running one of Loombre's dist entrypoints) — see
+    installers/windows/msi/Services.wxs's header for the full evidence
+    trail on WHY this exists (a bare node.exe cannot register with SCM or
+    receive a clean stop signal on its own).
+
+    net8.0-windows (not plain net8.0): System.ServiceProcess.ServiceBase
+    ships as part of the Windows-targeting reference assemblies pulled in
+    by the "-windows" TFM suffix — no extra NuGet package needed, keeping
+    this project's dependency surface at zero beyond the .NET 8 SDK itself
+    (nothing new for LICENSE-INTENT.md: this binary is fully-owned original
+    code, not a third-party wrapper — see Services.wxs's header).
+  -->
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>Loombre.ServiceHost</RootNamespace>
+    <AssemblyName>LoombreServiceHost</AssemblyName>
+
+    <!-- Self-contained single-file win-x64 publish (mission deliverable 1:
+         "buildable on macOS with the windows runtime pack for compile/
+         publish" — build-msi.mjs's `dotnet publish` step relies on these
+         being the project defaults so it never has to remember extra
+         flags). P4.1: unsigned — build-msi.mjs's sign step (no-op today,
+         installers/sign-hook.mjs) is the insertion point for a future
+         Authenticode signature over this exe. -->
+    <SelfContained>true</SelfContained>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\LoombreServiceHost.Core\LoombreServiceHost.Core.csproj" />
+  </ItemGroup>
+
+</Project>

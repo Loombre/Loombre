@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://loombre.com/schemas/events/plugin.updated.schema.json",
+  "title": "PluginUpdatedPayload",
+  "description": "Payload for envelope.type === 'plugin.updated'. Loombre Plugin Protocol (LPP) v1, Lane W2 (LD4/LD6/LD1): emitted in the SAME transaction as any NON-EXPANDING manifest re-fetch snapshot update (packages/db/src/query/plugins.ts's updatePluginManifestAndEmit), a non-secret config write (updatePluginConfigAndEmit), a delivery-signing HMAC rotation touch (touchPluginHmacRotatedAndEmit — LD1's 're-mint + return once + plugin.updated event'), a pseudonymization-posture toggle (Lane W5b's setPluginPseudonymizationAndEmit), or an event-grant replacement (Lane W5b's updatePluginEventGrantsAndEmit — replaces admin-plugin-grants.service.ts's earlier documented workaround of reusing updatePluginManifestAndEmit, which could only ever report change='manifest'). ADMIN-ONLY delivery, mirroring settings.updated exactly. `oldValue`/`newValue` NEVER carry the manifest itself, a secret, OR (fix-wave finding H-1) any config VALUE at all: for change='manifest' they are the plugin's own manifest `version` string; for change='config' `oldValue` is always null and `newValue` is the SORTED array of configSchema field NAMES (never values) that changed — a nested `secret: true` marker inside a config value must never be able to ride along into this event, so no config value of any kind is placed here, only which keys differ; for change='hmac-rotated' both are always null (the secret is never placed in an event, oldValue/newValue are only present for this type's schema-shape uniformity with settings.updated); for change='pseudonymization' they are the plugins.pseudonymize_actor_ids boolean before/after; for change='event-grants' they are the plugin's granted event `type` strings before/after, each SORTED ascending (a stable diff-friendly shape, not insertion order).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["pluginId", "name", "change", "oldValue", "newValue", "updatedAtMs"],
+  "properties": {
+    "pluginId": {
+      "type": "string",
+      "format": "uuid",
+      "description": "The plugins.id row that changed."
+    },
+    "name": {
+      "type": "string",
+      "description": "The plugin's current name at the time of this update."
+    },
+    "change": {
+      "type": "string",
+      "enum": ["manifest", "config", "hmac-rotated", "pseudonymization", "event-grants"],
+      "description": "Which facet of the plugin changed."
+    },
+    "oldValue": {
+      "description": "The previous value for `change`'s facet, or null (see this schema's top-level description for the shape per `change` value)."
+    },
+    "newValue": {
+      "description": "The value now in effect for `change`'s facet, or null."
+    },
+    "updatedAtMs": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Epoch ms this row was updated (plugins.updated_at_ms)."
+    }
+  }
+}

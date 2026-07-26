@@ -1,0 +1,74 @@
+name: transcode — assembly falls back to priority[0] when NEITHER opus nor aac is present in device.audio
+why: >
+  Inline device declares ONLY ac3 (no aac, no opus, no truehd). An 8ch ac3
+  stream exceeds the 6ch cap -> audio-channels-exceed-device alone.
+  Assembly gap (schema can't assert audio fields) — INTERPRETATION
+  (binding interpretation constraint 4): since neither policy-priority
+  codec ('opus' then 'aac') has a device.audio entry, assembly falls back
+  to priority[0]='opus'; with no matching target entry to cap it,
+  targetChannels stays the stream's own channel count (8); the >=7ch band
+  bitrate (512000) scales 0.75x for opus -> targetBitrateBps=384000.
+  Verified precisely by test/stages/audio.spec.ts.
+input:
+  media:
+    fileId: file-0244
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 6000000000
+    overallBitrateBps: 6000000
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 41
+        width: 1920
+        height: 1080
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 5000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: ac3
+        channels: 8
+        sampleRate: 48000
+        bitrateBps: 640000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device:
+    profileId: inline-ac3-only
+    directPlayContainers: [mp4]
+    hls: { container: fmp4, supportsFmp4: true, lowLatency: false }
+    video:
+      - codec: h264
+        maxProfile: high
+        maxLevel: 41
+        maxBitDepth: 8
+        maxWidth: 1920
+        maxHeight: 1080
+        maxFrameRate: 60
+        maxBitrateBps: null
+    hdr: { hdr10: false, hlg: false, dolbyVision: false }
+    audio:
+      - codec: ac3
+        maxChannels: 6
+        passthrough: false
+    subtitles: { renderText: [], hlsVtt: false, renderImage: false }
+    maxStreamBitrateBps: null
+  network: { fixture: networks.local }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.software-only }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: transcode
+  reasons:
+    - audio-channels-exceed-device

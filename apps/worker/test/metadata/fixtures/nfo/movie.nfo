@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<movie>
+  <title>The Great Heist</title>
+  <sorttitle>Great Heist, The</sorttitle>
+  <year>2014</year>
+  <plot>A crew pulls one last job.</plot>
+  <mpaa>R</mpaa>
+  <genre>Action</genre>
+  <genre>Crime</genre>
+  <tag>heist</tag>
+  <tag>ensemble-cast</tag>
+  <actor>
+    <name>Jane Doe</name>
+    <role>Lead</role>
+    <order>0</order>
+  </actor>
+  <actor>
+    <name>John Smith</name>
+    <role>Sidekick</role>
+    <order>1</order>
+  </actor>
+  <uniqueid type="tmdb">12345</uniqueid>
+  <uniqueid type="imdb">tt1234567</uniqueid>
+  <premiered>2014-06-20</premiered>
+</movie>

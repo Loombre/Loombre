@@ -1,0 +1,383 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Loombre :: apps/worker/test/metadata/consumer.spec.ts
+//
+// Integration test for metadataConsumerHandler (P1.6/P1.7) with
+// FakeProvider end-to-end against a live DB. SELF-SUFFICIENT: resets
+// @loombre/db's schema and seeds a minimal fixture of its own.
+//
+// Deliberately does NOT import the `pg` package directly (apps/worker has
+// no dependency on it, and dependency-cruiser reserves raw pg/kysely
+// access for packages/db) — every setup/assertion query goes through the
+// `db` handle from @loombre/db's createDb(), using Kysely's query builder
+// structurally (same trick src/metadata/item-read.ts uses).
+//
+// Connection: DATABASE_URL env var, default
+//   postgres://loombre:loombre@localhost:5442/loombre
+
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { spawnSync } from 'node:child_process';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { createDb } from '@loombre/db';
+import { upsertMetadataProvenance } from '@loombre/db/internal';
+import { metadataConsumerHandler } from '../../src/metadata/consumer.js';
+import { ProviderRegistry } from '../../src/metadata/registry.js';
+import { makeFakeProvider } from '../../src/metadata/test-support.js';
+import type { ProviderDetails } from '../../src/metadata/provider.js';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const DB_PKG_ROOT = path.resolve(__dirname, '../../../../packages/db');
+
+const DATABASE_URL = process.env.DATABASE_URL ?? 'postgres://loombre:loombre@localhost:5442/loombre';
+
+function run(script: string, args: string[]) {
+  const result = spawnSync(process.execPath, [script, ...args], {
+    cwd: DB_PKG_ROOT,
+    env: { ...process.env, DATABASE_URL },
+    encoding: 'utf8',
+  });
+  if (result.status !== 0) {
+    throw new Error(`${script} ${args.join(' ')} failed (exit ${result.status}):\n${result.stdout}\n${result.stderr}`);
+  }
+  return result.stdout;
+}
+
+let db: ReturnType<typeof createDb>;
+let libraryId: string;
+
+async function insertItem(
+  title: string,
+  year: number | null,
+  itemType: 'movie' | 'series' | 'artist' | 'album' = 'movie',
+  parentId: string | null = null
+): Promise<string> {
+  const now = Date.now();
+  const row = await db
+    .insertInto('catalog_items')
+    .values({ library_id: libraryId, item_type: itemType, parent_id: parentId, title, sort_title: title, year, added_at_ms: now, updated_at_ms: now })
+    .returningAll()
+    .executeTakeFirstOrThrow();
+  return row.id;
+}
+
+const MOVIE_DETAILS: ProviderDetails = {
+  itemType: 'movie',
+  title: 'The Great Heist',
+  sortTitle: 'Great Heist, The',
+  year: 2014,
+  overview: 'A crew pulls one last job.',
+  communityRating: 7.8,
+  contentRating: 'R',
+  genres: ['Action', 'Crime'],
+  tags: ['heist'],
+  people: [
+    { name: 'Jane Doe', role: 'actor', order: 0, credit: 'Lead' },
+    { name: 'John Smith', role: 'director', order: 1, credit: null },
+  ],
+  providerIds: { tmdb: '12345' },
+  tagline: 'One last job.',
+  runtimeMs: 7_260_000,
+};
+
+beforeAll(async () => {
+  run(path.join(DB_PKG_ROOT, 'scripts', 'migrate.mjs'), ['reset']);
+  db = createDb(DATABASE_URL);
+
+  const now = Date.now();
+  const lib = await db
+    .insertInto('libraries')
+    .values({ name: 'Consumer Test Library', media_kind: 'movie', paths: [], content_class: 'general', created_at_ms: now, updated_at_ms: now })
+    .returningAll()
+    .executeTakeFirstOrThrow();
+  libraryId = lib.id;
+});
+
+afterAll(async () => {
+  await db?.destroy();
+});
+
+describe('metadataConsumerHandler', () => {
+  it('resolves a match, writes catalog_items/satellite/provider_ids/tags/people/provenance, emits item.updated, and enqueues poster+backdrop image jobs', async () => {
+    const itemId = await insertItem('The Great Heist', 2014);
+
+    const tmdb = makeFakeProvider({
+      name: 'tmdb',
+      contentClass: 'general',
+      kinds: ['movie'],
+      searchResults: [{ ref: { provider: 'tmdb', externalId: '12345', mediaKind: 'movie' }, title: 'The Great Heist', year: 2014 }],
+      details: MOVIE_DETAILS,
+      images: [
+        { kind: 'poster', url: 'https://example.invalid/poster.jpg', width: 2000, height: 3000 },
+        { kind: 'backdrop', url: 'https://example.invalid/backdrop.jpg', width: 3840, height: 2160 },
+        { kind: 'logo', url: 'https://example.invalid/logo.png' }, // must NOT be enqueued
+      ],
+    });
+    const registry = new ProviderRegistry();
+    registry.register(tmdb);
+
+    const enqueueImageJob = vi.fn(async () => 'job-id');
+    const handler = metadataConsumerHandler({ db, registry, enqueueImageJob, log: () => {} });
+
+    await handler({ itemId, mediaKind: 'movie', contentClass: 'general' }, { jobId: 'test-job-1' });
+
+    const item = await db
+      .selectFrom('catalog_items')
+      .select(['title', 'sort_title', 'year', 'community_rating'])
+      .where('id', '=', itemId)
+      .executeTakeFirstOrThrow();
+    expect(item).toEqual({ title: 'The Great Heist', sort_title: 'Great Heist, The', year: 2014, community_rating: 7.8 });
+
+    const satellite = await db
+      .selectFrom('movie_details')
+      .select(['overview', 'content_rating', 'tagline', 'runtime_ms'])
+      .where('item_id', '=', itemId)
+      .executeTakeFirstOrThrow();
+    expect(satellite).toEqual({
+      overview: 'A crew pulls one last job.',
+      content_rating: 'R',
+      tagline: 'One last job.',
+      runtime_ms: 7_260_000,
+    });
+
+    const providerIds = await db.selectFrom('provider_ids').select(['provider', 'external_id']).where('item_id', '=', itemId).execute();
+    expect(providerIds).toEqual([{ provider: 'tmdb', external_id: '12345' }]);
+
+    const tags = await db
+      .selectFrom('item_tags')
+      .innerJoin('tags', 'tags.id', 'item_tags.tag_id')
+      .select(['tags.name as name', 'item_tags.kind as kind'])
+      .where('item_tags.item_id', '=', itemId)
+      .execute();
+    expect(tags).toEqual(
+      expect.arrayContaining([
+        { name: 'Action', kind: 'genre' },
+        { name: 'Crime', kind: 'genre' },
+        { name: 'heist', kind: 'tag' },
+      ])
+    );
+
+    const people = await db
+      .selectFrom('item_people')
+      .innerJoin('people', 'people.id', 'item_people.person_id')
+      .select(['people.name as name', 'item_people.role as role', 'item_people.credit as credit'])
+      .where('item_people.item_id', '=', itemId)
+      .orderBy('item_people.ord', 'asc')
+      .execute();
+    expect(people).toEqual([
+      { name: 'Jane Doe', role: 'actor', credit: 'Lead' },
+      { name: 'John Smith', role: 'director', credit: null },
+    ]);
+
+    const provenance = await db.selectFrom('metadata_provenance').select(['field', 'source']).where('item_id', '=', itemId).execute();
+    expect(provenance.length).toBeGreaterThan(0);
+    expect(provenance.every((r) => r.source === 'provider:tmdb')).toBe(true);
+
+    const events = await db.selectFrom('events').select(['payload']).where('type', '=', 'item.updated').execute();
+    const ourEvents = events.filter((e) => (e.payload as { itemId: string }).itemId === itemId);
+    expect(ourEvents).toHaveLength(1);
+    const changedFields = (ourEvents[0]!.payload as { changedFields: string[] }).changedFields;
+    expect(changedFields).toEqual(expect.arrayContaining(['overview', 'contentRating', 'tagline', 'runtimeMs']));
+
+    expect(enqueueImageJob).toHaveBeenCalledTimes(2);
+    expect(enqueueImageJob).toHaveBeenCalledWith({
+      entityType: 'catalog_item',
+      entityId: itemId,
+      kind: 'poster',
+      sourcePath: 'url:https://example.invalid/poster.jpg',
+    });
+    expect(enqueueImageJob).toHaveBeenCalledWith({
+      entityType: 'catalog_item',
+      entityId: itemId,
+      kind: 'backdrop',
+      sourcePath: 'url:https://example.invalid/backdrop.jpg',
+    });
+  });
+
+  // Regression (gap-closure lane, Wave-2 real-scan finding): the scanner's
+  // find-or-create hierarchy (apps/worker/src/scan/hierarchy.ts) correctly
+  // sets album.parent_id = artist.id at creation, but metadataConsumerHandler
+  // enriches that same album afterwards via upsertCatalogItem WITHOUT
+  // passing parentId — and upsertCatalogItem's ON CONFLICT clause always
+  // overwrites parent_id with `excluded.parent_id`, which defaults to NULL
+  // when the caller omits it (packages/db/src/internal/catalog.ts). Net
+  // effect: any album that gets provider-matched loses its artist link.
+  it('preserves an album item.parent_id (artist link) across a metadata enrichment write', async () => {
+    const artistId = await insertItem('The Fake Band', null, 'artist');
+    const albumId = await insertItem('Fake Album', 2020, 'album', artistId);
+
+    const albumDetails: ProviderDetails = {
+      itemType: 'album',
+      title: 'Fake Album (Remastered)',
+      sortTitle: 'Fake Album (Remastered)',
+      year: 2020,
+      overview: null,
+      communityRating: null,
+      contentRating: null,
+      genres: ['Rock'],
+      tags: [],
+      people: [],
+      providerIds: { musicbrainz: 'mbid-album-1' },
+    };
+    const musicbrainz = makeFakeProvider({
+      name: 'musicbrainz',
+      kinds: ['music'],
+      searchResults: [{ ref: { provider: 'musicbrainz', externalId: 'mbid-album-1', mediaKind: 'music', entityKind: 'album' }, title: 'Fake Album', year: 2020 }],
+      details: albumDetails,
+    });
+    const registry = new ProviderRegistry();
+    registry.register(musicbrainz);
+
+    const enqueueImageJob = vi.fn(async () => 'job-id');
+    const handler = metadataConsumerHandler({ db, registry, enqueueImageJob, log: () => {} });
+
+    await handler({ itemId: albumId, mediaKind: 'music', contentClass: 'general' }, { jobId: 'test-job-album-parent' });
+
+    const row = await db
+      .selectFrom('catalog_items')
+      .select(['parent_id', 'title'])
+      .where('id', '=', albumId)
+      .executeTakeFirstOrThrow();
+    expect(row.title).toBe('Fake Album (Remastered)'); // enrichment did run
+    expect(row.parent_id).toBe(artistId); // and must NOT have nulled the artist link
+  });
+
+  it('never overwrites a locked field, even with a matched provider', async () => {
+    const itemId = await insertItem('The Great Heist', 2014);
+    await upsertMetadataProvenance(db, { itemId, field: 'title', source: 'nfo', locked: true, updatedAtMs: Date.now() });
+
+    const tmdb = makeFakeProvider({
+      name: 'tmdb',
+      kinds: ['movie'],
+      searchResults: [{ ref: { provider: 'tmdb', externalId: '12345', mediaKind: 'movie' }, title: 'The Great Heist', year: 2014 }],
+      details: MOVIE_DETAILS,
+    });
+    const registry = new ProviderRegistry();
+    registry.register(tmdb);
+
+    const handler = metadataConsumerHandler({ db, registry, enqueueImageJob: vi.fn(async () => 'x'), log: () => {} });
+    await handler({ itemId, mediaKind: 'movie', contentClass: 'general' }, { jobId: 'test-job-2' });
+
+    const item = await db.selectFrom('catalog_items').select('title').where('id', '=', itemId).executeTakeFirstOrThrow();
+    expect(item.title).toBe('The Great Heist'); // unchanged (was already this value pre-lock)
+
+    const prov = await db
+      .selectFrom('metadata_provenance')
+      .select('source')
+      .where('item_id', '=', itemId)
+      .where('field', '=', 'title')
+      .executeTakeFirstOrThrow();
+    expect(prov.source).toBe('nfo'); // not overwritten to provider:tmdb
+  });
+
+  it('falls back tmdb -> tvdb for tv when tmdb has no match', async () => {
+    const itemId = await insertItem('Late Night Signal', 2019, 'series');
+
+    const tmdb = makeFakeProvider({ name: 'tmdb', kinds: ['tv'], searchResults: [] });
+    const tvdb = makeFakeProvider({
+      name: 'tvdb',
+      kinds: ['tv'],
+      searchResults: [{ ref: { provider: 'tvdb', externalId: '79488', mediaKind: 'tv' }, title: 'Late Night Signal', year: 2019 }],
+      details: {
+        itemType: 'series',
+        title: 'Late Night Signal',
+        sortTitle: 'Late Night Signal',
+        year: 2019,
+        overview: 'A radio host uncovers something.',
+        communityRating: 8.1,
+        contentRating: null,
+        genres: ['Drama'],
+        tags: [],
+        people: [],
+        providerIds: { tvdb: '79488' },
+        status: 'continuing',
+        airDateMs: Date.parse('2019-10-01'),
+      },
+    });
+    const registry = new ProviderRegistry();
+    registry.register(tmdb);
+    registry.register(tvdb);
+
+    const handler = metadataConsumerHandler({ db, registry, enqueueImageJob: vi.fn(async () => 'x'), log: () => {} });
+    await handler({ itemId, mediaKind: 'tv', contentClass: 'general' }, { jobId: 'test-job-3' });
+
+    const providerIds = await db.selectFrom('provider_ids').select(['provider', 'external_id']).where('item_id', '=', itemId).execute();
+    expect(providerIds).toEqual([{ provider: 'tvdb', external_id: '79488' }]);
+  });
+
+  it('is a no-op for an item that no longer exists (race with deletion)', async () => {
+    const registry = new ProviderRegistry();
+    registry.register(makeFakeProvider({ name: 'tmdb', kinds: ['movie'] }));
+    const enqueueImageJob = vi.fn(async () => 'x');
+    const handler = metadataConsumerHandler({ db, registry, enqueueImageJob, log: () => {} });
+
+    await expect(
+      handler({ itemId: '018f6f1e-0000-7000-8000-00000000dead', mediaKind: 'movie', contentClass: 'general' }, { jobId: 'test-job-4' })
+    ).resolves.toBeUndefined();
+    expect(enqueueImageJob).not.toHaveBeenCalled();
+  });
+
+  it('is a no-op when no provider in the chain finds a match', async () => {
+    const itemId = await insertItem('Totally Unfindable Title', 2014);
+    const tmdb = makeFakeProvider({ name: 'tmdb', kinds: ['movie'], searchResults: [] });
+    const registry = new ProviderRegistry();
+    registry.register(tmdb);
+
+    const enqueueImageJob = vi.fn(async () => 'x');
+    const handler = metadataConsumerHandler({ db, registry, enqueueImageJob, log: () => {} });
+    await handler({ itemId, mediaKind: 'movie', contentClass: 'general' }, { jobId: 'test-job-5' });
+
+    const events = await db.selectFrom('events').select(['payload']).where('type', '=', 'item.updated').execute();
+    const ourEvents = events.filter((e) => (e.payload as { itemId: string }).itemId === itemId);
+    expect(ourEvents).toHaveLength(0);
+    expect(enqueueImageJob).not.toHaveBeenCalled();
+  });
+
+  it('forceRef (Phosphor retheme Wave 2, Lane L2 — Fix Match apply-match) bypasses search entirely and applies EXACTLY the chosen candidate', async () => {
+    const itemId = await insertItem('Ambiguous Heist Movie', 2014);
+
+    // A search that would pick a DIFFERENT candidate than the one the admin
+    // chose — proves forceRef never calls search()/pickBestMatch at all.
+    const searchSpy = vi.fn(async () => [
+      { ref: { provider: 'tmdb', externalId: 'wrong-id', mediaKind: 'movie' as const }, title: 'Wrong Movie', year: 1999 },
+    ]);
+    const tmdb = makeFakeProvider({ name: 'tmdb', contentClass: 'general', kinds: ['movie'], details: MOVIE_DETAILS });
+    tmdb.search = searchSpy;
+    const registry = new ProviderRegistry();
+    registry.register(tmdb);
+
+    const enqueueImageJob = vi.fn(async () => 'x');
+    const handler = metadataConsumerHandler({ db, registry, enqueueImageJob, log: () => {} });
+
+    await handler(
+      { itemId, mediaKind: 'movie', contentClass: 'general', forceRef: { provider: 'tmdb', externalId: '12345' } },
+      { jobId: 'test-job-forceref' }
+    );
+
+    expect(searchSpy).not.toHaveBeenCalled();
+
+    const item = await db.selectFrom('catalog_items').select(['title']).where('id', '=', itemId).executeTakeFirstOrThrow();
+    expect(item.title).toBe('The Great Heist'); // MOVIE_DETAILS.title, not the item's original title or the search stub's
+
+    const providerIds = await db
+      .selectFrom('provider_ids')
+      .select(['provider', 'external_id'])
+      .where('item_id', '=', itemId)
+      .execute();
+    expect(providerIds).toEqual([{ provider: 'tmdb', external_id: '12345' }]);
+  });
+
+  it('forceRef against an unregistered provider no-ops (never throws, never partially applies)', async () => {
+    const itemId = await insertItem('Some Movie', 2014);
+    const registry = new ProviderRegistry(); // nothing registered
+    const enqueueImageJob = vi.fn(async () => 'x');
+    const handler = metadataConsumerHandler({ db, registry, enqueueImageJob, log: () => {} });
+
+    await expect(
+      handler(
+        { itemId, mediaKind: 'movie', contentClass: 'general', forceRef: { provider: 'tmdb', externalId: '12345' } },
+        { jobId: 'test-job-forceref-missing' }
+      )
+    ).resolves.toBeUndefined();
+    expect(enqueueImageJob).not.toHaveBeenCalled();
+  });
+});

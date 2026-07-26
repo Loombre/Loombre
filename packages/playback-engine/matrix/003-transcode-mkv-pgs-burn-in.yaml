@@ -1,0 +1,61 @@
+name: transcode — mkv h264+aac + PGS subtitle selected, web-chrome (no image-sub rendering)
+why: >
+  Stage A fires container-not-direct-playable (mkv not in web-chrome's directPlayContainers). Stage E: PGS is an IMAGE-kind subtitle and the device cannot render image subs (renderImage: false), so the strategy is burn-in with subtitle-format-requires-burn-in, which forces a video transcode (video-transcode-for-subtitle-burn-in) even though the video codec itself is otherwise copy-eligible. why (Phase 3 §11 step 3, Stage G arrival, STATE.md P3.2 regression law): this case's caps fixture has no hardware backend covering this route, so Stage G now routes full software (`software-fallback:encode`); tier 0 + a >=1080p selected source additionally trips the tier cap, narrowing the surviving ladder to <=480p rungs (`software-fallback:tier-capped`).
+
+input:
+  media:
+    fileId: file-0003
+    container: mkv
+    durationMs: 7200000
+    sizeBytes: 6000000000
+    overallBitrateBps: 6600000
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 41
+        width: 1920
+        height: 1080
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 5500000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 192000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle:
+      - index: 2
+        codec: pgs
+        language: eng
+        isForced: false
+        isDefault: false
+        isExternal: false
+        externalPath: null
+  device: { fixture: devices.web-chrome }
+  network: { fixture: networks.local }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.software-only }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: 2
+  mode: stream
+
+expect:
+  decision: transcode
+  reasons:
+    - container-not-direct-playable
+    - subtitle-format-requires-burn-in
+    - video-transcode-for-subtitle-burn-in
+    - software-fallback:encode
+    - software-fallback:tier-capped
+  subtitleStrategy: burn-in

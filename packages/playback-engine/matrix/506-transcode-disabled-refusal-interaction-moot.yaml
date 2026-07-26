@@ -1,0 +1,62 @@
+name: 'transcode (disabled) — hdr10-vs-SDR + software-only + tier-gated T0 (a scenario that would REFUSE
+  the tone-map) under allowTranscode:false: the disabled check runs FIRST, refusal evaluation is moot,
+  ONLY transcode-disabled-by-policy is appended'
+why: 'step 7b F1 new pin (disabled + refused-interaction, the orchestrator BIND made mechanical): this
+  input minus the allowTranscode:false knob is exactly seed 144''s refused scenario ([hdr-tone-map-required,
+  tone-map-refused-by-policy]). With transcode disabled, Stage G — and with it the F2 route-level refusal
+  evaluation — never runs at all: the disabled check fires FIRST in assembly, so tone-map-refused-by-policy
+  can NOT appear; the reason list is [hdr-tone-map-required, transcode-disabled-by-policy] with the disabled
+  verdict LAST (after Stage C''s branch reason, its assembly-level position). Both refusal shapes share
+  the same empty outputs (ladder [], ffmpegArgs [], no encoder/method), so the session layer surfaces
+  them identically — exactly one policy verdict, never both.'
+input:
+  media:
+    fileId: file-506
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 3894000000
+    overallBitrateBps: 5192000
+    video:
+    - index: 0
+      codec: hevc
+      profile: main10
+      level: 123
+      width: 1920
+      height: 1080
+      bitDepth: 10
+      frameRate: 23.976
+      bitrateBps: 5000000
+      hdr: hdr10
+      dvProfile: null
+      dvBlCompatId: null
+      interlaced: false
+    audio:
+    - index: 1
+      codec: aac
+      channels: 2
+      sampleRate: 48000
+      bitrateBps: 192000
+      language: eng
+      isDefault: true
+      hasAtmos: false
+    subtitle: []
+  device:
+    fixture: devices.hevc-sdr
+  network:
+    fixture: networks.local
+  policy:
+    fixture: policies.transcode-disabled
+  caps:
+    fixture: caps.software-only
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: transcode
+  reasons:
+  - hdr-tone-map-required
+  - transcode-disabled-by-policy
+  ladder: []
+  container: fmp4-hls

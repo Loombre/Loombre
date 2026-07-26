@@ -1,0 +1,52 @@
+name: direct-play — local network SKIPS its own cap, hevc/mov/web-safari variety
+why: >
+  Same PIN as 335 (local + within-null-device-cap -> no reason), distinct
+  codec/container/device to prove the rule isn't overfit to one combination.
+  overall (60Mbps) vastly exceeds local-4mbps's cap (4Mbps); isLocal true +
+  device.maxStreamBitrateBps null -> no reason. Decision direct-play.
+
+input:
+  media:
+    fileId: file-0336
+    container: mov
+    durationMs: 6000000
+    sizeBytes: 45000000000
+    overallBitrateBps: 60000000
+    video:
+      - index: 0
+        codec: hevc
+        profile: main10
+        level: 153
+        width: 1920
+        height: 1080
+        bitDepth: 10
+        frameRate: 23.976
+        bitrateBps: 50000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 160000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device: { fixture: devices.web-safari }
+  network: { fixture: networks.local-4mbps }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.software-only }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+
+expect:
+  decision: direct-play
+  reasons: []
+  container: source

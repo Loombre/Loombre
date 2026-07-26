@@ -1,0 +1,52 @@
+name: 'direct-play — hevc-main-only × wan-4mbps × t0-default: an 8-bit main-profile hevc stream exactly
+  matches the ladder-ranked cap'
+why: 'Grid combo (hevc-main-only × wan-4mbps × t0-default): the hevc ladder''s main == main boundary passes
+  (exceeds requires strictly higher rank), 3.6M ≤ 4M, mp4 direct-playable.'
+input:
+  media:
+    fileId: file-495
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 2700000000
+    overallBitrateBps: 3600000
+    video:
+    - index: 0
+      codec: hevc
+      profile: main
+      level: 120
+      width: 1920
+      height: 1080
+      bitDepth: 8
+      frameRate: 29.97
+      bitrateBps: 3200000
+      hdr: none
+      dvProfile: null
+      dvBlCompatId: null
+      interlaced: false
+    audio:
+    - index: 1
+      codec: aac
+      channels: 2
+      sampleRate: 48000
+      bitrateBps: 128000
+      language: eng
+      isDefault: true
+      hasAtmos: false
+    subtitle: []
+  device:
+    fixture: devices.hevc-main-only
+  network:
+    fixture: networks.wan-4mbps
+  policy:
+    fixture: policies.t0-default
+  caps:
+    fixture: caps.software-only
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: direct-play
+  reasons: []
+  container: source

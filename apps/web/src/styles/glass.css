@@ -1,0 +1,35 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+
+/**
+ * Phosphor chrome recipe (U8 — STATE.md "Phosphor retheme + responsive
+ * rebuild"; design/phosphor/README.md "The .glass recipe survives but
+ * changes character").
+ *
+ * The former liquid-glass recipe (specular highlight + frost gradient +
+ * saturated backdrop-filter, all fed by --glass-*) is GONE. Phosphor's
+ * chrome reads as a flat, neutral, translucent dark scrim — one fill, one
+ * blur, one hairline edge, no per-surface tint. Consume via CSS Modules
+ * `composes: glass from global;` exactly as before; this recipe still
+ * deliberately does NOT set border-radius or box-shadow, so it never fights
+ * a component's own declarations in the cascade.
+ *
+ * .glass is retained (not removed) — the mobile tab bar and now-playing bar
+ * (Wave 1+) both consume it, same as the desktop sidebar/topbar chrome and
+ * every modal/popover/sheet today.
+ */
+
+.glass {
+  background: var(--chrome-bg);
+  border: 1px solid var(--chrome-edge);
+  backdrop-filter: blur(var(--chrome-blur));
+}
+
+/* Opaque elevated-surface fallback where backdrop-filter is unsupported
+   (unchanged requirement). */
+@supports not (
+  (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))
+) {
+  .glass {
+    background: var(--color-surface);
+  }
+}

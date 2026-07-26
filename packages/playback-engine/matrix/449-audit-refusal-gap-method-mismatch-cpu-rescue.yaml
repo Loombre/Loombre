@@ -1,0 +1,74 @@
+name: AUDIT transcode — same nvenc-wrong-tonemap caps as 448 but allowToneMapCpu 'always' → identical
+  fall-through lands on the CPU zscale method (contrast control for the refusal-gap pins)
+why: 'Contrast control for 447/448: with t1-cpu-tonemap (allowToneMapCpu ''always'', tier 1), the SAME
+  per-candidate method fall-through ends at rule (iii)''s policy-gated cpu-zscale — video.toneMap IS set
+  (cpu-zscale, unit-unassertable by this schema, verified by probe and documented in the audit report)
+  and the reason list is byte-identical to 448''s, proving the reason surface CANNOT distinguish the method-resolved
+  and method-unresolved software routes (part of the same audit finding: §4 has no code for ''tone-map
+  required but no method resolved''). Deliberate future-proof exception: hdr10 vs SDR.'
+input:
+  media:
+    fileId: file-449
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 3894000000
+    overallBitrateBps: 5192000
+    video:
+    - index: 0
+      codec: hevc
+      profile: main10
+      level: 123
+      width: 1920
+      height: 1080
+      bitDepth: 10
+      frameRate: 23.976
+      bitrateBps: 5000000
+      hdr: hdr10
+      dvProfile: null
+      dvBlCompatId: null
+      interlaced: false
+    audio:
+    - index: 1
+      codec: aac
+      channels: 2
+      sampleRate: 48000
+      bitrateBps: 192000
+      language: eng
+      isDefault: true
+      hasAtmos: false
+    subtitle: []
+  device:
+    fixture: devices.hevc-sdr
+  network:
+    fixture: networks.wan-20mbps
+  policy:
+    fixture: policies.t1-cpu-tonemap
+  caps:
+    fixture: caps.nvenc-wrong-tonemap
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: transcode
+  reasons:
+  - hdr-tone-map-required
+  - software-fallback:encode
+  ladder:
+  - heightPx: 1080
+    videoBitrateBps: 4000000
+    audioBitrateBps: 160000
+    codec: h264
+  - heightPx: 720
+    videoBitrateBps: 3000000
+    audioBitrateBps: 160000
+    codec: h264
+  - heightPx: 480
+    videoBitrateBps: 1500000
+    audioBitrateBps: 160000
+    codec: h264
+  - heightPx: 360
+    videoBitrateBps: 800000
+    audioBitrateBps: 160000
+    codec: h264

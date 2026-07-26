@@ -1,0 +1,47 @@
+name: transcode — eac3 8ch exceeds web-safari's 6ch cap, atmos-lost fires from rule 2 alone (no passthrough rule for eac3)
+why: "web-safari's eac3 entry declares passthrough:true, but that's irrelevant here — rule 2 (channels 8 > max 6) fires on its own, and since eac3 is never subject to rule 3's codec gate, audio-passthrough-unsupported never appears. audio-atmos-lost still fires because the stage's own verdict is transcode (binding interpretation constraint 3 is codec-agnostic, not scoped to rule 3)."
+input:
+  media:
+    fileId: file-0229
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 6000000000
+    overallBitrateBps: 6000000
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 41
+        width: 1920
+        height: 1080
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 5000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: eac3
+        channels: 8
+        sampleRate: 48000
+        bitrateBps: 448000
+        language: eng
+        isDefault: true
+        hasAtmos: true
+    subtitle: []
+  device: { fixture: devices.web-safari }
+  network: { fixture: networks.local }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.software-only }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: transcode
+  reasons:
+    - audio-channels-exceed-device
+    - audio-atmos-lost

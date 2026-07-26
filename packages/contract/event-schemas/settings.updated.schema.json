@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://loombre.com/schemas/events/settings.updated.schema.json",
+  "title": "SettingsUpdatedPayload",
+  "description": "Payload for envelope.type === 'settings.updated'. STATE.md Addendum A (admin-configurable server settings), decision A5: emitted in the SAME transaction as every server_settings row write (packages/db/src/query/settings.ts's upsertServerSettingAndEmit) and every provider-key write/clear (A9 — packages/db/src/query/settings.ts's emitRedactedSettingsUpdated). ADMIN-ONLY delivery, mirroring job.updated exactly: apps/server/src/gateway/ws-broadcaster.service.ts's ADMIN_ONLY_TYPES list gates this type to admin-context sockets only, since (like job.updated) it carries no item/library/user content association for packages/db/src/query/events.ts's own visibility predicate to gate on. `oldValue`/`newValue` are the literal string '[redacted]' for provider-key events (A9: a secret's value is NEVER placed in an event, logged, or returned by a status endpoint) — for every other settings key they carry the actual JSON value (whatever shape that key's registry entry declares: boolean/number/string/array/object), so `null` is reserved for 'oldValue was never previously set' and is never itself a valid settings value.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["actorUserId", "key", "oldValue", "newValue"],
+  "properties": {
+    "actorUserId": {
+      "type": "string",
+      "format": "uuid",
+      "description": "The admin who made this change, re-verified live against users.is_admin at mutation time (A10) — always a real user id, never null (unlike envelope.actorUserId's general nullability for system-originated events, a settings mutation always has a human admin actor)."
+    },
+    "key": {
+      "type": "string",
+      "description": "The packages/shared/src/settings-registry.ts key that changed, or 'providerKey.<provider>' for an A9 provider-key set/clear."
+    },
+    "oldValue": {
+      "description": "The previous value, or null if this write created the row for the first time. '[redacted]' for provider-key events (A9)."
+    },
+    "newValue": {
+      "description": "The value now in effect. '[redacted]' for provider-key events (A9)."
+    }
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "id": 603,
+  "posters": [
+    { "file_path": "/poster1.jpg", "width": 2000, "height": 3000 },
+    { "file_path": "/poster2.jpg", "width": 1000, "height": 1500 }
+  ],
+  "backdrops": [{ "file_path": "/backdrop1.jpg", "width": 3840, "height": 2160 }],
+  "logos": []
+}

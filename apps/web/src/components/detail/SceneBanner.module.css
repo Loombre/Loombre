@@ -1,0 +1,114 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+
+/* Desktop-only (see SceneBanner.tsx's header) — cancels AppShell.module.
+   css's .main padding (var(--space-xl) all sides desktop) with a matching
+   negative margin so the banner bleeds to the real edges of the content
+   area beside the sidebar, without touching shell CSS. Hidden entirely
+   below the mobile breakpoint; MobileSceneCard.tsx owns that arrangement. */
+.banner {
+  position: relative;
+  height: var(--banner-height);
+  margin: calc(-1 * var(--space-xl)) calc(-1 * var(--space-xl)) 0;
+  overflow: hidden;
+
+  /* Missing-artwork fallback gradient (S5) — same two-stop recipe as
+     DetailPoster.module.css's .poster, under this component's own
+     --banner-glow custom property. Sits behind the real <img> at all
+     times (harmless — the image covers it via absolute inset:0 while
+     load succeeds) and is what actually shows once the <img> is removed
+     on error (SceneBanner.tsx's `failed` state). */
+  background: radial-gradient(120% 120% at 30% 0%, color-mix(in srgb, var(--banner-glow, var(--color-dominant-fallback)) 55%, transparent), var(--color-dominant-fallback));
+  isolation: isolate;
+}
+
+@media (width <= 767.98px) {
+  .banner {
+    display: none;
+  }
+}
+
+.backdrop {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  z-index: 0;
+}
+
+/* Missing-artwork fallback letter (S5) — same oversized/translucent
+   recipe as DetailPoster.module.css's .initial, sized up for this much
+   wider surface. No fallback title text here (see SceneBanner.tsx's
+   header for why — the real title already renders via `overlay`). */
+.initial {
+  position: absolute;
+  z-index: 0;
+  top: -0.12em;
+  right: var(--space-lg);
+  font-family: var(--font-sans);
+  font-stretch: var(--wdth-poster);
+  font-weight: var(--weight-black);
+  font-size: 220px;
+  line-height: 1;
+  color: rgb(255 255 255 / 13%);
+  user-select: none;
+}
+
+@media (width <= 1279.98px) {
+  .initial {
+    font-size: 160px;
+  }
+}
+
+.scanlines {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background-image: var(--scanlines);
+  pointer-events: none;
+}
+
+.scanlines[data-scanlines="off"] {
+  display: none;
+}
+
+.scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  background: linear-gradient(180deg, rgb(11 12 15 / 20%), var(--color-bg) 96%);
+}
+
+.backPill {
+  composes: glass from global;
+  position: absolute;
+  top: var(--space-md);
+  left: var(--space-lg);
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3xs);
+  font-family: var(--font-mono);
+  font-size: var(--mono-md);
+  font-weight: var(--weight-medium);
+  letter-spacing: var(--track-mono-wide);
+  color: rgb(233 235 238 / 80%);
+  padding: var(--space-2xs) var(--space-sm);
+  border-radius: var(--radius-pill);
+  text-decoration: none;
+  transition:
+    color var(--motion-fast) var(--ease-out),
+    border-color var(--motion-fast) var(--ease-out);
+}
+
+.backPill:hover {
+  color: var(--color-text);
+}
+
+.overlay {
+  position: absolute;
+  z-index: 3;
+  left: var(--space-lg);
+  right: var(--space-lg);
+  bottom: var(--space-lg);
+}

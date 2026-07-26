@@ -1,0 +1,50 @@
+name: direct-play — mp4 h264 high@41 8-bit 1080p + aac 2ch, no subs, web-chrome, local network
+why: >
+  Baseline direct-play-bias proof (docs/PLAYBACK.md §0 law 2): every axis is
+  within device/network limits, so no stage may fire a reason and the
+  decision must be direct-play with an empty reasons array.
+
+input:
+  media:
+    fileId: file-0001
+    container: mp4
+    durationMs: 5400000
+    sizeBytes: 4050000000
+    overallBitrateBps: 6000000
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 41
+        width: 1920
+        height: 1080
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 5000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 192000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device: { fixture: devices.web-chrome }
+  network: { fixture: networks.local }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.software-only }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+
+expect:
+  decision: direct-play
+  reasons: []

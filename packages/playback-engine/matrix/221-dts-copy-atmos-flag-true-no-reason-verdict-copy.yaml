@@ -1,0 +1,45 @@
+name: direct-play — plain dts 4ch WITH hasAtmos:true still copies with zero reasons (verdict never reaches transcode)
+why: "An atypical but structurally valid combination (dts doesn't realistically carry Atmos, but AudioStream.hasAtmos is just a bool field) — proves audio-atmos-lost is gated on the STAGE'S OWN transcode verdict, not on the flag alone: with the stream fully within the device's dts cap (4ch < 6ch) and dts never subject to the passthrough rule, Stage D verdicts copy, so audio-atmos-lost never fires despite hasAtmos:true."
+input:
+  media:
+    fileId: file-0221
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 6000000000
+    overallBitrateBps: 7000000
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 41
+        width: 1920
+        height: 1080
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 5000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: dts
+        channels: 4
+        sampleRate: 48000
+        bitrateBps: 1200000
+        language: eng
+        isDefault: true
+        hasAtmos: true
+    subtitle: []
+  device: { fixture: devices.passthrough-capable }
+  network: { fixture: networks.local }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.software-only }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: direct-play
+  reasons: []

@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://loombre.com/schemas/events/file.relocated.schema.json",
+  "title": "FileRelocatedPayload",
+  "description": "Payload for envelope.type === 'file.relocated'. Emitted instead of delete+add when the scanner re-links a moved/renamed media_files row to its existing item via content-hash identity (docs/PLAN.md §5, §8.2, P8) — watch state is preserved.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["itemId", "mediaFileId", "previousPath", "newPath", "contentHash", "relocatedAtMs"],
+  "properties": {
+    "itemId": { "type": "string", "format": "uuid" },
+    "mediaFileId": { "type": "string", "format": "uuid" },
+    "previousPath": { "type": "string" },
+    "newPath": { "type": "string" },
+    "contentHash": {
+      "type": "string",
+      "description": "xxHash3 of first+last 4 MiB + size, the identity hint used to match the file."
+    },
+    "relocatedAtMs": { "type": "integer", "minimum": 0 }
+  }
+}

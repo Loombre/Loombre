@@ -1,0 +1,57 @@
+name: "direct-play — TEXT mov_text via web-safari (real fixture, not the custom text-all-capable), mov container -> hls-vtt, reason-free"
+why: >
+  web-safari (a REAL, non-custom device fixture) declares hlsVtt:true; t0-default's policy is hls-vtt -> cascade (a) fires regardless of web-safari's renderText:[webvtt] (mov_text isn't even in that list — irrelevant, since (a) never consults renderText). mov is in web-safari's directPlayContainers, and h264/aac both fit -> the whole plan is direct-play, reason-free (mov_text carries no informational reason, only ass does).
+
+input:
+  media:
+    fileId: file-0321
+    container: mov
+    durationMs: 6000000
+    sizeBytes: 6000000000
+    overallBitrateBps: 5200000
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 41
+        width: 1920
+        height: 1080
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 5000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 192000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle:
+      - index: 2
+        codec: mov_text
+        language: eng
+        isForced: false
+        isDefault: false
+        isExternal: false
+        externalPath: null
+  device: { fixture: devices.web-safari }
+  network: { fixture: networks.local }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.software-only }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: 2
+  mode: stream
+
+expect:
+  decision: direct-play
+  reasons: []
+  subtitleStrategy: hls-vtt
+  container: source

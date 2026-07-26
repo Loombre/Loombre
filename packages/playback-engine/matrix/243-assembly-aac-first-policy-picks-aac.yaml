@@ -1,0 +1,53 @@
+name: transcode — assembly picks aac (aac-first policy priority) even though opus is also present in device.audio
+why: >
+  Same device/stream shape as case 241 (web-chrome, truehd 8ch passthrough
+  false -> audio-passthrough-unsupported alone) but policy
+  audioTranscodeCodecPriority is [aac, opus] instead of [opus, aac].
+  Assembly gap (schema can't assert audio fields): targetCodec='aac' (FIRST
+  priority entry present in device.audio, even though opus is ALSO
+  present) -> targetChannels=min(8,6)=6 -> targetBitrateBps=384000 (no
+  opus scaling). Verified precisely by test/stages/audio.spec.ts.
+input:
+  media:
+    fileId: file-0243
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 6000000000
+    overallBitrateBps: 8000000
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 41
+        width: 1920
+        height: 1080
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 5000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: truehd
+        channels: 8
+        sampleRate: 48000
+        bitrateBps: 3000000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device: { fixture: devices.web-chrome }
+  network: { fixture: networks.local }
+  policy: { fixture: policies.aac-first-audio }
+  caps: { fixture: caps.software-only }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: transcode
+  reasons:
+    - audio-passthrough-unsupported

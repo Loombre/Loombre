@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://loombre.com/schemas/events/plugin.registered.schema.json",
+  "title": "PluginRegisteredPayload",
+  "description": "Payload for envelope.type === 'plugin.registered'. Loombre Plugin Protocol (LPP) v1, Lane W2 (LD4/LD6): emitted in the SAME transaction as the plugins row insert (packages/db/src/query/plugins.ts's insertPluginAndEmit) at the end of the registration state machine. ADMIN-ONLY delivery (apps/server/src/gateway/ws-broadcaster.service.ts's ADMIN_ONLY_TYPES), mirroring settings.updated exactly — plugin registration is an admin-configuration action with no item/library/user content association for packages/db/src/query/events.ts's visibility predicate to gate on. NEVER carries the manifest itself, any config value, or any secret (LD4/LD9) — only the fields listed below.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["pluginId", "name", "baseUrl", "contentClass", "grantedCapabilityTypes", "eventTypes", "registeredAtMs"],
+  "properties": {
+    "pluginId": {
+      "type": "string",
+      "format": "uuid",
+      "description": "The new plugins.id row (UUIDv7)."
+    },
+    "name": {
+      "type": "string",
+      "description": "The plugin's manifest-declared display name at registration time."
+    },
+    "baseUrl": {
+      "type": "string",
+      "description": "The plugin's HTTP(S) origin, as registered."
+    },
+    "contentClass": {
+      "type": "string",
+      "enum": ["general", "restricted"],
+      "description": "The plugin's computed aggregate content-class scope (packages/db/migrations/0014_plugins.sql's plugins.content_class column comment)."
+    },
+    "grantedCapabilityTypes": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "The manifest-declared capability `type` values approved at registration (LD6 'capability set <= declared') — packages/plugin-protocol CAPABILITY_TYPES values today ('metadata-provider' | 'event-subscriber'), never the full capability objects."
+    },
+    "eventTypes": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "The outbox event types granted to an event-subscriber capability at registration (LD6 'event grants <= requested'); empty when no event-subscriber capability was granted."
+    },
+    "registeredAtMs": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Epoch ms this row was committed (plugins.approved_at_ms at insert time)."
+    }
+  }
+}

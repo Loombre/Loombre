@@ -1,0 +1,50 @@
+name: transcode — macos-vt's videotoolbox DOES decode av1 (contrast with 402's mpeg2 gap)
+why: >
+  macos-vt's videotoolbox decode list includes av1 — rule (i) fires hw-encoder-selected:videotoolbox directly (no fallback needed), contrasting with case 402's mpeg2 gap on the SAME backend.
+
+input:
+  media:
+    fileId: gen-file
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 6000000000
+    overallBitrateBps: 25000000
+    video:
+      - index: 0
+        codec: av1
+        profile: null
+        level: 30
+        width: 1920
+        height: 1080
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 18000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 160000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device: { fixture: devices.av1-generic }
+  network: { fixture: networks.wan-20mbps }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.macos-vt }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+
+expect:
+  decision: transcode
+  reasons:
+    - bitrate-exceeds-network
+    - hw-encoder-selected:videotoolbox

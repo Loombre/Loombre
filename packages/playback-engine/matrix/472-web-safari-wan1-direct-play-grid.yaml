@@ -1,0 +1,52 @@
+name: 'direct-play — web-safari × wan-1mbps × t0-default: 480p h264 mov under the tightest network tier'
+why: '§10 grid combo not previously exercised (web-safari never met wan-1mbps): an 850k overall 480p mov
+  stays under the 1M cap on every axis — the tightest network tier alone never forces work when the file
+  genuinely fits.'
+input:
+  media:
+    fileId: file-472
+    container: mov
+    durationMs: 6000000
+    sizeBytes: 637500000
+    overallBitrateBps: 850000
+    video:
+    - index: 0
+      codec: h264
+      profile: high
+      level: 30
+      width: 854
+      height: 480
+      bitDepth: 8
+      frameRate: 24
+      bitrateBps: 800000
+      hdr: none
+      dvProfile: null
+      dvBlCompatId: null
+      interlaced: false
+    audio:
+    - index: 1
+      codec: aac
+      channels: 2
+      sampleRate: 48000
+      bitrateBps: 96000
+      language: eng
+      isDefault: true
+      hasAtmos: false
+    subtitle: []
+  device:
+    fixture: devices.web-safari
+  network:
+    fixture: networks.wan-1mbps
+  policy:
+    fixture: policies.t0-default
+  caps:
+    fixture: caps.software-only
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: direct-play
+  reasons: []
+  container: source

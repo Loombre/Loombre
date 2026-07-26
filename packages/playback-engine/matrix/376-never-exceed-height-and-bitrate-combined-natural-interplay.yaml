@@ -1,0 +1,60 @@
+name: transcode — rules (a) and (b) both narrow the same ladder naturally, in combination
+why: >
+  Distinct from the single-rule-isolated cases (343-352): here BOTH the source height (720p, drops 2160p/1080p rungs) AND the source bitrate (2Mbps, additionally drops the 720p/3Mbps rung on top of that) narrow the same ladder together, leaving only 480p/360p. Proves the two rules compose correctly as independent conjunctive filters rather than only ever being exercised in isolation. why (Phase 3 §11 step 3, Stage G arrival, STATE.md P3.2 regression law): this case's caps fixture has no hardware backend covering this route, so Stage G now routes full software (`software-fallback:encode`).
+
+input:
+  media:
+    fileId: file-0376
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 1500000000
+    overallBitrateBps: 2000000
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 41
+        width: 1280
+        height: 720
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 2000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: true
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 128000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device: { fixture: devices.web-chrome }
+  network: { fixture: networks.local }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.software-only }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+
+expect:
+  decision: transcode
+  reasons:
+    - video-interlaced
+    - software-fallback:encode
+  container: fmp4-hls
+  ladder:
+    - heightPx: 480
+      videoBitrateBps: 1500000
+      audioBitrateBps: 160000
+      codec: h264
+    - heightPx: 360
+      videoBitrateBps: 800000
+      audioBitrateBps: 160000
+      codec: h264

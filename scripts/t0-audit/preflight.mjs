@@ -1,0 +1,177 @@
+#!/usr/bin/env node
+// SPDX-License-Identifier: AGPL-3.0-only
+// Loombre :: scripts/t0-audit/preflight.mjs
+//
+// Turnkey sanity check run BEFORE the measurement battery (runbook Step A,
+// end) — catches the two most likely setup mistakes cheaply, before they
+// waste a 30-minute headline-test run:
+//   1. LOOMBRE_EMBEDDED_PG_VENDOR_DIR set + embedded PG actually reachable
+//      (not external-PG mode — the mission requires embedded, lane B, NOT
+//      external).
+//   2. The `loombre` service user can reach /dev/dri (QSV needs this; the
+//      installer's system user has no group memberships by default — see
+//      installers/linux/install.sh's `useradd --system` call, which grants
+//      none).
+// Also prints the resolved hardware-capability report (GET
+// /admin/capabilities) so the owner can eyeball qsv encode support without
+// leaving this one command.
+//
+// Exits nonzero (with a specific, actionable message) on any hard problem;
+// prints warnings for soft/advisory ones. Never silently proceeds past a
+// misconfiguration this script CAN detect.
+//
+// N100-ONLY for the /dev/dri + systemd checks; the HTTP-based capability
+// check works against any running instance.
+//
+// Usage:
+//   node scripts/t0-audit/preflight.mjs [--base-url http://127.0.0.1:3001]
+//     [--admin-user admin] [--admin-password loombre-seed-admin]
+//     [--config-dir /etc/loombre] [--server-unit loombre-server]
+
+import { existsSync, readdirSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import path from "node:path";
+import {
+  parseArgs,
+  resolveInstallEnv,
+  resolveDataDir,
+  systemdActiveState,
+  login,
+  apiFetchJson,
+  isLinux,
+  log,
+  warn,
+  fail,
+  DEFAULT_ADMIN_USERNAME,
+  DEFAULT_ADMIN_PASSWORD,
+} from "./lib/common.mjs";
+
+let problems = 0;
+let warnings = 0;
+
+function ok(msg) {
+  log("preflight", `OK   ${msg}`);
+}
+function problem(msg) {
+  fail("preflight", msg);
+  problems += 1;
+}
+function advisory(msg) {
+  warn("preflight", msg);
+  warnings += 1;
+}
+
+async function main() {
+  const args = parseArgs(process.argv.slice(2));
+  const baseUrl = args["base-url"] ?? "http://127.0.0.1:3001";
+  const adminUser = args["admin-user"] ?? DEFAULT_ADMIN_USERNAME;
+  const adminPassword = args["admin-password"] ?? DEFAULT_ADMIN_PASSWORD;
+
+  if (!isLinux()) {
+    advisory("not running on Linux — every check below is best-effort/incomplete off the real N100 host");
+  }
+
+  const env = resolveInstallEnv(args);
+  const dataDir = resolveDataDir(env);
+
+  // 1. Embedded PG, not external.
+  if (env["DATABASE_URL"]) {
+    problem(
+      `DATABASE_URL is set in the resolved env (${env["DATABASE_URL"].replace(/:[^:@]*@/, ":***@")}) — this audit ` +
+        "requires EMBEDDED PostgreSQL (lane B), not external. Comment out DATABASE_URL in /etc/loombre/loombre.env " +
+        "and restart loombre-server.",
+    );
+  } else {
+    ok("DATABASE_URL is unset in the resolved env — embedded-PG mode is in effect");
+  }
+  if (!env["LOOMBRE_EMBEDDED_PG_VENDOR_DIR"]) {
+    problem(
+      "LOOMBRE_EMBEDDED_PG_VENDOR_DIR is not set — apps/server/src/bootstrap/provisioning.ts's dev-checkout-relative " +
+        "default cannot resolve inside a packaged install (STATE.md Phase 4 Open item: installer packaging must set " +
+        "this, and does not yet). Set it in /etc/loombre/loombre.env to <prefix>/pg (default prefix: /opt/loombre/pg) " +
+        "and restart loombre-server. See the runbook's Step A.",
+    );
+  } else {
+    ok(`LOOMBRE_EMBEDDED_PG_VENDOR_DIR=${env["LOOMBRE_EMBEDDED_PG_VENDOR_DIR"]}`);
+    if (!existsSync(env["LOOMBRE_EMBEDDED_PG_VENDOR_DIR"])) {
+      problem(`${env["LOOMBRE_EMBEDDED_PG_VENDOR_DIR"]} does not exist on disk`);
+    } else if (readdirSync(env["LOOMBRE_EMBEDDED_PG_VENDOR_DIR"]).length === 0) {
+      problem(
+        `${env["LOOMBRE_EMBEDDED_PG_VENDOR_DIR"]} exists but is empty — build-tarball.mjs likely fell back to the ` +
+          "placeholder README (scripts/fetch-embedded-pg.mjs did not produce a payload for this arch at build time).",
+      );
+    }
+  }
+  const secretPath = path.join(dataDir, "postgres", "superuser.secret");
+  if (existsSync(secretPath)) {
+    ok(`embedded-PG superuser secret present at ${secretPath} — provisioning has run at least once`);
+  } else {
+    advisory(`no superuser secret at ${secretPath} yet — start loombre-server at least once before continuing`);
+  }
+
+  // 2. loombre user's device-render-node access (QSV).
+  if (isLinux()) {
+    const groupsResult = spawnSync("id", ["-Gn", "loombre"], { encoding: "utf8" });
+    if (groupsResult.status !== 0) {
+      advisory("could not run `id -Gn loombre` — is the system user named something else? (--user at install time)");
+    } else {
+      const groups = groupsResult.stdout.trim().split(/\s+/);
+      const hasRenderOrVideo = groups.includes("render") || groups.includes("video");
+      if (hasRenderOrVideo) {
+        ok(`loombre user groups include ${groups.filter((g) => g === "render" || g === "video").join(",")} — /dev/dri should be accessible`);
+      } else {
+        problem(
+          `loombre user's groups (${groups.join(",")}) include neither 'render' nor 'video' — QSV needs /dev/dri ` +
+            "access. Fix: sudo usermod -aG render,video loombre && sudo systemctl restart loombre-server loombre-worker",
+        );
+      }
+    }
+    if (!existsSync("/dev/dri")) {
+      advisory("/dev/dri does not exist on this host at all — no GPU render nodes exposed; QSV cannot work regardless of group membership");
+    }
+  }
+
+  // 3. Server reachable + capability report.
+  const serverUnit = args["server-unit"] ?? "loombre-server";
+  if (isLinux()) {
+    const state = systemdActiveState(serverUnit);
+    if (state === "active") ok(`${serverUnit} is active`);
+    else problem(`${serverUnit} ActiveState=${state} (expected 'active') — sudo systemctl start ${serverUnit}`);
+  }
+
+  try {
+    const auth = await login(baseUrl, adminUser, adminPassword, "t0-audit-preflight");
+    ok(`logged in as ${adminUser} (userId ${auth.userId})`);
+    const caps = await apiFetchJson(baseUrl, auth.accessToken, "/admin/capabilities");
+    if (!caps.report) {
+      problem("GET /admin/capabilities returned report=null — hwprobe has never run. `pnpm --filter @loombre/worker run hwprobe`");
+    } else {
+      log("preflight", `capability report verified at ${new Date(caps.report.verifiedAtMs).toISOString()}, platform=${caps.report.platform}`);
+      for (const backend of caps.report.backends) {
+        log("preflight", `  [${backend.position}] ${backend.name}: decode=[${backend.decode.join(",")}] encode=[${backend.encode.join(",")}] toneMap=[${backend.toneMap.join(",")}]`);
+      }
+      const qsv = caps.report.backends.find((b) => b.name === "qsv");
+      const anyHwEncode = caps.report.backends.some((b) => b.name !== "software" && b.encode.length > 0);
+      if (!anyHwEncode) {
+        problem(
+          "no non-software backend reports ANY working encode codec — the headline hardware-transcode test cannot " +
+            "pass. Check intel-media-driver/oneVPL runtime packages are installed and re-run hwprobe.",
+        );
+      } else if (qsv && qsv.encode.length > 0) {
+        ok(`qsv encode verified for: ${qsv.encode.join(", ")}`);
+      } else {
+        advisory(`qsv backend absent or has no verified encode codecs (found: ${caps.report.backends.map((b) => b.name).join(", ")}) — the headline test will use whichever backend DID verify, if any`);
+      }
+    }
+  } catch (err) {
+    problem(`could not reach/authenticate against ${baseUrl}: ${err instanceof Error ? err.message : String(err)}`);
+  }
+
+  log("preflight", `=== ${problems} problem(s), ${warnings} warning(s) ===`);
+  if (problems > 0) process.exit(1);
+}
+
+main().catch((err) => {
+  fail("preflight", err instanceof Error ? err.message : String(err));
+  process.exit(1);
+});

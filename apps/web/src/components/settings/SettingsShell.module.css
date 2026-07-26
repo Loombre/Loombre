@@ -1,0 +1,12 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+.shell {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-xl);
+}
+
+.pane {
+  flex: 1;
+  min-width: 0;
+  max-width: 760px;
+}

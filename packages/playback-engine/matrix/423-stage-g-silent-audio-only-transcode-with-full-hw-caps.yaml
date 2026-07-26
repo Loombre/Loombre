@@ -1,0 +1,49 @@
+name: "transcode (audio-only) — full-hw caps present, video stays copy: Stage G silent"
+why: >
+  truehd 6ch without device passthrough -> Stage D transcodes audio alone; video (h264 1080p) stays genuinely within device caps -> video.action='copy', so Stage G's own gate (video.action==='transcode') never opens even though the overall decision is transcode and full-hw caps are attached. reasons stays EXACTLY [audio-passthrough-unsupported].
+
+input:
+  media:
+    fileId: gen-file
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 6000000000
+    overallBitrateBps: 5000000
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 41
+        width: 1920
+        height: 1080
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 5000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: truehd
+        channels: 6
+        sampleRate: 48000
+        bitrateBps: 1500000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device: { fixture: devices.web-chrome }
+  network: { fixture: networks.local }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.full-hw }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+
+expect:
+  decision: transcode
+  reasons:
+    - audio-passthrough-unsupported

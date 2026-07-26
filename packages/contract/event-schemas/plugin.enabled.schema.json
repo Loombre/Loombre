@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://loombre.com/schemas/events/plugin.enabled.schema.json",
+  "title": "PluginEnabledPayload",
+  "description": "Payload for envelope.type === 'plugin.enabled'. Loombre Plugin Protocol (LPP) v1, Lane W2 (LD4): emitted in the SAME transaction whenever plugins.enabled flips true — a manual admin re-enable (packages/db/src/query/plugins.ts's setPluginEnabledAndEmit) or a re-approval after a scope-change auto-disable (reapprovePluginAndEmit). No `reason` field (unlike plugin.disabled) — there is exactly one path to 'enabled', an explicit admin action. ADMIN-ONLY delivery, mirroring settings.updated exactly.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["pluginId", "name", "enabledAtMs"],
+  "properties": {
+    "pluginId": {
+      "type": "string",
+      "format": "uuid",
+      "description": "The plugins.id row that was enabled."
+    },
+    "name": {
+      "type": "string",
+      "description": "The plugin's current name."
+    },
+    "enabledAtMs": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Epoch ms this row was updated to enabled=true."
+    }
+  }
+}

@@ -1,0 +1,51 @@
+name: transcode — mp4 hevc main10 2160p HDR10 vs hevc-hlg-only (hlg true does not rescue an hdr10 source)
+why: "Stage C: source hdr is hdr10 but device.hdr.hdr10 is false (hevc-hlg-only declares hlg:true/hdr10:false) — the two flags are checked independently, so hlg support does not rescue an hdr10 source. hdr-tone-map-required fires; policy is t1-cpu-tonemap (allowToneMapCpu: always) so no refusal reason accompanies it. why (Phase 3 §11 step 3, Stage G arrival, STATE.md P3.2 regression law): this case's caps fixture has no hardware backend covering this route, so Stage G now routes full software (`software-fallback:encode`).\n"
+input:
+  media:
+    fileId: file-142
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 5000000000
+    overallBitrateBps: 15384000
+    video:
+      - index: 0
+        codec: hevc
+        profile: main10
+        level: 123
+        width: 3840
+        height: 2160
+        bitDepth: 10
+        frameRate: 23.976
+        bitrateBps: 15000000
+        hdr: hdr10
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 6
+        sampleRate: 48000
+        bitrateBps: 384000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device:
+    fixture: devices.hevc-hlg-only
+  network:
+    fixture: networks.local
+  policy:
+    fixture: policies.t1-cpu-tonemap
+  caps:
+    fixture: caps.software-only
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: transcode
+  reasons:
+    - hdr-tone-map-required
+    - software-fallback:encode

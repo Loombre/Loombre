@@ -1,0 +1,483 @@
+name: Release
+
+# Tag-triggered ONLY (v* — e.g. v0.9.0). Deliberately no workflow_dispatch:
+# build-macos runs on macos-latest, which bills 10x (repo's GH Actions
+# minutes budget — see the MEMORY.md note on this); a manual-dispatch path
+# would make it too easy to burn that budget testing this workflow. Test
+# individual scripts locally (scripts/release/*.mjs all run standalone)
+# instead of dispatching the whole pipeline.
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+env:
+  # Kept in sync with .github/workflows/ci.yml's own pin (CLAUDE.md: this
+  # lane doesn't own ci.yml, but the two workflows should install the same
+  # oasdiff build — not exercised in THIS workflow today, reserved for a
+  # future contract-drift-at-release-time check).
+  OASDIFF_VERSION: "1.26.0"
+
+jobs:
+  # ───────────────────────────────────────────────────────────────────────
+  # Resolves the release version ONCE from the pushed tag (v0.9.0 -> 0.9.0)
+  # so every downstream job/script agrees on it without re-deriving.
+  # ───────────────────────────────────────────────────────────────────────
+  prepare:
+    name: prepare
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Resolve version from tag
+        id: version
+        env:
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          tag="$REF_NAME"
+          version="${tag#v}"
+          if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::tag '$tag' does not resolve to a valid semver version ('$version')"
+            exit 1
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      # STATE.md P4.11: root package.json's `version` is THE single source
+      # of truth. installers/windows/build-msi.mjs and installers/macos/
+      # build-pkg.mjs both read it DIRECTLY (no --version flag override
+      # for the latter) rather than trusting whatever this workflow
+      # computed from the tag — so the release ritual is "bump package.json
+      # version, commit, THEN tag v<same version>, then push the tag", and
+      # this check is what catches "tagged the wrong commit" or "forgot to
+      # bump package.json first" before any expensive build job even starts.
+      - name: Verify root package.json's version matches the pushed tag
+        env:
+          EXPECTED_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          actual="$(node -p "require('./package.json').version")"
+          if [ "$actual" != "$EXPECTED_VERSION" ]; then
+            echo "::error::root package.json version ($actual) does not match the pushed tag's version ($EXPECTED_VERSION) — bump package.json and re-tag."
+            exit 1
+          fi
+          echo "prepare: package.json version ($actual) matches tag v$EXPECTED_VERSION"
+
+  # ───────────────────────────────────────────────────────────────────────
+  # build-linux — calls lane I1's installers/linux/build-tarball.mjs
+  # (STATE.md: I1 owns installers/linux + scripts/fetch-ffmpeg.mjs).
+  # ───────────────────────────────────────────────────────────────────────
+  build-linux:
+    name: build-linux
+    needs: prepare
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Stamp release version (root package.json -> packages/shared/src/version.ts, no -dev suffix)
+        run: node scripts/release/stamp-version.mjs --release
+
+      - name: Build workspace
+        run: pnpm build
+
+      - name: Prepare release output directory
+        run: mkdir -p dist/release
+
+      - name: build-tarball.mjs (lane I1)
+        # Real CLI contract (installers/linux/build-tarball.mjs
+        # parseArgs()): --version optional (falls back to reading
+        # package.json itself — the `prepare` job already proved they
+        # agree), --out-dir optional (default installers/linux/dist),
+        # --arch x64|arm64 (default x64 — matches ubuntu-latest; a native
+        # linux-arm64 build needs an arm64 runner or a cross-compilation
+        # story this script's own header documents avoiding for tsx/
+        # esbuild-native-binary reasons — logged as a follow-up, not
+        # attempted here).
+        env:
+          LOOMBRE_VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          set -euo pipefail
+          node installers/linux/build-tarball.mjs --version "$LOOMBRE_VERSION" --out-dir dist/release
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-artifacts-linux
+          path: dist/release/**
+          if-no-files-found: error
+
+  # ───────────────────────────────────────────────────────────────────────
+  # build-windows — calls lane I3's installers/windows/build-msi.mjs.
+  # ───────────────────────────────────────────────────────────────────────
+  build-windows:
+    name: build-windows
+    needs: prepare
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Stamp release version
+        run: node scripts/release/stamp-version.mjs --release
+
+      - name: Build workspace
+        run: pnpm build
+
+      - name: Prepare release output directory
+        shell: bash
+        run: mkdir -p dist/release
+
+      - name: build-msi.mjs (lane I3)
+        # Real CLI contract (installers/windows/build-msi.mjs):
+        # --version optional (falls back to package.json, which `prepare`
+        # already verified matches the tag). NO --out/--out-dir flag —
+        # output is ALWAYS installers/windows/out/loombre-<version>-
+        # windows-x64.msi; the next step copies it into dist/release.
+        shell: bash
+        env:
+          LOOMBRE_VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          set -euo pipefail
+          node installers/windows/build-msi.mjs --version "$LOOMBRE_VERSION"
+
+      - name: Stage the built MSI into dist/release
+        shell: bash
+        env:
+          LOOMBRE_VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          set -euo pipefail
+          src="installers/windows/out/loombre-${LOOMBRE_VERSION}-windows-x64.msi"
+          if [ ! -f "$src" ]; then
+            echo "::error::expected MSI not found at $src — build-msi.mjs's documented output path may have changed; update this step to match"
+            exit 1
+          fi
+          cp "$src" dist/release/
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-artifacts-windows
+          path: dist/release/**
+          if-no-files-found: error
+
+  # ───────────────────────────────────────────────────────────────────────
+  # build-macos — calls lane I4's installers/macos/build-pkg.mjs.
+  # macos-latest bills 10x — this job only ever runs on a real `v*` tag
+  # push (workflow-level trigger above), never on workflow_dispatch.
+  # ───────────────────────────────────────────────────────────────────────
+  build-macos:
+    name: build-macos
+    needs: prepare
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Stamp release version
+        run: node scripts/release/stamp-version.mjs --release
+
+      - name: Build workspace
+        run: pnpm build
+
+      - name: Prepare release output directory
+        run: mkdir -p dist/release
+
+      - name: build-pkg.mjs (lane I4)
+        # Real CLI contract (installers/macos/build-pkg.mjs): NO --version
+        # flag at all — always reads package.json directly (`prepare`
+        # already verified it matches the tag). --arch=arm64|x64 (default:
+        # the RUNNER's own arch; macos-latest is arm64 as of this writing —
+        # a native x64 .pkg would need an intel runner, logged as a
+        # follow-up, not attempted here). NO --out/--out-dir flag either —
+        # output is ALWAYS installers/macos/dist/loombre-<version>-macos-
+        # <arch>.pkg; the next step copies it into dist/release.
+        run: |
+          set -euo pipefail
+          node installers/macos/build-pkg.mjs --arch=arm64
+
+      - name: Stage the built .pkg into dist/release
+        env:
+          LOOMBRE_VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          set -euo pipefail
+          src="installers/macos/dist/loombre-${LOOMBRE_VERSION}-macos-arm64.pkg"
+          if [ ! -f "$src" ]; then
+            echo "::error::expected .pkg not found at $src — build-pkg.mjs's documented output path may have changed; update this step to match"
+            exit 1
+          fi
+          cp "$src" dist/release/
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-artifacts-macos
+          path: dist/release/**
+          if-no-files-found: error
+
+  # ───────────────────────────────────────────────────────────────────────
+  # build-docker — multi-arch buildx image via lane I2's Dockerfile +
+  # installers/docker files (STATE.md: I2 owns installers/docker +
+  # Dockerfile + prod compose), pushed to GHCR, signed KEYLESS via cosign
+  # + the GitHub OIDC identity (sigstore). This is separate from — and in
+  # addition to — the P4.18 minisign signature the release job produces
+  # for manifest.json/SHA256SUMS: cosign here proves "this image was built
+  # by this repo's CI"; minisign there is the release-manager's own
+  # blessing on the release MANIFEST the update-checker verifies. Image
+  # verification for end users: `cosign verify
+  # --certificate-identity-regexp "^https://github.com/<owner>/<repo>/"
+  # --certificate-oidc-issuer https://token.actions.githubusercontent.com
+  # ghcr.io/<owner>/loombre:<version>` (documented in docs/ops/updating.md's
+  # sibling install docs — lane I2/docs own the exact wording).
+  # ───────────────────────────────────────────────────────────────────────
+  build-docker:
+    name: build-docker
+    needs: prepare
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up QEMU (linux/arm64 emulation for the multi-arch bake target)
+        uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      - name: Log in to GHCR
+        uses: docker/login-action@abd2ef45e78c5afb21d64d4ca52ee8550d9572c7 # v4.5.1
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # installers/docker/build.sh wraps `docker buildx bake -f
+      # installers/docker/docker-bake.hcl` and populates LOOMBRE_VERSION/
+      # VCS_REF/BUILD_DATE from the repo itself (LOOMBRE_VERSION comes from
+      # package.json, already verified against the tag in `prepare`).
+      # LOOMBRE_IMAGE overrides the bake file's default "loombre" local name
+      # with the real GHCR coordinates (docker-bake.hcl's `variable
+      # "LOOMBRE_IMAGE"` reads this env var automatically — no file edit
+      # needed). Extra bake args ("$@" in build.sh) forward straight to
+      # `docker buildx bake`: --push publishes the multi-arch manifest
+      # list this lane's own docker-bake.hcl marks as cosign's insertion
+      # point; --metadata-file captures the resulting digest for that step.
+      - name: Build + push multi-arch image (installers/docker/build.sh + docker-bake.hcl, lane I2)
+        id: build
+        env:
+          REPO_LOWER: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          export LOOMBRE_IMAGE="ghcr.io/${REPO_LOWER,,}"
+          bash installers/docker/build.sh --push --metadata-file /tmp/docker-metadata.json
+          digest=$(node -e "console.log(JSON.parse(require('fs').readFileSync('/tmp/docker-metadata.json','utf8'))['loombre']['containerimage.digest'])")
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+          echo "image=$LOOMBRE_IMAGE" >> "$GITHUB_OUTPUT"
+
+      - name: cosign sign (keyless, GH OIDC identity)
+        env:
+          COSIGN_EXPERIMENTAL: "1"
+        run: cosign sign --yes "${{ steps.build.outputs.image }}@${{ steps.build.outputs.digest }}"
+
+      - name: Write docker-image.json sidecar (build-manifest.mjs's docker-artifact convention)
+        env:
+          LOOMBRE_VERSION: ${{ needs.prepare.outputs.version }}
+          IMAGE: ${{ steps.build.outputs.image }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist/release
+          # build-manifest.mjs's sha256 field is 64 lowercase hex chars, no
+          # "sha256:" scheme prefix — strip it here, once, in bash, so the
+          # node step below only ever sees the already-normalized value.
+          export DIGEST_HEX="${DIGEST#sha256:}"
+          # sizeBytes: a multi-arch manifest LIST has no single meaningful
+          # "file size" the way a tarball/msi/pkg does (it's an index over
+          # N per-platform layer sets) — 0 is an honest placeholder, not a
+          # bug; RELEASE_ARTIFACT_SCHEMA only requires a non-negative
+          # integer, and the update-checker never uses sizeBytes for
+          # anything besides admin-UI display. A future refinement could
+          # sum compressed layer sizes via `docker buildx imagetools
+          # inspect --raw`.
+          node -e "
+            const fs = require('node:fs');
+            fs.writeFileSync('dist/release/docker-image.json', JSON.stringify({
+              filename: \`\${process.env.IMAGE}:\${process.env.LOOMBRE_VERSION}\`,
+              sizeBytes: 0,
+              sha256: process.env.DIGEST_HEX,
+              url: \`https://\${process.env.IMAGE}:\${process.env.LOOMBRE_VERSION}\`,
+            }, null, 2) + '\n');
+          "
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-artifacts-docker
+          path: dist/release/**
+          if-no-files-found: error
+
+  # ───────────────────────────────────────────────────────────────────────
+  # release — gathers every build-* artifact, builds + minisign-signs the
+  # release manifest + SHA256SUMS, attests build provenance, drafts the
+  # GitHub Release.
+  # ───────────────────────────────────────────────────────────────────────
+  release:
+    name: release
+    needs: [prepare, build-linux, build-windows, build-macos, build-docker]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build @loombre/release-manifest (scripts/release/*.mjs read its compiled dist — see release-manifest-import.ts's header for the lockfile-freeze context this mirrors)
+        run: pnpm --filter @loombre/release-manifest run build
+
+      - name: Download all build-* artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: release-artifacts-*
+          path: dist/release
+          merge-multiple: true
+
+      - name: List staged artifacts
+        run: ls -la dist/release
+
+      - name: Build SHA256SUMS
+        run: node scripts/release/sha256sums.mjs --artifacts-dir dist/release --out dist/release/SHA256SUMS
+
+      - name: Build manifest.json
+        env:
+          LOOMBRE_VERSION: ${{ needs.prepare.outputs.version }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          set -euo pipefail
+          node scripts/release/build-manifest.mjs \
+            --version "$LOOMBRE_VERSION" \
+            --notes-url "https://github.com/${REPO}/releases/tag/${TAG}" \
+            --artifacts-dir dist/release \
+            --base-url "https://github.com/${REPO}/releases/download/${TAG}" \
+            --out dist/release/manifest.json
+
+      - name: Check the minisign public key's three P4.9 locations agree
+        run: node scripts/release/check-pubkey-consistency.mjs
+
+      - name: Install minisign (official apt package — never an npm dependency, P4.18/README.md)
+        run: sudo apt-get update && sudo apt-get install -y minisign
+
+      - name: Sign manifest.json + SHA256SUMS (standard Ed mode — NEVER -x, P4.18)
+        env:
+          LOOMBRE_MINISIGN_SECKEY: ${{ secrets.LOOMBRE_MINISIGN_SECKEY }}
+          LOOMBRE_MINISIGN_SECKEY_PASSWORD: ${{ secrets.LOOMBRE_MINISIGN_SECKEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "${LOOMBRE_MINISIGN_SECKEY:-}" ]; then
+            echo "::error::LOOMBRE_MINISIGN_SECKEY secret is not set — see keys/README.md's 'GitHub Actions secret (CI signing)' section. Cannot sign a release without it; this step intentionally fails the build rather than publishing an unsigned manifest."
+            exit 1
+          fi
+          seckey_path="$RUNNER_TEMP/loombre-release-signing.key"
+          echo "$LOOMBRE_MINISIGN_SECKEY" | base64 -d > "$seckey_path"
+          # Standard Ed mode is minisign's default (no -x anywhere here).
+          echo "$LOOMBRE_MINISIGN_SECKEY_PASSWORD" | minisign -S -s "$seckey_path" -m dist/release/manifest.json
+          echo "$LOOMBRE_MINISIGN_SECKEY_PASSWORD" | minisign -S -s "$seckey_path" -m dist/release/SHA256SUMS
+          shred -u "$seckey_path" 2>/dev/null || rm -f "$seckey_path"
+
+      - name: Remove the docker-image.json sidecar before publishing (internal build input, not a release asset)
+        run: rm -f dist/release/docker-image.json
+
+      - name: Attest build provenance for every artifact
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+        with:
+          subject-path: "dist/release/*"
+
+      - name: Render release notes (scripts/release/release-notes-template.md — P4.9 location #3)
+        env:
+          LOOMBRE_VERSION: ${{ needs.prepare.outputs.version }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          node scripts/release/render-release-notes.mjs \
+            --version "$LOOMBRE_VERSION" \
+            --repo "$REPO" \
+            --tag "$TAG" \
+            --out /tmp/release-notes.md
+
+      - name: Draft GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          set -euo pipefail
+          gh release create "$TAG" \
+            --draft \
+            --title "Loombre $TAG" \
+            --notes-file /tmp/release-notes.md \
+            dist/release/*

@@ -1,0 +1,49 @@
+name: direct-play — hevc stream present but UNSELECTED (audio-only selection) vs constrained-tv (h264-only) — Stage B must not fire
+why: "docs/PLAYBACK.md binding interpretation constraint 1: Stage B evaluates ONLY the selected video stream. This hevc stream is deliberately unsupported on every axis (interlaced, absurd level/resolution/framerate) — with selection.videoStreamIndex null, none of that may fire; only the container (mp4, in constrained-tv's list) and audio (aac 2ch) matter, giving direct-play."
+input:
+  media:
+    fileId: file-119
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 5000000000
+    overallBitrateBps: 5160000
+    video:
+      - index: 0
+        codec: hevc
+        profile: main10
+        level: 999
+        width: 7680
+        height: 4320
+        bitDepth: 10
+        frameRate: 120
+        bitrateBps: 5000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: true
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 160000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device:
+    fixture: devices.constrained-tv
+  network:
+    fixture: networks.local
+  policy:
+    fixture: policies.t0-default
+  caps:
+    fixture: caps.software-only
+  selection:
+    videoStreamIndex: null
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: direct-play
+  reasons: []

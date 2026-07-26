@@ -1,0 +1,381 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+
+/* Phosphor 210px labelled sidebar (Wave 0, README shell spec) — replaces
+   the former 76px icon-only NavRail. Fixed, flush against the left edge
+   (no border-radius — same convention the icon rail used).
+
+   U3 (tablet gap, owner-adopted per README's own suggestion): below
+   1280px down through the phone breakpoint, collapse to the same
+   icon-only rail width the app used before this wave — labels hidden,
+   groups intact. CSS-only (a media query, not a user-agent branch — U2).
+   The bottom tab bar replacing this on phone widths is Wave 1; until it
+   ships, phone widths render this same collapsed rail (checkpoint note in
+   the freeze report). Keep both widths below in sync with AppShell.module.css's
+   .topbar/.main offsets — they must match exactly or the topbar/content
+   sit under or beside the wrong edge. */
+
+/* S6 fix (Wave-3 fidelity audit, sidebar slice): drops .glass for the
+   prototype's opaque chrome — see tokens.css's --sidebar-bg for why this
+   is a dedicated token rather than a literal here. */
+.sidebar {
+  position: fixed;
+  inset: 0 auto 0 0;
+  width: 210px;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-lg) var(--space-sm) var(--space-md);
+  gap: var(--space-lg);
+  overflow-y: auto;
+  background: var(--sidebar-bg);
+  border-right: 1px solid var(--color-border-subtle);
+}
+
+.wordmarkRow {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3xs);
+  padding: 0 var(--space-xs);
+}
+
+.wordmarkLine {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2xs);
+}
+
+
+/* D8/README sidebar reference: 14.5px, Archivo 800, font-stretch:125%,
+   letter-spacing:.22em (design/blaze/README.md "Sidebar-size reference:
+   mark 18–19px + wordmark 14.5px"). */
+.wordmark {
+  font-family: var(--font-sans);
+  font-stretch: var(--wdth-wordmark);
+  font-weight: var(--weight-black);
+  font-size: 14.5px;
+  letter-spacing: 0.22em;
+  color: var(--text);
+  line-height: var(--leading-tight);
+}
+
+/* D6/D11/README sidebar reference: 8.5px mono, "MEDIA SERVER · V<version>"
+   (design/blaze/README.md "Sidebar-size reference: version line ... in mono 8.5px"). */
+.tagline {
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  font-weight: var(--weight-medium);
+  letter-spacing: var(--track-mono-wide);
+  text-transform: uppercase;
+  color: var(--color-text-subtle);
+}
+
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3xs);
+}
+
+/* Sidebar MED fix (Wave-3 fidelity audit): the "LIBRARY"/"SYSTEM" group
+   label is the --color-text-subtle tier (#61666E, prototype-verbatim), not
+   --color-text-hint (#4A4E55) — subtle, not the faintest hint tier. */
+.groupLabel {
+  font-family: var(--font-mono);
+  font-size: var(--mono-sm);
+  font-weight: var(--weight-medium);
+  letter-spacing: var(--track-mono-wide);
+  text-transform: uppercase;
+  color: var(--color-text-subtle);
+  padding: var(--space-2xs) var(--space-xs);
+}
+
+.navItem {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-xs) var(--space-md);
+  border-radius: var(--radius-pill);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  color: var(--muted);
+  text-decoration: none; /* UA anchor underline — never visible on the icon-only NavRail this replaced */
+  white-space: nowrap;
+  transition:
+    background-color var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out);
+}
+
+.navItem:hover {
+  background: var(--fill-3);
+  color: var(--text);
+}
+
+.navItem[data-active="true"] {
+  background: var(--color-accent-tint);
+  color: var(--color-accent);
+}
+
+.navIcon {
+  width: 17px;
+  height: 17px;
+  flex-shrink: 0;
+}
+
+.navLabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Wave 1c (Phosphor retheme, "contract enablers" lane): Movies/TV Shows
+   item counts (design/phosphor README Shell spec "Movies + count, TV
+   Shows + count") — a neutral mono readout, distinct from .scanBadge's
+   warning-amber pill (a count is informational, not a status alert). */
+.navCount {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: var(--mono-xs);
+  font-weight: var(--weight-medium);
+  letter-spacing: var(--track-mono);
+  color: var(--color-text-subtle);
+}
+
+/* Sidebar MED fix (Wave-3 fidelity audit): SCAN is accent TEXT + a 5px
+   pulsing dot, not a filled warning pill (prototype: `font:600 9px
+   'IBM Plex Mono';color:var(--acc);letter-spacing:.08em` + a
+   `width:5px;height:5px;...animation:lmPulse 1.6s infinite` dot beside
+   it) — compositor-only (opacity), disabled under reduced-motion. */
+.scanBadge {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-accent);
+}
+
+.scanBadgeDot {
+  width: 5px;
+  height: 5px;
+  flex-shrink: 0;
+  border-radius: var(--radius-full);
+  background: var(--color-accent);
+  animation: sidebar-scan-pulse 1.6s var(--ease-out) infinite;
+}
+
+@keyframes sidebar-scan-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.3;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scanBadgeDot {
+    animation: none;
+  }
+}
+
+/* Wave 2 (lane L8): Restricted nav entry's locked-state badge (README
+   shell spec "Restricted + PIN badge/count"). Sidebar MED fix (Wave-3
+   fidelity audit): OUTLINED, not filled (prototype: `font:600 8px
+   'IBM Plex Mono';letter-spacing:.1em;color:#E0A548;border:1px solid
+   rgba(224,165,72,.35);border-radius:999px;padding:2px 7px`). */
+.pinBadge {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 8px;
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--track-mono);
+  text-transform: uppercase;
+  color: var(--color-warning);
+  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--color-warning) 35%, transparent);
+  border-radius: var(--radius-pill);
+  padding: 2px 7px;
+}
+
+/* Wave 1c: storage-pool meter (design/phosphor README Shell spec "POOL
+   43.1 / 60.8 TB", 71% bar) — admin-only, hidden entirely (Sidebar.tsx)
+   when GET /system/info's storagePool is null. Sidebar MED fix (Wave-3
+   fidelity audit): card chrome per the prototype (`border:1px solid
+   rgba(255,255,255,.07);border-radius:8px;background:rgba(255,255,255,.02)`)
+   — border-subtle/--radius-sm/--fill-1 are this file's nearest token
+   equivalents (8px has no radius-scale step; --radius-sm is 10px). */
+.poolMeter {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3xs);
+  margin: 0 var(--space-xs);
+  padding: var(--space-sm);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--fill-1);
+}
+
+.poolLabelRow {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2xs);
+}
+
+/* Sidebar MED fix: --color-text-subtle (prototype #61666E), matching the
+   same tier fix as .groupLabel above, and .1em tracking (prototype's POOL
+   row is `letter-spacing:.1em`, not the .16em "wide" eyebrow tracking). */
+.poolLabel {
+  font-family: var(--font-mono);
+  font-size: var(--mono-sm);
+  font-weight: var(--weight-medium);
+  letter-spacing: var(--track-mono);
+  text-transform: uppercase;
+  color: var(--color-text-subtle);
+}
+
+.poolValue {
+  font-family: var(--font-mono);
+  font-size: var(--mono-sm);
+  letter-spacing: var(--track-mono);
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+
+.poolBarTrack {
+  height: 4px;
+  border-radius: var(--radius-pill);
+  background: var(--fill-3);
+  overflow: hidden;
+}
+
+.poolBarFill {
+  height: 100%;
+  border-radius: var(--radius-pill);
+  background: var(--color-accent);
+  transition: width var(--motion-base) var(--ease-out);
+}
+
+.spacer {
+  flex: 1;
+}
+
+.userRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-xs);
+  border-top: 1px solid var(--color-border-subtle);
+  padding-top: var(--space-md);
+}
+
+.userInfo {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3xs);
+  min-width: 0;
+}
+
+.userName {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.userMeta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3xs);
+  font-family: var(--font-mono);
+  font-size: var(--mono-sm);
+  letter-spacing: var(--track-mono);
+  text-transform: uppercase;
+  color: var(--color-text-subtle);
+}
+
+.signOut {
+  border: none;
+  background: transparent;
+  padding: 0;
+  font: inherit;
+  font-family: var(--font-mono);
+  font-size: var(--mono-sm);
+  letter-spacing: var(--track-mono);
+  text-transform: uppercase;
+  color: var(--color-text-subtle);
+  cursor: pointer;
+}
+
+.signOut:hover {
+  color: var(--color-accent);
+}
+
+/* ── U3: tablet (768-1279px) collapse to the icon-only rail ────────────
+   Same 76px the ember-era NavRail used — no design is drawn for this
+   range (README: "it is not drawn in the prototype and needs a design
+   decision"); this collapse point is that decision, presented at the
+   Wave-0 owner checkpoint. Wave 1 (W1a) narrowed this query's original
+   pre-mobile-chrome range (which used to reach all the way down to phone
+   widths, per that checkpoint's own note) to stop at 767.98px now that
+   the mobile breakpoint below has a real bottom-tab-bar replacement.
+
+   G10 (Blaze Wave 1): .wordmarkRow stays visible (mark-only at 18-19px flat,
+   centered in the 76px rail); the wordmark text + version line are hidden. */
+@media (width <= 1279.98px) {
+  .sidebar {
+    width: 76px;
+    align-items: center;
+    padding: var(--space-lg) var(--space-2xs) var(--space-md);
+  }
+
+  .wordmark,
+  .tagline,
+  .groupLabel,
+  .navLabel,
+  .navCount,
+  .scanBadge,
+  .poolMeter,
+  .userInfo {
+    display: none;
+  }
+
+  /* G10: show the mark-only in the rail — wordmark text + version line are
+     hidden (above), sidebar's align-items: center centers the mark. */
+  .wordmarkRow {
+    gap: 0;
+    padding: 0;
+  }
+
+  .wordmarkLine {
+    gap: 0;
+  }
+
+  .navItem {
+    justify-content: center;
+    padding: var(--space-xs);
+    width: 44px;
+  }
+
+  .userRow {
+    justify-content: center;
+    padding: var(--space-xs);
+  }
+}
+
+/* ── Wave 1 (W1a): below the mobile breakpoint the sidebar disappears
+   entirely — MobileHeader + MobileTabBar (own modules) are the chrome
+   there instead (README "Responsive strategy" / STATE.md U2). 767.98px is
+   the same repeated literal as AppShell.module.css/MobileTabBar.module.css/
+   MobileHeader.module.css — see tokens.css's "Mobile chrome layout" note. */
+@media (width <= 767.98px) {
+  .sidebar {
+    display: none;
+  }
+}

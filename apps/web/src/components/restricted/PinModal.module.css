@@ -1,0 +1,128 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+
+/* Wave 2 (lane L8) rebuild — see PinModal.tsx's header. Breakpoint matches
+   the rest of the shell's 767.98px boundary (tokens.css "Mobile chrome
+   layout" is the single source of truth this literal must stay in sync
+   with — same repeated-literal convention SheetOrModal.module.css/
+   MobileTabBar.module.css already follow). */
+
+.form {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-lg);
+  width: 100%;
+}
+
+.iconRow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  border-radius: var(--radius-full);
+  background: var(--fill-3);
+  color: var(--color-warning);
+}
+
+.dots {
+  display: flex;
+  gap: var(--space-sm);
+}
+
+.dot {
+  width: 14px;
+  height: 14px;
+  border-radius: var(--radius-full);
+  border: 1.5px solid var(--color-border-strong);
+  background: transparent;
+  transition:
+    background-color var(--motion-fast) var(--ease-out),
+    border-color var(--motion-fast) var(--ease-out);
+}
+
+.dot[data-filled="true"] {
+  background: var(--color-warning);
+  border-color: var(--color-warning);
+}
+
+/* Desktop numeric field — real keyboard input, styled to echo the dot
+   row's spacing rather than showing raw digits. */
+.hiddenInput {
+  width: 160px;
+  text-align: center;
+  letter-spacing: 0.6em;
+  font-family: var(--font-mono);
+  font-size: var(--text-lg);
+  padding: var(--space-xs) var(--space-sm);
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--color-border);
+  background: var(--fill-2);
+  color: var(--color-text);
+}
+
+.hiddenInput:focus-visible {
+  outline: none;
+  border-color: var(--color-focus);
+  box-shadow: var(--shadow-focus-ring);
+}
+
+/* H20 (W3 fidelity audit): 74px circular keys, 3-column grid — was
+   mobile-only ("modal shows text input + sheet Done" per the audit); the
+   dc's own DESKTOP pin dialog (dc:2994-3013) renders this exact keypad
+   too, not a text field, per the README's "one responsive tree" ethos
+   (this component already builds the keypad once — it just needs to stop
+   being hidden above 767.98px). The keyboard-typable `.hiddenInput` below
+   stays available at every width too (a real accessibility affordance the
+   dc's static mockup can't express); auto-submit on the 4th digit is
+   unchanged either way (PinModal.tsx). */
+.keypad {
+  display: grid;
+  grid-template-columns: repeat(3, 74px);
+  gap: var(--space-md);
+  justify-content: center;
+}
+
+.key {
+  width: 74px;
+  height: 74px;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--color-border);
+  background: var(--fill-3);
+  color: var(--color-text);
+  font-family: var(--font-mono);
+  font-size: var(--text-xl);
+  font-weight: var(--weight-medium);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition:
+    background-color var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
+}
+
+.key:active {
+  transform: scale(0.94);
+  background: var(--fill-5);
+}
+
+.key:disabled {
+  opacity: 0.5;
+}
+
+.key:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus-ring);
+}
+
+.error {
+  color: var(--color-danger);
+  font-size: var(--text-sm);
+  text-align: center;
+}
+
+@media (width <= 767.98px) {
+  .hiddenInput {
+    display: none;
+  }
+}

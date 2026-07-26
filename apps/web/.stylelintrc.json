@@ -1,0 +1,29 @@
+{
+  "extends": ["stylelint-config-standard"],
+  "rules": {
+    "custom-property-pattern": null,
+    "selector-class-pattern": null,
+    "import-notation": null,
+    "property-no-unknown": [
+      true,
+      { "ignoreProperties": ["composes"] }
+    ],
+    "property-no-vendor-prefix": [
+      true,
+      { "ignoreProperties": ["backdrop-filter"] }
+    ],
+    "declaration-property-value-allowed-list": {
+      "/^border-radius$/": [
+        "/^var\\(--radius-(pill|lg|md|sm|full)\\)$/",
+        "/^var\\(--radius-(pill|lg|md|sm|full)\\) var\\(--radius-(pill|lg|md|sm|full)\\)( var\\(--radius-(pill|lg|md|sm|full)\\) var\\(--radius-(pill|lg|md|sm|full)\\))?$/",
+        "0",
+        "inherit"
+      ],
+      "/^border-(top|bottom)-(left|right)-radius$/": [
+        "/^var\\(--radius-(pill|lg|md|sm|full)\\)$/",
+        "0",
+        "inherit"
+      ]
+    }
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "pebble": {
+    "listenAddress": "0.0.0.0:14000",
+    "managementListenAddress": "0.0.0.0:15000",
+    "certificate": "test/certs/localhost/cert.pem",
+    "privateKey": "test/certs/localhost/key.pem",
+    "httpPort": 3680,
+    "tlsPort": 3681,
+    "ocspResponderURL": "",
+    "externalAccountBindingRequired": false,
+    "retryAfter": {
+      "authz": 1,
+      "order": 1
+    },
+    "keyAlgorithm": "ecdsa",
+    "profiles": {
+      "default": {
+        "description": "Loombre lane-F pebble integration: short-lived by design so the renewal path is exercised for real within a single test run (P4.4 exit bar) rather than simulated.",
+        "validityPeriod": 300
+      },
+      "shortlived": {
+        "description": "A short-lived cert profile, without actual enforcement",
+        "validityPeriod": 300
+      }
+    }
+  }
+}

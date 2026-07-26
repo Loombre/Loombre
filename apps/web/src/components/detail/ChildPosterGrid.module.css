@@ -1,0 +1,18 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+.grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-md);
+}
+
+.cell {
+  width: 160px;
+}
+
+.empty {
+  border-radius: var(--radius-lg);
+  border: 1px dashed var(--border);
+  padding: var(--space-lg);
+  color: var(--muted);
+  text-align: center;
+}

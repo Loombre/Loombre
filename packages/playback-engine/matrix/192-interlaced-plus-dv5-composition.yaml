@@ -1,0 +1,52 @@
+name: transcode — interlaced hevc (Stage B rule 1) + DV profile 5 mismatch (Stage C) — codec itself IS supported
+why: "Composition where Stage B fires for an UNRELATED reason (interlace, rule 1) while the codec itself remains supported (hevc IS in hevc-sdr's device.video, so rule 2 never fires) — isolating the video-interlaced + dv-profile5-requires-tonemap pairing without a codec-unsupported reason muddying it. reasons: [video-interlaced, dv-profile5-requires-tonemap], stage order (B then C). t1-cpu-tonemap avoids refusal. why (Phase 3 §11 step 3, Stage G arrival, STATE.md P3.2 regression law): this case's caps fixture has no hardware backend covering this route, so Stage G now routes full software (`software-fallback:encode`).\n"
+input:
+  media:
+    fileId: file-192
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 5000000000
+    overallBitrateBps: 5192000
+    video:
+      - index: 0
+        codec: hevc
+        profile: main10
+        level: 123
+        width: 1920
+        height: 1080
+        bitDepth: 10
+        frameRate: 23.976
+        bitrateBps: 5000000
+        hdr: dv
+        dvProfile: 5
+        dvBlCompatId: null
+        interlaced: true
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 192000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device:
+    fixture: devices.hevc-sdr
+  network:
+    fixture: networks.local
+  policy:
+    fixture: policies.t1-cpu-tonemap
+  caps:
+    fixture: caps.software-only
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: transcode
+  reasons:
+    - video-interlaced
+    - dv-profile5-requires-tonemap
+    - software-fallback:encode

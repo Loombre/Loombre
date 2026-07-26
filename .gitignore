@@ -1,0 +1,67 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# deps
+node_modules/
+
+# build output
+dist/
+.next/
+.turbo/
+*.tsbuildinfo
+
+# env & local config
+.env
+.env.*
+!.env.example
+
+# logs & scratch
+*.log
+coverage/
+
+# db local data
+.pgdata/
+
+# vendored binaries fetched by scripts/fetch-ffmpeg.mjs / fetch-embedded-pg.mjs
+# — never committed, re-fetched on demand, checksum-pinned in installers/*.json
+vendor/
+
+# generated media fixtures (scripts/gen-media-fixtures.mjs) — real binaries,
+# regenerated on demand, never committed (docs/PLAYBACK.md §8.1/§10)
+test-fixtures/media/
+.claude/worktrees/
+
+# local evidence artifacts (screenshots, perf runs) — the handful of
+# tracked reports/* files are added deliberately via `git add -f`
+reports/
+apps/worker/data/
+
+# LHCI report output (scripts/perf-web-budget's sibling — apps/web's own
+# lighthouserc.cjs) — regenerated every `pnpm perf:lighthouse` run
+apps/web/.lighthouseci/
+
+# docs site build artifacts (Addendum A lane D1: `pnpm docs:build` —
+# VitePress + the redocly API reference) — regenerated on demand, never
+# committed. `dist/` above already matches docs/.vitepress/dist/; both are
+# spelled out for clarity.
+docs/.vitepress/cache/
+docs/.vitepress/dist/
+
+# installers/windows (I3) — dotnet build/publish output (bin/obj, scoped
+# under installers/windows only — apps/worker/test/probe/fixtures/bin/ is
+# unrelated, committed source) + build-msi.mjs's MSI staging/output dir
+installers/windows/**/bin/
+installers/windows/**/obj/
+installers/windows/out/
+
+# installers/linux (I1) — build-tarball.mjs's staging tree + downloaded
+# Node runtime cache + the built .tar.gz artifacts themselves (all
+# regenerated on demand from checked-in manifests; never committed)
+installers/linux/.build/
+installers/linux/dist/
+.buildx-cache/
+
+# WiX CLI's project-local extension cache (populated by `wix extension add`,
+# pinned via build-msi.mjs — never committed, restored on demand)
+installers/windows/.wix/

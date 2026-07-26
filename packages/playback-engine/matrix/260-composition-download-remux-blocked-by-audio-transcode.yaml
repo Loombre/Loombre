@@ -1,0 +1,48 @@
+name: transcode (NOT remux) — mode=download, container mismatch + audio transcode — blocking audio reason blocks the container-only-change remux
+why: "mkv is not in web-chrome's directPlayContainers (Stage A fires container-not-direct-playable), and the truehd stream (6ch, passthrough:false) fires Stage D's audio-passthrough-unsupported — a BLOCKING reason that is NOT container-not-direct-playable. The container-only-change predicate (src/plan.ts) requires every blocking reason to be exactly container-not-direct-playable; with a second blocking reason present, the predicate is false, so mode=download does NOT promote this to remux — decision stays transcode (constraint 8's required proof, also unit-tested in test/stages/audio.spec.ts)."
+input:
+  media:
+    fileId: file-0260
+    container: mkv
+    durationMs: 6000000
+    sizeBytes: 6000000000
+    overallBitrateBps: 7500000
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 41
+        width: 1920
+        height: 1080
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 5000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: truehd
+        channels: 6
+        sampleRate: 48000
+        bitrateBps: 2500000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device: { fixture: devices.web-chrome }
+  network: { fixture: networks.local }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.software-only }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: download
+expect:
+  decision: transcode
+  container: fmp4-hls
+  reasons:
+    - container-not-direct-playable
+    - audio-passthrough-unsupported

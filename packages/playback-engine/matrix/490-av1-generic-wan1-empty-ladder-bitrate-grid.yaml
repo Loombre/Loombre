@@ -1,0 +1,56 @@
+name: 'transcode — av1-generic × wan-1mbps × empty-ladder: network-driven transcode with a configured-empty
+  instance ladder on the software route'
+why: 'Grid combo pairing the empty-ladder degenerate with a NEW driver/codec (419/463 used h264): av1
+  source, 6.4M > 1M fires Stage F, software decodes av1, rule (iii) fires with a vacuous target set and
+  the ladder stays [] (tier 1 → no cap concern). ffmpegArgs [] degenerate applies (Step-4 surfaced edge,
+  documented).'
+input:
+  media:
+    fileId: file-490
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 4800000000
+    overallBitrateBps: 6400000
+    video:
+    - index: 0
+      codec: av1
+      profile: null
+      level: null
+      width: 1920
+      height: 1080
+      bitDepth: 10
+      frameRate: 29.97
+      bitrateBps: 6000000
+      hdr: none
+      dvProfile: null
+      dvBlCompatId: null
+      interlaced: false
+    audio:
+    - index: 1
+      codec: aac
+      channels: 2
+      sampleRate: 48000
+      bitrateBps: 128000
+      language: eng
+      isDefault: true
+      hasAtmos: false
+    subtitle: []
+  device:
+    fixture: devices.av1-generic
+  network:
+    fixture: networks.wan-1mbps
+  policy:
+    fixture: policies.empty-ladder
+  caps:
+    fixture: caps.software-only
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: transcode
+  reasons:
+  - bitrate-exceeds-network
+  - software-fallback:encode
+  ladder: []

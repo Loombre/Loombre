@@ -1,0 +1,65 @@
+name: "direct-play — music mode, hls-vtt-capable device -> subtitle strategy hls-vtt, no escalation at all"
+why: >
+  An inline audio-only device declares hlsVtt:true + renderText:[webvtt] — cascade (a) fires for this webvtt lyrics stream -> 'hls-vtt', which (§3: 'hls-vtt and none never force video work') contributes zero severity. flac-stereo-shaped aac/m4a audio copies cleanly, so the whole plan is direct-play and reason-free — contrasts directly with the burn-in case above under otherwise-similar music-mode conditions.
+
+input:
+  media:
+    fileId: file-0315
+    container: m4a
+    durationMs: 6000000
+    sizeBytes: 6000000000
+    overallBitrateBps: 5200000
+    video: []
+    audio:
+      - index: 0
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 192000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle:
+      - index: 1
+        codec: webvtt
+        language: eng
+        isForced: false
+        isDefault: false
+        isExternal: false
+        externalPath: null
+  device:
+    profileId: inline-music-hlsvtt-capable
+    directPlayContainers:
+      - m4a
+    hls:
+      container: fmp4
+      supportsFmp4: true
+      lowLatency: false
+    video: []
+    hdr:
+      hdr10: false
+      hlg: false
+      dolbyVision: false
+    audio:
+      - codec: aac
+        maxChannels: 2
+        passthrough: false
+    subtitles:
+      renderText:
+        - webvtt
+      hlsVtt: true
+      renderImage: false
+    maxStreamBitrateBps: null
+  network: { fixture: networks.local }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.software-only }
+  selection:
+    videoStreamIndex: null
+    audioStreamIndex: 0
+    subtitleStreamIndex: 1
+  mode: stream
+
+expect:
+  decision: direct-play
+  reasons: []
+  subtitleStrategy: hls-vtt

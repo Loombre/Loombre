@@ -1,0 +1,68 @@
+name: transcode — dv profile 5 tonemap (Stage C) + audio passthrough unsupported + atmos-lost (Stage D), exact stage order
+why: "Same inline device as case 257 (dolbyVision:false), but the source is dv profile 5 with no compatible base -> Stage C fires dv-profile5-requires-tonemap. Stage D's truehd/atmos behavior is identical to case 257. Reasons in exact stage order: [dv-profile5-requires-tonemap, audio-passthrough-unsupported, audio-atmos-lost]. why (Phase 3 §11 step 3, Stage G arrival, STATE.md P3.2 regression law): this case's caps fixture has no hardware backend covering this route, so Stage G now routes full software (`software-fallback:encode`).\n"
+input:
+  media:
+    fileId: file-0258
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 6000000000
+    overallBitrateBps: 8500000
+    video:
+      - index: 0
+        codec: hevc
+        profile: main10
+        level: 123
+        width: 1920
+        height: 1080
+        bitDepth: 10
+        frameRate: 23.976
+        bitrateBps: 5000000
+        hdr: dv
+        dvProfile: 5
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: truehd
+        channels: 8
+        sampleRate: 48000
+        bitrateBps: 3000000
+        language: eng
+        isDefault: true
+        hasAtmos: true
+    subtitle: []
+  device:
+    profileId: inline-dv5-mismatch-truehd-device
+    directPlayContainers: [ mp4 ]
+    hls: { container: fmp4, supportsFmp4: true, lowLatency: false }
+    video:
+      - codec: hevc
+        maxProfile: main10
+        maxLevel: 153
+        maxBitDepth: 10
+        maxWidth: 3840
+        maxHeight: 2160
+        maxFrameRate: 60
+        maxBitrateBps: 80000000
+    hdr: { hdr10: false, hlg: false, dolbyVision: false }
+    audio:
+      - codec: truehd
+        maxChannels: 8
+        passthrough: false
+    subtitles: { renderText: [], hlsVtt: false, renderImage: false }
+    maxStreamBitrateBps: null
+  network: { fixture: networks.local }
+  policy: { fixture: policies.t1-cpu-tonemap }
+  caps: { fixture: caps.software-only }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: transcode
+  reasons:
+    - dv-profile5-requires-tonemap
+    - audio-passthrough-unsupported
+    - audio-atmos-lost
+    - software-fallback:encode

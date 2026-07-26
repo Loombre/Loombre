@@ -1,0 +1,49 @@
+name: direct-play — mp4 h264 high@40 1080p25fps + aac 2ch, constrained-tv
+why: "Stage A (docs/PLAYBACK.md §3): mp4 IS in constrained-tv's directPlayContainers, and every SELECTED stream is copy-eligible under Stages B-F's current permissive stubs, so the decision is direct-play with reasons=[]. Every selected stream is constructed genuinely within the paired device's declared caps on every axis (matrix/README.md's case-authoring rule), so this case's expected outcome survives once Stages B-F land."
+input:
+  media:
+    fileId: file-0012
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 5000000000
+    overallBitrateBps: 8200000
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 40
+        width: 1920
+        height: 1080
+        bitDepth: 8
+        frameRate: 25
+        bitrateBps: 8000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 160000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device:
+    fixture: devices.constrained-tv
+  network:
+    fixture: networks.local
+  policy:
+    fixture: policies.t0-default
+  caps:
+    fixture: caps.software-only
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: direct-play
+  reasons: []

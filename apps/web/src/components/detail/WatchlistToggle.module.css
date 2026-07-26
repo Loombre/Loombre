@@ -1,0 +1,27 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+
+/* Same pill shape as PlayLink's button (composes the shared Button recipe)
+   but toggles accent-filled <-> outline by state instead of always-filled —
+   PlayLink is a permanent primary action, this is a two-state control. */
+.button {
+  composes: button secondary from "../ui/Button.module.css";
+  width: fit-content;
+}
+
+.button[data-active="true"] {
+  background: var(--color-accent-tint);
+  border-color: var(--color-accent-border);
+  color: var(--color-accent);
+}
+
+.button[data-active="true"]:hover:not(:disabled) {
+  background: var(--color-accent-subtle);
+}
+
+/* Mobile hard line: touch targets never below 44px (design/phosphor
+   README.md — "Mobile touch targets are never below 44px"). */
+@media (width <= 767.98px) {
+  .button {
+    min-height: 44px;
+  }
+}

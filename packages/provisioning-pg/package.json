@@ -1,0 +1,31 @@
+{
+  "name": "@loombre/provisioning-pg",
+  "version": "0.1.0",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "description": "Embedded PostgreSQL as a supervised child process (STATE.md P4.2): per-platform pinned binaries (scripts/fetch-embedded-pg.mjs), provision/supervise/stop/upgrade against the FROZEN @loombre/provisioning contract, localhost-only, file0600 SecretRef backend. No pg/kysely driver — health checks and dump/restore shell out to the bundled pg_isready/psql/pg_dumpall binaries (CLAUDE.md invariant 4).",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "lint": "eslint src test --max-warnings=0",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@loombre/provisioning": "workspace:*"
+  },
+  "devDependencies": {
+    "@loombre/db": "workspace:*",
+    "@types/node": "24.13.3",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.10"
+  }
+}

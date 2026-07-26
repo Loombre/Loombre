@@ -1,0 +1,61 @@
+name: transcode — nothing drops any rung; the surviving ladder is the ENTIRE default table, unchanged
+why: >
+  Mission bonus requirement, "a full surviving-rung-list case": every §7 construction rule is satisfied trivially — source is 2160p (rule a keeps everything), source bitrate is 20Mbps (rule b keeps everything, even the 16Mbps 2160p rung), network is the generous `local` fixture (rule c skipped via isLocal), device.maxStreamBitrateBps is null (rule d contributes nothing), and hevcEncodePreferred is false (no swap). The surviving ladder is therefore EXACTLY the unmodified §7 default table, all six rungs, in table order — pinned via expect.ladder. Driven via Stage B's interlaced reason so Stage F contributes no reason. why (Phase 3 §11 step 3, Stage G arrival, STATE.md P3.2 regression law): this case's caps fixture has no hardware backend covering this route, so Stage G now routes full software (`software-fallback:encode`); tier 0 + a >=1080p selected source additionally trips the tier cap, narrowing the surviving ladder to <=480p rungs (`software-fallback:tier-capped`). expect.ladder is tightened accordingly to the now-tier-capped surviving rungs.
+
+input:
+  media:
+    fileId: file-0366
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 15000000000
+    overallBitrateBps: 20000000
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 52
+        width: 3840
+        height: 2160
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 20000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: true
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 160000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device: { fixture: devices.web-chrome }
+  network: { fixture: networks.local }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.software-only }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+
+expect:
+  decision: transcode
+  reasons:
+    - video-interlaced
+    - software-fallback:encode
+    - software-fallback:tier-capped
+  container: fmp4-hls
+  ladder:
+    - heightPx: 480
+      videoBitrateBps: 1500000
+      audioBitrateBps: 160000
+      codec: h264
+    - heightPx: 360
+      videoBitrateBps: 800000
+      audioBitrateBps: 160000
+      codec: h264

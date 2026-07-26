@@ -1,0 +1,61 @@
+name: 'direct-play — text-embed-capable × local-4mbps × text-burn-in-preferred: srt EMBEDS (cascade (b))
+  even under a burn-in-preferring policy'
+why: 'Grid combo re-pinning the literal cascade (case 267''s rule) on a new device x network x policy
+  triple: with hlsVtt:false the policy''s burn-in preference never enters the cascade — (b)''s renderText+playable
+  embed wins. isLocal forgives nothing here (3.5M < 4M anyway).'
+input:
+  media:
+    fileId: file-481
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 2625000000
+    overallBitrateBps: 3500000
+    video:
+    - index: 0
+      codec: h264
+      profile: high
+      level: 41
+      width: 1920
+      height: 1080
+      bitDepth: 8
+      frameRate: 23.976
+      bitrateBps: 3000000
+      hdr: none
+      dvProfile: null
+      dvBlCompatId: null
+      interlaced: false
+    audio:
+    - index: 1
+      codec: aac
+      channels: 2
+      sampleRate: 48000
+      bitrateBps: 128000
+      language: eng
+      isDefault: true
+      hasAtmos: false
+    subtitle:
+    - index: 2
+      codec: subrip
+      language: eng
+      isForced: false
+      isDefault: false
+      isExternal: false
+      externalPath: null
+  device:
+    fixture: devices.text-embed-capable
+  network:
+    fixture: networks.local-4mbps
+  policy:
+    fixture: policies.text-burn-in-preferred
+  caps:
+    fixture: caps.software-only
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: 2
+  mode: stream
+expect:
+  decision: direct-play
+  reasons: []
+  subtitleStrategy: embed
+  container: source

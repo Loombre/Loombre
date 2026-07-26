@@ -1,0 +1,59 @@
+name: 'AUDIT transcode — download mode + tone-map REFUSED: the refused transcode never degrades to remux,
+  ladder stays []'
+why: 'Download-mode composition with the P3.9(b) refusal path (audit coverage gap: every refused case
+  was mode:stream): the refused plan''s blocking reasons include hdr-tone-map-required, so the §3 remux
+  predicate (blocking set exactly {container-not-direct-playable}) can never fire — decision stays ''transcode''
+  with ladder [] and (probe-verified, documented) ffmpegArgs []. Also pins that decisionToContainer reports
+  the HLS container for a download-mode transcode (the §5 container of a plan the session layer will surface
+  as failed). Deliberate future-proof exception: hdr10 vs SDR (the refusal driver).'
+input:
+  media:
+    fileId: file-466
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 3894000000
+    overallBitrateBps: 5192000
+    video:
+    - index: 0
+      codec: hevc
+      profile: main10
+      level: 123
+      width: 1920
+      height: 1080
+      bitDepth: 10
+      frameRate: 23.976
+      bitrateBps: 5000000
+      hdr: hdr10
+      dvProfile: null
+      dvBlCompatId: null
+      interlaced: false
+    audio:
+    - index: 1
+      codec: aac
+      channels: 2
+      sampleRate: 48000
+      bitrateBps: 192000
+      language: eng
+      isDefault: true
+      hasAtmos: false
+    subtitle: []
+  device:
+    fixture: devices.hevc-sdr
+  network:
+    fixture: networks.wan-20mbps
+  policy:
+    fixture: policies.t0-default
+  caps:
+    fixture: caps.software-only
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: download
+expect:
+  decision: transcode
+  reasons:
+  - hdr-tone-map-required
+  - tone-map-refused-by-policy
+  ladder: []
+  container: fmp4-hls

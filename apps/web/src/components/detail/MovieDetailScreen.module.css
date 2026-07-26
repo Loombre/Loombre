@@ -1,0 +1,159 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+
+.page {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Desktop/mobile trees coexist in the DOM; CSS swaps which one renders at
+   the shared 767.98px breakpoint (AppShell/Sidebar/MobileHeader convention
+   — see tokens.css "Mobile chrome layout"). */
+.mobileOnly {
+  display: none;
+}
+
+@media (width <= 767.98px) {
+  .desktopOnly {
+    display: none;
+  }
+
+  .mobileOnly {
+    display: block;
+  }
+}
+
+/* ── Desktop ───────────────────────────────────────────────────────── */
+
+/* H3 (W3 fidelity audit): flex's default align-items:stretch was forcing
+   DetailPoster's height to match .metaColumn's (measured 218x561 in the
+   audit instead of the poster's own aspect-ratio:2/3 at 218px wide, which
+   is 218x327). flex-start lets each flex item size to its own content —
+   DetailPoster keeps its `width:218px; aspect-ratio:2/3` intrinsic sizing
+   instead of being stretched to the row's cross-axis height. */
+.pullUp {
+  position: relative;
+  margin-top: -190px;
+  padding: 0 var(--space-xl);
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-xl);
+}
+
+.metaColumn {
+  flex: 1;
+  min-width: 0;
+  padding-top: 66px;
+}
+
+.eyebrowRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-sm);
+}
+
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: var(--mono-md);
+  font-weight: var(--weight-medium);
+  letter-spacing: var(--track-mono-wide);
+  color: var(--color-accent);
+}
+
+
+.title {
+  margin: 0 0 var(--space-sm);
+  font-stretch: var(--wdth-display);
+  font-weight: var(--weight-black);
+  font-size: var(--text-display);
+  line-height: var(--leading-display);
+  text-transform: uppercase;
+  letter-spacing: 0.01em;
+}
+
+.blurb {
+  margin: 0 0 var(--space-lg);
+  max-width: 620px;
+  font-size: var(--text-base);
+  color: var(--color-text-secondary);
+  text-wrap: pretty;
+}
+
+.actionRow {
+  display: flex;
+  gap: var(--space-sm);
+  align-items: center;
+  margin-bottom: var(--space-xl);
+}
+
+.body {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+  gap: var(--space-lg);
+  align-items: start;
+}
+
+.leftColumn {
+  min-width: 0;
+}
+
+.sectionEyebrow {
+  font-family: var(--font-mono);
+  font-size: var(--mono-md);
+  font-weight: var(--weight-medium);
+  letter-spacing: var(--track-mono-wide);
+  color: var(--color-text-subtle);
+  margin-bottom: var(--space-sm);
+}
+
+.versionsList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  margin-bottom: var(--space-xl);
+}
+
+.emptyNote {
+  color: var(--color-text-subtle);
+  font-size: var(--text-sm);
+}
+
+.castRail {
+  display: flex;
+  gap: var(--space-md);
+  overflow-x: auto;
+  padding-bottom: var(--space-xs);
+}
+
+/* ── Mobile ────────────────────────────────────────────────────────── */
+
+
+.mobileActionRow {
+  display: flex;
+  gap: var(--space-xs);
+  margin-bottom: var(--space-sm);
+}
+
+.mobileActionRow > * {
+  flex: 1;
+  min-height: 48px;
+}
+
+.mobileOnly .mobileBlurb {
+  margin: var(--space-sm) 0 var(--space-md);
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+  line-height: var(--leading-normal);
+  text-wrap: pretty;
+}
+
+.mobileOnly .versionsList {
+  margin-bottom: var(--space-lg);
+}
+
+.mobileOnly .castRail {
+  margin: 0 calc(-1 * var(--space-md));
+  padding-left: var(--space-md);
+  padding-right: var(--space-md);
+  margin-bottom: var(--space-lg);
+}

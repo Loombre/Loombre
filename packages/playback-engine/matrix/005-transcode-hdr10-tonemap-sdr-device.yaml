@@ -1,0 +1,70 @@
+name: transcode — mp4 hevc main10 HDR10, device hevc-capable but SDR-only
+why: >
+  Stage B is copy (device supports hevc main10 at this resolution/level).
+  Stage C: source is hdr10 but device.hdr.hdr10 is false, so tone-map is
+  required (hdr-tone-map-required). Container is mp4 (in
+  directPlayContainers) and audio is copy, so this is the only reason.
+  Policy is t1-cpu-tonemap (allowToneMapCpu: always) so the CPU zscale path
+  is permitted — with T0 defaults + software-only caps §3 Stage C would
+  additionally emit tone-map-refused-by-policy with an empty ladder; that
+  refusal path deserves its own future case.
+
+  why (Stage G arrival, STATE.md P3.9(a)): caps.software-only declares no
+  hardware backend, so Stage G's rule (iii) always routes full software
+  (`software-fallback:encode`). NO `software-fallback:tier-capped` here even
+  though the source is exactly 1080p: t1-cpu-tonemap is tier 1, not tier 0,
+  and docs/PLAYBACK.md §8.3's tier cap is T0-only ("T1/T2 ... no cap").
+  Stage C's own tone-map requirement is NOT refused (allowToneMapCpu
+  'always' resolves true regardless of tier), so the full-software route
+  additionally resolves a tone-map method: `video.toneMap` becomes
+  'cpu-zscale' (constraint 3's software branch) — the case-file schema
+  cannot assert `video.*` fields directly (see matrix/README.md's documented
+  gap), so this is verified by a dedicated test/stages/hardware.spec.ts /
+  plan()-level unit test instead, not by this case's own expect block.
+
+input:
+  media:
+    fileId: file-0005
+    container: mp4
+    durationMs: 6900000
+    sizeBytes: 7100000000
+    overallBitrateBps: 8200000
+    video:
+      - index: 0
+        codec: hevc
+        profile: main10
+        level: 123
+        width: 1920
+        height: 1080
+        bitDepth: 10
+        frameRate: 23.976
+        bitrateBps: 7000000
+        hdr: hdr10
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 192000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device: { fixture: devices.hevc-sdr }
+  network: { fixture: networks.local }
+  policy: { fixture: policies.t1-cpu-tonemap }
+  caps: { fixture: caps.software-only }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+
+expect:
+  decision: transcode
+  reasons:
+    - hdr-tone-map-required
+    - software-fallback:encode

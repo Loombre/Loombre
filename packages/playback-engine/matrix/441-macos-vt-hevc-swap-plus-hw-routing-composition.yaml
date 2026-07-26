@@ -1,0 +1,71 @@
+name: transcode — the SAME hevc-swap composition, routed through macos-vt instead of full-hw
+why: >
+  Identical scenario to 440 but macos-vt caps: videotoolbox covers h264 decode + hevc encode -> hw-encoder-selected:videotoolbox. Confirms the swap's effect on target codecs is caps-set-independent (a Stage F fact), while the CHOSEN backend still varies correctly by caps set.
+
+input:
+  media:
+    fileId: gen-file
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 6000000000
+    overallBitrateBps: 25000000
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 52
+        width: 1920
+        height: 1080
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 18000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 160000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device: { fixture: devices.web-safari }
+  network: { fixture: networks.wan-20mbps }
+  policy: { fixture: policies.hevc-preferred }
+  caps: { fixture: caps.macos-vt }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+
+expect:
+  decision: transcode
+  reasons:
+    - bitrate-exceeds-network
+    - hw-encoder-selected:videotoolbox
+  ladder:
+    - heightPx: 1080
+      videoBitrateBps: 6000000
+      audioBitrateBps: 384000
+      codec: hevc
+    - heightPx: 1080
+      videoBitrateBps: 3000000
+      audioBitrateBps: 160000
+      codec: hevc
+    - heightPx: 720
+      videoBitrateBps: 2250000
+      audioBitrateBps: 160000
+      codec: hevc
+    - heightPx: 480
+      videoBitrateBps: 1125000
+      audioBitrateBps: 160000
+      codec: hevc
+    - heightPx: 360
+      videoBitrateBps: 600000
+      audioBitrateBps: 160000
+      codec: hevc

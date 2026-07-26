@@ -1,0 +1,54 @@
+name: loombre_f
+
+# Loombre lane F — REAL ACME integration fixtures (P4.4 exit bar: "a mocked
+# ACME test proves nothing"). Runs the exact same images/topology as
+# letsencrypt/pebble's own docker-compose.yml, remapped onto the lane's
+# assigned 3600-3699 host port range and pointed at a custom
+# pebble-config.json (httpPort=3680 so pebble's HTTP-01 validation
+# connects to the SAME unprivileged port Loombre's Http01ChallengeServer
+# binds in tests; profiles.default.validityPeriod=300s so the renewal
+# path is exercised for real inside one test run rather than simulated).
+#
+# PEBBLE_VA_ALWAYS_VALID is deliberately left unset/0 (required by the
+# mission spec) — pebble performs REAL HTTP-01/DNS-01 validation against
+# whatever Loombre's challenge server / DNS-01 hook actually serves.
+#
+# Bring up: docker compose -f docker-compose.yml up -d
+# Tear down: docker compose -f docker-compose.yml down -v
+
+services:
+  pebble:
+    image: ghcr.io/letsencrypt/pebble:latest
+    command: -config /test/config/pebble-config.json -strict -dnsserver 10.30.50.3:8053
+    environment:
+      PEBBLE_VA_ALWAYS_VALID: "0"
+      PEBBLE_VA_NOSLEEP: "1"
+    ports:
+      - "3600:14000" # ACME directory/API (HTTPS, pebble's self-signed test root)
+      - "3601:15000" # management API (HTTPS)
+    volumes:
+      - ./pebble-config.json:/test/config/pebble-config.json:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      acmenet:
+        ipv4_address: 10.30.50.2
+
+  challtestsrv:
+    image: ghcr.io/letsencrypt/pebble-challtestsrv:latest
+    command: -defaultIPv6 "" -defaultIPv4 10.30.50.3
+    ports:
+      - "3602:8055" # HTTP management API (plain HTTP)
+      - "3603:8053/udp" # fake DNS server (Loombre's own TXT-propagation poll queries this directly)
+      - "3603:8053/tcp"
+    networks:
+      acmenet:
+        ipv4_address: 10.30.50.3
+
+networks:
+  acmenet:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 10.30.50.0/24

@@ -1,0 +1,68 @@
+name: transcode — ts mpeg2 interlaced + ac3, web-chrome
+why: >
+  Stage A fires container-not-direct-playable (ts not in web-chrome's
+  directPlayContainers). Stage B evaluates its rules in order and multiple
+  can co-fire: rule 1 (interlaced source) fires video-interlaced, then rule 2
+  (codec not in device.video — web-chrome has no mpeg2 entry) fires
+  video-codec-unsupported. Audio is ac3 stereo, which the device supports,
+  so no audio reason appears.
+
+  why (Stage G arrival, STATE.md P3.9(a)): caps.software-only declares no
+  hardware backend, so Stage G's rule (iii) always routes full software
+  (`software-fallback:encode`). policies.t0-default is tier 0 and the
+  selected source stream is 1080p (>=1080), so the tier cap (docs/
+  PLAYBACK.md §8.3) also applies: buildLadder's pre-cap survivors here (mpeg2
+  1080p/6.5Mbps source, local network, web-chrome's unlimited device cap)
+  are the 1080p/4M, 720p/3M, 480p/1.5M, and 360p/0.8M rungs — the tier cap
+  actually removes the two rungs above 480p, so `software-fallback:tier-
+  capped` fires too.
+
+input:
+  media:
+    fileId: file-0007
+    container: ts
+    durationMs: 3600000
+    sizeBytes: 3200000000
+    overallBitrateBps: 7100000
+    video:
+      - index: 0
+        codec: mpeg2
+        profile: main
+        level: null
+        width: 1920
+        height: 1080
+        bitDepth: 8
+        frameRate: 29.97
+        bitrateBps: 6500000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: true
+    audio:
+      - index: 1
+        codec: ac3
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 192000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device: { fixture: devices.web-chrome }
+  network: { fixture: networks.local }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.software-only }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+
+expect:
+  decision: transcode
+  reasons:
+    - container-not-direct-playable
+    - video-interlaced
+    - video-codec-unsupported
+    - software-fallback:encode
+    - software-fallback:tier-capped

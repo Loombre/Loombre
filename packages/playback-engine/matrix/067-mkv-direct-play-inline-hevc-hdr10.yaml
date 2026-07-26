@@ -1,0 +1,77 @@
+name: direct-play — mkv hevc main10 2160p HDR10 + aac 6ch, inline device with mkv in directPlayContainers + HDR10 support
+why: "Stage A in-list coverage variety vs case 020: a second inline mkv-capable DeviceProfile declaring hevc + HDR10 support instead of h264/SDR. Every selected stream is constructed genuinely within the paired device's declared caps on every axis (matrix/README.md's case-authoring rule), so this case's expected outcome survives once Stages B-F land."
+input:
+  media:
+    fileId: file-0067
+    container: mkv
+    durationMs: 6000000
+    sizeBytes: 5000000000
+    overallBitrateBps: 20400000
+    video:
+      - index: 0
+        codec: hevc
+        profile: null
+        level: null
+        width: 3840
+        height: 2160
+        bitDepth: 10
+        frameRate: 60
+        bitrateBps: 20000000
+        hdr: hdr10
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 6
+        sampleRate: 48000
+        bitrateBps: 384000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device:
+    profileId: inline-mkv-hevc-hdr10
+    directPlayContainers:
+      - mkv
+    hls:
+      container: fmp4
+      supportsFmp4: true
+      lowLatency: false
+    video:
+      - codec: hevc
+        maxProfile: null
+        maxLevel: null
+        maxBitDepth: 10
+        maxWidth: 3840
+        maxHeight: 2160
+        maxFrameRate: 60
+        maxBitrateBps: null
+    hdr:
+      hdr10: true
+      hlg: false
+      dolbyVision: false
+    audio:
+      - codec: aac
+        maxChannels: 6
+        passthrough: false
+    subtitles:
+      renderText: []
+      hlsVtt: false
+      renderImage: false
+    maxStreamBitrateBps: null
+  network:
+    fixture: networks.local
+  policy:
+    fixture: policies.t0-default
+  caps:
+    fixture: caps.software-only
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: direct-play
+  reasons: []

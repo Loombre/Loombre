@@ -1,0 +1,80 @@
+name: direct-play — ts h264 1080p + eac3 passthrough 6ch, inline device with ts in directPlayContainers
+why: "Stage A in-list coverage variety vs case 022: same inline ts-capable device's SECOND audio entry (eac3, passthrough:true) exercised instead of ac3. Every selected stream is constructed genuinely within the paired device's declared caps on every axis (matrix/README.md's case-authoring rule), so this case's expected outcome survives once Stages B-F land."
+input:
+  media:
+    fileId: file-0069
+    container: ts
+    durationMs: 6000000
+    sizeBytes: 5000000000
+    overallBitrateBps: 5400000
+    video:
+      - index: 0
+        codec: h264
+        profile: null
+        level: null
+        width: 1920
+        height: 1080
+        bitDepth: 8
+        frameRate: 24
+        bitrateBps: 5000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: eac3
+        channels: 6
+        sampleRate: 48000
+        bitrateBps: 384000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device:
+    profileId: inline-ts-capable
+    directPlayContainers:
+      - ts
+    hls:
+      container: ts
+      supportsFmp4: false
+      lowLatency: false
+    video:
+      - codec: h264
+        maxProfile: null
+        maxLevel: null
+        maxBitDepth: 8
+        maxWidth: 1920
+        maxHeight: 1080
+        maxFrameRate: 30
+        maxBitrateBps: null
+    hdr:
+      hdr10: false
+      hlg: false
+      dolbyVision: false
+    audio:
+      - codec: ac3
+        maxChannels: 2
+        passthrough: false
+      - codec: eac3
+        maxChannels: 6
+        passthrough: true
+    subtitles:
+      renderText: []
+      hlsVtt: false
+      renderImage: false
+    maxStreamBitrateBps: null
+  network:
+    fixture: networks.local
+  policy:
+    fixture: policies.t0-default
+  caps:
+    fixture: caps.software-only
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: direct-play
+  reasons: []

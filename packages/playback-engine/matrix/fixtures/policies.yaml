@@ -1,0 +1,268 @@
+# Shared ServerPolicy fixtures (docs/PLAYBACK.md §2.4). Field defaults per
+# the resolved-defaults comments in the spec (T0 policy defaults).
+
+# T1 variant that explicitly allows CPU tone mapping — used by cases that
+# exercise the tone-map path itself rather than the tier-gated refusal
+# (with T0 defaults + software-only caps, §3 Stage C would additionally emit
+# tone-map-refused-by-policy and an empty ladder).
+t1-cpu-tonemap:
+  allowTranscode: true
+  allowToneMapCpu: always
+  tier: 1
+  preferredTextSubMode: hls-vtt
+  preserveAssStyling: false
+  audioTranscodeCodecPriority: [opus, aac]
+  maxSimultaneousTranscodes: 2
+  ladderRungs:
+    - { heightPx: 2160, videoBitrateBps: 16000000, audioBitrateBps: 384000, codec: hevc }
+    - { heightPx: 1080, videoBitrateBps: 8000000, audioBitrateBps: 384000, codec: h264 }
+    - { heightPx: 1080, videoBitrateBps: 4000000, audioBitrateBps: 160000, codec: h264 }
+    - { heightPx: 720, videoBitrateBps: 3000000, audioBitrateBps: 160000, codec: h264 }
+    - { heightPx: 480, videoBitrateBps: 1500000, audioBitrateBps: 160000, codec: h264 }
+    - { heightPx: 360, videoBitrateBps: 800000, audioBitrateBps: 160000, codec: h264 }
+  segmentDurationSec: 6
+  hevcEncodePreferred: false
+
+t0-default:
+  allowTranscode: true
+  allowToneMapCpu: tier-gated
+  tier: 0
+  preferredTextSubMode: hls-vtt
+  preserveAssStyling: false
+  audioTranscodeCodecPriority: [opus, aac]
+  maxSimultaneousTranscodes: 1
+  # Instance default ladder table, docs/PLAYBACK.md §7.
+  ladderRungs:
+    - { heightPx: 2160, videoBitrateBps: 16000000, audioBitrateBps: 384000, codec: hevc }
+    - { heightPx: 1080, videoBitrateBps: 8000000, audioBitrateBps: 384000, codec: h264 }
+    - { heightPx: 1080, videoBitrateBps: 4000000, audioBitrateBps: 160000, codec: h264 }
+    - { heightPx: 720, videoBitrateBps: 3000000, audioBitrateBps: 160000, codec: h264 }
+    - { heightPx: 480, videoBitrateBps: 1500000, audioBitrateBps: 160000, codec: h264 }
+    - { heightPx: 360, videoBitrateBps: 800000, audioBitrateBps: 160000, codec: h264 }
+  segmentDurationSec: 6
+  hevcEncodePreferred: false
+
+# --- Phase 3 Step 2c (Stage C — HDR) additive fixture ---------------------
+# `allowToneMapCpu: never` UNCONDITIONALLY refuses a CPU tone-map — unlike
+# `tier-gated` (only refuses at tier 0), 'never' refuses regardless of
+# tier (docs/PLAYBACK.md §3/binding interpretation constraint 4). tier: 2
+# here is DELIBERATE (not tier 0) — it proves 'never' doesn't need tier 0
+# to bite, matching the mission's explicit "'never' + software-only +
+# tier 2 → refused" refusal-matrix variant. This same fixture pairs with
+# hardware-tonemap-capable caps sets (macos-vt/full-hw) in other cases to
+# prove the OTHER half of the refusal formula: 'never' alone is NOT
+# sufficient to refuse when a caps backend already has a real hardware
+# tone-map method (refusal requires BOTH no hardware method AND a
+# refusing policy).
+tonemap-never:
+  allowTranscode: true
+  allowToneMapCpu: never
+  tier: 2
+  preferredTextSubMode: hls-vtt
+  preserveAssStyling: false
+  audioTranscodeCodecPriority: [opus, aac]
+  maxSimultaneousTranscodes: 4
+  ladderRungs:
+    - { heightPx: 2160, videoBitrateBps: 16000000, audioBitrateBps: 384000, codec: hevc }
+    - { heightPx: 1080, videoBitrateBps: 8000000, audioBitrateBps: 384000, codec: h264 }
+    - { heightPx: 1080, videoBitrateBps: 4000000, audioBitrateBps: 160000, codec: h264 }
+    - { heightPx: 720, videoBitrateBps: 3000000, audioBitrateBps: 160000, codec: h264 }
+    - { heightPx: 480, videoBitrateBps: 1500000, audioBitrateBps: 160000, codec: h264 }
+    - { heightPx: 360, videoBitrateBps: 800000, audioBitrateBps: 160000, codec: h264 }
+  segmentDurationSec: 6
+  hevcEncodePreferred: false
+
+# --- Phase 3 Step 2c (Stage C — HDR) additive fixture ---------------------
+# `allowToneMapCpu: tier-gated` at a NON-ZERO tier — proves the "tier-gated
+# only refuses at tier 0" half of the refusal formula (binding
+# interpretation constraint 4): at tier 1 (or any tier != 0), tier-gated
+# behaves like an allowed CPU tone-map path, same as 'always', even under
+# software-only caps. Distinct from `t1-cpu-tonemap` above, which uses
+# `allowToneMapCpu: always` — this fixture specifically exercises the
+# 'tier-gated' resolution rule at a non-zero tier, not the 'always' rule.
+tiergated-t1:
+  allowTranscode: true
+  allowToneMapCpu: tier-gated
+  tier: 1
+  preferredTextSubMode: hls-vtt
+  preserveAssStyling: false
+  audioTranscodeCodecPriority: [opus, aac]
+  maxSimultaneousTranscodes: 2
+  ladderRungs:
+    - { heightPx: 2160, videoBitrateBps: 16000000, audioBitrateBps: 384000, codec: hevc }
+    - { heightPx: 1080, videoBitrateBps: 8000000, audioBitrateBps: 384000, codec: h264 }
+    - { heightPx: 1080, videoBitrateBps: 4000000, audioBitrateBps: 160000, codec: h264 }
+    - { heightPx: 720, videoBitrateBps: 3000000, audioBitrateBps: 160000, codec: h264 }
+    - { heightPx: 480, videoBitrateBps: 1500000, audioBitrateBps: 160000, codec: h264 }
+    - { heightPx: 360, videoBitrateBps: 800000, audioBitrateBps: 160000, codec: h264 }
+  segmentDurationSec: 6
+  hevcEncodePreferred: false
+
+# --- Phase 3 Step 2d (Stage D — Audio) additive fixture --------------------
+# Same as t0-default except `audioTranscodeCodecPriority` prefers aac FIRST
+# — proves Stage D.4's assembly picks the FIRST priority codec present in
+# device.audio, not merely "opus if available anywhere in the priority
+# list" (case 243 pairs this with a device declaring BOTH aac and opus).
+aac-first-audio:
+  allowTranscode: true
+  allowToneMapCpu: tier-gated
+  tier: 0
+  preferredTextSubMode: hls-vtt
+  preserveAssStyling: false
+  audioTranscodeCodecPriority: [aac, opus]
+  maxSimultaneousTranscodes: 1
+  ladderRungs:
+    - { heightPx: 2160, videoBitrateBps: 16000000, audioBitrateBps: 384000, codec: hevc }
+    - { heightPx: 1080, videoBitrateBps: 8000000, audioBitrateBps: 384000, codec: h264 }
+    - { heightPx: 1080, videoBitrateBps: 4000000, audioBitrateBps: 160000, codec: h264 }
+    - { heightPx: 720, videoBitrateBps: 3000000, audioBitrateBps: 160000, codec: h264 }
+    - { heightPx: 480, videoBitrateBps: 1500000, audioBitrateBps: 160000, codec: h264 }
+    - { heightPx: 360, videoBitrateBps: 800000, audioBitrateBps: 160000, codec: h264 }
+  segmentDurationSec: 6
+  hevcEncodePreferred: false
+
+# --- Phase 3 Step 2e (Stage E — Subtitles) additive fixtures ----------------
+# `preferredTextSubMode: burn-in` — every existing policy fixture above
+# declares 'hls-vtt'; this isolates the TEXT cascade's (a) condition failing
+# because the POLICY itself prefers burn-in, independent of
+# `device.subtitles.hlsVtt` (docs/PLAYBACK.md §3 Stage E TEXT tree).
+# Otherwise identical to t0-default.
+text-burn-in-preferred:
+  allowTranscode: true
+  allowToneMapCpu: tier-gated
+  tier: 0
+  preferredTextSubMode: burn-in
+  preserveAssStyling: false
+  audioTranscodeCodecPriority: [opus, aac]
+  maxSimultaneousTranscodes: 1
+  ladderRungs:
+    - { heightPx: 2160, videoBitrateBps: 16000000, audioBitrateBps: 384000, codec: hevc }
+    - { heightPx: 1080, videoBitrateBps: 8000000, audioBitrateBps: 384000, codec: h264 }
+    - { heightPx: 1080, videoBitrateBps: 4000000, audioBitrateBps: 160000, codec: h264 }
+    - { heightPx: 720, videoBitrateBps: 3000000, audioBitrateBps: 160000, codec: h264 }
+    - { heightPx: 480, videoBitrateBps: 1500000, audioBitrateBps: 160000, codec: h264 }
+    - { heightPx: 360, videoBitrateBps: 800000, audioBitrateBps: 160000, codec: h264 }
+  segmentDurationSec: 6
+  hevcEncodePreferred: false
+
+# `preserveAssStyling: true` — every existing policy fixture above declares
+# false; isolates the ASS "burn-in-for-styling" override inside the TEXT
+# cascade's (a) hls-vtt branch (docs/PLAYBACK.md §3 Stage E: "unless
+# policy.preserveAssStyling -> then 'burn-in'"). Otherwise identical to
+# t0-default.
+preserve-ass-styling:
+  allowTranscode: true
+  allowToneMapCpu: tier-gated
+  tier: 0
+  preferredTextSubMode: hls-vtt
+  preserveAssStyling: true
+  audioTranscodeCodecPriority: [opus, aac]
+  maxSimultaneousTranscodes: 1
+  ladderRungs:
+    - { heightPx: 2160, videoBitrateBps: 16000000, audioBitrateBps: 384000, codec: hevc }
+    - { heightPx: 1080, videoBitrateBps: 8000000, audioBitrateBps: 384000, codec: h264 }
+    - { heightPx: 1080, videoBitrateBps: 4000000, audioBitrateBps: 160000, codec: h264 }
+    - { heightPx: 720, videoBitrateBps: 3000000, audioBitrateBps: 160000, codec: h264 }
+    - { heightPx: 480, videoBitrateBps: 1500000, audioBitrateBps: 160000, codec: h264 }
+    - { heightPx: 360, videoBitrateBps: 800000, audioBitrateBps: 160000, codec: h264 }
+  segmentDurationSec: 6
+  hevcEncodePreferred: false
+
+# --- Phase 3 Step 2f (Stage F — bitrate/ladder) additive fixture -----------
+# Identical to `t0-default` except `hevcEncodePreferred: true` — every prior
+# policy fixture declares this false. Pairs with a device declaring an hevc
+# `device.video` entry (e.g. `devices.web-safari`, `devices.hevc-sdr`, or the
+# combined `devices.bitrate-capped-device`) to exercise the §7 hevc-swap
+# construction rule (binding interpretation constraint 3, step f); paired
+# with an h264-only device (e.g. `devices.web-chrome`), it proves the swap
+# does NOT apply merely because the policy wants it — `device.video` must
+# also declare hevc.
+hevc-preferred:
+  allowTranscode: true
+  allowToneMapCpu: tier-gated
+  tier: 0
+  preferredTextSubMode: hls-vtt
+  preserveAssStyling: false
+  audioTranscodeCodecPriority: [opus, aac]
+  maxSimultaneousTranscodes: 1
+  ladderRungs:
+    - { heightPx: 2160, videoBitrateBps: 16000000, audioBitrateBps: 384000, codec: hevc }
+    - { heightPx: 1080, videoBitrateBps: 8000000, audioBitrateBps: 384000, codec: h264 }
+    - { heightPx: 1080, videoBitrateBps: 4000000, audioBitrateBps: 160000, codec: h264 }
+    - { heightPx: 720, videoBitrateBps: 3000000, audioBitrateBps: 160000, codec: h264 }
+    - { heightPx: 480, videoBitrateBps: 1500000, audioBitrateBps: 160000, codec: h264 }
+    - { heightPx: 360, videoBitrateBps: 800000, audioBitrateBps: 160000, codec: h264 }
+  segmentDurationSec: 6
+  hevcEncodePreferred: true
+
+# --- Phase 3 §11 step 3 (Stage G — hardware routing) additive fixture -----
+# Empty ladderRungs — isolates the decode-only-backend guard (binding
+# interpretation 2's defensive note, stages/hardware.ts): with NO rungs to
+# build at all, the ladder's target-codec set is vacuously `[]`, which is
+# the only way any current case can exercise that guard (every other policy
+# fixture's ladderRungs is the real 6-rung table, and the property
+# generators always supply it too). tier 1 (not 0) so the tier cap — a
+# DIFFERENT Stage G concern — never conflates with this fixture's purpose.
+empty-ladder:
+  allowTranscode: true
+  allowToneMapCpu: tier-gated
+  tier: 1
+  preferredTextSubMode: hls-vtt
+  preserveAssStyling: false
+  audioTranscodeCodecPriority: [opus, aac]
+  maxSimultaneousTranscodes: 1
+  ladderRungs: []
+  segmentDurationSec: 6
+  hevcEncodePreferred: false
+
+# --- Phase 3 step 7 (adversarial spec audit) additive fixtures -------------
+# t0-default with `allowTranscode: false` (docs/PLAYBACK.md §2.4's knob,
+# §10's "transcode-disabled" policy dimension, §4's blocking-class
+# `transcode-disabled-by-policy`). Step 7b fix F1 made the knob REAL: in
+# src/plan.ts's final assembly, an aggregated 'transcode' decision under
+# allowTranscode:false keeps decision 'transcode' and mirrors the
+# tone-map-refused empty-output shape — `transcode-disabled-by-policy`
+# appended LAST (assembly-level verdict, after every stage's reasons; Stage
+# G skipped entirely, tone-map refusal moot), ladder [], ffmpegArgs [],
+# video/audio target fields unset. Boundary: repackaging is not
+# transcoding — direct-stream/remux/direct-play are unaffected. Cases
+# 451/452 (would-transcode paths), 453/505 (repackage unaffected), 489
+# (direct-play), 503/504/506 (video-driven, audio-only, refusal-interaction)
+# pin the semantics.
+transcode-disabled:
+  allowTranscode: false
+  allowToneMapCpu: tier-gated
+  tier: 0
+  preferredTextSubMode: hls-vtt
+  preserveAssStyling: false
+  audioTranscodeCodecPriority: [opus, aac]
+  maxSimultaneousTranscodes: 1
+  ladderRungs:
+    - { heightPx: 2160, videoBitrateBps: 16000000, audioBitrateBps: 384000, codec: hevc }
+    - { heightPx: 1080, videoBitrateBps: 8000000, audioBitrateBps: 384000, codec: h264 }
+    - { heightPx: 1080, videoBitrateBps: 4000000, audioBitrateBps: 160000, codec: h264 }
+    - { heightPx: 720, videoBitrateBps: 3000000, audioBitrateBps: 160000, codec: h264 }
+    - { heightPx: 480, videoBitrateBps: 1500000, audioBitrateBps: 160000, codec: h264 }
+    - { heightPx: 360, videoBitrateBps: 800000, audioBitrateBps: 160000, codec: h264 }
+  segmentDurationSec: 6
+  hevcEncodePreferred: false
+
+# Single-rung 720p-only instance ladder at tier 0 — constructs the §8.3
+# tier-cap edge where the PRE-cap ladder is exactly ONE rung above 480p:
+# the tier filter momentarily empties it, the keep-lowest rescue restores
+# the SAME rung, and `software-fallback:tier-capped` must NOT fire
+# (stages/hardware.ts binding interpretation 4's sameLadder comparison —
+# "the client actually lost rungs" vs "the filter momentarily produced []").
+# Previously pinned only in unit tests; case 462 pins it at matrix level.
+only-720p-ladder:
+  allowTranscode: true
+  allowToneMapCpu: tier-gated
+  tier: 0
+  preferredTextSubMode: hls-vtt
+  preserveAssStyling: false
+  audioTranscodeCodecPriority: [opus, aac]
+  maxSimultaneousTranscodes: 1
+  ladderRungs:
+    - { heightPx: 720, videoBitrateBps: 3000000, audioBitrateBps: 160000, codec: h264 }
+  segmentDurationSec: 6
+  hevcEncodePreferred: false

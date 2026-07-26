@@ -1,0 +1,47 @@
+name: transcode — truehd codec absent from constrained-tv's device.audio — rule 1 short-circuits rules 2/3
+why: "constrained-tv declares no truehd entry at all; an 8ch Atmos TrueHD stream fires ONLY audio-codec-unsupported (plus audio-atmos-lost, since the stage's own verdict is transcode) — never audio-channels-exceed-device or audio-passthrough-unsupported, proving rule 1's short-circuit (binding interpretation constraint 2)."
+input:
+  media:
+    fileId: file-0211
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 6000000000
+    overallBitrateBps: 8000000
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 41
+        width: 1920
+        height: 1080
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 5000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: truehd
+        channels: 8
+        sampleRate: 48000
+        bitrateBps: 3000000
+        language: eng
+        isDefault: true
+        hasAtmos: true
+    subtitle: []
+  device: { fixture: devices.constrained-tv }
+  network: { fixture: networks.local }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.software-only }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: transcode
+  reasons:
+    - audio-codec-unsupported
+    - audio-atmos-lost

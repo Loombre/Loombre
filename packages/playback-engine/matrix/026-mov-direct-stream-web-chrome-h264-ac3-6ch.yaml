@@ -1,0 +1,50 @@
+name: direct-stream — mov h264 1080p + ac3 6ch, web-chrome (mov not in directPlayContainers)
+why: "Stage A (docs/PLAYBACK.md §3): mov is NOT in web-chrome's directPlayContainers, so container-not-direct-playable fires; Stages B-F's stubs never escalate further, so the decision stops at direct-stream. Every selected stream is constructed genuinely within the paired device's declared caps on every axis (matrix/README.md's case-authoring rule), so this case's expected outcome survives once Stages B-F land."
+input:
+  media:
+    fileId: file-0026
+    container: mov
+    durationMs: 6000000
+    sizeBytes: 5000000000
+    overallBitrateBps: 5400000
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 41
+        width: 1920
+        height: 1080
+        bitDepth: 8
+        frameRate: 24
+        bitrateBps: 5000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: ac3
+        channels: 6
+        sampleRate: 48000
+        bitrateBps: 384000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device:
+    fixture: devices.web-chrome
+  network:
+    fixture: networks.local
+  policy:
+    fixture: policies.t0-default
+  caps:
+    fixture: caps.software-only
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: direct-stream
+  reasons:
+    - container-not-direct-playable

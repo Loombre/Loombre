@@ -1,0 +1,50 @@
+name: transcode — encode-only caps paired with constrained-tv (device diversity)
+why: >
+  constrained-tv (h264-only, 1080p, 20Mbps device cap) forces video-codec-unsupported on an hevc source; encode-only's nvenc has no verified decode, so rule (ii) fires software-fallback:decode with encoder=nvenc (software decodes hevc). Diversifies encode-only's device coverage beyond web-chrome/hevc-sdr.
+
+input:
+  media:
+    fileId: gen-file
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 6000000000
+    overallBitrateBps: 6600000
+    video:
+      - index: 0
+        codec: hevc
+        profile: main10
+        level: 123
+        width: 1920
+        height: 1080
+        bitDepth: 10
+        frameRate: 23.976
+        bitrateBps: 5500000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 160000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device: { fixture: devices.constrained-tv }
+  network: { fixture: networks.local }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.encode-only }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+
+expect:
+  decision: transcode
+  reasons:
+    - video-codec-unsupported
+    - software-fallback:decode

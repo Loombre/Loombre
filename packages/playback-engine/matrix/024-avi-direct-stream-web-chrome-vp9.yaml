@@ -1,0 +1,50 @@
+name: direct-stream — avi vp9 2160p + aac 6ch, web-chrome (avi not in directPlayContainers)
+why: "Stage A (docs/PLAYBACK.md §3): avi is NOT in web-chrome's directPlayContainers, so container-not-direct-playable fires; Stages B-F's stubs never escalate further, so the decision stops at direct-stream. Every selected stream is constructed genuinely within the paired device's declared caps on every axis (matrix/README.md's case-authoring rule), so this case's expected outcome survives once Stages B-F land."
+input:
+  media:
+    fileId: file-0024
+    container: avi
+    durationMs: 6000000
+    sizeBytes: 5000000000
+    overallBitrateBps: 30400000
+    video:
+      - index: 0
+        codec: vp9
+        profile: null
+        level: null
+        width: 3840
+        height: 2160
+        bitDepth: 10
+        frameRate: 60
+        bitrateBps: 30000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 6
+        sampleRate: 48000
+        bitrateBps: 384000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device:
+    fixture: devices.web-chrome
+  network:
+    fixture: networks.local
+  policy:
+    fixture: policies.t0-default
+  caps:
+    fixture: caps.software-only
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: direct-stream
+  reasons:
+    - container-not-direct-playable

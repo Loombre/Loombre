@@ -1,0 +1,50 @@
+name: "remux (download mode, container-only change) — software-only caps present: Stage G still silent (video.action stays copy)"
+why: >
+  Mirrors case 425 but with software-only caps instead of full-hw, confirming Stage G's silence on a container-only remux is caps-set-independent (the gate is video.action, never which caps set happens to be attached).
+
+input:
+  media:
+    fileId: gen-file
+    container: mkv
+    durationMs: 6000000
+    sizeBytes: 6000000000
+    overallBitrateBps: 5000000
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 41
+        width: 1920
+        height: 1080
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 5000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 160000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device: { fixture: devices.web-chrome }
+  network: { fixture: networks.local }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.software-only }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: download
+
+expect:
+  decision: remux
+  reasons:
+    - container-not-direct-playable
+  container: mp4

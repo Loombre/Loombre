@@ -1,0 +1,51 @@
+name: direct-stream (music, container repackage only) — ladder is []
+why: >
+  Companion to 363: same music file but in a container the device doesn't
+  direct-play (mp3, only flac/m4a/ogg/wav declared), forcing direct-stream
+  via Stage A alone. Still no video stream at all -> ladder stays [].
+
+input:
+  media:
+    fileId: file-0364
+    container: mp3
+    durationMs: 240000
+    sizeBytes: 30000000
+    overallBitrateBps: 900000
+    video: []
+    audio:
+      - index: 0
+        codec: mp3
+        channels: 2
+        sampleRate: 44100
+        bitrateBps: 320000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device:
+    profileId: mp3-only-client
+    directPlayContainers: [flac, m4a, ogg, wav]
+    hls: { container: fmp4, supportsFmp4: true, lowLatency: false }
+    video: []
+    hdr: { hdr10: false, hlg: false, dolbyVision: false }
+    audio:
+      - codec: mp3
+        maxChannels: 2
+        passthrough: false
+    subtitles: { renderText: [], hlsVtt: false, renderImage: false }
+    maxStreamBitrateBps: null
+  network: { fixture: networks.local }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.software-only }
+  selection:
+    videoStreamIndex: null
+    audioStreamIndex: 0
+    subtitleStreamIndex: null
+  mode: stream
+
+expect:
+  decision: direct-stream
+  reasons:
+    - container-not-direct-playable
+  container: fmp4-hls
+  ladder: []

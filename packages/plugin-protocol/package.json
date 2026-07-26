@@ -1,0 +1,36 @@
+{
+  "name": "@loombre/plugin-protocol",
+  "version": "0.1.0",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "description": "Loombre Plugin Protocol (LPP) v1: the frozen out-of-process plugin wire contract (docs/PLAN.md §4.4, pitfall P7) — envelope + capability schemas, generated JSON Schema + spec artifacts, and the lpp:conform conformance suite/CLI.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "bin": {
+    "lpp-conform": "./dist/conform/cli.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "lint": "eslint src test --max-warnings=0",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit",
+    "test": "vitest run",
+    "generate": "tsx src/generate/cli.ts",
+    "conform": "tsx src/conform/cli.ts"
+  },
+  "dependencies": {
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "24.13.3",
+    "tsx": "4.23.1",
+    "typescript": "6.0.3",
+    "vitest": "4.1.10"
+  }
+}

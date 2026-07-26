@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Loombre :: installers/windows/tray/Loombre.Tray
+
+    The actual WinForms tray UI (NotifyIcon + context menu). Deliberately
+    thin — all contract/HTTP logic lives in the referenced Loombre.Tray.Ipc
+    project so it stays unit-testable without WinForms. UNBUILDABLE-AS-A-
+    RUNNING-APP-VERIFIED on this host (no Windows) — see the I3 report's
+    validation-ceiling section; `dotnet build`/`dotnet publish -r win-x64`
+    are the compile-only proof available here.
+  -->
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>Loombre.Tray</RootNamespace>
+    <AssemblyName>Loombre.Tray</AssemblyName>
+
+    <!-- Self-contained single-file win-x64 publish, per mission deliverable
+         2. P4.1: unsigned — build-msi.mjs's sign step (no-op today,
+         installers/sign-hook.mjs) is the insertion point for a future
+         Authenticode signature over this exe, same as LoombreServiceHost. -->
+    <SelfContained>true</SelfContained>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Loombre.Tray.Ipc\Loombre.Tray.Ipc.csproj" />
+  </ItemGroup>
+
+</Project>

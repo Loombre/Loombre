@@ -1,0 +1,37 @@
+name: direct-stream — m4a container, AAC audio 2ch, web-chrome (m4a not in directPlayContainers)
+why: "Stage A (docs/PLAYBACK.md §3): m4a is NOT in web-chrome's directPlayContainers, so container-not-direct-playable fires; Stages B-F's stubs never escalate further, so the decision stops at direct-stream. Every selected stream is constructed genuinely within the paired device's declared caps on every axis (matrix/README.md's case-authoring rule), so this case's expected outcome survives once Stages B-F land. Music mode (no video streams)."
+input:
+  media:
+    fileId: file-0047
+    container: m4a
+    durationMs: 240000
+    sizeBytes: 6000000
+    overallBitrateBps: 200000
+    video: []
+    audio:
+      - index: 0
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 160000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device:
+    fixture: devices.web-chrome
+  network:
+    fixture: networks.local
+  policy:
+    fixture: policies.t0-default
+  caps:
+    fixture: caps.software-only
+  selection:
+    videoStreamIndex: null
+    audioStreamIndex: 0
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: direct-stream
+  reasons:
+    - container-not-direct-playable

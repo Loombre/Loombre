@@ -1,0 +1,57 @@
+name: 'remux — download mode + container-only change under allowTranscode:false: remux is repackaging,
+  not transcoding — the knob does not block it'
+why: 'step 7b F1 new pin (disabled + repackage-unaffected, the DOWNLOAD half — case 453 pins the direct-stream
+  half): the documented F1 boundary is "repackaging is not transcoding" — the disabled check fires ONLY
+  on an aggregated ''transcode'' decision, and a download-mode container-only change aggregates to direct-stream
+  then remuxes (§3 Final assembly), so allowTranscode:false leaves the copy-only progressive-mp4 remux
+  fully allowed. Whatever future semantics tighten, blocking a -c copy remux under a no-TRANSCODE policy
+  would be wrong; this case makes that boundary mechanical.'
+input:
+  media:
+    fileId: file-505
+    container: mkv
+    durationMs: 6000000
+    sizeBytes: 3900000000
+    overallBitrateBps: 5200000
+    video:
+    - index: 0
+      codec: h264
+      profile: high
+      level: 41
+      width: 1920
+      height: 1080
+      bitDepth: 8
+      frameRate: 23.976
+      bitrateBps: 5000000
+      hdr: none
+      dvProfile: null
+      dvBlCompatId: null
+      interlaced: false
+    audio:
+    - index: 1
+      codec: aac
+      channels: 2
+      sampleRate: 48000
+      bitrateBps: 192000
+      language: eng
+      isDefault: true
+      hasAtmos: false
+    subtitle: []
+  device:
+    fixture: devices.web-chrome
+  network:
+    fixture: networks.local
+  policy:
+    fixture: policies.transcode-disabled
+  caps:
+    fixture: caps.software-only
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: download
+expect:
+  decision: remux
+  reasons:
+  - container-not-direct-playable
+  container: mp4

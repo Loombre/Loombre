@@ -1,0 +1,71 @@
+name: transcode — hevc-preferred's swap collapses targets to {hevc} on a 1080p source too, full-hw still routes it
+why: >
+  1080p h264 source, hevc-preferred + web-safari (hevc-capable device) -> stages/ladder.ts's swap converts every sub-2160p rung (all of them, source caps at 1080p so the 2160p rung is dropped by rule (a) anyway) to hevc x0.75 — surviving targets are a SINGLE codec, hevc. full-hw's nvenc covers it trivially -> hw-encoder-selected:nvenc. Pinned via expect.ladder (the swapped, x0.75 table).
+
+input:
+  media:
+    fileId: gen-file
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 6000000000
+    overallBitrateBps: 25000000
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 52
+        width: 1920
+        height: 1080
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 18000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 160000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device: { fixture: devices.web-safari }
+  network: { fixture: networks.wan-20mbps }
+  policy: { fixture: policies.hevc-preferred }
+  caps: { fixture: caps.full-hw }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+
+expect:
+  decision: transcode
+  reasons:
+    - bitrate-exceeds-network
+    - hw-encoder-selected:nvenc
+  ladder:
+    - heightPx: 1080
+      videoBitrateBps: 6000000
+      audioBitrateBps: 384000
+      codec: hevc
+    - heightPx: 1080
+      videoBitrateBps: 3000000
+      audioBitrateBps: 160000
+      codec: hevc
+    - heightPx: 720
+      videoBitrateBps: 2250000
+      audioBitrateBps: 160000
+      codec: hevc
+    - heightPx: 480
+      videoBitrateBps: 1125000
+      audioBitrateBps: 160000
+      codec: hevc
+    - heightPx: 360
+      videoBitrateBps: 600000
+      audioBitrateBps: 160000
+      codec: hevc

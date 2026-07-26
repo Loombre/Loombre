@@ -1,0 +1,64 @@
+name: remux — mkv hevc DV profile 8 (HDR10-compatible BL), device hdr10-only, mode=download (informational strip does not block container-only change)
+why: >
+  Seed case 010's exact scenario with mode=download (Step 2c orchestrator
+  review resolution, ENGINE_VERSION 0.3.1): Stage A fires
+  container-not-direct-playable (mkv not direct-playable, mp4 only); Stage
+  C's dv8.1 branch copies the HDR10-compatible base layer with the
+  INFORMATIONAL dv-stripped-to-hdr10 reason (repackage path, so the strip
+  fires). "Container-only change" for the download remux override is judged
+  on BLOCKING-class reasons only — §4's class split is authoritative:
+  blocking-class forces severity, informational-class never does, and the
+  DV metadata strip is an arg-builder action performed identically during a
+  progressive-mp4 remux. The blocking set here is exactly
+  {container-not-direct-playable}, so download promotes to remux; no stream
+  is re-encoded. Every selected stream is genuinely within the device's
+  declared caps on every axis (matrix/README.md's case-authoring rule), so
+  this outcome survives Stages D-F landing.
+
+input:
+  media:
+    fileId: file-0205
+    container: mkv
+    durationMs: 7200000
+    sizeBytes: 8200000000
+    overallBitrateBps: 9100000
+    video:
+      - index: 0
+        codec: hevc
+        profile: main10
+        level: 153
+        width: 3840
+        height: 2160
+        bitDepth: 10
+        frameRate: 23.976
+        bitrateBps: 8500000
+        hdr: dv
+        dvProfile: 8
+        dvBlCompatId: 1
+        interlaced: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 192000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device: { fixture: devices.hevc-hdr10-only }
+  network: { fixture: networks.local }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.software-only }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: download
+
+expect:
+  decision: remux
+  container: mp4
+  reasons:
+    - container-not-direct-playable
+    - dv-stripped-to-hdr10

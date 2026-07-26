@@ -1,0 +1,45 @@
+name: direct-play — truehd 8ch (unsupported passthrough, Atmos) present but audioStreamIndex null — must not fire
+why: "docs/PLAYBACK.md binding interpretation constraint 1: Stage D evaluates ONLY the selected audio stream. This truehd stream is deliberately unsupported (web-chrome's entry has passthrough:false, would fire audio-passthrough-unsupported + audio-atmos-lost if selected) — with selection.audioStreamIndex null, none of that may fire; only the video/container matter, giving direct-play. Mirrors case 119's video analog exactly, for audio."
+input:
+  media:
+    fileId: file-0252
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 6000000000
+    overallBitrateBps: 8000000
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 41
+        width: 1920
+        height: 1080
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 5000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: truehd
+        channels: 8
+        sampleRate: 48000
+        bitrateBps: 3000000
+        language: eng
+        isDefault: true
+        hasAtmos: true
+    subtitle: []
+  device: { fixture: devices.web-chrome }
+  network: { fixture: networks.local }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.software-only }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: null
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: direct-play
+  reasons: []

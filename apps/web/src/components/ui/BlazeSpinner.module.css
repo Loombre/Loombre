@@ -1,0 +1,84 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+
+/* Loombre :: apps/web/src/components/ui/BlazeSpinner.module.css
+   Blaze spinner idle animations (D9: .85s/.6s durations, transform-only).
+   Replicates the splash reference (design/blaze/assets/loombre-splash.html)
+   at ~80% duration for steady-state loading states (vs. the one-shot splash).
+   Origins: blaze 50% 84%, flicker 50% 68%. */
+
+.rig {
+  /* No animation on the rig itself; it's the container for the two paths. */
+  transform-box: view-box;
+}
+
+.blaze {
+  /* Outer flame wobble at ~80% of the 1.05s splash reference. D9 pins .85s. */
+  transform-box: view-box;
+  transform-origin: 50% 84%;
+  animation: blaze 0.85s ease-in-out infinite;
+}
+
+.core {
+  /* Inner core flicker at ~80% of the .72s splash reference. D9 pins .6s. */
+  transform-box: view-box;
+  transform-origin: 50% 68%;
+  animation: flicker 0.6s ease-in-out infinite;
+}
+
+/* Keyframes — exact scale/rotate values from design/blaze/assets/loombre-splash.html,
+   applied to the two independently-transforming paths in animated mode. */
+
+@keyframes blaze {
+  0%,
+  100% {
+    transform: scale(1, 1) rotate(0);
+  }
+
+  20% {
+    transform: scale(0.94, 1.07) rotate(-2.4deg);
+  }
+
+  45% {
+    transform: scale(1.06, 0.92) rotate(1.6deg);
+  }
+
+  70% {
+    transform: scale(0.95, 1.05) rotate(-1.2deg);
+  }
+
+  85% {
+    transform: scale(1.03, 0.97) rotate(0.8deg);
+  }
+}
+
+@keyframes flicker {
+  0%,
+  100% {
+    transform: scale(1, 1);
+  }
+
+  25% {
+    transform: scale(0.96, 1.05) rotate(-1.5deg);
+  }
+
+  50% {
+    transform: scale(1.04, 0.94);
+  }
+
+  75% {
+    transform: scale(0.97, 1.03) rotate(1.2deg);
+  }
+}
+
+/* D10: reduced-motion collapse to settled pose. */
+@media (prefers-reduced-motion: reduce) {
+  .blaze {
+    animation: none;
+    transform: scale(0.95, 1.05) rotate(-1.2deg);
+  }
+
+  .core {
+    animation: none;
+    transform: scale(0.97, 1.03) rotate(1.2deg);
+  }
+}

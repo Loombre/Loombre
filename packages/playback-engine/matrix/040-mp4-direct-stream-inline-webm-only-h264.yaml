@@ -1,0 +1,78 @@
+name: direct-stream — mp4 h264 1080p + opus 2ch, inline webm-only device (mp4 not in directPlayContainers)
+why: "Stage A: every SHARED device fixture that has real video caps also lists mp4 in directPlayContainers, so this case defines an inline DeviceProfile whose directPlayContainers is [webm] only, to cover the mp4-out-of-list-with-video axis. Every selected stream is constructed genuinely within the paired device's declared caps on every axis (matrix/README.md's case-authoring rule), so this case's expected outcome survives once Stages B-F land."
+input:
+  media:
+    fileId: file-0040
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 5000000000
+    overallBitrateBps: 5500000
+    video:
+      - index: 0
+        codec: h264
+        profile: null
+        level: null
+        width: 1920
+        height: 1080
+        bitDepth: 8
+        frameRate: 24
+        bitrateBps: 5000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: opus
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 160000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device:
+    profileId: inline-webm-only-h264
+    directPlayContainers:
+      - webm
+    hls:
+      container: fmp4
+      supportsFmp4: true
+      lowLatency: false
+    video:
+      - codec: h264
+        maxProfile: null
+        maxLevel: null
+        maxBitDepth: 8
+        maxWidth: 1920
+        maxHeight: 1080
+        maxFrameRate: 30
+        maxBitrateBps: null
+    hdr:
+      hdr10: false
+      hlg: false
+      dolbyVision: false
+    audio:
+      - codec: opus
+        maxChannels: 2
+        passthrough: false
+    subtitles:
+      renderText: []
+      hlsVtt: false
+      renderImage: false
+    maxStreamBitrateBps: null
+  network:
+    fixture: networks.local
+  policy:
+    fixture: policies.t0-default
+  caps:
+    fixture: caps.software-only
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: direct-stream
+  reasons:
+    - container-not-direct-playable

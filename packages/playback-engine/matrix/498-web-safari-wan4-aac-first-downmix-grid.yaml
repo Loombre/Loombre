@@ -1,0 +1,54 @@
+name: 'transcode — web-safari × wan-4mbps × aac-first-audio: 8ch ac3 downmixes to the 6ch entry cap; video
+  copies, ladder [], Stage G silent'
+why: 'Grid combo (web-safari × wan-4mbps × aac-first-audio): audio-channels-exceed-device alone (8 > 6
+  on safari''s ac3 entry, no atmos flag), 720p video copies, 3.2M ≤ 4M keeps Stage F silent — an audio-only
+  transcode; aac-first priority meets safari''s aac entry (target aac, unassertable).'
+input:
+  media:
+    fileId: file-498
+    container: mov
+    durationMs: 6000000
+    sizeBytes: 2400000000
+    overallBitrateBps: 3200000
+    video:
+    - index: 0
+      codec: h264
+      profile: high
+      level: 41
+      width: 1280
+      height: 720
+      bitDepth: 8
+      frameRate: 24
+      bitrateBps: 2500000
+      hdr: none
+      dvProfile: null
+      dvBlCompatId: null
+      interlaced: false
+    audio:
+    - index: 1
+      codec: ac3
+      channels: 8
+      sampleRate: 48000
+      bitrateBps: 448000
+      language: eng
+      isDefault: true
+      hasAtmos: false
+    subtitle: []
+  device:
+    fixture: devices.web-safari
+  network:
+    fixture: networks.wan-4mbps
+  policy:
+    fixture: policies.aac-first-audio
+  caps:
+    fixture: caps.software-only
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: transcode
+  reasons:
+  - audio-channels-exceed-device
+  ladder: []

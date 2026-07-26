@@ -1,0 +1,36 @@
+name: direct-play — flac music (no video streams), flac-stereo — Stage B vacuous pass
+why: "Music mode: media.video is empty and selection.videoStreamIndex is null, so Stage B contributes zero work regardless of the flac audio track (docs/PLAYBACK.md binding interpretation constraint 1)."
+input:
+  media:
+    fileId: file-117
+    container: flac
+    durationMs: 6000000
+    sizeBytes: 5000000000
+    overallBitrateBps: 900000
+    video: []
+    audio:
+      - index: 0
+        codec: flac
+        channels: 2
+        sampleRate: 44100
+        bitrateBps: 900000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device:
+    fixture: devices.flac-stereo
+  network:
+    fixture: networks.local
+  policy:
+    fixture: policies.t0-default
+  caps:
+    fixture: caps.software-only
+  selection:
+    videoStreamIndex: null
+    audioStreamIndex: 0
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: direct-play
+  reasons: []

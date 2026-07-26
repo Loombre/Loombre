@@ -1,0 +1,12 @@
+{
+  "name": "lpp-reference-provider",
+  "version": "0.1.0",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "description": "LPP v1 reference metadata-provider plugin (packages/plugin-protocol Lane W1 exit proof). Node stdlib only, zero dependencies — demonstrates that LPP plugins may be written in ANY language/host with no Loombre-authored library (C1).",
+  "main": "server.mjs",
+  "scripts": {
+    "start": "node server.mjs"
+  }
+}

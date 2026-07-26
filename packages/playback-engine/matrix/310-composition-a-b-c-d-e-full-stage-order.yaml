@@ -1,0 +1,62 @@
+name: "transcode — full A+B+C+D+E composition, exact stage order, no duplicate video-transcode reason"
+why: >
+  hevc-sdr's device.video only declares hevc, so an av1 stream fires Stage B's video-codec-unsupported (transcode); Stage C evaluates independently regardless (source hdr10, device hdr10:false) -> hdr-tone-map-required; audio codec truehd has NO device.audio entry at all -> Stage D's rule 1 fires audio-codec-unsupported; the dvbsub subtitle burns in (renderImage false). mkv also fires Stage A's container reason. Since Stage B's OWN verdict is already 'transcode', video-transcode-for-subtitle-burn-in is NOT appended — five reasons total, in exact A,B,C,D,E stage order. full-hw's hardware tone-map avoids a sixth (refusal) reason muddying the pin. why (Phase 3 §11 step 3, Stage G arrival, STATE.md P3.2 regression law): this case's caps fixture verifies a real hardware backend for the selected stream's codec + surviving ladder targets, so Stage G now selects it (`hw-encoder-selected:nvenc`).
+
+input:
+  media:
+    fileId: file-0310
+    container: mkv
+    durationMs: 6000000
+    sizeBytes: 6000000000
+    overallBitrateBps: 5200000
+    video:
+      - index: 0
+        codec: av1
+        profile: null
+        level: null
+        width: 1920
+        height: 1080
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 5000000
+        hdr: hdr10
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: truehd
+        channels: 6
+        sampleRate: 48000
+        bitrateBps: 192000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle:
+      - index: 2
+        codec: dvbsub
+        language: eng
+        isForced: false
+        isDefault: false
+        isExternal: false
+        externalPath: null
+  device: { fixture: devices.hevc-sdr }
+  network: { fixture: networks.local }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.full-hw }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: 2
+  mode: stream
+
+expect:
+  decision: transcode
+  reasons:
+    - container-not-direct-playable
+    - video-codec-unsupported
+    - hdr-tone-map-required
+    - audio-codec-unsupported
+    - subtitle-format-requires-burn-in
+    - hw-encoder-selected:nvenc
+  subtitleStrategy: burn-in

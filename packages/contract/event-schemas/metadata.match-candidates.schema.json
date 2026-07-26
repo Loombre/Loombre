@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://loombre.com/schemas/events/metadata.match-candidates.schema.json",
+  "title": "MetadataMatchCandidatesPayload",
+  "description": "Payload for envelope.type === 'metadata.match-candidates'. Phosphor retheme Wave 2 (Lane L2, Fix Match): emitted once by the 'metadata-search' job handler (apps/worker/src/metadata/match-search-consumer.ts) after it has finished a bounded provider-chain search for one item — CLAUDE.md invariant 6 means the search itself runs in the worker, never inline in the POST /admin/items/{id}/match-search request path. ADMIN-ONLY delivery (ws-broadcaster.service.ts ADMIN_ONLY_TYPES), mirroring job.updated/settings.updated exactly: candidate titles/years are catalog data an admin's own restricted-content clearance already gates elsewhere, and this event carries no per-viewer redaction of its own — treat it the same as any other admin-only operational event, not as a content-list surface a non-admin could ever legitimately receive.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["itemId", "jobId", "candidates", "searchedAtMs"],
+  "properties": {
+    "itemId": {
+      "type": "string",
+      "format": "uuid",
+      "description": "The catalog item this search was run for."
+    },
+    "jobId": {
+      "type": "string",
+      "format": "uuid",
+      "description": "The 'metadata-search' job that produced this result — lets a client that enqueued several searches match results back to the right item."
+    },
+    "candidates": {
+      "type": "array",
+      "description": "Every result found across the item's resolved provider chain, ranked best-first (apps/worker/src/metadata/match.ts's title/year scoring, normalized 0-100). Empty when no provider in the chain returned any result.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["provider", "externalId", "title", "year", "confidence", "isBest"],
+        "properties": {
+          "provider": { "type": "string" },
+          "externalId": { "type": "string" },
+          "title": { "type": "string" },
+          "year": { "type": ["integer", "null"] },
+          "confidence": { "type": "number", "minimum": 0, "maximum": 100 },
+          "isBest": {
+            "type": "boolean",
+            "description": "True for exactly one candidate (the highest-scored) when candidates is non-empty; false for every candidate when candidates is empty."
+          }
+        }
+      }
+    },
+    "searchedAtMs": { "type": "integer", "minimum": 0 }
+  }
+}

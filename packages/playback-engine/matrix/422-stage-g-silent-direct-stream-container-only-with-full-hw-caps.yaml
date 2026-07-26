@@ -1,0 +1,49 @@
+name: "direct-stream — container-only change, full-hw caps present: Stage G still silent (video.action stays copy)"
+why: >
+  mkv vs web-chrome's [mp4,webm] directPlayContainers -> container-not-direct-playable alone (every stream itself is genuinely compatible) -> decision direct-stream, reasons EXACTLY [container-not-direct-playable]. full-hw caps attached to prove Stage G never engages merely because SOME OTHER stage escalated past direct-play — only a VIDEO transcode gates it.
+
+input:
+  media:
+    fileId: gen-file
+    container: mkv
+    durationMs: 6000000
+    sizeBytes: 6000000000
+    overallBitrateBps: 5000000
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 41
+        width: 1920
+        height: 1080
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 5000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 160000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device: { fixture: devices.web-chrome }
+  network: { fixture: networks.local }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.full-hw }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+
+expect:
+  decision: direct-stream
+  reasons:
+    - container-not-direct-playable

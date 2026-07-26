@@ -1,0 +1,57 @@
+name: remux — flac container, FLAC audio 2ch, inline mp4-only audio device, mode=download (container-only change)
+why: Same container-only-change remux rule as the video case, exercised in music mode (no video streams) against the inline flac-audio device from case 049. Every selected stream is constructed genuinely within the paired device's declared caps on every axis (matrix/README.md's case-authoring rule), so this case's expected outcome survives once Stages B-F land.
+input:
+  media:
+    fileId: file-0053
+    container: flac
+    durationMs: 240000
+    sizeBytes: 30000000
+    overallBitrateBps: 950000
+    video: []
+    audio:
+      - index: 0
+        codec: flac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 900000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device:
+    profileId: inline-flac-audio-mp4-only
+    directPlayContainers:
+      - mp4
+    hls:
+      container: fmp4
+      supportsFmp4: true
+      lowLatency: false
+    video: []
+    hdr:
+      hdr10: false
+      hlg: false
+      dolbyVision: false
+    audio:
+      - codec: flac
+        maxChannels: 2
+        passthrough: false
+    subtitles:
+      renderText: []
+      hlsVtt: false
+      renderImage: false
+    maxStreamBitrateBps: null
+  network:
+    fixture: networks.local
+  policy:
+    fixture: policies.t0-default
+  caps:
+    fixture: caps.software-only
+  selection:
+    videoStreamIndex: null
+    audioStreamIndex: 0
+    subtitleStreamIndex: null
+  mode: download
+expect:
+  decision: remux
+  reasons:
+    - container-not-direct-playable

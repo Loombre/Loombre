@@ -1,0 +1,56 @@
+name: transcode — assembly picks opus (present in device.audio), 6ch band, 0.75x bitrate
+why: >
+  Stage D fires audio-passthrough-unsupported alone (web-chrome's truehd
+  entry caps at 8 channels — exactly the stream's count, so rule 2 stays
+  silent; passthrough:false fires rule 3). Case schema cannot assert §5
+  audio.targetCodec/targetChannels/targetBitrateBps fields (matrix/README.md
+  case-schema gap, same gap noted at Step 2a/2b/2c) — documented here and
+  verified precisely by test/stages/audio.spec.ts's plan()-level assembly
+  tests: policy.audioTranscodeCodecPriority is [opus, aac] and web-chrome
+  declares an opus entry, so targetCodec='opus'; that entry's
+  maxChannels=6, so targetChannels=min(8,6)=6; the 3-6ch band bitrate
+  (384000) scales 0.75x for opus -> targetBitrateBps=288000.
+input:
+  media:
+    fileId: file-0241
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 6000000000
+    overallBitrateBps: 8000000
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 41
+        width: 1920
+        height: 1080
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 5000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: truehd
+        channels: 8
+        sampleRate: 48000
+        bitrateBps: 3000000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device: { fixture: devices.web-chrome }
+  network: { fixture: networks.local }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.software-only }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: transcode
+  reasons:
+    - audio-passthrough-unsupported

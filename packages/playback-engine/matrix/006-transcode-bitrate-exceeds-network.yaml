@@ -1,0 +1,69 @@
+name: transcode — mp4 h264 40Mbps source over a 4Mbps remote network
+why: >
+  Stage F: device supports this h264/1080p stream fine (would otherwise be
+  direct-play), but overallBitrateBps (40Mbps) exceeds network.maxBitrateBps
+  (4Mbps) and the connection is not local, so bitrate-exceeds-network fires.
+  The instance ladder (docs/PLAYBACK.md §7) drops every rung above the
+  network cap but keeps at least the lowest rung, so the surviving ladder's
+  max video bitrate must be <= 4,000,000 (the 4Mbps rung itself survives).
+
+  why (Stage G arrival, STATE.md P3.9(a)): caps.software-only declares no
+  hardware backend, so Stage G's rule (iii) always routes full software
+  (`software-fallback:encode`). policies.t0-default is tier 0 and the
+  selected source stream is 1080p (>=1080), so the tier cap (docs/
+  PLAYBACK.md §8.3) also applies: Stage F's own (pre-Stage-G) survivors here
+  are the 1080p/4M, 720p/3M, 480p/1.5M, and 360p/0.8M rungs (the network cap
+  already dropped the 8M rung) — the tier cap actually removes the two
+  rungs above 480p, so `software-fallback:tier-capped` fires too. The
+  surviving ladder's max video bitrate TIGHTENS from <=4,000,000 to
+  <=1,500,000 (the 480p rung is now the highest survivor) — updated below
+  with this why:.
+
+input:
+  media:
+    fileId: file-0006
+    container: mp4
+    durationMs: 7500000
+    sizeBytes: 37500000000
+    overallBitrateBps: 40000000
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 41
+        width: 1920
+        height: 1080
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 38000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 192000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device: { fixture: devices.web-chrome }
+  network: { fixture: networks.wan-4mbps }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.software-only }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+
+expect:
+  decision: transcode
+  reasons:
+    - bitrate-exceeds-network
+    - software-fallback:encode
+    - software-fallback:tier-capped
+  ladderMaxVideoBitrateBps: 1500000

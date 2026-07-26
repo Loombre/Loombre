@@ -1,0 +1,60 @@
+name: direct-play — same scenario as 337 but device.maxStreamBitrateBps is null -> the reason no longer fires at all
+why: >
+  Direct contrast with case 337: IDENTICAL media/network(local-4mbps)/policy/
+  caps; the ONLY change is the device, from bitrate-capped-device (a
+  500,000 maxStreamBitrateBps) to web-chrome (null — unconstrained). §3
+  Stage F's unless-clause is `network.isLocal AND bitrate <= device cap`; a
+  null device cap makes `withinDeviceCap` trivially true (docs/PLAYBACK.md
+  §2.2: a null cap means unconstrained), so with isLocal true the
+  unless-clause now HOLDS and bitrate-exceeds-network does NOT fire —
+  decision flips all the way from 337's forced-single-rung transcode to a
+  plain direct-play. This isolates that 337's escalation (and its ladder
+  narrowing to exactly the 360p rung) came ENTIRELY from that device's tight
+  cap, not from anything else in the scenario (overall is unchanged at
+  40Mbps in both cases).
+
+input:
+  media:
+    fileId: file-0339
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 30000000000
+    overallBitrateBps: 40000000
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 52
+        width: 1920
+        height: 1080
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 10000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 160000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device: { fixture: devices.web-chrome }
+  network: { fixture: networks.local-4mbps }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.software-only }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+
+expect:
+  decision: direct-play
+  reasons: []
+  container: source

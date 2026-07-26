@@ -1,0 +1,53 @@
+name: transcode — hevc 2160p over a 20Mbps remote network, exceeds cap
+why: >
+  Stage F network-dimension coverage, 20Mbps tier, hevc/2160p/web-safari variety (distinct codec+resolution+device from case 327). overallBitrateBps (30Mbps) exceeds network.maxBitrateBps (20Mbps), non-local -> fires alone. Ladder: source height 2160p keeps every rung by height; source bitrate (25Mbps) keeps every rung by bitrate (even the 16Mbps 2160p rung); the 20Mbps network cap doesn't drop the 16Mbps rung either (16M <= 20M) — ALL SIX rungs survive, max 16,000,000 (proves the cap doesn't always bite). why (Phase 3 §11 step 3, Stage G arrival, STATE.md P3.2 regression law): this case's caps fixture has no hardware backend covering this route, so Stage G now routes full software (`software-fallback:encode`); tier 0 + a >=1080p selected source additionally trips the tier cap, narrowing the surviving ladder to <=480p rungs (`software-fallback:tier-capped`).
+
+input:
+  media:
+    fileId: file-0329
+    container: mov
+    durationMs: 6000000
+    sizeBytes: 22500000000
+    overallBitrateBps: 30000000
+    video:
+      - index: 0
+        codec: hevc
+        profile: main10
+        level: 153
+        width: 3840
+        height: 2160
+        bitDepth: 10
+        frameRate: 23.976
+        bitrateBps: 25000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 160000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device: { fixture: devices.web-safari }
+  network: { fixture: networks.wan-20mbps }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.software-only }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+
+expect:
+  decision: transcode
+  reasons:
+    - bitrate-exceeds-network
+    - software-fallback:encode
+    - software-fallback:tier-capped
+  container: fmp4-hls
+  ladderMaxVideoBitrateBps: 16000000
