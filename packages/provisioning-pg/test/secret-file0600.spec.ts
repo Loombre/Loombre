@@ -18,8 +18,19 @@ function scratchDir(): string {
   return dir;
 }
 
+// POSIX permission bits are a POSIX concept: Node's chmod on Windows only
+// toggles the read-only attribute, so a file written with mode 0o600 reads
+// back as 0o666 there (the first windows-latest CI run failed on exactly
+// that: "expected 438 to be 384"). The backend's chmod call is correct and
+// unchanged — Windows simply does not implement the bits. Confidentiality
+// of the superuser secret on Windows rests on the ACLs of the per-user app-
+// data directory it lives in, NOT on this mode; see STATE.md's platform-
+// limitation note. The assertion is therefore host-aware rather than
+// skipped, so the POSIX guarantee stays enforced where it is real.
+const IS_WINDOWS = process.platform === "win32";
+
 describe("file0600 backend", () => {
-  it("generates a real random secret and writes it 0600", async () => {
+  it("generates a real random secret and writes it with owner-only POSIX bits (POSIX hosts)", async () => {
     const dir = scratchDir();
     const keyPath = join(dir, "nested", "superuser.secret");
     const backend = createFile0600Backend();
@@ -29,7 +40,15 @@ describe("file0600 backend", () => {
     expect(value.length).toBeGreaterThan(20);
 
     const mode = statSync(keyPath).mode & 0o777;
-    expect(mode).toBe(0o600);
+    if (IS_WINDOWS) {
+      // No POSIX bits to assert; prove the file exists and is readable back
+      // (the round-trip test below covers content) and that nothing made it
+      // executable, which Windows DOES surface.
+      expect(mode & 0o111).toBe(0);
+    } else {
+      expect(mode).toBe(0o600);
+      expect(mode & 0o077).toBe(0); // no group/other access, stated explicitly
+    }
   });
 
   it("resolve() reads back exactly what generate() wrote", async () => {
