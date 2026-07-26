@@ -1,0 +1,82 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+#
+# DIAGNOSTIC, manual-dispatch only — not part of the gate, never runs on
+# push or PR. Exists so the release.yml build-windows leg (lane I3's
+# installers/windows/build-msi.mjs) can be exercised on a real
+# windows-latest runner WITHOUT burning a tag cycle: the first rc tag
+# (v0.9.0-rc.1, run 30217169344) died at build-msi step 1/7 on
+# `execFileSync("pnpm") → ENOENT` (pnpm is a .cmd shim on Windows;
+# Node refuses shell-less cmd-script spawns per CVE-2024-27980), which
+# meant steps 2–7 (pnpm deploy, WiX, dotnet test, MSI harvest) had never
+# executed on Windows at all. This workflow mirrors release.yml's
+# build-windows job step-for-step (minus the tag-derived version — it
+# uses package.json, which the release prepare job pins to the tag
+# anyway), so a green run here is direct evidence for the release leg.
+#
+# METHOD NOTE (see windows-tls-diag.yml): continue-on-error steps report
+# conclusion=success in the API even when they fail — this workflow uses
+# hard-failing steps plus an explicit `VERDICT:` line, so read the log,
+# not the step conclusions.
+name: windows-msi-diag
+
+on:
+  workflow_dispatch:
+
+jobs:
+  msi:
+    name: windows MSI lane — release build-windows rehearsal
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Stamp release version
+        run: node scripts/release/stamp-version.mjs --release
+
+      - name: Build workspace
+        run: pnpm build
+
+      - name: Prepare release output directory
+        shell: bash
+        run: mkdir -p dist/release
+
+      - name: build-msi.mjs (lane I3)
+        shell: bash
+        run: |
+          set -euo pipefail
+          LOOMBRE_VERSION="$(node -p "require('./package.json').version")"
+          echo "version under test: $LOOMBRE_VERSION"
+          node installers/windows/build-msi.mjs --version "$LOOMBRE_VERSION"
+
+      - name: Stage the built MSI into dist/release
+        shell: bash
+        run: |
+          set -euo pipefail
+          LOOMBRE_VERSION="$(node -p "require('./package.json').version")"
+          src="installers/windows/out/loombre-${LOOMBRE_VERSION}-windows-x64.msi"
+          if [ ! -f "$src" ]; then
+            echo "VERDICT:MSI:FAIL (expected MSI not found at $src)"
+            exit 1
+          fi
+          cp "$src" dist/release/
+          ls -l dist/release
+          echo "VERDICT:MSI:PASS"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: windows-msi-diag
+          path: dist/release/**
+          if-no-files-found: error

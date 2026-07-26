@@ -83,9 +83,60 @@ function which(cmd) {
   }
 }
 
+// pnpm on Windows is normally a `.cmd` shim (npm -g, corepack, and
+// pnpm/action-setup all shim this way; only the standalone installer ships a
+// real pnpm.exe). Node refuses to spawn cmd/bat scripts without an explicit
+// shell (CVE-2024-27980) — a bare execFileSync("pnpm", …) dies with ENOENT.
+// Routing through cmd.exe would reintroduce the metacharacter surface that
+// refusal exists to remove, so resolve the shim to its real entry point
+// instead: pnpm.exe directly, or the shim's JS entry run by this same Node.
+let cachedPnpmInvocation = null;
+function pnpmInvocation() {
+  if (process.platform !== "win32") return { file: "pnpm", prefix: [] };
+  if (cachedPnpmInvocation) return cachedPnpmInvocation;
+  let matches = [];
+  try {
+    matches = execFileSync("where", ["pnpm"], { encoding: "utf8" })
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+  } catch {
+    stop("pnpm not found on PATH");
+  }
+  const exe = matches.find((m) => /\.exe$/i.test(m));
+  if (exe) {
+    cachedPnpmInvocation = { file: exe, prefix: [] };
+  } else {
+    for (const shim of matches.filter((m) => /\.(cmd|bat)$/i.test(m))) {
+      const shimDir = path.dirname(shim);
+      const entry = [
+        path.join(shimDir, "node_modules", "pnpm", "bin", "pnpm.cjs"), // npm -g layout
+        path.resolve(shimDir, "..", "pnpm", "bin", "pnpm.cjs"), // node_modules/.bin layout (pnpm/action-setup)
+        path.join(shimDir, "node_modules", "corepack", "dist", "pnpm.js"), // corepack shim beside node.exe
+      ].find((candidate) => existsSync(candidate));
+      if (entry) {
+        cachedPnpmInvocation = { file: process.execPath, prefix: [entry] };
+        break;
+      }
+    }
+  }
+  if (!cachedPnpmInvocation) {
+    stop(
+      `pnpm on PATH is only a shell shim and its JS entry point was not found next to it (checked: ${matches.join(", ")})`,
+    );
+  }
+  log(`pnpm resolved to: ${[cachedPnpmInvocation.file, ...cachedPnpmInvocation.prefix].join(" ")}`);
+  return cachedPnpmInvocation;
+}
+
 function run(cmd, cmdArgs, opts = {}) {
   log(`$ ${cmd} ${cmdArgs.join(" ")}`);
-  execFileSync(cmd, cmdArgs, { stdio: "inherit", cwd: REPO_ROOT, ...opts });
+  const invocation = cmd === "pnpm" ? pnpmInvocation() : { file: cmd, prefix: [] };
+  execFileSync(invocation.file, [...invocation.prefix, ...cmdArgs], {
+    stdio: "inherit",
+    cwd: REPO_ROOT,
+    ...opts,
+  });
 }
 
 function getProductVersion() {
