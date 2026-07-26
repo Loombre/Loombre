@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 /**
- * Enforces the architecture invariants from CLAUDE.md / docs/PLAN.md §3:
+ * Enforces the architecture invariants from docs/PLAN.md §3/§4.5:
  *  - Catalog / Playback / Session server modules share only IDs (never import
  *    one another).
  *  - No module outside packages/db may touch the raw pg/kysely drivers — the
@@ -105,7 +105,7 @@ module.exports = {
     {
       name: "no-raw-db-driver-outside-packages-db",
       comment:
-        "pg/pg-*/kysely may only be imported from packages/db — the query-guard makes unfiltered queries impossible by construction (CLAUDE.md invariant 4). pg-boss is carved out of the `pg-[^/]+` glob (it would otherwise match) and governed instead by the dedicated 'pg-boss-outside-jobs-forbidden' rule below, since it is packages/jobs's queue driver, not a raw catalog-data access path.",
+        "pg/pg-*/kysely may only be imported from packages/db — the query-guard makes unfiltered queries impossible by construction (the single-database-door invariant). pg-boss is carved out of the `pg-[^/]+` glob (it would otherwise match) and governed instead by the dedicated 'pg-boss-outside-jobs-forbidden' rule below, since it is packages/jobs's queue driver, not a raw catalog-data access path.",
       severity: "error",
       from: { pathNot: "^packages/db" },
       to: { path: "(^|/)node_modules/(pg|pg-(?!boss($|/))[^/]+|kysely)($|/)" },

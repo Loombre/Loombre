@@ -458,4 +458,93 @@ describe("websocket broadcaster (mission-mandated two-live-sockets test)", () =>
       casualWs.close();
     }
   }, 20_000);
+
+  it("job.updated: a demoted admin's live socket stops receiving admin-only events within the context TTL (L2)", async () => {
+    const httpServer = app.getHttpServer();
+
+    const seedLogin = await request(httpServer).post("/auth/login").send({
+      username: "admin",
+      password: "loombre-seed-admin",
+      deviceName: "ws-test-demote-seed",
+      deviceProfile: buildDeviceProfile("ws-test-demote-seed"),
+    });
+    expect(seedLogin.status, JSON.stringify(seedLogin.body)).toBe(200);
+    const seedToken: string = seedLogin.body.accessToken;
+
+    const created = await request(httpServer)
+      .post("/users")
+      .set("Authorization", `Bearer ${seedToken}`)
+      .send({
+        username: "ws-demote-me",
+        email: "ws-demote-me@example.invalid",
+        password: "ws-demote-me-password-1",
+        isAdmin: true,
+      });
+    expect(created.status, JSON.stringify(created.body)).toBe(201);
+    const secondAdminId: string = created.body.id;
+
+    const secondLogin = await request(httpServer).post("/auth/login").send({
+      username: "ws-demote-me",
+      password: "ws-demote-me-password-1",
+      deviceName: "ws-test-demote-socket",
+      deviceProfile: buildDeviceProfile("ws-test-demote-socket"),
+    });
+    expect(secondLogin.status, JSON.stringify(secondLogin.body)).toBe(200);
+    const secondToken: string = secondLogin.body.accessToken;
+
+    const secondWs = new WebSocket(`${baseWsUrl}?token=${encodeURIComponent(secondToken)}`);
+    const secondMessages: unknown[] = [];
+    secondWs.on("message", (data) => secondMessages.push(JSON.parse(data.toString())));
+    await waitForOpen(secondWs);
+
+    const db = createDb(process.env["DATABASE_URL"]!);
+    const beforeJobId = "018f6f1e-0000-7000-8000-0000000000c1";
+    const afterJobId = "018f6f1e-0000-7000-8000-0000000000c2";
+    const insertJobEvent = async (jobId: string) => {
+      const nowMs = Date.now();
+      await db
+        .insertInto("events")
+        .values({
+          type: "job.updated",
+          ts_ms: nowMs,
+          actor_user_id: null,
+          payload: { jobId, jobType: "scan", status: "active", errorMessage: null, updatedAtMs: nowMs },
+        })
+        .execute();
+    };
+    const isJobUpdatedFor = (m: unknown, wantJobId: string): boolean => {
+      const envelope = m as { type?: unknown; payload?: { jobId?: unknown } };
+      return envelope.type === "job.updated" && envelope.payload?.jobId === wantJobId;
+    };
+
+    try {
+      // Positive control: while genuinely an admin, the socket receives it.
+      await insertJobEvent(beforeJobId);
+      await sleep(1500);
+      expect(
+        secondMessages.some((m) => isJobUpdatedFor(m, beforeJobId)),
+        `pre-demotion admin socket should receive job.updated; got ${JSON.stringify(secondMessages)}`,
+      ).toBe(true);
+
+      const demoted = await request(httpServer)
+        .patch(`/users/${secondAdminId}`)
+        .set("Authorization", `Bearer ${seedToken}`)
+        .send({ isAdmin: false });
+      expect(demoted.status, JSON.stringify(demoted.body)).toBe(200);
+
+      // Wait out the broadcaster's per-socket context TTL (5s) plus poll
+      // margin, then emit another admin-only event: the demoted socket
+      // must NOT receive it — connect-time claims are not forever.
+      await sleep(6000);
+      await insertJobEvent(afterJobId);
+      await sleep(1500);
+      expect(
+        secondMessages.some((m) => isJobUpdatedFor(m, afterJobId)),
+        `post-demotion socket must NOT receive job.updated; got ${JSON.stringify(secondMessages)}`,
+      ).toBe(false);
+    } finally {
+      await db.destroy();
+      secondWs.close();
+    }
+  }, 30_000);
 });

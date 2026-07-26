@@ -66,6 +66,44 @@ export const REQUEST_HEADERS: Readonly<Record<string, string>> = {
   Accept: "application/json, text/plain;q=0.9",
 };
 
+/** Security review L3: redirects are followed manually, at most this many
+ *  hops, each hop validated — never fetch()'s unbounded default. */
+export const MAX_REDIRECT_HOPS = 3;
+
+const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
+
+/**
+ * L3 bounded-redirect fetch. The default manifest base
+ * (`github.com/<owner>/<repo>/releases/latest/download`) answers with a 302
+ * to the release CDN, so redirects can't simply be disabled — instead each
+ * hop must be https (no downgrade bounce onto the operator's LAN) unless it
+ * stays same-origin (a local http mirror or test fixture redirecting within
+ * itself), and the chain is capped at MAX_REDIRECT_HOPS. Violations throw;
+ * performUpdateCheck's existing catch maps that to "unreachable".
+ */
+export async function fetchWithBoundedRedirects(fetchImpl: typeof fetch, url: string, init: RequestInit): Promise<Response> {
+  let currentUrl = url;
+  for (let hop = 0; ; hop++) {
+    const res = await fetchImpl(currentUrl, { ...init, redirect: "manual" });
+    if (!REDIRECT_STATUSES.has(res.status)) {
+      return res;
+    }
+    if (hop >= MAX_REDIRECT_HOPS) {
+      throw new Error(`update-check: redirect chain exceeded ${MAX_REDIRECT_HOPS} hops`);
+    }
+    const location = res.headers.get("location");
+    if (!location) {
+      throw new Error("update-check: redirect response carried no Location header");
+    }
+    const target = new URL(location, currentUrl);
+    const sameOrigin = target.origin === new URL(currentUrl).origin;
+    if (target.protocol !== "https:" && !sameOrigin) {
+      throw new Error("update-check: refusing cross-origin redirect to a non-https target");
+    }
+    currentUrl = target.toString();
+  }
+}
+
 function disabledResult(config: UpdateCheckConfig): SystemUpdateInfo {
   return {
     currentVersion: config.currentVersion,
@@ -116,8 +154,8 @@ export async function performUpdateCheck(config: UpdateCheckConfig, deps: Update
   let sigRes: Response;
   try {
     [manifestRes, sigRes] = await Promise.all([
-      deps.fetchImpl(manifestUrl, { method: "GET", headers: REQUEST_HEADERS }),
-      deps.fetchImpl(sigUrl, { method: "GET", headers: REQUEST_HEADERS }),
+      fetchWithBoundedRedirects(deps.fetchImpl, manifestUrl, { method: "GET", headers: REQUEST_HEADERS }),
+      fetchWithBoundedRedirects(deps.fetchImpl, sigUrl, { method: "GET", headers: REQUEST_HEADERS }),
     ]);
   } catch {
     return unreachableResult(config, checkedAtMs);

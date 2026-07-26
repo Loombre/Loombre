@@ -109,16 +109,45 @@ export interface RateLimitResult {
 }
 
 /** One (capacity, refillMs) policy, fanned out across independent
- *  per-key buckets (per-IP or per-user) allocated lazily on first use. */
+ *  per-key buckets (per-IP or per-user) allocated lazily on first use.
+ *
+ *  Security review L1 (bucket-Map growth): the Map is BOUNDED by
+ *  opportunistic eviction. A bucket that has refilled to full capacity is
+ *  byte-for-byte indistinguishable from the fresh bucket a returning key
+ *  would lazily get anyway, so dropping it can never change any caller's
+ *  observable rate-limit state — eviction is behavior-neutral by
+ *  construction. attempt() sweeps at most once per `capacity * refillMs`
+ *  (the time a fully-drained bucket needs to refill completely — sweeping
+ *  more often could never evict anything a fresh bucket wouldn't equal),
+ *  so steady-state memory is bounded by the number of DISTINCT keys seen
+ *  within one refill window, not by lifetime key churn. */
 export class KeyedRateLimiter {
   private opts: TokenBucketOptions;
   private buckets = new Map<string, TokenBucket>();
+  private lastSweepAtMs: number;
 
   constructor(opts: TokenBucketOptions) {
     this.opts = opts;
+    this.lastSweepAtMs = (opts.clock ?? systemClock).nowMs();
+  }
+
+  /** Ms for a drained bucket to refill fully — the eviction horizon. */
+  private get sweepIntervalMs(): number {
+    return this.opts.capacity * this.opts.refillMs;
+  }
+
+  private sweep(nowMs: number): void {
+    if (nowMs - this.lastSweepAtMs < this.sweepIntervalMs) return;
+    this.lastSweepAtMs = nowMs;
+    for (const [key, bucket] of this.buckets) {
+      if (bucket.peek() === bucket.capacity) {
+        this.buckets.delete(key);
+      }
+    }
   }
 
   attempt(key: string): RateLimitResult {
+    this.sweep((this.opts.clock ?? systemClock).nowMs());
     let bucket = this.buckets.get(key);
     if (!bucket) {
       bucket = new TokenBucket(this.opts);
@@ -126,6 +155,11 @@ export class KeyedRateLimiter {
     }
     const waitMs = bucket.tryAcquire();
     return { allowed: waitMs === 0, retryAfterMs: waitMs };
+  }
+
+  /** Number of tracked per-key buckets — test/introspection only. */
+  get size(): number {
+    return this.buckets.size;
   }
 
   /** Current (capacity, refillMs) policy — test/introspection only. */

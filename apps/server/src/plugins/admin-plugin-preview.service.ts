@@ -20,7 +20,7 @@ import { describeFetchManifestFailure, fetchPluginManifest } from "@loombre/plug
 import { type LppEventSubscriberCapability } from "@loombre/plugin-protocol";
 import { DbProvider } from "../common/db.provider.js";
 import { unprocessableEntity } from "../gateway/problem.exception.js";
-import { requireLiveAdmin } from "../settings/require-live-admin.js";
+import { requireLiveAdmin } from "../common/require-live-admin.js";
 import type { PluginManifestPreviewDto } from "./admin-plugin-dto.js";
 import { computeManifestDigest } from "./manifest-digest.js";
 

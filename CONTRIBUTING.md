@@ -1,8 +1,8 @@
 # Contributing to Loombre
 
 Loombre is a ground-up, contract-first media server — see
-[`CLAUDE.md`](CLAUDE.md) for the full architecture invariants and
-[`docs/PLAN.md`](docs/PLAN.md) for the authoritative technical spec. This
+[`docs/PLAN.md`](docs/PLAN.md) for the authoritative technical spec and
+architecture invariants. This
 page distills the working rules that actually matter for a PR to land,
 plus the concrete commands to run before opening one. For a guided tour of
 the codebase itself, start with the
@@ -42,7 +42,7 @@ page is the concrete first-time walkthrough, prerequisites included.
 ## Contract-first rules
 
 `packages/contract/openapi.yaml` is the source of truth for the entire
-API surface (CLAUDE.md invariant 1):
+API surface (the contract-first invariant):
 
 - Never hand-write `packages/sdk`'s generated files. Edit
   `openapi.yaml`, run `pnpm --filter @loombre/contract run codegen`, and
@@ -63,7 +63,7 @@ Full workflow, with a diagram:
 ## The playback-engine matrix regression law
 
 `packages/playback-engine` is a pure decision function with zero I/O
-(CLAUDE.md invariant 2). **Every new or changed decision rule ships with
+(the engine-purity invariant). **Every new or changed decision rule ships with
 matrix cases in the same PR** — not a follow-up PR, the same one:
 
 1. Add or change the decision logic in `packages/playback-engine/src/`.
@@ -81,7 +81,8 @@ Full walkthrough, with an example case:
 
 ## Other architecture invariants that fail review
 
-The complete list is in [`CLAUDE.md`](CLAUDE.md); the ones worth calling
+The full set is enforced mechanically by `pnpm gate` (dependency-cruiser,
+grep-gates, contract drift checks); the ones worth calling
 out because they're easy to trip without realizing it:
 
 - **No `pg`/`kysely` imports outside `packages/db`.** All catalog reads go
@@ -134,6 +135,6 @@ Please don't open a public issue for a security vulnerability — see
 
 ## Questions
 
-If something in this file, `CLAUDE.md`, or the Developer Guide is unclear
+If something in this file, `docs/PLAN.md`, or the Developer Guide is unclear
 or seems to contradict the actual codebase, please open an issue — a
 confusing contributor-facing doc is a real bug, not a nitpick.
