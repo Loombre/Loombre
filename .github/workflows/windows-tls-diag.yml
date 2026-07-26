@@ -1,45 +1,28 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 #
 # DIAGNOSTIC, manual-dispatch only — not part of the gate, never runs on
-# push or PR. Investigating STATE.md P4.21: in real ci.yml gate runs on
-# windows-latest, src/tls/manual-provider.spec.ts and runtime.spec.ts never
-# report; their vitest fork dies ("Worker exited unexpectedly"), 4/4 runs.
+# push or PR. History of STATE.md P4.21 (the Windows fork crash):
 #
-# VERDICTS SO FAR (each round eliminated a hypothesis):
-#   Round 1 (A–E): both specs pass IN ISOLATION under forks, threads,
-#     --no-isolate, and each alone. Not intrinsically broken; not pool-mode.
-#   Round 2 (F/G): the FULL apps/server suite passes standalone under both
-#     pools. Not a suite-internal interaction.
-#   Round 3 (H/I): apps/server + apps/worker via turbo, concurrent and
-#     serialized, both pass. Not two-package concurrency.
-#   Round 4 (J/K): unfiltered `turbo run test` (the gate's test step, ALL
-#     packages concurrent) passes, as does --concurrency=1. Not full
-#     fan-out concurrency either — at least not under THIS workflow's
-#     conditions.
+# ROOT CAUSE (found in round 5's raw step logs): libuv's Windows fs-event
+# backend ABORTS the process on a C-level assert when a watched directory
+# path contains a DOS 8.3 short name — exactly what os.tmpdir() returns on
+# GitHub runners (C:\Users\RUNNER~1\...):
 #
-# ROUND 5 — the two remaining deltas vs the real failing context:
-#   1. PRE-TEST GATE STEPS: the real gate runs codegen → sdk-drift →
-#      oasdiff → depcruise → runtime-imports → license-check → dep-audit →
-#      lint → typecheck before test (hundreds of node/tsc/eslint process
-#      spawns of churn).
-#   2. SHELL: ci.yml runs `pnpm gate` under `shell: bash` (Git Bash/MSYS).
-#      Rounds 1–4 ran under the Windows default shell (pwsh). MSYS
-#      mediates process trees and signal delivery differently — exactly
-#      the layer a fork's "unexpected exit" lives in.
+#     Assertion failed: !_wcsnicmp(filename, dir, dirlen),
+#       file src\win\fs-event.c, line 72
 #
-#   L1/L2: `pnpm gate` under bash — byte-identical to the failing CI step,
-#          twice, for a reproduction-rate sample.
-#   M:     the test step alone under bash — isolates the shell variable
-#          from the pre-test-steps variable.
+# Both src/tls/manual-provider.spec.ts and src/tls/runtime.spec.ts exercise
+# watchManualCertificate's real fs.watch over tmpdir paths, so their vitest
+# forks died with no JS error ("Worker exited unexpectedly"). The fix is in
+# PRODUCTION code (manual-provider.ts canonicalWatchDir: realpathSync.native
+# before fs.watch) because an operator-supplied short-name cert path would
+# abort a real Windows server the same way.
 #
-# How to read:
-#   L red, M red    -> bash shell + test step suffices: the shell is the delta.
-#   L red, M green  -> pre-test gate steps are the delta; bisect them next.
-#   L green ×2      -> cannot reproduce outside the real ci.yml job even
-#                      byte-identically; compare with the parallel real-CI
-#                      dispatch — if that failed again, the delta is the
-#                      ci.yml job definition itself (env/matrix), else the
-#                      failure is probabilistic and needs rate data.
+# METHOD NOTE, learned the hard way: steps with continue-on-error report
+# conclusion=success in the API even when they fail. Rounds 1–4's
+# "all green" readings were exactly that artifact. Every result step below
+# therefore prints an explicit `VERDICT:` line — read THOSE from the log,
+# never the step conclusions.
 name: windows-tls-diag
 
 on:
@@ -47,7 +30,7 @@ on:
 
 jobs:
   diag:
-    name: windows TLS fork-crash diagnosis (round 5)
+    name: windows fs.watch short-name crash — fix verification (round 6)
     runs-on: windows-latest
     steps:
       - name: Checkout
@@ -65,76 +48,29 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Set up Postgres 18 (D18 — port 5442)
-        uses: ikalnytskyi/action-setup-postgres@c4dda34aae1c821e3a771b68b73b13af3198a7ee # v8
-        with:
-          username: loombre
-          password: loombre
-          database: loombre
-          port: "5442"
-          postgres-version: "18"
+      - name: Build workspace dependencies
+        run: pnpm build
 
-      - name: Migrate + seed database
+      - name: Confirm tmpdir uses a short name (the trigger precondition)
         shell: bash
-        env:
-          DATABASE_URL: postgres://loombre:loombre@127.0.0.1:5442/loombre
         run: |
-          set -euo pipefail
-          pnpm db:migrate
-          pnpm db:seed
+          node -e "const os=require('os'); console.log('tmpdir:', os.tmpdir())"
+          echo "If the path above contains a '~', the crash precondition is present."
 
-      - name: Install ffmpeg
-        run: choco install ffmpeg -y --no-progress
-
-      - name: Generate media fixtures
-        shell: bash
-        run: node scripts/gen-media-fixtures.mjs
-
-      - name: "L1: pnpm gate under bash — byte-identical to the failing CI step"
+      - name: "R1-R3: the two formerly-crashing specs, three times, default pool"
         continue-on-error: true
+        working-directory: apps/server
         shell: bash
-        env:
-          PGHOST: 127.0.0.1
-          PGPORT: "5442"
-          PGUSER: loombre
-          PGPASSWORD: loombre
-          DATABASE_URL: postgres://loombre:loombre@127.0.0.1:5442/loombre
-          LOOMBRE_REQUIRE_FFMPEG: "1"
-          LOOMBRE_TEST_TIME_SCALE: "3"
-        run: pnpm gate
+        run: |
+          for i in 1 2 3; do
+            if pnpm exec vitest run src/tls/manual-provider.spec.ts src/tls/runtime.spec.ts --reporter=verbose; then
+              echo "VERDICT:R$i:PASS"
+            else
+              echo "VERDICT:R$i:FAIL"
+            fi
+          done
 
-      - name: "L2: pnpm gate under bash — second sample"
-        continue-on-error: true
-        shell: bash
-        env:
-          PGHOST: 127.0.0.1
-          PGPORT: "5442"
-          PGUSER: loombre
-          PGPASSWORD: loombre
-          DATABASE_URL: postgres://loombre:loombre@127.0.0.1:5442/loombre
-          LOOMBRE_REQUIRE_FFMPEG: "1"
-          LOOMBRE_TEST_TIME_SCALE: "3"
-        run: pnpm gate
-
-      - name: "M: turbo run test under bash — test step alone, shell isolated"
-        continue-on-error: true
-        shell: bash
-        env:
-          PGHOST: 127.0.0.1
-          PGPORT: "5442"
-          PGUSER: loombre
-          PGPASSWORD: loombre
-          DATABASE_URL: postgres://loombre:loombre@127.0.0.1:5442/loombre
-          LOOMBRE_REQUIRE_FFMPEG: "1"
-          LOOMBRE_TEST_TIME_SCALE: "3"
-        run: pnpm exec turbo run test
-
-      - name: How to read this run
+      - name: Summary
         if: always()
         shell: bash
-        run: |
-          echo "L red, M red   -> the bash/MSYS shell is the delta."
-          echo "L red, M green -> pre-test gate steps are the delta; bisect next."
-          echo "L green x2     -> compare the parallel real-CI windows dispatch; if that failed,"
-          echo "                  the ci.yml job definition is the delta; if it passed too, the"
-          echo "                  failure is probabilistic — gather rate data before any fix."
+        run: echo "Read the VERDICT: lines above — three PASSes mean the canonicalWatchDir fix holds at the crash site; the real ci.yml windows leg is the final authority."
