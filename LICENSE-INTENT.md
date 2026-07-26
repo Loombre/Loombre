@@ -77,3 +77,16 @@ these programs communicate only via process boundaries/CLI/files).
 
 Rule: any new vendored binary requires (a) a pinned-checksum manifest entry
 with source URLs, (b) a license row here, (c) an aggregation-posture note.
+
+## .NET components (Phase 4, Windows lane I3)
+
+The Windows tray and service-host executables are C# — fully-owned
+original code, AGPL-3.0 like the rest of the repo. What ships beside or
+inside them (also outside `license-checker`'s npm-only scan):
+
+| Component | License | Source + pin | Posture |
+|-----------|---------|--------------|---------|
+| .NET 8 runtime packs | MIT | resolved by `dotnet publish --self-contained` from nuget.org (SDK-managed) | Bundled unmodified into `LoombreServiceHost.exe` / `Loombre.Tray.exe` (single-file publish); the runtime the C# code runs ON |
+| System.ServiceProcess.ServiceController 8.0.1 | MIT (© .NET Foundation) | exact-version `PackageReference` in `LoombreServiceHost.csproj` (ServiceBase does not ship in the `-windows` TFM reference assemblies — first Windows compile evidence, diag run 30218015372) | Compiled into the service-host exe; MIT → AGPL-3.0 compatible |
+| xunit 2.9.2, xunit.runner.visualstudio 2.8.2, Microsoft.NET.Test.Sdk 17.12.0 | Apache-2.0 / MIT | exact-version `PackageReference`s in the two test csprojs | Build/test-time only — never ships in any artifact |
+| WiX Toolset 5.0.2 + WixToolset.Firewall.wixext 5.0.2 | MS-RL | `/.config/dotnet-tools.json` pin (OSMF decision — STATE.md sweep ledger) | Build tool. OWNER-REVIEW NOTE: the Firewall extension embeds its native custom-action DLL inside the produced `.msi` (MSI Binary table) — a separate binary aggregated in the installer container, never linked with Loombre code; same mere-aggregation posture as ffmpeg above. MS-RL is GPL-incompatible for LINKING, which is why the aggregation-only posture matters and is recorded here |
