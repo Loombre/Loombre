@@ -13,6 +13,10 @@
 
 using System.Diagnostics;
 using Loombre.Tray.Ipc;
+// The poll timer must be the WinForms (UI-thread) Timer — Tick handlers
+// touch NotifyIcon/menu state directly. The alias disambiguates it from
+// System.Threading.Timer, which the SDK's implicit usings also import.
+using Timer = System.Windows.Forms.Timer;
 
 namespace Loombre.Tray;
 
