@@ -9,12 +9,15 @@
     trail on WHY this exists (a bare node.exe cannot register with SCM or
     receive a clean stop signal on its own).
 
-    net8.0-windows (not plain net8.0): System.ServiceProcess.ServiceBase
-    ships as part of the Windows-targeting reference assemblies pulled in
-    by the "-windows" TFM suffix — no extra NuGet package needed, keeping
-    this project's dependency surface at zero beyond the .NET 8 SDK itself
-    (nothing new for LICENSE-INTENT.md: this binary is fully-owned original
-    code, not a third-party wrapper — see Services.wxs's header).
+    net8.0-windows: Windows-only surface (ServiceBase, the console-signal
+    P/Invokes). CORRECTION (first-ever Windows compile, diag run
+    30218015372): System.ServiceProcess.ServiceBase does NOT ship in the
+    "-windows" reference assemblies as this comment previously claimed —
+    it lives only in the System.ServiceProcess.ServiceController NuGet
+    package (MIT, © .NET Foundation; recorded in LICENSE-INTENT.md),
+    referenced below. EnableWindowsTargeting exists so the macOS dev host
+    can run compile-only proofs (dotnet build/publish) — without it, any
+    "-windows" TFM fails restore off-Windows with NETSDK1100.
   -->
 
   <PropertyGroup>
@@ -38,10 +41,15 @@
     <PublishSingleFile>true</PublishSingleFile>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
     <InvariantGlobalization>true</InvariantGlobalization>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
   </PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\LoombreServiceHost.Core\LoombreServiceHost.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="System.ServiceProcess.ServiceController" Version="8.0.1" />
   </ItemGroup>
 
 </Project>
