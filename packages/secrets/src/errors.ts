@@ -55,3 +55,25 @@ export class AmbiguousSecretError extends Error {
     this.cause = cause;
   }
 }
+
+/** Windows-only: the owner-only DACL could not be applied to a secret file.
+ *  Raised INSTEAD of leaving the secret readable under inherited
+ *  permissions — a caller that cannot make the confidentiality guarantee
+ *  stops loudly rather than silently downgrading it. */
+export class SecretAclError extends Error {
+  readonly filePath: string;
+  readonly principal: string;
+
+  constructor(filePath: string, principal: string, cause?: unknown) {
+    super(
+      `@loombre/secrets: could not apply an owner-only DACL to the secret at ${filePath} ` +
+        `(principal ${principal}). Windows has no POSIX mode bits, so this ACL IS the file's confidentiality ` +
+        `guarantee — refusing to continue with the secret under inherited permissions. ` +
+        `Check that icacls is on PATH and that the volume supports ACLs (NTFS, not FAT32/exFAT).`,
+    );
+    this.name = "SecretAclError";
+    this.filePath = filePath;
+    this.principal = principal;
+    this.cause = cause;
+  }
+}

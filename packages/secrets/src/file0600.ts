@@ -19,14 +19,13 @@
 // provisioning-pg should import this module instead of its own copy once a
 // lane is scheduled to make that (non-breaking, same-shape) swap.
 
-import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { dirname } from "node:path";
 import { randomBytes } from "node:crypto";
 import type { SecretRef } from "@loombre/provisioning";
 import type { SecretBackendImpl } from "./types.js";
 import { SecretNotFoundError } from "./errors.js";
-
-const SECRET_FILE_MODE = 0o600;
+import { writeOwnerOnlyFile } from "./owner-only-file.js";
 
 /** 32 random bytes, base64url-encoded (43 chars, no padding/slashes) — safe
  *  to embed verbatim in a connection string or use directly as a JWT HMAC
@@ -37,13 +36,10 @@ export function generateRandomSecretValue(): string {
 
 function writeSecretFile(key: string, value: string): void {
   mkdirSync(dirname(key), { recursive: true });
-  // Node's `mode` option on writeFileSync only takes effect on file
-  // CREATION (O_CREAT) — an existing file's mode is left untouched, so
-  // every write is followed by an explicit chmod (same gotcha
-  // apps/server/src/tls/fs-secret.ts and provisioning-pg's file0600.ts both
-  // document for their own instances of this exact pattern).
-  writeFileSync(key, value, { mode: SECRET_FILE_MODE });
-  chmodSync(key, SECRET_FILE_MODE);
+  // Owner-only, however this platform expresses that: 0600 mode bits on
+  // POSIX, an explicit owner-only DACL on Windows (which has no POSIX
+  // bits at all). See ./owner-only-file.ts.
+  writeOwnerOnlyFile(key, value);
 }
 
 export function createFile0600Backend(): SecretBackendImpl {
