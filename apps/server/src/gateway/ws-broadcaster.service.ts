@@ -91,7 +91,7 @@ import { HttpAdapterHost } from "@nestjs/core";
 import type { IncomingMessage, Server } from "node:http";
 import type { Socket } from "node:net";
 import { WebSocket, WebSocketServer } from "ws";
-import { filterEventsForViewer, markEventsProcessed, readUnprocessedEvents, type ViewerContext } from "@loombre/db";
+import { filterEventsForViewer, getUserById, markEventsProcessed, readUnprocessedEvents, type ViewerContext } from "@loombre/db";
 import { uuidv7 } from "@loombre/shared";
 import { TokenService, type AccessTokenClaims } from "../session/token.service.js";
 import { DbProvider } from "../common/db.provider.js";
@@ -246,6 +246,15 @@ export class WsBroadcasterService implements OnApplicationBootstrap, OnModuleDes
         ctx = await this.viewerContextProvider.resolve(state.userId, nowMs);
         state.ctx = ctx;
         state.ctxResolvedAtMs = nowMs;
+
+        // L2 (pre-public hardening): admin-only delivery must not ride the
+        // connect-time claim forever — re-read users.is_admin at the same
+        // TTL boundary as the viewer context, fail-closed on a missing
+        // user. A demoted admin's live socket stops receiving
+        // ADMIN_ONLY_TYPES within CONTEXT_CACHE_TTL_MS instead of for as
+        // long as the socket stays open.
+        const user = await getUserById(db, state.userId);
+        state.isAdmin = user?.is_admin === true;
 
         if (wasCleared && !ctx.restrictedCleared) {
           // Restricted auto-relock synthesis — see this file's header for

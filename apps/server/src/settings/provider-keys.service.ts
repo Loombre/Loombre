@@ -57,7 +57,7 @@ import { emitRedactedSettingsUpdated } from "@loombre/db";
 import { DbProvider } from "../common/db.provider.js";
 import { conflict, notFound, unprocessableEntity } from "../gateway/problem.exception.js";
 import { resolveAppPaths } from "../cli/app-paths.js";
-import { requireLiveAdmin } from "./require-live-admin.js";
+import { requireLiveAdmin } from "../common/require-live-admin.js";
 import type { ProviderKeyStatusDto, ProviderName } from "./settings.types.js";
 
 const PROVIDER_ENV_VAR: Record<ProviderName, string> = {

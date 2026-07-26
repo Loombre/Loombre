@@ -21,7 +21,8 @@ import { nowMs as clockNowMs } from "@loombre/shared";
 import { forbidden, notFound, unprocessableEntity } from "../gateway/problem.exception.js";
 import { requireUuidParam } from "../gateway/require-uuid-param.js";
 import type { AuthenticatedRequest } from "../gateway/auth.guard.js";
-import { DbProvider } from "../common/db.provider.js";
+import { DbProvider, type LoombreDb } from "../common/db.provider.js";
+import { requireLiveAdmin } from "../common/require-live-admin.js";
 import { HashService } from "../common/hash.service.js";
 import { parseListQuery } from "./viewer.js";
 
@@ -56,10 +57,14 @@ function mapSettings(settings: { restricted_opt_in: boolean; updated_at_ms: numb
   };
 }
 
-function requireAdmin(req: AuthenticatedRequest): void {
+// L2 (pre-public hardening): claim fast-fail, then a FRESH DB re-read via
+// requireLiveAdmin — the JWT isAdmin claim alone can be stale for up to the
+// access token's 15-minute lifetime after a demotion.
+async function requireAdmin(db: LoombreDb, req: AuthenticatedRequest): Promise<void> {
   if (!req.user?.isAdmin) {
     throw forbidden("Admin privileges are required for this operation.", req.originalUrl);
   }
+  await requireLiveAdmin(db, req.user.userId, req.originalUrl);
 }
 
 @Controller()
@@ -71,7 +76,7 @@ export class UsersController {
 
   @Get("users")
   async listUsers(@Query() query: Record<string, unknown>, @Req() req: AuthenticatedRequest) {
-    requireAdmin(req);
+    await requireAdmin(this.dbProvider.db, req);
     const { cursor, limit } = parseListQuery(query);
     const page = await listUsersAdmin(this.dbProvider.db, {
       ...(cursor !== undefined ? { cursor } : {}),
@@ -82,7 +87,7 @@ export class UsersController {
 
   @Post("users")
   async createUser(@Body() rawBody: Record<string, unknown> | undefined, @Req() req: AuthenticatedRequest) {
-    requireAdmin(req);
+    await requireAdmin(this.dbProvider.db, req);
     const body = rawBody ?? {};
     const instance = req.originalUrl;
 
@@ -170,7 +175,7 @@ export class UsersController {
 
   @Get("users/:id")
   async getUser(@Param("id") id: string, @Req() req: AuthenticatedRequest) {
-    requireAdmin(req);
+    await requireAdmin(this.dbProvider.db, req);
     requireUuidParam(id, "User not found.", req.originalUrl);
     const user = await getUserById(this.dbProvider.db, id);
     if (!user) {
@@ -185,7 +190,7 @@ export class UsersController {
     @Body() rawBody: Record<string, unknown> | undefined,
     @Req() req: AuthenticatedRequest,
   ) {
-    requireAdmin(req);
+    await requireAdmin(this.dbProvider.db, req);
     requireUuidParam(id, "User not found.", req.originalUrl);
     const body = rawBody ?? {};
     const updated = await updateUserAdmin(this.dbProvider.db, id, {
@@ -204,7 +209,7 @@ export class UsersController {
 
   @Delete("users/:id")
   async deleteUser(@Param("id") id: string, @Req() req: AuthenticatedRequest) {
-    requireAdmin(req);
+    await requireAdmin(this.dbProvider.db, req);
     requireUuidParam(id, "User not found.", req.originalUrl);
     const existing = await getUserById(this.dbProvider.db, id);
     if (!existing) {
