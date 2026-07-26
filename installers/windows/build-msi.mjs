@@ -47,7 +47,16 @@
 // lockfile or LICENSE-INTENT.md.
 
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, cpSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  realpathSync,
+  rmSync,
+  cpSync,
+  writeFileSync,
+} from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
@@ -238,10 +247,13 @@ function placeholderDir(targetDir, note) {
   // (installers/windows/msi/Files.wxs) has at least one file to harvest —
   // an EMPTY source directory is a `wix build` error (nothing to match),
   // not a silently-empty ComponentGroup.
+  // Written directly — no shell. The previous `cmd /c echo …> "path"`
+  // form died on real Windows: Node quotes the composite arg when
+  // spawning cmd.exe, which mangles the nested redirect quoting
+  // ("The filename, directory name, or volume label syntax is
+  // incorrect", diag run 30217821095).
   const marker = path.join(targetDir, "PLACEHOLDER.txt");
-  execFileSync(process.platform === "win32" ? "cmd" : "sh", process.platform === "win32"
-    ? ["/c", `echo ${note}> "${marker}"`]
-    : ["-c", `printf '%s\n' ${JSON.stringify(note)} > "${marker}"`]);
+  writeFileSync(marker, `${note}\n`);
 }
 
 function fetchNodeRuntime(targetDir) {
