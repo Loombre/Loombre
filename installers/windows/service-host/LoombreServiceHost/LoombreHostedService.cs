@@ -17,21 +17,28 @@
 // signal available on this platform. Two things have to be true for that
 // delivery to actually reach the child:
 //
-//   1. The child must be its OWN console process group (CREATE_NEW_
-//      PROCESS_GROUP on ProcessStartInfo — .NET exposes this as
-//      ProcessStartInfo.CreateNewProcessGroup) — otherwise a
-//      CTRL_BREAK_EVENT sent to "the group" would also hit THIS wrapper
-//      process, tearing itself down mid-shutdown-sequence.
-//   2. GenerateConsoleCtrlEvent can only signal a console GROUP the
+//   1. GenerateConsoleCtrlEvent can only signal a console GROUP the
 //      CALLING process is itself attached to. A Windows Service normally
 //      has no console at all, so before signalling we FreeConsole() (in
 //      case we somehow have one) then AttachConsole(childPid) to borrow
 //      the child's, call SetConsoleCtrlHandler(null, true) so THIS
 //      process ignores the very event it's about to broadcast, fire the
-//      event, then FreeConsole() again to detach. This dance (not a
-//      single API call) is the actual documented mechanism for a
-//      console-less parent to signal a console-subsystem child — see
-//      NativeMethods.cs's header for the "untested on real Windows" note.
+//      event at group 0 (= every process attached to that console), then
+//      FreeConsole() again to detach. This dance (not a single API call)
+//      is the actual documented mechanism for a console-less parent to
+//      signal a console-subsystem child — see NativeMethods.cs's header
+//      for the "untested on real Windows" note.
+//   2. .NET 8 cannot put the child in its own console process group:
+//      ProcessStartInfo.CreateNewProcessGroup exists only on .NET 9+
+//      (the first-ever Windows compile of this project — diag run
+//      30218015372 — caught the CS0117), and .NET 8 is this repo's
+//      Active-LTS line. Group-targeted delivery (group id = child pid,
+//      which would cleanly exclude this wrapper) is therefore not
+//      available; the group-0 broadcast plus the handler-ignore above is
+//      the .NET 8 mechanism. Revisit when the repo's .NET line moves
+//      past 8 (the property is the cleaner form), or if Wave-3 Windows
+//      hardening lands a P/Invoked CreateProcess with
+//      CREATE_NEW_PROCESS_GROUP.
 //
 // If AttachConsole fails (child never got a console for some reason, or
 // already exited) or the child does not exit within
@@ -83,7 +90,6 @@ public sealed class LoombreHostedService : ServiceBase
             UseShellExecute = false,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
-            CreateNewProcessGroup = true,
         };
         foreach (var a in _options.Arguments)
         {
