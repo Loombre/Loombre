@@ -505,7 +505,15 @@ function wixBuild(version, payloadDirs) {
     `TrayPublishDir=${path.join(STAGE_DIR, "tray")}`,
     "-out",
     outFile,
-  ]);
+  ], {
+    // MUST match ensureWixInstalled's cwd: `wix extension add` (no
+    // --global) caches into .wix/ under the CURRENT directory, and
+    // `wix build -ext` resolves from the same place — running the build
+    // from REPO_ROOT while the add ran here yields WIX0144 "extension
+    // could not be found" (diag run 30218552917). Every path argument
+    // above is absolute, so the cwd carries no other meaning.
+    cwd: WINDOWS_DIR,
+  });
 
   const sizeBytes = existsSync(outFile) ? readFileSync(outFile).length : 0;
   log(`MSI built: ${outFile} (${(sizeBytes / (1024 * 1024)).toFixed(1)} MiB)`);
