@@ -47,7 +47,7 @@
 // lockfile or LICENSE-INTENT.md.
 
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, rmSync, cpSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, cpSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
@@ -164,7 +164,41 @@ function pnpmDeploy(pkgName, targetDir) {
   // PRODUCTION dependency closure — resolved from the frozen lockfile —
   // into targetDir, pruned of devDependencies. Requires the package to
   // already be built (dist/ present), hence buildWorkspace() runs first.
-  run("pnpm", ["--filter", pkgName, "deploy", "--prod", targetDir]);
+  // `--legacy` matches lanes I1/I4: pnpm v10+ refuses to deploy from a
+  // non-injected workspace without it (ERR_PNPM_DEPLOY_NONINJECTED_
+  // WORKSPACE), and this workspace does not set inject-workspace-packages.
+  run("pnpm", ["--filter", pkgName, "deploy", "--prod", "--legacy", targetDir]);
+
+  // apps/server-only, ported from lane I4 (installers/macos/build-pkg.mjs +
+  // LAYOUT.md §9): ajv is a *runtime* dependency (device-profile
+  // validation) miscategorized as a devDependency, so `--prod` omits it
+  // and the installed server would crash on first import. Vendor the
+  // exact resolved version already installed under apps/server (pinned by
+  // pnpm-lock.yaml — NOT a fresh fetch). ajv's own transitive deps live
+  // as SIBLINGS in `.pnpm/ajv@<v>/node_modules/`, not nested under
+  // `ajv/node_modules`, so copy the whole sibling level, flattened into
+  // the deploy's top-level node_modules (I4 found this during its own
+  // smoke-testing). realpathSync.native resolves pnpm's junction on
+  // Windows where I4 shells out to `readlink -f`.
+  if (pkgName === "@loombre/server") {
+    const ajvSourceDir = path.join(REPO_ROOT, "apps", "server", "node_modules", "ajv");
+    if (!existsSync(ajvSourceDir)) {
+      stop(
+        "pnpmDeploy(@loombre/server): apps/server/node_modules/ajv not found — run `pnpm install` " +
+          "first, or apps/server no longer depends on ajv (update LAYOUT.md §9 + this script together).",
+      );
+    }
+    const ajvSiblingLevel = path.dirname(realpathSync.native(ajvSourceDir)); // …/.pnpm/ajv@<v>/node_modules/
+    const deployNodeModules = path.join(targetDir, "node_modules");
+    for (const entry of readdirSync(ajvSiblingLevel)) {
+      const dest = path.join(deployNodeModules, entry);
+      rmSync(dest, { recursive: true, force: true });
+      cpSync(path.join(ajvSiblingLevel, entry), dest, { recursive: true, dereference: true });
+    }
+    log(
+      `vendored ajv + its ${readdirSync(ajvSiblingLevel).length - 1} resolved transitive deps into the server deploy`,
+    );
+  }
 }
 
 function stageWeb(targetDir) {
