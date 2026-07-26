@@ -12,8 +12,21 @@
 
 import { defineConfig } from "vitest/config";
 
+// CI-runner time scaling, same mechanism as apps/worker/test/transcode/
+// session.integration.spec.ts's per-test deadlines (which ci.yml already
+// feeds via LOOMBRE_TEST_TIME_SCALE=3, macOS 10, passed through turbo's
+// globalEnv). This package's image specs do REAL sharp encode work —
+// variant-job.spec.ts runs 9 tests in ~0.7s on real hardware but took
+// 13.4s on a 3-core virtualized ubuntu runner, blowing vitest's fixed 5s
+// default on a single AVIF-heavy case. Scaling the default timeout keeps
+// every assertion identical and only widens the patience on slow runners;
+// locally the scale is 1, so the timeout stays exactly 5s.
+const TIME_SCALE = Math.max(1, Number(process.env["LOOMBRE_TEST_TIME_SCALE"] ?? "1") || 1);
+
 export default defineConfig({
   test: {
     fileParallelism: false,
+    testTimeout: 5_000 * TIME_SCALE,
+    hookTimeout: 10_000 * TIME_SCALE,
   },
 });

@@ -18,6 +18,17 @@ import { ensureRealBinaries, isProvenIntegrationHost, requireEnvSet, PG_CURRENT_
 const RUN = isProvenIntegrationHost() || requireEnvSet();
 const describeReal = RUN ? describe : describe.skip;
 
+// CI-runner time scaling, same mechanism as apps/worker/test/transcode/
+// session.integration.spec.ts (ci.yml sets 3, macOS 10; passed through
+// turbo's globalEnv). EVERY test here does real work — vendored-binary
+// resolution, real initdb, real pg_controldata — so vitest's fixed 5s
+// default was never right for them; it only went unnoticed because these
+// specs SKIP on linux/windows (darwin-arm64 is the proven integration
+// host) and real hardware finishes them in well under 5s. The first
+// macos-latest CI execution timed out at 5s on a file that takes ~20s
+// there. Assertions unchanged, only the patience.
+const TIME_SCALE = Math.max(1, Number(process.env["LOOMBRE_TEST_TIME_SCALE"] ?? "1") || 1);
+
 if (!RUN) {
   console.warn(
     `corruption.integration.spec.ts: SKIPPED — not the proven integration host (darwin-arm64), host is ${process.platform}/${process.arch}. ` +
@@ -79,7 +90,7 @@ describeReal("detectCorruption() — real damaged control file", () => {
     expect(report.dataDir).toBe(dataDir);
     expect(typeof report.detectedAtMs).toBe("number");
     expect(report.detail).toBeDefined();
-  });
+  }, 30_000 * TIME_SCALE);
 
   it("a BIT-FLIPPED (CRC-mismatched but full-size) global/pg_control -> 'checksum-failure' (real captured pg_controldata behavior: exits 0 with a WARNING, not a nonzero exit)", async () => {
     const { binaries } = await ensureRealBinaries(PG_CURRENT_VERSION);
@@ -112,21 +123,21 @@ describeReal("detectCorruption() — real damaged control file", () => {
     const report = await detectCorruption({ dataDir, pinnedMajor: 18, binaries });
     expect(report).not.toBeNull();
     expect(report?.reason).toBe("checksum-failure");
-  });
+  }, 30_000 * TIME_SCALE);
 
   it("a missing data directory entirely -> 'missing-data-dir' (fs-derived, never even shells out to pg_controldata)", async () => {
     const { binaries } = await ensureRealBinaries(PG_CURRENT_VERSION);
     const neverCreatedDataDir = join(scratchDir("missing"), "does-not-exist");
     const report = await detectCorruption({ dataDir: neverCreatedDataDir, pinnedMajor: 18, binaries });
     expect(report?.reason).toBe("missing-data-dir");
-  });
+  }, 30_000 * TIME_SCALE);
 
   it("a data dir with no PG_VERSION -> 'missing-version-file'", async () => {
     const { binaries } = await ensureRealBinaries(PG_CURRENT_VERSION);
     const emptyDataDir = scratchDir("empty-data");
     const report = await detectCorruption({ dataDir: emptyDataDir, pinnedMajor: 18, binaries });
     expect(report?.reason).toBe("missing-version-file");
-  });
+  }, 30_000 * TIME_SCALE);
 
   it("a real 17.x-initialized cluster checked against pinnedMajor=18 -> 'pg-version-mismatch'", async () => {
     const { binaries: binariesOld } = await ensureRealBinaries(PG_UPGRADE_FROM_VERSION);
@@ -148,7 +159,7 @@ describeReal("detectCorruption() — real damaged control file", () => {
     const { binaries: binariesNew } = await ensureRealBinaries(PG_CURRENT_VERSION);
     const report = await detectCorruption({ dataDir, pinnedMajor: 18, binaries: binariesNew });
     expect(report?.reason).toBe("pg-version-mismatch");
-  });
+  }, 30_000 * TIME_SCALE);
 
   it("start() on a corrupted data directory surfaces the SAME typed CorruptionReport through ProvisioningStatus.state='corrupt' (crash-of-child / startup-failure detection)", async () => {
     const { binaries } = await ensureRealBinaries(PG_CURRENT_VERSION);
@@ -175,5 +186,5 @@ describeReal("detectCorruption() — real damaged control file", () => {
     const status = await instance.start();
     expect(status.state).toBe("corrupt");
     expect(status.detail).toBeDefined();
-  }, 30_000);
+  }, 30_000 * TIME_SCALE);
 });
