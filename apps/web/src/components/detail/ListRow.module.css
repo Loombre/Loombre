@@ -1,0 +1,158 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+
+/* Shared row recipe for episode/track lists inside item detail pages. */
+
+/* Shared by both <a> rows (EpisodeRow/VersionRow — navigate) and <button>
+   rows (TrackRow — plays in place, see that file's header) — the reset
+   properties below are no-ops for an <a> but required for a <button> to
+   look identical to one. */
+.row {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  gap: var(--space-sm);
+  padding: var(--space-sm);
+  border: none;
+  border-radius: var(--radius-md);
+  background: none;
+  font: inherit;
+  text-align: left;
+  text-decoration: none;
+  color: inherit;
+  cursor: pointer;
+  transition: background-color var(--motion-fast) var(--ease-out);
+}
+
+.row:hover,
+.row:focus-visible {
+  background: var(--color-surface-hover);
+}
+
+/* Phosphor H2 (design/phosphor/dc:546-561, "mono track index/length
+   rows"): only TrackRow.tsx renders `.number`/`.eq`/`.trackTitle`/
+   `.trackLength` — VersionRow.tsx (this file's other consumer) never
+   references any of them, so these are safe to restyle/add without
+   touching the movie/episode Versions section. */
+.number {
+  width: 20px;
+  flex-shrink: 0;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: var(--mono-lg);
+  color: var(--color-text-subtle);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 3-bar equalizer, replacing the index on the currently-playing track's
+   row. Same footprint as `.number` so the row never reflows switching
+   between the two. */
+.eq {
+  width: 20px;
+  height: 12px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 2px;
+}
+
+.eqBar {
+  width: 3px;
+  height: 100%;
+  background: var(--color-accent);
+  transform-origin: bottom;
+  animation: loombre-eq 0.8s ease-in-out infinite;
+}
+
+.eqBar:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.eqBar:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes loombre-eq {
+  0%,
+  100% {
+    transform: scaleY(0.3);
+  }
+
+  50% {
+    transform: scaleY(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .eqBar {
+    animation: none;
+    transform: scaleY(0.65);
+  }
+
+  .eqBar:nth-child(2) {
+    transform: scaleY(1);
+  }
+
+  .eqBar:nth-child(3) {
+    transform: scaleY(0.45);
+  }
+}
+
+.trackTitle {
+  flex: 1;
+  min-width: 0;
+  color: var(--color-text-secondary);
+}
+
+.trackTitle[data-playing="true"] {
+  color: var(--color-accent);
+}
+
+.trackLength {
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: var(--mono-lg);
+  color: var(--color-text-subtle);
+  font-variant-numeric: tabular-nums;
+}
+
+.thumb {
+  width: 96px;
+  height: 54px;
+  flex-shrink: 0;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--color-dominant-fallback);
+  object-fit: cover;
+}
+
+.info {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3xs);
+  min-width: 0;
+  flex: 1;
+}
+
+.title {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.meta {
+  font-size: var(--text-xs);
+  color: var(--muted);
+}
+
+.playIcon {
+  flex-shrink: 0;
+  color: var(--muted);
+}
+
+.row:hover .playIcon,
+.row:focus-visible .playIcon {
+  color: var(--color-accent);
+}

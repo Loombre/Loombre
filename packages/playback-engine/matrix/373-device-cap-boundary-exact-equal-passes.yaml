@@ -1,0 +1,56 @@
+name: direct-play — overall EXACTLY equal to the device cap passes (withinDeviceCap is <=, not <)
+why: >
+  Boundary case for `withinDeviceCap = device.maxStreamBitrateBps === null
+  OR overallBitrateBps <= device.maxStreamBitrateBps` (binding
+  interpretation constraint 2): overall (500,000) is EXACTLY equal to
+  bitrate-capped-device's cap (500,000) — the comparison is `<=`, so this
+  counts as "within". Network is local (isLocal true) with a cap (100,000)
+  that overall genuinely exceeds, so the unless-clause's SECOND half is the
+  one actually being tested here; since it holds, no reason fires and the
+  decision is direct-play.
+
+input:
+  media:
+    fileId: file-0373
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 375000000
+    overallBitrateBps: 500000
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 41
+        width: 1920
+        height: 1080
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 450000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 48000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device: { fixture: devices.bitrate-capped-device }
+  network: { maxBitrateBps: 100000, isLocal: true }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.software-only }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+
+expect:
+  decision: direct-play
+  reasons: []
+  container: source

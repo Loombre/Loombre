@@ -1,0 +1,207 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+.header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: var(--space-md);
+}
+
+.title {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--mono-lg);
+  text-transform: uppercase;
+  letter-spacing: var(--track-mono-wide);
+  color: var(--color-text-muted);
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  padding: var(--space-sm) var(--space-md);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-subtle);
+}
+
+.mainLine {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  flex-wrap: wrap;
+}
+
+.name {
+  font-weight: var(--weight-semibold);
+  color: var(--text);
+}
+
+.count {
+  font-size: var(--text-xs);
+  color: var(--muted);
+}
+
+.scanningBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2xs);
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: var(--mono-sm);
+  letter-spacing: var(--track-mono);
+  color: var(--color-accent);
+  text-transform: uppercase;
+}
+
+/* Indeterminate scan bar: compositor-only (transform), never width/layout —
+   U9/reduced-motion: the streaming scanner has no upfront total (see
+   apps/worker/src/scan/scanner.ts's maybeCheckpoint header), so this never
+   claims a percentage — it is purely a "something is happening" cue. */
+.scanBar {
+  position: relative;
+  width: 40px;
+  height: 3px;
+  border-radius: var(--radius-pill);
+  background: rgb(255 255 255 / 8%);
+  overflow: hidden;
+}
+
+.scanBar::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  width: 34%;
+  border-radius: var(--radius-pill);
+  background: var(--brand-amber);
+  animation: blaze-indeterminate 1.6s ease-in-out infinite;
+}
+
+@keyframes blaze-indeterminate {
+  0% {
+    transform: translateX(-110%);
+  }
+
+  100% {
+    transform: translateX(360%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scanBar::after {
+    animation: none;
+    transform: translateX(30%);
+  }
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.scanStatus {
+  font-size: var(--text-xs);
+  color: var(--muted);
+}
+
+.unmatchedDisclosure {
+  margin-top: var(--space-2xs);
+}
+
+/* H18 fix (Wave-3 fidelity audit): an amber OUTLINED pill (prototype's
+   library-row "n UNMATCHED · REVIEW":
+   `font:600 9px 'IBM Plex Mono';letter-spacing:.08em;color:#E0A548;
+   border:1px solid rgba(224,165,72,.35);border-radius:999px;
+   padding:3px 11px`), not plain danger text — unmatched-needs-review is a
+   caution, not an error. */
+.unmatchedSummary {
+  display: inline-flex;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--track-mono);
+  color: var(--color-warning);
+  border: 1px solid color-mix(in srgb, var(--color-warning) 35%, transparent);
+  border-radius: var(--radius-pill);
+  padding: 3px 11px;
+  text-transform: uppercase;
+  list-style: none;
+  transition: background-color var(--motion-fast) var(--ease-out);
+}
+
+.unmatchedSummary:hover {
+  background: color-mix(in srgb, var(--color-warning) 10%, transparent);
+}
+
+.unmatchedSummary::-webkit-details-marker {
+  display: none;
+}
+
+.unmatchedList {
+  list-style: none;
+  margin: var(--space-xs) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2xs);
+}
+
+.unmatchedItem {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-2xs) var(--space-sm);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-hover);
+}
+
+.unmatchedMain {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.unmatchedTitle {
+  font-size: var(--text-sm);
+  color: var(--text);
+}
+
+.unmatchedPath {
+  font-family: var(--font-mono);
+  font-size: var(--mono-sm);
+  color: var(--color-text-subtle);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.empty {
+  margin: 0;
+  padding: var(--space-md);
+  font-size: var(--text-sm);
+  color: var(--muted);
+}
+
+@media (width <= 767.98px) {
+  .row button {
+    min-height: 44px;
+  }
+
+  .unmatchedItem {
+    flex-wrap: wrap;
+  }
+
+  .unmatchedItem button {
+    width: 100%;
+  }
+}

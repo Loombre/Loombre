@@ -1,0 +1,41 @@
+name: loombre-dev
+
+services:
+  postgres:
+    image: postgres:18
+    environment:
+      POSTGRES_DB: loombre
+      POSTGRES_USER: loombre
+      POSTGRES_PASSWORD: loombre
+    ports:
+      - "${LOOMBRE_PG_PORT:-5442}:5432"
+    volumes:
+      # PG 18 image layout change: PGDATA moved to the version-specific
+      # /var/lib/postgresql/18/docker — mount the PARENT, not the old
+      # /var/lib/postgresql/data, or the real data dir lands outside the
+      # volume. A pre-18 loombre_pgdata volume is not readable by 18;
+      # dev data is disposable: `docker compose -f docker-compose.dev.yml
+      # down -v` then `pnpm db:migrate && pnpm db:seed`.
+      - loombre_pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U loombre -d loombre"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  adminer:
+    image: adminer
+    ports:
+      - "8080:8080"
+    depends_on:
+      - postgres
+
+  redis:
+    image: redis:7
+    ports:
+      - "6379:6379"
+    profiles:
+      - redis
+
+volumes:
+  loombre_pgdata:

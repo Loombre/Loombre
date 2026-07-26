@@ -1,0 +1,50 @@
+name: transcode — macos-vt's videotoolbox does NOT decode mpeg2 -> software decode fallback (rule ii)
+why: >
+  macos-vt's videotoolbox decode list is [h264,hevc,av1,vp9] — mpeg2 is absent (matches real VideoToolbox hardware, which has no MPEG-2 decode session), so rule (i) never matches. videotoolbox's encode still covers the ladder's h264 targets and software decodes mpeg2, so rule (ii) fires software-fallback:decode with encoder=videotoolbox.
+
+input:
+  media:
+    fileId: gen-file
+    container: ts
+    durationMs: 6000000
+    sizeBytes: 6000000000
+    overallBitrateBps: 25000000
+    video:
+      - index: 0
+        codec: mpeg2
+        profile: main
+        level: null
+        width: 1920
+        height: 1080
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 18000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 160000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device: { fixture: devices.mpeg2-generic }
+  network: { fixture: networks.wan-20mbps }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.macos-vt }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+
+expect:
+  decision: transcode
+  reasons:
+    - bitrate-exceeds-network
+    - software-fallback:decode

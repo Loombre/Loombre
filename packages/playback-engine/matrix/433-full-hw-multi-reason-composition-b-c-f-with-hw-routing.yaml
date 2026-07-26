@@ -1,0 +1,51 @@
+name: transcode — composition B+C+F (interlaced, hdr-tonemap, bitrate) all fire; Stage G still appends its own reason last
+why: >
+  Interlaced hevc10 hdr10 source vs an SDR device, ALSO exceeding the network cap: Stage B fires video-interlaced, Stage C fires hdr-tone-map-required (not refused — full-hw has cuda), Stage F is suppressed (videoAlreadyTranscoding already true from B/C) — reasons are EXACTLY [video-interlaced, hdr-tone-map-required, hw-encoder-selected:nvenc], proving Stage G's reason always lands LAST regardless of how many earlier stages already fired (docs/PLAYBACK.md §4: ordered by stage, A..G).
+
+input:
+  media:
+    fileId: gen-file
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 6000000000
+    overallBitrateBps: 40000000
+    video:
+      - index: 0
+        codec: hevc
+        profile: main10
+        level: 123
+        width: 1920
+        height: 1080
+        bitDepth: 10
+        frameRate: 23.976
+        bitrateBps: 7000000
+        hdr: hdr10
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: true
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 160000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device: { fixture: devices.hevc-sdr }
+  network: { fixture: networks.wan-4mbps }
+  policy: { fixture: policies.t1-cpu-tonemap }
+  caps: { fixture: caps.full-hw }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+
+expect:
+  decision: transcode
+  reasons:
+    - video-interlaced
+    - hdr-tone-map-required
+    - hw-encoder-selected:nvenc

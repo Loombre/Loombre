@@ -1,0 +1,143 @@
+# Loombre :: docker-compose.prod.yml (repo root)
+#
+# The canonical Docker distribution (STATE.md P4.1/P4.9, docs/PLAN.md §11
+# "Docker/Compose (canonical)"). Quickstart:
+#
+#   cp installers/docker/loombre.env.example installers/docker/loombre.env
+#   $EDITOR installers/docker/loombre.env          # at minimum: LOOMBRE_JWT_SECRET, POSTGRES_PASSWORD
+#   docker compose -f docker-compose.prod.yml --env-file installers/docker/loombre.env up -d postgres
+#   # wait for postgres healthy, then run migrations once (also the upgrade step later — see docs/install/docker.md):
+#   docker compose -f docker-compose.prod.yml --env-file installers/docker/loombre.env run --rm server \
+#     node packages/db/scripts/migrate.mjs migrate
+#   docker compose -f docker-compose.prod.yml --env-file installers/docker/loombre.env up -d
+#
+# Full walkthrough + env explanation: docs/install/docker.md.
+#
+# ONE image (built from the repo-root Dockerfile), TWO containers: `server`
+# runs the image's default CMD, `worker` overrides `command:` to run the
+# same image's worker entrypoint instead. See the Dockerfile's own header
+# comment for why this is one image rather than two.
+#
+# No ports beyond the server's HTTP port are published — this is a LAN/
+# localhost-reachable stack by default. Reverse-proxy + TLS (80/443) is the
+# documented real-deployment path (docs/install/docker.md; the reverse-
+# proxy and ACME mechanics themselves are lane F's docs/ops territory, not
+# this file's job).
+#
+# Profiles were deliberately left out per this lane's brief ("keep it
+# minimal") — every service here is required for a working instance.
+
+name: loombre
+
+services:
+  postgres:
+    image: postgres:18.4
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-loombre}
+      POSTGRES_USER: ${POSTGRES_USER:-loombre}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set — see installers/docker/loombre.env.example}
+    volumes:
+      # PG 18 image layout change: PGDATA is now the version-specific
+      # /var/lib/postgresql/18/docker, so the volume mounts the PARENT
+      # directory (mounting the old /var/lib/postgresql/data would leave
+      # the real data dir OUTSIDE the volume — silent data loss on
+      # container recreation). An existing pre-18 volume must go through
+      # the documented dump/restore upgrade path first — see
+      # docs/install/troubleshooting.md's embedded-PG upgrade section.
+      - loombre_pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-loombre} -d ${POSTGRES_DB:-loombre}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ${LOOMBRE_IMAGE:-loombre:latest}
+    restart: unless-stopped
+    # Default CMD from the Dockerfile (node apps/server/dist/main.js).
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-loombre}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}@postgres:5432/${POSTGRES_DB:-loombre}
+      LOOMBRE_JWT_SECRET: ${LOOMBRE_JWT_SECRET:?LOOMBRE_JWT_SECRET must be set — see installers/docker/loombre.env.example}
+      LOOMBRE_CORS_ORIGINS: ${LOOMBRE_CORS_ORIGINS:-}
+      LOOMBRE_TRUST_PROXY: ${LOOMBRE_TRUST_PROXY:-}
+      LOOMBRE_TIER: ${LOOMBRE_TIER:-}
+      LOOMBRE_ALLOW_TRANSCODE: ${LOOMBRE_ALLOW_TRANSCODE:-}
+      LOOMBRE_MAX_TRANSCODES: ${LOOMBRE_MAX_TRANSCODES:-}
+      LOOMBRE_MAX_STREAM_BITRATE: ${LOOMBRE_MAX_STREAM_BITRATE:-}
+      LOOMBRE_RESTRICTED_ENABLED: ${LOOMBRE_RESTRICTED_ENABLED:-}
+      LOOMBRE_TMDB_API_KEY: ${LOOMBRE_TMDB_API_KEY:-}
+      LOOMBRE_TVDB_API_KEY: ${LOOMBRE_TVDB_API_KEY:-}
+      PORT: ${LOOMBRE_PORT:-3001}
+    ports:
+      - "${LOOMBRE_PORT:-3001}:${LOOMBRE_PORT:-3001}"
+    volumes:
+      - loombre_data:/data
+      # Bind-mount example (documented, not enabled by default — uncomment
+      # and point at real media, read-only unless you use in-place NFO
+      # writing, which Loombre never does — D8):
+      # - /path/to/your/movies:/media/movies:ro
+      # - /path/to/your/tv:/media/tv:ro
+      # - /path/to/your/music:/media/music:ro
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "--show-error", "http://127.0.0.1:${LOOMBRE_PORT:-3001}/healthz"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ${LOOMBRE_IMAGE:-loombre:latest}
+    restart: unless-stopped
+    command: ["node", "apps/worker/dist/index.js"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-loombre}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}@postgres:5432/${POSTGRES_DB:-loombre}
+      LOOMBRE_TIER: ${LOOMBRE_TIER:-}
+      LOOMBRE_SCAN_CONCURRENCY: ${LOOMBRE_SCAN_CONCURRENCY:-}
+      LOOMBRE_TRANSCODE_WORKER_CONCURRENCY: ${LOOMBRE_TRANSCODE_WORKER_CONCURRENCY:-}
+      LOOMBRE_TRANSCODE_POLL_MS: ${LOOMBRE_TRANSCODE_POLL_MS:-}
+      LOOMBRE_TMDB_API_KEY: ${LOOMBRE_TMDB_API_KEY:-}
+      LOOMBRE_TVDB_API_KEY: ${LOOMBRE_TVDB_API_KEY:-}
+    volumes:
+      - loombre_data:/data
+      # Same bind-mount paths as `server` above — both containers need the
+      # SAME media paths visible at the SAME container-side paths (the
+      # scanner records paths as given; server and worker must agree).
+      # - /path/to/your/movies:/media/movies:ro
+      # - /path/to/your/tv:/media/tv:ro
+      # - /path/to/your/music:/media/music:ro
+    # No HEALTHCHECK: the worker exposes no port to probe (it is a
+    # pg-boss job consumer, not an HTTP service — see apps/worker/src/
+    # index.ts). Its liveness is `docker compose ps`'s normal "running"/
+    # "exited" state; a stuck-but-still-running worker is exactly what the
+    # 15-minute no-heartbeat session sweeper and job-queue retry/timeout
+    # semantics (packages/jobs) are the real safety net for, not a
+    # container-level probe duplicating that logic. `restart: unless-stopped`
+    # is set once, above (next to `image:`) — not repeated here.
+
+volumes:
+  loombre_pgdata:
+    name: ${COMPOSE_PROJECT_NAME:-loombre}_pgdata
+  # Single app-data volume for BOTH images/blurhash output (LOOMBRE_DATA_DIR)
+  # and transcode staging (LOOMBRE_TRANSCODE_DIR=/data/transcode, set in the
+  # Dockerfile) — this lane's brief groups them under one "app-data"
+  # volume rather than splitting transcode staging onto its own mount;
+  # an operator who wants transcode staging on faster/ephemeral storage
+  # can override LOOMBRE_TRANSCODE_DIR and add their own volume/tmpfs mount
+  # at that path (docs/install/docker.md notes this as a documented
+  # follow-up, not a default this file makes for everyone).
+  loombre_data:
+    name: ${COMPOSE_PROJECT_NAME:-loombre}_data

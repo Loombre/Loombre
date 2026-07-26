@@ -1,0 +1,61 @@
+name: "transcode — external .srt burns in when the device has neither hlsVtt nor native TEXT rendering"
+why: >
+  constrained-tv declares hlsVtt:false and renderText:[] — both (a) and (b) fail for the external subrip stream exactly as they would for an embedded one -> cascade (c) burn-in. mkv also fires Stage A's container reason; Stage B copies, so video-transcode-for-subtitle-burn-in appends. why (Phase 3 §11 step 3, Stage G arrival, STATE.md P3.2 regression law): this case's caps fixture has no hardware backend covering this route, so Stage G now routes full software (`software-fallback:encode`); tier 0 + a >=1080p selected source additionally trips the tier cap, narrowing the surviving ladder to <=480p rungs (`software-fallback:tier-capped`).
+
+input:
+  media:
+    fileId: file-0303
+    container: mkv
+    durationMs: 6000000
+    sizeBytes: 6000000000
+    overallBitrateBps: 5200000
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 41
+        width: 1920
+        height: 1080
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 5000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 192000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle:
+      - index: 2
+        codec: subrip
+        language: eng
+        isForced: false
+        isDefault: false
+        isExternal: true
+        externalPath: "/sidecars/movie.srt"
+  device: { fixture: devices.constrained-tv }
+  network: { fixture: networks.local }
+  policy: { fixture: policies.text-burn-in-preferred }
+  caps: { fixture: caps.software-only }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: 2
+  mode: stream
+
+expect:
+  decision: transcode
+  reasons:
+    - container-not-direct-playable
+    - subtitle-format-requires-burn-in
+    - video-transcode-for-subtitle-burn-in
+    - software-fallback:encode
+    - software-fallback:tier-capped
+  subtitleStrategy: burn-in

@@ -1,0 +1,26 @@
+{
+  "name": "@loombre/contract",
+  "version": "0.1.0",
+  "private": true,
+  "description": "OpenAPI contract + event schemas — the source of truth for the Loombre API. Never hand-write the SDK against this; run codegen.",
+  "type": "module",
+  "license": "AGPL-3.0-only",
+  "files": [
+    "openapi.yaml",
+    "event-schemas"
+  ],
+  "scripts": {
+    "codegen": "node scripts/codegen.mjs",
+    "lint": "redocly lint openapi.yaml",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@redocly/cli": "^2.40.0",
+    "ajv": "^8.20.0",
+    "ajv-formats": "^3.0.1",
+    "openapi-typescript": "^7.13.0",
+    "redoc": "2.5.3",
+    "vitest": "^4.1.10",
+    "yaml": "^2.9.0"
+  }
+}

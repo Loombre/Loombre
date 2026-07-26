@@ -1,0 +1,60 @@
+name: "transcode — T0 + software-only + a 2160p source: tier-capped to EXACTLY the 480p/360p rungs"
+why: >
+  2160p source (web-chrome supports up to 2160p), software-only caps (no hardware backend at all) -> Stage G always routes full software. tier 0 (t0-default) + source height 2160 (>=1080) -> the tier cap fires: Stage F's own pre-Stage-G survivors (network cap 20Mbps keeps every rung <= 20Mbps: all six) get filtered to heightPx<=480, leaving EXACTLY the 480p/1.5M and 360p/0.8M rungs — pinned via expect.ladder (exact array).
+
+input:
+  media:
+    fileId: gen-file
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 6000000000
+    overallBitrateBps: 25000000
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 41
+        width: 3840
+        height: 2160
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 18000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 160000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device: { fixture: devices.web-chrome }
+  network: { fixture: networks.wan-20mbps }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.software-only }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+
+expect:
+  decision: transcode
+  reasons:
+    - bitrate-exceeds-network
+    - software-fallback:encode
+    - software-fallback:tier-capped
+  ladder:
+    - heightPx: 480
+      videoBitrateBps: 1500000
+      audioBitrateBps: 160000
+      codec: h264
+    - heightPx: 360
+      videoBitrateBps: 800000
+      audioBitrateBps: 160000
+      codec: h264

@@ -1,0 +1,68 @@
+name: direct-stream — multi-video mkv; selected in-caps second stream copies, container alone forces the
+  repackage
+why: 'Multi-video composition with Stage A: same stream layout as 454 but in mkv — the selected h264 stream
+  1 verdicts copy at every stage, so the aggregated decision is exactly Stage A''s direct-stream with
+  the container reason alone. Deliberate future-proof exception: unselected stream 0 out of caps (multi-video
+  point).'
+input:
+  media:
+    fileId: file-456
+    container: mkv
+    durationMs: 6000000
+    sizeBytes: 4500000000
+    overallBitrateBps: 6000000
+    video:
+    - index: 0
+      codec: hevc
+      profile: main10
+      level: 153
+      width: 3840
+      height: 2160
+      bitDepth: 10
+      frameRate: 60
+      bitrateBps: 25000000
+      hdr: hdr10
+      dvProfile: null
+      dvBlCompatId: null
+      interlaced: false
+    - index: 1
+      codec: h264
+      profile: high
+      level: 41
+      width: 1920
+      height: 1080
+      bitDepth: 8
+      frameRate: 23.976
+      bitrateBps: 5000000
+      hdr: none
+      dvProfile: null
+      dvBlCompatId: null
+      interlaced: false
+    audio:
+    - index: 2
+      codec: aac
+      channels: 2
+      sampleRate: 48000
+      bitrateBps: 192000
+      language: eng
+      isDefault: true
+      hasAtmos: false
+    subtitle: []
+  device:
+    fixture: devices.web-chrome
+  network:
+    fixture: networks.local
+  policy:
+    fixture: policies.t0-default
+  caps:
+    fixture: caps.software-only
+  selection:
+    videoStreamIndex: 1
+    audioStreamIndex: 2
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: direct-stream
+  reasons:
+  - container-not-direct-playable
+  container: fmp4-hls

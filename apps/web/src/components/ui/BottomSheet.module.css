@@ -1,0 +1,114 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+
+/* Phosphor bottom sheet (design/phosphor/README.md "Phone-only additions").
+   `.scrim` here only ADDS the enter/exit opacity transition on top of
+   components/ui/Overlay.module.css's `.scrim` (composed via className, not
+   CSS Modules `composes`, specifically so there's never a same-property
+   override to arbitrate between the two files' cascade order — see
+   BottomSheet.tsx's header). */
+
+.scrim {
+  opacity: 0;
+  transition: opacity var(--motion-base) var(--ease-out);
+}
+
+.scrim[data-visible="true"] {
+  opacity: 1;
+}
+
+.sheet {
+  /* Anchors to the bottom of Overlay's flex-centered scrim without
+     touching that file's `align-items` — see BottomSheet.tsx's header. */
+  align-self: flex-end;
+  width: 100%;
+  max-width: 480px;
+  max-height: 82%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--color-surface);
+  border-top-left-radius: var(--radius-lg);
+  border-top-right-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sheet);
+  padding-bottom: max(var(--space-md), env(safe-area-inset-bottom));
+
+  /* Compositor-only enter/exit: transform + opacity, nothing else.
+     Direction-specific easing (U-series motion mapping,
+     design/phosphor/README.md "Motion"): a CSS transition takes its
+     timing-function from the state it is transitioning TO, so the closed
+     rule below governs the exit (--ease-out) and the [data-visible]
+     override governs the enter (--ease-spring). Interruptible for free —
+     if `data-visible` flips back before the transition finishes, the
+     browser continues from the current interpolated value, no jump. */
+  transform: translateY(100%);
+  opacity: 0;
+  transition:
+    transform var(--motion-base) var(--ease-out),
+    opacity var(--motion-base) var(--ease-out);
+}
+
+.sheet[data-visible="true"] {
+  transform: translateY(0);
+  opacity: 1;
+  transition:
+    transform var(--motion-base) var(--ease-spring),
+    opacity var(--motion-base) var(--ease-out);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* "no travel": the translate component is removed entirely (not just
+     shortened) — the sheet only fades. tokens.css's global reduced-motion
+     block already clamps --motion-base to 100ms and both eases to linear,
+     so the transition below inherits that automatically. */
+  .sheet,
+  .sheet[data-visible="true"] {
+    transform: none;
+  }
+}
+
+.handle {
+  width: 36px;
+  height: 4px;
+  flex-shrink: 0;
+  margin: var(--space-sm) auto var(--space-xs);
+  border-radius: var(--radius-pill);
+  background: var(--color-border-strong);
+}
+
+.header {
+  display: flex;
+  flex-shrink: 0;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  padding: 0 var(--space-lg) var(--space-sm);
+}
+
+.headerText {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--space-3xs);
+}
+
+.title {
+  margin: 0;
+  color: var(--text);
+  font-size: var(--text-lg);
+  font-weight: var(--weight-semibold);
+}
+
+.sub {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+
+.done {
+  flex-shrink: 0;
+}
+
+.body {
+  overflow-y: auto;
+  padding: 0 var(--space-lg) var(--space-lg);
+}

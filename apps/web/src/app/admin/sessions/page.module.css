@@ -1,0 +1,118 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+.header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-md);
+  margin-bottom: var(--space-md);
+  flex-wrap: wrap;
+}
+
+.title {
+  margin: 0;
+  font-size: var(--text-lg);
+  font-weight: var(--weight-semibold);
+}
+
+.subtitle {
+  font-size: var(--text-xs);
+  color: var(--muted);
+}
+
+.errorBanner {
+  margin: 0 0 var(--space-md);
+  padding: var(--space-sm) var(--space-md);
+  border-radius: var(--radius-md);
+  background: var(--color-accent-tint);
+  color: var(--color-accent);
+  font-size: var(--text-sm);
+}
+
+.skeletonList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.skeletonRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  padding: var(--space-sm) 0;
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.row {
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.rowHeader {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2xs);
+  padding: var(--space-sm) var(--space-md);
+  background: none;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
+}
+
+.rowHeader:hover {
+  background: var(--color-surface-hover);
+}
+
+.rowMain {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  flex-wrap: wrap;
+}
+
+.username {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+}
+
+.itemTitle {
+  font-size: var(--text-sm);
+  color: var(--text);
+}
+
+.hiddenChip {
+  border-radius: var(--radius-pill);
+  padding: var(--space-3xs) var(--space-sm);
+  font-size: var(--text-xs);
+  background: var(--color-surface-hover);
+  color: var(--color-text-subtle);
+  font-style: italic;
+}
+
+.rowMeta {
+  display: flex;
+  gap: var(--space-md);
+  flex-wrap: wrap;
+}
+
+.metaItem {
+  font-size: var(--text-xs);
+  color: var(--color-text-subtle);
+}
+
+.expandedPanel {
+  padding: 0 var(--space-md) var(--space-md);
+}
+
+.loadMoreRow {
+  display: flex;
+  justify-content: center;
+  margin-top: var(--space-md);
+}

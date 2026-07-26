@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://loombre.com/schemas/events/playback.ended.schema.json",
+  "title": "PlaybackEndedPayload",
+  "description": "Payload for envelope.type === 'playback.ended'. Emitted when a session reaches 'ended' or 'failed', including idle-timeout teardown (docs/PLAYBACK.md §9: no heartbeat for 15 min -> end session).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["sessionId", "itemId", "deviceId", "reason", "endedAtMs"],
+  "properties": {
+    "sessionId": { "type": "string", "format": "uuid" },
+    "itemId": { "type": "string", "format": "uuid" },
+    "deviceId": { "type": "string", "format": "uuid" },
+    "reason": {
+      "type": "string",
+      "enum": ["client-stopped", "idle-timeout", "server-error", "revoked", "completed"]
+    },
+    "errorCode": { "type": ["string", "null"] },
+    "finalPositionMs": { "type": ["integer", "null"], "minimum": 0 },
+    "endedAtMs": { "type": "integer", "minimum": 0 }
+  }
+}

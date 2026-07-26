@@ -1,0 +1,49 @@
+name: direct-play — vc1 vs vc1-generic (codec genuinely supported)
+why: vc1-generic declares a vc1 entry with generous caps and mkv is in its directPlayContainers, so the decision is direct-play — proving vc1 is not treated as unconditionally unsupported.
+input:
+  media:
+    fileId: file-094
+    container: mkv
+    durationMs: 6000000
+    sizeBytes: 5000000000
+    overallBitrateBps: 5160000
+    video:
+      - index: 0
+        codec: vc1
+        profile: null
+        level: null
+        width: 1920
+        height: 1080
+        bitDepth: 8
+        frameRate: 24
+        bitrateBps: 5000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 160000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device:
+    fixture: devices.vc1-generic
+  network:
+    fixture: networks.local
+  policy:
+    fixture: policies.t0-default
+  caps:
+    fixture: caps.software-only
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: direct-play
+  reasons: []

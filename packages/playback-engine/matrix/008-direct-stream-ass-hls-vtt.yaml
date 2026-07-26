@@ -1,0 +1,64 @@
+name: direct-stream — mkv h264+aac + ASS text subtitle selected, web-chrome, hls-vtt policy
+why: >
+  Stage A fires container-not-direct-playable (mkv), but video and audio are
+  both copy-eligible, so the decision only escalates to direct-stream (HLS
+  repackage, all streams -c copy), never transcode. Stage E: ASS is a TEXT
+  codec; device.subtitles.hlsVtt is true and policy.preferredTextSubMode is
+  hls-vtt, and preserveAssStyling is false, so the strategy is hls-vtt (never
+  forces video work) with the informational subtitle-styling-lost reason
+  because ASS styling doesn't survive a WebVTT side-track.
+
+input:
+  media:
+    fileId: file-0008
+    container: mkv
+    durationMs: 6600000
+    sizeBytes: 5800000000
+    overallBitrateBps: 7000000
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 41
+        width: 1920
+        height: 1080
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 5500000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 192000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle:
+      - index: 2
+        codec: ass
+        language: eng
+        isForced: false
+        isDefault: false
+        isExternal: false
+        externalPath: null
+  device: { fixture: devices.web-chrome }
+  network: { fixture: networks.local }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.software-only }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: 2
+  mode: stream
+
+expect:
+  decision: direct-stream
+  reasons:
+    - container-not-direct-playable
+    - subtitle-styling-lost
+  subtitleStrategy: hls-vtt

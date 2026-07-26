@@ -1,0 +1,53 @@
+name: transcode — F is the ONLY reason on an otherwise direct-playable file (seed 006 pattern, fmp4/mov/web-safari variant)
+why: >
+  Mission requirement: "a composition ... where F is the ONLY reason on an otherwise direct-playable file — seed 006 is that, add fmp4/ts variants". This is the fmp4 variant: mov container (direct-playable on web-safari), hevc source fully within web-safari's caps, hdr none, no subtitle — everything passes Stages A-E; only overallBitrateBps (30Mbps) exceeding wan-4mbps's cap (4Mbps, non-local) escalates. container is fmp4-hls (web-safari's device.hls.supportsFmp4 is true), distinct from seed 006's own mp4/web-chrome pairing. why (Phase 3 §11 step 3, Stage G arrival, STATE.md P3.2 regression law): this case's caps fixture has no hardware backend covering this route, so Stage G now routes full software (`software-fallback:encode`); tier 0 + a >=1080p selected source additionally trips the tier cap, narrowing the surviving ladder to <=480p rungs (`software-fallback:tier-capped`).
+
+input:
+  media:
+    fileId: file-0368
+    container: mov
+    durationMs: 6000000
+    sizeBytes: 22500000000
+    overallBitrateBps: 30000000
+    video:
+      - index: 0
+        codec: hevc
+        profile: main10
+        level: 153
+        width: 1920
+        height: 1080
+        bitDepth: 10
+        frameRate: 23.976
+        bitrateBps: 28000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 160000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device: { fixture: devices.web-safari }
+  network: { fixture: networks.wan-4mbps }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.software-only }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+
+expect:
+  decision: transcode
+  reasons:
+    - bitrate-exceeds-network
+    - software-fallback:encode
+    - software-fallback:tier-capped
+  container: fmp4-hls
+  ladderMaxVideoBitrateBps: 4000000

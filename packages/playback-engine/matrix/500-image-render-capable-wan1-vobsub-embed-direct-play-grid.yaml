@@ -1,0 +1,61 @@
+name: 'direct-play — image-render-capable × wan-1mbps × tiergated-t1: vobsub embeds in a direct-playable
+  mkv under the tightest network tier'
+why: 'Grid combo (image-render-capable × wan-1mbps × tiergated-t1): mkv IS direct-playable on this device,
+  renderImage:true embeds the vobsub, and 950k ≤ 1M keeps Stage F silent — a fully-loaded direct-play
+  on the tightest tier.'
+input:
+  media:
+    fileId: file-500
+    container: mkv
+    durationMs: 6000000
+    sizeBytes: 712500000
+    overallBitrateBps: 950000
+    video:
+    - index: 0
+      codec: h264
+      profile: high
+      level: 41
+      width: 1280
+      height: 720
+      bitDepth: 8
+      frameRate: 24
+      bitrateBps: 700000
+      hdr: none
+      dvProfile: null
+      dvBlCompatId: null
+      interlaced: false
+    audio:
+    - index: 1
+      codec: aac
+      channels: 2
+      sampleRate: 48000
+      bitrateBps: 128000
+      language: eng
+      isDefault: true
+      hasAtmos: false
+    subtitle:
+    - index: 2
+      codec: vobsub
+      language: eng
+      isForced: false
+      isDefault: false
+      isExternal: false
+      externalPath: null
+  device:
+    fixture: devices.image-render-capable
+  network:
+    fixture: networks.wan-1mbps
+  policy:
+    fixture: policies.tiergated-t1
+  caps:
+    fixture: caps.software-only
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: 2
+  mode: stream
+expect:
+  decision: direct-play
+  reasons: []
+  subtitleStrategy: embed
+  container: source

@@ -1,0 +1,50 @@
+name: transcode — macos-vt + hevc-sdr, hdr10 tone-map required WITH a network cap ALSO exceeded (Stage F correctly suppressed)
+why: >
+  hdr10 source vs hevc-sdr (SDR-only device) fires hdr-tone-map-required (Stage C), which sets videoAlreadyTranscoding — Stage F's OWN evaluateBitrate therefore never fires even though overallBitrateBps (40Mbps) also exceeds the wan-4mbps network cap (docs/PLAYBACK.md §3 Stage F: 'if final video verdict is copy' — it is not, here). reasons are EXACTLY [hdr-tone-map-required, hw-encoder-selected:videotoolbox] (macos-vt's videotoolbox covers hevc decode/encode + the videotoolbox tone-map method) — proving Stage F's suppression composes correctly with Stage G still running off Stage C's own escalation.
+
+input:
+  media:
+    fileId: gen-file
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 6000000000
+    overallBitrateBps: 40000000
+    video:
+      - index: 0
+        codec: hevc
+        profile: main10
+        level: 123
+        width: 1920
+        height: 1080
+        bitDepth: 10
+        frameRate: 23.976
+        bitrateBps: 7000000
+        hdr: hdr10
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 160000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device: { fixture: devices.hevc-sdr }
+  network: { fixture: networks.wan-4mbps }
+  policy: { fixture: policies.t1-cpu-tonemap }
+  caps: { fixture: caps.macos-vt }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+
+expect:
+  decision: transcode
+  reasons:
+    - hdr-tone-map-required
+    - hw-encoder-selected:videotoolbox

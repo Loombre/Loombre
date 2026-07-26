@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://loombre.com/schemas/events/plugin.removed.schema.json",
+  "title": "PluginRemovedPayload",
+  "description": "Payload for envelope.type === 'plugin.removed'. Loombre Plugin Protocol (LPP) v1, Lane W2 (LD4): emitted in the SAME transaction as the plugins row DELETE (packages/db/src/query/plugins.ts's removePluginAndEmit; plugin_event_grants rows CASCADE with it). ADMIN-ONLY delivery, mirroring settings.updated exactly. Never carries the manifest, config, or any secret — the row (and any keyring entries the lifecycle service removes alongside this call) are gone by the time this event is observable.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["pluginId", "name", "removedAtMs"],
+  "properties": {
+    "pluginId": {
+      "type": "string",
+      "format": "uuid",
+      "description": "The plugins.id row that was removed."
+    },
+    "name": {
+      "type": "string",
+      "description": "The plugin's name at the time of removal."
+    },
+    "removedAtMs": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Epoch ms the row was deleted."
+    }
+  }
+}

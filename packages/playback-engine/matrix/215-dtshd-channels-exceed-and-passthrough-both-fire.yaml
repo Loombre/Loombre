@@ -1,0 +1,66 @@
+name: transcode — dtshd 8ch exceeding a 6ch-capped device AND passthrough:false — rules 2 and 3 both fire (DTS-HD side)
+why: "DTS-HD counterpart to case 210 — both Stage D rule 2 and rule 3 fire independently, in order."
+input:
+  media:
+    fileId: file-0215
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 6000000000
+    overallBitrateBps: 8500000
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 41
+        width: 1920
+        height: 1080
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 5000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: dtshd
+        channels: 8
+        sampleRate: 48000
+        bitrateBps: 3000000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device:
+    profileId: inline-dtshd-limited
+    directPlayContainers: [mp4]
+    hls: { container: fmp4, supportsFmp4: true, lowLatency: false }
+    video:
+      - codec: h264
+        maxProfile: high
+        maxLevel: 41
+        maxBitDepth: 8
+        maxWidth: 1920
+        maxHeight: 1080
+        maxFrameRate: 60
+        maxBitrateBps: null
+    hdr: { hdr10: false, hlg: false, dolbyVision: false }
+    audio:
+      - codec: dtshd
+        maxChannels: 6
+        passthrough: false
+    subtitles: { renderText: [], hlsVtt: false, renderImage: false }
+    maxStreamBitrateBps: null
+  network: { fixture: networks.local }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.software-only }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: transcode
+  reasons:
+    - audio-channels-exceed-device
+    - audio-passthrough-unsupported

@@ -1,0 +1,5 @@
+# Loombre :: installers/macos/.gitignore — build outputs only, never source.
+.build-cache/
+dist/
+menubar/.build/
+menubar/.swiftpm/

@@ -1,0 +1,69 @@
+name: transcode — full A+B+C+D composition — container + video-codec-unsupported + hdr-tonemap + audio-channels-exceed, exact stage order
+why: "Inline device declares directPlayContainers:[mp4] only (mkv fires Stage A), video.entries h264-only (the selected hevc stream fires Stage B's video-codec-unsupported — a naive 'Stage C only runs when Stage B is copy' reading would wrongly skip Stage C, per the inherited binding interpretation constraint 1 from Step 2c: Stage C evaluates regardless), hdr.hdr10:false (the same hevc stream is hdr10 -> Stage C fires hdr-tone-map-required), and audio.aac maxChannels:2 (the selected 6ch aac stream exceeds it -> Stage D fires audio-channels-exceed-device). t1-cpu-tonemap avoids a 5th (refusal) reason. Reasons appear in EXACT stage order: [container-not-direct-playable, video-codec-unsupported, hdr-tone-map-required, audio-channels-exceed-device]. why (Phase 3 §11 step 3, Stage G arrival, STATE.md P3.2 regression law): this case's caps fixture has no hardware backend covering this route, so Stage G now routes full software (`software-fallback:encode`).\n"
+input:
+  media:
+    fileId: file-0259
+    container: mkv
+    durationMs: 6000000
+    sizeBytes: 6000000000
+    overallBitrateBps: 5500000
+    video:
+      - index: 0
+        codec: hevc
+        profile: main10
+        level: 123
+        width: 1920
+        height: 1080
+        bitDepth: 10
+        frameRate: 23.976
+        bitrateBps: 5000000
+        hdr: hdr10
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 6
+        sampleRate: 48000
+        bitrateBps: 384000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device:
+    profileId: inline-full-composition-device
+    directPlayContainers: [ mp4 ]
+    hls: { container: fmp4, supportsFmp4: true, lowLatency: false }
+    video:
+      - codec: h264
+        maxProfile: high
+        maxLevel: 41
+        maxBitDepth: 8
+        maxWidth: 1920
+        maxHeight: 1080
+        maxFrameRate: 60
+        maxBitrateBps: null
+    hdr: { hdr10: false, hlg: false, dolbyVision: false }
+    audio:
+      - codec: aac
+        maxChannels: 2
+        passthrough: false
+    subtitles: { renderText: [], hlsVtt: false, renderImage: false }
+    maxStreamBitrateBps: null
+  network: { fixture: networks.local }
+  policy: { fixture: policies.t1-cpu-tonemap }
+  caps: { fixture: caps.software-only }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: transcode
+  reasons:
+    - container-not-direct-playable
+    - video-codec-unsupported
+    - hdr-tone-map-required
+    - audio-channels-exceed-device
+    - software-fallback:encode

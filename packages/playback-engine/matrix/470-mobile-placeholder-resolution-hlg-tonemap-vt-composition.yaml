@@ -1,0 +1,79 @@
+name: 'transcode — mobile-placeholder × macos-vt: 2160p HLG source exceeds the 1080p mobile ceiling AND
+  needs tone-mapping (hlg:false); VideoToolbox routes with its own tone-map method; device 8M cap trims
+  the ladder'
+why: 'mobile-placeholder composition case: Stage B resolution axis (3840x2160 vs 1920x1080), Stage C hlg
+  mismatch (mobile is hdr10-only), Stage G rule (i) videotoolbox (decode hevc + encode h264 targets +
+  toneMap videotoolbox). Ladder: 2160/16M-hevc rung survives height (=source) and network 20M but is dropped
+  by the mobile 8M DEVICE cap — the surviving set is exactly the five h264 rungs ≤ 8M, so the target set
+  stays {h264}. Deliberate future-proof exception: resolution + HDR exceed mobile caps (the drivers).'
+input:
+  media:
+    fileId: file-470
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 19125000000
+    overallBitrateBps: 25500000
+    video:
+    - index: 0
+      codec: hevc
+      profile: main10
+      level: 120
+      width: 3840
+      height: 2160
+      bitDepth: 10
+      frameRate: 24
+      bitrateBps: 25000000
+      hdr: hlg
+      dvProfile: null
+      dvBlCompatId: null
+      interlaced: false
+    audio:
+    - index: 1
+      codec: aac
+      channels: 2
+      sampleRate: 48000
+      bitrateBps: 192000
+      language: eng
+      isDefault: true
+      hasAtmos: false
+    subtitle: []
+  device:
+    fixture: devices.mobile-placeholder
+  network:
+    fixture: networks.wan-20mbps
+  policy:
+    fixture: policies.t1-cpu-tonemap
+  caps:
+    fixture: caps.macos-vt
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: transcode
+  reasons:
+  - video-resolution-exceeds-device
+  - hdr-tone-map-required
+  - hw-encoder-selected:videotoolbox
+  ladder:
+  - heightPx: 1080
+    videoBitrateBps: 8000000
+    audioBitrateBps: 384000
+    codec: h264
+  - heightPx: 1080
+    videoBitrateBps: 4000000
+    audioBitrateBps: 160000
+    codec: h264
+  - heightPx: 720
+    videoBitrateBps: 3000000
+    audioBitrateBps: 160000
+    codec: h264
+  - heightPx: 480
+    videoBitrateBps: 1500000
+    audioBitrateBps: 160000
+    codec: h264
+  - heightPx: 360
+    videoBitrateBps: 800000
+    audioBitrateBps: 160000
+    codec: h264

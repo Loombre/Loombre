@@ -1,0 +1,55 @@
+name: transcode — composition A+B+D+F (A/B/D fire as reasons; F contributes the capped ladder, not a fifth reason)
+why: >
+  Future-proofing composition covering four stages on one plan: container mismatch (mkv, Stage A), video-codec-unsupported (av1 vs a device with no av1 entry, Stage B), audio-codec-unsupported (eac3, Stage D), and Stage F — deliberately paired with a restrictive network (wan-4mbps) to prove the ladder still gets built and CAPPED for a genuinely multi-stage plan. Stage F's OWN reason cannot ALSO appear here as a fifth reason: Stage B's own transcode verdict sets `videoAlreadyTranscoding`, which — per binding interpretation constraint 1 — unconditionally suppresses evaluateBitrate's reason (an A+B+D+F composition where F ALSO contributes bitrate-exceeds-network is structurally impossible whenever B or C already forced the escalation; this is that constraint's real-world consequence). why (Phase 3 §11 step 3, Stage G arrival, STATE.md P3.2 regression law): this case's caps fixture has no hardware backend covering this route, so Stage G now routes full software (`software-fallback:encode`); tier 0 + a >=1080p selected source additionally trips the tier cap, narrowing the surviving ladder to <=480p rungs (`software-fallback:tier-capped`).
+
+input:
+  media:
+    fileId: file-0367
+    container: mkv
+    durationMs: 6000000
+    sizeBytes: 7500000000
+    overallBitrateBps: 10000000
+    video:
+      - index: 0
+        codec: av1
+        profile: null
+        level: null
+        width: 1920
+        height: 1080
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 10000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: eac3
+        channels: 6
+        sampleRate: 48000
+        bitrateBps: 384000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device: { fixture: devices.web-chrome }
+  network: { fixture: networks.wan-4mbps }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.software-only }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+
+expect:
+  decision: transcode
+  reasons:
+    - container-not-direct-playable
+    - video-codec-unsupported
+    - audio-codec-unsupported
+    - software-fallback:encode
+    - software-fallback:tier-capped
+  container: fmp4-hls
+  ladderMaxVideoBitrateBps: 4000000

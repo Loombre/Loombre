@@ -1,0 +1,41 @@
+#!/bin/sh
+# Loombre :: /opt/loombre/current/bin/loombre-server
+#
+# Launched by /Library/LaunchDaemons/com.loombre.server.plist. Kept as a
+# shell shim (not inlined into the plist's ProgramArguments) so the plist
+# itself stays clean per the lane brief, and so an operator has one
+# documented, upgrade-safe place — config/loombre.env — to override
+# DATABASE_URL/PORT without editing a system plist file (which a `pkg`
+# upgrade would blow away and re-lay-down anyway).
+#
+# `pwd -P` (PHYSICAL path, symlinks resolved), NOT plain `pwd`, is
+# load-bearing here — found live during this lane's own smoke testing.
+# LaunchDaemons invoke this script via /opt/loombre/current/bin/loombre-server
+# (the `current` symlink is the whole point of LAYOUT.md §1's atomic-
+# upgrade design). node's `import.meta.url` for the loaded main.js is
+# always realpath-resolved, but `process.argv[1]` keeps whatever path
+# string was passed on argv verbatim — so execing node with a
+# symlink-containing path makes apps/server/src/main.ts's own
+# `isDirectEntrypoint` guard (import.meta.url === pathToFileURL(argv[1]))
+# evaluate to FALSE, and the server silently does nothing and exits 0
+# (no error, no log line — the guard exists specifically so importing
+# main.ts for unit tests never boots a real server, and it was doing
+# exactly that here by mistake). `pwd -P` makes $HERE the resolved
+# `/opt/loombre/<version>` path before node ever sees it, so argv[1] and
+# import.meta.url agree regardless of the `current` symlink (or macOS's
+# own /tmp,/var->private/* symlinks, which is how this was first caught).
+set -eu
+
+HERE="$(cd "$(dirname "$0")/.." && pwd -P)"
+CONFIG_ENV="/Library/Application Support/Loombre/config/loombre.env"
+
+# shellcheck disable=SC1090
+[ -f "$CONFIG_ENV" ] && { set -a; . "$CONFIG_ENV"; set +a; }
+
+: "${PORT:=3001}"
+: "${DATABASE_URL:=postgres://loombre:loombre@localhost:5442/loombre}"
+: "${LOOMBRE_FFMPEG:=$HERE/runtime/ffmpeg/ffmpeg}"
+: "${LOOMBRE_FFPROBE:=$HERE/runtime/ffmpeg/ffprobe}"
+export PORT DATABASE_URL LOOMBRE_FFMPEG LOOMBRE_FFPROBE
+
+exec "$HERE/runtime/node/bin/node" "$HERE/server/dist/main.js"

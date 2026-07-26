@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://loombre.com/schemas/events/user.created.schema.json",
+  "title": "UserCreatedPayload",
+  "description": "Payload for envelope.type === 'user.created'. Emitted when a new users row is created via POST /v1/users (admin) or first-run onboarding. Never carries secrets (password/PIN hashes, tokens).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["userId", "username", "isAdmin", "createdAtMs"],
+  "properties": {
+    "userId": { "type": "string", "format": "uuid" },
+    "username": { "type": "string" },
+    "isAdmin": { "type": "boolean" },
+    "createdAtMs": { "type": "integer", "minimum": 0 }
+  }
+}

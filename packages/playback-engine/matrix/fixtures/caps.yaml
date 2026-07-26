@@ -1,0 +1,327 @@
+# Shared VerifiedCapabilities fixtures (docs/PLAYBACK.md §2.5). All ten
+# Phase-0 seed matrix cases use software-only backends per the Wave-2
+# scaffold instructions. full-hw / encode-only / macos-vt are the STATE.md
+# P3.3 named FIXTURE sets: Stage G (hardware routing, docs/PLAYBACK.md §8)
+# engine work runs against these FAKED capability sets until the real
+# self-test probe lands in Phase 3 step 5 — the probe implementation must
+# reproduce this exact schema. verifiedAtMs is a fixed placeholder value
+# shared by every entry (not wall-clock — these are fixtures, not real
+# self-test output).
+
+software-only:
+  backends:
+    - backend: software
+      decode: [h264, hevc, av1, vp9, mpeg2, vc1, mpeg4]
+      encode: [h264, hevc]
+      toneMap: []
+      verifiedAtMs: 1750000000000
+
+# Full hardware acceleration (e.g. a Linux box with a modern NVIDIA GPU):
+# nvenc covers decode of every §10 codec plus h264/hevc/av1 encode and CUDA
+# tone-mapping; software is always present too as the platform's fallback
+# tier (docs/PLAYBACK.md §8.3 selection order tries nvenc first).
+full-hw:
+  backends:
+    - backend: nvenc
+      decode: [h264, hevc, av1, vp9, mpeg2]
+      encode: [h264, hevc, av1]
+      toneMap: [cuda]
+      verifiedAtMs: 1750000000000
+    - backend: software
+      decode: [h264, hevc, av1, vp9, mpeg2, vc1, mpeg4]
+      encode: [h264, hevc]
+      toneMap: []
+      verifiedAtMs: 1750000000000
+
+# Encode-capable but the decode self-test failed/is unsupported on this box
+# (docs/PLAYBACK.md §8.3's "software-fallback:decode" path): nvenc can
+# encode but cannot decode anything here, so Stage G must route decode
+# through software while keeping nvenc for encode.
+encode-only:
+  backends:
+    - backend: nvenc
+      decode: []
+      encode: [h264, hevc]
+      toneMap: []
+      verifiedAtMs: 1750000000000
+    - backend: software
+      decode: [h264, hevc, av1, vp9, mpeg2, vc1, mpeg4]
+      encode: [h264, hevc]
+      toneMap: []
+      verifiedAtMs: 1750000000000
+
+# macOS VideoToolbox (docs/PLAYBACK.md §8.2 "macOS: videotoolbox ->
+# software" — the M3 Max real-hardware verification box, STATE.md P3.4):
+# decode h264/hevc/av1/vp9, encode h264/hevc, VideoToolbox tone-mapping,
+# plus the software fallback tier.
+macos-vt:
+  backends:
+    - backend: videotoolbox
+      decode: [h264, hevc, av1, vp9]
+      encode: [h264, hevc]
+      toneMap: [videotoolbox]
+      verifiedAtMs: 1750000000000
+    - backend: software
+      decode: [h264, hevc, av1, vp9, mpeg2, vc1, mpeg4]
+      encode: [h264, hevc]
+      toneMap: []
+      verifiedAtMs: 1750000000000
+
+# --- Phase 3 §11 step 3 (Stage G — hardware routing) additive fixtures ----
+# docs/PLAYBACK.md §8.3's tone-map preference table needs qsv/vaapi cases
+# that isolate "opencl present -> opencl" from "opencl absent, vulkan
+# present -> vulkan" (the table's own "opencl(else vulkan)" clause) — none
+# of the four P3.3 named sets exercises qsv or vaapi at all.
+
+# qsv with BOTH opencl and vulkan verified -> proves 'opencl' wins (table
+# preference order), not merely "some tone-map exists".
+qsv-opencl:
+  backends:
+    - backend: qsv
+      decode: [h264, hevc, av1, vp9, mpeg2]
+      encode: [h264, hevc]
+      toneMap: [opencl, vulkan]
+      verifiedAtMs: 1750000000000
+    - backend: software
+      decode: [h264, hevc, av1, vp9, mpeg2, vc1, mpeg4]
+      encode: [h264, hevc]
+      toneMap: []
+      verifiedAtMs: 1750000000000
+
+# qsv with ONLY vulkan verified (opencl self-test failed/absent) -> proves
+# the "else vulkan" half in isolation.
+qsv-vulkan-only:
+  backends:
+    - backend: qsv
+      decode: [h264, hevc, av1, vp9, mpeg2]
+      encode: [h264, hevc]
+      toneMap: [vulkan]
+      verifiedAtMs: 1750000000000
+    - backend: software
+      decode: [h264, hevc, av1, vp9, mpeg2, vc1, mpeg4]
+      encode: [h264, hevc]
+      toneMap: []
+      verifiedAtMs: 1750000000000
+
+# vaapi mirrors qsv's own opencl/vulkan preference (§8.3 groups them
+# together: "qsv/vaapi -> opencl(else vulkan)") — both variants for parity.
+vaapi-opencl:
+  backends:
+    - backend: vaapi
+      decode: [h264, hevc, av1, vp9, mpeg2]
+      encode: [h264, hevc]
+      toneMap: [opencl, vulkan]
+      verifiedAtMs: 1750000000000
+    - backend: software
+      decode: [h264, hevc, av1, vp9, mpeg2, vc1, mpeg4]
+      encode: [h264, hevc]
+      toneMap: []
+      verifiedAtMs: 1750000000000
+
+vaapi-vulkan-only:
+  backends:
+    - backend: vaapi
+      decode: [h264, hevc, av1, vp9, mpeg2]
+      encode: [h264, hevc]
+      toneMap: [vulkan]
+      verifiedAtMs: 1750000000000
+    - backend: software
+      decode: [h264, hevc, av1, vp9, mpeg2, vc1, mpeg4]
+      encode: [h264, hevc]
+      toneMap: []
+      verifiedAtMs: 1750000000000
+
+# A single hardware backend that covers decode+encode for everything but
+# verified NO tone-map method at all (self-test for tone-mapping failed) —
+# proves the tone-map fall-through (binding interpretation 3): a candidate
+# satisfying decode+encode still can't be chosen when a method is required
+# and unavailable, so this falls all the way to the rule-(iii) software
+# route despite genuine hardware decode+encode coverage.
+hw-no-tonemap:
+  backends:
+    - backend: nvenc
+      decode: [h264, hevc, av1, vp9, mpeg2]
+      encode: [h264, hevc, av1]
+      toneMap: []
+      verifiedAtMs: 1750000000000
+    - backend: software
+      decode: [h264, hevc, av1, vp9, mpeg2, vc1, mpeg4]
+      encode: [h264, hevc]
+      toneMap: []
+      verifiedAtMs: 1750000000000
+
+# TWO hardware backends, platform-ordered: qsv FIRST (decode+encode cover
+# everything but verifies no tone-map method), nvenc SECOND (also covers
+# decode+encode, and DOES verify cuda). When tone-mapping is required, rule
+# (i) must skip qsv (no usable method) and fall through to the NEXT
+# candidate in array order (nvenc) rather than jumping straight to software
+# — proves the fall-through lands on another hw candidate, not just on the
+# software floor.
+dual-hw-tonemap-fallthrough:
+  backends:
+    - backend: qsv
+      decode: [h264, hevc, av1, vp9, mpeg2]
+      encode: [h264, hevc]
+      toneMap: []
+      verifiedAtMs: 1750000000000
+    - backend: nvenc
+      decode: [h264, hevc, av1, vp9, mpeg2]
+      encode: [h264, hevc, av1]
+      toneMap: [cuda]
+      verifiedAtMs: 1750000000000
+    - backend: software
+      decode: [h264, hevc, av1, vp9, mpeg2, vc1, mpeg4]
+      encode: [h264, hevc]
+      toneMap: []
+      verifiedAtMs: 1750000000000
+
+# Linux platform order per §8.2 ("Linux: nvenc -> qsv -> vaapi -> software")
+# with ALL THREE hardware backends simultaneously capable of the same
+# route (decode+encode+tonemap all present on nvenc/qsv/vaapi alike) -
+# proves the engine picks the FIRST array entry (nvenc) rather than merely
+# "any capable backend" (design law 4 / binding interpretation 1's
+# platform-blind array-order rule).
+linux-platform-order:
+  backends:
+    - backend: nvenc
+      decode: [h264, hevc, av1, vp9, mpeg2]
+      encode: [h264, hevc, av1]
+      toneMap: [cuda]
+      verifiedAtMs: 1750000000000
+    - backend: qsv
+      decode: [h264, hevc, av1, vp9, mpeg2]
+      encode: [h264, hevc]
+      toneMap: [opencl, vulkan]
+      verifiedAtMs: 1750000000000
+    - backend: vaapi
+      decode: [h264, hevc, av1, vp9, mpeg2]
+      encode: [h264, hevc]
+      toneMap: [opencl, vulkan]
+      verifiedAtMs: 1750000000000
+    - backend: software
+      decode: [h264, hevc, av1, vp9, mpeg2, vc1, mpeg4]
+      encode: [h264, hevc]
+      toneMap: []
+      verifiedAtMs: 1750000000000
+
+# Windows platform order per §8.2 ("Windows: nvenc -> qsv -> amf ->
+# d3d11va(decode-only) -> software"): nvenc/qsv both verify decode of
+# EVERYTHING except vc1 (self-test gap modeled deliberately), amf covers
+# vc1 decode+encode (so a vc1 source routes PAST nvenc/qsv, which can't
+# decode it, to amf) — proves array-order is honored (nvenc/qsv checked
+# first and genuinely skipped, not merely "amf happened to be picked").
+# d3d11va sits between amf and software (matching §8.2's literal order)
+# with an empty `encode` list, matching its real-world decode-only nature.
+windows-platform-order:
+  backends:
+    - backend: nvenc
+      decode: [h264, hevc, av1, vp9, mpeg2]
+      encode: [h264, hevc, av1]
+      toneMap: [cuda]
+      verifiedAtMs: 1750000000000
+    - backend: qsv
+      decode: [h264, hevc, av1, vp9, mpeg2]
+      encode: [h264, hevc]
+      toneMap: [opencl, vulkan]
+      verifiedAtMs: 1750000000000
+    - backend: amf
+      decode: [h264, hevc, vc1]
+      encode: [h264, hevc]
+      toneMap: []
+      verifiedAtMs: 1750000000000
+    - backend: d3d11va
+      decode: [h264, hevc, av1, vp9, mpeg2, vc1]
+      encode: []
+      toneMap: []
+      verifiedAtMs: 1750000000000
+    - backend: software
+      decode: [h264, hevc, av1, vp9, mpeg2, vc1, mpeg4]
+      encode: [h264, hevc]
+      toneMap: []
+      verifiedAtMs: 1750000000000
+
+# Minimal fixture isolating the decode-only-backend guard (binding
+# interpretation 2's defensive note in stages/hardware.ts): a SINGLE
+# hardware backend that verifies decode of everything but declares an
+# EMPTY `encode` list (§8.2's d3d11va shape), paired with software. Used
+# ONLY with a case whose `policy.ladderRungs` is deliberately empty (so the
+# ladder's target-codec set is vacuously `[]`) — without the guard, a
+# decode-only backend would be wrongly "selected" as an encoder purely
+# because there was nothing to cover; with the guard, it is correctly
+# skipped and the route falls through to full software.
+decode-only-guard:
+  backends:
+    - backend: d3d11va
+      decode: [h264, hevc, av1, vp9, mpeg2, vc1, mpeg4]
+      encode: []
+      toneMap: []
+      verifiedAtMs: 1750000000000
+    - backend: software
+      decode: [h264, hevc, av1, vp9, mpeg2, vc1, mpeg4]
+      encode: [h264, hevc]
+      toneMap: []
+      verifiedAtMs: 1750000000000
+
+# --- Phase 3 step 7 (adversarial spec audit) additive fixtures -------------
+# STATE.md Step 3 surfaced (and the step-7 audit pins with cases 447-450):
+# stages/hdr.ts's tone-map REFUSAL check is CAPS-GLOBAL ("does ANY backend
+# have a non-empty toneMap array"), while Stage G resolves a METHOD per
+# §8.3's per-backend preference table. These sets construct that gap
+# deliberately: a backend whose toneMap array is non-empty (so Stage C never
+# refuses) that Stage G can nevertheless never USE for the routed plan —
+# the plan transcodes UNREFUSED with `video.toneMap` unset and no tone-map
+# filter in its args (audit finding; candidate docs/PLAYBACK.md
+# clarification).
+
+# nvenc verified tone-map-capable (cuda) but its encode self-test only ever
+# passed av1 — it can never cover an h264/hevc ladder target set, so rules
+# (i)/(ii) skip it on encode coverage and rule (iii) lands on software.
+tonemap-no-encode:
+  backends:
+    - backend: nvenc
+      decode: [h264, hevc]
+      encode: [av1]
+      toneMap: [cuda]
+      verifiedAtMs: 1750000000000
+    - backend: software
+      decode: [h264, hevc, av1, vp9, mpeg2, vc1, mpeg4]
+      encode: [h264, hevc]
+      toneMap: []
+      verifiedAtMs: 1750000000000
+
+# nvenc covers decode+encode but its verified toneMap list carries ONLY
+# opencl — §8.3's preference table gives nvenc exactly [cuda], so a
+# tone-map-requiring plan can never use this backend (candidates lacking a
+# usable method fall through, stages/hardware.ts binding interpretation 3)
+# despite full route coverage; Stage C still sees a non-empty toneMap array
+# and never refuses.
+nvenc-wrong-tonemap:
+  backends:
+    - backend: nvenc
+      decode: [h264, hevc]
+      encode: [h264, hevc]
+      toneMap: [opencl]
+      verifiedAtMs: 1750000000000
+    - backend: software
+      decode: [h264, hevc, av1, vp9, mpeg2, vc1, mpeg4]
+      encode: [h264, hevc]
+      toneMap: []
+      verifiedAtMs: 1750000000000
+
+# amf declaring a (hypothetically verified) opencl tone-map — §8.3's
+# preference table has NO amf row at all, so Stage G treats amf as never
+# able to satisfy a tone-map requirement regardless of its own toneMap
+# array (stages/hardware.ts binding interpretation 3's amf/d3d11va branch,
+# previously defensive-only and fixture-unexercised; case 450 pins it).
+amf-tonemap-declared:
+  backends:
+    - backend: amf
+      decode: [h264, hevc]
+      encode: [h264, hevc]
+      toneMap: [opencl]
+      verifiedAtMs: 1750000000000
+    - backend: software
+      decode: [h264, hevc, av1, vp9, mpeg2, vc1, mpeg4]
+      encode: [h264, hevc]
+      toneMap: []
+      verifiedAtMs: 1750000000000

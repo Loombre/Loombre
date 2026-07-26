@@ -1,0 +1,3332 @@
+[
+  {
+    "path": "Show (2019)/Season 01/Show.S01E01.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show",
+      "seasonNumber": 1,
+      "episodeNumbers": [
+        1
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "high",
+      "reasons": [
+        "series-year:from-directory",
+        "matched:sxxexx",
+        "title:from-directory"
+      ]
+    },
+    "note": "canonical dotted SxxEyy, series year in dir"
+  },
+  {
+    "path": "Show/Season 01/Show.s01e01.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show",
+      "seasonNumber": 1,
+      "episodeNumbers": [
+        1
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "high",
+      "reasons": [
+        "matched:sxxexx",
+        "title:from-directory"
+      ]
+    },
+    "note": "lowercase sxxeyy"
+  },
+  {
+    "path": "Show/Season 01/Show.S1E1.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show",
+      "seasonNumber": 1,
+      "episodeNumbers": [
+        1
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "high",
+      "reasons": [
+        "matched:sxxexx",
+        "title:from-directory"
+      ]
+    },
+    "note": "single-digit season/episode"
+  },
+  {
+    "path": "Show/Season 01/Show.S01.E01.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show",
+      "seasonNumber": 1,
+      "episodeNumbers": [
+        1
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "high",
+      "reasons": [
+        "matched:sxxexx",
+        "title:from-directory"
+      ]
+    },
+    "note": "dotted season/episode separator"
+  },
+  {
+    "path": "Show/Season 01/Show S01 E01.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show",
+      "seasonNumber": 1,
+      "episodeNumbers": [
+        1
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "high",
+      "reasons": [
+        "matched:sxxexx",
+        "title:from-directory"
+      ]
+    },
+    "note": "spaced season/episode separator"
+  },
+  {
+    "path": "Show/Season 1/Show.1x01.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show",
+      "seasonNumber": 1,
+      "episodeNumbers": [
+        1
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "high",
+      "reasons": [
+        "matched:1x01",
+        "title:from-directory"
+      ]
+    },
+    "note": "1x01 style"
+  },
+  {
+    "path": "Show/Season 1/Show 1x1.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show",
+      "seasonNumber": 1,
+      "episodeNumbers": [
+        1
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "high",
+      "reasons": [
+        "matched:1x01",
+        "title:from-directory"
+      ]
+    },
+    "note": "1x1 single digit x-style, spaced"
+  },
+  {
+    "path": "Show/Season 12/Show.S12E05.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show",
+      "seasonNumber": 12,
+      "episodeNumbers": [
+        5
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "high",
+      "reasons": [
+        "matched:sxxexx",
+        "title:from-directory"
+      ]
+    },
+    "note": "two-digit season"
+  },
+  {
+    "path": "Show/Season 01/Show - S01E01 - Pilot.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show",
+      "seasonNumber": 1,
+      "episodeNumbers": [
+        1
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": "Pilot",
+      "confidence": "high",
+      "reasons": [
+        "matched:sxxexx",
+        "title:from-directory"
+      ]
+    },
+    "note": "sxxeyy with episode title"
+  },
+  {
+    "path": "Show/Season 01/Show.S01E01.Pilot.1080p.WEB-DL.x264-GROUP.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show",
+      "seasonNumber": 1,
+      "episodeNumbers": [
+        1
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": "Pilot",
+      "confidence": "high",
+      "reasons": [
+        "matched:sxxexx",
+        "title:from-directory"
+      ]
+    },
+    "note": "dotted sxxeyy + episode title + noise + group"
+  },
+  {
+    "path": "show/season 01/show.s01e01.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "show",
+      "seasonNumber": 1,
+      "episodeNumbers": [
+        1
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "high",
+      "reasons": [
+        "matched:sxxexx",
+        "title:from-directory"
+      ]
+    },
+    "note": "fully lowercase path incl dir names"
+  },
+  {
+    "path": "Show/Season 01/Show.S01E01E02.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show",
+      "seasonNumber": 1,
+      "episodeNumbers": [
+        1,
+        2
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "high",
+      "reasons": [
+        "matched:sxxexx",
+        "matched:multi-episode-list",
+        "title:from-directory"
+      ]
+    },
+    "note": "list: two adjacent episodes"
+  },
+  {
+    "path": "Show/Season 01/Show.S01E01E02E03.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show",
+      "seasonNumber": 1,
+      "episodeNumbers": [
+        1,
+        2,
+        3
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "high",
+      "reasons": [
+        "matched:sxxexx",
+        "matched:multi-episode-list",
+        "title:from-directory"
+      ]
+    },
+    "note": "list: three adjacent episodes"
+  },
+  {
+    "path": "Show/Season 01/Show.S01E01-E02.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show",
+      "seasonNumber": 1,
+      "episodeNumbers": [
+        1,
+        2
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "high",
+      "reasons": [
+        "matched:sxxexx",
+        "matched:multi-episode-range",
+        "title:from-directory"
+      ]
+    },
+    "note": "range: E01-E02 -> [1,2]"
+  },
+  {
+    "path": "Show/Season 01/Show.S01E01-E05.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show",
+      "seasonNumber": 1,
+      "episodeNumbers": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "high",
+      "reasons": [
+        "matched:sxxexx",
+        "matched:multi-episode-range",
+        "title:from-directory"
+      ]
+    },
+    "note": "range: E01-E05 -> [1,2,3,4,5]"
+  },
+  {
+    "path": "Show/Season 01/Show.S01E01-03.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show",
+      "seasonNumber": 1,
+      "episodeNumbers": [
+        1,
+        2,
+        3
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "high",
+      "reasons": [
+        "matched:sxxexx",
+        "matched:multi-episode-range",
+        "title:from-directory"
+      ]
+    },
+    "note": "range without repeated E -> [1,2,3]"
+  },
+  {
+    "path": "Show/Season 01/Show 1x01x02.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show",
+      "seasonNumber": 1,
+      "episodeNumbers": [
+        1,
+        2
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "high",
+      "reasons": [
+        "matched:1x01",
+        "matched:multi-episode-list",
+        "title:from-directory"
+      ]
+    },
+    "note": "x-style list: two adjacent"
+  },
+  {
+    "path": "Show/Season 01/Show 1x01x02x03.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show",
+      "seasonNumber": 1,
+      "episodeNumbers": [
+        1,
+        2,
+        3
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "high",
+      "reasons": [
+        "matched:1x01",
+        "matched:multi-episode-list",
+        "title:from-directory"
+      ]
+    },
+    "note": "x-style list: three adjacent"
+  },
+  {
+    "path": "Show/Season 01/Show - E01.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show",
+      "seasonNumber": 1,
+      "episodeNumbers": [
+        1
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "medium",
+      "reasons": [
+        "matched:bare-episode",
+        "season:from-directory",
+        "title:from-directory"
+      ]
+    },
+    "note": "bare E01, season from 'Season 01/'"
+  },
+  {
+    "path": "Show/Season 1/Show - E01.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show",
+      "seasonNumber": 1,
+      "episodeNumbers": [
+        1
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "medium",
+      "reasons": [
+        "matched:bare-episode",
+        "season:from-directory",
+        "title:from-directory"
+      ]
+    },
+    "note": "bare E01, season from 'Season 1/' (single digit)"
+  },
+  {
+    "path": "Show/Season 03/Show - Episode 05.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show",
+      "seasonNumber": 3,
+      "episodeNumbers": [
+        5
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "medium",
+      "reasons": [
+        "matched:bare-episode",
+        "season:from-directory",
+        "title:from-directory"
+      ]
+    },
+    "note": "'Episode 05' word form, season from directory"
+  },
+  {
+    "path": "Show/Season 03/Show - Episode05.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show",
+      "seasonNumber": 3,
+      "episodeNumbers": [
+        5
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "medium",
+      "reasons": [
+        "matched:bare-episode",
+        "season:from-directory",
+        "title:from-directory"
+      ]
+    },
+    "note": "'Episode05' no space, season from directory"
+  },
+  {
+    "path": "Show/Specials/Show - E01.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show",
+      "seasonNumber": 0,
+      "episodeNumbers": [
+        1
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": true,
+      "episodeTitle": null,
+      "confidence": "medium",
+      "reasons": [
+        "matched:bare-episode",
+        "season:from-directory",
+        "title:from-directory"
+      ]
+    },
+    "note": "bare E01 under Specials/ -> season 0, isSpecial"
+  },
+  {
+    "path": "Show/Special/Show - E02.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show",
+      "seasonNumber": 0,
+      "episodeNumbers": [
+        2
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": true,
+      "episodeTitle": null,
+      "confidence": "medium",
+      "reasons": [
+        "matched:bare-episode",
+        "season:from-directory",
+        "title:from-directory"
+      ]
+    },
+    "note": "singular 'Special/' directory variant"
+  },
+  {
+    "path": "Show - E07.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show",
+      "seasonNumber": null,
+      "episodeNumbers": [
+        7
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "low",
+      "reasons": [
+        "matched:bare-episode",
+        "title:from-filename"
+      ]
+    },
+    "note": "bare E07, NO directory at all -> season stays null, low confidence"
+  },
+  {
+    "path": "Show/Specials/Show.S00E01.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show",
+      "seasonNumber": 0,
+      "episodeNumbers": [
+        1
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": true,
+      "episodeTitle": null,
+      "confidence": "high",
+      "reasons": [
+        "matched:sxxexx",
+        "special:s00",
+        "title:from-directory"
+      ]
+    },
+    "note": "S00E01 explicit special in filename"
+  },
+  {
+    "path": "Show/Season 01/Show.S00E02.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show",
+      "seasonNumber": 0,
+      "episodeNumbers": [
+        2
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": true,
+      "episodeTitle": null,
+      "confidence": "high",
+      "reasons": [
+        "matched:sxxexx",
+        "special:s00",
+        "title:from-directory"
+      ]
+    },
+    "note": "S00E02 even though sitting under Season 01/ dir (filename wins)"
+  },
+  {
+    "path": "Show/Specials/Show.S00E01.Behind.The.Scenes.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show",
+      "seasonNumber": 0,
+      "episodeNumbers": [
+        1
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": true,
+      "episodeTitle": "Behind The Scenes",
+      "confidence": "high",
+      "reasons": [
+        "matched:sxxexx",
+        "special:s00",
+        "title:from-directory"
+      ]
+    },
+    "note": "S00E01 + episode title noise"
+  },
+  {
+    "path": "Daily.Show.2024.01.05.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Daily Show",
+      "seasonNumber": null,
+      "episodeNumbers": [],
+      "airDate": "2024-01-05",
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "medium",
+      "reasons": [
+        "matched:dated",
+        "title:from-filename"
+      ]
+    },
+    "note": "dotted date, flat file no dirs"
+  },
+  {
+    "path": "Show/2024-01-05 - Guest Name.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show",
+      "seasonNumber": null,
+      "episodeNumbers": [],
+      "airDate": "2024-01-05",
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": "Guest Name",
+      "confidence": "medium",
+      "reasons": [
+        "matched:dated",
+        "title:from-directory"
+      ]
+    },
+    "note": "dashed date + episode title, single dir"
+  },
+  {
+    "path": "The.Daily.Show/2024.03.14.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "The Daily Show",
+      "seasonNumber": null,
+      "episodeNumbers": [],
+      "airDate": "2024-03-14",
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "medium",
+      "reasons": [
+        "matched:dated",
+        "title:from-directory"
+      ]
+    },
+    "note": "dotted date, dir supplies title only"
+  },
+  {
+    "path": "Late Night/2023-12-25.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Late Night",
+      "seasonNumber": null,
+      "episodeNumbers": [],
+      "airDate": "2023-12-25",
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "medium",
+      "reasons": [
+        "matched:dated",
+        "title:from-directory"
+      ]
+    },
+    "note": "dashed date, no episode title"
+  },
+  {
+    "path": "Talk Show/Season 2024/2024-06-01 - Special Guest.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Talk Show",
+      "seasonNumber": null,
+      "episodeNumbers": [],
+      "airDate": "2024-06-01",
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": "Special Guest",
+      "confidence": "medium",
+      "reasons": [
+        "matched:dated",
+        "title:from-directory"
+      ]
+    },
+    "note": "dashed date inside a 'Season 2024' dir: 2024 exceeds the 3-digit season-dir pattern on purpose, so it is never misread as a season number"
+  },
+  {
+    "path": "Show.2024.13.40.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show 2024 13",
+      "seasonNumber": null,
+      "episodeNumbers": [],
+      "airDate": null,
+      "absoluteNumbers": [
+        40
+      ],
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "medium",
+      "reasons": [
+        "matched:absolute-number",
+        "title:from-filename"
+      ]
+    },
+    "note": "month=13/day=40 fail calendar validation -> not treated as dated; falls through to the absolute-number last resort, which grabs the trailing '40' and leaves '2024 13' stuck in the title (documented degenerate-input behavior, not a crash)"
+  },
+  {
+    "path": "[Group] Show - 012 [1080p].mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show",
+      "seasonNumber": null,
+      "episodeNumbers": [],
+      "airDate": null,
+      "absoluteNumbers": [
+        12
+      ],
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "medium",
+      "reasons": [
+        "matched:absolute-number",
+        "group:anime-bracket-stripped",
+        "title:from-filename"
+      ]
+    },
+    "note": "anime absolute number with bracket group + quality noise"
+  },
+  {
+    "path": "Show 012.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show",
+      "seasonNumber": null,
+      "episodeNumbers": [],
+      "airDate": null,
+      "absoluteNumbers": [
+        12
+      ],
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "medium",
+      "reasons": [
+        "matched:absolute-number",
+        "title:from-filename"
+      ]
+    },
+    "note": "anime absolute number, no group, no dash"
+  },
+  {
+    "path": "Show - 12.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show",
+      "seasonNumber": null,
+      "episodeNumbers": [],
+      "airDate": null,
+      "absoluteNumbers": [
+        12
+      ],
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "medium",
+      "reasons": [
+        "matched:absolute-number",
+        "title:from-filename"
+      ]
+    },
+    "note": "anime absolute number, two-digit, dash-separated"
+  },
+  {
+    "path": "[Group] Show - 001 [720p][x264].mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show",
+      "seasonNumber": null,
+      "episodeNumbers": [],
+      "airDate": null,
+      "absoluteNumbers": [
+        1
+      ],
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "medium",
+      "reasons": [
+        "matched:absolute-number",
+        "group:anime-bracket-stripped",
+        "title:from-filename"
+      ]
+    },
+    "note": "absolute 001 + multiple bracket noise chunks"
+  },
+  {
+    "path": "[SubsPlease] Show - 245 (1080p) [ABCDEF01].mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show",
+      "seasonNumber": null,
+      "episodeNumbers": [],
+      "airDate": null,
+      "absoluteNumbers": [
+        245
+      ],
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "medium",
+      "reasons": [
+        "matched:absolute-number",
+        "group:anime-bracket-stripped",
+        "title:from-filename"
+      ]
+    },
+    "note": "absolute 245 + parenthesized quality + hash bracket"
+  },
+  {
+    "path": "[Group] Show - 012v2 [1080p].mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show",
+      "seasonNumber": null,
+      "episodeNumbers": [],
+      "airDate": null,
+      "absoluteNumbers": [
+        12
+      ],
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "medium",
+      "reasons": [
+        "matched:absolute-number",
+        "matched:absolute-versioned",
+        "group:anime-bracket-stripped",
+        "title:from-filename"
+      ]
+    },
+    "note": "versioned absolute number v2"
+  },
+  {
+    "path": "[Group] Show - 012v3 [1080p].mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show",
+      "seasonNumber": null,
+      "episodeNumbers": [],
+      "airDate": null,
+      "absoluteNumbers": [
+        12
+      ],
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "medium",
+      "reasons": [
+        "matched:absolute-number",
+        "matched:absolute-versioned",
+        "group:anime-bracket-stripped",
+        "title:from-filename"
+      ]
+    },
+    "note": "versioned absolute number v3"
+  },
+  {
+    "path": "Show 1234.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show",
+      "seasonNumber": null,
+      "episodeNumbers": [],
+      "airDate": null,
+      "absoluteNumbers": [
+        1234
+      ],
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "medium",
+      "reasons": [
+        "matched:absolute-number",
+        "title:from-filename"
+      ]
+    },
+    "note": "four-digit absolute number (long-running show)"
+  },
+  {
+    "path": "[Group] Show S01E01 [1080p].mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show",
+      "seasonNumber": 1,
+      "episodeNumbers": [
+        1
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "high",
+      "reasons": [
+        "matched:sxxexx",
+        "group:bracket-stripped",
+        "title:from-filename"
+      ]
+    },
+    "note": "SxxEyy present -> wins over any bare-number reading; group bracket still stripped generically"
+  },
+  {
+    "path": "Show/Season 01/Show.S01E12.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show",
+      "seasonNumber": 1,
+      "episodeNumbers": [
+        12
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "high",
+      "reasons": [
+        "matched:sxxexx",
+        "title:from-directory"
+      ]
+    },
+    "note": "SxxEyy episode number 12 must NOT be reinterpreted as absolute"
+  },
+  {
+    "path": "Show/Season 01/Show.S01E03.The.Long.Goodbye.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show",
+      "seasonNumber": 1,
+      "episodeNumbers": [
+        3
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": "The Long Goodbye",
+      "confidence": "high",
+      "reasons": [
+        "matched:sxxexx",
+        "title:from-directory"
+      ]
+    },
+    "note": "dotted episode title, multiple words"
+  },
+  {
+    "path": "Show/Season 01/Show - S01E04 - Homecoming [1080p].mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show",
+      "seasonNumber": 1,
+      "episodeNumbers": [
+        4
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": "Homecoming",
+      "confidence": "high",
+      "reasons": [
+        "matched:sxxexx",
+        "title:from-directory"
+      ]
+    },
+    "note": "episode title + trailing quality noise"
+  },
+  {
+    "path": "Show/Season 01/Show.1x05.Reunion.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show",
+      "seasonNumber": 1,
+      "episodeNumbers": [
+        5
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": "Reunion",
+      "confidence": "high",
+      "reasons": [
+        "matched:1x01",
+        "title:from-directory"
+      ]
+    },
+    "note": "x-style + dotted episode title"
+  },
+  {
+    "path": "Show/Season 01/Show.S01E06.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show",
+      "seasonNumber": 1,
+      "episodeNumbers": [
+        6
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "high",
+      "reasons": [
+        "matched:sxxexx",
+        "title:from-directory"
+      ]
+    },
+    "note": "no episode title present -> null"
+  },
+  {
+    "path": "Show (2019)/Season 01/Show.S01E01.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show",
+      "seasonNumber": 1,
+      "episodeNumbers": [
+        1
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "high",
+      "reasons": [
+        "series-year:from-directory",
+        "matched:sxxexx",
+        "title:from-directory"
+      ]
+    },
+    "note": "duplicate of first case, confirms series-year dir reason (kept for count/coverage)"
+  },
+  {
+    "path": "Better Call Saul (2015)/Season 01/Better Call Saul.S01E01.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Better Call Saul",
+      "seasonNumber": 1,
+      "episodeNumbers": [
+        1
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "high",
+      "reasons": [
+        "series-year:from-directory",
+        "matched:sxxexx",
+        "title:from-directory"
+      ]
+    },
+    "note": "realistic series-year dir example"
+  },
+  {
+    "path": "The Office (2005)/Season 02/The Office.S02E01.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "The Office",
+      "seasonNumber": 2,
+      "episodeNumbers": [
+        1
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "high",
+      "reasons": [
+        "series-year:from-directory",
+        "matched:sxxexx",
+        "title:from-directory"
+      ]
+    },
+    "note": "another realistic series-year dir example"
+  },
+  {
+    "path": "千と千尋の神隠し/Season 01/千と千尋の神隠し.S01E01.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "千と千尋の神隠し",
+      "seasonNumber": 1,
+      "episodeNumbers": [
+        1
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "high",
+      "reasons": [
+        "matched:sxxexx",
+        "title:from-directory"
+      ]
+    },
+    "note": "unicode CJK series title"
+  },
+  {
+    "path": "기묘한 이야기/Season 01/기묘한 이야기.S01E01.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "기묘한 이야기",
+      "seasonNumber": 1,
+      "episodeNumbers": [
+        1
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "high",
+      "reasons": [
+        "matched:sxxexx",
+        "title:from-directory"
+      ]
+    },
+    "note": "unicode Korean series title"
+  },
+  {
+    "path": "Дылда/Season 01/Дылда.S01E01.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Дылда",
+      "seasonNumber": 1,
+      "episodeNumbers": [
+        1
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "high",
+      "reasons": [
+        "matched:sxxexx",
+        "title:from-directory"
+      ]
+    },
+    "note": "unicode Cyrillic series title"
+  },
+  {
+    "path": "[Group] 進撃の巨人 - 001 [1080p].mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "進撃の巨人",
+      "seasonNumber": null,
+      "episodeNumbers": [],
+      "airDate": null,
+      "absoluteNumbers": [
+        1
+      ],
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "medium",
+      "reasons": [
+        "matched:absolute-number",
+        "group:anime-bracket-stripped",
+        "title:from-filename"
+      ]
+    },
+    "note": "unicode anime title + absolute number"
+  },
+  {
+    "path": "The.Mandalorian.S01E01.1080p.WEB-DL.DDP5.1.x264-GROUP.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "The Mandalorian",
+      "seasonNumber": 1,
+      "episodeNumbers": [
+        1
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "high",
+      "reasons": [
+        "matched:sxxexx",
+        "title:from-filename"
+      ]
+    },
+    "note": "dotted series title + sxxeyy + heavy noise, flat file no dirs"
+  },
+  {
+    "path": "Breaking.Bad.S05E14.720p.BluRay.x264-GROUP.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Breaking Bad",
+      "seasonNumber": 5,
+      "episodeNumbers": [
+        14
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "high",
+      "reasons": [
+        "matched:sxxexx",
+        "title:from-filename"
+      ]
+    },
+    "note": "dotted series title + sxxeyy + noise, flat file"
+  },
+  {
+    "path": "Game of Thrones (2011)/Season 01/Game of Thrones.S01E01.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Game of Thrones",
+      "seasonNumber": 1,
+      "episodeNumbers": [
+        1
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "high",
+      "reasons": [
+        "series-year:from-directory",
+        "matched:sxxexx",
+        "title:from-directory"
+      ]
+    },
+    "note": "realistic long-running drama, season 1 ep 1"
+  },
+  {
+    "path": "Game of Thrones (2011)/Season 08/Game of Thrones.S08E06.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Game of Thrones",
+      "seasonNumber": 8,
+      "episodeNumbers": [
+        6
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "high",
+      "reasons": [
+        "series-year:from-directory",
+        "matched:sxxexx",
+        "title:from-directory"
+      ]
+    },
+    "note": "same show, final season/episode, two-digit season+episode"
+  },
+  {
+    "path": "Stranger Things (2016)/Season 04/Stranger Things.S04E01.The Hellfire Club.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Stranger Things",
+      "seasonNumber": 4,
+      "episodeNumbers": [
+        1
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": "The Hellfire Club",
+      "confidence": "high",
+      "reasons": [
+        "series-year:from-directory",
+        "matched:sxxexx",
+        "title:from-directory"
+      ]
+    },
+    "note": "episode title with spaces already present (no dotted conversion needed)"
+  },
+  {
+    "path": "Friends (1994)/Season 03/Friends.s03e05.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Friends",
+      "seasonNumber": 3,
+      "episodeNumbers": [
+        5
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "high",
+      "reasons": [
+        "series-year:from-directory",
+        "matched:sxxexx",
+        "title:from-directory"
+      ]
+    },
+    "note": "lowercase sxxeyy, sitcom"
+  },
+  {
+    "path": "The Simpsons (1989)/Season 05/The Simpsons.S05E22.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "The Simpsons",
+      "seasonNumber": 5,
+      "episodeNumbers": [
+        22
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "high",
+      "reasons": [
+        "series-year:from-directory",
+        "matched:sxxexx",
+        "title:from-directory"
+      ]
+    },
+    "note": "long-running animated sitcom"
+  },
+  {
+    "path": "Rick and Morty (2013)/Season 03/Rick.and.Morty.S03E01.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Rick and Morty",
+      "seasonNumber": 3,
+      "episodeNumbers": [
+        1
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "high",
+      "reasons": [
+        "series-year:from-directory",
+        "matched:sxxexx",
+        "title:from-directory"
+      ]
+    },
+    "note": "dotted filename inside spaced dirs"
+  },
+  {
+    "path": "Doctor Who (2005)/Season 01/Doctor Who.1x01.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Doctor Who",
+      "seasonNumber": 1,
+      "episodeNumbers": [
+        1
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "high",
+      "reasons": [
+        "series-year:from-directory",
+        "matched:1x01",
+        "title:from-directory"
+      ]
+    },
+    "note": "x-style inside a modern-era reboot dir"
+  },
+  {
+    "path": "The Wire/Season 01/The Wire S01E01.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "The Wire",
+      "seasonNumber": 1,
+      "episodeNumbers": [
+        1
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "high",
+      "reasons": [
+        "matched:sxxexx",
+        "title:from-directory"
+      ]
+    },
+    "note": "no series year in dir, spaced sxxeyy"
+  },
+  {
+    "path": "Fargo/Season 02/Fargo - S02E01 - Waiting for Dutch.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Fargo",
+      "seasonNumber": 2,
+      "episodeNumbers": [
+        1
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": "Waiting for Dutch",
+      "confidence": "high",
+      "reasons": [
+        "matched:sxxexx",
+        "title:from-directory"
+      ]
+    },
+    "note": "anthology series, dash-style with episode title"
+  },
+  {
+    "path": "The Crown (2016)/Season 01/The Crown.S01E01.Wolferton Splash.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "The Crown",
+      "seasonNumber": 1,
+      "episodeNumbers": [
+        1
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": "Wolferton Splash",
+      "confidence": "high",
+      "reasons": [
+        "series-year:from-directory",
+        "matched:sxxexx",
+        "title:from-directory"
+      ]
+    },
+    "note": "already-spaced episode title after dotted sxxeyy"
+  },
+  {
+    "path": "Chernobyl (2019)/Season 01/Chernobyl.S01E01.1.23.45.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Chernobyl",
+      "seasonNumber": 1,
+      "episodeNumbers": [
+        1
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": "1 23 45",
+      "confidence": "high",
+      "reasons": [
+        "series-year:from-directory",
+        "matched:sxxexx",
+        "title:from-directory"
+      ]
+    },
+    "note": "miniseries, episode title itself looks numeric (must not be misread)"
+  },
+  {
+    "path": "Sherlock/Season 01/Sherlock.S01E01.A Study in Pink.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Sherlock",
+      "seasonNumber": 1,
+      "episodeNumbers": [
+        1
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": "A Study in Pink",
+      "confidence": "high",
+      "reasons": [
+        "matched:sxxexx",
+        "title:from-directory"
+      ]
+    },
+    "note": "episode title retains internal spaces"
+  },
+  {
+    "path": "True Detective/Season 01/True Detective.S01E01.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "True Detective",
+      "seasonNumber": 1,
+      "episodeNumbers": [
+        1
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "high",
+      "reasons": [
+        "matched:sxxexx",
+        "title:from-directory"
+      ]
+    },
+    "note": "anthology season 1"
+  },
+  {
+    "path": "Black Mirror/Season 03/Black.Mirror.S03E01.Nosedive.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Black Mirror",
+      "seasonNumber": 3,
+      "episodeNumbers": [
+        1
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": "Nosedive",
+      "confidence": "high",
+      "reasons": [
+        "matched:sxxexx",
+        "title:from-directory"
+      ]
+    },
+    "note": "dotted filename, single-word episode title"
+  },
+  {
+    "path": "The Last of Us (2023)/Season 01/The Last of Us.S01E03.Long Long Time.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "The Last of Us",
+      "seasonNumber": 1,
+      "episodeNumbers": [
+        3
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": "Long Long Time",
+      "confidence": "high",
+      "reasons": [
+        "series-year:from-directory",
+        "matched:sxxexx",
+        "title:from-directory"
+      ]
+    },
+    "note": "multi-word episode title with spaces"
+  },
+  {
+    "path": "Show/Season 02/Show.S02E05E06.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show",
+      "seasonNumber": 2,
+      "episodeNumbers": [
+        5,
+        6
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "high",
+      "reasons": [
+        "matched:sxxexx",
+        "matched:multi-episode-list",
+        "title:from-directory"
+      ]
+    },
+    "note": "list, season 2"
+  },
+  {
+    "path": "Show/Season 02/Show.S02E05-E07.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show",
+      "seasonNumber": 2,
+      "episodeNumbers": [
+        5,
+        6,
+        7
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "high",
+      "reasons": [
+        "matched:sxxexx",
+        "matched:multi-episode-range",
+        "title:from-directory"
+      ]
+    },
+    "note": "range spanning 3 episodes"
+  },
+  {
+    "path": "Show/Season 10/Show.S10E01E02E03E04.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show",
+      "seasonNumber": 10,
+      "episodeNumbers": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "high",
+      "reasons": [
+        "matched:sxxexx",
+        "matched:multi-episode-list",
+        "title:from-directory"
+      ]
+    },
+    "note": "list of four episodes"
+  },
+  {
+    "path": "Show/Season 00/Show.E05.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show",
+      "seasonNumber": 0,
+      "episodeNumbers": [
+        5
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "medium",
+      "reasons": [
+        "matched:bare-episode",
+        "season:from-directory",
+        "title:from-directory"
+      ]
+    },
+    "note": "'Season 00' directory itself signals specials"
+  },
+  {
+    "path": "Show/Season 7/Show - E12.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show",
+      "seasonNumber": 7,
+      "episodeNumbers": [
+        12
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "medium",
+      "reasons": [
+        "matched:bare-episode",
+        "season:from-directory",
+        "title:from-directory"
+      ]
+    },
+    "note": "single-digit 'Season 7' directory"
+  },
+  {
+    "path": "Show/Season 001/Show - E01.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show",
+      "seasonNumber": 1,
+      "episodeNumbers": [
+        1
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "medium",
+      "reasons": [
+        "matched:bare-episode",
+        "season:from-directory",
+        "title:from-directory"
+      ]
+    },
+    "note": "three-digit zero-padded season directory"
+  },
+  {
+    "path": "Show/SEASON 04/Show - E02.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show",
+      "seasonNumber": 4,
+      "episodeNumbers": [
+        2
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "medium",
+      "reasons": [
+        "matched:bare-episode",
+        "season:from-directory",
+        "title:from-directory"
+      ]
+    },
+    "note": "all-caps 'SEASON' directory"
+  },
+  {
+    "path": "Show/season04/Show - E02.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show",
+      "seasonNumber": 4,
+      "episodeNumbers": [
+        2
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "medium",
+      "reasons": [
+        "matched:bare-episode",
+        "season:from-directory",
+        "title:from-directory"
+      ]
+    },
+    "note": "no-space lowercase 'season04' directory"
+  },
+  {
+    "path": "Conan/2019.05.14.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Conan",
+      "seasonNumber": null,
+      "episodeNumbers": [],
+      "airDate": "2019-05-14",
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "medium",
+      "reasons": [
+        "matched:dated",
+        "title:from-directory"
+      ]
+    },
+    "note": "dotted date, short show name"
+  },
+  {
+    "path": "The Tonight Show/2022-11-30.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "The Tonight Show",
+      "seasonNumber": null,
+      "episodeNumbers": [],
+      "airDate": "2022-11-30",
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "medium",
+      "reasons": [
+        "matched:dated",
+        "title:from-directory"
+      ]
+    },
+    "note": "dashed date, multi-word show name"
+  },
+  {
+    "path": "News Hour 2023-07-04 Special Report.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "News Hour",
+      "seasonNumber": null,
+      "episodeNumbers": [],
+      "airDate": "2023-07-04",
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": "Special Report",
+      "confidence": "medium",
+      "reasons": [
+        "matched:dated",
+        "title:from-filename"
+      ]
+    },
+    "note": "dashed date NOT at filename start, flat file, no dirs"
+  },
+  {
+    "path": "Show.09.09.2024.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show 09 09",
+      "seasonNumber": null,
+      "episodeNumbers": [],
+      "airDate": null,
+      "absoluteNumbers": [
+        2024
+      ],
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "medium",
+      "reasons": [
+        "matched:absolute-number",
+        "title:from-filename"
+      ]
+    },
+    "note": "date-shaped digits but NOT in YYYY-MM-DD order -> not matched as dated (day/month first is out of scope)"
+  },
+  {
+    "path": "[Group] Show - 003.5 [1080p].mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show - 003.5 [1080p]",
+      "seasonNumber": null,
+      "episodeNumbers": [],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "low",
+      "reasons": [
+        "group:bracket-stripped",
+        "title:from-filename",
+        "matched:none"
+      ]
+    },
+    "note": "half-episode '.5' suffix is not a supported absolute-number shape (the trailing-anchor match requires a clean 2-4 digit run) -> falls through to a low-confidence whole-text title, group bracket still stripped"
+  },
+  {
+    "path": "[Erai-raws] Show - 100 [1080p][Multiple Subtitle].mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show",
+      "seasonNumber": null,
+      "episodeNumbers": [],
+      "airDate": null,
+      "absoluteNumbers": [
+        100
+      ],
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "medium",
+      "reasons": [
+        "matched:absolute-number",
+        "group:anime-bracket-stripped",
+        "title:from-filename"
+      ]
+    },
+    "note": "three-digit absolute + multi-word bracket noise"
+  },
+  {
+    "path": "Show S1 - 05.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show S1",
+      "seasonNumber": null,
+      "episodeNumbers": [],
+      "airDate": null,
+      "absoluteNumbers": [
+        5
+      ],
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "medium",
+      "reasons": [
+        "matched:absolute-number",
+        "title:from-filename"
+      ]
+    },
+    "note": "hybrid 'S1 -' prefix before an absolute-shaped number is NOT SxxEyy (no E marker) -> falls through to absolute"
+  },
+  {
+    "path": "[Group] Long Running Show - 500 [1080p].mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Long Running Show",
+      "seasonNumber": null,
+      "episodeNumbers": [],
+      "airDate": null,
+      "absoluteNumbers": [
+        500
+      ],
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "medium",
+      "reasons": [
+        "matched:absolute-number",
+        "group:anime-bracket-stripped",
+        "title:from-filename"
+      ]
+    },
+    "note": "three-digit absolute, long-running franchise"
+  },
+  {
+    "path": "[Group] Some Documentary [1080p].mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Some Documentary [1080p]",
+      "seasonNumber": null,
+      "episodeNumbers": [],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "low",
+      "reasons": [
+        "group:bracket-stripped",
+        "title:from-filename",
+        "matched:none"
+      ]
+    },
+    "note": "leading group bracket stripped, but with no episode/absolute signal the no-match fallback uses the raw remaining text as-is (trailing '[1080p]' noise is not cleaned in this fallback path) -> low confidence"
+  },
+  {
+    "path": "Show/Season 01/Show_S01E01.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show",
+      "seasonNumber": 1,
+      "episodeNumbers": [
+        1
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "high",
+      "reasons": [
+        "matched:sxxexx",
+        "title:from-directory"
+      ]
+    },
+    "note": "underscore between title and sxxeyy"
+  },
+  {
+    "path": "Show/Season 01/Show-S01E01.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show",
+      "seasonNumber": 1,
+      "episodeNumbers": [
+        1
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "high",
+      "reasons": [
+        "matched:sxxexx",
+        "title:from-directory"
+      ]
+    },
+    "note": "hyphen between title and sxxeyy"
+  },
+  {
+    "path": "Show/Season 01/[Show] S01E01.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show",
+      "seasonNumber": 1,
+      "episodeNumbers": [
+        1
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "high",
+      "reasons": [
+        "matched:sxxexx",
+        "group:bracket-stripped",
+        "title:from-directory"
+      ]
+    },
+    "note": "bracketed title prefix (not a leading anime group, just decorative) + sxxeyy"
+  },
+  {
+    "path": "Show/Season 20/Show.S20E99.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show",
+      "seasonNumber": 20,
+      "episodeNumbers": [
+        99
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "high",
+      "reasons": [
+        "matched:sxxexx",
+        "title:from-directory"
+      ]
+    },
+    "note": "large season and episode numbers"
+  },
+  {
+    "path": "Show/Season 01/SHOW.S01E01.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show",
+      "seasonNumber": 1,
+      "episodeNumbers": [
+        1
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "high",
+      "reasons": [
+        "matched:sxxexx",
+        "title:from-directory"
+      ]
+    },
+    "note": "all-caps title + sxxeyy"
+  },
+  {
+    "path": "Show/Season 01/show.S01E01.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show",
+      "seasonNumber": 1,
+      "episodeNumbers": [
+        1
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "high",
+      "reasons": [
+        "matched:sxxexx",
+        "title:from-directory"
+      ]
+    },
+    "note": "all-lowercase title + mixed-case sxxeyy"
+  },
+  {
+    "path": "Show/Season 01/Show S1.E1.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show",
+      "seasonNumber": 1,
+      "episodeNumbers": [
+        1
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "high",
+      "reasons": [
+        "matched:sxxexx",
+        "title:from-directory"
+      ]
+    },
+    "note": "single-digit season, dotted episode separator"
+  },
+  {
+    "path": "Show/Season 01/Show [S01E01].mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show",
+      "seasonNumber": 1,
+      "episodeNumbers": [
+        1
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "high",
+      "reasons": [
+        "matched:sxxexx",
+        "title:from-directory"
+      ]
+    },
+    "note": "sxxeyy wrapped in brackets"
+  },
+  {
+    "path": "Show/Season 01/Show (S01E01).mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show",
+      "seasonNumber": 1,
+      "episodeNumbers": [
+        1
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "high",
+      "reasons": [
+        "matched:sxxexx",
+        "title:from-directory"
+      ]
+    },
+    "note": "sxxeyy wrapped in parens"
+  },
+  {
+    "path": "Show/Season 04/Show.S04E01.720p.HDTV.x264-GROUP.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show",
+      "seasonNumber": 4,
+      "episodeNumbers": [
+        1
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "high",
+      "reasons": [
+        "matched:sxxexx",
+        "title:from-directory"
+      ]
+    },
+    "note": "sxxeyy + full noise stack + group, no episode title"
+  },
+  {
+    "path": "Show/Season 04/Show.S04E01.2160p.WEB-DL.HDR10.x265-GROUP.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show",
+      "seasonNumber": 4,
+      "episodeNumbers": [
+        1
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "high",
+      "reasons": [
+        "matched:sxxexx",
+        "title:from-directory"
+      ]
+    },
+    "note": "sxxeyy + 4K HDR noise stack"
+  },
+  {
+    "path": "Show/Season 06/Show.S06E13.PROPER.720p.HDTV.x264-GROUP.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show",
+      "seasonNumber": 6,
+      "episodeNumbers": [
+        13
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "high",
+      "reasons": [
+        "matched:sxxexx",
+        "title:from-directory"
+      ]
+    },
+    "note": "sxxeyy + PROPER release tag"
+  },
+  {
+    "path": "Show/Season 01/Show.S01E01.REPACK.1080p.WEB-DL.x264-GROUP.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show",
+      "seasonNumber": 1,
+      "episodeNumbers": [
+        1
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "high",
+      "reasons": [
+        "matched:sxxexx",
+        "title:from-directory"
+      ]
+    },
+    "note": "sxxeyy + REPACK release tag"
+  },
+  {
+    "path": "Show/Season 01/Show.S01E01.iNTERNAL.1080p.WEB-DL.x264-GROUP.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show",
+      "seasonNumber": 1,
+      "episodeNumbers": [
+        1
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "high",
+      "reasons": [
+        "matched:sxxexx",
+        "title:from-directory"
+      ]
+    },
+    "note": "sxxeyy + iNTERNAL release tag, mixed case"
+  },
+  {
+    "path": "Show/Season 05/Show.S05E10E11.720p.HDTV.x264-GROUP.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show",
+      "seasonNumber": 5,
+      "episodeNumbers": [
+        10,
+        11
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "high",
+      "reasons": [
+        "matched:sxxexx",
+        "matched:multi-episode-list",
+        "title:from-directory"
+      ]
+    },
+    "note": "multi-episode list + full noise stack"
+  },
+  {
+    "path": "Show/Season 02 - Extended/Show - E01.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show",
+      "seasonNumber": null,
+      "episodeNumbers": [
+        1
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "low",
+      "reasons": [
+        "matched:bare-episode",
+        "title:from-directory"
+      ]
+    },
+    "note": "trailing text after season number in dir name -> not matched as a season dir (strict pattern), season stays null"
+  },
+  {
+    "path": "Show/S01/Show - E01.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show",
+      "seasonNumber": null,
+      "episodeNumbers": [
+        1
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "low",
+      "reasons": [
+        "matched:bare-episode",
+        "title:from-directory"
+      ]
+    },
+    "note": "abbreviated 'S01' directory (not 'Season 01') -> not a recognized season-dir pattern, season stays null"
+  },
+  {
+    "path": "Show/Specials/Show - Episode 3.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show",
+      "seasonNumber": 0,
+      "episodeNumbers": [
+        3
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": true,
+      "episodeTitle": null,
+      "confidence": "medium",
+      "reasons": [
+        "matched:bare-episode",
+        "season:from-directory",
+        "title:from-directory"
+      ]
+    },
+    "note": "'Episode 3' word form under Specials/"
+  },
+  {
+    "path": "Show/Season 09/Show - E1.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show",
+      "seasonNumber": 9,
+      "episodeNumbers": [
+        1
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "medium",
+      "reasons": [
+        "matched:bare-episode",
+        "season:from-directory",
+        "title:from-directory"
+      ]
+    },
+    "note": "single-digit bare episode, two-digit season dir"
+  },
+  {
+    "path": "Show/Season 01/Extras/Show - E01.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show",
+      "seasonNumber": 1,
+      "episodeNumbers": [
+        1
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "medium",
+      "reasons": [
+        "matched:bare-episode",
+        "season:from-directory",
+        "title:from-directory"
+      ]
+    },
+    "note": "'Extras' as an intermediate dir segment does not disturb season lookup from 'Season 01' higher up"
+  },
+  {
+    "path": "The Daily Show/2021.02.15.Guest.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "The Daily Show",
+      "seasonNumber": null,
+      "episodeNumbers": [],
+      "airDate": "2021-02-15",
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": "Guest",
+      "confidence": "medium",
+      "reasons": [
+        "matched:dated",
+        "title:from-directory"
+      ]
+    },
+    "note": "dotted date + dotted episode title suffix"
+  },
+  {
+    "path": "Show/1999-12-31 - Millennium Special.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show",
+      "seasonNumber": null,
+      "episodeNumbers": [],
+      "airDate": "1999-12-31",
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": "Millennium Special",
+      "confidence": "medium",
+      "reasons": [
+        "matched:dated",
+        "title:from-directory"
+      ]
+    },
+    "note": "dashed date, four-digit year boundary (1999)"
+  },
+  {
+    "path": "Show/2000-01-01.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show",
+      "seasonNumber": null,
+      "episodeNumbers": [],
+      "airDate": "2000-01-01",
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "medium",
+      "reasons": [
+        "matched:dated",
+        "title:from-directory"
+      ]
+    },
+    "note": "dashed date, year-2000 boundary, no episode title"
+  },
+  {
+    "path": "Show.2024.02.29.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show",
+      "seasonNumber": null,
+      "episodeNumbers": [],
+      "airDate": "2024-02-29",
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "medium",
+      "reasons": [
+        "matched:dated",
+        "title:from-filename"
+      ]
+    },
+    "note": "dotted date, leap day"
+  },
+  {
+    "path": "Colbert/2023-10-10 - Guest A and Guest B.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Colbert",
+      "seasonNumber": null,
+      "episodeNumbers": [],
+      "airDate": "2023-10-10",
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": "Guest A and Guest B",
+      "confidence": "medium",
+      "reasons": [
+        "matched:dated",
+        "title:from-directory"
+      ]
+    },
+    "note": "dashed date + multi-name episode title"
+  },
+  {
+    "path": "[Group] Show - 007.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show",
+      "seasonNumber": null,
+      "episodeNumbers": [],
+      "airDate": null,
+      "absoluteNumbers": [
+        7
+      ],
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "medium",
+      "reasons": [
+        "matched:absolute-number",
+        "group:anime-bracket-stripped",
+        "title:from-filename"
+      ]
+    },
+    "note": "three-char zero-padded absolute number, no bracket noise after"
+  },
+  {
+    "path": "[Group] Show - 099.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show",
+      "seasonNumber": null,
+      "episodeNumbers": [],
+      "airDate": null,
+      "absoluteNumbers": [
+        99
+      ],
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "medium",
+      "reasons": [
+        "matched:absolute-number",
+        "group:anime-bracket-stripped",
+        "title:from-filename"
+      ]
+    },
+    "note": "two-nines absolute number"
+  },
+  {
+    "path": "Show 5.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show 5",
+      "seasonNumber": null,
+      "episodeNumbers": [],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "low",
+      "reasons": [
+        "title:from-filename",
+        "matched:none"
+      ]
+    },
+    "note": "single-digit trailing number is NOT matched (absolute requires 2-4 digits) -> falls through to whole-stem title"
+  },
+  {
+    "path": "[Group] Another Show - 015 [720p][HEVC][GROUP].mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Another Show",
+      "seasonNumber": null,
+      "episodeNumbers": [],
+      "airDate": null,
+      "absoluteNumbers": [
+        15
+      ],
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "medium",
+      "reasons": [
+        "matched:absolute-number",
+        "group:anime-bracket-stripped",
+        "title:from-filename"
+      ]
+    },
+    "note": "absolute number + several stacked bracket noise chunks"
+  },
+  {
+    "path": "[Group] Show S2 - 015 [1080p].mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show S2",
+      "seasonNumber": null,
+      "episodeNumbers": [],
+      "airDate": null,
+      "absoluteNumbers": [
+        15
+      ],
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "medium",
+      "reasons": [
+        "matched:absolute-number",
+        "group:anime-bracket-stripped",
+        "title:from-filename"
+      ]
+    },
+    "note": "'S2 -' prefix has no E marker, not SxxEyy -> absolute wins, season info lost (documented limitation)"
+  },
+  {
+    "path": "Anime Season/進撃の巨人/Season 01/進撃の巨人.S01E01.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Anime Season",
+      "seasonNumber": 1,
+      "episodeNumbers": [
+        1
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "high",
+      "reasons": [
+        "matched:sxxexx",
+        "title:from-directory"
+      ]
+    },
+    "note": "unicode series title with real 'Season 01' dir"
+  },
+  {
+    "path": "Élite/Season 01/Élite.S01E01.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Élite",
+      "seasonNumber": 1,
+      "episodeNumbers": [
+        1
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "high",
+      "reasons": [
+        "matched:sxxexx",
+        "title:from-directory"
+      ]
+    },
+    "note": "accented Latin series title"
+  },
+  {
+    "path": "Загадочная история/Season 01/Загадочная история.S01E01.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Загадочная история",
+      "seasonNumber": 1,
+      "episodeNumbers": [
+        1
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "high",
+      "reasons": [
+        "matched:sxxexx",
+        "title:from-directory"
+      ]
+    },
+    "note": "unicode Cyrillic multi-word series title"
+  },
+  {
+    "path": "Peaky Blinders (2013)/Season 01/Peaky Blinders.S01E01.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Peaky Blinders",
+      "seasonNumber": 1,
+      "episodeNumbers": [
+        1
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "high",
+      "reasons": [
+        "series-year:from-directory",
+        "matched:sxxexx",
+        "title:from-directory"
+      ]
+    },
+    "note": "realistic series-year dir"
+  },
+  {
+    "path": "Narcos (2015)/Season 02/Narcos.S02E10.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Narcos",
+      "seasonNumber": 2,
+      "episodeNumbers": [
+        10
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "high",
+      "reasons": [
+        "series-year:from-directory",
+        "matched:sxxexx",
+        "title:from-directory"
+      ]
+    },
+    "note": "realistic series-year dir, two-digit episode"
+  },
+  {
+    "path": "The Boys (2019)/Season 03/The Boys.S03E01.Payback.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "The Boys",
+      "seasonNumber": 3,
+      "episodeNumbers": [
+        1
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": "Payback",
+      "confidence": "high",
+      "reasons": [
+        "series-year:from-directory",
+        "matched:sxxexx",
+        "title:from-directory"
+      ]
+    },
+    "note": "series-year dir + episode title"
+  },
+  {
+    "path": "Money Heist (2017)/Season 01/Money Heist.S01E01.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Money Heist",
+      "seasonNumber": 1,
+      "episodeNumbers": [
+        1
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "high",
+      "reasons": [
+        "series-year:from-directory",
+        "matched:sxxexx",
+        "title:from-directory"
+      ]
+    },
+    "note": "series-year dir"
+  },
+  {
+    "path": "Dark (2017)/Season 01/Dark.S01E01.Secrets.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Dark",
+      "seasonNumber": 1,
+      "episodeNumbers": [
+        1
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": "Secrets",
+      "confidence": "high",
+      "reasons": [
+        "series-year:from-directory",
+        "matched:sxxexx",
+        "title:from-directory"
+      ]
+    },
+    "note": "series-year dir + single-word episode title"
+  },
+  {
+    "path": "Show/Season 01/Show.S01E01.720p.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show",
+      "seasonNumber": 1,
+      "episodeNumbers": [
+        1
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "high",
+      "reasons": [
+        "matched:sxxexx",
+        "title:from-directory"
+      ]
+    },
+    "note": "sxxeyy + single resolution token, no group"
+  },
+  {
+    "path": "Show/Season 01/Show.S01E01.HDTV.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show",
+      "seasonNumber": 1,
+      "episodeNumbers": [
+        1
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "high",
+      "reasons": [
+        "matched:sxxexx",
+        "title:from-directory"
+      ]
+    },
+    "note": "sxxeyy + single source token, no group"
+  },
+  {
+    "path": "Show/Season 01/Show.S01E02.WEBRip.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show",
+      "seasonNumber": 1,
+      "episodeNumbers": [
+        2
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "high",
+      "reasons": [
+        "matched:sxxexx",
+        "title:from-directory"
+      ]
+    },
+    "note": "sxxeyy + webrip token"
+  },
+  {
+    "path": "Show/Season 01/Show.S01E03.x265.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show",
+      "seasonNumber": 1,
+      "episodeNumbers": [
+        3
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "high",
+      "reasons": [
+        "matched:sxxexx",
+        "title:from-directory"
+      ]
+    },
+    "note": "sxxeyy + codec token only"
+  },
+  {
+    "path": "Show/Season 01/Show.S01E04.AAC.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show",
+      "seasonNumber": 1,
+      "episodeNumbers": [
+        4
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "high",
+      "reasons": [
+        "matched:sxxexx",
+        "title:from-directory"
+      ]
+    },
+    "note": "sxxeyy + audio codec token only"
+  },
+  {
+    "path": "Show/Season 02/Show.S02E01.DUAL.MULTI.720p.HDTV.x264-GROUP.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show",
+      "seasonNumber": 2,
+      "episodeNumbers": [
+        1
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "high",
+      "reasons": [
+        "matched:sxxexx",
+        "title:from-directory"
+      ]
+    },
+    "note": "sxxeyy + language tags + full noise stack"
+  },
+  {
+    "path": "Show/Season 01/Show.S01E01E02E03E04E05.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show",
+      "seasonNumber": 1,
+      "episodeNumbers": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "high",
+      "reasons": [
+        "matched:sxxexx",
+        "matched:multi-episode-list",
+        "title:from-directory"
+      ]
+    },
+    "note": "five-episode list"
+  },
+  {
+    "path": "Show/Season 03/Show.S03E01-E10.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show",
+      "seasonNumber": 3,
+      "episodeNumbers": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "high",
+      "reasons": [
+        "matched:sxxexx",
+        "matched:multi-episode-range",
+        "title:from-directory"
+      ]
+    },
+    "note": "ten-episode range (full-season batch release)"
+  },
+  {
+    "path": "Show/Season 01/Show s1e1.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show",
+      "seasonNumber": 1,
+      "episodeNumbers": [
+        1
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "high",
+      "reasons": [
+        "matched:sxxexx",
+        "title:from-directory"
+      ]
+    },
+    "note": "fully lowercase compact sxxeyy"
+  },
+  {
+    "path": "Show/Season 01/Show S01E1.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show",
+      "seasonNumber": 1,
+      "episodeNumbers": [
+        1
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "high",
+      "reasons": [
+        "matched:sxxexx",
+        "title:from-directory"
+      ]
+    },
+    "note": "mixed-width: two-digit season, one-digit episode"
+  },
+  {
+    "path": "Show/Season 01/Show S1E01.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show",
+      "seasonNumber": 1,
+      "episodeNumbers": [
+        1
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "high",
+      "reasons": [
+        "matched:sxxexx",
+        "title:from-directory"
+      ]
+    },
+    "note": "mixed-width: one-digit season, two-digit episode"
+  },
+  {
+    "path": "Show/Season 15/Show.S15E200.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show",
+      "seasonNumber": 15,
+      "episodeNumbers": [
+        200
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "high",
+      "reasons": [
+        "matched:sxxexx",
+        "title:from-directory"
+      ]
+    },
+    "note": "very large episode number (200)"
+  },
+  {
+    "path": "Show/Season 01/Show 1X01.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show",
+      "seasonNumber": 1,
+      "episodeNumbers": [
+        1
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "high",
+      "reasons": [
+        "matched:1x01",
+        "title:from-directory"
+      ]
+    },
+    "note": "uppercase X in x-style"
+  },
+  {
+    "path": "Show/Season 01/Show.S01E01.WEB.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show",
+      "seasonNumber": 1,
+      "episodeNumbers": [
+        1
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "high",
+      "reasons": [
+        "matched:sxxexx",
+        "title:from-directory"
+      ]
+    },
+    "note": "sxxeyy + bare WEB source token"
+  },
+  {
+    "path": "Show/Season 01/Show - S01E01 - The One Where It Begins [WEBRip][x264]-GROUP.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show",
+      "seasonNumber": 1,
+      "episodeNumbers": [
+        1
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": "The One Where It Begins",
+      "confidence": "high",
+      "reasons": [
+        "matched:sxxexx",
+        "title:from-directory"
+      ]
+    },
+    "note": "episode title + stacked bracket noise + trailing group"
+  },
+  {
+    "path": "新闻联播/2024-05-01.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "新闻联播",
+      "seasonNumber": null,
+      "episodeNumbers": [],
+      "airDate": "2024-05-01",
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "medium",
+      "reasons": [
+        "matched:dated",
+        "title:from-directory"
+      ]
+    },
+    "note": "unicode Chinese show name + dashed date, no dirs"
+  },
+  {
+    "path": "Show/Season 01/Show.S01E01.한글자막.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show",
+      "seasonNumber": 1,
+      "episodeNumbers": [
+        1
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": "한글자막",
+      "confidence": "high",
+      "reasons": [
+        "matched:sxxexx",
+        "title:from-directory"
+      ]
+    },
+    "note": "sxxeyy + unicode Korean text as episode-title-shaped suffix"
+  },
+  {
+    "path": "[Group] とある科学の超電磁砲 - 013 [1080p].mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "とある科学の超電磁砲",
+      "seasonNumber": null,
+      "episodeNumbers": [],
+      "airDate": null,
+      "absoluteNumbers": [
+        13
+      ],
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "medium",
+      "reasons": [
+        "matched:absolute-number",
+        "group:anime-bracket-stripped",
+        "title:from-filename"
+      ]
+    },
+    "note": "long unicode anime title + absolute number"
+  },
+  {
+    "path": "Show/Specials/Show.S00E05.Cast Reunion.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show",
+      "seasonNumber": 0,
+      "episodeNumbers": [
+        5
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": true,
+      "episodeTitle": "Cast Reunion",
+      "confidence": "high",
+      "reasons": [
+        "matched:sxxexx",
+        "special:s00",
+        "title:from-directory"
+      ]
+    },
+    "note": "S00 special + spaced episode title already present"
+  },
+  {
+    "path": "Show/Season 01/Show.S01E01.PROPER.REPACK.720p.HDTV.x264-GROUP.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show",
+      "seasonNumber": 1,
+      "episodeNumbers": [
+        1
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "high",
+      "reasons": [
+        "matched:sxxexx",
+        "title:from-directory"
+      ]
+    },
+    "note": "double release-tag stack (PROPER + REPACK) before quality noise"
+  },
+  {
+    "path": "Show/Season 06/Show - S06E08 - No Title Needed Here Either.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show",
+      "seasonNumber": 6,
+      "episodeNumbers": [
+        8
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": "No Title Needed Here Either",
+      "confidence": "high",
+      "reasons": [
+        "matched:sxxexx",
+        "title:from-directory"
+      ]
+    },
+    "note": "long multi-word episode title, no trailing noise"
+  },
+  {
+    "path": "[Group] Show Name - 25.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show Name",
+      "seasonNumber": null,
+      "episodeNumbers": [],
+      "airDate": null,
+      "absoluteNumbers": [
+        25
+      ],
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "medium",
+      "reasons": [
+        "matched:absolute-number",
+        "group:anime-bracket-stripped",
+        "title:from-filename"
+      ]
+    },
+    "note": "two-digit absolute number, multi-word series title before dash"
+  },
+  {
+    "path": "Show/Season 01/Show.S01E01.mkv/",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show",
+      "seasonNumber": 1,
+      "episodeNumbers": [
+        1
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "high",
+      "reasons": [
+        "matched:sxxexx",
+        "title:from-directory"
+      ]
+    },
+    "note": "trailing slash after a normal file path is inert (no extra empty segment introduced beyond what splitSegments already drops)"
+  },
+  {
+    "path": "Show/Season 01/Show.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show",
+      "seasonNumber": null,
+      "episodeNumbers": [],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "low",
+      "reasons": [
+        "title:from-directory",
+        "matched:none"
+      ]
+    },
+    "note": "season dir present but no episode marker at all in filename -> low confidence, season stays null (dir season only applies to bare-episode match)"
+  },
+  {
+    "path": "Random Home Video.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Random Home Video",
+      "seasonNumber": null,
+      "episodeNumbers": [],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "low",
+      "reasons": [
+        "title:from-filename",
+        "matched:none"
+      ]
+    },
+    "note": "no series/episode signal at all, no dirs -> whole stem becomes title, low confidence"
+  },
+  {
+    "path": "1080p.WEB-DL.x264-GROUP.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "1080p WEB-DL x264-GROUP",
+      "seasonNumber": null,
+      "episodeNumbers": [],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "low",
+      "reasons": [
+        "title:from-filename",
+        "matched:none"
+      ]
+    },
+    "note": "pure noise filename, no dirs -> not null: with nothing else to go on, the raw (noise-shaped) stem itself becomes a low-confidence title guess rather than being dropped, since TV filenames legitimately contain digit-heavy tokens (unlike movies, there's no all-noise short-circuit here)"
+  },
+  {
+    "path": "",
+    "kind": "tv",
+    "expected": null,
+    "note": "empty path -> null"
+  },
+  {
+    "path": "Show//Season 01//Show.S01E01.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "Show",
+      "seasonNumber": 1,
+      "episodeNumbers": [
+        1
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "high",
+      "reasons": [
+        "matched:sxxexx",
+        "title:from-directory"
+      ]
+    },
+    "note": "doubled slashes -> empty path segments are silently dropped, same result as the clean-path version"
+  },
+  {
+    "path": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.S01E01.mkv",
+    "kind": "tv",
+    "expected": {
+      "seriesTitle": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "seasonNumber": 1,
+      "episodeNumbers": [
+        1
+      ],
+      "airDate": null,
+      "absoluteNumbers": null,
+      "isSpecial": false,
+      "episodeTitle": null,
+      "confidence": "high",
+      "reasons": [
+        "matched:sxxexx",
+        "title:from-filename"
+      ]
+    },
+    "note": "absurdly long series title, still parses"
+  },
+  {
+    "path": "....mkv",
+    "kind": "tv",
+    "expected": null,
+    "note": "only separator punctuation, no dirs -> null"
+  }
+]

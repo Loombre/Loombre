@@ -1,0 +1,55 @@
+name: transcode — Stage F's own device-cap drop happens BEFORE Stage G's tier cap; both narrow the SAME ladder in sequence
+why: >
+  bitrate-capped-device's maxStreamBitrateBps (500,000) is BELOW even the 360p rung; networks.local-4mbps (isLocal true, a REALISTIC 4Mbps cap — not the effectively-unlimited `local` fixture) triggers Stage F's own bitrate-exceeds-network reason via the 'local + exceeds device cap' unless-clause failure (5Mbps overall exceeds BOTH the network's 4Mbps cap and the device's 500,000bps cap, so isLocal alone doesn't save it). Stage F's buildLadder already collapses everything to the single keep-lowest 360p/0.8M rung (rule (d) drops every other rung on the device cap alone, rule (e) keeps the lowest). Stage G's tier cap (tier 0, source is 1080p, full-software route since caps.software-only) then filters THAT already-single-rung table to <=480p — the 360p rung already qualifies, so NOTHING further is removed: reasons carries software-fallback:encode WITHOUT tier-capped (the `sameLadder` check, stages/hardware.ts, correctly recognizes no actual change happened). ladder stays the single 360p rung throughout.
+
+input:
+  media:
+    fileId: gen-file
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 6000000000
+    overallBitrateBps: 5000000
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 41
+        width: 1920
+        height: 1080
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 5000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 160000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device: { fixture: devices.bitrate-capped-device }
+  network: { fixture: networks.local-4mbps }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.software-only }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+
+expect:
+  decision: transcode
+  reasons:
+    - bitrate-exceeds-network
+    - software-fallback:encode
+  ladder:
+    - heightPx: 360
+      videoBitrateBps: 800000
+      audioBitrateBps: 160000
+      codec: h264

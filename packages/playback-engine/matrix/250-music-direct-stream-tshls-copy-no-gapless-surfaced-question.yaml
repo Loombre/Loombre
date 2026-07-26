@@ -1,0 +1,56 @@
+name: direct-stream — music mode, container mismatch into ts-hls, audio itself copies — reason-free per strict text (SURFACED open question)
+why: >
+  Identical to case 249 except hls.supportsFmp4:false -> container ts-hls.
+  Stage D's own verdict is still copy (the vorbis entry accommodates the
+  stream), so gapless-degraded stays reason-free under strict §3 Stage D.5
+  text, which ties the reason to THIS STAGE's own transcode verdict only.
+  SURFACED, NOT RESOLVED (matches Step 2c's remux-question precedent): the
+  same spec sentence's OWN requirement is that gapless needs direct-play OR
+  fmp4 direct-stream — a ts-hls direct-stream breaks gapless exactly as
+  thoroughly as an audio transcode does, yet Stage D has no visibility into
+  device.hls.supportsFmp4 at all, so this combination stays reason-free
+  under a faithful strict-text implementation. Flagged for orchestrator/
+  spec-owner review, not silently resolved by this implementation.
+input:
+  media:
+    fileId: file-0250
+    container: ogg
+    durationMs: 240000
+    sizeBytes: 6000000
+    overallBitrateBps: 192000
+    video: []
+    audio:
+      - index: 0
+        codec: vorbis
+        channels: 2
+        sampleRate: 44100
+        bitrateBps: 192000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device:
+    profileId: inline-music-tshls
+    directPlayContainers: [flac]
+    hls: { container: ts, supportsFmp4: false, lowLatency: false }
+    video: []
+    hdr: { hdr10: false, hlg: false, dolbyVision: false }
+    audio:
+      - codec: vorbis
+        maxChannels: 2
+        passthrough: false
+    subtitles: { renderText: [], hlsVtt: false, renderImage: false }
+    maxStreamBitrateBps: null
+  network: { fixture: networks.local }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.software-only }
+  selection:
+    videoStreamIndex: null
+    audioStreamIndex: 0
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: direct-stream
+  container: ts-hls
+  reasons:
+    - container-not-direct-playable

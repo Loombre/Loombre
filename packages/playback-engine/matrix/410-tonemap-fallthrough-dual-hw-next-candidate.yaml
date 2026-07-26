@@ -1,0 +1,50 @@
+name: transcode — the FIRST hw backend lacks a tone-map method, so Stage G falls through to the NEXT hw candidate (not straight to software)
+why: >
+  dual-hw-tonemap-fallthrough lists qsv FIRST (decode+encode match, toneMap empty) then nvenc SECOND (decode+encode match, toneMap=[cuda]). Tone-mapping is required (hdr10 mismatch): rule (i) tries qsv first, finds no usable method, falls through to the array's NEXT hw candidate (nvenc), which DOES have cuda -> hw-encoder-selected:nvenc with video.toneMap='cuda'. Proves the fall-through (constraint 3) lands on another real hw candidate, not merely the software floor.
+
+input:
+  media:
+    fileId: gen-file
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 6000000000
+    overallBitrateBps: 8200000
+    video:
+      - index: 0
+        codec: hevc
+        profile: main10
+        level: 123
+        width: 1920
+        height: 1080
+        bitDepth: 10
+        frameRate: 23.976
+        bitrateBps: 7000000
+        hdr: hdr10
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 160000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device: { fixture: devices.hevc-sdr }
+  network: { fixture: networks.local }
+  policy: { fixture: policies.t1-cpu-tonemap }
+  caps: { fixture: caps.dual-hw-tonemap-fallthrough }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+
+expect:
+  decision: transcode
+  reasons:
+    - hdr-tone-map-required
+    - hw-encoder-selected:nvenc

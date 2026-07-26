@@ -1,0 +1,40 @@
+name: direct-play (music, no video streams) — ladder is []
+why: >
+  §5: "ladder (may be empty for copy/audio-only decisions)" — a pure music
+  file (media.video is empty) that direct-plays cleanly. video.action is
+  'none' (no video stream exists at all, let alone one selected), so ladder
+  is trivially [] — the simplest member of this mission category.
+
+input:
+  media:
+    fileId: file-0363
+    container: flac
+    durationMs: 240000
+    sizeBytes: 30000000
+    overallBitrateBps: 1000000
+    video: []
+    audio:
+      - index: 0
+        codec: flac
+        channels: 2
+        sampleRate: 44100
+        bitrateBps: 900000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device: { fixture: devices.flac-stereo }
+  network: { fixture: networks.local }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.software-only }
+  selection:
+    videoStreamIndex: null
+    audioStreamIndex: 0
+    subtitleStreamIndex: null
+  mode: stream
+
+expect:
+  decision: direct-play
+  reasons: []
+  container: source
+  ladder: []

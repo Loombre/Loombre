@@ -1,0 +1,53 @@
+name: transcode — vp9/webm 1080p over a 4Mbps remote network, exceeds cap
+why: >
+  Stage F network-dimension coverage, 4Mbps tier, vp9/webm variety (distinct codec+container from seed 006's h264/mp4). overallBitrateBps (10Mbps) exceeds network.maxBitrateBps (4Mbps), non-local -> fires alone. Ladder: source height 1080p drops the 2160p rung; source bitrate (10Mbps) keeps every remaining rung; the 4Mbps network cap then drops the 1080p/8Mbps rung — surviving max is 4,000,000 (the 1080p/4Mbps rung itself). why (Phase 3 §11 step 3, Stage G arrival, STATE.md P3.2 regression law): this case's caps fixture has no hardware backend covering this route, so Stage G now routes full software (`software-fallback:encode`); tier 0 + a >=1080p selected source additionally trips the tier cap, narrowing the surviving ladder to <=480p rungs (`software-fallback:tier-capped`).
+
+input:
+  media:
+    fileId: file-0330
+    container: webm
+    durationMs: 6000000
+    sizeBytes: 7500000000
+    overallBitrateBps: 10000000
+    video:
+      - index: 0
+        codec: vp9
+        profile: null
+        level: null
+        width: 1920
+        height: 1080
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 9500000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 160000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device: { fixture: devices.web-chrome }
+  network: { fixture: networks.wan-4mbps }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.software-only }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+
+expect:
+  decision: transcode
+  reasons:
+    - bitrate-exceeds-network
+    - software-fallback:encode
+    - software-fallback:tier-capped
+  container: fmp4-hls
+  ladderMaxVideoBitrateBps: 4000000

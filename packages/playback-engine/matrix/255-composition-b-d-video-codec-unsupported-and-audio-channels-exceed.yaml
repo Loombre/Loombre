@@ -1,0 +1,49 @@
+name: transcode — video codec unsupported (Stage B) + audio channels exceed (Stage D), exact stage order
+why: "hevc is not in constrained-tv's device.video (h264-only) — Stage B fires video-codec-unsupported. The same file's aac stream carries 6 channels, exceeding constrained-tv's 2ch aac cap — Stage D fires audio-channels-exceed-device. Container mp4 is in constrained-tv's list (Stage A silent) and the video's hdr is none (Stage C silent). Reasons appear in exact stage order: [video-codec-unsupported, audio-channels-exceed-device]. why (Phase 3 §11 step 3, Stage G arrival, STATE.md P3.2 regression law): this case's caps fixture has no hardware backend covering this route, so Stage G now routes full software (`software-fallback:encode`); tier 0 + a >=1080p selected source additionally trips the tier cap, narrowing the surviving ladder to <=480p rungs (`software-fallback:tier-capped`).\n"
+input:
+  media:
+    fileId: file-0255
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 6000000000
+    overallBitrateBps: 5500000
+    video:
+      - index: 0
+        codec: hevc
+        profile: main10
+        level: 123
+        width: 1920
+        height: 1080
+        bitDepth: 10
+        frameRate: 23.976
+        bitrateBps: 5000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 6
+        sampleRate: 48000
+        bitrateBps: 384000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device: { fixture: devices.constrained-tv }
+  network: { fixture: networks.local }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.software-only }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: transcode
+  reasons:
+    - video-codec-unsupported
+    - audio-channels-exceed-device
+    - software-fallback:encode
+    - software-fallback:tier-capped

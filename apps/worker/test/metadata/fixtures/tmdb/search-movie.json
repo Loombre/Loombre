@@ -1,0 +1,27 @@
+{
+  "page": 1,
+  "results": [
+    {
+      "id": 603,
+      "title": "The Matrix",
+      "original_title": "The Matrix",
+      "release_date": "1999-03-30",
+      "overview": "Set in the 22nd century, The Matrix tells the story of a computer hacker...",
+      "vote_average": 8.2,
+      "popularity": 85.4,
+      "adult": false
+    },
+    {
+      "id": 604,
+      "title": "The Matrix Reloaded",
+      "original_title": "The Matrix Reloaded",
+      "release_date": "2003-05-15",
+      "overview": "Neo and his allies race against time.",
+      "vote_average": 7.1,
+      "popularity": 40.2,
+      "adult": false
+    }
+  ],
+  "total_pages": 1,
+  "total_results": 2
+}

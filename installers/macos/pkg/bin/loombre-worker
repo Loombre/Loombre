@@ -1,0 +1,19 @@
+#!/bin/sh
+# Loombre :: /opt/loombre/current/bin/loombre-worker
+#
+# See bin/loombre-server for the config/loombre.env rationale AND the
+# `pwd -P` (not plain `pwd`) rationale — identical pattern, worker side.
+set -eu
+
+HERE="$(cd "$(dirname "$0")/.." && pwd -P)"
+CONFIG_ENV="/Library/Application Support/Loombre/config/loombre.env"
+
+# shellcheck disable=SC1090
+[ -f "$CONFIG_ENV" ] && { set -a; . "$CONFIG_ENV"; set +a; }
+
+: "${DATABASE_URL:=postgres://loombre:loombre@localhost:5442/loombre}"
+: "${LOOMBRE_FFMPEG:=$HERE/runtime/ffmpeg/ffmpeg}"
+: "${LOOMBRE_FFPROBE:=$HERE/runtime/ffmpeg/ffprobe}"
+export DATABASE_URL LOOMBRE_FFMPEG LOOMBRE_FFPROBE
+
+exec "$HERE/runtime/node/bin/node" "$HERE/worker/dist/index.js"

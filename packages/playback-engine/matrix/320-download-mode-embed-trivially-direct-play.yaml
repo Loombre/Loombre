@@ -1,0 +1,57 @@
+name: "direct-play — download mode, container already direct-playable, TEXT embed selected -> no escalation, mode is irrelevant"
+why: >
+  text-embed-capable's mp4 is direct-playable and the webvtt stream embeds (copy) -> zero reasons from any stage, so decision is direct-play regardless of mode==='download' (there is no container-only-change question to even ask when nothing escalated in the first place).
+
+input:
+  media:
+    fileId: file-0320
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 6000000000
+    overallBitrateBps: 5200000
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 41
+        width: 1920
+        height: 1080
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 5000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 192000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle:
+      - index: 2
+        codec: webvtt
+        language: eng
+        isForced: false
+        isDefault: false
+        isExternal: false
+        externalPath: null
+  device: { fixture: devices.text-embed-capable }
+  network: { fixture: networks.local }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.software-only }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: 2
+  mode: download
+
+expect:
+  decision: direct-play
+  reasons: []
+  subtitleStrategy: embed
+  container: source

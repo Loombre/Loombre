@@ -1,0 +1,60 @@
+name: "transcode — Stage E's IMAGE branch is indifferent to network/policy/caps (unlike its TEXT branch, which DOES consult policy)"
+why: >
+  Same web-chrome + mkv + pgs shape as seed case 003, but paired with wan-4mbps network, t1-cpu-tonemap policy, and full-hw caps instead of the usual local/t0-default/software-only trio — evaluateSubtitle's IMAGE-tree signature never even reads network/policy/caps (only device.subtitles.renderImage + containerDirectPlayable), so the fired reasons are identical regardless (mirrors case 262's identical Stage-D indifference pattern, extended here to include POLICY too since the IMAGE tree, unlike TEXT, never consults preferredTextSubMode/preserveAssStyling at all). why (Phase 3 §11 step 3, Stage G arrival, STATE.md P3.2 regression law): this case's caps fixture verifies a real hardware backend for the selected stream's codec + surviving ladder targets, so Stage G now selects it (`hw-encoder-selected:nvenc`).
+
+input:
+  media:
+    fileId: file-0317
+    container: mkv
+    durationMs: 6000000
+    sizeBytes: 6000000000
+    overallBitrateBps: 5200000
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 41
+        width: 1920
+        height: 1080
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 5000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 192000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle:
+      - index: 2
+        codec: pgs
+        language: eng
+        isForced: false
+        isDefault: false
+        isExternal: false
+        externalPath: null
+  device: { fixture: devices.web-chrome }
+  network: { fixture: networks.wan-4mbps }
+  policy: { fixture: policies.t1-cpu-tonemap }
+  caps: { fixture: caps.full-hw }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: 2
+  mode: stream
+
+expect:
+  decision: transcode
+  reasons:
+    - container-not-direct-playable
+    - subtitle-format-requires-burn-in
+    - video-transcode-for-subtitle-burn-in
+    - hw-encoder-selected:nvenc
+  subtitleStrategy: burn-in

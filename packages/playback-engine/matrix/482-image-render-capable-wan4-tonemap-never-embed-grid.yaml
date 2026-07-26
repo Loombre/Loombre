@@ -1,0 +1,60 @@
+name: 'direct-play — image-render-capable × wan-4mbps × tonemap-never: PGS embeds on a renderImage device
+  in a direct-playable container'
+why: 'Grid combo (image-render-capable × wan-4mbps × tonemap-never): the IMAGE tree''s embed branch under
+  a policy triple it never met — 3.6M under the 4M cap, renderImage:true + playable container.'
+input:
+  media:
+    fileId: file-482
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 2700000000
+    overallBitrateBps: 3600000
+    video:
+    - index: 0
+      codec: h264
+      profile: high
+      level: 41
+      width: 1920
+      height: 1080
+      bitDepth: 8
+      frameRate: 23.976
+      bitrateBps: 3200000
+      hdr: none
+      dvProfile: null
+      dvBlCompatId: null
+      interlaced: false
+    audio:
+    - index: 1
+      codec: aac
+      channels: 2
+      sampleRate: 48000
+      bitrateBps: 128000
+      language: eng
+      isDefault: true
+      hasAtmos: false
+    subtitle:
+    - index: 2
+      codec: pgs
+      language: eng
+      isForced: false
+      isDefault: false
+      isExternal: false
+      externalPath: null
+  device:
+    fixture: devices.image-render-capable
+  network:
+    fixture: networks.wan-4mbps
+  policy:
+    fixture: policies.tonemap-never
+  caps:
+    fixture: caps.software-only
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: 2
+  mode: stream
+expect:
+  decision: direct-play
+  reasons: []
+  subtitleStrategy: embed
+  container: source

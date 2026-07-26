@@ -1,0 +1,58 @@
+name: "transcode (audio-only) — video stays copy, ladder is [] (§5: may be empty for audio-only decisions)"
+why: >
+  Video and container are both fine (Stage A/B/C all copy/direct-play);
+  only the AUDIO stream escalates (eac3 unsupported by this device) ->
+  decision transcode via Stage D alone, video.action stays 'copy' (overall
+  bitrate is deliberately kept under the paired wan-4mbps cap so Stage F
+  ALSO stays silent on its own terms — a clean single-stage-D case). §5:
+  "ladder (may be empty for copy/audio-only decisions)" — ladder must be []
+  because video.action never reaches 'transcode', regardless of what Stage
+  D itself did.
+
+input:
+  media:
+    fileId: file-0361
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 2250000000
+    overallBitrateBps: 3000000
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 52
+        width: 1920
+        height: 1080
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 5000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: eac3
+        channels: 6
+        sampleRate: 48000
+        bitrateBps: 384000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device: { fixture: devices.web-chrome }
+  network: { fixture: networks.wan-4mbps }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.software-only }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+
+expect:
+  decision: transcode
+  reasons:
+    - audio-codec-unsupported
+  container: fmp4-hls
+  ladder: []

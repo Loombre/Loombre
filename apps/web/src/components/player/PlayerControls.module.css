@@ -1,0 +1,251 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+
+/* W3 fidelity audit S6: player chrome is its OWN treatment, not `.glass`
+   (U8 reserves that for the mobile tab bar + now-playing bar only). The
+   dc's player top bar (dc:1379) isn't glass at all — it's a plain scrim
+   gradient with no blur/border: `background:linear-gradient(180deg,
+   rgba(0,0,0,.55),transparent)`. The back button becomes its own floating
+   circular chip (dc:1381: 38x38, `border:1px solid rgba(255,255,255,.18)`,
+   `background:rgba(11,12,15,.35)`, `backdrop-filter:blur(6px)`) instead of
+   reusing the plain ghost `.iconButton` every other transport control
+   uses. */
+.topBar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-md) var(--space-lg);
+  background: linear-gradient(180deg, rgb(0 0 0 / 55%), transparent);
+  transition:
+    opacity var(--motion-base) var(--ease-out),
+    transform var(--motion-base) var(--ease-out);
+}
+
+.backButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  flex-shrink: 0;
+  border-radius: var(--radius-full);
+  border: 1px solid rgb(255 255 255 / 18%);
+  background: rgb(11 12 15 / 35%);
+  backdrop-filter: blur(6px);
+  color: var(--color-text);
+  cursor: pointer;
+  transition: border-color var(--motion-fast) var(--ease-out);
+}
+
+.backButton:hover,
+.backButton:focus-visible {
+  border-color: #fff;
+}
+
+/* dc:1445's own "bottom instrument bar" literal — own rgba, not `.glass`
+   (S6). --color-border is literally 12% white, an exact match for the
+   dc's `rgba(255,255,255,.12)`, so the border reuses that token; the fill
+   (13,14,18) has no close existing token (--color-bg-raised is 17,19,24)
+   and is a single-consumer value, so it stays literal. */
+.bottomBar {
+  position: absolute;
+  left: var(--space-lg);
+  right: var(--space-lg);
+  bottom: var(--space-lg);
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--color-border);
+  background: rgb(13 14 18 / 88%);
+  backdrop-filter: blur(18px);
+  box-shadow: var(--shadow-lg);
+  padding: var(--space-sm) var(--space-lg);
+  transition:
+    opacity var(--motion-base) var(--ease-out),
+    transform var(--motion-base) var(--ease-out);
+}
+
+@supports not (
+  (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))
+) {
+  .bottomBar {
+    background: var(--color-bg-raised);
+  }
+}
+
+.hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.topBar.hidden {
+  transform: translateY(-8px);
+}
+
+.bottomBar.hidden {
+  transform: translateY(8px);
+}
+
+.title {
+  font-size: var(--text-base);
+  font-weight: var(--weight-medium);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scrubberRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.time {
+  font-size: var(--text-xs);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
+.controlsRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2xs);
+}
+
+.spacer {
+  flex: 1;
+}
+
+/* H6 (W3 fidelity audit): "flanking controls 38x38 ghosts" — dc:1465's
+   back-10/forward-30 buttons are exactly 38x38 with a transparent rest
+   state and `rgba(255,255,255,.08)` hover (was 40x40 / 14%). */
+.iconButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: var(--radius-full);
+  border: none;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  transition: background-color var(--motion-fast) var(--ease-out);
+}
+
+.iconButton:hover {
+  background: rgb(255 255 255 / 8%);
+}
+
+.iconButton[aria-pressed="true"] {
+  color: var(--color-accent);
+}
+
+/* H6: play/pause is the focal 46x46 accent-filled circle w/ dark glyph
+   (dc:1467: `width:46px;height:46px;border-radius:50%;background:var(--acc);
+   color:#0C0D10`) — every other transport button stays the 38x38 ghost
+   above. */
+.playPauseButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 46px;
+  height: 46px;
+  flex-shrink: 0;
+  border-radius: var(--radius-full);
+  border: none;
+  background: var(--color-accent);
+  color: var(--color-accent-text);
+  cursor: pointer;
+  transition: filter var(--motion-fast) var(--ease-out);
+}
+
+.playPauseButton:hover,
+.playPauseButton:focus-visible {
+  filter: brightness(1.1);
+}
+
+.volumeSlider {
+  width: 80px;
+  accent-color: var(--color-accent);
+}
+
+/* Own chrome, not `.glass` (S6) — dc:1476/1490's track/quality popovers:
+   `background:rgba(13,14,18,.95);backdrop-filter:blur(18px);
+   border:1px solid rgba(255,255,255,.14)`. */
+.pickerPopover {
+  position: absolute;
+  bottom: calc(100% + var(--space-sm));
+  right: 0;
+  border-radius: var(--radius-lg);
+  border: 1px solid rgb(255 255 255 / 14%);
+  background: rgb(13 14 18 / 95%);
+  backdrop-filter: blur(18px);
+  box-shadow: var(--shadow-lg);
+  padding: var(--space-sm);
+  display: flex;
+  gap: var(--space-lg);
+}
+
+@supports not (
+  (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))
+) {
+  .pickerPopover {
+    background: var(--color-bg-raised);
+  }
+}
+
+/* H6: capability chips, sourced only from real session-plan/track data the
+   player already holds (VideoPlayer.tsx's PlaybackSession) — never
+   fabricated (README's DIRECT PLAY/SUBTITLES OFF class, dc:2566-2568).
+   Decision-mode chip is accent-toned like dc's "DIRECT PLAY" example;
+   audio/subtitle fact chips stay neutral like dc's "TRUEHD 7.1 · EN" /
+   "SUBTITLES OFF" chips. */
+.capabilityRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  flex-wrap: wrap;
+}
+
+.capabilityChip {
+  font-family: var(--font-mono);
+  font-size: var(--mono-xs);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--track-mono);
+  text-transform: uppercase;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-muted);
+  padding: 6px 12px;
+  white-space: nowrap;
+}
+
+.capabilityChip[data-tone="accent"] {
+  color: var(--color-accent);
+  border-color: color-mix(in srgb, var(--color-accent) 35%, transparent);
+}
+
+.pickerAnchor {
+  position: relative;
+}
+
+.buffering {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 4;
+  pointer-events: none;
+}
+

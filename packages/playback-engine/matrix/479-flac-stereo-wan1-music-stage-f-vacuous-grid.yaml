@@ -1,0 +1,41 @@
+name: 'direct-play — flac-stereo × wan-1mbps: a 1.4M FLAC exceeds the 1M network cap yet Stage F stays
+  vacuous (video-selected scoping) — music never bitrate-transcodes'
+why: 'Matrix-level pin of Stage F''s video-only scoping (Step 2f binding interpretation: ''bitrate capping
+  of audio-only is not a §3 Stage F concern'') on the tightest network tier: overallBitrateBps 1.4M >
+  1M with NO video stream selected must not fire bitrate-exceeds-network — the whole plan stays direct-play
+  [].'
+input:
+  media:
+    fileId: file-479
+    container: flac
+    durationMs: 6000000
+    sizeBytes: 1050000000
+    overallBitrateBps: 1400000
+    video: []
+    audio:
+    - index: 0
+      codec: flac
+      channels: 2
+      sampleRate: 44100
+      bitrateBps: 1400000
+      language: eng
+      isDefault: true
+      hasAtmos: false
+    subtitle: []
+  device:
+    fixture: devices.flac-stereo
+  network:
+    fixture: networks.wan-1mbps
+  policy:
+    fixture: policies.t0-default
+  caps:
+    fixture: caps.software-only
+  selection:
+    videoStreamIndex: null
+    audioStreamIndex: 0
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: direct-play
+  reasons: []
+  container: source

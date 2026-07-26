@@ -1,0 +1,37 @@
+name: "transcode (music, no video stream) — full-hw caps present: Stage G silent (no video track to route)"
+why: >
+  No video streams at all (media.video===[]) -> video.action='none' regardless of the audio transcode (flac 6ch -> stereo device cap, which also carries the music-mode gapless-degraded informational reason per Stage D rule 5) -> Stage G's gate never opens. reasons stays EXACTLY [audio-channels-exceed-device, gapless-degraded].
+
+input:
+  media:
+    fileId: gen-file
+    container: flac
+    durationMs: 6000000
+    sizeBytes: 6000000000
+    overallBitrateBps: 5000000
+    video: []
+    audio:
+      - index: 0
+        codec: flac
+        channels: 6
+        sampleRate: 44100
+        bitrateBps: 2000000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device: { fixture: devices.flac-stereo }
+  network: { fixture: networks.local }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.full-hw }
+  selection:
+    videoStreamIndex: null
+    audioStreamIndex: 0
+    subtitleStreamIndex: null
+  mode: stream
+
+expect:
+  decision: transcode
+  reasons:
+    - audio-channels-exceed-device
+    - gapless-degraded

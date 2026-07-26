@@ -1,0 +1,54 @@
+name: 'direct-play — constrained-tv × local-4mbps × transcode-disabled: isLocal forgives 5M > 4M within
+  the 20M device cap; the now-live knob is indifferent here too'
+why: 'Grid combo completing the allowTranscode boundary set (451/452/453/505) on the direct-play path:
+  §3 Stage F''s unless-clause holds (isLocal AND 5M ≤ 20M device cap), so nothing transcodes and allowTranscode:false
+  has nothing to (not) do — true before step 7b F1 made the knob real, and still true after (expectation
+  unchanged; prose refreshed since the knob is no longer dead).'
+input:
+  media:
+    fileId: file-489
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 3750000000
+    overallBitrateBps: 5000000
+    video:
+    - index: 0
+      codec: h264
+      profile: high
+      level: 41
+      width: 1920
+      height: 1080
+      bitDepth: 8
+      frameRate: 24
+      bitrateBps: 4800000
+      hdr: none
+      dvProfile: null
+      dvBlCompatId: null
+      interlaced: false
+    audio:
+    - index: 1
+      codec: aac
+      channels: 2
+      sampleRate: 48000
+      bitrateBps: 128000
+      language: eng
+      isDefault: true
+      hasAtmos: false
+    subtitle: []
+  device:
+    fixture: devices.constrained-tv
+  network:
+    fixture: networks.local-4mbps
+  policy:
+    fixture: policies.transcode-disabled
+  caps:
+    fixture: caps.software-only
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: direct-play
+  reasons: []
+  container: source

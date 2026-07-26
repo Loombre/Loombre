@@ -1,0 +1,55 @@
+name: 'transcode — aac-only-no-opus × wan-20mbps × aac-first-audio: vorbis → audio-only transcode targeting
+  aac, ladder [], Stage G silent'
+why: 'Grid combo (aac-only-no-opus × wan-20mbps × aac-first-audio): vorbis has no device entry (audio-codec-unsupported);
+  video copies (mp4, in-caps h264) so the ladder is [] per §5 and Stage G never runs; the aac-first priority
+  meets the aac-only device — target aac (unassertable here; the priority-intersection rule is unit-pinned
+  by 243).'
+input:
+  media:
+    fileId: file-483
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 3000000000
+    overallBitrateBps: 4000000
+    video:
+    - index: 0
+      codec: h264
+      profile: high
+      level: 41
+      width: 1920
+      height: 1080
+      bitDepth: 8
+      frameRate: 29.97
+      bitrateBps: 3500000
+      hdr: none
+      dvProfile: null
+      dvBlCompatId: null
+      interlaced: false
+    audio:
+    - index: 1
+      codec: vorbis
+      channels: 2
+      sampleRate: 48000
+      bitrateBps: 192000
+      language: eng
+      isDefault: true
+      hasAtmos: false
+    subtitle: []
+  device:
+    fixture: devices.aac-only-no-opus
+  network:
+    fixture: networks.wan-20mbps
+  policy:
+    fixture: policies.aac-first-audio
+  caps:
+    fixture: caps.software-only
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: transcode
+  reasons:
+  - audio-codec-unsupported
+  ladder: []

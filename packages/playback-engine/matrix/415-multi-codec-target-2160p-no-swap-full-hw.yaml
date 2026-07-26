@@ -1,0 +1,75 @@
+name: transcode — a 2160p source WITHOUT hevc-preferred survives as a MIXED {hevc(2160), h264(lower)} ladder; nvenc must cover BOTH
+why: >
+  t0-default (hevcEncodePreferred:false) + a 2160p h264 source generous enough that NOTHING is dropped (network cap 20Mbps >= every rung's bitrate, device/source height/bitrate never narrow it) -> the FULL 6-rung default table survives UNCHANGED: {2160p/hevc, 1080p x2/h264, 720p/h264, 480p/h264, 360p/h264} — the 2160p rung is hevc (§7's own default table), every other rung stays h264 (no swap requested). Target codecs are therefore {hevc, h264} (binding interpretation 2's multi-codec case, constructed WITHOUT the hevc-preferred swap). full-hw's nvenc covers h264 decode AND both hevc+h264 encode, so rule (i) fires hw-encoder-selected:nvenc — pinned via expect.ladder (the untouched, unswapped 6-rung table, exact order).
+
+input:
+  media:
+    fileId: gen-file
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 6000000000
+    overallBitrateBps: 25000000
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 52
+        width: 3840
+        height: 2160
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 18000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 160000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device: { fixture: devices.web-safari }
+  network: { fixture: networks.wan-20mbps }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.full-hw }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+
+expect:
+  decision: transcode
+  reasons:
+    - bitrate-exceeds-network
+    - hw-encoder-selected:nvenc
+  ladder:
+    - heightPx: 2160
+      videoBitrateBps: 16000000
+      audioBitrateBps: 384000
+      codec: hevc
+    - heightPx: 1080
+      videoBitrateBps: 8000000
+      audioBitrateBps: 384000
+      codec: h264
+    - heightPx: 1080
+      videoBitrateBps: 4000000
+      audioBitrateBps: 160000
+      codec: h264
+    - heightPx: 720
+      videoBitrateBps: 3000000
+      audioBitrateBps: 160000
+      codec: h264
+    - heightPx: 480
+      videoBitrateBps: 1500000
+      audioBitrateBps: 160000
+      codec: h264
+    - heightPx: 360
+      videoBitrateBps: 800000
+      audioBitrateBps: 160000
+      codec: h264

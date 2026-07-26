@@ -1,0 +1,64 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+
+/* Desktop branch of SheetOrModal.tsx — composes Overlay.module.css's
+   `.dialog` (glass chrome, radius, shadow, padding, enter animation) and
+   only ADDS properties it doesn't already declare (display/flex-direction/
+   max-height/overflow), so there's no same-property conflict to arbitrate
+   between this file and Overlay.module.css's cascade order. */
+
+.dialog {
+  composes: dialog from "./Overlay.module.css";
+  display: flex;
+  flex-direction: column;
+  max-height: 80vh;
+  overflow: hidden;
+}
+
+.header {
+  display: flex;
+  flex-shrink: 0;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-md);
+}
+
+.headerText {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--space-3xs);
+}
+
+.title {
+  margin: 0;
+  color: var(--text);
+  font-size: var(--text-lg);
+  font-weight: var(--weight-semibold);
+}
+
+.sub {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+
+.body {
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* H8 fix (Wave-3 fidelity audit): Done reads as an accent text action
+   (prototype's mobile sheet Done: `font-size:15px;font-weight:500;
+   color:var(--acc)`) — its own class rather than a Button.module.css
+   variant change (per the fix wave's own instruction: button variants
+   stay generic). The `.header` ancestor combinator gives this rule higher
+   specificity than Button.module.css's `.ghost`/`.button` single-class
+   rules, so it wins regardless of which CSS Modules file the bundler
+   places later in the cascade (same pattern as RestrictedZoneToolbar's
+   zone-focus fix). */
+.header .doneButton {
+  font-size: 15px;
+  font-weight: var(--weight-medium);
+  color: var(--color-accent);
+}

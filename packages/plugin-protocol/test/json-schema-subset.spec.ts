@@ -1,0 +1,208 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Loombre :: packages/plugin-protocol/test/json-schema-subset.spec.ts
+
+import { describe, expect, it } from "vitest";
+import {
+  LPP_EMPTY_CONFIG_SCHEMA,
+  LppConfigSchema,
+  checkConfigSchemaBounds,
+  findSecretBelowRoot,
+  findSecretOnNonStringFields,
+  listTopLevelSecretFieldNames,
+  type LppConfig,
+} from "../src/json-schema-subset.js";
+
+describe("LppConfigSchema", () => {
+  it("accepts the canonical empty configSchema", () => {
+    expect(LppConfigSchema.safeParse(LPP_EMPTY_CONFIG_SCHEMA).success).toBe(true);
+  });
+
+  it("accepts a mix of string/number/boolean/enum/array/object fields, mirroring settings-registry conventions", () => {
+    const schema: LppConfig = {
+      type: "object",
+      properties: {
+        webhookUrl: { type: "string", description: "Webhook URL", secret: true },
+        maxRetries: { type: "integer", minimum: 0, maximum: 10, default: 3 },
+        enabled: { type: "boolean", default: true },
+        mode: { type: "string", enum: ["off", "on"] },
+        tags: { type: "array", items: { type: "string" } },
+        ladder: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: { heightPx: { type: "integer" }, codec: { type: "string", enum: ["h264", "hevc"] } },
+            additionalProperties: false,
+          },
+        },
+      },
+      required: ["webhookUrl"],
+      additionalProperties: false,
+    };
+    const result = LppConfigSchema.safeParse(schema);
+    expect(result.success, JSON.stringify(result.success ? undefined : result.error.issues)).toBe(true);
+  });
+
+  it("rejects a oneOf/anyOf shape (outside the supported subset)", () => {
+    const schema = {
+      type: "object",
+      properties: { x: { oneOf: [{ type: "string" }, { type: "number" }] } },
+      additionalProperties: false,
+    };
+    expect(LppConfigSchema.safeParse(schema).success).toBe(false);
+  });
+
+  it("rejects additionalProperties: true at the top level (must be a closed object)", () => {
+    const schema = { type: "object", properties: {}, additionalProperties: true };
+    expect(LppConfigSchema.safeParse(schema).success).toBe(false);
+  });
+
+  it("rejects an unrecognized field-level keyword (no invented widget vocabulary)", () => {
+    const schema = {
+      type: "object",
+      properties: { x: { type: "string", widget: "color-picker" } },
+      additionalProperties: false,
+    };
+    expect(LppConfigSchema.safeParse(schema).success).toBe(false);
+  });
+});
+
+describe("findSecretOnNonStringFields", () => {
+  it("returns [] when no field is marked secret", () => {
+    const schema: LppConfig = { type: "object", properties: { a: { type: "string" } }, additionalProperties: false };
+    expect(findSecretOnNonStringFields(schema)).toEqual([]);
+  });
+
+  it("returns [] when secret is only used on string fields", () => {
+    const schema: LppConfig = {
+      type: "object",
+      properties: { apiKey: { type: "string", secret: true } },
+      additionalProperties: false,
+    };
+    expect(findSecretOnNonStringFields(schema)).toEqual([]);
+  });
+
+  it("flags a secret marker on a nested object field's string leaf by dotted path", () => {
+    const schema: LppConfig = {
+      type: "object",
+      properties: {
+        nested: {
+          type: "object",
+          properties: { token: { type: "string", secret: true } },
+          additionalProperties: false,
+        },
+      },
+      additionalProperties: false,
+    };
+    // secret on a string leaf, even nested, is legal — expect no violation.
+    expect(findSecretOnNonStringFields(schema)).toEqual([]);
+  });
+});
+
+describe("H-1 fix wave: findSecretBelowRoot", () => {
+  it("returns [] when the only secret markers are top-level", () => {
+    const schema: LppConfig = {
+      type: "object",
+      properties: { apiKey: { type: "string", secret: true }, plain: { type: "string" } },
+      additionalProperties: false,
+    };
+    expect(findSecretBelowRoot(schema)).toEqual([]);
+  });
+
+  it("flags a secret nested inside an object property, by dotted path", () => {
+    const schema: LppConfig = {
+      type: "object",
+      properties: {
+        creds: { type: "object", properties: { token: { type: "string", secret: true } }, additionalProperties: false },
+      },
+      additionalProperties: false,
+    };
+    expect(findSecretBelowRoot(schema)).toEqual(["creds.token"]);
+  });
+
+  it("flags a secret nested inside an array's items", () => {
+    const schema: LppConfig = {
+      type: "object",
+      properties: { keys: { type: "array", items: { type: "string", secret: true } } },
+      additionalProperties: false,
+    };
+    expect(findSecretBelowRoot(schema)).toEqual(["keys[]"]);
+  });
+
+  it("flags every violation, not just the first", () => {
+    const schema: LppConfig = {
+      type: "object",
+      properties: {
+        a: { type: "object", properties: { x: { type: "string", secret: true } }, additionalProperties: false },
+        b: { type: "array", items: { type: "string", secret: true } },
+      },
+      additionalProperties: false,
+    };
+    expect(findSecretBelowRoot(schema).sort()).toEqual(["a.x", "b[]"]);
+  });
+
+  it("returns [] for the canonical empty configSchema", () => {
+    expect(findSecretBelowRoot(LPP_EMPTY_CONFIG_SCHEMA)).toEqual([]);
+  });
+});
+
+describe("M-2 fix wave: checkConfigSchemaBounds", () => {
+  it("returns null (in bounds) for a shallow, small schema", () => {
+    expect(checkConfigSchemaBounds({ type: "object", properties: { a: { type: "string" } }, additionalProperties: false })).toBeNull();
+  });
+
+  it("flags a schema exceeding the depth bound WITHOUT itself recursing arbitrarily deep", () => {
+    // 1000 levels of object nesting — a naive recursive walker mirroring
+    // the depth would also risk stack pressure; checkConfigSchemaBounds's
+    // own recursion is bounded to MAX_CONFIG_SCHEMA_DEPTH+1 frames
+    // regardless, which is the whole point (it must never itself become
+    // the thing that overflows).
+    let node: Record<string, unknown> = { type: "string" };
+    for (let i = 0; i < 1000; i++) {
+      node = { type: "object", properties: { nested: node }, additionalProperties: false };
+    }
+    const violation = checkConfigSchemaBounds(node);
+    expect(violation).not.toBeNull();
+    expect(violation?.reason).toBe("max-depth-exceeded");
+  });
+
+  it("flags an oversized enum", () => {
+    const violation = checkConfigSchemaBounds({
+      type: "object",
+      properties: { mode: { type: "string", enum: Array.from({ length: 500 }, (_, i) => `o${i}`) } },
+      additionalProperties: false,
+    });
+    expect(violation?.reason).toBe("enum-too-large");
+  });
+
+  it("flags too many properties on one object node", () => {
+    const properties: Record<string, unknown> = {};
+    for (let i = 0; i < 300; i++) properties[`field${i}`] = { type: "string" };
+    const violation = checkConfigSchemaBounds({ type: "object", properties, additionalProperties: false });
+    expect(violation?.reason).toBe("too-many-properties");
+  });
+
+  it("is defensive about non-object input (returns null, defers to zod's own type validation)", () => {
+    expect(checkConfigSchemaBounds("not a schema")).toBeNull();
+    expect(checkConfigSchemaBounds(null)).toBeNull();
+    expect(checkConfigSchemaBounds(42)).toBeNull();
+  });
+});
+
+describe("listTopLevelSecretFieldNames", () => {
+  it("lists only top-level secret:true string fields", () => {
+    const schema: LppConfig = {
+      type: "object",
+      properties: {
+        webhookUrl: { type: "string", secret: true },
+        label: { type: "string" },
+        retries: { type: "integer" },
+      },
+      additionalProperties: false,
+    };
+    expect(listTopLevelSecretFieldNames(schema)).toEqual(["webhookUrl"]);
+  });
+
+  it("returns [] for a schema with no secret fields", () => {
+    expect(listTopLevelSecretFieldNames(LPP_EMPTY_CONFIG_SCHEMA)).toEqual([]);
+  });
+});

@@ -1,0 +1,226 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Loombre :: apps/web/src/app/browse/page.tsx
+//
+// Library browse — the P2.6 exit-gate surface: a virtualized poster grid
+// that stays smooth at 50k items (see `pnpm db:seed-large`). One route,
+// library switcher inside it (?library=<id> in the URL, so a link/back-
+// button/reload all land on the same library).
+//
+// Sort: the list endpoints (GET /movies, /series, /artists) now take a
+// `sort`+`order` pair (gap-closure lane addition — see SortControl.tsx's
+// header); LibraryPills is the library filter, SortControl picks which
+// server-side order the cursor feed walks. Cursor pagination stays correct
+// across a sort change because `resetKey` below includes `sort` — a cursor
+// from one sort+order pair is only valid under that same pair (contract
+// doc on listMovies etc.), so switching sort always restarts the feed from
+// cursor null rather than reusing a stale cursor.
+
+"use client";
+
+import { Suspense, useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import type { components } from "@loombre/sdk";
+import { AppShell } from "../../components/shell/AppShell.js";
+import { VirtualPosterGrid } from "../../components/browse/VirtualPosterGrid.js";
+import { PosterCell } from "../../components/browse/PosterCell.js";
+import { LibraryPills } from "../../components/browse/LibraryPills.js";
+import { SortControl, SORT_PARAMS, type SortValue } from "../../components/browse/SortControl.js";
+import { useCursorFeed, type CursorPage } from "../../components/browse/useCursorFeed.js";
+import { Skeleton } from "../../components/skeleton/Skeleton.js";
+import { RestrictedZoneBrowseChip } from "../../components/restricted/RestrictedZoneBrowseChip.js";
+import { apiGet } from "../../lib/api-client.js";
+import { getAuthStore } from "../../lib/auth-store.js";
+import { useNowPlayingItemIds } from "../../lib/now-playing.js";
+import styles from "./page.module.css";
+
+type Library = components["schemas"]["Library"];
+type ImageDescriptor = components["schemas"]["ImageDescriptor"];
+
+interface BrowseCard {
+  id: string;
+  title: string;
+  subtitle?: string | undefined;
+  blurhash: string | null;
+  href: string;
+  entityType: string;
+}
+
+function posterBlurhash(images: ImageDescriptor[] | undefined): string | null {
+  return images?.find((img) => img.kind === "poster")?.blurhash ?? null;
+}
+
+const PAGE_LIMIT = 100;
+
+async function fetchLibraryPage(library: Library, cursor: string | null, sort: SortValue): Promise<CursorPage<BrowseCard>> {
+  const query = { libraryId: library.id, limit: PAGE_LIMIT, sort: SORT_PARAMS[sort], ...(cursor ? { cursor } : {}) };
+
+  if (library.mediaKind === "movie") {
+    const page = await apiGet("/movies", { params: { query } });
+    return {
+      items: page.items.map((m) => ({
+        id: m.id,
+        title: m.title,
+        subtitle: m.year ? String(m.year) : undefined,
+        blurhash: posterBlurhash(m.images),
+        href: `/items/movie/${m.id}`,
+        entityType: "movie",
+      })),
+      nextCursor: page.nextCursor,
+    };
+  }
+
+  if (library.mediaKind === "tv") {
+    const page = await apiGet("/series", { params: { query } });
+    return {
+      items: page.items.map((s) => ({
+        id: s.id,
+        title: s.title,
+        subtitle: s.year ? String(s.year) : (s.status ?? undefined),
+        blurhash: posterBlurhash(s.images),
+        href: `/items/series/${s.id}`,
+        entityType: "series",
+      })),
+      nextCursor: page.nextCursor,
+    };
+  }
+
+  const page = await apiGet("/artists", { params: { query } });
+  return {
+    items: page.items.map((a) => ({
+      id: a.id,
+      title: a.title,
+      subtitle: undefined,
+      blurhash: posterBlurhash(a.images),
+      href: `/items/artist/${a.id}`,
+      entityType: "artist",
+    })),
+    nextCursor: page.nextCursor,
+  };
+}
+
+function BrowseContent(): React.JSX.Element {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const [libraries, setLibraries] = useState<Library[] | null>(null);
+  const [serverUrl] = useState(() => getAuthStore().getSnapshot().serverUrl);
+  const [accessToken, setAccessToken] = useState<string | null>(null);
+  const [sort, setSort] = useState<SortValue>("recently-added");
+  const nowPlayingIds = useNowPlayingItemIds();
+
+  useEffect(() => {
+    getAuthStore()
+      .getAccessToken()
+      .then(setAccessToken);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    apiGet("/libraries", { params: { query: { limit: 100 } } }).then((page) => {
+      if (!cancelled) setLibraries(page.items);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const requestedId = searchParams.get("library");
+  const activeLibrary = useMemo(
+    () => libraries?.find((l) => l.id === requestedId) ?? null,
+    [libraries, requestedId],
+  );
+
+  // No/invalid ?library= param once libraries have loaded — land on the
+  // first one so the route is always in a well-defined state.
+  useEffect(() => {
+    if (libraries === null || libraries.length === 0) return;
+    const first = libraries[0];
+    if (!activeLibrary && first) {
+      router.replace(`/browse?library=${first.id}`);
+    }
+  }, [libraries, activeLibrary, router]);
+
+  const resetKey = activeLibrary ? `${activeLibrary.id}:${sort}` : null;
+  const { items, hasMore, loading, loadingMore, error, loadMore } = useCursorFeed<BrowseCard>(
+    (cursor) => {
+      if (!activeLibrary) return Promise.resolve({ items: [], nextCursor: null });
+      return fetchLibraryPage(activeLibrary, cursor, sort);
+    },
+    resetKey,
+  );
+
+  return (
+    <div className={styles.page}>
+      <div className={styles.toolbar}>
+        <h1 className={styles.title}>Browse</h1>
+        {libraries === null ? (
+          <Skeleton radius="pill" width={240} height={36} />
+        ) : libraries.length > 0 ? (
+          <LibraryPills
+            options={libraries.map((l) => ({ id: l.id, name: l.name }))}
+            activeId={activeLibrary?.id ?? null}
+            onSelect={(id) => router.replace(`/browse?library=${id}`)}
+          />
+        ) : null}
+        <SortControl active={sort} onChange={setSort} />
+      </div>
+
+      {/* Wave 2 (lane L8): amber "N restricted · PIN-gated zone ->" chip,
+          above the grid — entitlement-gated, hidden entirely otherwise. */}
+      <RestrictedZoneBrowseChip />
+
+      {libraries !== null && libraries.length === 0 ? (
+        <div className={styles.emptyLibraries}>No libraries yet — ask an admin to create one.</div>
+      ) : error ? (
+        <div className={styles.emptyLibraries}>{error}</div>
+      ) : accessToken === null || activeLibrary === null ? (
+        <VirtualPosterGrid<BrowseCard>
+          items={[]}
+          hasMore={false}
+          loadingMore={false}
+          loading
+          onLoadMore={() => {}}
+          getKey={(item) => item.id}
+          renderItem={() => null}
+          ariaLabel="Library items"
+        />
+      ) : (
+        <VirtualPosterGrid<BrowseCard>
+          items={items}
+          hasMore={hasMore}
+          loadingMore={loadingMore}
+          loading={loading}
+          onLoadMore={loadMore}
+          getKey={(item) => item.id}
+          emptyMessage={`${activeLibrary.name} is empty — scan this library to add items.`}
+          ariaLabel={`${activeLibrary.name} items`}
+          renderItem={(item, _index, handlers) => (
+            <PosterCell
+              serverUrl={serverUrl}
+              accessToken={accessToken}
+              entityType={item.entityType}
+              entityId={item.id}
+              href={item.href}
+              title={item.title}
+              subtitle={item.subtitle}
+              blurhash={item.blurhash}
+              tabIndex={handlers.tabIndex}
+              cellRef={handlers.cellRef}
+              onFocus={handlers.onFocus}
+              nowPlaying={nowPlayingIds.has(item.id)}
+            />
+          )}
+        />
+      )}
+    </div>
+  );
+}
+
+export default function BrowsePage(): React.JSX.Element {
+  return (
+    <AppShell>
+      <Suspense fallback={null}>
+        <BrowseContent />
+      </Suspense>
+    </AppShell>
+  );
+}

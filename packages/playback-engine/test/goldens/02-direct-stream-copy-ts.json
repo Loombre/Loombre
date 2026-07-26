@@ -1,0 +1,32 @@
+{
+  "scenario": "direct-stream, all streams copy, mpegts HLS segment type (device.hls.supportsFmp4 false)",
+  "args": [
+    "-hide_banner",
+    "-loglevel",
+    "warning",
+    "-nostdin",
+    "-i",
+    "{INPUT}",
+    "-map",
+    "0:v:0",
+    "-map",
+    "0:a:0",
+    "-c:v",
+    "copy",
+    "-c:a",
+    "copy",
+    "-f",
+    "hls",
+    "-hls_time",
+    "{SEG_DUR}",
+    "-hls_playlist_type",
+    "event",
+    "-hls_segment_type",
+    "mpegts",
+    "-start_number",
+    "{START_SEG}",
+    "-hls_segment_filename",
+    "{SESSION_DIR}/s%06d.ts",
+    "{SESSION_DIR}/media.m3u8"
+  ]
+}

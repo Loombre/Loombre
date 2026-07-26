@@ -1,0 +1,79 @@
+name: transcode — hevc main10 HDR10 vs an inline device declaring dolbyVision:true but hdr10:false
+why: "Proves only the SPECIFIC matching flag (device.hdr.hdr10) rescues an hdr10 source — a device that supports Dolby Vision but not HDR10 still needs tone-map for a plain HDR10 stream; DV capability does not imply HDR10 capability in this model. hdr-tone-map-required fires; t1-cpu-tonemap avoids refusal muddying this assertion. why (Phase 3 §11 step 3, Stage G arrival, STATE.md P3.2 regression law): this case's caps fixture has no hardware backend covering this route, so Stage G now routes full software (`software-fallback:encode`).\n"
+input:
+  media:
+    fileId: file-147
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 5000000000
+    overallBitrateBps: 15384000
+    video:
+      - index: 0
+        codec: hevc
+        profile: main10
+        level: 123
+        width: 3840
+        height: 2160
+        bitDepth: 10
+        frameRate: 23.976
+        bitrateBps: 15000000
+        hdr: hdr10
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 6
+        sampleRate: 48000
+        bitrateBps: 384000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device:
+    profileId: inline-dv-capable-no-hdr10
+    directPlayContainers:
+      - mp4
+    hls:
+      container: fmp4
+      supportsFmp4: true
+      lowLatency: false
+    video:
+      - codec: hevc
+        maxProfile: main10
+        maxLevel: 153
+        maxBitDepth: 10
+        maxWidth: 3840
+        maxHeight: 2160
+        maxFrameRate: 60
+        maxBitrateBps: null
+    hdr:
+      hdr10: false
+      hlg: false
+      dolbyVision: true
+    audio:
+      - codec: aac
+        maxChannels: 6
+        passthrough: false
+    subtitles:
+      renderText: []
+      hlsVtt: false
+      renderImage: false
+    maxStreamBitrateBps: null
+  network:
+    fixture: networks.local
+  policy:
+    fixture: policies.t1-cpu-tonemap
+  caps:
+    fixture: caps.software-only
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: transcode
+  reasons:
+    - hdr-tone-map-required
+    - software-fallback:encode

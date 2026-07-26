@@ -1,0 +1,16 @@
+{
+  "page": 1,
+  "results": [
+    {
+      "id": 1399,
+      "name": "Game of Thrones",
+      "original_name": "Game of Thrones",
+      "first_air_date": "2011-04-17",
+      "overview": "Seven noble families fight for control of the mythical land of Westeros.",
+      "vote_average": 8.4,
+      "popularity": 300.1
+    }
+  ],
+  "total_pages": 1,
+  "total_results": 1
+}

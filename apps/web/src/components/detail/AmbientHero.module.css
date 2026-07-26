@@ -1,0 +1,89 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+
+/* P2.11 ambient signature: the backdrop is heavily blurred/darkened, and a
+   radial glow reads the item's dominant_color (falling back to
+   --color-dominant-fallback when absent). Phosphor (U8) simplified the
+   content panel to the flat chrome recipe — it no longer color-mixes a
+   per-item tint into its own fill, so the dominant-color pairing lives
+   entirely in .glow now, not in .content's background. */
+
+.hero {
+  position: relative;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  min-height: 360px;
+  display: flex;
+  align-items: flex-end;
+  background: var(--color-bg-raised);
+  isolation: isolate;
+}
+
+.backdrop {
+  position: absolute;
+  inset: -24px;
+  width: calc(100% + 48px);
+  height: calc(100% + 48px);
+  object-fit: cover;
+  filter: blur(48px) saturate(1.3) brightness(0.5);
+  transform: scale(1.08);
+  z-index: 0;
+}
+
+/* Scanlines preference (Wave 2 L7, README "Other" — default ON): CSS-only
+   toggle via the root [data-scanlines="off"] attribute, no per-component
+   JS. Sits above the blurred backdrop, below the dominant-color glow/scrim
+   — same layering the prototype's own hero markup uses. */
+.scanlines {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background: var(--scanlines);
+  pointer-events: none;
+}
+
+:root[data-scanlines="off"] .scanlines {
+  display: none;
+}
+
+.glow {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  background: radial-gradient(
+    ellipse 70% 65% at 20% 10%,
+    color-mix(in srgb, var(--hero-glow, var(--color-dominant-fallback)) 45%, transparent) 0%,
+    transparent 65%
+  );
+}
+
+.scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  background: linear-gradient(180deg, rgb(0 0 0 / 0%) 0%, var(--color-bg) 94%);
+}
+
+.content {
+  composes: glass from global;
+  position: relative;
+  z-index: 4;
+  margin: var(--space-xl);
+  padding: var(--space-xl);
+  border-radius: var(--radius-lg);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  max-width: 720px;
+
+  /* Phosphor U8: the flat chrome recipe has no per-surface tint knob
+     anymore (dropped along with the specular/frost layers) — the
+     dominant-color signature lives entirely in .glow below now, not in
+     this panel's own fill. */
+}
+
+.title {
+  font-size: var(--text-2xl);
+  font-weight: var(--weight-bold);
+  margin: 0;
+  line-height: var(--leading-tight);
+}

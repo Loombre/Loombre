@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://loombre.com/schemas/events/playback.progress.schema.json",
+  "title": "PlaybackProgressPayload",
+  "description": "Payload for envelope.type === 'playback.progress'. STATE.md P2.8/deliverable E (websocket-presence lane): now-playing presence signal, emitted from the heartbeat path (PUT /progress/{itemId} with a sessionId, docs/PLAYBACK.md §9) AT MOST ONCE PER 30 SECONDS PER SESSION (plan §6.3 — never row-per-tick; see packages/db/src/query/playback-sessions.ts's last_progress_event_at_ms throttle). Distinct from progress.updated (which fires on every progress upsert, keyed by user+item with no device/session context) — this one carries the session/device identity admin surfaces and the home-row now-playing pulse (P2.11) need to render 'user X is watching item Y on device Z'.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["sessionId", "itemId", "deviceId", "positionMs", "updatedAtMs"],
+  "properties": {
+    "sessionId": { "type": "string", "format": "uuid" },
+    "itemId": { "type": "string", "format": "uuid" },
+    "deviceId": { "type": "string", "format": "uuid" },
+    "positionMs": { "type": "integer", "minimum": 0 },
+    "durationMs": {
+      "type": ["integer", "null"],
+      "minimum": 0,
+      "description": "Snapshot of the played file's duration when known (mirrors Progress.durationMs); null when the client never supplied one."
+    },
+    "updatedAtMs": { "type": "integer", "minimum": 0 }
+  }
+}

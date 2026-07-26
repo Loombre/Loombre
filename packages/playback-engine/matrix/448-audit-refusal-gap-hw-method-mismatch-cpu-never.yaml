@@ -1,0 +1,64 @@
+name: transcode (refused) — hdr10 vs SDR device; nvenc covers decode+encode but verified toneMap is [opencl]
+  (nvenc's §8.3 preference is cuda only); CPU 'never' → route-level refusal fires (step-7a refusal-gap
+  arm B, FIXED)
+why: 'step 7b F2 fix (P3.2 flip of the step-7a audit pin, whose why: block was written to be replaced):
+  the routed backend''s non-empty toneMap array no longer suppresses refusal — what matters is whether
+  any candidate resolves a USABLE method per its own §8.3 preference row. nvenc (preference exactly [cuda])
+  verifies only opencl, so the rule-(i) candidate falls through per stages/hardware.ts binding interpretation
+  3, rule (ii) falls through identically, and rule (iii)''s CPU method is disallowed by ''never'' — no
+  method anywhere on the route ⇒ REFUSED, same shape as seed 144 (branch reason then refusal, ladder [],
+  no routing reason, ffmpegArgs [], video.toneMap unset; test/stages/hdr.spec.ts arm B pins it, plus an
+  ''always''-policy control proving the identical caps route to cpu-zscale unrefused). This arm also
+  disproved stages/hardware.ts''s old header claim that the gap was ''only reachable via the unknown
+  VideoCodec'' — ordinary hevc reached it whenever method preference and verified lists disagreed; that
+  header is corrected in the same PR. Deliberate future-proof exception: hdr10 vs SDR.'
+input:
+  media:
+    fileId: file-448
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 3894000000
+    overallBitrateBps: 5192000
+    video:
+    - index: 0
+      codec: hevc
+      profile: main10
+      level: 123
+      width: 1920
+      height: 1080
+      bitDepth: 10
+      frameRate: 23.976
+      bitrateBps: 5000000
+      hdr: hdr10
+      dvProfile: null
+      dvBlCompatId: null
+      interlaced: false
+    audio:
+    - index: 1
+      codec: aac
+      channels: 2
+      sampleRate: 48000
+      bitrateBps: 192000
+      language: eng
+      isDefault: true
+      hasAtmos: false
+    subtitle: []
+  device:
+    fixture: devices.hevc-sdr
+  network:
+    fixture: networks.wan-20mbps
+  policy:
+    fixture: policies.tonemap-never
+  caps:
+    fixture: caps.nvenc-wrong-tonemap
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: transcode
+  reasons:
+  - hdr-tone-map-required
+  - tone-map-refused-by-policy
+  ladder: []

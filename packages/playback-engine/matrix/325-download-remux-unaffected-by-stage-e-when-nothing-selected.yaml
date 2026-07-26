@@ -1,0 +1,58 @@
+name: "remux — download + container-mismatch, NO subtitle selected at all -> Stage E contributes strategy 'none' and zero reasons, remux proceeds exactly as it would pre-Stage-E"
+why: >
+  Regression-style sanity check: with subtitleStreamIndex null, Stage E is a total no-op (strategy 'none', zero reasons) regardless of whichever subtitle streams might be present in media.subtitle — the download-mode container-only-change remux behaves identically to how it did before Stage E existed.
+
+input:
+  media:
+    fileId: file-0325
+    container: mkv
+    durationMs: 6000000
+    sizeBytes: 6000000000
+    overallBitrateBps: 5200000
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 41
+        width: 1920
+        height: 1080
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 5000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 192000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle:
+      - index: 2
+        codec: pgs
+        language: eng
+        isForced: false
+        isDefault: false
+        isExternal: false
+        externalPath: null
+  device: { fixture: devices.web-chrome }
+  network: { fixture: networks.local }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.software-only }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: download
+
+expect:
+  decision: remux
+  reasons:
+    - container-not-direct-playable
+  subtitleStrategy: none
+  container: mp4

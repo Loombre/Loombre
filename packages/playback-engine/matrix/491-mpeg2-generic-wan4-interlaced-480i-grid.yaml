@@ -1,0 +1,64 @@
+name: 'transcode — mpeg2-generic × wan-4mbps × t1-cpu-tonemap: classic 480i broadcast source deinterlaces
+  on a supported-codec device; ts-hls output'
+why: 'Grid combo (mpeg2-generic × wan-4mbps × t1-cpu-tonemap): interlace is the ONLY Stage B reason (mpeg2
+  itself is supported, profile exact-matches), 480-height source keeps only the ≤480 rungs (both within
+  the 2.5M source bitrate and 4M network), tier 1 → no cap, software route. supportsFmp4:false → ts-hls.'
+input:
+  media:
+    fileId: file-491
+    container: ts
+    durationMs: 6000000
+    sizeBytes: 2100000000
+    overallBitrateBps: 2800000
+    video:
+    - index: 0
+      codec: mpeg2
+      profile: main
+      level: null
+      width: 720
+      height: 480
+      bitDepth: 8
+      frameRate: 29.97
+      bitrateBps: 2500000
+      hdr: none
+      dvProfile: null
+      dvBlCompatId: null
+      interlaced: true
+    audio:
+    - index: 1
+      codec: aac
+      channels: 2
+      sampleRate: 48000
+      bitrateBps: 192000
+      language: eng
+      isDefault: true
+      hasAtmos: false
+    subtitle: []
+  device:
+    fixture: devices.mpeg2-generic
+  network:
+    fixture: networks.wan-4mbps
+  policy:
+    fixture: policies.t1-cpu-tonemap
+  caps:
+    fixture: caps.software-only
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: transcode
+  reasons:
+  - video-interlaced
+  - software-fallback:encode
+  ladder:
+  - heightPx: 480
+    videoBitrateBps: 1500000
+    audioBitrateBps: 160000
+    codec: h264
+  - heightPx: 360
+    videoBitrateBps: 800000
+    audioBitrateBps: 160000
+    codec: h264
+  container: ts-hls

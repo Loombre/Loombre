@@ -1,0 +1,335 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+
+/**
+ * Loombre design tokens — single source of truth (STATE.md "Phosphor
+ * retheme + responsive rebuild", Wave 0).
+ *
+ * Every hardcoded border-radius outside this file fails stylelint
+ * (declaration-property-value-allowed-list, .stylelintrc.json). Component
+ * CSS must reference these custom properties, never literal px/% radii.
+ *
+ * Phosphor retheme (design/phosphor/README.md is THE spec; U1 in STATE.md):
+ * this file replaces the former warm-ember palette wholesale — cool
+ * near-black background, white-alpha surfaces, amber accent, self-hosted
+ * Archivo (variable wdth+wght) + IBM Plex Mono. Values below are transcribed
+ * verbatim from the README's "Proposed tokens.css" block; it is authoritative
+ * for every token it defines.
+ *
+ * Dark only (README "Light theme — removed", STATE.md decision U line):
+ * the former `:root[data-theme="light"]` block existed for exactly one
+ * commit (Wave-0 commit 1, retheme-alone-first per the spec's own
+ * implementation order) and is gone as of this commit, alongside
+ * ThemeToggle.tsx, the persisted theme preference, and the data-theme
+ * attribute write in app/layout.tsx. `color-scheme: dark` stays on :root
+ * so native form controls/scrollbars still render dark. A future light
+ * theme is still possible (the tokens are the design system, not the
+ * theming mechanism) — it would re-add this block, not restructure
+ * anything above.
+ */
+
+:root {
+  color-scheme: dark;
+
+  /* Radius — unchanged scale, Phosphor values fit it */
+  --radius-pill: 9999px; /* all buttons/chips/tags/badges/inputs/search/segmented/progress/scrubber */
+  --radius-lg: 20px; /* cards, dialogs, sheets */
+  --radius-md: 14px; /* posters, thumbnails, tiles */
+  --radius-sm: 10px; /* inline chips, nested blocks */
+  --radius-full: 50%; /* avatars, icon buttons */
+
+  /* Motion — unchanged (P2.10 motion-engineering rules stay binding) */
+  --motion-fast: 150ms;
+  --motion-base: 240ms;
+  --motion-slow: 400ms;
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+
+  /* ── Phosphor: cool near-black, white-alpha surfaces ── */
+  --color-bg: #0b0c0f;
+  --color-bg-raised: #111318; /* modals, popovers, command palette */
+  --color-surface: #15171c; /* bottom sheets, toasts */
+  --color-surface-hover: #1a1d23;
+  --color-surface-active: #20242b;
+
+  /* Alpha fills — Phosphor layers these over artwork, so they must stay
+     translucent. Ascending emphasis; do not stack two without checking. */
+  --fill-1: rgb(255 255 255 / 2%); /* card + row rest */
+  --fill-2: rgb(255 255 255 / 3%);
+  --fill-3: rgb(255 255 255 / 4%); /* grouped-list rows, hover */
+  --fill-4: rgb(255 255 255 / 5%);
+  --fill-5: rgb(255 255 255 / 6%); /* pressed, segmented track */
+  --color-border-subtle: rgb(255 255 255 / 7%); /* hairlines, separators */
+  --color-border: rgb(255 255 255 / 12%); /* control borders */
+  --color-border-strong: rgb(255 255 255 / 18%); /* emphasis, bezels */
+  --color-overlay: rgb(4 5 7 / 50%); /* sheet + modal scrim (+ blur 3px) */
+
+  /* Text contrast — measured-exception note (U4, replaces the former
+     "all pairs clear AA" claim, which is now FALSE and must not be
+     restored). Measured against --color-bg (#0B0C0F):
+       #E9EBEE primary    15.6:1  AA ok
+       #C7CBD1 secondary  ~11:1   AA ok
+       #9BA0A8 muted       7.4:1  AA ok
+       #61666E subtle      3.4:1  FAILS AA (4.5:1) — ACCEPTED EXCEPTION
+       #4A4E55 hint        2.3:1  FAILS AA (4.5:1) — ACCEPTED EXCEPTION
+     The owner has reviewed these two measurements and accepted the
+     exception (design/phosphor/README.md "Text contrast — known AA
+     exception, accepted by the owner"): the tonal range across the four
+     grey tiers is load-bearing for this direction and flattening it costs
+     more than the contrast gain. DO NOT brighten #61666E/#4A4E55 to "fix"
+     this — that is a review failure, not an improvement. Never use either
+     tier below --text-xs, on a non-bg surface, or as the only signal (see
+     the README section for the full obligations this incurs). */
+  --color-text: #e9ebee;
+  --color-text-secondary: #c7cbd1;
+  --color-text-muted: #9ba0a8;
+  --color-text-subtle: #61666e; /* 3.4:1 — accepted exception, see above */
+  --color-text-hint: #4a4e55; /* 2.3:1 — accepted exception, see above */
+
+  /* ── Accent — amber default, four-way user preference (Wave 2 L7,
+     README "Accent as a user preference": amber #FFB454 / lime #CDF34C /
+     mint #4CE0B3 / blue #8AB8FF). ONE custom property mechanism: only
+     --color-accent itself is ever overridden (by
+     components/settings/AppearancePrefsRow.tsx's persisted choice, applied
+     via lib/appearance-prefs.ts as a `[data-accent]` attribute on
+     <html> — see tokens.css's own override rules right below :root, and
+     that file's header for why an attribute+CSS mechanism was chosen over
+     inline-styling document.body). Every derived value below is
+     color-mix(var(--color-accent), …) — swap the one property and
+     subtle/tint/border/hover/active/focus all follow with ZERO extra
+     per-accent literals to maintain.
+       --color-accent-hover/-active USED TO BE literals (#ffc272/#e89f42) —
+     converted to color-mix so the other three accents get correct
+     hover/active states too. Derivation (both "in srgb", matching this
+     file's existing subtle/tint/border convention):
+       hover  = color-mix(in srgb, var(--color-accent) 82%, white)
+       active = color-mix(in srgb, var(--color-accent) 89%, black)
+     Verified visually-equivalent for amber (the accepted default): hover
+     computes to #ffc273 (was #ffc272, off by 1 unit in one channel —
+     imperceptible); active computes to #e3a04b (was #e89f42, max ~9-unit
+     per-channel drift, ~3.5% — a deliberate trade for ONE formula that
+     also holds up for lime/mint/blue rather than four sets of hand-tuned
+     hex). Measured contrast of --color-accent-text (#0C0D10, unchanged —
+     all four accents are light hues, dark text holds) against each
+     accent's fill/hover/active, "in srgb" color-mix math, WCAG relative
+     luminance:
+       amber  base 11.02:1  hover 12.19:1  active  8.71:1
+       lime   base 15.29:1  hover 15.88:1  active 11.97:1
+       mint   base 11.68:1  hover 12.66:1  active  9.21:1
+       blue   base  9.61:1  hover 11.00:1  active  7.63:1
+     All four clear AA (4.5:1) by a wide margin in every state; the lowest
+     (blue active, 7.63:1) still clears AAA (7:1). */
+  --color-accent: #ffb454;
+  --color-accent-hover: color-mix(in srgb, var(--color-accent) 82%, white);
+  --color-accent-active: color-mix(in srgb, var(--color-accent) 89%, black);
+  --color-accent-subtle: color-mix(in srgb, var(--color-accent) 16%, transparent);
+  --color-accent-tint: color-mix(in srgb, var(--color-accent) 12%, transparent);
+  --color-accent-border: color-mix(in srgb, var(--color-accent) 40%, transparent);
+  --color-accent-text: #0c0d10; /* text ON accent — dark, not white; holds for all four (see measurements above) */
+  --color-focus: var(--color-accent-hover);
+  --color-danger: #e2453a; /* errors, destructive, unmatched files */
+  --color-warning: #e0a548; /* restricted, restart-pending, cautions */
+
+  /* Wave 2 lane L8: text ON --color-warning fills (restricted-zone active
+     filter chips) — same "dark, not white" rule --color-accent-text
+     documents; warning is a comparably light/warm amber, so the identical
+     near-black reads correctly on it too. */
+  --color-warning-text: #0c0d10;
+  --color-success: #5cb87a;
+  --color-dominant-fallback: #1c2128;
+
+  /* ── Spacing scale (unchanged — Phosphor's spacing maps cleanly onto it,
+     README's own "Spacing" section) ─────────────────────────────────── */
+  --space-3xs: 2px;
+  --space-2xs: 4px;
+  --space-xs: 8px;
+  --space-sm: 12px;
+  --space-md: 16px;
+  --space-lg: 24px;
+  --space-xl: 32px;
+  --space-2xl: 48px;
+  --space-3xl: 64px;
+
+  /* ── Type ── */
+  --font-sans: "Archivo", system-ui, -apple-system, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+
+  /* Archivo width axis — the signature of the direction */
+  --wdth-display: 118%; /* movie/series display titles */
+  --wdth-title: 114%; /* screen titles, section headings */
+  --wdth-wordmark: 125%; /* LOOMBRE wordmark */
+  --wdth-poster: 62%; /* oversized poster initial */
+  --text-display: 52px;
+  --text-2xl: 31px; /* mobile large title */
+  --text-xl: 26px; /* desktop h1 */
+  --text-lg: 19px; /* h2 */
+  --text-md: 16px; /* mobile list row label */
+  --text-base: 14.5px;
+  --text-sm: 13px;
+  --text-xs: 12px;
+
+  /* Mono scale — labels, counts, paths, log lines */
+  --mono-lg: 11px;
+  --mono-md: 10px;
+  --mono-sm: 9.5px;
+  --mono-xs: 8.5px;
+  --track-mono: 0.1em; /* default label tracking */
+  --track-mono-wide: 0.16em; /* section eyebrows */
+  --leading-display: 1;
+  --leading-tight: 1.15;
+  --leading-normal: 1.45;
+  --leading-dense: 1.55; /* mono blocks, log tails */
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+  --weight-black: 800; /* titles — Archivo goes to 900 */
+
+  /* ── Shadows — neutral, no ember tint (U1: --shadow-ember-bloom is
+     RETIRED, not retinted; every former consumer moved to --shadow-md,
+     which reads correctly on an amber app because it carries no color at
+     all) ─────────────────────────────────────────────────────────────── */
+  --shadow-sm: 0 2px 8px rgb(0 0 0 / 40%);
+  --shadow-md: 0 8px 24px rgb(0 0 0 / 50%);
+  --shadow-lg: 0 16px 48px rgb(0 0 0 / 60%);
+  --shadow-poster: 0 24px 64px rgb(0 0 0 / 58%);
+  --shadow-modal: 0 32px 90px rgb(0 0 0 / 70%);
+  --shadow-sheet: 0 -20px 60px rgb(0 0 0 / 60%);
+  --shadow-focus-ring: 0 0 0 3px var(--color-focus);
+
+  /* ── Chrome scrim — replaces liquid glass (U8). Consumed ONLY via the
+     shared `.glass` recipe, src/styles/glass.css — component CSS should
+     not hand-roll backdrop-filter from these directly. */
+  --chrome-bg: rgb(18 20 25 / 86%);
+  --chrome-blur: 20px;
+  --chrome-edge: rgb(255 255 255 / 7%);
+
+  /* S6 fix (Wave-3 fidelity audit, sidebar slice): the sidebar is one of
+     U8's over-applied .glass instances — the prototype's own sidebar
+     surface is an OPAQUE gradient, not a translucent blurred scrim
+     (design/phosphor/Loombre Phosphor.dc.html: `background:
+     linear-gradient(180deg,#0D0E12,#0B0C0F)`). A distinct literal-hex
+     token (not derived from --color-bg/--color-surface) per this file's
+     own "hex literals for surfaces live here" convention — Sidebar.module.css
+     (FX2) is the only consumer. Logged in the FX2 freeze report as a
+     shared-file touch (tokens.css isn't in any lane's exclusive file list). */
+  --sidebar-bg: linear-gradient(180deg, #0d0e12, #0b0c0f);
+
+  /* ── Mobile chrome layout (Wave 1 W1a — responsive breakpoint) ──────────
+     Shared between AppShell.module.css (the .main content offset),
+     MobileTabBar.module.css (its own height), MobileHeader.module.css and
+     MiniPlayerBar.module.css (docking above the tab bar on mobile) so the
+     four never drift out of sync the way the desktop .topbar/.main pairing
+     warns about above. Both are content-box heights EXCLUDING safe-area-
+     inset — callers add env(safe-area-inset-*) on top, never bake it in.
+     NOTE: the mobile breakpoint itself (767.98px, README phone spec
+     392x846 / U3 tablet gap starting at 768) is NOT a custom property —
+     @media conditions cannot consume var() — so it stays a literal,
+     repeated with a comment pointing here in every file that queries it
+     (AppShell.module.css, Sidebar.module.css, MobileTabBar.module.css,
+     MobileHeader.module.css, MiniPlayerBar.module.css). Keep them in sync
+     by hand; this is the same convention Sidebar.module.css already uses
+     for the 1279.98px tablet cutoff. */
+  --mobile-tabbar-height: 60px; /* icon 24px + mono label + padding, > the 44px touch minimum */
+  --mobile-header-height: 112px; /* sized for the taller "title" mode (top row + 31px large title + subtitle), measured ~110px in-browser; "back" mode (~66px) fits with room to spare */
+
+  /* ── Phosphor texture ── */
+
+  /* Scanlines: a user preference, DEFAULT ON (README "Other" + Wave 2 L7).
+     Consumed CSS-only — components render a decorative overlay element
+     whose background is var(--scanlines); the [data-scanlines="off"] rule
+     below is the ENTIRE toggle (no per-component JS branch anywhere) — see
+     lib/appearance-prefs.ts for the persisted-preference write of the
+     `data-scanlines` attribute on <html>, and AmbientHero.module.css /
+     AmbientBackdrop.module.css (the item-detail banner and the player's
+     idle/paused/unavailable backdrop — the app's only two real hero/scene
+     artwork surfaces today; README also draws scanlines on the Home
+     featured banner, which doesn't exist in apps/web yet — nothing to
+     wire there until that banner lands) for the two consumers. Default ON
+     needs no attribute at all (absence = on) so the common case never
+     flashes; only an explicit opt-out pays a one-frame cost, same
+     trade-off as any client-only preference in a stack with no
+     server-rendered personalization. Static texture (a plain background
+     image, not a running animation) — prefers-reduced-motion is
+     irrelevant to it, same reasoning as this file's own motion-token
+     media query below not touching anything decorative-but-static. */
+  --scanlines: repeating-linear-gradient(0deg, rgb(0 0 0 / 28%) 0 1px, transparent 1px 3px);
+  --vignette: radial-gradient(120% 90% at 50% 45%, transparent 40%, rgb(0 0 0 / 55%) 100%);
+
+  /* ── Blaze brand tokens (STATE.md "Blaze logo rollout" D11/G3/G4) ─────
+     Brand-FIXED — never derive the Blaze mark from --color-accent (G4):
+     --color-accent above is a user-swappable four-way preference (amber/
+     lime/mint/blue); the logo must stay amber regardless of what the
+     viewer picked, or it "turns lime". These duplicate the accent
+     DEFAULT's hex values on purpose — a justified semantic-split
+     duplicate, not an oversight (precedent: lib/appearance-prefs.ts:56's
+     ACCENT_HEX swatch literal already does the same). */
+  --brand-amber: #ffb454; /* flat-variant mark fill — NEVER --color-accent (G4) */
+  --brand-amber-bright: #ffd9a0; /* gradient bottom (0%) stop */
+  --brand-amber-deep: #e08f2e; /* gradient top (100%) stop */
+
+  /* Boot-splash-only near-black background (design/blaze/README.md
+     "Design Tokens": "splash bg #07080A") — distinct from --color-bg
+     (#0B0C0F, the app-wide background above) and --sidebar-bg's
+     #0D0E12/#0B0C0F gradient; the splash is the one surface darker than
+     both, and is also the animated BlazeMark's default `surface` fill. */
+  --color-bg-splash: #07080a;
+
+  /* Brand-mark glow — hero contexts only; BlazeMark itself bakes in NO
+     glow, callers apply this token around the rendered mark. This is NOT
+     a revival of the retired --shadow-ember-bloom (see this file's
+     Shadows section, tokens.css:187-190 — that token named the old
+     warm-ember palette's drop shadow and was removed wholesale by the
+     Phosphor retheme). --brand-mark-glow is new, narrowly scoped to
+     exactly one thing (the Blaze flame glow), not a general-purpose
+     shadow token. */
+  --brand-mark-glow: 0 0 12px rgb(255 180 84 / 45%);
+
+  /* Splash-scoped scanline overlay (G3 three-way conflict, adjudicated):
+     the boot-splash recipe (design/blaze/README.md line 62:
+     "repeating-linear-gradient(0deg, rgba(0,0,0,.35) 0 1px, transparent
+     1px 3px)") is DIFFERENT from --scanlines above (28% @ 1px/3px,
+     Phosphor law, 4 consumers) and from the mark-scanline SVG's own
+     internal pattern (1.2px @ 35% every 3.2px, untouchable — it ships
+     byte-faithful per D1). This token is for the Blaze splash surface
+     ONLY — do not repoint --scanlines at it or vice versa. */
+  --scanlines-splash: repeating-linear-gradient(0deg, rgb(0 0 0 / 35%) 0 1px, transparent 1px 3px);
+
+  /* ── Semantic aliases — keep, existing modules reference them ──────── */
+  --bg: var(--color-bg);
+  --surface: var(--color-surface);
+  --overlay: var(--color-overlay);
+  --text: var(--color-text);
+  --muted: var(--color-text-muted);
+  --border: var(--color-border);
+  --focus: var(--color-focus);
+}
+
+/* ── Accent preference overrides (Wave 2 L7) ── amber needs no rule — it
+   IS :root's own --color-accent default above, so the zero-preference
+   (first-load, no localStorage yet) case never flashes. Only the other
+   three swap a single custom property; every hover/active/subtle/tint/
+   border/focus value above re-derives automatically (see the --color-
+   accent block's own comment for the color-mix formula + measured
+   contrast). Hex values match README "Accent as a user preference"
+   verbatim. */
+:root[data-accent="lime"] {
+  --color-accent: #cdf34c;
+}
+
+:root[data-accent="mint"] {
+  --color-accent: #4ce0b3;
+}
+
+:root[data-accent="blue"] {
+  --color-accent: #8ab8ff;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-fast: 100ms;
+    --motion-base: 100ms;
+    --motion-slow: 100ms;
+    --ease-spring: linear;
+    --ease-out: linear;
+  }
+}

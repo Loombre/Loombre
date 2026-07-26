@@ -1,0 +1,52 @@
+name: "transcode — composition A+D+F under encode-only caps: container, audio, and bitrate reasons all fire; Stage G appends last"
+why: >
+  mkv vs web-chrome's [mp4,webm] directPlayContainers (mismatch) + truehd passthrough-unsupported audio (web-chrome declares truehd but passthrough:false) + bitrate exceeding a tight network cap, all under encode-only caps: Stage B copies (h264 1080p is within web-chrome's caps), so reasons fire in stage order [container-not-direct-playable, audio-passthrough-unsupported, bitrate-exceeds-network], THEN Stage G appends software-fallback:decode (encode-only's nvenc encode-covers the ladder's h264 targets but has no verified decode; software decodes h264) — proving Stage G composes correctly after a MULTI-stage reason set, not just single-reason scenarios.
+
+input:
+  media:
+    fileId: gen-file
+    container: mkv
+    durationMs: 6000000
+    sizeBytes: 6000000000
+    overallBitrateBps: 40000000
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 41
+        width: 1920
+        height: 1080
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 20000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: truehd
+        channels: 6
+        sampleRate: 48000
+        bitrateBps: 1500000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device: { fixture: devices.web-chrome }
+  network: { fixture: networks.wan-4mbps }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.encode-only }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+
+expect:
+  decision: transcode
+  reasons:
+    - container-not-direct-playable
+    - audio-passthrough-unsupported
+    - bitrate-exceeds-network
+    - software-fallback:decode

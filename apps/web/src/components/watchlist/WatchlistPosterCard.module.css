@@ -1,0 +1,172 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+
+/* Same recipe as components/browse/PosterCell.module.css (blurhash
+   crossfade, compositor-only hover lift, --radius-md) — width:100% so
+   BOTH hosts (Home's Row horizontal scroller, /watchlist's CSS grid) size
+   this card via their OWN fixed-width wrapper, matching
+   components/detail/ChildPosterGrid.module.css's `.cell { width: 160px }`
+   convention rather than this component picking a width for either. */
+.tile {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2xs);
+  width: 100%;
+  text-decoration: none;
+  color: inherit;
+  outline: none;
+}
+
+.imageWrap {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 2 / 3;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: var(--color-dominant-fallback);
+  transform: translateY(0) scale(1);
+  transition:
+    transform var(--motion-base) var(--ease-spring),
+    box-shadow var(--motion-base) var(--ease-spring);
+  will-change: transform;
+}
+
+/* S7 poster signature (W3 fidelity audit): translateY(-4px) only, no
+   scale (unspecified in the dc); ring + shadow match the dc's shared
+   poster-hover literal exactly — see components/home/PosterCard.module.css's
+   identical rule for the full citation. */
+.tile:hover .imageWrap,
+.tile:focus-visible .imageWrap {
+  transform: translateY(-4px);
+  box-shadow:
+    0 12px 32px rgb(0 0 0 / 50%),
+    0 0 0 1px color-mix(in srgb, var(--color-accent) 45%, transparent);
+}
+
+/* S7 poster signature: inner hairline + in-artwork title — see
+   components/home/PosterCard.module.css's identical rules for the dc
+   citation. Added ADDITIONALLY to the existing below-caption title/
+   subtitle, which the dc also renders on this exact surface (Home's
+   watchlist rail dc:208-222, /watchlist route dc:1110-1120). */
+.imageWrap::after {
+  content: "";
+  position: absolute;
+  inset: 7px;
+  border: 1px solid rgb(255 255 255 / 16%);
+  border-radius: var(--radius-sm);
+  pointer-events: none;
+}
+
+.artTitle {
+  position: absolute;
+  left: 13px;
+  right: 13px;
+  bottom: 11px;
+  font-stretch: 108%;
+  font-weight: var(--weight-black);
+  font-size: var(--text-sm);
+  line-height: var(--leading-tight);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  text-shadow: 0 1px 8px rgb(0 0 0 / 50%);
+  color: var(--color-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.tile:focus-visible {
+  border-radius: var(--radius-md);
+}
+
+.placeholder,
+.image {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: inherit;
+}
+
+.placeholder {
+  opacity: 1;
+  transition: opacity var(--motion-slow) var(--ease-out);
+  filter: saturate(1.1);
+}
+
+.placeholder[data-loaded="true"] {
+  opacity: 0;
+}
+
+.image {
+  opacity: 0;
+  transition: opacity var(--motion-slow) var(--ease-out);
+}
+
+.image[data-loaded="true"] {
+  opacity: 1;
+}
+
+/* Inline REMOVE (design/phosphor README.md: "each card offering inline
+   REMOVE" / "inline REMOVE on cards"). Top-right overlay, scrim-backed so
+   the X reads over any artwork; a real <button> nested inside the tile's
+   <a> (valid HTML — interactive content is not itself nested, only a
+   sibling positioned on top) with its own click handler that stops
+   propagation before the card's own navigation handler ever sees the
+   event. 32px hit box on desktop, bumped to the 44px touch minimum below
+   the mobile breakpoint (design/phosphor README.md's hard line). */
+.removeButton {
+  position: absolute;
+  top: var(--space-2xs);
+  right: var(--space-2xs);
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: var(--radius-full);
+  background: var(--color-overlay);
+  color: var(--color-text);
+  cursor: pointer;
+  transition:
+    background-color var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
+}
+
+.removeButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.removeButton:hover:not(:disabled) {
+  background: var(--color-danger);
+}
+
+.removeButton:active:not(:disabled) {
+  transform: scale(0.92);
+}
+
+@media (width <= 767.98px) {
+  .removeButton {
+    width: 44px;
+    height: 44px;
+  }
+}
+
+.title {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.subtitle {
+  font-size: var(--text-xs);
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

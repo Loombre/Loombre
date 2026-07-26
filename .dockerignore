@@ -1,0 +1,69 @@
+# Loombre :: .dockerignore (repo root)
+#
+# Keeps the build context small — the Dockerfile's `pruner` stage does a
+# full `COPY . .` (it needs the whole workspace to run `turbo prune`), so
+# everything excluded here is bytes that never leave the host at all,
+# rather than bytes that get copied and then discarded mid-build.
+#
+# Mirrors .gitignore's exclusions where they apply (build output, deps,
+# local env/data) plus a few Docker-specific ones (.dockerignore/Dockerfile*
+# themselves have no reason to be inside their own build context; .git
+# history is never needed to build).
+
+# VCS
+.git/
+.github/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# deps (reinstalled inside the build — see Dockerfile's builder/prod-deps
+# stages; a host node_modules here would just be dead weight in the
+# context, and could even be the WRONG architecture if this repo was ever
+# `pnpm install`ed on a different host than the one running `docker build`)
+node_modules/
+**/node_modules/
+
+# build output (recompiled inside the build; stale host dist/ would only
+# risk masking a real build failure by satisfying a later COPY with
+# leftover files from a previous local `pnpm build`)
+dist/
+**/dist/
+.next/
+**/.next/
+.turbo/
+**/.turbo/
+*.tsbuildinfo
+
+# env & local config — never bake secrets into an image layer
+.env
+.env.*
+!.env.example
+installers/docker/loombre.env
+!installers/docker/loombre.env.example
+
+# logs & scratch
+*.log
+**/logs/
+coverage/
+**/coverage/
+
+# db local data / generated fixtures / reports (regenerated on demand,
+# never part of a build)
+.pgdata/
+test-fixtures/media/
+reports/
+apps/worker/data/
+perf/t0-baseline.json
+perf/web-budget-result.json
+
+# vendored ffmpeg (fetched fresh, checksum-verified, inside the
+# ffmpeg-fetch build stage — see scripts/fetch-ffmpeg.mjs; a stale host
+# copy here would bypass that verification entirely)
+vendor/
+
+# this lane's own worktree/smoke artifacts and docs never need to be IN
+# the image being built
+installers/docker/BUILD-NOTES.md
+.claude/

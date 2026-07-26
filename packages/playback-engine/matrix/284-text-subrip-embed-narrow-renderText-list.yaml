@@ -1,0 +1,86 @@
+name: "direct-play — TEXT subrip embeds via a device whose renderText declares ONLY subrip (narrow list, not the all-4 fixture)"
+why: >
+  Every other embed case in this file uses text-all-capable/text-embed-capable, which both declare renderText for all four TEXT codecs — this inline device declares renderText:[subrip] alone, proving the (b) check is a genuine membership test against whatever the device declares, not merely 'renderText is non-empty'.
+
+input:
+  media:
+    fileId: file-0284
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 6000000000
+    overallBitrateBps: 5200000
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 41
+        width: 1920
+        height: 1080
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 5000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 192000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle:
+      - index: 2
+        codec: subrip
+        language: eng
+        isForced: false
+        isDefault: false
+        isExternal: false
+        externalPath: null
+  device:
+    profileId: inline-text-narrow-subrip
+    directPlayContainers:
+      - mp4
+    hls:
+      container: fmp4
+      supportsFmp4: true
+      lowLatency: false
+    video:
+      - codec: h264
+        maxProfile: high
+        maxLevel: 52
+        maxBitDepth: 8
+        maxWidth: 3840
+        maxHeight: 2160
+        maxFrameRate: 60
+        maxBitrateBps: 50000000
+    hdr:
+      hdr10: false
+      hlg: false
+      dolbyVision: false
+    audio:
+      - codec: aac
+        maxChannels: 6
+        passthrough: false
+    subtitles:
+      renderText:
+        - subrip
+      hlsVtt: false
+      renderImage: false
+    maxStreamBitrateBps: null
+  network: { fixture: networks.local }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.software-only }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: 2
+  mode: stream
+
+expect:
+  decision: direct-play
+  reasons: []
+  subtitleStrategy: embed

@@ -1,0 +1,72 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+.container {
+  position: relative;
+  width: 260px;
+}
+
+.field {
+  width: 100%;
+}
+
+.popover {
+  composes: glass from global;
+  position: absolute;
+  top: calc(100% + var(--space-xs));
+  right: 0;
+  width: 380px;
+  max-height: 70vh;
+  overflow-y: auto;
+  border-radius: var(--radius-lg);
+  padding: var(--space-md);
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+/* ⌘K polish (Wave 2 L7): instant screen/action matches, rendered above the
+   debounced catalog results from SearchPanel — see quick-search-sources.ts. */
+.paletteGroup {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3xs);
+}
+
+.paletteRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  width: 100%;
+  border: none;
+  background: transparent;
+  border-radius: var(--radius-sm);
+  padding: var(--space-xs) var(--space-sm);
+  font-size: var(--text-sm);
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+  transition: background-color var(--motion-fast) var(--ease-out);
+}
+
+.paletteRow:hover,
+.paletteRow:focus-visible {
+  background: var(--fill-3);
+}
+
+.paletteLabel {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.paletteHint {
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: var(--mono-xs);
+  font-weight: var(--weight-medium);
+  letter-spacing: var(--track-mono);
+  text-transform: uppercase;
+  color: var(--color-text-hint);
+}

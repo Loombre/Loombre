@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://loombre.com/schemas/events/plugin.disabled.schema.json",
+  "title": "PluginDisabledPayload",
+  "description": "Payload for envelope.type === 'plugin.disabled'. Loombre Plugin Protocol (LPP) v1, Lane W2 (LD4/LD6/LD8): emitted in the SAME transaction whenever plugins.enabled flips false (packages/db/src/query/plugins.ts's setPluginEnabledAndEmit) — an explicit admin action (reason='admin'), the circuit breaker crossing packages/plugin-host's LPP_BREAKER_FAILURE_THRESHOLD consecutive call failures (reason='breaker', envelope.actorUserId is null — system-originated), or an expanding re-fetch diff (reason='scope-change', see docs on apps/server/src/plugins/plugin-registration.service.ts for the exact expansion definition). ADMIN-ONLY delivery, mirroring settings.updated exactly.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["pluginId", "name", "reason", "disabledAtMs"],
+  "properties": {
+    "pluginId": {
+      "type": "string",
+      "format": "uuid",
+      "description": "The plugins.id row that was disabled."
+    },
+    "name": {
+      "type": "string",
+      "description": "The plugin's current name."
+    },
+    "reason": {
+      "type": "string",
+      "enum": ["admin", "breaker", "scope-change"],
+      "description": "Matches plugins.disabled_reason exactly."
+    },
+    "disabledAtMs": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Epoch ms this row was updated to enabled=false."
+    }
+  }
+}

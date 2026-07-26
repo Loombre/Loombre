@@ -1,0 +1,50 @@
+# Watching
+
+<!-- Sourcing: resume/progress tracking — docs/PLAN.md §4.3 domain event
+     outbox names "progress.updated" as a real event type; the playback
+     reason taxonomy (packages/playback-engine/src/reasons.ts) includes
+     subtitle-specific codes (subtitle-format-requires-burn-in,
+     subtitle-styling-lost, subtitle-codec-unknown), confirming subtitle
+     support is implemented, not aspirational. Restricted-content session
+     unlock timing — docs/PLAN.md §6.4 gate 5 (default 30 minutes),
+     linked rather than restated here. -->
+
+## Starting something
+
+Select **Play** on any movie, episode, or track. If you've watched part of
+it before, Loombre picks up right where you left off automatically — you
+won't need to find your spot by hand.
+
+[SCREENSHOT: Player screen, mid-playback, showing progress bar and controls]
+
+## Player controls
+
+The usual controls are there: play, pause, skip forward and back, and a
+progress bar you can drag to jump to any point.
+
+## Subtitles and audio
+
+If subtitles are available for what you're watching, a subtitle button
+lets you turn them on, turn them off, or choose a different language.
+The same idea applies to audio — if more than one audio language or mix
+is available, you can switch between them from the player.
+
+[SCREENSHOT: Player subtitle and audio selection menu]
+
+## Picking up on another device
+
+Your progress is saved as you watch, so you can pause on one device and
+resume on another — a TV in the living room, a laptop, a phone — without
+losing your place.
+
+## When something won't play smoothly
+
+If a video looks a little softer than usual, or takes a moment to start,
+see [Why is this converting?](why-is-it-converting.md) — Loombre
+is doing some extra work behind the scenes to make sure it plays properly
+on your device.
+
+## Restricted content
+
+If you try to open something and you're asked for a PIN, see
+[Restricted content](restricted-content.md).

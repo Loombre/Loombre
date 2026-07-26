@@ -1,0 +1,52 @@
+name: 'direct-play — hevc-hdr10-strict × local × hevc-preferred: 2160p HDR10 at 41M on the unlimited local
+  network'
+why: 'Grid combo (hevc-hdr10-strict × local × hevc-preferred): hdr10 flag match, 41M overall forgiven
+  by the effectively-unlimited local fixture (null device cap), hevc-preferred indifferent on direct-play.'
+input:
+  media:
+    fileId: file-484
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 30750000000
+    overallBitrateBps: 41000000
+    video:
+    - index: 0
+      codec: hevc
+      profile: main10
+      level: 153
+      width: 3840
+      height: 2160
+      bitDepth: 10
+      frameRate: 24
+      bitrateBps: 40000000
+      hdr: hdr10
+      dvProfile: null
+      dvBlCompatId: null
+      interlaced: false
+    audio:
+    - index: 1
+      codec: aac
+      channels: 2
+      sampleRate: 48000
+      bitrateBps: 256000
+      language: eng
+      isDefault: true
+      hasAtmos: false
+    subtitle: []
+  device:
+    fixture: devices.hevc-hdr10-strict
+  network:
+    fixture: networks.local
+  policy:
+    fixture: policies.hevc-preferred
+  caps:
+    fixture: caps.software-only
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: direct-play
+  reasons: []
+  container: source

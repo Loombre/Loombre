@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Loombre :: /Library/LaunchDaemons/com.loombre.worker.plist
+  See com.loombre.server.plist's header — identical rationale, worker side.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.loombre.worker</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/opt/loombre/current/bin/loombre-worker</string>
+  </array>
+
+  <key>UserName</key>
+  <string>_loombre</string>
+  <key>GroupName</key>
+  <string>_loombre</string>
+
+  <key>WorkingDirectory</key>
+  <string>/opt/loombre/current</string>
+
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <dict>
+    <key>SuccessfulExit</key>
+    <false/>
+    <key>Crashed</key>
+    <true/>
+  </dict>
+
+  <key>StandardOutPath</key>
+  <string>/Library/Logs/Loombre/worker.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Library/Logs/Loombre/worker.err.log</string>
+
+  <key>ProcessType</key>
+  <string>Background</string>
+
+  <key>ThrottleInterval</key>
+  <integer>10</integer>
+</dict>
+</plist>

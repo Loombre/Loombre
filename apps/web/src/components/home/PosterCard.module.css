@@ -1,0 +1,272 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+.tile {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2xs);
+  width: 160px;
+  flex-shrink: 0;
+  text-decoration: none;
+  color: inherit;
+  outline: none;
+}
+
+.tile[data-aspect="16/9"] {
+  width: 272px;
+}
+
+.tile[data-aspect="1/1"] {
+  width: 148px;
+}
+
+.imageWrap {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 2 / 3;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: var(--color-dominant-fallback);
+  transform: translateY(0) scale(1);
+  transition:
+    transform var(--motion-base) var(--ease-spring),
+    box-shadow var(--motion-base) var(--ease-spring);
+  will-change: transform;
+}
+
+.tile[data-aspect="16/9"] .imageWrap {
+  aspect-ratio: 16 / 9;
+}
+
+.tile[data-aspect="1/1"] .imageWrap {
+  aspect-ratio: 1 / 1;
+}
+
+/* S7 poster signature (W3 fidelity audit): translateY(-4px) only — the
+   dc's own poster hover (`style-hover="transform:translateY(-4px)"` on
+   every browse/rail/watchlist/zone/person tile) never scales; the
+   scale(1.03) this rule used to add was unspecified. Ring + shadow match
+   dc's shared poster hover literal exactly:
+   `box-shadow:0 12px 32px rgba(0,0,0,.5),0 0 0 1px color-mix(in
+   srgb,var(--acc) 45%,transparent)`. */
+.tile:hover .imageWrap,
+.tile:focus-visible .imageWrap {
+  transform: translateY(-4px);
+  box-shadow:
+    0 12px 32px rgb(0 0 0 / 50%),
+    0 0 0 1px color-mix(in srgb, var(--color-accent) 45%, transparent);
+}
+
+.tile:focus-visible {
+  border-radius: var(--radius-md);
+}
+
+/* S7 poster signature: inner hairline, inset 7px / 1px rgba(255,255,255,.16)
+   (dc's `position:absolute;inset:7px;border:1px solid
+   rgba(255,255,255,.16)` on every 2:3/1:1 poster tile) — a pseudo-element
+   so no extra DOM node is needed; radius-sm is tokens.css's own "nested
+   chip" step, which is exactly what this is. Applies under the CW 16:9
+   scene art too (dc doesn't draw it there, but it's harmless — the
+   now-playing pulse already coexists on `::before`). */
+.imageWrap::after {
+  content: "";
+  position: absolute;
+  inset: 7px;
+  border: 1px solid rgb(255 255 255 / 16%);
+  border-radius: var(--radius-sm);
+  pointer-events: none;
+}
+
+/* S7 poster signature: bottom-anchored in-artwork uppercase title (dc's
+   shared 2:3/1:1 poster literal: `font-stretch:108%;font-weight:800;
+   text-transform:uppercase;text-shadow:0 1px 8px rgba(0,0,0,.5)`) — added
+   ADDITIONALLY to the existing below-caption `.title`/`.subtitle` row,
+   which the prototype ALSO renders on every one of these surfaces
+   (Recently Added dc:183-196, Watchlist rail dc:208-222, New in Music
+   dc:232-...) — not a replacement for it. Skipped for the 16/9 Continue
+   Watching aspect (PosterCard.tsx), which already has its own distinct
+   title+epcode+progress overlay treatment; adding a second title there
+   would double up. font-stretch 108% has no matching --wdth-* token (the
+   scale is 62/114/118/125) and is a single-purpose value, so it stays a
+   literal rather than growing tokens.css for one number. */
+.artTitle {
+  position: absolute;
+  left: 13px;
+  right: 13px;
+  bottom: 11px;
+  font-stretch: 108%;
+  font-weight: var(--weight-black);
+  font-size: var(--text-sm);
+  line-height: var(--leading-tight);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  text-shadow: 0 1px 8px rgb(0 0 0 / 50%);
+  color: var(--color-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* P2.11 now-playing pulse: a static-box-shadow ring whose OPACITY animates
+   (compositor-only per P2.10 — the box-shadow value itself never changes,
+   only the pseudo-element's opacity does). Accent color reserved for
+   interactive/now-playing per P2.11 (amber under Phosphor — U1). */
+.imageWrap::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow:
+    0 0 0 2px var(--color-accent),
+    0 0 18px 2px var(--color-accent-subtle);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--motion-fast) var(--ease-out);
+}
+
+.imageWrap[data-now-playing="true"]::before {
+  opacity: 0.35;
+  animation: now-playing-pulse 1.8s var(--ease-out) infinite;
+}
+
+@keyframes now-playing-pulse {
+  0%,
+  100% {
+    opacity: 0.3;
+  }
+
+  50% {
+    opacity: 0.85;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .imageWrap[data-now-playing="true"]::before {
+    animation: none;
+    opacity: 0.5;
+  }
+}
+
+.placeholder,
+.image {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: inherit;
+}
+
+.placeholder {
+  opacity: 1;
+  transition: opacity var(--motion-slow) var(--ease-out);
+  filter: saturate(1.1);
+}
+
+.placeholder[data-loaded="true"] {
+  opacity: 0;
+}
+
+.image {
+  opacity: 0;
+  transition: opacity var(--motion-slow) var(--ease-out);
+}
+
+.image[data-loaded="true"] {
+  opacity: 1;
+}
+
+/* Missing-artwork fallback ONLY (README "Assets") — gradient + oversized
+   translucent initial, same recipe as app/styleguide/page.module.css's
+   .demoTileGradient / FeaturedBanner.module.css's .sceneFallback+.poster
+   fallback. Never shown for items that DO have real art. */
+.artFallback {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: linear-gradient(160deg, #3a4656 0%, #1f2630 60%, #14171c 100%);
+}
+
+.artInitial {
+  position: absolute;
+  top: -14px;
+  right: -6px;
+  font-family: var(--font-sans);
+  font-stretch: var(--wdth-poster);
+  font-weight: var(--weight-black);
+  font-size: 96px;
+  line-height: 1;
+  color: rgb(255 255 255 / 13%);
+  user-select: none;
+}
+
+.tile[data-aspect="1/1"] .artInitial,
+.tile[data-aspect="16/9"] .artInitial {
+  font-size: 64px;
+}
+
+/* W3 fidelity audit S6: was a glass-on-poster pill (P2.20); U8 reserves
+   `.glass` for the mobile tab bar + now-playing bar only, and the
+   prototype's own poster-badge convention (dc:289's RESTRICTED chip, the
+   nearest analog) is a plain dark fill with no blur — `background:
+   rgba(11,12,15,.75)`, no border. --color-bg is `rgb(11 12 15)`, so this
+   reproduces that literal from the token via color-mix rather than a
+   second hardcoded hex. */
+.progressOverlay {
+  position: absolute;
+  left: var(--space-xs);
+  right: var(--space-xs);
+  bottom: var(--space-xs);
+  border-radius: var(--radius-pill);
+  padding: var(--space-3xs) var(--space-xs);
+  background: color-mix(in srgb, var(--color-bg) 75%, transparent);
+}
+
+/* Continue Watching's PLAY affordance — Interactions & behavior: "their
+   play button opens the resume prompt instead" (of the card's own detail
+   link). A real nested <button> (not a second <a> — HTML disallows
+   nesting interactive content inside a link), centered over the art. */
+.playButton {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-full);
+  background: rgb(11 12 15 / 65%);
+  border: 1px solid var(--color-border-strong);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text);
+  backdrop-filter: blur(4px);
+  cursor: pointer;
+  padding: 0;
+  transition:
+    background var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out),
+    border-color var(--motion-fast) var(--ease-out);
+}
+
+.playButton:hover,
+.playButton:focus-visible {
+  background: var(--color-accent);
+  color: var(--color-accent-text);
+  border-color: var(--color-accent);
+}
+
+.title {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.subtitle {
+  font-size: var(--text-xs);
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

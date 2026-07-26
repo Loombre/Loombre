@@ -1,0 +1,57 @@
+name: "direct-stream — TEXT subrip via web-chrome (real fixture), mkv mismatch -> hls-vtt fires regardless of web-chrome's renderText not listing subrip"
+why: >
+  web-chrome's renderText only declares [webvtt], yet cascade (a) fires purely off device.subtitles.hlsVtt (true) + policy hls-vtt — renderText content is irrelevant once (a) holds. mkv drives Stage A's direct-stream on its own; subrip carries no informational reason.
+
+input:
+  media:
+    fileId: file-0326
+    container: mkv
+    durationMs: 6000000
+    sizeBytes: 6000000000
+    overallBitrateBps: 5200000
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 41
+        width: 1920
+        height: 1080
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 5000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 192000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle:
+      - index: 2
+        codec: subrip
+        language: eng
+        isForced: false
+        isDefault: false
+        isExternal: false
+        externalPath: null
+  device: { fixture: devices.web-chrome }
+  network: { fixture: networks.local }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.software-only }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: 2
+  mode: stream
+
+expect:
+  decision: direct-stream
+  reasons:
+    - container-not-direct-playable
+  subtitleStrategy: hls-vtt

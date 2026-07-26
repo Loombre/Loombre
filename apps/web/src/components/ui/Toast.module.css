@@ -1,0 +1,79 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+
+/* Phosphor toast (design/phosphor/README.md "Interactions & behavior →
+   Feedback"). Bottom-center, single slot, compositor-only interruptible
+   fade+rise — same transition-based technique as BottomSheet.module.css
+   (direction-specific easing comes from whichever rule the transition is
+   moving TO; see that file's comment for the full explanation).
+
+   --toast-offset-bottom is the seam the mobile shell (not owned by this
+   lane) sets to clear the future tab bar + now-playing mini-bar, e.g.
+   `--toast-offset-bottom: calc(64px + env(safe-area-inset-bottom))` on an
+   ancestor. The default below is safe-area-aware on its own so the toast
+   still clears the home indicator with no shell involvement at all
+   (desktop, or before that wiring lands). */
+
+.viewport {
+  position: fixed;
+  z-index: 100; /* matches Overlay.module.css's .scrim so a toast can surface over a sheet/modal */
+  bottom: var(--toast-offset-bottom, calc(var(--space-lg) + env(safe-area-inset-bottom, 0px)));
+  left: 50%;
+  pointer-events: none; /* passive notification — nothing to click */
+  transform: translate(-50%, 12px);
+  opacity: 0;
+  transition:
+    transform var(--motion-base) var(--ease-out),
+    opacity var(--motion-base) var(--ease-out);
+}
+
+.viewport[data-visible="true"] {
+  transform: translate(-50%, 0);
+  opacity: 1;
+  transition:
+    transform var(--motion-base) var(--ease-spring),
+    opacity var(--motion-base) var(--ease-out);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* "no travel" — fade only, same rule as BottomSheet.module.css. */
+  .viewport,
+  .viewport[data-visible="true"] {
+    transform: translate(-50%, 0);
+  }
+}
+
+.toast {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  padding: var(--space-xs) var(--space-md);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  box-shadow: var(--shadow-md);
+  white-space: nowrap;
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  flex-shrink: 0;
+  border-radius: var(--radius-full);
+  background: var(--color-accent);
+}
+
+.dot[data-variant="warning"] {
+  background: var(--color-warning);
+}
+
+.dot[data-variant="danger"] {
+  background: var(--color-danger);
+}
+
+.message {
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--mono-sm);
+  letter-spacing: var(--track-mono);
+  text-transform: uppercase;
+}

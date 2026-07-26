@@ -1,0 +1,60 @@
+name: 'transcode — web-safari × wan-1mbps × full-hw: 1080p hevc at 8.3M collapses to the single 360p rung,
+  nvenc routes (T0 + hw route = no tier cap)'
+why: 'Grid combo (web-safari × wan-1mbps × full-hw × t0-default): Stage F fires on the 1M cap; the ladder''s
+  network rule keeps only 360p/0.8M; rule (i) nvenc covers hevc decode + the h264 target; T0''s tier cap
+  applies only to the rule-(iii) software route so the hw route keeps its rung untrimmed. eac3 passthrough
+  entry copies.'
+input:
+  media:
+    fileId: file-473
+    container: mov
+    durationMs: 6000000
+    sizeBytes: 6225000000
+    overallBitrateBps: 8300000
+    video:
+    - index: 0
+      codec: hevc
+      profile: main10
+      level: 123
+      width: 1920
+      height: 1080
+      bitDepth: 10
+      frameRate: 23.976
+      bitrateBps: 8000000
+      hdr: none
+      dvProfile: null
+      dvBlCompatId: null
+      interlaced: false
+    audio:
+    - index: 1
+      codec: eac3
+      channels: 6
+      sampleRate: 48000
+      bitrateBps: 256000
+      language: eng
+      isDefault: true
+      hasAtmos: false
+    subtitle: []
+  device:
+    fixture: devices.web-safari
+  network:
+    fixture: networks.wan-1mbps
+  policy:
+    fixture: policies.t0-default
+  caps:
+    fixture: caps.full-hw
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: transcode
+  reasons:
+  - bitrate-exceeds-network
+  - hw-encoder-selected:nvenc
+  ladder:
+  - heightPx: 360
+    videoBitrateBps: 800000
+    audioBitrateBps: 160000
+    codec: h264

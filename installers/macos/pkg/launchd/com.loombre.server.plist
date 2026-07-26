@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Loombre :: /Library/LaunchDaemons/com.loombre.server.plist
+
+  LaunchDaemon (system domain), not LaunchAgent — starts at boot before any
+  login and keeps running through logout/user-switch, per
+  installers/macos/LAYOUT.md §3 ("a media server serves while logged out").
+  Runs as the dedicated `_loombre` service account (least privilege — see
+  LAYOUT.md §3), never root. All real configuration (DATABASE_URL, PORT,
+  ffmpeg paths) lives in bin/loombre-server + config/loombre.env, not here —
+  this plist stays a clean, minimal launch descriptor.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.loombre.server</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/opt/loombre/current/bin/loombre-server</string>
+  </array>
+
+  <key>UserName</key>
+  <string>_loombre</string>
+  <key>GroupName</key>
+  <string>_loombre</string>
+
+  <key>WorkingDirectory</key>
+  <string>/opt/loombre/current</string>
+
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <dict>
+    <key>SuccessfulExit</key>
+    <false/>
+    <key>Crashed</key>
+    <true/>
+  </dict>
+
+  <key>StandardOutPath</key>
+  <string>/Library/Logs/Loombre/server.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Library/Logs/Loombre/server.err.log</string>
+
+  <key>ProcessType</key>
+  <string>Interactive</string>
+
+  <key>ThrottleInterval</key>
+  <integer>10</integer>
+</dict>
+</plist>

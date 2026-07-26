@@ -1,0 +1,380 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Loombre :: apps/server/src/catalog/admin.controller.ts
+//
+// GET /admin/jobs, GET /admin/jobs/{id} (job ledger — Job schema firmed up
+// this wave, packages/contract/openapi.yaml), GET /system/info (admin).
+//
+// GET /admin/sessions (STATE.md P2.8/deliverable E, websocket-presence
+// lane): admin-only session-list feed. Item display fields are resolved
+// through THIS ADMIN'S OWN ViewerContext (resolveViewer) — never a
+// synthetic "admin sees everything" context — because plan §6.4 gate 4/5
+// default-denies even admins; see listActiveSessionsAdmin's doc comment
+// (packages/db/src/query/admin.ts) for the exact redaction contract this
+// mirrors verbatim into the wire response. `plan`/`engineVersion` on the
+// mapped row are additive wire fields beyond the frozen (this wave)
+// AdminSession contract schema — see listActiveSessionsAdmin's own doc
+// comment on AdminSessionRow.plan for the full discovered-gap writeup;
+// they follow the exact same redact-not-omit rule as itemTitle.
+//
+// GET /system/update (STATE.md P4.3/P4.16, release lane): admin-only
+// notify-only update check. Co-located with GET /system/info — both are
+// the contract's only two admin-only /system/* endpoints (GET /system/
+// capabilities is public and lives in session/system.controller.ts
+// instead). Never triggers a download, never auto-applies anything — see
+// apps/server/src/common/update-check/perform-check.ts's header.
+//
+// GET /admin/capabilities, GET /admin/crash-files(+/{name}), GET
+// /admin/logs/tail (Phase 4 deliverable D, this wave): see
+// admin-crash-files.ts and admin-logs-tail.ts for the filesystem-facing
+// implementations this controller is a thin, admin-gated HTTP wrapper
+// around.
+
+import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Query, Req, Res } from "@nestjs/common";
+import type { Response } from "express";
+import {
+  getCurrentHwCapabilitySnapshot,
+  getEnrichableCatalogItemForAdmin,
+  getJobAdmin,
+  getLibraryByIdAdmin,
+  listActiveSessionsAdmin,
+  listJobsAdmin,
+  listLibraryPathsAdmin,
+  listUnmatchedLibraryItemsForViewer,
+  type AdminSessionRow,
+  type HwPlatform,
+  type JobRow,
+} from "@loombre/db";
+import { LOOMBRE_VERSION_FULL } from "@loombre/shared";
+import os from "node:os";
+import { forbidden, notFound, unprocessableEntity } from "../gateway/problem.exception.js";
+import { requireUuidParam } from "../gateway/require-uuid-param.js";
+import { sanitizeInstancePath } from "../gateway/sanitize-instance.js";
+import type { AuthenticatedRequest } from "../gateway/auth.guard.js";
+import { DbProvider } from "../common/db.provider.js";
+import { ViewerContextProvider } from "../common/viewer-context.provider.js";
+import { JobQueueProvider } from "../common/job-queue.provider.js";
+import { UpdateCheckService } from "../common/update-check/update-check.service.js";
+import { resolveAppPaths } from "../cli/app-paths.js";
+import { isValidCrashFileName, listCrashFileMetas, readCrashFileContent } from "./admin-crash-files.js";
+import { tailLogFile } from "./admin-logs-tail.js";
+import { computeStoragePool } from "./admin-storage-pool.js";
+import { parseListQuery, resolveViewer } from "./viewer.js";
+
+function mapJob(row: JobRow) {
+  return {
+    id: row.id,
+    type: row.type,
+    status: row.status,
+    priority: row.priority,
+    attempts: row.attempts,
+    lastError: row.last_error,
+    subjectItemId: row.subject_item_id,
+    createdAtMs: row.created_at_ms,
+    updatedAtMs: row.updated_at_ms,
+    startedAtMs: row.started_at_ms,
+    finishedAtMs: row.finished_at_ms,
+  };
+}
+
+function requireAdmin(req: AuthenticatedRequest): void {
+  if (!req.user?.isAdmin) {
+    throw forbidden("Admin privileges are required for this operation.", req.originalUrl);
+  }
+}
+
+function mapOs(platform: NodeJS.Platform): "linux" | "macos" | "windows" {
+  if (platform === "darwin") return "macos";
+  if (platform === "win32") return "windows";
+  return "linux";
+}
+
+function mapAdminSession(row: AdminSessionRow) {
+  return {
+    id: row.id,
+    userId: row.userId,
+    username: row.username,
+    deviceId: row.deviceId,
+    deviceName: row.deviceName,
+    itemId: row.itemId,
+    itemTitle: row.itemTitle,
+    contentHidden: row.contentHidden,
+    status: row.status,
+    startedAtMs: row.startedAtMs,
+    updatedAtMs: row.updatedAtMs,
+    lastHeartbeatMs: row.lastHeartbeatMs,
+    // Additive wire fields beyond the frozen AdminSession contract schema
+    // — see this file's header and AdminSessionRow.plan's doc comment
+    // (packages/db/src/query/admin.ts).
+    plan: row.plan,
+    engineVersion: row.engineVersion,
+  };
+}
+
+/** Node's os.platform() values the hardware-capability probe supports
+ *  (mirrors apps/server/src/playback/resolve-caps.ts's identical, smaller-
+ *  scoped SUPPORTED_HW_PLATFORMS constant — kept as a separate literal
+ *  here rather than importing that module's private array, since exporting
+ *  it there for exactly one other caller would widen that file's surface
+ *  for no benefit). */
+function isHwPlatform(platform: NodeJS.Platform): platform is HwPlatform {
+  return platform === "darwin" || platform === "linux" || platform === "win32";
+}
+
+@Controller()
+export class AdminController {
+  constructor(
+    private readonly dbProvider: DbProvider,
+    private readonly viewerContextProvider: ViewerContextProvider,
+    private readonly updateCheckService: UpdateCheckService,
+    private readonly jobQueueProvider: JobQueueProvider,
+  ) {}
+
+  @Get("admin/jobs")
+  async listJobs(@Query() query: Record<string, unknown>, @Req() req: AuthenticatedRequest) {
+    requireAdmin(req);
+    const { cursor, limit } = parseListQuery(query);
+    const page = await listJobsAdmin(this.dbProvider.db, {
+      ...(cursor !== undefined ? { cursor } : {}),
+      ...(limit !== undefined ? { limit } : {}),
+    });
+    return { items: page.rows.map(mapJob), nextCursor: page.nextCursor };
+  }
+
+  @Get("admin/jobs/:id")
+  async getJob(@Param("id") id: string, @Req() req: AuthenticatedRequest) {
+    requireAdmin(req);
+    requireUuidParam(id, "Job not found.", req.originalUrl);
+    const job = await getJobAdmin(this.dbProvider.db, id);
+    if (!job) {
+      throw notFound("Job not found.", req.originalUrl);
+    }
+    return mapJob(job);
+  }
+
+  @Get("admin/sessions")
+  async listSessions(@Query() query: Record<string, unknown>, @Req() req: AuthenticatedRequest) {
+    requireAdmin(req);
+    const ctx = await resolveViewer(this.viewerContextProvider, req);
+    const { cursor, limit } = parseListQuery(query);
+    const page = await listActiveSessionsAdmin(this.dbProvider.db, ctx, {
+      ...(cursor !== undefined ? { cursor } : {}),
+      ...(limit !== undefined ? { limit } : {}),
+    });
+    return { items: page.rows.map(mapAdminSession), nextCursor: page.nextCursor };
+  }
+
+  @Get("system/info")
+  async getSystemInfo(@Req() req: AuthenticatedRequest) {
+    requireAdmin(req);
+    // Wave 1c (Phosphor retheme, "contract enablers" lane): storagePool —
+    // every library's root paths (admin-only, unfiltered by
+    // ViewerContext — see listLibraryPathsAdmin's own doc comment for why
+    // disk capacity isn't a restricted-content leak class), reduced to
+    // deduped total/used bytes by computeStoragePool's two cheap syscalls
+    // per distinct filesystem (Tier-0 rule). Null when there are no
+    // libraries yet or every probe failed — rendered honestly, never
+    // fabricated.
+    const libraries = await listLibraryPathsAdmin(this.dbProvider.db);
+    const allLibraryPaths = libraries.flatMap((library) => library.paths);
+    const storagePool = await computeStoragePool(allLibraryPaths);
+
+    return {
+      // STATE.md P4.11: single-source version stamping. LOOMBRE_VERSION_FULL
+      // is generated by scripts/release/stamp-version.mjs from root
+      // package.json's `version` field — "<version>-dev+<shorthash>" for a
+      // dev build, exactly "<version>" for a `--release` build. Same
+      // constant `loombre --version` and the release manifest builder read.
+      version: LOOMBRE_VERSION_FULL,
+      os: mapOs(os.platform()),
+      // Tier detection (docs/PLAN.md §9, Tier-0/1/2 hardware classes) is a
+      // future wave; Tier-0 is the safe floor default until it lands.
+      tier: 0,
+      nodeVersion: process.version,
+      uptimeMs: Math.round(process.uptime() * 1000),
+      storagePool,
+    };
+  }
+
+  @Get("system/update")
+  async getSystemUpdate(@Req() req: AuthenticatedRequest) {
+    requireAdmin(req);
+    return this.updateCheckService.getUpdateInfo();
+  }
+
+  @Get("admin/capabilities")
+  async getAdminCapabilities(@Req() req: AuthenticatedRequest) {
+    requireAdmin(req);
+    const currentPlatform = os.platform();
+    if (!isHwPlatform(currentPlatform)) {
+      // Unsupported platform for hw-capability probing at all (matches
+      // resolve-caps.ts's own fallback posture) — same envelope shape as
+      // "never probed yet": there is no report to show.
+      return { report: null };
+    }
+
+    const snapshot = await getCurrentHwCapabilitySnapshot(this.dbProvider.db, currentPlatform);
+    if (!snapshot) {
+      return { report: null };
+    }
+
+    return {
+      report: {
+        platform: mapOs(currentPlatform),
+        ffmpegBuildHash: snapshot.ffmpegBuildHash,
+        // DB default is '' (best-effort probe command failure, migrations/
+        // 0011's own column comment) — the contract's gpuFingerprint is
+        // documented null for exactly that case.
+        gpuFingerprint: snapshot.gpuFingerprint.length > 0 ? snapshot.gpuFingerprint : null,
+        verifiedAtMs: snapshot.verifiedAtMs,
+        backends: snapshot.backends.map((b) => ({
+          name: b.backend,
+          position: b.position,
+          decode: b.decode,
+          encode: b.encode,
+          toneMap: b.toneMap,
+        })),
+      },
+    };
+  }
+
+  @Get("admin/crash-files")
+  listCrashFiles(@Req() req: AuthenticatedRequest) {
+    requireAdmin(req);
+    const { dataDir } = resolveAppPaths(process.platform, process.env);
+    return { items: listCrashFileMetas(dataDir) };
+  }
+
+  @Get("admin/crash-files/:name")
+  getCrashFile(@Param("name") name: string, @Req() req: AuthenticatedRequest, @Res() res: Response): void {
+    requireAdmin(req);
+    // Reject BEFORE ever touching the filesystem with a caller-supplied
+    // name — readCrashFileContent re-checks this same pattern internally
+    // (defense in depth, admin-crash-files.ts's header), but the 404 here
+    // is what makes a hostile name indistinguishable from "no such file"
+    // at the HTTP layer, never a 400/500 that would hint at the rejection
+    // reason.
+    if (!isValidCrashFileName(name)) {
+      throw notFound("Crash file not found.", sanitizeInstancePath(req));
+    }
+    const { dataDir } = resolveAppPaths(process.platform, process.env);
+    const content = readCrashFileContent(dataDir, name);
+    if (content === null) {
+      throw notFound("Crash file not found.", sanitizeInstancePath(req));
+    }
+    res.status(200);
+    res.setHeader("Content-Type", "text/plain; charset=utf-8");
+    res.send(content);
+  }
+
+  @Get("admin/logs/tail")
+  async getAdminLogsTail(@Query() query: Record<string, unknown>, @Req() req: AuthenticatedRequest) {
+    requireAdmin(req);
+    const lines = parseLinesQuery(query["lines"]);
+    return tailLogFile(process.env["LOOMBRE_LOG_FILE"], lines);
+  }
+
+  // ────────── Fix Match (Phosphor retheme Wave 2, Lane L2) ──────────
+
+  @Get("admin/libraries/:id/unmatched")
+  async listUnmatchedLibraryItems(
+    @Param("id") id: string,
+    @Query() query: Record<string, unknown>,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    requireAdmin(req);
+    requireUuidParam(id, "Library not found.", req.originalUrl);
+    // Admin-bypass existence check (matches scanLibrary/putLibraryPermissions
+    // precedent, libraries.controller.ts) — the LIST itself is still
+    // ViewerContext-guarded below (listUnmatchedLibraryItemsForViewer), so
+    // an admin without a library_permissions grant for this exact library
+    // gets a 404-free empty page, not a leak.
+    const library = await getLibraryByIdAdmin(this.dbProvider.db, id);
+    if (!library) {
+      throw notFound("Library not found.", req.originalUrl);
+    }
+    const ctx = await resolveViewer(this.viewerContextProvider, req);
+    const { cursor, limit } = parseListQuery(query);
+    const page = await listUnmatchedLibraryItemsForViewer(this.dbProvider.db, ctx, id, {
+      ...(cursor !== undefined ? { cursor } : {}),
+      ...(limit !== undefined ? { limit } : {}),
+    });
+    return {
+      items: page.rows.map((row) => ({
+        itemId: row.itemId,
+        itemType: row.itemType,
+        title: row.title,
+        year: row.year,
+        filePath: row.filePath,
+      })),
+      nextCursor: page.nextCursor,
+    };
+  }
+
+  @Post("admin/items/:id/match-search")
+  @HttpCode(HttpStatus.ACCEPTED)
+  async searchItemMatchCandidates(@Param("id") id: string, @Req() req: AuthenticatedRequest) {
+    requireAdmin(req);
+    requireUuidParam(id, "Item not found.", req.originalUrl);
+    const item = await getEnrichableCatalogItemForAdmin(this.dbProvider.db, id);
+    if (!item) {
+      throw notFound("Item not found (or not an enrichable type — movie/series/artist/album only).", req.originalUrl);
+    }
+    const jobId = await this.jobQueueProvider.queue.enqueue("metadata-search", { itemId: id }, { subjectItemId: id });
+    return { jobId };
+  }
+
+  @Post("admin/items/:id/apply-match")
+  @HttpCode(HttpStatus.ACCEPTED)
+  async applyItemMatch(
+    @Param("id") id: string,
+    @Body() rawBody: Record<string, unknown> | undefined,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    requireAdmin(req);
+    requireUuidParam(id, "Item not found.", req.originalUrl);
+    const instance = req.originalUrl;
+    const item = await getEnrichableCatalogItemForAdmin(this.dbProvider.db, id);
+    if (!item) {
+      throw notFound("Item not found (or not an enrichable type — movie/series/artist/album only).", instance);
+    }
+
+    const body = rawBody ?? {};
+    if (typeof body["provider"] !== "string" || body["provider"].length === 0) {
+      throw unprocessableEntity("provider is required.", instance);
+    }
+    if (typeof body["externalId"] !== "string" || body["externalId"].length === 0) {
+      throw unprocessableEntity("externalId is required.", instance);
+    }
+
+    // Rides the EXISTING 'metadata' job/consumer (forceRef, additive) —
+    // never a bespoke apply-match pipeline; re-fetches provider details +
+    // artwork for EXACTLY this ref through the same precedence engine
+    // every scan-triggered metadata job already uses. Never touches the
+    // original media file.
+    const jobId = await this.jobQueueProvider.queue.enqueue(
+      "metadata",
+      {
+        itemId: id,
+        mediaKind: item.mediaKind,
+        contentClass: item.contentClass,
+        forceRef: { provider: body["provider"], externalId: body["externalId"] },
+      },
+      { subjectItemId: id },
+    );
+    return { jobId };
+  }
+}
+
+const DEFAULT_LOG_TAIL_LINES = 200;
+const MIN_LOG_TAIL_LINES = 1;
+const MAX_LOG_TAIL_LINES = 500;
+
+/** Same lenient posture as viewer.ts's parseListQuery: a malformed/out-of-
+ *  range `lines` falls back to the documented default rather than 422ing —
+ *  this is a display-tuning query param, not a validated write. */
+function parseLinesQuery(raw: unknown): number {
+  if (typeof raw !== "string") return DEFAULT_LOG_TAIL_LINES;
+  const n = Number.parseInt(raw, 10);
+  if (!Number.isFinite(n)) return DEFAULT_LOG_TAIL_LINES;
+  return Math.min(MAX_LOG_TAIL_LINES, Math.max(MIN_LOG_TAIL_LINES, n));
+}

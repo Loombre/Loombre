@@ -1,0 +1,50 @@
+name: "direct-play — h264 8-bit progressive, web-chrome (Stage B grid: codec x bitDepth x interlaced)"
+why: "Stage B grid case 1/20 (docs/PLAYBACK.md §3): h264 8-bit progressive is fully within web-chrome's h264 entry on every axis, so Stage B verdicts copy and the decision is direct-play with reasons=[]."
+input:
+  media:
+    fileId: file-073
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 5000000000
+    overallBitrateBps: 5160000
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 41
+        width: 1920
+        height: 1080
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 5000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 160000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device:
+    fixture: devices.web-chrome
+  network:
+    fixture: networks.local
+  policy:
+    fixture: policies.t0-default
+  caps:
+    fixture: caps.software-only
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: direct-play
+  reasons: []
+  container: source

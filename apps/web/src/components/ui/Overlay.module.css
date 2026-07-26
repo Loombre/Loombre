@@ -1,0 +1,117 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+
+/* Glass overlays (P2.7 origin; scope widened to shell chrome + cards-over-
+   ambient by P2.20). Phosphor U8 narrows `.glass` (src/styles/glass.css) to
+   exactly two surfaces — the mobile tab bar + now-playing bar — so this
+   file's dialog/menu/popover chrome no longer composes it (W3 fidelity
+   audit S6). Per tokens.css's own --color-bg-raised comment ("modals,
+   popovers, command palette"), those three become a SOLID fill instead of
+   a translucent one; the border it used to inherit from `.glass`
+   (--chrome-edge, 7%) is replaced with the slightly stronger
+   --color-border (12%) that dc:2898/2606/etc.'s own modal literal
+   (rgba(255,255,255,.14)) sits nearest to. */
+
+.scrim {
+  position: fixed;
+  inset: 0;
+  background: var(--overlay);
+  backdrop-filter: blur(3px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+/* Two distinct scrims exist in the prototype, not one: the phone BOTTOM
+   SHEET's own backdrop (dc:2355 `mobCloseSheet`, rgba(4,5,7,.5)+blur(3px))
+   is exactly tokens.css's --color-overlay + "blur 3px" comment — the
+   default above already matches it verbatim and stays correct for
+   components/ui/BottomSheet.tsx's scrim (composed via plain className,
+   not `composes`, per that file's own header — it only ADDS an opacity
+   transition on top of whatever this rule declares, so it inherits
+   whatever background/blur live here). The DESKTOP MODAL's scrim
+   (dc:2898 `closeModal` / dc:2877 command palette, rgba(5,6,8,.66)+
+   blur(8px)) is heavier and genuinely different — not a token-drift, a
+   deliberate second value. BottomSheet never renders at/above 768px (its
+   only caller, components/ui/SheetOrModal.tsx, switches to a plain
+   dialog there — tokens.css "Mobile chrome layout" is the source of truth
+   for that same 767.98px cut), so raising `.scrim`'s minimum-width variant
+   to the heavier modal value can never bleed into the sheet. */
+@media (width >= 768px) {
+  .scrim {
+    background: rgb(5 6 8 / 66%);
+    backdrop-filter: blur(8px);
+  }
+}
+
+@supports not (
+  (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))
+) {
+  .scrim {
+    background: color-mix(in srgb, var(--color-bg) 80%, transparent);
+  }
+}
+
+.dialog {
+  background: var(--color-bg-raised);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  padding: var(--space-lg);
+  min-width: 320px;
+  max-width: 90vw;
+  animation: loombre-dialog-in var(--motion-base) var(--ease-spring);
+}
+
+@keyframes loombre-dialog-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.popover {
+  background: var(--color-bg-raised);
+  border: 1px solid var(--color-border);
+  position: relative;
+  display: inline-block;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+  padding: var(--space-md);
+  animation: loombre-dialog-in var(--motion-fast) var(--ease-spring);
+}
+
+.menu {
+  background: var(--color-bg-raised);
+  border: 1px solid var(--color-border);
+  display: flex;
+  flex-direction: column;
+  min-width: 200px;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+  padding: var(--space-xs);
+  animation: loombre-dialog-in var(--motion-fast) var(--ease-spring);
+}
+
+.menuItem {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  border: none;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  border-radius: var(--radius-sm);
+  padding: var(--space-xs) var(--space-sm);
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+
+.menuItem:hover {
+  background: var(--color-surface-hover);
+}

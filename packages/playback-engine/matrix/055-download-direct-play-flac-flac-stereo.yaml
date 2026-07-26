@@ -1,0 +1,36 @@
+name: direct-play — flac container, FLAC 2ch, flac-stereo, mode=download (container already direct-playable)
+why: "Music-mode counterpart of case 054: flac IS in flac-stereo's directPlayContainers, so decision stays direct-play under mode=download."
+input:
+  media:
+    fileId: file-0055
+    container: flac
+    durationMs: 240000
+    sizeBytes: 30000000
+    overallBitrateBps: 950000
+    video: []
+    audio:
+      - index: 0
+        codec: flac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 900000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device:
+    fixture: devices.flac-stereo
+  network:
+    fixture: networks.local
+  policy:
+    fixture: policies.t0-default
+  caps:
+    fixture: caps.software-only
+  selection:
+    videoStreamIndex: null
+    audioStreamIndex: 0
+    subtitleStreamIndex: null
+  mode: download
+expect:
+  decision: direct-play
+  reasons: []

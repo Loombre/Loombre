@@ -1,0 +1,26 @@
+{
+  "name": "@loombre/provisioning",
+  "version": "0.1.0",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "description": "ProvisioningInterface (docs/PLAN.md §11, STATE.md P4.2/P4.7): the pure-type seam between the platform installer lanes and the embedded-PostgreSQL lane. Types + JSON-schema fixtures only — no I/O, no implementation.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "lint": "eslint src test --max-warnings=0",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "24.13.3",
+    "ajv": "^8.20.0"
+  }
+}

@@ -1,0 +1,61 @@
+name: "transcode — IMAGE dvbsub, device.renderImage false -> burn-in (container otherwise playable)"
+why: >
+  devices.constrained-tv declares subtitles.renderImage:false, so the IMAGE tree's AND fails on that condition alone (container playability is irrelevant once renderImage is false) -> 'burn-in' with subtitle-format-requires-burn-in. mkv is not in this device's directPlayContainers either, so Stage A ALSO fires container-not-direct-playable; Stage B copies (h264 fits), so video-transcode-for-subtitle-burn-in is appended. why (Phase 3 §11 step 3, Stage G arrival, STATE.md P3.2 regression law): this case's caps fixture has no hardware backend covering this route, so Stage G now routes full software (`software-fallback:encode`); tier 0 + a >=1080p selected source additionally trips the tier cap, narrowing the surviving ladder to <=480p rungs (`software-fallback:tier-capped`).
+
+input:
+  media:
+    fileId: file-0295
+    container: mkv
+    durationMs: 6000000
+    sizeBytes: 6000000000
+    overallBitrateBps: 5200000
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 41
+        width: 1920
+        height: 1080
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 5000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 192000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle:
+      - index: 2
+        codec: dvbsub
+        language: eng
+        isForced: false
+        isDefault: false
+        isExternal: false
+        externalPath: null
+  device: { fixture: devices.constrained-tv }
+  network: { fixture: networks.local }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.software-only }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: 2
+  mode: stream
+
+expect:
+  decision: transcode
+  reasons:
+    - container-not-direct-playable
+    - subtitle-format-requires-burn-in
+    - video-transcode-for-subtitle-burn-in
+    - software-fallback:encode
+    - software-fallback:tier-capped
+  subtitleStrategy: burn-in

@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Loombre :: installers/windows/msi/Firewall.wxs
+
+  Inbound TCP exception for the Loombre server's listen port, via the WiX v4
+  Firewall extension (WixToolset.Firewall.wixext — passed to `wix build`
+  with `-ext WixToolset.Firewall.wixext`; NuGet-restored the same way the
+  `wix` dotnet tool itself is, see build-msi.mjs).
+
+  Scope="any" (not "localSubnet"): docs/PLAN.md §10 treats remote/LAN access
+  as first-class (P9 in the plan's competitive table), and an operator
+  running Loombre for their household expects it reachable from outside
+  their immediate subnet in common home-router topologies (VPN clients,
+  guest VLANs). This is an OS-firewall INBOUND ALLOW only — it does not
+  expose anything the server wasn't already going to listen on; the
+  server's own bind address / CORS / trust-proxy posture (README.md) is the
+  actual access-control surface. IgnoreFailure="yes": a firewall rule
+  failing to register (e.g. Windows Firewall service disabled by policy)
+  must never fail the whole MSI — Loombre still works on 127.0.0.1 without
+  it, just not reachable from the LAN until the operator's own firewall
+  policy allows it.
+
+  Port is $(var.ServerPort) — the SAME preprocessor variable Services.wxs's
+  LoombreServer Environment RegistryValue uses for PORT, so the firewall
+  rule and the service's actual listen port can never drift apart from a
+  single edit in Package.wxs's <?define ServerPort?>.
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:fw="http://wixtoolset.org/schemas/v4/wxs/firewall">
+  <Fragment>
+    <ComponentGroup Id="FirewallComponents" Directory="INSTALLFOLDER">
+      <Component Id="cmp.FirewallException" Guid="*">
+        <!-- Explicit registry KeyPath rather than relying on
+             FirewallException's implicit-keypath support — cheap
+             insurance against a WiX/MSI edge case we cannot test-compile
+             on this host (no `wix build` available here; see the I3
+             report). Doubles as a simple "was the rule ever installed by
+             this MSI" marker an uninstall-support script could check. -->
+        <RegistryValue
+          Root="HKLM"
+          Key="SOFTWARE\Loombre"
+          Name="FirewallExceptionInstalled"
+          Type="integer"
+          Value="1"
+          KeyPath="yes" />
+        <fw:FirewallException
+          Id="fw.LoombreServer"
+          Name="Loombre Server"
+          Description="Inbound TCP for the Loombre media server (LAN/remote access, docs/PLAN.md §10)."
+          Port="$(var.ServerPort)"
+          Protocol="tcp"
+          Scope="any"
+          Profile="all"
+          IgnoreFailure="yes" />
+      </Component>
+    </ComponentGroup>
+  </Fragment>
+</Wix>

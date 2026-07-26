@@ -1,0 +1,52 @@
+name: 'direct-stream — mobile-placeholder: in-caps streams in mkv repackage to fmp4-hls'
+why: 'mobile-placeholder container axis: mkv is outside its mp4-only directPlayContainers while every
+  stream copies — direct-stream with the container reason alone, fmp4-hls per its supportsFmp4:true.'
+input:
+  media:
+    fileId: file-469
+    container: mkv
+    durationMs: 6000000
+    sizeBytes: 3150000000
+    overallBitrateBps: 4200000
+    video:
+    - index: 0
+      codec: h264
+      profile: high
+      level: 41
+      width: 1920
+      height: 1080
+      bitDepth: 8
+      frameRate: 29.97
+      bitrateBps: 4000000
+      hdr: none
+      dvProfile: null
+      dvBlCompatId: null
+      interlaced: false
+    audio:
+    - index: 1
+      codec: aac
+      channels: 2
+      sampleRate: 48000
+      bitrateBps: 192000
+      language: eng
+      isDefault: true
+      hasAtmos: false
+    subtitle: []
+  device:
+    fixture: devices.mobile-placeholder
+  network:
+    fixture: networks.wan-20mbps
+  policy:
+    fixture: policies.t0-default
+  caps:
+    fixture: caps.software-only
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: direct-stream
+  reasons:
+  - container-not-direct-playable
+  container: fmp4-hls

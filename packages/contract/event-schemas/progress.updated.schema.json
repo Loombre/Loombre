@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://loombre.com/schemas/events/progress.updated.schema.json",
+  "title": "ProgressUpdatedPayload",
+  "description": "Payload for envelope.type === 'progress.updated'. Emitted on each upsert to the progress table (PK user_id,item_id), including heartbeat-driven updates during playback (docs/PLAN.md §6.3).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["userId", "itemId", "positionMs", "state", "playCount", "updatedAtMs"],
+  "properties": {
+    "userId": { "type": "string", "format": "uuid" },
+    "itemId": { "type": "string", "format": "uuid" },
+    "positionMs": { "type": "integer", "minimum": 0 },
+    "state": { "type": "string", "enum": ["unplayed", "in-progress", "played"] },
+    "playCount": { "type": "integer", "minimum": 0 },
+    "updatedAtMs": { "type": "integer", "minimum": 0 }
+  }
+}

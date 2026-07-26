@@ -1,0 +1,44 @@
+name: transcode (music, gapless-degraded) — video.action stays 'none', ladder is []
+why: >
+  Distinct from cases 363/364 (music COPY/direct-stream): here the audio
+  itself transcodes (flac 6ch exceeds flac-stereo's 2ch cap ->
+  audio-channels-exceed-device + gapless-degraded, music mode), but there is
+  still no video stream at all — video.action stays 'none' regardless of
+  what Stage D did, so ladder must be [] (§5's "audio-only" carve-out
+  covers a REAL audio transcode too, not just a copy).
+
+input:
+  media:
+    fileId: file-0380
+    container: flac
+    durationMs: 240000
+    sizeBytes: 60000000
+    overallBitrateBps: 2000000
+    video: []
+    audio:
+      - index: 0
+        codec: flac
+        channels: 6
+        sampleRate: 48000
+        bitrateBps: 1800000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device: { fixture: devices.flac-stereo }
+  network: { fixture: networks.local }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.software-only }
+  selection:
+    videoStreamIndex: null
+    audioStreamIndex: 0
+    subtitleStreamIndex: null
+  mode: stream
+
+expect:
+  decision: transcode
+  reasons:
+    - audio-channels-exceed-device
+    - gapless-degraded
+  container: fmp4-hls
+  ladder: []

@@ -1,0 +1,46 @@
+name: transcode — vorbis codec absent from constrained-tv's device.audio (non-music)
+why: "constrained-tv declares only aac; a selected vorbis stream fires audio-codec-unsupported alone. Video stays genuinely within constrained-tv's caps so only the audio axis contributes."
+input:
+  media:
+    fileId: file-0232
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 6000000000
+    overallBitrateBps: 5300000
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 41
+        width: 1920
+        height: 1080
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 5000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: vorbis
+        channels: 2
+        sampleRate: 44100
+        bitrateBps: 128000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device: { fixture: devices.constrained-tv }
+  network: { fixture: networks.local }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.software-only }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: transcode
+  reasons:
+    - audio-codec-unsupported

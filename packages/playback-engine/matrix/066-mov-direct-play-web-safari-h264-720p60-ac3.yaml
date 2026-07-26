@@ -1,0 +1,49 @@
+name: direct-play — mov h264 720p60fps + ac3 6ch, web-safari (resolution/frame-rate/audio-channel variety vs cases 018/019)
+why: "Stage A (docs/PLAYBACK.md §3): mov IS in web-safari's directPlayContainers, and every SELECTED stream is copy-eligible under Stages B-F's current permissive stubs, so the decision is direct-play with reasons=[]. Every selected stream is constructed genuinely within the paired device's declared caps on every axis (matrix/README.md's case-authoring rule), so this case's expected outcome survives once Stages B-F land."
+input:
+  media:
+    fileId: file-0066
+    container: mov
+    durationMs: 6000000
+    sizeBytes: 5000000000
+    overallBitrateBps: 6400000
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 42
+        width: 1280
+        height: 720
+        bitDepth: 8
+        frameRate: 60
+        bitrateBps: 6000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: ac3
+        channels: 6
+        sampleRate: 48000
+        bitrateBps: 384000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device:
+    fixture: devices.web-safari
+  network:
+    fixture: networks.local
+  policy:
+    fixture: policies.t0-default
+  caps:
+    fixture: caps.software-only
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: direct-play
+  reasons: []

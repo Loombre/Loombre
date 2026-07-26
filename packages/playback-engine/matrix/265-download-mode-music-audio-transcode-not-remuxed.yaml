@@ -1,0 +1,35 @@
+name: transcode — mode=download, music mode, container already direct-playable, audio-only transcode — never remuxed
+why: "Container flac is in flac-stereo's directPlayContainers (Stage A silent) so the aggregated verdict comes ENTIRELY from Stage D's transcode (flac 8ch exceeds the 2ch cap, plus gapless-degraded since this is music mode). The aggregated verdict is 'transcode', never 'direct-stream', so the download-mode container-only-change remux predicate never applies — decision stays transcode."
+input:
+  media:
+    fileId: file-0265
+    container: flac
+    durationMs: 300000
+    sizeBytes: 70000000
+    overallBitrateBps: 1900000
+    video: []
+    audio:
+      - index: 0
+        codec: flac
+        channels: 8
+        sampleRate: 96000
+        bitrateBps: 1900000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device: { fixture: devices.flac-stereo }
+  network: { fixture: networks.local }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.software-only }
+  selection:
+    videoStreamIndex: null
+    audioStreamIndex: 0
+    subtitleStreamIndex: null
+  mode: download
+expect:
+  decision: transcode
+  container: fmp4-hls
+  reasons:
+    - audio-channels-exceed-device
+    - gapless-degraded

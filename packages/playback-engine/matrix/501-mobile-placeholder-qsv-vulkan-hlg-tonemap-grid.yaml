@@ -1,0 +1,72 @@
+name: 'transcode — mobile-placeholder × wan-4mbps × qsv-vulkan-only: HLG needs tone-mapping (mobile is
+  hdr10-only); qsv resolves vulkan (its opencl preference absent)'
+why: 'Grid combo (mobile-placeholder × wan-4mbps × t1-cpu-tonemap × qsv-vulkan-only): Stage C fires on
+  the hlg/hdr10-only mismatch (not refused — qsv''s toneMap is non-empty); rule (i) qsv covers hevc decode
+  + h264 targets and resolves vulkan per the ''opencl(else vulkan)'' clause against ITS OWN verified list.
+  Ladder: 8M rung dropped by both the 4.5M source bitrate and the 4M network; mobile 8M device cap moot.'
+input:
+  media:
+    fileId: file-501
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 3750000000
+    overallBitrateBps: 5000000
+    video:
+    - index: 0
+      codec: hevc
+      profile: main10
+      level: 120
+      width: 1920
+      height: 1080
+      bitDepth: 10
+      frameRate: 24
+      bitrateBps: 4500000
+      hdr: hlg
+      dvProfile: null
+      dvBlCompatId: null
+      interlaced: false
+    audio:
+    - index: 1
+      codec: aac
+      channels: 2
+      sampleRate: 48000
+      bitrateBps: 128000
+      language: eng
+      isDefault: true
+      hasAtmos: false
+    subtitle: []
+  device:
+    fixture: devices.mobile-placeholder
+  network:
+    fixture: networks.wan-4mbps
+  policy:
+    fixture: policies.t1-cpu-tonemap
+  caps:
+    fixture: caps.qsv-vulkan-only
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: transcode
+  reasons:
+  - hdr-tone-map-required
+  - hw-encoder-selected:qsv
+  ladder:
+  - heightPx: 1080
+    videoBitrateBps: 4000000
+    audioBitrateBps: 160000
+    codec: h264
+  - heightPx: 720
+    videoBitrateBps: 3000000
+    audioBitrateBps: 160000
+    codec: h264
+  - heightPx: 480
+    videoBitrateBps: 1500000
+    audioBitrateBps: 160000
+    codec: h264
+  - heightPx: 360
+    videoBitrateBps: 800000
+    audioBitrateBps: 160000
+    codec: h264

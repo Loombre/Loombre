@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Loombre :: installers/windows/msi/Package.wxs
+
+  Top-level WiX v4 authoring for the Windows MSI (STATE.md P4.1/P4.9,
+  docs/PLAN.md §11). Linked together with Directories.wxs, Files.wxs,
+  Services.wxs, Firewall.wxs, Shortcuts.wxs by build-msi.mjs's `wix build`
+  invocation — see that script's header for the exact command line
+  (preprocessor -d values, -ext extension references).
+
+  Per-machine, upgrade-safe: Package/@Scope="perMachine" + a STABLE
+  UpgradeCode (never changes across releases, see below) + <MajorUpgrade>
+  is the whole of WiX's "install v2 cleanly replaces v1" contract — no
+  custom upgrade logic needed. ProductVersion is re-derived every build
+  from root package.json (P4.11 single-source-of-version) via
+  -d ProductVersion=… ; the MSI's own ProductCode is left to WiX's default
+  per-build auto-generation (omit Package/@Id — WiX v4 defaults to "*",
+  meaning "new GUID every build"), which is exactly what a MajorUpgrade
+  needs: ProductCode MUST differ build-to-build for the standard major-
+  upgrade pattern to detect "a different, newer product" at all.
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:fw="http://wixtoolset.org/schemas/v4/wxs/firewall">
+
+  <!-- ========================================================================
+       UpgradeCode: 5F8B7B26-A5C5-4AA4-B2F1-09DB733A5719
+
+       Generated ONCE for this MSI (uuidgen, this lane, this build) and
+       committed here as a literal constant. THIS VALUE MUST NEVER CHANGE —
+       it is the sole identity MajorUpgrade uses to recognize "an earlier
+       Loombre install" across every future version. Recorded again in the
+       I3 report for visibility outside this file.
+       ==================================================================== -->
+  <?define UpgradeCode = "5F8B7B26-A5C5-4AA4-B2F1-09DB733A5719" ?>
+
+  <!-- Single source of truth for the server's listen port, shared by
+       Services.wxs's Environment RegistryValue and Firewall.wxs's
+       FirewallException — see Firewall.wxs's header. Overridable via
+       `wix build -d ServerPort=…` for anyone who needs a non-default port
+       without hand-editing source; build-msi.mjs does not override it
+       today (ships the same 3001 default apps/server/src/main.ts itself
+       falls back to). -->
+  <?ifndef ServerPort ?>
+    <?define ServerPort = "3001" ?>
+  <?endif ?>
+
+  <Package
+    Name="Loombre"
+    Manufacturer="Loombre"
+    Version="$(var.ProductVersion)"
+    UpgradeCode="$(var.UpgradeCode)"
+    Language="1033"
+    Scope="perMachine"
+    InstallerVersion="500">
+
+    <SummaryInformation Keywords="Loombre" Description="Loombre media server installer" Manufacturer="Loombre" />
+
+    <!-- P4.1: UNSIGNED dev-mode posture — no Authenticode certificate
+         exists for this build (no revenue, no telemetry; trust is
+         delivered via checksum + minisign per P4.9/docs/install/windows.md).
+         This MSI is therefore expected to trigger SmartScreen on first run
+         of the downloaded file AND on first service/tray launch — that is
+         the documented, honest v1 experience, not a bug to silently work
+         around. build-msi.mjs's sign step calls installers/sign-hook.mjs
+         (lane I1, no-op today) AFTER `wix build` produces this .msi, so
+         adding a real certificate later is a pipeline change, not a
+         rework of this authoring. -->
+
+    <MajorUpgrade
+      DowngradeErrorMessage="A newer version of [ProductName] is already installed. Uninstall it first if you need to downgrade."
+      Schedule="afterInstallInitialize" />
+
+    <MediaTemplate EmbedCab="yes" />
+
+    <!-- ProgramData\Loombre\{data,logs,pgdata} must exist even on a bare
+         install before any service has run once (LoombreServiceHost writes
+         its log file lazily but the ServiceInstall log-path argument's
+         PARENT directory must already exist; embedded-PG provisioning, once lane B lands,
+         expects its dataDir to pre-exist too, matching
+         packages/provisioning's "caller resolves the path, this package
+         never creates directories" convention). Left at DEFAULT ACL
+         inheritance from %ProgramData% (SYSTEM/Administrators full
+         control, Users read — Windows' own out-of-the-box default for
+         that folder) rather than hand-authored PermissionEx entries: the
+         services run as LocalSystem (full access regardless) and the tray
+         only needs to READ inside this tree — see the I3 report's flagged
+         finding about the discovery/token file's 0600-vs-Windows-ACL gap,
+         which is a SERVER-side (not installer-side) concern. -->
+    <ComponentGroup Id="AppDataFolders">
+      <Component Id="cmp.AppDataDataFolder" Directory="APPDATA_DATA" Guid="*">
+        <CreateFolder />
+      </Component>
+      <Component Id="cmp.AppDataLogsFolder" Directory="APPDATA_LOGS" Guid="*">
+        <CreateFolder />
+      </Component>
+      <Component Id="cmp.AppDataPgdataFolder" Directory="APPDATA_PGDATA" Guid="*">
+        <CreateFolder />
+      </Component>
+    </ComponentGroup>
+
+    <Feature Id="Main" Title="Loombre" Level="1" AllowAbsent="no" AllowAdvertise="no">
+      <ComponentGroupRef Id="ServerFiles" />
+      <ComponentGroupRef Id="WorkerFiles" />
+      <ComponentGroupRef Id="WebFiles" />
+      <ComponentGroupRef Id="NodeRuntimeFiles" />
+      <ComponentGroupRef Id="FfmpegFiles" />
+      <ComponentGroupRef Id="EmbeddedPgFiles" />
+      <ComponentGroupRef Id="TrayFiles" />
+      <ComponentGroupRef Id="ServiceComponents" />
+      <ComponentGroupRef Id="FirewallComponents" />
+      <ComponentGroupRef Id="ShortcutComponents" />
+      <ComponentGroupRef Id="AppDataFolders" />
+    </Feature>
+
+    <!-- WixToolset.Firewall.wixext supplies fw:FirewallException
+         (Firewall.wxs). No other extensions are needed: ServiceInstall/
+         ServiceControl/RegistryValue/Shortcut/CreateFolder are all core
+         v4 schema, not extension elements. -->
+  </Package>
+</Wix>

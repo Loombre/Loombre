@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics>
+<meta name="design_doc_mode" content="canvas">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Instrument+Sans:wght@400;500;600;700&family=Big+Shoulders+Display:wght@500;600;700;800&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&family=JetBrains+Mono:wght@400;500;600;700&family=Archivo:wdth,wght@62..125,100..900&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#0E0F12;font-family:'Archivo',system-ui,sans-serif;color:#E9EBEE}
+a{color:#CDF34C;text-decoration:none} a:hover{color:#fff}
+*{box-sizing:border-box}
+.dv-turn{padding:40px 44px 32px;border-bottom:1px solid rgba(255,255,255,.08);scroll-margin-top:16px}
+.dv-thd{display:flex;align-items:baseline;gap:10px;margin:0 0 8px}
+.dv-tid{font:600 10px 'IBM Plex Mono',monospace;padding:3px 7px;background:#E9EBEE;color:#0E0F12;border-radius:4px;text-decoration:none}
+.dv-tname{font:600 13px/1.2 'Archivo',sans-serif;color:#E9EBEE}
+.dv-sub{font:400 11.5px/1.5 'Archivo',sans-serif;color:rgba(233,235,238,.55);margin:0 0 24px;max-width:720px}
+.dv-opts{display:flex;flex-wrap:wrap;gap:32px;align-items:flex-start}
+.dv-opt{flex:none;display:flex;flex-direction:column;gap:10px;scroll-margin-top:16px}
+.dv-oid{font:600 10.5px 'IBM Plex Mono',monospace;padding:3px 7px;background:rgba(255,255,255,.12);color:#E9EBEE;border-radius:5px;text-decoration:none}
+.dv-oid:hover{color:#fff;background:rgba(255,255,255,.22)}
+.dv-olabel{display:flex;align-items:baseline;gap:9px;font:400 11.5px/1.3 'Archivo',sans-serif;color:rgba(233,235,238,.6)}
+.dv-card{max-width:100%;background:#fff;border:1px solid rgba(255,255,255,.1);border-radius:10px;box-shadow:0 2px 24px rgba(0,0,0,.45);overflow:hidden}
+.dv-opt:target .dv-oid{background:#CDF34C;color:#0E0F12}
+.dv-next{margin:26px 0 0;font:12px/1.5 'Archivo',sans-serif;color:rgba(233,235,238,.5)}
+</style>
+</helmet>
+
+<section class="dv-turn" id="t1">
+<div class="dv-thd"><a class="dv-tid" href="#t1">1</a><span class="dv-tname">Three alternate visual directions — same Home content, same flows</span></div>
+<p class="dv-sub">Baseline for comparison is the current <strong>Phosphor</strong> direction (ink black · chartreuse · instrument readouts) living in <em>Loombre Phosphor.dc.html</em>. Each card below shows the home surface plus a player-bar fragment so you can judge type, color, and density. Pan/zoom freely.</p>
+<div class="dv-opts">
+
+<!-- ═══════════ 1a GALLERY ═══════════ -->
+<div class="dv-opt" id="1a">
+<div class="dv-olabel"><a class="dv-oid" href="#1a">1a</a><span><strong style="color:#E9EBEE">Gallery</strong> — light editorial. Your library as an art collection. Instrument Serif + oxblood on warm paper.</span></div>
+<div class="dv-card" style="width:1020px;background:#F4F1EA;color:#1C1917;font-family:'Instrument Sans',sans-serif">
+  <!-- masthead -->
+  <div style="display:flex;align-items:center;gap:26px;padding:18px 34px;border-bottom:1px solid #E3DDD1">
+    <div style="font-family:'Instrument Serif',serif;font-size:24px;letter-spacing:.14em">LOOMBRE</div>
+    <div style="display:flex;gap:20px;font-size:11px;font-weight:600;letter-spacing:.14em;color:#6E675C">
+      <span style="color:#1C1917;border-bottom:1.5px solid #7A2E2A;padding-bottom:2px">HOME</span><span>LIBRARY</span><span>MUSIC</span><span>SEARCH</span></div>
+    <div style="flex:1"></div>
+    <div style="font-size:10.5px;letter-spacing:.12em;color:#6E675C;border:1px solid #E3DDD1;border-radius:2px;padding:5px 12px">SEARCH ⌘K</div>
+    <div style="display:flex;align-items:center;gap:8px"><span style="font-size:10.5px;letter-spacing:.1em;color:#6E675C">SCANNING · 68%</span><div style="width:28px;height:28px;border-radius:50%;background:#7A2E2A;color:#F4F1EA;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700">M</div></div>
+  </div>
+  <!-- hero -->
+  <div style="display:flex;gap:44px;padding:44px 34px 40px;align-items:center">
+    <div style="flex:1;min-width:0">
+      <div style="font-size:10px;font-weight:600;letter-spacing:.22em;color:#7A2E2A;margin-bottom:14px">CONTINUE WATCHING · PAUSED ON LIVING ROOM TV · 2H AGO</div>
+      <div style="font-family:'Instrument Serif',serif;font-size:52px;line-height:1.02;margin-bottom:10px">The Relay <span style="font-style:italic;font-size:30px;color:#6E675C">— S2E4, “Signal to Noise”</span></div>
+      <p style="margin:0 0 22px;font-size:14px;line-height:1.6;color:#514B41;max-width:520px">The crew finally isolates the source — and it's closer than the array. Forty-two minutes in; twelve remain.</p>
+      <div style="display:flex;align-items:center;gap:10px;max-width:420px;margin-bottom:24px">
+        <div style="flex:1;height:2px;background:#E3DDD1"><div style="width:62%;height:100%;background:#7A2E2A"></div></div>
+        <span style="font-size:10.5px;letter-spacing:.08em;color:#6E675C">42:17 / 54:00</span></div>
+      <div style="display:flex;gap:14px;align-items:center">
+        <div style="background:#1C1917;color:#F4F1EA;padding:12px 26px;font-size:12.5px;font-weight:600;letter-spacing:.06em;cursor:pointer">▶&nbsp;&nbsp;RESUME</div>
+        <div style="border:1px solid #C9C1B2;color:#1C1917;padding:12px 22px;font-size:12.5px;font-weight:600;letter-spacing:.06em;cursor:pointer">DETAILS</div>
+        <span style="font-family:'Instrument Serif',serif;font-style:italic;font-size:13.5px;color:#7A2E2A;border-bottom:1px solid rgba(122,46,42,.4);cursor:pointer">start over instead?</span></div>
+    </div>
+    <div style="flex-shrink:0;width:210px">
+      <div style="aspect-ratio:2/3;background:linear-gradient(165deg,#8FA3A8 0%,#4A5D63 55%,#2E3B40 100%);box-shadow:0 24px 48px rgba(28,25,23,.28);position:relative">
+        <div style="position:absolute;inset:10px;border:1px solid rgba(244,241,234,.5)"></div>
+        <div style="position:absolute;left:20px;bottom:18px;color:#F4F1EA;font-family:'Instrument Serif',serif;font-size:22px;line-height:1.05">The<br>Relay</div>
+        <div style="position:absolute;top:16px;right:16px;color:rgba(244,241,234,.75);font-size:9px;letter-spacing:.2em">2022—</div>
+      </div>
+      <div style="margin-top:12px;padding-top:8px;border-top:1px solid #E3DDD1;font-size:10px;letter-spacing:.1em;color:#6E675C;line-height:1.7">SERIES · 3 SEASONS · RETURNING<br><span style="color:#A39A88">12 OF 20 EPISODES SEEN</span></div>
+    </div>
+  </div>
+  <!-- row -->
+  <div style="padding:0 34px 38px">
+    <div style="display:flex;align-items:baseline;gap:14px;border-top:1px solid #E3DDD1;padding-top:22px;margin-bottom:18px">
+      <span style="font-family:'Instrument Serif',serif;font-size:21px">Recently added</span>
+      <span style="font-size:9.5px;letter-spacing:.16em;color:#A39A88">SIX NEW THIS WEEK</span>
+      <span style="margin-left:auto;font-size:10px;letter-spacing:.14em;color:#7A2E2A;cursor:pointer">VIEW ALL →</span></div>
+    <div style="display:flex;gap:20px">
+      <div style="width:148px"><div style="aspect-ratio:2/3;background:linear-gradient(165deg,#B9A48B,#6E5A44 70%);position:relative"><div style="position:absolute;inset:8px;border:1px solid rgba(244,241,234,.45)"></div><div style="position:absolute;left:16px;bottom:14px;color:#F4F1EA;font-family:'Instrument Serif',serif;font-size:17px;line-height:1.05">Meridian</div></div><div style="margin-top:9px;font-size:11.5px;font-weight:600">Meridian</div><div style="font-size:9.5px;letter-spacing:.1em;color:#A39A88">2024 · 4K DOLBY VISION</div></div>
+      <div style="width:148px"><div style="aspect-ratio:2/3;background:linear-gradient(165deg,#A8B39A,#59634C 70%);position:relative"><div style="position:absolute;inset:8px;border:1px solid rgba(244,241,234,.45)"></div><div style="position:absolute;left:16px;bottom:14px;color:#F4F1EA;font-family:'Instrument Serif',serif;font-size:17px;line-height:1.05">The Long Static</div></div><div style="margin-top:9px;font-size:11.5px;font-weight:600">The Long Static</div><div style="font-size:9.5px;letter-spacing:.1em;color:#A39A88">2023 · 4K HDR10</div></div>
+      <div style="width:148px"><div style="aspect-ratio:2/3;background:linear-gradient(165deg,#C4917E,#7A4A3C 70%);position:relative"><div style="position:absolute;inset:8px;border:1px solid rgba(244,241,234,.45)"></div><div style="position:absolute;left:16px;bottom:14px;color:#F4F1EA;font-family:'Instrument Serif',serif;font-size:17px;line-height:1.05">Low Orbit</div></div><div style="margin-top:9px;font-size:11.5px;font-weight:600">Low Orbit</div><div style="font-size:9.5px;letter-spacing:.1em;color:#A39A88">2025 · 4K HDR10</div></div>
+      <div style="width:148px"><div style="aspect-ratio:2/3;background:linear-gradient(165deg,#9AA7B3,#4C5B66 70%);position:relative"><div style="position:absolute;inset:8px;border:1px solid rgba(244,241,234,.45)"></div><div style="position:absolute;left:16px;bottom:14px;color:#F4F1EA;font-family:'Instrument Serif',serif;font-size:17px;line-height:1.05">Glasshouse</div></div><div style="margin-top:9px;font-size:11.5px;font-weight:600">Glasshouse</div><div style="font-size:9.5px;letter-spacing:.1em;color:#A39A88">2024 · 4K DV</div></div>
+      <div style="width:148px"><div style="aspect-ratio:2/3;background:linear-gradient(165deg,#B3A0B8,#5E4C66 70%);position:relative"><div style="position:absolute;inset:8px;border:1px solid rgba(244,241,234,.45)"></div><div style="position:absolute;left:16px;bottom:14px;color:#F4F1EA;font-family:'Instrument Serif',serif;font-size:17px;line-height:1.05">Paper Suns</div></div><div style="margin-top:9px;font-size:11.5px;font-weight:600">Paper Suns</div><div style="font-size:9.5px;letter-spacing:.1em;color:#A39A88">SERIES · NEW</div></div>
+      <div style="width:148px"><div style="aspect-ratio:2/3;background:linear-gradient(165deg,#8B9E8E,#44534A 70%);position:relative"><div style="position:absolute;inset:8px;border:1px solid rgba(244,241,234,.45)"></div><div style="position:absolute;left:16px;bottom:14px;color:#F4F1EA;font-family:'Instrument Serif',serif;font-size:17px;line-height:1.05">Saltwater</div></div><div style="margin-top:9px;font-size:11.5px;font-weight:600">Saltwater</div><div style="font-size:9.5px;letter-spacing:.1em;color:#A39A88">2021 · 1080P</div></div>
+    </div>
+  </div>
+  <!-- player fragment -->
+  <div style="border-top:1px solid #E3DDD1;background:#FBF9F4;padding:16px 34px 18px">
+    <div style="font-size:9px;letter-spacing:.2em;color:#A39A88;margin-bottom:12px">PLAYER FRAGMENT</div>
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+      <div style="flex:1;height:3px;background:#E3DDD1;position:relative"><div style="width:52%;height:100%;background:#7A2E2A"></div><div style="position:absolute;left:52%;top:50%;transform:translate(-50%,-50%);width:11px;height:11px;border-radius:50%;background:#7A2E2A;border:2px solid #FBF9F4"></div></div>
+      <span style="font-size:10px;letter-spacing:.06em;color:#6E675C">1:12:03 / 2:18:44</span></div>
+    <div style="display:flex;align-items:center;gap:18px">
+      <span style="font-size:15px">⏮</span><div style="width:38px;height:38px;border-radius:50%;background:#1C1917;color:#F4F1EA;display:flex;align-items:center;justify-content:center;font-size:12px">❚❚</div><span style="font-size:15px">⏭</span>
+      <span style="font-family:'Instrument Serif',serif;font-size:15px">Meridian <span style="font-style:italic;color:#6E675C;font-size:13px">— Director's Cut</span></span>
+      <div style="flex:1"></div>
+      <span style="font-size:9.5px;letter-spacing:.12em;color:#6E675C;border:1px solid #E3DDD1;padding:4px 10px">TRUEHD 7.1</span>
+      <span style="font-size:9.5px;letter-spacing:.12em;color:#6E675C;border:1px solid #E3DDD1;padding:4px 10px">4K DV</span>
+      <span style="font-size:9.5px;letter-spacing:.12em;color:#7A2E2A;border:1px solid rgba(122,46,42,.35);padding:4px 10px">● DIRECT PLAY</span></div>
+  </div>
+</div>
+</div>
+
+<!-- ═══════════ 1b MARQUEE ═══════════ -->
+<div class="dv-opt" id="1b">
+<div class="dv-olabel"><a class="dv-oid" href="#1b">1b</a><span><strong style="color:#E9EBEE">Marquee</strong> — cinema-house luxe. Velvet noir + brass, Big Shoulders condensed, deco hairlines and symmetry.</span></div>
+<div class="dv-card" style="width:1020px;background:#100D0B;color:#F2E9DB;font-family:'Newsreader',serif">
+  <div style="display:flex">
+    <!-- rail -->
+    <div style="width:64px;flex-shrink:0;border-right:1px solid rgba(217,169,78,.22);display:flex;flex-direction:column;align-items:center;padding:20px 0;gap:22px">
+      <div style="width:34px;height:34px;border-radius:50%;border:1px solid #D9A94E;display:flex;align-items:center;justify-content:center;font-family:'Big Shoulders Display';font-weight:700;font-size:17px;color:#D9A94E;box-shadow:inset 0 0 0 3px #100D0B,inset 0 0 0 4px rgba(217,169,78,.4)">L</div>
+      <div style="width:22px;height:1px;background:rgba(217,169,78,.3)"></div>
+      <span style="color:#D9A94E;font-size:15px">⌂</span><span style="color:rgba(242,233,219,.4);font-size:15px">▦</span><span style="color:rgba(242,233,219,.4);font-size:15px">♪</span><span style="color:rgba(242,233,219,.4);font-size:15px">⌕</span>
+      <div style="flex:1"></div>
+      <span style="color:rgba(242,233,219,.4);font-size:13px">✦</span>
+      <div style="width:26px;height:26px;border-radius:50%;background:#3E2E4D;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;font-family:'Instrument Sans'">M</div>
+    </div>
+    <div style="flex:1;min-width:0">
+      <!-- hero -->
+      <div style="position:relative;padding:40px 40px 34px;text-align:center;background:radial-gradient(85% 120% at 50% -20%, rgba(217,169,78,.14), transparent 60%)">
+        <div style="display:flex;align-items:center;justify-content:center;gap:14px;margin-bottom:14px">
+          <div style="width:60px;height:1px;background:linear-gradient(90deg,transparent,rgba(217,169,78,.6))"></div>
+          <span style="font-family:'Instrument Sans';font-size:9.5px;font-weight:600;letter-spacing:.32em;color:#D9A94E">NOW SHOWING · CONTINUE</span>
+          <div style="width:60px;height:1px;background:linear-gradient(270deg,transparent,rgba(217,169,78,.6))"></div></div>
+        <div style="font-family:'Big Shoulders Display';font-weight:800;font-size:74px;line-height:.92;letter-spacing:.03em;margin-bottom:8px">THE RELAY</div>
+        <div style="font-style:italic;font-size:16px;color:rgba(242,233,219,.75);margin-bottom:18px">Season Two, Episode Four — “Signal to Noise”</div>
+        <div style="display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:22px">
+          <span style="color:rgba(217,169,78,.7);font-size:8px">◆</span>
+          <div style="width:300px;height:2px;background:rgba(242,233,219,.14);position:relative"><div style="width:62%;height:100%;background:#D9A94E"></div></div>
+          <span style="color:rgba(217,169,78,.7);font-size:8px">◆</span>
+          <span style="font-family:'Instrument Sans';font-size:10px;letter-spacing:.14em;color:rgba(242,233,219,.55)">42:17 REMAINING ON LIVING ROOM TV</span></div>
+        <div style="display:flex;justify-content:center;gap:14px">
+          <div style="background:#D9A94E;color:#100D0B;padding:13px 34px;font-family:'Instrument Sans';font-size:12px;font-weight:700;letter-spacing:.18em;cursor:pointer">▶ RESUME</div>
+          <div style="border:1px solid rgba(217,169,78,.45);color:#F2E9DB;padding:13px 26px;font-family:'Instrument Sans';font-size:12px;font-weight:600;letter-spacing:.18em;cursor:pointer">DETAILS</div></div>
+      </div>
+      <!-- row -->
+      <div style="padding:6px 40px 34px">
+        <div style="display:flex;align-items:center;gap:16px;margin-bottom:20px">
+          <span style="font-family:'Big Shoulders Display';font-weight:700;font-size:22px;letter-spacing:.06em">RECENTLY ADDED</span>
+          <div style="flex:1;height:1px;background:rgba(217,169,78,.22)"></div>
+          <span style="font-family:'Instrument Sans';font-size:9.5px;letter-spacing:.2em;color:#D9A94E;cursor:pointer">ALL ✦</span></div>
+        <div style="display:flex;gap:18px">
+          <div style="width:152px"><div style="aspect-ratio:2/3;background:linear-gradient(170deg,#5C2E2A,#241110 75%);position:relative"><div style="position:absolute;top:9px;left:9px;width:14px;height:14px;border-top:1px solid rgba(217,169,78,.8);border-left:1px solid rgba(217,169,78,.8)"></div><div style="position:absolute;bottom:9px;right:9px;width:14px;height:14px;border-bottom:1px solid rgba(217,169,78,.8);border-right:1px solid rgba(217,169,78,.8)"></div><div style="position:absolute;left:0;right:0;bottom:16px;text-align:center;font-family:'Big Shoulders Display';font-weight:700;font-size:19px;letter-spacing:.08em">MERIDIAN</div></div><div style="margin-top:9px;text-align:center;font-family:'Instrument Sans';font-size:9px;letter-spacing:.18em;color:rgba(242,233,219,.5)">2024 · 4K DV</div></div>
+          <div style="width:152px"><div style="aspect-ratio:2/3;background:linear-gradient(170deg,#4A4430,#1D1A0F 75%);position:relative"><div style="position:absolute;top:9px;left:9px;width:14px;height:14px;border-top:1px solid rgba(217,169,78,.8);border-left:1px solid rgba(217,169,78,.8)"></div><div style="position:absolute;bottom:9px;right:9px;width:14px;height:14px;border-bottom:1px solid rgba(217,169,78,.8);border-right:1px solid rgba(217,169,78,.8)"></div><div style="position:absolute;left:0;right:0;bottom:16px;text-align:center;font-family:'Big Shoulders Display';font-weight:700;font-size:17px;letter-spacing:.08em;line-height:1.05">THE LONG<br>STATIC</div></div><div style="margin-top:9px;text-align:center;font-family:'Instrument Sans';font-size:9px;letter-spacing:.18em;color:rgba(242,233,219,.5)">2023 · 4K HDR</div></div>
+          <div style="width:152px"><div style="aspect-ratio:2/3;background:linear-gradient(170deg,#2E3D4A,#10161D 75%);position:relative"><div style="position:absolute;top:9px;left:9px;width:14px;height:14px;border-top:1px solid rgba(217,169,78,.8);border-left:1px solid rgba(217,169,78,.8)"></div><div style="position:absolute;bottom:9px;right:9px;width:14px;height:14px;border-bottom:1px solid rgba(217,169,78,.8);border-right:1px solid rgba(217,169,78,.8)"></div><div style="position:absolute;left:0;right:0;bottom:16px;text-align:center;font-family:'Big Shoulders Display';font-weight:700;font-size:19px;letter-spacing:.08em">LOW ORBIT</div></div><div style="margin-top:9px;text-align:center;font-family:'Instrument Sans';font-size:9px;letter-spacing:.18em;color:rgba(242,233,219,.5)">2025 · 4K HDR</div></div>
+          <div style="width:152px"><div style="aspect-ratio:2/3;background:linear-gradient(170deg,#3A4A3E,#141D17 75%);position:relative"><div style="position:absolute;top:9px;left:9px;width:14px;height:14px;border-top:1px solid rgba(217,169,78,.8);border-left:1px solid rgba(217,169,78,.8)"></div><div style="position:absolute;bottom:9px;right:9px;width:14px;height:14px;border-bottom:1px solid rgba(217,169,78,.8);border-right:1px solid rgba(217,169,78,.8)"></div><div style="position:absolute;left:0;right:0;bottom:16px;text-align:center;font-family:'Big Shoulders Display';font-weight:700;font-size:19px;letter-spacing:.08em">GLASSHOUSE</div></div><div style="margin-top:9px;text-align:center;font-family:'Instrument Sans';font-size:9px;letter-spacing:.18em;color:rgba(242,233,219,.5)">2024 · 4K DV</div></div>
+          <div style="width:152px"><div style="aspect-ratio:2/3;background:linear-gradient(170deg,#4A3050,#1A1020 75%);position:relative"><div style="position:absolute;top:9px;left:9px;width:14px;height:14px;border-top:1px solid rgba(217,169,78,.8);border-left:1px solid rgba(217,169,78,.8)"></div><div style="position:absolute;bottom:9px;right:9px;width:14px;height:14px;border-bottom:1px solid rgba(217,169,78,.8);border-right:1px solid rgba(217,169,78,.8)"></div><div style="position:absolute;left:0;right:0;bottom:16px;text-align:center;font-family:'Big Shoulders Display';font-weight:700;font-size:19px;letter-spacing:.08em">PAPER SUNS</div></div><div style="margin-top:9px;text-align:center;font-family:'Instrument Sans';font-size:9px;letter-spacing:.18em;color:rgba(242,233,219,.5)">SERIES · NEW</div></div>
+        </div>
+      </div>
+      <!-- player fragment -->
+      <div style="border-top:1px solid rgba(217,169,78,.22);background:#15110D;padding:15px 40px 17px">
+        <div style="font-family:'Instrument Sans';font-size:8.5px;letter-spacing:.26em;color:rgba(217,169,78,.6);margin-bottom:11px">PLAYER FRAGMENT</div>
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px">
+          <div style="flex:1;height:2px;background:rgba(242,233,219,.12);position:relative"><div style="width:52%;height:100%;background:#D9A94E"></div><div style="position:absolute;left:52%;top:50%;transform:translate(-50%,-50%) rotate(45deg);width:9px;height:9px;background:#D9A94E"></div></div>
+          <span style="font-family:'Instrument Sans';font-size:10px;letter-spacing:.1em;color:rgba(242,233,219,.6)">1:12:03 / 2:18:44</span></div>
+        <div style="display:flex;align-items:center;gap:18px">
+          <span style="color:rgba(242,233,219,.6)">⏮</span><div style="width:38px;height:38px;border-radius:50%;border:1px solid #D9A94E;color:#D9A94E;display:flex;align-items:center;justify-content:center;font-size:11px">❚❚</div><span style="color:rgba(242,233,219,.6)">⏭</span>
+          <span style="font-family:'Big Shoulders Display';font-weight:700;font-size:18px;letter-spacing:.06em">MERIDIAN <span style="font-family:'Newsreader';font-style:italic;font-weight:400;font-size:13px;color:rgba(242,233,219,.6);letter-spacing:0">director's cut</span></span>
+          <div style="flex:1"></div>
+          <span style="font-family:'Instrument Sans';font-size:9px;letter-spacing:.14em;color:rgba(242,233,219,.6);border:1px solid rgba(217,169,78,.3);padding:4px 10px">TRUEHD 7.1</span>
+          <span style="font-family:'Instrument Sans';font-size:9px;letter-spacing:.14em;color:#D9A94E;border:1px solid rgba(217,169,78,.5);padding:4px 10px">◆ DIRECT PLAY</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- ═══════════ 1c TERMINAL ═══════════ -->
+<div class="dv-opt" id="1c">
+<div class="dv-olabel"><a class="dv-oid" href="#1c">1c</a><span><strong style="color:#E9EBEE">Terminal</strong> — brutalist console. The whole server is an instrument: all-mono, visible grid, tables over tiles, zero radius.</span></div>
+<div class="dv-card" style="width:1020px;background:#050607;color:#E8EAED;font-family:'JetBrains Mono',monospace;border-radius:10px">
+  <!-- command bar -->
+  <div style="display:flex;align-items:center;gap:14px;padding:13px 20px;border-bottom:1px solid rgba(255,255,255,.14)">
+    <span style="color:#3FA9FF;font-weight:700;font-size:13px">▮</span>
+    <span style="font-size:12px;font-weight:600;letter-spacing:.04em">loombre://home</span>
+    <span style="font-size:10px;color:#5C6470">TAB TO SEARCH · : FOR COMMANDS</span>
+    <div style="flex:1"></div>
+    <span style="font-size:10px;color:#8B93A0">CPU 34% · GPU 12% · POOL 71% · <span style="color:#3FA9FF">3 STREAMS</span> · SCAN <span style="color:#3FA9FF">68%</span></span>
+    <span style="font-size:10px;border:1px solid rgba(255,255,255,.2);padding:2px 8px;color:#8B93A0">MAYA@LOOMBRE-01</span>
+  </div>
+  <!-- continue table -->
+  <div style="padding:18px 20px 6px">
+    <div style="font-size:10px;font-weight:700;letter-spacing:.1em;color:#5C6470;margin-bottom:8px">## CONTINUE_WATCHING <span style="color:#3FA9FF">(4)</span> — SYNCED 12S AGO</div>
+    <div style="border:1px solid rgba(255,255,255,.14)">
+      <div style="display:grid;grid-template-columns:44px 1.6fr 1fr 90px 1.2fr 140px;font-size:9.5px;color:#5C6470;border-bottom:1px solid rgba(255,255,255,.14)">
+        <span style="padding:7px 10px;border-right:1px solid rgba(255,255,255,.08)">ID</span><span style="padding:7px 10px;border-right:1px solid rgba(255,255,255,.08)">TITLE</span><span style="padding:7px 10px;border-right:1px solid rgba(255,255,255,.08)">EPISODE</span><span style="padding:7px 10px;border-right:1px solid rgba(255,255,255,.08)">POS</span><span style="padding:7px 10px;border-right:1px solid rgba(255,255,255,.08)">DEVICE</span><span style="padding:7px 10px">PROGRESS</span></div>
+      <div style="display:grid;grid-template-columns:44px 1.6fr 1fr 90px 1.2fr 140px;font-size:11px;border-bottom:1px solid rgba(255,255,255,.08);background:rgba(63,169,255,.06)">
+        <span style="padding:9px 10px;color:#5C6470;border-right:1px solid rgba(255,255,255,.08)">01</span><span style="padding:9px 10px;font-weight:700;border-right:1px solid rgba(255,255,255,.08)">THE RELAY <span style="color:#3FA9FF">▶</span></span><span style="padding:9px 10px;color:#8B93A0;border-right:1px solid rgba(255,255,255,.08)">S02E04 SIGNAL/NOISE</span><span style="padding:9px 10px;color:#8B93A0;border-right:1px solid rgba(255,255,255,.08)">42:17</span><span style="padding:9px 10px;color:#8B93A0;border-right:1px solid rgba(255,255,255,.08)">LIVING-ROOM-TV · 2H</span><span style="padding:9px 10px;color:#3FA9FF">████████░░░░ 62%</span></div>
+      <div style="display:grid;grid-template-columns:44px 1.6fr 1fr 90px 1.2fr 140px;font-size:11px;border-bottom:1px solid rgba(255,255,255,.08)">
+        <span style="padding:9px 10px;color:#5C6470;border-right:1px solid rgba(255,255,255,.08)">02</span><span style="padding:9px 10px;font-weight:700;border-right:1px solid rgba(255,255,255,.08)">MERIDIAN</span><span style="padding:9px 10px;color:#8B93A0;border-right:1px solid rgba(255,255,255,.08)">—</span><span style="padding:9px 10px;color:#8B93A0;border-right:1px solid rgba(255,255,255,.08)">1:12:03</span><span style="padding:9px 10px;color:#8B93A0;border-right:1px solid rgba(255,255,255,.08)">THIS-DEVICE · 1D</span><span style="padding:9px 10px;color:#3FA9FF">██████░░░░░░ 54%</span></div>
+      <div style="display:grid;grid-template-columns:44px 1.6fr 1fr 90px 1.2fr 140px;font-size:11px;border-bottom:1px solid rgba(255,255,255,.08)">
+        <span style="padding:9px 10px;color:#5C6470;border-right:1px solid rgba(255,255,255,.08)">03</span><span style="padding:9px 10px;font-weight:700;border-right:1px solid rgba(255,255,255,.08)">BLACKWATER SOUND</span><span style="padding:9px 10px;color:#8B93A0;border-right:1px solid rgba(255,255,255,.08)">S01E07 KING TIDE</span><span style="padding:9px 10px;color:#8B93A0;border-right:1px solid rgba(255,255,255,.08)">12:05</span><span style="padding:9px 10px;color:#8B93A0;border-right:1px solid rgba(255,255,255,.08)">PIXEL-9 · 3D</span><span style="padding:9px 10px;color:#3FA9FF">██░░░░░░░░░░ 18%</span></div>
+      <div style="display:grid;grid-template-columns:44px 1.6fr 1fr 90px 1.2fr 140px;font-size:11px">
+        <span style="padding:9px 10px;color:#5C6470;border-right:1px solid rgba(255,255,255,.08)">04</span><span style="padding:9px 10px;font-weight:700;border-right:1px solid rgba(255,255,255,.08)">HALF LIGHT</span><span style="padding:9px 10px;color:#8B93A0;border-right:1px solid rgba(255,255,255,.08)">—</span><span style="padding:9px 10px;color:#8B93A0;border-right:1px solid rgba(255,255,255,.08)">23:40</span><span style="padding:9px 10px;color:#8B93A0;border-right:1px solid rgba(255,255,255,.08)">BEDROOM-TV · 1W</span><span style="padding:9px 10px;color:#3FA9FF">███░░░░░░░░░ 21%</span></div>
+    </div>
+  </div>
+  <!-- grid -->
+  <div style="padding:16px 20px 20px">
+    <div style="font-size:10px;font-weight:700;letter-spacing:.1em;color:#5C6470;margin-bottom:8px">## RECENTLY_ADDED <span style="color:#3FA9FF">(6)</span> — SCAN #412 · 2H AGO</div>
+    <div style="display:grid;grid-template-columns:repeat(6,1fr);border:1px solid rgba(255,255,255,.14)">
+      <div style="border-right:1px solid rgba(255,255,255,.14);padding:10px"><div style="aspect-ratio:2/3;background:linear-gradient(160deg,#1E3A52,#0A1522 75%);position:relative"><div style="position:absolute;left:8px;bottom:8px;font-weight:700;font-size:11px;line-height:1.2">MERIDIAN</div><div style="position:absolute;top:8px;left:8px;font-size:8px;color:#3FA9FF">[NEW]</div></div><div style="margin-top:7px;font-size:9px;color:#8B93A0">2024 · HEVC · <span style="color:#3FA9FF">4K-DV</span></div></div>
+      <div style="border-right:1px solid rgba(255,255,255,.14);padding:10px"><div style="aspect-ratio:2/3;background:linear-gradient(160deg,#2E4235,#101A13 75%);position:relative"><div style="position:absolute;left:8px;bottom:8px;font-weight:700;font-size:11px;line-height:1.2">THE LONG STATIC</div><div style="position:absolute;top:8px;left:8px;font-size:8px;color:#3FA9FF">[NEW]</div></div><div style="margin-top:7px;font-size:9px;color:#8B93A0">2023 · HEVC · 4K-HDR</div></div>
+      <div style="border-right:1px solid rgba(255,255,255,.14);padding:10px"><div style="aspect-ratio:2/3;background:linear-gradient(160deg,#3D2E4A,#150F1D 75%);position:relative"><div style="position:absolute;left:8px;bottom:8px;font-weight:700;font-size:11px;line-height:1.2">LOW ORBIT</div><div style="position:absolute;top:8px;left:8px;font-size:8px;color:#3FA9FF">[NEW]</div></div><div style="margin-top:7px;font-size:9px;color:#8B93A0">2025 · AV1 · 4K-HDR</div></div>
+      <div style="border-right:1px solid rgba(255,255,255,.14);padding:10px"><div style="aspect-ratio:2/3;background:linear-gradient(160deg,#28424A,#0E181D 75%);position:relative"><div style="position:absolute;left:8px;bottom:8px;font-weight:700;font-size:11px;line-height:1.2">GLASSHOUSE</div><div style="position:absolute;top:8px;left:8px;font-size:8px;color:#3FA9FF">[NEW]</div></div><div style="margin-top:7px;font-size:9px;color:#8B93A0">2024 · HEVC · 4K-DV</div></div>
+      <div style="border-right:1px solid rgba(255,255,255,.14);padding:10px"><div style="aspect-ratio:2/3;background:linear-gradient(160deg,#4A3A2E,#1D150F 75%);position:relative"><div style="position:absolute;left:8px;bottom:8px;font-weight:700;font-size:11px;line-height:1.2">PAPER SUNS</div><div style="position:absolute;top:8px;left:8px;font-size:8px;color:#3FA9FF">[NEW]</div></div><div style="margin-top:7px;font-size:9px;color:#8B93A0">SERIES · S01 · 2EP</div></div>
+      <div style="padding:10px"><div style="aspect-ratio:2/3;background:linear-gradient(160deg,#37414A,#12181D 75%);position:relative"><div style="position:absolute;left:8px;bottom:8px;font-weight:700;font-size:11px;line-height:1.2">SALTWATER</div></div><div style="margin-top:7px;font-size:9px;color:#8B93A0">2021 · H264 · 1080P</div></div>
+    </div>
+  </div>
+  <!-- player fragment -->
+  <div style="border-top:1px solid rgba(255,255,255,.14);background:#07090B;padding:14px 20px 16px">
+    <div style="font-size:9px;letter-spacing:.1em;color:#5C6470;margin-bottom:10px">## PLAYER_FRAGMENT</div>
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:9px">
+      <span style="font-size:10px;color:#3FA9FF">▶</span>
+      <div style="flex:1;height:8px;border:1px solid rgba(255,255,255,.18);position:relative"><div style="position:absolute;inset:1px auto 1px 1px;width:52%;background:#3FA9FF"></div></div>
+      <span style="font-size:10px;color:#8B93A0">01:12:03 / 02:18:44</span></div>
+    <div style="display:flex;align-items:center;gap:14px;font-size:10px">
+      <span style="font-weight:700;font-size:11.5px">MERIDIAN.2024.DC.2160P.MKV</span>
+      <span style="color:#5C6470">|</span><span style="color:#8B93A0">VIDEO: <span style="color:#3FA9FF">DIRECT</span></span>
+      <span style="color:#8B93A0">AUDIO: <span style="color:#3FA9FF">DIRECT (TRUEHD.7.1)</span></span>
+      <span style="color:#8B93A0">NET: LAN·940M</span><span style="color:#8B93A0">CPU-COST: <span style="color:#3FA9FF">0%</span></span>
+      <div style="flex:1"></div>
+      <span style="border:1px solid rgba(255,255,255,.2);padding:3px 9px;color:#8B93A0">[A]UDIO</span>
+      <span style="border:1px solid rgba(255,255,255,.2);padding:3px 9px;color:#8B93A0">[C]C</span>
+      <span style="border:1px solid rgba(63,169,255,.5);padding:3px 9px;color:#3FA9FF">[S]IGNAL</span></div>
+  </div>
+</div>
+</div>
+
+</div>
+<p class="dv-next">Try next: "apply <a class="dv-oid" href="#1b">1b</a> to the whole prototype" · "mix — <a class="dv-oid" href="#1a">1a</a>'s type with Phosphor's dark surfaces" · "make <a class="dv-oid" href="#1c">1c</a> less severe" · "new directions"</p>
+</section>
+</x-dc>
+</body>
+</html>

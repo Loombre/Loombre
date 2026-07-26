@@ -1,0 +1,88 @@
+name: transcode — hevc swap rescues a rung from the DEVICE cap (distinct from 353's network-cap rescue)
+why: >
+  Same ordered-swap proof as 353, isolating the DEVICE cap (rule d) instead of the network cap (rule c): device.maxStreamBitrateBps is 6,000,000. The 1080p/8Mbps rung, swapped to 1080p/6Mbps/hevc (hevcEncodePreferred true + an hevc device.video entry), lands EXACTLY at the device cap and survives (6,000,000 <= 6,000,000); in its original h264/8,000,000 form it would have been dropped. Network is the generous `local` fixture so rule (c) never enters the picture — this case isolates rule (d) alone. why (Phase 3 §11 step 3, Stage G arrival, STATE.md P3.2 regression law): this case's caps fixture has no hardware backend covering this route, so Stage G now routes full software (`software-fallback:encode`); tier 0 + a >=1080p selected source additionally trips the tier cap, narrowing the surviving ladder to <=480p rungs (`software-fallback:tier-capped`). expect.ladder is tightened accordingly to the now-tier-capped surviving rungs.
+
+input:
+  media:
+    fileId: file-0385
+    container: mov
+    durationMs: 6000000
+    sizeBytes: 15000000000
+    overallBitrateBps: 20000000
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 52
+        width: 3840
+        height: 2160
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 20000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: true
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 160000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device:
+    profileId: hevc-capable-device-cap-6mbps
+    directPlayContainers: [ mp4, mov ]
+    hls: { container: fmp4, supportsFmp4: true, lowLatency: false }
+    video:
+      - codec: h264
+        maxProfile: high
+        maxLevel: 52
+        maxBitDepth: 8
+        maxWidth: 3840
+        maxHeight: 2160
+        maxFrameRate: 60
+        maxBitrateBps: null
+      - codec: hevc
+        maxProfile: main10
+        maxLevel: 153
+        maxBitDepth: 10
+        maxWidth: 3840
+        maxHeight: 2160
+        maxFrameRate: 60
+        maxBitrateBps: null
+    hdr: { hdr10: true, hlg: true, dolbyVision: true }
+    audio:
+      - codec: aac
+        maxChannels: 6
+        passthrough: false
+    subtitles: { renderText: [ webvtt ], hlsVtt: true, renderImage: false }
+    maxStreamBitrateBps: 6000000
+  network: { fixture: networks.local }
+  policy: { fixture: policies.hevc-preferred }
+  caps: { fixture: caps.software-only }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+
+expect:
+  decision: transcode
+  reasons:
+    - video-interlaced
+    - software-fallback:encode
+    - software-fallback:tier-capped
+  container: fmp4-hls
+  ladder:
+    - heightPx: 480
+      videoBitrateBps: 1125000
+      audioBitrateBps: 160000
+      codec: hevc
+    - heightPx: 360
+      videoBitrateBps: 600000
+      audioBitrateBps: 160000
+      codec: hevc

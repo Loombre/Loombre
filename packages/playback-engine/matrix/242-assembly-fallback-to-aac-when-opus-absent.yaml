@@ -1,0 +1,53 @@
+name: transcode — assembly falls back to aac when opus is absent from device.audio, no 0.75x scaling
+why: >
+  aac-only-no-opus declares no truehd entry at all, so rule 1 fires
+  audio-codec-unsupported. Assembly gap (schema can't assert audio fields):
+  policy priority [opus, aac] but opus is absent from device.audio, so
+  assembly falls back to the NEXT present priority codec, aac; that entry's
+  maxChannels=6, so targetChannels=min(8,6)=6; the 3-6ch band bitrate
+  (384000) does NOT scale for aac -> targetBitrateBps=384000. Verified
+  precisely by test/stages/audio.spec.ts.
+input:
+  media:
+    fileId: file-0242
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 6000000000
+    overallBitrateBps: 8000000
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 41
+        width: 1920
+        height: 1080
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 5000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: truehd
+        channels: 8
+        sampleRate: 48000
+        bitrateBps: 3000000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device: { fixture: devices.aac-only-no-opus }
+  network: { fixture: networks.local }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.software-only }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: transcode
+  reasons:
+    - audio-codec-unsupported

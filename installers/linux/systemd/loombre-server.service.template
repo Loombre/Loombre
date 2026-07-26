@@ -1,0 +1,44 @@
+[Unit]
+Description=Loombre media server
+Documentation=https://github.com/Loombre/Loombre
+After=network.target network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=__LOOMBRE_USER__
+Group=__LOOMBRE_USER__
+EnvironmentFile=__CONFIG_DIR__/loombre.env
+WorkingDirectory=__DATA_DIR__
+ExecStart=__PREFIX__/bin/loombre-server
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+
+# Hardening (STATE.md P4.1 / docs/PLAN.md §11 systemd unit requirement).
+# ProtectSystem=strict makes the ENTIRE filesystem read-only for this unit
+# except what's explicitly listed in ReadWritePaths below (plus PrivateTmp's
+# own private /tmp) — the app payload under __PREFIX__ never needs to write
+# to itself, only to the data dir an operator chose at install time.
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=__DATA_DIR__
+PrivateTmp=true
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+RestrictNamespaces=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RemoveIPC=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+[Install]
+WantedBy=multi-user.target

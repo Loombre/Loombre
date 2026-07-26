@@ -1,0 +1,53 @@
+name: transcode (audio-only) — channels exceed device cap, video stays copy, ladder is []
+why: >
+  Companion to 361 with a different Stage D rule (channels-exceed-device
+  rather than codec-unsupported): aac 8ch exceeds web-chrome's aac
+  maxChannels (6). video.action stays 'copy' -> ladder must be [] (§5).
+
+input:
+  media:
+    fileId: file-0362
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 2250000000
+    overallBitrateBps: 3000000
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 52
+        width: 1920
+        height: 1080
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 5000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 8
+        sampleRate: 48000
+        bitrateBps: 512000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device: { fixture: devices.web-chrome }
+  network: { fixture: networks.wan-4mbps }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.software-only }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+
+expect:
+  decision: transcode
+  reasons:
+    - audio-channels-exceed-device
+  container: fmp4-hls
+  ladder: []

@@ -1,0 +1,45 @@
+name: "transcode — music mode (no video stream), external lyrics .srt forced to burn-in — video.action stays 'none' despite the fired video-transcode reason"
+why: >
+  flac-stereo declares hlsVtt:false and renderText:[] -> the subrip lyrics sidecar burns in (subtitle-format-requires-burn-in). Stage B's OWN vacuous-pass verdict (no video stream at all) is 'direct-play' (stages/video.ts: videoStreamIndex null/media.video empty -> copy-equivalent), so per the LITERAL rule text video-transcode-for-subtitle-burn-in still fires — the SURFACED artifact documented in stages/subtitle.ts's header: the reason claims a video re-encode is needed even though there is no video track at all. plan()'s own video.action assembly correctly stays 'none' regardless (see test/stages/subtitle.spec.ts for that companion assertion) — this matrix case pins the reason list/decision/strategy only, since the matrix schema has no video.action assertion.
+
+input:
+  media:
+    fileId: file-0314
+    container: flac
+    durationMs: 6000000
+    sizeBytes: 6000000000
+    overallBitrateBps: 5200000
+    video: []
+    audio:
+      - index: 0
+        codec: flac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 192000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle:
+      - index: 1
+        codec: subrip
+        language: eng
+        isForced: false
+        isDefault: false
+        isExternal: true
+        externalPath: "/sidecars/lyrics.srt"
+  device: { fixture: devices.flac-stereo }
+  network: { fixture: networks.local }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.software-only }
+  selection:
+    videoStreamIndex: null
+    audioStreamIndex: 0
+    subtitleStreamIndex: 1
+  mode: stream
+
+expect:
+  decision: transcode
+  reasons:
+    - subtitle-format-requires-burn-in
+    - video-transcode-for-subtitle-burn-in
+  subtitleStrategy: burn-in

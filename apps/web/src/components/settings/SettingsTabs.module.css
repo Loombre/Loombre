@@ -1,0 +1,32 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+.tabs {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3xs);
+  width: 200px;
+  flex-shrink: 0;
+}
+
+.tab {
+  display: block;
+  padding: var(--space-xs) var(--space-md);
+  border-radius: var(--radius-pill);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  color: var(--muted);
+  text-decoration: none; /* UA anchor underline — H9 regression (W0's fix was .navItem-scoped only) */
+  transition:
+    background-color var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out);
+}
+
+.tab:hover {
+  background: var(--fill-3);
+  color: var(--text);
+}
+
+.tab[data-active="true"] {
+  background: color-mix(in srgb, var(--color-accent) 12%, transparent);
+  color: var(--color-accent);
+  font-weight: var(--weight-semibold);
+}

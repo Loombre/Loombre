@@ -1,0 +1,80 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+}
+
+.title {
+  font-size: var(--text-xl);
+  font-stretch: var(--wdth-title);
+  font-weight: var(--weight-black);
+  margin: 0;
+}
+
+/* LOCK NOW: header placement on desktop, a dedicated row above the grid on
+   mobile (design/phosphor/README.md, verbatim) — one handler, two CSS-
+   swapped renders rather than a single element repositioned, matching the
+   rest of the shell's dual-render convention (Sidebar vs MobileTabBar). */
+.lockNowDesktop,
+.lockNowMobile {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2xs);
+  border: 1px solid var(--color-warning);
+  background: transparent;
+  color: var(--color-warning);
+  border-radius: var(--radius-pill);
+  padding: var(--space-2xs) var(--space-md);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  cursor: pointer;
+  transition:
+    background-color var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out);
+}
+
+.lockNowMobile {
+  display: none;
+  width: 100%;
+  min-height: 44px;
+  justify-content: center;
+}
+
+.lockNowDesktop:hover,
+.lockNowMobile:hover {
+  background: var(--color-warning);
+  color: var(--color-warning-text);
+}
+
+.emptyZone {
+  border-radius: var(--radius-lg);
+  border: 1px dashed var(--color-border);
+  padding: var(--space-2xl);
+  color: var(--muted);
+  text-align: center;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
+  gap: var(--space-md);
+}
+
+@media (width <= 767.98px) {
+  .lockNowDesktop {
+    display: none;
+  }
+
+  .lockNowMobile {
+    display: flex;
+  }
+}
