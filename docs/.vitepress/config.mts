@@ -164,6 +164,7 @@ export default defineConfig({
             { text: "Playback engine & matrix law", link: "/developer-guide/architecture/playback-engine" },
             { text: "Jobs, worker & outbox", link: "/developer-guide/architecture/jobs-worker" },
             { text: "Packaging & release", link: "/developer-guide/architecture/packaging-release" },
+            { text: "Performance budgets", link: "/developer-guide/architecture/performance-budgets" },
           ],
         },
         {

@@ -216,6 +216,28 @@ one image — there is no separate web service in that distribution yet, so
 web client as its own deployment (its own container, its own static host,
 etc.) pointed at a Loombre server.
 
+## HSTS is yours, not Loombre's
+
+On this path the proxy is the browser's actual TLS endpoint, so the proxy —
+not Loombre — owns `Strict-Transport-Security`. Loombre only sends the
+header itself when it is terminating TLS AND `LOOMBRE_TRUST_PROXY` is unset;
+setting `LOOMBRE_TRUST_PROXY` (which you do here) turns it off on Loombre's
+side even if `LOOMBRE_TLS_MODE` is also non-`off`. The full rule, by
+combination, is the HSTS table in `docs/ops/acme.md`.
+
+Add it at the proxy layer instead. The nginx recipe above already carries the
+line:
+
+```nginx
+add_header Strict-Transport-Security "max-age=63072000; includeSubDomains" always;
+```
+
+The Caddy equivalent inside the site block is
+`header Strict-Transport-Security "max-age=63072000; includeSubDomains"`; on
+Traefik it's a `headers` middleware (`stsSeconds`, `stsIncludeSubdomains`).
+None of the three set it for you — HSTS is a commitment about a domain you
+own, so it stays an explicit operator decision.
+
 ## LAN-only, no TLS
 
 If Loombre never leaves a network you trust (no port-forward, no public
