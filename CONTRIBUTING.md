@@ -102,6 +102,9 @@ out because they're easy to trip without realizing it:
 - **Zero Jellyfin/Emby API surface, schema, or naming, anywhere** — this
   is both a product rule and a licensing-compatibility rule (see
   `LICENSE-INTENT.md`). `grep-gates` checks for this too.
+- **Performance budgets are enforced in CI, and changing one requires a
+  stated reason in the same diff.** See
+  [Performance budgets](docs/developer-guide/architecture/performance-budgets.md).
 
 ## Licensing and provenance
 
@@ -127,6 +130,12 @@ consistent with `LICENSE-INTENT.md`'s contributor-provenance rule.
 - Small, focused PRs over large ones where the two are actually
   equivalent in risk — a contract change plus its conformance tests plus
   its SDK regeneration is normally one PR; unrelated refactors are not.
+
+## Code of Conduct
+
+Taking part in this project — issues, PRs, discussions — means agreeing to
+the [Code of Conduct](CODE_OF_CONDUCT.md). It applies to everyone equally,
+maintainers included.
 
 ## Reporting a security issue
 
