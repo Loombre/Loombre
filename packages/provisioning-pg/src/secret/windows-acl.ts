@@ -73,13 +73,59 @@ export function currentUserPrincipal(): string {
  */
 export function applyOwnerOnlyDacl(filePath: string): void {
   const principal = currentUserPrincipal();
-  try {
-    execFileSync("icacls", [filePath, "/inheritance:r", "/grant:r", `${principal}:F`], {
-      encoding: "utf8",
-      windowsHide: true,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-  } catch (cause) {
-    throw new SecretAclError(filePath, principal, cause);
+  const icacls = (args: string[]): string => {
+    try {
+      return execFileSync("icacls", [filePath, ...args], {
+        encoding: "utf8",
+        windowsHide: true,
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+    } catch (cause) {
+      throw new SecretAclError(filePath, principal, cause);
+    }
+  };
+
+  icacls(["/inheritance:r", "/grant:r", `${principal}:F`]);
+
+  // Those two flags alone are NOT enough, which the first windows-latest
+  // run of this code proved: it left three ACEs behind. `/inheritance:r`
+  // removes only INHERITED entries, and `/grant:r` replaces only the NAMED
+  // principal's entry — so any OTHER principal holding an EXPLICIT ACE
+  // (SYSTEM and Administrators, typically) survives both. Enumerate what is
+  // actually left and remove everything that is not us.
+  const me = userInfo().username;
+  for (const other of daclPrincipals(filePath, icacls([]))) {
+    if (!sameAccount(other, me)) icacls(["/remove:g", other]);
   }
+
+  // Verify the postcondition rather than assuming it. This is a
+  // confidentiality control: if the DACL is not exactly one ACE, the
+  // guarantee this function exists to make has not been made.
+  const remaining = daclPrincipals(filePath, icacls([]));
+  if (remaining.length !== 1 || !sameAccount(remaining[0]!, me)) {
+    throw new SecretAclError(filePath, principal, new Error(`DACL is not owner-only after hardening: [${remaining.join(", ")}]`));
+  }
+}
+
+/** Principal names from `icacls <path>` output ("DOMAIN\\user:(F)" ->
+ *  "DOMAIN\\user"). The first line is prefixed with the file path, which is
+ *  stripped. Matched on the "principal:(FLAGS)" shape so the trailing
+ *  localized summary line is ignored. */
+function daclPrincipals(filePath: string, aclText: string): string[] {
+  const names: string[] = [];
+  for (const rawLine of aclText.split(/\r?\n/)) {
+    let line = rawLine.trim();
+    if (!line) continue;
+    if (line.startsWith(filePath)) line = line.slice(filePath.length).trim();
+    const matched = /^(.+?):\([A-Z]/.exec(line);
+    if (matched) names.push(matched[1]!.trim());
+  }
+  return names;
+}
+
+/** True when an ACL principal ("DOMAIN\\alice", "alice") names this
+ *  account. Compared on the leaf so a domain prefix does not matter. */
+function sameAccount(aclPrincipal: string, username: string): boolean {
+  const leaf = aclPrincipal.includes("\\") ? aclPrincipal.slice(aclPrincipal.lastIndexOf("\\") + 1) : aclPrincipal;
+  return leaf.toLowerCase() === username.toLowerCase();
 }
