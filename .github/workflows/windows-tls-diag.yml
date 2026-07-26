@@ -1,0 +1,85 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+#
+# DIAGNOSTIC, manual-dispatch only — not part of the gate, never runs on
+# push or PR.
+#
+# Question it answers (STATE.md P4.21): on windows-latest, two apps/server
+# specs — src/tls/manual-provider.spec.ts and src/tls/runtime.spec.ts —
+# never report at all; their vitest fork dies with "Worker exited
+# unexpectedly" while every other file passes. Both create a REAL
+# https.Server and perform a REAL TLS handshake. Two candidate causes,
+# which this run separates:
+#
+#   A. A native crash (Node/OpenSSL TLS on Windows) inside the test
+#      process. Then the failure follows the CODE, and it will reproduce
+#      under every pool mode — including threads.
+#   B. A vitest fork-pool teardown / handle-leak interaction. Then the
+#      failure follows the POOL, and --pool=threads (or --no-isolate)
+#      will pass while the default forks pool crashes.
+#
+# Each step is continue-on-error so ALL configurations report in one run
+# rather than the first red one masking the rest. Read the summary at the
+# end of the job log.
+name: windows-tls-diag
+
+on:
+  workflow_dispatch:
+
+jobs:
+  diag:
+    name: windows TLS fork-crash diagnosis
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # apps/server imports built workspace packages (@loombre/secrets et al),
+      # so the dependency graph must be built before vitest can resolve them.
+      - name: Build workspace dependencies
+        run: pnpm build
+
+      - name: "A: default pool (forks + isolate) — the CONTROL, expected to crash"
+        continue-on-error: true
+        working-directory: apps/server
+        run: pnpm exec vitest run src/tls/manual-provider.spec.ts src/tls/runtime.spec.ts --reporter=verbose
+
+      - name: "B: --pool=threads"
+        continue-on-error: true
+        working-directory: apps/server
+        run: pnpm exec vitest run src/tls/manual-provider.spec.ts src/tls/runtime.spec.ts --pool=threads --reporter=verbose
+
+      - name: "C: forks, --no-isolate"
+        continue-on-error: true
+        working-directory: apps/server
+        run: pnpm exec vitest run src/tls/manual-provider.spec.ts src/tls/runtime.spec.ts --no-isolate --reporter=verbose
+
+      # Which of the two files is responsible — one, or both independently?
+      - name: "D: runtime.spec.ts alone (default pool)"
+        continue-on-error: true
+        working-directory: apps/server
+        run: pnpm exec vitest run src/tls/runtime.spec.ts --reporter=verbose
+
+      - name: "E: manual-provider.spec.ts alone (default pool)"
+        continue-on-error: true
+        working-directory: apps/server
+        run: pnpm exec vitest run src/tls/manual-provider.spec.ts --reporter=verbose
+
+      - name: How to read this run
+        if: always()
+        shell: bash
+        run: |
+          echo "A crashed but B passed  -> pool/teardown issue: switch these specs (or apps/server) to threads."
+          echo "A and B both crashed    -> native Node/OpenSSL TLS crash on Windows: the code, not the runner."
+          echo "D/E isolate whether one spec or both are responsible."
