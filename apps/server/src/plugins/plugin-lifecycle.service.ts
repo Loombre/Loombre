@@ -19,7 +19,7 @@ import {
 } from "@loombre/db";
 import { DbProvider } from "../common/db.provider.js";
 import { conflict, notFound, unprocessableEntity } from "../gateway/problem.exception.js";
-import { requireLiveAdmin } from "../settings/require-live-admin.js";
+import { requireLiveAdmin } from "../common/require-live-admin.js";
 import { validatePluginConfig } from "./plugin-config.js";
 import { removeAllPluginSecrets, rotatePluginHmac, storePluginConfigSecret } from "./plugin-keyring.js";
 import { PluginHealthService } from "./plugin-health.service.js";

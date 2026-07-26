@@ -146,7 +146,6 @@ Reference documents:
 - [docs/ops/updating.md](docs/ops/updating.md) — Update checker configuration + exact network request contents
 - [keys/README.md](keys/README.md) — Release-signing key generation, rotation, and the three-location consistency check
 - [CHANGELOG.md](CHANGELOG.md) — Release/phase history
-- [CLAUDE.md](CLAUDE.md) — Architecture invariants and working agreements
 - [STATE.md](STATE.md) — Goals, decisions, and open items
 - [CONTRIBUTING.md](CONTRIBUTING.md) — How to contribute: the gate, contract-first rules, the matrix regression law
 - [SECURITY.md](SECURITY.md) — Reporting a vulnerability privately

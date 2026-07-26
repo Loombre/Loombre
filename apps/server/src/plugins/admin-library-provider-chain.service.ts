@@ -39,7 +39,7 @@ import {
 } from "@loombre/db";
 import { DbProvider } from "../common/db.provider.js";
 import { notFound, unprocessableEntity } from "../gateway/problem.exception.js";
-import { requireLiveAdmin } from "../settings/require-live-admin.js";
+import { requireLiveAdmin } from "../common/require-live-admin.js";
 import { KNOWN_BUILTIN_PROVIDER_NAMES, LEGACY_DEFAULT_PROVIDER_CHAIN, isKnownBuiltinProviderName } from "./builtin-metadata-providers.js";
 import { toChainEntryDto, toDefaultChainEntryDto, toPluginRefDto, type AdminLibraryProviderChainDto } from "./admin-library-provider-chain-dto.js";
 

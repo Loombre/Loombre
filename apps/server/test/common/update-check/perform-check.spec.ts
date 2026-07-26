@@ -27,7 +27,7 @@ import {
   buildPublicKeyFile,
   buildSignatureFile,
 } from "../../../../../packages/release-manifest/test/helpers/minisign-fixtures.js";
-import { performUpdateCheck, type UpdateCheckConfig } from "../../../src/common/update-check/perform-check.js";
+import { performUpdateCheck, fetchWithBoundedRedirects, MAX_REDIRECT_HOPS, type UpdateCheckConfig } from "../../../src/common/update-check/perform-check.js";
 
 const NOW_MS = 1_753_315_200_000;
 
@@ -325,5 +325,103 @@ describe("performUpdateCheck — request shape", () => {
       "https://mirror.example.invalid/releases/manifest.json",
       "https://mirror.example.invalid/releases/manifest.json.minisig",
     ]);
+  });
+});
+
+// Security review L3: the update check used to hand fetch() its default
+// redirect-following behavior — an unbounded, unvalidated chain. The
+// default GitHub `releases/latest/download` base REQUIRES one redirect
+// (302 to the CDN), so a flat no-redirect fetch is not an option; instead
+// redirects are followed MANUALLY with a hop cap and per-hop validation:
+// a redirect target must be https (no downgrade-to-plain-http bounce to
+// somewhere on the operator's LAN) unless it stays same-origin (a local
+// http mirror redirecting within itself, as fixture servers do).
+describe("fetchWithBoundedRedirects (L3)", () => {
+  const redirectTo = (to: string) => new Response(null, { status: 302, headers: { location: to } });
+
+  it("follows redirects to https targets and returns the final response, always fetching with redirect:'manual'", async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(redirectTo("https://cdn.example.invalid/assets/manifest.json"))
+      .mockResolvedValueOnce(new Response("ok", { status: 200 }));
+
+    const res = await fetchWithBoundedRedirects(fetchImpl as unknown as typeof fetch, "https://github.example.invalid/releases/latest/download/manifest.json", { method: "GET" });
+
+    expect(res.status).toBe(200);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(String(fetchImpl.mock.calls[1]![0])).toBe("https://cdn.example.invalid/assets/manifest.json");
+    for (const call of fetchImpl.mock.calls) {
+      expect((call[1] as RequestInit).redirect).toBe("manual");
+    }
+  });
+
+  it("resolves a relative Location against the current URL", async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(redirectTo("/mirror/manifest.json"))
+      .mockResolvedValueOnce(new Response("ok", { status: 200 }));
+
+    await fetchWithBoundedRedirects(fetchImpl as unknown as typeof fetch, "https://mirror.example.invalid/releases/manifest.json", { method: "GET" });
+
+    expect(String(fetchImpl.mock.calls[1]![0])).toBe("https://mirror.example.invalid/mirror/manifest.json");
+  });
+
+  it("allows a same-origin plain-http redirect (local fixture/lab mirrors)", async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(redirectTo("http://127.0.0.1:8099/alt/manifest.json"))
+      .mockResolvedValueOnce(new Response("ok", { status: 200 }));
+
+    const res = await fetchWithBoundedRedirects(fetchImpl as unknown as typeof fetch, "http://127.0.0.1:8099/releases/manifest.json", { method: "GET" });
+    expect(res.status).toBe(200);
+  });
+
+  it("refuses a cross-origin redirect to a non-https target", async () => {
+    const fetchImpl = vi.fn().mockResolvedValueOnce(redirectTo("http://192.168.1.1/admin"));
+
+    await expect(
+      fetchWithBoundedRedirects(fetchImpl as unknown as typeof fetch, "https://mirror.example.invalid/releases/manifest.json", { method: "GET" }),
+    ).rejects.toThrow(/non-https/);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it(`caps the chain at ${MAX_REDIRECT_HOPS} hops`, async () => {
+    const fetchImpl = vi.fn().mockImplementation((url: string) => {
+      const n = Number(new URL(String(url)).pathname.replace(/\D/g, "") || 0);
+      return Promise.resolve(redirectTo(`https://mirror.example.invalid/hop${n + 1}`));
+    });
+
+    await expect(
+      fetchWithBoundedRedirects(fetchImpl as unknown as typeof fetch, "https://mirror.example.invalid/hop0", { method: "GET" }),
+    ).rejects.toThrow(/redirect/);
+    expect(fetchImpl.mock.calls.length).toBeLessThanOrEqual(MAX_REDIRECT_HOPS + 1);
+  });
+
+  it("performUpdateCheck reports 'unreachable' when the redirect chain is refused (never throws to the caller)", async () => {
+    const keypair = generateFixtureKeypair();
+    const config = baseConfig({}, buildPublicKeyFile(keypair));
+    const fetchImpl = vi.fn().mockResolvedValue(redirectTo("http://10.0.0.1/loot"));
+
+    const result = await performUpdateCheck(config, { fetchImpl: fetchImpl as unknown as typeof fetch, clockNowMs: () => NOW_MS });
+    expect(result.verification).toBe("unreachable");
+  });
+
+  it("performUpdateCheck verifies end-to-end through a well-behaved https redirect", async () => {
+    const keypair = generateFixtureKeypair();
+    const body = manifestJson([{ version: "1.1.0" }]);
+    const sig = buildSignatureFile(keypair, new TextEncoder().encode(body));
+    const config = baseConfig({}, buildPublicKeyFile(keypair));
+
+    const fetchImpl = vi.fn().mockImplementation((url: string) => {
+      const u = String(url);
+      if (u.startsWith("https://cdn.example.invalid/")) {
+        return Promise.resolve(new Response(u.endsWith(".minisig") ? sig : body, { status: 200 }));
+      }
+      const target = u.replace("https://manifest.example.invalid/releases", "https://cdn.example.invalid/assets");
+      return Promise.resolve(redirectTo(target));
+    });
+
+    const result = await performUpdateCheck(config, { fetchImpl: fetchImpl as unknown as typeof fetch, clockNowMs: () => NOW_MS });
+    expect(result.verification).toBe("verified");
   });
 });

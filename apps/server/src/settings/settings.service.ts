@@ -52,7 +52,7 @@ import {
 import { listServerSettings, upsertServerSettingAndEmit } from "@loombre/db";
 import { DbProvider } from "../common/db.provider.js";
 import { conflict, notFound, unprocessableEntity } from "../gateway/problem.exception.js";
-import { requireLiveAdmin } from "./require-live-admin.js";
+import { requireLiveAdmin } from "../common/require-live-admin.js";
 import type {
   AdminSettingSchemaEntryDto,
   AdminSettingValueDto,

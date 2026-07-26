@@ -92,3 +92,64 @@ describe("KeyedRateLimiter", () => {
     expect(refilled.allowed).toBe(true);
   });
 });
+
+describe("KeyedRateLimiter idle-bucket eviction (security review L1: the per-key Map must not grow forever under key churn)", () => {
+  it("evicts a bucket that has refilled to full capacity once the sweep interval passes", () => {
+    const clock = new FakeClock();
+    const limiter = new KeyedRateLimiter({ capacity: 2, refillMs: 100, clock });
+
+    expect(limiter.attempt("1.2.3.4").allowed).toBe(true);
+    expect(limiter.size).toBe(1);
+
+    // After capacity*refillMs the bucket is full again — indistinguishable
+    // from a fresh lazily-allocated one, so keeping it is pure memory waste.
+    clock.advance(200);
+    limiter.attempt("5.6.7.8");
+    expect(limiter.size).toBe(1);
+  });
+
+  it("keeps mid-refill buckets — a rate-limited caller cannot reset its window via sweep", () => {
+    const clock = new FakeClock();
+    const limiter = new KeyedRateLimiter({ capacity: 3, refillMs: 1000, clock });
+
+    limiter.attempt("idle-key");
+
+    clock.advance(2900);
+    limiter.attempt("hot-key");
+    limiter.attempt("hot-key");
+    limiter.attempt("hot-key");
+
+    // Sweep interval (capacity*refillMs = 3000ms) elapses: "idle-key" is
+    // full (evicted); "hot-key" drained 200ms ago (kept, still blocked).
+    clock.advance(200);
+    limiter.attempt("fresh-key");
+    expect(limiter.size).toBe(2);
+    expect(limiter.attempt("hot-key").allowed).toBe(false);
+  });
+
+  it("an evicted key starts over with a full burst — eviction is behavior-neutral", () => {
+    const clock = new FakeClock();
+    const limiter = new KeyedRateLimiter({ capacity: 2, refillMs: 100, clock });
+
+    limiter.attempt("a");
+    limiter.attempt("a");
+    expect(limiter.attempt("a").allowed).toBe(false);
+
+    // Long idle: full refill + sweep. The key must behave exactly as a
+    // brand-new one would: full burst of `capacity`, then blocked.
+    clock.advance(10_000);
+    expect(limiter.attempt("a").allowed).toBe(true);
+    expect(limiter.attempt("a").allowed).toBe(true);
+    expect(limiter.attempt("a").allowed).toBe(false);
+  });
+
+  it("updatePolicy still drops every bucket (unchanged hot-reload semantics)", () => {
+    const clock = new FakeClock();
+    const limiter = new KeyedRateLimiter({ capacity: 2, refillMs: 100, clock });
+    limiter.attempt("a");
+    limiter.attempt("b");
+    expect(limiter.size).toBe(2);
+    limiter.updatePolicy({ capacity: 3, refillMs: 100, clock });
+    expect(limiter.size).toBe(0);
+  });
+});

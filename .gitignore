@@ -65,3 +65,6 @@ installers/linux/dist/
 # WiX CLI's project-local extension cache (populated by `wix extension add`,
 # pinned via build-msi.mjs — never committed, restored on demand)
 installers/windows/.wix/
+
+# owner-local agent instructions (untracked by owner decision)
+/CLAUDE.md

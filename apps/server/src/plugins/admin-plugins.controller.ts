@@ -43,7 +43,7 @@ import { getDeliveryCursor, getPluginById, getPluginEventGrants, listPlugins } f
 import { DbProvider } from "../common/db.provider.js";
 import type { AuthenticatedRequest } from "../gateway/auth.guard.js";
 import { notFound } from "../gateway/problem.exception.js";
-import { requireLiveAdmin } from "../settings/require-live-admin.js";
+import { requireLiveAdmin } from "../common/require-live-admin.js";
 import { PluginLifecycleService } from "./plugin-lifecycle.service.js";
 import { PluginRegistrationService } from "./plugin-registration.service.js";
 import { AdminPluginGrantsService } from "./admin-plugin-grants.service.js";
