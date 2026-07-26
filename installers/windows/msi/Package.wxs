@@ -33,16 +33,9 @@
        ==================================================================== -->
   <?define UpgradeCode = "5F8B7B26-A5C5-4AA4-B2F1-09DB733A5719" ?>
 
-  <!-- Single source of truth for the server's listen port, shared by
-       Services.wxs's Environment RegistryValue and Firewall.wxs's
-       FirewallException — see Firewall.wxs's header. Overridable via
-       `wix build -d ServerPort=…` for anyone who needs a non-default port
-       without hand-editing source; build-msi.mjs does not override it
-       today (ships the same 3001 default apps/server/src/main.ts itself
-       falls back to). -->
-  <?ifndef ServerPort ?>
-    <?define ServerPort = "3001" ?>
-  <?endif ?>
+  <!-- The server listen port lives in ServerPort.wxi (WiX defines are
+       per-source-file, so the files that USE it — Services.wxs,
+       Firewall.wxs — each include it there; this file does not use it). -->
 
   <Package
     Name="Loombre"
@@ -86,14 +79,20 @@
          only needs to READ inside this tree — see the I3 report's flagged
          finding about the discovery/token file's 0600-vs-Windows-ACL gap,
          which is a SERVER-side (not installer-side) concern. -->
+    <!-- Explicit GUIDs, not Guid="*": WIX0230 (first real `wix build`,
+         diag run 30218812062) — a CreateFolder-only component's KeyPath
+         is its Directory, which disqualifies auto-generated guids.
+         PERMANENT once shipped, same rule as UpgradeCode above: MSI
+         component rules key on these identities across every future
+         upgrade — never regenerate them. -->
     <ComponentGroup Id="AppDataFolders">
-      <Component Id="cmp.AppDataDataFolder" Directory="APPDATA_DATA" Guid="*">
+      <Component Id="cmp.AppDataDataFolder" Directory="APPDATA_DATA" Guid="2D43F24B-15DB-4C51-86A7-CAE9419E1AEC">
         <CreateFolder />
       </Component>
-      <Component Id="cmp.AppDataLogsFolder" Directory="APPDATA_LOGS" Guid="*">
+      <Component Id="cmp.AppDataLogsFolder" Directory="APPDATA_LOGS" Guid="06F6DD6F-2FCB-4A9F-8B15-231E9CC804A6">
         <CreateFolder />
       </Component>
-      <Component Id="cmp.AppDataPgdataFolder" Directory="APPDATA_PGDATA" Guid="*">
+      <Component Id="cmp.AppDataPgdataFolder" Directory="APPDATA_PGDATA" Guid="654D4DEC-F8D7-4D5B-B7E2-EC4A2FC7BBB9">
         <CreateFolder />
       </Component>
     </ComponentGroup>

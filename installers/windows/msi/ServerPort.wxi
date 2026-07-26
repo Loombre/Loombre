@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Loombre :: installers/windows/msi/ServerPort.wxi
+
+  Single source of truth for the server's listen port, shared by
+  Services.wxs's Environment RegistryValue and Firewall.wxs's
+  FirewallException so the firewall rule and the service's actual listen
+  port can never drift apart. A .wxi INCLUDE rather than a define in
+  Package.wxs: WiX preprocessor defines are PER SOURCE FILE, and the
+  first real `wix build` (diag run 30218812062, WIX0150) proved a define
+  in Package.wxs is invisible to the other compilation units — so every
+  file that needs the port includes this one instead. Overridable via
+  `wix build -d ServerPort=…` (the ifndef) for anyone who needs a
+  non-default port without hand-editing source; build-msi.mjs does not
+  override it today (ships the same 3001 default
+  apps/server/src/main.ts itself falls back to).
+-->
+<Include>
+  <?ifndef ServerPort ?>
+    <?define ServerPort = "3001" ?>
+  <?endif ?>
+</Include>
