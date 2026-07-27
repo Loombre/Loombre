@@ -147,7 +147,16 @@ export async function bootstrapProvisioning(env: NodeJS.ProcessEnv = process.env
     // P4.2 — 127.0.0.1 is hard-coded inside @loombre/provisioning-pg's
     // listen.ts, never configurable to anything else.
     listenStrategy: { kind: "tcp-loopback", port },
-    locale: "en_US.UTF-8",
+    // builtin C.UTF-8 (PG 17+), NOT a libc locale: packaged hosts —
+    // minimal containers especially — generate no OS locales, and initdb
+    // rejects an absent one ("invalid locale name en_US.UTF-8", the linux
+    // smoke's first honest embedded boot). The builtin provider gives
+    // full UTF-8 ctype semantics with OS-independent byte-order
+    // collation — deterministic across every platform we ship. Follow-up
+    // (STATE.md): linguistic sort order via ICU is a later, per-database
+    // choice, not a boot-time requirement.
+    locale: "C.UTF-8",
+    localeProvider: "builtin",
     encoding: "UTF8",
     superuserSecretRef: { backend: "file0600", key: secretPath },
   });

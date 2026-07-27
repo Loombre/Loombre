@@ -55,6 +55,12 @@ export interface EmbeddedPostgresConfig {
   dataDir: string;
   listenStrategy: ListenStrategy;
   locale: string;
+  /** "libc" (default; locale must exist in the OS) or "builtin" (PG 17+:
+   *  OS-independent C / C.UTF-8 — what packaged installs use, because a
+   *  minimal host has no generated locales at all; the linux smoke's
+   *  first honest embedded boot died on initdb "invalid locale name
+   *  en_US.UTF-8" exactly this way). */
+  localeProvider?: "libc" | "builtin";
   encoding: "UTF8";
   superuserSecretRef: SecretRef;
   /** @default "loombre" */
@@ -123,6 +129,7 @@ export class EmbeddedPostgres implements ProvisioningController {
   private readonly dataDir: string;
   private readonly listenStrategy: ListenStrategy;
   private readonly locale: string;
+  private readonly localeProvider: "libc" | "builtin";
   private readonly encoding: "UTF8";
   private readonly secretRef: SecretRef;
   private readonly username: string;
@@ -142,6 +149,7 @@ export class EmbeddedPostgres implements ProvisioningController {
     this.dataDir = config.dataDir;
     this.listenStrategy = config.listenStrategy;
     this.locale = config.locale;
+    this.localeProvider = config.localeProvider ?? "libc";
     this.encoding = config.encoding;
     this.secretRef = config.superuserSecretRef;
     this.username = config.superuserUsername ?? DEFAULT_USERNAME;
@@ -240,7 +248,9 @@ export class EmbeddedPostgres implements ProvisioningController {
           `--pwfile=${pwfilePath}`,
           "-E",
           this.encoding,
-          `--locale=${this.locale}`,
+          ...(this.localeProvider === "builtin"
+            ? ["--locale-provider=builtin", `--builtin-locale=${this.locale}`]
+            : [`--locale=${this.locale}`]),
           "-A",
           "scram-sha-256",
         ],
