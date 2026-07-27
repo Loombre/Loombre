@@ -22,10 +22,28 @@ export interface EnqueueOptions {
   subjectItemId?: string | null;
 }
 
-export interface WorkOptions {
+export interface WorkOptions<T extends JobType = JobType> {
   /** Number of jobs this node processes concurrently for this queue.
    *  @default 1 */
   concurrency?: number;
+  /**
+   * Owner ledger L1, adjudication A-3: an optional terminal-failure hook.
+   * Invoked ONLY when the job has exhausted its retries (`willRetry ===
+   * false` below) — never for a still-retryable failure — and only AFTER
+   * the ledger's recordFailed write has been attempted, so the jobs-ledger
+   * row remains the authoritative record of what happened regardless of
+   * what this hook does. Best-effort: wrapped in its own try/catch inside
+   * work()'s batch handler below, so a throwing/rejecting hook is logged
+   * locally and never propagates — a broken hook can never break the
+   * ledger transition it is observing, nor the batch result reported back
+   * to pg-boss.
+   *
+   * Exists so a consumer (apps/worker/src/probe/terminal-failure-hook.ts
+   * is the first) can turn a terminal job failure into something visible
+   * beyond the generic jobs ledger's free-text last_error, without this
+   * package taking on any opinion about WHAT that visibility looks like.
+   */
+  onTerminalFailure?: (payload: JobPayloads[T], error: unknown) => void | Promise<void>;
 }
 
 export type JobHandler<T extends JobType> = (
@@ -35,7 +53,7 @@ export type JobHandler<T extends JobType> = (
 
 export interface JobQueue {
   enqueue<T extends JobType>(type: T, payload: JobPayloads[T], opts?: EnqueueOptions): Promise<string>;
-  work<T extends JobType>(type: T, handler: JobHandler<T>, opts?: WorkOptions): void;
+  work<T extends JobType>(type: T, handler: JobHandler<T>, opts?: WorkOptions<T>): void;
   stop(): Promise<void>;
 }
 
@@ -152,6 +170,16 @@ export function createJobQueue(connectionString: string): JobQueue {
                   await recorded.catch((ledgerErr: unknown) => {
                     console.error(`[@loombre/jobs] ledger transition failed for job ${job.id}:`, ledgerErr);
                   });
+                  // A-3: fires ONLY once retries are exhausted, and only
+                  // AFTER the ledger write above — see WorkOptions.
+                  // onTerminalFailure's doc comment for the full rationale.
+                  if (!willRetry && opts.onTerminalFailure) {
+                    try {
+                      await opts.onTerminalFailure(job.data as JobPayloads[typeof type], err);
+                    } catch (hookErr) {
+                      console.error(`[@loombre/jobs] onTerminalFailure hook threw for job ${job.id} (${type}):`, hookErr);
+                    }
+                  }
                   results.push({ id: job.id, status: 'failed', output: { message } });
                 }
               }
