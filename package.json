@@ -29,6 +29,7 @@
     "docs:dev": "vitepress dev docs --port 4750",
     "docs:register-lint": "node scripts/docs/register-lint.mjs",
     "gate": "node scripts/gate.mjs",
+    "gate:full": "node scripts/gate.mjs full",
     "stamp-version": "node scripts/release/stamp-version.mjs",
     "embed-public-key": "node scripts/release/embed-public-key.mjs",
     "release:test": "node --test \"scripts/release/test/**/*.test.mjs\"",
