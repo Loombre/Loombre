@@ -228,10 +228,12 @@ export async function deliverOnePluginTick(
   }
 
   // H-4 fix wave, defense in depth (constants.ts's own header): even though
-  // a plugin_event_grants row for one of these eight types can no longer be
+  // a plugin_event_grants row for an admin-only type can no longer be
   // CREATED (apps/server/src/plugins/event-taxonomy.ts's registration-time
   // exclusion), this loop never fans one out either, independent of that
-  // upstream gate.
+  // upstream gate. (Count deliberately unstated — the canonical inventory
+  // lives in @loombre/shared admin-only-event-types; L3/Lane-R lesson:
+  // counts in prose re-stale on every addition.)
   const grantedTypes = plugin.grantedTypes.filter((t) => !LPP_DELIVERY_ADMIN_ONLY_EVENT_TYPES.includes(t));
 
   const windowStartMs = nowMs - LPP_DELIVERY_RETENTION_WINDOW_MS;

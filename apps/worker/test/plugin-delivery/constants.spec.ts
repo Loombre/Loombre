@@ -16,10 +16,10 @@
 // per the prior honesty note — Lane R review) because no cross-import was
 // possible; it now asserts DERIVATION (reference identity against the
 // canonical import) instead, which can never silently drift no matter how
-// the inventory changes. The one place the 10-item inventory is still
-// spelled out as a literal is
-// packages/shared/test/admin-only-event-types.test.ts (the single
-// intentional snapshot).
+// the inventory changes. The one place the inventory is still spelled
+// out as a literal is packages/shared/test/admin-only-event-types.test.ts
+// (the single intentional snapshot; count deliberately unstated here —
+// prose counts re-stale on every addition, Lane R F2).
 
 import { describe, expect, it } from "vitest";
 import { ADMIN_ONLY_EVENT_TYPES as CANONICAL_ADMIN_ONLY_EVENT_TYPES } from "@loombre/shared/admin-only-event-types";
