@@ -102,6 +102,21 @@ Default layout: app at `/opt/loombre`, data at `/var/lib/loombre`, config at
 `--prefix`/`--data-dir`/`--config-dir`/`--user` — see `install.sh --help`.
 Full on-disk layout: `installers/linux/LAYOUT.md`.
 
+`install.sh` also places a `loombre` command on `PATH`
+(`/usr/local/bin/loombre`, a symlink into the install root — replaced
+cleanly on re-install/upgrade). Confirm it:
+
+```sh
+loombre --version
+```
+
+If `/usr/local/bin/loombre` was occupied by something else already (not a
+symlink Loombre itself created) or `/usr/local/bin` wasn't writable,
+`install.sh` warns instead of failing and prints the exact command to
+create the shim yourself; either way the install itself always succeeds,
+and the full-path invocation (`docs/ops/cli.md`'s "Running it") always
+works as a fallback.
+
 ### No systemd? (containers, WSL1, minimal chroots)
 
 `install.sh`'s last step needs `systemctl` to install + enable the two
@@ -126,8 +141,9 @@ separate, still-landing Phase 4 deliverable — see the file's own
 comments) and set `LOOMBRE_JWT_SECRET` (`openssl rand -base64 48`) so
 restarts don't log every device out.
 
-Run migrations against that database (until the `loombre` CLI gains a
-first-class subcommand for this):
+Run migrations against that database. `loombre` (now on `PATH` — see
+[step 3](#3-extract--install)) does not have a migration subcommand yet;
+until it does, this still means a repo checkout:
 
 ```sh
 # from a repo checkout with the same DATABASE_URL, or an equivalent tool
@@ -145,6 +161,13 @@ security mistake, not a shortcut. `pnpm db:migrate` alone leaves the
 `users` table empty, which is what the next step needs.
 
 ## 5. Start
+
+Optional pre-flight sanity check — read-only, touches nothing (see
+`docs/ops/cli.md`):
+
+```sh
+DATABASE_URL=<value from /etc/loombre/loombre.env> loombre doctor
+```
 
 ```sh
 sudo systemctl start loombre-server loombre-worker
@@ -193,6 +216,11 @@ cd loombre-<version>-linux-<arch>   # or wherever you extracted it
 sudo ./uninstall.sh                 # leaves only /var/lib/loombre (the data dir) behind
 sudo ./uninstall.sh --purge          # also deletes them — irreversible
 ```
+
+This also removes the `/usr/local/bin/loombre` PATH shim — but only when
+it's still a symlink pointing into this install's own prefix; a foreign
+file (or a symlink some other install/program put there) is left alone,
+untouched.
 
 ## Systemd hardening (for reference)
 
