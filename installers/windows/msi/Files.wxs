@@ -2,45 +2,39 @@
 <!--
   Loombre :: installers/windows/msi/Files.wxs
 
-  Payload harvesting. Every one of these trees is large, deep (node_modules)
-  and CHANGES EVERY BUILD — hand-authoring a <File> element per file is not
-  "authoring" for a tree this shape, so this uses WiX v4's glob-harvesting
-  <Files Include="…\**" /> element (a genuine v4 feature, not a v3 heat.exe
-  workaround): <ComponentGroup Directory="…"> + <Files Include> recursively
-  creates one Component+File per matched file AND the nested Directory
-  entries needed to preserve the source tree's relative structure under the
-  target directory — exactly what a pruned production node_modules tree
-  needs.
+  Payload harvesting.
 
-  All seven $(var.*) preprocessor variables are supplied by build-msi.mjs's
+  ARCHIVED-PAYLOAD MODEL (owner decision after diag run 30219204709): the
+  five big trees — server, worker, web, node, pg — are NOT harvested
+  file-by-file. The first real `wix build` proved they cannot be: glob
+  harvesting produced 84,305 Components against the MSI format's hard
+  65,536 ceiling (WIX7502). build-msi.mjs zips those five staged trees
+  into ONE payload.zip (top-level names matching Directories.wxs's
+  SERVERDIR/WORKERDIR/WEBDIR/NODEDIR/PGDIR), this file installs that zip
+  as a single component into PAYLOADDIR, and LoombreServiceHost extracts
+  it into the install folder on first service start (PayloadExtractor.cs:
+  sha256 marker for idempotence, mutex against the two services racing,
+  stale-tree removal on upgrade; Package.wxs's cleanup component removes
+  the extracted trees at uninstall via util:RemoveFolderEx).
+
+  The small, stable trees (ffmpeg, tray publish output) are still glob-
+  harvested below with WiX v4's <Files Include="…\**"/> — per-file
+  components with real MSI servicing are strictly better where the count
+  is nowhere near the ceiling.
+
+  All $(var.*) preprocessor variables are supplied by build-msi.mjs's
   `wix build -d Name=value` invocation (see that script's header for the
-  exact staging paths). Every one of them MUST point at an already-staged,
-  already-populated directory before `wix build` runs — this file performs
-  no fetching/building itself (CLAUDE.md invariant 6 spirit: no I/O in
-  authoring, orchestration lives in the build script).
+  exact staging paths). Every one of them MUST point at an already-staged
+  path before `wix build` runs — this file performs no fetching/building
+  itself (CLAUDE.md invariant 6 spirit: no I/O in authoring, orchestration
+  lives in the build script).
 -->
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
   <Fragment>
-    <ComponentGroup Id="ServerFiles" Directory="SERVERDIR">
-      <Files Include="$(var.ServerDistDir)\**" />
-    </ComponentGroup>
-  </Fragment>
-
-  <Fragment>
-    <ComponentGroup Id="WorkerFiles" Directory="WORKERDIR">
-      <Files Include="$(var.WorkerDistDir)\**" />
-    </ComponentGroup>
-  </Fragment>
-
-  <Fragment>
-    <ComponentGroup Id="WebFiles" Directory="WEBDIR">
-      <Files Include="$(var.WebDistDir)\**" />
-    </ComponentGroup>
-  </Fragment>
-
-  <Fragment>
-    <ComponentGroup Id="NodeRuntimeFiles" Directory="NODEDIR">
-      <Files Include="$(var.NodeRuntimeDir)\**" />
+    <ComponentGroup Id="PayloadFiles" Directory="PAYLOADDIR">
+      <Component Id="cmp.PayloadZip" Guid="*">
+        <File Id="file.PayloadZip" Source="$(var.PayloadZip)" Name="payload.zip" KeyPath="yes" />
+      </Component>
     </ComponentGroup>
   </Fragment>
 
@@ -57,18 +51,6 @@
          script's console output, not hidden here. -->
     <ComponentGroup Id="FfmpegFiles" Directory="FFMPEGDIR">
       <Files Include="$(var.FfmpegDir)\**" />
-    </ComponentGroup>
-  </Fragment>
-
-  <Fragment>
-    <!-- Same pattern as FfmpegFiles: $(var.EmbeddedPgDir) is
-         fetchEmbeddedPgWindows()'s result — lane B's SHARED, landed
-         scripts/fetch-embedded-pg.mjs fetching windows-x64 PostgreSQL
-         (manifest.defaultVersion) into
-         vendor/embedded-pg/windows-x64/<version>. Same marker-file
-         fallback if that script is ever absent. -->
-    <ComponentGroup Id="EmbeddedPgFiles" Directory="PGDIR">
-      <Files Include="$(var.EmbeddedPgDir)\**" />
     </ComponentGroup>
   </Fragment>
 
