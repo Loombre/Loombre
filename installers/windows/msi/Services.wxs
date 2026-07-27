@@ -210,7 +210,7 @@
           Type="ownProcess"
           ErrorControl="normal"
           Account="LocalSystem"
-          Arguments='--name LoombreWeb --exe "[NODEDIR]node.exe" --arg "[WEBDIR]apps\web\server.js" --cwd "[WEBDIR]apps\web\." --log "[APPDATA_LOGS]web.log" --envfile "[APPDATA_DATA]web.env" --stop-timeout-ms 10000'>
+          Arguments='--name LoombreWeb --exe "[NODEDIR]node.exe" --arg "[WEBDIR]node_modules\next\dist\bin\next" --arg start --arg --hostname --arg 0.0.0.0 --cwd "[WEBDIR]." --log "[APPDATA_LOGS]web.log" --envfile "[APPDATA_DATA]web.env" --stop-timeout-ms 10000'>
           <ServiceDependency Id="LoombreServer" />
         </ServiceInstall>
         <ServiceControl
@@ -303,7 +303,7 @@
           Key="SYSTEM\CurrentControlSet\Services\LoombreWeb"
           Name="Environment"
           Type="multiString"
-          Value="NODE_ENV=production[~]PORT=$(var.WebPort)[~]HOSTNAME=0.0.0.0[~]LOOMBRE_SERVER_ORIGIN=http://localhost:$(var.ServerPort)" />
+          Value="NODE_ENV=production[~]PORT=$(var.WebPort)[~]LOOMBRE_SERVER_ORIGIN=http://localhost:$(var.ServerPort)" />
       </Component>
     </ComponentGroup>
   </Fragment>
