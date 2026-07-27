@@ -260,6 +260,9 @@ importers:
 
   packages/contract:
     devDependencies:
+      '@loombre/shared':
+        specifier: workspace:*
+        version: link:../shared
       '@redocly/cli':
         specifier: ^2.40.0
         version: 2.40.0
