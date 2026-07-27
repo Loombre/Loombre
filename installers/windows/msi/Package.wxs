@@ -38,10 +38,17 @@
        per-source-file, so the files that USE it — Services.wxs,
        Firewall.wxs — each include it there; this file does not use it). -->
 
+  <!-- Version is $(var.MsiVersion), NOT the full release version:
+       Windows Installer requires a plain numeric major.minor.build
+       ProductVersion (WIX1148 fired on '0.9.0-rc.1' — labels make
+       version comparison, and therefore MajorUpgrade, undefined).
+       build-msi.mjs derives MsiVersion by stripping any prerelease
+       label; the full semver still names the .msi file itself. On a
+       final x.y.z release the two are identical. -->
   <Package
     Name="Loombre"
     Manufacturer="Loombre"
-    Version="$(var.ProductVersion)"
+    Version="$(var.MsiVersion)"
     UpgradeCode="$(var.UpgradeCode)"
     Language="1033"
     Scope="perMachine"

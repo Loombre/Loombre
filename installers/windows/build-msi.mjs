@@ -490,6 +490,28 @@ function ensureWixInstalled() {
   }
 }
 
+// Windows Installer's ProductVersion must be plain numeric
+// major.minor.build (major/minor < 256, build < 65536) — prerelease
+// labels are rejected (WIX1148, diag run 30286420347: "unpredictable and
+// undefined", and MajorUpgrade comparisons key on this value). The full
+// semver (incl. any -rc.N label) still names the .msi FILE; only the MSI
+// metadata version is stripped. Identical for a final x.y.z release.
+function msiNumericVersion(version) {
+  const numeric = version.split("-")[0];
+  const match = /^(\d+)\.(\d+)\.(\d+)$/.exec(numeric);
+  if (!match) {
+    stop(`cannot derive an MSI ProductVersion from '${version}' — expected a semver x.y.z core.`);
+  }
+  const [, major, minor, build] = match.map(Number);
+  if (major >= 256 || minor >= 256 || build >= 65536) {
+    stop(
+      `'${numeric}' exceeds MSI ProductVersion limits (major/minor < 256, build < 65536) — ` +
+        "Windows Installer would compare it unpredictably.",
+    );
+  }
+  return numeric;
+}
+
 function wixBuild(version, payloadDirs) {
   log("Step 6/7: wix build");
   if (!ensureWixInstalled()) {
@@ -527,7 +549,7 @@ function wixBuild(version, payloadDirs) {
     "-ext",
     PINNED_UTIL_EXT,
     "-d",
-    `ProductVersion=${version}`,
+    `MsiVersion=${msiNumericVersion(version)}`,
     "-d",
     `PayloadZip=${payloadDirs.payloadZip}`,
     "-d",
