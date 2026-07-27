@@ -39,15 +39,20 @@ export interface AssemblePlanInputParams {
    *  — see resolve-selection.ts's header for why this module doesn't read
    *  it itself. */
   audioLanguagePref: string | null | undefined;
+  /** Same, for `user_settings.prefs.subtitlePreferredLanguage` (H1,
+   *  orchestrator adjudication A-2). Optional so a caller that only reads
+   *  the audio preference still compiles — resolveTrackSelection treats an
+   *  omitted value identically to `null`/`undefined` ("no preference"). */
+  subtitleLanguagePref?: string | null | undefined;
   settingsService: SettingsService;
 }
 
 export async function assemblePlanInput(params: AssemblePlanInputParams): Promise<PlanInput> {
-  const { db, req, assembly, parsed, audioLanguagePref, settingsService } = params;
+  const { db, req, assembly, parsed, audioLanguagePref, subtitleLanguagePref, settingsService } = params;
 
   const device = parsed.device;
   const pins: SelectionPins = parsed.selection ?? {};
-  const selection = resolveTrackSelection(assembly.media, pins, audioLanguagePref);
+  const selection = resolveTrackSelection(assembly.media, pins, audioLanguagePref, subtitleLanguagePref);
   const network = assembleNetworkConditions(req, parsed.network, device.maxStreamBitrateBps);
   const caps = await resolveVerifiedCapabilities(db);
   const policy = resolveServerPolicyFromSettings(settingsService, caps);
