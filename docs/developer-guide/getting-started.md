@@ -37,8 +37,8 @@ no steps skipped, no commands invented beyond what's in `CLAUDE.md` and
   integration) silently *skip* rather than fail, so a clean-looking local
   `pnpm test`/`pnpm gate` run can hide real coverage gaps. Set
   `LOOMBRE_REQUIRE_FFMPEG=1` to turn that silent skip into a hard failure —
-  `LOOMBRE_REQUIRE_FFMPEG=1 pnpm gate` is exactly what CI runs, so it's the
-  closest local match to what a PR is actually checked against.
+  `LOOMBRE_REQUIRE_FFMPEG=1 pnpm gate:full` is exactly what CI runs, so
+  it's the closest local match to what a PR is actually checked against.
 
 ## 1. Install dependencies
 
@@ -105,21 +105,34 @@ for what that actually is, and
 [Authoring a matrix case](matrix-authoring.md) if you're
 adding to it.
 
-## 5. Run the full gate
+## 5. Run the gate
 
 ```bash
 pnpm gate
 ```
 
-This is the same sequence CI runs, stopping at the first failing step:
+This is the fast inner-loop default, stopping at the first failing step:
 `codegen` → `sdk-drift` → `oasdiff` → `depcruise` →
 `runtime-imports` → `license-check` → `dep-audit` → `lint` → `typecheck` →
 `test` → `db:migrate-check` → `grep-gates` → `docs-build` (see
 `scripts/gate.mjs` for the exact step list and the reasoning behind each
 step's position — it's a short, heavily-commented file, worth reading
-once). If `pnpm gate` is green, your change is in the same state CI will
-see it in. Run `LOOMBRE_REQUIRE_FFMPEG=1 pnpm gate` (see "Prerequisites"
-above) for the closest local match to what CI itself enforces.
+once).
+
+### 5a. Before you push or open a PR: run the full gate
+
+```bash
+pnpm gate:full
+```
+
+`pnpm gate:full` runs everything `pnpm gate` runs, plus a 14th step,
+`web-build-budget`: a production build of `apps/web` and a check of its
+bundle size against the docs/PLAN.md §9.3 budget. This step is genuinely
+slow (a full Next.js production build), which is why it's not in the fast
+`pnpm gate` — but **CI runs `pnpm gate:full`, not the fast gate**, so a
+green `pnpm gate` alone does not guarantee a green PR. Run
+`LOOMBRE_REQUIRE_FFMPEG=1 pnpm gate:full` (see "Prerequisites" above) for
+the closest local match to what CI itself enforces.
 
 ## Where to go next
 

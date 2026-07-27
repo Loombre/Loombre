@@ -33,6 +33,14 @@ Three blocking CI jobs (`perf-t0`, `perf-web-budget`, `perf-lighthouse` in
 handled by `lighthouserc.cjs`'s `startServerCommand`) and builds it itself
 via `pnpm perf:web-budget`'s own step, or you can build first.
 
+The `/browse` first-load JS budget is also checked locally by
+`pnpm gate:full` (as its `web-build-budget` step, running
+`pnpm perf:web-budget` under the hood) — the standalone `perf-web-budget`
+CI job above still exists independently, since it's the artifact
+publisher for `perf/web-budget-result.json` and a required branch-
+protection context; the two checks are the same script, just invoked from
+two different places.
+
 The stack idle-RSS figure named in plan §9.2 (server + worker + embedded PG
 <= 500 MB) is measured and reported (server + worker, best-effort) but NOT
 hard-enforced: embedded PG doesn't exist yet (a Phase-4 packaging concern),
