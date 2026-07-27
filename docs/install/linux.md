@@ -91,6 +91,23 @@ verification exists to catch.
 
 ## 3. Extract + install
 
+Two small shared libraries are needed by the bundled PostgreSQL (the
+default embedded-database mode). Ordinary server installs usually have
+them already; minimal/container images may not:
+
+```sh
+# Debian/Ubuntu
+apt install libgssapi-krb5-2 libxml2
+# openSUSE
+zypper install krb5 libxml2-2
+# Fedora/RHEL
+dnf install krb5-libs libxml2
+```
+
+`install.sh` warns if they are missing (installs pointed at an external
+`DATABASE_URL` never run the bundled PostgreSQL and are unaffected).
+
+
 ```sh
 tar xzf loombre-<version>-linux-<arch>.tar.gz
 cd loombre-<version>-linux-<arch>
