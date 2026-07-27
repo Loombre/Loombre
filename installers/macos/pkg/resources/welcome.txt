@@ -1,10 +1,10 @@
 Loombre — self-hosted media streaming
 
-This installer sets up the Loombre media server and worker as background
-system services (LaunchDaemons), running as a dedicated, unprivileged
-service account (_loombre). It bundles its own Node.js runtime and ffmpeg —
-nothing else on your Mac is required or modified outside the paths listed
-in the accompanying README.
+This installer sets up the Loombre media server, worker, and web UI as
+background system services (LaunchDaemons), running as a dedicated,
+unprivileged service account (_loombre). It bundles its own Node.js
+runtime, ffmpeg, and PostgreSQL — nothing else on your Mac is required or
+modified outside the paths listed in the accompanying README.
 
 This build is UNSIGNED (Loombre does not pay for an Apple Developer ID —
 see docs/install/macos.md in the repository for exactly why, and for the

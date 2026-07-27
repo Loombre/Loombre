@@ -98,7 +98,19 @@ for entry in bin lib runtime ffmpeg web pg packages VERSION; do
 done
 chown -R root:root "${PREFIX}"
 chmod -R go-w "${PREFIX}"
-chmod 755 "${PREFIX}/bin/loombre-server" "${PREFIX}/bin/loombre-worker" "${PREFIX}/bin/loombre"
+chmod 755 "${PREFIX}/bin/loombre-server" "${PREFIX}/bin/loombre-worker" "${PREFIX}/bin/loombre-web" "${PREFIX}/bin/loombre"
+
+# Next runtime cache (installer completeness audit, gap 3): the web app's
+# standalone server.js chdir()s into web/apps/web and writes its runtime
+# cache under .next/cache — the ONE spot inside the otherwise root-owned,
+# read-only payload that must be writable by the service user. The
+# loombre-web unit's ReadWritePaths= lists exactly this dir (that only
+# lifts ProtectSystem=strict's read-only bind; DAC ownership is what this
+# chown provides). Created here, empty, rather than shipped in the tarball.
+if [ -d "${PREFIX}/web/apps/web/.next" ]; then
+  mkdir -p "${PREFIX}/web/apps/web/.next/cache"
+  chown -R "${LOOMBRE_USER}:${LOOMBRE_USER}" "${PREFIX}/web/apps/web/.next/cache"
+fi
 echo "install.sh: app payload installed at ${PREFIX}"
 
 # ── PATH shim: /usr/local/bin/loombre -> $PREFIX/bin/loombre (L2, ──────
@@ -157,8 +169,9 @@ if [ -f "${ENV_FILE}" ]; then
 else
   cat > "${ENV_FILE}" <<EOF
 # Loombre environment file — installers/linux/install.sh generated this
-# skeleton. Values here are read by both loombre-server and loombre-worker
-# (systemd's EnvironmentFile=, or sourced directly in --no-systemd mode).
+# skeleton. Values here are read by loombre-server, loombre-worker AND
+# loombre-web (systemd's EnvironmentFile=, or sourced directly in
+# --no-systemd mode).
 
 # Server HTTP port.
 PORT=3001
@@ -168,10 +181,13 @@ NODE_ENV=production
 # App-data directory (matches the --data-dir this was installed with).
 LOOMBRE_DATA_DIR=${DATA_DIR}
 
-# External PostgreSQL (P4.2's "external-PG env var path" — first-class and
-# equally tested). Uncomment and point at your own Postgres 17+ instance.
-# Embedded PostgreSQL (when lane B's payload is present under pg/) is the
-# alternative — leave DATABASE_URL unset to use it once that path lands.
+# PostgreSQL. Leave DATABASE_URL unset (the default) to use the BUNDLED
+# embedded PostgreSQL: the server provisions it under the data dir, runs
+# migrations automatically at boot, and supervises it — no database setup
+# of any kind required. Uncomment and point at your own Postgres 17+
+# instance for external mode instead (P4.2's "external-PG env var path" —
+# first-class and equally tested; you run migrations yourself in that mode,
+# see docs/install/linux.md).
 #DATABASE_URL=postgres://loombre:CHANGE_ME@127.0.0.1:5432/loombre
 
 # JWT signing secret. STRONGLY recommended to set explicitly in any real
@@ -180,13 +196,35 @@ LOOMBRE_DATA_DIR=${DATA_DIR}
 #   openssl rand -base64 48
 #LOOMBRE_JWT_SECRET=
 
+# Web client (bin/loombre-web / loombre-web.service) HTTP port. NOT the
+# shared PORT above — that one belongs to loombre-server; the web wrapper
+# reads this and defaults to 3000.
+#LOOMBRE_WEB_PORT=3000
+
 # Reverse-proxy deployments: uncomment if loombre-server sits behind your
 # own trusted reverse proxy (nginx/Caddy/Traefik) that sets X-Forwarded-For.
 #LOOMBRE_TRUST_PROXY=loopback
 
 # CORS allow-list for the web client, comma-separated. Empty disables CORS
-# entirely (same-origin deployments behind one reverse proxy).
+# entirely (same-origin deployments behind one reverse proxy). For LAN use
+# — browsing from other machines — list the web client's URL as those
+# machines actually reach it (host/IP + LOOMBRE_WEB_PORT), e.g.:
+#   LOOMBRE_CORS_ORIGINS=http://localhost:3000,http://192.168.1.50:3000
 #LOOMBRE_CORS_ORIGINS=http://localhost:3000
+
+# Embedded PostgreSQL (ADVANCED — normally all auto). When DATABASE_URL is
+# unset, bin/loombre-server points the vendor dir at the installed pg/
+# payload and derives the version from it; the cluster listens on
+# localhost:5433. Only override to run a self-vendored PG build/version or
+# to move the port:
+#LOOMBRE_EMBEDDED_PG_VENDOR_DIR=${PREFIX}/pg
+#LOOMBRE_EMBEDDED_PG_VERSION=
+#LOOMBRE_EMBEDDED_PG_PORT=5433
+
+# Library folders on NAS/network mounts (NFS/SMB) often don't deliver
+# inotify events — set LOOMBRE_SCAN_POLL=1 to force polling for watched
+# paths if new files aren't picked up automatically.
+#LOOMBRE_SCAN_POLL=1
 EOF
   chown root:"${LOOMBRE_USER}" "${ENV_FILE}"
   chmod 640 "${ENV_FILE}"
@@ -198,13 +236,17 @@ if [ "${NO_SYSTEMD}" -eq 1 ]; then
   echo "install.sh: --no-systemd — skipping unit install. Start manually:"
   echo "  sudo -u ${LOOMBRE_USER} env \$(cat ${ENV_FILE} | grep -v '^#' | xargs) ${PREFIX}/bin/loombre-server"
   echo "  sudo -u ${LOOMBRE_USER} env \$(cat ${ENV_FILE} | grep -v '^#' | xargs) ${PREFIX}/bin/loombre-worker"
+  echo "  sudo -u ${LOOMBRE_USER} env \$(cat ${ENV_FILE} | grep -v '^#' | xargs) ${PREFIX}/bin/loombre-web"
 else
   if ! command -v systemctl >/dev/null 2>&1; then
     echo "install.sh: systemctl not found but --no-systemd was not passed — pass --no-systemd on non-systemd hosts" >&2
     exit 1
   fi
   UNIT_DIR="/etc/systemd/system"
-  for svc in loombre-server loombre-worker; do
+  # Three units since the installer completeness audit: loombre-web is the
+  # browser-facing UI (Next standalone server, :3000 by default) — without
+  # it the tarball shipped a web client nothing ever started.
+  for svc in loombre-server loombre-worker loombre-web; do
     sed \
       -e "s#__PREFIX__#${PREFIX}#g" \
       -e "s#__DATA_DIR__#${DATA_DIR}#g" \
@@ -213,9 +255,9 @@ else
       "${SCRIPT_DIR}/systemd/${svc}.service.template" > "${UNIT_DIR}/${svc}.service"
   done
   systemctl daemon-reload
-  systemctl enable loombre-server.service loombre-worker.service
+  systemctl enable loombre-server.service loombre-worker.service loombre-web.service
   echo "install.sh: systemd units installed + enabled (not started — configure ${ENV_FILE} first, then:"
-  echo "  sudo systemctl start loombre-server loombre-worker"
+  echo "  sudo systemctl start loombre-server loombre-worker loombre-web"
 fi
 
 echo "install.sh: done. Loombre ${VERSION} installed at ${PREFIX}."

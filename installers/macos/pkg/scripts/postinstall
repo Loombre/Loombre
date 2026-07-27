@@ -11,8 +11,8 @@
 # 4. Marks the bin/ shims + fetched runtime binaries executable (pkgbuild
 #    payload permissions can be lossy across some staging tools; this is
 #    belt-and-suspenders, cheap and idempotent).
-# 5. Bootstraps (loads) both LaunchDaemons so the service is live
-#    immediately, without requiring a reboot.
+# 5. Bootstraps (loads) all three LaunchDaemons (server, worker, web UI)
+#    so the service is live immediately, without requiring a reboot.
 #
 # Runs as root (Installer.app / `installer(8)` always run scripts as root).
 set -eu
@@ -38,7 +38,12 @@ if ! dscl . -read /Users/_loombre >/dev/null 2>&1; then
   dscl . -create /Users/_loombre NFSHomeDirectory /var/empty
   dscl . -create /Groups/_loombre PrimaryGroupID "$NEXT_UID"
   dscl . -create /Groups/_loombre RealName "Loombre Service Group"
-  dscl . -appendo /Groups/_loombre GroupMembership _loombre 2>/dev/null || true
+  # (installer completeness audit: this line shipped as `-appendo`, a typo
+  # dscl reports as an unknown verb — masked by the `|| true`. `-append` is
+  # the real verb. Harmless in practice only because _loombre's
+  # PrimaryGroupID already makes it a member of its own primary group;
+  # fixed anyway so the explicit membership record actually lands.)
+  dscl . -append /Groups/_loombre GroupMembership _loombre 2>/dev/null || true
   # IsHidden keeps the account off the login window / Users & Groups list.
   dscl . -create /Users/_loombre IsHidden 1
 else
@@ -50,6 +55,32 @@ mkdir -p "$APP_SUPPORT/db" "$APP_SUPPORT/config" "$APP_SUPPORT/secrets" "$APP_SU
 mkdir -p "$LOG_DIR"
 
 chown -R _loombre:_loombre "$APP_SUPPORT"
+
+# ROOT dir only: group `admin` + 0750 — installer completeness audit.
+# apps/server's IPC listener writes its discovery + bearer-token files
+# (controller-ipc.json / controller-ipc.token) at the app-support ROOT
+# (apps/server/src/ipc/discovery-files.ts follows the FROZEN transport.ts
+# wording: "under the platform app-data dir", no subdirectory), each 0640
+# with the file's GROUP chown'd to LOOMBRE_IPC_GROUP=admin (set by
+# bin/loombre-server per the recorded orchestrator decision in
+# apps/server/src/ipc/env.ts). The menubar app runs as the CONSOLE user,
+# not _loombre — group-read on those files is useless unless that user can
+# also TRAVERSE this directory, so the root dir itself must be group-admin
+# 0750 (owner _loombre rwx, group admin r-x, no world bits).
+#
+# Deliberately NOT loosened (verified against what the server creates):
+#   - postgres/  — embedded-PG data dir + superuser.secret; initdb itself
+#     enforces 0700 on postgres/data and the secret is file0600
+#     (packages/provisioning-pg/src/{discovery.ts,secret/file0600.ts}).
+#   - secrets/   — 0700 below (P4.7 file0600 SecretRef fallback dir).
+# Both stay _loombre-owned with no group access; only the ROOT dir's group
+# changes here, never `chgrp -R`.
+#
+# Upgrade note: the `chown -R _loombre:_loombre` above resets any existing
+# discovery/token files' group back to _loombre for a moment — harmless:
+# preinstall already booted the daemons out, and the server rewrites both
+# files (re-chowning group per LOOMBRE_IPC_GROUP) on every boot.
+chown _loombre:admin "$APP_SUPPORT"
 chmod 0750 "$APP_SUPPORT"
 chmod 0750 "$APP_SUPPORT/db" "$APP_SUPPORT/ipc" "$APP_SUPPORT/config"
 chmod 0700 "$APP_SUPPORT/secrets"
@@ -63,30 +94,68 @@ chown -R root:wheel "$OPT_DIR"
 CONFIG_ENV="$APP_SUPPORT/config/loombre.env"
 if [ ! -f "$CONFIG_ENV" ]; then
   cat > "$CONFIG_ENV" <<'EOF'
-# Loombre server/worker environment overrides.
-# Sourced by /opt/loombre/current/bin/loombre-{server,worker} at every start.
-# This file is created once at install time and NEVER touched by upgrades —
-# edits here survive `pkg` reinstalls/upgrades.
+# Loombre service environment overrides.
+# Sourced by /opt/loombre/current/bin/loombre-{server,worker,web} at every
+# start. This file is created once at install time and NEVER touched by
+# upgrades — edits here survive `pkg` reinstalls/upgrades.
 #
-# Uncomment and edit to point at your own PostgreSQL instance
+# --- Database ---------------------------------------------------------
+# Leave DATABASE_URL unset (the default) and the server provisions and
+# supervises the BUNDLED embedded PostgreSQL under
+# /Library/Application Support/Loombre/postgres/ automatically at boot.
+# Embedded-mode knobs (port, version pinning, vendor dir) are the
+# LOOMBRE_EMBEDDED_PG_* variables — see docs/install/macos.md and
+# packages/provisioning-pg for the full list; bin/loombre-server derives
+# sensible defaults from the payload itself.
+#
+# Uncomment and edit to point at your own PostgreSQL instead
 # (D1: "external Postgres via one env var" is a first-class, equally
 # tested path — see docs/install/macos.md):
 #
 #   DATABASE_URL=postgres://loombre:yourpassword@127.0.0.1:5432/loombre
 #
-# PORT=3001
+# --- Ports ------------------------------------------------------------
+# A bare PORT here is the API SERVER's port (bin/loombre-server defaults
+# it to 3001):
+#
+#   PORT=3001
+#
+# The web UI's port is deliberately NAMESPACED — all three services source
+# this same file, and Next's standalone server also reads a bare PORT, so
+# an un-namespaced value would move/collide both services at once.
+# bin/loombre-web maps LOOMBRE_WEB_PORT onto PORT after sourcing:
+#
+#   LOOMBRE_WEB_PORT=3000
+#   LOOMBRE_WEB_HOSTNAME=0.0.0.0   # web UI bind address (127.0.0.1 = local only)
+#
+# --- LAN access -------------------------------------------------------
+# The API's CORS allowlist defaults to http://localhost:3000 +
+# http://127.0.0.1:3000 ONLY (apps/server). The web UI binds all
+# interfaces, but browsing it from another device needs the origins those
+# browsers will actually use allowlisted, comma-separated:
+#
+#   LOOMBRE_CORS_ORIGINS=http://mymac.local:3000,http://192.168.1.50:3000
+#
+# and the web app told which API origin those browsers should reach
+# (defaults to http://localhost:3001, correct only on the Mac itself):
+#
+#   LOOMBRE_SERVER_ORIGIN=http://mymac.local:3001
 EOF
   chown _loombre:_loombre "$CONFIG_ENV"
   chmod 0640 "$CONFIG_ENV"
 fi
 
 # --- 4. executable bits ---------------------------------------------------
-chmod 0755 "$OPT_DIR/current/bin/loombre-server" "$OPT_DIR/current/bin/loombre-worker" 2>/dev/null || true
+chmod 0755 "$OPT_DIR/current/bin/loombre-server" "$OPT_DIR/current/bin/loombre-worker" "$OPT_DIR/current/bin/loombre-web" 2>/dev/null || true
 chmod 0755 "$OPT_DIR/current/runtime/node/bin/node" 2>/dev/null || true
 chmod 0755 "$OPT_DIR/current/runtime/ffmpeg/ffmpeg" "$OPT_DIR/current/runtime/ffmpeg/ffprobe" 2>/dev/null || true
 
 # --- 5. load the daemons ---------------------------------------------------
-for PLIST in /Library/LaunchDaemons/com.loombre.server.plist /Library/LaunchDaemons/com.loombre.worker.plist; do
+# Order matters loosely: server first (it provisions embedded PG + writes
+# the IPC discovery files), then worker (discovers DATABASE_URL via
+# LOOMBRE_DATA_DIR), then web (com.loombre.web — installer completeness
+# audit gap 1: the UI daemon, serving the Next standalone build on :3000).
+for PLIST in /Library/LaunchDaemons/com.loombre.server.plist /Library/LaunchDaemons/com.loombre.worker.plist /Library/LaunchDaemons/com.loombre.web.plist; do
   if [ -f "$PLIST" ]; then
     echo "loombre postinstall: bootstrapping $PLIST"
     launchctl bootstrap system "$PLIST" 2>&1 || echo "loombre postinstall: WARNING bootstrap failed for $PLIST (may already be loaded)"

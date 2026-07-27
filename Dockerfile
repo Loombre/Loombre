@@ -19,6 +19,18 @@
 # for a solo-maintainer AGPL project than the marginal "pull only what you
 # run" saving a split would buy).
 #
+# PLUS a second, independent final stage `web` (installer completeness
+# audit — the compose stack previously shipped no way to reach the UI at
+# all): apps/web's Next.js standalone server as its OWN image
+# (`--target web`; installers/docker/docker-bake.hcl's `loombre-web`
+# target). The one-image rationale above does NOT extend to it — the web
+# client shares essentially none of the server/worker runtime graph (no
+# ffmpeg, no @loombre/db, no pg; its standalone build carries its own
+# pruned node_modules) — so a separate image is the smaller, simpler shape
+# here, not a contradiction of that reasoning. The `runtime` stage stays
+# LAST in this file deliberately: an untargeted `docker build .` still
+# produces the server/worker image, exactly as before the web path landed.
+#
 # Multi-arch: built for linux/amd64 and linux/arm64 via buildx (see
 # installers/docker/docker-bake.hcl). Every native dependency below (sharp,
 # hash-wasm/argon2id, xxhash-wasm, the fetched ffmpeg/ffprobe pair) resolves
@@ -44,7 +56,9 @@ RUN corepack enable
 # @loombre/server and @loombre/worker need at runtime (server, worker, db,
 # jobs, playback-engine, provisioning, provisioning-pg, shared, sdk, plus
 # release-manifest — see the explicit third scope argument below — NOT
-# apps/web, NOT the rest of the installer packages). `pnpm dlx` fetches a
+# apps/web, NOT the rest of the installer packages; apps/web gets its OWN
+# prune stage, `web-pruner` below, and that stage's header explains why
+# the two scopes stay separate). `pnpm dlx` fetches a
 # standalone turbo CLI so this
 # stage doesn't need a full `pnpm install` just to run one command.
 #
@@ -152,9 +166,160 @@ RUN set -eu; \
     node scripts/fetch-ffmpeg.mjs --platform "$ffmpeg_platform" --vendor-dir /vendor
 
 # ─────────────────────────────────────────────────────────────────────────
-# Stage: runtime — the shipped image. Assembled from three independent
-# stages above rather than one mutated tree, specifically so no stage's
-# devDependency install ever touches this stage's filesystem history.
+# Stage: web-pruner — a SECOND `turbo prune`, scoped to @loombre/web only
+# (installer completeness audit). Deliberately NOT merged into the shared
+# `pruner` scope above: adding @loombre/web there would drag apps/web and
+# its whole Next toolchain into the server path's out/json + out/full,
+# bloating `builder`/`prod-deps`'s inputs and invalidating their layer
+# cache on every web-only source change (and vice versa). Two prune stages
+# keep the two images' dependency closures fully independent while still
+# sharing the `base` layer and the one pnpm store cache mount.
+#
+# Same turbo pin as `pruner` above — bump the two together, always.
+# `pruner`'s tsconfig.base.json gotcha applies identically here
+# (apps/web/tsconfig.json `extends` ../../tsconfig.base.json, and `next
+# build`'s type-check step needs it) — fixed the same way, by copying it
+# from THIS stage's own full checkout in web-builder below.
+# ─────────────────────────────────────────────────────────────────────────
+FROM base AS web-pruner
+WORKDIR /repo
+COPY . .
+RUN pnpm dlx turbo@2.10.7 prune @loombre/web --docker
+
+# ─────────────────────────────────────────────────────────────────────────
+# Stage: web-builder — full install against the web-pruned lockfile, then
+# `next build` via turbo (whose ^build graph compiles @loombre/sdk and
+# @loombre/shared first — both plain `tsc` over committed sources; the
+# sdk's generated client is checked in, so NO contract codegen runs at
+# image-build time).
+#
+# There is deliberately NO build-time API origin: the web client selects
+# its server URL in the BROWSER (the login screen takes a server URL —
+# docs/PLAN.md's v1 deployment shape), and LOOMBRE_SERVER_ORIGIN — the
+# optional CSP-tightening pairing — is read PER-REQUEST at runtime by
+# src/proxy.ts, never baked into the bundle. So this stage takes zero
+# LOOMBRE_* build args and one build serves every deployment.
+# NEXT_TELEMETRY_DISABLED is inherited from `base` (D14 — see its header).
+# ─────────────────────────────────────────────────────────────────────────
+FROM base AS web-builder
+WORKDIR /repo
+COPY --from=web-pruner /repo/out/json/ .
+COPY --from=web-pruner /repo/out/pnpm-lock.yaml ./pnpm-lock.yaml
+RUN --mount=type=cache,id=loombre-pnpm-store,target=/root/.local/share/pnpm/store \
+    pnpm install --frozen-lockfile
+COPY --from=web-pruner /repo/out/full/ .
+COPY --from=web-pruner /repo/tsconfig.base.json ./tsconfig.base.json
+RUN pnpm exec turbo run build --filter=@loombre/web
+# `output: "standalone"` (apps/web/next.config.mjs) makes that build emit
+# .next/standalone/ — a self-contained server.js plus a PRUNED, real-dir
+# node_modules — which is all the `web` stage below ships. The full
+# devDependency install above never reaches the final image.
+
+# ─────────────────────────────────────────────────────────────────────────
+# Stage: web — the shipped WEB image (`--target web`; docker-bake.hcl's
+# `loombre-web` target; docker-compose.prod.yml's `web` service). Mirrors
+# the `runtime` stage's posture — tini as PID 1, non-root loombre at
+# uid/gid 1000, curl-driven HEALTHCHECK — minus everything server-specific:
+# no ffmpeg, no db scripts, no /data volume. A Next standalone server is
+# stateless; every API call happens from the BROWSER straight to the
+# server's own origin, never through this container.
+# ─────────────────────────────────────────────────────────────────────────
+FROM node:24.18.0-bookworm-slim AS web
+
+LABEL org.opencontainers.image.title="Loombre Web" \
+      org.opencontainers.image.description="Loombre web client (Next.js standalone server)" \
+      org.opencontainers.image.source="https://github.com/Loombre/Loombre" \
+      org.opencontainers.image.licenses="NOASSERTION" \
+      org.opencontainers.image.vendor="Loombre"
+# licenses=NOASSERTION for the same reason as the `runtime` stage below —
+# see its comment (LICENSE-INTENT.md: AGPL-3.0 is declared intent, not the
+# license in force yet). ARG declarations are per-stage in Dockerfiles, so
+# the version/revision/created trio is redeclared here; the values arrive
+# from the same installers/docker/build.sh invocation either way.
+ARG LOOMBRE_VERSION=0.0.0
+ARG VCS_REF=unknown
+ARG BUILD_DATE=unknown
+LABEL org.opencontainers.image.version="${LOOMBRE_VERSION}" \
+      org.opencontainers.image.revision="${VCS_REF}" \
+      org.opencontainers.image.created="${BUILD_DATE}"
+
+# Same rename-in-place of the base image's uid/gid-1000 "node" user as the
+# `runtime` stage below — see its comment for why rename beats a second
+# uid-1000 identity.
+RUN usermod -l loombre -d /home/loombre -m node \
+    && groupmod -n loombre node
+
+# `curl` for the HEALTHCHECK below; `tini` as PID 1 (same reasoning as
+# `runtime` — though the zombie-reaping half barely applies here, the
+# standalone server spawns no child processes; direct SIGTERM delivery is
+# the part that keeps `docker stop` from waiting out the kill timeout).
+# NO ca-certificates, deliberately: the web process makes no outbound TLS
+# calls of its own — all API traffic is browser-side (see web-builder's
+# header) and the standalone server only renders routes and serves local
+# assets. NO ffmpeg, obviously.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      curl tini \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Standalone monorepo layout (verified against a real `next build` of this
+# workspace, not assumed from docs): <standalone>/apps/web/server.js is
+# the entrypoint and <standalone>/node_modules the pruned dependency tree,
+# so copying the standalone root onto /app puts the server at
+# /app/apps/web/server.js.
+COPY --from=web-builder --chown=loombre:loombre /repo/apps/web/.next/standalone ./
+# Next's documented standalone contract: .next/static and public/ are NOT
+# promised inside standalone output and must be placed at
+# <app dir>/.next/static and <app dir>/public by the deployer. Copied
+# explicitly from the real build output — a no-op layer if a given Next
+# version happens to have included them, and correct when it doesn't;
+# never rely on the undocumented behavior.
+COPY --from=web-builder --chown=loombre:loombre /repo/apps/web/.next/static ./apps/web/.next/static
+COPY --from=web-builder --chown=loombre:loombre /repo/apps/web/public ./apps/web/public
+
+# HOSTNAME=0.0.0.0: the standalone server.js binds process.env.HOSTNAME
+# and defaults to localhost — unreachable through container networking
+# without this. NEXT_TELEMETRY_DISABLED: D14 no-phone-home, same as the
+# build stages (Next phones home from the running server too, not only
+# `next build`). LOOMBRE_SERVER_ORIGIN (optional per-request CSP
+# tightening, src/proxy.ts) deliberately has NO default here — it is a
+# per-deployment value; docker-compose.prod.yml wires it with a
+# commented rationale.
+ENV NODE_ENV=production \
+    PORT=3000 \
+    HOSTNAME=0.0.0.0 \
+    NEXT_TELEMETRY_DISABLED=1
+
+EXPOSE 3000
+
+USER loombre:loombre
+
+# /manifest.webmanifest is Next's file-based metadata route
+# (apps/web/src/app/manifest.ts) — statically generated at build time,
+# always-200, zero data/API dependency — a far cheaper every-30s liveness
+# probe than rendering /login. The /login page itself is asserted
+# end-to-end (once, through the published port) by
+# installers/docker/smoke.mjs instead. start-period is shorter than
+# runtime's 20s: no DB, nothing to warm — the standalone server binds in
+# about a second.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD curl --fail --silent --show-error "http://127.0.0.1:${PORT}/manifest.webmanifest" || exit 1
+
+# Same tini-as-PID-1 rationale as `runtime` below (correct under plain
+# `docker run`, not only compose — see that stage's comment and
+# installers/docker/BUILD-NOTES.md).
+ENTRYPOINT ["tini", "--"]
+CMD ["node", "apps/web/server.js"]
+
+# ─────────────────────────────────────────────────────────────────────────
+# Stage: runtime — the shipped SERVER/WORKER image. Assembled from three
+# independent stages above rather than one mutated tree, specifically so no
+# stage's devDependency install ever touches this stage's filesystem
+# history. Kept as the LAST stage in this file so an untargeted
+# `docker build .` still builds this image, not the `web` stage above
+# (BuildKit's default target is the final stage) — though every real
+# consumer (compose, bake) now names its target explicitly anyway.
 # ─────────────────────────────────────────────────────────────────────────
 FROM node:24.18.0-bookworm-slim AS runtime
 

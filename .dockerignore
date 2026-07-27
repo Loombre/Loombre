@@ -67,3 +67,15 @@ vendor/
 # the image being built
 installers/docker/BUILD-NOTES.md
 .claude/
+
+# Installer-lane build caches (gitignored, multi-GB): never build context.
+# Found by the installer completeness audit — installers/linux/.build alone
+# held 2.8 GB of cached Node runtimes that every `COPY . .` prune stage
+# uploaded as context.
+installers/**/.build/
+installers/**/.build-cache/
+installers/**/out/
+installers/**/dist/
+.buildx-cache/
+.buildx-cache-web/
+vendor/

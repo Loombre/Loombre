@@ -47,25 +47,22 @@
         <Directory Id="SERVERDIR" Name="server" />
         <!-- Same shape as SERVERDIR, for @loombre/worker. -->
         <Directory Id="WORKERDIR" Name="worker" />
-        <!-- @loombre/web's production build output. STAGED HERE, NOT YET
-             SERVABLE STANDALONE — see build-msi.mjs's header comment and
-             the I3 lane report: apps/web/next.config.mjs does not set
-             `output: 'standalone'` and apps/server has no code today that
-             mounts/proxies a built Next app, even though
-             packages/controller-ipc's IpcStatusResponse.webUrl (a bare URL,
-             not a third ProcessInfo) implies "the server serves the web
-             client" is the intended v1 architecture. Flagged, not invented
-             here — installers/windows/msi is a staging/authoring lane, not
-             the owner of apps/server or apps/web. -->
+        <!-- @loombre/web's `output: "standalone"` bundle in Next's
+             monorepo layout (apps\web\server.js + pruned node_modules,
+             plus the explicitly-copied apps\web\.next\static and
+             apps\web\public trees — see build-msi.mjs's stageWeb()).
+             SERVED by the LoombreWeb service (Services.wxs) running
+             node.exe against apps\web\server.js — the installer
+             completeness audit closed the old "staged but nothing serves
+             it" gap this comment used to flag. -->
         <Directory Id="WEBDIR" Name="web" />
         <!-- Bundled Node runtime (single Node runtime per platform, no
-             user-installed Node — docs/PLAN.md §11). NOT YET REAL: this
-             lane's own build-msi.mjs (fetchNodeRuntime()) stages a
-             PLACEHOLDER only — no shared fetch-node script exists in the
-             repo yet, unlike ffmpeg/embedded-pg below. Flagged as a
-             consolidation candidate for lane I in the I3 report (this
-             lane does not own root scripts/, so it did not create one
-             unilaterally). -->
+             user-installed Node — docs/PLAN.md §11). REAL now: the shared,
+             manifest-pinned scripts/fetch-node.mjs (installers/
+             node-manifest.json) landed and build-msi.mjs's
+             fetchNodeRuntime() calls it, staging node.exe at this
+             directory's root — the exact path Services.wxs's
+             "[NODEDIR]node.exe" references resolve. -->
         <Directory Id="NODEDIR" Name="node" />
         <!-- Bundled ffmpeg/ffprobe. Populated by lane I1's SHARED, landed
              scripts/fetch-ffmpeg.mjs — build-msi.mjs's fetchFfmpegWindows()
@@ -76,7 +73,12 @@
         <!-- Embedded PostgreSQL per-platform pinned binaries (P4.2).
              Populated by lane B's SHARED, landed
              scripts/fetch-embedded-pg.mjs (same real-CLI /
-             placeholder-fallback pattern as FFMPEGDIR). -->
+             placeholder-fallback pattern as FFMPEGDIR), staged
+             VENDOR-SHAPED by build-msi.mjs's createPayloadZip():
+             pg\windows-x64\<version>\{bin,lib,share,include} — the layout
+             packages/provisioning-pg's vendor-layout.ts resolves under
+             the LOOMBRE_EMBEDDED_PG_VENDOR_DIR env var Services.wxs
+             points at this directory (installer completeness audit). -->
         <Directory Id="PGDIR" Name="pg" />
         <!-- The single-file archived payload (payload.zip) holding the
              five big trees above — the ONLY thing the MSI installs for
@@ -96,25 +98,29 @@
     </StandardDirectory>
 
     <StandardDirectory Id="CommonAppDataFolder">
-      <!-- %ProgramData%\Loombre — the ProvisioningInterface data-dir
-           (packages/provisioning/src/provisioning-request.ts's `dataDir`;
-           packages/controller-ipc/src/transport.ts's discovery/token
-           files live directly in this folder, alongside — not inside —
-           APPDATA_DATA, matching transport.ts's "alongside the data dir
-           itself" wording). -->
+      <!-- %ProgramData%\Loombre — LOOMBRE_DATA_DIR itself (Services.wxs
+           points both node services at this ROOT, per the installer
+           completeness audit): packages/controller-ipc's discovery/token
+           files are written at join(dataDir, controller-ipc.*) — i.e.
+           directly in this folder, where the tray looks for them — and
+           the embedded-PG cluster lives at postgres\data UNDER here,
+           created at runtime by apps/server's provisioning bootstrap
+           (which appends postgres\data to the data dir itself — see
+           apps/server/src/bootstrap/provisioning.ts). That is why there
+           is no pgdata Directory below anymore: the earlier APPDATA_PGDATA
+           authoring predated lane B's landed path convention and pointed
+           at a directory nothing would ever use. -->
       <Directory Id="APPDATAFOLDER" Name="Loombre">
-        <!-- Embedded-PG data directory + any other persistent server data
-             (ProvisioningRequest.dataDir target). -->
+        <!-- Optional per-service envfile overrides read by
+             LoombreServiceHost at spawn time (Services.wxs passes
+             [APPDATA_DATA]server.env / worker.env / web.env) + any other
+             operator-managed persistent files that should not sit loose
+             in the data-dir root. -->
         <Directory Id="APPDATA_DATA" Name="data" />
         <!-- LoombreServiceHost's child-process stdout/stderr logs
              (Services.wxs) + P4.5/P4.14 process-level crash files (the
              controller-ipc crash-files.ts surface reads from here). -->
         <Directory Id="APPDATA_LOGS" Name="logs" />
-        <!-- P4.2 embedded-PG cluster data (kept as its own named
-             subdirectory rather than dumped straight into APPDATA_DATA so
-             a P4.3 dump/restore upgrade job can rsync/replace exactly this
-             one directory without touching sibling app data). -->
-        <Directory Id="APPDATA_PGDATA" Name="pgdata" />
       </Directory>
     </StandardDirectory>
 

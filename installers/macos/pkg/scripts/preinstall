@@ -2,9 +2,9 @@
 # Loombre :: installers/macos/pkg/scripts/preinstall
 #
 # Runs before the payload is laid down. On a fresh install there is nothing
-# to stop (idempotent no-op — both `launchctl bootout` calls below are
+# to stop (idempotent no-op — all three `launchctl bootout` calls below are
 # allowed to fail, that IS "nothing was running"). On an upgrade, stops any
-# already-running server/worker LaunchDaemons so the new payload doesn't
+# already-running server/worker/web LaunchDaemons so the new payload doesn't
 # land under a live, possibly-incompatible process (mid-transcode ffmpeg
 # processes, open DB connections against a schema about to be migrated,
 # etc.) — installer runs this as root, which is required for
@@ -13,8 +13,12 @@ set -u
 
 SERVER_LABEL="system/com.loombre.server"
 WORKER_LABEL="system/com.loombre.worker"
+# Third daemon (installer completeness audit): the web-UI service must be
+# stopped for upgrade too, or the new payload lands under a live Next
+# server holding open file handles into the old version dir.
+WEB_LABEL="system/com.loombre.web"
 
-for LABEL in "$SERVER_LABEL" "$WORKER_LABEL"; do
+for LABEL in "$SERVER_LABEL" "$WORKER_LABEL" "$WEB_LABEL"; do
   if launchctl print "$LABEL" >/dev/null 2>&1; then
     echo "loombre preinstall: stopping $LABEL for upgrade"
     launchctl bootout "$LABEL" 2>/dev/null || true

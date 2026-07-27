@@ -10,19 +10,25 @@
 #   docker compose -f docker-compose.prod.yml --env-file installers/docker/loombre.env run --rm server \
 #     node packages/db/scripts/migrate.mjs migrate
 #   docker compose -f docker-compose.prod.yml --env-file installers/docker/loombre.env up -d
+#   # web UI: http://<host>:3000 — HTTP API: http://<host>:3001
 #
 # Full walkthrough + env explanation: docs/install/docker.md.
 #
-# ONE image (built from the repo-root Dockerfile), TWO containers: `server`
-# runs the image's default CMD, `worker` overrides `command:` to run the
-# same image's worker entrypoint instead. See the Dockerfile's own header
-# comment for why this is one image rather than two.
+# TWO images, both built from the one repo-root Dockerfile (installer
+# completeness audit — this file previously started no web container at
+# all, so the docs' "open the first-run wizard" step pointed at nothing):
+#   - `server` and `worker` share the server/worker image (`runtime`
+#     target): `server` runs its default CMD, `worker` overrides
+#     `command:` to the same image's worker entrypoint. See the
+#     Dockerfile's header for the one-image-two-roles rationale.
+#   - `web` runs the separate web-client image (`web` target) — the
+#     Dockerfile's header also explains why THAT one is its own image.
 #
-# No ports beyond the server's HTTP port are published — this is a LAN/
-# localhost-reachable stack by default. Reverse-proxy + TLS (80/443) is the
-# documented real-deployment path (docs/install/docker.md; the reverse-
-# proxy and ACME mechanics themselves are lane F's docs/ops territory, not
-# this file's job).
+# No ports beyond the server's HTTP port and the web client's port are
+# published — this is a LAN/localhost-reachable stack by default.
+# Reverse-proxy + TLS (80/443) is the documented real-deployment path
+# (docs/install/docker.md; the reverse-proxy and ACME mechanics themselves
+# are lane F's docs/ops territory, not this file's job).
 #
 # Profiles were deliberately left out per this lane's brief ("keep it
 # minimal") — every service here is required for a working instance.
@@ -59,6 +65,10 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      # Explicit now that the Dockerfile has a second final stage (`web`):
+      # an untargeted build compiles the LAST stage — still `runtime`
+      # today, but that's file position, not a contract.
+      target: runtime
     image: ${LOOMBRE_IMAGE:-loombre:latest}
     restart: unless-stopped
     # Default CMD from the Dockerfile (node apps/server/dist/main.js).
@@ -77,7 +87,30 @@ services:
       # an external Postgres instance instead of the `postgres` service.
       DATABASE_URL: ${DATABASE_URL:-postgres://${POSTGRES_USER:-loombre}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}@postgres:5432/${POSTGRES_DB:-loombre}}
       LOOMBRE_JWT_SECRET: ${LOOMBRE_JWT_SECRET:?LOOMBRE_JWT_SECRET must be set — see installers/docker/loombre.env.example}
-      LOOMBRE_CORS_ORIGINS: ${LOOMBRE_CORS_ORIGINS:-}
+      # UNSET vs EMPTY matter here — verified against apps/server/src/
+      # main.ts resolveCorsOrigins(): UNSET falls back to the code's
+      # localhost web pairing (http://localhost:3000 + http://127.0.0.1:3000);
+      # EMPTY disables CORS ENTIRELY (the same-origin/reverse-proxy
+      # posture). The previous `${LOOMBRE_CORS_ORIGINS:-}` default passed
+      # an empty string, i.e. shipped the stack with CORS off and the
+      # bundled `web` container's cross-origin API calls dead on arrival
+      # (installer completeness audit). A compose `environment:` mapping
+      # always SETS the variable, so the code's unset-default is
+      # unreachable from here — instead the `-` operator (no colon:
+      # default only when UNSET) reproduces it explicitly, tracking
+      # LOOMBRE_WEB_PORT; an explicit `LOOMBRE_CORS_ORIGINS=` (empty) in
+      # loombre.env still means "disable CORS". NOTE the default covers
+      # browsers ON the Docker host only — LAN/remote browsers load the
+      # web UI from http://<host-ip>:3000, so set this to the origin(s)
+      # browsers actually use (see installers/docker/loombre.env.example).
+      LOOMBRE_CORS_ORIGINS: ${LOOMBRE_CORS_ORIGINS-http://localhost:${LOOMBRE_WEB_PORT:-3000},http://127.0.0.1:${LOOMBRE_WEB_PORT:-3000}}
+      # Where the server's own "open the web UI" surfaces point
+      # (IpcStatusResponse.webUrl / GET /ipc/v1/open-web-target —
+      # apps/server/src/ipc/web-url.ts: env override wins over the
+      # server's own-origin fallback, which would 404 here since this
+      # image does not serve the web client). Defaults to the bundled
+      # `web` service's published port on this host.
+      LOOMBRE_WEB_URL: ${LOOMBRE_WEB_URL:-http://localhost:${LOOMBRE_WEB_PORT:-3000}}
       LOOMBRE_TRUST_PROXY: ${LOOMBRE_TRUST_PROXY:-}
       LOOMBRE_TIER: ${LOOMBRE_TIER:-}
       LOOMBRE_ALLOW_TRANSCODE: ${LOOMBRE_ALLOW_TRANSCODE:-}
@@ -86,6 +119,17 @@ services:
       LOOMBRE_RESTRICTED_ENABLED: ${LOOMBRE_RESTRICTED_ENABLED:-}
       LOOMBRE_TMDB_API_KEY: ${LOOMBRE_TMDB_API_KEY:-}
       LOOMBRE_TVDB_API_KEY: ${LOOMBRE_TVDB_API_KEY:-}
+      # ffmpeg/ffprobe override pass-through, image's vendored pair as the
+      # default. loombre.env.example documented these as an escape hatch
+      # (hw-accel builds bind-mounted in) but nothing ever passed them into
+      # the containers — compose `--env-file` values are interpolation-only,
+      # never injected — so setting them silently did NOTHING (installer
+      # completeness audit). Unset keeps the exact prior behavior: the
+      # Dockerfile's ENV paths to the checksum-verified vendored pair.
+      # Keep in sync with `worker` below — both processes must resolve the
+      # SAME binaries (the worker is the one that actually spawns them).
+      LOOMBRE_FFMPEG: ${LOOMBRE_FFMPEG:-/usr/local/bin/ffmpeg}
+      LOOMBRE_FFPROBE: ${LOOMBRE_FFPROBE:-/usr/local/bin/ffprobe}
       PORT: ${LOOMBRE_PORT:-3001}
     ports:
       - "${LOOMBRE_PORT:-3001}:${LOOMBRE_PORT:-3001}"
@@ -108,6 +152,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      # Same explicit-target note as `server` above.
+      target: runtime
     image: ${LOOMBRE_IMAGE:-loombre:latest}
     restart: unless-stopped
     command: ["node", "apps/worker/dist/index.js"]
@@ -122,8 +168,25 @@ services:
       LOOMBRE_SCAN_CONCURRENCY: ${LOOMBRE_SCAN_CONCURRENCY:-}
       LOOMBRE_TRANSCODE_WORKER_CONCURRENCY: ${LOOMBRE_TRANSCODE_WORKER_CONCURRENCY:-}
       LOOMBRE_TRANSCODE_POLL_MS: ${LOOMBRE_TRANSCODE_POLL_MS:-}
+      # "1" forces filesystem POLLING for every watched library path — THE
+      # escape hatch for NAS/SMB/NFS bind mounts, where host-side inotify
+      # events never reach the container and a native watch silently sees
+      # nothing; "0" forces native watching. Unset = per-path heuristic.
+      # apps/worker/src/scan/watcher.ts resolveUsePolling() honors ONLY
+      # the exact strings "1"/"0", so the empty-string default below is
+      # behavior-identical to unset — a plain `:-` pass-through is safe
+      # here (unlike LOOMBRE_CORS_ORIGINS on `server`, where empty and
+      # unset genuinely differ).
+      LOOMBRE_SCAN_POLL: ${LOOMBRE_SCAN_POLL:-}
       LOOMBRE_TMDB_API_KEY: ${LOOMBRE_TMDB_API_KEY:-}
       LOOMBRE_TVDB_API_KEY: ${LOOMBRE_TVDB_API_KEY:-}
+      # Same ffmpeg/ffprobe pass-through — and the same previously-dead-
+      # override audit finding — as `server` above. The WORKER is the
+      # process that actually spawns these for probe/transcode jobs
+      # (docs/PLAYBACK.md §9), so an override reaching only one container
+      # would desync the pair; bind-mount the binaries into BOTH.
+      LOOMBRE_FFMPEG: ${LOOMBRE_FFMPEG:-/usr/local/bin/ffmpeg}
+      LOOMBRE_FFPROBE: ${LOOMBRE_FFPROBE:-/usr/local/bin/ffprobe}
     volumes:
       - loombre_data:/data
       # Same bind-mount paths as `server` above — both containers need the
@@ -140,6 +203,64 @@ services:
     # semantics (packages/jobs) are the real safety net for, not a
     # container-level probe duplicating that logic. `restart: unless-stopped`
     # is set once, above (next to `image:`) — not repeated here.
+
+  # Web client (installer completeness audit — this stack previously
+  # started NO web container, leaving the documented first-run wizard with
+  # nothing serving it): the Next.js standalone server from the same
+  # Dockerfile's separate `web` final stage. Its OWN image, not the
+  # server/worker one — see the Dockerfile's header for why the one-image
+  # rationale stops here.
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: web
+    image: ${LOOMBRE_WEB_IMAGE:-loombre-web:latest}
+    restart: unless-stopped
+    # NO depends_on, deliberately: the web container only renders and
+    # serves the client — every API call happens from the BROWSER straight
+    # to `server`'s published port, never through this container — so the
+    # two lifecycles share nothing worth gating on. A server that is still
+    # starting just means the login screen's connection attempt retries.
+    environment:
+      PORT: ${LOOMBRE_WEB_PORT:-3000}
+      # CSP-tightening pairing (apps/web/src/lib/csp.ts, read per-request
+      # by src/proxy.ts): the API origin(s) this web build's
+      # connect/img/media-src directives allow — as seen by the BROWSER,
+      # not container-to-container (a browser never resolves compose
+      # service names like `server`). Three states — note the `-` operator
+      # (default only when UNSET), not `:-`, so empty stays empty:
+      #   - UNSET (line absent/commented in loombre.env): defaults below
+      #     to the server's published port on localhost — correct ONLY
+      #     when the browser runs on the Docker host itself.
+      #   - SET: the externally visible server origin(s) for LAN/remote
+      #     deployments, e.g. http://192.168.1.20:3001 — must match what
+      #     browsers actually connect to. Pair with `server`'s
+      #     LOOMBRE_CORS_ORIGINS (the same relationship, inverted).
+      #   - EMPTY (LOOMBRE_SERVER_ORIGIN= in loombre.env): the documented
+      #     scheme-wildcard CSP fallback (http:/https:/ws:/wss:) — the
+      #     multi-server posture; the safe choice when you cannot
+      #     enumerate origins up front.
+      # Mismatch symptom: the login page loads but API calls die with CSP
+      # violations in the browser console while curl against the API
+      # works fine.
+      LOOMBRE_SERVER_ORIGIN: ${LOOMBRE_SERVER_ORIGIN-http://localhost:${LOOMBRE_PORT:-3001}}
+    ports:
+      - "${LOOMBRE_WEB_PORT:-3000}:${LOOMBRE_WEB_PORT:-3000}"
+    # No volumes: the web container is stateless — no /data, no media
+    # (images and streams reach the browser from `server` directly).
+    healthcheck:
+      # /manifest.webmanifest: Next's file-based metadata route
+      # (apps/web/src/app/manifest.ts) — statically generated, always-200,
+      # zero data dependency; a cheaper every-30s probe than rendering
+      # /login (which installers/docker/smoke.mjs asserts end-to-end once
+      # instead). start_period is shorter than `server`'s 20s: no DB,
+      # nothing to warm — the standalone server binds in about a second.
+      test: ["CMD", "curl", "--fail", "--silent", "--show-error", "http://127.0.0.1:${LOOMBRE_WEB_PORT:-3000}/manifest.webmanifest"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
 
 volumes:
   loombre_pgdata:
