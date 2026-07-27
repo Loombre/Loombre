@@ -27,7 +27,7 @@
  * `EXCLUDED_MEDIA_EXTENSIONS` below stays OUT of v1 deliberately. It has
  * two tiers with one treatment: ape/wv/wma (the original v1 policy call —
  * genuinely rare formats with thin codec support) plus the broader
- * recognized-media tail (mts, mka, asf, ogv, 3gp, … — added by the Lane R
+ * recognized-media tail (mka, asf, ogv, 3gp, … — added by the Lane R
  * review of STATE.md H3, which found that anything recognizable as media
  * but in NEITHER set fell through to ordinary "ignored" junk, silently:
  * the exact class the H3 finding was about). Unlike the old blanket
@@ -39,13 +39,16 @@
  * left out and why. Truly unrecognized suffixes (notes, junk, artwork)
  * still fall to "ignored" — that boundary is what the docs promise.
  *
- * `.mts` note for a future widening: it is the same AVCHD MPEG-TS as the
- * admitted `.m2ts` (identical ffprobe format_name 'mpegts' → 'ts') and
- * would be admittable at zero cost — kept excluded-but-visible only
- * because the H3 brief enumerated the reinstated list exactly; owner
- * call recorded in STATE.md. `.aif` IS admitted: it is the common alias
- * suffix of `.aiff` (same content; ffprobe reports 'aiff' for both,
- * verified empirically), the same alias treatment mpg/mpeg get.
+ * `.mts` (owner ledger L1, resolving the widening note this comment used
+ * to carry): it is the same AVCHD MPEG-TS as the already-admitted `.m2ts`
+ * (identical ffprobe format_name 'mpegts' → 'ts', verified empirically —
+ * see apps/worker/test/scan/media-extensions.spec.ts's FORMAT_FACTS) and
+ * was excluded-but-visible only for H3 brief-scope discipline (that brief
+ * enumerated its reinstated list exactly); the owner ledger closed that
+ * carve-out, so `.mts` is admitted here at zero technical cost, exactly
+ * like `.m2ts`. `.aif` IS admitted for the analogous reason: it is the
+ * common alias suffix of `.aiff` (same content; ffprobe reports 'aiff'
+ * for both, verified empirically), the same alias treatment mpg/mpeg get.
  *
  * apps/worker/test/scan/media-extensions.spec.ts pins both directions
  * (every admitted extension resolves to a Container; every excluded
@@ -59,6 +62,7 @@ export const VIDEO_EXTENSIONS = new Set([
   "m4v",
   "ts",
   "m2ts",
+  "mts",
   "webm",
   "wmv",
   "mpg",
@@ -100,8 +104,8 @@ export const EXCLUDED_MEDIA_EXTENSIONS = new Set([
   "ape",
   "wv",
   "wma",
-  // recognized-media tail (Lane R review): video
-  "mts",
+  // recognized-media tail (Lane R review): video. mts left this list
+  // (owner ledger L1) — see the VIDEO_EXTENSIONS header note above.
   "asf",
   "ogv",
   "3gp",
