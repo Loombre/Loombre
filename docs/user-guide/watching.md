@@ -7,7 +7,11 @@
      subtitle-styling-lost, subtitle-codec-unknown), confirming subtitle
      support is implemented, not aspirational. Restricted-content session
      unlock timing — docs/PLAN.md §6.4 gate 5 (default 30 minutes),
-     linked rather than restated here. -->
+     linked rather than restated here. Supported file types (STATE.md H3) —
+     apps/worker/src/scan/parse/path-utils.ts's VIDEO_EXTENSIONS/
+     AUDIO_EXTENSIONS/EXCLUDED_MEDIA_EXTENSIONS; the full technical table
+     lives in the Admin Guide's Libraries & scanning page instead of here,
+     kept plain-language per the audience-register rules. -->
 
 ## Starting something
 
@@ -36,6 +40,20 @@ is available, you can switch between them from the player.
 Your progress is saved as you watch, so you can pause on one device and
 resume on another — a TV in the living room, a laptop, a phone — without
 losing your place.
+
+## What kinds of files work
+
+Loombre plays and organizes video and audio files. Most everyday file
+types work, including a lot of older ones — files ending in .wmv, .mpg,
+or .flv, and audio files ending in .aac or .aiff, all just work
+alongside the more common ones.
+
+A very small handful of older, uncommon audio file types aren't
+supported yet — files ending in .ape, .wv, or .wma. If a folder you
+pointed Loombre at has files like that, they're never added silently and
+never added incorrectly — whoever administers your Loombre can see
+exactly which files were left out and why (see the
+[Admin Guide](../admin-guide/libraries.md)).
 
 ## When something won't play smoothly
 

@@ -99,6 +99,11 @@ export interface RawProbeResult {
 // MediaInfo — docs/PLAYBACK.md §2.1, verbatim
 // ---------------------------------------------------------------------------
 
+// v1.1 widening (STATE.md H3, docs/PLAYBACK.md §2.1): asf/mpeg/flv/aac/aiff
+// admit legacy-format ingestion (wmv/wma->asf, mpg/mpeg/vob->mpeg, flv, bare
+// ADTS aac, aiff) — see apps/worker/src/probe/extract.ts's
+// SIMPLE_CONTAINER_MAP for the format_name mapping and apps/worker/src/scan/
+// parse/path-utils.ts for the extension sets this feeds.
 export type Container =
   | "mp4"
   | "mkv"
@@ -110,7 +115,12 @@ export type Container =
   | "mp3"
   | "ogg"
   | "m4a"
-  | "wav";
+  | "wav"
+  | "asf"
+  | "mpeg"
+  | "flv"
+  | "aac"
+  | "aiff";
 
 export type VideoCodec =
   | "h264"

@@ -111,7 +111,23 @@ interface ScanCounters {
   itemsAdded: number;
   itemsUpdated: number;
   itemsRemoved: number;
+  /** STATE.md H3 — every walked file whose extension is in
+   *  EXCLUDED_MEDIA_EXTENSIONS (parse/path-utils.ts: ape/wv/wma today),
+   *  kind-independent (a .wma in a music library and a .wma in a video
+   *  library are both "known media, unsupported"). Authoritative count —
+   *  `skippedUnsupportedFiles.length < skippedUnsupportedCount` implies the
+   *  list was truncated at SKIPPED_UNSUPPORTED_FILES_CAP. */
+  skippedUnsupportedCount: number;
+  /** Relative (library-root) paths, capped at SKIPPED_UNSUPPORTED_FILES_CAP
+   *  entries — never unbounded (a library with thousands of excluded files
+   *  must not balloon the scan.completed event payload). */
+  skippedUnsupportedFiles: string[];
 }
+
+/** scan.completed's skippedUnsupportedFiles cap (STATE.md H3) — the count
+ *  field stays authoritative past this; the list is a representative
+ *  sample, not a guarantee of completeness. */
+const SKIPPED_UNSUPPORTED_FILES_CAP = 100;
 
 const ARTWORK_CANDIDATES: Array<{ names: string[]; kind: string }> = [
   { names: ["poster.jpg", "poster.png", "poster.jpeg"], kind: "poster" },
@@ -372,7 +388,13 @@ export async function runScan(deps: ScanDeps, params: RunScanParams, meta: RunSc
     });
   });
 
-  const counters: ScanCounters = { itemsAdded: 0, itemsUpdated: 0, itemsRemoved: 0 };
+  const counters: ScanCounters = {
+    itemsAdded: 0,
+    itemsUpdated: 0,
+    itemsRemoved: 0,
+    skippedUnsupportedCount: 0,
+    skippedUnsupportedFiles: [],
+  };
   let firstError: string | null = null;
 
   try {
@@ -467,6 +489,11 @@ export async function runScan(deps: ScanDeps, params: RunScanParams, meta: RunSc
           status: firstError ? "partial" : "succeeded",
           errorMessage: firstError,
           completedAtMs,
+          // STATE.md H3 — optional/additive (packages/contract/event-schemas/
+          // README.md's evolution policy): visible skip reporting for
+          // known-media-but-excluded-in-v1 extensions (ape/wv/wma).
+          skippedUnsupportedCount: counters.skippedUnsupportedCount,
+          skippedUnsupportedFiles: counters.skippedUnsupportedFiles,
         },
       });
     });
@@ -496,6 +523,8 @@ export async function runScan(deps: ScanDeps, params: RunScanParams, meta: RunSc
           status: "failed",
           errorMessage: message,
           completedAtMs,
+          skippedUnsupportedCount: counters.skippedUnsupportedCount,
+          skippedUnsupportedFiles: counters.skippedUnsupportedFiles,
         },
       });
     });
@@ -516,6 +545,23 @@ async function processOneFile(
   clock: () => number
 ): Promise<boolean> {
   const auxKind = classifyAuxiliary(walked.relPath);
+  if (auxKind === "unsupported") {
+    // STATE.md H3: known-media-but-excluded-in-v1 extension (ape/wv/wma) —
+    // counted + visibly reported (scan.completed's skippedUnsupportedCount/
+    // skippedUnsupportedFiles), never silently dropped like ordinary
+    // 'ignored' junk. Kind-independent by design (adjudicated): a .wma in a
+    // music library and a .wma in a video library are both "known media,
+    // unsupported" — no per-library-kind distinction here.
+    counters.skippedUnsupportedCount++;
+    if (counters.skippedUnsupportedFiles.length < SKIPPED_UNSUPPORTED_FILES_CAP) {
+      counters.skippedUnsupportedFiles.push(walked.relPath);
+    }
+    // Worker's plain-console logging idiom (no telemetry/phone-home —
+    // CLAUDE.md invariant 7 — this is local-only stdout, same as every
+    // other apps/worker/src/index.ts log line).
+    console.log(`scan: skipped unsupported-format file "${walked.relPath}" (library ${library.id})`);
+    return false;
+  }
   if (auxKind !== null) return false;
 
   const ext = extensionOf(walked.relPath);

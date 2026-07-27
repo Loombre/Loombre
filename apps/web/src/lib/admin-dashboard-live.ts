@@ -30,14 +30,29 @@
 import { useEffect, useRef, useState } from "react";
 import { getEventsSocket, type EventEnvelope } from "./events-socket.js";
 
+/** STATE.md H3 — the most recent scan.completed's skip-visibility report for
+ *  a library, once observed this session. `count` is authoritative;
+ *  `files.length < count` implies the payload's own list was truncated
+ *  (scanner.ts caps it at 100 — see ScanCompletedPayload below). */
+export interface LibrarySkippedUnsupported {
+  count: number;
+  files: string[];
+}
+
 export interface LibraryScanState {
   scanning: boolean;
   /** Files processed so far in the active scan; null before the first
    *  checkpoint tick reports, or when not scanning. Never a percentage. */
   filesProcessed: number | null;
+  /** Populated from the most recently observed scan.completed event for
+   *  this library — persists after scanning finishes (unlike
+   *  scanning/filesProcessed) so the admin can actually review it. Reset to
+   *  null when a new scan starts, and left null whenever the last completed
+   *  scan reported zero skips. */
+  lastSkipped: LibrarySkippedUnsupported | null;
 }
 
-const IDLE_STATE: LibraryScanState = { scanning: false, filesProcessed: null };
+const IDLE_STATE: LibraryScanState = { scanning: false, filesProcessed: null, lastSkipped: null };
 
 interface ScanStartedPayload {
   jobId: string;
@@ -46,6 +61,13 @@ interface ScanStartedPayload {
 interface ScanCompletedPayload {
   jobId: string;
   libraryId: string;
+  /** STATE.md H3 (packages/contract/event-schemas/scan.completed.schema.json
+   *  — optional/additive per the evolution policy): known-media-but-
+   *  excluded-in-v1 files (ape/wv/wma) this scan walked past. Absent on
+   *  events from a pre-H3 worker; treated the same as zero. */
+  skippedUnsupportedCount?: number;
+  /** Library-root-relative paths, capped server-side at 100 entries. */
+  skippedUnsupportedFiles?: string[];
 }
 interface JobUpdatedProgressPayload {
   jobId: string;
@@ -70,7 +92,9 @@ export function useLibraryScanState(isAdmin: boolean): Map<string, LibraryScanSt
       jobToLibraryRef.current.set(e.payload.jobId, e.payload.libraryId);
       setState((prev) => {
         const next = new Map(prev);
-        next.set(e.payload.libraryId, { scanning: true, filesProcessed: null });
+        // A new scan starting clears any prior lastSkipped report — this
+        // scan's own scan.completed will repopulate it if it finds any.
+        next.set(e.payload.libraryId, { scanning: true, filesProcessed: null, lastSkipped: null });
         return next;
       });
     });
@@ -84,7 +108,8 @@ export function useLibraryScanState(isAdmin: boolean): Map<string, LibraryScanSt
         const current = e.payload.progress.current;
         setState((prev) => {
           const next = new Map(prev);
-          next.set(libraryId, { scanning: true, filesProcessed: current });
+          const existing = next.get(libraryId) ?? IDLE_STATE;
+          next.set(libraryId, { ...existing, scanning: true, filesProcessed: current });
           return next;
         });
       },
@@ -94,10 +119,16 @@ export function useLibraryScanState(isAdmin: boolean): Map<string, LibraryScanSt
       "scan.completed",
       (e: EventEnvelope<ScanCompletedPayload>) => {
         jobToLibraryRef.current.delete(e.payload.jobId);
+        const skippedCount = e.payload.skippedUnsupportedCount ?? 0;
+        const skippedFiles = e.payload.skippedUnsupportedFiles ?? [];
         setState((prev) => {
           if (!prev.has(e.payload.libraryId)) return prev;
           const next = new Map(prev);
-          next.delete(e.payload.libraryId);
+          next.set(e.payload.libraryId, {
+            scanning: false,
+            filesProcessed: null,
+            lastSkipped: skippedCount > 0 ? { count: skippedCount, files: skippedFiles } : null,
+          });
           return next;
         });
       },

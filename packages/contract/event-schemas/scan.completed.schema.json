@@ -16,6 +16,17 @@
     "durationMs": { "type": "integer", "minimum": 0 },
     "status": { "type": "string", "enum": ["succeeded", "failed", "partial"] },
     "errorMessage": { "type": ["string", "null"] },
-    "completedAtMs": { "type": "integer", "minimum": 0 }
+    "completedAtMs": { "type": "integer", "minimum": 0 },
+    "skippedUnsupportedCount": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "STATE.md H3: count of walked files whose extension is known-media-but-excluded-in-v1 (ape/wv/wma today). Authoritative even when skippedUnsupportedFiles was truncated."
+    },
+    "skippedUnsupportedFiles": {
+      "type": "array",
+      "items": { "type": "string" },
+      "maxItems": 100,
+      "description": "STATE.md H3: library-root-relative paths of skipped unsupported-format files, capped at 100 entries. skippedUnsupportedFiles.length < skippedUnsupportedCount implies truncation."
+    }
   }
 }

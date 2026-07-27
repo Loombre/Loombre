@@ -50,4 +50,9 @@ export interface MusicGuess {
   reasons: string[];
 }
 
-export type AuxiliaryKind = "extra" | "sample" | "ignored" | null;
+// "unsupported" (STATE.md H3): a known-media-but-excluded-in-v1 extension
+// (parse/path-utils.ts's EXCLUDED_MEDIA_EXTENSIONS — ape/wv/wma) — kept
+// distinct from "ignored" (junk: .txt/.nfo/.DS_Store/wrong-media-kind) so
+// the scanner can count and visibly report it instead of silently dropping
+// it. See parse/auxiliary.ts's classifyAuxiliary header for precedence.
+export type AuxiliaryKind = "extra" | "sample" | "ignored" | "unsupported" | null;

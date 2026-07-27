@@ -13,11 +13,29 @@
  * apps/worker/src/probe/extract.ts's resolveContainer): admitting anything
  * else creates a catalog item and an item.added event for a file whose
  * probe then fails deterministically forever — visible in the catalog,
- * permanently unplayable. Excluded for exactly that reason in v1 (their
- * ffprobe format_name has no §2.1 container): wmv/wma ('asf'), mpg/mpeg/vob
- * ('mpeg'), flv, aac (bare ADTS), ape, wv, aiff. Widening the set means
- * widening §2.1 first (a spec change plus new engine matrix cases).
- * apps/worker/test/scan/media-extensions.spec.ts pins both directions.
+ * permanently unplayable.
+ *
+ * v1.1 (STATE.md H3): the common legacy formats wmv/mpg/mpeg/vob/flv
+ * (video) and aac/aiff (audio) are REINSTATED here — probe can extract all
+ * of them (docs/PLAYBACK.md §2.1's Container union was widened to match:
+ * wmv/wma->'asf', mpg/mpeg/vob->'mpeg', flv, aac, aiff — see that section's
+ * widening note and apps/worker/src/probe/extract.ts's
+ * SIMPLE_CONTAINER_MAP), and the playback engine's plan() already decides
+ * transcoding for anything a device can't direct-play — ingestion
+ * generosity here is the architecture working as designed, not a gap.
+ *
+ * `EXCLUDED_MEDIA_EXTENSIONS` below (ape, wv, wma) stays OUT of v1
+ * deliberately: genuinely rare formats with thin codec support, not worth
+ * the ingestion/maintenance cost. Unlike the old blanket narrowing, an
+ * excluded extension is never SILENTLY dropped — apps/worker/src/scan/
+ * scanner.ts classifies it distinctly from ordinary "ignored" junk
+ * (parse/auxiliary.ts's classifyAuxiliary) and counts + reports it in the
+ * scan.completed payload's skippedUnsupportedCount/skippedUnsupportedFiles,
+ * so an admin can always see exactly what was left out and why.
+ *
+ * apps/worker/test/scan/media-extensions.spec.ts pins both directions
+ * (every admitted extension resolves to a Container; every excluded
+ * extension never leaks into MEDIA_EXTENSIONS).
  */
 export const VIDEO_EXTENSIONS = new Set([
   "mkv",
@@ -28,6 +46,11 @@ export const VIDEO_EXTENSIONS = new Set([
   "ts",
   "m2ts",
   "webm",
+  "wmv",
+  "mpg",
+  "mpeg",
+  "vob",
+  "flv",
 ]);
 
 export const AUDIO_EXTENSIONS = new Set([
@@ -39,9 +62,25 @@ export const AUDIO_EXTENSIONS = new Set([
   "opus",
   "wav",
   "alac",
+  "aac",
+  "aiff",
 ]);
 
 export const MEDIA_EXTENSIONS = new Set<string>([...VIDEO_EXTENSIONS, ...AUDIO_EXTENSIONS]);
+
+/**
+ * Known-media-but-unsupported-in-v1 extensions (STATE.md H3): genuinely
+ * rare formats with thin codec support (Monkey's Audio, WavPack, legacy
+ * Windows Media Audio). Deliberately kept separate from "junk"
+ * (parse/auxiliary.ts's `'ignored'` classification, e.g. .txt/.nfo/
+ * .DS_Store) — a file with one of these extensions IS recognizable media,
+ * so silently dropping it the way junk is dropped would be exactly the
+ * kind of invisible non-ingestion this reinstatement effort was meant to
+ * close. The scanner (scanner.ts's processOneFile) checks this set
+ * BEFORE/distinct from classifyAuxiliary's generic "ignored" so these
+ * always land in the scan report's visible skip count/list instead.
+ */
+export const EXCLUDED_MEDIA_EXTENSIONS = new Set(["ape", "wv", "wma"]);
 
 /** Splits a relative path into non-empty segments, ignoring `.`/`..`/empty runs. */
 export function splitSegments(relPath: string): string[] {

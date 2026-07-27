@@ -2064,7 +2064,7 @@ export interface components {
              * @description Null until the file has been probed.
              * @enum {string|null}
              */
-            container: "mp4" | "mkv" | "webm" | "avi" | "ts" | "mov" | "flac" | "mp3" | "ogg" | "m4a" | "wav" | null;
+            container: "mp4" | "mkv" | "webm" | "avi" | "ts" | "mov" | "flac" | "mp3" | "ogg" | "m4a" | "wav" | "asf" | "mpeg" | "flv" | "aac" | "aiff" | null;
             width: number | null;
             height: number | null;
             /** Format: int64 */
@@ -2340,10 +2340,10 @@ export interface components {
             nextCursor: string | null;
         };
         /**
-         * @description Source container (docs/PLAYBACK.md §2.1).
+         * @description Source container (docs/PLAYBACK.md §2.1). v1.1 (STATE.md H3): asf/mpeg/flv/aac/aiff admit legacy-format ingestion (wmv/wma->asf, mpg/mpeg/vob->mpeg) — never direct-playable.
          * @enum {string}
          */
-        Container: "mp4" | "mkv" | "webm" | "avi" | "ts" | "mov" | "flac" | "mp3" | "ogg" | "m4a" | "wav";
+        Container: "mp4" | "mkv" | "webm" | "avi" | "ts" | "mov" | "flac" | "mp3" | "ogg" | "m4a" | "wav" | "asf" | "mpeg" | "flv" | "aac" | "aiff";
         /** @enum {string} */
         VideoCodec: "h264" | "hevc" | "av1" | "vp9" | "mpeg2" | "vc1" | "mpeg4" | "unknown";
         /** @enum {string} */

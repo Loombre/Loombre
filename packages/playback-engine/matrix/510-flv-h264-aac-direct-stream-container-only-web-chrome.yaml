@@ -1,0 +1,59 @@
+name: direct-stream — flv container (v1.1 legacy reinstatement) h264 + aac vs web-chrome (container-only obstacle)
+why: >
+  STATE.md H3: flv is a newly admitted Container member (its own ffprobe
+  format_name, verified empirically both by apps/worker/test/scan/
+  media-extensions.spec.ts's FORMAT_FACTS table and by the real-ffmpeg
+  fixture generator — flv accepts h264+aac directly, no flv1/mp3 fallback
+  needed). The video (h264, high profile, 1080p, 8-bit, 24fps, well under
+  web-chrome's caps) and audio (aac, 2ch) are both genuinely supported by
+  web-chrome's device entries — Stages B/D copy, proving neither codec side
+  needed any change. web-chrome's directPlayContainers is [mp4, webm] — flv
+  is not, and never will be, a member, so Stage A alone fires container-
+  not-direct-playable, isolating the container-only obstacle (mirrors case
+  508's asf/vc1-generic isolation, video-family counterpart).
+
+input:
+  media:
+    fileId: file-0510
+    container: flv
+    durationMs: 4200000
+    sizeBytes: 2100000000
+    overallBitrateBps: 4000000
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 41
+        width: 1920
+        height: 1080
+        bitDepth: 8
+        frameRate: 24
+        bitrateBps: 3800000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 128000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device: { fixture: devices.web-chrome }
+  network: { fixture: networks.local }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.software-only }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+
+expect:
+  decision: direct-stream
+  reasons:
+    - container-not-direct-playable

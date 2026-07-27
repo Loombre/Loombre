@@ -8,7 +8,13 @@
      rename detection via content matching, 72-hour grace period before a
      missing file is removed) — docs/PLAN.md §8.1-8.2, and
      apps/worker/src/scan/scanner.ts's header comment (checkpointing,
-     file.relocated events, MISSING_HARD_CASCADE_GRACE_MS = 72h). -->
+     file.relocated events, MISSING_HARD_CASCADE_GRACE_MS = 72h). Supported
+     file types + the v1 exclusions (STATE.md H3) —
+     apps/worker/src/scan/parse/path-utils.ts's VIDEO_EXTENSIONS/
+     AUDIO_EXTENSIONS/EXCLUDED_MEDIA_EXTENSIONS; the skip report — scanner.ts's
+     scan.completed skippedUnsupportedCount/skippedUnsupportedFiles, surfaced
+     in the admin dashboard's Libraries panel
+     (apps/web/src/components/admin/LibrariesPanel.tsx). -->
 
 A **library** is a collection of media that lives in one or more folders
 on disk — for example, "Movies" pointing at your movies folder, or "TV
@@ -68,3 +74,28 @@ embedded tags) to figure out what it is.
 If a scan doesn't find what you expect, the
 [Jobs dashboard](jobs-dashboard.md) shows the scan's progress
 and any errors it ran into.
+
+### Supported file types
+
+Loombre recognizes most common video and audio file types when scanning:
+
+| Kind  | File endings recognized |
+| ----- | ------------------------ |
+| Video | .mkv, .mp4, .avi, .mov, .m4v, .ts, .m2ts, .webm, .wmv, .mpg, .mpeg, .vob, .flv |
+| Audio | .flac, .mp3, .m4a, .ogg, .oga, .opus, .wav, .alac, .aac, .aiff |
+
+A small number of older, uncommon audio file types are **not** supported in
+this version:
+
+| File ending | Why it's left out |
+| ----------- | ------------------ |
+| .ape | Genuinely rare, thin support for turning it into something playable |
+| .wv | Genuinely rare, thin support for turning it into something playable |
+| .wma | Genuinely rare, thin support for turning it into something playable |
+
+Files with one of those endings are never dropped silently — every scan's
+result on the Libraries panel of your admin dashboard shows a
+**"N skipped (unsupported format)"** note (expandable to the exact list of
+files) whenever a scan walks past one, so you always know what was left
+out and why, and can decide whether to convert it to a supported file
+type yourself.

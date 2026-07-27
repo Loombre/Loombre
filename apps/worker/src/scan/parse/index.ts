@@ -8,4 +8,4 @@ export { classifyAuxiliary } from "./auxiliary.js";
 // itself): the scanner's per-library media-kind extension filter
 // (../media-kind.ts) needs these sets and is meant to consume this API,
 // not reach into parse/path-utils.ts directly.
-export { VIDEO_EXTENSIONS, AUDIO_EXTENSIONS, MEDIA_EXTENSIONS } from "./path-utils.js";
+export { VIDEO_EXTENSIONS, AUDIO_EXTENSIONS, MEDIA_EXTENSIONS, EXCLUDED_MEDIA_EXTENSIONS } from "./path-utils.js";

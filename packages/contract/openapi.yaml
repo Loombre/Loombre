@@ -3403,7 +3403,7 @@ components:
         versionLabel: { type: [string, 'null'] }
         container:
           type: [string, 'null']
-          enum: [mp4, mkv, webm, avi, ts, mov, flac, mp3, ogg, m4a, wav, null]
+          enum: [mp4, mkv, webm, avi, ts, mov, flac, mp3, ogg, m4a, wav, asf, mpeg, flv, aac, aiff, null]
           description: Null until the file has been probed.
         width: { type: [integer, 'null'] }
         height: { type: [integer, 'null'] }
@@ -3959,8 +3959,11 @@ components:
     # ══════════════════════════ Playback engine (docs/PLAYBACK.md) ═════════════
     Container:
       type: string
-      description: Source container (docs/PLAYBACK.md §2.1).
-      enum: [mp4, mkv, webm, avi, ts, mov, flac, mp3, ogg, m4a, wav]
+      description: >-
+        Source container (docs/PLAYBACK.md §2.1). v1.1 (STATE.md H3):
+        asf/mpeg/flv/aac/aiff admit legacy-format ingestion
+        (wmv/wma->asf, mpg/mpeg/vob->mpeg) — never direct-playable.
+      enum: [mp4, mkv, webm, avi, ts, mov, flac, mp3, ogg, m4a, wav, asf, mpeg, flv, aac, aiff]
 
     VideoCodec:
       type: string

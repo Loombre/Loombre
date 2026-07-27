@@ -1,0 +1,55 @@
+name: transcode — aiff container (v1.1 legacy reinstatement) pcm music vs flac-stereo (container AND codec both unsupported)
+why: >
+  STATE.md H3: aiff is a newly admitted Container member (Audio IFF's
+  native pcm_s16be format, verified empirically — apps/worker/test/scan/
+  media-extensions.spec.ts's FORMAT_FACTS and the real-ffmpeg fixture
+  generator both confirm format_name 'aiff'). flac-stereo declares
+  directPlayContainers [flac, mp3, m4a, ogg, wav] — aiff is not, and never
+  will be, a member, so Stage A fires container-not-direct-playable.
+  flac-stereo's only audio entry is flac — it declares no pcm entry at
+  all, so Stage D rule 1 (no device entry for the stream's codec) ALSO
+  fires audio-codec-unsupported (pcm already existed in the closed
+  AudioCodec union; this is an ordinary "device doesn't support this
+  codec" case, nothing new on the codec side). Both obstacles fire
+  together, contrasting case 511's aac scenario (container-only). Music
+  mode (video.length===0) + Stage D's own transcode verdict together fire
+  gapless-degraded (binding interpretation constraint 5), appended last,
+  matching seed case 009's exact reason-ordering precedent
+  (matrix/009-transcode-flac-6ch-2ch-device.yaml). No software-fallback
+  reasons: this is audio-only (no video stream to route through Stage G at
+  all), matching case 009's own reason list exactly in that respect.
+
+input:
+  media:
+    fileId: file-0512
+    container: aiff
+    durationMs: 260000
+    sizeBytes: 45000000
+    overallBitrateBps: 1400000
+    video: []
+    audio:
+      - index: 0
+        codec: pcm
+        channels: 2
+        sampleRate: 44100
+        bitrateBps: 1400000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device: { fixture: devices.flac-stereo }
+  network: { fixture: networks.local }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.software-only }
+  selection:
+    videoStreamIndex: null
+    audioStreamIndex: 0
+    subtitleStreamIndex: null
+  mode: stream
+
+expect:
+  decision: transcode
+  reasons:
+    - container-not-direct-playable
+    - audio-codec-unsupported
+    - gapless-degraded
