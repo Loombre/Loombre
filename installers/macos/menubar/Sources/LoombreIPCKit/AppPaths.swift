@@ -13,13 +13,18 @@ import Foundation
 
 public enum LoombreAppPaths {
     public static let appSupportDir = "/Library/Application Support/Loombre"
-    public static let ipcDir = appSupportDir + "/ipc"
 
+    // Discovery/token files live at the DATA-DIR ROOT — "alongside, not
+    // inside, the data subdirs" per packages/controller-ipc's transport
+    // contract, and exactly where apps/server/src/ipc/discovery-files.ts
+    // writes them (the Windows tray reads the same root). This enum
+    // previously pointed at an "ipc/" subdirectory nothing ever wrote —
+    // the installer completeness audit's menubar-can-never-connect gap.
     public static var discoveryFileURL: URL {
-        URL(fileURLWithPath: ipcDir).appendingPathComponent(IPCTransport.discoveryFilename)
+        URL(fileURLWithPath: appSupportDir).appendingPathComponent(IPCTransport.discoveryFilename)
     }
 
     public static var tokenFileURL: URL {
-        URL(fileURLWithPath: ipcDir).appendingPathComponent(IPCTransport.tokenFilename)
+        URL(fileURLWithPath: appSupportDir).appendingPathComponent(IPCTransport.tokenFilename)
     }
 }

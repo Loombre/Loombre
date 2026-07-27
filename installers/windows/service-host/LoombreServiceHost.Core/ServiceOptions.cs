@@ -33,7 +33,16 @@ public sealed record ServiceOptions(
     // components vs MSI's hard 65,536 ceiling, diag run 30219204709), and
     // whichever service starts first extracts it — see PayloadExtractor.
     string? ExtractZipPath = null,
-    string? ExtractToDir = null)
+    string? ExtractToDir = null,
+    // --spawn-restricted: launch the child with a CreateRestrictedToken
+    // that DISABLES the Administrators group SID — pg_ctl's own technique.
+    // Required for LoombreServer: it supervises an embedded postgres.exe,
+    // which hard-refuses to run from a token with admin privileges, and a
+    // LocalSystem service's direct spawn inherits exactly such a token.
+    // See RestrictedProcess.cs for the mechanism and what SYSTEM file
+    // access survives (user-SID ACEs do; Administrators-granted ACEs
+    // become deny-only).
+    bool SpawnRestricted = false)
 {
     /// <summary>Default used when --stop-timeout-ms is omitted. Kept
     /// generous (worker jobs — scan/transcode — may need longer to reach a
@@ -53,6 +62,7 @@ public sealed record ServiceOptions(
         string? envFile = null;
         string? extractZip = null;
         string? extractTo = null;
+        var spawnRestricted = false;
         var stopTimeoutMs = DefaultGracefulStopTimeoutMs;
 
         for (var i = 0; i < args.Length; i++)
@@ -82,6 +92,9 @@ public sealed record ServiceOptions(
                     break;
                 case "--extract-to":
                     extractTo = RequireValue(args, ref i, "--extract-to");
+                    break;
+                case "--spawn-restricted":
+                    spawnRestricted = true;
                     break;
                 case "--stop-timeout-ms":
                     var raw = RequireValue(args, ref i, "--stop-timeout-ms");
@@ -115,7 +128,8 @@ public sealed record ServiceOptions(
         }
 
         return new ServiceOptions(
-            serviceName!, exePath!, childArgs, cwd!, logPath!, envFile, stopTimeoutMs, extractZip, extractTo);
+            serviceName!, exePath!, childArgs, cwd!, logPath!, envFile, stopTimeoutMs, extractZip, extractTo,
+            spawnRestricted);
     }
 
     private static string RequireValue(string[] args, ref int i, string flag)

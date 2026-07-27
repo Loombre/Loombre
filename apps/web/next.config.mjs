@@ -52,6 +52,14 @@ const nextConfig = {
   // relative import (verified against 16.2.11 during the supported-latest
   // sweep), so build/dev pin --webpack; revisit if Turbopack grows
   // extensionAlias support or the repo migrates import style.
+  // Installed deployments (all four installer channels) run the web app as
+  // its own Node service from .next/standalone — a pruned server.js +
+  // minimal real-dir node_modules — instead of shipping the 600 MB dev
+  // deploy tree. Static export is NOT an option: the per-request CSP nonce
+  // (src/proxy.ts) requires a live render path. Dev (`next dev`) ignores
+  // this setting entirely.
+  output: "standalone",
+
   webpack: (config) => {
     config.resolve.extensionAlias = {
       ...(config.resolve.extensionAlias ?? {}),
