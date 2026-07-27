@@ -222,59 +222,50 @@ function pnpmDeploy(pkgName, targetDir) {
 }
 
 function stageWeb(targetDir) {
-  // REAL STANDALONE STAGING (installer completeness audit — the old
-  // raw-.next known-gap is CLOSED): apps/web/next.config.mjs sets
-  // `output: "standalone"`, so `next build` (buildWorkspace step 1)
-  // produces a self-contained, pruned server bundle at
-  // apps/web/.next/standalone/ in the MONOREPO layout:
-  //   <standalone>/apps/web/server.js   — the entrypoint
-  //   <standalone>/node_modules         — pruned prod deps
-  // Next deliberately EXCLUDES two trees from standalone output (its own
-  // documented contract — they are expected to be CDN'd or copied by the
-  // deployer), so they are copied in explicitly to make the stage
-  // runnable as-is:
-  //   apps/web/.next/static -> <stage>/apps/web/.next/static
-  //   apps/web/public       -> <stage>/apps/web/public
-  // Run with `node <stage>/apps/web/server.js`, env NODE_ENV=production,
-  // PORT, HOSTNAME=0.0.0.0 — exactly what Services.wxs's LoombreWeb
-  // service registration does against the installed WEBDIR copy.
-  log("staging apps/web standalone bundle");
-  const webSrc = path.join(REPO_ROOT, "apps", "web");
-  const standaloneDir = path.join(webSrc, ".next", "standalone");
-  if (!existsSync(standaloneDir)) {
-    stop(
-      "stageWeb: apps/web/.next/standalone not found — `next build` did not run, or apps/web/" +
-        'next.config.mjs no longer sets `output: "standalone"`. buildWorkspace() (step 1) must ' +
-        "precede staging; if the config regressed, fix it there (this script stages, never builds).",
-    );
-  }
+  // HOISTED DEPLOY + .next OUTPUT, NOT Next's standalone bundle: the
+  // standalone tree's node_modules is pnpm-link-structured (junctions on
+  // Windows), and this lane's zip boundary materializes links flat —
+  // which severs pnpm's realpath sibling resolution exactly like the
+  // server tree's '@napi-rs/keyring' incident. Diag run 30307500908: the
+  // web child died every start on "Cannot find module
+  // '@swc/helpers/_/_interop_require_default'" from next's own dist. The
+  // cure is the same one the server/worker deploys already use:
+  // node-linker=hoisted produces a REAL flat npm-style tree, and the
+  // service runs next's own CLI against the copied .next build output —
+  // the shape lane I1's tarball originally proved. macOS/Linux keep
+  // shipping standalone (their archivers preserve the relative links).
+  log("staging apps/web as a hoisted deploy + .next build output");
   rmSync(targetDir, { recursive: true, force: true });
   mkdirSync(targetDir, { recursive: true });
-  // verbatimSymlinks (NOT dereference): payload.zip's bsdtar -L is this
-  // lane's one materialization boundary (proven, diag run 30299041676-era
-  // rounds), and a dereferencing cpSync walk over a Windows pnpm/junction
-  // tree can cycle-recurse into a silent hard crash — diag run
-  // 30303262774 died inside this function with exit 127 and ZERO output.
-  cpSync(standaloneDir, targetDir, { recursive: true, verbatimSymlinks: true });
-  log("staged standalone tree; overlaying .next/static");
-  cpSync(path.join(webSrc, ".next", "static"), path.join(targetDir, "apps", "web", ".next", "static"), {
-    recursive: true,
-    verbatimSymlinks: true,
-  });
+  run("pnpm", ["--config.node-linker=hoisted", "--filter", "@loombre/web", "deploy", "--prod", "--legacy", targetDir]);
+
+  const webSrc = path.join(REPO_ROOT, "apps", "web");
+  const nextDir = path.join(webSrc, ".next");
+  if (!existsSync(path.join(nextDir, "BUILD_ID"))) {
+    stop("stageWeb: apps/web/.next has no BUILD_ID — `next build` did not run (buildWorkspace step 1 must precede staging).");
+  }
+  // Selective .next copy: EXCLUDE standalone/ (the linked tree this
+  // function exists to avoid — tar -L would balloon and sever it) and
+  // cache/ (webpack build cache, 100s of MB of dead weight).
+  const nextDest = path.join(targetDir, ".next");
+  rmSync(nextDest, { recursive: true, force: true });
+  mkdirSync(nextDest, { recursive: true });
+  for (const entry of readdirSync(nextDir)) {
+    if (entry === "standalone" || entry === "cache") continue;
+    cpSync(path.join(nextDir, entry), path.join(nextDest, entry), { recursive: true, verbatimSymlinks: true });
+  }
   const publicDir = path.join(webSrc, "public");
   if (existsSync(publicDir)) {
-    log("overlaying public/");
-    cpSync(publicDir, path.join(targetDir, "apps", "web", "public"), { recursive: true, verbatimSymlinks: true });
+    cpSync(publicDir, path.join(targetDir, "public"), { recursive: true, verbatimSymlinks: true });
   }
-  const entrypoint = path.join(targetDir, "apps", "web", "server.js");
-  if (!existsSync(entrypoint)) {
+  const nextCli = path.join(targetDir, "node_modules", "next", "dist", "bin", "next");
+  if (!existsSync(nextCli)) {
     stop(
-      "stageWeb: staged standalone bundle is missing apps/web/server.js — Next's monorepo " +
-        "standalone layout changed shape. Services.wxs's LoombreWeb Arguments must be updated in " +
-        "the SAME change as whatever fixed this (they encode this exact path).",
+      "stageWeb: hoisted web deploy is missing node_modules/next/dist/bin/next — Services.wxs's " +
+        "LoombreWeb Arguments encode this exact path; fix both together.",
     );
   }
-  log("staged apps/web standalone bundle (server.js + pruned node_modules + static + public)");
+  log("staged apps/web (hoisted node_modules + .next + public; entry: next start)");
 }
 
 function placeholderDir(targetDir, note) {
