@@ -27,7 +27,13 @@ public sealed record ServiceOptions(
     string WorkingDirectory,
     string LogFilePath,
     string? EnvFilePath,
-    int GracefulStopTimeoutMs)
+    int GracefulStopTimeoutMs,
+    // Both-or-neither pair (Parse enforces it): the MSI ships the five big
+    // payload trees as ONE archived file (WIX7502 — 84,305 per-file
+    // components vs MSI's hard 65,536 ceiling, diag run 30219204709), and
+    // whichever service starts first extracts it — see PayloadExtractor.
+    string? ExtractZipPath = null,
+    string? ExtractToDir = null)
 {
     /// <summary>Default used when --stop-timeout-ms is omitted. Kept
     /// generous (worker jobs — scan/transcode — may need longer to reach a
@@ -45,6 +51,8 @@ public sealed record ServiceOptions(
         string? cwd = null;
         string? logPath = null;
         string? envFile = null;
+        string? extractZip = null;
+        string? extractTo = null;
         var stopTimeoutMs = DefaultGracefulStopTimeoutMs;
 
         for (var i = 0; i < args.Length; i++)
@@ -68,6 +76,12 @@ public sealed record ServiceOptions(
                     break;
                 case "--envfile":
                     envFile = RequireValue(args, ref i, "--envfile");
+                    break;
+                case "--extract-zip":
+                    extractZip = RequireValue(args, ref i, "--extract-zip");
+                    break;
+                case "--extract-to":
+                    extractTo = RequireValue(args, ref i, "--extract-to");
                     break;
                 case "--stop-timeout-ms":
                     var raw = RequireValue(args, ref i, "--stop-timeout-ms");
@@ -93,7 +107,15 @@ public sealed record ServiceOptions(
                 "(see installers/windows/msi/Services.wxs's <ServiceInstall Arguments=\"…\">).");
         }
 
-        return new ServiceOptions(serviceName!, exePath!, childArgs, cwd!, logPath!, envFile, stopTimeoutMs);
+        if ((extractZip is null) != (extractTo is null))
+        {
+            throw new ArgumentException(
+                "--extract-zip and --extract-to must be passed together (both or neither) — " +
+                "see installers/windows/msi/Services.wxs's <ServiceInstall Arguments=\"…\">.");
+        }
+
+        return new ServiceOptions(
+            serviceName!, exePath!, childArgs, cwd!, logPath!, envFile, stopTimeoutMs, extractZip, extractTo);
     }
 
     private static string RequireValue(string[] args, ref int i, string flag)

@@ -94,6 +94,30 @@ public class ServiceOptionsTests
         Assert.Throws<ArgumentException>(() => ServiceOptions.Parse(["--bogus", "value"]));
     }
 
+    [Fact]
+    public void Parses_the_extract_pair_and_defaults_it_to_absent()
+    {
+        Assert.Null(ServiceOptions.Parse(ServerArgs).ExtractZipPath);
+        Assert.Null(ServiceOptions.Parse(ServerArgs).ExtractToDir);
+
+        var options = ServiceOptions.Parse(
+        [
+            .. ServerArgs,
+            "--extract-zip", @"C:\Program Files\Loombre\payload\payload.zip",
+            "--extract-to", @"C:\Program Files\Loombre\.",
+        ]);
+        Assert.Equal(@"C:\Program Files\Loombre\payload\payload.zip", options.ExtractZipPath);
+        Assert.Equal(@"C:\Program Files\Loombre\.", options.ExtractToDir);
+    }
+
+    [Theory]
+    [InlineData("--extract-zip", @"C:\payload.zip")]
+    [InlineData("--extract-to", @"C:\Loombre")]
+    public void Throws_when_only_one_of_the_extract_pair_is_given(string flag, string value)
+    {
+        Assert.Throws<ArgumentException>(() => ServiceOptions.Parse([.. ServerArgs, flag, value]));
+    }
+
     [Theory]
     [InlineData("0")]
     [InlineData("-5")]

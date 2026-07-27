@@ -20,7 +20,8 @@
   upgrade pattern to detect "a different, newer product" at all.
 -->
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
-     xmlns:fw="http://wixtoolset.org/schemas/v4/wxs/firewall">
+     xmlns:fw="http://wixtoolset.org/schemas/v4/wxs/firewall"
+     xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
 
   <!-- ========================================================================
        UpgradeCode: 5F8B7B26-A5C5-4AA4-B2F1-09DB733A5719
@@ -97,23 +98,56 @@
       </Component>
     </ComponentGroup>
 
+    <!-- The extracted-payload trees (server/worker/web/node/pg — see
+         Files.wxs's archived-payload header) plus the extractor's marker
+         file are UNREGISTERED files MSI knows nothing about, so plain
+         uninstall would orphan hundreds of MB under Program Files.
+         util:RemoveFolderEx sweeps the whole install folder at uninstall
+         time. The registry value is the canonical RemoveFolderEx pattern
+         (and this component's keypath): the path must be REMEMBERED in
+         the registry because at uninstall time the Directory table that
+         produced [INSTALLFOLDER] is no longer trustworthy. Runs on the
+         OLD product during a MajorUpgrade too (its uninstall leg) — that
+         is correct and load-bearing: it clears stale extracted trees so
+         the new version's first service start re-extracts its own
+         payload (PayloadExtractor's marker is swept with them). -->
+    <Property Id="INSTALLFOLDER_TO_CLEAN">
+      <RegistrySearch
+        Id="rs.InstallFolderToClean"
+        Root="HKLM"
+        Key="SOFTWARE\Loombre"
+        Name="InstallDir"
+        Type="raw" />
+    </Property>
+    <ComponentGroup Id="CleanupComponents" Directory="INSTALLFOLDER">
+      <Component Id="cmp.PayloadCleanup" Guid="*">
+        <RegistryValue
+          Root="HKLM"
+          Key="SOFTWARE\Loombre"
+          Name="InstallDir"
+          Type="string"
+          Value="[INSTALLFOLDER]"
+          KeyPath="yes" />
+        <util:RemoveFolderEx Property="INSTALLFOLDER_TO_CLEAN" On="uninstall" />
+      </Component>
+    </ComponentGroup>
+
     <Feature Id="Main" Title="Loombre" Level="1" AllowAbsent="no" AllowAdvertise="no">
-      <ComponentGroupRef Id="ServerFiles" />
-      <ComponentGroupRef Id="WorkerFiles" />
-      <ComponentGroupRef Id="WebFiles" />
-      <ComponentGroupRef Id="NodeRuntimeFiles" />
+      <ComponentGroupRef Id="PayloadFiles" />
       <ComponentGroupRef Id="FfmpegFiles" />
-      <ComponentGroupRef Id="EmbeddedPgFiles" />
       <ComponentGroupRef Id="TrayFiles" />
       <ComponentGroupRef Id="ServiceComponents" />
       <ComponentGroupRef Id="FirewallComponents" />
       <ComponentGroupRef Id="ShortcutComponents" />
       <ComponentGroupRef Id="AppDataFolders" />
+      <ComponentGroupRef Id="CleanupComponents" />
     </Feature>
 
     <!-- WixToolset.Firewall.wixext supplies fw:FirewallException
-         (Firewall.wxs). No other extensions are needed: ServiceInstall/
-         ServiceControl/RegistryValue/Shortcut/CreateFolder are all core
-         v4 schema, not extension elements. -->
+         (Firewall.wxs); WixToolset.Util.wixext supplies
+         util:RemoveFolderEx (cleanup component above) — both pinned in
+         lockstep with the wix tool itself (build-msi.mjs). Everything
+         else (ServiceInstall/ServiceControl/RegistryValue/Shortcut/
+         CreateFolder) is core v4 schema, not extension elements. -->
   </Package>
 </Wix>
