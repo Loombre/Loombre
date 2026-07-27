@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Loombre :: installers/windows/msi/WebPort.wxi
+
+  Single source of truth for the web client's listen port (installer
+  completeness audit — mirrors ServerPort.wxi exactly, for the same
+  WIX0150 reason: WiX preprocessor defines are PER SOURCE FILE, so every
+  compilation unit that needs the port includes this file instead of
+  relying on a Package.wxs define it would never see). Shared by
+  Services.wxs (LoombreWeb's PORT environment entry + LoombreServer's
+  LOOMBRE_WEB_URL) and Firewall.wxs (the web UI's inbound-allow rule) so
+  the firewall rule, the tray-advertised URL, and the service's actual
+  listen port can never drift apart. Overridable via
+  `wix build -d WebPort=…` (the ifndef) for anyone who needs a
+  non-default port without hand-editing source; build-msi.mjs does not
+  override it today (ships Next.js's own conventional 3000 default).
+-->
+<Include>
+  <?ifndef WebPort ?>
+    <?define WebPort = "3000" ?>
+  <?endif ?>
+</Include>

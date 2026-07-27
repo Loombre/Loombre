@@ -81,48 +81,85 @@
   Arguments whose token continues with a filename ("[NODEDIR]node.exe")
   don't have the problem.
 -->
-<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
   <?include ServerPort.wxi ?>
+  <?include WebPort.wxi ?>
   <Fragment>
     <ComponentGroup Id="ServiceComponents" Directory="SVCHOSTDIR">
-      <!-- ONE component, TWO ServiceInstall/ServiceControl pairs: both
-           Windows services launch the SAME shared LoombreServiceHost.exe
-           binary (it takes its target executable + args on its own
-           command line, see Services.wxs's header + ServiceOptions.cs),
-           so there is exactly one file to install/service/remove and the
-           two service registrations live and die with it atomically. -->
+      <!-- ONE component, THREE ServiceInstall/ServiceControl pairs: all
+           three Windows services launch the SAME shared
+           LoombreServiceHost.exe binary (it takes its target executable +
+           args on its own command line, see Services.wxs's header +
+           ServiceOptions.cs), so there is exactly one file to
+           install/service/remove and the three service registrations live
+           and die with it atomically. -->
       <Component Id="cmp.ServiceHost" Guid="*">
         <File Id="file.LoombreServiceHost" Source="$(var.SvcHostDir)\LoombreServiceHost.exe" KeyPath="yes" />
 
-        <!-- START POSTURE (rehearsal reality, not the end state): both
-             services install as Start="demand" and ServiceControl does
-             NOT start them at install time. The bundled node/ payload is
-             still build-msi.mjs's PLACEHOLDER (no real node.exe), so an
-             install-time start with Wait="yes" would FAIL the whole MSI
-             on every machine today. Payload extraction happens at
-             INSTALL time (Package.wxs ca.ExtractPayload); `sc start
-             LoombreServer` exercises the self-heal re-check plus a
-             loudly-logged spawn failure in [APPDATA_LOGS]server.log.
-             Flip both to Start="auto" + ServiceControl Start="install"
-             in the SAME change that makes the node runtime real. -->
+        <!-- START POSTURE (installer completeness audit — the end state
+             the old rehearsal comment promised): the bundled node/
+             payload is REAL now (build-msi.mjs's fetchNodeRuntime calls
+             the shared, manifest-pinned scripts/fetch-node.mjs, staging
+             node.exe at the NODEDIR root), so all three services install
+             as Start="auto" and each ServiceControl carries
+             Start="install" — a fresh install boots the whole stack with
+             no manual `sc start`. Payload extraction still happens at
+             INSTALL time (Package.wxs ca.ExtractPayload), before
+             StartServices in the execute sequence, so first start only
+             pays the extractor's marker-hash self-heal check.
+
+             ORDERING: LoombreWorker and LoombreWeb declare an SCM
+             ServiceDependency on LoombreServer — SCM starts the server
+             first and stops it last. The worker discovers DATABASE_URL
+             via LOOMBRE_DATA_DIR from the server-provisioned embedded-PG
+             cluster, and the web client proxies API calls to the server,
+             so both are strictly downstream. First-boot reality: the
+             server reports RUNNING as soon as the wrapper spawns its
+             child, but initdb + migrations take longer — the worker's
+             own bounded discovery poll plus the SCM recovery actions
+             below (not SCM start ordering) are what absorb that window. -->
 
         <!-- ==================== LoombreServer ==================== -->
+        <!-- spawn-restricted (server ONLY, see ServiceOptions.cs +
+             RestrictedProcess.cs): the server supervises an embedded
+             postgres.exe, which hard-refuses to run from a token holding
+             admin privileges — and a LocalSystem service's direct spawn
+             inherits exactly such a token. The wrapper launches the child
+             with a CreateRestrictedToken that disables the Administrators
+             SID (pg_ctl's own technique). The worker keeps a normal token:
+             it spawns ffmpeg, not postgres, and transcode file access
+             relies on LocalSystem breadth. -->
         <ServiceInstall
           Id="svc.LoombreServer"
           Name="LoombreServer"
           DisplayName="Loombre Server"
-          Description="Loombre media server (catalog API + playback; also serves the web client — see Directories.wxs's WEBDIR comment for the current staging-vs-serving caveat)."
-          Start="demand"
+          Description="Loombre media server (catalog API + playback; the web client is served by the LoombreWeb service and advertised via LOOMBRE_WEB_URL)."
+          Start="auto"
           Type="ownProcess"
           ErrorControl="normal"
           Account="LocalSystem"
-          Arguments='--name LoombreServer --exe "[NODEDIR]node.exe" --arg "[SERVERDIR]dist\main.js" --cwd "[SERVERDIR]." --log "[APPDATA_LOGS]server.log" --envfile "[APPDATA_DATA]server.env" --stop-timeout-ms 10000 --extract-zip "[PAYLOADDIR]payload.zip" --extract-to "[INSTALLFOLDER]."' />
+          Arguments='--name LoombreServer --exe "[NODEDIR]node.exe" --arg "[SERVERDIR]dist\main.js" --cwd "[SERVERDIR]." --log "[APPDATA_LOGS]server.log" --envfile "[APPDATA_DATA]server.env" --stop-timeout-ms 10000 --extract-zip "[PAYLOADDIR]payload.zip" --extract-to "[INSTALLFOLDER]." --spawn-restricted' />
         <ServiceControl
           Id="svcctl.LoombreServer"
           Name="LoombreServer"
+          Start="install"
           Stop="both"
           Remove="uninstall"
           Wait="yes" />
+        <!-- SCM recovery actions (installer completeness audit): restart
+             on every failure tier with a 10s delay, failure count reset
+             daily. Load-bearing beyond ordinary resilience — the worker's
+             bounded discovery poll DEPENDS on SCM restarting it if the
+             server's embedded-PG provisioning outlasts the poll window on
+             a slow first boot. -->
+        <util:ServiceConfig
+          ServiceName="LoombreServer"
+          FirstFailureActionType="restart"
+          SecondFailureActionType="restart"
+          ThirdFailureActionType="restart"
+          RestartServiceDelayInSeconds="10"
+          ResetPeriodInDays="1" />
 
         <!-- ==================== LoombreWorker ==================== -->
         <ServiceInstall
@@ -130,53 +167,143 @@
           Name="LoombreWorker"
           DisplayName="Loombre Worker"
           Description="Loombre background worker (scan/probe/transcode/metadata job consumers)."
-          Start="demand"
+          Start="auto"
           Type="ownProcess"
           ErrorControl="normal"
           Account="LocalSystem"
-          Arguments='--name LoombreWorker --exe "[NODEDIR]node.exe" --arg "[WORKERDIR]dist\index.js" --cwd "[WORKERDIR]." --log "[APPDATA_LOGS]worker.log" --envfile "[APPDATA_DATA]worker.env" --stop-timeout-ms 15000 --extract-zip "[PAYLOADDIR]payload.zip" --extract-to "[INSTALLFOLDER]."' />
+          Arguments='--name LoombreWorker --exe "[NODEDIR]node.exe" --arg "[WORKERDIR]dist\index.js" --cwd "[WORKERDIR]." --log "[APPDATA_LOGS]worker.log" --envfile "[APPDATA_DATA]worker.env" --stop-timeout-ms 15000 --extract-zip "[PAYLOADDIR]payload.zip" --extract-to "[INSTALLFOLDER]."'>
+          <ServiceDependency Id="LoombreServer" />
+        </ServiceInstall>
         <ServiceControl
           Id="svcctl.LoombreWorker"
           Name="LoombreWorker"
+          Start="install"
           Stop="both"
           Remove="uninstall"
           Wait="yes" />
+        <util:ServiceConfig
+          ServiceName="LoombreWorker"
+          FirstFailureActionType="restart"
+          SecondFailureActionType="restart"
+          ThirdFailureActionType="restart"
+          RestartServiceDelayInSeconds="10"
+          ResetPeriodInDays="1" />
 
-        <!-- PORT / LOOMBRE_DATA_DIR / NODE_ENV are the only env vars this
-             installer can responsibly set at INSTALL time — see this
-             element's own comment. DATABASE_URL is deliberately ABSENT:
-             apps/server/src/common/db.provider.ts resolves it from
-             process.env.DATABASE_URL with a DEV-ONLY fallback
-             (postgres://loombre:loombre@localhost:5442/loombre) that must
-             NEVER be what a real Windows install runs against. The correct
-             source for a real install's DATABASE_URL is embedded-PG's
-             generated credentials via the P4.7 SecretRef/DPAPI seam
-             (lane B + P4.17), resolved by apps/server AT BOOT, not baked
-             in by this MSI at install time (the whole point of SecretRef
-             is that the installer never sees a plaintext credential). As
-             of this build lane B's boot-time wiring had not landed —
-             flagged in the I3 report as a real, currently-open gap: a
-             Windows install today would boot LoombreServer against the DEV
-             DEFAULT unless something else sets DATABASE_URL first.
-             LOOMBRE_TRUST_PROXY is deliberately left UNSET here too (README.md:
-             it is an operator opt-in for their own trusted reverse-proxy
-             config, never an installer default). Per-service REG_MULTI_SZ
-             Environment values use MSI's documented "[~]"-as-null-separator
-             RegistryValue convention for Type="multiString" — no trailing
-             "[~]" after the LAST entry, or MSI writes a spurious empty
-             trailing string into the REG_MULTI_SZ. -->
+        <!-- ==================== LoombreWeb ==================== -->
+        <!-- The apps/web Next.js standalone bundle (installer
+             completeness audit — closes the "installed web files nothing
+             serves" gap): build-msi.mjs stages `output: "standalone"`'s
+             monorepo layout, so the entrypoint is
+             [WEBDIR]apps\web\server.js and the working directory is its
+             containing folder (Next resolves .next/static and public/
+             relative to server.js). The cwd argument uses the same
+             trailing-dot idiom as the other two services — see this
+             file's header TRAILING-BACKSLASH TRAP note. No extract-zip
+             pair here: the server/worker registrations already carry the
+             self-heal, and one extractor owner per boot is plenty. -->
+        <ServiceInstall
+          Id="svc.LoombreWeb"
+          Name="LoombreWeb"
+          DisplayName="Loombre Web"
+          Description="Loombre web client (Next.js standalone server for the browser UI; talks to the Loombre Server API)."
+          Start="auto"
+          Type="ownProcess"
+          ErrorControl="normal"
+          Account="LocalSystem"
+          Arguments='--name LoombreWeb --exe "[NODEDIR]node.exe" --arg "[WEBDIR]apps\web\server.js" --cwd "[WEBDIR]apps\web\." --log "[APPDATA_LOGS]web.log" --envfile "[APPDATA_DATA]web.env" --stop-timeout-ms 10000'>
+          <ServiceDependency Id="LoombreServer" />
+        </ServiceInstall>
+        <ServiceControl
+          Id="svcctl.LoombreWeb"
+          Name="LoombreWeb"
+          Start="install"
+          Stop="both"
+          Remove="uninstall"
+          Wait="yes" />
+        <util:ServiceConfig
+          ServiceName="LoombreWeb"
+          FirstFailureActionType="restart"
+          SecondFailureActionType="restart"
+          ThirdFailureActionType="restart"
+          RestartServiceDelayInSeconds="10"
+          ResetPeriodInDays="1" />
+
+        <!-- Per-service REG_MULTI_SZ Environment values use MSI's
+             documented "[~]"-as-null-separator RegistryValue convention
+             for Type="multiString" — no trailing "[~]" after the LAST
+             entry, or MSI writes a spurious empty trailing string into
+             the REG_MULTI_SZ.
+
+             LOOMBRE_DATA_DIR=[APPDATAFOLDER], the ProgramData\Loombre
+             ROOT — NOT the data\ subdirectory (installer completeness
+             audit's tray-can-never-connect gap). The IPC discovery/token
+             files are written at join(LOOMBRE_DATA_DIR, controller-ipc.*)
+             (apps/server/src/ipc/discovery-files.ts), and the tray reads
+             them from the ProgramData\Loombre root — pointing the data
+             dir one level down would bury the discovery file where no
+             controller looks. The embedded-PG cluster then lives at
+             ProgramData\Loombre\postgres\data (provisioning appends
+             postgres\data itself — see apps/server/src/bootstrap/
+             provisioning.ts), which is also why Directories.wxs no longer
+             ships a pgdata folder.
+
+             Server-only entries (installer completeness audit):
+             LOOMBRE_EMBEDDED_PG_VENDOR_DIR=[PGDIR] + a matching
+             LOOMBRE_EMBEDDED_PG_VERSION — a packaged install has no repo
+             root for the bootstrap's dev-checkout vendor default, so the
+             MSI must name where it put the binaries (hard requirement per
+             packages/provisioning-pg/README.md); build-msi.mjs stages the
+             tree vendor-shaped (pg\windows-x64\<version>\...) and passes
+             the same manifest-pinned version as the EmbeddedPgVersion
+             preprocessor define, so path and version cannot drift.
+             LOOMBRE_IPC_WINDOWS_GRANT grants the discovery/token files a
+             read ACE for BUILTIN\Users, named by locale-independent
+             well-known SID (icacls "*SID" form — the value is a
+             comma-separated icacls principal list, each granted read; see
+             apps/server/src/ipc/env.ts + packages/secrets/src/
+             windows-acl.ts). Rationale: the tray runs as ANY logged-in
+             user (HKLM Run key, Shortcuts.wxs), while the default policy
+             only grants SYSTEM + Administrators.
+             LOOMBRE_WEB_URL names the LoombreWeb service's URL so the IPC
+             status response advertises the real web client instead of the
+             server-port fallback (apps/server/src/ipc/web-url.ts).
+
+             DATABASE_URL is deliberately ABSENT — and unlike the earlier
+             revision of this comment, that is now the CORRECT, fully-wired
+             posture, not an open gap: apps/server's provisioning bootstrap
+             (bootstrapProvisioning) treats an unset DATABASE_URL as "run
+             embedded PG" — it provisions/starts the vendored cluster under
+             LOOMBRE_DATA_DIR, resolves generated credentials at boot, and
+             auto-migrates; the worker reconstructs the same URL via the
+             LOOMBRE_DATA_DIR discovery seam (P4.2). Baking a URL in here
+             would OVERRIDE embedded mode with the external-server path.
+             LOOMBRE_TRUST_PROXY stays deliberately UNSET too (README.md:
+             an operator opt-in for their own trusted reverse-proxy config,
+             never an installer default). -->
         <RegistryValue
           Root="HKLM"
           Key="SYSTEM\CurrentControlSet\Services\LoombreServer"
           Name="Environment"
           Type="multiString"
-          Value="NODE_ENV=production[~]PORT=$(var.ServerPort)[~]LOOMBRE_DATA_DIR=[APPDATA_DATA]" />
+          Value="NODE_ENV=production[~]PORT=$(var.ServerPort)[~]LOOMBRE_DATA_DIR=[APPDATAFOLDER][~]LOOMBRE_EMBEDDED_PG_VENDOR_DIR=[PGDIR][~]LOOMBRE_EMBEDDED_PG_VERSION=$(var.EmbeddedPgVersion)[~]LOOMBRE_IPC_WINDOWS_GRANT=*S-1-5-32-545[~]LOOMBRE_WEB_URL=http://localhost:$(var.WebPort)" />
         <RegistryValue
           Root="HKLM"
           Key="SYSTEM\CurrentControlSet\Services\LoombreWorker"
           Name="Environment"
           Type="multiString"
-          Value="NODE_ENV=production[~]LOOMBRE_DATA_DIR=[APPDATA_DATA][~]LOOMBRE_FFMPEG=[FFMPEGDIR]ffmpeg.exe[~]LOOMBRE_FFPROBE=[FFMPEGDIR]ffprobe.exe" />
+          Value="NODE_ENV=production[~]LOOMBRE_DATA_DIR=[APPDATAFOLDER][~]LOOMBRE_FFMPEG=[FFMPEGDIR]ffmpeg.exe[~]LOOMBRE_FFPROBE=[FFMPEGDIR]ffprobe.exe" />
+        <!-- LoombreWeb's env is pure Next.js standalone contract: PORT +
+             HOSTNAME are what server.js binds (0.0.0.0 because the web UI
+             is LAN-facing by the same PLAN §10 rationale as the server —
+             Firewall.wxs opens the matching inbound rule);
+             LOOMBRE_SERVER_ORIGIN points API proxying at the server
+             service on its ServerPort.wxi port. -->
+        <RegistryValue
+          Root="HKLM"
+          Key="SYSTEM\CurrentControlSet\Services\LoombreWeb"
+          Name="Environment"
+          Type="multiString"
+          Value="NODE_ENV=production[~]PORT=$(var.WebPort)[~]HOSTNAME=0.0.0.0[~]LOOMBRE_SERVER_ORIGIN=http://localhost:$(var.ServerPort)" />
       </Component>
     </ComponentGroup>
   </Fragment>

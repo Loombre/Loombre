@@ -6,11 +6,12 @@
   registration (HKLM Run key — per-machine because this whole install is
   per-machine, ALLUSERS=1 via Package/@Scope in Package.wxs; a per-user Run
   key would need a per-user install context this product doesn't use). The
-  tray is what a user is meant to actually SEE after install; the two
-  Windows services start themselves independently at boot regardless of
-  whether any user ever logs in or the tray ever runs (Start="auto" in
-  Services.wxs) — the tray is a status/control surface over them, not their
-  supervisor.
+  tray is what a user is meant to actually SEE after install; the three
+  Windows services (server, worker, web) start themselves independently at
+  boot regardless of whether any user ever logs in or the tray ever runs
+  (Start="auto" in Services.wxs — true again since the installer
+  completeness audit made the bundled node runtime real) — the tray is a
+  status/control surface over them, not their supervisor.
 -->
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
   <Fragment>

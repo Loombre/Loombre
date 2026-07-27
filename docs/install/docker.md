@@ -38,7 +38,7 @@ docker compose -f docker-compose.prod.yml --env-file installers/docker/loombre.e
 docker compose -f docker-compose.prod.yml --env-file installers/docker/loombre.env run --rm server \
   node packages/db/scripts/migrate.mjs migrate
 
-# 3) bring up the server + worker
+# 3) bring up the server + worker + web UI
 docker compose -f docker-compose.prod.yml --env-file installers/docker/loombre.env up -d
 ```
 
@@ -50,24 +50,42 @@ exists yet (see "Pulling a published image" below): building `server`/
 `worker` from source needs the whole repository as build context, not just
 those two files.
 
-Loombre is now reachable at `http://<this host>:3001` (or whatever
-`LOOMBRE_PORT` you set in `loombre.env`). The first-run web setup wizard
+The **web UI** is now at `http://<this host>:3000` (the `web` container;
+`LOOMBRE_WEB_PORT` changes it) and the **HTTP API** at
+`http://<this host>:3001` (`LOOMBRE_PORT`). The first-run setup wizard
 (welcome → admin creation → library paths → hardware probe → restricted
-content → restore-from-backup → done) runs the first time you open it —
-see `docs/admin-guide/wizard.md` for the full walkthrough; there is no
-default admin account and no manual `docker exec` step required to create
-one.
+content → restore-from-backup → done) lives in the web UI and runs the
+first time you open it — see `docs/admin-guide/wizard.md` for the full
+walkthrough; there is no default admin account and no manual `docker exec`
+step required to create one. When the login screen asks for a server URL,
+give it the API origin **as your browser reaches it** —
+`http://<this host>:3001` — never a container-internal name like
+`http://server:3001` (the browser, not the web container, makes every API
+call).
+
+Browsing from a *different* machine (LAN or beyond)? The localhost
+defaults only cover a browser running on the Docker host itself — set two
+variables in `loombre.env` to the origins browsers actually use, e.g.:
+
+```bash
+LOOMBRE_CORS_ORIGINS=http://192.168.1.20:3000    # the web UI origin (server-side CORS allowlist)
+LOOMBRE_SERVER_ORIGIN=http://192.168.1.20:3001   # the API origin (web client's CSP allowance)
+```
+
+Both are documented in full — including the unset/empty/set distinction
+each one carries — in `installers/docker/loombre.env.example`.
 
 **Pulling a published image** (once a tagged release publishes images —
 none has been published yet as of this writing):
 
 ```bash
 export LOOMBRE_IMAGE=ghcr.io/loombre/loombre:v0.9.0
+export LOOMBRE_WEB_IMAGE=ghcr.io/loombre/loombre-web:v0.9.0
 docker compose -f docker-compose.prod.yml --env-file installers/docker/loombre.env pull
 ```
 
 Until published images are available, `docker compose ... up -d` builds from
-source automatically the first time (the `build:` section in `docker-compose.prod.yml`),
+source automatically the first time (the `build:` sections in `docker-compose.prod.yml`),
 which is what the Quickstart above does implicitly.
 
 ## What gets started
@@ -75,19 +93,28 @@ which is what the Quickstart above does implicitly.
 | Service | Image | Role |
 |---|---|---|
 | `postgres` | `postgres:18.4` | Catalog database (D1: Postgres-only, no embedded-PG path in the Docker distribution — see [External Postgres](#running-against-an-external-postgres) below) |
-| `server` | built from the repo-root `Dockerfile` | HTTP API + web-facing surfaces (`node apps/server/dist/main.js`) |
+| `server` | built from the repo-root `Dockerfile` (`runtime` target) | HTTP API (`node apps/server/dist/main.js`) |
 | `worker` | **same image as `server`**, different `command:` | Scanner, probe, metadata, image pipeline, transcode runtime (`node apps/worker/dist/index.js`) |
+| `web` | built from the **same `Dockerfile`**, separate `web` target (`loombre-web`) | The browser UI — a Next.js standalone server (`node apps/web/server.js`) |
 
 `server` and `worker` are two containers built from **one image** — see the
 Dockerfile's own header comment for why (short version: they share their
 entire dependency graph; a second image would duplicate every layer except
 two small `dist/` directories, for a solo-maintainer project where keeping
 both processes in exact version lockstep matters more than that marginal
-pull-size saving).
+pull-size saving). `web` is deliberately its **own image**: it shares
+essentially none of that runtime graph (no ffmpeg, no db, no pg — a Next
+standalone build carries its own pruned `node_modules`), so the one-image
+rationale stops there — also covered in the Dockerfile's header.
 
-Only `server`'s HTTP port is published to the host. `postgres` and `worker`
-are reachable only from inside the compose network — there is nothing to
-port-forward for either.
+The `web` container is stateless and makes no API calls of its own — every
+API request happens **from your browser** directly to `server`'s published
+port. That's why it has no `depends_on`, no volumes, and why the CORS/CSP
+pairing above talks about browser-visible origins, never container names.
+
+Only `server`'s and `web`'s HTTP ports are published to the host.
+`postgres` and `worker` are reachable only from inside the compose network
+— there is nothing to port-forward for either.
 
 ## Environment variables
 
@@ -98,13 +125,17 @@ copy it to `loombre.env` (gitignored) rather than editing the example in
 place. The two you cannot skip:
 
 - `POSTGRES_PASSWORD` — no default; compose refuses to start without it.
-- `LOOMBRE_JWT_SECRET` — no default in the compose file's own validation, and
-  while the server itself *can* boot without it (P1.9 zero-config boot
-  derives an ephemeral random secret and logs a loud warning), doing that in
-  a multi-process deployment means the server and worker processes sign
-  with different secrets on every restart and every previously issued
-  access token is invalidated — always set this for anything beyond a
-  five-minute local trial. Generate one with `openssl rand -base64 48`.
+- `LOOMBRE_JWT_SECRET` — required by the compose file's own validation.
+  Signs access JWTs; only the **server** reads it (the worker never does).
+  The server *can* technically manage this itself — since P4.7/P4.17 an
+  unset secret is generated once and **persisted** (here: under
+  `/data/secrets` on the `loombre_data` volume), so restarts keep every
+  outstanding token; the old "new ephemeral secret every restart" behavior
+  is gone. The compose file still requires an explicit value because a
+  secret in `loombre.env` survives `docker compose down -v` (which wipes
+  `/data`, and a volume-persisted secret with it — logging every session
+  out) and gets backed up with the rest of your configuration. Generate
+  one with `openssl rand -base64 48`.
 
 Everything else (CORS origins, trust-proxy, performance tier, transcode
 concurrency, TMDB/TVDB provider keys, …) has a sane default and is
@@ -185,11 +216,40 @@ never written). Add your real library paths via the first-run wizard (or
 `POST /libraries` directly) after the containers are up, pointing at the
 container-side path (`/media/movies`, above), not the host path.
 
+**Media on a NAS (SMB/NFS)?** Filesystem-change events don't cross network
+mounts into a container, so a native watch silently sees nothing and new
+files only appear on manual rescans. Set `LOOMBRE_SCAN_POLL=1` in
+`loombre.env` to force the scanner's polling mode for every watched path —
+the documented escape hatch (see `installers/docker/loombre.env.example`).
+
+## Hardware-accelerated ffmpeg (override)
+
+The image ships a pinned, checksum-verified **software** ffmpeg/ffprobe
+pair (`installers/ffmpeg-manifest.json`) — nothing to configure for a
+working instance. If you need hardware acceleration the vendored build
+lacks (VAAPI, NVENC, QSV), bring your own binaries:
+
+1. Bind-mount your hw-accel-capable `ffmpeg`/`ffprobe` into **both** the
+   `server` and `worker` containers at the same container-side path (the
+   worker is what actually spawns them; both processes must resolve the
+   same pair) — plus whatever device/driver mounts the acceleration needs
+   (`/dev/dri` for VAAPI, the NVIDIA runtime for NVENC, etc.).
+2. Point `LOOMBRE_FFMPEG` and `LOOMBRE_FFPROBE` in `loombre.env` at that
+   container-side path. Both are passed through to both containers, with
+   the image's vendored pair as the default when unset.
+
+Historical note: `loombre.env.example` documented this override before it
+actually worked — compose `--env-file` values are interpolation-only and
+were never passed into the containers, so setting these did nothing. The
+pass-through in `docker-compose.prod.yml` (with the vendored path as the
+`:-` default) is what made it real; if you tried this before and saw no
+effect, that was why, and it works now.
+
 ## Reverse proxy + TLS (the real deployment)
 
-`docker-compose.prod.yml` deliberately publishes only `server`'s own HTTP
-port — putting it directly on the internet unproxied is not the recommended
-posture for anything beyond local/LAN use. The documented v1 remote-access
+`docker-compose.prod.yml` deliberately publishes only `server`'s and
+`web`'s own HTTP ports — putting either directly on the internet unproxied
+is not the recommended posture for anything beyond local/LAN use. The documented v1 remote-access
 path is plain HTTP behind a reverse proxy you already run and trust (nginx,
 Caddy, Traefik) that terminates TLS, with `LOOMBRE_TRUST_PROXY` set so the
 auth rate limiter and anomaly log see real client IPs (README.md's "Remote
@@ -227,17 +287,22 @@ cosign verify \
 
 This proves the image was built by Loombre's own CI from the exact commit
 tagged in the repository — no key file needed (cosign uses GitHub's OIDC
-token as the trust root).
+token as the trust root). The web-client image
+(`ghcr.io/loombre/loombre-web:<version>`) verifies the same way — swap the
+image reference.
 
 ## Building multi-arch images yourself
 
 ```bash
-installers/docker/build.sh                # linux/amd64 + linux/arm64, both verified in CI
+installers/docker/build.sh                # BOTH images (loombre + loombre-web), linux/amd64 + linux/arm64
 installers/docker/build.sh --load          # single-platform (host arch), loads into `docker images`
-installers/docker/build.sh loombre-amd64    # one arch only
+installers/docker/build.sh loombre-amd64    # one target, one arch (also: loombre-web-amd64, etc.)
 ```
 
-See `installers/docker/docker-bake.hcl` for the full target definitions.
+The default bake group builds both shipped images — `loombre`
+(server/worker) and `loombre-web` (the web client) — from the one repo-root
+`Dockerfile`'s two final stages. See `installers/docker/docker-bake.hcl`
+for the full target definitions.
 Both architectures were built and booted end-to-end — see
 `installers/docker/BUILD-NOTES.md` for image sizes,
 version pins, and native-dependency findings from that run.
@@ -247,7 +312,7 @@ version pins, and native-dependency findings from that run.
 | What | Where |
 |---|---|
 | Postgres data | named volume `loombre_pgdata` |
-| Application data (image variants, transcode staging) | named volume `loombre_data`, mounted at `/data` in both containers |
+| Application data (image variants, transcode staging) | named volume `loombre_data`, mounted at `/data` in the `server` and `worker` containers (`web` is stateless — no volumes) |
 | Your media | wherever you bind-mount it (see [Media library paths](#media-library-paths)) — never copied, never modified |
 
 `docker compose -f docker-compose.prod.yml down` (without `-v`) stops
@@ -293,4 +358,17 @@ are the first thing to check today.
   (container-side path, e.g. `/media/movies` — see [Media library
   paths](#media-library-paths)), and that both `server` and `worker` mount
   it identically.
+- **Library scans fine once but never notices new files (NAS media).**
+  Network mounts don't deliver filesystem events into the container — set
+  `LOOMBRE_SCAN_POLL=1` (see [Media library paths](#media-library-paths)).
+- **Login page loads, but logging in / every API call fails.** Two
+  browser-side pairings to check, both about the origins **your browser**
+  uses (never container names): the server URL you entered must be the API
+  origin as the browser reaches it (`http://<host>:3001`); and for any
+  browser not running on the Docker host itself, `LOOMBRE_CORS_ORIGINS`
+  (server-side allowlist) and `LOOMBRE_SERVER_ORIGIN` (web client's CSP)
+  must both name the real origins — CSP violations in the browser console
+  point at the latter, CORS errors at the former. See the
+  [Quickstart](#quickstart)'s LAN note and
+  `installers/docker/loombre.env.example`.
 

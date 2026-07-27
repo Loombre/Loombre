@@ -2,10 +2,14 @@
 <!--
   Loombre :: installers/windows/msi/Firewall.wxs
 
-  Inbound TCP exception for the Loombre server's listen port, via the WiX v4
-  Firewall extension (WixToolset.Firewall.wixext — passed to `wix build`
-  with `-ext WixToolset.Firewall.wixext`; NuGet-restored the same way the
-  `wix` dotnet tool itself is, see build-msi.mjs).
+  Inbound TCP exceptions for the Loombre server's listen port AND the web
+  client's listen port (the latter added by the installer completeness
+  audit: the LoombreWeb service binds HOSTNAME=0.0.0.0 — see Services.wxs —
+  because the browser UI is exactly as LAN-facing as the API it fronts, by
+  the same PLAN §10 rationale below). Via the WiX v4 Firewall extension
+  (WixToolset.Firewall.wixext — passed to `wix build` with
+  `-ext WixToolset.Firewall.wixext`; NuGet-restored the same way the `wix`
+  dotnet tool itself is, see build-msi.mjs).
 
   Scope="any" (not "localSubnet"): docs/PLAN.md §10 treats remote/LAN access
   as first-class (P9 in the plan's competitive table), and an operator
@@ -20,15 +24,17 @@
   it, just not reachable from the LAN until the operator's own firewall
   policy allows it.
 
-  Port is $(var.ServerPort) — the SAME preprocessor variable Services.wxs's
-  LoombreServer Environment RegistryValue uses for PORT, so the firewall
-  rule and the service's actual listen port can never drift apart from a
-  single edit in ServerPort.wxi (a shared include: WiX defines are
+  Ports are $(var.ServerPort) / $(var.WebPort) — the SAME preprocessor
+  variables Services.wxs's LoombreServer/LoombreWeb Environment
+  RegistryValues use for PORT, so each firewall rule and its service's
+  actual listen port can never drift apart from a single edit in
+  ServerPort.wxi / WebPort.wxi (shared includes: WiX defines are
   per-source-file, so a Package.wxs define never reaches this file).
 -->
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
      xmlns:fw="http://wixtoolset.org/schemas/v4/wxs/firewall">
   <?include ServerPort.wxi ?>
+  <?include WebPort.wxi ?>
   <Fragment>
     <ComponentGroup Id="FirewallComponents" Directory="INSTALLFOLDER">
       <Component Id="cmp.FirewallException" Guid="*">
@@ -50,6 +56,20 @@
           Name="Loombre Server"
           Description="Inbound TCP for the Loombre media server (LAN/remote access, docs/PLAN.md §10)."
           Port="$(var.ServerPort)"
+          Protocol="tcp"
+          Scope="any"
+          Profile="all"
+          IgnoreFailure="yes" />
+        <!-- Same Scope/Profile/IgnoreFailure posture as the server rule
+             above, for the same reasons (see this file's header): the web
+             UI is the thing a household's OTHER devices actually open in
+             a browser, so it needs LAN reachability at least as much as
+             the API does. -->
+        <fw:FirewallException
+          Id="fw.LoombreWeb"
+          Name="Loombre Web"
+          Description="Inbound TCP for the Loombre web client (LAN/remote access, docs/PLAN.md §10)."
+          Port="$(var.WebPort)"
           Protocol="tcp"
           Scope="any"
           Profile="all"
