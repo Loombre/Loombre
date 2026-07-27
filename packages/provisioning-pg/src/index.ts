@@ -17,6 +17,14 @@ export type { GeneratedSecret, SecretBackendImpl } from "./secret/types.js";
 export { generateSecret, resolveSecret } from "./secret/resolve.js";
 export { createFile0600Backend } from "./secret/file0600.js";
 
+export {
+  EMBEDDED_PG_DEFAULT_PORT,
+  EMBEDDED_PG_SUPERUSER_USERNAME,
+  EMBEDDED_PG_DEFAULT_DATABASE,
+} from "./defaults.js";
+export type { EmbeddedDiscoveryOptions } from "./discovery.js";
+export { embeddedSuperuserSecretPath, resolveEmbeddedDatabaseUrl } from "./discovery.js";
+
 export type { ControlDataProbeResult } from "./corruption.js";
 export { classifyControlDataOutput, classifyStartupFailureLog, detectCorruption, formatCorruptDetail } from "./corruption.js";
 
