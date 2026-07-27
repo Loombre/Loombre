@@ -260,4 +260,22 @@ else
   echo "  sudo systemctl start loombre-server loombre-worker loombre-web"
 fi
 
+# Embedded-PostgreSQL shared-library preflight (installer completeness
+# follow-up): the bundled PG links libgssapi_krb5.so.2 + libxml2.so.2 —
+# ldd-probed as the ONLY two non-default deps on minimal Debian/Ubuntu.
+# WARN (not fail): external-DATABASE_URL installs never run these
+# binaries, and the server's own boot error names the missing lib too.
+_pg_bin="$(ls "${PREFIX}"/pg/*/*/bin/postgres 2>/dev/null | head -n 1)"
+if [ -n "${_pg_bin}" ] && command -v ldd >/dev/null 2>&1; then
+  _missing="$(ldd "${_pg_bin}" 2>/dev/null | awk '/not found/ {print $1}' | sort -u | tr '\n' ' ')"
+  if [ -n "${_missing}" ]; then
+    echo "WARNING: the bundled PostgreSQL is missing shared libraries: ${_missing}" >&2
+    echo "         Embedded database mode (the default) will fail to start until they are installed:" >&2
+    echo "           Debian/Ubuntu: apt install libgssapi-krb5-2 libxml2" >&2
+    echo "           openSUSE:      zypper install krb5 libxml2-2" >&2
+    echo "           Fedora/RHEL:   dnf install krb5-libs libxml2" >&2
+    echo "         (Installs using an external DATABASE_URL are unaffected.)" >&2
+  fi
+fi
+
 echo "install.sh: done. Loombre ${VERSION} installed at ${PREFIX}."
