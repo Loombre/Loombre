@@ -451,6 +451,11 @@ function buildPrecompiledWorkspaceDep(pkgDirName, stagingRoot, { exportsMap, dep
     walkSrc(join(liveDir, "src"));
     addFile(join(liveDir, "package.json"));
     addFile(join(liveDir, "tsconfig.json"));
+    // The exports map is BUILD-SCRIPT input, not package content — a map
+    // change must invalidate too (round-4 linux smoke shipped a cached
+    // copy with the pre-./migrate map because only sources were hashed).
+    h.update(JSON.stringify(exportsMap));
+    h.update("\0");
     for (const [name, targetDir] of Object.entries(depOverrides).sort(([a], [b]) => a.localeCompare(b))) {
       h.update(name);
       h.update(readFileSync(join(targetDir, ".precompiled-ok"), "utf8"));
