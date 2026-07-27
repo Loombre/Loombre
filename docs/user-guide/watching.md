@@ -45,15 +45,20 @@ losing your place.
 
 Loombre plays and organizes video and audio files. Most everyday file
 types work, including a lot of older ones — files ending in .wmv, .mpg,
-or .flv, and audio files ending in .aac or .aiff, all just work
-alongside the more common ones.
+or .flv, camcorder files ending in .m2ts or .mts, and audio files ending
+in .aac or .aiff, all just work alongside the more common ones.
 
 Some older or uncommon file types aren't supported yet — for example
-files ending in .ape, .wv, or .wma, or camcorder files ending in .mts.
-If a folder you pointed Loombre at has files like that, they're never
-added incorrectly and never dropped without a trace — whoever
-administers your Loombre can see exactly which files were left out and
-why (see the [Admin Guide](../admin-guide/libraries.md)).
+files ending in .ape, .wv, or .wma. If a folder you pointed Loombre at
+has files like that, they're never added incorrectly and never dropped
+without a trace — whoever administers your Loombre can see exactly which
+files were left out and why (see the [Admin Guide](../admin-guide/libraries.md)).
+
+Occasionally a file that looks like it should work turns out not to be
+playable video or audio at all — a corrupted download, or a file that
+somehow got renamed to look like one. Loombre never guesses or shows a
+broken entry for these — they're flagged for your administrator to look
+into, the same way an unsupported file type is.
 
 ## When something won't play smoothly
 

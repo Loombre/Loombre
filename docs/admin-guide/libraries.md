@@ -9,12 +9,17 @@
      missing file is removed) — docs/PLAN.md §8.1-8.2, and
      apps/worker/src/scan/scanner.ts's header comment (checkpointing,
      file.relocated events, MISSING_HARD_CASCADE_GRACE_MS = 72h). Supported
-     file types + the v1 exclusions (STATE.md H3) —
-     apps/worker/src/scan/parse/path-utils.ts's VIDEO_EXTENSIONS/
-     AUDIO_EXTENSIONS/EXCLUDED_MEDIA_EXTENSIONS; the skip report — scanner.ts's
-     scan.completed skippedUnsupportedCount/skippedUnsupportedFiles, surfaced
-     in the admin dashboard's Libraries panel
-     (apps/web/src/components/admin/LibrariesPanel.tsx). -->
+     file types + the v1 exclusions (STATE.md H3; .mts admission, owner
+     ledger L1) — apps/worker/src/scan/parse/path-utils.ts's
+     VIDEO_EXTENSIONS/AUDIO_EXTENSIONS/EXCLUDED_MEDIA_EXTENSIONS; the skip
+     report — scanner.ts's scan.completed skippedUnsupportedCount/
+     skippedUnsupportedFiles, surfaced in the admin dashboard's Libraries
+     panel (apps/web/src/components/admin/LibrariesPanel.tsx). Files that
+     fail inspection after ingest (owner ledger L1) — apps/worker/src/
+     probe/terminal-failure-hook.ts's probe.failed event (packages/
+     contract/event-schemas/probe.failed.schema.json), surfaced on the
+     same Libraries panel via apps/web/src/lib/admin-dashboard-live.ts's
+     probeFailed accumulator. -->
 
 A **library** is a collection of media that lives in one or more folders
 on disk — for example, "Movies" pointing at your movies folder, or "TV
@@ -81,7 +86,7 @@ Loombre recognizes most common video and audio file types when scanning:
 
 | Kind  | File endings recognized |
 | ----- | ------------------------ |
-| Video | .mkv, .mp4, .avi, .mov, .m4v, .ts, .m2ts, .webm, .wmv, .mpg, .mpeg, .vob, .flv |
+| Video | .mkv, .mp4, .avi, .mov, .m4v, .ts, .m2ts, .mts, .webm, .wmv, .mpg, .mpeg, .vob, .flv |
 | Audio | .flac, .mp3, .m4a, .ogg, .oga, .opus, .wav, .alac, .aac, .aiff, .aif |
 
 A number of recognized media file types are **not** supported in this
@@ -92,7 +97,7 @@ version:
 | .ape | Genuinely rare, thin support for turning it into something playable |
 | .wv | Genuinely rare, thin support for turning it into something playable |
 | .wma | Genuinely rare, thin support for turning it into something playable |
-| .mts, .asf, .ogv, .3gp, .3g2, .divx, .m2v, .rm, .rmvb, .wtv, .f4v, .dv | Recognized video types not yet supported — reported as skipped so nothing disappears without a trace |
+| .asf, .ogv, .3gp, .3g2, .divx, .m2v, .rm, .rmvb, .wtv, .f4v, .dv | Recognized video types not yet supported — reported as skipped so nothing disappears without a trace |
 | .mka, .m4b, .dsf, .dff, .mpc, .tta, .ra, .shn, .amr, .ac3, .dts, .spx | Recognized audio types not yet supported — reported as skipped so nothing disappears without a trace |
 
 Files with one of those endings are never dropped silently — the scan's
@@ -108,3 +113,10 @@ Files whose endings aren't recognized as media at all — notes, artwork,
 text files, and other junk that rides along in media folders — are
 treated as non-media and ignored without a report. The skip report covers
 recognized media types only.
+
+Separately, a file with a recognized ending can still turn out not to be
+readable media once Loombre actually inspects it — a corrupted download, a
+placeholder file, or a file that was simply misnamed. Those are reported
+too: the same Libraries panel shows a **"N failed inspection (unreadable
+media)"** note listing the affected files, as they're discovered, for as
+long as the dashboard stays open.
