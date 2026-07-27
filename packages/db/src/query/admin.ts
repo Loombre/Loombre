@@ -656,20 +656,31 @@ export interface EnrichableCatalogItemAdminRow {
 }
 
 /**
- * Admin-authorized (not ViewerContext-guarded — mirrors getLibraryByIdAdmin/
- * scanLibrary's own posture exactly, see libraries.controller.ts): both Fix
- * Match trigger endpoints only ever enqueue a job and return {jobId}, never
- * any catalog content in the response body, so this is an existence +
- * item-type check for the 404 gate, not a content read. `mediaKind` comes
- * from the OWNING LIBRARY's media_kind (catalog_items itself has no such
- * column) — apps/worker's provider-chain resolution needs it.
+ * The Fix Match trigger endpoints' existence + item-type check (their 404
+ * gate). Named ...ForAdmin because the ENDPOINTS are isAdmin-authorized,
+ * but — like listActiveSessionsAdmin above, and unlike everything else in
+ * this file — it also takes a ViewerContext, because it reads
+ * catalog_items. Standard guarded read (applyGuard), exactly like
+ * listUnmatchedLibraryItemsForViewer above — NOT the getLibraryByIdAdmin
+ * admin-bypass posture, which reads `libraries` and is deliberately paired
+ * there with a ViewerContext-guarded list; this lookup has no guarded half
+ * to pair with, and it reads catalog_items, so plan §6.4's default-deny
+ * (which denies uncleared ADMINS too) applies unchanged. An item this
+ * admin's own ViewerContext doesn't clear is `undefined` here, i.e. a
+ * byte-identical 404 to a nonexistent id — the job it would otherwise
+ * enqueue derives its provider search from the item's real title/year and
+ * broadcasts candidate titles back over the admin socket, so "the response
+ * body is only {jobId}" is not by itself a reason to skip the guard.
+ * `mediaKind` comes from the OWNING LIBRARY's media_kind (catalog_items
+ * itself has no such column) — apps/worker's provider-chain resolution
+ * needs it.
  */
 export async function getEnrichableCatalogItemForAdmin(
   db: Kysely<DB>,
+  ctx: ViewerContext,
   id: string
 ): Promise<EnrichableCatalogItemAdminRow | undefined> {
-  const row = await db
-    .selectFrom('catalog_items')
+  const row = await applyGuard(db.selectFrom('catalog_items'), ctx)
     .innerJoin('libraries', 'libraries.id', 'catalog_items.library_id')
     .select([
       'catalog_items.id as id',

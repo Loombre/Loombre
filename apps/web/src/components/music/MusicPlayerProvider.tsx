@@ -60,6 +60,10 @@ import { apiPut } from "../../lib/api-client.js";
 
 export interface PlayableTrackInput {
   itemId: string;
+  /** Set only when the user picked a specific VERSION of the track
+   *  (components/detail/VersionRow.tsx -> /watch/{itemId}?mediaFileId=…);
+   *  omitted means the item's primary media_files row. */
+  mediaFileId?: string | null;
   title: string;
   subtitle?: string | null;
   albumId?: string | null;
@@ -71,6 +75,7 @@ function toQueueTrack(input: PlayableTrackInput): QueueTrack {
   return {
     entryId: (globalThis.crypto?.randomUUID?.() ?? `${input.itemId}-${Date.now()}-${Math.random()}`),
     itemId: input.itemId,
+    mediaFileId: input.mediaFileId ?? null,
     title: input.title,
     subtitle: input.subtitle ?? null,
     albumId: input.albumId ?? null,
@@ -187,8 +192,9 @@ export function MusicPlayerProvider({ children }: { children: ReactNode }): Reac
       const myToken = ++loadTokenRef.current;
       // Music-scoped interim shim (Phase 3 Step 6c): direct-play only —
       // see lib/playback-session.ts's createDirectPlaySession header for
-      // the "music HLS transcode playback" open item.
-      const result = await createDirectPlaySession(track.itemId);
+      // the "music HLS transcode playback" open item. `mediaFileId` pins
+      // the session to the version the user picked, when they picked one.
+      const result = await createDirectPlaySession(track.itemId, "stream", track.mediaFileId ?? undefined);
       if (myToken !== loadTokenRef.current) return; // superseded by a later load
 
       if (!result.ok) {

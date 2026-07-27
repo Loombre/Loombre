@@ -943,7 +943,7 @@
         "matched:track-title"
       ]
     },
-    "note": "wma"
+    "note": "wma — the parser is extension-agnostic; the SCANNER does not admit wma (see test/scan/media-extensions.spec.ts)"
   },
   {
     "path": "Artist/Album/01 Track.ape",
@@ -960,7 +960,7 @@
         "matched:track-title"
       ]
     },
-    "note": "ape (lossless)"
+    "note": "ape (lossless) — the parser is extension-agnostic; the SCANNER does not admit ape (see test/scan/media-extensions.spec.ts)"
   },
   {
     "path": "",

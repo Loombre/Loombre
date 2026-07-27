@@ -26,6 +26,14 @@ export interface DetectBackendEnv {
   LOOMBRE_SECRET_BACKEND?: string | undefined;
 }
 
+/** The native store this platform would use if it is usable at all, or
+ *  undefined for a platform with no mapping (freebsd et al.). Exported for
+ *  jwt-secret.ts's migration lookback, which needs the same answer WITHOUT
+ *  re-running detection (an explicit override short-circuits it). */
+export function nativeBackendForPlatform(platform: NodeJS.Platform): SecretBackend | undefined {
+  return NATIVE_BACKEND_FOR_PLATFORM[platform];
+}
+
 /** Parses+validates an explicit override without probing anything — throws
  *  a plain Error (not UnsupportedSecretBackendError, which is about
  *  platform mismatch, not a typo) for a value outside the closed

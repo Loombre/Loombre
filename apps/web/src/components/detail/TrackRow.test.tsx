@@ -92,7 +92,7 @@ describe("TrackRow", () => {
   it("renders the index, not an equalizer, when this track is current but paused", () => {
     const track = makeTrack();
     const player = makePlayer({
-      current: { entryId: "e1", itemId: track.id, title: track.title, subtitle: null, albumId: track.albumId, durationMs: track.durationMs, blurhash: null },
+      current: { entryId: "e1", itemId: track.id, mediaFileId: null, title: track.title, subtitle: null, albumId: track.albumId, durationMs: track.durationMs, blurhash: null },
       isPlaying: false,
     });
     view = renderRow(track, player);
@@ -103,7 +103,7 @@ describe("TrackRow", () => {
   it("swaps the index for a 3-bar equalizer only when this exact track is current AND playing", () => {
     const track = makeTrack();
     const player = makePlayer({
-      current: { entryId: "e1", itemId: track.id, title: track.title, subtitle: null, albumId: track.albumId, durationMs: track.durationMs, blurhash: null },
+      current: { entryId: "e1", itemId: track.id, mediaFileId: null, title: track.title, subtitle: null, albumId: track.albumId, durationMs: track.durationMs, blurhash: null },
       isPlaying: true,
     });
     view = renderRow(track, player);
@@ -115,7 +115,7 @@ describe("TrackRow", () => {
   it("does not show the equalizer for a different track even while something else plays", () => {
     const track = makeTrack({ id: "track-1" });
     const player = makePlayer({
-      current: { entryId: "e1", itemId: "some-other-track", title: "Other", subtitle: null, albumId: track.albumId, durationMs: 1000, blurhash: null },
+      current: { entryId: "e1", itemId: "some-other-track", mediaFileId: null, title: "Other", subtitle: null, albumId: track.albumId, durationMs: 1000, blurhash: null },
       isPlaying: true,
     });
     view = renderRow(track, player);
@@ -125,7 +125,7 @@ describe("TrackRow", () => {
   it("titles the currently-playing row in accent (data-playing), other rows are not marked", () => {
     const track = makeTrack();
     const player = makePlayer({
-      current: { entryId: "e1", itemId: track.id, title: track.title, subtitle: null, albumId: track.albumId, durationMs: track.durationMs, blurhash: null },
+      current: { entryId: "e1", itemId: track.id, mediaFileId: null, title: track.title, subtitle: null, albumId: track.albumId, durationMs: track.durationMs, blurhash: null },
       isPlaying: true,
     });
     view = renderRow(track, player);

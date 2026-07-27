@@ -158,6 +158,16 @@ any single \`enum\`/\`properties\`/\`required\` list is capped at 200 entries.
 Both are generous relative to the settings-registry vocabulary this schema
 mirrors; no legitimate plugin config form needs more.
 
+One consistency rule applies within a single field (erratum, same review):
+a \`default\` MUST satisfy that same field's own declared constraints —
+\`enum\` membership, \`const\`, \`minLength\`/\`maxLength\`,
+\`minimum\`/\`maximum\`, and integer-ness for \`type: "integer"\`. The keywords
+are independent in JSON Schema, so a self-contradictory pair (a default
+outside its own field's range) is otherwise legal; because the host renders
+this schema straight into the admin config form, such a default would
+pre-populate the form with a value the same schema calls invalid, so it is
+REJECTED at parse time instead.
+
 ${schemaSection("ConfigSchema")}
 
 The host renders \`configSchema\` into the plugin's admin config form.

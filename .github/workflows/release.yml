@@ -286,6 +286,19 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+
+      # Same stamp every other build-* job runs (see build-linux above) —
+      # without it packages/shared/src/version.ts stays whatever dev-mode
+      # value happened to be committed, and the Dockerfile's builder stage
+      # (`COPY . .` + `turbo run build`) bakes that stale value straight
+      # into the image instead of the tag's clean release version.
+      - name: Stamp release version (root package.json -> packages/shared/src/version.ts, no -dev suffix)
+        run: node scripts/release/stamp-version.mjs --release
+
       - name: Set up QEMU (linux/arm64 emulation for the multi-arch bake target)
         uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4
 

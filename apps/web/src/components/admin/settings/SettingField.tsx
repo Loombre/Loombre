@@ -37,7 +37,7 @@
 
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Minus, Plus } from "lucide-react";
 import { Icon } from "../../icon/Icon.js";
 import { TextInput } from "../../ui/Input.js";
@@ -94,12 +94,21 @@ export function SettingField({ entry, value, source, onChanged }: SettingFieldPr
   // a websocket-driven settings.updated refresh, or the response of this
   // field's own successful PUT) — but ONLY while the admin hasn't started
   // an in-progress edit, so a live refresh can never clobber unsaved input.
+  // `dirty` gates this but must NOT be a dependency: Save/Reset clear it
+  // locally the instant their PUT resolves, before onChanged's refetch has
+  // round-tripped — so `value` here is still the pre-write snapshot for a
+  // moment. Depending on `dirty` would re-run this effect on that
+  // transition alone and repaint that stale `value`, flashing it over the
+  // optimistic default/edit Save/Reset just painted. Reading `dirty` from a
+  // ref means this only resyncs when `value` itself actually changes.
+  const dirtyRef = useRef(dirty);
+  dirtyRef.current = dirty;
   useEffect(() => {
-    if (dirty) return;
+    if (dirtyRef.current) return;
     setRawText(kind === "structured" ? JSON.stringify(value, null, 2) : String(value ?? ""));
     setBoolDraft(Boolean(value));
     setEnumDraft(typeof value === "string" ? value : "");
-  }, [value, kind, dirty]);
+  }, [value, kind]);
 
   function parseDraft(): { ok: true; value: unknown } | { ok: false; error: string } {
     if (kind === "boolean") return { ok: true, value: boolDraft };
@@ -129,7 +138,7 @@ export function SettingField({ entry, value, source, onChanged }: SettingFieldPr
   // an untouched field already sitting at its default.
   const canReset = !atDefault || dirty;
 
-  async function submit(nextValue: unknown, markDirtyFalseAfter: boolean): Promise<void> {
+  async function submit(nextValue: unknown, markDirtyFalseAfter: boolean): Promise<boolean> {
     setSaving(true);
     setError(null);
     setSaved(false);
@@ -141,8 +150,10 @@ export function SettingField({ entry, value, source, onChanged }: SettingFieldPr
       if (markDirtyFalseAfter) setDirty(false);
       setSaved(true);
       onChanged(result);
+      return true;
     } catch (err) {
       setError(err instanceof LoombreApiError ? err.message : "Failed to save this setting.");
+      return false;
     } finally {
       setSaving(false);
     }
@@ -154,14 +165,21 @@ export function SettingField({ entry, value, source, onChanged }: SettingFieldPr
   }
 
   function handleResetToDefault(): void {
-    void submit(entry.default, false).then(() => {
-      // Reflect the default in every draft representation immediately —
-      // the next GET /admin/settings response (via onChanged -> parent
-      // refetch) will confirm it, but this keeps the control from flashing
-      // a stale value in the meantime.
+    void submit(entry.default, false).then((ok) => {
+      if (!ok) return;
+      // Reflect the default in every draft representation immediately, and
+      // clear `dirty` in this SAME batch — NOT via markDirtyFalseAfter,
+      // which would clear it before this write lands and let the resync
+      // effect above re-run against the still-stale `value` prop, flashing
+      // the pre-reset value. Clearing dirty here also re-arms the effect
+      // for the next external update (live refresh, another admin's write)
+      // instead of leaving this field frozen on its last local snapshot.
+      // The next GET /admin/settings response (via onChanged -> parent
+      // refetch) will confirm the default explicitly.
       setRawText(kind === "structured" ? JSON.stringify(entry.default, null, 2) : String(entry.default ?? ""));
       setBoolDraft(Boolean(entry.default));
       setEnumDraft(typeof entry.default === "string" ? entry.default : "");
+      setDirty(false);
     });
   }
 

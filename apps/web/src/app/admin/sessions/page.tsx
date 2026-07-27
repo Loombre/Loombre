@@ -14,6 +14,13 @@
 // rather than waiting on next wave's contract promotion (see
 // apps/server/src/catalog/admin.controller.ts's header for the full
 // discovered-gap writeup this mirrors).
+//
+// Live refresh: subscribes to playback.started/playback.ended over the
+// shared events socket (StreamsPanel.tsx's header has the full reasoning —
+// refetch page 1 rather than merge, since neither event payload carries
+// the fields a row needs and only the server applies the P2.8 redaction
+// contract). Silent — it does not flip `loading`, so an admin watching
+// this page never sees the skeleton re-flash for a background nudge.
 
 import { useEffect, useState } from "react";
 import { Video } from "lucide-react";
@@ -26,6 +33,8 @@ import { StatusPill } from "../../../components/admin/StatusPill.js";
 import { ReasonsPanel } from "../../../components/admin/ReasonsPanel.js";
 import { describeSessionStatus } from "../../../lib/admin-status.js";
 import { apiGet, LoombreApiError } from "../../../lib/api-client.js";
+import { debounce } from "../../../lib/debounce.js";
+import { getEventsSocket } from "../../../lib/events-socket.js";
 import styles from "./page.module.css";
 
 type AdminSession = components["schemas"]["AdminSession"];
@@ -103,6 +112,37 @@ export default function AdminSessionsPage(): React.JSX.Element {
     // reads `cursor` fresh from state, so the "load more" button always
     // calls the current closure — an empty deps array here is correct.
     load(true);
+  }, []);
+
+  useEffect(() => {
+    // A silent page-1 refetch, distinct from `load` (which flips `loading`
+    // and would re-show the full skeleton on every session start/end).
+    // Resets cursor/hasMore to page 1's, same as `load(true)` — any extra
+    // "Load more" pages an admin had open are discarded, matching a manual
+    // reload's behavior.
+    const refreshFirstPageSilently = (): void => {
+      apiGet("/admin/sessions", { params: { query: { limit: PAGE_LIMIT } } })
+        .then((page) => {
+          const items = page.items as AdminSessionWithPlan[];
+          setSessions(items);
+          setCursor(page.nextCursor);
+          setHasMore(page.nextCursor !== null);
+        })
+        .catch(() => {
+          // A live nudge failing silently is fine — the page already has a
+          // committed snapshot on screen; an error banner here would be
+          // noisier than useful for a background refresh.
+        });
+    };
+    const socket = getEventsSocket();
+    const debouncedRefresh = debounce(refreshFirstPageSilently, 500);
+    const unsubStarted = socket.subscribe("playback.started", () => debouncedRefresh());
+    const unsubEnded = socket.subscribe("playback.ended", () => debouncedRefresh());
+    return () => {
+      debouncedRefresh.cancel();
+      unsubStarted();
+      unsubEnded();
+    };
   }, []);
 
   return (

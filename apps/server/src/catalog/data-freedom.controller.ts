@@ -29,23 +29,41 @@
 //
 // POST /import (admin) — apps/worker/src/import owns the real archive-apply
 // consumer (Phase 4 lane E; replaces the Phase 1 stub). This endpoint's job
-// is unchanged: validate the body is at least archive-shaped and hand it to
-// the queue — see that module's header for the conflict-policy/id-
-// preservation/transaction design the job itself implements.
+// is unchanged: gate on admin, validate the body is at least archive-shaped
+// and hand it to the queue — see that module's header for the conflict-
+// policy/id-preservation/transaction design the job itself implements.
+//
+// Admin gate asymmetry: only POST /import is admin-only (the consumer
+// applies the archive's `users[]` rows verbatim, isAdmin included, so a
+// non-admin importer is a privilege-escalation path). GET /export stays
+// authenticated-but-not-admin — its own admin-only `users` phase is already
+// filtered inside packages/db/src/query/export.ts, and the contract
+// documents no 403 for it.
 
-import { Controller, Get, Post, Body, Req, Res, UseFilters, UseGuards } from "@nestjs/common";
+import { Controller, Get, Post, Body, HttpCode, HttpStatus, Req, Res, UseFilters, UseGuards } from "@nestjs/common";
 import type { Response } from "express";
 import { exportData, getCatalogDetail } from "@loombre/db";
 import { nowMs as clockNowMs } from "@loombre/shared";
-import { unprocessableEntity } from "../gateway/problem.exception.js";
+import { forbidden, unprocessableEntity } from "../gateway/problem.exception.js";
 import type { AuthenticatedRequest } from "../gateway/auth.guard.js";
-import { DbProvider } from "../common/db.provider.js";
+import { DbProvider, type LoombreDb } from "../common/db.provider.js";
+import { requireLiveAdmin } from "../common/require-live-admin.js";
 import { ViewerContextProvider } from "../common/viewer-context.provider.js";
 import { JobQueueProvider } from "../common/job-queue.provider.js";
 import { RateLimit, SurfaceRateLimitGuard } from "../common/rate-limit.guard.js";
 import { RateLimitExceptionFilter } from "../common/rate-limit-exception.filter.js";
 import { resolveViewer } from "./viewer.js";
 import { mapByType } from "./mappers.js";
+
+// L2 (pre-public hardening): claim fast-fail, then a FRESH DB re-read via
+// requireLiveAdmin — the JWT isAdmin claim alone can be stale for up to the
+// access token's 15-minute lifetime after a demotion.
+async function requireAdmin(db: LoombreDb, req: AuthenticatedRequest): Promise<void> {
+  if (!req.user?.isAdmin) {
+    throw forbidden("Admin privileges are required for this operation.", req.originalUrl);
+  }
+  await requireLiveAdmin(db, req.user.userId, req.originalUrl);
+}
 
 function mapExportLibrary(lib: {
   id: string;
@@ -170,7 +188,9 @@ export class DataFreedomController {
   }
 
   @Post("import")
+  @HttpCode(HttpStatus.ACCEPTED)
   async importArchive(@Body() rawBody: Record<string, unknown> | undefined, @Req() req: AuthenticatedRequest) {
+    await requireAdmin(this.dbProvider.db, req);
     const body = rawBody ?? {};
     if (typeof body["exportedAtMs"] !== "number" || !Array.isArray(body["items"])) {
       throw unprocessableEntity("Body must be an ExportArchive (exportedAtMs, items[], ...).", req.originalUrl);

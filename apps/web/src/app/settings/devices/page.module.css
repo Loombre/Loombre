@@ -1,0 +1,27 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+
+/* Loombre :: apps/web/src/app/settings/devices/page.module.css
+ *
+ * Standalone route (not rendered through SettingsShell — see page.tsx's
+ * header): reproduces SettingsShell.module.css's own 760px content-pane
+ * max-width so this route matches the rest of /settings/* even though it
+ * isn't wired into that shell's tab chrome.
+ */
+
+.wrap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  max-width: 760px;
+}
+
+.backLink {
+  align-self: flex-start;
+  font-size: var(--text-sm);
+  color: var(--muted);
+  text-decoration: none;
+}
+
+.backLink:hover {
+  color: var(--text);
+}

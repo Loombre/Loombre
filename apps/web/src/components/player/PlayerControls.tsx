@@ -67,6 +67,9 @@ export interface PlayerControlsProps {
   selectedAudioIndex: number | null;
   selectedSubtitleIndex: number | null;
   videoElement: HTMLVideoElement | null;
+  /** Forwarded straight to TrackPickers — see its header for why client-
+   *  side audio switching only applies to direct-play. */
+  directPlay: boolean;
   /** The session's real decision (direct-play/direct-stream/remux/
    *  transcode) — H6's "decision mode chip at minimum". Null while a
    *  session hasn't resolved yet; the chip is simply omitted, never
@@ -94,9 +97,12 @@ export function PlayerControls(props: PlayerControlsProps): React.JSX.Element {
   // deliberately omitted rather than guessed — see this lane's freeze
   // report.
   const decisionChipLabel = props.plan ? decisionLabel(props.plan.decision).toUpperCase() : null;
-  const audioStream = props.selectedAudioIndex !== null ? props.audioStreams[props.selectedAudioIndex] : undefined;
+  // `selected*Index` is a media STREAM index (ffprobe's, as carried on
+  // AudioStream.index) — NOT a position in these arrays, which skip the
+  // file's video streams. Resolve by identity, never by subscript.
+  const audioStream = props.audioStreams.find((s) => s.index === props.selectedAudioIndex);
   const audioChipLabel = props.audioStreams.length > 0 ? describeAudioFact(audioStream) : null;
-  const subtitleStream = props.selectedSubtitleIndex !== null ? props.subtitleStreams[props.selectedSubtitleIndex] : undefined;
+  const subtitleStream = props.subtitleStreams.find((s) => s.index === props.selectedSubtitleIndex);
   const subtitleChipLabel =
     props.subtitleStreams.length > 0 ? describeSubtitleFact(subtitleStream, props.selectedSubtitleIndex !== null) : null;
   const hasCapabilityChips = decisionChipLabel !== null || audioChipLabel !== null || subtitleChipLabel !== null;
@@ -168,6 +174,7 @@ export function PlayerControls(props: PlayerControlsProps): React.JSX.Element {
                     selectedAudioIndex={props.selectedAudioIndex}
                     selectedSubtitleIndex={props.selectedSubtitleIndex}
                     videoElement={props.videoElement}
+                    directPlay={props.directPlay}
                     onSelectAudio={props.onSelectAudio}
                     onSelectSubtitle={props.onSelectSubtitle}
                   />

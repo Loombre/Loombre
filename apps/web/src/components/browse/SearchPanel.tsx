@@ -49,6 +49,18 @@
 // person/tag substring branches — grep that file's own header). "M MS" is
 // a REAL measurement (performance.now() around the fetch), not the
 // prototype's length-derived fake latency formula.
+//
+// Pagination (`paginated` prop, /search page only): both GET /search and
+// GET /people are cursor-paginated, so this component always tracks a
+// nextCursor for each even though the topbar popover never surfaces a
+// "Load more" control for it — a bounded preview is the right call there.
+// One cursor covers all three catalog groups (Movies/Series/Music) since
+// GET /search itself is one ranked, cross-type page; People is a fully
+// separate cursor off GET /people. Not routed through useCursorFeed: that
+// hook is a single fetchPage->{items,nextCursor} feed, and this component
+// already runs two feeds in lockstep behind one shared elapsedMs/
+// recentQueries/artistNames bookkeeping that a second hook instance would
+// have to duplicate or fight with.
 
 "use client";
 
@@ -87,6 +99,14 @@ export interface SearchPanelProps {
    *  query at all (it gates on `debouncedQuery.trim().length > 0`), so it
    *  never needs a way to set one from a recent-search pill. */
   onSelectQuery?: ((query: string) => void) | undefined;
+  /** Only the full /search page passes this. GET /search and GET /people
+   *  are both cursor-paginated (packages/contract/openapi.yaml) but the
+   *  topbar popover deliberately wants a bounded, single-screen preview —
+   *  quick-search-sources.ts's own PALETTE_RESULT_LIMIT precedent — so it
+   *  never renders the "Load more" controls below even though the same
+   *  fetches always request (and this component always tracks) a
+   *  nextCursor. */
+  paginated?: boolean | undefined;
 }
 
 interface FlatEntry {
@@ -106,6 +126,7 @@ export function SearchPanel({
   onResultCount,
   registerHandle,
   onSelectQuery,
+  paginated = false,
 }: SearchPanelProps): React.JSX.Element {
   const router = useRouter();
   const [movies, setMovies] = useState<SearchResult[]>([]);
@@ -117,6 +138,18 @@ export function SearchPanel({
   const [elapsedMs, setElapsedMs] = useState<number | null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
   const [recentQueries, setRecentQueries] = useState<string[]>(() => getRecentSearches());
+  // GET /search and GET /people's own nextCursor (contract: SearchResultPage
+  // / PersonPage) — tracked regardless of `paginated` (cheap: just a string)
+  // so the topbar popover and the full page share one fetch effect; only
+  // the "Load more" controls below are gated on `paginated`.
+  const [catalogCursor, setCatalogCursor] = useState<string | null>(null);
+  const [catalogHasMore, setCatalogHasMore] = useState(false);
+  const [loadingMoreCatalog, setLoadingMoreCatalog] = useState(false);
+  const [catalogLoadMoreError, setCatalogLoadMoreError] = useState<string | null>(null);
+  const [peopleCursor, setPeopleCursor] = useState<string | null>(null);
+  const [peopleHasMore, setPeopleHasMore] = useState(false);
+  const [loadingMorePeople, setLoadingMorePeople] = useState(false);
+  const [peopleLoadMoreError, setPeopleLoadMoreError] = useState<string | null>(null);
   const requestId = useRef(0);
   const containerRef = useRef<HTMLDivElement | null>(null);
 
@@ -129,6 +162,12 @@ export function SearchPanel({
       setPeople([]);
       setArtistNames(new Map());
       setElapsedMs(null);
+      setCatalogCursor(null);
+      setCatalogHasMore(false);
+      setCatalogLoadMoreError(null);
+      setPeopleCursor(null);
+      setPeopleHasMore(false);
+      setPeopleLoadMoreError(null);
       onResultCount?.(0);
       return;
     }
@@ -153,6 +192,12 @@ export function SearchPanel({
         setSeries(nextSeries);
         setMusic(nextMusic);
         setPeople(peoplePage.items);
+        setCatalogCursor(searchPage.nextCursor);
+        setCatalogHasMore(searchPage.nextCursor !== null);
+        setCatalogLoadMoreError(null);
+        setPeopleCursor(peoplePage.nextCursor);
+        setPeopleHasMore(peoplePage.nextCursor !== null);
+        setPeopleLoadMoreError(null);
         setElapsedMs(Math.round(performance.now() - startedAtMs));
         setActiveIndex(0);
         const total = nextMovies.length + nextSeries.length + nextMusic.length + peoplePage.items.length;
@@ -194,11 +239,98 @@ export function SearchPanel({
         setPeople([]);
         setArtistNames(new Map());
         setElapsedMs(null);
+        setCatalogCursor(null);
+        setCatalogHasMore(false);
+        setPeopleCursor(null);
+        setPeopleHasMore(false);
       })
       .finally(() => {
         if (requestId.current === id) setLoading(false);
       });
   }, [query, onResultCount]);
+
+  // Page 2+ of GET /search — one cursor walks all three catalog groups at
+  // once (SearchResult.itemType, the same discriminated union the initial
+  // fetch above buckets), so "Load more results" appends across Movies/
+  // Series/Music together rather than per-group. Guarded by the same
+  // requestId this file already uses for the initial fetch, so a query
+  // change mid-flight can't append a stale page onto the new query's fresh
+  // results.
+  async function loadMoreCatalog(): Promise<void> {
+    if (loadingMoreCatalog || catalogCursor === null) return;
+    const id = requestId.current;
+    setLoadingMoreCatalog(true);
+    setCatalogLoadMoreError(null);
+    try {
+      const page = await apiGet("/search", {
+        params: { query: { q: query.trim(), limit: 20, cursor: catalogCursor } },
+      });
+      if (requestId.current !== id) return;
+      const nextMovies: SearchResult[] = [];
+      const nextSeries: SearchResult[] = [];
+      const nextMusic: SearchResult[] = [];
+      for (const result of page.items) {
+        if (result.itemType === "movie") nextMovies.push(result);
+        else if (result.itemType === "series") nextSeries.push(result);
+        else nextMusic.push(result);
+      }
+      setMovies((prev) => [...prev, ...nextMovies]);
+      setSeries((prev) => [...prev, ...nextSeries]);
+      setMusic((prev) => [...prev, ...nextMusic]);
+      setCatalogCursor(page.nextCursor);
+      setCatalogHasMore(page.nextCursor !== null);
+
+      const newArtistIds = new Set<string>();
+      for (const result of nextMusic) {
+        if (result.itemType === "album") newArtistIds.add((result.item as Album).artistId);
+        else if (result.itemType === "track") newArtistIds.add((result.item as Track).artistId);
+      }
+      const missingArtistIds = Array.from(newArtistIds).filter((artistId) => !artistNames.has(artistId));
+      if (missingArtistIds.length > 0) {
+        const resolved = await Promise.all(
+          missingArtistIds.map((artistId) =>
+            apiGet("/artists/{id}", { params: { path: { id: artistId } } })
+              .then((artist) => [artistId, artist.title] as const)
+              .catch(() => null),
+          ),
+        );
+        if (requestId.current !== id) return;
+        setArtistNames((prev) => {
+          const next = new Map(prev);
+          for (const entry of resolved) {
+            if (entry) next.set(entry[0], entry[1]);
+          }
+          return next;
+        });
+      }
+    } catch (err) {
+      if (requestId.current !== id) return;
+      setCatalogLoadMoreError(err instanceof Error ? err.message : "Failed to load more.");
+    } finally {
+      if (requestId.current === id) setLoadingMoreCatalog(false);
+    }
+  }
+
+  async function loadMorePeople(): Promise<void> {
+    if (loadingMorePeople || peopleCursor === null) return;
+    const id = requestId.current;
+    setLoadingMorePeople(true);
+    setPeopleLoadMoreError(null);
+    try {
+      const page = await apiGet("/people", {
+        params: { query: { q: query.trim(), limit: 6, cursor: peopleCursor } },
+      });
+      if (requestId.current !== id) return;
+      setPeople((prev) => [...prev, ...page.items]);
+      setPeopleCursor(page.nextCursor);
+      setPeopleHasMore(page.nextCursor !== null);
+    } catch (err) {
+      if (requestId.current !== id) return;
+      setPeopleLoadMoreError(err instanceof Error ? err.message : "Failed to load more.");
+    } finally {
+      if (requestId.current === id) setLoadingMorePeople(false);
+    }
+  }
 
   const flatEntries = useMemo<FlatEntry[]>(
     () => [
@@ -281,10 +413,31 @@ export function SearchPanel({
           />
         </div>
       )}
+      {/* Full /search page only (unverified[4]) — the topbar popover's
+          bounded preview never shows this even when catalogHasMore is true.
+          One cursor for all three catalog groups above (see loadMoreCatalog's
+          header), so this sits after MUSIC rather than inside any one
+          group. */}
+      {paginated && catalogHasMore && (
+        <div className={styles.loadMoreRow}>
+          <button type="button" className={styles.loadMore} onClick={() => void loadMoreCatalog()} disabled={loadingMoreCatalog}>
+            {loadingMoreCatalog ? "Loading…" : "Load more results"}
+          </button>
+          {catalogLoadMoreError && <div className={styles.loadMoreError}>{catalogLoadMoreError}</div>}
+        </div>
+      )}
       {people.length > 0 && (
         <div className={styles.group}>
           <h3 className={styles.groupHeading}>PEOPLE</h3>
           <SearchPersonGrid people={people} activeId={activeId} />
+        </div>
+      )}
+      {paginated && peopleHasMore && (
+        <div className={styles.loadMoreRow}>
+          <button type="button" className={styles.loadMore} onClick={() => void loadMorePeople()} disabled={loadingMorePeople}>
+            {loadingMorePeople ? "Loading…" : "Load more people"}
+          </button>
+          {peopleLoadMoreError && <div className={styles.loadMoreError}>{peopleLoadMoreError}</div>}
         </div>
       )}
     </div>

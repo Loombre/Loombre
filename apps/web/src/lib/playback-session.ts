@@ -111,15 +111,21 @@ export function applyDirectPlayOnlyGuard(result: CreateSessionResult): CreateSes
  * components/music/MusicPlayerProvider.tsx): music stays direct-play-only
  * this lane, so a non-direct-play session is immediately ended (releasing
  * its transcode slot) and surfaced as unavailable, same as every
- * non-direct-play session was treated before 6c.
+ * non-direct-play session was treated before 6c. `mediaFileId` is threaded
+ * straight through to `createPlaybackSession` above — a track's picked
+ * VERSION (components/detail/VersionRow.tsx), same meaning as there.
  *
  * OPEN ITEM (reported, not solved here): "music HLS transcode playback" —
  * gapless dual-<audio> HLS handoff (components/music/MusicPlayerProvider.tsx's
  * own header, the gapless.ts state machine) is its own docs/PLAN.md §3 D.5
  * problem, out of this lane's scope.
  */
-export async function createDirectPlaySession(itemId: string, mode: "stream" | "download" = "stream"): Promise<CreateSessionResult> {
-  const result = await createPlaybackSession(itemId, mode);
+export async function createDirectPlaySession(
+  itemId: string,
+  mode: "stream" | "download" = "stream",
+  mediaFileId?: string,
+): Promise<CreateSessionResult> {
+  const result = await createPlaybackSession(itemId, mode, mediaFileId);
   const guarded = applyDirectPlayOnlyGuard(result);
   if (result.ok && !guarded.ok) {
     await endPlaybackSession(result.session.id);

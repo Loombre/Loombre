@@ -21,22 +21,27 @@ key-substitution attack requires compromising all three simultaneously**;
 that's the whole point of publishing it in three independently-controlled
 places (P4.9).
 
-## The file currently committed is a PLACEHOLDER
+## The file currently committed is the REAL key
 
-`keys/minisign.pub` right now is a structurally-valid-but-cryptographically-
-inert all-zero key (see the file's own `untrusted comment:` line) — it
-parses correctly (so tooling that reads it doesn't crash), but it can never
-verify a real signature. **Do not ship a release signed against this key.**
-`check-pubkey-consistency.mjs` deliberately does NOT check "is this the
-placeholder" — it only checks "do the three locations agree with each
-other" — so replacing the placeholder in all three places at once keeps
-that check green throughout.
+`keys/minisign.pub` is the real, in-use release-signing public key (key ID
+`9EA9BD1D8785E084`, landed in 7d04f7e — "real minisign trust root —
+placeholder era over (P4.9)"). It verifies genuine releases signed with the
+matching secret key held offline by the owner and mirrored into the
+`LOOMBRE_MINISIGN_SECKEY` GitHub Actions secret. **Do not regenerate or
+overwrite this file** — doing so desyncs it from the secret key that
+actually signs releases in CI and orphans every install already pinned to
+this key. `check-pubkey-consistency.mjs` only checks "do the three
+locations (plus the generated `update-public-key.ts` copy) agree with each
+other" — it does NOT detect a wrongful key rotation, so this file being
+overwritten would go undetected by CI.
 
-## Generating the real keypair (owner, offline, once)
+## Rotating the keypair (owner, offline — a real operational event)
 
-This is entirely a **local, offline, manual** step — no CI job generates
-signing key material, ever (P4.18: standard `Ed` mode, never `-x`
-pre-hashed).
+Only do this to actually replace the live signing key (e.g. suspected
+secret-key compromise) — never to "generate the real key for the first
+time"; that step is already done. This is entirely a **local, offline,
+manual** step — no CI job generates signing key material, ever (P4.18:
+standard `Ed` mode, never `-x` pre-hashed).
 
 ```bash
 # Requires the minisign binary (https://jedisct1.github.io/minisign/):
@@ -44,11 +49,13 @@ pre-hashed).
 #   Linux:   apt/dnf/pacman package `minisign`, or build from source
 #   Windows: scoop/choco package `minisign`, or WSL
 
-minisign -G -p keys/minisign.pub -s ~/.loombre-release-signing.key
+minisign -G -p /tmp/minisign.pub -s ~/.loombre-release-signing.key
 
-# -p: the PUBLIC key output path — point it straight at keys/minisign.pub
-#     so the file this repo tracks IS the real public key from the start
-#     (no separate copy step to forget).
+# -p: the PUBLIC key output path — write it to a SCRATCH path, not
+#     keys/minisign.pub directly. keys/minisign.pub is the live trust
+#     root; overwriting it in place before the new key is wired
+#     everywhere (see "Wiring" below) breaks verification for every
+#     install pinned to the old key with no warning.
 # -s: the SECRET key output path — NEVER inside the repo, NEVER committed.
 #     minisign prompts for (and requires) a passphrase protecting it.
 ```
@@ -62,10 +69,10 @@ locations again and every existing install's pinned key goes stale (still
 recoverable — `LOOMBRE_UPDATE_PUBLIC_KEY_PATH`/a new install picks up the
 new key — but it's a real operational event, not a shrug).
 
-## Wiring the real key into the three locations
+## Wiring the new key into the three locations
 
-1. **This repo**: commit the real `keys/minisign.pub` in place of the
-   placeholder (this is the file `minisign -G -p` wrote above). Run
+1. **This repo**: copy the scratch public key over `keys/minisign.pub`
+   (this is the file `minisign -G -p` wrote above) and commit it. Run
    `pnpm embed-public-key` (regenerates
    `packages/shared/src/update-public-key.ts` — the server's compiled-in
    copy) and commit that too.

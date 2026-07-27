@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { describe, expect, it, afterEach } from "vitest";
-import { mkdtempSync, rmSync, statSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { tmpdir, userInfo } from "node:os";
 import { join } from "node:path";
-import { createFile0600Backend } from "../src/secret/file0600.js";
+import { createFile0600Backend, writeOwnerOnlySecretFile } from "../src/secret/file0600.js";
 import { currentUserPrincipal } from "../src/secret/windows-acl.js";
 import { generateSecret, resolveSecret } from "../src/secret/resolve.js";
 import { UnsupportedSecretBackendError } from "../src/errors.js";
@@ -136,6 +136,39 @@ describe("file0600 backend", () => {
     const dir = scratchDir();
     const backend = createFile0600Backend();
     await expect(backend.resolve({ backend: "file0600", key: join(dir, "never-written") })).rejects.toThrow(/not found/);
+  });
+});
+
+// The stored secret file is not the only place this secret hits the disk:
+// supervisor.ts spills it to a scratch `--pwfile` that initdb reads, in a
+// mkdtemp directory under the OS temp dir. That spill must carry the same
+// guarantee, which is why the writer is exported rather than duplicated —
+// a bare `{ mode: 0o600 }` there is a Windows no-op and would leave the
+// plaintext superuser password under the ambient Temp DACL for the length
+// of the initdb run (and, if the process is killed mid-initdb, for good:
+// the cleanup only runs on an unwind).
+describe("writeOwnerOnlySecretFile (the scratch-spill writer, e.g. initdb's --pwfile)", () => {
+  it("writes the value with the same owner-only guarantee the stored secret gets", () => {
+    const path = join(scratchDir(), "pwfile");
+    writeOwnerOnlySecretFile(path, "a-superuser-password");
+
+    expect(readFileSync(path, "utf8")).toBe("a-superuser-password");
+
+    if (IS_WINDOWS) {
+      const acl = readAcl(path);
+      expect(acl, acl).not.toMatch(/\(I\)/);
+      expect(acl, acl).not.toMatch(/BUILTIN\\Users/i);
+      const aceLines = acl
+        .split(/\r?\n/)
+        .map((l) => l.trim())
+        .filter((l) => /:\([A-Z]/.test(l));
+      expect(aceLines, acl).toHaveLength(1);
+      expect(aceLines[0], acl).toMatch(/:\(F\)$/);
+    } else {
+      const mode = statSync(path).mode & 0o777;
+      expect(mode).toBe(0o600);
+      expect(mode & 0o077).toBe(0);
+    }
   });
 });
 

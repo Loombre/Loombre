@@ -96,7 +96,7 @@ function PersonContent({ id }: { id: string }): React.JSX.Element {
   // person actually resolved (no point fetching a filmography page for a
   // person we're about to 404), then a stable key that only changes if the
   // route's own id changes.
-  const { items, loading: filmographyLoading, error } = useCursorFeed<FilmographyCard>(
+  const { items, hasMore, loading: filmographyLoading, loadingMore, error, loadMoreError, loadMore } = useCursorFeed<FilmographyCard>(
     fetchFilmographyPage,
     person ? id : null,
   );
@@ -144,12 +144,23 @@ function PersonContent({ id }: { id: string }): React.JSX.Element {
         ) : error ? (
           <div className={styles.notFoundInline}>{error}</div>
         ) : (
-          <ChildPosterGrid
-            emptyMessage="No visible credits found."
-            serverUrl={serverUrl}
-            accessToken={accessToken}
-            items={items}
-          />
+          <>
+            <ChildPosterGrid
+              emptyMessage="No visible credits found."
+              serverUrl={serverUrl}
+              accessToken={accessToken}
+              items={items}
+            />
+            {hasMore && (
+              <button type="button" className={styles.loadMore} onClick={loadMore} disabled={loadingMore}>
+                {loadingMore ? "Loading…" : "Load more"}
+              </button>
+            )}
+            {/* Non-destructive, same reasoning as watchlist/page.tsx — the
+                button above is already the retry (cursor/hasMore survive a
+                failed loadMore in useCursorFeed). */}
+            {loadMoreError && <div className={styles.loadMoreError}>{loadMoreError}</div>}
+          </>
         )}
       </section>
     </div>

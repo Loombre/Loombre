@@ -20,7 +20,7 @@
 // raw Kysely handle — so packages/db remains the only place pg/kysely is
 // imported (dependency-cruiser's "no-raw-db-driver-outside-packages-db").
 
-import { sql, type Kysely, type Selectable } from 'kysely';
+import { sql, type Kysely, type Selectable, type Transaction } from 'kysely';
 import type {
   DB,
   UsersTable,
@@ -29,7 +29,7 @@ import type {
   RefreshTokensTable,
 } from '../types.js';
 import { withTransaction, writeEvent } from '../internal/index.js';
-import { createUserAdmin } from './admin.js';
+import { createUserAdmin, type CreateUserAdminInput } from './admin.js';
 
 export type UserRow = Selectable<UsersTable>;
 export type UserSettingsRow = Selectable<UserSettingsTable>;
@@ -63,6 +63,60 @@ export async function countUsers(db: Kysely<DB>): Promise<number> {
   return row ? Number(row.count) : 0;
 }
 
+export interface CreateUserAdminAndEmitInput extends CreateUserAdminInput {
+  /** The admin who performed the creation (POST /v1/users). Omitted for
+   *  first-run onboarding, where no prior user exists to attribute it to —
+   *  the new admin is then recorded as their own actor. */
+  actorUserId?: string;
+}
+
+/**
+ * Shared insert-and-emit body for both user-creation entry points below, so
+ * `user.created` can never be emitted by one and forgotten by the other.
+ * Payload is exactly packages/contract/event-schemas/user.created.schema.json's
+ * required set (additionalProperties: false) — never `password_hash` or any
+ * other secret, per that schema's description.
+ */
+async function insertUserAndEmit(
+  trx: Transaction<DB>,
+  input: CreateUserAdminAndEmitInput
+): Promise<UserRow> {
+  const row = await createUserAdmin(trx, input);
+
+  await writeEvent(trx, {
+    type: 'user.created',
+    tsMs: input.nowMs,
+    actorUserId: input.actorUserId ?? row.id,
+    payload: {
+      userId: row.id,
+      username: row.username,
+      isAdmin: row.is_admin,
+      createdAtMs: row.created_at_ms,
+    },
+  });
+
+  return row;
+}
+
+/**
+ * createUserAdmin's outbox-transactional sibling — the SAME split
+ * setRestrictedUnlockUntil/setRestrictedUnlockUntilAndEmit (below) already
+ * established, and for the same reason: src/internal/import-users.ts's
+ * bulk-restore path deliberately writes user rows WITHOUT per-row events
+ * (apps/worker/test/import/consumer.spec.ts asserts that), so the emission
+ * belongs to a separate entry point rather than to createUserAdmin itself.
+ *
+ * Every interactive user-creation path goes through this one (docs/PLAN.md
+ * §4.3: the event row is written in the same transaction as the state
+ * change it describes).
+ */
+export async function createUserAdminAndEmit(
+  db: Kysely<DB>,
+  input: CreateUserAdminAndEmitInput
+): Promise<UserRow> {
+  return withTransaction(db, (trx) => insertUserAndEmit(trx, input));
+}
+
 export interface CreateFirstAdminInput {
   username: string;
   email: string;
@@ -91,11 +145,13 @@ export interface CreateFirstAdminInput {
  * "SELECT count then INSERT" race and both succeed, which is exactly the
  * "exactly one 201" invariant this function exists to prevent.
  *
- * Reuses createUserAdmin (this package's existing user-creation service
- * path, src/query/admin.ts — argon2id hashing happens in the caller, this
+ * Reuses insertUserAndEmit (above — createUserAdmin's insert plus the
+ * `user.created` outbox row; argon2id hashing happens in the caller, this
  * function only receives the already-hashed password) for the actual
  * insert, so first-admin creation and every other admin-created user share
- * one column list and one code path — never duplicated.
+ * one column list, one code path, and one emission — never duplicated. The
+ * event lands inside the advisory-locked transaction below, so the losing
+ * caller of a race writes neither a user row nor an event.
  */
 export async function createFirstAdminIfEmpty(
   db: Kysely<DB>,
@@ -112,7 +168,7 @@ export async function createFirstAdminIfEmpty(
       return undefined;
     }
 
-    return createUserAdmin(trx, {
+    return insertUserAndEmit(trx, {
       username: input.username,
       email: input.email,
       passwordHash: input.passwordHash,

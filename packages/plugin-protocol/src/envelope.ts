@@ -25,6 +25,7 @@ import { z } from "zod";
 import {
   LppConfigSchema,
   checkConfigSchemaBounds,
+  findInconsistentDefaults,
   findSecretBelowRoot,
   type LppConfig,
   type ConfigSchemaBoundsViolation,
@@ -96,12 +97,16 @@ export type LppManifestParseResult =
   | { ok: false; stage: "config-schema-bounds"; violation: ConfigSchemaBoundsViolation }
   /** H-1 fix wave: a `secret: true` marker appeared below the configSchema
    *  root — see json-schema-subset.ts's findSecretBelowRoot header. */
-  | { ok: false; stage: "config-schema-secret-placement"; paths: string[] };
+  | { ok: false; stage: "config-schema-secret-placement"; paths: string[] }
+  /** A field's `default` contradicts that same field's own declared
+   *  constraints — see json-schema-subset.ts's findInconsistentDefaults. */
+  | { ok: false; stage: "config-schema-default-consistency"; paths: string[] };
 
 /**
  * Staged manifest parse (see file header). Order: envelope shape ->
  * protocolVersion -> capabilities (unknown-type/duplicate-type-aware) ->
- * configSchema (structural bounds -> shape -> secret placement). The first
+ * configSchema (structural bounds -> shape -> secret placement -> default
+ * consistency). The first
  * failing stage short-circuits — this mirrors how a real registration flow
  * should behave: an unsupported protocol version makes capability details
  * moot, and unknown/duplicate capability types are worth reporting
@@ -146,9 +151,11 @@ export function parseLppManifest(raw: unknown): LppManifestParseResult {
   try {
     configSchemaResult = LppConfigSchema.safeParse(data.configSchema);
   } catch {
-    // Defense in depth only — checkConfigSchemaBounds above should make
-    // this unreachable. A RangeError here (or any other unexpected throw)
-    // still comes back as a typed result, never propagates.
+    // Belt and braces, NOT dead code: checkConfigSchemaBounds bounds every
+    // key zod recurses on (`properties`/`items`) so this should not fire,
+    // but a `path: ""` violation in the wild means it did. A RangeError
+    // here (or any other unexpected throw) still comes back as a typed
+    // result, never propagates.
     return { ok: false, stage: "config-schema-bounds", violation: { path: "", reason: "max-depth-exceeded" } };
   }
   if (!configSchemaResult.success) {
@@ -159,6 +166,11 @@ export function parseLppManifest(raw: unknown): LppManifestParseResult {
   const secretPlacementViolations = findSecretBelowRoot(configSchemaResult.data as LppConfig);
   if (secretPlacementViolations.length > 0) {
     return { ok: false, stage: "config-schema-secret-placement", paths: secretPlacementViolations };
+  }
+
+  const inconsistentDefaults = findInconsistentDefaults(configSchemaResult.data as LppConfig);
+  if (inconsistentDefaults.length > 0) {
+    return { ok: false, stage: "config-schema-default-consistency", paths: inconsistentDefaults };
   }
 
   const manifest: LppManifest = {
@@ -198,5 +210,7 @@ export function describeLppManifestParseFailure(result: Extract<LppManifestParse
       return `configSchema exceeds structural limits at '${result.violation.path || "(root)"}' (${result.violation.reason})`;
     case "config-schema-secret-placement":
       return `configSchema declares "secret": true below the root — only a top-level field may be secret (offending path(s): ${result.paths.join(", ")})`;
+    case "config-schema-default-consistency":
+      return `configSchema declares a "default" that violates its own field's constraints (offending path(s): ${result.paths.join(", ")})`;
   }
 }

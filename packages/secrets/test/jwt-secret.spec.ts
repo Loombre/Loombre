@@ -93,4 +93,34 @@ describe("resolveJwtSecret", () => {
       await fileBackend.remove({ backend: "file0600", key }).catch(() => undefined);
     }
   });
+
+  it.skipIf(!isDarwin)("REAL: forcing LOOMBRE_SECRET_BACKEND=file0600 AFTER an auto-migration to the Keychain migrates back, keeping the SAME value (never a silent new secret)", async () => {
+    const key = join(dataDir, "jwt.secret");
+    const fileBackend = createFile0600Backend();
+    const keychainBackend = createNativeKeyringBackend("keychain");
+
+    const preExisting = await fileBackend.generate(key);
+
+    try {
+      // Boot 1: auto-detect moves the value into the Keychain and (per
+      // migrateSecret's removeSource default) deletes the file copy.
+      const migratedUp = await resolveJwtSecret({ key, env: {}, platform: "darwin" });
+      expect(migratedUp.backend).toBe("keychain");
+      expect(migratedUp.secret).toBe(preExisting.value);
+
+      // Boot 2: the operator forces file0600 back. file0600 holds nothing at
+      // this key any more, so without the reverse lookback this boot mints a
+      // brand-new secret and logs every session out.
+      const forced = { LOOMBRE_SECRET_BACKEND: "file0600" as const };
+      const downgraded = await resolveJwtSecret({ key, env: forced, platform: "darwin" });
+      expect(downgraded).toEqual({ secret: preExisting.value, source: "migrated", backend: "file0600" });
+
+      // Boot 3: still the same value, now straight out of the file.
+      const again = await resolveJwtSecret({ key, env: forced, platform: "darwin" });
+      expect(again).toEqual({ secret: preExisting.value, source: "existing", backend: "file0600" });
+    } finally {
+      await keychainBackend.remove({ backend: "keychain", key }).catch(() => undefined);
+      await fileBackend.remove({ backend: "file0600", key }).catch(() => undefined);
+    }
+  });
 });

@@ -19,14 +19,30 @@
 // separate `progress` table is a per-user "continue watching" position,
 // not a per-SESSION live one. Logged, not rendered; `n` (the "ACTIVE
 // STREAMS · n" count) and every other field below IS real.
+//
+// Live refresh: subscribes to playback.started/playback.ended over the
+// SAME shared events socket JobsPanel/LibrariesPanel already ride (no
+// second connection, no poll loop) and refetches on either — never a local
+// merge, unlike those two. playback.started/.ended (packages/contract/
+// event-schemas/) carry only {sessionId, itemId, deviceId, ...}; they have
+// no username/deviceName/plan/contentHidden, so merging one into a row
+// would mean fabricating the rest of that row (U9), and only the server's
+// listActiveSessionsAdmin applies the P2.8 redaction contract — the client
+// must never re-derive it. GAP (U9): playback.* is gated ITEM_ONLY_TYPES
+// (packages/db/src/query/events.ts) — an admin not cleared for a
+// restricted item never receives that item's start/end event, so this
+// live refresh is best-effort for restricted sessions; a row that DOES get
+// refetched some other way still renders correctly redacted regardless.
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { components } from "@loombre/sdk";
 import { EmptyState } from "./EmptyState.js";
 import { ReasonsPanel } from "./ReasonsPanel.js";
 import { Skeleton } from "../skeleton/Skeleton.js";
 import { describeSessionStatus } from "../../lib/admin-status.js";
 import { apiGet, LoombreApiError } from "../../lib/api-client.js";
+import { debounce } from "../../lib/debounce.js";
+import { getEventsSocket } from "../../lib/events-socket.js";
 import { Video } from "lucide-react";
 import styles from "./StreamsPanel.module.css";
 
@@ -72,11 +88,28 @@ export function StreamsPanel(): React.JSX.Element {
   const [sessions, setSessions] = useState<AdminSessionWithPlan[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
+  const refresh = useCallback(() => {
     apiGet("/admin/sessions", { params: { query: { limit: 50 } } })
       .then((page) => setSessions(page.items as AdminSessionWithPlan[]))
       .catch((err) => setError(err instanceof LoombreApiError ? err.message : "Failed to load active streams."));
   }, []);
+
+  useEffect(refresh, [refresh]);
+
+  // Live updates — no poll loop while this socket subscription lives, same
+  // as every sibling panel on this dashboard (see header for why this
+  // refetches instead of merging the event into a row).
+  useEffect(() => {
+    const socket = getEventsSocket();
+    const debouncedRefresh = debounce(refresh, 500);
+    const unsubStarted = socket.subscribe("playback.started", () => debouncedRefresh());
+    const unsubEnded = socket.subscribe("playback.ended", () => debouncedRefresh());
+    return () => {
+      debouncedRefresh.cancel();
+      unsubStarted();
+      unsubEnded();
+    };
+  }, [refresh]);
 
   return (
     <div>

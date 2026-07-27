@@ -10,6 +10,7 @@ export {
   type OperationFor,
   type RequestBodyFor,
   type SuccessResponseFor,
+  type UndecodableResponseBody,
   type RequestOptions,
 } from "./client.js";
 

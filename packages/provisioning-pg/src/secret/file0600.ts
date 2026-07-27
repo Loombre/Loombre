@@ -42,8 +42,14 @@ const SECRET_FILE_MODE = 0o600;
 /**
  * Write `value` to `key` with owner-only access, however this platform
  * expresses that. See this file's header for the per-platform guarantee.
+ *
+ * Exported because the stored secret file is not the only place this exact
+ * secret hits the disk: supervisor.ts spills it to a scratch `--pwfile` for
+ * initdb to read, and a plain `writeFileSync(..., { mode: 0o600 })` there
+ * would carry the ambient Temp-directory DACL on Windows — the same secret
+ * under two different protection levels at once.
  */
-function writeOwnerOnlySecret(key: string, value: string): void {
+export function writeOwnerOnlySecretFile(key: string, value: string): void {
   if (isWindowsHost()) {
     // Create empty -> lock the DACL down -> write the bytes. Any other
     // order would leave the secret briefly readable under the parent
@@ -92,7 +98,7 @@ export function createFile0600Backend(): SecretBackendImpl {
       }
       const value = generatePassword();
       mkdirSync(dirname(key), { recursive: true });
-      writeOwnerOnlySecret(key, value);
+      writeOwnerOnlySecretFile(key, value);
       return { ref: { backend: "file0600", key }, value };
     },
 

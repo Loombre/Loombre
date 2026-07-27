@@ -27,6 +27,7 @@ import { SearchField } from "../ui/Input.js";
 import { SearchPanel, type SearchPanelHandle } from "../browse/SearchPanel.js";
 import { debounce } from "../../lib/debounce.js";
 import { getAuthStore } from "../../lib/auth-store.js";
+import { hasRestrictedZoneEntitlement, useRestrictedZoneCount } from "../../lib/restricted-zone-count.js";
 import { useRestricted } from "../restricted/RestrictedProvider.js";
 import {
   PALETTE_RESULT_LIMIT,
@@ -42,6 +43,14 @@ const DEBOUNCE_MS = 250;
 export function QuickSearch({ isAdmin }: { isAdmin: boolean }): React.JSX.Element {
   const router = useRouter();
   const restricted = useRestricted();
+  // Same predicate + hook Sidebar's RestrictedNavEntry (and the Browse
+  // chip, mobile tab, UserMenu row) gate the Restricted zone's very
+  // existence behind — count is null while loading AND for a viewer with
+  // no restricted-library entitlement at all, so this fails closed exactly
+  // like every other zone entry point (see restricted-zone-count.js's
+  // hasRestrictedZoneEntitlement doc comment).
+  const { count: restrictedZoneCount } = useRestrictedZoneCount();
+  const isRestrictedEntitled = hasRestrictedZoneEntitlement(restrictedZoneCount);
   const [open, setOpen] = useState(false);
   const [inputValue, setInputValue] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
@@ -138,7 +147,7 @@ export function QuickSearch({ isAdmin }: { isAdmin: boolean }): React.JSX.Elemen
     },
   ];
 
-  const screenMatches = filterPaletteScreens(inputValue, isAdmin);
+  const screenMatches = filterPaletteScreens(inputValue, isAdmin, isRestrictedEntitled);
   const actionMatches = filterPaletteActions(inputValue, actions);
   const paletteEntries = [...screenMatches.map((s) => ({ kind: "screen" as const, screen: s })), ...actionMatches.map((a) => ({ kind: "action" as const, action: a }))].slice(
     0,

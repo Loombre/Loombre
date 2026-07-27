@@ -19,6 +19,7 @@ import { Button } from "../../../components/ui/Button.js";
 import { TextInput } from "../../../components/ui/Input.js";
 import { SegmentedControl } from "../../../components/ui/SegmentedControl.js";
 import { apiGet, apiPut } from "../../../lib/api-client.js";
+import { PIN_LENGTH, isPinComplete, sanitizePinInput } from "../../../lib/pin-entry.js";
 import { deriveRestrictedViewState } from "../wizard-state.js";
 import styles from "./steps.module.css";
 
@@ -55,8 +56,8 @@ export function RestrictedStep({ onNext }: RestrictedStepProps): React.JSX.Eleme
       onNext();
       return;
     }
-    if (pin.length === 0) {
-      setError("Enter a PIN to enable restricted content.");
+    if (!isPinComplete(pin)) {
+      setError(`Enter a ${PIN_LENGTH}-digit PIN to enable restricted content.`);
       return;
     }
     setSubmitting(true);
@@ -123,13 +124,14 @@ export function RestrictedStep({ onNext }: RestrictedStepProps): React.JSX.Eleme
           </div>
           {optIn && (
             <label className={styles.field} htmlFor="setup-restricted-pin">
-              <span className={styles.label}>PIN</span>
+              <span className={styles.label}>PIN ({PIN_LENGTH} digits)</span>
               <TextInput
                 id="setup-restricted-pin"
                 type="password"
                 inputMode="numeric"
+                maxLength={PIN_LENGTH}
                 value={pin}
-                onChange={(e) => setPin(e.target.value.replace(/\D/g, ""))}
+                onChange={(e) => setPin(sanitizePinInput(e.target.value))}
               />
             </label>
           )}

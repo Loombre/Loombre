@@ -30,3 +30,21 @@
   color: var(--muted);
   text-align: center;
 }
+
+/* A failed page-append (confirmed[36]) — non-destructive: the grid above
+   stays mounted, this is just a retry affordance below it. */
+.loadMoreError {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-md);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--color-danger) 12%, transparent);
+  color: var(--color-danger);
+  padding: var(--space-sm) var(--space-md);
+  font-size: var(--text-sm);
+}
+
+.retryButton {
+  composes: button secondary from "../../components/ui/Button.module.css";
+}

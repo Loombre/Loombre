@@ -129,6 +129,28 @@ function assertManifestDigestMatches(manifest: LppManifest, expectedDigest: stri
   }
 }
 
+/** The one 409 registration can reach two ways: the pre-check below, and
+ *  the losing side of a concurrent register() for the same origin. */
+function baseUrlAlreadyRegistered(baseUrl: string, instancePath: string): never {
+  throw conflict(
+    `A plugin is already registered at ${baseUrl}. Use the refresh/re-approval flow instead of registering again.`,
+    instancePath,
+  );
+}
+
+/** The base_url pre-check and the insert run in different transactions with
+ *  a manifest fetch between them, so two concurrent register() calls for the
+ *  same origin both pass the pre-check and the loser is stopped only by
+ *  plugins_base_url_unique (packages/db/migrations/0014_plugins.sql). Matched
+ *  by constraint NAME, never by code alone: the same transaction also inserts
+ *  plugin_event_grants, whose own unique violations must stay internal
+ *  errors rather than a misleading "already registered". */
+function isBaseUrlUniqueViolation(err: unknown): boolean {
+  if (typeof err !== "object" || err === null) return false;
+  const candidate = err as { code?: unknown; constraint?: unknown };
+  return candidate.code === "23505" && candidate.constraint === "plugins_base_url_unique";
+}
+
 function validateBaseUrl(baseUrl: string, instancePath: string): URL {
   let parsed: URL;
   try {
@@ -202,12 +224,7 @@ export class PluginRegistrationService {
     const baseUrl = parsedUrl.origin;
 
     const existing = await getPluginByBaseUrl(this.dbProvider.db, baseUrl);
-    if (existing) {
-      throw conflict(
-        `A plugin is already registered at ${baseUrl}. Use the refresh/re-approval flow instead of registering again.`,
-        instancePath,
-      );
-    }
+    if (existing) baseUrlAlreadyRegistered(baseUrl, instancePath);
 
     const lanAllowlist = input.lanAllowlist ?? [];
     const manifestResult = await fetchPluginManifest(baseUrl, { lanAllowlist });
@@ -268,6 +285,7 @@ export class PluginRegistrationService {
       });
     } catch (err) {
       await removeAllPluginSecrets(pluginId, secretFieldNames);
+      if (isBaseUrlUniqueViolation(err)) baseUrlAlreadyRegistered(baseUrl, instancePath);
       throw err;
     }
     const { plugin, eventGrants } = inserted;

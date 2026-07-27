@@ -13,3 +13,19 @@
   width: 160px;
   flex-shrink: 0;
 }
+
+.loadError {
+  border-radius: var(--radius-lg);
+  border: 1px dashed var(--color-border);
+  padding: var(--space-2xl);
+  color: var(--color-text-muted);
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-md);
+}
+
+.loadErrorText {
+  margin: 0;
+}

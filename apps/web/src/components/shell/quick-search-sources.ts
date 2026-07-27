@@ -13,12 +13,18 @@
 // they can render before the debounced catalog search even fires.
 //
 // Screens are every route that ACTUALLY EXISTS today (nav-items.ts +
-// tab-items.ts's shipped set + AdminNav.tsx's seven sections) — no
-// Watchlist/Restricted/Person entries yet (their routes don't exist,
-// STATE.md kickoff ground truth; W2 L3/L8 land them, and can append here
-// without touching QuickSearch.tsx's render logic). Admin screens are
-// gated by the SAME isAdmin the shell already threads to Sidebar/AdminNav,
-// not a new capability check invented for this file.
+// tab-items.ts's shipped set + AdminNav.tsx's seven sections). W2 L3/L8
+// have since landed Watchlist and Restricted — Watchlist is a plain screen
+// entry now; Restricted is gated by the SAME hasRestrictedZoneEntitlement
+// predicate (lib/restricted-zone-count.js) every other zone entry point
+// renders behind (Sidebar's RestrictedNavEntry, the Browse chip, the
+// mobile tab, UserMenu), via PaletteScreen.restrictedOnly +
+// filterPaletteScreens' isRestrictedEntitled param — defaulted to false so
+// a caller that hasn't threaded the real entitlement yet never leaks the
+// zone's existence to an unentitled viewer. Still no Person entry (that
+// route doesn't exist yet). Admin screens are gated by the SAME isAdmin
+// the shell already threads to Sidebar/AdminNav, not a new capability
+// check invented for this file.
 //
 // Actions are intentionally NOT the prototype's scan-trigger/fix-match
 // set (those need per-library ids + duplicate app/admin/libraries/
@@ -35,6 +41,10 @@ export interface PaletteScreen {
   label: string;
   href: string;
   adminOnly?: boolean;
+  /** Gated the same way Sidebar's RestrictedNavEntry/Browse chip/mobile
+   *  tab/UserMenu row are — see filterPaletteScreens' isRestrictedEntitled
+   *  param. */
+  restrictedOnly?: boolean;
 }
 
 export interface PaletteAction {
@@ -46,6 +56,8 @@ export interface PaletteAction {
 export const PALETTE_SCREENS: PaletteScreen[] = [
   { key: "home", label: "Home", href: "/home" },
   { key: "browse", label: "Browse", href: "/browse" },
+  { key: "watchlist", label: "Watchlist", href: "/watchlist" },
+  { key: "restricted", label: "Restricted", href: "/restricted", restrictedOnly: true },
   { key: "search", label: "Search", href: "/search" },
   { key: "settings", label: "Settings", href: "/settings" },
   { key: "admin-dashboard", label: "Dashboard", href: "/admin", adminOnly: true },
@@ -68,10 +80,16 @@ function matches(label: string, query: string): boolean {
   return label.toLowerCase().includes(query);
 }
 
-export function filterPaletteScreens(query: string, isAdmin: boolean): PaletteScreen[] {
+/** `isRestrictedEntitled` defaults to false (rather than being required) so
+ *  a call site that hasn't threaded the real hasRestrictedZoneEntitlement
+ *  value yet fails closed — never shows the Restricted screen — instead of
+ *  a type error forcing a guess. */
+export function filterPaletteScreens(query: string, isAdmin: boolean, isRestrictedEntitled = false): PaletteScreen[] {
   const q = query.trim().toLowerCase();
   if (!q) return [];
-  return PALETTE_SCREENS.filter((screen) => (!screen.adminOnly || isAdmin) && matches(screen.label, q));
+  return PALETTE_SCREENS.filter(
+    (screen) => (!screen.adminOnly || isAdmin) && (!screen.restrictedOnly || isRestrictedEntitled) && matches(screen.label, q),
+  );
 }
 
 export function filterPaletteActions(query: string, actions: PaletteAction[]): PaletteAction[] {

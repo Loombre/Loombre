@@ -55,6 +55,20 @@
   color: var(--muted);
 }
 
+.loadMore {
+  composes: button secondary from "../../../components/ui/Button.module.css";
+  align-self: center;
+}
+
+.loadMoreError {
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--color-danger) 12%, transparent);
+  color: var(--color-danger);
+  padding: var(--space-sm) var(--space-md);
+  font-size: var(--text-sm);
+  text-align: center;
+}
+
 /* Both breakpoints (U2 — one responsive tree): narrower portrait + stacked
    header below the mobile breakpoint rather than a fixed 140px forcing the
    name column to wrap awkwardly at 392px. */
@@ -72,5 +86,10 @@
 
   .name {
     font-size: var(--text-lg);
+  }
+
+  .loadMore {
+    min-height: 44px;
+    width: 100%;
   }
 }
