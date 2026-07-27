@@ -122,7 +122,11 @@ export function useLibraryScanState(isAdmin: boolean): Map<string, LibraryScanSt
         const skippedCount = e.payload.skippedUnsupportedCount ?? 0;
         const skippedFiles = e.payload.skippedUnsupportedFiles ?? [];
         setState((prev) => {
-          if (!prev.has(e.payload.libraryId)) return prev;
+          // No prior scan.started required (Lane R review): a completion
+          // arriving in a session that never saw the scan start — an admin
+          // who opened the dashboard mid-scan — still registers, so the
+          // skip note renders for them too. The panel joins on its own
+          // libraries list, so an unknown libraryId simply never renders.
           const next = new Map(prev);
           next.set(e.payload.libraryId, {
             scanning: false,
