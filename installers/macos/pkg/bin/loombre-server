@@ -33,9 +33,32 @@ CONFIG_ENV="/Library/Application Support/Loombre/config/loombre.env"
 [ -f "$CONFIG_ENV" ] && { set -a; . "$CONFIG_ENV"; set +a; }
 
 : "${PORT:=3001}"
-: "${DATABASE_URL:=postgres://loombre:loombre@localhost:5442/loombre}"
 : "${LOOMBRE_FFMPEG:=$HERE/runtime/ffmpeg/ffmpeg}"
 : "${LOOMBRE_FFPROBE:=$HERE/runtime/ffmpeg/ffprobe}"
-export PORT DATABASE_URL LOOMBRE_FFMPEG LOOMBRE_FFPROBE
+export PORT LOOMBRE_FFMPEG LOOMBRE_FFPROBE
+
+# DATABASE_URL is deliberately NOT defaulted here (the rc.1 shim defaulted
+# it to the dev-only localhost:5442 URL, which forced apps/server's
+# bootstrap into external mode against a database that exists on no real
+# Mac — while the payload's own PostgreSQL sat unused). Unset means
+# apps/server/src/bootstrap/provisioning.ts provisions and supervises the
+# BUNDLED embedded PostgreSQL below; an operator who wants external mode
+# sets DATABASE_URL in config/loombre.env (sourced above), which wins.
+if [ -n "${DATABASE_URL:-}" ]; then
+  export DATABASE_URL
+else
+  : "${LOOMBRE_DATA_DIR:=/Library/Application Support/Loombre}"
+  export LOOMBRE_DATA_DIR
+  export LOOMBRE_EMBEDDED_PG_VENDOR_DIR="$HERE/runtime/pg"
+  # The payload stages exactly one <platform>/<version> pair under
+  # runtime/pg (vendor-layout shape — see build-pkg.mjs fetchRuntimes);
+  # derive the version from the directory rather than pinning a second
+  # copy of it here.
+  _pg_platform_dir="$(find "$HERE/runtime/pg" -mindepth 1 -maxdepth 1 -type d | head -n 1)"
+  if [ -n "$_pg_platform_dir" ]; then
+    _pg_version="$(find "$_pg_platform_dir" -mindepth 1 -maxdepth 1 -type d -exec basename {} \; | head -n 1)"
+    [ -n "$_pg_version" ] && export LOOMBRE_EMBEDDED_PG_VERSION="$_pg_version"
+  fi
+fi
 
 exec "$HERE/runtime/node/bin/node" "$HERE/server/dist/main.js"

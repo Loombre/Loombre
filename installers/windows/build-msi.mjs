@@ -177,7 +177,19 @@ function pnpmDeploy(pkgName, targetDir) {
   // `--legacy` matches lanes I1/I4: pnpm v10+ refuses to deploy from a
   // non-injected workspace without it (ERR_PNPM_DEPLOY_NONINJECTED_
   // WORKSPACE), and this workspace does not set inject-workspace-packages.
-  run("pnpm", ["--filter", pkgName, "deploy", "--prod", "--legacy", targetDir]);
+  //
+  // Deploy to a raw dir, then MATERIALIZE into targetDir with a
+  // dereferencing copy: pnpm's node_modules layout is junction/symlink-
+  // heavy, macOS's rc.1 install proved relocated links are a crash
+  // (ERR_MODULE_NOT_FOUND on every direct dep), and this lane adds a zip
+  // hop where System.IO.Compression cannot recreate links at all. Real
+  // files only in the payload — the posture lane I1's boot smoke proved.
+  const rawDir = `${targetDir}-raw`;
+  rmSync(rawDir, { recursive: true, force: true });
+  mkdirSync(rawDir, { recursive: true });
+  run("pnpm", ["--filter", pkgName, "deploy", "--prod", "--legacy", rawDir]);
+  cpSync(rawDir, targetDir, { recursive: true, dereference: true });
+  rmSync(rawDir, { recursive: true, force: true });
 
   // apps/server-only, ported from lane I4 (installers/macos/build-pkg.mjs +
   // LAYOUT.md §9): ajv is a *runtime* dependency (device-profile

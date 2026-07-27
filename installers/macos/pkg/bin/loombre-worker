@@ -11,9 +11,25 @@ CONFIG_ENV="/Library/Application Support/Loombre/config/loombre.env"
 # shellcheck disable=SC1090
 [ -f "$CONFIG_ENV" ] && { set -a; . "$CONFIG_ENV"; set +a; }
 
-: "${DATABASE_URL:=postgres://loombre:loombre@localhost:5442/loombre}"
 : "${LOOMBRE_FFMPEG:=$HERE/runtime/ffmpeg/ffmpeg}"
 : "${LOOMBRE_FFPROBE:=$HERE/runtime/ffmpeg/ffprobe}"
-export DATABASE_URL LOOMBRE_FFMPEG LOOMBRE_FFPROBE
+export LOOMBRE_FFMPEG LOOMBRE_FFPROBE
+
+# No DATABASE_URL default (the rc.1 dev-only localhost:5442 default made
+# the worker crash-loop on every real Mac). In embedded mode the server
+# generates the database credentials at provision time and NO seam exists
+# yet for this worker to discover them (STATE.md P4.2 single-provisioner
+# rule; the discovery seam is lane B's open deliverable). Until it lands:
+# exit 0 (idle) — the launchd plist's KeepAlive.SuccessfulExit=false means
+# a clean exit is NOT relaunched, so this logs once instead of
+# crash-looping every ThrottleInterval. External-mode operators set
+# DATABASE_URL in config/loombre.env and get a real worker.
+if [ -z "${DATABASE_URL:-}" ]; then
+  echo "loombre-worker: DATABASE_URL is not set — embedded-mode credential discovery has not landed" \
+    "(STATE.md P4.2, lane B). Worker idle until it does; set DATABASE_URL in" \
+    "/Library/Application Support/Loombre/config/loombre.env to run the worker against external PostgreSQL."
+  exit 0
+fi
+export DATABASE_URL
 
 exec "$HERE/runtime/node/bin/node" "$HERE/worker/dist/index.js"
