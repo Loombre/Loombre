@@ -39,6 +39,18 @@ export interface LibrarySkippedUnsupported {
   files: string[];
 }
 
+/** Owner ledger L1 (adjudication A-4): one admitted file that turned out
+ *  unreadable once a real probe ran against it — a probe.failed event's
+ *  {path, code}, mediaFileId/libraryId dropped (not needed for display).
+ *  DIFFERENT from LibrarySkippedUnsupported: that's an extension the
+ *  scanner never admitted at all; this is a file the scanner DID admit,
+ *  whose probe job then exhausted its retries — see this file's own
+ *  freeze-report note on why scan.completed's schema stays untouched. */
+export interface LibraryProbeFailure {
+  path: string;
+  code: string;
+}
+
 export interface LibraryScanState {
   scanning: boolean;
   /** Files processed so far in the active scan; null before the first
@@ -50,9 +62,21 @@ export interface LibraryScanState {
    *  null when a new scan starts, and left null whenever the last completed
    *  scan reported zero skips. */
   lastSkipped: LibrarySkippedUnsupported | null;
+  /** Owner ledger L1 (adjudication A-4): every probe.failed event observed
+   *  for this library THIS SESSION, newest first, capped at
+   *  PROBE_FAILED_MAX entries — unlike lastSkipped, this is deliberately
+   *  NOT reset when a new scan starts: probe jobs for files a scan
+   *  admitted routinely finish well after that scan's own scan.completed
+   *  fires (sometimes across a LATER scan entirely), so tying it to a scan
+   *  boundary would drop failures an admin hasn't seen yet. */
+  probeFailed: LibraryProbeFailure[];
 }
 
-const IDLE_STATE: LibraryScanState = { scanning: false, filesProcessed: null, lastSkipped: null };
+const IDLE_STATE: LibraryScanState = { scanning: false, filesProcessed: null, lastSkipped: null, probeFailed: [] };
+
+/** Owner ledger L1: mirrors EVENT_LOG_MAX's ring-buffer cap pattern below,
+ *  scoped per library instead of globally. */
+const PROBE_FAILED_MAX = 100;
 
 interface ScanStartedPayload {
   jobId: string;
@@ -74,6 +98,17 @@ interface JobUpdatedProgressPayload {
   jobType: string;
   progress?: { current: number; total: number | null; phase: string | null } | null;
 }
+/** packages/contract/event-schemas/probe.failed.schema.json (owner ledger
+ *  L1, adjudication A-2) — ADMIN-ONLY, so this hook only ever observes it
+ *  when isAdmin is true (mirrors scan.completed's own admin-gated
+ *  subscription below; server-side ws-broadcaster.service.ts enforces the
+ *  admin-only delivery independently). */
+interface ProbeFailedPayload {
+  mediaFileId: string;
+  libraryId: string;
+  path: string;
+  code: string;
+}
 
 /** Per-library scan state, live. Returns a Map keyed by libraryId — read a
  *  single library's state with `map.get(libraryId) ?? IDLE_STATE` (exported
@@ -92,9 +127,13 @@ export function useLibraryScanState(isAdmin: boolean): Map<string, LibraryScanSt
       jobToLibraryRef.current.set(e.payload.jobId, e.payload.libraryId);
       setState((prev) => {
         const next = new Map(prev);
+        const existing = next.get(e.payload.libraryId) ?? IDLE_STATE;
         // A new scan starting clears any prior lastSkipped report — this
         // scan's own scan.completed will repopulate it if it finds any.
-        next.set(e.payload.libraryId, { scanning: true, filesProcessed: null, lastSkipped: null });
+        // probeFailed is deliberately CARRIED FORWARD, not reset — see
+        // LibraryScanState.probeFailed's doc comment (session-scoped, not
+        // scan-scoped).
+        next.set(e.payload.libraryId, { scanning: true, filesProcessed: null, lastSkipped: null, probeFailed: existing.probeFailed });
         return next;
       });
     });
@@ -128,10 +167,34 @@ export function useLibraryScanState(isAdmin: boolean): Map<string, LibraryScanSt
           // skip note renders for them too. The panel joins on its own
           // libraries list, so an unknown libraryId simply never renders.
           const next = new Map(prev);
+          const existing = next.get(e.payload.libraryId) ?? IDLE_STATE;
           next.set(e.payload.libraryId, {
             scanning: false,
             filesProcessed: null,
             lastSkipped: skippedCount > 0 ? { count: skippedCount, files: skippedFiles } : null,
+            probeFailed: existing.probeFailed,
+          });
+          return next;
+        });
+      },
+    );
+
+    // Owner ledger L1 (adjudication A-4): accumulates every probe.failed
+    // event this session, per-library, capped at PROBE_FAILED_MAX. See
+    // ProbeFailedPayload's doc comment for why this is only ever observed
+    // when isAdmin (server-side admin-only delivery is the real gate; this
+    // is the client mirroring the same posture scan.completed's own
+    // subscription already has).
+    const unsubProbeFailed = socket.subscribe<ProbeFailedPayload>(
+      "probe.failed",
+      (e: EventEnvelope<ProbeFailedPayload>) => {
+        setState((prev) => {
+          const next = new Map(prev);
+          const existing = next.get(e.payload.libraryId) ?? IDLE_STATE;
+          const entry: LibraryProbeFailure = { path: e.payload.path, code: e.payload.code };
+          next.set(e.payload.libraryId, {
+            ...existing,
+            probeFailed: [entry, ...existing.probeFailed].slice(0, PROBE_FAILED_MAX),
           });
           return next;
         });
@@ -142,6 +205,7 @@ export function useLibraryScanState(isAdmin: boolean): Map<string, LibraryScanSt
       unsubStarted();
       unsubProgress();
       unsubCompleted();
+      unsubProbeFailed();
     };
   }, [isAdmin]);
 

@@ -218,6 +218,39 @@
   display: none;
 }
 
+/* Owner ledger L1 (adjudication A-4): "N failed inspection (unreadable
+   media)" disclosure — mirrors .skippedDisclosure/.skippedSummary exactly
+   (same neutral-muted pill). A DIFFERENT thing from the skip pill above:
+   that's an extension the scanner never admitted; this is a file the
+   scanner DID admit that turned out unreadable once a real probe ran. */
+.probeFailedDisclosure {
+  margin-top: var(--space-2xs);
+}
+
+.probeFailedSummary {
+  display: inline-flex;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--track-mono);
+  color: var(--color-text-muted);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-pill);
+  padding: 3px 11px;
+  text-transform: uppercase;
+  list-style: none;
+  transition: background-color var(--motion-fast) var(--ease-out);
+}
+
+.probeFailedSummary:hover {
+  background: var(--color-surface-hover);
+}
+
+.probeFailedSummary::-webkit-details-marker {
+  display: none;
+}
+
 .empty {
   margin: 0;
   padding: var(--space-md);
