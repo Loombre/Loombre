@@ -118,6 +118,13 @@ public class ServiceOptionsTests
         Assert.Throws<ArgumentException>(() => ServiceOptions.Parse([.. ServerArgs, flag, value]));
     }
 
+    [Fact]
+    public void Spawn_restricted_defaults_off_and_parses_on()
+    {
+        Assert.False(ServiceOptions.Parse(ServerArgs).SpawnRestricted);
+        Assert.True(ServiceOptions.Parse([.. ServerArgs, "--spawn-restricted"]).SpawnRestricted);
+    }
+
     [Theory]
     [InlineData("0")]
     [InlineData("-5")]

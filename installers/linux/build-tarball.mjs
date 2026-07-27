@@ -767,11 +767,11 @@ async function fixKeyringBinding(deployDir, arch, appLabel) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// Step: bundled Node runtime (installers/linux/node-manifest.json)
+// Step: bundled Node runtime (installers/node-manifest.json — SHARED across lanes I1/I3 since the win-x64 entry landed)
 // ─────────────────────────────────────────────────────────────────────────
 
 function loadNodeManifest() {
-  return JSON.parse(readFileSync(join(INSTALLERS_LINUX_DIR, "node-manifest.json"), "utf8"));
+  return JSON.parse(readFileSync(join(INSTALLERS_LINUX_DIR, "..", "node-manifest.json"), "utf8"));
 }
 
 async function fetchAndExtractNode(arch, cacheDir) {

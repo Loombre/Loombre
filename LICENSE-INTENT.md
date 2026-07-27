@@ -73,7 +73,7 @@ these programs communicate only via process boundaries/CLI/files).
 |--------|---------|--------------|---------------------|
 | ffmpeg / ffprobe | GPL-3.0-or-later (GPL builds: libx264/x265 required for software encode) | `installers/ffmpeg-manifest.json` — BtbN autobuild (linux/win), evermeet.cx (mac x64), osxexperts.net (mac arm64), sha256-pinned; see the manifest's `provenance` + `verification.notes` (incl. the flagged arm64 webpage-checksum mismatch requiring second-source re-check before public release) | Child process via job queue (CLAUDE.md invariant 6); GPLv3↔AGPLv3 compatible both directions per each license's §13; aggregation rationale recorded in the manifest |
 | PostgreSQL 17.x (embedded) | PostgreSQL License (BSD-style, allow-list compatible) | `installers/embedded-pg-manifest.json` — theseus-rs/postgresql-binaries, sha256 triple-verified | Supervised child process (`@loombre/provisioning-pg`); communicates via socket |
-| Node.js runtime | MIT (+ bundled deps per Node's LICENSE) | `installers/linux/node-manifest.json` (+ per-platform fetch scripts) — official nodejs.org dist, sha256-pinned | The runtime the AGPL work runs ON; bundled unmodified |
+| Node.js runtime | MIT (+ bundled deps per Node's LICENSE) | `installers/node-manifest.json` (+ per-platform fetch scripts) — official nodejs.org dist, sha256-pinned | The runtime the AGPL work runs ON; bundled unmodified |
 
 Rule: any new vendored binary requires (a) a pinned-checksum manifest entry
 with source URLs, (b) a license row here, (c) an aggregation-posture note.

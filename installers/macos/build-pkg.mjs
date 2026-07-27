@@ -360,6 +360,17 @@ function buildMenubar() {
   log("verifying menubar/fixtures.json against @loombre/controller-ipc's real schemas");
   run("node", [path.join(MENUBAR_DIR, "verify-fixtures.mjs")], { cwd: REPO_ROOT });
 
+  // P4.11 single-source version: regenerate GeneratedVersion.swift from
+  // root package.json so the menu's "Loombre Controller vX" can never
+  // drift from the release again (a real install showed v0.0.1).
+  const version = readVersion();
+  writeFileSync(
+    path.join(MENUBAR_DIR, "Sources", "LoombreMenubar", "GeneratedVersion.swift"),
+    `// SPDX-License-Identifier: AGPL-3.0-only\n// GENERATED at pkg-build time by installers/macos/build-pkg.mjs\n// (buildMenubar) from root package.json — do not hand-edit the version.\n// The checked-in value is a dev placeholder for bare \`swift build\` runs;\n// build-pkg.mjs overwrites it before every release build and \`git\n// checkout\`-restores nothing (the file is committed with the placeholder).\n\nlet loombreGeneratedVersion = "${version}"\n`,
+    "utf8",
+  );
+  log(`stamped GeneratedVersion.swift = ${version}`);
+
   log("swift build -c release (LoombreMenubar)");
   run("swift", ["build", "-c", "release"], { cwd: MENUBAR_DIR });
 
