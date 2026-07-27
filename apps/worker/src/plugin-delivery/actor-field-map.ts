@@ -84,6 +84,13 @@ export const ACTOR_FIELD_MAP: Record<string, readonly string[]> = {
   // (this map tracks "does the schema carry a user-id-bearing field", not
   // "is this type reachable by a plugin today" — see this file's header).
   "user.restricted-pin-reset": ["userId"],
+  // Owner ledger L1 (adjudication A-2): probe.failed's payload names only
+  // {mediaFileId, libraryId, path, code} — none of them a user id or
+  // another user-correlating identifier (USER_ID_FIELD_NAMES) — empty for
+  // the same reason every plugin.* entry above is, not left unmapped. Also
+  // ADMIN_ONLY (never grantable to a plugin subscriber in the first place
+  // — see event-taxonomy.ts), same posture as metadata.match-candidates.
+  "probe.failed": [],
 };
 
 /**

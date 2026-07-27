@@ -46,7 +46,7 @@ interface EnvelopeSchemaShape {
  * apps/server/src/plugins/plugin-registration.service.ts's
  * validateGrantAgainstManifest) keep working unchanged.
  *
- * H-4 fix wave (why this classification exists at all): the ten event
+ * H-4 fix wave (why this classification exists at all): the event
  * `type`s here are the ones `ws-broadcaster.service.ts` never delivers to
  * a non-admin socket. Before that fix, `getOutboxEventTaxonomy()` returned
  * the WHOLE envelope enum with no such exclusion, so a plugin's manifest

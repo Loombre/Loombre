@@ -13,7 +13,8 @@
     "plugin.removed",
     "plugin.health-changed",
     "metadata.match-candidates",
-    "user.restricted-pin-reset"
+    "user.restricted-pin-reset",
+    "probe.failed"
   ],
   "type": "object",
   "additionalProperties": false,
@@ -51,7 +52,8 @@
         "plugin.removed",
         "plugin.health-changed",
         "metadata.match-candidates",
-        "user.restricted-pin-reset"
+        "user.restricted-pin-reset",
+        "probe.failed"
       ],
       "description": "Closed enum today; additions are additive contract PRs (new event types are always backward compatible for existing consumers)."
     },

@@ -17,9 +17,11 @@
 // replaced with DERIVATION assertions against the canonical import
 // (packages/shared/src/admin-only-event-types.ts) and against the
 // envelope's own enum length, so this spec can never silently drift from
-// either. The one place the 10-item inventory is still spelled out as a
-// literal is packages/shared/test/admin-only-event-types.test.ts (the
-// single intentional snapshot).
+// either (owner ledger L1 grew both sides by one — 26 - 11 = 15, unchanged
+// by construction — without touching a single assertion here). The one
+// place the inventory is still spelled out as a literal is
+// packages/shared/test/admin-only-event-types.test.ts (the single
+// intentional snapshot).
 
 import { describe, expect, it } from "vitest";
 import { createRequire } from "node:module";
@@ -33,7 +35,7 @@ describe("H-4 fix wave: getOutboxEventTaxonomy excludes ADMIN_ONLY_EVENT_TYPES",
     expect(ADMIN_ONLY_EVENT_TYPES).toBe(CANONICAL_ADMIN_ONLY_EVENT_TYPES);
   });
 
-  it("none of the 10 ADMIN_ONLY types appear in the grantable taxonomy", () => {
+  it("none of the ADMIN_ONLY types appear in the grantable taxonomy", () => {
     resetOutboxEventTaxonomyCacheForTests();
     const taxonomy = new Set(getOutboxEventTaxonomy());
     for (const adminOnlyType of ADMIN_ONLY_EVENT_TYPES) {
