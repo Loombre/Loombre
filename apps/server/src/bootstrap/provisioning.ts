@@ -38,6 +38,7 @@
 // explicitly-authorized "tiny guard in worker db-connect error handling").
 
 import { resolveAppPaths } from "../cli/app-paths.js";
+import { runPendingMigrations } from "@loombre/db/migrate";
 import {
   EMBEDDED_PG_DEFAULT_PORT,
   EmbeddedPostgres,
@@ -168,5 +169,18 @@ export async function bootstrapProvisioning(env: NodeJS.ProcessEnv = process.env
   process.once("exit", () => instance.killSync());
 
   const databaseUrl = instance.getDatabaseUrl();
+
+  // EMBEDDED MODE ONLY: apply pending schema migrations at boot. This
+  // cluster is exclusively ours (single-provisioner rule) and migrations
+  // are forward-only (docs/PLAN.md, H4), so auto-migration is safe here —
+  // and REQUIRED: an installed deployment has no repo checkout or pnpm to
+  // run the dev CLI from; without this, first boot provisions a
+  // schema-less database and the app dies on its first query (installer
+  // completeness audit). External mode deliberately never migrates — an
+  // operator's database is not ours to alter unprompted.
+  await runPendingMigrations(databaseUrl, {
+    log: (message) => console.log(`[bootstrap] ${message}`),
+  });
+
   return { controller: instance, databaseUrl, mode: "embedded" };
 }

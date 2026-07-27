@@ -19,7 +19,7 @@ loombre-<version>-linux-<arch>/
 │                                   # install.sh symlinks /usr/local/bin/loombre -> this file, see below)
 ├── runtime/
 │   └── node/
-│       └── bin/node              # bundled Node runtime (installers/linux/node-manifest.json — pinned + sha256, official nodejs.org build)
+│       └── bin/node              # bundled Node runtime (installers/node-manifest.json — pinned + sha256, official nodejs.org build)
 ├── ffmpeg/
 │   ├── ffmpeg
 │   ├── ffprobe
@@ -40,7 +40,7 @@ loombre-<version>-linux-<arch>/
 | Path | Produced by |
 |------|-------------|
 | `bin/`, `install.sh`, `uninstall.sh`, `systemd/`, `VERSION` | this build script, generated/copied directly |
-| `runtime/node/` | `installers/linux/node-manifest.json` — official nodejs.org release, checksum-verified before extraction |
+| `runtime/node/` | `installers/node-manifest.json` — official nodejs.org release, checksum-verified before extraction |
 | `ffmpeg/` | `scripts/fetch-ffmpeg.mjs` + `installers/ffmpeg-manifest.json` (shared deliverable, also used by lanes I3/I4) |
 | `lib/server/`, `lib/worker/` | `pnpm --filter <app> deploy <dir> --prod --legacy`, then packaging-time-only fixes — see below |
 | `web/` | `pnpm --filter @loombre/web deploy <dir> --prod --legacy` |
@@ -143,7 +143,7 @@ dev Postgres database other Phase-4 lanes are using concurrently).
 
 ## Bundled Node runtime
 
-Pinned in `installers/linux/node-manifest.json`: Node 24.18.0 ("Krypton" Active LTS),
+Pinned in `installers/node-manifest.json`: Node 24.18.0 ("Krypton" Active LTS),
 official nodejs.org prebuilt tarball, sha256-verified against nodejs.org's
 own published `SHASUMS256.txt` before extraction. Only `bin/node` itself
 is bundled (not `npm`/`npx`/`corepack`/headers/docs) — this tarball ships a
