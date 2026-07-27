@@ -139,6 +139,32 @@
       </Component>
     </ComponentGroup>
 
+    <!-- Install-time payload extraction (added after the v0.9.0-rc.1
+         install test: leaving payload.zip packed until first service
+         start meant a fresh install had NO server/worker/web trees on
+         disk — and today's demand-start services can't run yet, so
+         nothing would ever unpack). Deferred + elevated, after
+         InstallFiles so payload.zip and LoombreServiceHost.exe are both
+         on disk; ExeCommand is Formatted and resolves when the deferred
+         script is generated. Return="check": a failed extraction fails
+         the install loudly (rollback removes MSI-owned files; any
+         partially-extracted trees are swept by the next install's
+         stale-tree removal or by uninstall's RemoveFolderEx). The
+         services' own extract-zip/extract-to flags stay as a first-start
+         SELF-HEAL — after a healthy install the marker matches and it
+         costs one hash pass. Same trailing-dot idiom as Services.wxs
+         (see its header's TRAILING-BACKSLASH TRAP note). -->
+    <CustomAction
+      Id="ca.ExtractPayload"
+      FileRef="file.LoombreServiceHost"
+      ExeCommand='--extract-cli "[PAYLOADDIR]payload.zip" "[INSTALLFOLDER]."'
+      Execute="deferred"
+      Impersonate="no"
+      Return="check" />
+    <InstallExecuteSequence>
+      <Custom Action="ca.ExtractPayload" After="InstallFiles" Condition="NOT REMOVE" />
+    </InstallExecuteSequence>
+
     <Feature Id="Main" Title="Loombre" Level="1" AllowAbsent="no" AllowAdvertise="no">
       <ComponentGroupRef Id="PayloadFiles" />
       <ComponentGroupRef Id="FfmpegFiles" />

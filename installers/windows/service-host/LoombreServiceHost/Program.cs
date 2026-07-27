@@ -10,9 +10,29 @@ namespace Loombre.ServiceHost;
 
 internal static class Program
 {
-    private static void Main(string[] args)
+    private static int Main(string[] args)
     {
+        // MSI install-time mode (Package.wxs's ca.ExtractPayload, deferred
+        // after InstallFiles): extract the archived payload and exit — no
+        // SCM involved. The service path below keeps the same extraction
+        // as a first-start SELF-HEAL (marker match makes it a cheap no-op
+        // after a healthy install).
+        if (args.Length == 3 && args[0] == "--extract-cli")
+        {
+            try
+            {
+                PayloadExtractor.ExtractIfNeeded(args[1], args[2], Console.WriteLine);
+                return 0;
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"payload extraction failed: {ex}");
+                return 1;
+            }
+        }
+
         var options = ServiceOptions.Parse(args);
         ServiceBase.Run(new LoombreHostedService(options));
+        return 0;
     }
 }

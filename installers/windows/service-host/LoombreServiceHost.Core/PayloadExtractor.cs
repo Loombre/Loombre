@@ -6,9 +6,11 @@
 // `wix build` (diag run 30219204709) hit WIX7502: 84,305 per-file
 // Components against MSI's hard 65,536 ceiling. So build-msi.mjs ships
 // them as ONE payload.zip inside the MSI, and this extractor materializes
-// the trees under the install folder before the wrapped child process
-// first starts (LoombreHostedService.OnStart calls this when Services.wxs
-// passes --extract-zip/--extract-to).
+// the trees under the install folder. TWO call sites, same marker: the
+// MSI's install-time custom action (Program.cs --extract-cli, the primary
+// path) and LoombreHostedService.OnStart as a first-start self-heal
+// (Services.wxs passes --extract-zip/--extract-to; a healthy install
+// makes it a marker-match no-op).
 //
 // Design constraints, each load-bearing:
 //   - Both Windows services (LoombreServer, LoombreWorker) run this same

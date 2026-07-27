@@ -80,3 +80,44 @@ jobs:
           name: windows-msi-diag
           path: dist/release/**
           if-no-files-found: error
+
+      # Real install/uninstall smoke — the v0.9.0-rc.1 machine test found
+      # two defects a green BUILD cannot catch (install landed in
+      # Program Files (x86); payload.zip never extracted because
+      # extraction was deferred to a service start that cannot happen
+      # yet). Runner is admin, so exercise the actual msiexec paths:
+      # install must materialize every extracted tree in the 64-BIT
+      # Program Files, uninstall must leave zero residue (RemoveFolderEx).
+      - name: Install/uninstall smoke (msiexec, real elevation)
+        shell: pwsh
+        run: |
+          $msi = (Get-ChildItem dist/release/*.msi | Select-Object -First 1).FullName
+          $proc = Start-Process msiexec -ArgumentList "/i `"$msi`" /qn /l*v install.log" -Wait -PassThru
+          if ($proc.ExitCode -ne 0) {
+            Get-Content install.log -Tail 120
+            Write-Host "VERDICT:INSTALL:FAIL (msiexec exit $($proc.ExitCode))"
+            exit 1
+          }
+          $root = "C:\Program Files\Loombre"
+          foreach ($d in "server","worker","web","node","pg","ffmpeg","svc","tray","payload") {
+            if (-not (Test-Path "$root\$d")) { Write-Host "VERDICT:INSTALL:FAIL (missing $root\$d)"; exit 1 }
+          }
+          if (-not (Test-Path "$root\server\dist\main.js")) { Write-Host "VERDICT:INSTALL:FAIL (extraction incomplete: server\dist\main.js missing)"; exit 1 }
+          if (Test-Path "${env:ProgramFiles(x86)}\Loombre") { Write-Host "VERDICT:INSTALL:FAIL (32-bit Program Files folder present)"; exit 1 }
+          foreach ($svc in "LoombreServer","LoombreWorker") {
+            if (-not (Get-Service $svc -ErrorAction SilentlyContinue)) { Write-Host "VERDICT:INSTALL:FAIL (service $svc not installed)"; exit 1 }
+          }
+          Write-Host "VERDICT:INSTALL:PASS"
+          $un = Start-Process msiexec -ArgumentList "/x `"$msi`" /qn /l*v uninstall.log" -Wait -PassThru
+          if ($un.ExitCode -ne 0) {
+            Get-Content uninstall.log -Tail 120
+            Write-Host "VERDICT:UNINSTALL:FAIL (msiexec exit $($un.ExitCode))"
+            exit 1
+          }
+          if (Test-Path $root) {
+            Get-ChildItem -Recurse $root | Select-Object -First 20 FullName
+            Write-Host "VERDICT:UNINSTALL:FAIL (residue remains at $root)"
+            exit 1
+          }
+          if (Get-Service LoombreServer -ErrorAction SilentlyContinue) { Write-Host "VERDICT:UNINSTALL:FAIL (LoombreServer service remains)"; exit 1 }
+          Write-Host "VERDICT:UNINSTALL:PASS"
