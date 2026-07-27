@@ -1,10 +1,40 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: AGPL-3.0-only
 /**
- * Ordered CI gate runner (CLAUDE.md: `pnpm gate`):
+ * Ordered CI gate runner (CLAUDE.md: `pnpm gate` / `pnpm gate:full`):
  *   codegen -> sdk-drift -> oasdiff -> depcruise -> runtime-imports
  *   -> license-check -> dep-audit -> lint -> typecheck -> test
  *   -> db:migrate-check -> grep-gates -> docs-build
+ *   -> [gate:full only] web-build-budget
+ *
+ * Modes (L4, STATE.md ledger item "consider adding the web production
+ * build ... to `pnpm gate`" — closed by adding a mode instead of changing
+ * the default):
+ *   `node scripts/gate.mjs`      (no arg — FAST, the CLAUDE.md inner-loop
+ *     default): the 13 steps above, unchanged behavior and unchanged speed.
+ *     The `steps` array below is exactly what it was before this mode
+ *     argument existed — full mode APPENDS to it rather than editing it in
+ *     place, specifically so a reviewer can diff the array itself and see
+ *     no step was silently lost or reordered.
+ *   `node scripts/gate.mjs full` (FULL — what CI's `pnpm gate:full` runs,
+ *     and what CLAUDE.md's working agreements call for before any
+ *     push/PR): the same 13 steps, plus a 14th, `web-build-budget`
+ *     (`pnpm run perf:web-budget`) — builds apps/web's workspace
+ *     dependency closure, builds apps/web itself for production, boots it,
+ *     and asserts the /browse route's first-load JS gzip size against the
+ *     docs/PLAN.md §9.3 budget. That budget threshold is hardcoded in
+ *     perf-web-budget.mjs itself; perf/baselines.json is a separate,
+ *     hand-curated ledger documenting that budget's history (not read by
+ *     the script — see scripts/perf-baseline-check.mjs). This is the only
+ *     LOCAL path that catches a production-build-only failure class —
+ *     e.g. a barrel import pulling a `node:`-scheme module into the client
+ *     graph, which fails webpack with UnhandledSchemeError naming the
+ *     offending module — that fast gate and `pnpm test` cannot see (the
+ *     real regression this closes: STATE.md's 2026-07-26 entry, the
+ *     AccountSection `@loombre/shared` barrel/language-codes defect,
+ *     8f11000).
+ *   Any other argument is a usage error: prints usage to stderr, exits 1,
+ *     runs nothing.
  *
  * runtime-imports (Phase 4 Wave 3, lane STRUCT, STATE.md Phase 4 Open item
  * "Runtime-TS packaging defects (I2 findings)"): scripts/check-runtime-
@@ -27,14 +57,21 @@
  *
  * docs-build (Addendum A, lane D1, STATE.md "## Addendum A" deliverable
  * 10): `node scripts/docs/build.mjs` — VitePress site build + the
- * `redocly build-docs` API reference, wired as the LAST gate step.
- * Deliberately last: it's cheapest to reach only once everything earlier
- * (codegen through grep-gates) has already confirmed the rest of the repo
- * is consistent, and a docs-only PR still gets full gate coverage before
- * this step runs. A broken docs build (bad Markdown link, VitePress config
- * error, the API reference generator failing) fails the gate here;
- * register-lint's own findings are warnings-only and never fail this step
- * (see scripts/docs/register-lint.mjs's header).
+ * `redocly build-docs` API reference, wired as the LAST of the 13 fixed
+ * steps (full mode's web-build-budget, when present, runs after it).
+ * Deliberately last among those 13: it's cheapest to reach only once
+ * everything earlier (codegen through grep-gates) has already confirmed
+ * the rest of the repo is consistent, and a docs-only PR still gets full
+ * gate coverage before this step runs. A broken docs build (bad Markdown
+ * link, VitePress config error, the API reference generator failing)
+ * fails the gate here; register-lint's own findings are warnings-only and
+ * never fail this step (see scripts/docs/register-lint.mjs's header).
+ *
+ * web-build-budget (full mode only, L4): `pnpm run perf:web-budget` —
+ * see the Modes section above. Placed after docs-build rather than
+ * interleaved: it's by far the most expensive step (a full Next.js
+ * production build), so it only runs once every cheaper step has already
+ * passed.
  *
  * Stops at the first failing step. Each step prints a clear PASS/FAIL line.
  */
@@ -43,6 +80,23 @@ import { existsSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+// Mode argument (L4): no arg = fast (default, unchanged); "full" = fast +
+// web-build-budget. Anything else is a usage error — see the Modes section
+// in the header comment above.
+const MODE_ARG = process.argv[2];
+if (MODE_ARG !== undefined && MODE_ARG !== "full") {
+  console.error(
+    `gate: unrecognized argument "${MODE_ARG}"\n` +
+      "usage: node scripts/gate.mjs        # fast (default)\n" +
+      "       node scripts/gate.mjs full   # fast + web-build-budget",
+  );
+  process.exit(1);
+}
+const FULL = MODE_ARG === "full";
+
+// FAST STEPS — byte-identical to the array before gate:full existed.
+// Full mode appends to this array below rather than editing it in place,
+// so a step-loss regression is a one-line diff to catch on review.
 const steps = [
   { name: "codegen", run: runCodegen },
   { name: "sdk-drift", run: runSdkDrift },
@@ -58,6 +112,10 @@ const steps = [
   { name: "grep-gates", run: () => runCommand("node", ["scripts/grep-gates.mjs"]) },
   { name: "docs-build", run: () => runCommand("node", ["scripts/docs/build.mjs"]) },
 ];
+
+if (FULL) {
+  steps.push({ name: "web-build-budget", run: () => runCommand("pnpm", ["run", "perf:web-budget"]) });
+}
 
 // On Windows, pnpm/turbo are .cmd shims that Node cannot spawn without a
 // shell (spawnSync ENOENT). Everywhere else a shell would mis-handle paths
