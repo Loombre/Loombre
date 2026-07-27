@@ -23,6 +23,18 @@
   <Fragment>
     <StandardDirectory Id="ProgramFilesFolder">
       <Directory Id="INSTALLFOLDER" Name="Loombre">
+        <!-- ARCHIVED-PAYLOAD MODEL (see Files.wxs's header): the five big
+             trees below (server, worker, web, node, pg) are NOT installed
+             by MSI components — they are the top-level names inside
+             payload.zip (PAYLOADDIR), materialized here by
+             LoombreServiceHost's PayloadExtractor on first service start
+             and removed at uninstall by Package.wxs's cleanup component
+             (util:RemoveFolderEx over the whole install folder). Their
+             Directory Ids remain REAL and load-bearing: Services.wxs's
+             [SERVERDIR]/[WORKERDIR]/[NODEDIR] Formatted-string references
+             resolve exactly these paths, which is what keeps zip layout,
+             extraction output, and service command lines from drifting
+             apart. -->
         <!-- @loombre/server's `tsc` build output + pruned production
              node_modules (staged by the pnpm-deploy step — see
              build-msi.mjs's pnpmDeploy()). Contains dist/main.js, the
@@ -61,6 +73,12 @@
              scripts/fetch-embedded-pg.mjs (same real-CLI /
              placeholder-fallback pattern as FFMPEGDIR). -->
         <Directory Id="PGDIR" Name="pg" />
+        <!-- The single-file archived payload (payload.zip) holding the
+             five big trees above — the ONLY thing the MSI installs for
+             them (Files.wxs PayloadFiles; extracted by
+             LoombreServiceHost, see the block comment at the top of
+             INSTALLFOLDER). -->
+        <Directory Id="PAYLOADDIR" Name="payload" />
         <!-- installers/windows/service-host's self-contained single-file
              win-x64 publish output (LoombreServiceHost.exe) — see
              Services.wxs for why this wrapper exists and is not just
