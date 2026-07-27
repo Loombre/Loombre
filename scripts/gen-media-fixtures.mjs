@@ -350,6 +350,30 @@ function main() {
     ["pcm_s16be"],
   );
 
+  // --- Owner ledger L1: .mts admission (identical mpegts family as the
+  // baseline mpeg2_interlaced_ac3.ts fixture above and the admitted
+  // .m2ts extension) ---
+  //
+  // h264 + aac muxed with the mpegts muxer, passed explicitly via -f
+  // mpegts since ffmpeg cannot infer the right muxer from the unfamiliar
+  // .mts extension (unlike .ts, which it recognizes). Container resolves
+  // to 'ts' — the SAME value the plain mpeg2_interlaced_ac3.ts fixture
+  // above produces — so this entry is placed AFTER that one on purpose:
+  // probe.integration.spec.ts's "genuinely detected as interlaced" test
+  // finds the FIRST manifest entry whose container is 'ts', and that must
+  // stay the interlaced baseline fixture, not this one.
+  encodeIfNeeded(
+    "h264_aac.mts",
+    [
+      "-f", "lavfi", "-i", "testsrc2=size=320x240:rate=25:duration=1",
+      "-f", "lavfi", "-i", "sine=frequency=1000:duration=1",
+      "-c:v", "libx264", "-c:a", "aac", "-ac", "2",
+      "-f", "mpegts",
+    ],
+    { container: "ts", videoCodec: "h264", audioCodec: "aac", channels: 2, interlaced: false },
+    ["libx264", "aac"],
+  );
+
   // hevc 10-bit main10 is optional bonus coverage: only when libx265 is
   // present, feature-detected and skipped gracefully otherwise (per the
   // deliverable's "skip hevc/10-bit variants gracefully when libx265

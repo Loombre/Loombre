@@ -12,12 +12,14 @@
  */
 import { ffmpegAvailableStrict } from "../support/require-ffmpeg.js";
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
 import { extractMediaInfo } from "../../src/probe/extract.js";
 import { resolveFfprobe, runFfprobe } from "../../src/probe/ffprobe.js";
+import { ProbeError } from "../../src/probe/errors.js";
 import type { Container, AudioCodec, VideoCodec } from "../../src/probe/types.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -78,6 +80,13 @@ describe.skipIf(!toolsAvailable)("probe pipeline integration (real ffmpeg/ffprob
     expect(containers.get("audio.aiff")).toBe("aiff");
   });
 
+  // Owner ledger L1: .mts probes to the same Container as .m2ts/.ts
+  // (mpegts family) against REAL ffprobe output.
+  it("the .mts admission (owner ledger L1) probes to the 'ts' Container value", () => {
+    const containers = new Map(manifest.files.map((f) => [f.file, f.container]));
+    expect(containers.get("h264_aac.mts")).toBe("ts");
+  });
+
   it("probes + extracts every manifest entry and matches its declared properties", async () => {
     for (const entry of manifest.files) {
       const filePath = join(MEDIA_DIR, entry.file);
@@ -123,6 +132,34 @@ describe.skipIf(!toolsAvailable)("probe pipeline integration (real ffmpeg/ffprob
     const tsEntry = manifest.files.find((f) => f.container === "ts");
     expect(tsEntry, "expected a .ts fixture in the manifest").toBeDefined();
     expect(tsEntry?.interlaced).toBe(true);
+  });
+});
+
+// Owner ledger L1, adjudication A-5(b) — the honest text-file test chain's
+// probe-layer link, against REAL ffprobe (not the fake-binary fixture
+// ffprobe.spec.ts's own "nonzero-exit" test uses). A plain-text file
+// wearing an admitted video extension (.mts — the extension L1 widened;
+// nothing below is .mts-specific, any admitted extension behaves the
+// same) is exactly what the scanner ingests without complaint (see
+// apps/worker/test/scan/garbage-file-ingestion.spec.ts, A-5a) — this
+// proves the OTHER half of the premise correction: real ffprobe genuinely
+// rejects it with a typed ProbeError('nonzero-exit'), which is what the
+// queue's terminal-failure seam (A-3) and the probe.failed event (A-2)
+// exist to make visible.
+describe.skipIf(!toolsAvailable)("probe pipeline integration: garbage (non-media) file rejection (owner ledger L1, A-5b)", () => {
+  it("real ffprobe rejects a plain-text file wearing an admitted .mts extension with ProbeError('nonzero-exit')", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "loombre-probe-garbage-"));
+    const garbageFile = join(dir, "Fake Camcorder Clip.mts");
+    writeFileSync(garbageFile, "this is not a video file, just plain text pretending to be one\n");
+
+    await expect(runFfprobe(garbageFile)).rejects.toMatchObject({ code: "nonzero-exit" });
+
+    try {
+      await runFfprobe(garbageFile);
+      expect.unreachable();
+    } catch (err) {
+      expect(err).toBeInstanceOf(ProbeError);
+    }
   });
 });
 
