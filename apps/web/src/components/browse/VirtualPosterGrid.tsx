@@ -55,6 +55,14 @@ export interface VirtualPosterGridProps<T> {
   loadingMore: boolean;
   loading: boolean;
   onLoadMore: () => void;
+  /** Non-null once a page-append has failed (useCursorFeed's own
+   *  `loadMoreError`) — pauses the auto-fire below so a persistently
+   *  failing endpoint can't turn into a tight retry loop the moment
+   *  `loadingMore` flips back to false. The caller owns rendering the
+   *  actual retry affordance (outside this component, so the scroll
+   *  container/position survive a failure); passing this prop is only what
+   *  stops the silent auto-retry underneath it. */
+  loadMoreError?: string | null;
   getKey: (item: T) => string;
   renderItem: (item: T, index: number, handlers: CellHandlers) => ReactNode;
   emptyMessage?: string;
@@ -69,6 +77,7 @@ export function VirtualPosterGrid<T>({
   loadingMore,
   loading,
   onLoadMore,
+  loadMoreError = null,
   getKey,
   renderItem,
   emptyMessage = "Nothing here yet.",
@@ -151,10 +160,16 @@ export function VirtualPosterGrid<T>({
   );
 
   useEffect(() => {
+    // `loadMoreError` gate: without it, a failing page-append would clear
+    // `loadingMore` back to false while `hasMore`/`shouldLoadMore` stay
+    // true, and this effect re-fires on every render that condition still
+    // holds — an unbounded retry storm against a failing endpoint. Retrying
+    // is now the caller's explicit job (see `loadMoreError` doc above).
+    if (loadMoreError) return;
     if (shouldLoadMore({ endRow: range.endRow, loadedRows: totalRows, hasMore, loadingMore })) {
       onLoadMore();
     }
-  }, [range.endRow, totalRows, hasMore, loadingMore, onLoadMore]);
+  }, [range.endRow, totalRows, hasMore, loadingMore, onLoadMore, loadMoreError]);
 
   const visibleIndices = useMemo(
     () => rangeToItemIndices(range, columns, items.length),

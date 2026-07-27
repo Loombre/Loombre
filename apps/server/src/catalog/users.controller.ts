@@ -8,7 +8,7 @@
 
 import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Query, Req } from "@nestjs/common";
 import {
-  createUserAdmin,
+  createUserAdminAndEmit,
   deleteUserAdmin,
   getUserById,
   getUserSettings,
@@ -102,13 +102,21 @@ export class UsersController {
     }
 
     const passwordHash = await this.hashService.hash(body["password"]);
-    const created = await createUserAdmin(this.dbProvider.db, {
+    // createUserAdminAndEmit, never the non-emitting createUserAdmin: the
+    // `user.created` outbox row (docs/PLAN.md §4.3) must be written in the
+    // SAME transaction as the users row. actorUserId is the authenticated
+    // admin resolved by requireAdmin above — without it the event would be
+    // attributed to the newly created user instead of its creator
+    // (@loombre/db CreateUserAdminAndEmitInput's documented fallback, which
+    // exists for first-run onboarding only).
+    const created = await createUserAdminAndEmit(this.dbProvider.db, {
       username: body["username"],
       email: body["email"],
       passwordHash,
       isAdmin: body["isAdmin"] === true,
       maxContentRating: typeof body["maxContentRating"] === "string" ? body["maxContentRating"] : null,
       nowMs: clockNowMs(),
+      actorUserId: req.user!.userId,
     });
     return mapUser(created);
   }
@@ -169,6 +177,11 @@ export class UsersController {
     // PUT /users/me/restricted) is backed by real storage. Echoing the
     // current settings back keeps this endpoint idempotent-safe rather than
     // silently discarding a client's write with no persistence at all.
+    // No UI offers these fields while that holds — the web Playback-
+    // preferences form was deleted for reporting a green "Saved" over this
+    // no-op (apps/web/src/components/settings/sections/AccountSection.tsx,
+    // cleanup 3); restore both ends together when user_settings.prefs is
+    // wired for real (STATE.md owner ledger item 6).
     const settings = await getUserSettings(this.dbProvider.db, req.user!.userId);
     return mapSettings(settings);
   }

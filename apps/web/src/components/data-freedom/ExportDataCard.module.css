@@ -1,0 +1,47 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+
+/* Loombre :: apps/web/src/components/data-freedom/ExportDataCard.module.css
+ *
+ * Same row/section recipe as components/settings/sections/AccountSection.
+ * module.css (.section/.sectionTitle/.sectionBody/.actions/.status) — kept
+ * as its own module rather than importing that one so this new directory
+ * has no dependency on files outside it.
+ */
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.sectionTitle {
+  margin: 0;
+  font-size: var(--text-lg);
+  font-weight: var(--weight-semibold);
+}
+
+.sectionBody {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-sm);
+}
+
+.status {
+  font-size: var(--text-xs);
+  color: var(--muted);
+}
+
+.status[data-tone="error"] {
+  color: var(--color-danger);
+}
+
+.status[data-tone="success"] {
+  color: var(--color-success);
+}

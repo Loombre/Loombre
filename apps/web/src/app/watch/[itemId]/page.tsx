@@ -32,6 +32,12 @@ export default function WatchPage(): React.JSX.Element | null {
 
   const itemId = params.itemId;
   const hintType = searchParams.get("type") ?? undefined;
+  // Which VERSION of the item to play (components/detail/VersionRow.tsx
+  // links here with its own row's file id). Absent = the item's primary
+  // media_files row, which is PlanRequest's own documented default
+  // (packages/contract/openapi.yaml) — so a plain /watch/{itemId} link
+  // behaves exactly as before.
+  const mediaFileId = searchParams.get("mediaFileId") ?? undefined;
 
   useEffect(() => {
     const store = getAuthStore();
@@ -48,7 +54,13 @@ export default function WatchPage(): React.JSX.Element | null {
         return;
       }
       if (item.itemType === "track") {
-        musicPlayer.playTrack({ itemId: item.id, title: item.title, subtitle: item.subtitle, durationMs: item.durationMs });
+        musicPlayer.playTrack({
+          itemId: item.id,
+          title: item.title,
+          subtitle: item.subtitle,
+          durationMs: item.durationMs,
+          ...(mediaFileId ? { mediaFileId } : {}),
+        });
         router.back();
         return;
       }
@@ -63,10 +75,17 @@ export default function WatchPage(): React.JSX.Element | null {
     // (MusicPlayerProvider), so only the primitives below need to be
     // dependencies — including the whole context value here would re-run
     // this on every position tick while something else is playing.
-  }, [itemId, hintType, router, musicPlayer.playTrack, musicPlayer.playQueue]);
+  }, [itemId, hintType, mediaFileId, router, musicPlayer.playTrack, musicPlayer.playQueue]);
 
   if (routed === "video") {
-    return <VideoPlayer itemId={itemId} onBack={() => router.back()} {...(hintType ? { hintType } : {})} />;
+    return (
+      <VideoPlayer
+        itemId={itemId}
+        onBack={() => router.back()}
+        {...(hintType ? { hintType } : {})}
+        {...(mediaFileId ? { mediaFileId } : {})}
+      />
+    );
   }
   return null;
 }

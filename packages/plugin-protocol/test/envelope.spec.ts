@@ -245,6 +245,45 @@ describe("parseLppManifest", () => {
     });
   });
 
+  describe("configSchema default consistency", () => {
+    it("rejects a default that violates its own field's enum/range", () => {
+      const raw = {
+        ...manifestFixture(),
+        configSchema: {
+          type: "object",
+          properties: {
+            mode: { type: "string", enum: ["a", "b"], default: "c" },
+            count: { type: "number", minimum: 10, maximum: 20, default: 999 },
+          },
+          additionalProperties: false,
+        },
+      };
+      const result = parseLppManifest(raw);
+      expect(result.ok).toBe(false);
+      if (!result.ok && result.stage === "config-schema-default-consistency") {
+        expect(result.paths.sort()).toEqual(["count", "mode"]);
+      } else {
+        throw new Error(`expected stage 'config-schema-default-consistency', got ${JSON.stringify(result)}`);
+      }
+    });
+
+    it("still accepts defaults that satisfy their own constraints", () => {
+      const raw = {
+        ...manifestFixture(),
+        configSchema: {
+          type: "object",
+          properties: {
+            mode: { type: "string", enum: ["a", "b"], default: "b" },
+            count: { type: "number", minimum: 10, maximum: 20, default: 12 },
+          },
+          additionalProperties: false,
+        },
+      };
+      const result = parseLppManifest(raw);
+      expect(result.ok, JSON.stringify(!result.ok ? result : undefined)).toBe(true);
+    });
+  });
+
   // M-2 fix wave regression test — the exact probe3.mjs scenario: a
   // depth-1000 configSchema (well under LPP_MANIFEST_MAX_BYTES) used to
   // raise `RangeError: Maximum call stack size exceeded` out of
@@ -265,6 +304,28 @@ describe("parseLppManifest", () => {
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.stage).toBe("config-schema-bounds");
+      }
+    });
+
+    // A malformed `type` is ordinary (not adversarial) third-party input, and
+    // the bounds walker used to skip the whole subtree under it — leaving the
+    // depth-1000 tree to zod, whose RangeError only the "defense in depth"
+    // catch absorbed. A NON-EMPTY violation path is the discriminator: the
+    // catch synthesizes `path: ""`.
+    it.each([
+      ["typo'd", "objectt"],
+      ["absent", undefined],
+    ])("a depth-1000 configSchema whose root `type` is %s is caught by the bounds check itself", (_label, rootType) => {
+      const configSchema: Record<string, unknown> = { ...deeplyNestedConfigSchema(1000) };
+      if (rootType === undefined) delete configSchema.type;
+      else configSchema.type = rootType;
+      const result = parseLppManifest({ ...manifestFixture(), configSchema });
+      expect(result.ok).toBe(false);
+      if (!result.ok && result.stage === "config-schema-bounds") {
+        expect(result.violation.reason).toBe("max-depth-exceeded");
+        expect(result.violation.path).not.toBe("");
+      } else {
+        throw new Error(`expected stage 'config-schema-bounds', got ${JSON.stringify(result)}`);
       }
     });
 

@@ -1,11 +1,13 @@
 {
-  "scenario": "qsv route, opencl tone-map (§8.3's preferred half of qsv/vaapi -> opencl(else vulkan))",
+  "scenario": "qsv route, opencl tone-map (§8.3's preferred half of qsv/vaapi -> opencl(else vulkan)) — pure-hw route (a): -hwaccel_output_format qsv pins the decode surface",
   "args": [
     "-hide_banner",
     "-loglevel",
     "warning",
     "-nostdin",
     "-hwaccel",
+    "qsv",
+    "-hwaccel_output_format",
     "qsv",
     "-i",
     "{INPUT}",

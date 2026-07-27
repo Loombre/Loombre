@@ -28,6 +28,7 @@ import type { INestApplication } from "@nestjs/common";
 import { createDb, ensureTestDatabase, getUserByUsername, updateRestrictedSettings } from "@loombre/db";
 import { AppModule } from "../src/app.module.js";
 import { SettingsService } from "../src/settings/settings.service.js";
+import { HashService } from "../src/common/hash.service.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DB_PKG_ROOT = path.resolve(__dirname, "../../../packages/db");
@@ -401,6 +402,72 @@ describe("PUT /users/me/restricted (self-service opt-in + PIN, gate 3)", () => {
       .send({ optIn: true, pin: "1234" });
     expect(res.status).toBe(401);
   });
+
+  // The contract constrains RestrictedSettingsUpdate.pin to exactly 4
+  // digits because PinModal — the ONE unlock surface — can only ever enter
+  // 4. A server that stored a 5-digit PIN locked that user out of
+  // restricted content permanently.
+  it("a new PIN that is not exactly 4 digits -> 422 (would be unenterable at unlock)", async () => {
+    await resetCasualRestrictedSettings();
+    const casual = await loginAs("casual", "loombre-seed-casual");
+
+    for (const badPin of ["12345", "123", "", "12a4", "12 4"]) {
+      const res = await request(app.getHttpServer())
+        .put("/users/me/restricted")
+        .set("Authorization", `Bearer ${casual.accessToken}`)
+        .send({ optIn: true, pin: badPin });
+      expect(res.status, `pin=${JSON.stringify(badPin)}`).toBe(422);
+      expect(res.headers["content-type"]).toMatch(/^application\/problem\+json/);
+    }
+
+    // ...and nothing was stored by any of those attempts.
+    const stillNoPin = await request(app.getHttpServer())
+      .put("/users/me/restricted")
+      .set("Authorization", `Bearer ${casual.accessToken}`)
+      .send({ optIn: true, pin: "4242" });
+    expect(stillNoPin.status).toBe(200);
+    expect(stillNoPin.body).toEqual({ optIn: true, hasPin: true, unlockedUntilMs: null });
+  });
+
+  // THE recovery path for an install that stored a non-conforming PIN
+  // before the rule existed: `currentPin` proves an ALREADY-STORED secret
+  // and is deliberately NOT length-constrained, so such a user can still
+  // rotate to a conforming PIN (and still opt out). Constraining it would
+  // leave them with no way out at all.
+  it("currentPin is NOT length-constrained — a legacy longer PIN can still be rotated away", async () => {
+    await resetCasualRestrictedSettings();
+    const casual = await loginAs("casual", "loombre-seed-casual");
+    const user = await getUserByUsername(rawDb, "casual");
+
+    // Simulate a pre-rule install: a 6-digit PIN already in the column.
+    const legacyHash = await app.get(HashService).hash("543210");
+    await updateRestrictedSettings(rawDb, {
+      userId: user!.id,
+      optIn: true,
+      pinHash: legacyHash,
+      updatedAtMs: Date.now(),
+    });
+
+    const rotated = await request(app.getHttpServer())
+      .put("/users/me/restricted")
+      .set("Authorization", `Bearer ${casual.accessToken}`)
+      .send({ optIn: true, pin: "1234", currentPin: "543210" });
+    expect(rotated.status).toBe(200);
+    expect(rotated.body.hasPin).toBe(true);
+
+    // The rotation really took: the old long PIN no longer proves anything.
+    const staleProof = await request(app.getHttpServer())
+      .put("/users/me/restricted")
+      .set("Authorization", `Bearer ${casual.accessToken}`)
+      .send({ optIn: false, currentPin: "543210" });
+    expect(staleProof.status).toBe(422);
+
+    const optOut = await request(app.getHttpServer())
+      .put("/users/me/restricted")
+      .set("Authorization", `Bearer ${casual.accessToken}`)
+      .send({ optIn: false, currentPin: "1234" });
+    expect(optOut.status).toBe(200);
+  });
 });
 
 describe("POST /restricted/unlock + /restricted/lock (gate 5)", () => {
@@ -459,5 +526,25 @@ describe("POST /restricted/unlock + /restricted/lock (gate 5)", () => {
     expect(unlockRes.status).toBe(401);
     const lockRes = await request(app.getHttpServer()).post("/restricted/lock").send();
     expect(lockRes.status).toBe(401);
+  });
+
+  // UnlockRequest.pin carries the same exactly-4-digits constraint as
+  // RestrictedSettingsUpdate.pin: 422 is a REQUEST-SHAPE failure (the value
+  // could not be a PIN), distinct from the 401 a well-formed-but-wrong PIN
+  // gets.
+  it("a pin that is not exactly 4 digits -> 422, not 401", async () => {
+    await setRestrictedEnabled("true");
+    const admin = await loginAs("admin", "loombre-seed-admin");
+
+    for (const badPin of ["00000", "000", "", "00a0"]) {
+      const res = await request(app.getHttpServer())
+        .post("/restricted/unlock")
+        .set("Authorization", `Bearer ${admin.accessToken}`)
+        .send({ pin: badPin });
+      expect(res.status, `pin=${JSON.stringify(badPin)}`).toBe(422);
+      expect(res.headers["content-type"]).toMatch(/^application\/problem\+json/);
+    }
+
+    await setRestrictedEnabled(undefined);
   });
 });

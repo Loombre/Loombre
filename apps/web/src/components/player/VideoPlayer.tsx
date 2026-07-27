@@ -68,6 +68,12 @@ const IDLE_HIDE_MS = 3000;
 export interface VideoPlayerProps {
   itemId: string;
   hintType?: string;
+  /** The specific media_files row to play, when the user picked a VERSION
+   *  rather than the item itself (components/detail/VersionRow.tsx's
+   *  `?mediaFileId=` link -> app/watch/[itemId]/page.tsx). Omitted means
+   *  "the item's primary media_files row", which is PlanRequest's own
+   *  documented default (packages/contract/openapi.yaml). */
+  mediaFileId?: string;
   onBack: () => void;
 }
 
@@ -79,7 +85,7 @@ function readBuffered(video: HTMLVideoElement): BufferedRange[] {
   return ranges;
 }
 
-export function VideoPlayer({ itemId, hintType, onBack }: VideoPlayerProps): React.JSX.Element {
+export function VideoPlayer({ itemId, hintType, mediaFileId, onBack }: VideoPlayerProps): React.JSX.Element {
   const [phase, setPhase] = useState<Phase>("loading");
   const [item, setItem] = useState<ItemSummary | null>(null);
   const [unavailableReasons, setUnavailableReasons] = useState<PlanReason[]>([]);
@@ -153,11 +159,15 @@ export function VideoPlayer({ itemId, hintType, onBack }: VideoPlayerProps): Rea
   // REAL session. Only a genuine 409 (unplayable)/422/429 renders
   // UnavailableScreen now; direct-stream/remux/transcode all proceed to the
   // attach-strategy effects below.
+  //
+  // `mediaFileId` pins the session to the VERSION the user actually picked
+  // (undefined = the item's primary file, PlanRequest's own default) — the
+  // same third argument the fallback-accept path below already uses.
   useEffect(() => {
     let cancelled = false;
 
     async function run(): Promise<void> {
-      const result = await createPlaybackSession(itemId);
+      const result = await createPlaybackSession(itemId, "stream", mediaFileId);
       if (cancelled) return;
       if (!result.ok) {
         setUnavailableReasons(resolveUnavailableReasons(result.status, result.wouldBeReasons));
@@ -186,7 +196,7 @@ export function VideoPlayer({ itemId, hintType, onBack }: VideoPlayerProps): Rea
     return () => {
       cancelled = true;
     };
-  }, [itemId]);
+  }, [itemId, mediaFileId]);
 
   // ── Session end on unmount ──────────────────────────────────────────────
   useEffect(() => {
@@ -405,17 +415,38 @@ export function VideoPlayer({ itemId, hintType, onBack }: VideoPlayerProps): Rea
     return () => heartbeatRef.current?.stop();
   }, [session, itemId]);
 
+  // ── Teardown flush ───────────────────────────────────────────────────────
+  // `pagehide` alone is not enough: the /watch route's Back control is an
+  // in-app router.back() (app/watch/[itemId]/page.tsx), which unmounts this
+  // tree WITHOUT any document teardown, so nothing fired and everything
+  // since the last ~10s heartbeat tick was lost — including, for a watch
+  // shorter than one interval, the whole position even though it clears
+  // isWorthResuming's 5s bar. One flush body, two triggers. Assigned during
+  // render (same idiom as awaitingResumeChoiceRef above) so the unmount
+  // effect below can keep empty deps and fire exactly once, at real
+  // teardown, rather than on every `session` change.
+  const flushProgressRef = useRef<() => void>(() => undefined);
+  flushProgressRef.current = (): void => {
+    // Nothing ever played (abandoned load, or a fallback re-session that
+    // never started) — a zero-position row would be a lie, not a save.
+    if (!session || positionRef.current <= 0) return;
+    reportProgressOnUnload(
+      { serverUrl, itemId, sessionId: session.id },
+      { positionMs: positionRef.current, durationMs: durationRef.current, state: progressStateRef.current },
+    );
+  };
+
   useEffect(() => {
     function onPageHide(): void {
-      if (!session) return;
-      reportProgressOnUnload(
-        { serverUrl, itemId, sessionId: session.id },
-        { positionMs: positionRef.current, durationMs: durationRef.current, state: progressStateRef.current },
-      );
+      flushProgressRef.current();
     }
     window.addEventListener("pagehide", onPageHide);
     return () => window.removeEventListener("pagehide", onPageHide);
-  }, [session, itemId, serverUrl]);
+  }, []);
+
+  useEffect(() => {
+    return () => flushProgressRef.current();
+  }, []);
 
   // ── Video element event wiring ──────────────────────────────────────────
   useEffect(() => {
@@ -750,6 +781,7 @@ export function VideoPlayer({ itemId, hintType, onBack }: VideoPlayerProps): Rea
             // exclusive file list, so this is deliberately the only touch.
             plan={session?.plan ?? null}
             videoElement={videoRef.current}
+            directPlay={attachStrategy === "direct-play"}
             onBack={onBack}
             onTogglePlay={togglePlay}
             onSeek={seek}

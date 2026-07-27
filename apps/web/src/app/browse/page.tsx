@@ -140,7 +140,7 @@ function BrowseContent(): React.JSX.Element {
   }, [libraries, activeLibrary, router]);
 
   const resetKey = activeLibrary ? `${activeLibrary.id}:${sort}` : null;
-  const { items, hasMore, loading, loadingMore, error, loadMore } = useCursorFeed<BrowseCard>(
+  const { items, hasMore, loading, loadingMore, error, loadMoreError, loadMore } = useCursorFeed<BrowseCard>(
     (cursor) => {
       if (!activeLibrary) return Promise.resolve({ items: [], nextCursor: null });
       return fetchLibraryPage(activeLibrary, cursor, sort);
@@ -184,32 +184,48 @@ function BrowseContent(): React.JSX.Element {
           ariaLabel="Library items"
         />
       ) : (
-        <VirtualPosterGrid<BrowseCard>
-          items={items}
-          hasMore={hasMore}
-          loadingMore={loadingMore}
-          loading={loading}
-          onLoadMore={loadMore}
-          getKey={(item) => item.id}
-          emptyMessage={`${activeLibrary.name} is empty — scan this library to add items.`}
-          ariaLabel={`${activeLibrary.name} items`}
-          renderItem={(item, _index, handlers) => (
-            <PosterCell
-              serverUrl={serverUrl}
-              accessToken={accessToken}
-              entityType={item.entityType}
-              entityId={item.id}
-              href={item.href}
-              title={item.title}
-              subtitle={item.subtitle}
-              blurhash={item.blurhash}
-              tabIndex={handlers.tabIndex}
-              cellRef={handlers.cellRef}
-              onFocus={handlers.onFocus}
-              nowPlaying={nowPlayingIds.has(item.id)}
-            />
+        <>
+          <VirtualPosterGrid<BrowseCard>
+            items={items}
+            hasMore={hasMore}
+            loadingMore={loadingMore}
+            loading={loading}
+            loadMoreError={loadMoreError}
+            onLoadMore={loadMore}
+            getKey={(item) => item.id}
+            emptyMessage={`${activeLibrary.name} is empty — scan this library to add items.`}
+            ariaLabel={`${activeLibrary.name} items`}
+            renderItem={(item, _index, handlers) => (
+              <PosterCell
+                serverUrl={serverUrl}
+                accessToken={accessToken}
+                entityType={item.entityType}
+                entityId={item.id}
+                href={item.href}
+                title={item.title}
+                subtitle={item.subtitle}
+                blurhash={item.blurhash}
+                tabIndex={handlers.tabIndex}
+                cellRef={handlers.cellRef}
+                onFocus={handlers.onFocus}
+                nowPlaying={nowPlayingIds.has(item.id)}
+              />
+            )}
+          />
+          {/* Sits outside VirtualPosterGrid on purpose (confirmed[36]) — a
+              failed page-append must never unmount the grid: that's what
+              would discard everything already loaded and the user's scroll
+              position. `loadMore` is already a valid retry (cursor/hasMore
+              are untouched by a failed loadMore in useCursorFeed). */}
+          {loadMoreError && (
+            <div className={styles.loadMoreError}>
+              {loadMoreError}
+              <button type="button" className={styles.retryButton} onClick={loadMore}>
+                Retry
+              </button>
+            </div>
           )}
-        />
+        </>
       )}
     </div>
   );

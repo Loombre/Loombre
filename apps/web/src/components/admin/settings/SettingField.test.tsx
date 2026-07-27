@@ -13,19 +13,35 @@
 // Every assertion here is about LOCAL state (dirty/validation/canSave/
 // locked rendering), which never touches the network to compute.
 //
+// The one exception is the "Reset-to-default dirty-clearing" describe
+// block below, which mocks ../../../lib/api-client.js exactly the way
+// AccountSection.test.tsx already does for this same codebase — that
+// interaction is specifically about what happens to local state AFTER a
+// submit resolves, which is unobservable without letting one resolve.
+//
 // No component test harness exists beyond components/ui/test-render.tsx
 // (also this codebase's established convention — no @testing-library/react
 // dependency); reused here unchanged.
 
 import { act } from "react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { components } from "@loombre/sdk";
-import { SettingField } from "./SettingField.js";
 import type { JsonSchemaLike } from "../../../lib/settings-schema-widget.js";
 import { renderIntoBody, type TestRender } from "../../ui/test-render.js";
 
 type AdminSettingSchemaEntry = components["schemas"]["AdminSettingSchemaEntry"];
 type UpdateSettingResponse = components["schemas"]["UpdateSettingResponse"];
+
+const apiPutMock = vi.fn();
+
+class FakeApiError extends Error {}
+
+vi.mock("../../../lib/api-client.js", () => ({
+  apiPut: (...args: unknown[]) => apiPutMock(...args),
+  LoombreApiError: FakeApiError,
+}));
+
+const { SettingField } = await import("./SettingField.js");
 
 function noop(_result: UpdateSettingResponse): void {
   // Tests never click Save, so this is never invoked — present only to
@@ -115,6 +131,10 @@ const PINNED_RATE_LOGIN_ENTRY: AdminSettingSchemaEntry = {
 
 describe("SettingField — Phosphor registry card fidelity", () => {
   let view: TestRender | null = null;
+
+  beforeEach(() => {
+    apiPutMock.mockReset();
+  });
 
   afterEach(() => {
     view?.unmount();
@@ -293,6 +313,44 @@ describe("SettingField — Phosphor registry card fidelity", () => {
       const buttons = Array.from(view.container.querySelectorAll("button"));
       const save = buttons.find((b) => b.textContent === "Save")!;
       expect(save.hasAttribute("disabled")).toBe(true);
+    });
+  });
+
+  describe("Reset-to-default clears dirty (confirmed[31] regression)", () => {
+    it("editing a field then clicking Reset clears dirty, so a later external value update is applied instead of frozen", async () => {
+      apiPutMock.mockResolvedValue({
+        key: MAX_TRANSCODES_ENTRY.key,
+        value: MAX_TRANSCODES_ENTRY.default,
+        source: "default",
+        requiresRestart: false,
+        restartPending: false,
+      } satisfies UpdateSettingResponse);
+
+      view = renderIntoBody(<SettingField entry={MAX_TRANSCODES_ENTRY} value={4} source="database" onChanged={noop} />);
+      const input = view.container.querySelector('input[type="number"]') as HTMLInputElement;
+
+      // Dirty the field mid-edit — README: Reset must be able to discard an
+      // in-progress draft, not just revert a stored override.
+      act(() => setNativeValue(input, "10"));
+      expect(input.value).toBe("10");
+
+      const reset = Array.from(view.container.querySelectorAll("button")).find((b) => b.textContent?.includes("Reset"))!;
+      await act(async () => {
+        reset.click();
+      });
+      await act(async () => {}); // flush the .then() chained onto submit()'s promise
+
+      expect(apiPutMock).toHaveBeenCalledTimes(1);
+      expect(input.value).toBe(String(MAX_TRANSCODES_ENTRY.default));
+
+      // The regression: with `dirty` stuck true, the resync effect's
+      // `if (dirty) return;` guard drops every subsequent external value —
+      // a live settings.updated refetch, another admin's write, a "reset
+      // category" bulk action — and the field is frozen on this local
+      // snapshot forever. Once Reset correctly clears dirty, a new `value`
+      // prop (standing in for that refetch) must reach the control again.
+      view.rerender(<SettingField entry={MAX_TRANSCODES_ENTRY} value={7} source="database" onChanged={noop} />);
+      expect((view.container.querySelector('input[type="number"]') as HTMLInputElement).value).toBe("7");
     });
   });
 });

@@ -1,11 +1,13 @@
 {
-  "scenario": "nvenc route, cuda tone-map — rung matches source height, isolates the tonemap filter alone",
+  "scenario": "nvenc route, cuda tone-map — pure-hw route (a): -hwaccel_output_format cuda keeps decode on the cuda surface for tonemap_cuda (rung matches source height, isolates the tonemap filter alone)",
   "args": [
     "-hide_banner",
     "-loglevel",
     "warning",
     "-nostdin",
     "-hwaccel",
+    "cuda",
+    "-hwaccel_output_format",
     "cuda",
     "-i",
     "{INPUT}",

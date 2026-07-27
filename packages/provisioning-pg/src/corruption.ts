@@ -69,6 +69,18 @@ export function classifyStartupFailureLog(log: string): CorruptionReason {
   return "unknown";
 }
 
+/** Pure: collapses a typed CorruptionReason into ProvisioningStatus's single
+ *  free-text `detail` field, reason-led. The FROZEN v1 status contract has no
+ *  typed slot for the reason (PROVISIONING_STATUS_SCHEMA is
+ *  additionalProperties: false), so the closed-enum token survives that
+ *  collapse only as a stable leading `"<reason>: "` prefix — which is what
+ *  keeps it recoverable by a consumer, per corruption-report.ts's binding
+ *  "detail is supplementary free text, never a substitute for reason". */
+export function formatCorruptDetail(reason: CorruptionReason, body?: string): string {
+  const text = body?.trim();
+  return text ? `${reason}: ${text}` : reason;
+}
+
 function nowMs(): number {
   return Date.now();
 }

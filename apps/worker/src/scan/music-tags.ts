@@ -29,8 +29,10 @@ export interface ParsedTags {
 export type TagReader = (absPath: string) => Promise<ParsedTags | null>;
 
 /** Real implementation: music-metadata's parseFile(). Returns null (never
- * throws) when tags are missing/unreadable/corrupt — the caller falls back
- * to parseMusicPath in that case, per P1.4's documented precedence. */
+ * throws) when tags are missing/unreadable/corrupt, and a partially
+ * populated object (null per absent field) when only some tags are present
+ * — the caller fills every null field from parseMusicPath, per P1.4's
+ * documented per-field precedence. */
 export const readTagsWithMusicMetadata: TagReader = async (absPath) => {
   try {
     const metadata = await parseFile(absPath);

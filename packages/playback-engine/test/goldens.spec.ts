@@ -3,7 +3,9 @@
  * Golden-file suite for src/args/builder.ts (docs/PLAYBACK.md §6, Phase 3
  * §11 step 4's 25 scenarios + step 7b fix F4's two vaapi burn-in scenarios
  * + the step-7 owner-smoke VT tone-map real-execution fix's hybrid
- * scenario = exactly 28 scenario files under test/goldens/
+ * scenario + the four scenarios that landed with interpretation D's
+ * generalization to every §8.3 hw backend = exactly 32 scenario files
+ * under test/goldens/
  * (test/goldens/scenarios.ts constructs the inputs in test
  * code; test/goldens/<id>.json are the checked-in snapshots — full deep
  * equality, never a partial/subset match). "Golden-file tests snapshot the
@@ -36,9 +38,9 @@ function loadSnapshot(id: string): GoldenSnapshot {
   return JSON.parse(raw) as GoldenSnapshot;
 }
 
-describe("ffmpeg arg builder goldens (docs/PLAYBACK.md §6, exactly 28 scenarios)", () => {
-  it("exactly 28 scenarios are defined (step 4's 25 + step 7b F4's two vaapi burn-in goldens + the VT tone-map hybrid golden)", () => {
-    expect(GOLDEN_SCENARIOS).toHaveLength(28);
+describe("ffmpeg arg builder goldens (docs/PLAYBACK.md §6, exactly 32 scenarios)", () => {
+  it("exactly 32 scenarios are defined (step 4's 25 + step 7b F4's two vaapi burn-in goldens + the VT tone-map hybrid golden + interpretation D's four backend-agnostic hw tone-map goldens)", () => {
+    expect(GOLDEN_SCENARIOS).toHaveLength(32);
   });
 
   it("every scenario id is unique", () => {

@@ -193,7 +193,7 @@ describe("AlbumDetailScreen", () => {
     installApiGetMock();
     view = renderScreen(
       makePlayer({
-        current: { entryId: "e1", itemId: "t1", title: "Sodium Glow", subtitle: null, albumId: "album-1", durationMs: 200_000, blurhash: null },
+        current: { entryId: "e1", itemId: "t1", mediaFileId: null, title: "Sodium Glow", subtitle: null, albumId: "album-1", durationMs: 200_000, blurhash: null },
         isPlaying: true,
       }),
     );
@@ -207,7 +207,7 @@ describe("AlbumDetailScreen", () => {
     installApiGetMock();
     view = renderScreen(
       makePlayer({
-        current: { entryId: "e1", itemId: "other-track", title: "Other", subtitle: null, albumId: "some-other-album", durationMs: 200_000, blurhash: null },
+        current: { entryId: "e1", itemId: "other-track", mediaFileId: null, title: "Other", subtitle: null, albumId: "some-other-album", durationMs: 200_000, blurhash: null },
         isPlaying: true,
       }),
     );

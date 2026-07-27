@@ -7,9 +7,10 @@
 //   - decision === 'direct-play'  -> EXACTLY the Phase 2 path (no
 //     admission check, no job — createPlaybackSession itself sets initial
 //     status 'active').
-//   - any OTHER decision (direct-stream/remux/transcode) -> admission
-//     control first (429 'transcode-slots-exhausted' when the global
-//     active-ish-transcode-session count already meets the resolved
+//   - any OTHER decision (direct-stream/remux/transcode) -> creation runs
+//     through transcode-admission.ts's gate, which counts and inserts in
+//     one critical section (429 'transcode-slots-exhausted' when the
+//     global active-ish-transcode-session count already meets the resolved
 //     policy's cap); a genuinely UNPLAYABLE transcode plan (empty
 //     ffmpegArgs — tone-map-refused-by-policy or a degenerate empty
 //     ladder) is a 409 'media-unplayable' carrying the plan's own reasons
@@ -30,7 +31,8 @@
 // only ever changes the outcome of `activeCount >= cap` for a brand-new
 // POST here — it can never reach back and touch a playback_sessions row
 // that already exists, since nothing in this handler (or anywhere else)
-// re-evaluates the cap against an existing row after creation.
+// re-evaluates the cap against an existing row after creation (the gate
+// takes the cap as a per-request argument for exactly that reason).
 
 import { Body, Controller, Delete, Get, HttpCode, Param, Post, Req } from "@nestjs/common";
 import { plan } from "@loombre/playback-engine";
@@ -56,6 +58,7 @@ import { parsePlanRequestBody } from "./plan-request.js";
 import { assemblePlanInput } from "./plan-assembly.js";
 import { UnplayableMediaException } from "./unplayable-media.exception.js";
 import { TranscodeSlotsExhaustedException } from "./transcode-slots-exhausted.exception.js";
+import { transcodeAdmissionGate } from "./transcode-admission.js";
 import { toContractPlaybackSession } from "./session-plan.js";
 import { cleanupDirectPlaySubtitleStagingDir } from "./direct-play-subs-cleanup.js";
 
@@ -115,25 +118,38 @@ export class PlaybackSessionsController {
       if (isUnplayable) {
         throw new UnplayableMediaException(planResult.reasons, req.originalUrl);
       }
-
-      const activeCount = await countActiveTranscodeSessions(this.dbProvider.db);
-      if (activeCount >= planInput.policy.maxSimultaneousTranscodes) {
-        throw new TranscodeSlotsExhaustedException(req.originalUrl);
-      }
     }
 
-    const nowMs = clockNowMs();
-    const session = await createPlaybackSession(this.dbProvider.db, ctx, {
-      itemId: assembly.itemId,
-      fileId: assembly.fileId,
-      deviceId,
-      // The `selection` sidecar key is REQUIRED, not part of the engine's
-      // own §5 output (apps/worker/src/transcode/plan-shape.ts's header —
-      // the seek-restart path needs it back to regenerate ffmpeg args).
-      plan: { ...planResult, selection: planInput.selection },
-      engineVersion: planResult.engineVersion,
-      nowMs,
-    });
+    const create = () =>
+      createPlaybackSession(this.dbProvider.db, ctx, {
+        itemId: assembly.itemId,
+        fileId: assembly.fileId,
+        deviceId,
+        // The `selection` sidecar key is REQUIRED, not part of the engine's
+        // own §5 output (apps/worker/src/transcode/plan-shape.ts's header —
+        // the seek-restart path needs it back to regenerate ffmpeg args).
+        plan: { ...planResult, selection: planInput.selection },
+        engineVersion: planResult.engineVersion,
+        nowMs: clockNowMs(),
+      });
+
+    // Direct-play creates straight through (it occupies no slot); every
+    // other decision goes through the gate, which counts AND inserts inside
+    // ONE critical section — see transcode-admission.ts's header for why a
+    // standalone pre-check here was a check-then-act race that let the cap
+    // be exceeded.
+    const admission =
+      planResult.decision === "direct-play"
+        ? ({ admitted: true, created: await create() } as const)
+        : await transcodeAdmissionGate.admit({
+            cap: planInput.policy.maxSimultaneousTranscodes,
+            countActive: () => countActiveTranscodeSessions(this.dbProvider.db),
+            create,
+          });
+    if (!admission.admitted) {
+      throw new TranscodeSlotsExhaustedException(req.originalUrl);
+    }
+    const session = admission.created;
     if (!session) {
       throw notFound("Item or media file not found.", req.originalUrl);
     }

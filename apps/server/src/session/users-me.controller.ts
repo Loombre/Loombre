@@ -5,6 +5,13 @@
 // opt-in + PIN management. There is no admin path here by construction —
 // the route has no user-id param, it always acts on the caller from the
 // AuthGuard-attached `req.user`.
+//
+// A NEW pin must match the contract's `^[0-9]{4}$` exactly (pin-format.ts —
+// read its header for why: the unlock UI can only ever enter 4 digits, so
+// storing any other length is a permanent lockout). `currentPin` is NOT
+// format-checked: it proves an already-stored secret that may predate the
+// rule, and this endpoint is that user's only route back to a conforming
+// PIN. Both are still checked for non-emptiness.
 
 import { Body, Controller, Put, Req } from "@nestjs/common";
 import { getUserSettings, updateRestrictedSettings } from "@loombre/db";
@@ -13,6 +20,7 @@ import { unprocessableEntity } from "../gateway/problem.exception.js";
 import type { AuthenticatedRequest } from "../gateway/auth.guard.js";
 import { DbProvider } from "../common/db.provider.js";
 import { HashService } from "../common/hash.service.js";
+import { PIN_LENGTH, isValidNewPin } from "./pin-format.js";
 
 interface RestrictedSettingsUpdateBody {
   optIn?: unknown;
@@ -56,7 +64,17 @@ export class UsersMeController {
     const currentlyOptedIn = current?.restricted_opt_in ?? false;
     const currentPinHash = current?.restricted_pin_hash ?? null;
 
-    const pin = isNonEmptyString(body.pin) ? body.pin : undefined;
+    // `pin` is validated whenever the key is PRESENT — not only on the
+    // branches that go on to hash it — so a malformed value can never be
+    // silently dropped and reported as a successful save.
+    if (body.pin !== undefined && !isValidNewPin(body.pin)) {
+      throw unprocessableEntity(
+        `pin must be exactly ${PIN_LENGTH} digits (0-9).`,
+        instance,
+      );
+    }
+
+    const pin = isValidNewPin(body.pin) ? body.pin : undefined;
     const currentPin = isNonEmptyString(body.currentPin) ? body.currentPin : undefined;
 
     let newPinHash: string | null;

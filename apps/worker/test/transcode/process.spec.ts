@@ -9,7 +9,7 @@
 // which is where that claim actually matters end-to-end.
 
 import { EventEmitter } from "node:events";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { spawnFfmpegRun } from "../../src/transcode/process.js";
 
 class FakeStream extends EventEmitter {
@@ -19,9 +19,15 @@ class FakeStream extends EventEmitter {
 }
 
 class FakeChild extends EventEmitter {
-  readonly pid: number | undefined = undefined; // never a real pid — see module header
   readonly stdout = new FakeStream();
   readonly stderr = new FakeStream();
+
+  // Defaults to no pid at all (module header) — the signal-order test below
+  // passes a fake one, with process.kill stubbed, to observe WHICH signals
+  // terminate() actually sends.
+  constructor(readonly pid: number | undefined = undefined) {
+    super();
+  }
 
   emitClose(exitCode: number | null, signal: NodeJS.Signals | null = null): void {
     this.emit("close", exitCode, signal);
@@ -111,5 +117,54 @@ describe("spawnFfmpegRun — suspend()/resume() are safe no-ops without a real p
     const handle = spawnFfmpegRun("ffmpeg", ["-i", "x"], { cwd: "/tmp", spawnFn: fakeSpawnFn(child) });
     expect(() => handle.suspend()).not.toThrow();
     expect(() => handle.resume()).not.toThrow();
+  });
+});
+
+describe("spawnFfmpegRun — terminate() of a throttle-SUSPENDED run", () => {
+  it("SIGCONTs before the SIGTERM (a SIGSTOPped ffmpeg cannot act on a caught SIGTERM)", async () => {
+    const child = new FakeChild(4242);
+    const sent: NodeJS.Signals[] = [];
+    const killSpy = vi.spyOn(process, "kill").mockImplementation(((_pid: number, signal: NodeJS.Signals) => {
+      sent.push(signal);
+      return true;
+    }) as typeof process.kill);
+    try {
+      const handle = spawnFfmpegRun("ffmpeg", ["-i", "x"], { cwd: "/tmp", spawnFn: fakeSpawnFn(child) });
+      handle.suspend();
+      const terminatePromise = handle.terminate();
+      queueMicrotask(() => child.emitClose(0, null));
+      await terminatePromise;
+      expect(sent).toEqual(["SIGSTOP", "SIGCONT", "SIGTERM"]);
+    } finally {
+      killSpy.mockRestore();
+    }
+  });
+});
+
+// Real-process proof of the above against a child that CATCHES SIGTERM
+// (ffmpeg does): while SIGSTOPped, a caught SIGTERM merely stays pending, so
+// without the SIGCONT terminate() burns its whole GRACEFUL_TERM_TIMEOUT_MS
+// and then SIGKILLs — a mandatory ~2s stall on every seek-restart of a
+// throttle-suspended session. POSIX-only (win32 never suspends — throttle.ts).
+describe.skipIf(process.platform === "win32")("spawnFfmpegRun — terminate() of a REAL suspended process", () => {
+  it("reaps a SIGSTOPped child promptly and gracefully, not via the SIGKILL escalation", async () => {
+    const script = "process.on('SIGTERM', () => process.exit(0)); process.stderr.write('ready\\n'); setInterval(() => {}, 1000);";
+    const handle = spawnFfmpegRun(process.execPath, ["-e", script], { cwd: "/tmp" });
+    // Only meaningful once the handler is actually installed — before that a
+    // SIGTERM has its default (fatal-even-while-stopped) disposition.
+    for (let i = 0; i < 200 && !handle.stderrTail().includes("ready"); i += 1) {
+      await new Promise((r) => setTimeout(r, 10));
+    }
+    expect(handle.stderrTail()).toContain("ready");
+
+    handle.suspend();
+    const startedAt = Date.now();
+    await handle.terminate();
+    const elapsedMs = Date.now() - startedAt;
+
+    const result = await handle.result;
+    expect(result.signal).not.toBe("SIGKILL");
+    expect(result.exitCode).toBe(0);
+    expect(elapsedMs).toBeLessThan(1_500);
   });
 });

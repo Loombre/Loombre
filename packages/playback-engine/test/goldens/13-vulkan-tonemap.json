@@ -1,11 +1,13 @@
 {
-  "scenario": "vaapi route, vulkan tone-map (§8.3's 'else vulkan' half)",
+  "scenario": "vaapi route, vulkan tone-map (§8.3's 'else vulkan' half) — pure-hw route (a): -hwaccel_output_format vaapi pins the decode surface",
   "args": [
     "-hide_banner",
     "-loglevel",
     "warning",
     "-nostdin",
     "-hwaccel",
+    "vaapi",
+    "-hwaccel_output_format",
     "vaapi",
     "-i",
     "{INPUT}",

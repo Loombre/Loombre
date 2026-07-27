@@ -16,7 +16,7 @@
 // but POST /libraries only documents 401/403/422/default (no 409) — 403 is
 // used, matching what's actually in packages/contract/openapi.yaml.
 
-import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Query, Req } from "@nestjs/common";
+import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post, Put, Query, Req } from "@nestjs/common";
 import {
   createLibrary,
   deleteLibraryAdmin,
@@ -242,6 +242,7 @@ export class LibrariesController {
   }
 
   @Post("libraries/:id/scan")
+  @HttpCode(HttpStatus.ACCEPTED)
   async scanLibrary(
     @Param("id") id: string,
     @Body() rawBody: Record<string, unknown> | undefined,

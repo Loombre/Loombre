@@ -127,55 +127,70 @@
  *     type-relative AGAINST). Reported as the resolution of the prompt's own
  *     open question, not a silent pick.
  *
- * (D) VIDEOTOOLBOX TONE-MAP ROUTES (Phase 3 step-7 owner-smoke
- *     REAL-EXECUTION FIX — supersedes this interpretation's original
- *     "scale_vt occupies the tonemap chain position inside a software
- *     chain" reading, which FAILED on real ffmpeg 8.1.1/macOS M3 Max:
- *     `scale_vt` is a HARDWARE filter requiring `videotoolbox_vld` frames,
- *     but a plain `-hwaccel videotoolbox` decode auto-downloads frames to
- *     system memory, so ffmpeg's auto-scale tried sw -> videotoolbox_vld
+ * (D) HARDWARE TONE-MAP ROUTES (Phase 3 step-7 owner-smoke REAL-EXECUTION
+ *     FIX — supersedes this interpretation's original "the hw tone-map
+ *     filter occupies the tonemap chain position inside a software chain"
+ *     reading, which FAILED on real ffmpeg 8.1.1/macOS M3 Max: `scale_vt`
+ *     is a HARDWARE filter requiring `videotoolbox_vld` frames, but a plain
+ *     `-hwaccel videotoolbox` decode auto-downloads frames to system
+ *     memory, so ffmpeg's auto-scale tried sw -> videotoolbox_vld
  *     conversion, hit "Error reinitializing filters!" -> -78 (Function not
- *     implemented) -> encoder never opened, nothing written). Two routes,
- *     selected when `video.toneMap === 'videotoolbox'` (Stage G only ever
- *     pairs that method with `video.encoder === 'videotoolbox'`; both are
- *     checked defensively):
+ *     implemented) -> encoder never opened, nothing written). The rule is
+ *     BACKEND-AGNOSTIC: `tonemap_cuda`/`tonemap_opencl`/`libplacebo` are
+ *     hardware filters for exactly the same reason `scale_vt` is, and
+ *     `-hwaccel <name>` alone is only a HINT on every backend (apps/worker/
+ *     src/hwcaps/tables.ts's real-hardware finding (2), stated
+ *     backend-agnostically there). Two routes, selected whenever
+ *     `video.toneMap` is one of the HARDWARE methods §8.3 pairs with
+ *     `video.encoder` (HW_TONE_MAP_METHODS_BY_BACKEND below — the pairing
+ *     is checked defensively; Stage G never produces any other pair):
  *
  *     (a) PURE-HW ROUTE — no software-only filter needed (no deinterlace,
  *         no burn-in overlay; a rung downscale does NOT disqualify): segment
- *         2 gains `-hwaccel_output_format videotoolbox_vld` after `-hwaccel
- *         videotoolbox`, forcing decoded frames to STAY on the VT surface
- *         (§8.3 "decode/encode stay on one device") — the SAME flag apps/
- *         worker/src/hwcaps's step-5 battery empirically needed on this
- *         exact machine/ffmpeg (see its args.ts header: bare `-hwaccel
- *         videotoolbox` is only a HINT). NOTE the value is ffmpeg's PIXEL
- *         FORMAT name `videotoolbox_vld` — plain `videotoolbox` is REJECTED
- *         by ffmpeg 8.1.1 ("Unrecognised hwaccel output format"), verified
- *         on this box. `scale_vt` then performs BOTH the tone-map AND any
- *         rung downscale in one hw step (`scale_vt=w=-2:h={H}:color_matrix=
- *         bt709:...` — §8.3's "VT tone-maps in the scaler", now literally):
- *         no separate software `scale`, no hw<->sw bounce anywhere.
- *         Real-verified end-to-end on this machine (exit 0, segments
+ *         2 gains `-hwaccel_output_format <backend format>` after `-hwaccel
+ *         <backend>`, forcing decoded frames to STAY on that device's
+ *         surface (§8.3 "decode/encode stay on one device") — the SAME flag,
+ *         from the SAME table, that apps/worker/src/hwcaps's step-5 battery
+ *         passes when it VERIFIES a tone-map method, so the graph this
+ *         builder emits is the graph the probe proved (the VT failure above
+ *         was exactly this divergence: the probe passed because IT built a
+ *         correct chain). NOTE videotoolbox's value is ffmpeg's PIXEL FORMAT
+ *         name `videotoolbox_vld` — plain `videotoolbox` is REJECTED by
+ *         ffmpeg 8.1.1 ("Unrecognised hwaccel output format"), verified on
+ *         this box. A rung downscale then also stays on the device: for
+ *         videotoolbox `scale_vt` performs BOTH the tone-map AND the
+ *         downscale in one hw step (`scale_vt=w=-2:h={H}:color_matrix=
+ *         bt709:...` — §8.3's "VT tone-maps in the scaler", now literally),
+ *         and every other backend takes its OWN hw scaler in §6's scale
+ *         position (`scale_cuda`/`scale_qsv`/`scale_vaapi`,
+ *         HW_SCALE_FILTER_BY_BACKEND below) ahead of its tone-map filter.
+ *         No software `scale`, no hw<->sw bounce anywhere. Real-verified
+ *         end-to-end for videotoolbox on this machine (exit 0, segments
  *         written, ffprobe color_transfer=bt709) by apps/worker/test/
- *         transcode/vt-tonemap-args.integration.spec.ts.
+ *         transcode/vt-tonemap-args.integration.spec.ts; cuda/qsv/vaapi
+ *         remain UNEXECUTED against real ffmpeg (STATE.md P3.4's Linux/
+ *         Windows owner checklist) — this fix makes their graphs match the
+ *         probe's, it does not substitute for running them.
  *
  *     (b) HYBRID FALLBACK — a software-only filter (yadif deinterlace and/
- *         or burn-in overlay) is ALSO required: keep TODAY'S plain
- *         `-hwaccel videotoolbox` (no output_format; frames auto-download
- *         to system memory once, at the decoder boundary), run the ENTIRE
- *         §6 chain in software with the documented cpu-zscale tone-map
- *         string in the tonemap position (NO scale_vt — it can't take sw
- *         frames), and still ENCODE on VideoToolbox (h264_/hevc_
- *         videotoolbox accept software frames; real-verified on this box).
- *         SURFACED §8.3 TENSION (reported, not silently resolved): §8.3's
- *         "exactly one download/upload" burn-in exception cannot compose
- *         with §6's fixed filter order for VT — yadif must run PRE-scale
- *         (§6 order) but scale_vt tone-maps IN the scaler on hw frames, so
- *         a VT chain honoring both would need hwdownload -> yadif ->
- *         hwupload -> scale_vt -> (overlay would need a SECOND download) —
- *         two bounces, violating the one-bounce rule. The hybrid drops to
- *         one clean sw window instead (decode-download once, sw filters,
- *         VT encode): correct-for-the-common-case, zero bounces inside the
- *         graph. Golden 28 pins this graph.
+ *         or burn-in overlay) is ALSO required: keep the plain `-hwaccel
+ *         <backend>` (no output_format; frames auto-download to system
+ *         memory once, at the decoder boundary), run the ENTIRE §6 chain in
+ *         software with the documented cpu-zscale tone-map string in the
+ *         tonemap position (NO hw tone-map filter — none of them take sw
+ *         frames), and still ENCODE on the hw backend (h264_/hevc_
+ *         videotoolbox accept software frames — real-verified on this box;
+ *         the vaapi burn-in graph's own `hwupload` (interpretation B) is
+ *         what returns frames to that device). SURFACED §8.3 TENSION
+ *         (reported, not silently resolved): §8.3's "exactly one download/
+ *         upload" burn-in exception cannot compose with §6's fixed filter
+ *         order — yadif must run PRE-scale (§6 order) but the hw tone-map
+ *         works on hw frames, so a chain honoring both would need
+ *         hwdownload -> yadif -> hwupload -> tone-map -> (overlay would need
+ *         a SECOND download) — two bounces, violating the one-bounce rule.
+ *         The hybrid drops to one clean sw window instead (decode-download
+ *         once, sw filters, hw encode): correct-for-the-common-case, zero
+ *         bounces inside the graph. Goldens 28/32 pin this graph.
  *
  * (E) EMBED SUBTITLE CODEC-COPY PLACEMENT (this step's instruction 4,
  *     verbatim BIND: "sub codec copy flag lives at the END of segment 8
@@ -299,12 +314,48 @@ const VIDEO_ENCODER_NAMES: Partial<Record<HardwareBackend, Record<"h264" | "hevc
  *  one hw step). Real-verified on ffmpeg 8.1.1/macOS. */
 const VT_TONE_MAP_PARAMS = "color_matrix=bt709:color_primaries=bt709:color_transfer=bt709";
 
-/** Segment 2's `-hwaccel_output_format` value for route (a) — ffmpeg's
- *  PIXEL FORMAT name for VT hw surfaces. `videotoolbox` (without `_vld`)
- *  is REJECTED by ffmpeg 8.1.1 ("Unrecognised hwaccel output format") —
- *  same value the step-5 hwcaps battery uses (apps/worker/src/hwcaps/
- *  tables.ts HWACCEL_OUTPUT_FORMAT_BY_BACKEND, proven on this machine). */
-const VT_HWACCEL_OUTPUT_FORMAT = "videotoolbox_vld";
+/** Segment 2's `-hwaccel_output_format` value per backend for route (a) —
+ *  ffmpeg's PIXEL FORMAT name for that backend's hw surfaces. Mirrors
+ *  apps/worker/src/hwcaps/tables.ts's HWACCEL_OUTPUT_FORMAT_BY_BACKEND
+ *  (copied, not imported — this package stays dependency-free), which is
+ *  the SAME table the step-5 capability battery pins the surface with when
+ *  it VERIFIES a tone-map method: whatever plumbing proved the method is
+ *  the plumbing this builder must reproduce, or a "verified" method ships
+ *  a graph nothing ever executed. `videotoolbox_vld` is real-verified on
+ *  this box — plain `videotoolbox` is REJECTED by ffmpeg 8.1.1
+ *  ("Unrecognised hwaccel output format"). Backends absent from this table
+ *  (amf, d3d11va, software) have no hw tone-map method in §8.3 and so
+ *  never reach route (a) at all. */
+const HWACCEL_OUTPUT_FORMAT_BY_BACKEND: Partial<Record<HardwareBackend, string>> = {
+  videotoolbox: "videotoolbox_vld",
+  nvenc: "cuda",
+  qsv: "qsv",
+  vaapi: "vaapi",
+};
+
+/** §8.3's tone-map preference table (mirrors stages/hardware.ts's
+ *  HW_TONE_MAP_PREFERENCE): which METHODS Stage G may ever pair with which
+ *  encoder backend. Read here ONLY to recognise a coherent HARDWARE
+ *  tone-map route — an incoherent shape (a method this backend cannot run)
+ *  falls through to the generic, unpinned path rather than forcing an
+ *  output format its tone-map filter can't consume. */
+const HW_TONE_MAP_METHODS_BY_BACKEND: Partial<Record<HardwareBackend, readonly ToneMapMethod[]>> = {
+  videotoolbox: ["videotoolbox"],
+  nvenc: ["cuda"],
+  qsv: ["opencl", "vulkan"],
+  vaapi: ["opencl", "vulkan"],
+};
+
+/** The backend's OWN hardware scaler, occupying §6's scale position on
+ *  route (a) (interpretation D): once the decode surface is pinned, the
+ *  software `scale` filter cannot touch the frames. `videotoolbox` has no
+ *  entry — its downscale folds INTO `scale_vt`, which tone-maps and scales
+ *  in the same hw step. */
+const HW_SCALE_FILTER_BY_BACKEND: Partial<Record<HardwareBackend, string>> = {
+  nvenc: "scale_cuda",
+  qsv: "scale_qsv",
+  vaapi: "scale_vaapi",
+};
 
 /** Segment 6 tone-map filter string per method (this step's instruction 5's
  *  BIND table, quoted verbatim). Fixed strings — no dynamic parameters.
@@ -412,26 +463,33 @@ export function buildFfmpegArgs(input: PlanInput, planShape: FfmpegPlanShape, op
   const needsOverlay = hasVideo && videoTranscoding && subtitle.strategy === "burn-in";
   const hasFilterGraph = needsDeinterlace || needsScale || needsToneMap || needsOverlay;
 
-  // Interpretation D's two videotoolbox tone-map routes. Stage G only ever
-  // selects toneMap 'videotoolbox' alongside encoder 'videotoolbox'; the
-  // encoder check is defensive (an incoherent shape falls through to the
-  // generic — pre-fix — path rather than emitting a mismatched
-  // -hwaccel_output_format).
-  const isVtToneMap = needsToneMap && video.toneMap === "videotoolbox" && video.encoder === "videotoolbox";
-  const vtHybrid = isVtToneMap && (needsDeinterlace || needsOverlay);
-  const vtPureHw = isVtToneMap && !vtHybrid;
+  // Interpretation D's two hardware tone-map routes, for EVERY backend
+  // §8.3 names a hw method for. The backend/method pairing check is
+  // defensive (an incoherent shape falls through to the generic — unpinned
+  // — path rather than emitting a mismatched -hwaccel_output_format).
+  const isHwToneMap =
+    needsToneMap &&
+    video.encoder !== undefined &&
+    (HW_TONE_MAP_METHODS_BY_BACKEND[video.encoder]?.includes(video.toneMap!) ?? false);
+  const hwHybrid = isHwToneMap && (needsDeinterlace || needsOverlay);
+  const hwPureHw = isHwToneMap && !hwHybrid;
+  /** Route (a) on videotoolbox specifically — the only backend whose
+   *  tone-map filter IS its scaler, so its downscale folds in. */
+  const vtPureHw = hwPureHw && video.encoder === "videotoolbox";
 
   // Segment 2 — decode accel, ONLY when video actually transcodes (this
   // step's instruction 3). Route (a) additionally pins decoded frames to
-  // the VT hw surface (interpretation D — without this, scale_vt receives
-  // software frames and the whole pipeline fails at filter init).
+  // the backend's hw surface (interpretation D — without this, the hw
+  // tone-map filter receives software frames and the whole pipeline fails
+  // at filter init).
   if (videoTranscoding) {
     if (!video.encoder) {
       throw new Error("buildFfmpegArgs: video.action==='transcode' requires planShape.video.encoder");
     }
     const hwaccel = HWACCEL_BY_BACKEND[video.encoder];
     if (hwaccel) args.push("-hwaccel", hwaccel);
-    if (vtPureHw) args.push("-hwaccel_output_format", VT_HWACCEL_OUTPUT_FORMAT);
+    const outputFormat = hwPureHw ? HWACCEL_OUTPUT_FORMAT_BY_BACKEND[video.encoder] : undefined;
+    if (outputFormat) args.push("-hwaccel_output_format", outputFormat);
   }
 
   // Segment 3 — seek, BEFORE -i, only when the caller asked for it
@@ -482,19 +540,23 @@ export function buildFfmpegArgs(input: PlanInput, planShape: FfmpegPlanShape, op
     const chainFilters: string[] = [];
     if (isVaapiBurnIn) chainFilters.push("hwdownload", "format=nv12");
     if (needsDeinterlace) chainFilters.push("yadif");
-    // Route (a) folds the rung downscale INTO scale_vt (interpretation D:
-    // "VT tone-maps in the scaler", literally) — no separate software
-    // `scale` step ever touches the hw frames.
-    if (needsScale && !vtPureHw) chainFilters.push(`scale=-2:${rung!.heightPx}`);
+    // On route (a) the frames stayed on the device, so the SOFTWARE `scale`
+    // filter cannot touch them: videotoolbox folds the rung downscale INTO
+    // scale_vt (interpretation D: "VT tone-maps in the scaler", literally),
+    // every other backend takes its OWN hw scaler in this position.
+    if (needsScale && !vtPureHw) {
+      const hwScale = hwPureHw ? HW_SCALE_FILTER_BY_BACKEND[video.encoder!] : undefined;
+      chainFilters.push(hwScale ? `${hwScale}=w=-2:h=${rung!.heightPx}` : `scale=-2:${rung!.heightPx}`);
+    }
     if (needsToneMap) {
       if (vtPureHw) {
         chainFilters.push(
           needsScale ? `scale_vt=w=-2:h=${rung!.heightPx}:${VT_TONE_MAP_PARAMS}` : TONE_MAP_FILTERS.videotoolbox,
         );
-      } else if (vtHybrid) {
+      } else if (hwHybrid) {
         // Route (b): software frames (plain -hwaccel auto-download) can't
-        // feed scale_vt — the documented cpu-zscale chain substitutes in
-        // the tonemap position; VideoToolbox still encodes.
+        // feed a hardware tone-map filter — the documented cpu-zscale chain
+        // substitutes in the tonemap position; the hw backend still encodes.
         chainFilters.push(TONE_MAP_FILTERS["cpu-zscale"]);
       } else {
         chainFilters.push(TONE_MAP_FILTERS[video.toneMap!]);

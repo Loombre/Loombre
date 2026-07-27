@@ -85,7 +85,7 @@ function WatchlistContent(): React.JSX.Element {
     };
   }, []);
 
-  const { items, hasMore, loading, loadingMore, error, loadMore } = useCursorFeed<WatchlistCard>(
+  const { items, hasMore, loading, loadingMore, error, loadMoreError, loadMore } = useCursorFeed<WatchlistCard>(
     fetchWatchlistPage,
     `v${resetKey}`,
   );
@@ -153,6 +153,11 @@ function WatchlistContent(): React.JSX.Element {
               {loadingMore ? "Loading…" : "Load more"}
             </button>
           )}
+          {/* A failed page-append (confirmed[36]) — non-destructive: the
+              already-loaded grid above stays put. The "Load more" button
+              itself is already the retry (cursor/hasMore survive a failed
+              loadMore in useCursorFeed), this is just the error readout. */}
+          {loadMoreError && <div className={styles.loadMoreError}>{loadMoreError}</div>}
         </>
       )}
     </div>

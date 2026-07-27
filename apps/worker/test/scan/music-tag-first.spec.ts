@@ -8,10 +8,10 @@
 //      cleanly without ffmpeg, mirroring test/probe/probe.integration.spec.ts's
 //      convention).
 //   2. The scanner (src/scan/scanner.ts) prefers tags over filename parsing
-//      when tags are present, and falls back to parseMusicPath when the
-//      injectable TagReader seam returns null (missing/unreadable tags) —
-//      exercised via the fake tag-reader seam, no real audio file needed
-//      for this half.
+//      field by field: a tagged field wins, and every field the tags leave
+//      null (up to and including ALL of them, when the TagReader seam
+//      returns null outright) falls back to parseMusicPath — exercised via
+//      the fake tag-reader seam, no real audio file needed for this half.
 
 import { ffmpegAvailableStrict } from "../support/require-ffmpeg.js";
 import { execFileSync } from "node:child_process";
@@ -172,5 +172,110 @@ describe("scanner tag-first precedence (fake TagReader seam)", () => {
       [libraryId]
     );
     expect(artistRow.rows).toHaveLength(1);
+  });
+
+  it("fills the fields partial tags leave null from the filename instead of dropping the file (artist missing)", async () => {
+    // Real-world shape: a compilation rip tagged with an album and nothing
+    // else. The tag object is non-null, so an all-or-nothing fallback would
+    // never consult the filename and the track would be silently skipped —
+    // precedence is per-field (docs/PLAN.md §8.3), so the tagged album wins
+    // while artist/title/track come from the path.
+    const filePath = join(libraryDir, "Partial Artist", "Partial Album", "03 Partial Title.mp3");
+    writeFakeMediaFile(filePath, "tag-first-3", 128);
+
+    const fakeTags: ParsedTags = {
+      artist: null,
+      album: "Tagged Partial Album",
+      discNumber: null,
+      trackNumber: null,
+      title: null,
+    };
+    const tagReader: TagReader = async (absPath) => (absPath === filePath ? fakeTags : null);
+
+    const { queue } = makeMemoryQueue();
+    await runScan(
+      { db: dbHandle, queue, hashPool, tagReader },
+      { libraryId, full: false },
+      { jobId: "018f0000-0000-7000-8000-00000000aaa3" }
+    );
+
+    const trackRow = await raw.query<{ track_number: number; album_title: string }>(
+      `SELECT td.track_number, album.title AS album_title FROM catalog_items ci
+       JOIN track_details td ON td.item_id = ci.id
+       JOIN catalog_items album ON album.id = ci.parent_id
+       WHERE ci.library_id = $1 AND ci.item_type = 'track' AND ci.title = 'Partial Title'`,
+      [libraryId]
+    );
+    expect(trackRow.rows).toHaveLength(1);
+    expect(trackRow.rows[0]!.track_number).toBe(3);
+    expect(trackRow.rows[0]!.album_title).toBe("Tagged Partial Album");
+
+    const artistRow = await raw.query<{ title: string }>(
+      "SELECT title FROM catalog_items WHERE item_type = 'artist' AND library_id = $1 AND title = 'Partial Artist'",
+      [libraryId]
+    );
+    expect(artistRow.rows).toHaveLength(1);
+  });
+
+  it("fills the fields partial tags leave null from the filename instead of dropping the file (title missing)", async () => {
+    const filePath = join(libraryDir, "Symmetric Artist", "Symmetric Album", "04 Symmetric Title.mp3");
+    writeFakeMediaFile(filePath, "tag-first-4", 128);
+
+    const fakeTags: ParsedTags = {
+      artist: "Tagged Symmetric Artist",
+      album: null,
+      discNumber: null,
+      trackNumber: null,
+      title: null,
+    };
+    const tagReader: TagReader = async (absPath) => (absPath === filePath ? fakeTags : null);
+
+    const { queue } = makeMemoryQueue();
+    await runScan(
+      { db: dbHandle, queue, hashPool, tagReader },
+      { libraryId, full: false },
+      { jobId: "018f0000-0000-7000-8000-00000000aaa4" }
+    );
+
+    const trackRow = await raw.query<{ track_number: number; artist_title: string }>(
+      `SELECT td.track_number, artist.title AS artist_title FROM catalog_items ci
+       JOIN track_details td ON td.item_id = ci.id
+       JOIN catalog_items album ON album.id = ci.parent_id
+       JOIN catalog_items artist ON artist.id = album.parent_id
+       WHERE ci.library_id = $1 AND ci.item_type = 'track' AND ci.title = 'Symmetric Title'`,
+      [libraryId]
+    );
+    expect(trackRow.rows).toHaveLength(1);
+    expect(trackRow.rows[0]!.track_number).toBe(4);
+    expect(trackRow.rows[0]!.artist_title).toBe("Tagged Symmetric Artist");
+  });
+
+  it("still skips a file when neither the tags nor the filename yield an artist", async () => {
+    // Flat path => parseMusicPath has no artist/album directory context, and
+    // the tags carry only an album: no identity from either source.
+    const filePath = join(libraryDir, "No Identity.mp3");
+    writeFakeMediaFile(filePath, "tag-first-5", 128);
+
+    const fakeTags: ParsedTags = {
+      artist: null,
+      album: "Orphan Album",
+      discNumber: null,
+      trackNumber: null,
+      title: null,
+    };
+    const tagReader: TagReader = async (absPath) => (absPath === filePath ? fakeTags : null);
+
+    const { queue } = makeMemoryQueue();
+    await runScan(
+      { db: dbHandle, queue, hashPool, tagReader },
+      { libraryId, full: false },
+      { jobId: "018f0000-0000-7000-8000-00000000aaa5" }
+    );
+
+    const trackRow = await raw.query<{ title: string }>(
+      "SELECT title FROM catalog_items WHERE library_id = $1 AND item_type = 'track' AND title = 'No Identity'",
+      [libraryId]
+    );
+    expect(trackRow.rows).toHaveLength(0);
   });
 });

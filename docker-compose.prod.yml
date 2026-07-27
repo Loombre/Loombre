@@ -36,6 +36,8 @@ services:
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-loombre}
       POSTGRES_USER: ${POSTGRES_USER:-loombre}
+      # Also spliced unescaped into DATABASE_URL below (server/worker) —
+      # see the URI-safe-characters note on `server`'s DATABASE_URL.
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set — see installers/docker/loombre.env.example}
     volumes:
       # PG 18 image layout change: PGDATA is now the version-specific
@@ -64,7 +66,16 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgres://${POSTGRES_USER:-loombre}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}@postgres:5432/${POSTGRES_DB:-loombre}
+      # Assembled from POSTGRES_USER/PASSWORD/DB below with NO URI-encoding —
+      # a password containing '/', '?', '#', '%', or '@' will corrupt this
+      # URI (silently, for '%') and the container will fail to reach
+      # Postgres. Either keep POSTGRES_PASSWORD to URI-safe characters
+      # (e.g. `openssl rand -hex 32`, not bare `openssl rand -base64`,
+      # whose alphabet includes '/'), or set DATABASE_URL directly in
+      # installers/docker/loombre.env (already percent-encoded) to
+      # override this assembled value entirely — also the way to point at
+      # an external Postgres instance instead of the `postgres` service.
+      DATABASE_URL: ${DATABASE_URL:-postgres://${POSTGRES_USER:-loombre}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}@postgres:5432/${POSTGRES_DB:-loombre}}
       LOOMBRE_JWT_SECRET: ${LOOMBRE_JWT_SECRET:?LOOMBRE_JWT_SECRET must be set — see installers/docker/loombre.env.example}
       LOOMBRE_CORS_ORIGINS: ${LOOMBRE_CORS_ORIGINS:-}
       LOOMBRE_TRUST_PROXY: ${LOOMBRE_TRUST_PROXY:-}
@@ -104,7 +115,9 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgres://${POSTGRES_USER:-loombre}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}@postgres:5432/${POSTGRES_DB:-loombre}
+      # Same DATABASE_URL assembly (and the same escape hatch) as `server`
+      # above — server and worker must agree, so keep both in sync.
+      DATABASE_URL: ${DATABASE_URL:-postgres://${POSTGRES_USER:-loombre}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}@postgres:5432/${POSTGRES_DB:-loombre}}
       LOOMBRE_TIER: ${LOOMBRE_TIER:-}
       LOOMBRE_SCAN_CONCURRENCY: ${LOOMBRE_SCAN_CONCURRENCY:-}
       LOOMBRE_TRANSCODE_WORKER_CONCURRENCY: ${LOOMBRE_TRANSCODE_WORKER_CONCURRENCY:-}

@@ -467,8 +467,13 @@ describe("buildFfmpegArgs: vaapi burn-in hwdownload/hwupload wrap (step 7b fix F
       { withSeek: false },
     );
     const filterArg = args[args.indexOf("-filter_complex") + 1]!;
+    // The burn-in overlay is a software-only filter, so this is
+    // interpretation D's route (b): everything inside the download window
+    // is system-memory, which is precisely why the tonemap position holds
+    // the cpu-zscale chain and not `libplacebo` (a hw filter that cannot
+    // consume the downloaded frames).
     expect(filterArg).toBe(
-      "[0:v:0]hwdownload,format=nv12,yadif,scale=-2:1080,libplacebo=tonemapping=hable:format=yuv420p[vfilt];[vfilt][0:s:0]overlay,hwupload[vout]",
+      "[0:v:0]hwdownload,format=nv12,yadif,scale=-2:1080,zscale=t=linear:npl=100,tonemap=hable:desat=0,zscale=p=bt709:t=bt709:m=bt709:r=tv,format=yuv420p[vfilt];[vfilt][0:s:0]overlay,hwupload[vout]",
     );
     expect(filterArg.split("hwdownload").length - 1).toBe(1);
     expect(filterArg.split("hwupload").length - 1).toBe(1);
@@ -495,6 +500,116 @@ describe("buildFfmpegArgs: vaapi burn-in hwdownload/hwupload wrap (step 7b fix F
     const args = buildFfmpegArgs(input, shape, { withSeek: false });
     const filterArg = args[args.indexOf("-filter_complex") + 1]!;
     expect(filterArg).toBe("[0:v:0]yadif[vout]");
+  });
+});
+
+describe("buildFfmpegArgs: hardware tone-map routes (interpretation D, backend-agnostic — every §8.3 backend, not just videotoolbox)", () => {
+  function toneMapShape(
+    encoder: "videotoolbox" | "nvenc" | "qsv" | "vaapi" | "software",
+    toneMap: "videotoolbox" | "cuda" | "opencl" | "vulkan" | "cpu-zscale",
+  ): FfmpegPlanShape {
+    return {
+      container: "fmp4-hls",
+      video: { action: "transcode", targetCodec: "h264", encoder, toneMap },
+      audio: { action: "copy" },
+      subtitle: { strategy: "none" },
+      rung: RUNG_1080P_H264,
+    };
+  }
+
+  function hdrInput(videoOverrides: Partial<VideoStream> = {}): PlanInput {
+    return makeInput({
+      media: makeMedia({ video: [makeVideoStream({ hdr: "hdr10", bitDepth: 10, ...videoOverrides })] }),
+    });
+  }
+
+  function outputFormatOf(args: string[]): string | undefined {
+    const idx = args.indexOf("-hwaccel_output_format");
+    return idx === -1 ? undefined : args[idx + 1];
+  }
+
+  // The pure-hw route pins the decode surface for EVERY backend §8.3 names
+  // a hw tone-map method for — `-hwaccel <name>` alone is only a HINT
+  // (apps/worker/src/hwcaps/tables.ts's real-hardware finding 2), and
+  // tonemap_cuda/tonemap_opencl/libplacebo/scale_vt all need frames that
+  // actually stayed on the device.
+  it.each([
+    ["nvenc", "cuda", "cuda"],
+    ["qsv", "opencl", "qsv"],
+    ["vaapi", "vulkan", "vaapi"],
+    ["videotoolbox", "videotoolbox", "videotoolbox_vld"],
+  ] as const)("%s + %s tone-map pins the surface: -hwaccel_output_format %s immediately after -hwaccel", (encoder, method, expectedFormat) => {
+    const args = buildFfmpegArgs(hdrInput(), toneMapShape(encoder, method), { withSeek: false });
+    const hwaccelIdx = args.indexOf("-hwaccel");
+    expect(hwaccelIdx).toBeGreaterThanOrEqual(0);
+    expect(args[hwaccelIdx + 2]).toBe("-hwaccel_output_format");
+    expect(args[hwaccelIdx + 3]).toBe(expectedFormat);
+  });
+
+  // Once the surface is pinned, the SOFTWARE `scale` filter can no longer
+  // touch the frames — each backend's own hw scaler takes the §6 scale
+  // position (videotoolbox instead folds the downscale INTO scale_vt).
+  it.each([
+    ["nvenc", "cuda", "scale_cuda=w=-2:h=1080,tonemap_cuda=format=yuv420p:tonemap=hable"],
+    ["qsv", "opencl", "scale_qsv=w=-2:h=1080,tonemap_opencl=format=yuv420p:tonemap=hable"],
+    ["vaapi", "vulkan", "scale_vaapi=w=-2:h=1080,libplacebo=tonemapping=hable:format=yuv420p"],
+  ] as const)("%s + %s tone-map with a rung downscale uses the backend's OWN hw scaler, never software scale=", (encoder, method, expectedChain) => {
+    const args = buildFfmpegArgs(
+      hdrInput({ height: 2160, width: 3840 }),
+      toneMapShape(encoder, method),
+      { withSeek: false },
+    );
+    const filterArg = args[args.indexOf("-filter_complex") + 1]!;
+    expect(filterArg).toBe(`[0:v:0]${expectedChain}[vout]`);
+    expect(filterArg).not.toContain("scale=-2:");
+  });
+
+  // Route (b), generalized: a software-only filter in the same graph means
+  // the frames must NOT be pinned (yadif/overlay cannot consume them), so
+  // the whole chain drops to software with cpu-zscale in the tonemap
+  // position — the hw encoder still encodes.
+  const CPU_ZSCALE =
+    "zscale=t=linear:npl=100,tonemap=hable:desat=0,zscale=p=bt709:t=bt709:m=bt709:r=tv,format=yuv420p";
+
+  it.each([
+    ["nvenc", "cuda"],
+    ["qsv", "opencl"],
+    ["vaapi", "vulkan"],
+  ] as const)("%s + %s tone-map + deinterlace is the HYBRID route: no -hwaccel_output_format, cpu-zscale substitutes for the hw filter", (encoder, method) => {
+    const args = buildFfmpegArgs(
+      hdrInput({ interlaced: true, height: 2160, width: 3840 }),
+      toneMapShape(encoder, method),
+      { withSeek: false },
+    );
+    expect(args).toContain("-hwaccel");
+    expect(outputFormatOf(args)).toBeUndefined();
+    const filterArg = args[args.indexOf("-filter_complex") + 1]!;
+    expect(filterArg).toBe(`[0:v:0]yadif,scale=-2:1080,${CPU_ZSCALE}[vout]`);
+  });
+
+  it("software backend with cpu-zscale never pins a surface (no -hwaccel, no -hwaccel_output_format)", () => {
+    const args = buildFfmpegArgs(hdrInput(), toneMapShape("software", "cpu-zscale"), { withSeek: false });
+    expect(args).not.toContain("-hwaccel");
+    expect(outputFormatOf(args)).toBeUndefined();
+  });
+
+  it("an INCOHERENT backend/method pair (§8.3 never pairs them) falls through unpinned rather than forcing a format its filter can't consume", () => {
+    const args = buildFfmpegArgs(hdrInput(), toneMapShape("nvenc", "opencl"), { withSeek: false });
+    expect(args).toContain("-hwaccel");
+    expect(outputFormatOf(args)).toBeUndefined();
+  });
+
+  it("a hw backend transcoding WITHOUT any tone-map is untouched — decode-accel hint only, no surface pin", () => {
+    const shape: FfmpegPlanShape = {
+      container: "fmp4-hls",
+      video: { action: "transcode", targetCodec: "h264", encoder: "nvenc" },
+      audio: { action: "copy" },
+      subtitle: { strategy: "none" },
+      rung: RUNG_1080P_H264,
+    };
+    const args = buildFfmpegArgs(makeInput(), shape, { withSeek: false });
+    expect(args).toContain("-hwaccel");
+    expect(outputFormatOf(args)).toBeUndefined();
   });
 });
 

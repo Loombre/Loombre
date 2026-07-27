@@ -2,7 +2,24 @@
 // Loombre :: apps/web/src/lib/pin-entry.test.ts
 
 import { describe, expect, it } from "vitest";
-import { PIN_LENGTH, appendPinDigit, isPinComplete, sanitizePinInput } from "./pin-entry.js";
+import { PIN_LENGTH, appendPinDigit, isPinComplete, sanitizePinInput, stripPinDigits } from "./pin-entry.js";
+
+describe("stripPinDigits — digits-only WITHOUT the length clamp", () => {
+  it("strips non-digits", () => {
+    expect(stripPinDigits("5a4b3c2d1")).toBe("54321");
+  });
+
+  it("keeps buffers longer than PIN_LENGTH intact", () => {
+    // The `Current PIN` field's whole job: prove an ALREADY-STORED PIN,
+    // which on an install predating the 4-digit rule may be longer. Clamping
+    // it would make those users unable to change their PIN or opt out.
+    expect(stripPinDigits("123456789").length).toBeGreaterThan(PIN_LENGTH);
+  });
+
+  it("is the sole digit filter sanitizePinInput itself is built from", () => {
+    expect(sanitizePinInput("9z8y7x6w5")).toBe(stripPinDigits("9z8y7x6w5").slice(0, PIN_LENGTH));
+  });
+});
 
 describe("sanitizePinInput", () => {
   it("strips non-digit characters", () => {

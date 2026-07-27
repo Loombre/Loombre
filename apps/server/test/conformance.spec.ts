@@ -16,10 +16,11 @@
  *   3. NEW — authenticated walk: with a real seed-admin access token
  *      attached, every NON-PUBLIC documented operation must return a
  *      NON-401 status (proving the guard passes valid tokens through to
- *      the handler/catch-all rather than blocking them). Operations this
- *      wave actually implements assert their exact expected status;
- *      everything else (no controller yet — another wave's scope) hits
- *      NotFoundController's catch-all and must be exactly 404, never 401.
+ *      the handler/catch-all rather than blocking them), AND must have an
+ *      exact expected status recorded in IMPLEMENTED_NON_PUBLIC_EXPECTATIONS
+ *      — the unimplemented-allowance is EXACTLY ZERO (STATE.md P3.7/step
+ *      6b), so an operation missing from that map fails the suite outright
+ *      instead of silently coasting on a coincidental catch-all 404.
  *   4. Asserts /healthz stays public (200), since it's deliberately not
  *      part of the /v1 contract.
  *   5. Mounted-route assertion (D21 tightening): every mounted Express
@@ -183,11 +184,12 @@ const PUBLIC_OPERATION_IDS = new Set([
   "createFirstAdmin",
 ]);
 
-/** Operations this wave implements outside the public set, with their
- *  exact expected status when called authenticated-but-bodyless (the
- *  conformance walker never sends a body/query — see resolvePath). Every
- *  other non-public operation has no controller yet (another wave's
- *  scope) and must hit NotFoundController's catch-all -> 404.
+/** Every non-public documented operation's exact expected status when
+ *  called authenticated-but-bodyless (the conformance walker never sends a
+ *  body/query — see resolvePath). The unimplemented-allowance is EXACTLY
+ *  ZERO (see the Phase 3 §11 step 6b note below) — an operationId absent
+ *  from this map fails the authenticated walk outright rather than
+ *  defaulting to an assumed NotFoundController catch-all -> 404.
  *
  *  P1.17 (catalog/cross-type/progress/people-tags/images/libraries/users/
  *  devices/admin/data-freedom wave): every path param the walker fills in
@@ -257,6 +259,7 @@ const IMPLEMENTED_NON_PUBLIC_EXPECTATIONS: Record<string, number> = {
   getImage: 404, // placeholder entity id never resolves
 
   // progress
+  getProgress: 404, // PLACEHOLDER_UUID item never resolves -> guarded item-visibility 404 (see progress.controller.ts:55-64)
   putProgress: 422, // bodyless -> "positionMs is required"
   listProgress: 200,
 
@@ -528,14 +531,16 @@ describe("contract conformance (STATE.md D17/D21)", () => {
       expect(res.status, `${label} must not be 401 when a valid token is presented`).not.toBe(401);
 
       const expected = IMPLEMENTED_NON_PUBLIC_EXPECTATIONS[op.operationId];
-      if (expected !== undefined) {
-        expect(res.status, `${label} expected status`).toBe(expected);
-      } else {
-        // Not implemented this wave — must hit NotFoundController's
-        // catch-all, proving the guard passed the token through rather
-        // than blocking it (401) or something else mounting unexpectedly.
-        expect(res.status, `${label} (no controller yet -> catch-all)`).toBe(404);
+      if (expected === undefined) {
+        // The unimplemented-allowance is EXACTLY ZERO (see the map's own
+        // header comment) — a missing entry here is a coverage hole in
+        // this suite, not a legitimately-unimplemented operation, so fail
+        // loudly instead of silently assuming a catch-all 404.
+        throw new Error(
+          `${label} has no entry in IMPLEMENTED_NON_PUBLIC_EXPECTATIONS — add its exact expected status (the unimplemented-allowance is EXACTLY ZERO).`,
+        );
       }
+      expect(res.status, `${label} expected status`).toBe(expected);
 
       walked += 1;
     }
