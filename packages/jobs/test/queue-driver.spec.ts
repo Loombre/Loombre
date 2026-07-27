@@ -58,8 +58,17 @@ const DSN = 'postgres://loombre:loombre@localhost:5442/loombre';
  *  actually handed to pg-boss (registration is chained onto ensureStarted,
  *  so it lands a microtask or two after work() returns). */
 async function registerHandler(handler: () => Promise<void>): Promise<BatchHandler> {
+  return registerHandlerWithOpts(handler, {});
+}
+
+/** Same as registerHandler, but forwards `opts` (e.g. onTerminalFailure)
+ *  straight to work() — used by the A-3 seam tests below. */
+async function registerHandlerWithOpts(
+  handler: () => Promise<void>,
+  opts: Record<string, unknown>,
+): Promise<BatchHandler> {
   const queue = createJobQueue(DSN);
-  queue.work('probe', handler);
+  queue.work('probe', handler, opts);
   await vi.waitFor(() => {
     expect(mocks.boss.work).toHaveBeenCalled();
   });
@@ -163,5 +172,79 @@ describe('createJobQueue failure mirroring', () => {
 
     expect(mocks.ledger.recordFailed).toHaveBeenCalledWith('job-3', 'session failure');
     expect(mocks.ledger.recordRetrying).not.toHaveBeenCalled();
+  });
+});
+
+// Owner ledger L1, adjudication A-3: the onTerminalFailure seam. Threaded
+// through the SAME catch block failure-mirroring tests above exercise, so
+// these reuse that block's fake pg-boss/ledger stubs rather than
+// duplicating the scaffolding.
+describe('createJobQueue onTerminalFailure hook (A-3, owner ledger L1)', () => {
+  it('does NOT fire when pg-boss still has attempts left (non-terminal retry)', async () => {
+    const onTerminalFailure = vi.fn(async () => {});
+    const batch = await registerHandlerWithOpts(
+      async () => {
+        throw new Error('transient probe failure');
+      },
+      { onTerminalFailure },
+    );
+
+    await batch([{ id: 'job-hook-1', data: { mediaFileId: 'file-1' }, retryCount: 0, retryLimit: 2 }]);
+
+    expect(mocks.ledger.recordRetrying).toHaveBeenCalled();
+    expect(onTerminalFailure).not.toHaveBeenCalled();
+  });
+
+  it('fires exactly once, with (payload, error), AFTER the ledger recordFailed write, once retries are exhausted', async () => {
+    const order: string[] = [];
+    mocks.ledger.recordFailed.mockImplementationOnce(async () => {
+      order.push('recordFailed');
+    });
+    const thrown = new Error('permanent probe failure');
+    const onTerminalFailure = vi.fn(async () => {
+      order.push('hook');
+    });
+    const batch = await registerHandlerWithOpts(
+      async () => {
+        throw thrown;
+      },
+      { onTerminalFailure },
+    );
+
+    await batch([{ id: 'job-hook-2', data: { mediaFileId: 'file-2' }, retryCount: 2, retryLimit: 2 }]);
+
+    expect(onTerminalFailure).toHaveBeenCalledTimes(1);
+    expect(onTerminalFailure).toHaveBeenCalledWith({ mediaFileId: 'file-2' }, thrown);
+    expect(order).toEqual(['recordFailed', 'hook']);
+  });
+
+  it('a throwing/rejecting hook is swallowed and logged locally — never breaks the ledger transition or the batch result', async () => {
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const onTerminalFailure = vi.fn(async () => {
+      throw new Error('hook blew up');
+    });
+    const batch = await registerHandlerWithOpts(
+      async () => {
+        throw new Error('permanent probe failure');
+      },
+      { onTerminalFailure },
+    );
+
+    const results = await batch([{ id: 'job-hook-3', data: {}, retryCount: 0, retryLimit: 0 }]);
+
+    expect(mocks.ledger.recordFailed).toHaveBeenCalledWith('job-hook-3', 'permanent probe failure');
+    expect(results).toEqual([{ id: 'job-hook-3', status: 'failed', output: { message: 'permanent probe failure' } }]);
+    expect(consoleErrorSpy).toHaveBeenCalled();
+    consoleErrorSpy.mockRestore();
+  });
+
+  it('a queue with no onTerminalFailure configured behaves exactly as before (no crash)', async () => {
+    const batch = await registerHandler(async () => {
+      throw new Error('permanent probe failure');
+    });
+
+    const results = await batch([{ id: 'job-hook-4', data: {}, retryCount: 0, retryLimit: 0 }]);
+
+    expect(results).toEqual([{ id: 'job-hook-4', status: 'failed', output: { message: 'permanent probe failure' } }]);
   });
 });
