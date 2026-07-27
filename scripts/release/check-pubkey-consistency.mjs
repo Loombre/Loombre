@@ -3,7 +3,9 @@
 // Loombre :: scripts/release/check-pubkey-consistency.mjs
 //
 // STATE.md P4.9: the minisign public key must be published, byte-
-// identical, in THREE independently-maintained locations —
+// identical, in THREE canonical, independently-controlled trust
+// locations — "so key-substitution attacks require compromising all of
+// them":
 //   1. keys/minisign.pub (the repo file; also what
 //      scripts/release/embed-public-key.mjs bakes into
 //      packages/shared/src/update-public-key.ts, the server's own copy)
@@ -15,100 +17,124 @@
 //      standalone Markdown file rather than inlined in the workflow YAML
 //      so its ``` fences stay literal — see render-release-notes.mjs's
 //      header for why an inline bash heredoc doesn't work for this)
-// — "so key-substitution attacks require compromising all of them."
 //
-// This script is the CI-runnable proof they agree. Run:
+// This script checks those three PLUS two more things, byte-identical
+// against them (five FIXED_LOCATIONS total — see
+// scripts/release/lib/pubkey-consistency.mjs's header for the full
+// reasoning):
+//   4. packages/shared/src/update-public-key.ts (GENERATED — the
+//      compiled-in copy the server's update-check verifier actually
+//      imports; freshness relative to keys/minisign.pub, i.e. "did
+//      someone forget to run `pnpm embed-public-key`", not a fourth
+//      independent P4.9 trust root)
+//   5. docs/install/linux.md's "Verify what you downloaded" section (same
+//      markers — added after an audit found this page still shipping the
+//      all-zero placeholder key after the real key had landed everywhere
+//      else; H5 residue fix. Not a P4.9 trust root either, but a wrong key
+//      here is exactly as misleading to a downloader as a wrong key
+//      anywhere else.)
+//
+// On TOP of that five-way equality check, this script separately treats
+// the all-zero PLACEHOLDER key as its own, prior failure condition (H5):
+// a placeholder pasted into every location agrees with itself perfectly,
+// and an equality-only check would PASS against it. See
+// scripts/release/lib/pubkey-consistency.mjs's header + detectPlaceholder
+// for the two independent signals checked (the literal all-zero base64
+// line, and the `untrusted comment: PLACEHOLDER` self-identification).
+//
+// It ALSO sweeps every other tracked .md page under docs/ (git ls-files,
+// so build output under docs/.vitepress/dist is never in scope — that
+// directory isn't tracked anyway) for a stray LOOMBRE_MINISIGN_PUBLIC_KEY
+// marker block nobody wired into the five FIXED_LOCATIONS above; any such
+// block must extract cleanly and must not hold the placeholder.
+//
+// Pure comparison/extraction logic lives in
+// scripts/release/lib/pubkey-consistency.mjs (node:test-covered by
+// scripts/release/test/pubkey-consistency.test.mjs with in-memory
+// fixtures); this file is the thin fs-reading CLI wrapper. Run:
 //   node scripts/release/check-pubkey-consistency.mjs
-// Wired into .github/workflows/release.yml's `release` job (this lane owns
-// that workflow). It is NOT wired into .github/workflows/ci.yml — that
-// file belongs to the orchestrator/another lane; see the release-lane
-// report for that hand-off note. Also verifies the GENERATED
-// packages/shared/src/update-public-key.ts is in sync with keys/
-// minisign.pub (catches "forgot to run `pnpm embed-public-key`" as a
-// fourth, build-artifact-freshness check, not a fourth independent P4.9
-// location).
+// Wired into BOTH .github/workflows/release.yml's `prepare` job (fail a
+// bad tag in seconds, before any build spend) AND its `release` job
+// (pre-sign, belt-and-braces — this lane owns that workflow) AND
+// .github/workflows/ci.yml's "pubkey three-location consistency" step
+// (every PR that touches any checked location, not just at tag time —
+// that file belongs to the orchestrator/another lane; see the release-
+// lane report for that hand-off note).
 //
-// Exits non-zero with a clear diff-style report on any mismatch; exits 0
-// silently... well, with one confirming line, on success.
+// Exits non-zero with a clear, per-problem report on any placeholder,
+// structural, or mismatch finding; exits 0 with one confirming line on
+// success.
 
 import { readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { checkPubkeyConsistency, FIXED_LOCATIONS } from "./lib/pubkey-consistency.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, "../..");
 
-const BEGIN_MARKER = "LOOMBRE_MINISIGN_PUBLIC_KEY_BEGIN";
-const END_MARKER = "LOOMBRE_MINISIGN_PUBLIC_KEY_END";
-
 function readRepoFile(relPath) {
-  return readFileSync(path.join(REPO_ROOT, relPath), "utf8");
+  try {
+    return readFileSync(path.join(REPO_ROOT, relPath), "utf8");
+  } catch {
+    return undefined;
+  }
 }
 
-/** Extracts the fenced-code-block content between the two marker comments. */
-function extractMarkedBlock(source, sourceLabel) {
-  const beginIdx = source.indexOf(BEGIN_MARKER);
-  const endIdx = source.indexOf(END_MARKER);
-  if (beginIdx === -1 || endIdx === -1 || endIdx < beginIdx) {
-    throw new Error(`${sourceLabel}: missing or misordered ${BEGIN_MARKER}/${END_MARKER} markers`);
-  }
-  const between = source.slice(beginIdx + BEGIN_MARKER.length, endIdx);
-  const fenceMatches = [...between.matchAll(/```(?:\n|\r\n)([\s\S]*?)```/g)];
-  if (fenceMatches.length !== 1) {
-    throw new Error(
-      `${sourceLabel}: expected exactly one \`\`\`-fenced block between the markers, found ${fenceMatches.length}`,
-    );
-  }
-  const content = fenceMatches[0][1];
-  if (content === undefined) {
-    throw new Error(`${sourceLabel}: fenced block matched but captured no content`);
-  }
-  return content.trimEnd();
-}
-
-function normalize(text) {
-  return text.replace(/\r\n/g, "\n").trim();
+/**
+ * Every tracked .md file under docs/ (source tree only — docs/.vitepress/
+ * dist and docs/.vitepress/cache are build output/cache and are gitignored,
+ * so `git ls-files` already never returns them; the path-substring guard
+ * below is belt-and-braces in case that ever changes).
+ */
+function listDocsMarkdownFiles() {
+  const out = execFileSync("git", ["ls-files", "-z", "--", "docs"], {
+    cwd: REPO_ROOT,
+    encoding: "utf8",
+    maxBuffer: 16 * 1024 * 1024,
+  });
+  return out
+    .split("\0")
+    .filter((p) => p.length > 0)
+    .filter((p) => p.endsWith(".md"))
+    .filter((p) => !p.includes(".vitepress/dist/") && !p.includes(".vitepress/cache/"));
 }
 
 function main() {
-  const keysFile = normalize(readRepoFile("keys/minisign.pub"));
-
-  const docsSource = readRepoFile("docs/ops/updating.md");
-  const docsBlock = normalize(extractMarkedBlock(docsSource, "docs/ops/updating.md"));
-
-  const templateSource = readRepoFile("scripts/release/release-notes-template.md");
-  const templateBlock = normalize(extractMarkedBlock(templateSource, "scripts/release/release-notes-template.md"));
-
-  const generatedSource = readRepoFile("packages/shared/src/update-public-key.ts");
-  const generatedMatch = generatedSource.match(/LOOMBRE_UPDATE_PUBLIC_KEY_TEXT = "([\s\S]*?)";\n?$/);
-  if (!generatedMatch || generatedMatch[1] === undefined) {
-    throw new Error("packages/shared/src/update-public-key.ts: could not find the LOOMBRE_UPDATE_PUBLIC_KEY_TEXT export");
+  const files = {};
+  for (const loc of FIXED_LOCATIONS) {
+    const content = readRepoFile(loc.label);
+    if (content !== undefined) files[loc.label] = content;
   }
-  const generatedKey = normalize(JSON.parse(`"${generatedMatch[1]}"`));
 
-  const locations = [
-    { label: "keys/minisign.pub", value: keysFile },
-    { label: "docs/ops/updating.md", value: docsBlock },
-    { label: "scripts/release/release-notes-template.md", value: templateBlock },
-    { label: "packages/shared/src/update-public-key.ts (generated — run `pnpm embed-public-key`)", value: generatedKey },
-  ];
+  const docsSweep = listDocsMarkdownFiles().map((relPath) => ({
+    path: relPath,
+    content: readRepoFile(relPath) ?? "",
+  }));
 
-  const reference = locations[0];
-  const mismatches = locations.slice(1).filter((loc) => loc.value !== reference.value);
+  const verdict = checkPubkeyConsistency({ files, docsSweep });
 
-  if (mismatches.length > 0) {
-    console.error(`check-pubkey-consistency: FAIL — ${mismatches.length} location(s) disagree with keys/minisign.pub\n`);
-    for (const loc of mismatches) {
-      console.error(`--- ${loc.label} ---`);
-      console.error(loc.value);
-      console.error("");
+  if (!verdict.ok) {
+    console.error(`check-pubkey-consistency: FAIL — ${verdict.problems.length} problem(s) found\n`);
+    for (const problem of verdict.problems) {
+      console.error(`[${problem.type}] ${problem.message}`);
     }
-    console.error(`--- keys/minisign.pub (reference) ---`);
-    console.error(reference.value);
+    const mismatches = verdict.problems.filter((p) => p.type === "mismatch");
+    if (mismatches.length > 0) {
+      console.error("");
+      for (const loc of verdict.locations) {
+        console.error(`--- ${loc.label} ---`);
+        console.error(loc.value);
+        console.error("");
+      }
+    }
     process.exit(1);
   }
 
-  console.log(`check-pubkey-consistency: PASS — all ${locations.length} locations agree`);
+  console.log(
+    `check-pubkey-consistency: PASS — all ${FIXED_LOCATIONS.length} locations agree and no placeholder found (docs sweep: ${docsSweep.length} file(s) scanned)`,
+  );
 }
 
 main();
