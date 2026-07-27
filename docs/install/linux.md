@@ -69,29 +69,24 @@ proves this tarball is authentic too:
 minisign -Vm SHA256SUMS -P <public key — see below>
 ```
 
-The minisign public key is published in **three independent places** (this doc,
-`keys/minisign.pub` in the repository, and every release's notes) so
-substituting all three would be required to defeat verification:
+The minisign public key is published, byte-identical, in multiple
+independently-maintained places — this page, `docs/ops/updating.md`'s
+"Verifying releases" section, `keys/minisign.pub` in the repository, and
+every release's notes — so substituting all of them simultaneously would
+be required to defeat verification. `scripts/release/check-pubkey-
+consistency.mjs` is the CI-runnable proof they all agree (this page
+included, as of the H5 hardening pass); `keys/README.md` documents the
+full key-rotation and key-generation story.
 
-```
 <!-- LOOMBRE_MINISIGN_PUBLIC_KEY_BEGIN -->
-untrusted comment: PLACEHOLDER — NOT a real key. Generate a real keypair per keys/README.md before any real release; this all-zero key never verifies anything (it is structurally valid minisign-format so tooling can parse it, but every real signature will correctly fail against it).
-RWQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
-<!-- LOOMBRE_MINISIGN_PUBLIC_KEY_END -->
 ```
+untrusted comment: minisign public key 9EA9BD1D8785E084
+RWSE4IWHHb2pnrgvN8eVIFOOv1vK84f5Zkk8lMtw6t4VlggsYAOj2oA5
+```
+<!-- LOOMBRE_MINISIGN_PUBLIC_KEY_END -->
 
-**Pre-release note:** the key above is currently that placeholder (see its
-own `untrusted comment:` line) — no real release has shipped yet, so a real
-minisign signature is *expected* to fail against it (it's structurally
-valid so tooling can parse it, but cryptographically inert by design; see
-`keys/README.md`). That's a "no release yet" state, not a "this download is
-compromised" state — don't conflate the two while this note is still here.
-Once the project's real keypair is generated and wired into all three P4.9
-locations, this note and the placeholder key above are both replaced, and
-the next paragraph is what governs:
-
-If verification fails or the three locations disagree on a **real**
-release, **do not install** — that is exactly the scenario minisign
+If verification fails, or the published locations disagree with each
+other, **do not install** — that is exactly the scenario minisign
 verification exists to catch.
 
 ## 3. Extract + install

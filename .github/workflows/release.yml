@@ -71,6 +71,28 @@ jobs:
           fi
           echo "prepare: package.json version ($actual) matches tag v$EXPECTED_VERSION"
 
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+
+      # H5 (release-integrity guard against the placeholder minisign key):
+      # runs right after the tag/version check above — the earliest
+      # possible fail-fast point, before any build-* job spends CI minutes
+      # (macos-latest alone bills 10x). Fails the tagged build outright if
+      # any of the five checked locations (the three P4.9 trust roots plus
+      # the generated packages/shared/src/update-public-key.ts plus
+      # docs/install/linux.md) disagree with each other, OR if any of them
+      # — or any other docs/**/*.md page carrying the marker block — still
+      # holds the all-zero placeholder key. This script is
+      # node-builtins-only (node:fs, node:child_process, node:path,
+      # node:url — see its own header): no `pnpm install` needed in this
+      # job, just Node itself (setup-node above) and git (already present
+      # from the Checkout step). Also re-run pre-sign in the `release` job
+      # below (belt-and-braces) and on every PR via ci.yml.
+      - name: Check the minisign public key's locations agree (P4.9 + H5 placeholder gate)
+        run: node scripts/release/check-pubkey-consistency.mjs
+
   # ───────────────────────────────────────────────────────────────────────
   # build-linux — calls lane I1's installers/linux/build-tarball.mjs
   # (STATE.md: I1 owns installers/linux + scripts/fetch-ffmpeg.mjs).
@@ -439,7 +461,7 @@ jobs:
             --base-url "https://github.com/${REPO}/releases/download/${TAG}" \
             --out dist/release/manifest.json
 
-      - name: Check the minisign public key's three P4.9 locations agree
+      - name: Check the minisign public key's locations agree (P4.9 + H5 placeholder gate)
         run: node scripts/release/check-pubkey-consistency.mjs
 
       - name: Install minisign (official apt package — never an npm dependency, P4.18/README.md)
@@ -461,6 +483,24 @@ jobs:
           echo "$LOOMBRE_MINISIGN_SECKEY_PASSWORD" | minisign -S -s "$seckey_path" -m dist/release/manifest.json
           echo "$LOOMBRE_MINISIGN_SECKEY_PASSWORD" | minisign -S -s "$seckey_path" -m dist/release/SHA256SUMS
           shred -u "$seckey_path" 2>/dev/null || rm -f "$seckey_path"
+
+      # H5 clause (b): "the key file used for signing matches the
+      # placeholder" — the check-pubkey-consistency step above already
+      # proves keys/minisign.pub itself isn't the placeholder and agrees
+      # with every other checked location, but it never sees the SECRET
+      # key, so it can't prove the LOOMBRE_MINISIGN_SECKEY actually used
+      # above pairs with that committed public key (as opposed to some
+      # other, unrelated real key). Verifying the just-produced signatures
+      # against the committed keys/minisign.pub structurally closes that
+      # gap without ever touching or logging the secret itself — a fresh
+      # `minisign -V` invocation, not a re-check of anything already
+      # checked.
+      - name: Verify manifest.json + SHA256SUMS signatures against the committed keys/minisign.pub
+        run: |
+          set -euo pipefail
+          minisign -V -p keys/minisign.pub -m dist/release/manifest.json
+          minisign -V -p keys/minisign.pub -m dist/release/SHA256SUMS
+          echo "release: manifest.json + SHA256SUMS signatures verified against keys/minisign.pub"
 
       - name: Remove the docker-image.json sidecar before publishing (internal build input, not a release asset)
         run: rm -f dist/release/docker-image.json

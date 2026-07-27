@@ -34,8 +34,9 @@ export function renderPublicKeyFileSource(rawFileContents) {
     "// update-check verifier (apps/server/src/session/update-check) imports\n" +
     "// ONLY this constant, never reads keys/minisign.pub off disk at runtime —\n" +
     "// see scripts/release/lib/embed-public-key.mjs's header for why.\n" +
-    "// Regenerate with `pnpm embed-public-key` after replacing the placeholder\n" +
-    "// key (keys/README.md has the full three-location rollout checklist).\n" +
+    "// Regenerate with `pnpm embed-public-key` whenever keys/minisign.pub\n" +
+    "// changes — initial real-key rollout (done; see keys/README.md) or any\n" +
+    "// future key rotation (keys/README.md has the full checklist either way).\n" +
     "\n" +
     `export const LOOMBRE_UPDATE_PUBLIC_KEY_TEXT = ${JSON.stringify(`${trimmed}\n`)};\n`
   );

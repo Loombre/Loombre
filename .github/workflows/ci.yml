@@ -204,15 +204,24 @@ jobs:
       - name: scripts + release tooling tests
         run: pnpm scripts:test
 
-      - name: pubkey three-location consistency (P4.9)
+      - name: pubkey consistency + placeholder gate (P4.9 + H5)
         if: runner.os == 'Linux'
         shell: bash
-        # The minisign public key must be byte-identical across its three
-        # published locations (repo keys/minisign.pub, docs/install, release
-        # notes template) so a key-substitution attack requires compromising
-        # all of them. release.yml runs this too; running it here means a PR
-        # touching any location fails fast, not at tag time. ubuntu-only:
-        # the check is platform-independent text comparison.
+        # The minisign public key must be byte-identical across five
+        # checked locations (repo keys/minisign.pub, docs/ops/updating.md,
+        # scripts/release/release-notes-template.md, the GENERATED
+        # packages/shared/src/update-public-key.ts, and docs/install/
+        # linux.md) so a key-substitution attack requires compromising all
+        # of them — see scripts/release/lib/pubkey-consistency.mjs's header
+        # for exactly which three are the P4.9 trust roots vs. the other
+        # two. The same run also fails outright if ANY of those locations —
+        # or any other docs/**/*.md page carrying the marker block — still
+        # holds the all-zero placeholder key (H5: mutual agreement alone
+        # isn't enough, since an all-placeholder tree agrees with itself
+        # perfectly). release.yml's `prepare` and `release` jobs run this
+        # too; running it here means a PR touching any checked location
+        # fails fast, not at tag time. ubuntu-only: the check is
+        # platform-independent text comparison.
         run: node scripts/release/check-pubkey-consistency.mjs
 
       - name: scan smoke — 500-file generated library (Phase 1 wave 4)
