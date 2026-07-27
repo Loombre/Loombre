@@ -209,7 +209,7 @@ enforced, not aspirational.
 ## Contributing
 
 - **[CONTRIBUTING.md](CONTRIBUTING.md)** — the short version: feedback-loop-first
-  (no code before a failing check exists), `pnpm gate` must pass, and new
+  (no code before a failing check exists), `pnpm gate:full` must pass, and new
   playback decision rules ship with matrix cases in the same PR.
 - **[SECURITY.md](SECURITY.md)** — found a security issue? Report it privately,
   not as a public issue.

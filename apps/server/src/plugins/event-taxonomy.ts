@@ -67,7 +67,7 @@ export { ADMIN_ONLY_EVENT_TYPES };
 
 /** Returns the GRANTABLE set of outbox event `type` values — the closed
  *  envelope enum (packages/contract/event-schemas/envelope.schema.json's
- *  `type.enum`) MINUS `ADMIN_ONLY_EVENT_TYPES` (H-4 fix wave: those ten
+ *  `type.enum`) MINUS `ADMIN_ONLY_EVENT_TYPES` (H-4 fix wave: admin-only
  *  types can be neither requested by a plugin manifest nor granted by an
  *  admin in LPP v1 — see this file's header). Throws if the file cannot be
  *  located or is shaped unexpectedly (a packaging defect, not a plugin's

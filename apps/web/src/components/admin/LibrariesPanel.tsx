@@ -164,7 +164,10 @@ function LibraryDashboardRow({
           <ul className={styles.unmatchedList}>
             {scanState.probeFailed.map((failure, index) => (
               <li key={`${failure.path}-${index}`} className={styles.unmatchedItem}>
-                <span className={styles.unmatchedPath}>{failure.path}</span>
+                {/* code is the closed ProbeError enum — the reason the
+                    event carries it is so the admin can see WHY (Lane R
+                    F8: rendering only the path buried that). */}
+                <span className={styles.unmatchedPath}>{failure.path}</span> — {failure.code}
               </li>
             ))}
           </ul>

@@ -23,7 +23,7 @@
 //     (A-5(b): runProbe against a text file throws ProbeError).
 //   - packages/jobs/test/queue-driver.spec.ts (A-5(c): the terminal-failure
 //     seam fires only once retries are exhausted).
-//   - apps/worker/test/probe/probe-failed-hook.spec.ts (A-5(d): the
+//   - apps/worker/test/probe/terminal-failure-hook.spec.ts (A-5(d): the
 //     terminal-failure hook writes a probe.failed event).
 //   - apps/web/src/components/admin/LibrariesPanel.test.tsx (A-5(e): the
 //     panel renders the disclosure).
