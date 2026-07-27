@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://loombre.com/schemas/events/probe.failed.schema.json",
+  "title": "ProbeFailedPayload",
+  "description": "Payload for envelope.type === 'probe.failed'. Owner ledger L1, adjudication A-2/A-3: emitted by the worker's 'probe' job onTerminalFailure hook (packages/jobs/src/queue.ts's queue.work() seam) when a probe job exhausts its retries — the ARCHITECTURE-HONEST alternative to the false premise that ingestion requires a successful ffprobe. Before this event existed, a terminal probe failure wrote no probe columns at all (the item stayed visible, permanently 'not ready') and surfaced only as a failed 'probe' row in the generic jobs ledger, with the path buried in last_error free text. NO free-text message here on purpose (CLAUDE.md invariant 7 spirit extended to this stream: stderr tails never enter the event outbox) — `code` is the closed classification, `path` is the library-relative fact an admin needs to go look at the file themselves. envelope.actorUserId is always null (system-originated: a job failure has no human actor in the loop). ADMIN-ONLY delivery, mirroring plugin.health-changed/scan.completed's operational-event posture.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["mediaFileId", "libraryId", "path", "code"],
+  "properties": {
+    "mediaFileId": {
+      "type": "string",
+      "format": "uuid",
+      "description": "The media_files.id whose probe job failed terminally."
+    },
+    "libraryId": {
+      "type": "string",
+      "format": "uuid",
+      "description": "The owning library, resolved via media_files.item_id -> catalog_items.library_id — lets the admin Libraries panel group this failure under the right library without a second lookup."
+    },
+    "path": {
+      "type": "string",
+      "description": "The media_files.path that failed to probe (library-relative or absolute per the scanner's own path convention — never re-derived, just the stored value)."
+    },
+    "code": {
+      "type": "string",
+      "enum": ["binary-not-found", "spawn-failed", "timeout", "nonzero-exit", "invalid-json", "unsupported-container", "unknown"],
+      "description": "apps/worker/src/probe/errors.ts's ProbeErrorCode, verbatim, plus 'unknown' for a thrown value that was not a ProbeError at all (defensive — runProbe's only documented failure mode IS a ProbeError)."
+    }
+  }
+}
