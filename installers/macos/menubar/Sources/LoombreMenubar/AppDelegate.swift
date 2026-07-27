@@ -12,14 +12,12 @@ import LoombreIPCKit
 
 /// Baked build version for the "version" half of the mission's "version +
 /// contract-version mismatch notice" menu item. SYNC NOTE: no Info.plist
-/// exists for a bare `swift build` SPM executable to read
-/// CFBundleShortVersionString from, and build-pkg.mjs's app-bundling step
-/// does not (yet) inject this at build time — mirrors root package.json's
-/// "version" field by hand, same discipline as ContractVersion.swift.
-/// STATE.md P4.11 assigns real single-source version stamping to lane I;
-/// once it lands this becomes a build-time substitution instead of a
-/// hand-synced literal.
-let menubarBuildVersion = "0.0.1"
+/// P4.11 single-source version stamping, landed: build-pkg.mjs's
+/// buildMenubar() regenerates Sources/LoombreMenubar/GeneratedVersion.swift
+/// from root package.json before every `swift build`, so this is never a
+/// hand-synced literal again. The checked-in GeneratedVersion.swift holds
+/// a dev placeholder for bare `swift build` runs outside the pkg pipeline.
+let menubarBuildVersion = loombreGeneratedVersion
 
 let pollIntervalSeconds: TimeInterval = 3.0
 

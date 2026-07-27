@@ -110,6 +110,21 @@ public sealed class LoombreHostedService : ServiceBase
 
         ApplyEnvFile(psi, _options.EnvFilePath);
 
+        if (_options.SpawnRestricted)
+        {
+            // pg_ctl's privilege-drop technique, applied at the node spawn —
+            // see RestrictedProcess.cs's header for the full why (embedded
+            // postgres.exe refuses admin tokens; LocalSystem is one).
+            var started = RestrictedProcess.Start(psi);
+            started.Process.EnableRaisingEvents = true;
+            started.Process.Exited += OnChildExited;
+            _child = started.Process;
+            _ = PumpAsync(started.Stdout);
+            _ = PumpAsync(started.Stderr);
+            Log("child spawned with a restricted token (Administrators SID disabled)");
+            return;
+        }
+
         var child = new Process { StartInfo = psi, EnableRaisingEvents = true };
         child.OutputDataReceived += (_, e) => { if (e.Data is not null) Log(e.Data); };
         child.ErrorDataReceived += (_, e) => { if (e.Data is not null) Log(e.Data); };
@@ -119,6 +134,17 @@ public sealed class LoombreHostedService : ServiceBase
         child.BeginOutputReadLine();
         child.BeginErrorReadLine();
         _child = child;
+    }
+
+    private async Task PumpAsync(StreamReader reader)
+    {
+        // Same at-least-line-granular interleaving the Process event
+        // handlers give the unrestricted path.
+        string? line;
+        while ((line = await reader.ReadLineAsync().ConfigureAwait(false)) is not null)
+        {
+            Log(line);
+        }
     }
 
     private void OnChildExited(object? sender, EventArgs e)
