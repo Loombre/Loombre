@@ -15,6 +15,11 @@ import type { PlanReason } from "./reasons.js";
 // §2.1 MediaInfo
 // ---------------------------------------------------------------------------
 
+// v1.1 widening (STATE.md H3, docs/PLAYBACK.md §2.1): asf/mpeg/flv/aac/aiff
+// admit legacy-format ingestion (wmv/wma->asf, mpg/mpeg/vob->mpeg, flv, bare
+// ADTS aac, aiff) — none is ever direct-playable (no DeviceProfile declares
+// them), so Stage A routes them like any other non-direct-playable
+// container; zero decision-rule changes elsewhere.
 export type Container =
   | "mp4"
   | "mkv"
@@ -26,7 +31,12 @@ export type Container =
   | "mp3"
   | "ogg"
   | "m4a"
-  | "wav";
+  | "wav"
+  | "asf"
+  | "mpeg"
+  | "flv"
+  | "aac"
+  | "aiff";
 
 export interface MediaInfo {
   fileId: string;

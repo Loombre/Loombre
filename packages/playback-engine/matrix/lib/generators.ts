@@ -47,6 +47,14 @@ import type {
 // Shared value pools (docs/PLAYBACK.md §2 closed enums, full type space)
 // ---------------------------------------------------------------------------
 
+// v1.1 widening (STATE.md H3, docs/PLAYBACK.md §2.1): asf/mpeg/flv/aac/aiff.
+// Sampled here (genRandomPlanInput's totality/determinism/reason-
+// completeness property coverage) but deliberately NOT added to
+// DIRECT_PLAY_VIDEO_CONTAINERS/DIRECT_PLAY_MUSIC_OPTIONS below — no device
+// ever declares these direct-playable (adjudicated: "new containers are
+// simply never direct-playable" — ingestion generosity, not a playback
+// capability), so the constructive direct-play generator must never
+// synthesize one either.
 const ALL_CONTAINERS: Container[] = [
   "mp4",
   "mkv",
@@ -59,6 +67,11 @@ const ALL_CONTAINERS: Container[] = [
   "ogg",
   "m4a",
   "wav",
+  "asf",
+  "mpeg",
+  "flv",
+  "aac",
+  "aiff",
 ];
 
 const ALL_VIDEO_CODECS: VideoCodec[] = ["h264", "hevc", "av1", "vp9", "mpeg2", "vc1", "mpeg4", "unknown"];

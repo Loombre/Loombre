@@ -504,5 +504,11 @@
   "503-transcode-disabled-video-would-transcode-interlaced.yaml": "green",
   "504-transcode-disabled-audio-only-transcode.yaml": "green",
   "505-transcode-disabled-download-remux-unaffected.yaml": "green",
-  "506-transcode-disabled-refusal-interaction-moot.yaml": "green"
+  "506-transcode-disabled-refusal-interaction-moot.yaml": "green",
+  "507-asf-vc1-transcode-codec-unsupported-constrained-tv.yaml": "green",
+  "508-asf-vc1-direct-stream-container-only-vc1-generic.yaml": "green",
+  "509-mpeg-mpeg2-unknown-audio-transcode-mpeg2-generic.yaml": "green",
+  "510-flv-h264-aac-direct-stream-container-only-web-chrome.yaml": "green",
+  "511-aac-music-mode-direct-stream-container-only-aac-only-no-opus.yaml": "green",
+  "512-aiff-music-mode-transcode-container-and-codec-flac-stereo.yaml": "green"
 }

@@ -132,6 +132,26 @@ function LibraryDashboardRow({
         </details>
       )}
 
+      {scanState.lastSkipped && scanState.lastSkipped.count > 0 && (
+        <details className={styles.skippedDisclosure}>
+          <summary className={styles.skippedSummary}>
+            {scanState.lastSkipped.count} skipped (unsupported format)
+          </summary>
+          <ul className={styles.unmatchedList}>
+            {scanState.lastSkipped.files.map((path) => (
+              <li key={path} className={styles.unmatchedItem}>
+                <span className={styles.unmatchedPath}>{path}</span>
+              </li>
+            ))}
+          </ul>
+          {scanState.lastSkipped.files.length < scanState.lastSkipped.count && (
+            <p className={styles.empty}>
+              and {scanState.lastSkipped.count - scanState.lastSkipped.files.length} more…
+            </p>
+          )}
+        </details>
+      )}
+
       {fixingItem && (
         <FixMatch
           itemId={fixingItem.id}

@@ -167,6 +167,26 @@ describe('getMediaInfoForFile (guard-free, internal)', () => {
     const media = await getMediaInfoForFile(db, '11111111-1111-4111-8111-111111111111');
     expect(media).toBeUndefined();
   });
+
+  // STATE.md H3 (v1.1 widening, docs/PLAYBACK.md §2.1): this module's own
+  // CONTAINERS whitelist (deliberately a separate copy from query/
+  // media-info.ts's — see this file's header) must ALSO include every
+  // closed Container union member, or a seek-restart against a legitimately
+  // probed .aiff/.wmv/etc. file would fail as if unprobed.
+  it('assembles MediaInfo for a v1.1-reinstated container (aiff) once probed', async () => {
+    const aiffFileId = (
+      await rawClient.query<{ id: string }>(
+        `INSERT INTO media_files (item_id, path, container, duration_ms, size_bytes, probed_at_ms)
+         VALUES ($1, '/media/test/legacy-widening-check.aiff', 'aiff', 90000, 45000000, $2)
+         RETURNING id`,
+        [itemId, Date.now()],
+      )
+    ).rows[0]!.id;
+
+    const media = await getMediaInfoForFile(db, aiffFileId);
+    expect(media).toBeDefined();
+    expect(media?.container).toBe('aiff');
+  });
 });
 
 describe('markSessionStarting', () => {

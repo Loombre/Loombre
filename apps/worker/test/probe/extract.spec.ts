@@ -630,9 +630,16 @@ describe("extractMediaInfo — container disambiguation edge cases", () => {
   });
 
   it("throws a typed ProbeError for a format_name outside the closed Container union", () => {
+    // 'wv' (WavPack) genuinely has no §2.1 Container member — it's in
+    // EXCLUDED_MEDIA_EXTENSIONS (apps/worker/src/scan/parse/path-utils.ts,
+    // STATE.md H3) for exactly this reason. NOTE: 'asf' used to be this
+    // test's example format_name before H3 widened the Container union to
+    // include it (wmv/wma both mux to 'asf' — see apps/worker/test/scan/
+    // media-extensions.spec.ts's FORMAT_FACTS) — asf now resolves instead
+    // of throwing, so it no longer fits this test's purpose.
     const raw: RawProbeResult = {
       streams: [],
-      format: { format_name: "asf", duration: "1.0", size: "1", bit_rate: "8" },
+      format: { format_name: "wv", duration: "1.0", size: "1", bit_rate: "8" },
     };
     expect(() => extractMediaInfo(raw, { sizeBytes: 1, fileId: "bad" })).toThrowError(ProbeError);
     try {

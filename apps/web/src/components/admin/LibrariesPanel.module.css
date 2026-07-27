@@ -185,6 +185,39 @@
   white-space: nowrap;
 }
 
+/* STATE.md H3: "N skipped (unsupported format)" disclosure — mirrors
+   .unmatchedDisclosure/.unmatchedSummary's shape exactly (same pill +
+   expandable-list pattern), but neutral-muted rather than warning-amber:
+   an excluded-format file isn't something the admin needs to act on the
+   way an unmatched item is, only something they should be able to SEE. */
+.skippedDisclosure {
+  margin-top: var(--space-2xs);
+}
+
+.skippedSummary {
+  display: inline-flex;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--track-mono);
+  color: var(--color-text-muted);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-pill);
+  padding: 3px 11px;
+  text-transform: uppercase;
+  list-style: none;
+  transition: background-color var(--motion-fast) var(--ease-out);
+}
+
+.skippedSummary:hover {
+  background: var(--color-surface-hover);
+}
+
+.skippedSummary::-webkit-details-marker {
+  display: none;
+}
+
 .empty {
   margin: 0;
   padding: var(--space-md);
