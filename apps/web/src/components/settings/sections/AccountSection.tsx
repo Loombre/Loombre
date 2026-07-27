@@ -55,7 +55,13 @@ import { SegmentedControl } from "../../ui/SegmentedControl.js";
 import { useRestricted } from "../../restricted/RestrictedProvider.js";
 import { apiGet, apiPatch, apiPut, LoombreApiError } from "../../../lib/api-client.js";
 import { PIN_LENGTH, isPinComplete, sanitizePinInput, stripPinDigits } from "../../../lib/pin-entry.js";
-import { LANGUAGE_CODES } from "@loombre/shared";
+// Subpath import, NOT the barrel: @loombre/shared's barrel also exports
+// server-side modules importing node:crypto/node:path, which the Next
+// production webpack build refuses to bundle (UnhandledSchemeError — it
+// broke perf-lighthouse/perf-web-budget on the first 3-OS dispatch of the
+// audit-residue run). language-codes is pure data + pure functions, safe
+// for the client chunk; the subpath keeps the barrel out of the graph.
+import { LANGUAGE_CODES } from "@loombre/shared/language-codes";
 import type { components } from "@loombre/sdk";
 import styles from "./AccountSection.module.css";
 
