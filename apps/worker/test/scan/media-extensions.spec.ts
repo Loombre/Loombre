@@ -12,7 +12,7 @@
 // format_name table below is the captured empirical fact.
 
 import { describe, expect, it } from "vitest";
-import { MEDIA_EXTENSIONS } from "../../src/scan/parse/index.js";
+import { EXCLUDED_MEDIA_EXTENSIONS, MEDIA_EXTENSIONS } from "../../src/scan/parse/index.js";
 import { extractMediaInfo } from "../../src/probe/extract.js";
 import type { Container, RawProbeResult } from "../../src/probe/types.js";
 
@@ -31,9 +31,23 @@ interface FormatFact {
  * what a real `.alac` file on disk is, and probes as the mp4 family; `.ape`
  * likewise has only a demuxer, whose name IS the reported format_name).
  * `container: null` marks the formats the §2.1 union genuinely cannot
- * express — extending that union is a spec change (docs/PLAYBACK.md) plus
- * new playback-engine matrix cases, so v1 keeps them out of the scanner
- * instead of ingesting content it can never play.
+ * express — v1.1 (STATE.md H3) widened the union to admit wmv/mpg/mpeg/
+ * vob/flv/aac/aiff (see docs/PLAYBACK.md §2.1's widening note and apps/
+ * worker/src/probe/extract.ts's SIMPLE_CONTAINER_MAP), so only ape/wv (and
+ * wma — see below) remain genuinely unrepresentable. `container: null`
+ * extensions are kept out of MEDIA_EXTENSIONS by the first test below; the
+ * v1.1-reinstated ones are asserted admitted by the second.
+ *
+ * `wma` is a special case worth calling out: it shares .wmv's `asf`
+ * format_name (verified empirically — ffmpeg's asf muxer reports the
+ * identical format_name for an audio-only wmav2 stream as for a video wmv2
+ * stream), so it is now technically REPRESENTABLE (`container: 'asf'`)
+ * even though it stays OUT of MEDIA_EXTENSIONS in v1 — the exclusion is a
+ * policy call (genuinely rare + thin codec support, EXCLUDED_MEDIA_
+ * EXTENSIONS in apps/worker/src/scan/parse/path-utils.ts), not a technical
+ * one. The scanner never enqueues a probe job for an excluded extension, so
+ * this container/extension mismatch is inert in production; it is recorded
+ * here only for factual accuracy of what resolveContainer actually does.
  */
 const FORMAT_FACTS: Record<string, FormatFact> = {
   // video
@@ -45,11 +59,11 @@ const FORMAT_FACTS: Record<string, FormatFact> = {
   ts: { formatName: "mpegts", container: "ts" },
   m2ts: { formatName: "mpegts", container: "ts" },
   webm: { formatName: "matroska,webm", container: "webm" },
-  wmv: { formatName: "asf", container: null },
-  mpg: { formatName: "mpeg", container: null },
-  mpeg: { formatName: "mpeg", container: null },
-  flv: { formatName: "flv", container: null },
-  vob: { formatName: "mpeg", container: null },
+  wmv: { formatName: "asf", container: "asf" },
+  mpg: { formatName: "mpeg", container: "mpeg" },
+  mpeg: { formatName: "mpeg", container: "mpeg" },
+  flv: { formatName: "flv", container: "flv" },
+  vob: { formatName: "mpeg", container: "mpeg" },
   // audio
   flac: { formatName: "flac", container: "flac" },
   mp3: { formatName: "mp3", container: "mp3" },
@@ -59,11 +73,13 @@ const FORMAT_FACTS: Record<string, FormatFact> = {
   opus: { formatName: "ogg", container: "ogg" },
   wav: { formatName: "wav", container: "wav" },
   alac: { formatName: "mov,mp4,m4a,3gp,3g2,mj2", majorBrand: "M4A ", container: "m4a" },
-  aac: { formatName: "aac", container: null },
-  wma: { formatName: "asf", container: null },
+  aac: { formatName: "aac", container: "aac" },
+  // Technically representable (shares .wmv's 'asf' format_name — see header
+  // note above) but stays excluded from MEDIA_EXTENSIONS for policy reasons.
+  wma: { formatName: "asf", container: "asf" },
   ape: { formatName: "ape", container: null },
   wv: { formatName: "wv", container: null },
-  aiff: { formatName: "aiff", container: null },
+  aiff: { formatName: "aiff", container: "aiff" },
 };
 
 function rawFor(fact: FormatFact): RawProbeResult {
@@ -102,5 +118,25 @@ describe("scanner media extensions vs. the probe pipeline's Container union", ()
       .map(([ext]) => ext);
     expect(unrepresentable.length).toBeGreaterThan(0);
     expect(unrepresentable.filter((ext) => MEDIA_EXTENSIONS.has(ext))).toEqual([]);
+  });
+
+  // --- v1.1 (STATE.md H3) ---------------------------------------------------
+
+  it("admits the 7 v1.1-reinstated legacy extensions (wmv/mpg/mpeg/vob/flv/aac/aiff)", () => {
+    for (const ext of ["wmv", "mpg", "mpeg", "vob", "flv", "aac", "aiff"]) {
+      expect(MEDIA_EXTENSIONS.has(ext), ext).toBe(true);
+    }
+  });
+
+  it("EXCLUDED_MEDIA_EXTENSIONS (ape/wv/wma) never overlaps MEDIA_EXTENSIONS, regardless of technical representability", () => {
+    // wma is technically representable (container 'asf', shared with wmv —
+    // see the FORMAT_FACTS header note) yet still must never be admitted:
+    // the exclusion is a v1 policy call, not merely "probe would throw".
+    expect(EXCLUDED_MEDIA_EXTENSIONS.has("wma")).toBe(true);
+    expect(FORMAT_FACTS["wma"]!.container).not.toBeNull();
+    for (const ext of EXCLUDED_MEDIA_EXTENSIONS) {
+      expect(MEDIA_EXTENSIONS.has(ext), `${ext} must not be in MEDIA_EXTENSIONS`).toBe(false);
+    }
+    expect([...EXCLUDED_MEDIA_EXTENSIONS].sort()).toEqual(["ape", "wma", "wv"]);
   });
 });

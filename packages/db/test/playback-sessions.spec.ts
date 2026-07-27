@@ -157,6 +157,29 @@ describe('getMediaInfoAssembly', () => {
     const result = await getMediaInfoAssembly(db, adminCtx, { itemId: '11111111-1111-4111-8111-111111111111' });
     expect(result).toBeUndefined();
   });
+
+  // STATE.md H3 (v1.1 widening, docs/PLAYBACK.md §2.1): the CONTAINERS
+  // whitelist this module gates on (a probed-but-container-outside-the-set
+  // row is treated as "not ready", same as an unprobed one) must include
+  // every closed Container union member — a real ground-truth risk this
+  // lane's recon surfaced beyond the orchestrator's originally-enumerated 5
+  // sites: forgetting to widen this set would silently make every
+  // legitimately-probed .wmv/.mpg/.flv/.aac/.aiff file's MediaInfo
+  // unassemblable forever (getMediaInfoAssembly returns undefined exactly
+  // as it would for an unprobed file), even though probe itself succeeded.
+  it('assembles MediaInfo for a v1.1-reinstated container (asf) once probed — proves the CONTAINERS whitelist was widened alongside the Container union', async () => {
+    const fileId = (
+      await rawClient.query<{ id: string }>(
+        `INSERT INTO media_files (item_id, path, container, duration_ms, size_bytes, probed_at_ms)
+         VALUES ($1, $2, 'asf', 1000, 123456, $3) RETURNING id`,
+        [harborLightsItemId, '/test-fixtures/h3/legacy-widening-check.wmv', Date.now()],
+      )
+    ).rows[0]!.id;
+
+    const result = await getMediaInfoAssembly(db, adminCtx, { fileId });
+    expect(result).toBeDefined();
+    expect(result!.media.container).toBe('asf');
+  });
 });
 
 describe('createPlaybackSession', () => {

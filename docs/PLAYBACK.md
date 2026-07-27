@@ -52,10 +52,21 @@ Internal layout (each stage a pure module with its own matrix cases):
 ## 2. Input type contracts (complete)
 
 ### 2.1 MediaInfo
+
+**v1.1 widening (STATE.md H3):** `Container` gained `asf`|`mpeg`|`flv`|`aac`|
+`aiff` so the scanner can admit their source extensions (wmv/wma→asf,
+mpg/mpeg/vob→mpeg, flv, bare-ADTS aac, aiff) without a permanently-unplayable
+catalog item — docs/PLAN.md §8.1's ingestion generosity, the plan engine
+already decides transcoding. No device ever declares these direct-playable
+(`DeviceProfile.directPlayContainers`); Stage A treats them exactly like any
+other non-direct-playable container. `ape`/`wv`/`wma` stay OUT of v1 (rare,
+thin codec support) — the scanner reports them as a visible skip rather than
+ingesting or throwing.
+
 ```ts
 interface MediaInfo {
   fileId: string;
-  container: Container;              // 'mp4'|'mkv'|'webm'|'avi'|'ts'|'mov'|'flac'|'mp3'|'ogg'|'m4a'|'wav'
+  container: Container;              // 'mp4'|'mkv'|'webm'|'avi'|'ts'|'mov'|'flac'|'mp3'|'ogg'|'m4a'|'wav'|'asf'|'mpeg'|'flv'|'aac'|'aiff'
   durationMs: number;
   sizeBytes: number;
   overallBitrateBps: number;         // size/duration derived if probe lacks it

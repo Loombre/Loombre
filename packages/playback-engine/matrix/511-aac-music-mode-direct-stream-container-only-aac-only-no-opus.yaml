@@ -1,0 +1,49 @@
+name: direct-stream — aac container (v1.1 legacy reinstatement) bare-ADTS music vs aac-only-no-opus (container-only obstacle)
+why: >
+  STATE.md H3: aac is a newly admitted Container member (bare-ADTS audio
+  files — no video streams at all, music mode per Stage D's own
+  media.video.length===0 rule). aac-only-no-opus genuinely declares an aac
+  audio entry (maxChannels 6, this stream is 2ch) — Stage D copies, proving
+  the audio CODEC side needed no change (aac already existed in the closed
+  AudioCodec union; only the Container union gained a same-named member for
+  the bare-stream file format). aac-only-no-opus's directPlayContainers is
+  [mp4] — aac (the container) is not, and never will be, a member, so
+  Stage A alone fires container-not-direct-playable. Because Stage D's OWN
+  verdict stays direct-play (copy succeeded), gapless-degraded does NOT
+  fire here (binding interpretation constraint 5 — it only fires alongside
+  Stage D's own transcode verdict) — contrast with case 512's aiff scenario
+  below, where the audio codec is ALSO unsupported and gapless-degraded
+  does fire.
+
+input:
+  media:
+    fileId: file-0511
+    container: aac
+    durationMs: 210000
+    sizeBytes: 3400000
+    overallBitrateBps: 130000
+    video: []
+    audio:
+      - index: 0
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 128000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device: { fixture: devices.aac-only-no-opus }
+  network: { fixture: networks.local }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.software-only }
+  selection:
+    videoStreamIndex: null
+    audioStreamIndex: 0
+    subtitleStreamIndex: null
+  mode: stream
+
+expect:
+  decision: direct-stream
+  reasons:
+    - container-not-direct-playable

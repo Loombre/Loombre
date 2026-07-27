@@ -1,0 +1,76 @@
+name: transcode — mpeg container (v1.1 legacy reinstatement) mpeg2 video + mp2-shaped (unknown) audio vs mpeg2-generic
+why: >
+  STATE.md H3: mpeg is the newly admitted Container member shared by
+  .mpg/.mpeg/.vob (all three probe to the identical ffprobe format_name
+  'mpeg' — apps/worker/test/scan/media-extensions.spec.ts's FORMAT_FACTS).
+  mpeg2-generic genuinely supports the mpeg2 VIDEO codec within its caps
+  (profile 'main' exact match, 1080p/30fps/8bit/6.5Mbps all within its
+  declared limits) — Stage B copies, proving the codec side needed no
+  widening. mpeg2-generic's directPlayContainers is [ts, mp4] — mpeg is
+  not, and never will be, a member, so Stage A fires container-not-
+  direct-playable. The audio stream represents the real-world mp2 codec
+  these formats commonly carry (verified empirically: apps/worker's ffmpeg
+  8.1.1 mp2 encoder reports codec_name 'mp2', which AUDIO_CODEC_MAP has no
+  entry for and therefore maps to 'unknown' — an EXISTING engine mapping
+  rule, not something this widening changed); mpeg2-generic declares only
+  an aac audio entry, so Stage D rule 1 (no device entry for the stream's
+  codec) fires audio-codec-unsupported, escalating the decision past
+  direct-stream to transcode.
+
+  why (NO Stage G software-fallback reasons — verified empirically against
+  the real engine, unlike seed case 007's mpeg2 scenario): Stage G routes
+  hardware/software backend selection for VIDEO ENCODE work specifically.
+  Because mpeg2-generic genuinely supports the mpeg2 video codec/profile/
+  caps here, Stage B's own verdict is 'copy' (no video re-encode needed) —
+  only the audio stream transcodes. With no video encode work to route,
+  Stage G never engages, so neither `software-fallback:encode` nor
+  `software-fallback:tier-capped` appears, the same shape the audio-only
+  music-mode cases have (e.g. seed case 009) even though this case DOES
+  carry a video stream.
+
+input:
+  media:
+    fileId: file-0509
+    container: mpeg
+    durationMs: 3600000
+    sizeBytes: 3200000000
+    overallBitrateBps: 7100000
+    video:
+      - index: 0
+        codec: mpeg2
+        profile: main
+        level: null
+        width: 1920
+        height: 1080
+        bitDepth: 8
+        frameRate: 29.97
+        bitrateBps: 6500000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: unknown
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 224000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device: { fixture: devices.mpeg2-generic }
+  network: { fixture: networks.local }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.software-only }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+
+expect:
+  decision: transcode
+  reasons:
+    - container-not-direct-playable
+    - audio-codec-unsupported

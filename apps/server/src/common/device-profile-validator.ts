@@ -33,8 +33,26 @@ import { Ajv } from "ajv";
 import type { ValidateFunction } from "ajv";
 
 // Mirrors packages/contract/openapi.yaml components.schemas.{Container,
-// VideoCodec,AudioCodec,SubtitleCodec} enums verbatim.
-const CONTAINER_ENUM = ["mp4", "mkv", "webm", "avi", "ts", "mov", "flac", "mp3", "ogg", "m4a", "wav"];
+// VideoCodec,AudioCodec,SubtitleCodec} enums verbatim. v1.1 (STATE.md H3):
+// asf/mpeg/flv/aac/aiff — see that enum's description for the widening note.
+const CONTAINER_ENUM = [
+  "mp4",
+  "mkv",
+  "webm",
+  "avi",
+  "ts",
+  "mov",
+  "flac",
+  "mp3",
+  "ogg",
+  "m4a",
+  "wav",
+  "asf",
+  "mpeg",
+  "flv",
+  "aac",
+  "aiff",
+];
 const VIDEO_CODEC_ENUM = ["h264", "hevc", "av1", "vp9", "mpeg2", "vc1", "mpeg4", "unknown"];
 const AUDIO_CODEC_ENUM = [
   "aac",

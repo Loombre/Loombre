@@ -39,7 +39,24 @@ import type { DB } from '../types.js';
 import type { ViewerContext } from '../context.js';
 import { getItemById } from './items.js';
 
-export type AssembledContainer = 'mp4' | 'mkv' | 'webm' | 'avi' | 'ts' | 'mov' | 'flac' | 'mp3' | 'ogg' | 'm4a' | 'wav';
+// v1.1 widening (STATE.md H3, docs/PLAYBACK.md §2.1): asf/mpeg/flv/aac/aiff.
+export type AssembledContainer =
+  | 'mp4'
+  | 'mkv'
+  | 'webm'
+  | 'avi'
+  | 'ts'
+  | 'mov'
+  | 'flac'
+  | 'mp3'
+  | 'ogg'
+  | 'm4a'
+  | 'wav'
+  | 'asf'
+  | 'mpeg'
+  | 'flv'
+  | 'aac'
+  | 'aiff';
 export type AssembledVideoCodec = 'h264' | 'hevc' | 'av1' | 'vp9' | 'mpeg2' | 'vc1' | 'mpeg4' | 'unknown';
 export type AssembledAudioCodec =
   | 'aac'
@@ -132,6 +149,11 @@ const CONTAINERS: ReadonlySet<string> = new Set([
   'ogg',
   'm4a',
   'wav',
+  'asf',
+  'mpeg',
+  'flv',
+  'aac',
+  'aiff',
 ]);
 const VIDEO_CODECS: ReadonlySet<string> = new Set(['h264', 'hevc', 'av1', 'vp9', 'mpeg2', 'vc1', 'mpeg4', 'unknown']);
 const AUDIO_CODECS: ReadonlySet<string> = new Set([

@@ -222,6 +222,42 @@
     "note": "hidden file wins over sample-dir classification"
   },
   {
+    "path": "Music/Artist/Album/Track.ape",
+    "kind": "auxiliary",
+    "expected": "unsupported",
+    "note": "STATE.md H3: known-media-but-excluded-in-v1 extension (.ape) -> 'unsupported', distinct from 'ignored' junk"
+  },
+  {
+    "path": "Music/Artist/Album/Track.wv",
+    "kind": "auxiliary",
+    "expected": "unsupported",
+    "note": "STATE.md H3: known-media-but-excluded-in-v1 extension (.wv) -> 'unsupported'"
+  },
+  {
+    "path": "Music/Artist/Album/Track.wma",
+    "kind": "auxiliary",
+    "expected": "unsupported",
+    "note": "STATE.md H3: known-media-but-excluded-in-v1 extension (.wma) -> 'unsupported', even though it is technically probe-representable (shares .wmv's asf format_name) — the exclusion is a v1 policy call"
+  },
+  {
+    "path": "Music/Artist/Album/._Track.wma",
+    "kind": "auxiliary",
+    "expected": "ignored",
+    "note": "hidden AppleDouble sidecar wins over unsupported-extension classification (precedence rule 1 before rule 2)"
+  },
+  {
+    "path": "Movie (2010)/Featurettes/Bonus.wma",
+    "kind": "auxiliary",
+    "expected": "unsupported",
+    "note": "unsupported-extension classification wins over extras-dir classification (precedence rule 2 before rule 5)"
+  },
+  {
+    "path": "Music/Artist/Album/Sample Track.wma",
+    "kind": "auxiliary",
+    "expected": "unsupported",
+    "note": "unsupported-extension classification wins over sample-token classification (precedence rule 2 before rule 4)"
+  },
+  {
     "path": "Movie (2010)/Movie (2010).mkv",
     "kind": "auxiliary",
     "expected": null,
