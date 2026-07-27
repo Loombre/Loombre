@@ -91,9 +91,10 @@ describe("LibrariesPanel — skip-visibility (STATE.md H3)", () => {
     view = renderIntoBody(<LibrariesPanel />);
     await act(async () => {});
 
-    // scan.started first (admin-dashboard-live.ts correlates jobId->libraryId
-    // via this event — scan.completed alone, without a prior scan.started
-    // for the SAME libraryId already known to the map, is a no-op by design).
+    // scan.started first — the common live-watched flow. (A completion
+    // WITHOUT a prior started also registers — Lane R review removed the
+    // old known-library guard so a mid-scan-joining admin still sees the
+    // note; the dedicated test below covers that path.)
     act(() => {
       scanStartedHandler()!({
         id: "e0",
@@ -130,6 +131,37 @@ describe("LibrariesPanel — skip-visibility (STATE.md H3)", () => {
     expect(view.container.textContent).toContain("2 skipped (unsupported format)");
     expect(view.container.textContent).toContain("Old Movie.wma");
     expect(view.container.textContent).toContain("Older Movie.ape");
+  });
+
+  it("renders the skip disclosure from scan.completed ALONE — no prior scan.started (admin joined mid-scan; Lane R review)", async () => {
+    view = renderIntoBody(<LibrariesPanel />);
+    await act(async () => {});
+
+    act(() => {
+      scanCompletedHandler()!({
+        id: "e1",
+        type: "scan.completed",
+        tsMs: 2,
+        actorUserId: null,
+        payload: {
+          jobId: "job-9",
+          libraryId: "lib-1",
+          full: true,
+          itemsAdded: 2,
+          itemsUpdated: 0,
+          itemsRemoved: 0,
+          durationMs: 500,
+          status: "succeeded",
+          errorMessage: null,
+          completedAtMs: 2,
+          skippedUnsupportedCount: 1,
+          skippedUnsupportedFiles: ["Camcorder Clip.mts"],
+        },
+      });
+    });
+
+    expect(view.container.textContent).toContain("1 skipped (unsupported format)");
+    expect(view.container.textContent).toContain("Camcorder Clip.mts");
   });
 
   it("renders no skip disclosure when scan.completed reports zero skips", async () => {

@@ -48,12 +48,12 @@ types work, including a lot of older ones — files ending in .wmv, .mpg,
 or .flv, and audio files ending in .aac or .aiff, all just work
 alongside the more common ones.
 
-A very small handful of older, uncommon audio file types aren't
-supported yet — files ending in .ape, .wv, or .wma. If a folder you
-pointed Loombre at has files like that, they're never added silently and
-never added incorrectly — whoever administers your Loombre can see
-exactly which files were left out and why (see the
-[Admin Guide](../admin-guide/libraries.md)).
+Some older or uncommon file types aren't supported yet — for example
+files ending in .ape, .wv, or .wma, or camcorder files ending in .mts.
+If a folder you pointed Loombre at has files like that, they're never
+added incorrectly and never dropped without a trace — whoever
+administers your Loombre can see exactly which files were left out and
+why (see the [Admin Guide](../admin-guide/libraries.md)).
 
 ## When something won't play smoothly
 

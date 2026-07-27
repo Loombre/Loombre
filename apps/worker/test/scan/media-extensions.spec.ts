@@ -80,6 +80,11 @@ const FORMAT_FACTS: Record<string, FormatFact> = {
   ape: { formatName: "ape", container: null },
   wv: { formatName: "wv", container: null },
   aiff: { formatName: "aiff", container: "aiff" },
+  // .aif is the common alias suffix for the same AIFF content — ffprobe
+  // reports format_name 'aiff' regardless of suffix (verified empirically
+  // against a pcm_s16be mux renamed to .aif; content-sniffed, not
+  // extension-derived).
+  aif: { formatName: "aiff", container: "aiff" },
 };
 
 function rawFor(fact: FormatFact): RawProbeResult {
@@ -128,15 +133,53 @@ describe("scanner media extensions vs. the probe pipeline's Container union", ()
     }
   });
 
-  it("EXCLUDED_MEDIA_EXTENSIONS (ape/wv/wma) never overlaps MEDIA_EXTENSIONS, regardless of technical representability", () => {
+  it("EXCLUDED_MEDIA_EXTENSIONS never overlaps MEDIA_EXTENSIONS, regardless of technical representability", () => {
     // wma is technically representable (container 'asf', shared with wmv —
     // see the FORMAT_FACTS header note) yet still must never be admitted:
     // the exclusion is a v1 policy call, not merely "probe would throw".
+    // Same for mts (identical mpegts family as the admitted m2ts) — its
+    // exclusion is scope discipline (H3's enumerated reinstatement list),
+    // recorded as an owner call in STATE.md, and it must be VISIBLE, which
+    // membership here is what guarantees.
     expect(EXCLUDED_MEDIA_EXTENSIONS.has("wma")).toBe(true);
     expect(FORMAT_FACTS["wma"]!.container).not.toBeNull();
     for (const ext of EXCLUDED_MEDIA_EXTENSIONS) {
       expect(MEDIA_EXTENSIONS.has(ext), `${ext} must not be in MEDIA_EXTENSIONS`).toBe(false);
     }
-    expect([...EXCLUDED_MEDIA_EXTENSIONS].sort()).toEqual(["ape", "wma", "wv"]);
+    expect([...EXCLUDED_MEDIA_EXTENSIONS].sort()).toEqual(
+      [
+        // original v1 policy exclusions
+        "ape",
+        "wma",
+        "wv",
+        // recognized-media tail (Lane R review closed the silent class:
+        // known-media-but-in-neither-set used to fall through to plain
+        // "ignored" with no count, no list, no log)
+        "3g2",
+        "3gp",
+        "ac3",
+        "amr",
+        "asf",
+        "dff",
+        "divx",
+        "dsf",
+        "dts",
+        "dv",
+        "f4v",
+        "m2v",
+        "m4b",
+        "mka",
+        "mpc",
+        "mts",
+        "ogv",
+        "ra",
+        "rm",
+        "rmvb",
+        "shn",
+        "spx",
+        "tta",
+        "wtv",
+      ].sort(),
+    );
   });
 });
