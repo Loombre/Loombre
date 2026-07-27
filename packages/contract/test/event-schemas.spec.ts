@@ -56,8 +56,8 @@ describe("event-schemas (docs/PLAN.md §4.3)", () => {
     }
   });
 
-  it("envelope enum has exactly 24 types (15 through Addendum A + 6 plugin.* [LPP] + 2 watchlist.* [W2 L3] + 1 metadata.match-candidates [W2 L2])", () => {
-    expect(envelopeTypeEnum).toHaveLength(24);
+  it("envelope enum has exactly 25 types (15 through Addendum A + 6 plugin.* [LPP] + 2 watchlist.* [W2 L3] + 1 metadata.match-candidates [W2 L2] + 1 user.restricted-pin-reset [H2])", () => {
+    expect(envelopeTypeEnum).toHaveLength(25);
     expect(envelopeTypeEnum).toEqual(
       expect.arrayContaining([
         "item.added",
@@ -84,6 +84,7 @@ describe("event-schemas (docs/PLAN.md §4.3)", () => {
         "plugin.removed",
         "plugin.health-changed",
         "metadata.match-candidates",
+        "user.restricted-pin-reset",
       ]),
     );
   });
@@ -270,6 +271,11 @@ describe("event-schemas (docs/PLAN.md §4.3)", () => {
           { provider: "tmdb", externalId: "604", title: "The Matrix Reloaded", year: 2003, confidence: 41.2, isBest: false },
         ],
         searchedAtMs: 1_700_000_000_000,
+      },
+      "user.restricted-pin-reset": {
+        userId: "018f6f1e-0000-7000-8000-000000000005",
+        username: "casual",
+        actor: "cli",
       },
     };
 

@@ -20,10 +20,20 @@
 // DELIBERATELY NOT COVERED HERE: `currentPin` on PUT /users/me/restricted.
 // That field proves an ALREADY-STORED secret, and an install predating this
 // rule may hold a PIN of some other length. It stays unconstrained (in the
-// contract too) so those users retain a recovery path — prove the old PIN,
-// set a conforming new one, or opt out — rather than being stranded. It is
-// only ever compared against a stored hash, never stored itself, so the
-// looser shape widens nothing.
+// contract too) so those users retain a SELF-SERVICE migration path — prove
+// the old PIN, set a conforming new one, or opt out — rather than being
+// stranded. It is only ever compared against a stored hash, never stored
+// itself, so the looser shape widens nothing.
+//
+// H2 update: this is no longer the ONLY recovery path. `loombre admin
+// reset-pin <username>` (apps/server/src/cli/admin-reset-pin.ts,
+// server-local, interactively confirmed) now covers the case currentPin
+// can't — a user who has forgotten their PIN entirely, with nothing to
+// prove. currentPin stays exactly as unclamped as before (it is still the
+// right tool for "I know my old PIN and it's just the wrong shape"); it
+// dies naturally once no install can hold a legacy non-conforming PIN
+// anymore, since every such PIN either gets rotated through this field or
+// cleared through the CLI.
 
 /** Digits in a PIN. Mirrors apps/web/src/lib/pin-entry.ts's PIN_LENGTH;
  *  the contract is what actually binds the two. */
