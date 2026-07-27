@@ -152,6 +152,25 @@ function LibraryDashboardRow({
         </details>
       )}
 
+      {/* Owner ledger L1 (adjudication A-4): a DIFFERENT disclosure from
+          the skip one above — that's an extension the scanner never
+          admitted at all; this is a file the scanner DID admit whose
+          probe job then exhausted its retries (probe.failed, admin-only). */}
+      {scanState.probeFailed.length > 0 && (
+        <details className={styles.probeFailedDisclosure}>
+          <summary className={styles.probeFailedSummary}>
+            {scanState.probeFailed.length} failed inspection (unreadable media)
+          </summary>
+          <ul className={styles.unmatchedList}>
+            {scanState.probeFailed.map((failure, index) => (
+              <li key={`${failure.path}-${index}`} className={styles.unmatchedItem}>
+                <span className={styles.unmatchedPath}>{failure.path}</span>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+
       {fixingItem && (
         <FixMatch
           itemId={fixingItem.id}

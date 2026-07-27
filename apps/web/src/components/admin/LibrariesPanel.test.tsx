@@ -79,12 +79,13 @@ describe("LibrariesPanel — skip-visibility (STATE.md H3)", () => {
       | undefined;
   }
 
-  it("subscribes to scan.completed on the shared events socket on mount", async () => {
+  it("subscribes to scan.completed and probe.failed on the shared events socket on mount", async () => {
     view = renderIntoBody(<LibrariesPanel />);
     await act(async () => {});
     const subscribedTypes = subscribeMock.mock.calls.map(([type]) => type);
     expect(subscribedTypes).toContain("scan.started");
     expect(subscribedTypes).toContain("scan.completed");
+    expect(subscribedTypes).toContain("probe.failed");
   });
 
   it('renders "N skipped (unsupported format)" with the file list when scan.completed carries skip data', async () => {
@@ -155,13 +156,13 @@ describe("LibrariesPanel — skip-visibility (STATE.md H3)", () => {
           errorMessage: null,
           completedAtMs: 2,
           skippedUnsupportedCount: 1,
-          skippedUnsupportedFiles: ["Camcorder Clip.mts"],
+          skippedUnsupportedFiles: ["Old Broadcast.wtv"],
         },
       });
     });
 
     expect(view.container.textContent).toContain("1 skipped (unsupported format)");
-    expect(view.container.textContent).toContain("Camcorder Clip.mts");
+    expect(view.container.textContent).toContain("Old Broadcast.wtv");
   });
 
   it("renders no skip disclosure when scan.completed reports zero skips", async () => {
@@ -240,5 +241,107 @@ describe("LibrariesPanel — skip-visibility (STATE.md H3)", () => {
     });
 
     expect(view.container.textContent).not.toContain("skipped (unsupported format)");
+  });
+});
+
+// Owner ledger L1, adjudication A-4/A-5(e): a probe.failed event (admin-
+// only — packages/contract/event-schemas/probe.failed.schema.json) must
+// surface as a visible "N failed inspection (unreadable media)"
+// disclosure, session-scoped and separate from the H3 skip disclosure
+// above (they describe DIFFERENT things: an EXCLUDED extension the
+// scanner never admitted at all, vs. an ADMITTED file that turned out
+// unreadable once a real probe ran against it — see this lane's freeze
+// report for the full "scan.completed stays untouched" rationale).
+describe("LibrariesPanel — probe-failure visibility (owner ledger L1, A-4/A-5e)", () => {
+  let view: TestRender | null = null;
+
+  beforeEach(() => {
+    apiGetMock.mockReset();
+    apiPostMock.mockReset();
+    subscribeMock.mockReset();
+    subscribeMock.mockReturnValue(() => {});
+    apiGetMock.mockImplementation((path: string) => {
+      if (path === "/libraries") return Promise.resolve({ items: [library("lib-1")], nextCursor: null });
+      if (path === "/admin/libraries/{id}/unmatched") return Promise.resolve({ items: [], nextCursor: null });
+      return Promise.reject(new Error(`unexpected apiGet(${path})`));
+    });
+  });
+
+  afterEach(() => {
+    view?.unmount();
+    view = null;
+  });
+
+  function probeFailedHandler(): ((event: unknown) => void) | undefined {
+    return subscribeMock.mock.calls.find(([type]) => type === "probe.failed")?.[1] as
+      | ((event: unknown) => void)
+      | undefined;
+  }
+
+  function emitProbeFailed(mediaFileId: string, path: string, code = "nonzero-exit"): void {
+    probeFailedHandler()!({
+      id: `pf-${mediaFileId}`,
+      type: "probe.failed",
+      tsMs: 1,
+      actorUserId: null,
+      payload: { mediaFileId, libraryId: "lib-1", path, code },
+    });
+  }
+
+  it("renders no probe-failure disclosure when no probe.failed event has been observed this session", async () => {
+    view = renderIntoBody(<LibrariesPanel />);
+    await act(async () => {});
+
+    expect(view.container.textContent).not.toContain("failed inspection");
+  });
+
+  it('accumulates probe.failed events into a "N failed inspection (unreadable media)" disclosure with the path list', async () => {
+    view = renderIntoBody(<LibrariesPanel />);
+    await act(async () => {});
+
+    act(() => {
+      emitProbeFailed("file-1", "Fake Camcorder Clip.mts");
+    });
+    act(() => {
+      emitProbeFailed("file-2", "Another Garbage File.mkv");
+    });
+
+    expect(view.container.textContent).toContain("2 failed inspection (unreadable media)");
+    expect(view.container.textContent).toContain("Fake Camcorder Clip.mts");
+    expect(view.container.textContent).toContain("Another Garbage File.mkv");
+  });
+
+  it("caps the accumulated list at 100 entries (session-scoped ring buffer)", async () => {
+    view = renderIntoBody(<LibrariesPanel />);
+    await act(async () => {});
+
+    for (let i = 0; i < 105; i++) {
+      act(() => {
+        emitProbeFailed(`file-${i}`, `Garbage ${i}.mts`);
+      });
+    }
+
+    expect(view.container.textContent).toContain("100 failed inspection (unreadable media)");
+  });
+
+  it("only accumulates events for the library they name (per-library, like the skip disclosure)", async () => {
+    view = renderIntoBody(<LibrariesPanel />);
+    await act(async () => {});
+
+    act(() => {
+      probeFailedHandler()!({
+        id: "pf-other-lib",
+        type: "probe.failed",
+        tsMs: 1,
+        actorUserId: null,
+        payload: { mediaFileId: "file-x", libraryId: "lib-does-not-exist", path: "Elsewhere.mts", code: "nonzero-exit" },
+      });
+    });
+
+    // The panel only ever renders rows for libraries the /libraries list
+    // returned (lib-1) — an event naming an unknown library simply never
+    // renders, the same "unknown libraryId never renders" behavior the H3
+    // skip disclosure already relies on (admin-dashboard-live.ts).
+    expect(view.container.textContent).not.toContain("Elsewhere.mts");
   });
 });
