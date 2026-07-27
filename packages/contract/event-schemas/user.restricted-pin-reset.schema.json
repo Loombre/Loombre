@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://loombre.com/schemas/events/user.restricted-pin-reset.schema.json",
+  "title": "UserRestrictedPinResetPayload",
+  "description": "Payload for envelope.type === 'user.restricted-pin-reset' (H2). Emitted when the server-local `loombre admin reset-pin <username>` CLI command clears a user's restricted-content opt-in, PIN hash, and live unlock state (packages/db/src/query/identity.js's resetRestrictedPinAndEmit). There is no HTTP path to this event — filesystem access to the running server is the privilege boundary. ADMIN_ONLY delivery (apps/server/src/plugins/event-taxonomy.ts): this is instance-administration/recovery activity, not catalog data, and is never granted to a plugin subscriber. Never carries secrets — no PIN or hash material, ever.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["userId", "username", "actor"],
+  "properties": {
+    "userId": { "type": "string", "format": "uuid" },
+    "username": { "type": "string" },
+    "actor": {
+      "type": "string",
+      "enum": ["cli"],
+      "description": "How the reset was performed. A closed enum of one today (deliberate — future-proofs the shape without inventing a surface that doesn't exist yet); the envelope's own actorUserId is null for this type since the CLI runs outside any authenticated user session."
+    }
+  }
+}

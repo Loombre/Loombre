@@ -57,6 +57,9 @@ export const LPP_DELIVERY_BACKOFF_MAX_MS = 5 * 60_000;
  *
  * `metadata.match-candidates` (Phosphor retheme Wave 2, Lane L2) joined
  * that upstream set for the identical reason — kept in lockstep here too.
+ *
+ * `user.restricted-pin-reset` (H2, owner brief) joined that upstream set
+ * for the identical reason — kept in lockstep here too.
  */
 export const LPP_DELIVERY_ADMIN_ONLY_EVENT_TYPES: readonly string[] = [
   "job.updated",
@@ -68,4 +71,5 @@ export const LPP_DELIVERY_ADMIN_ONLY_EVENT_TYPES: readonly string[] = [
   "plugin.removed",
   "plugin.health-changed",
   "metadata.match-candidates",
+  "user.restricted-pin-reset",
 ];

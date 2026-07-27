@@ -137,6 +137,7 @@ export default defineConfig({
             { text: "Backups & restore", link: "/ops/backup" },
             { text: "External PostgreSQL", link: "/ops/external-postgres" },
             { text: "systemd", link: "/ops/systemd" },
+            { text: "The loombre command-line tool", link: "/ops/cli" },
             { text: "Updating & verifying releases", link: "/ops/updating" },
             { text: "Tier-0 performance audit runbook", link: "/ops/t0-audit-runbook" },
             { text: "Environment variable reference", link: "/ops/env-reference" },

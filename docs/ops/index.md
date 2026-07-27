@@ -66,6 +66,14 @@ Full request/response detail is in the [API Reference](../api-reference/index.md
 - **[systemd](systemd.md)** — unit files for the Linux tarball install
   (full walkthrough: [docs/install/linux.md](../install/linux.md)).
 
+## The `loombre` command-line tool
+
+- **[The loombre command-line tool](cli.md)** — read-only environment
+  checks (`doctor`, `paths`) plus the one privileged operation it
+  exposes: `admin reset-pin <username>`, the recovery procedure for a
+  forgotten restricted-content PIN. Server-local by design — there is no
+  equivalent over HTTP.
+
 ## Updating & verifying releases
 
 - **[Updating Loombre](updating.md)** — exactly what the built-in update
