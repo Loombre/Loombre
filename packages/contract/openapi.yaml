@@ -3141,10 +3141,28 @@ components:
           type: boolean
           description: Read-only mirror here; changed only via PUT /users/me/restricted.
           readOnly: true
-        locale: { type: string }
+        locale: { type: string, minLength: 1, maxLength: 35 }
         theme: { type: string, enum: [light, dark, system] }
-        subtitlePreferredLanguage: { type: [string, 'null'], description: ISO 639-2 }
-        audioPreferredLanguage: { type: [string, 'null'], description: ISO 639-2 }
+        subtitlePreferredLanguage:
+          type: [string, 'null']
+          minLength: 3
+          maxLength: 3
+          pattern: '^[a-z]{3}$'
+          description: >-
+            ISO 639-2 (lowercase 3-letter code, e.g. "eng"), or null for no
+            preference. Server-side membership in the known-language list
+            (packages/shared/src/language-codes.ts) is validated beyond this
+            shape (P4.22-style pre-release narrowing: the shape alone cannot
+            express "a real language code").
+        audioPreferredLanguage:
+          type: [string, 'null']
+          minLength: 3
+          maxLength: 3
+          pattern: '^[a-z]{3}$'
+          description: >-
+            ISO 639-2 (lowercase 3-letter code, e.g. "eng"), or null for no
+            preference. Same known-language-list validation as
+            subtitlePreferredLanguage above.
         autoplayNextEpisode: { type: boolean }
         updatedAtMs: { type: integer, format: int64 }
 

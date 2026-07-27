@@ -67,3 +67,28 @@
   gap: var(--space-sm);
   align-items: center;
 }
+
+/* Playback preference pickers (H1) — a styled native <select>, matching
+   Input.module.css's .input Phosphor treatment (same radius/border/surface/
+   padding tokens) since no dropdown component exists in the kit and no new
+   deps are allowed. */
+.select {
+  width: 100%;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border);
+  background: var(--color-surface);
+  color: var(--text);
+  padding: var(--space-sm) var(--space-lg);
+  font-size: var(--text-base);
+  transition:
+    border-color var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-fast) var(--ease-out);
+}
+
+.select:hover {
+  border-color: var(--color-text-subtle);
+}
+
+.select:focus-visible {
+  border-color: var(--color-accent);
+}

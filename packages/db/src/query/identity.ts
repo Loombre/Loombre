@@ -245,6 +245,70 @@ export async function updateRestrictedSettings(
   return row;
 }
 
+export interface UpdateUserPrefsInput {
+  userId: string;
+  /** The FULL prefs object to store (locale/theme/subtitlePreferredLanguage/
+   *  audioPreferredLanguage/autoplayNextEpisode — H1, orchestrator
+   *  adjudication A-5). This function always REPLACES the whole `prefs`
+   *  JSONB value, mirroring updateRestrictedSettings' always-sets-the-
+   *  column posture below — the caller (apps/server's putMySettings) is
+   *  responsible for assembling the full object, since the contract's
+   *  UserSettings is itself a full-replace PUT body, not a patch. */
+  prefs: Record<string, unknown>;
+  updatedAtMs: number;
+}
+
+/**
+ * user_settings.prefs writer (H1, orchestrator adjudication A-5). "Guarded"
+ * here does NOT mean applyGuard() — see this file's header: identity
+ * plumbing is deliberately outside that mechanism, which exists for
+ * ViewerContext-scoped catalog_items reads. This writer's actual guard is
+ * strict self-scoping by `user_id` (every call site passes the
+ * AUTHENTICATED caller's own userId — there is no admin-on-behalf-of-
+ * another-user path, same posture as updateRestrictedSettings below) plus
+ * validated values (the caller — apps/server/src/catalog/
+ * users.controller.ts's putMySettings — checks locale length, the theme
+ * enum, and known-language-list membership via
+ * @loombre/shared's isKnownLanguageCode BEFORE this function is ever
+ * called; this module trusts its input the same way upsertServerSettingAndEmit
+ * trusts the registry-checked caller in src/query/settings.ts).
+ *
+ * Upserts for the same reason updateRestrictedSettings does (a fresh user
+ * row could in principle lack a user_settings row). Only `prefs` and
+ * `updated_at_ms` are ever written — `restricted_opt_in`/
+ * `restricted_pin_hash`/`restricted_unlocked_until_ms` are UNTOUCHED (A-5),
+ * both on insert (they fall through to the column defaults: FALSE/NULL/NULL)
+ * and on conflict (they are simply absent from doUpdateSet, so Postgres
+ * leaves the existing values alone).
+ *
+ * JSONB write note: `prefs` goes through `sql\`${json}::jsonb\``, not a bare
+ * Kysely value — see src/query/settings.ts's module header for why a plain
+ * JS object/array/string sent through node-postgres's default parameter
+ * serialization does not round-trip correctly against a jsonb column.
+ */
+export async function updateUserPrefs(
+  db: Kysely<DB>,
+  input: UpdateUserPrefsInput
+): Promise<UserSettingsRow> {
+  const prefsJson = JSON.stringify(input.prefs);
+  const row = await db
+    .insertInto('user_settings')
+    .values({
+      user_id: input.userId,
+      prefs: sql`${prefsJson}::jsonb`,
+      updated_at_ms: input.updatedAtMs,
+    })
+    .onConflict((oc) =>
+      oc.column('user_id').doUpdateSet({
+        prefs: sql`${prefsJson}::jsonb`,
+        updated_at_ms: input.updatedAtMs,
+      })
+    )
+    .returningAll()
+    .executeTakeFirstOrThrow();
+  return row;
+}
+
 /**
  * Gate 5 (live session unlock, docs/PLAN.md §6.4). `unlockedUntilMs = null`
  * clears the unlock immediately (POST /restricted/lock).
