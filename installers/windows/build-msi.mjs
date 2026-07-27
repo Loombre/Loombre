@@ -177,7 +177,16 @@ function pnpmDeploy(pkgName, targetDir) {
   // `--legacy` matches lanes I1/I4: pnpm v10+ refuses to deploy from a
   // non-injected workspace without it (ERR_PNPM_DEPLOY_NONINJECTED_
   // WORKSPACE), and this workspace does not set inject-workspace-packages.
-  run("pnpm", ["--filter", pkgName, "deploy", "--prod", "--legacy", targetDir]);
+  // node-linker=hoisted: a FLAT npm-style tree of real directories — no
+  // symlinks, no junctions, no .pnpm virtual store. Required on THIS lane
+  // specifically: the payload rides a zip that System.IO.Compression
+  // extracts (cannot recreate links), and materializing pnpm's default
+  // layout with `tar -L` breaks Node resolution for transitive deps
+  // (diag run 30299041676: '@napi-rs/keyring' unreachable from a COPIED
+  // @loombre/secrets — pnpm's sibling resolution works via realpath into
+  // .pnpm, which flattening severs). macOS/Linux keep the default layout
+  // with relative links preserved — proven relocatable there.
+  run("pnpm", ["--config.node-linker=hoisted", "--filter", pkgName, "deploy", "--prod", "--legacy", targetDir]);
 
   // apps/server-only, ported from lane I4 (installers/macos/build-pkg.mjs +
   // LAYOUT.md §9): ajv is a *runtime* dependency (device-profile
