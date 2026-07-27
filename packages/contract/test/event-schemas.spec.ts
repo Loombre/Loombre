@@ -40,7 +40,20 @@ const envelopeTypeEnum = (
 const schemaFiles = readdirSync(SCHEMAS_DIR).filter((f) => f.endsWith(".schema.json"));
 const payloadFiles = schemaFiles.filter((f) => f !== "envelope.schema.json");
 
+// L3 (owner brief): envelope.schema.json carries one custom vendor keyword,
+// `x-loombre-admin-only-event-types` (event-schemas/README.md "Admin-only
+// event types" — a validation-inert machine-readable mirror of
+// packages/shared/src/admin-only-event-types.ts, parity-tested by
+// admin-only-event-types-parity.spec.ts). Ajv's strict mode otherwise
+// throws "unknown keyword" for it; registering it explicitly (rather than
+// disabling strictSchema wholesale) keeps strict mode catching genuine
+// schema-authoring typos everywhere else.
+function registerAdminOnlyKeyword(instance: Ajv2020): void {
+  instance.addKeyword({ keyword: "x-loombre-admin-only-event-types", schemaType: "array" });
+}
+
 const ajv = new Ajv2020({ allErrors: true, strict: true });
+registerAdminOnlyKeyword(ajv);
 addFormats(ajv);
 
 describe("event-schemas (docs/PLAN.md §4.3)", () => {
@@ -50,6 +63,7 @@ describe("event-schemas (docs/PLAN.md §4.3)", () => {
       // schemas by $id, and would throw "already exists" on a second
       // compile of the same file.
       const freshAjv = new Ajv2020({ allErrors: true, strict: true });
+      registerAdminOnlyKeyword(freshAjv);
       addFormats(freshAjv);
       const schema = loadSchema(file);
       expect(() => freshAjv.compile(schema), `${file} failed to compile`).not.toThrow();
