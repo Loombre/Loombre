@@ -5,6 +5,7 @@ import { createDb, getCurrentHwCapabilitySnapshot } from "@loombre/db";
 import { listLibraries, listImagesNeedingDominantColor, hasQueuedOrActiveJobOfType } from "@loombre/db/internal";
 import { LOOMBRE_VERSION_FULL } from "@loombre/shared";
 import { installCrashHandlers, installGracefulShutdown, type ShutdownSignal } from "./crash/index.js";
+import { resolveWorkerDatabaseUrl } from "./db-url.js";
 import { resolveWorkerDataDir } from "./crash/data-dir.js";
 import { createTranscodeConsumerHandler, resolveTranscodeWorkerConcurrency } from "./transcode/index.js";
 import { createSubtitleExtractConsumerHandler } from "./subtitles/index.js";
@@ -45,11 +46,12 @@ installCrashHandlers({
   processName: "@loombre/worker",
 });
 
-// Same fallback default used across the repo (CLAUDE.md, packages/db
-// scripts) so a bare `pnpm dev`/`node dist/index.js` against the compose
-// Postgres just works.
-const DATABASE_URL =
-  process.env.DATABASE_URL ?? "postgres://loombre:loombre@localhost:5442/loombre";
+// Resolution order lives in db-url.ts (P4.2 discovery seam): explicit
+// DATABASE_URL -> installed embedded mode (LOOMBRE_DATA_DIR set: poll for
+// the credentials apps/server's provisioner writes) -> the same dev
+// compose fallback a bare `pnpm dev`/`node dist/index.js` always had.
+// Top-level await: nothing below can exist without a database URL.
+const DATABASE_URL = await resolveWorkerDatabaseUrl(process.env);
 
 const queue = createJobQueue(DATABASE_URL);
 const db = createDb(DATABASE_URL);

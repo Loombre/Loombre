@@ -213,6 +213,9 @@ importers:
       '@loombre/plugin-protocol':
         specifier: workspace:*
         version: link:../../packages/plugin-protocol
+      '@loombre/provisioning-pg':
+        specifier: workspace:*
+        version: link:../../packages/provisioning-pg
       '@loombre/secrets':
         specifier: workspace:*
         version: link:../../packages/secrets
