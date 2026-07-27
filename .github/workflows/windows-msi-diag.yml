@@ -94,7 +94,17 @@ jobs:
           $msi = (Get-ChildItem dist/release/*.msi | Select-Object -First 1).FullName
           $proc = Start-Process msiexec -ArgumentList "/i `"$msi`" /qn /l*v install.log" -Wait -PassThru
           if ($proc.ExitCode -ne 0) {
-            Get-Content install.log -Tail 120
+            Write-Host "=== install.log: failing actions (Return value 3 / service errors, with context) ==="
+            Select-String -Path install.log -Pattern "Return value 3","rror 19","could not be started","StartServices" -Context 8,2 |
+              Select-Object -Last 50 | ForEach-Object { $_.Context.PreContext; $_.Line; $_.Context.PostContext }
+            Write-Host "=== ProgramData service-host logs (if any) ==="
+            Get-ChildItem "C:\ProgramData\Loombre\logs" -ErrorAction SilentlyContinue | ForEach-Object {
+              Write-Host "== $($_.Name) =="; Get-Content $_.FullName -Tail 40
+            }
+            Write-Host "=== SCM event log (last 25) ==="
+            Get-WinEvent -LogName System -MaxEvents 200 -ErrorAction SilentlyContinue |
+              Where-Object { $_.ProviderName -eq "Service Control Manager" } |
+              Select-Object -First 25 | ForEach-Object { Write-Host $_.TimeCreated $_.Id $_.Message }
             Write-Host "VERDICT:INSTALL:FAIL (msiexec exit $($proc.ExitCode))"
             exit 1
           }
