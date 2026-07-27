@@ -314,16 +314,16 @@ function deployApp(pkgName, outDirName) {
   for (const keep of ["dist", "node_modules", "package.json"]) {
     const src = path.join(rawDeployDir, keep);
     if (!existsSync(src)) throw new Error(`deployApp(${pkgName}): expected ${keep} in deploy output, missing`);
-    // dereference: pnpm's deploy layout links top-level packages into
-    // .pnpm with RELATIVE symlinks, but cpSync's default rewrites them to
-    // ABSOLUTE build-machine paths (verbatimSymlinks: false) — the
-    // v0.9.0-rc.1 installed tree had every entry pointing at
-    // /Users/runner/... and the server crash-looped on
-    // ERR_MODULE_NOT_FOUND. Shipping fully-materialized trees (the same
-    // posture lane I1's tarball proved with a real boot smoke) removes
-    // symlinks from the payload entirely instead of betting on every
-    // downstream tool preserving them.
-    cpSync(src, path.join(prunedDir, keep), { recursive: true, dereference: true });
+    // verbatimSymlinks: pnpm's deploy layout links packages into .pnpm
+    // with RELATIVE symlinks — exactly what lane I1's tarball ships (717
+    // relative links, boots on real machines). cpSync's DEFAULT rewrites
+    // every link target to an ABSOLUTE build-machine path — the
+    // v0.9.0-rc.1 installed tree pointed at /Users/runner/... and the
+    // server crash-looped on ERR_MODULE_NOT_FOUND. (dereference: true is
+    // NOT the fix: measured on this tree, it copies nested directory
+    // symlinks as links and STILL rewrites them absolute.) Relative
+    // links survive pkgbuild/BOM and relocate cleanly.
+    cpSync(src, path.join(prunedDir, keep), { recursive: true, verbatimSymlinks: true });
   }
   const sizeMb = duSizeMb(prunedDir);
   log(`${outDirName} deploy pruned to dist+node_modules+package.json (${sizeMb} MB)`);
@@ -500,9 +500,11 @@ function assemblePayload(serverDeployDir, workerDeployDir) {
     chmodSync(path.join(versionDir, "bin", shim), 0o755);
   }
 
-  // server/, worker/
-  cpSync(serverDeployDir, path.join(versionDir, "server"), { recursive: true });
-  cpSync(workerDeployDir, path.join(versionDir, "worker"), { recursive: true });
+  // server/, worker/ — verbatimSymlinks for the same reason as
+  // deployApp's prune copy: the default silently rewrites pnpm's
+  // relative .pnpm links to absolute build-machine paths.
+  cpSync(serverDeployDir, path.join(versionDir, "server"), { recursive: true, verbatimSymlinks: true });
+  cpSync(workerDeployDir, path.join(versionDir, "worker"), { recursive: true, verbatimSymlinks: true });
 
   stagePackagesReleaseManifestForRawRelativeImport(payloadRoot);
 
