@@ -18,6 +18,12 @@
 //      item at all and are counted + listed in the scan.completed event's
 //      skippedUnsupportedCount/skippedUnsupportedFiles, plus a local
 //      console.log line per file (no telemetry — CLAUDE.md invariant 7).
+//
+// Owner-ledger L1: .mts (identical mpegts family as the already-admitted
+// .m2ts) moved from the excluded set into VIDEO_EXTENSIONS — the
+// "Camcorder Clip.mts" fixture below now exercises the SAME ingested path
+// as "Legacy War Movie.wmv" (case 1), not the excluded path (case 2), and
+// the excluded-extension fixture set shrank to 3 (.wma/.ape/.wv).
 
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -56,10 +62,10 @@ describe("scanner: legacy-format reinstatement + unsupported-format skip visibil
     writeFakeMediaFile(join(libraryDir, "Old Song.wma"), "excluded-wma", 512);
     writeFakeMediaFile(join(libraryDir, "Ancient Track.ape"), "excluded-ape", 512);
     writeFakeMediaFile(join(libraryDir, "Rare Track.wv"), "excluded-wv", 512);
-    // Recognized-media tail (Lane R review): known media, in NEITHER set
-    // before the review fix — used to fall through to plain "ignored"
-    // silently, the exact class the H3 audit finding was about.
-    writeFakeMediaFile(join(libraryDir, "Camcorder Clip.mts"), "excluded-mts", 512);
+    // Owner-ledger L1: .mts (identical mpegts family as the already-admitted
+    // .m2ts) is now admitted, same as the .wmv reinstated extension above —
+    // must ingest, not land in the skip section.
+    writeFakeMediaFile(join(libraryDir, "Camcorder Clip.mts"), "admitted-mts", 512);
 
     libraryId = await createLibrary(raw, { name: "Legacy Movies", mediaKind: "movie", paths: [libraryDir] });
 
@@ -101,11 +107,26 @@ describe("scanner: legacy-format reinstatement + unsupported-format skip visibil
     expect(item.rows).toHaveLength(1);
   });
 
-  it("enqueues a 'probe' job for the reinstated .wmv file, same as any other ingested file", () => {
-    expect(queueCalls.filter((c) => c.type === "probe").length).toBeGreaterThanOrEqual(2);
+  it("ingests the admitted .mts extension (owner-ledger L1) as a real catalog item + media_files row", async () => {
+    const item = await raw.query<{ id: string; title: string }>(
+      "SELECT id, title FROM catalog_items WHERE library_id = $1 AND title = $2",
+      [libraryId, "Camcorder Clip"]
+    );
+    expect(item.rows).toHaveLength(1);
+
+    const file = await raw.query<{ path: string }>(
+      "SELECT path FROM media_files WHERE item_id = $1",
+      [item.rows[0]!.id]
+    );
+    expect(file.rows).toHaveLength(1);
+    expect(file.rows[0]!.path).toMatch(/\.mts$/);
   });
 
-  it("creates NO catalog item for excluded-extension files (.wma/.ape/.wv/.mts)", async () => {
+  it("enqueues a 'probe' job for the reinstated .wmv file, same as any other ingested file", () => {
+    expect(queueCalls.filter((c) => c.type === "probe").length).toBeGreaterThanOrEqual(3);
+  });
+
+  it("creates NO catalog item for excluded-extension files (.wma/.ape/.wv)", async () => {
     const items = await raw.query<{ title: string }>(
       "SELECT title FROM catalog_items WHERE library_id = $1",
       [libraryId]
@@ -114,9 +135,9 @@ describe("scanner: legacy-format reinstatement + unsupported-format skip visibil
     expect(titles).not.toContain("Old Song");
     expect(titles).not.toContain("Ancient Track");
     expect(titles).not.toContain("Rare Track");
-    expect(titles).not.toContain("Camcorder Clip");
-    // Only the two genuinely-ingested files created items.
-    expect(titles.sort()).toEqual(["Legacy War Movie", "Ordinary Movie"]);
+    // The three genuinely-excluded files stay unmatched; .mts (owner-ledger
+    // L1) is now genuinely ingested alongside .wmv/.mkv.
+    expect(titles.sort()).toEqual(["Camcorder Clip", "Legacy War Movie", "Ordinary Movie"]);
   });
 
   it("counts and lists every excluded-extension file in the scan.completed event payload", async () => {
@@ -126,17 +147,18 @@ describe("scanner: legacy-format reinstatement + unsupported-format skip visibil
     );
     expect(result.rows).toHaveLength(1);
     const payload = result.rows[0]!.payload;
-    expect(payload.skippedUnsupportedCount).toBe(4);
+    expect(payload.skippedUnsupportedCount).toBe(3);
     expect(payload.skippedUnsupportedFiles.sort()).toEqual(
-      ["Ancient Track.ape", "Old Song.wma", "Rare Track.wv", "Camcorder Clip.mts"].sort(),
+      ["Ancient Track.ape", "Old Song.wma", "Rare Track.wv"].sort(),
     );
   });
 
   it("logs each skipped-unsupported file locally (no telemetry — CLAUDE.md invariant 7)", () => {
     const skipLines = consoleLogLines.filter((line) => line.includes("skipped unsupported-format file"));
-    expect(skipLines.length).toBe(4);
+    expect(skipLines.length).toBe(3);
     expect(skipLines.some((line) => line.includes("Old Song.wma"))).toBe(true);
-    expect(skipLines.some((line) => line.includes("Camcorder Clip.mts"))).toBe(true);
+    // .mts (owner-ledger L1) is ingested now, not skipped — no log line.
+    expect(skipLines.some((line) => line.includes("Camcorder Clip.mts"))).toBe(false);
   });
 });
 
