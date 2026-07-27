@@ -27,20 +27,42 @@ describe("getLibraryScanState", () => {
       scanning: false,
       filesProcessed: null,
       lastSkipped: null,
+      probeFailed: [],
     });
   });
 
   it("returns the live entry when present", () => {
     const map = new Map<string, LibraryScanState>([
-      ["lib-1", { scanning: true, filesProcessed: 42, lastSkipped: null }],
+      ["lib-1", { scanning: true, filesProcessed: 42, lastSkipped: null, probeFailed: [] }],
     ]);
-    expect(getLibraryScanState(map, "lib-1")).toEqual({ scanning: true, filesProcessed: 42, lastSkipped: null });
+    expect(getLibraryScanState(map, "lib-1")).toEqual({
+      scanning: true,
+      filesProcessed: 42,
+      lastSkipped: null,
+      probeFailed: [],
+    });
   });
 
   it("returns a persisted lastSkipped report (STATE.md H3) after a scan finishes", () => {
     const map = new Map<string, LibraryScanState>([
-      ["lib-1", { scanning: false, filesProcessed: null, lastSkipped: { count: 3, files: ["a.wma", "b.ape"] } }],
+      ["lib-1", { scanning: false, filesProcessed: null, lastSkipped: { count: 3, files: ["a.wma", "b.ape"] }, probeFailed: [] }],
     ]);
     expect(getLibraryScanState(map, "lib-1").lastSkipped).toEqual({ count: 3, files: ["a.wma", "b.ape"] });
+  });
+
+  // Owner ledger L1 (adjudication A-4).
+  it("returns an accumulated probeFailed list", () => {
+    const map = new Map<string, LibraryScanState>([
+      [
+        "lib-1",
+        {
+          scanning: false,
+          filesProcessed: null,
+          lastSkipped: null,
+          probeFailed: [{ path: "Garbage.mts", code: "nonzero-exit" }],
+        },
+      ],
+    ]);
+    expect(getLibraryScanState(map, "lib-1").probeFailed).toEqual([{ path: "Garbage.mts", code: "nonzero-exit" }]);
   });
 });
