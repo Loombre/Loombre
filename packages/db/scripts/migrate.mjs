@@ -42,8 +42,11 @@ const SCHEMA_BANNER = `-- GENERATED FILE — do not hand-edit.
 `;
 
 function listMigrationFiles() {
+  // Dotfiles excluded (KEEP IN SYNC with src/migrate.ts's
+  // isMigrationFile): macOS tar writes AppleDouble "._*.sql" entries
+  // into archives — never migrations.
   return readdirSync(MIGRATIONS_DIR)
-    .filter((f) => f.endsWith('.sql'))
+    .filter((f) => f.endsWith('.sql') && !f.startsWith('.'))
     .sort();
 }
 

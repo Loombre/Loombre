@@ -61,3 +61,13 @@ describe('runPendingMigrations', () => {
     expect(result.totalCount).toBeGreaterThan(0);
   });
 });
+
+describe('isMigrationFile', () => {
+  it('accepts real migrations and rejects AppleDouble/dotfile junk', async () => {
+    const { isMigrationFile } = await import('../src/migrate.js');
+    expect(isMigrationFile('0001_init.sql')).toBe(true);
+    expect(isMigrationFile('._0001_init.sql')).toBe(false);
+    expect(isMigrationFile('.hidden.sql')).toBe(false);
+    expect(isMigrationFile('notes.txt')).toBe(false);
+  });
+});

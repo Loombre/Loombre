@@ -33,10 +33,16 @@ export interface MigrationRunResult {
   totalCount: number;
 }
 
+export function isMigrationFile(name: string): boolean {
+  // Dotfiles excluded: macOS tar writes AppleDouble "._*.sql" metadata
+  // entries into archives (a locally-built tarball fed one to PG as
+  // binary garbage — "invalid message format", linux smoke round 9).
+  // KEEP IN SYNC with scripts/migrate.mjs's listMigrationFiles.
+  return name.endsWith(".sql") && !name.startsWith(".");
+}
+
 function listMigrationFiles(): string[] {
-  return readdirSync(MIGRATIONS_DIR)
-    .filter((f) => f.endsWith(".sql"))
-    .sort();
+  return readdirSync(MIGRATIONS_DIR).filter(isMigrationFile).sort();
 }
 
 function sha256(content: string): string {
