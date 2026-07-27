@@ -82,20 +82,29 @@ Loombre recognizes most common video and audio file types when scanning:
 | Kind  | File endings recognized |
 | ----- | ------------------------ |
 | Video | .mkv, .mp4, .avi, .mov, .m4v, .ts, .m2ts, .webm, .wmv, .mpg, .mpeg, .vob, .flv |
-| Audio | .flac, .mp3, .m4a, .ogg, .oga, .opus, .wav, .alac, .aac, .aiff |
+| Audio | .flac, .mp3, .m4a, .ogg, .oga, .opus, .wav, .alac, .aac, .aiff, .aif |
 
-A small number of older, uncommon audio file types are **not** supported in
-this version:
+A number of recognized media file types are **not** supported in this
+version:
 
 | File ending | Why it's left out |
 | ----------- | ------------------ |
 | .ape | Genuinely rare, thin support for turning it into something playable |
 | .wv | Genuinely rare, thin support for turning it into something playable |
 | .wma | Genuinely rare, thin support for turning it into something playable |
+| .mts, .asf, .ogv, .3gp, .3g2, .divx, .m2v, .rm, .rmvb, .wtv, .f4v, .dv | Recognized video types not yet supported — reported as skipped so nothing disappears without a trace |
+| .mka, .m4b, .dsf, .dff, .mpc, .tta, .ra, .shn, .amr, .ac3, .dts, .spx | Recognized audio types not yet supported — reported as skipped so nothing disappears without a trace |
 
-Files with one of those endings are never dropped silently — every scan's
-result on the Libraries panel of your admin dashboard shows a
-**"N skipped (unsupported format)"** note (expandable to the exact list of
-files) whenever a scan walks past one, so you always know what was left
-out and why, and can decide whether to convert it to a supported file
-type yourself.
+Files with one of those endings are never dropped silently — the scan's
+outcome always records a **"N skipped (unsupported format)"** count and
+the exact list of files. You'll see that note on the Libraries panel of
+your admin dashboard when a scan finishes while the dashboard is open
+(including if you opened it mid-scan), and the server's own log records
+every skipped file for after-the-fact review, so you always know what was
+left out and why, and can decide whether to convert those files to a
+supported type yourself.
+
+Files whose endings aren't recognized as media at all — notes, artwork,
+text files, and other junk that rides along in media folders — are
+treated as non-media and ignored without a report. The skip report covers
+recognized media types only.
