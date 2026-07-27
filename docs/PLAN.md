@@ -135,8 +135,12 @@ CI-checkable rule.
   for future-feature and plugin metadata — extensions get a namespaced sandbox
   without touching core columns. Core code never reads it; only namespaced
   features do.
-- **Migrations are forward-only** with tested `down` for dev; production
-  rollback = restore + roll forward (documented in ops guide).
+- **Migrations are forward-only — no `down` migrations exist, anywhere,
+  ever.** Dev reset is drop + re-migrate zero-to-current (`pnpm db:reset`:
+  `DROP SCHEMA public CASCADE` then replay every migration from scratch —
+  `packages/db/scripts/migrate.mjs`). Production rollback = restore the
+  pre-upgrade backup + roll forward with a corrected migration (documented
+  in `docs/ops/backup.md`'s "Rolling back a failed migration" section).
 
 ### 4.3 Domain event outbox
 Every state change that any future feature could care about (`item.added`,
