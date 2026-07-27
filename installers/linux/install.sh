@@ -98,8 +98,46 @@ for entry in bin lib runtime ffmpeg web pg packages VERSION; do
 done
 chown -R root:root "${PREFIX}"
 chmod -R go-w "${PREFIX}"
-chmod 755 "${PREFIX}/bin/loombre-server" "${PREFIX}/bin/loombre-worker"
+chmod 755 "${PREFIX}/bin/loombre-server" "${PREFIX}/bin/loombre-worker" "${PREFIX}/bin/loombre"
 echo "install.sh: app payload installed at ${PREFIX}"
+
+# ── PATH shim: /usr/local/bin/loombre -> $PREFIX/bin/loombre (L2, ──────
+#    the H2-recovery invocability fix — `loombre admin reset-pin` reachable
+#    from a fresh shell with no path prefix). This script is root-gated
+#    (see the gate above), so there is no "user-mode install" branch here
+#    — placing the shim is purely DEFENSIVE instead: any failure to create
+#    it (unwritable /usr/local/bin, a read-only mount, a foreign file
+#    already occupying the path) WARNS and prints the exact manual command
+#    but never fails the install (owner-brief adjudication B-1).
+SHIM_PATH="/usr/local/bin/loombre"
+SHIM_TARGET="${PREFIX}/bin/loombre"
+SHIM_MANUAL_CMD="ln -s \"${SHIM_TARGET}\" \"${SHIM_PATH}\""
+if [ -L "${SHIM_PATH}" ]; then
+  # Already a symlink — a prior install/upgrade, or a stale link left over
+  # from a different prefix. Always safe to replace outright (B-3): this is
+  # the idempotent re-install/upgrade path, never a foreign file.
+  if ln -sfn "${SHIM_TARGET}" "${SHIM_PATH}" 2>/dev/null; then
+    echo "install.sh: PATH shim ${SHIM_PATH} -> ${SHIM_TARGET}"
+  else
+    echo "install.sh: WARNING — could not replace the PATH shim at ${SHIM_PATH} (continuing install)." >&2
+    echo "install.sh: run this yourself to put 'loombre' on PATH:" >&2
+    echo "  ${SHIM_MANUAL_CMD}" >&2
+  fi
+elif [ -e "${SHIM_PATH}" ]; then
+  # A foreign, non-symlink file already occupies this path — never clobber
+  # it (B-3). Warn and move on; the install itself is unaffected.
+  echo "install.sh: WARNING — a foreign file already exists at ${SHIM_PATH} (not a symlink) — leaving it untouched." >&2
+  echo "install.sh: run 'loombre' via its full path instead, or free up ${SHIM_PATH} yourself and re-run:" >&2
+  echo "  ${SHIM_MANUAL_CMD}" >&2
+else
+  if mkdir -p "$(dirname "${SHIM_PATH}")" 2>/dev/null && ln -s "${SHIM_TARGET}" "${SHIM_PATH}" 2>/dev/null; then
+    echo "install.sh: PATH shim ${SHIM_PATH} -> ${SHIM_TARGET}"
+  else
+    echo "install.sh: WARNING — could not create the PATH shim at ${SHIM_PATH} (unwritable or missing directory; continuing install)." >&2
+    echo "install.sh: run this yourself to put 'loombre' on PATH:" >&2
+    echo "  ${SHIM_MANUAL_CMD}" >&2
+  fi
+fi
 
 # ── data dir (the ProvisioningInterface caller's app-data dir — P4.2) ──
 mkdir -p "${DATA_DIR}"

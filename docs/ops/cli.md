@@ -18,9 +18,20 @@ from):
 node apps/server/bin/loombre.mjs --help
 ```
 
-**In a Linux tarball install** (`docs/install/linux.md`), the tarball has
-no separate `loombre` shim on `PATH` today — invoke it through the
-tarball's own bundled Node runtime, from the install root:
+**In a Linux tarball install** (`docs/install/linux.md`), `install.sh`
+places a `loombre` shim on `PATH` (`/usr/local/bin/loombre`, a symlink into
+the install root — `installers/linux/LAYOUT.md`), so once installed it's
+just:
+
+```bash
+loombre --help
+```
+
+If the shim couldn't be placed (a foreign, non-symlink file already sat at
+`/usr/local/bin/loombre`, or `/usr/local/bin` wasn't writable — `install.sh`
+warns and prints the exact `ln -s` command to create it yourself when this
+happens), fall back to the tarball's own bundled Node runtime, from the
+install root:
 
 ```bash
 runtime/node/bin/node lib/server/bin/loombre.mjs --help
@@ -53,11 +64,11 @@ recovery is this command, run on the server itself:
 
 ```bash
 DATABASE_URL=<your server's connection string> \
-  node apps/server/bin/loombre.mjs admin reset-pin <username>
+  loombre admin reset-pin <username>
 ```
 
-(substitute the tarball invocation from "Running it" above if that's your
-install type). It will:
+(substitute the source-checkout or full-path invocation from "Running it"
+above if that's your install type). It will:
 
 1. Look up the user, and print a clean error and exit if the username
    doesn't exist — nothing changes.

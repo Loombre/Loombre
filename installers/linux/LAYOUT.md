@@ -14,7 +14,9 @@ loombre-<version>-linux-<arch>/
 │   └── loombre-worker.service.template
 ├── bin/
 │   ├── loombre-server            # wrapper: execs the bundled node against lib/server/dist/main.js
-│   └── loombre-worker            # wrapper: execs the bundled node against lib/worker/dist/index.js
+│   ├── loombre-worker            # wrapper: execs the bundled node against lib/worker/dist/index.js
+│   └── loombre                   # wrapper: execs the bundled node against lib/server/bin/loombre.mjs (the `loombre` CLI —
+│                                   # install.sh symlinks /usr/local/bin/loombre -> this file, see below)
 ├── runtime/
 │   └── node/
 │       └── bin/node              # bundled Node runtime (installers/linux/node-manifest.json — pinned + sha256, official nodejs.org build)
@@ -170,15 +172,26 @@ platform/arch), `pg/` instead contains a short README explaining that and
 pointing back at lane B — the tarball is fully installable and runnable
 either way, since external-PG needs nothing under `pg/` at all.
 
-## `bin/loombre-server` / `bin/loombre-worker`
+## `bin/loombre-server` / `bin/loombre-worker` / `bin/loombre`
 
-Small generated bash wrapper scripts. Both resolve their own location
-(`$APP_ROOT`, independent of the caller's cwd or how the tarball was
-extracted), set `LOOMBRE_FFMPEG`/`LOOMBRE_FFPROBE`/`PATH` for the bundled
-ffmpeg, and `exec` the bundled `runtime/node/bin/node` against
-`lib/server/dist/main.js` / `lib/worker/dist/index.js`. No system Node
-required at any point (docs/PLAN.md §11: "Single Node runtime bundled per
-platform (no user-installed Node)").
+Small generated bash wrapper scripts. All three resolve their own
+location (`$APP_ROOT`, independent of the caller's cwd or how the tarball
+was extracted), set `LOOMBRE_FFMPEG`/`LOOMBRE_FFPROBE`/`PATH` for the
+bundled ffmpeg, and `exec` the bundled `runtime/node/bin/node` against
+`lib/server/dist/main.js` / `lib/worker/dist/index.js` /
+`lib/server/bin/loombre.mjs` respectively. No system Node required at any
+point (docs/PLAN.md §11: "Single Node runtime bundled per platform (no
+user-installed Node)").
+
+`bin/loombre` (the `loombre` CLI — L2, the H2-recovery invocability fix)
+is the one of the three meant to be reached through a SYMLINK once
+installed (`install.sh` points `/usr/local/bin/loombre` at it — see
+below), so unlike its siblings it resolves its own PHYSICAL path first
+(`readlink -f` on `${BASH_SOURCE[0]}`, GNU coreutils, before deriving
+`$APP_ROOT`) — the siblings' cheaper `dirname "${BASH_SOURCE[0]}"` idiom
+would otherwise resolve to the symlink's own directory
+(`/usr/local/bin`), not this file's real location. The siblings are never
+symlinked, so they keep that cheaper idiom.
 
 ## `install.sh` / `uninstall.sh` / `systemd/`
 
@@ -188,10 +201,17 @@ facing walkthrough. Short version: `install.sh` creates a system user
 `--prefix` to change), creates `/var/lib/loombre` (default, `--data-dir`)
 as the app-data directory, writes `/etc/loombre/loombre.env` (default,
 `--config-dir`) with a documented, commented-out `DATABASE_URL` and other
-knobs, and (unless `--no-systemd`) installs+enables the two systemd
-units. `uninstall.sh` reverses this — a clean uninstall leaves NO FILES
-OUTSIDE THE DATA DIR (app payload, config dir/env file, system user, and
-systemd units are all removed; only the data dir survives), and `--purge`
-removes that too. Both scripts run from wherever the tarball was
-extracted — they read the payload from their own directory, not from a
-fixed path.
+knobs, places a `/usr/local/bin/loombre` symlink to `$PREFIX/bin/loombre`
+(replacing a stale symlink from a prior install/upgrade outright; warning
+and continuing — never failing the install — if that path is unwritable
+or already occupied by a foreign, non-symlink file), and (unless
+`--no-systemd`) installs+enables the two systemd units. `uninstall.sh`
+reverses this — a clean uninstall leaves NO FILES OUTSIDE THE DATA DIR
+(app payload, config dir/env file, system user, systemd units, AND the
+`/usr/local/bin/loombre` shim are all removed; only the data dir
+survives), and `--purge` removes that too. The shim is only ever removed
+if it's still a symlink resolving into this install's own `$PREFIX` — a
+foreign file, or a symlink pointing at a different install/program
+entirely, is left untouched. Both scripts run from wherever the tarball
+was extracted — they read the payload from their own directory, not from
+a fixed path.

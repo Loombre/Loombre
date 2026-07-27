@@ -77,6 +77,30 @@ if [ "${NO_SYSTEMD}" -eq 0 ] && command -v systemctl >/dev/null 2>&1; then
   echo "uninstall.sh: systemd units stopped, disabled, removed"
 fi
 
+# ── PATH shim: /usr/local/bin/loombre (L2) ──────────────────────────────
+#    Removed ONLY if it is a symlink whose resolved target lives under
+#    PREFIX (B-4) — a foreign file, or a symlink pointing somewhere else
+#    entirely (e.g. a different Loombre install at a different --prefix,
+#    or an unrelated program that happens to be named `loombre`), is left
+#    alone. readlink -f resolves both sides to absolute, symlink-free
+#    paths before comparing, with a trailing-slash guard so a sibling
+#    directory with PREFIX as a strict string prefix (e.g.
+#    /opt/loombre-evil when PREFIX=/opt/loombre) can never false-match.
+SHIM_PATH="/usr/local/bin/loombre"
+if [ -L "${SHIM_PATH}" ]; then
+  RESOLVED_PREFIX="$(readlink -f "${PREFIX}" 2>/dev/null || true)"
+  RESOLVED_SHIM_TARGET="$(readlink -f "${SHIM_PATH}" 2>/dev/null || true)"
+  if [ -n "${RESOLVED_PREFIX}" ] && [ -n "${RESOLVED_SHIM_TARGET}" ] \
+     && { [ "${RESOLVED_SHIM_TARGET}" = "${RESOLVED_PREFIX}" ] || case "${RESOLVED_SHIM_TARGET}" in "${RESOLVED_PREFIX}"/*) true ;; *) false ;; esac; }; then
+    rm -f "${SHIM_PATH}"
+    echo "uninstall.sh: removed PATH shim ${SHIM_PATH} (pointed into ${PREFIX})"
+  else
+    echo "uninstall.sh: ${SHIM_PATH} is a symlink but does NOT resolve under ${PREFIX} — leaving it alone (foreign install or unrelated program)."
+  fi
+elif [ -e "${SHIM_PATH}" ]; then
+  echo "uninstall.sh: ${SHIM_PATH} exists but is not a symlink — leaving it alone (never installed by this script)."
+fi
+
 # ── app payload ──────────────────────────────────────────────────────────
 if [ -d "${PREFIX}" ]; then
   rm -rf "${PREFIX:?}"
