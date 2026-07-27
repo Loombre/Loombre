@@ -67,6 +67,13 @@
 //     `loombre admin reset-pin <username>` CLI command
 //     (packages/db/src/query/identity.ts's resetRestrictedPinAndEmit), not
 //     content any viewer-scoped predicate should gate.
+//   - `probe.failed` (owner ledger L1, adjudication A-2): a terminal probe
+//     job failure (apps/worker/src/probe/terminal-failure-hook.ts, wired
+//     through packages/jobs/src/queue.ts's onTerminalFailure seam) —
+//     instance-administration/diagnostic data (which library-relative path
+//     failed to probe and why), not content any viewer-scoped predicate
+//     should gate, same posture as scan.completed's own skip-visibility
+//     fields.
 //
 // Dependency-free data only (no zod, no I/O) — importable from
 // apps/server, apps/worker, and (via the prose pointer above, not a real
@@ -86,4 +93,6 @@ export const ADMIN_ONLY_EVENT_TYPES: readonly string[] = [
   "metadata.match-candidates",
   // H2 (owner brief).
   "user.restricted-pin-reset",
+  // Owner ledger L1 (adjudication A-2).
+  "probe.failed",
 ];

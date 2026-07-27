@@ -70,8 +70,8 @@ describe("event-schemas (docs/PLAN.md §4.3)", () => {
     }
   });
 
-  it("envelope enum has exactly 25 types (15 through Addendum A + 6 plugin.* [LPP] + 2 watchlist.* [W2 L3] + 1 metadata.match-candidates [W2 L2] + 1 user.restricted-pin-reset [H2])", () => {
-    expect(envelopeTypeEnum).toHaveLength(25);
+  it("envelope enum has exactly 26 types (15 through Addendum A + 6 plugin.* [LPP] + 2 watchlist.* [W2 L3] + 1 metadata.match-candidates [W2 L2] + 1 user.restricted-pin-reset [H2] + 1 probe.failed [owner ledger L1])", () => {
+    expect(envelopeTypeEnum).toHaveLength(26);
     expect(envelopeTypeEnum).toEqual(
       expect.arrayContaining([
         "item.added",
@@ -99,6 +99,7 @@ describe("event-schemas (docs/PLAN.md §4.3)", () => {
         "plugin.health-changed",
         "metadata.match-candidates",
         "user.restricted-pin-reset",
+        "probe.failed",
       ]),
     );
   });
@@ -290,6 +291,12 @@ describe("event-schemas (docs/PLAN.md §4.3)", () => {
         userId: "018f6f1e-0000-7000-8000-000000000005",
         username: "casual",
         actor: "cli",
+      },
+      "probe.failed": {
+        mediaFileId: "018f6f1e-0000-7000-8000-000000000003",
+        libraryId: "018f6f1e-0000-7000-8000-000000000002",
+        path: "/media/movies/Garbage File.mkv",
+        code: "nonzero-exit",
       },
     };
 
