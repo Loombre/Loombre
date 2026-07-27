@@ -59,6 +59,13 @@ interface EnvelopeSchemaShape {
  * admin-tool operational data (a bounded provider-search result for one
  * admin's Fix Match flow), not a catalog event any content-scoped viewer
  * predicate could sensibly gate.
+ *
+ * `user.restricted-pin-reset` (H2, owner brief) joins this set for the same
+ * reason: it is instance-administration/audit activity emitted by the
+ * server-local `loombre admin reset-pin <username>` CLI command
+ * (packages/db/src/query/identity.ts's resetRestrictedPinAndEmit), not
+ * content any viewer-scoped predicate should gate, and never something a
+ * plugin subscriber should be able to request a grant for.
  */
 export const ADMIN_ONLY_EVENT_TYPES: readonly string[] = [
   "job.updated",
@@ -70,6 +77,7 @@ export const ADMIN_ONLY_EVENT_TYPES: readonly string[] = [
   "plugin.removed",
   "plugin.health-changed",
   "metadata.match-candidates",
+  "user.restricted-pin-reset",
 ];
 
 /** Returns the GRANTABLE set of outbox event `type` values — the closed

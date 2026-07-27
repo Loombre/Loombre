@@ -370,6 +370,91 @@ export async function setRestrictedUnlockUntilAndEmit(
   });
 }
 
+export interface ResetRestrictedPinInput {
+  userId: string;
+  username: string;
+  nowMs: number;
+}
+
+export interface ResetRestrictedPinResult {
+  /** False when the user had no user_settings row at all (never opted in)
+   *  — a true no-op: nothing was updated and no event was written. */
+  cleared: boolean;
+}
+
+/**
+ * H2 (owner brief): the ONLY restricted-content PIN recovery path in v1 —
+ * `loombre admin reset-pin <username>` (apps/server/src/cli/
+ * admin-reset-pin.ts), server-local and interactively confirmed there.
+ * Deliberately NOT reachable over HTTP (apps/server/src/session/
+ * restricted.controller.ts and users-me.controller.ts's headers both note
+ * this): filesystem access to the running server IS the privilege boundary,
+ * not a bearer token.
+ *
+ * Clears ALL THREE gate-3/gate-5 columns UNCONDITIONALLY (restricted_opt_in
+ * -> false, restricted_pin_hash -> null, restricted_unlocked_until_ms ->
+ * null) whenever a user_settings row exists for this user, regardless of
+ * what state it was already in — never a partial or conditional clear. This
+ * is deliberate: "the user's next opt-in flow starts fresh" (owner brief)
+ * requires optIn itself to go false, so PUT /users/me/restricted's
+ * first-time-opt-in branch (users-me.controller.ts: `!currentlyOptedIn ||
+ * currentPinHash === null`) governs the next attempt and demands a
+ * brand-new 4-digit PIN under the P4.22 contract — the same path a user who
+ * never opted in at all goes through.
+ *
+ * No-op (no UPDATE, no event) when the user has NO user_settings row at
+ * all — there is nothing to clear and nothing worth auditing; mirrors
+ * updateRestrictedSettings's own "a fresh user row could in principle lack
+ * a user_settings row" note above. A user who opted out (row exists, but
+ * already opt_in=false/pin_hash=null) still gets the unconditional
+ * clear-and-emit — the row's existence is the only precondition, not its
+ * current values, so the audit trail always reflects that a reset was
+ * actually performed by an operator.
+ *
+ * Emits `user.restricted-pin-reset` (ADMIN_ONLY delivery — apps/server/src/
+ * plugins/event-taxonomy.ts) with payload `{userId, username, actor: 'cli'}`
+ * — NEVER a hash or PIN. `actorUserId` (the envelope's own actor-attribution
+ * field) is `null`: the CLI runs outside any authenticated user session and
+ * has no user id to attribute this to; the payload's own `actor: 'cli'`
+ * field is what carries that provenance instead (packages/contract/
+ * event-schemas/user.restricted-pin-reset.schema.json).
+ */
+export async function resetRestrictedPinAndEmit(
+  db: Kysely<DB>,
+  input: ResetRestrictedPinInput
+): Promise<ResetRestrictedPinResult> {
+  return withTransaction(db, async (trx) => {
+    const existing = await trx
+      .selectFrom('user_settings')
+      .select('user_id')
+      .where('user_id', '=', input.userId)
+      .executeTakeFirst();
+    if (!existing) {
+      return { cleared: false };
+    }
+
+    await trx
+      .updateTable('user_settings')
+      .set({
+        restricted_opt_in: false,
+        restricted_pin_hash: null,
+        restricted_unlocked_until_ms: null,
+        updated_at_ms: input.nowMs,
+      })
+      .where('user_id', '=', input.userId)
+      .execute();
+
+    await writeEvent(trx, {
+      type: 'user.restricted-pin-reset',
+      tsMs: input.nowMs,
+      actorUserId: null,
+      payload: { userId: input.userId, username: input.username, actor: 'cli' },
+    });
+
+    return { cleared: true };
+  });
+}
+
 // ============================================================================
 // library_permissions
 // ============================================================================

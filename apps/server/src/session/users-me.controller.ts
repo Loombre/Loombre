@@ -4,7 +4,13 @@
 // PUT /users/me/restricted (task spec, docs/PLAN.md §6.4 gate 3): SELF
 // opt-in + PIN management. There is no admin path here by construction —
 // the route has no user-id param, it always acts on the caller from the
-// AuthGuard-attached `req.user`.
+// AuthGuard-attached `req.user`. Still true over HTTP after H2: a user who
+// forgets their PIN entirely (nothing to prove via `currentPin` below) has
+// no path through THIS endpoint — the recovery is the server-local
+// `loombre admin reset-pin <username>` CLI command (apps/server/src/cli/
+// admin-reset-pin.ts), deliberately never exposed here or anywhere else
+// over HTTP; filesystem access to the running server is that privilege
+// boundary, not a bearer token.
 //
 // A NEW pin must match the contract's `^[0-9]{4}$` exactly (pin-format.ts —
 // read its header for why: the unlock UI can only ever enter 4 digits, so

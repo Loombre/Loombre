@@ -547,4 +547,88 @@ describe("websocket broadcaster (mission-mandated two-live-sockets test)", () =>
       secondWs.close();
     }
   }, 30_000);
+
+  // H2 (owner brief): `user.restricted-pin-reset` is the audit event the
+  // server-local `loombre admin reset-pin <username>` CLI command emits
+  // (packages/db/src/query/identity.ts's resetRestrictedPinAndEmit) —
+  // ADMIN_ONLY delivery (apps/server/src/plugins/event-taxonomy.ts), the
+  // SAME bucket job.updated is in, for the identical reason: instance-
+  // administration/recovery activity, never content a non-admin viewer
+  // should see over the live event stream. Mirrors this file's own
+  // job.updated ADMIN_ONLY delivery test's shape exactly.
+  it("user.restricted-pin-reset: ADMIN_ONLY delivery — casual socket receives nothing, admin socket receives it", async () => {
+    const httpServer = app.getHttpServer();
+
+    const adminLogin = await request(httpServer).post("/auth/login").send({
+      username: "admin",
+      password: "loombre-seed-admin",
+      deviceName: "ws-test-admin-pin-reset",
+      deviceProfile: buildDeviceProfile("ws-test-admin-pin-reset"),
+    });
+    expect(adminLogin.status, JSON.stringify(adminLogin.body)).toBe(200);
+    const adminToken: string = adminLogin.body.accessToken;
+
+    const casualLogin = await request(httpServer).post("/auth/login").send({
+      username: "casual",
+      password: "loombre-seed-casual",
+      deviceName: "ws-test-casual-pin-reset",
+      deviceProfile: buildDeviceProfile("ws-test-casual-pin-reset"),
+    });
+    expect(casualLogin.status, JSON.stringify(casualLogin.body)).toBe(200);
+    const casualToken: string = casualLogin.body.accessToken;
+
+    const adminWs = new WebSocket(`${baseWsUrl}?token=${encodeURIComponent(adminToken)}`);
+    const casualWs = new WebSocket(`${baseWsUrl}?token=${encodeURIComponent(casualToken)}`);
+
+    const adminMessages: unknown[] = [];
+    const casualMessages: unknown[] = [];
+    adminWs.on("message", (data) => adminMessages.push(JSON.parse(data.toString())));
+    casualWs.on("message", (data) => casualMessages.push(JSON.parse(data.toString())));
+
+    await Promise.all([waitForOpen(adminWs), waitForOpen(casualWs)]);
+
+    const db = createDb(process.env["DATABASE_URL"]!);
+    const resetUserId = "018f6f1e-0000-7000-8000-0000000000d1";
+    try {
+      const nowMs = Date.now();
+      await db
+        .insertInto("events")
+        .values({
+          type: "user.restricted-pin-reset",
+          ts_ms: nowMs,
+          actor_user_id: null,
+          payload: { userId: resetUserId, username: "ws-pin-reset-target", actor: "cli" },
+        })
+        .execute();
+
+      // Two poll ticks' worth of margin (POLL_INTERVAL_MS = 500ms).
+      await sleep(1500);
+
+      const isPinResetFor = (m: unknown, wantUserId: string): boolean => {
+        const envelope = m as { type?: unknown; payload?: { userId?: unknown } };
+        return envelope.type === "user.restricted-pin-reset" && envelope.payload?.userId === wantUserId;
+      };
+      const isAnyPinReset = (m: unknown): boolean => (m as { type?: unknown }).type === "user.restricted-pin-reset";
+
+      expect(
+        adminMessages.some((m) => isPinResetFor(m, resetUserId)),
+        `admin socket should receive user.restricted-pin-reset; got ${JSON.stringify(adminMessages)}`,
+      ).toBe(true);
+      expect(
+        casualMessages.some(isAnyPinReset),
+        `casual (non-admin) socket must NEVER receive user.restricted-pin-reset; got ${JSON.stringify(casualMessages)}`,
+      ).toBe(false);
+
+      const casualCountAfterFirstWindow = casualMessages.length;
+      await sleep(750);
+      expect(
+        casualMessages.length,
+        "casual socket received additional message(s) during the negative-window grace period",
+      ).toBe(casualCountAfterFirstWindow);
+    } finally {
+      await db.destroy();
+      adminWs.close();
+      casualWs.close();
+    }
+  }, 20_000);
 });

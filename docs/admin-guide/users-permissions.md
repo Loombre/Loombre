@@ -53,3 +53,12 @@ your grant is necessary but not sufficient by itself, by design.
 Toggle a library off in the same **Library access** editor to revoke it,
 or delete a user's account entirely from the Users screen if they should
 no longer have any access at all.
+
+## Forgot PIN?
+
+Nobody administering Loombre can see or set someone else's restricted-
+content PIN — but whoever runs the server itself can reset it. Resetting
+clears it completely and turns off that person's opt-in; they simply
+choose a brand new PIN the next time they turn restricted content back on.
+There's no screen for this here by design — see the Operator Guide's
+[PIN-reset recovery steps](../ops/cli.md#forgot-a-pin) for exactly how.
