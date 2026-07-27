@@ -1,3 +1,10 @@
+# pnpm v11's verify-deps-before-run pre-script check, disabled repo-wide —
+# see .npmrc's comment for the incident history (the .npmrc key alone does
+# not take effect on v11; this camelCase workspace setting is the one the
+# runtime honors). CI is unaffected: it always runs
+# `pnpm install --frozen-lockfile` explicitly first.
+verifyDepsBeforeRun: false
+
 packages:
   - "apps/*"
   - "packages/*"
