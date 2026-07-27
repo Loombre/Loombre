@@ -274,6 +274,24 @@ async function waitForHttp200(url, timeoutMs) {
   throw new Error(`smoke: ${url} never returned 200 within ${timeoutMs}ms — last error: ${lastErr?.message ?? lastErr}`);
 }
 
+/** Polls until nothing answers on the port — the inverse of
+ *  waitForHealthz, used between scenarios so a surviving process can
+ *  never masquerade as the next scenario's server. */
+async function waitForPortFree(port, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    try {
+      await fetch(`http://127.0.0.1:${port}/healthz`, { signal: AbortSignal.timeout(1_000) });
+    } catch {
+      return;
+    }
+    if (Date.now() > deadline) {
+      throw new Error(`smoke: port ${port} still answering after ${timeoutMs}ms — previous scenario's server survived teardown`);
+    }
+    await new Promise((r) => setTimeout(r, 500));
+  }
+}
+
 async function waitForHealthz(port, timeoutMs) {
   return waitForHttp200(`http://127.0.0.1:${port}/healthz`, timeoutMs);
 }
@@ -470,8 +488,16 @@ async function main(argv) {
     await loginRoundTrip(SMOKE_SERVER_PORT);
 
     console.log("--- stopping server/worker before uninstall ---");
-    dockerExecCapture(args.containerName, ["pkill", "-f", "/opt/loombre/bin/loombre-server"]);
-    dockerExecCapture(args.containerName, ["pkill", "-f", "/opt/loombre/bin/loombre-worker"]);
+    // dist-path patterns, NOT the wrapper paths: the wrappers `exec` into
+    // the bundled node, so the live argv is `node .../dist/main.js` — the
+    // old /opt/loombre/bin/* patterns matched NOTHING, scenario 1's
+    // processes survived into the embedded scenario, and the STALE
+    // external server answered /healthz on the shared port while the real
+    // embedded server had died underneath it (round-5 smoke: worker
+    // ECONNREFUSED on 5433 with a "passing" healthz).
+    dockerExecCapture(args.containerName, ["pkill", "-f", "lib/server/dist/main.js"]);
+    dockerExecCapture(args.containerName, ["pkill", "-f", "lib/worker/dist/index.js"]);
+    await waitForPortFree(SMOKE_SERVER_PORT, 15_000);
 
     console.log("--- uninstall.sh (no --purge) ---");
     dockerExec(args.containerName, ["bash", "-c", `cd /tmp/${tarballName} && ./uninstall.sh --no-systemd`]);
