@@ -21,14 +21,19 @@
 -->
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
   <Fragment>
-    <StandardDirectory Id="ProgramFilesFolder">
+    <!-- ProgramFiles64Folder, NOT ProgramFilesFolder: the plain Id is the
+         32-BIT folder even in an -arch x64 package — the v0.9.0-rc.1
+         install landed in "Program Files (x86)" on a real machine before
+         this was caught. -->
+    <StandardDirectory Id="ProgramFiles64Folder">
       <Directory Id="INSTALLFOLDER" Name="Loombre">
         <!-- ARCHIVED-PAYLOAD MODEL (see Files.wxs's header): the five big
              trees below (server, worker, web, node, pg) are NOT installed
              by MSI components — they are the top-level names inside
-             payload.zip (PAYLOADDIR), materialized here by
-             LoombreServiceHost's PayloadExtractor on first service start
-             and removed at uninstall by Package.wxs's cleanup component
+             payload.zip (PAYLOADDIR), materialized here at INSTALL time
+             by Package.wxs's ca.ExtractPayload (LoombreServiceHost.exe
+             in extract-cli mode; first service start self-heals via the
+             same extractor) and removed at uninstall by Package.wxs's cleanup component
              (util:RemoveFolderEx over the whole install folder). Their
              Directory Ids remain REAL and load-bearing: Services.wxs's
              [SERVERDIR]/[WORKERDIR]/[NODEDIR] Formatted-string references

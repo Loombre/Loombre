@@ -11,11 +11,13 @@
   65,536 ceiling (WIX7502). build-msi.mjs zips those five staged trees
   into ONE payload.zip (top-level names matching Directories.wxs's
   SERVERDIR/WORKERDIR/WEBDIR/NODEDIR/PGDIR), this file installs that zip
-  as a single component into PAYLOADDIR, and LoombreServiceHost extracts
-  it into the install folder on first service start (PayloadExtractor.cs:
-  sha256 marker for idempotence, mutex against the two services racing,
-  stale-tree removal on upgrade; Package.wxs's cleanup component removes
-  the extracted trees at uninstall via util:RemoveFolderEx).
+  as a single component into PAYLOADDIR, and LoombreServiceHost.exe (in
+  extract-cli mode) unpacks it into the install folder AT INSTALL TIME
+  (Package.wxs's ca.ExtractPayload, deferred after InstallFiles) with a
+  first-service-start self-heal via the same PayloadExtractor.cs (sha256
+  marker for idempotence, mutex against racing instances, stale-tree
+  removal on upgrade; Package.wxs's cleanup component removes the
+  extracted trees at uninstall via util:RemoveFolderEx).
 
   The small, stable trees (ffmpeg, tray publish output) are still glob-
   harvested below with WiX v4's <Files Include="…\**"/> — per-file

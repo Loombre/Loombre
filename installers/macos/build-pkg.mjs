@@ -514,10 +514,22 @@ function buildPkg(payloadRoot, version) {
   mkdirSync(outRoot, { recursive: true });
   mkdirSync(DIST_OUT, { recursive: true });
 
+  // Stage the install scripts and FORCE the exec bit before pkgbuild:
+  // PackageKit refuses a non-executable preinstall outright (error 112,
+  // "./preinstall: isn't executable" — the v0.9.0-rc.1 install failure on
+  // a real Mac: the scripts were tracked 100644, so every checkout
+  // reproduced the broken mode). Git modes are now 100755 too; this
+  // staging chmod makes the pkg immune to any future mode regression.
+  const scriptsStage = path.join(outRoot, "scripts");
+  cpSync(path.join(PKG_DIR, "scripts"), scriptsStage, { recursive: true });
+  for (const script of readdirSync(scriptsStage)) {
+    chmodSync(path.join(scriptsStage, script), 0o755);
+  }
+
   const componentPkg = path.join(outRoot, "loombre-component.pkg");
   run("pkgbuild", [
     "--root", payloadRoot,
-    "--scripts", path.join(PKG_DIR, "scripts"),
+    "--scripts", scriptsStage,
     "--identifier", "com.loombre.pkg",
     "--version", version,
     "--install-location", "/",

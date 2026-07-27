@@ -3,7 +3,12 @@
     <title>Loombre __VERSION__</title>
     <organization>com.loombre</organization>
     <domains enable_anywhere="false" enable_currentUserHome="false" enable_localSystem="true"/>
-    <options customize="never" require-scripts="true" rootVolumeOnly="true"/>
+    <!-- hostArchitectures: without it Installer assumes x86_64 and runs
+         the install scripts under Rosetta on Apple Silicon (observed in
+         the v0.9.0-rc.1 install log). This payload is arm64-only — say
+         so, which also makes Installer refuse cleanly on Intel Macs
+         instead of laying down binaries that cannot run. -->
+    <options customize="never" require-scripts="true" rootVolumeOnly="true" hostArchitectures="arm64"/>
     <welcome file="welcome.txt" mime-type="text/plain"/>
     <readme file="readme.txt" mime-type="text/plain"/>
 
