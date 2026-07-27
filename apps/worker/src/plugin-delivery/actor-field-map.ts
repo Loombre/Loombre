@@ -78,6 +78,12 @@ export const ACTOR_FIELD_MAP: Record<string, readonly string[]> = {
   // event-taxonomy.ts) — empty for the same reason every plugin.* entry
   // above is, not left unmapped.
   "metadata.match-candidates": [],
+  // H2 (owner brief): the CLI PIN-reset recovery event's payload DOES carry
+  // a real userId (the reset's target user) — mapped for the same reason
+  // settings.updated's actorUserId is mapped despite ALSO being ADMIN_ONLY
+  // (this map tracks "does the schema carry a user-id-bearing field", not
+  // "is this type reachable by a plugin today" — see this file's header).
+  "user.restricted-pin-reset": ["userId"],
 };
 
 /**

@@ -43,6 +43,10 @@ content stays available for a while — after that, it locks again
 automatically and you'll be asked for your PIN the next time. You can also
 lock it again yourself at any time if you want to put it away sooner.
 
+Forgot your PIN? Whoever runs your Loombre can reset it for you — they
+still can't see or choose it, resetting just clears it so you can pick a
+new one yourself the next time you opt in.
+
 ## Your privacy
 
 Restricted content is designed to be genuinely private, not just hidden

@@ -28,6 +28,7 @@ import { createDb } from '../src/db.js';
 import type { DB } from '../src/types.js';
 import {
   createDevice,
+  createUserAdminAndEmit,
   findRefreshTokenByHash,
   getDeviceById,
   getLibraryPermissionSummary,
@@ -36,6 +37,7 @@ import {
   getUserByUsername,
   getUserSettings,
   insertRefreshToken,
+  resetRestrictedPinAndEmit,
   revokeRefreshTokenChain,
   revokeRefreshTokensForDevice,
   setRestrictedUnlockUntil,
@@ -431,6 +433,65 @@ describe('identity queries (users / user_settings / library_permissions / device
       const after = await latestUserEvent('restricted.locked', userId);
       // Same row (or both undefined) — no NEW event was written.
       expect(after?.payload).toEqual(before?.payload);
+    });
+  });
+
+  describe('resetRestrictedPinAndEmit (H2 — server-local CLI admin recovery path, `loombre admin reset-pin <username>`)', () => {
+    it('clears opt-in/pin/unlock unconditionally and writes user.restricted-pin-reset (actor: cli, actorUserId: null) when a user_settings row exists', async () => {
+      const casual = await getUserByUsername(db, 'casual');
+      const userId = casual!.id;
+
+      await updateRestrictedSettings(db, {
+        userId,
+        optIn: true,
+        pinHash: 'fake-hash-for-reset-test',
+        updatedAtMs: 80_000,
+      });
+      await setRestrictedUnlockUntil(db, userId, 90_000, 80_500);
+
+      const result = await resetRestrictedPinAndEmit(db, { userId, username: 'casual', nowMs: 100_000 });
+      expect(result).toEqual({ cleared: true });
+
+      const settings = await getUserSettings(db, userId);
+      expect(settings?.restricted_opt_in).toBe(false);
+      expect(settings?.restricted_pin_hash).toBeNull();
+      expect(settings?.restricted_unlocked_until_ms).toBeNull();
+
+      const event = await latestUserEvent('user.restricted-pin-reset', userId);
+      expect(event).toBeDefined();
+      expect(event!.payload).toEqual({ userId, username: 'casual', actor: 'cli' });
+      // The CLI has no user id of its own — the payload's `actor: 'cli'`
+      // field carries that truth, never the envelope's actorUserId (see
+      // this function's doc comment).
+      expect(event!.actor_user_id).toBeNull();
+    });
+
+    it('is a no-op — no row touched, NO event emitted — for a user with no user_settings row at all (never opted in)', async () => {
+      // A fresh admin-created user gets no user_settings row automatically
+      // (no DB-level auto-create trigger — see updateRestrictedSettings's
+      // own doc comment above), so this exercises the true "never opted
+      // in" case rather than an opted-out-with-a-row one.
+      const created = await createUserAdminAndEmit(db, {
+        username: 'reset-noop-user',
+        email: 'reset-noop-user@example.invalid',
+        passwordHash: 'not-a-real-hash',
+        isAdmin: false,
+        maxContentRating: null,
+        nowMs: 101_000,
+      });
+
+      const result = await resetRestrictedPinAndEmit(db, {
+        userId: created.id,
+        username: created.username,
+        nowMs: 102_000,
+      });
+      expect(result).toEqual({ cleared: false });
+
+      const settings = await getUserSettings(db, created.id);
+      expect(settings).toBeUndefined();
+
+      const event = await latestUserEvent('user.restricted-pin-reset', created.id);
+      expect(event).toBeUndefined();
     });
   });
 });

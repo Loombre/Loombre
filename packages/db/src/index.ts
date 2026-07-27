@@ -208,6 +208,8 @@ export type {
   InsertRefreshTokenInput,
   CreateFirstAdminInput,
   CreateUserAdminAndEmitInput,
+  ResetRestrictedPinInput,
+  ResetRestrictedPinResult,
 } from './query/identity.js';
 export {
   getUserByUsername,
@@ -218,6 +220,11 @@ export {
   updateUserPrefs,
   setRestrictedUnlockUntil,
   setRestrictedUnlockUntilAndEmit,
+  // H2 — server-local CLI admin recovery path
+  // (apps/server/src/cli/admin-reset-pin.ts); see src/query/identity.js's
+  // resetRestrictedPinAndEmit doc comment for why this is never reachable
+  // over HTTP.
+  resetRestrictedPinAndEmit,
   getLibraryPermissionSummary,
   createDevice,
   getDeviceById,
