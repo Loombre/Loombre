@@ -291,7 +291,7 @@ describe.skipIf(!vtAvailable)(
         expect(result.video.encoder).toBe("videotoolbox");
         expect(result.video.toneMap).toBe("videotoolbox");
         expect(result.container).toBe("fmp4-hls");
-        expect(result.engineVersion).toBe("0.8.2");
+        expect(result.engineVersion).toBe("0.8.3");
 
         // Route (a)'s argv shape: hw-surface pin + scale_vt, zero software
         // filters, zero hw<->sw bounces.
