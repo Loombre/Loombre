@@ -81,6 +81,18 @@ public sealed class LoombreHostedService : ServiceBase
             Directory.CreateDirectory(logDir);
         }
         _log = new StreamWriter(_options.LogFilePath, append: true) { AutoFlush = true };
+
+        if (_options.ExtractZipPath is not null && _options.ExtractToDir is not null)
+        {
+            // First boot after install/upgrade extracts the multi-hundred-MB
+            // payload.zip (see PayloadExtractor's header for why the MSI
+            // cannot ship these trees as files). SCM's default start-pending
+            // window (~30s) is too short for that on a slow disk — ask for
+            // more BEFORE starting; a marker-match skip costs one hash pass.
+            RequestAdditionalTime(180_000);
+            PayloadExtractor.ExtractIfNeeded(_options.ExtractZipPath, _options.ExtractToDir, Log);
+        }
+
         Log($"starting: \"{_options.ExecutablePath}\" {string.Join(' ', _options.Arguments)}");
 
         var psi = new ProcessStartInfo

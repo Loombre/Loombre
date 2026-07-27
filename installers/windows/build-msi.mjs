@@ -54,6 +54,7 @@ import {
   readdirSync,
   realpathSync,
   rmSync,
+  statSync,
   cpSync,
   writeFileSync,
 } from "node:fs";
@@ -285,10 +286,11 @@ function fetchNodeRuntime(targetDir) {
 // I1/I3/I4 all call this" / "installer lanes I1/I3/I4 call this too") with
 // a real CLI, not a guessed one — this function calls the ACTUAL interface
 // rather than the placeholder `--out`/`--arch` shape this file originally
-// assumed. Both default to writing under <repo>/vendor/…, which is why
-// this lane's earlier vendor-dir mkdir/pnpmDeploy-style copy into
-// STAGE_DIR is unnecessary here: wixBuild() points its -d FfmpegDir /
-// -d EmbeddedPgDir preprocessor variables straight at the vendor output.
+// assumed. Both default to writing under <repo>/vendor/…. ffmpeg is
+// consumed straight from there (wixBuild's -d FfmpegDir); embedded-pg is
+// copied into STAGE_DIR/pg by createPayloadZip() so it rides inside
+// payload.zip under its Directories.wxs name (the archived-payload model
+// — see that function's comment).
 
 function fetchFfmpegWindows() {
   const scriptPath = path.join(REPO_ROOT, "scripts", "fetch-ffmpeg.mjs");
@@ -323,6 +325,36 @@ function fetchEmbeddedPgWindows() {
   return path.join(REPO_ROOT, "vendor", "embedded-pg", "windows-x64", pgVersion);
 }
 
+// ARCHIVED-PAYLOAD MODEL (owner decision after WIX7502, diag run
+// 30219204709: 84,305 per-file Components vs MSI's hard 65,536 ceiling):
+// the five big trees ship inside the MSI as ONE payload.zip whose
+// top-level names match Directories.wxs's SERVERDIR/WORKERDIR/WEBDIR/
+// NODEDIR/PGDIR. LoombreServiceHost extracts it on first service start
+// (PayloadExtractor.cs). ffmpeg/svc/tray stay per-file MSI components —
+// their counts are nowhere near the ceiling.
+function createPayloadZip(embeddedPgDir) {
+  log("Step 2/7 (cont.): create payload.zip (MSI component-count ceiling workaround)");
+  // pg is fetched into vendor/, not STAGE_DIR — copy it in so one
+  // tar -C root covers all five trees under their final names.
+  const pgStage = path.join(STAGE_DIR, "pg");
+  rmSync(pgStage, { recursive: true, force: true });
+  cpSync(embeddedPgDir, pgStage, { recursive: true, dereference: true });
+
+  const zipPath = path.join(OUT_DIR, "payload.zip");
+  rmSync(zipPath, { force: true });
+  // System32\tar.exe is bsdtar (ships with Windows 10+); -a picks ZIP
+  // format from the .zip extension, which PayloadExtractor's
+  // System.IO.Compression reader requires. The ABSOLUTE path matters:
+  // a Git-for-Windows GNU tar earlier on PATH would not produce ZIP.
+  const tarExe =
+    process.platform === "win32"
+      ? path.join(process.env["SystemRoot"] ?? "C:\\Windows", "System32", "tar.exe")
+      : "tar";
+  run(tarExe, ["-a", "-cf", zipPath, "-C", STAGE_DIR, "server", "worker", "web", "node", "pg"]);
+  log(`payload.zip created: ${(statSync(zipPath).size / (1024 * 1024)).toFixed(1)} MiB`);
+  return zipPath;
+}
+
 function stagePayloads() {
   log("Step 2/7: stage payloads");
   mkdirSync(STAGE_DIR, { recursive: true });
@@ -333,7 +365,8 @@ function stagePayloads() {
   fetchNodeRuntime(path.join(STAGE_DIR, "node"));
   const ffmpegDir = fetchFfmpegWindows();
   const embeddedPgDir = fetchEmbeddedPgWindows();
-  return { ffmpegDir, embeddedPgDir };
+  const payloadZip = createPayloadZip(embeddedPgDir);
+  return { ffmpegDir, payloadZip };
 }
 
 // ---------------------------------------------------------------------------
@@ -403,6 +436,10 @@ function buildDotnetProjects(version) {
 // build-breaker (wixtoolset/issues#8945).
 const PINNED_WIX_VERSION = "5.0.2";
 const PINNED_FIREWALL_EXT = `WixToolset.Firewall.wixext/${PINNED_WIX_VERSION}`;
+// Util supplies util:RemoveFolderEx (Package.wxs's uninstall cleanup of
+// the extracted payload trees) — pinned in lockstep like Firewall.
+const PINNED_UTIL_EXT = `WixToolset.Util.wixext/${PINNED_WIX_VERSION}`;
+const PINNED_EXTENSIONS = [PINNED_FIREWALL_EXT, PINNED_UTIL_EXT];
 
 function ensureWixInstalled() {
   // Restore first: with a tool manifest present, `dotnet tool run` errors
@@ -429,21 +466,23 @@ function ensureWixInstalled() {
           `building with an unpinned toolset.`,
       );
     }
-    // Pin the Firewall extension in lockstep (adds to the project-local
-    // .wix/ extension cache on first use; idempotent after that).
-    // Best-effort: if `extension add` fails (e.g. offline with a cold
-    // cache), the build's own versioned -ext reference below fails loudly
-    // with wix's error rather than silently using a mismatched version.
-    try {
-      execFileSync("dotnet", ["tool", "run", "wix", "extension", "add", PINNED_FIREWALL_EXT], {
-        stdio: "pipe",
-        cwd: WINDOWS_DIR,
-      });
-    } catch (err) {
-      log(
-        `warning: \`wix extension add ${PINNED_FIREWALL_EXT}\` did not succeed (${String(err.message).slice(0, 120)}) — ` +
-          `continuing; the build's versioned -ext reference will fail loudly if the extension truly can't resolve.`,
-      );
+    // Pin the extensions in lockstep (adds to the project-local .wix/
+    // extension cache on first use; idempotent after that). Best-effort:
+    // if `extension add` fails (e.g. offline with a cold cache), the
+    // build's own versioned -ext references below fail loudly with wix's
+    // error rather than silently using a mismatched version.
+    for (const pinnedExt of PINNED_EXTENSIONS) {
+      try {
+        execFileSync("dotnet", ["tool", "run", "wix", "extension", "add", pinnedExt], {
+          stdio: "pipe",
+          cwd: WINDOWS_DIR,
+        });
+      } catch (err) {
+        log(
+          `warning: \`wix extension add ${pinnedExt}\` did not succeed (${String(err.message).slice(0, 120)}) — ` +
+            `continuing; the build's versioned -ext reference will fail loudly if the extension truly can't resolve.`,
+        );
+      }
     }
     return true;
   } catch {
@@ -485,20 +524,14 @@ function wixBuild(version, payloadDirs) {
     "x64",
     "-ext",
     PINNED_FIREWALL_EXT,
+    "-ext",
+    PINNED_UTIL_EXT,
     "-d",
     `ProductVersion=${version}`,
     "-d",
-    `ServerDistDir=${path.join(STAGE_DIR, "server")}`,
-    "-d",
-    `WorkerDistDir=${path.join(STAGE_DIR, "worker")}`,
-    "-d",
-    `WebDistDir=${path.join(STAGE_DIR, "web")}`,
-    "-d",
-    `NodeRuntimeDir=${path.join(STAGE_DIR, "node")}`,
+    `PayloadZip=${payloadDirs.payloadZip}`,
     "-d",
     `FfmpegDir=${payloadDirs.ffmpegDir}`,
-    "-d",
-    `EmbeddedPgDir=${payloadDirs.embeddedPgDir}`,
     "-d",
     `SvcHostDir=${path.join(STAGE_DIR, "svc")}`,
     "-d",
@@ -515,7 +548,7 @@ function wixBuild(version, payloadDirs) {
     cwd: WINDOWS_DIR,
   });
 
-  const sizeBytes = existsSync(outFile) ? readFileSync(outFile).length : 0;
+  const sizeBytes = existsSync(outFile) ? statSync(outFile).size : 0;
   log(`MSI built: ${outFile} (${(sizeBytes / (1024 * 1024)).toFixed(1)} MiB)`);
   return outFile;
 }
