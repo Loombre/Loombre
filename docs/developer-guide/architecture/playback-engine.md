@@ -68,3 +68,18 @@ the real `plan()` and checks the output against what `burnup.json` records
 as correct — so a decision-logic change that flips a case's outcome is
 caught immediately, not discovered later. `pnpm test:matrix` runs this
 suite directly; CI also runs it as its own "playback matrix burn-up" step.
+
+## Admission control is process-local
+
+The transcode admission gate (`docs/PLAYBACK.md`:379's
+`maxSimultaneousTranscodes` semaphore) — `TranscodeAdmissionGate` in
+`apps/server/src/playback/transcode-admission.ts` — is a process-local
+promise-chain mutex, not a `plan()` concern. Correct for v1's
+single-process-per-instance topology
+(compose prod, the bundled installers); running the server multi-process
+against one shared database would let each process admit up to the cap
+independently, over-admitting. Scaling past one process requires
+converting it to a Postgres advisory lock — a
+`pg_advisory_xact_lock`-guarded count+insert in `packages/db`, per the
+module's own header and CLAUDE.md invariant 4. No code change here; this
+is the map for whoever scales it later.
