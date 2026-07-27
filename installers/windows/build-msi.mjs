@@ -177,19 +177,7 @@ function pnpmDeploy(pkgName, targetDir) {
   // `--legacy` matches lanes I1/I4: pnpm v10+ refuses to deploy from a
   // non-injected workspace without it (ERR_PNPM_DEPLOY_NONINJECTED_
   // WORKSPACE), and this workspace does not set inject-workspace-packages.
-  //
-  // Deploy to a raw dir, then MATERIALIZE into targetDir with a
-  // dereferencing copy: pnpm's node_modules layout is junction/symlink-
-  // heavy, macOS's rc.1 install proved relocated links are a crash
-  // (ERR_MODULE_NOT_FOUND on every direct dep), and this lane adds a zip
-  // hop where System.IO.Compression cannot recreate links at all. Real
-  // files only in the payload — the posture lane I1's boot smoke proved.
-  const rawDir = `${targetDir}-raw`;
-  rmSync(rawDir, { recursive: true, force: true });
-  mkdirSync(rawDir, { recursive: true });
-  run("pnpm", ["--filter", pkgName, "deploy", "--prod", "--legacy", rawDir]);
-  cpSync(rawDir, targetDir, { recursive: true, dereference: true });
-  rmSync(rawDir, { recursive: true, force: true });
+  run("pnpm", ["--filter", pkgName, "deploy", "--prod", "--legacy", targetDir]);
 
   // apps/server-only, ported from lane I4 (installers/macos/build-pkg.mjs +
   // LAYOUT.md §9): ajv is a *runtime* dependency (device-profile
@@ -358,11 +346,18 @@ function createPayloadZip(embeddedPgDir) {
   // format from the .zip extension, which PayloadExtractor's
   // System.IO.Compression reader requires. The ABSOLUTE path matters:
   // a Git-for-Windows GNU tar earlier on PATH would not produce ZIP.
+  // -L (dereference) MATERIALIZES pnpm's junction/symlink node_modules
+  // layout into real files at the archive boundary — the one place a
+  // link can be reliably killed on this lane: System.IO.Compression's
+  // extractor cannot recreate links at all (it writes them as junk
+  // files), and the macOS rc.1 payload proved what relocated links do
+  // to a server (ERR_MODULE_NOT_FOUND crash-loop). The diag's
+  // import-graph install smoke regression-tests this.
   const tarExe =
     process.platform === "win32"
       ? path.join(process.env["SystemRoot"] ?? "C:\\Windows", "System32", "tar.exe")
       : "tar";
-  run(tarExe, ["-a", "-cf", zipPath, "-C", STAGE_DIR, "server", "worker", "web", "node", "pg"]);
+  run(tarExe, ["-a", "-L", "-cf", zipPath, "-C", STAGE_DIR, "server", "worker", "web", "node", "pg"]);
   log(`payload.zip created: ${(statSync(zipPath).size / (1024 * 1024)).toFixed(1)} MiB`);
   return zipPath;
 }
