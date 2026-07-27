@@ -14,6 +14,10 @@
     "./language-codes": {
       "types": "./dist/language-codes.d.ts",
       "default": "./dist/language-codes.js"
+    },
+    "./admin-only-event-types": {
+      "types": "./dist/admin-only-event-types.d.ts",
+      "default": "./dist/admin-only-event-types.js"
     }
   },
   "scripts": {

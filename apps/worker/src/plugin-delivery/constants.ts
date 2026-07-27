@@ -11,6 +11,8 @@
 // rationale" section) — none of it is locked by the mission brief or the
 // LD series.
 
+import { ADMIN_ONLY_EVENT_TYPES } from "@loombre/shared/admin-only-event-types";
+
 export { LPP_DELIVERY_TIMEOUT_MS, LPP_CAPABILITY_MAX_RESPONSE_BYTES } from "@loombre/plugin-host";
 
 /** Mission-locked (LPP v1 mission §3.2 "retention window"). */
@@ -41,35 +43,27 @@ export const LPP_DELIVERY_BACKOFF_BASE_MS = 2_000;
 export const LPP_DELIVERY_BACKOFF_MAX_MS = 5 * 60_000;
 
 /**
- * H-4 fix wave, defense in depth. The registration-time gate
+ * L3 (owner brief): this used to be a hand-maintained DUPLICATE of
+ * apps/server/src/plugins/event-taxonomy.ts's `ADMIN_ONLY_EVENT_TYPES`,
+ * justified (this constant's own prior header) by "apps/worker cannot
+ * import apps/server, the dependency graph runs the other way" — true, but
+ * that rationale never actually required a hand-copied list, only that the
+ * source not live in apps/server. It now lives in neither app: the
+ * canonical list is packages/shared/src/admin-only-event-types.ts (apps/worker
+ * already depends on @loombre/shared for other things — see keyring.ts and
+ * elsewhere), and this is a straight re-export under the original name so
+ * this file's sole runtime consumer (delivery-loop.ts's defense-in-depth
+ * fanout filter) keeps working unchanged. See the canonical module's own
+ * header for H-4 fix wave / metadata.match-candidates / user.restricted-pin-reset
+ * provenance and the full list of every derived/parity site.
+ *
+ * H-4 fix wave, defense in depth (why this filter exists here at all,
+ * independent of import path): the registration-time gate
  * (apps/server/src/plugins/event-taxonomy.ts's `ADMIN_ONLY_EVENT_TYPES`
  * exclusion) is what actually PREVENTS a `plugin_event_grants` row for one
- * of these eight types from ever being created — this delivery-loop copy
+ * of these ten types from ever being created — this delivery-loop copy
  * exists so the loop itself can never fan one out even if that upstream
  * gate were ever bypassed (a stale pre-fix DB row, a future bug) — LD8's
  * "no plugin can stall/leak" posture applied to this one axis too.
- * Duplicated (not imported) from apps/server for the SAME reason
- * clearance.ts's `pluginMayReceiveRestricted` is duplicated rather than
- * imported — apps/worker cannot import apps/server, the dependency graph
- * runs the other way (this file's own precedent, and clearance.ts's
- * header). Keep this list in lockstep with event-taxonomy.ts's
- * `ADMIN_ONLY_EVENT_TYPES` and ws-broadcaster.service.ts's `ADMIN_ONLY_TYPES`.
- *
- * `metadata.match-candidates` (Phosphor retheme Wave 2, Lane L2) joined
- * that upstream set for the identical reason — kept in lockstep here too.
- *
- * `user.restricted-pin-reset` (H2, owner brief) joined that upstream set
- * for the identical reason — kept in lockstep here too.
  */
-export const LPP_DELIVERY_ADMIN_ONLY_EVENT_TYPES: readonly string[] = [
-  "job.updated",
-  "settings.updated",
-  "plugin.registered",
-  "plugin.updated",
-  "plugin.enabled",
-  "plugin.disabled",
-  "plugin.removed",
-  "plugin.health-changed",
-  "metadata.match-candidates",
-  "user.restricted-pin-reset",
-];
+export const LPP_DELIVERY_ADMIN_ONLY_EVENT_TYPES: readonly string[] = ADMIN_ONLY_EVENT_TYPES;
