@@ -118,10 +118,33 @@ jobs:
           port: "5442"
           postgres-version: "18"
 
-      - name: Migrate + seed database
+      - name: "Zero-to-current proof: fresh DB → all migrations → seed"
         shell: bash
+        # Standing H4 gate (docs/PLAN.md §4.2 forward-only migration policy
+        # — closes the audit finding "no down migrations exist anywhere
+        # (contradicts PLAN.md 4.2)"): ikalnytskyi/action-setup-postgres
+        # above stands up a brand-new Postgres every run, but nothing
+        # asserted it was actually empty before today — the property was
+        # incidental. The check below makes "fresh" a verified premise, not
+        # an assumption, before replaying every migration onto it and
+        # seeding. Conformance (apps/server/test/conformance.spec.ts,
+        # test/seeded-conformance.spec.ts) and the restricted-content leak
+        # suite (packages/db/test/leak.spec.ts) ride this same job's later
+        # `pnpm gate` test step — each is self-sufficient and
+        # resets/reseeds its own derived DB, so they don't disturb this
+        # proof. `pnpm gate`'s db:migrate-check step separately replays the
+        # full migration chain again into a scratch schema. Runs on all 3
+        # OS legs — psql is on PATH on every one of them courtesy of the
+        # action-setup-postgres step above (its README: "Adds PostgreSQL
+        # client applications to PATH"), so this stays a single
+        # cross-platform check rather than three OS-specific ones.
         run: |
           set -euo pipefail
+          table_count="$(psql "$DATABASE_URL" -X -At -c "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public';")"
+          if [ "$table_count" -ne 0 ]; then
+            echo "zero-to-current proof: expected an EMPTY public schema before migrating, found $table_count existing table(s) — this Postgres instance is not fresh." >&2
+            exit 1
+          fi
           pnpm db:migrate
           pnpm db:seed
 
