@@ -7,18 +7,19 @@
 //                                  and their workspace deps, `next build`
 //                                  @loombre/web
 //   2. stage payloads           — pnpm-deploy server/worker (pruned prod
-//                                  node_modules); stage web's build output
-//                                  (see stageWeb()'s WARNING — apps/web has
-//                                  no `output: 'standalone'` yet, so this
-//                                  step ships an INCOMPLETE web payload,
-//                                  flagged loudly, not silently); fetch
-//                                  node runtime (placeholder — see
-//                                  fetchNodeRuntime()); consume lane I1's
-//                                  scripts/fetch-ffmpeg.mjs and lane B's
-//                                  scripts/fetch-embedded-pg.mjs IF they
-//                                  exist yet, else placeholder + warn (same
-//                                  pattern lane I1 itself used for the
-//                                  sign-hook per this lane's brief)
+//                                  node_modules); stage web's `output:
+//                                  "standalone"` bundle in its runnable
+//                                  monorepo layout (see stageWeb() — the
+//                                  installer completeness audit closed the
+//                                  old raw-.next gap); fetch the REAL
+//                                  win-x64 Node runtime via the shared,
+//                                  manifest-pinned scripts/fetch-node.mjs
+//                                  (see fetchNodeRuntime()); consume lane
+//                                  I1's scripts/fetch-ffmpeg.mjs and lane
+//                                  B's scripts/fetch-embedded-pg.mjs IF
+//                                  they exist yet, else placeholder + warn
+//                                  (same pattern lane I1 itself used for
+//                                  the sign-hook per this lane's brief)
 //   3. dotnet publish tray       — win-x64 self-contained single-file
 //   4. dotnet publish svc-host   — win-x64 self-contained single-file
 //   5. dotnet test               — the plain-net8.0 test projects (portable
@@ -221,33 +222,51 @@ function pnpmDeploy(pkgName, targetDir) {
 }
 
 function stageWeb(targetDir) {
-  // KNOWN GAP (flagged, not silently worked around — see the I3 report and
-  // installers/windows/msi/Directories.wxs's WEBDIR comment): apps/web's
-  // next.config.mjs does not set `output: "standalone"`, so there is no
-  // self-contained, pruned Next.js server bundle to stage yet. This copies
-  // the raw build output (.next/, public/, package.json, next.config.mjs)
-  // WITHOUT node_modules — the resulting web/ payload is NOT independently
-  // runnable via `next start` on the target machine as staged. It exists
-  // so the MSI's file layout (Directories.wxs's WEBDIR) and Files.wxs's
-  // glob harvesting are exercised end-to-end once dotnet/wix are
-  // available, and so whoever lands `output: "standalone"` (or the
-  // apps/server-serves-web wiring the frozen IpcStatusResponse.webUrl
-  // field implies — see Directories.wxs) has a working directory-mapping
-  // target to drop a real bundle into.
-  warn(
-    'stageWeb: apps/web/next.config.mjs has no `output: "standalone"` — staging .next/ + public/ ' +
-      "WITHOUT a pruned node_modules. The resulting MSI installs web files it cannot yet serve " +
-      "standalone. See the I3 report's 'web-serving architecture' finding.",
-  );
+  // REAL STANDALONE STAGING (installer completeness audit — the old
+  // raw-.next known-gap is CLOSED): apps/web/next.config.mjs sets
+  // `output: "standalone"`, so `next build` (buildWorkspace step 1)
+  // produces a self-contained, pruned server bundle at
+  // apps/web/.next/standalone/ in the MONOREPO layout:
+  //   <standalone>/apps/web/server.js   — the entrypoint
+  //   <standalone>/node_modules         — pruned prod deps
+  // Next deliberately EXCLUDES two trees from standalone output (its own
+  // documented contract — they are expected to be CDN'd or copied by the
+  // deployer), so they are copied in explicitly to make the stage
+  // runnable as-is:
+  //   apps/web/.next/static -> <stage>/apps/web/.next/static
+  //   apps/web/public       -> <stage>/apps/web/public
+  // Run with `node <stage>/apps/web/server.js`, env NODE_ENV=production,
+  // PORT, HOSTNAME=0.0.0.0 — exactly what Services.wxs's LoombreWeb
+  // service registration does against the installed WEBDIR copy.
+  const webSrc = path.join(REPO_ROOT, "apps", "web");
+  const standaloneDir = path.join(webSrc, ".next", "standalone");
+  if (!existsSync(standaloneDir)) {
+    stop(
+      "stageWeb: apps/web/.next/standalone not found — `next build` did not run, or apps/web/" +
+        'next.config.mjs no longer sets `output: "standalone"`. buildWorkspace() (step 1) must ' +
+        "precede staging; if the config regressed, fix it there (this script stages, never builds).",
+    );
+  }
   rmSync(targetDir, { recursive: true, force: true });
   mkdirSync(targetDir, { recursive: true });
-  const webSrc = path.join(REPO_ROOT, "apps", "web");
-  for (const entry of [".next", "public", "package.json", "next.config.mjs"]) {
-    const src = path.join(webSrc, entry);
-    if (existsSync(src)) {
-      cpSync(src, path.join(targetDir, entry), { recursive: true });
-    }
+  cpSync(standaloneDir, targetDir, { recursive: true, dereference: true });
+  cpSync(path.join(webSrc, ".next", "static"), path.join(targetDir, "apps", "web", ".next", "static"), {
+    recursive: true,
+    dereference: true,
+  });
+  const publicDir = path.join(webSrc, "public");
+  if (existsSync(publicDir)) {
+    cpSync(publicDir, path.join(targetDir, "apps", "web", "public"), { recursive: true, dereference: true });
   }
+  const entrypoint = path.join(targetDir, "apps", "web", "server.js");
+  if (!existsSync(entrypoint)) {
+    stop(
+      "stageWeb: staged standalone bundle is missing apps/web/server.js — Next's monorepo " +
+        "standalone layout changed shape. Services.wxs's LoombreWeb Arguments must be updated in " +
+        "the SAME change as whatever fixed this (they encode this exact path).",
+    );
+  }
+  log("staged apps/web standalone bundle (server.js + pruned node_modules + static + public)");
 }
 
 function placeholderDir(targetDir, note) {
@@ -267,24 +286,16 @@ function placeholderDir(targetDir, note) {
 }
 
 function fetchNodeRuntime(targetDir) {
-  // PLACEHOLDER, same honesty pattern as ffmpeg/embedded-pg below: real
-  // node-runtime bundling (single Node runtime per platform, no
-  // user-installed Node — docs/PLAN.md §11) needs a pinned nodejs.org
-  // win-x64 zip download + sha256 verification + extraction. Every
-  // installer lane (I1 Linux, I3 this one, I4 macOS) needs the SAME
-  // thing for its own platform — a strong candidate for ONE shared
-  // script (e.g. scripts/fetch-node.mjs) rather than three independent
-  // copies. This lane does not own root scripts/ (OWNERSHIP:
-  // installers/windows/** only), so it stages a placeholder here and
-  // flags the consolidation opportunity in the I3 report instead of
-  // reaching outside its lane to create that shared script unilaterally.
-  const nodeVersion = process.version; // documents "pin to the repo's own Node major" intent
-  warn(
-    `fetchNodeRuntime: staging a PLACEHOLDER node/ payload (no real win-x64 Node runtime downloaded). ` +
-      `Repo Node engine: ${nodeVersion}. See the I3 report's "node runtime fetch" finding — a real ` +
-      "implementation needs a pinned nodejs.org win-x64 zip + sha256 pin, ideally shared across I1/I3/I4.",
-  );
-  placeholderDir(targetDir, "Loombre placeholder: real win-x64 Node runtime not yet fetched by build-msi.mjs.");
+  // REAL runtime staging (installer completeness audit — this was the
+  // last placeholder holding the services at demand-start): the SHARED,
+  // manifest-pinned scripts/fetch-node.mjs this lane asked for landed
+  // (installers/node-manifest.json pins the official nodejs.org win-x64
+  // zip + sha256; the script downloads with an on-disk cache, verifies,
+  // extracts, and strips the archive root). It stages node.exe AT THE
+  // DEST ROOT — the exact shape Services.wxs's "[NODEDIR]node.exe"
+  // Formatted references resolve, so a fetcher layout change breaks
+  // loudly at its own probe step, not at first service start.
+  run("node", [path.join(REPO_ROOT, "scripts", "fetch-node.mjs"), "--platform", "win-x64", "--dest", targetDir]);
 }
 
 // fetch-ffmpeg.mjs / fetch-embedded-pg.mjs LANDED mid-lane (lanes I1 and B
@@ -317,21 +328,25 @@ function fetchFfmpegWindows() {
 function fetchEmbeddedPgWindows() {
   const scriptPath = path.join(REPO_ROOT, "scripts", "fetch-embedded-pg.mjs");
   const manifestPath = path.join(REPO_ROOT, "installers", "embedded-pg-manifest.json");
-  if (!existsSync(scriptPath)) {
-    const fallbackDir = path.join(REPO_ROOT, "vendor", "embedded-pg", "windows-x64");
-    warn("scripts/fetch-embedded-pg.mjs not present (lane B deliverable) — staging a PLACEHOLDER instead.");
-    placeholderDir(fallbackDir, "Loombre placeholder: scripts/fetch-embedded-pg.mjs not present at build time.");
-    return fallbackDir;
-  }
   // The script's vendor-dir layout is <vendorDir>/<platform>/<version>/…
   // (its own header comment) — the *version* segment is whatever
   // manifest.defaultVersion currently pins, read here rather than
-  // hardcoded so a manifest bump doesn't silently break this path.
+  // hardcoded so a manifest bump doesn't silently break this path. The
+  // version is RETURNED alongside the dir (installer completeness audit):
+  // createPayloadZip() stages pg VENDOR-SHAPED under that version segment
+  // and wixBuild() passes it as -d EmbeddedPgVersion so Services.wxs can
+  // set LOOMBRE_EMBEDDED_PG_VERSION — three consumers, one source.
   const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
   const pgVersion = manifest.defaultVersion;
+  if (!existsSync(scriptPath)) {
+    const fallbackDir = path.join(REPO_ROOT, "vendor", "embedded-pg", "windows-x64", pgVersion);
+    warn("scripts/fetch-embedded-pg.mjs not present (lane B deliverable) — staging a PLACEHOLDER instead.");
+    placeholderDir(fallbackDir, "Loombre placeholder: scripts/fetch-embedded-pg.mjs not present at build time.");
+    return { embeddedPgDir: fallbackDir, pgVersion };
+  }
   log(`Found scripts/fetch-embedded-pg.mjs (lane B) — fetching windows-x64 PostgreSQL ${pgVersion}`);
   run("node", [scriptPath, "--platform", "windows-x64", "--pg-version", pgVersion]);
-  return path.join(REPO_ROOT, "vendor", "embedded-pg", "windows-x64", pgVersion);
+  return { embeddedPgDir: path.join(REPO_ROOT, "vendor", "embedded-pg", "windows-x64", pgVersion), pgVersion };
 }
 
 // ARCHIVED-PAYLOAD MODEL (owner decision after WIX7502, diag run
@@ -341,13 +356,20 @@ function fetchEmbeddedPgWindows() {
 // NODEDIR/PGDIR. LoombreServiceHost extracts it on first service start
 // (PayloadExtractor.cs). ffmpeg/svc/tray stay per-file MSI components —
 // their counts are nowhere near the ceiling.
-function createPayloadZip(embeddedPgDir) {
+function createPayloadZip(embeddedPgDir, pgVersion) {
   log("Step 2/7 (cont.): create payload.zip (MSI component-count ceiling workaround)");
   // pg is fetched into vendor/, not STAGE_DIR — copy it in so one
-  // tar -C root covers all five trees under their final names.
+  // tar -C root covers all five trees under their final names. Staged
+  // VENDOR-SHAPED (installer completeness audit): apps/server's
+  // provisioning bootstrap resolves binaries as
+  // <LOOMBRE_EMBEDDED_PG_VENDOR_DIR>/<platform>/<version>/bin/… (see
+  // packages/provisioning-pg/src/vendor-layout.ts), and Services.wxs sets
+  // that env var to [PGDIR] — so the installed tree must be
+  // pg/windows-x64/<version>/…, not the bare bin/lib/share layout the
+  // fetcher's leaf directory holds.
   const pgStage = path.join(STAGE_DIR, "pg");
   rmSync(pgStage, { recursive: true, force: true });
-  cpSync(embeddedPgDir, pgStage, { recursive: true, dereference: true });
+  cpSync(embeddedPgDir, path.join(pgStage, "windows-x64", pgVersion), { recursive: true, dereference: true });
 
   const zipPath = path.join(OUT_DIR, "payload.zip");
   rmSync(zipPath, { force: true });
@@ -380,9 +402,9 @@ function stagePayloads() {
   stageWeb(path.join(STAGE_DIR, "web"));
   fetchNodeRuntime(path.join(STAGE_DIR, "node"));
   const ffmpegDir = fetchFfmpegWindows();
-  const embeddedPgDir = fetchEmbeddedPgWindows();
-  const payloadZip = createPayloadZip(embeddedPgDir);
-  return { ffmpegDir, payloadZip };
+  const { embeddedPgDir, pgVersion } = fetchEmbeddedPgWindows();
+  const payloadZip = createPayloadZip(embeddedPgDir, pgVersion);
+  return { ffmpegDir, payloadZip, pgVersion };
 }
 
 // ---------------------------------------------------------------------------
@@ -568,6 +590,12 @@ function wixBuild(version, payloadDirs) {
     `MsiVersion=${msiNumericVersion(version)}`,
     "-d",
     `PayloadZip=${payloadDirs.payloadZip}`,
+    "-d",
+    // Consumed by Services.wxs's LOOMBRE_EMBEDDED_PG_VERSION environment
+    // entry (installer completeness audit) — the same manifest-pinned
+    // version createPayloadZip() staged the vendor-shaped pg tree under,
+    // so the env var and the on-disk directory can never disagree.
+    `EmbeddedPgVersion=${payloadDirs.pgVersion}`,
     "-d",
     `FfmpegDir=${payloadDirs.ffmpegDir}`,
     "-d",

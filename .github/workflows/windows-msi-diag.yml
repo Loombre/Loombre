@@ -104,17 +104,55 @@ jobs:
           }
           if (-not (Test-Path "$root\server\dist\main.js")) { Write-Host "VERDICT:INSTALL:FAIL (extraction incomplete: server\dist\main.js missing)"; exit 1 }
           if (Test-Path "${env:ProgramFiles(x86)}\Loombre") { Write-Host "VERDICT:INSTALL:FAIL (32-bit Program Files folder present)"; exit 1 }
-          foreach ($svc in "LoombreServer","LoombreWorker") {
+          foreach ($svc in "LoombreServer","LoombreWorker","LoombreWeb") {
             if (-not (Get-Service $svc -ErrorAction SilentlyContinue)) { Write-Host "VERDICT:INSTALL:FAIL (service $svc not installed)"; exit 1 }
           }
-          # Import-graph proof with the RUNNER's node (the bundled node/ is
-          # still a placeholder): dynamic import resolves the server's
-          # ENTIRE module graph without booting it (isDirectEntrypoint
-          # guard). Catches dead node_modules links surviving the
-          # zip/extract hop — the class that broke rc.1 on macOS. Worker
-          # has no import guard (importing boots it), so server-only.
+          # Import-graph proof with the RUNNER's node (fast static check —
+          # the bundled node\node.exe is real now per the installer
+          # completeness audit, but any Node resolves the same graph):
+          # dynamic import resolves the server's ENTIRE module graph
+          # without booting it (isDirectEntrypoint guard). Catches dead
+          # node_modules links surviving the zip/extract hop — the class
+          # that broke rc.1 on macOS. Worker has no import guard
+          # (importing boots it), so server-only.
           node -e "const{pathToFileURL}=require('node:url');import(pathToFileURL(process.argv[1]).href).then(()=>console.log('server import graph resolves')).catch((e)=>{console.error(e);process.exit(1)})" "C:\Program Files\Loombre\server\dist\main.js"
           if ($LASTEXITCODE -ne 0) { Write-Host "VERDICT:INSTALL:FAIL (server import graph broken in extracted payload)"; exit 1 }
+          # ---- Live-boot assertions (installer completeness audit) ----
+          # Services are Start="auto" + ServiceControl Start="install" now,
+          # so the MSI itself booted the stack during msiexec. First boot
+          # does real work before /healthz can answer (payload self-heal
+          # hash pass, embedded-PG initdb, migrations), so poll up to 240s
+          # rather than asserting immediately. On ANY failure, print the
+          # service log tails first — they are the only diagnostics a
+          # runner teardown leaves behind.
+          function Show-LogTails {
+            foreach ($f in "server.log","worker.log","web.log") {
+              $p = "C:\ProgramData\Loombre\logs\$f"
+              if (Test-Path $p) { Write-Host "==== tail: $p ===="; Get-Content $p -Tail 100 }
+              else { Write-Host "==== $p does not exist ====" }
+            }
+          }
+          $deadline = (Get-Date).AddSeconds(240)
+          $healthy = $false
+          while ((Get-Date) -lt $deadline) {
+            try {
+              $r = Invoke-WebRequest -Uri "http://127.0.0.1:3001/healthz" -UseBasicParsing -TimeoutSec 5
+              if ($r.StatusCode -eq 200) { $healthy = $true; break }
+            } catch { }
+            Start-Sleep -Seconds 5
+          }
+          if (-not $healthy) { Show-LogTails; Write-Host "VERDICT:INSTALL:FAIL (server /healthz not 200 within 240s)"; exit 1 }
+          Write-Host "server /healthz returned 200"
+          try {
+            $login = Invoke-WebRequest -Uri "http://127.0.0.1:3000/login" -UseBasicParsing -TimeoutSec 30
+          } catch { Show-LogTails; Write-Host "VERDICT:INSTALL:FAIL (web /login request failed: $_)"; exit 1 }
+          if ($login.StatusCode -ne 200) { Show-LogTails; Write-Host "VERDICT:INSTALL:FAIL (web /login returned $($login.StatusCode))"; exit 1 }
+          Write-Host "web /login returned 200"
+          # The IPC discovery file lands at the LOOMBRE_DATA_DIR root
+          # (ProgramData\Loombre — Services.wxs) — the exact path the tray
+          # reads; its presence proves the server's IPC listener came up.
+          if (-not (Test-Path "C:\ProgramData\Loombre\controller-ipc.json")) { Show-LogTails; Write-Host "VERDICT:INSTALL:FAIL (C:\ProgramData\Loombre\controller-ipc.json missing)"; exit 1 }
+          Write-Host "controller-ipc.json discovery file present"
           Write-Host "VERDICT:INSTALL:PASS"
           $un = Start-Process msiexec -ArgumentList "/x `"$msi`" /qn /l*v uninstall.log" -Wait -PassThru
           if ($un.ExitCode -ne 0) {

@@ -37,6 +37,38 @@ CONFIG_ENV="/Library/Application Support/Loombre/config/loombre.env"
 : "${LOOMBRE_FFPROBE:=$HERE/runtime/ffmpeg/ffprobe}"
 export PORT LOOMBRE_FFMPEG LOOMBRE_FFPROBE
 
+# LOOMBRE_DATA_DIR: exported in BOTH database modes — installer
+# completeness audit, gap 4. This export used to live inside the
+# embedded-mode else-branch below, but apps/server/src/ipc/env.ts gates the
+# ENTIRE controller-IPC listener on LOOMBRE_DATA_DIR being set ("dev
+# servers without a data dir get no IPC; installers always set it"), so an
+# operator who set DATABASE_URL in config/loombre.env (external-PG mode —
+# a first-class, equally-tested D1 path) silently lost the menubar's
+# discovery/token files and every /ipc/v1/* endpoint with them. The data
+# dir is where config/secrets/IPC files live regardless of where
+# PostgreSQL runs — it is not an embedded-PG-only concept.
+: "${LOOMBRE_DATA_DIR:=/Library/Application Support/Loombre}"
+export LOOMBRE_DATA_DIR
+
+# LOOMBRE_IPC_GROUP: the recorded orchestrator decision (apps/server/src/
+# ipc/env.ts + posix-permissions.ts) — "installers set 'admin' on macOS".
+# The IPC listener writes controller-ipc.json + controller-ipc.token 0640
+# at the app-support ROOT with the file GROUP chown'd to this name; the
+# menubar runs as the console user (a member of "admin" on any Mac admin
+# account), not as _loombre, so group-read is the only bridge across that
+# uid boundary. postinstall makes the root dir itself _loombre:admin 0750
+# so the same console user can traverse to the files. Operator override in
+# config/loombre.env (sourced above) wins via the :- expansion.
+export LOOMBRE_IPC_GROUP="${LOOMBRE_IPC_GROUP:-admin}"
+
+# LOOMBRE_WEB_URL: what IpcStatusResponse.webUrl / the menubar's "Open Web
+# UI" action opens (apps/server/src/ipc/web-url.ts). Unset, that file
+# falls back to the SERVER's own origin (http://localhost:3001) — the API,
+# which serves no UI. The pkg now ships + bootstraps com.loombre.web
+# (bin/loombre-web, Next standalone build) on port 3000 — point there.
+# Keep in sync with LOOMBRE_WEB_PORT if an operator changes that.
+export LOOMBRE_WEB_URL="${LOOMBRE_WEB_URL:-http://localhost:3000}"
+
 # DATABASE_URL is deliberately NOT defaulted here (the rc.1 shim defaulted
 # it to the dev-only localhost:5442 URL, which forced apps/server's
 # bootstrap into external mode against a database that exists on no real
@@ -47,8 +79,6 @@ export PORT LOOMBRE_FFMPEG LOOMBRE_FFPROBE
 if [ -n "${DATABASE_URL:-}" ]; then
   export DATABASE_URL
 else
-  : "${LOOMBRE_DATA_DIR:=/Library/Application Support/Loombre}"
-  export LOOMBRE_DATA_DIR
   export LOOMBRE_EMBEDDED_PG_VENDOR_DIR="$HERE/runtime/pg"
   # The payload stages exactly one <platform>/<version> pair under
   # runtime/pg (vendor-layout shape — see build-pkg.mjs fetchRuntimes);

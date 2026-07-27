@@ -2,21 +2,25 @@ What this installer does
 =========================
 
 Installs to:
-  /opt/loombre/<version>       Node runtime, bundled ffmpeg, server + worker
+  /opt/loombre/<version>       Node runtime, bundled ffmpeg + PostgreSQL,
+                               server + worker + web UI
   /opt/loombre/current         symlink to the active version (upgrade swap point)
   /Applications/Loombre.app    menubar controller (status, start/stop, logs)
   /Library/Application Support/Loombre   app data (config, embedded-PG data
-                               dir once bundled, local secrets)
-  /Library/Logs/Loombre        server.{out,err}.log, worker.{out,err}.log
+                               dir, local secrets)
+  /Library/Logs/Loombre        server/worker/web .{out,err}.log
   /Library/LaunchDaemons/com.loombre.server.plist
   /Library/LaunchDaemons/com.loombre.worker.plist
+  /Library/LaunchDaemons/com.loombre.web.plist
 
-Creates a dedicated, unprivileged system account (_loombre) that the server
-and worker run as — never root, never your login account.
+Creates a dedicated, unprivileged system account (_loombre) that the
+server, worker, and web UI run as — never root, never your login account.
 
-After installation, the web UI is reachable at http://localhost:3001 once
-you point the server at a PostgreSQL database — see
-/Library/Application Support/Loombre/config/loombre.env and
+After installation, the web UI is reachable at http://localhost:3000
+(the API serves on port 3001). No database setup is required — the server
+provisions its bundled PostgreSQL automatically on first boot. To use your
+own PostgreSQL instead, or to reach the web UI from other devices on your
+network, see /Library/Application Support/Loombre/config/loombre.env and
 docs/install/macos.md for full configuration + first-run instructions.
 
 Full layout rationale: installers/macos/LAYOUT.md in the Loombre source

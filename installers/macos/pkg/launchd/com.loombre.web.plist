@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Loombre :: /Library/LaunchDaemons/com.loombre.web.plist
+
+  Third daemon, NEW in the installer completeness audit (gap 1): serves the
+  Next.js web UI (apps/web's `output: "standalone"` build, staged under
+  /opt/loombre/<version>/web/ by build-pkg.mjs stageWeb()) on port 3000 via
+  bin/loombre-web. See com.loombre.server.plist's header for the
+  LaunchDaemon-not-LaunchAgent + _loombre + clean-minimal-plist rationale —
+  identical here. All real configuration (LOOMBRE_WEB_PORT,
+  LOOMBRE_SERVER_ORIGIN) lives in bin/loombre-web + config/loombre.env.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.loombre.web</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/opt/loombre/current/bin/loombre-web</string>
+  </array>
+
+  <key>UserName</key>
+  <string>_loombre</string>
+  <key>GroupName</key>
+  <string>_loombre</string>
+
+  <key>WorkingDirectory</key>
+  <string>/opt/loombre/current</string>
+
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <dict>
+    <key>SuccessfulExit</key>
+    <false/>
+    <key>Crashed</key>
+    <true/>
+  </dict>
+
+  <key>StandardOutPath</key>
+  <string>/Library/Logs/Loombre/web.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Library/Logs/Loombre/web.err.log</string>
+
+  <!-- Interactive like com.loombre.server (user-facing request serving),
+       not Background like the worker. -->
+  <key>ProcessType</key>
+  <string>Interactive</string>
+
+  <key>ThrottleInterval</key>
+  <integer>10</integer>
+</dict>
+</plist>

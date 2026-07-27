@@ -35,7 +35,12 @@ RestrictSUIDSGID=true
 RestrictRealtime=true
 RestrictNamespaces=true
 LockPersonality=true
-MemoryDenyWriteExecute=true
+# MemoryDenyWriteExecute is DELIBERATELY ABSENT (installer completeness
+# audit): systemd.exec(5) documents MDWE as incompatible with programs
+# that generate program code dynamically at runtime — i.e. every JIT,
+# V8 included — and this unit's entire payload is Node. With MDWE on,
+# V8's W^X page flips fail and the runtime aborts/degrades; do not
+# re-add it here or in the sibling loombre-worker/loombre-web units.
 RemoveIPC=true
 CapabilityBoundingSet=
 AmbientCapabilities=

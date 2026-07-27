@@ -3,9 +3,13 @@
 // Loombre :: installers/linux/build-tarball.mjs
 //
 // Produces loombre-<version>-linux-<arch>.tar.gz — a self-contained,
-// systemd-ready Linux distribution: bundled Node 22 runtime, built
-// server+worker with production node_modules, a built web client, bundled
-// ffmpeg/ffprobe (scripts/fetch-ffmpeg.mjs), bin/ wrapper scripts, a
+// systemd-ready Linux distribution: bundled Node 24 runtime (installer
+// completeness audit cosmetic fix: this header used to say "Node 22" while
+// node-manifest.json pinned 24.x), built server+worker with production
+// node_modules, the web client's Next standalone output (see
+// assembleWebStandalone — NOT a pnpm deploy tree, see the audit note
+// there), bundled ffmpeg/ffprobe (scripts/fetch-ffmpeg.mjs), embedded
+// PostgreSQL staged vendor-shaped (assemblePg), bin/ wrapper scripts, a
 // VERSION file, and an unsigned-build sign-hook call. See LAYOUT.md for
 // the exact on-disk shape this produces and docs/install/linux.md for the
 // operator-facing install flow.
@@ -767,6 +771,132 @@ async function fixKeyringBinding(deployDir, arch, appLabel) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
+// Step: web client — Next standalone staging (installer completeness
+// audit, gap 3)
+//
+// The previous version staged `pnpm --filter @loombre/web deploy --prod`
+// output into web/: 599 MB of dev-shaped tree that was ALSO unrunnable —
+// there is no `next` CLI entrypoint wiring in the tarball and nothing ever
+// started it (no wrapper, no unit; the tarball shipped a web client no
+// operator could run). apps/web builds with `output: "standalone"`
+// (next.config.mjs — added exactly for installed deployments), which
+// produces a pruned, self-contained server at
+// `.next/standalone/apps/web/server.js` (monorepo layout: the standalone
+// root mirrors <repo>/apps/web + a traced-minimal <repo>/node_modules,
+// ~60 MB total). Runnable staging = the standalone tree + two overlays
+// Next deliberately leaves out of it (`.next/static`, `public` — served
+// by server.js from disk at request time), verified against the real
+// build output on this host.
+//
+// Symlink note (verified on the real standalone tree): pnpm-style
+// node_modules inside it contain RELATIVE symlinks (e.g.
+// apps/web/node_modules/next -> ../../../node_modules/.pnpm/next@.../
+// node_modules/next; 22 links total, zero absolute). cpSync with
+// `verbatimSymlinks: true` preserves those relative targets byte-for-byte
+// — the default (verbatim off) re-resolves targets and can mint links
+// pointing back into the BUILD HOST's repo checkout, exactly the class of
+// leak buildPrecompiledWorkspaceDep's header forbids shipping.
+// ─────────────────────────────────────────────────────────────────────────
+
+async function assembleWebStandalone(stageDir, arch) {
+  const webAppDir = join(REPO_ROOT, "apps", "web");
+  const standaloneDir = join(webAppDir, ".next", "standalone");
+  const serverJs = join(standaloneDir, "apps", "web", "server.js");
+  if (!existsSync(serverJs)) {
+    throw new Error(
+      `build-tarball: ${serverJs} not found — apps/web's build should have produced the Next standalone output ` +
+        `(next.config.mjs sets output: "standalone"; re-run without --skip-app-build if you skipped it).`,
+    );
+  }
+
+  const webStageDir = join(stageDir, "web");
+  rmSync(webStageDir, { recursive: true, force: true });
+  cpSync(standaloneDir, webStageDir, { recursive: true, verbatimSymlinks: true });
+
+  // The two overlays Next's standalone output deliberately omits (its own
+  // docs tell deployers to copy them alongside): hashed client assets and
+  // the public/ dir, both served from disk by server.js.
+  cpSync(join(webAppDir, ".next", "static"), join(webStageDir, "apps", "web", ".next", "static"), {
+    recursive: true,
+  });
+  cpSync(join(webAppDir, "public"), join(webStageDir, "apps", "web", "public"), { recursive: true });
+
+  // Defensive prunes (audit gap 7): the standalone tree was verified NOT
+  // to contain `.next/cache` (runtime cache — Next recreates it on boot;
+  // install.sh pre-creates it writable for the hardened unit) or
+  // lighthouse leftovers (lighthouserc.cjs lives in apps/web's root, not
+  // in traced output) on this host — but a `next build` over a previously
+  // RUN tree could carry a populated cache in, so prune rather than trust.
+  rmSync(join(webStageDir, "apps", "web", ".next", "cache"), { recursive: true, force: true });
+  rmSync(join(webStageDir, "apps", "web", "lighthouserc.cjs"), { force: true });
+  rmSync(join(webStageDir, "apps", "web", ".lighthouseci"), { recursive: true, force: true });
+
+  await fixWebStandaloneSharp(webStageDir, arch);
+  console.log(`build-tarball: web client staged from Next standalone output -> ${webStageDir}`);
+}
+
+/** Same disease as fixWorkerSharp (file header point 4), discovered while
+ *  implementing the standalone staging above: Next's image optimizer
+ *  (`/_next/image` — images.unoptimized is NOT set) uses `sharp`, and the
+ *  build-host standalone tree ships the BUILD HOST's native packages
+ *  (verified: node_modules/.pnpm/@img+sharp-darwin-arm64@0.35.3 +
+ *  @img+sharp-libvips-darwin-arm64 on this Mac) — never loadable on
+ *  Linux, so every poster/backdrop optimization request would 500. Fixed
+ *  the same way: drop the wrong-platform packages, vendor the Linux ones
+ *  at the exact pnpm-lock.yaml-pinned versions (derived from the resolved
+ *  sharp's own package.json, never hardcoded), sha512-verified. */
+async function fixWebStandaloneSharp(webStageDir, arch) {
+  const pnpmDir = join(webStageDir, "node_modules", ".pnpm");
+  const sharpEntry = existsSync(pnpmDir)
+    ? readdirSync(pnpmDir).find((e) => e.startsWith("sharp@"))
+    : undefined;
+  if (!sharpEntry) {
+    console.warn(
+      "build-tarball: no sharp in the web standalone tree — skipping the web sharp platform-binary fix (Next stopped tracing it upstream?)",
+    );
+    return;
+  }
+  const sharpPkgDir = join(pnpmDir, sharpEntry, "node_modules", "sharp");
+  const sharpPkg = JSON.parse(readFileSync(join(sharpPkgDir, "package.json"), "utf8"));
+  const sharpVersion = sharpPkg.version;
+  const libvipsPkgName = `@img/sharp-libvips-linux-${arch}`;
+  const libvipsVersion = sharpPkg.optionalDependencies?.[libvipsPkgName];
+  if (!sharpVersion || !libvipsVersion) {
+    throw new Error(
+      `build-tarball: could not derive sharp/libvips versions from ${sharpPkgDir}/package.json ` +
+        `(version=${sharpVersion}, ${libvipsPkgName}=${libvipsVersion}) — sharp's package layout changed; update fixWebStandaloneSharp.`,
+    );
+  }
+  console.log(`build-tarball: web standalone resolved sharp ${sharpVersion} + ${libvipsPkgName}@${libvipsVersion} (derived, not hardcoded)`);
+
+  // Drop the build host's platform packages: the symlinks in sharp's own
+  // resolution scope AND the .pnpm store dirs they point into (dead weight
+  // + wrong platform). @img+colour (platform-agnostic) is kept.
+  const sharpScopeImgDir = join(pnpmDir, sharpEntry, "node_modules", "@img");
+  if (existsSync(sharpScopeImgDir)) {
+    for (const entry of readdirSync(sharpScopeImgDir)) {
+      if (entry.startsWith("sharp-")) {
+        rmSync(join(sharpScopeImgDir, entry), { recursive: true, force: true });
+        console.log(`build-tarball: web standalone — removed build-host @img/${entry} link (wrong platform)`);
+      }
+    }
+  }
+  for (const entry of readdirSync(pnpmDir)) {
+    if (entry.startsWith("@img+sharp-")) {
+      rmSync(join(pnpmDir, entry), { recursive: true, force: true });
+      console.log(`build-tarball: web standalone — removed build-host store dir .pnpm/${entry} (wrong platform)`);
+    }
+  }
+
+  // Vendor the Linux packages into sharp's OWN node_modules (real dirs, no
+  // store indirection) — require() from sharp/lib/* finds them there first
+  // on the upward walk, same placement fixWorkerSharp uses.
+  const sharpOwnNodeModules = join(sharpPkgDir, "node_modules");
+  await vendorPinnedPlatformNpmPackage(`@img/sharp-linux-${arch}`, sharpVersion, sharpOwnNodeModules);
+  await vendorPinnedPlatformNpmPackage(libvipsPkgName, libvipsVersion, sharpOwnNodeModules);
+}
+
+// ─────────────────────────────────────────────────────────────────────────
 // Step: bundled Node runtime (installers/node-manifest.json — SHARED across lanes I1/I3 since the win-x64 entry landed)
 // ─────────────────────────────────────────────────────────────────────────
 
@@ -822,43 +952,85 @@ function fetchFfmpeg(platformKey) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// Step: embedded PG placeholder (lane B's deliverable — scripts/fetch-embedded-pg.mjs)
+// Step: embedded PostgreSQL payload (scripts/fetch-embedded-pg.mjs)
+//
+// Installer completeness audit, gap 1 — the previous version of this
+// function had TWO real defects, both found by inspecting an actual built
+// tarball against apps/server's resolver:
+//
+//   1. FLATTENED SHAPE: it copied `vendor/embedded-pg/<platform>/*` into
+//      `pg/` directly, producing `pg/<version>/bin/...` — but apps/server's
+//      bootstrap resolves binaries VENDOR-SHAPED:
+//      `<LOOMBRE_EMBEDDED_PG_VENDOR_DIR>/<platform>/<version>/bin/...`
+//      (packages/provisioning-pg's resolveVendorBinaries; same layout
+//      contract scripts/fetch-embedded-pg.mjs's own header documents, and
+//      the same shape the macOS pkg stages under runtime/pg — see
+//      installers/macos/build-pkg.mjs's "vendor-layout shape, NOT a flat
+//      runtime/pg" comment, which fixed this exact bug for that lane's
+//      rc.1). A flat pg/ payload could NEVER be found by the server.
+//   2. VERSION BLOAT: `cpSync(<platform>, pg/)` shipped EVERY version
+//      vendored on the build host — this repo's vendor/embedded-pg/
+//      linux-arm64 has both 17.10.0 (the upgrade-test pin) and 18.4.0,
+//      so the arm64 tarball carried two full PostgreSQL trees while the
+//      server only ever resolves one (EMBEDDED_PG_DEFAULT_VERSION).
+//
+// Now: the manifest's `defaultVersion` (installers/embedded-pg-manifest.json
+// — "the ONE version to ship") is selected EXPLICITLY (--pg-version) and
+// staged as `pg/<platform>/<version>/...`, and a missing payload is a HARD
+// BUILD FAILURE — embedded PG is the wrapper's DATABASE_URL-unset default
+// path (see writeWrapperScripts), so a tarball without it would break the
+// out-of-the-box install, not degrade it.
 // ─────────────────────────────────────────────────────────────────────────
+
+function readEmbeddedPgDefaultVersion() {
+  const manifestPath = join(INSTALLERS_LINUX_DIR, "..", "embedded-pg-manifest.json");
+  const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+  if (typeof manifest.defaultVersion !== "string" || manifest.defaultVersion.length === 0) {
+    throw new Error(`build-tarball: ${manifestPath} has no usable defaultVersion`);
+  }
+  return manifest.defaultVersion;
+}
 
 function assemblePg(stageDir, arch) {
   const pgFetchScript = join(REPO_ROOT, "scripts", "fetch-embedded-pg.mjs");
-  const pgDir = join(stageDir, "pg");
-  mkdirSync(pgDir, { recursive: true });
   const platformKey = `linux-${arch}`;
-  if (existsSync(pgFetchScript)) {
-    console.log("build-tarball: scripts/fetch-embedded-pg.mjs found — invoking it for the embedded PG payload (lane B)");
-    // Mirrors scripts/fetch-ffmpeg.mjs's own CLI shape exactly (same
-    // author convention, confirmed via --help): --platform + a
-    // vendor/embedded-pg/<platform> output dir, no --out-dir flag — copy
-    // its vendored output into the tarball ourselves, same as ffmpeg below.
-    run(process.execPath, [pgFetchScript, "--platform", platformKey]);
-    const pgVendorDir = join(REPO_ROOT, "vendor", "embedded-pg", platformKey);
-    if (existsSync(pgVendorDir)) {
-      cpSync(pgVendorDir, pgDir, { recursive: true });
-      console.log(`build-tarball: embedded PG payload copied from ${pgVendorDir}`);
-      return;
-    }
-    console.warn(`build-tarball: fetch-embedded-pg.mjs ran but ${pgVendorDir} was not produced — falling back to placeholder README`);
+  const pgVersion = readEmbeddedPgDefaultVersion();
+
+  if (!existsSync(pgFetchScript)) {
+    throw new Error(
+      `build-tarball: ${pgFetchScript} not found — the embedded-PostgreSQL payload is REQUIRED ` +
+        `(bin/loombre-server's DATABASE_URL-unset default path provisions the bundled PG; ` +
+        `installer completeness audit gap 1 removed the old placeholder-README fallback).`,
+    );
   }
-  writeFileSync(
-    join(pgDir, "README.md"),
-    "# Embedded PostgreSQL — placeholder\n\n" +
-      "This directory is where lane B's embedded-PostgreSQL binaries (STATE.md P4.2,\n" +
-      "`scripts/fetch-embedded-pg.mjs`) belong. Either that script did not exist yet\n" +
-      "when this tarball was built, or it ran but did not produce a\n" +
-      "vendor/embedded-pg/<platform> payload for this platform/arch — either way this\n" +
-      "is an empty placeholder: install.sh's default posture is the EXTERNAL-Postgres\n" +
-      "path (P4.2 — DATABASE_URL env var, `provisioning-status: external`), which\n" +
-      "needs nothing here at all.\n\n" +
-      "Re-run installers/linux/build-tarball.mjs once scripts/fetch-embedded-pg.mjs\n" +
-      "produces vendor/embedded-pg/linux-<arch>/ — it is called automatically (see\n" +
-      "assemblePg() in build-tarball.mjs) and this README is replaced by the real\n" +
-      "embedded-PG payload.\n",
+
+  // --pg-version passed EXPLICITLY (the manifest's defaultVersion) rather
+  // than relying on the script's own default — the vendor dir on a dev
+  // build host accumulates OTHER versions too (the 17.x upgrade-test pin),
+  // and this build must be deterministic about which single version ships.
+  run(process.execPath, [pgFetchScript, "--platform", platformKey, "--pg-version", pgVersion]);
+
+  const pgVendorVersionDir = join(REPO_ROOT, "vendor", "embedded-pg", platformKey, pgVersion);
+  if (!existsSync(join(pgVendorVersionDir, "bin", "postgres"))) {
+    throw new Error(
+      `build-tarball: ${pgVendorVersionDir}/bin/postgres missing after fetch-embedded-pg.mjs ran — ` +
+        `refusing to ship a tarball whose embedded-PG default path (DATABASE_URL unset) cannot work.`,
+    );
+  }
+
+  // Vendor-shaped staging: pg/<platform>/<version>/{bin,lib,share,...} —
+  // exactly what resolveVendorBinaries(LOOMBRE_EMBEDDED_PG_VENDOR_DIR=
+  // $PREFIX/pg, <platform>, <version>) expects. `include/` (C headers,
+  // build-time only — nothing in the runtime payload compiles against
+  // PostgreSQL) is trivially excludable at this top level, so it is.
+  const pgStageVersionDir = join(stageDir, "pg", platformKey, pgVersion);
+  mkdirSync(pgStageVersionDir, { recursive: true });
+  for (const entry of readdirSync(pgVendorVersionDir)) {
+    if (entry === "include") continue; // headers — dead weight at runtime
+    cpSync(join(pgVendorVersionDir, entry), join(pgStageVersionDir, entry), { recursive: true });
+  }
+  console.log(
+    `build-tarball: embedded PG ${pgVersion} staged vendor-shaped at pg/${platformKey}/${pgVersion} (include/ headers excluded)`,
   );
 }
 
@@ -866,7 +1038,9 @@ function assemblePg(stageDir, arch) {
 // Step: bin/ wrapper scripts
 // ─────────────────────────────────────────────────────────────────────────
 
-function writeWrapperScripts(stageDir) {
+// Exported so the wrapper text can be rendered + `bash -n`-checked without
+// running a full tarball assembly (installer completeness audit tooling).
+export function writeWrapperScripts(stageDir) {
   const binDir = join(stageDir, "bin");
   mkdirSync(binDir, { recursive: true });
 
@@ -894,16 +1068,80 @@ if [ -n "\${LOOMBRE_DATA_DIR:-}" ]; then
 fi
 `;
 
+  // Embedded-PostgreSQL wiring for the SERVER wrapper only (installer
+  // completeness audit, gap 2) — mirrors the macOS shim
+  // (installers/macos/pkg/bin/loombre-server), the reference for correct
+  // embedded wiring: when DATABASE_URL is unset, apps/server's bootstrap
+  // (bootstrapProvisioning) provisions + supervises the BUNDLED PostgreSQL
+  // and needs LOOMBRE_EMBEDDED_PG_VENDOR_DIR pointed at the tarball's
+  // vendor-shaped pg/ payload — its own default resolves relative to a
+  // monorepo checkout that does not exist on an installed host (that
+  // function's header calls setting this "a hard requirement, not a
+  // nice-to-have" for every packaging lane). The version is DERIVED from
+  // the single pg/<platform>/<version> pair assemblePg stages (find-based,
+  // same idiom as the macOS shim) rather than pinned a second time here.
+  // The worker needs none of this: it discovers the embedded DATABASE_URL
+  // through LOOMBRE_DATA_DIR (apps/worker/src/db-url.ts's discovery seam).
+  //
+  // LOOMBRE_WEB_URL (always exported, overridable): the server's IPC/web-url
+  // seam (apps/server/src/ipc/web-url.ts) — the tarball's own bin/loombre-web
+  // serves the UI on :3000 by default, so point at it by default.
+  const serverEmbeddedWiring = `export LOOMBRE_WEB_URL="\${LOOMBRE_WEB_URL:-http://localhost:3000}"
+if [ -z "\${DATABASE_URL:-}" ]; then
+  export LOOMBRE_EMBEDDED_PG_VENDOR_DIR="\${LOOMBRE_EMBEDDED_PG_VENDOR_DIR:-\${APP_ROOT}/pg}"
+  if [ -z "\${LOOMBRE_EMBEDDED_PG_VERSION:-}" ]; then
+    # assemblePg stages exactly one <platform>/<version> pair under pg/
+    # (vendor-layout shape); derive the version from the directory rather
+    # than pinning a second copy of it here (macOS-shim idiom). The
+    # \`|| true\` differs from that shim deliberately: this wrapper runs
+    # under \`set -o pipefail\` (the macOS one is plain \`set -eu\`), so a
+    # failing find on a broken install would otherwise kill the wrapper
+    # with no message at all — falling through unset instead lets
+    # apps/server's own vendor-binary resolver print the actionable error.
+    _pg_platform_dir="$(find "\${LOOMBRE_EMBEDDED_PG_VENDOR_DIR}" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | head -n 1 || true)"
+    if [ -n "\${_pg_platform_dir}" ]; then
+      _pg_version="$(find "\${_pg_platform_dir}" -mindepth 1 -maxdepth 1 -type d -exec basename {} \\; 2>/dev/null | head -n 1 || true)"
+      if [ -n "\${_pg_version}" ]; then
+        export LOOMBRE_EMBEDDED_PG_VERSION="\${_pg_version}"
+      fi
+    fi
+  fi
+fi
+`;
+
   writeFileSync(
     join(binDir, "loombre-server"),
-    common + `exec "\${NODE_BIN}" "\${APP_ROOT}/lib/server/dist/main.js" "$@"\n`,
+    common + serverEmbeddedWiring + `exec "\${NODE_BIN}" "\${APP_ROOT}/lib/server/dist/main.js" "$@"\n`,
   );
   writeFileSync(
     join(binDir, "loombre-worker"),
     common + `exec "\${NODE_BIN}" "\${APP_ROOT}/lib/worker/dist/index.js" "$@"\n`,
   );
+
+  // bin/loombre-web (installer completeness audit, gap 3): runs the web
+  // client's Next standalone server (web/apps/web/server.js — see
+  // assembleWebStandalone) on the bundled Node. PORT is OVERRIDDEN
+  // unconditionally from LOOMBRE_WEB_PORT (default 3000): the shared env
+  // file's PORT belongs to loombre-server (:3001), and all three wrappers
+  // source the same EnvironmentFile under systemd — inheriting the
+  // server's PORT here would bind the web app onto the API port.
+  // HOSTNAME likewise unconditionally (bash pre-sets HOSTNAME to the
+  // machine's hostname in every shell — a `\${HOSTNAME:-0.0.0.0}` default
+  // would silently pick that up instead). server.js chdir()s to its own
+  // directory at boot, so the common block's LOOMBRE_DATA_DIR cd is
+  // harmless here. LOOMBRE_SERVER_ORIGIN feeds apps/web's CSP tightening
+  // (src/lib/csp.ts) — default pairs with loombre-server's :3001.
+  const webWrapper = common + `export NODE_ENV=production
+export PORT="\${LOOMBRE_WEB_PORT:-3000}"
+export HOSTNAME="0.0.0.0"
+export LOOMBRE_SERVER_ORIGIN="\${LOOMBRE_SERVER_ORIGIN:-http://localhost:3001}"
+exec "\${NODE_BIN}" "\${APP_ROOT}/web/apps/web/server.js" "$@"
+`;
+  writeFileSync(join(binDir, "loombre-web"), webWrapper);
+
   chmodSync(join(binDir, "loombre-server"), 0o755);
   chmodSync(join(binDir, "loombre-worker"), 0o755);
+  chmodSync(join(binDir, "loombre-web"), 0o755);
 
   // bin/loombre — the CLI shim (L2, H2-recovery invocability fix). Unlike
   // the two siblings above, this wrapper is meant to be reached through a
@@ -977,12 +1215,11 @@ async function assembleTarball(args) {
   await fixKeyringBinding(workerDeployDir, arch, "apps/worker");
   pruneDeployedAppDir(workerDeployDir);
 
-  console.log("--- deploying apps/web ---");
-  const webDeployDir = join(stageDir, "web");
-  pnpmDeploy("@loombre/web", webDeployDir);
-  // apps/web has no raw-TS workspace deps of its own (@loombre/sdk already
-  // ships compiled dist — see LAYOUT.md), so no precompile step here.
-  pruneDeployedAppDir(webDeployDir);
+  console.log("--- staging apps/web (Next standalone output) ---");
+  // Installer completeness audit, gap 3: was `pnpmDeploy("@loombre/web")`
+  // — 599 MB and unrunnable (nothing in the tarball could start it). See
+  // assembleWebStandalone's header.
+  await assembleWebStandalone(stageDir, arch);
 
   console.log("--- bundling Node runtime ---");
   const nodeBinPath = await fetchAndExtractNode(arch, cacheDir);
@@ -1003,7 +1240,7 @@ async function assembleTarball(args) {
   chmodSync(join(ffmpegStageDir, "ffmpeg"), 0o755);
   chmodSync(join(ffmpegStageDir, "ffprobe"), 0o755);
 
-  console.log("--- embedded PG placeholder / lane B payload ---");
+  console.log("--- embedded PG payload (vendor-shaped, manifest defaultVersion) ---");
   assemblePg(stageDir, arch);
 
   console.log("--- writing bin/ wrappers + VERSION ---");

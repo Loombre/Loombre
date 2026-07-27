@@ -74,6 +74,17 @@ function sha256File(filePath) {
  * Resolves the latest published patch for `major` by reading nodejs.org's
  * index.json (small JSON, one request) rather than hardcoding a patch
  * version that goes stale the day it's written.
+ *
+ * STALENESS CAVEAT (installer completeness audit, cosmetic — noted, not
+ * redesigned): the downloaded index.json is cached FOREVER (the existsSync
+ * below short-circuits every later run), so "latest patch" really means
+ * "latest as of the first build on this machine/CI cache". A Node security
+ * release published after that first fetch is silently not picked up until
+ * someone deletes installers/macos/.build-cache/node/index.json (or the
+ * whole .build-cache). Acceptable for now — repeatable offline-friendly
+ * rebuilds mid-wave beat silent runtime drift between reruns — but the
+ * release pipeline (lane I) should force-refresh this file for real
+ * release builds.
  */
 async function resolveFullVersion(major) {
   const indexPath = path.join(CACHE_DIR, "index.json");
