@@ -471,6 +471,12 @@ function buildPrecompiledWorkspaceDep(pkgDirName, stagingRoot, { exportsMap, dep
   cpSync(join(liveSrcPkgDir, "src"), join(outDir, "src"), { recursive: true });
   cpSync(join(liveSrcPkgDir, "package.json"), join(outDir, "package.json"));
   cpSync(join(liveSrcPkgDir, "tsconfig.json"), join(outDir, "tsconfig.json"));
+  // migrations/ ships with @loombre/db since the installer completeness
+  // wave: dist/migrate.js resolves ../migrations at runtime (the server's
+  // embedded-mode boot auto-migration). Conditional — jobs has none.
+  if (existsSync(join(liveSrcPkgDir, "migrations"))) {
+    cpSync(join(liveSrcPkgDir, "migrations"), join(outDir, "migrations"), { recursive: true });
+  }
 
   // READ-ONLY references to the live package's resolved deps (kysely, pg,
   // pg-boss, ...) for tsc's module resolution — this process only ever
@@ -600,7 +606,13 @@ function installPrecompiledDep(deployDir, pkgSubpath, precompiledDir) {
  *  dist/ too, via installPrecompiledDep below). */
 function precompileRawTsDepsIn(deployDir, stagingRoot) {
   const dbDir = buildPrecompiledWorkspaceDep("db", stagingRoot, {
-    exportsMap: { ".": "./dist/index.js", "./internal": "./dist/internal/index.js" },
+    exportsMap: {
+      ".": "./dist/index.js",
+      "./internal": "./dist/internal/index.js",
+      // Embedded-mode boot auto-migration (installer completeness wave):
+      // apps/server/src/bootstrap/provisioning.ts imports this subpath.
+      "./migrate": "./dist/migrate.js",
+    },
   });
   installPrecompiledDep(deployDir, "@loombre/db", dbDir);
 
