@@ -66,16 +66,24 @@ Every release artifact carries three independent verification layers
 (fully specified for installers, from the operator's side, in
 [docs/install/index.md](../../install/index.md#why-are-the-installers-unsigned)):
 SHA-256 checksums (`scripts/release/sha256sums.mjs`), a minisign signature
-over `SHA256SUMS` (`scripts/release/sign-manifest.mjs`, keyed by a secret
-held only in CI), and GitHub artifact attestation
-(`actions/attest-build-provenance`) — plus cosign keyless signing (GitHub
-OIDC) specifically for the Docker image. `keys/README.md` documents the
-minisign keypair lifecycle: the public half must stay byte-identical in
-three places (the repository's `keys/minisign.pub`, the docs site, and
-every release's notes), checked in CI by
-`scripts/release/check-pubkey-consistency.mjs`. As of this writing,
-`keys/minisign.pub` is still the documented all-zero placeholder — no real
-release has been signed yet (version `0.9.0`, pre-v1.0, no tag pushed).
+over `SHA256SUMS` (the inline `minisign -S` step in
+`.github/workflows/release.yml`'s `release` job, keyed by the
+`LOOMBRE_MINISIGN_SECKEY` CI secret — `scripts/release/sign-manifest.mjs`
+is a local-only helper for signing outside CI, e.g. a hotfix cut off the
+normal pipeline, and is never invoked by CI itself), and GitHub artifact
+attestation (`actions/attest-build-provenance`) — plus cosign keyless
+signing (GitHub OIDC) specifically for the Docker image. `keys/README.md`
+documents the minisign keypair lifecycle: the public half must stay
+byte-identical across `keys/minisign.pub`, the docs site
+(`docs/ops/updating.md`), and every release's notes (the three P4.9 trust
+roots), plus the GENERATED `packages/shared/src/update-public-key.ts` and
+`docs/install/linux.md` — all five checked in CI by
+`scripts/release/check-pubkey-consistency.mjs`, which also fails outright
+if any of them (or any other docs page carrying the marker block) still
+holds the all-zero placeholder key. `keys/minisign.pub` is the real,
+in-use signing key (key ID `9EA9BD1D8785E084`) — the placeholder era is
+over; see `keys/README.md` for the rotation story if the keypair is ever
+replaced.
 
 ## `.github/workflows/release.yml`
 
