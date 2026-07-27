@@ -58,6 +58,11 @@ const FORMAT_FACTS: Record<string, FormatFact> = {
   avi: { formatName: "avi", container: "avi" },
   ts: { formatName: "mpegts", container: "ts" },
   m2ts: { formatName: "mpegts", container: "ts" },
+  // L1 (owner ledger): identical mpegts family as m2ts (verified
+  // empirically — ffprobe reports the same format_name 'mpegts' for both
+  // suffixes), now admitted alongside it (see path-utils.ts's VIDEO_
+  // EXTENSIONS/EXCLUDED_MEDIA_EXTENSIONS header notes).
+  mts: { formatName: "mpegts", container: "ts" },
   webm: { formatName: "matroska,webm", container: "webm" },
   wmv: { formatName: "asf", container: "asf" },
   mpg: { formatName: "mpeg", container: "mpeg" },
@@ -133,14 +138,22 @@ describe("scanner media extensions vs. the probe pipeline's Container union", ()
     }
   });
 
+  it("admits .mts alongside .m2ts (L1, owner ledger): identical mpegts family, zero-cost widening", () => {
+    // .mts used to sit in EXCLUDED_MEDIA_EXTENSIONS purely for H3
+    // brief-scope discipline (it enumerated the reinstated list exactly),
+    // never for a technical reason — ffprobe reports the identical
+    // 'mpegts' format_name for both suffixes (see FORMAT_FACTS above), so
+    // there was never a representability gap to begin with. The owner
+    // ledger closed that scope-discipline carve-out: .mts is admitted the
+    // same as .m2ts now.
+    expect(MEDIA_EXTENSIONS.has("mts")).toBe(true);
+    expect(EXCLUDED_MEDIA_EXTENSIONS.has("mts")).toBe(false);
+  });
+
   it("EXCLUDED_MEDIA_EXTENSIONS never overlaps MEDIA_EXTENSIONS, regardless of technical representability", () => {
     // wma is technically representable (container 'asf', shared with wmv —
     // see the FORMAT_FACTS header note) yet still must never be admitted:
     // the exclusion is a v1 policy call, not merely "probe would throw".
-    // Same for mts (identical mpegts family as the admitted m2ts) — its
-    // exclusion is scope discipline (H3's enumerated reinstatement list),
-    // recorded as an owner call in STATE.md, and it must be VISIBLE, which
-    // membership here is what guarantees.
     expect(EXCLUDED_MEDIA_EXTENSIONS.has("wma")).toBe(true);
     expect(FORMAT_FACTS["wma"]!.container).not.toBeNull();
     for (const ext of EXCLUDED_MEDIA_EXTENSIONS) {
@@ -154,7 +167,8 @@ describe("scanner media extensions vs. the probe pipeline's Container union", ()
         "wv",
         // recognized-media tail (Lane R review closed the silent class:
         // known-media-but-in-neither-set used to fall through to plain
-        // "ignored" with no count, no list, no log)
+        // "ignored" with no count, no list, no log). mts left this list
+        // (L1, owner ledger) — see the dedicated admission test above.
         "3g2",
         "3gp",
         "ac3",
@@ -170,7 +184,6 @@ describe("scanner media extensions vs. the probe pipeline's Container union", ()
         "m4b",
         "mka",
         "mpc",
-        "mts",
         "ogv",
         "ra",
         "rm",
