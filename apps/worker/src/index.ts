@@ -13,6 +13,7 @@ import { createHashPool, type HashPool } from "./scan/identity/pool.js";
 import { startWatcher, type WatcherHandle } from "./scan/watcher.js";
 import { getWorkerSettingValue, loadWorkerEffectiveSettings, resolveScanConcurrencyFromEffective } from "./settings/effective-settings.js";
 import { runProbe } from "./probe/consumer.js";
+import { createProbeTerminalFailureHook } from "./probe/terminal-failure-hook.js";
 import {
   ProviderRegistry,
   createMusicBrainzProvider,
@@ -110,12 +111,17 @@ queue.work(
 );
 
 // Deliverable B: the real probe consumer (docs/PLAN.md §8.3/P1.5).
+// onTerminalFailure (owner ledger L1, adjudication A-3): once retries are
+// exhausted, writes an admin-only probe.failed outbox event — see
+// ./probe/terminal-failure-hook.ts's header for the full architecture-
+// honest rationale (the scanner never runs ffprobe itself; a terminal
+// probe failure used to be invisible outside the generic jobs ledger).
 queue.work(
   "probe",
   async (payload) => {
     await runProbe({ db }, payload);
   },
-  { concurrency: cpuDerivedConcurrencyFloor() },
+  { concurrency: cpuDerivedConcurrencyFloor(), onTerminalFailure: createProbeTerminalFailureHook(db) },
 );
 
 // Deliverable D: metadata providers behind the registry choke-point
