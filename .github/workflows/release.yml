@@ -274,6 +274,35 @@ jobs:
           fi
           cp "$src" dist/release/
 
+      # Real install smoke (runner has passwordless sudo; macos-latest is
+      # arm64, matching the payload). Added after the v0.9.0-rc.1 draft
+      # FAILED on a real Mac with a defect no green BUILD can catch —
+      # PackageKit refused the non-executable preinstall script
+      # (PKInstallErrorDomain 112; the scripts were tracked 100644). A
+      # failed sudo installer here fails the whole release, which is the
+      # point. /var/log/install.log tail is printed on failure for the
+      # PackageKit error, then the payload's presence is asserted.
+      - name: Install smoke (sudo installer, real PackageKit)
+        env:
+          LOOMBRE_VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          set -euo pipefail
+          pkg="dist/release/loombre-${LOOMBRE_VERSION}-macos-arm64.pkg"
+          if ! sudo installer -pkg "$pkg" -target / -verboseR; then
+            echo "::error::sudo installer failed — PackageKit log tail follows"
+            tail -50 /var/log/install.log || true
+            echo "VERDICT:PKG_INSTALL:FAIL"
+            exit 1
+          fi
+          for p in "/opt/loombre/${LOOMBRE_VERSION}" "/opt/loombre/current" "/Applications/Loombre.app"; do
+            if [ ! -e "$p" ]; then
+              echo "::error::expected install output missing: $p (LAYOUT.md layout)"
+              echo "VERDICT:PKG_INSTALL:FAIL"
+              exit 1
+            fi
+          done
+          echo "VERDICT:PKG_INSTALL:PASS"
+
       - name: Upload artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
