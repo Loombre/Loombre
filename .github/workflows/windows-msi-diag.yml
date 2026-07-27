@@ -107,6 +107,14 @@ jobs:
           foreach ($svc in "LoombreServer","LoombreWorker") {
             if (-not (Get-Service $svc -ErrorAction SilentlyContinue)) { Write-Host "VERDICT:INSTALL:FAIL (service $svc not installed)"; exit 1 }
           }
+          # Import-graph proof with the RUNNER's node (the bundled node/ is
+          # still a placeholder): dynamic import resolves the server's
+          # ENTIRE module graph without booting it (isDirectEntrypoint
+          # guard). Catches dead node_modules links surviving the
+          # zip/extract hop — the class that broke rc.1 on macOS. Worker
+          # has no import guard (importing boots it), so server-only.
+          node -e "const{pathToFileURL}=require('node:url');import(pathToFileURL(process.argv[1]).href).then(()=>console.log('server import graph resolves')).catch((e)=>{console.error(e);process.exit(1)})" "C:\Program Files\Loombre\server\dist\main.js"
+          if ($LASTEXITCODE -ne 0) { Write-Host "VERDICT:INSTALL:FAIL (server import graph broken in extracted payload)"; exit 1 }
           Write-Host "VERDICT:INSTALL:PASS"
           $un = Start-Process msiexec -ArgumentList "/x `"$msi`" /qn /l*v uninstall.log" -Wait -PassThru
           if ($un.ExitCode -ne 0) {

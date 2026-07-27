@@ -25,7 +25,7 @@
 
 import {
   existsSync, mkdirSync, rmSync, cpSync, chmodSync, writeFileSync, readFileSync,
-  unlinkSync, symlinkSync, readdirSync, statSync,
+  unlinkSync, symlinkSync, readdirSync, statSync, renameSync,
 } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -314,7 +314,16 @@ function deployApp(pkgName, outDirName) {
   for (const keep of ["dist", "node_modules", "package.json"]) {
     const src = path.join(rawDeployDir, keep);
     if (!existsSync(src)) throw new Error(`deployApp(${pkgName}): expected ${keep} in deploy output, missing`);
-    cpSync(src, path.join(prunedDir, keep), { recursive: true });
+    // dereference: pnpm's deploy layout links top-level packages into
+    // .pnpm with RELATIVE symlinks, but cpSync's default rewrites them to
+    // ABSOLUTE build-machine paths (verbatimSymlinks: false) — the
+    // v0.9.0-rc.1 installed tree had every entry pointing at
+    // /Users/runner/... and the server crash-looped on
+    // ERR_MODULE_NOT_FOUND. Shipping fully-materialized trees (the same
+    // posture lane I1's tarball proved with a real boot smoke) removes
+    // symlinks from the payload entirely instead of betting on every
+    // downstream tool preserving them.
+    cpSync(src, path.join(prunedDir, keep), { recursive: true, dereference: true });
   }
   const sizeMb = duSizeMb(prunedDir);
   log(`${outDirName} deploy pruned to dist+node_modules+package.json (${sizeMb} MB)`);
@@ -411,8 +420,25 @@ async function fetchRuntimes(payloadRoot) {
   log(`ffmpeg staged (placeholder=${ffmpegResult.placeholder}): ${ffmpegResult.version}`);
 
   const { fetchEmbeddedPg } = await import(path.join(PKG_DIR, "fetch-embedded-pg.mjs"));
-  const pgResult = await fetchEmbeddedPg({ platform: "macos", arch: ARCH, destDir: path.join(runtimeDir, "pg") });
+  // Vendor-layout shape, NOT a flat runtime/pg: apps/server's embedded
+  // provisioning resolves binaries as <vendorDir>/<platform>/<version>/bin
+  // (packages/provisioning-pg/src/vendor-layout.ts), and the loombre-server
+  // shim points LOOMBRE_EMBEDDED_PG_VENDOR_DIR at runtime/pg. The rc.1
+  // payload staged pg FLAT, which — together with the shim's dev-default
+  // DATABASE_URL — is why the installed server could never use the
+  // PostgreSQL it shipped (LAYOUT.md §8's deferred wiring, now landed).
+  const pgVendorPlatform = `macos-${ARCH}`;
+  const pgFetchDir = path.join(runtimeDir, "pg-fetch");
+  const pgResult = await fetchEmbeddedPg({ platform: "macos", arch: ARCH, destDir: pgFetchDir });
   log(`embedded-PG staged=${pgResult.staged} placeholder=${pgResult.placeholder}`);
+  if (pgResult.staged && pgResult.version) {
+    const pgVendorDir = path.join(runtimeDir, "pg", pgVendorPlatform, pgResult.version);
+    mkdirSync(path.dirname(pgVendorDir), { recursive: true });
+    renameSync(pgFetchDir, pgVendorDir);
+    log(`embedded-PG restaged vendor-shaped: runtime/pg/${pgVendorPlatform}/${pgResult.version}`);
+  } else {
+    renameSync(pgFetchDir, path.join(runtimeDir, "pg"));
+  }
 
   return { nodeResult, ffmpegResult, pgResult };
 }

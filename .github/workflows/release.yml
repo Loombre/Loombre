@@ -303,6 +303,37 @@ jobs:
           done
           echo "VERDICT:PKG_INSTALL:PASS"
 
+          # Import-graph proof with the BUNDLED runtime: dynamic import
+          # resolves the server's ENTIRE module graph without booting it
+          # (apps/server main.ts's isDirectEntrypoint guard). This is the
+          # check that catches dead node_modules links — rc.1 shipped a
+          # tree whose every entry pointed at /Users/runner/... and
+          # crash-looped on ERR_MODULE_NOT_FOUND on the first real Mac.
+          if ! "/opt/loombre/current/runtime/node/bin/node" -e 'import("file:///opt/loombre/current/server/dist/main.js").then(()=>console.log("server import graph resolves")).catch((e)=>{console.error(e);process.exit(1)})'; then
+            echo "::error::server import graph broken in the installed payload"
+            echo "VERDICT:IMPORT_GRAPH:FAIL"
+            exit 1
+          fi
+          echo "VERDICT:IMPORT_GRAPH:PASS"
+
+          # Full boot proof: postinstall bootstrapped the LaunchDaemons and
+          # the server (no DATABASE_URL set anywhere on this runner) must
+          # provision + start its BUNDLED embedded PostgreSQL and answer on
+          # its port. This is the real product promise of the .pkg.
+          booted=0
+          for _ in $(seq 1 45); do
+            if curl -sf -o /dev/null "http://127.0.0.1:3001/"; then booted=1; break; fi
+            sleep 2
+          done
+          if [ "$booted" != "1" ]; then
+            echo "::error::server did not answer on :3001 within 90s — log tails follow"
+            sudo tail -40 /Library/Logs/Loombre/server.err.log || true
+            sudo tail -20 /Library/Logs/Loombre/server.out.log || true
+            echo "VERDICT:SERVER_BOOT:FAIL"
+            exit 1
+          fi
+          echo "VERDICT:SERVER_BOOT:PASS"
+
       - name: Upload artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
