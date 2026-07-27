@@ -65,6 +65,19 @@ describe.skipIf(!toolsAvailable)("probe pipeline integration (real ffmpeg/ffprob
     }
   });
 
+  // STATE.md H3 — v1.1 legacy-format reinstatement: each reinstated
+  // extension must probe to the RIGHT Container value against REAL
+  // ffprobe output (not just the FORMAT_FACTS unit-test table).
+  it("each v1.1-reinstated legacy format probes to the right Container value", () => {
+    const containers = new Map(manifest.files.map((f) => [f.file, f.container]));
+    expect(containers.get("wmv2_wmav2.wmv")).toBe("asf");
+    expect(containers.get("mpeg2video_mp2.mpg")).toBe("mpeg");
+    expect(containers.get("mpeg2_ac3.vob")).toBe("mpeg");
+    expect(containers.get("h264_aac.flv")).toBe("flv");
+    expect(containers.get("audio.aac")).toBe("aac");
+    expect(containers.get("audio.aiff")).toBe("aiff");
+  });
+
   it("probes + extracts every manifest entry and matches its declared properties", async () => {
     for (const entry of manifest.files) {
       const filePath = join(MEDIA_DIR, entry.file);

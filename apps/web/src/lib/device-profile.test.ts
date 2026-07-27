@@ -14,7 +14,24 @@ import { Ajv } from "ajv";
 import { buildDeviceProfile, type CanPlayTypeResult, type ProbeEnv } from "./device-profile.js";
 
 // Mirrors apps/server/src/common/device-profile-validator.ts DEVICE_PROFILE_SCHEMA verbatim.
-const CONTAINER_ENUM = ["mp4", "mkv", "webm", "avi", "ts", "mov", "flac", "mp3", "ogg", "m4a", "wav"];
+const CONTAINER_ENUM = [
+  "mp4",
+  "mkv",
+  "webm",
+  "avi",
+  "ts",
+  "mov",
+  "flac",
+  "mp3",
+  "ogg",
+  "m4a",
+  "wav",
+  "asf",
+  "mpeg",
+  "flv",
+  "aac",
+  "aiff",
+];
 const VIDEO_CODEC_ENUM = ["h264", "hevc", "av1", "vp9", "mpeg2", "vc1", "mpeg4", "unknown"];
 const AUDIO_CODEC_ENUM = [
   "aac",

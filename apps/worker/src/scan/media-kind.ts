@@ -3,12 +3,18 @@
  * Per-library-media-kind extension filtering (docs/PLAN.md §8.1: "Media
  * extensions per library.media_kind"). `classifyAuxiliary()`
  * (./parse/auxiliary.ts) already rejects anything outside the COMBINED
- * video+audio extension set as 'ignored', but it has no notion of which
- * library it's running against — a stray .mp3 sitting in a movie library
- * is a real file `classifyAuxiliary` would NOT flag as auxiliary (it's a
- * legitimate media extension, just the wrong kind for this library). This
- * module is the second, kind-aware filter the scanner applies right after
- * classifyAuxiliary().
+ * video+audio extension set as 'ignored' (or, for a known-media-but-
+ * excluded-in-v1 extension — STATE.md H3, EXCLUDED_MEDIA_EXTENSIONS — as
+ * the distinct 'unsupported'), but it has no notion of which library it's
+ * running against — a stray .mp3 sitting in a movie library is a real file
+ * `classifyAuxiliary` would NOT flag as auxiliary (it's a legitimate media
+ * extension, just the wrong kind for this library). This module is the
+ * second, kind-aware filter the scanner applies right after
+ * classifyAuxiliary(). Deliberately NOT involved in the EXCLUDED_MEDIA_
+ * EXTENSIONS decision at all: that exclusion is kind-independent by
+ * adjudication (a .wma in a music library and a .wma in a video library are
+ * both "known media, unsupported"), so it is fully resolved upstream by
+ * classifyAuxiliary before this module ever runs.
  */
 import { AUDIO_EXTENSIONS, VIDEO_EXTENSIONS } from "./parse/index.js";
 import type { MediaKind } from "@loombre/shared";

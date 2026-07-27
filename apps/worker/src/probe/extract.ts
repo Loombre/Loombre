@@ -67,6 +67,23 @@ const SIMPLE_CONTAINER_MAP: Record<string, Container> = {
   mp3: "mp3",
   ogg: "ogg",
   wav: "wav",
+  // v1.1 widening (STATE.md H3, docs/PLAYBACK.md §2.1): each of these is a
+  // simple single-name format_name -> Container mapping, empirically
+  // verified with real ffmpeg/ffprobe 8.1.1 (see apps/worker/test/scan/
+  // media-extensions.spec.ts's FORMAT_FACTS table for the captured facts).
+  // 'asf' covers BOTH .wmv (video) and .wma (audio) — unlike the
+  // matroska/webm and mp4/mov/m4a families above, this is not ambiguous
+  // against the Container union: both extensions collapse to the SAME
+  // union member, so no filenameHint/majorBrand disambiguation is needed.
+  // Likewise 'mpeg' covers .mpg/.mpeg/.vob (all three probe to the
+  // identical format_name via ffmpeg's MPEG-PS demuxer, VOB being DVD-
+  // flavored MPEG-PS with an extra dvd_nav_packet data stream that this
+  // module already skips — see extractMediaInfo's header).
+  asf: "asf",
+  mpeg: "mpeg",
+  flv: "flv",
+  aac: "aac",
+  aiff: "aiff",
 };
 
 /**

@@ -106,7 +106,29 @@ describe("Stage A: evaluateContainer", () => {
 
   it("empty directPlayContainers array -> always direct-stream, regardless of container", () => {
     const device = makeDevice({ directPlayContainers: [] });
-    for (const container of ["mp4", "mkv", "webm", "avi", "ts", "mov", "flac", "mp3", "ogg", "m4a", "wav"] as const) {
+    // v1.1 widening (STATE.md H3, docs/PLAYBACK.md §2.1): asf/mpeg/flv/aac/
+    // aiff included alongside the original 11 — evaluateContainer is a pure
+    // function of (container, directPlayContainers) with no per-member
+    // special-casing, so the property holds identically for every closed
+    // Container union member, old or new.
+    for (const container of [
+      "mp4",
+      "mkv",
+      "webm",
+      "avi",
+      "ts",
+      "mov",
+      "flac",
+      "mp3",
+      "ogg",
+      "m4a",
+      "wav",
+      "asf",
+      "mpeg",
+      "flv",
+      "aac",
+      "aiff",
+    ] as const) {
       const media = makeMedia({ container });
       const result = evaluateContainer(media, device);
       expect(result.verdict, `container=${container}`).toBe("direct-stream");

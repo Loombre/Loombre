@@ -264,6 +264,92 @@ function main() {
     ["aac"],
   );
 
+  // --- STATE.md H3: v1.1 legacy-format reinstatement baseline fixtures ---
+  // (docs/PLAYBACK.md §2.1's widened Container union — asf/mpeg/flv/aac/
+  // aiff). Empirically verified against real ffmpeg/ffprobe 8.1.1 before
+  // this generator was extended (see apps/worker/test/scan/
+  // media-extensions.spec.ts's FORMAT_FACTS table for the captured facts
+  // this mirrors).
+
+  // wmv: wmv2 + wmav2, asf muxer (auto-selected from the .wmv extension).
+  // wmv2 has no VideoCodec union member (it predates VC-1) — probes to
+  // 'unknown', same as any other codec the closed union doesn't name; the
+  // Container side ('asf') is what this fixture exists to prove.
+  encodeIfNeeded(
+    "wmv2_wmav2.wmv",
+    [
+      "-f", "lavfi", "-i", "testsrc2=size=320x240:rate=25:duration=1",
+      "-f", "lavfi", "-i", "sine=frequency=1000:duration=1",
+      "-c:v", "wmv2", "-c:a", "wmav2", "-ac", "2",
+    ],
+    { container: "asf", videoCodec: "unknown", audioCodec: "unknown", channels: 2, interlaced: false },
+    ["wmv2", "wmav2"],
+  );
+
+  // mpg: mpeg2video + mp2, MPEG-PS ('mpeg' muxer — shared by .mpg/.mpeg/
+  // .vob, docs/PLAYBACK.md §2.1's single 'mpeg' Container member). mp2 has
+  // no AudioCodec union member -> probes to 'unknown' (same escape hatch as
+  // every other codec union).
+  encodeIfNeeded(
+    "mpeg2video_mp2.mpg",
+    [
+      "-f", "lavfi", "-i", "testsrc2=size=320x240:rate=25:duration=1",
+      "-f", "lavfi", "-i", "sine=frequency=1000:duration=1",
+      "-c:v", "mpeg2video", "-c:a", "mp2", "-ac", "2",
+      "-f", "mpeg",
+    ],
+    { container: "mpeg", videoCodec: "mpeg2", audioCodec: "unknown", channels: 2, interlaced: false },
+    ["mpeg2video", "mp2"],
+  );
+
+  // vob: mpeg2 + ac3 via the DVD-flavored MPEG-PS ('dvd') muxer — probes to
+  // the SAME 'mpeg' format_name/Container as .mpg/.mpeg (verified
+  // empirically), plus an extra dvd_nav_packet data stream that
+  // extractMediaInfo already skips (codec_type 'data'). Real codec support
+  // this time (ac3), unlike the mp2 case above.
+  encodeIfNeeded(
+    "mpeg2_ac3.vob",
+    [
+      "-f", "lavfi", "-i", "testsrc2=size=320x240:rate=25:duration=1",
+      "-f", "lavfi", "-i", "sine=frequency=1000:duration=1",
+      "-c:v", "mpeg2video", "-c:a", "ac3", "-b:a", "192k", "-ac", "2",
+      "-f", "dvd",
+    ],
+    { container: "mpeg", videoCodec: "mpeg2", audioCodec: "ac3", channels: 2, interlaced: false },
+    ["mpeg2video", "ac3"],
+  );
+
+  // flv: h264 + aac — the flv muxer accepts this pairing directly (verified
+  // empirically; no need for the flv1/mp3 fallback the task brief flagged
+  // as a possibility).
+  encodeIfNeeded(
+    "h264_aac.flv",
+    [
+      "-f", "lavfi", "-i", "testsrc2=size=320x240:rate=25:duration=1",
+      "-f", "lavfi", "-i", "sine=frequency=1000:duration=1",
+      "-c:v", "libx264", "-c:a", "aac", "-ac", "2",
+    ],
+    { container: "flv", videoCodec: "h264", audioCodec: "aac", channels: 2, interlaced: false },
+    ["libx264", "aac"],
+  );
+
+  // aac: bare ADTS stream (no container muxing beyond the adts framing
+  // itself) — audio-only, same shape as the flac/mp3/m4a baselines above.
+  encodeIfNeeded(
+    "audio.aac",
+    ["-f", "lavfi", "-i", "sine=frequency=1000:duration=1", "-c:a", "aac"],
+    { container: "aac", audioCodec: "aac", channels: 1 },
+    ["aac"],
+  );
+
+  // aiff: pcm_s16be (Audio IFF's native uncompressed format).
+  encodeIfNeeded(
+    "audio.aiff",
+    ["-f", "lavfi", "-i", "sine=frequency=1000:duration=1", "-c:a", "pcm_s16be"],
+    { container: "aiff", audioCodec: "pcm", channels: 1 },
+    ["pcm_s16be"],
+  );
+
   // hevc 10-bit main10 is optional bonus coverage: only when libx265 is
   // present, feature-detected and skipped gracefully otherwise (per the
   // deliverable's "skip hevc/10-bit variants gracefully when libx265
