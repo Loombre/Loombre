@@ -91,3 +91,21 @@ A backup you have never restored is a hope, not a backup. Periodically:
 
 If step 3/4 fails, you've found a broken backup while it's still just an
 inconvenience, not a crisis.
+
+## Rolling back a failed migration
+
+Database migrations are **forward-only** (docs/PLAN.md §4.2) —
+`packages/db/migrations/*.sql` ships no `down` counterpart for any
+migration, on principle, not as a gap to be filled in later. There is
+nothing to "undo" a migration with.
+
+If a new Loombre release's migration step fails partway, or completes but
+the new version misbehaves once running, the only rollback path is: stop
+the server, restore the pre-upgrade backup you took before applying the
+update (see above — this is exactly the scenario that backup was for),
+then either stay on the old application version against the restored data
+until a fix ships, or roll forward again once a corrected migration is
+available. `pnpm db:migrate`/`node scripts/migrate.mjs migrate` is
+idempotent and safe to re-run (already-applied migrations are skipped by
+filename, tracked in `schema_migrations`) — but it only ever moves the
+schema forward, never back.
