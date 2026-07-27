@@ -1,5 +1,38 @@
 # STATE.md — Lumbre Phase 4 (Phases 0–2 complete; Phase 3 automated exit met, owner review items Open)
 
+## Audit-residue hardening run (kicked off 2026-07-26, authority: owner "Closing the Audit Residue" brief; docs/PLAN.md v1.1 as amended per H4 + docs/PLAYBACK.md §2.6)
+
+### Mission (verbatim)
+
+Implement the five hardening items: (H1) a real user_settings.prefs writer restoring the language pickers end-to-end into playback track selection, (H2) an audited admin PIN-reset CLI closing the PIN recovery gap, (H3) the scanner extension list reinstated for common legacy formats with skipped files made visible in the scan report, (H4) PLAN.md §4.2 amended to pure forward-only migrations with the zero-to-current CI proof confirmed as a permanent gate, and (H5) a release-pipeline guard making it impossible to tag a build containing the placeholder minisign key — plus (H6) the admission-lock topology constraint recorded. Each item lands green or is reported blocked with evidence; none are optional.
+
+### Originating audit language (commit 9552333, "fix!: close 42 verified findings from full-codebase review" — the audit record; quoted here as review-lane ground truth)
+
+- **H1:** "Preferred audio/subtitle language and playback prefs reported 'Saved' while putMySettings discarded them (it declares no @Body at all). The form is removed rather than left lying, following the precedent set for the theme control; restoring it needs a user_settings.prefs writer."
+- **H2:** "currentPin is deliberately left unconstrained: it is the only recovery path for anyone already affected, since no admin or CLI PIN reset exists." + residue list: "a forgotten PIN still has no recovery path".
+- **H3:** "Scanner accepted 9 declared extensions probe can never extract, so those items ingested and sat permanently unplayable." + residue list: "the narrowed scanner extension list is a real v1 scope statement worth recording".
+- **H4:** residue list: "no down migrations exist anywhere (contradicts PLAN.md 4.2)".
+- **H5:** residue list: "docs/install/linux.md still ships the all-zero placeholder key" (sibling finding fixed in 9552333: keys/README.md still called the trust root a placeholder after the real key landed — the class of failure is placeholder residue surviving key rotation; the guard makes it structural).
+- **H6:** residue list: "admission control is process-local and would need a DB advisory lock under a multi-process topology".
+
+### Preconditions + run posture (2026-07-26)
+
+- Precondition "current gate green on a clean clone": working-tree `pnpm gate` dispatched at kickoff on clean main (70c0242) as the run's precondition proof — result recorded below when it lands. Last recorded green: the 9552333/70c0242 verification chain.
+- Isolation: worktree lanes per the standing policy (G15 lesson applies — any resume message pins the absolute worktree path). DB contention avoided structurally: each DB-touching lane creates and exports its OWN database on the compose PG (`loombre_lane_<x>` via DATABASE_URL); main-tree dev DB untouched by lanes.
+- STATE.md is orchestrator-owned this run — lanes return their entry text in their freeze reports; the orchestrator integrates (prevents 5-way merge conflicts on this file).
+- Scope discipline: the six items only. ACL/TLS items from the same reports and P4.22 relitigating are OUT unless an item names them.
+
+### Lane burn-up
+
+| Lane | Scope | Model | Status |
+|---|---|---|---|
+| A | H1 prefs writer → contract/SDK → pickers → §2.6 selection seam + matrix cases | sonnet | dispatched |
+| B | H2 reset-pin CLI + outbox event + tests + both doc registers | sonnet | dispatched |
+| C | H3 extension reinstatement + visible skips + fixtures + docs | sonnet | dispatched |
+| D | H4 §4.2 amendment + zero-to-current gate confirmation; H6 topology note | sonnet | dispatched |
+| E | H5 release placeholder guard + dry-run failure test | sonnet | dispatched |
+| R | opus cross-check vs originating audit language; scope + honesty verdicts | opus | pending lanes |
+
 ## Public-facing docs restructure (2026-07-26, owner-directed; commit 324f400)
 
 - **README rewritten visitor-first (308 → 217 lines).** Three owner decisions recorded: (1) the Install section presents ALL FOUR channels (Docker/Compose, Linux tarball+systemd, Windows MSI, macOS .pkg) as first-class in a platform table with an honest "installer artifacts ship with tagged releases; none has shipped yet" note — NOT a Docker-only quick start (the full copy-pasteable Docker sequence stays, minus the old drift-apology meta-commentary); (2) STATE.md dropped from the README doc list — it stays tracked and public (per the pre-public-cleanup decision above) but is no longer advertised to visitors; its link home is CONTRIBUTING.md; (3) badges added (ci.yml status, static AGPL-3.0-only, static Node 24). Every internal codename (P4.x, D-numbers, STATE.md refs, plan-§ citations) stripped from README headings/body — grep-verified zero remaining. The "Status: private" claim removed (was already stale — repo is public as of 2026-07-26).
