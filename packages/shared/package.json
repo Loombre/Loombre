@@ -10,6 +10,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./language-codes": {
+      "types": "./dist/language-codes.d.ts",
+      "default": "./dist/language-codes.js"
     }
   },
   "scripts": {
