@@ -127,9 +127,18 @@ import { buildFfmpegArgs } from "./args/builder.js";
  * route — args/builder.ts interpretation D's two VT routes ((a) pure-hw
  * `-hwaccel_output_format videotoolbox_vld` + scale_vt fold, (b) hybrid
  * sw-chain fallback); ffmpegArgs-only change, no decision/reason/toneMap
- * flips, golden count 27 → 28 with the hybrid-deinterlace scenario).
+ * flips, golden count 27 → 28 with the hybrid-deinterlace scenario.
+ * 0.8.2 → 0.8.3: interpretation D generalized from videotoolbox to EVERY
+ * §8.3 hw backend — nvenc/qsv/vaapi tone-map routes were emitting bare
+ * `-hwaccel` with no surface pin, so tonemap_cuda/tonemap_opencl/libplacebo
+ * would have received software frames on real hardware (the identical
+ * failure the VT fix above found by executing it); route (a) now pins each
+ * backend's own `-hwaccel_output_format` and scales with that backend's own
+ * hw scaler, route (b)'s cpu-zscale fallback covers all of them.
+ * ffmpegArgs-only change, no decision/reason/toneMap flips, golden count
+ * 28 → 32).
  */
-export const ENGINE_VERSION = "0.8.2";
+export const ENGINE_VERSION = "0.8.3";
 
 /**
  * Stage D assembly (docs/PLAYBACK.md §3 Stage D.4, binding interpretation

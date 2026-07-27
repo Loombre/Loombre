@@ -252,6 +252,68 @@ export function findSecretBelowRoot(schema: LppConfig): string[] {
   return violations;
 }
 
+/**
+ * Dotted/bracketed paths of every field whose `default` contradicts that
+ * SAME field's own declared constraints (`enum` membership, `const`,
+ * `minLength`/`maxLength`, `minimum`/`maximum`, integer-ness). Empty = valid.
+ *
+ * The keywords are independent zod fields, so a self-contradictory pair is
+ * schema-legal on its own; this is the cross-field check. It matters because
+ * `configSchema` drives the admin config form (C3) directly — a default
+ * outside its own field's range pre-populates the form with a value the same
+ * schema calls invalid. Enforced by the STAGED parser only, matching the H-1
+ * precedent above (the raw zod schema stays permissive).
+ */
+export function findInconsistentDefaults(schema: LppConfig): string[] {
+  const violations: string[] = [];
+
+  function walk(node: LppConfigFieldNode, path: string): void {
+    switch (node.type) {
+      case "string": {
+        const value = node.default;
+        if (value === undefined) return;
+        if (
+          (node.enum !== undefined && !node.enum.includes(value)) ||
+          (node.const !== undefined && node.const !== value) ||
+          (node.minLength !== undefined && value.length < node.minLength) ||
+          (node.maxLength !== undefined && value.length > node.maxLength)
+        ) {
+          violations.push(path);
+        }
+        return;
+      }
+      case "number":
+      case "integer": {
+        const value = node.default;
+        if (value === undefined) return;
+        if (
+          (node.minimum !== undefined && value < node.minimum) ||
+          (node.maximum !== undefined && value > node.maximum) ||
+          (node.type === "integer" && !Number.isInteger(value))
+        ) {
+          violations.push(path);
+        }
+        return;
+      }
+      case "object": {
+        for (const [key, child] of Object.entries(node.properties)) {
+          walk(child, path ? `${path}.${key}` : key);
+        }
+        return;
+      }
+      case "array": {
+        walk(node.items, `${path}[]`);
+        return;
+      }
+      default:
+        return;
+    }
+  }
+
+  walk(schema, "");
+  return violations;
+}
+
 // ============================================================================
 // M-2 fix wave: bound configSchema recursion depth + enum/properties/required
 // cardinality BEFORE zod ever sees the tree (frozen-contract narrowing, D23).
@@ -299,6 +361,14 @@ export interface ConfigSchemaBoundsViolation {
  * error) — this function's only job is to guarantee ITS OWN recursion can
  * never exceed `MAX_CONFIG_SCHEMA_DEPTH` frames, so it must never recurse
  * based on unvalidated assumptions about `raw`'s shape.
+ *
+ * Descent and the cardinality caps are therefore SHAPE-driven, never
+ * `type`-driven: zod recurses on the `properties`/`items` KEYS whether or
+ * not the node's `type` literal matched anything (its union still tries
+ * `LppConfigObjectFieldSchema`, whose `z.record` walks every property), so
+ * gating on a recognized `type` would leave the entire subtree below any
+ * missing or typo'd `type` unbounded — failing OPEN on exactly the ordinary
+ * malformed manifest this pre-check exists to stop.
  */
 export function checkConfigSchemaBounds(raw: unknown, path = "", depth = 1): ConfigSchemaBoundsViolation | null {
   if (depth > MAX_CONFIG_SCHEMA_DEPTH) {
@@ -309,29 +379,27 @@ export function checkConfigSchemaBounds(raw: unknown, path = "", depth = 1): Con
   }
   const node = raw as Record<string, unknown>;
 
-  if (node.type === "string" && Array.isArray(node.enum) && node.enum.length > MAX_CONFIG_SCHEMA_ENUM_LENGTH) {
+  if (Array.isArray(node.enum) && node.enum.length > MAX_CONFIG_SCHEMA_ENUM_LENGTH) {
     return { path: path ? `${path}.enum` : "enum", reason: "enum-too-large" };
   }
 
-  if (node.type === "object") {
-    const properties = node.properties;
-    if (properties !== null && typeof properties === "object" && !Array.isArray(properties)) {
-      const propEntries = Object.entries(properties as Record<string, unknown>);
-      if (propEntries.length > MAX_CONFIG_SCHEMA_PROPERTIES) {
-        return { path: path ? `${path}.properties` : "properties", reason: "too-many-properties" };
-      }
-      for (const [key, value] of propEntries) {
-        const violation = checkConfigSchemaBounds(value, path ? `${path}.${key}` : key, depth + 1);
-        if (violation) return violation;
-      }
+  const properties = node.properties;
+  if (properties !== null && typeof properties === "object" && !Array.isArray(properties)) {
+    const propEntries = Object.entries(properties as Record<string, unknown>);
+    if (propEntries.length > MAX_CONFIG_SCHEMA_PROPERTIES) {
+      return { path: path ? `${path}.properties` : "properties", reason: "too-many-properties" };
     }
-    if (Array.isArray(node.required) && node.required.length > MAX_CONFIG_SCHEMA_REQUIRED_LENGTH) {
-      return { path: path ? `${path}.required` : "required", reason: "too-many-required" };
+    for (const [key, value] of propEntries) {
+      const violation = checkConfigSchemaBounds(value, path ? `${path}.${key}` : key, depth + 1);
+      if (violation) return violation;
     }
-    return null;
   }
 
-  if (node.type === "array" && node.items !== undefined) {
+  if (Array.isArray(node.required) && node.required.length > MAX_CONFIG_SCHEMA_REQUIRED_LENGTH) {
+    return { path: path ? `${path}.required` : "required", reason: "too-many-required" };
+  }
+
+  if (node.items !== undefined) {
     return checkConfigSchemaBounds(node.items, `${path}[]`, depth + 1);
   }
 

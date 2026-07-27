@@ -693,6 +693,16 @@ interface ListCursorPayload {
 const VALID_SORTS: ReadonlySet<string> = new Set<ListCatalogItemsSort>(['title', 'added', 'rating', 'year']);
 const VALID_ORDERS: ReadonlySet<string> = new Set<ListCatalogItemsOrder>(['asc', 'desc']);
 
+/** Postgres's own `uuid` input format (RFC 4122 8-4-4-4-12 hex, any
+ *  version/variant octet) — the same pattern apps/server's
+ *  gateway/require-uuid-param.ts applies to :id PATH params, repeated here
+ *  because `parentId`/`libraryId`/a cursor's `id` reach this function as
+ *  QUERY input, which that helper never sees. Binding a non-UUID string
+ *  into a `uuid` column comparison makes Postgres throw 22P02 (invalid
+ *  input syntax for type uuid) — a raw 500 with an unhandled_exception log
+ *  line for what is a client input mistake. */
+const UUID_PATTERN = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+
 function isListCursorPayload(
   value: unknown,
   activeSort: ListCatalogItemsSort,
@@ -700,7 +710,7 @@ function isListCursorPayload(
 ): value is ListCursorPayload {
   if (typeof value !== 'object' || value === null) return false;
   const v = value as Record<string, unknown>;
-  if (typeof v.id !== 'string') return false;
+  if (typeof v.id !== 'string' || !UUID_PATTERN.test(v.id)) return false;
   if (typeof v.sort !== 'string' || !VALID_SORTS.has(v.sort)) return false;
   if (typeof v.order !== 'string' || !VALID_ORDERS.has(v.order)) return false;
   if (v.sort !== activeSort || v.order !== activeOrder) return false;
@@ -727,6 +737,18 @@ export async function listCatalogItems(
   const order = params.order ?? DEFAULT_ORDER_BY_SORT[sort];
   const keyExpr = sortKeyExpr(sort, order);
   const cmp = order === 'desc' ? '<' : '>';
+
+  // A malformed filter id can never match a row, so it answers exactly the
+  // way a syntactically valid but nonexistent/unentitled one already does —
+  // an empty page ("invisible == nonexistent") — rather than reaching
+  // Postgres's uuid cast (see UUID_PATTERN above). Dropping the filter
+  // instead would silently WIDEN the result set to the whole library set.
+  if (
+    (params.parentId && !UUID_PATTERN.test(params.parentId)) ||
+    (params.libraryId && !UUID_PATTERN.test(params.libraryId))
+  ) {
+    return { rows: [], nextCursor: null };
+  }
 
   let query = applyGuard(db.selectFrom('catalog_items').selectAll(), ctx).where(
     'item_type',

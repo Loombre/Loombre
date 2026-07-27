@@ -232,3 +232,54 @@ export const JOB_TYPES: readonly JobType[] = [
   'subtitle-extract',
   'pg-upgrade',
 ];
+
+/** pg-boss provisioning options for one queue (queue.ts passes these to
+ *  createQueue/updateQueue). */
+export interface JobQueueOptions {
+  /** Seconds a job may sit in pg-boss's `active` state before its
+   *  maintenance sweep retries or fails the row. */
+  expireInSeconds: number;
+  /** Times pg-boss may re-dispatch a job after a handler failure. */
+  retryLimit: number;
+}
+
+// pg-boss asserts `expireInSeconds / 3600 < 24`, so this is effectively its
+// ceiling — the point is only that no handler this registry dispatches can
+// plausibly outlive it.
+const LONG_RUNNING_EXPIRE_SECONDS = 23 * 60 * 60;
+const BOUNDED_EXPIRE_SECONDS = 60 * 60;
+
+/**
+ * Per-queue pg-boss options, declared for EVERY job type so none of them
+ * silently inherits a driver default.
+ *
+ * `expireInSeconds` is the one that matters: pg-boss defaults it to 900 and
+ * its maintenance sweep flips any job still `active` past that back to
+ * `retry` purely on wall-clock — it has no knowledge of whether the JS
+ * handler promise is still pending. Several types here deliberately hold
+ * their handler promise far longer than 15 minutes ('transcode' resolves
+ * only when its playback session reaches a terminal state, i.e. a whole
+ * movie; 'scan'/'import'/'hwprobe' run for as long as the library/archive/
+ * probe battery takes), so at the default a SECOND worker slot re-fetches
+ * the same job id and runs it concurrently with the still-live original.
+ *
+ * 'transcode' additionally opts out of retries entirely: its handler drives
+ * one live `playback_sessions` row and one staging directory, so a re-run is
+ * not idempotent and is never the right recovery — the session is failed and
+ * the client starts a new one.
+ */
+export const JOB_QUEUE_OPTIONS: Readonly<Record<JobType, JobQueueOptions>> = {
+  scan: { expireInSeconds: LONG_RUNNING_EXPIRE_SECONDS, retryLimit: 2 },
+  probe: { expireInSeconds: BOUNDED_EXPIRE_SECONDS, retryLimit: 2 },
+  image: { expireInSeconds: BOUNDED_EXPIRE_SECONDS, retryLimit: 2 },
+  metadata: { expireInSeconds: BOUNDED_EXPIRE_SECONDS, retryLimit: 2 },
+  'metadata-search': { expireInSeconds: BOUNDED_EXPIRE_SECONDS, retryLimit: 2 },
+  import: { expireInSeconds: LONG_RUNNING_EXPIRE_SECONDS, retryLimit: 2 },
+  'image-backfill': { expireInSeconds: BOUNDED_EXPIRE_SECONDS, retryLimit: 2 },
+  hwprobe: { expireInSeconds: LONG_RUNNING_EXPIRE_SECONDS, retryLimit: 2 },
+  transcode: { expireInSeconds: LONG_RUNNING_EXPIRE_SECONDS, retryLimit: 0 },
+  'subtitle-extract': { expireInSeconds: LONG_RUNNING_EXPIRE_SECONDS, retryLimit: 2 },
+  // Never dispatched through pg-boss at all (see PgUpgradeJobPayload) — the
+  // queue exists only so JOB_TYPES stays a total map.
+  'pg-upgrade': { expireInSeconds: BOUNDED_EXPIRE_SECONDS, retryLimit: 0 },
+};

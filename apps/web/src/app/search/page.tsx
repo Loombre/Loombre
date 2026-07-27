@@ -96,6 +96,7 @@ function SearchContent(): React.JSX.Element {
             accessToken={accessToken}
             registerHandle={registerHandle}
             onSelectQuery={handleChange}
+            paginated
           />
         )}
       </div>

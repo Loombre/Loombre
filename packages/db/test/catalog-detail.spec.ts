@@ -298,6 +298,38 @@ describe('listCatalogItems', () => {
   });
 });
 
+// A client-suppliable filter id that isn't a syntactically valid UUID used
+// to be bound straight into a `uuid` column comparison, where Postgres's
+// implicit cast throws 22P02 — a raw 500 for what is a client input
+// mistake. Same posture as a valid-but-unentitled id (an empty page):
+// "invisible == nonexistent".
+describe('listCatalogItems malformed-id filters', () => {
+  it('returns an empty page for a syntactically invalid libraryId instead of throwing', async () => {
+    const ctx = ctxFor(adminId, { allowedLibraryIds: [libMoviesId], restrictedCleared: false });
+    const page = await listCatalogItems(db, ctx, { itemType: 'movie', libraryId: 'not-a-uuid', limit: 200 });
+    expect(page.rows).toEqual([]);
+    expect(page.nextCursor).toBeNull();
+  });
+
+  it('returns an empty page for a syntactically invalid parentId instead of throwing', async () => {
+    const ctx = ctxFor(adminId, { allowedLibraryIds: [libMoviesId], restrictedCleared: false });
+    const page = await listCatalogItems(db, ctx, { itemType: 'season', parentId: '../../etc/passwd', limit: 50 });
+    expect(page.rows).toEqual([]);
+    expect(page.nextCursor).toBeNull();
+  });
+
+  it('rejects a forged cursor whose id is not a UUID as a malformed cursor, not a driver error', async () => {
+    const ctx = ctxFor(adminId, { allowedLibraryIds: [libMoviesId], restrictedCleared: false });
+    const forged = Buffer.from(
+      JSON.stringify({ sort: 'added', order: 'desc', sortKey: 1, id: 'not-a-uuid' }),
+      'utf8'
+    ).toString('base64url');
+    await expect(
+      listCatalogItems(db, ctx, { itemType: 'movie', libraryId: libMoviesId, cursor: forged })
+    ).rejects.toThrow(/malformed cursor/);
+  });
+});
+
 // Gap-closure lane: browse Sort control (`sort`/`order` additive params).
 // The 5 visible general movies (seed.mjs; "Paper Kingdoms" stays hidden,
 // missing-file rule): Harbor Lights (2019, 7.4), The Quiet Frontier

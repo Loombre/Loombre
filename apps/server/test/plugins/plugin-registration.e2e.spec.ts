@@ -461,6 +461,77 @@ describe("registerPlugin — manifest failure modes (throwaway stubs)", () => {
 });
 
 // ===========================================================================
+// concurrent registration at the same baseUrl
+// ===========================================================================
+
+describe("registerPlugin — the losing side of a concurrent same-baseUrl registration", () => {
+  const stubs: StubServer[] = [];
+  afterEach(async () => {
+    await Promise.all(stubs.splice(0).map((s) => s.close()));
+  });
+
+  // The pre-check and the insert are in different transactions with a
+  // manifest fetch between them. Rather than race two real register() calls
+  // (inherently flaky), the stub commits the COMPETING row from inside the
+  // manifest request registerPlugin itself makes — i.e. exactly inside the
+  // window — so the loser deterministically reaches the insert and fails on
+  // plugins_base_url_unique. It must still surface the same 409 the
+  // sequential duplicate produces, not an unmapped 500.
+  it("still surfaces the same 409 when the row lands after its pre-check passed", async () => {
+    let manifestFetches = 0;
+    const stub = await startStub(async (req, res) => {
+      if (req.method === "GET" && req.url === "/lpp/manifest") {
+        manifestFetches += 1;
+        // Fetch 1 is digestFor's; fetch 2 is registerPlugin's own, which is
+        // the one that has to happen after the pre-check.
+        if (manifestFetches === 2) {
+          await insertPluginAndEmit(dbProvider.db, {
+            id: "018f6f1e-0000-7000-8000-0000000000e1",
+            name: "race-winner-plugin",
+            baseUrl: stub.baseUrl,
+            version: "0.1.0",
+            protocolVersion: 1,
+            contentClass: "general",
+            grantedCapabilityTypes: ["metadata-provider"],
+            eventTypes: [],
+            lanAllowlist: [stub.host],
+            manifest: { ...VALID_MANIFEST_BASE, capabilities: [METADATA_CAP] },
+            config: {},
+            actorUserId: adminId,
+            nowMs: Date.now(),
+          });
+        }
+        return jsonResponse(res, 200, { ...VALID_MANIFEST_BASE, capabilities: [METADATA_CAP] });
+      }
+      jsonResponse(res, 404, {});
+    });
+    stubs.push(stub);
+
+    const manifestDigest = await digestFor(stub.baseUrl, [stub.host]);
+    await expect(
+      registrationService.registerPlugin({
+        baseUrl: stub.baseUrl,
+        lanAllowlist: [stub.host],
+        grantedCapabilityTypes: ["metadata-provider"],
+        eventTypeGrants: [],
+        configValues: {},
+        actorUserId: adminId,
+        manifestDigest,
+      }),
+    ).rejects.toMatchObject({
+      status: 409,
+      response: expect.objectContaining({ detail: expect.stringContaining("already registered") }),
+    });
+
+    // The winner's row is the only one, and the loser left nothing behind.
+    const rows = await listPlugins(dbProvider.db);
+    expect(rows.filter((r) => r.base_url === stub.baseUrl).map((r) => r.id)).toEqual([
+      "018f6f1e-0000-7000-8000-0000000000e1",
+    ]);
+  }, 20_000);
+});
+
+// ===========================================================================
 // LD9 distinctive-value scans
 // ===========================================================================
 

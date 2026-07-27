@@ -45,3 +45,24 @@
   letter-spacing: var(--track-mono);
   color: var(--color-text-subtle);
 }
+
+.loadMoreRow {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.loadMore {
+  composes: button secondary from "../ui/Button.module.css";
+}
+
+.loadMoreError {
+  width: 100%;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--color-danger) 12%, transparent);
+  color: var(--color-danger);
+  padding: var(--space-sm) var(--space-md);
+  font-size: var(--text-sm);
+  text-align: center;
+}

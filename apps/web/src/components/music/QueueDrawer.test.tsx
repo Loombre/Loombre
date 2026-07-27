@@ -13,7 +13,7 @@ import { renderIntoBody, type TestRender } from "../ui/test-render.js";
 // this test a pure, fast render/interaction test instead of exercising real
 // playback sessions.
 function track(entryId: string): QueueTrack {
-  return { entryId, itemId: entryId, title: `Track ${entryId}`, subtitle: "Some Artist", albumId: "album-1", durationMs: 200_000, blurhash: null };
+  return { entryId, itemId: entryId, mediaFileId: null, title: `Track ${entryId}`, subtitle: "Some Artist", albumId: "album-1", durationMs: 200_000, blurhash: null };
 }
 
 function makeQueueState(entryIds: string[], currentIndex: number | null): QueueState {

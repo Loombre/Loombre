@@ -5,16 +5,16 @@
 // section (movie/episode/track — the only item types with a `mediaFiles[]`
 // field per the contract; series/artist/album are not directly playable).
 //
-// TODO(watch-version-param): the contract's PlanRequest already supports
-// selecting a specific file via an optional `mediaFileId` (defaults to the
+// Per-version playback selection, end to end: the contract's PlanRequest
+// selects a specific file via its optional `mediaFileId` (defaults to the
 // item's primary media_files row when omitted — packages/contract/
-// openapi.yaml's PlanRequest schema), so per-version playback selection is
-// possible server-side today. But /watch/[itemId] and VideoPlayer (lane
-// (ii)'s file ownership) only take an itemId — there is no query param that
-// threads a chosen fileId through to createPlaybackSession's PlanRequest.
-// Reworking their route/player is out of this lane's scope for this pass
-// per the task brief, so every version's Play button intentionally starts
-// the item's DEFAULT version until that param is wired.
+// openapi.yaml's PlanRequest schema), so this row emits its OWN file.id as
+// a `mediaFileId` query param on its /watch/{itemId} link, and the
+// receiving end reads it: app/watch/[itemId]/page.tsx threads the param
+// into <VideoPlayer> (movie/episode) and into playTrack() (track), each of
+// which pins the real session request to that file. Guarded at both ends —
+// VersionRow.test.tsx for the href, app/watch/[itemId]/page.test.tsx and
+// components/music/MusicPlayerProvider.test.tsx for the session request.
 
 "use client";
 
@@ -36,7 +36,7 @@ export function VersionRow({ itemId, file }: { itemId: string; file: MediaFileSu
     .join(" · ");
 
   return (
-    <a href={`/watch/${itemId}`} className={styles.row}>
+    <a href={`/watch/${itemId}?mediaFileId=${encodeURIComponent(file.id)}`} className={styles.row}>
       <span className={styles.info}>
         <span className={styles.title}>{file.versionLabel ?? "Original"}</span>
         <span className={styles.meta}>{meta || "Not yet probed"}</span>

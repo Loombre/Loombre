@@ -36,11 +36,12 @@
 // below — do not build a watchlist button here, per this lane's
 // coordination-seam instruction).
 
-import { useEffect, useState } from "react";
 import type { components } from "@loombre/sdk";
 import { apiGet } from "../../lib/api-client.js";
 import { pickHeroImage } from "../../lib/pick-hero-image.js";
 import { useWatchedState } from "../../lib/use-watched-state.js";
+import { useDetailFetch } from "./useDetailFetch.js";
+import { DetailNotFound, DetailLoadError } from "./DetailFetchStatus.js";
 import { PlayLink } from "./PlayLink.js";
 import { MarkWatchedButton } from "./MarkWatchedButton.js";
 import { SceneBanner } from "./SceneBanner.js";
@@ -86,17 +87,12 @@ export function MovieDetailScreen({
   serverUrl: string;
   accessToken: string;
 }): React.JSX.Element {
-  const [movie, setMovie] = useState<Movie | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    apiGet("/movies/{id}", { params: { path: { id } } }).then((m) => {
-      if (!cancelled) setMovie(m);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [id]);
+  const {
+    entity: movie,
+    notFound,
+    error,
+    retry,
+  } = useDetailFetch<Movie>(() => apiGet("/movies/{id}", { params: { path: { id } } }), id);
 
   // Called unconditionally (rules-of-hooks) — the hook itself no-ops until
   // movie.id is known (see use-watched-state.ts's `itemId: null` case). One
@@ -104,6 +100,9 @@ export function MovieDetailScreen({
   // (they coexist in the DOM), so the real GET /progress/{itemId} fires
   // exactly once per page load, not twice.
   const watched = useWatchedState(movie?.id ?? null, movie?.runtimeMs ?? null);
+
+  if (notFound) return <DetailNotFound label="Movie" />;
+  if (error) return <DetailLoadError message={error} onRetry={retry} />;
 
   if (!movie) {
     return (

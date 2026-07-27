@@ -12,10 +12,10 @@
 // Every enqueue and lifecycle transition is mirrored into the `jobs` table
 // via src/ledger.ts so the admin UI never has to read pg-boss internals.
 
-import { randomUUID } from 'node:crypto';
 import { PgBoss } from 'pg-boss';
+import { uuidv7 } from './ids.js';
 import { createLedger, type Ledger } from './ledger.js';
-import { JOB_TYPES, type JobPayloads, type JobType } from './types.js';
+import { JOB_QUEUE_OPTIONS, JOB_TYPES, type JobPayloads, type JobType } from './types.js';
 
 export interface EnqueueOptions {
   priority?: number;
@@ -52,7 +52,13 @@ export function createJobQueue(connectionString: string): JobQueue {
     startPromise ??= (async () => {
       await boss.start();
       for (const type of JOB_TYPES) {
-        await boss.createQueue(type);
+        const options = JOB_QUEUE_OPTIONS[type];
+        // createQueue's INSERT is ON CONFLICT DO NOTHING, so on any install
+        // whose `pgboss.queue` rows already exist it silently keeps whatever
+        // options they were first provisioned with. updateQueue is what makes
+        // JOB_QUEUE_OPTIONS actually authoritative after a version bump.
+        await boss.createQueue(type, options);
+        await boss.updateQueue(type, options);
       }
     })();
     return startPromise;
@@ -68,7 +74,7 @@ export function createJobQueue(connectionString: string): JobQueue {
       // recordQueued commits the row — the worker's transition then hits a
       // missing row. Writing queued-first closes that race deterministically;
       // pg-boss accepts our id via SendOptions.id.
-      const jobId = randomUUID();
+      const jobId = uuidv7();
       await ledger.recordQueued(jobId, type, opts);
 
       let sent: string | null;
@@ -107,10 +113,16 @@ export function createJobQueue(connectionString: string): JobQueue {
         .then(() =>
           boss.work(
             type,
-            { localConcurrency: opts.concurrency ?? 1, perJobResults: true },
+            // includeMetadata: the ledger has to mirror pg-boss's OWN retry
+            // state (retryCount/retryLimit) rather than calling every throw
+            // terminal — see the catch block below.
+            { localConcurrency: opts.concurrency ?? 1, perJobResults: true, includeMetadata: true },
             async (jobs) => {
               const results: { id: string; status: 'completed' | 'failed'; output?: unknown }[] = [];
               for (const job of jobs) {
+                // pg-boss increments retry_count as it fetches, so retryCount
+                // is 0 on the first attempt: attempts is 1-based.
+                const attempts = job.retryCount + 1;
                 // recordActive is INSIDE the try: a missing ledger row (e.g.
                 // a crash between boss.send and recordQueued left a job with
                 // no ledger row) must not throw out of the batch handler —
@@ -119,14 +131,26 @@ export function createJobQueue(connectionString: string): JobQueue {
                 // failures degrade to a failed-status result for that one
                 // job, never a lost batch.
                 try {
-                  await ledger.recordActive(job.id);
+                  await ledger.recordActive(job.id, attempts);
                   await handler(job.data as JobPayloads[typeof type], { jobId: job.id });
                   await ledger.recordCompleted(job.id);
                   results.push({ id: job.id, status: 'completed' });
                 } catch (err) {
                   const message = err instanceof Error ? err.message : String(err);
-                  await ledger.recordFailed(job.id, message).catch((ledgerErr: unknown) => {
-                    console.error(`[@loombre/jobs] ledger recordFailed failed for job ${job.id}:`, ledgerErr);
+                  // Returning 'failed' here is pg-boss's RETRY path, not a
+                  // terminal one — it re-inserts the job in state 'retry'
+                  // whenever retry_count < retry_limit. Writing a terminal
+                  // ledger row on the first throw would therefore publish a
+                  // failure the queue has not actually reached: the setup
+                  // wizard's restore step stops polling on any terminal
+                  // status and would show a permanent failure banner for a
+                  // job that goes on to succeed.
+                  const willRetry = job.retryCount < job.retryLimit;
+                  const recorded = willRetry
+                    ? ledger.recordRetrying(job.id, message, attempts)
+                    : ledger.recordFailed(job.id, message);
+                  await recorded.catch((ledgerErr: unknown) => {
+                    console.error(`[@loombre/jobs] ledger transition failed for job ${job.id}:`, ledgerErr);
                   });
                   results.push({ id: job.id, status: 'failed', output: { message } });
                 }

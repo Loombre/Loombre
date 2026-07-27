@@ -53,7 +53,9 @@ export interface FfmpegRunHandle {
   /** SIGCONT the whole process group (POSIX only, no-op on win32). Safe to
    *  call redundantly. */
   resume(): void;
-  /** Graceful SIGTERM, escalating to a process-group SIGKILL after
+  /** SIGCONT (see the implementation's comment — a throttle-suspended run
+   *  must be resumed first or the graceful term below cannot work), then a
+   *  graceful SIGTERM, escalating to a process-group SIGKILL after
    *  `GRACEFUL_TERM_TIMEOUT_MS` if the process hasn't exited by then
    *  (binding constraint 5: "kill (SIGKILL after graceful term attempt
    *  with short timeout)"). Resolves once the process has actually
@@ -149,6 +151,14 @@ export function spawnFfmpegRun(ffmpegPath: string, args: string[], options: Spaw
       terminated = true;
       killedByUs = true;
       if (child.pid !== undefined) {
+        // SIGCONT FIRST, unconditionally: ffmpeg installs a SIGTERM handler,
+        // and a SIGSTOPped process never runs one — the signal just stays
+        // pending until it is continued, so a term of a throttle-suspended
+        // run (runner.ts's seek-restart and teardown paths both reach here
+        // with the group stopped) would sit out the full graceful window and
+        // die by SIGKILL. Harmless on a process that was never stopped, and
+        // already a documented no-op on win32 (killProcessGroup above).
+        killProcessGroup(child.pid, "SIGCONT");
         killProcessGroup(child.pid, "SIGTERM");
       }
       const timedOutTerm = await Promise.race([

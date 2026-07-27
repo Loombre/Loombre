@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 /**
- * The 28 canonical golden scenarios for src/args/builder.ts (docs/PLAYBACK.md
+ * The 32 canonical golden scenarios for src/args/builder.ts (docs/PLAYBACK.md
  * §6, Phase 3 §11 step 4's 25 + step 7b fix F4's two vaapi burn-in
  * scenarios, 26/27, + the step-7 owner-smoke VT tone-map real-execution
- * fix's hybrid-deinterlace scenario, 28). Inputs are constructed HERE, in
+ * fix's hybrid-deinterlace scenario, 28, + the four scenarios that landed
+ * with interpretation D's generalization to every §8.3 hw backend, 29-32).
+ * Inputs are constructed HERE, in
  * test code — never read
  * from disk — per the step-4 mandate ("inputs constructed in test code,
  * snapshots as .json arrays checked in"). `goldens.spec.ts` (sibling) loads
@@ -26,9 +28,12 @@
  * changes scenario 14 (route (a) gains -hwaccel_output_format
  * videotoolbox_vld) and adds 28 (route (b), the hybrid fallback: VT
  * tone-map + deinterlace drops the whole graph to software with the
- * cpu-zscale chain in the tonemap position, VT still encoding) — 28 files
- * total (golden discipline: each graph change landed with its goldens in
- * the same PR).
+ * cpu-zscale chain in the tonemap position, VT still encoding). Generalizing
+ * interpretation D to every §8.3 hw backend changes 11/12/13 (each gains its
+ * own -hwaccel_output_format) and adds 29-31 (route (a) with a rung
+ * downscale on cuda/qsv/vaapi — the backend's own hw scaler, never software
+ * `scale`) plus 32 (route (b) on a non-VT backend) — 32 files total (golden
+ * discipline: each graph change landed with its goldens in the same PR).
  */
 import type {
   AudioStream,
@@ -296,7 +301,8 @@ export const GOLDEN_SCENARIOS: GoldenScenario[] = [
   },
   {
     id: "11-cuda-tonemap",
-    scenario: "nvenc route, cuda tone-map — rung matches source height, isolates the tonemap filter alone",
+    scenario:
+      "nvenc route, cuda tone-map — pure-hw route (a): -hwaccel_output_format cuda keeps decode on the cuda surface for tonemap_cuda (rung matches source height, isolates the tonemap filter alone)",
     input: input({ media: media(), device: device([H264_DEVICE_ENTRY]), selection: SEL_V0_A1 }),
     planShape: {
       container: "fmp4-hls",
@@ -309,7 +315,8 @@ export const GOLDEN_SCENARIOS: GoldenScenario[] = [
   },
   {
     id: "12-opencl-tonemap",
-    scenario: "qsv route, opencl tone-map (§8.3's preferred half of qsv/vaapi -> opencl(else vulkan))",
+    scenario:
+      "qsv route, opencl tone-map (§8.3's preferred half of qsv/vaapi -> opencl(else vulkan)) — pure-hw route (a): -hwaccel_output_format qsv pins the decode surface",
     input: input({ media: media(), device: device([H264_DEVICE_ENTRY]), selection: SEL_V0_A1 }),
     planShape: {
       container: "fmp4-hls",
@@ -322,7 +329,8 @@ export const GOLDEN_SCENARIOS: GoldenScenario[] = [
   },
   {
     id: "13-vulkan-tonemap",
-    scenario: "vaapi route, vulkan tone-map (§8.3's 'else vulkan' half)",
+    scenario:
+      "vaapi route, vulkan tone-map (§8.3's 'else vulkan' half) — pure-hw route (a): -hwaccel_output_format vaapi pins the decode surface",
     input: input({ media: media(), device: device([H264_DEVICE_ENTRY]), selection: SEL_V0_A1 }),
     planShape: {
       container: "fmp4-hls",
@@ -588,6 +596,76 @@ export const GOLDEN_SCENARIOS: GoldenScenario[] = [
     planShape: {
       container: "fmp4-hls",
       video: { action: "transcode", targetCodec: "h264", encoder: "videotoolbox", toneMap: "videotoolbox" },
+      audio: { action: "copy" },
+      subtitle: { strategy: "none" },
+      rung: RUNG_1080P_H264,
+    },
+    options: { withSeek: false },
+  },
+  {
+    id: "29-cuda-tonemap-hw-downscale",
+    scenario:
+      "nvenc route (a) WITH a rung downscale — the pinned cuda surface forbids the software `scale` filter, so scale_cuda takes §6's scale position ahead of tonemap_cuda (nvenc's analogue of videotoolbox's scale_vt fold)",
+    input: input({
+      media: media({ video: [videoStream({ codec: "hevc", height: 2160, width: 3840, hdr: "hdr10", bitDepth: 10 })] }),
+      device: device([H264_DEVICE_ENTRY]),
+      selection: SEL_V0_A1,
+    }),
+    planShape: {
+      container: "fmp4-hls",
+      video: { action: "transcode", targetCodec: "h264", encoder: "nvenc", toneMap: "cuda" },
+      audio: { action: "copy" },
+      subtitle: { strategy: "none" },
+      rung: RUNG_1080P_H264,
+    },
+    options: { withSeek: false },
+  },
+  {
+    id: "30-opencl-tonemap-hw-downscale",
+    scenario: "qsv route (a) WITH a rung downscale — scale_qsv takes §6's scale position ahead of tonemap_opencl",
+    input: input({
+      media: media({ video: [videoStream({ codec: "hevc", height: 2160, width: 3840, hdr: "hdr10", bitDepth: 10 })] }),
+      device: device([H264_DEVICE_ENTRY]),
+      selection: SEL_V0_A1,
+    }),
+    planShape: {
+      container: "fmp4-hls",
+      video: { action: "transcode", targetCodec: "h264", encoder: "qsv", toneMap: "opencl" },
+      audio: { action: "copy" },
+      subtitle: { strategy: "none" },
+      rung: RUNG_1080P_H264,
+    },
+    options: { withSeek: false },
+  },
+  {
+    id: "31-vulkan-tonemap-hw-downscale",
+    scenario: "vaapi route (a) WITH a rung downscale — scale_vaapi takes §6's scale position ahead of libplacebo",
+    input: input({
+      media: media({ video: [videoStream({ codec: "hevc", height: 2160, width: 3840, hdr: "hdr10", bitDepth: 10 })] }),
+      device: device([H264_DEVICE_ENTRY]),
+      selection: SEL_V0_A1,
+    }),
+    planShape: {
+      container: "fmp4-hls",
+      video: { action: "transcode", targetCodec: "h264", encoder: "vaapi", toneMap: "vulkan" },
+      audio: { action: "copy" },
+      subtitle: { strategy: "none" },
+      rung: RUNG_1080P_H264,
+    },
+    options: { withSeek: false },
+  },
+  {
+    id: "32-cuda-tonemap-hybrid-deinterlace",
+    scenario:
+      "nvenc tone-map hybrid fallback, route (b) — the non-VT counterpart of scenario 28: yadif (a software-only filter) means NO -hwaccel_output_format and NO tonemap_cuda/scale_cuda, so plain -hwaccel cuda auto-downloads frames once and the whole §6 chain runs in software with the cpu-zscale string in the tonemap position, nvenc still encoding",
+    input: input({
+      media: media({ video: [videoStream({ codec: "hevc", interlaced: true, height: 2160, width: 3840, hdr: "hdr10", bitDepth: 10 })] }),
+      device: device([H264_DEVICE_ENTRY]),
+      selection: SEL_V0_A1,
+    }),
+    planShape: {
+      container: "fmp4-hls",
+      video: { action: "transcode", targetCodec: "h264", encoder: "nvenc", toneMap: "cuda" },
       audio: { action: "copy" },
       subtitle: { strategy: "none" },
       rung: RUNG_1080P_H264,

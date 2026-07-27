@@ -33,6 +33,7 @@
 import type { Kysely } from 'kysely';
 import type { DB, WatchState } from '../types.js';
 import type { ViewerContext } from '../context.js';
+import { withTransaction, writeEvent } from '../internal/index.js';
 import { getItemById } from './items.js';
 
 export interface UpsertProgressInput {
@@ -99,7 +100,19 @@ export async function getProgressForItem(
 
 /** Returns `undefined` when the item does not exist OR is not visible to
  *  `ctx` — indistinguishable, matching getItemById's own contract; the
- *  caller (apps/server) turns this into a 404. */
+ *  caller (apps/server) turns this into a 404.
+ *
+ *  Emits `progress.updated` in the SAME transaction as the upsert
+ *  (docs/PLAN.md §4.3's outbox invariant), which is also why the
+ *  read-then-upsert play_count computation below now runs inside that
+ *  transaction rather than against two separate autocommit statements.
+ *  Deliberately UNTHROTTLED, unlike playback-sessions.ts's
+ *  `playback.progress` (at most once per 30s per session): that event
+ *  tracks a live session's liveness, this one is the outbox record of a
+ *  `progress` ROW CHANGE, and packages/contract/event-schemas/
+ *  progress.updated.schema.json says "on each upsert ... including
+ *  heartbeat-driven updates" — a consumer that skipped an upsert would
+ *  observe a position that never existed in the table. */
 export async function upsertProgress(
   db: Kysely<DB>,
   ctx: ViewerContext,
@@ -109,47 +122,71 @@ export async function upsertProgress(
   const item = await getItemById(db, ctx, itemId);
   if (!item) return undefined;
 
-  const existing = await db
-    .selectFrom('progress')
-    .select(['play_count', 'state'])
-    .where('user_id', '=', ctx.userId)
-    .where('item_id', '=', itemId)
-    .executeTakeFirst();
+  return withTransaction(db, async (trx) => {
+    const existing = await trx
+      .selectFrom('progress')
+      .select(['play_count', 'state'])
+      .where('user_id', '=', ctx.userId)
+      .where('item_id', '=', itemId)
+      .executeTakeFirst();
 
-  const incrementPlayCount = input.state === 'played' && existing?.state !== 'played';
-  const nextPlayCount = (existing?.play_count ?? 0) + (incrementPlayCount ? 1 : 0);
+    const incrementPlayCount = input.state === 'played' && existing?.state !== 'played';
+    const nextPlayCount = (existing?.play_count ?? 0) + (incrementPlayCount ? 1 : 0);
 
-  const row = await db
-    .insertInto('progress')
-    .values({
-      user_id: ctx.userId,
-      item_id: itemId,
-      position_ms: input.positionMs,
-      state: input.state,
-      play_count: incrementPlayCount ? 1 : 0,
-      updated_at_ms: input.nowMs,
-      duration_ms: input.durationMs ?? null,
-    })
-    .onConflict((oc) =>
-      oc.columns(['user_id', 'item_id']).doUpdateSet({
+    const row = await trx
+      .insertInto('progress')
+      .values({
+        user_id: ctx.userId,
+        item_id: itemId,
         position_ms: input.positionMs,
         state: input.state,
-        play_count: nextPlayCount,
+        play_count: incrementPlayCount ? 1 : 0,
         updated_at_ms: input.nowMs,
-        // Only overwrite duration_ms when THIS heartbeat actually supplied
-        // one — see UpsertProgressInput.durationMs's doc comment.
-        ...(input.durationMs !== undefined ? { duration_ms: input.durationMs } : {}),
+        duration_ms: input.durationMs ?? null,
       })
-    )
-    .returningAll()
-    .executeTakeFirstOrThrow();
+      .onConflict((oc) =>
+        oc.columns(['user_id', 'item_id']).doUpdateSet({
+          position_ms: input.positionMs,
+          state: input.state,
+          play_count: nextPlayCount,
+          updated_at_ms: input.nowMs,
+          // Only overwrite duration_ms when THIS heartbeat actually supplied
+          // one — see UpsertProgressInput.durationMs's doc comment.
+          ...(input.durationMs !== undefined ? { duration_ms: input.durationMs } : {}),
+        })
+      )
+      .returningAll()
+      .executeTakeFirstOrThrow();
 
-  return {
-    itemId: row.item_id,
-    positionMs: row.position_ms,
-    durationMs: row.duration_ms,
-    state: row.state,
-    playCount: row.play_count,
-    updatedAtMs: row.updated_at_ms,
-  };
+    const result: ProgressWriteRow = {
+      itemId: row.item_id,
+      positionMs: row.position_ms,
+      durationMs: row.duration_ms,
+      state: row.state,
+      playCount: row.play_count,
+      updatedAtMs: row.updated_at_ms,
+    };
+
+    // ITEM_ONLY_TYPES delivery (src/query/events.ts): the payload carries
+    // itemId, so the read side re-resolves the item's CURRENT visibility
+    // per viewer. `userId` is additionally what LPP v1's
+    // apps/worker/src/plugin-delivery/actor-field-map.ts pseudonymizes for
+    // this type. Payload fields are exactly the schema's required set
+    // (additionalProperties: false) — durationMs is not one of them.
+    await writeEvent(trx, {
+      type: 'progress.updated',
+      tsMs: input.nowMs,
+      actorUserId: ctx.userId,
+      payload: {
+        userId: ctx.userId,
+        itemId,
+        positionMs: result.positionMs,
+        state: result.state,
+        playCount: result.playCount,
+        updatedAtMs: result.updatedAtMs,
+      },
+    });
+
+    return result;
+  });
 }

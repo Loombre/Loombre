@@ -40,7 +40,8 @@ import type { VendorBinaries } from "./binaries.js";
 import { buildClientConnArgs, buildDatabaseUrl, buildServerListenArgs } from "./listen.js";
 import { PG_HBA_CONTENTS } from "./hba.js";
 import { generateSecret, resolveSecret } from "./secret/resolve.js";
-import { detectCorruption, classifyStartupFailureLog } from "./corruption.js";
+import { writeOwnerOnlySecretFile } from "./secret/file0600.js";
+import { detectCorruption, classifyStartupFailureLog, formatCorruptDetail } from "./corruption.js";
 import { runBinary, spawnServer } from "./exec.js";
 import { UpgradeStepFailedError, BinaryExecutionError } from "./errors.js";
 import type { ProvisioningController } from "./controller.js";
@@ -194,7 +195,13 @@ export class EmbeddedPostgres implements ProvisioningController {
     if (alreadyInitialized) {
       const report = await detectCorruption({ dataDir: this.dataDir, pinnedMajor: this.pgMajor, binaries: this.binaries });
       if (report) {
-        this.status = { state: "corrupt", pgVersion: null, dataDir: this.dataDir, lastCheckMs: nowMs(), detail: report.reason };
+        this.status = {
+          state: "corrupt",
+          pgVersion: null,
+          dataDir: this.dataDir,
+          lastCheckMs: nowMs(),
+          detail: formatCorruptDetail(report.reason, report.detail),
+        };
         return this.getCurrentProvisioningStatus();
       }
       // Existing, healthy cluster — idempotent re-provision. Secret is
@@ -215,7 +222,11 @@ export class EmbeddedPostgres implements ProvisioningController {
     const pwfileDir = mkdtempSync(join(tmpdir(), "loombre-pg-pwfile-"));
     const pwfilePath = join(pwfileDir, "pwfile");
     try {
-      writeFileSync(pwfilePath, generated.value, { mode: 0o600 });
+      // The pwfile holds the SAME secret the file0600 backend just stored,
+      // so it gets the same owner-only guarantee: `{ mode: 0o600 }` is inert
+      // on Windows, where the file would otherwise inherit the ambient Temp
+      // directory's DACL for the length of the initdb run.
+      writeOwnerOnlySecretFile(pwfilePath, generated.value);
       const result = await runBinary(
         this.binaries.initdb,
         [
@@ -336,7 +347,7 @@ export class EmbeddedPostgres implements ProvisioningController {
         pgVersion: null,
         dataDir: this.dataDir,
         lastCheckMs: nowMs(),
-        detail: report?.detail ?? `startup failed: ${reason}\n${this.childLogTail.slice(-2000)}`,
+        detail: formatCorruptDetail(reason, report?.detail ?? `startup failed\n${this.childLogTail.slice(-2000)}`),
       };
       this.child = null;
       return this.getCurrentProvisioningStatus();
@@ -351,12 +362,13 @@ export class EmbeddedPostgres implements ProvisioningController {
   private async handleUnexpectedExit(): Promise<void> {
     this.child = null;
     const report = await detectCorruption({ dataDir: this.dataDir, pinnedMajor: this.pgMajor, binaries: this.binaries });
+    const reason = report?.reason ?? classifyStartupFailureLog(this.childLogTail);
     this.status = {
       state: "corrupt",
       pgVersion: null,
       dataDir: this.dataDir,
       lastCheckMs: nowMs(),
-      detail: report?.detail ?? `postgres exited unexpectedly\n${this.childLogTail.slice(-2000)}`,
+      detail: formatCorruptDetail(reason, report?.detail ?? `postgres exited unexpectedly\n${this.childLogTail.slice(-2000)}`),
     };
   }
 
@@ -497,7 +509,7 @@ export class EmbeddedPostgres implements ProvisioningController {
         const pwfileDir = mkdtempSync(join(tmpdir(), "loombre-pg-pwfile-"));
         try {
           const pwfilePath = join(pwfileDir, "pwfile");
-          writeFileSync(pwfilePath, secret, { mode: 0o600 });
+          writeOwnerOnlySecretFile(pwfilePath, secret);
           const result = await runBinary(
             opts.toBinaries.initdb,
             ["-D", scratchNewDataDir, "-U", this.username, `--pwfile=${pwfilePath}`, "-E", this.encoding, `--locale=${this.locale}`, "-A", "scram-sha-256"],

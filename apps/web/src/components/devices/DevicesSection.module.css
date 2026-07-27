@@ -1,0 +1,133 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+
+/* Loombre :: apps/web/src/components/devices/DevicesSection.module.css
+ *
+ * Same row/list/header recipe as the Settings IA's other list sections
+ * (components/settings/sections/shared.module.css) — kept as its own copy
+ * rather than an import since this component lives outside
+ * components/settings (see DevicesSection.tsx's header for why).
+ */
+
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.heading {
+  margin: 0 0 var(--space-md);
+  font-size: var(--text-xl);
+  font-weight: var(--weight-semibold);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  margin-bottom: var(--space-xs);
+}
+
+.title {
+  margin: 0;
+  font-size: var(--text-lg);
+  font-weight: var(--weight-semibold);
+}
+
+.countMono {
+  font-family: var(--font-mono);
+  font-size: var(--mono-lg);
+  letter-spacing: var(--track-mono);
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.explainer {
+  margin: 0 0 var(--space-md);
+  font-size: var(--text-xs);
+  color: var(--color-text-subtle);
+  line-height: var(--leading-normal);
+}
+
+.errorBanner {
+  margin: 0 0 var(--space-md);
+  padding: var(--space-sm) var(--space-md);
+  border-radius: var(--radius-md);
+  background: var(--color-accent-tint);
+  color: var(--color-accent);
+  font-size: var(--text-sm);
+}
+
+.skeletonList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  padding: var(--space-sm) var(--space-md);
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--color-border-subtle);
+  background: var(--fill-1);
+  flex-wrap: wrap;
+}
+
+.rowMain {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.rowTitle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rowSub {
+  font-size: var(--text-xs);
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.currentBadge {
+  flex-shrink: 0;
+  padding: 2px var(--space-xs);
+  border-radius: var(--radius-pill);
+  background: var(--color-accent-tint);
+  color: var(--color-accent);
+  font-family: var(--font-mono);
+  font-size: var(--mono-sm);
+  letter-spacing: var(--track-mono);
+  text-transform: uppercase;
+}
+
+.loadMoreRow {
+  display: flex;
+  justify-content: center;
+  margin-top: var(--space-xs);
+}
+
+@media (width <= 767.98px) {
+  .row {
+    min-height: 44px;
+  }
+}

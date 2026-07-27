@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { currentTrack, initialQueueState, peekNextTrack, queueReducer, type QueueTrack } from "./queue.js";
 
 function track(entryId: string, itemId = entryId): QueueTrack {
-  return { entryId, itemId, title: `Track ${entryId}`, subtitle: null, albumId: null, durationMs: 180_000, blurhash: null };
+  return { entryId, itemId, mediaFileId: null, title: `Track ${entryId}`, subtitle: null, albumId: null, durationMs: 180_000, blurhash: null };
 }
 
 describe("queueReducer", () => {
