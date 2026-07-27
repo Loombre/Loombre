@@ -101,6 +101,15 @@ jobs:
             Get-ChildItem "C:\ProgramData\Loombre\logs" -ErrorAction SilentlyContinue | ForEach-Object {
               Write-Host "== $($_.Name) =="; Get-Content $_.FullName -Tail 40
             }
+            Write-Host "=== install.log: every LoombreWeb mention with context ==="
+            Select-String -Path install.log -Pattern "LoombreWeb" -Context 4,4 |
+              Select-Object -Last 30 | ForEach-Object { $_.Context.PreContext; $_.Line; $_.Context.PostContext }
+            Write-Host "=== svc-trace.log (pre-logger breadcrumbs) ==="
+            Get-Content "C:\ProgramData\Loombre\logs\svc-trace.log" -ErrorAction SilentlyContinue
+            Write-Host "=== Application event log: .NET / WER entries (last 15) ==="
+            Get-WinEvent -LogName Application -MaxEvents 200 -ErrorAction SilentlyContinue |
+              Where-Object { $_.ProviderName -match "\.NET|Windows Error|Application Error" } |
+              Select-Object -First 15 | ForEach-Object { Write-Host $_.TimeCreated $_.ProviderName $_.Message }
             Write-Host "=== SCM event log (last 25) ==="
             Get-WinEvent -LogName System -MaxEvents 200 -ErrorAction SilentlyContinue |
               Where-Object { $_.ProviderName -eq "Service Control Manager" } |
