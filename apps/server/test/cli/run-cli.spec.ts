@@ -159,6 +159,23 @@ describe("runCli — admin (dispatch only; full reset-pin behavior is apps/serve
     expect(result.stderr.join("\n")).toContain("bogus");
   });
 
+  it.each(["--help", "-h"])(
+    "`admin reset-pin %s` prints usage and exits 0, and never touches adminDeps (H2-recovery invocability fix)",
+    async (helpArg) => {
+      const result = await runCli({
+        argv: ["admin", "reset-pin", helpArg],
+        env: BASE_ENV,
+        nodePlatform: "linux",
+        doctorDeps: OK_DOCTOR_DEPS,
+        adminDeps: THROWING_ADMIN_DEPS,
+      });
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout[0]).toBe("loombre admin reset-pin <username>");
+      expect(result.stdout.join("\n")).toContain("DATABASE_URL");
+      expect(result.stderr).toEqual([]);
+    },
+  );
+
   it("`admin reset-pin` with no username is a usage error, exit 1, and never touches adminDeps", async () => {
     const result = await runCli({ argv: ["admin", "reset-pin"], env: BASE_ENV, nodePlatform: "linux", doctorDeps: OK_DOCTOR_DEPS, adminDeps: THROWING_ADMIN_DEPS });
     expect(result.exitCode).toBe(1);
