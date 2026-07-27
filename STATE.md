@@ -1,5 +1,35 @@
 # STATE.md — Lumbre Phase 4 (Phases 0–2 complete; Phase 3 automated exit met, owner review items Open)
 
+## Owner-ledger close-out run (kicked off 2026-07-27, authority: owner "Closing the Four Owner-Ledger Items" brief — owner decisions now MADE on all four parked items)
+
+### Mission (verbatim)
+
+Close all four ledger items: (L1) .mts admitted to scanner ingestion with fixtures, (L2) the Linux tarball installs a loombre PATH shim with clean uninstall, (L3) the admin-only event list becomes single-source with the other copies derived or parity-tested, and (L4) pnpm gate splits into gate (fast, inner-loop) and gate:full (adds the web production build + bundle budget check), with CI and merge protection running full. Each lands green; the ledger section in STATE.md is emptied with pointers to the closing commits.
+
+### Originating ledger wording (2026-07-26 exit gate + round-1 CI entry — review-lane ground truth)
+
+- **L1:** "`.mts` admission is zero-cost (identical mpegts family as .m2ts) whenever wanted — currently excluded-but-visible purely for brief-scope discipline."
+- **L2:** "Linux tarball still ships no `loombre` PATH shim (installers/ untouched per standing constraint; docs/ops/cli.md documents the honest invocation)." Promoted by H2: CLI PIN recovery is not invocable as documented on tarball installs without it.
+- **L3:** "No automated parity gate across the three admin-only event-list copies (R-4 — snapshot tests only)."
+- **L4:** "Gate-gap follow-up for the owner ledger: consider adding the web production build (or a node:-scheme import lint for client-reachable graphs) to `pnpm gate` — this class is currently caught only in CI perf jobs."
+
+### Run posture (2026-07-27)
+
+- **Standing rule recorded (auto-memory too): sub-agent floor = sonnet (no haiku); review = opus — this and all future runs.**
+- Precondition gate dispatched on clean main (e96b278; last full 3-OS board green at 8f11000, e96b278 is [skip ci] docs-only) — result recorded below.
+- Isolation: worktree lanes, per-lane DBs (loombre_lane_<x> on compose PG), STATE.md orchestrator-owned; installers/ constraint LIFTED for Lane B only (owner decision in this brief supersedes the 9552333-era hands-off note).
+- Scope: the four items only.
+
+### Lane burn-up
+
+| Lane | Scope | Model | Status |
+|---|---|---|---|
+| A | L1 .mts admission + fixtures + probe-failed skip visibility + docs tables | sonnet | pending recon |
+| B | L2 tarball PATH shim + uninstall safety + smoke re-run + docs | sonnet | pending recon |
+| C | L3 canonical admin-only list + derivation/parity + demonstrated catch + LPP pointer | sonnet | pending recon |
+| D | L4 gate/gate:full split + CI wiring + CLAUDE.md/docs + runtime measurements | sonnet | pending recon |
+| R | opus review vs original ledger wording; L2 safety, L3 catch proof, L4 fast-gate byte-parity | opus | pending lanes |
+
 ## Audit-residue hardening run (kicked off 2026-07-26, authority: owner "Closing the Audit Residue" brief; docs/PLAN.md v1.1 as amended per H4 + docs/PLAYBACK.md §2.6)
 
 ### Mission (verbatim)
