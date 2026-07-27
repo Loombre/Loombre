@@ -82,15 +82,41 @@ public sealed class LoombreHostedService : ServiceBase
         }
         _log = new StreamWriter(_options.LogFilePath, append: true) { AutoFlush = true };
 
-        if (_options.ExtractZipPath is not null && _options.ExtractToDir is not null)
+        try
         {
-            // First boot after install/upgrade extracts the multi-hundred-MB
-            // payload.zip (see PayloadExtractor's header for why the MSI
-            // cannot ship these trees as files). SCM's default start-pending
-            // window (~30s) is too short for that on a slow disk — ask for
-            // more BEFORE starting; a marker-match skip costs one hash pass.
-            RequestAdditionalTime(180_000);
-            PayloadExtractor.ExtractIfNeeded(_options.ExtractZipPath, _options.ExtractToDir, Log);
+            if (_options.ExtractZipPath is not null && _options.ExtractToDir is not null)
+            {
+                // First boot after install/upgrade extracts the multi-hundred-MB
+                // payload.zip (see PayloadExtractor's header for why the MSI
+                // cannot ship these trees as files). SCM's default start-pending
+                // window (~30s) is too short for that on a slow disk — ask for
+                // more BEFORE starting; a marker-match skip costs one hash pass.
+                try
+                {
+                    RequestAdditionalTime(180_000);
+                }
+                catch (InvalidOperationException)
+                {
+                    // .NET 8 validates the pending state strictly and THROWS
+                    // when it judges the service not start-pending — and an
+                    // unhandled OnStart exception kills the host with zero
+                    // log output (diag run 30304921691: both extract-carrying
+                    // services died before their first log line, SCM event
+                    // 7031, while the extract-less web service ran past this
+                    // point). The extension is best-effort; the install-time
+                    // extraction CA means the service path is a marker-match
+                    // skip anyway.
+                    Log("RequestAdditionalTime unavailable in this service state — continuing without the extended start window");
+                }
+                PayloadExtractor.ExtractIfNeeded(_options.ExtractZipPath, _options.ExtractToDir, Log);
+            }
+        }
+        catch (Exception ex)
+        {
+            // NEVER die silently in OnStart again: name the failure in our
+            // own log before SCM sees the start fail.
+            Log($"OnStart FAILED before child spawn: {ex}");
+            throw;
         }
 
         Log($"starting: \"{_options.ExecutablePath}\" {string.Join(' ', _options.Arguments)}");
