@@ -56,6 +56,10 @@ describe("scanner: legacy-format reinstatement + unsupported-format skip visibil
     writeFakeMediaFile(join(libraryDir, "Old Song.wma"), "excluded-wma", 512);
     writeFakeMediaFile(join(libraryDir, "Ancient Track.ape"), "excluded-ape", 512);
     writeFakeMediaFile(join(libraryDir, "Rare Track.wv"), "excluded-wv", 512);
+    // Recognized-media tail (Lane R review): known media, in NEITHER set
+    // before the review fix — used to fall through to plain "ignored"
+    // silently, the exact class the H3 audit finding was about.
+    writeFakeMediaFile(join(libraryDir, "Camcorder Clip.mts"), "excluded-mts", 512);
 
     libraryId = await createLibrary(raw, { name: "Legacy Movies", mediaKind: "movie", paths: [libraryDir] });
 
@@ -101,7 +105,7 @@ describe("scanner: legacy-format reinstatement + unsupported-format skip visibil
     expect(queueCalls.filter((c) => c.type === "probe").length).toBeGreaterThanOrEqual(2);
   });
 
-  it("creates NO catalog item for excluded-extension files (.wma/.ape/.wv)", async () => {
+  it("creates NO catalog item for excluded-extension files (.wma/.ape/.wv/.mts)", async () => {
     const items = await raw.query<{ title: string }>(
       "SELECT title FROM catalog_items WHERE library_id = $1",
       [libraryId]
@@ -110,6 +114,7 @@ describe("scanner: legacy-format reinstatement + unsupported-format skip visibil
     expect(titles).not.toContain("Old Song");
     expect(titles).not.toContain("Ancient Track");
     expect(titles).not.toContain("Rare Track");
+    expect(titles).not.toContain("Camcorder Clip");
     // Only the two genuinely-ingested files created items.
     expect(titles.sort()).toEqual(["Legacy War Movie", "Ordinary Movie"]);
   });
@@ -121,14 +126,17 @@ describe("scanner: legacy-format reinstatement + unsupported-format skip visibil
     );
     expect(result.rows).toHaveLength(1);
     const payload = result.rows[0]!.payload;
-    expect(payload.skippedUnsupportedCount).toBe(3);
-    expect(payload.skippedUnsupportedFiles.sort()).toEqual(["Ancient Track.ape", "Old Song.wma", "Rare Track.wv"].sort());
+    expect(payload.skippedUnsupportedCount).toBe(4);
+    expect(payload.skippedUnsupportedFiles.sort()).toEqual(
+      ["Ancient Track.ape", "Old Song.wma", "Rare Track.wv", "Camcorder Clip.mts"].sort(),
+    );
   });
 
   it("logs each skipped-unsupported file locally (no telemetry — CLAUDE.md invariant 7)", () => {
     const skipLines = consoleLogLines.filter((line) => line.includes("skipped unsupported-format file"));
-    expect(skipLines.length).toBe(3);
+    expect(skipLines.length).toBe(4);
     expect(skipLines.some((line) => line.includes("Old Song.wma"))).toBe(true);
+    expect(skipLines.some((line) => line.includes("Camcorder Clip.mts"))).toBe(true);
   });
 });
 

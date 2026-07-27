@@ -133,14 +133,18 @@ jobs:
         # `pnpm gate` test step — each is self-sufficient and
         # resets/reseeds its own derived DB, so they don't disturb this
         # proof. `pnpm gate`'s db:migrate-check step separately replays the
-        # full migration chain again into a scratch schema. Runs on all 3
-        # OS legs — psql is on PATH on every one of them courtesy of the
+        # full migration chain again into a scratch schema. Runs on every
+        # matrix leg (ubuntu on every push; windows/macos when the matrix
+        # expands via workflow_dispatch or a [full-ci] commit message) —
+        # psql is on PATH on every one of them courtesy of the
         # action-setup-postgres step above (its README: "Adds PostgreSQL
         # client applications to PATH"), so this stays a single
         # cross-platform check rather than three OS-specific ones.
         run: |
           set -euo pipefail
-          table_count="$(psql "$DATABASE_URL" -X -At -c "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public';")"
+          # tr -d '\r': on the windows leg psql writes stdout in text mode,
+          # so "$( )" would capture "0\r" and break [ -ne ] (Lane R review).
+          table_count="$(psql "$DATABASE_URL" -X -At -c "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public';" | tr -d '\r')"
           if [ "$table_count" -ne 0 ]; then
             echo "zero-to-current proof: expected an EMPTY public schema before migrating, found $table_count existing table(s) — this Postgres instance is not fresh." >&2
             exit 1

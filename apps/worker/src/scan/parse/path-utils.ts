@@ -24,14 +24,28 @@
  * transcoding for anything a device can't direct-play — ingestion
  * generosity here is the architecture working as designed, not a gap.
  *
- * `EXCLUDED_MEDIA_EXTENSIONS` below (ape, wv, wma) stays OUT of v1
- * deliberately: genuinely rare formats with thin codec support, not worth
- * the ingestion/maintenance cost. Unlike the old blanket narrowing, an
- * excluded extension is never SILENTLY dropped — apps/worker/src/scan/
- * scanner.ts classifies it distinctly from ordinary "ignored" junk
- * (parse/auxiliary.ts's classifyAuxiliary) and counts + reports it in the
- * scan.completed payload's skippedUnsupportedCount/skippedUnsupportedFiles,
- * so an admin can always see exactly what was left out and why.
+ * `EXCLUDED_MEDIA_EXTENSIONS` below stays OUT of v1 deliberately. It has
+ * two tiers with one treatment: ape/wv/wma (the original v1 policy call —
+ * genuinely rare formats with thin codec support) plus the broader
+ * recognized-media tail (mts, mka, asf, ogv, 3gp, … — added by the Lane R
+ * review of STATE.md H3, which found that anything recognizable as media
+ * but in NEITHER set fell through to ordinary "ignored" junk, silently:
+ * the exact class the H3 finding was about). Unlike the old blanket
+ * narrowing, an excluded extension is never SILENTLY dropped —
+ * apps/worker/src/scan/scanner.ts classifies it distinctly from ordinary
+ * "ignored" junk (parse/auxiliary.ts's classifyAuxiliary) and counts +
+ * reports it in the scan.completed payload's skippedUnsupportedCount/
+ * skippedUnsupportedFiles, so an admin can always see exactly what was
+ * left out and why. Truly unrecognized suffixes (notes, junk, artwork)
+ * still fall to "ignored" — that boundary is what the docs promise.
+ *
+ * `.mts` note for a future widening: it is the same AVCHD MPEG-TS as the
+ * admitted `.m2ts` (identical ffprobe format_name 'mpegts' → 'ts') and
+ * would be admittable at zero cost — kept excluded-but-visible only
+ * because the H3 brief enumerated the reinstated list exactly; owner
+ * call recorded in STATE.md. `.aif` IS admitted: it is the common alias
+ * suffix of `.aiff` (same content; ffprobe reports 'aiff' for both,
+ * verified empirically), the same alias treatment mpg/mpeg get.
  *
  * apps/worker/test/scan/media-extensions.spec.ts pins both directions
  * (every admitted extension resolves to a Container; every excluded
@@ -64,6 +78,7 @@ export const AUDIO_EXTENSIONS = new Set([
   "alac",
   "aac",
   "aiff",
+  "aif",
 ]);
 
 export const MEDIA_EXTENSIONS = new Set<string>([...VIDEO_EXTENSIONS, ...AUDIO_EXTENSIONS]);
@@ -80,7 +95,38 @@ export const MEDIA_EXTENSIONS = new Set<string>([...VIDEO_EXTENSIONS, ...AUDIO_E
  * BEFORE/distinct from classifyAuxiliary's generic "ignored" so these
  * always land in the scan report's visible skip count/list instead.
  */
-export const EXCLUDED_MEDIA_EXTENSIONS = new Set(["ape", "wv", "wma"]);
+export const EXCLUDED_MEDIA_EXTENSIONS = new Set([
+  // original v1 policy exclusions (rare + thin codec support)
+  "ape",
+  "wv",
+  "wma",
+  // recognized-media tail (Lane R review): video
+  "mts",
+  "asf",
+  "ogv",
+  "3gp",
+  "3g2",
+  "divx",
+  "m2v",
+  "rm",
+  "rmvb",
+  "wtv",
+  "f4v",
+  "dv",
+  // recognized-media tail: audio
+  "mka",
+  "m4b",
+  "dsf",
+  "dff",
+  "mpc",
+  "tta",
+  "ra",
+  "shn",
+  "amr",
+  "ac3",
+  "dts",
+  "spx",
+]);
 
 /** Splits a relative path into non-empty segments, ignoring `.`/`..`/empty runs. */
 export function splitSegments(relPath: string): string[] {
