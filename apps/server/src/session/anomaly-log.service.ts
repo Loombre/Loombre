@@ -63,7 +63,15 @@ export class AnomalyLogService {
   readonly filePath: string;
 
   constructor(private readonly settingsService: SettingsService) {
-    this.filePath = process.env["LOOMBRE_AUTH_LOG_FILE"] ?? join(process.cwd(), "logs", "auth-anomaly.log");
+    // LOOMBRE_DATA_DIR before cwd: every installed deployment sets it and
+    // runs from a READ-ONLY install dir (macOS launchd works from
+    // /opt/loombre/current — rehearsal round 4's server died right here
+    // on EACCES mkdir; Windows silently wrote into Program Files). The
+    // bare-cwd fallback remains the dev-checkout behavior only.
+    const dataDir = process.env["LOOMBRE_DATA_DIR"]?.trim();
+    this.filePath =
+      process.env["LOOMBRE_AUTH_LOG_FILE"] ??
+      (dataDir ? join(dataDir, "logs", "auth-anomaly.log") : join(process.cwd(), "logs", "auth-anomaly.log"));
     mkdirSync(dirname(this.filePath), { recursive: true });
   }
 
