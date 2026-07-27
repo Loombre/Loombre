@@ -6,20 +6,28 @@
  * gratuitous coupling for something this small.
  */
 
+/**
+ * The extensions the scanner admits — deliberately narrower than "every
+ * extension a media file could carry". Every member must resolve to the
+ * probe pipeline's CLOSED Container union (docs/PLAYBACK.md §2.1, mapped by
+ * apps/worker/src/probe/extract.ts's resolveContainer): admitting anything
+ * else creates a catalog item and an item.added event for a file whose
+ * probe then fails deterministically forever — visible in the catalog,
+ * permanently unplayable. Excluded for exactly that reason in v1 (their
+ * ffprobe format_name has no §2.1 container): wmv/wma ('asf'), mpg/mpeg/vob
+ * ('mpeg'), flv, aac (bare ADTS), ape, wv, aiff. Widening the set means
+ * widening §2.1 first (a spec change plus new engine matrix cases).
+ * apps/worker/test/scan/media-extensions.spec.ts pins both directions.
+ */
 export const VIDEO_EXTENSIONS = new Set([
   "mkv",
   "mp4",
   "avi",
   "mov",
-  "wmv",
   "m4v",
-  "mpg",
-  "mpeg",
   "ts",
   "m2ts",
   "webm",
-  "flv",
-  "vob",
 ]);
 
 export const AUDIO_EXTENSIONS = new Set([
@@ -30,12 +38,7 @@ export const AUDIO_EXTENSIONS = new Set([
   "oga",
   "opus",
   "wav",
-  "aac",
   "alac",
-  "wma",
-  "ape",
-  "wv",
-  "aiff",
 ]);
 
 export const MEDIA_EXTENSIONS = new Set<string>([...VIDEO_EXTENSIONS, ...AUDIO_EXTENSIONS]);

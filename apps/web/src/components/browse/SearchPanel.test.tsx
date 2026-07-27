@@ -83,6 +83,13 @@ const ALBUM = {
 
 const PERSON = { id: "person-1", name: "Maya Reyes", contentClass: "general" as const, creditCount: 3 };
 
+const MOVIE_PAGE_2 = {
+  itemType: "movie" as const,
+  item: { ...MOVIE.item, id: "movie-2", title: "Second Wave", sortTitle: "Second Wave" },
+};
+
+const PERSON_PAGE_2 = { id: "person-2", name: "Jordan Ives", contentClass: "general" as const, creditCount: 1 };
+
 function installApiGetMock(opts: { people?: unknown[] } = {}): void {
   apiGetMock.mockImplementation((path: string) => {
     if (path === "/search") return Promise.resolve({ items: [MOVIE, SERIES, ALBUM], nextCursor: null });
@@ -192,5 +199,92 @@ describe("SearchPanel", () => {
       handle!.activateFocused();
     });
     expect(pushMock).toHaveBeenCalledWith("/items/movie/movie-1");
+  });
+
+  // unverified[4]: the full /search page never paginated despite both GET
+  // /search and GET /people carrying a real nextCursor — these three cover
+  // the fix (`paginated` prop) without regressing the topbar popover's
+  // deliberately bounded preview.
+
+  it("paginated=false (topbar default): a non-null nextCursor never renders a Load more control", async () => {
+    apiGetMock.mockImplementation((path: string) => {
+      if (path === "/search") return Promise.resolve({ items: [MOVIE], nextCursor: "cursor-2" });
+      if (path === "/people") return Promise.resolve({ items: [PERSON], nextCursor: "people-cursor-2" });
+      return Promise.reject(new Error(`unexpected apiGet(${path})`));
+    });
+    view = renderIntoBody(<SearchPanel query="relay" serverUrl="https://loombre.local" accessToken="tok" />);
+    await flush();
+
+    expect(view.container.textContent).toContain("Low Orbit");
+    const buttons = Array.from(view.container.querySelectorAll("button"));
+    expect(buttons.some((b) => b.textContent?.startsWith("Load more"))).toBe(false);
+  });
+
+  it("paginated: a non-null /search nextCursor renders 'Load more results'; clicking it appends page 2 and re-queries with that cursor", async () => {
+    let searchCalls = 0;
+    apiGetMock.mockImplementation((path: string, options?: { params?: { query?: { cursor?: string } } }) => {
+      if (path === "/search") {
+        searchCalls += 1;
+        if (searchCalls === 1) {
+          expect(options?.params?.query?.cursor).toBeUndefined();
+          return Promise.resolve({ items: [MOVIE], nextCursor: "cursor-2" });
+        }
+        expect(options?.params?.query?.cursor).toBe("cursor-2");
+        return Promise.resolve({ items: [MOVIE_PAGE_2], nextCursor: null });
+      }
+      if (path === "/people") return Promise.resolve({ items: [PERSON], nextCursor: null });
+      return Promise.reject(new Error(`unexpected apiGet(${path})`));
+    });
+
+    view = renderIntoBody(<SearchPanel query="relay" serverUrl="https://loombre.local" accessToken="tok" paginated />);
+    await flush();
+
+    expect(view.container.textContent).not.toContain("Second Wave");
+    const button = Array.from(view.container.querySelectorAll("button")).find((b) => b.textContent === "Load more results") as
+      | HTMLButtonElement
+      | undefined;
+    expect(button).toBeTruthy();
+
+    act(() => {
+      button!.click();
+    });
+    await flush();
+
+    expect(view.container.textContent).toContain("Second Wave");
+    expect(searchCalls).toBe(2);
+  });
+
+  it("paginated: a non-null /people nextCursor renders 'Load more people'; clicking it appends page 2 and re-queries with that cursor", async () => {
+    let peopleCalls = 0;
+    apiGetMock.mockImplementation((path: string, options?: { params?: { query?: { cursor?: string } } }) => {
+      if (path === "/search") return Promise.resolve({ items: [MOVIE], nextCursor: null });
+      if (path === "/people") {
+        peopleCalls += 1;
+        if (peopleCalls === 1) {
+          expect(options?.params?.query?.cursor).toBeUndefined();
+          return Promise.resolve({ items: [PERSON], nextCursor: "people-cursor-2" });
+        }
+        expect(options?.params?.query?.cursor).toBe("people-cursor-2");
+        return Promise.resolve({ items: [PERSON_PAGE_2], nextCursor: null });
+      }
+      return Promise.reject(new Error(`unexpected apiGet(${path})`));
+    });
+
+    view = renderIntoBody(<SearchPanel query="relay" serverUrl="https://loombre.local" accessToken="tok" paginated />);
+    await flush();
+
+    expect(view.container.textContent).not.toContain("Jordan Ives");
+    const button = Array.from(view.container.querySelectorAll("button")).find((b) => b.textContent === "Load more people") as
+      | HTMLButtonElement
+      | undefined;
+    expect(button).toBeTruthy();
+
+    act(() => {
+      button!.click();
+    });
+    await flush();
+
+    expect(view.container.textContent).toContain("Jordan Ives");
+    expect(peopleCalls).toBe(2);
   });
 });

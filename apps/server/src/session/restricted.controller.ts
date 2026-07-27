@@ -70,6 +70,7 @@ import { tooManyRequests } from "../common/rate-limit.exception.js";
 import { RateLimitExceptionFilter } from "../common/rate-limit-exception.filter.js";
 import { SettingsService } from "../settings/settings.service.js";
 import { ViewerContextProvider } from "../common/viewer-context.provider.js";
+import { PIN_LENGTH, isValidNewPin } from "./pin-format.js";
 
 interface UnlockRequestBody {
   pin?: unknown;
@@ -77,10 +78,6 @@ interface UnlockRequestBody {
 
 interface UnlockResponse {
   unlockedUntilMs: number;
-}
-
-function isNonEmptyString(value: unknown): value is string {
-  return typeof value === "string" && value.length > 0;
 }
 
 @Controller("restricted")
@@ -111,11 +108,14 @@ export class RestrictedController {
       throw tooManyRequests("Too many unlock attempts. Try again later.", instance, limit.retryAfterMs);
     }
 
-    if (!isNonEmptyString(body.pin)) {
-      // A missing/empty pin is a request-validation failure (UnlockRequest
-      // requires `pin`, minLength 1), distinct from a WRONG pin (401,
-      // below) — 422 per contract's documented UnprocessableEntity.
-      throw unprocessableEntity("pin is required.", instance);
+    if (!isValidNewPin(body.pin)) {
+      // A missing/empty/mis-shaped pin is a request-validation failure
+      // (UnlockRequest.pin is `^[0-9]{4}$` — see pin-format.ts), distinct
+      // from a WELL-FORMED BUT WRONG pin (401, below) — 422 per the
+      // contract's documented UnprocessableEntity. The rate-limit budget is
+      // already spent above either way, so this shortcut costs an attacker
+      // nothing and tells them nothing they can't read in the spec.
+      throw unprocessableEntity(`pin must be exactly ${PIN_LENGTH} digits (0-9).`, instance);
     }
 
     const db = this.dbProvider.db;

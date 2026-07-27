@@ -206,6 +206,7 @@ export type {
   UpdateDeviceForLoginInput,
   InsertRefreshTokenInput,
   CreateFirstAdminInput,
+  CreateUserAdminAndEmitInput,
 } from './query/identity.js';
 export {
   getUserByUsername,
@@ -229,6 +230,11 @@ export {
   // countUsers/createFirstAdminIfEmpty doc comments.
   countUsers,
   createFirstAdminIfEmpty,
+  // Interactive user creation (POST /v1/users) — createUserAdmin's
+  // outbox-transactional sibling. apps/server must never reach for the
+  // non-emitting `createUserAdmin` below; see src/query/identity.js's
+  // createUserAdminAndEmit doc comment for why the split exists.
+  createUserAdminAndEmit,
 } from './query/identity.js';
 
 // Playback sessions (P2.4/P2.13/P2.14/P2.17, Wave-1 lane B) — see

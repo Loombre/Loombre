@@ -61,8 +61,16 @@ export interface Ledger {
     type: JobType,
     opts: { priority?: number; subjectItemId?: string | null }
   ): Promise<void>;
-  recordActive(id: string): Promise<void>;
+  /** `attempts` is the 1-based attempt number the queue driver is starting
+   *  (pg-boss's `retryCount + 1`); omitted by callers that don't dispatch
+   *  through a retrying driver, which leaves the column untouched. */
+  recordActive(id: string, attempts?: number): Promise<void>;
   recordCompleted(id: string): Promise<void>;
+  /** NON-terminal failure: the driver still owns the job and will re-dispatch
+   *  it. The row goes back to 'queued' (the `jobs.job_status` enum has no
+   *  'retrying' member) carrying the error, and `finished_at_ms` stays unset
+   *  so nothing downstream reads it as a completed job. */
+  recordRetrying(id: string, errorMessage: string, attempts: number): Promise<void>;
   recordFailed(id: string, errorMessage: string): Promise<void>;
   destroy(): Promise<void>;
 }
@@ -87,11 +95,12 @@ export function createLedger(connectionString: string): Ledger {
       });
     },
 
-    async recordActive(id) {
+    async recordActive(id, attempts) {
       const now = Date.now();
       await withTransaction(db, async (trx) => {
         const row = await transitionJobLedgerRow(trx, id, {
           status: 'active',
+          ...(attempts !== undefined ? { attempts } : {}),
           startedAtMs: now,
           updatedAtMs: now,
         });
@@ -108,6 +117,19 @@ export function createLedger(connectionString: string): Ledger {
           updatedAtMs: now,
         });
         await emitJobUpdated(trx, { jobId: id, jobType: row.type, status: 'completed', errorMessage: null, updatedAtMs: now });
+      });
+    },
+
+    async recordRetrying(id, errorMessage, attempts) {
+      const now = Date.now();
+      await withTransaction(db, async (trx) => {
+        const row = await transitionJobLedgerRow(trx, id, {
+          status: 'queued',
+          attempts,
+          lastError: errorMessage,
+          updatedAtMs: now,
+        });
+        await emitJobUpdated(trx, { jobId: id, jobType: row.type, status: 'queued', errorMessage, updatedAtMs: now });
       });
     },
 

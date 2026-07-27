@@ -6,6 +6,7 @@ import {
   LPP_EMPTY_CONFIG_SCHEMA,
   LppConfigSchema,
   checkConfigSchemaBounds,
+  findInconsistentDefaults,
   findSecretBelowRoot,
   findSecretOnNonStringFields,
   listTopLevelSecretFieldNames,
@@ -186,6 +187,56 @@ describe("M-2 fix wave: checkConfigSchemaBounds", () => {
     expect(checkConfigSchemaBounds(null)).toBeNull();
     expect(checkConfigSchemaBounds(42)).toBeNull();
   });
+
+  // The walker's descent must be SHAPE-driven, not `type`-driven: zod
+  // recurses on the `properties`/`items` KEYS regardless of whether the
+  // node's `type` literal matched, so gating descent on a recognized
+  // `type` would leave the whole subtree below any missing/typo'd `type`
+  // unbounded — the exact DoS pre-check this function exists to provide.
+  describe("descends regardless of a node's own `type`", () => {
+    function deepChain(depth: number): Record<string, unknown> {
+      let node: Record<string, unknown> = { type: "string" };
+      for (let i = 0; i < depth; i++) {
+        node = { type: "object", properties: { nested: node }, additionalProperties: false };
+      }
+      return node;
+    }
+
+    it("flags a deep chain whose ROOT `type` is typo'd", () => {
+      const violation = checkConfigSchemaBounds({ ...deepChain(1000), type: "objectt" });
+      expect(violation?.reason).toBe("max-depth-exceeded");
+      expect(violation?.path).not.toBe("");
+    });
+
+    it("flags a deep chain whose ROOT `type` is absent", () => {
+      const rootWithoutType = deepChain(1000);
+      delete rootWithoutType.type;
+      const violation = checkConfigSchemaBounds(rootWithoutType);
+      expect(violation?.reason).toBe("max-depth-exceeded");
+      expect(violation?.path).not.toBe("");
+    });
+
+    it("flags a deep chain whose `type` is typo'd at an INTERMEDIATE level", () => {
+      // Typo three levels BELOW the root, i.e. well inside the depth bound —
+      // everything under it must still be walked.
+      const violation = checkConfigSchemaBounds({
+        type: "object",
+        properties: { a: { type: "object", properties: { b: { ...deepChain(1000), type: "objectt" } }, additionalProperties: false } },
+        additionalProperties: false,
+      });
+      expect(violation?.reason).toBe("max-depth-exceeded");
+      expect(violation?.path).not.toBe("");
+    });
+
+    it("flags a deep chain reached through an `items` key on a node with no `type`", () => {
+      let node: Record<string, unknown> = { type: "string" };
+      for (let i = 0; i < 1000; i++) {
+        node = { items: node };
+      }
+      const violation = checkConfigSchemaBounds(node);
+      expect(violation?.reason).toBe("max-depth-exceeded");
+    });
+  });
 });
 
 describe("listTopLevelSecretFieldNames", () => {
@@ -204,5 +255,81 @@ describe("listTopLevelSecretFieldNames", () => {
 
   it("returns [] for a schema with no secret fields", () => {
     expect(listTopLevelSecretFieldNames(LPP_EMPTY_CONFIG_SCHEMA)).toEqual([]);
+  });
+});
+
+describe("findInconsistentDefaults", () => {
+  it("returns [] when every default satisfies its own field's constraints", () => {
+    const schema: LppConfig = {
+      type: "object",
+      properties: {
+        mode: { type: "string", enum: ["off", "on"], default: "on" },
+        label: { type: "string", minLength: 1, maxLength: 4, default: "abc" },
+        pinned: { type: "string", const: "x", default: "x" },
+        retries: { type: "integer", minimum: 0, maximum: 10, default: 3 },
+        ratio: { type: "number", minimum: 0, maximum: 1, default: 0.5 },
+        enabled: { type: "boolean", default: true },
+      },
+      additionalProperties: false,
+    };
+    expect(findInconsistentDefaults(schema)).toEqual([]);
+  });
+
+  it("returns [] for the canonical empty configSchema and for fields with no default", () => {
+    expect(findInconsistentDefaults(LPP_EMPTY_CONFIG_SCHEMA)).toEqual([]);
+    expect(findInconsistentDefaults({ type: "object", properties: { a: { type: "string", enum: ["x"] } }, additionalProperties: false })).toEqual([]);
+  });
+
+  it("flags a string default outside its own enum", () => {
+    expect(findInconsistentDefaults({ type: "object", properties: { mode: { type: "string", enum: ["a", "b"], default: "c" } }, additionalProperties: false })).toEqual(["mode"]);
+  });
+
+  it("flags a string default disagreeing with const, or outside minLength/maxLength", () => {
+    const schema: LppConfig = {
+      type: "object",
+      properties: {
+        pinned: { type: "string", const: "x", default: "y" },
+        short: { type: "string", minLength: 3, default: "ab" },
+        long: { type: "string", maxLength: 2, default: "abc" },
+      },
+      additionalProperties: false,
+    };
+    expect(findInconsistentDefaults(schema).sort()).toEqual(["long", "pinned", "short"]);
+  });
+
+  it("flags a numeric default outside minimum/maximum, and a non-integer default on an integer field", () => {
+    const schema: LppConfig = {
+      type: "object",
+      properties: {
+        count: { type: "number", minimum: 10, maximum: 20, default: 999 },
+        floor: { type: "number", minimum: 10, default: 1 },
+        steps: { type: "integer", default: 1.5 },
+      },
+      additionalProperties: false,
+    };
+    expect(findInconsistentDefaults(schema).sort()).toEqual(["count", "floor", "steps"]);
+  });
+
+  it("reports nested paths inside objects and array items", () => {
+    const schema: LppConfig = {
+      type: "object",
+      properties: {
+        group: {
+          type: "object",
+          properties: { mode: { type: "string", enum: ["a"], default: "z" } },
+          additionalProperties: false,
+        },
+        rungs: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: { bitrate: { type: "integer", minimum: 100, default: 1 } },
+            additionalProperties: false,
+          },
+        },
+      },
+      additionalProperties: false,
+    };
+    expect(findInconsistentDefaults(schema).sort()).toEqual(["group.mode", "rungs[].bitrate"]);
   });
 });

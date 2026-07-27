@@ -31,6 +31,23 @@ describe("filterPaletteScreens", () => {
       expect(screen.href.startsWith("/admin")).toBe(true);
     }
   });
+
+  it("matches the Watchlist screen (W2 L3 landed /watchlist)", () => {
+    const matches = filterPaletteScreens("watchlist", false);
+    expect(matches).toEqual([{ key: "watchlist", label: "Watchlist", href: "/watchlist" }]);
+  });
+
+  it("hides the Restricted screen for a viewer with no zone entitlement, even as admin", () => {
+    expect(filterPaletteScreens("restricted", false)).toEqual([]);
+    expect(filterPaletteScreens("restricted", true)).toEqual([]);
+    // Same fail-closed default when the entitlement flag isn't passed at all.
+    expect(filterPaletteScreens("restricted", false, false)).toEqual([]);
+  });
+
+  it("matches the Restricted screen (W2 L8 landed /restricted) once the caller confirms zone entitlement", () => {
+    const matches = filterPaletteScreens("restricted", false, true);
+    expect(matches).toEqual([{ key: "restricted", label: "Restricted", href: "/restricted", restrictedOnly: true }]);
+  });
 });
 
 describe("filterPaletteActions", () => {

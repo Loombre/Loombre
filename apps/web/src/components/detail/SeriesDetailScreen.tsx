@@ -29,6 +29,8 @@ import { apiGet } from "../../lib/api-client.js";
 import { pickHeroImage } from "../../lib/pick-hero-image.js";
 import { findProgressForItem } from "../../lib/progress-lookup.js";
 import { pickResumeTarget, type EpisodeProgressEntry } from "../../lib/series-resume.js";
+import { useDetailFetch } from "./useDetailFetch.js";
+import { DetailNotFound, DetailLoadError } from "./DetailFetchStatus.js";
 import { SceneBanner } from "./SceneBanner.js";
 import { MobileSceneCard } from "./MobileSceneCard.js";
 import { SeasonPillTabs } from "./SeasonPillTabs.js";
@@ -64,7 +66,12 @@ export function SeriesDetailScreen({
   serverUrl: string;
   accessToken: string;
 }): React.JSX.Element {
-  const [series, setSeries] = useState<Series | null>(null);
+  const {
+    entity: series,
+    notFound,
+    error,
+    retry,
+  } = useDetailFetch<Series>(() => apiGet("/series/{id}", { params: { path: { id } } }), id);
   const [seasons, setSeasons] = useState<Season[] | null>(null);
   const [episodesBySeason, setEpisodesBySeason] = useState<Map<string, Episode[]> | null>(null);
   const [progressByEpisode, setProgressByEpisode] = useState<Map<string, Progress | null>>(new Map());
@@ -72,43 +79,42 @@ export function SeriesDetailScreen({
 
   useEffect(() => {
     let cancelled = false;
-    apiGet("/series/{id}", { params: { path: { id } } }).then((s) => {
-      if (!cancelled) setSeries(s);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [id]);
+    apiGet("/series/{id}/seasons", { params: { path: { id }, query: { limit: 100 } } })
+      .then(async (page) => {
+        if (cancelled) return;
+        const sorted = page.items.slice().sort((a, b) => a.seasonNumber - b.seasonNumber);
+        setSeasons(sorted);
 
-  useEffect(() => {
-    let cancelled = false;
-    apiGet("/series/{id}/seasons", { params: { path: { id }, query: { limit: 100 } } }).then(async (page) => {
-      if (cancelled) return;
-      const sorted = page.items.slice().sort((a, b) => a.seasonNumber - b.seasonNumber);
-      setSeasons(sorted);
+        const eager = sorted.slice(0, MAX_SEASONS_EAGER);
+        const perSeason = await Promise.all(
+          eager.map((season) =>
+            apiGet("/seasons/{id}/episodes", { params: { path: { id: season.id }, query: { limit: 200 } } })
+              .then((ep) => ep.items)
+              .catch(() => []),
+          ),
+        );
+        if (cancelled) return;
+        const map = new Map<string, Episode[]>();
+        eager.forEach((season, i) => map.set(season.id, perSeason[i]!.slice().sort((a, b) => a.episodeNumber - b.episodeNumber)));
+        setEpisodesBySeason(map);
 
-      const eager = sorted.slice(0, MAX_SEASONS_EAGER);
-      const perSeason = await Promise.all(
-        eager.map((season) =>
-          apiGet("/seasons/{id}/episodes", { params: { path: { id: season.id }, query: { limit: 200 } } })
-            .then((ep) => ep.items)
-            .catch(() => []),
-        ),
-      );
-      if (cancelled) return;
-      const map = new Map<string, Episode[]>();
-      eager.forEach((season, i) => map.set(season.id, perSeason[i]!.slice().sort((a, b) => a.episodeNumber - b.episodeNumber)));
-      setEpisodesBySeason(map);
-
-      const allEpisodes = perSeason.flat().slice(0, MAX_EPISODES_FOR_PROGRESS);
-      const progressEntries = await Promise.all(
-        allEpisodes.map((ep) => findProgressForItem(ep.id).catch(() => null)),
-      );
-      if (cancelled) return;
-      const progressMap = new Map<string, Progress | null>();
-      allEpisodes.forEach((ep, i) => progressMap.set(ep.id, progressEntries[i]!));
-      setProgressByEpisode(progressMap);
-    });
+        const allEpisodes = perSeason.flat().slice(0, MAX_EPISODES_FOR_PROGRESS);
+        const progressEntries = await Promise.all(
+          allEpisodes.map((ep) => findProgressForItem(ep.id).catch(() => null)),
+        );
+        if (cancelled) return;
+        const progressMap = new Map<string, Progress | null>();
+        allEpisodes.forEach((ep, i) => progressMap.set(ep.id, progressEntries[i]!));
+        setProgressByEpisode(progressMap);
+      })
+      // Same graceful degrade as the per-season episode fetches above:
+      // without this, a failed outer /series/{id}/seasons request left
+      // `seasons` (and therefore the `!series || !seasons` gate below)
+      // null forever — an infinite skeleton no retry on the primary
+      // fetch above could ever clear.
+      .catch(() => {
+        if (!cancelled) setSeasons([]);
+      });
     return () => {
       cancelled = true;
     };
@@ -146,6 +152,9 @@ export function SeriesDetailScreen({
       setSelectedSeasonId(seasons[0]!.id);
     }
   }, [seasons, resumeTarget, selectedSeasonId]);
+
+  if (notFound) return <DetailNotFound label="Series" />;
+  if (error) return <DetailLoadError message={error} onRetry={retry} />;
 
   if (!series || !seasons) {
     return (

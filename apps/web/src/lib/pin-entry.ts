@@ -11,12 +11,23 @@
 
 export const PIN_LENGTH = 4;
 
+/** Digits-only, NO length clamp. Split out of sanitizePinInput so the one
+ *  field that must accept a non-conforming value can share the digit filter
+ *  without also inheriting the clamp: settings' "Current PIN" proves an
+ *  ALREADY-STORED PIN, and an install predating the PIN_LENGTH rule may
+ *  hold a longer one. Clamping there would leave those users unable to
+ *  rotate to a conforming PIN or even opt out — i.e. no recovery at all.
+ *  Every OTHER surface wants sanitizePinInput below. */
+export function stripPinDigits(raw: string): string {
+  return raw.replace(/[^0-9]/g, "");
+}
+
 /** Strips non-digits and clamps to PIN_LENGTH — the sanitizer both the
  *  desktop text field's onChange and the phone keypad's digit buttons
  *  route every update through, so they can never disagree about what a
  *  "valid" buffer looks like. */
 export function sanitizePinInput(raw: string): string {
-  return raw.replace(/[^0-9]/g, "").slice(0, PIN_LENGTH);
+  return stripPinDigits(raw).slice(0, PIN_LENGTH);
 }
 
 /** Appends one digit to `current`, ignored once the buffer is already full

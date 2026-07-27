@@ -320,7 +320,11 @@ export class AdminController {
   async searchItemMatchCandidates(@Param("id") id: string, @Req() req: AuthenticatedRequest) {
     await requireAdmin(this.dbProvider.db, req);
     requireUuidParam(id, "Item not found.", req.originalUrl);
-    const item = await getEnrichableCatalogItemForAdmin(this.dbProvider.db, id);
+    // THIS ADMIN'S OWN ViewerContext — plan §6.4 default-denies uncleared
+    // admins too, so an unclearable item 404s byte-identically to a
+    // nonexistent one (getEnrichableCatalogItemForAdmin's doc comment).
+    const ctx = await resolveViewer(this.viewerContextProvider, req);
+    const item = await getEnrichableCatalogItemForAdmin(this.dbProvider.db, ctx, id);
     if (!item) {
       throw notFound("Item not found (or not an enrichable type — movie/series/artist/album only).", req.originalUrl);
     }
@@ -338,7 +342,10 @@ export class AdminController {
     await requireAdmin(this.dbProvider.db, req);
     requireUuidParam(id, "Item not found.", req.originalUrl);
     const instance = req.originalUrl;
-    const item = await getEnrichableCatalogItemForAdmin(this.dbProvider.db, id);
+    // Same guarded lookup / same 404 posture as searchItemMatchCandidates
+    // above — the admin's own ViewerContext, never a synthetic one.
+    const ctx = await resolveViewer(this.viewerContextProvider, req);
+    const item = await getEnrichableCatalogItemForAdmin(this.dbProvider.db, ctx, id);
     if (!item) {
       throw notFound("Item not found (or not an enrichable type — movie/series/artist/album only).", instance);
     }

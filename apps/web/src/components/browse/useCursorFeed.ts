@@ -25,6 +25,7 @@ export interface UseCursorFeedResult<T> {
   loading: boolean;
   loadingMore: boolean;
   error: string | null;
+  loadMoreError: string | null;
   loadMore: () => void;
 }
 
@@ -38,6 +39,13 @@ export function useCursorFeed<T>(
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Deliberately separate from `error`: `error` means the feed has nothing
+  // to show (initial load never landed); `loadMoreError` means a page-append
+  // failed with items already on screen. Conflating them used to make a
+  // mid-scroll pagination hiccup blow away the whole already-rendered grid
+  // (both /browse and /watchlist rendered ANY non-null `error` as a full
+  // replacement) — see this file's callers for how each is used.
+  const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
 
   const fetchPageRef = useRef(fetchPage);
   fetchPageRef.current = fetchPage;
@@ -51,6 +59,7 @@ export function useCursorFeed<T>(
     setHasMore(true);
     setLoading(true);
     setError(null);
+    setLoadMoreError(null);
     inFlight.current = true;
 
     fetchPageRef
@@ -79,6 +88,12 @@ export function useCursorFeed<T>(
     if (inFlight.current || !hasMore || loading) return;
     inFlight.current = true;
     setLoadingMore(true);
+    // Cleared up front so this same function doubles as the retry action —
+    // a caller with an auto-fire trigger (VirtualPosterGrid's onLoadMore
+    // effect) is responsible for not calling `loadMore` again on its own
+    // while `loadMoreError` is set (see that component), otherwise clearing
+    // it here would let an auto-retry storm re-arm itself every failure.
+    setLoadMoreError(null);
     fetchPageRef
       .current(cursor)
       .then((page) => {
@@ -87,7 +102,7 @@ export function useCursorFeed<T>(
         setHasMore(page.nextCursor !== null);
       })
       .catch((err: unknown) => {
-        setError(err instanceof Error ? err.message : "Failed to load more.");
+        setLoadMoreError(err instanceof Error ? err.message : "Failed to load more.");
       })
       .finally(() => {
         inFlight.current = false;
@@ -95,5 +110,5 @@ export function useCursorFeed<T>(
       });
   }, [cursor, hasMore, loading]);
 
-  return { items, hasMore, loading, loadingMore, error, loadMore };
+  return { items, hasMore, loading, loadingMore, error, loadMoreError, loadMore };
 }

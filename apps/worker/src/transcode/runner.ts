@@ -295,7 +295,11 @@ export async function runTranscodeSession(deps: RunSessionDeps, sessionId: strin
 
     // Seek-restart (binding constraint 5) takes priority over throttle —
     // a viewer explicitly seeking should never be blocked by an
-    // in-progress throttle reconciliation.
+    // in-progress throttle reconciliation. That holds physically too:
+    // terminate() SIGCONTs before its SIGTERM (process.ts), so restarting a
+    // run whose process is currently throttle-SUSPENDED costs no extra kill
+    // latency — a stopped ffmpeg would otherwise sit on the pending SIGTERM
+    // for the whole graceful window before being SIGKILLed.
     if (row.seek_target_ms !== null) {
       const consumed = await consumeSeekTarget(db, sessionId, now());
       if (consumed) {

@@ -1958,9 +1958,9 @@ export interface components {
         };
         RestrictedSettingsUpdate: {
             optIn: boolean;
-            /** @description New PIN to set (required when enabling opt-in or changing PIN). */
+            /** @description New PIN to set (required when enabling opt-in or changing PIN). Exactly 4 digits: the unlock prompt is a fixed 4-digit buffer, so a PIN of any other length could never be entered again and would lock the user out of restricted content permanently. */
             pin?: string;
-            /** @description Required to change an existing PIN or to opt out. */
+            /** @description Required to change an existing PIN or to opt out. Proves an ALREADY-STORED PIN and is therefore DELIBERATELY not length- or pattern-constrained: an install predating the 4-digit rule above may hold a PIN of some other length, and this field is that user's only recovery path (prove the old PIN, set a conforming new one, or opt out). It is only ever compared against a stored hash, never stored, so the looser shape widens nothing. */
             currentPin?: string;
         };
         RestrictedSettings: {
@@ -2514,6 +2514,7 @@ export interface components {
             updatedAtMs: number;
         };
         UnlockRequest: {
+            /** @description Exactly 4 digits, the same shape RestrictedSettingsUpdate.pin accepts. A value of any other length is a 422 (request shape), NOT the 401 a well-formed but incorrect PIN gets. */
             pin: string;
         };
         UnlockResponse: {

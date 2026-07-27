@@ -31,9 +31,33 @@ type MaybeParameters<Op> = Op extends { parameters: infer Params }
   ? Params
   : Record<string, never>;
 
-type JsonContent<T> = T extends { content: { "application/json": infer C } }
-  ? C
-  : never;
+/** Response content types `request()` decodes as text (its `response.text()`
+ *  fallback). Every other non-JSON content type is binary. */
+type TextualContentType = `text/${string}` | "application/vnd.apple.mpegurl";
+
+declare const undecodableBody: unique symbol;
+
+/**
+ * Stand-in for a 2xx body whose only declared content types are binary
+ * (`image/*`, `application/octet-stream`). `request()` decodes non-JSON
+ * bodies with `response.text()`, which mangles bytes, so those operations
+ * must be fetched directly instead. The brand makes reaching for one a
+ * compile error at the call site rather than a silently-assignable `never`.
+ */
+export interface UndecodableResponseBody {
+  readonly [undecodableBody]: "binary response body — fetch this operation directly";
+}
+
+/** Decoded body for one response object: the JSON schema when the response
+ *  declares `application/json`, the declared schema for a textual content
+ *  type, and the binary marker when neither is present. */
+type ResponseContent<T> = T extends { content: { "application/json": infer J } }
+  ? J
+  : T extends { content: infer C }
+    ? [Extract<keyof C, TextualContentType>] extends [never]
+      ? UndecodableResponseBody
+      : C[Extract<keyof C, TextualContentType>]
+    : never;
 
 /** JSON request body type for an operation, or `never` if it takes none. */
 export type RequestBodyFor<Op> = Op extends {
@@ -56,10 +80,12 @@ type IsSuccessStatus<S> = S extends string
       : false
     : false;
 
-/** Union of JSON response bodies across every 2xx response for an operation. */
+/** Union of decoded response bodies across every 2xx response for an operation. */
 export type SuccessResponseFor<Op> = Op extends { responses: infer R }
   ? {
-      [S in keyof R]: IsSuccessStatus<S> extends true ? JsonContent<R[S]> : never;
+      [S in keyof R]: IsSuccessStatus<S> extends true
+        ? ResponseContent<R[S]>
+        : never;
     }[keyof R]
   : never;
 

@@ -2,8 +2,10 @@
 // Loombre :: packages/db/test/admin-unmatched-items.spec.ts
 //
 // Live-DB tests for src/query/admin.ts's listUnmatchedLibraryItemsForViewer
-// (Phosphor retheme Wave 2, Lane L2 — Fix Match, GET /admin/libraries/{id}/
-// unmatched). Seed data never populates provider_ids (grepped seed.mjs —
+// and getEnrichableCatalogItemForAdmin (Phosphor retheme Wave 2, Lane L2 —
+// Fix Match, GET /admin/libraries/{id}/unmatched + the POST
+// /admin/items/{id}/match-search|apply-match 404 gate). Seed data never
+// populates provider_ids (grepped seed.mjs —
 // confirmed), so every seeded movie/series/artist/album starts "unmatched"
 // by this function's derived definition; these tests insert ONE provider_ids
 // row for a control fixture to prove it then drops out of the list.
@@ -19,7 +21,10 @@ import type { Kysely } from 'kysely';
 import { createDb } from '../src/db.js';
 import type { DB } from '../src/types.js';
 import type { ViewerContext } from '../src/context.js';
-import { listUnmatchedLibraryItemsForViewer } from '../src/query/admin.js';
+import {
+  getEnrichableCatalogItemForAdmin,
+  listUnmatchedLibraryItemsForViewer,
+} from '../src/query/admin.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PKG_ROOT = path.resolve(__dirname, '..');
@@ -170,5 +175,36 @@ describe('listUnmatchedLibraryItemsForViewer (Phosphor retheme Wave 2, Lane L2)'
     for (const row of page.rows) {
       expect(['movie', 'series', 'artist', 'album']).toContain(row.itemType);
     }
+  });
+});
+
+describe('getEnrichableCatalogItemForAdmin (Fix Match trigger 404 gate)', () => {
+  it('returns the row for a general enrichable item, with mediaKind from the OWNING library', async () => {
+    const row = await getEnrichableCatalogItemForAdmin(db, clearedCtx, harborLightsItemId);
+    expect(row).toBeDefined();
+    expect(row!.itemType).toBe('movie');
+    expect(row!.libraryId).toBe(moviesLibraryId);
+    expect(row!.mediaKind).toBe('movie');
+    expect(row!.title).toBe('Harbor Lights');
+  });
+
+  it('a restricted item: visible to a cleared ctx, undefined to an uncleared one — SAME admin user both times', async () => {
+    expect(await getEnrichableCatalogItemForAdmin(db, clearedCtx, restrictedMovieItemId)).toBeDefined();
+    expect(await getEnrichableCatalogItemForAdmin(db, unclearedCtx, restrictedMovieItemId)).toBeUndefined();
+  });
+
+  it('returns undefined for a non-enrichable item type (season/episode/track)', async () => {
+    const seasonId = (
+      await rawClient.query<{ id: string }>('SELECT id FROM catalog_items WHERE parent_id = $1 LIMIT 1', [
+        coastlineSignalsItemId,
+      ])
+    ).rows[0]!.id;
+    expect(await getEnrichableCatalogItemForAdmin(db, clearedCtx, seasonId)).toBeUndefined();
+  });
+
+  it('returns undefined for a nonexistent id', async () => {
+    expect(
+      await getEnrichableCatalogItemForAdmin(db, clearedCtx, '00000000-0000-0000-0000-000000000000')
+    ).toBeUndefined();
   });
 });

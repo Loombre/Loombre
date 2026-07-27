@@ -18,7 +18,7 @@ export { generateSecret, resolveSecret } from "./secret/resolve.js";
 export { createFile0600Backend } from "./secret/file0600.js";
 
 export type { ControlDataProbeResult } from "./corruption.js";
-export { classifyControlDataOutput, classifyStartupFailureLog, detectCorruption } from "./corruption.js";
+export { classifyControlDataOutput, classifyStartupFailureLog, detectCorruption, formatCorruptDetail } from "./corruption.js";
 
 export type { ProvisioningController } from "./controller.js";
 

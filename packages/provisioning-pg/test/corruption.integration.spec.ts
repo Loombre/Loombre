@@ -90,6 +90,15 @@ describeReal("detectCorruption() — real damaged control file", () => {
     expect(report.dataDir).toBe(dataDir);
     expect(typeof report.detectedAtMs).toBe("number");
     expect(report.detail).toBeDefined();
+
+    // Re-provisioning an already-initialized-but-damaged cluster must carry
+    // the SAME typed reason out through ProvisioningStatus. `detail` is the
+    // only free-text field the FROZEN status contract has, so the reason
+    // survives as its leading token — and the supplementary pg_controldata
+    // text must NOT be dropped to make room for it.
+    const status = await instance.provision();
+    expect(status.state).toBe("corrupt");
+    expect(status.detail).toBe(`incomplete-initdb: ${report.detail}`);
   }, 30_000 * TIME_SCALE);
 
   it("a BIT-FLIPPED (CRC-mismatched but full-size) global/pg_control -> 'checksum-failure' (real captured pg_controldata behavior: exits 0 with a WARNING, not a nonzero exit)", async () => {
@@ -185,6 +194,13 @@ describeReal("detectCorruption() — real damaged control file", () => {
 
     const status = await instance.start();
     expect(status.state).toBe("corrupt");
-    expect(status.detail).toBeDefined();
+
+    // Not merely "some detail": the typed reason must be recoverable from
+    // it. pg_controldata's own output is present here, and BEFORE the
+    // reason-led format it displaced the classification entirely — the
+    // status said nothing about WHY the cluster was declared corrupt.
+    const leadingToken = status.detail?.split(":")[0];
+    expect(CORRUPTION_REASONS, status.detail).toContain(leadingToken);
+    expect(status.detail, status.detail).toMatch(/^incomplete-initdb: \S/);
   }, 30_000 * TIME_SCALE);
 });

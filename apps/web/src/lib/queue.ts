@@ -12,6 +12,12 @@ export interface QueueTrack {
    *  twice), so React keys and reorder/remove operations are unambiguous. */
   entryId: string;
   itemId: string;
+  /** The specific media_files row to play, when the user picked a VERSION
+   *  of this track rather than the track itself (components/detail/
+   *  VersionRow.tsx). Null = the item's primary media_files row, which is
+   *  PlanRequest's own documented default (packages/contract/openapi.yaml)
+   *  — every queue built from an album/artist listing is null here. */
+  mediaFileId: string | null;
   title: string;
   subtitle: string | null;
   albumId: string | null;

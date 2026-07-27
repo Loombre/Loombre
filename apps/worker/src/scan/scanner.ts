@@ -147,7 +147,10 @@ async function enqueueArtworkJobs(deps: ScanDeps, itemId: string, dirAbsPath: st
   const artwork = await findLocalArtwork(dirAbsPath);
   for (const art of artwork) {
     await deps.queue.enqueue("image", {
-      entityType: "item",
+      // 'catalog_item' is the canonical ImageEntityType (packages/db/src/
+      // query/images.ts) the image consumer resolves against — an
+      // unrecognized value is a silent green no-op, not a failure.
+      entityType: "catalog_item",
       entityId: itemId,
       kind: art.kind,
       sourcePath: art.absPath,
@@ -202,8 +205,8 @@ interface NewFileResolution {
 /** Media-kind-specific parse + find-or-create dispatch for the "genuinely
  * new file" branch (docs/PLAN.md §8.1 step 3). Returns null when the file
  * cannot be parsed/placed at all (unparseable filename, or a music file
- * with neither usable tags nor a parseable fallback) — the caller skips
- * the file rather than guessing. */
+ * whose tags and filename TOGETHER yield no artist/title) — the caller
+ * skips the file rather than guessing. */
 async function resolveNewFile(
   trx: DbOrTx,
   mediaKind: "movie" | "tv" | "music",
@@ -263,14 +266,17 @@ async function resolveNewFile(
     };
   }
 
-  // music: tag-first (P1.4) — try tags, fall back to filename parsing only
-  // when tags are missing/unreadable.
+  // music: tag-first (P1.4) — precedence is PER FIELD (docs/PLAN.md §8.3),
+  // not per source: every field a tag leaves null falls back to the
+  // filename parse. Partially-tagged files (a compilation rip carrying only
+  // an album, say) are the common case, and parseMusicPath is pure
+  // synchronous string work, so it is computed unconditionally.
   const tags = await tagReader(absPath).catch(() => null);
-  const fallback = tags ? null : parseMusicPath(relPath);
+  const fallback = parseMusicPath(relPath);
   if (!tags && !fallback) return null;
 
   const artistName = tags?.artist ?? fallback?.artist ?? null;
-  if (!artistName) return null; // no identity to hang this track on — skip
+  if (!artistName) return null; // neither source yields an identity — skip
 
   const title = tags?.title ?? fallback?.title ?? null;
   if (!title) return null;

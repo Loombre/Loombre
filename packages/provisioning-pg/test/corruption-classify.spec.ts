@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { describe, expect, it } from "vitest";
-import { classifyControlDataOutput, classifyStartupFailureLog } from "../src/corruption.js";
+import { classifyControlDataOutput, classifyStartupFailureLog, formatCorruptDetail } from "../src/corruption.js";
 import { CORRUPTION_REASONS } from "@loombre/provisioning";
 
 // Every non-fs-derived case below is copy-pasted from REAL pg_controldata
@@ -92,5 +92,32 @@ describe("classifyStartupFailureLog", () => {
 
   it("no FATAL/PANIC at all -> unknown", () => {
     expect(classifyStartupFailureLog("LOG: database system is ready to accept connections")).toBe("unknown");
+  });
+});
+
+// ProvisioningStatus's `detail` is one free-text field and the v1 contract is
+// frozen, so the typed reason has exactly one way to survive the collapse:
+// as a stable leading token. Every 'corrupt' status this package produces
+// goes through this formatter so a consumer can recover `reason` uniformly.
+describe("formatCorruptDetail", () => {
+  it("leads with the typed reason and keeps the supplementary text", () => {
+    expect(formatCorruptDetail("checksum-failure", "WARNING: Calculated CRC checksum does not match")).toBe(
+      "checksum-failure: WARNING: Calculated CRC checksum does not match",
+    );
+  });
+
+  it("is the bare reason when there is no supplementary text (undefined, empty, or whitespace-only)", () => {
+    expect(formatCorruptDetail("missing-data-dir")).toBe("missing-data-dir");
+    expect(formatCorruptDetail("missing-data-dir", "")).toBe("missing-data-dir");
+    expect(formatCorruptDetail("missing-data-dir", "  \n ")).toBe("missing-data-dir");
+  });
+
+  it("every reason in the frozen enum yields a detail whose leading token is that reason", () => {
+    for (const reason of CORRUPTION_REASONS) {
+      for (const body of [undefined, "some diagnostic text"]) {
+        const detail = formatCorruptDetail(reason, body);
+        expect(CORRUPTION_REASONS.find((r) => detail === r || detail.startsWith(`${r}: `))).toBe(reason);
+      }
+    }
   });
 });
