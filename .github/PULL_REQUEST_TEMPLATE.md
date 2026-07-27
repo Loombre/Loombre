@@ -4,7 +4,7 @@
 
 ## Checklist
 
-- [ ] `pnpm gate` passes locally (this now includes a `docs-build` step — see `docs/developer-guide/getting-started.md`)
+- [ ] `pnpm gate:full` passes locally (CI's actual bar — `pnpm gate` alone is the faster inner-loop check and includes a `docs-build` step; see `docs/developer-guide/getting-started.md`)
 - [ ] Contract changes are additive-only (oasdiff clean)
 - [ ] New decision rules in `packages/playback-engine` land with matrix cases in this PR (`matrix/burnup.json` updated too)
 - [ ] Schema changes follow expand → migrate → contract pattern

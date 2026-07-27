@@ -27,13 +27,27 @@ look like yet, that's a sign to figure that out first.
 pnpm gate
 ```
 
-This runs the same ordered sequence CI runs, stopping at the first
-failure: `codegen` → `sdk-drift` → `oasdiff` → `depcruise` →
-`runtime-imports` → `license-check` → `dep-audit` → `lint` → `typecheck` →
-`test` → `db:migrate-check` → `grep-gates` → `docs-build`. See
-`scripts/gate.mjs`'s own header comment for what each step checks and why
-it's positioned where it is. **A PR that doesn't pass `pnpm gate` locally
-won't pass it in CI either** — there's no separate, looser local path.
+This runs the ordered sequence stopping at the first failure: `codegen` →
+`sdk-drift` → `oasdiff` → `depcruise` → `runtime-imports` →
+`license-check` → `dep-audit` → `lint` → `typecheck` → `test` →
+`db:migrate-check` → `grep-gates` → `docs-build`. See `scripts/gate.mjs`'s
+own header comment for what each step checks and why it's positioned
+where it is.
+
+```bash
+pnpm gate:full
+```
+
+`pnpm gate` is the fast inner-loop default — **it is a looser local path
+than CI now runs**, deliberately: a 14th step, `web-build-budget`
+(builds `apps/web` for production and checks its bundle size against
+docs/PLAN.md §9.3), is expensive enough that folding it into the fast
+gate would slow down every inner-loop run. `pnpm gate:full` runs it —
+`pnpm gate`'s 13 steps plus that 14th. **CI runs `pnpm gate:full`, so
+that's the real bar a PR is checked against** — run it before pushing or
+opening a PR. It's the only local path that catches a production-build-
+only failure class (e.g. a barrel import pulling a `node:`-scheme module
+into the client graph), which plain `pnpm gate`/`pnpm test` cannot see.
 
 New to the codebase? The Developer Guide's
 [clean clone to green gate](docs/developer-guide/getting-started.md)

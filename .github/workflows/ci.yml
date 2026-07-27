@@ -191,7 +191,19 @@ jobs:
         # entire gate run to discover it buried in that step's log.
         run: node scripts/dep-audit.mjs
 
-      - name: pnpm gate
+      - name: pnpm gate:full
+        # L4: CI runs the FULL gate (13 steps + web-build-budget), not the
+        # fast inner-loop default — bundle size is deterministic, not
+        # hardware-sensitive like the perf-NUMBER jobs below, so there's no
+        # reason to run it on fewer legs, and runner minutes are unmetered
+        # (public repo). This duplicates the standalone perf-web-budget
+        # job's check on the ubuntu leg specifically (~1 extra minute here,
+        # same assertion) — that job stays because it's the artifact
+        # publisher (perf/web-budget-result.json) and a to-be-required
+        # branch-protection context (see the owner checklist in the L4
+        # freeze report); the owner may choose to retire the standalone job
+        # once gate:full's own coverage is trusted, but it isn't retired by
+        # this change.
         env:
           LOOMBRE_REQUIRE_FFMPEG: "1"
           # 3-core virtualized runners miss the integration suites'
@@ -200,7 +212,7 @@ jobs:
           # slowest observed by far (first paced segment >60s vs ~2s on
           # real hardware) — it gets 10x.
           LOOMBRE_TEST_TIME_SCALE: ${{ runner.os == 'macOS' && '10' || '3' }}
-        run: pnpm gate
+        run: pnpm gate:full
 
       # scripts/ is not a pnpm workspace, so turbo-run tests never reach
       # these suites (fetch-ffmpeg, fetch-embedded-pg, dep-audit, release
@@ -258,7 +270,10 @@ jobs:
   # failing the workflow; push-to-main only (not PRs) per the billed-
   # minutes economy above — ubuntu only, ~one extra gate run per batched
   # push. When Node 26 goes LTS and the pins move to it, point this job at
-  # the next Current line (27) per the standing N2 policy.
+  # the next Current line (27) per the standing N2 policy. L4: runs
+  # `pnpm gate:full` (not just `pnpm gate`) so this evidence lane also
+  # catches Node-26 web-production-build breakage early — non-blocking, so
+  # widening it to gate:full costs nothing at the merge bar.
   # ─────────────────────────────────────────────────────────────────────────
   gate-node-next:
     name: gate (ubuntu, node-current 26, non-blocking)
@@ -319,20 +334,27 @@ jobs:
         shell: bash
         run: node scripts/gen-media-fixtures.mjs
 
-      - name: pnpm gate
+      - name: pnpm gate:full
         env:
           LOOMBRE_REQUIRE_FFMPEG: "1"
           LOOMBRE_TEST_TIME_SCALE: "3"
-        run: pnpm gate
+        run: pnpm gate:full
 
   # ─────────────────────────────────────────────────────────────────────────
   # Perf jobs (STATE.md P2.6, docs/PLAN.md §9, D15): ENFORCING from Phase 2.
-  # These are separate required jobs (not folded into `pnpm gate`, which is
-  # a CLAUDE.md-documented step list owned by a different concurrent work
-  # stream) but are just as blocking — a red perf job fails the PR the same
-  # as a red gate job. ubuntu-only: perf numbers are hardware/OS-sensitive
-  # enough that a 3-OS matrix here would mostly measure runner noise, not
-  # real regressions, at 3x the cost.
+  # These are separate required jobs but are just as blocking — a red perf
+  # job fails the PR the same as a red gate job. ubuntu-only: perf NUMBERS
+  # are hardware/OS-sensitive enough that a 3-OS matrix here would mostly
+  # measure runner noise, not real regressions, at 3x the cost — that
+  # reasoning does NOT extend to perf-web-budget below: bundle SIZE is
+  # deterministic (not hardware-sensitive), so it's ALSO checked in
+  # `pnpm gate:full` (L4) and runs on every gate matrix leg above, not just
+  # ubuntu. perf-web-budget stays as its own job regardless — it's the
+  # artifact publisher (perf/web-budget-result.json) and a required
+  # branch-protection context, both independent of gate:full's coverage.
+  # perf-t0 and perf-lighthouse remain genuinely perf-NUMBER jobs (RSS,
+  # p95 latency, Lighthouse score) and stay ubuntu-only for the reason
+  # above.
   # ─────────────────────────────────────────────────────────────────────────
 
   perf-t0:
