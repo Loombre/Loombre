@@ -99,12 +99,12 @@
              NOT start them at install time. The bundled node/ payload is
              still build-msi.mjs's PLACEHOLDER (no real node.exe), so an
              install-time start with Wait="yes" would FAIL the whole MSI
-             on every machine today. `sc start LoombreServer` still
-             exercises the real first-start path (payload extraction,
-             then a loudly-logged spawn failure in
-             [APPDATA_LOGS]server.log). Flip both to Start="auto" +
-             ServiceControl Start="install" in the SAME change that makes
-             the node runtime real. -->
+             on every machine today. Payload extraction happens at
+             INSTALL time (Package.wxs ca.ExtractPayload); `sc start
+             LoombreServer` exercises the self-heal re-check plus a
+             loudly-logged spawn failure in [APPDATA_LOGS]server.log.
+             Flip both to Start="auto" + ServiceControl Start="install"
+             in the SAME change that makes the node runtime real. -->
 
         <!-- ==================== LoombreServer ==================== -->
         <ServiceInstall
