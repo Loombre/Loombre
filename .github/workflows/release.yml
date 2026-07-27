@@ -322,7 +322,11 @@ jobs:
           # its port. This is the real product promise of the .pkg.
           booted=0
           for _ in $(seq 1 45); do
-            if curl -sf -o /dev/null "http://127.0.0.1:3001/"; then booted=1; break; fi
+            # /healthz, NOT "/": the root path is the NotFound controller's
+            # 404 and curl -f treats that as failure — round 5's smoke
+            # failed a PERFECTLY HEALTHY server ("Nest application
+            # successfully started" in the same log) for 90 straight polls.
+            if curl -sf -o /dev/null "http://127.0.0.1:3001/healthz"; then booted=1; break; fi
             sleep 2
           done
           if [ "$booted" != "1" ]; then
