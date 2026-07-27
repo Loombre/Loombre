@@ -1,5 +1,5 @@
 [Unit]
-Description=Loombre background worker (scan/probe/transcode/metadata/import jobs)
+Description=Loombre web client (Next standalone server, bin/loombre-web)
 Documentation=https://github.com/Loombre/Loombre
 After=network.target network-online.target loombre-server.service
 Wants=network-online.target
@@ -10,17 +10,26 @@ User=__LOOMBRE_USER__
 Group=__LOOMBRE_USER__
 EnvironmentFile=__CONFIG_DIR__/loombre.env
 WorkingDirectory=__DATA_DIR__
-ExecStart=__PREFIX__/bin/loombre-worker
+ExecStart=__PREFIX__/bin/loombre-web
 Restart=on-failure
 RestartSec=5
 TimeoutStopSec=30
 
 # Hardening — mirrors loombre-server.service.template; see that file for
-# rationale. ReadWritePaths covers the same data dir (scan/transcode
-# output, blurhash cache, hwcaps snapshots all live under it).
+# the full rationale. ONE deliberate difference: ReadWritePaths also
+# includes the web app's Next runtime-cache directory. The standalone
+# server.js chdir()s into its own app dir (verified in the built
+# .next/standalone/apps/web/server.js: `process.chdir(__dirname)`,
+# `distDir: "./.next"`) and Next writes its runtime cache (image-optimizer
+# output etc.) under <distDir>/cache — i.e. __PREFIX__/web/apps/web/.next/cache,
+# inside the otherwise read-only app payload. Under ProtectSystem=strict
+# alone those writes would EACCES. Scoped to exactly that cache dir —
+# NOT the whole web/ tree. install.sh pre-creates it owned by the service
+# user (ReadWritePaths only lifts the read-only bind mount; plain DAC
+# permissions still apply, and the payload is root-owned).
 NoNewPrivileges=true
 ProtectSystem=strict
-ReadWritePaths=__DATA_DIR__
+ReadWritePaths=__DATA_DIR__ __PREFIX__/web/apps/web/.next/cache
 PrivateTmp=true
 ProtectHome=true
 ProtectKernelTunables=true

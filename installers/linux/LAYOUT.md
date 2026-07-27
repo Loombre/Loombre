@@ -11,10 +11,16 @@ loombre-<version>-linux-<arch>/
 ├── uninstall.sh
 ├── systemd/
 │   ├── loombre-server.service.template
-│   └── loombre-worker.service.template
+│   ├── loombre-worker.service.template
+│   └── loombre-web.service.template
 ├── bin/
-│   ├── loombre-server            # wrapper: execs the bundled node against lib/server/dist/main.js
+│   ├── loombre-server            # wrapper: execs the bundled node against lib/server/dist/main.js;
+│   │                               # when DATABASE_URL is unset it also wires the embedded-PG env
+│   │                               # (LOOMBRE_EMBEDDED_PG_VENDOR_DIR -> pg/, version derived from the
+│   │                               # staged <platform>/<version> dir — mirrors the macOS shim)
 │   ├── loombre-worker            # wrapper: execs the bundled node against lib/worker/dist/index.js
+│   ├── loombre-web               # wrapper: execs the bundled node against web/apps/web/server.js
+│   │                               # (Next standalone; PORT from LOOMBRE_WEB_PORT, default 3000)
 │   └── loombre                   # wrapper: execs the bundled node against lib/server/bin/loombre.mjs (the `loombre` CLI —
 │                                   # install.sh symlinks /usr/local/bin/loombre -> this file, see below)
 ├── runtime/
@@ -27,9 +33,17 @@ loombre-<version>-linux-<arch>/
 ├── lib/
 │   ├── server/                   # `pnpm --filter @loombre/server deploy --prod` output: dist/, package.json, node_modules/
 │   └── worker/                   # same, for @loombre/worker
-├── web/                          # `pnpm --filter @loombre/web deploy --prod` output: .next/, public/, package.json, node_modules/
-├── pg/                            # embedded PostgreSQL payload (lane B, scripts/fetch-embedded-pg.mjs) if present at
-│                                   # build time, else a README.md placeholder — see "Embedded vs external PostgreSQL" below
+├── web/                          # apps/web's Next STANDALONE output (monorepo shape: apps/web/server.js +
+│   │                               # traced-minimal node_modules/), plus the .next/static and public/ overlays —
+│   │                               # ~60 MB and actually runnable via bin/loombre-web (the pre-audit pnpm-deploy
+│   │                               # tree was 599 MB with no way to start it). See assembleWebStandalone.
+│   └── apps/web/server.js
+├── pg/                            # embedded PostgreSQL payload, VENDOR-SHAPED: pg/<platform>/<version>/{bin,lib,share,...}
+│   │                               # — exactly one platform+version pair (the manifest's defaultVersion), the shape
+│   │                               # resolveVendorBinaries + bin/loombre-server's derivation expect. include/ headers
+│   │                               # excluded. A missing payload FAILS the build (embedded is the DATABASE_URL-unset
+│   │                               # default path) — see "Embedded vs external PostgreSQL" below.
+│   └── linux-<arch>/<version>/
 └── packages/
     └── release-manifest/
         └── dist/                  # apps/server's documented relative-import workaround — see below
@@ -43,8 +57,8 @@ loombre-<version>-linux-<arch>/
 | `runtime/node/` | `installers/node-manifest.json` — official nodejs.org release, checksum-verified before extraction |
 | `ffmpeg/` | `scripts/fetch-ffmpeg.mjs` + `installers/ffmpeg-manifest.json` (shared deliverable, also used by lanes I3/I4) |
 | `lib/server/`, `lib/worker/` | `pnpm --filter <app> deploy <dir> --prod --legacy`, then packaging-time-only fixes — see below |
-| `web/` | `pnpm --filter @loombre/web deploy <dir> --prod --legacy` |
-| `pg/` | `scripts/fetch-embedded-pg.mjs` (lane B) if present at build time, else a placeholder README |
+| `web/` | `apps/web/.next/standalone` (Next `output: "standalone"`) + `.next/static` and `public/` overlays + a linux-`<arch>` sharp swap — `assembleWebStandalone` in `build-tarball.mjs` |
+| `pg/` | `scripts/fetch-embedded-pg.mjs` at the manifest `defaultVersion`, restaged vendor-shaped (`pg/<platform>/<version>/`); REQUIRED — the build fails without it |
 | `packages/release-manifest/dist/` | a copy of the live repo's own already-built `packages/release-manifest/dist/` — see below |
 
 ## Three packaging-time-only fixes, all discovered by the first real container smoke run
@@ -160,28 +174,44 @@ bundled binaries; `PATH` also includes `ffmpeg/` as a fallback.
 
 ## Embedded vs external PostgreSQL
 
-`install.sh`'s default posture — and this lane's own smoke test — uses
-**external PostgreSQL** (`DATABASE_URL` env var; P4.2's "external-PG env
-var path", first-class and equally tested). The `pg/` directory exists
-for lane B's embedded-PostgreSQL payload (child process on a localhost
-socket, data under the app-data dir); this build script calls
-`scripts/fetch-embedded-pg.mjs` automatically when present and copies its
-`vendor/embedded-pg/linux-<arch>/` output into `pg/`. If that script
-hasn't produced a payload (not yet landed, or no output for this
-platform/arch), `pg/` instead contains a short README explaining that and
-pointing back at lane B — the tarball is fully installable and runnable
-either way, since external-PG needs nothing under `pg/` at all.
+**Embedded is the out-of-the-box default** (installer completeness audit):
+with `DATABASE_URL` unset, `bin/loombre-server` exports
+`LOOMBRE_EMBEDDED_PG_VENDOR_DIR=$PREFIX/pg` and derives
+`LOOMBRE_EMBEDDED_PG_VERSION` from the single `pg/<platform>/<version>`
+pair staged by the build (same wiring as the macOS shim,
+`installers/macos/pkg/bin/loombre-server`); apps/server's bootstrap then
+provisions the cluster under the data dir, **auto-migrates at every
+boot** (`@loombre/db/migrate` ships inside the deploy), and supervises
+it. External PostgreSQL (`DATABASE_URL` set — P4.2's "external-PG env var
+path", first-class and equally tested) always wins when configured.
 
-## `bin/loombre-server` / `bin/loombre-worker` / `bin/loombre`
+Because embedded is the default path, the payload is REQUIRED:
+`assemblePg` invokes `scripts/fetch-embedded-pg.mjs` with the manifest's
+`defaultVersion` explicitly and HARD-FAILS the build if the vendored
+binaries are absent — the old placeholder-README fallback (and the flat
+`pg/<version>` shape, and the ship-every-vendored-version bloat) is gone;
+see `assemblePg`'s header comment for the audit evidence.
 
-Small generated bash wrapper scripts. All three resolve their own
+## `bin/loombre-server` / `bin/loombre-worker` / `bin/loombre-web` / `bin/loombre`
+
+Small generated bash wrapper scripts. All four resolve their own
 location (`$APP_ROOT`, independent of the caller's cwd or how the tarball
 was extracted), set `LOOMBRE_FFMPEG`/`LOOMBRE_FFPROBE`/`PATH` for the
 bundled ffmpeg, and `exec` the bundled `runtime/node/bin/node` against
 `lib/server/dist/main.js` / `lib/worker/dist/index.js` /
-`lib/server/bin/loombre.mjs` respectively. No system Node required at any
-point (docs/PLAN.md §11: "Single Node runtime bundled per platform (no
-user-installed Node)").
+`web/apps/web/server.js` / `lib/server/bin/loombre.mjs` respectively. No
+system Node required at any point (docs/PLAN.md §11: "Single Node runtime
+bundled per platform (no user-installed Node)").
+
+`bin/loombre-server` additionally wires embedded PostgreSQL when
+`DATABASE_URL` is unset (see "Embedded vs external PostgreSQL" above) and
+always exports `LOOMBRE_WEB_URL` (default `http://localhost:3000` — where
+`bin/loombre-web` serves). `bin/loombre-web` unconditionally overrides
+`PORT` from `LOOMBRE_WEB_PORT` (default 3000; the shared env file's
+`PORT` belongs to the server) and `HOSTNAME` to `0.0.0.0` (bash pre-sets
+`HOSTNAME` to the machine name in every shell — a `:-` default would
+silently bind to that), and defaults `LOOMBRE_SERVER_ORIGIN` to
+`http://localhost:3001` for apps/web's CSP tightening.
 
 `bin/loombre` (the `loombre` CLI — L2, the H2-recovery invocability fix)
 is the one of the three meant to be reached through a SYMLINK once
@@ -205,7 +235,10 @@ knobs, places a `/usr/local/bin/loombre` symlink to `$PREFIX/bin/loombre`
 (replacing a stale symlink from a prior install/upgrade outright; warning
 and continuing — never failing the install — if that path is unwritable
 or already occupied by a foreign, non-symlink file), and (unless
-`--no-systemd`) installs+enables the two systemd units. `uninstall.sh`
+`--no-systemd`) installs+enables the three systemd units (server, worker,
+web — the web unit's `ReadWritePaths` also covers the Next runtime-cache
+dir install.sh pre-creates under `web/apps/web/.next/cache`, the one
+writable spot in the otherwise read-only payload). `uninstall.sh`
 reverses this — a clean uninstall leaves NO FILES OUTSIDE THE DATA DIR
 (app payload, config dir/env file, system user, systemd units, AND the
 `/usr/local/bin/loombre` shim are all removed; only the data dir

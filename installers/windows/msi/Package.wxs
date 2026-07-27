@@ -73,7 +73,7 @@
 
     <MediaTemplate EmbedCab="yes" />
 
-    <!-- ProgramData\Loombre\{data,logs,pgdata} must exist even on a bare
+    <!-- ProgramData\Loombre\{data,logs} must exist even on a bare
          install before any service has run once (LoombreServiceHost writes
          its log file lazily but the ServiceInstall log-path argument's
          PARENT directory must already exist; embedded-PG provisioning, once lane B lands,
@@ -100,9 +100,12 @@
       <Component Id="cmp.AppDataLogsFolder" Directory="APPDATA_LOGS" Guid="06F6DD6F-2FCB-4A9F-8B15-231E9CC804A6">
         <CreateFolder />
       </Component>
-      <Component Id="cmp.AppDataPgdataFolder" Directory="APPDATA_PGDATA" Guid="654D4DEC-F8D7-4D5B-B7E2-EC4A2FC7BBB9">
-        <CreateFolder />
-      </Component>
+      <!-- cmp.AppDataPgdataFolder (Guid 654D4DEC-F8D7-4D5B-B7E2-EC4A2FC7BBB9)
+           REMOVED here, never shipped in a public release: the real
+           embedded-PG cluster lives at ProgramData\Loombre\postgres\data,
+           created at runtime by apps/server's provisioning bootstrap —
+           see Directories.wxs (installer completeness audit). The GUID is
+           recorded so it is never reused for a different component. -->
     </ComponentGroup>
 
     <!-- The extracted-payload trees (server/worker/web/node/pg — see

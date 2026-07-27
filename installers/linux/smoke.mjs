@@ -5,33 +5,49 @@
 // The REAL check for the Linux tarball + systemd distribution channel
 // (P4.1). Inside a fresh ubuntu:24.04 container: extracts the built
 // tarball, runs install.sh --no-systemd, boots server+worker with the
-// BUNDLED node against the loombre_i1 database (external-PG path — P4.2;
-// embedded PG is lane B's), asserts /healthz 200 and a real login
-// round-trip via the seeded admin, then asserts a clean (non-purge)
-// uninstall leaves NO FILES OUTSIDE THE DATA DIR.
+// BUNDLED node against the loombre_i1 database (external-PG path — P4.2),
+// asserts /healthz 200 and a real login round-trip via the seeded admin,
+// then asserts a clean (non-purge) uninstall leaves NO FILES OUTSIDE THE
+// DATA DIR. Since the installer completeness audit it ALSO proves the
+// EMBEDDED-mode out-of-the-box path (the wrapper's DATABASE_URL-unset
+// default): a second scenario re-installs and boots server (embedded PG
+// provision + auto-migrate), web (bin/loombre-web serving /login), and
+// worker (embedded DATABASE_URL discovery via LOOMBRE_DATA_DIR) with NO
+// DATABASE_URL anywhere — see the "embedded scenario" block below.
 //
-// RESOURCE ISOLATION (this lane's dispatch): ports 3100-3199, database
-// `loombre_i1` on the shared dev Postgres (127.0.0.1:5442) — NEVER the
-// `loombre` database (that is another lane's / the base dev environment's,
-// off-limits). Every DATABASE_URL this script builds is asserted to
-// target `loombre_i1` before use — see assertSafeDatabaseUrl below. This
-// assertion exists because an earlier session mistake (documented in the
-// I1 handoff report) booted a real app process with no DATABASE_URL
-// override at all, which would have defaulted straight at the shared
-// `loombre` database — never again silently.
+// RESOURCE ISOLATION (this lane's dispatch): ports 3100-3199 (3101 =
+// server, 3102 = web), database `loombre_i1` on the shared dev Postgres
+// (127.0.0.1:5442) — NEVER the `loombre` database (that is another lane's
+// / the base dev environment's, off-limits). Every DATABASE_URL this
+// script builds is asserted to target `loombre_i1` before use — see
+// assertSafeDatabaseUrl below. This assertion exists because an earlier
+// session mistake (documented in the I1 handoff report) booted a real app
+// process with no DATABASE_URL override at all, which would have
+// defaulted straight at the shared `loombre` database — never again
+// silently. (The embedded scenario deliberately sets NO DATABASE_URL —
+// that is safe by construction, not an exception: with LOOMBRE_DATA_DIR
+// set, both apps resolve the container-local embedded cluster
+// [apps/worker/src/db-url.ts resolution order]; the shared-dev-PG
+// fallback only exists when LOOMBRE_DATA_DIR is ALSO unset.)
 //
 // Wires into NOTHING (ci.yml untouched — release wiring is lane I's).
 //
 // Usage:
 //   node installers/linux/smoke.mjs [--tarball <path>] [--keep-container]
-//                                    [--container-name <name>]
+//                                    [--container-name <name>] [--fresh]
+//
+//   --fresh  force a tarball rebuild even if dist/ has one (ensureTarball
+//            also rebuilds automatically when anything under
+//            installers/linux is newer than the existing tarball — the
+//            old behavior reused ANY stale dist artifact, which silently
+//            smoked outdated bits after every installer edit).
 //
 // Prerequisites: docker running locally; the shared dev Postgres
 // container up (`docker compose -f docker-compose.dev.yml up -d`,
 // 127.0.0.1:5442, user/password `loombre`) — this script does NOT start
 // it, only connects to it.
 
-import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { spawnSync } from "node:child_process";
@@ -44,6 +60,7 @@ const SMOKE_DB_NAME = "loombre_i1";
 const SMOKE_DB_HOST_URL = `postgres://loombre:loombre@127.0.0.1:5442/${SMOKE_DB_NAME}`;
 const SMOKE_DB_CONTAINER_URL = `postgres://loombre:loombre@host.docker.internal:5442/${SMOKE_DB_NAME}`;
 const SMOKE_SERVER_PORT = 3101; // this lane's assigned range: 3100-3199
+const SMOKE_WEB_PORT = 3102; // bin/loombre-web (embedded scenario) — same assigned range
 const ADMIN_USERNAME = "admin";
 const ADMIN_PASSWORD = "loombre-seed-admin"; // packages/db/seed/seed.mjs — argon2id('loombre-seed-admin')
 
@@ -60,12 +77,13 @@ assertSafeDatabaseUrl(SMOKE_DB_HOST_URL);
 assertSafeDatabaseUrl(SMOKE_DB_CONTAINER_URL);
 
 function parseArgs(argv) {
-  const out = { tarball: null, keepContainer: false, containerName: "loombre_i1-smoke" };
+  const out = { tarball: null, keepContainer: false, containerName: "loombre_i1-smoke", fresh: false };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === "--tarball") out.tarball = resolve(argv[++i]);
     else if (arg === "--keep-container") out.keepContainer = true;
     else if (arg === "--container-name") out.containerName = argv[++i];
+    else if (arg === "--fresh") out.fresh = true;
     else throw new Error(`smoke: unrecognized argument ${JSON.stringify(arg)}`);
   }
   return out;
@@ -174,22 +192,50 @@ async function migrateAndSeed() {
 // the same foot-gun the rename run's "--arch arm64" note recorded).
 const TARBALL_ARCH = process.arch === "arm64" ? "arm64" : "x64";
 
-function ensureTarball(explicitPath) {
+/** Newest mtime (ms) of any file under `dir`, skipping the build outputs
+ *  themselves (dist/, .build/) — the "is the existing tarball stale?"
+ *  input set: build-tarball.mjs, install.sh, uninstall.sh, systemd/*,
+ *  this file's siblings. App-source staleness is NOT tracked here (that
+ *  would mean walking the whole repo); --fresh covers that case. */
+function newestInstallerInputMtimeMs(dir) {
+  const SKIP = new Set(["dist", ".build", ".DS_Store"]);
+  let newest = 0;
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    if (SKIP.has(entry.name)) continue;
+    const p = join(dir, entry.name);
+    newest = Math.max(newest, entry.isDirectory() ? newestInstallerInputMtimeMs(p) : statSync(p).mtimeMs);
+  }
+  return newest;
+}
+
+function ensureTarball(explicitPath, fresh = false) {
   if (explicitPath) {
     if (!existsSync(explicitPath)) throw new Error(`smoke: --tarball ${explicitPath} does not exist`);
     return explicitPath;
   }
   const suffix = `-linux-${TARBALL_ARCH}.tar.gz`;
   const distDir = join(INSTALLERS_LINUX_DIR, "dist");
-  if (existsSync(distDir)) {
+  if (!fresh && existsSync(distDir)) {
     const existing = readdirSync(distDir).filter((f) => f.endsWith(suffix));
     if (existing.length > 0) {
       const path = join(distDir, existing.sort().at(-1));
-      console.log(`smoke: reusing existing tarball ${path}`);
-      return path;
+      // Installer completeness audit (gap 6): the old unconditional reuse
+      // silently smoked a STALE dist tarball after every installer edit —
+      // an audit run proved a days-old artifact was being "verified" while
+      // build-tarball.mjs had changed underneath it. Reuse only when the
+      // tarball is newer than every installer input file.
+      const inputMtime = newestInstallerInputMtimeMs(INSTALLERS_LINUX_DIR);
+      const tarballMtime = statSync(path).mtimeMs;
+      if (tarballMtime >= inputMtime) {
+        console.log(`smoke: reusing existing tarball ${path} (newer than all installers/linux inputs)`);
+        return path;
+      }
+      console.log(
+        `smoke: existing tarball ${path} is STALE (an installers/linux input is newer) — rebuilding`,
+      );
     }
   }
-  console.log("smoke: no tarball found — building one now (node installers/linux/build-tarball.mjs)");
+  console.log(`smoke: building tarball (node installers/linux/build-tarball.mjs)${fresh ? " [--fresh]" : ""}`);
   run(process.execPath, [join(INSTALLERS_LINUX_DIR, "build-tarball.mjs"), "--arch", TARBALL_ARCH], { cwd: REPO_ROOT });
   const built = readdirSync(distDir).filter((f) => f.endsWith(suffix));
   if (built.length === 0) throw new Error("smoke: build-tarball.mjs ran but produced no tarball");
@@ -212,20 +258,43 @@ function dockerExecCapture(name, args, opts = {}) {
   return runCapture("docker", ["exec", ...(opts.user ? ["-u", opts.user] : []), name, ...args]);
 }
 
-async function waitForHealthz(port, timeoutMs) {
+async function waitForHttp200(url, timeoutMs) {
   const deadline = Date.now() + timeoutMs;
   let lastErr;
   while (Date.now() < deadline) {
     try {
-      const res = await fetch(`http://127.0.0.1:${port}/healthz`);
+      const res = await fetch(url);
       if (res.status === 200) return true;
-      lastErr = new Error(`GET /healthz -> HTTP ${res.status}`);
+      lastErr = new Error(`GET ${url} -> HTTP ${res.status}`);
     } catch (err) {
       lastErr = err;
     }
     await new Promise((r) => setTimeout(r, 500));
   }
-  throw new Error(`smoke: /healthz never returned 200 within ${timeoutMs}ms — last error: ${lastErr?.message ?? lastErr}`);
+  throw new Error(`smoke: ${url} never returned 200 within ${timeoutMs}ms — last error: ${lastErr?.message ?? lastErr}`);
+}
+
+async function waitForHealthz(port, timeoutMs) {
+  return waitForHttp200(`http://127.0.0.1:${port}/healthz`, timeoutMs);
+}
+
+/** Polls a log file INSIDE the container for a substring — used by the
+ *  embedded scenario to catch the worker's own "worker up" boot line
+ *  (apps/worker/src/index.ts logs it once the queue + plugin-delivery
+ *  loop are live, i.e. after embedded DATABASE_URL discovery succeeded). */
+async function waitForContainerLogLine(containerName, logPath, needle, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const grep = dockerExecCapture(containerName, ["bash", "-c", `grep -F ${JSON.stringify(needle)} ${logPath} 2>/dev/null`]);
+    if (grep.status === 0 && grep.stdout.trim().length > 0) return grep.stdout.trim();
+    if (Date.now() >= deadline) {
+      const tail = dockerExecCapture(containerName, ["bash", "-c", `tail -n 40 ${logPath} 2>&1`]);
+      throw new Error(
+        `smoke: ${JSON.stringify(needle)} never appeared in ${logPath} within ${timeoutMs}ms — log tail:\n${tail.stdout}${tail.stderr}`,
+      );
+    }
+    await new Promise((r) => setTimeout(r, 1000));
+  }
 }
 
 function buildDeviceProfile() {
@@ -337,7 +406,7 @@ async function main(argv) {
   await ensureSmokeDatabase();
   await migrateAndSeed();
 
-  const tarballPath = ensureTarball(args.tarball);
+  const tarballPath = ensureTarball(args.tarball, args.fresh);
   const tarballName = tarballPath.split("/").at(-1).replace(/\.tar\.gz$/, "");
   console.log(`\n=== smoke: ${tarballName} ===\n`);
 
@@ -348,6 +417,7 @@ async function main(argv) {
       "run", "-d", "--name", args.containerName,
       "--add-host=host.docker.internal:host-gateway",
       "-p", `${SMOKE_SERVER_PORT}:${SMOKE_SERVER_PORT}`,
+      "-p", `${SMOKE_WEB_PORT}:${SMOKE_WEB_PORT}`, // embedded scenario's bin/loombre-web
       "ubuntu:24.04", "sleep", "infinity",
     ]);
 
@@ -491,6 +561,88 @@ async function main(argv) {
 
     dockerExecCapture(args.containerName, ["bash", "-c", "rm -f /usr/local/bin/loombre"]);
     console.log("smoke: cleaned up the planted foreign file");
+
+    // ── EMBEDDED-MODE scenario (installer completeness audit, gap 6): the ──
+    //    out-of-the-box path an operator gets by NOT setting DATABASE_URL.
+    //    Before the audit this smoke only ever proved external-PG, while
+    //    the wrapper's default path (embedded provision + boot-time
+    //    auto-migrate via @loombre/db/migrate shipping in the deploy) went
+    //    completely unexercised — and the web client had NO scenario at
+    //    all because nothing in the tarball could even start it.
+    //
+    //    NO DATABASE_URL is exported anywhere below — safe by construction
+    //    (see the header's RESOURCE ISOLATION note): LOOMBRE_DATA_DIR is
+    //    set, so server AND worker resolve the container-local embedded
+    //    cluster; the shared-dev-PG fallback needs LOOMBRE_DATA_DIR unset.
+    //
+    //    User note (mission-checked): embedded initdb REFUSES to run as
+    //    root. This container's `docker exec` default IS root (plain
+    //    ubuntu:24.04), so every process below runs `-u loombre` — the
+    //    same unprivileged system user install.sh created, which owns
+    //    /var/lib/loombre. (`runuser`/`su` would work too; `docker exec -u`
+    //    is the same thing with less quoting.)
+    console.log("\n--- embedded-mode scenario: re-install, boot server+web+worker with NO DATABASE_URL ---");
+    dockerExec(args.containerName, ["bash", "-c", `cd /tmp/${tarballName} && ./install.sh --no-systemd`]);
+
+    run("docker", [
+      "exec", "-d", "-u", "loombre",
+      "-e", `PORT=${SMOKE_SERVER_PORT}`, "-e", "NODE_ENV=production", "-e", "LOOMBRE_DATA_DIR=/var/lib/loombre",
+      args.containerName, "bash", "-c", "/opt/loombre/bin/loombre-server > /tmp/loombre-server-embedded.log 2>&1",
+    ]);
+
+    console.log("--- waiting for /healthz (embedded provision: initdb + start + AUTO-MIGRATE — slower than external) ---");
+    try {
+      // 120s, not the external scenario's 30s: first boot runs a real
+      // initdb + cluster start + full migration set before listening.
+      await waitForHealthz(SMOKE_SERVER_PORT, 120_000);
+    } catch (err) {
+      console.error("--- embedded /healthz never came up — dumping in-container log for diagnosis ---");
+      dockerExec(args.containerName, ["bash", "-c", "cat /tmp/loombre-server-embedded.log 2>&1"], { allowFailure: true });
+      throw err;
+    }
+    console.log("smoke: embedded-mode /healthz 200 OK — provision + auto-migrate fully self-contained (no repo checkout, no external DB)");
+
+    console.log("--- web client via bin/loombre-web ---");
+    run("docker", [
+      "exec", "-d", "-u", "loombre",
+      "-e", `LOOMBRE_WEB_PORT=${SMOKE_WEB_PORT}`, "-e", `LOOMBRE_SERVER_ORIGIN=http://localhost:${SMOKE_SERVER_PORT}`,
+      args.containerName, "bash", "-c", "/opt/loombre/bin/loombre-web > /tmp/loombre-web.log 2>&1",
+    ]);
+    try {
+      await waitForHttp200(`http://127.0.0.1:${SMOKE_WEB_PORT}/login`, 60_000);
+    } catch (err) {
+      console.error("--- web /login never came up — dumping in-container log for diagnosis ---");
+      dockerExec(args.containerName, ["bash", "-c", "cat /tmp/loombre-web.log 2>&1"], { allowFailure: true });
+      throw err;
+    }
+    console.log("smoke: web client serves /login 200 via bin/loombre-web (Next standalone + bundled node)");
+
+    console.log("--- worker: embedded DATABASE_URL discovery via LOOMBRE_DATA_DIR ---");
+    run("docker", [
+      "exec", "-d", "-u", "loombre",
+      "-e", "NODE_ENV=production", "-e", "LOOMBRE_DATA_DIR=/var/lib/loombre",
+      args.containerName, "bash", "-c", "/opt/loombre/bin/loombre-worker > /tmp/loombre-worker-embedded.log 2>&1",
+    ]);
+    // "worker up — plugin-delivery loop started" is index.ts's own
+    // end-of-boot line — it only prints after the discovery seam resolved
+    // the embedded URL and the queue connected, so matching it proves the
+    // worker JOINED, not merely that the process is still alive.
+    await waitForContainerLogLine(args.containerName, "/tmp/loombre-worker-embedded.log", "worker up", 90_000);
+    // Pattern note: the wrapper `exec`s the bundled node, so the live
+    // process's argv is `.../runtime/node/bin/node .../lib/worker/dist/index.js`
+    // — match the dist path, not the wrapper path (which exists in no argv
+    // after the exec).
+    const workerAlive = dockerExecCapture(args.containerName, ["bash", "-c", "pgrep -f lib/worker/dist/index.js >/dev/null && echo ALIVE || echo DEAD"]);
+    if (!workerAlive.stdout.includes("ALIVE")) {
+      throw new Error("smoke: worker logged its boot line but the process is no longer running");
+    }
+    console.log("smoke: worker joined via embedded discovery (logged 'worker up', process alive)");
+
+    console.log("--- embedded scenario teardown ---");
+    dockerExecCapture(args.containerName, ["pkill", "-f", "lib/worker/dist/index.js"]);
+    dockerExecCapture(args.containerName, ["pkill", "-f", "web/apps/web/server.js"]);
+    dockerExecCapture(args.containerName, ["pkill", "-f", "lib/server/dist/main.js"]);
+    console.log("smoke: embedded-mode scenario PASSED — server (provision+auto-migrate), web (/login 200), worker (discovery join), zero DATABASE_URL");
 
     console.log("\n=== smoke: ALL CHECKS PASSED ===");
   } finally {

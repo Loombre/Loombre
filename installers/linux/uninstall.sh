@@ -70,9 +70,12 @@ echo "uninstall.sh: removing Loombre -> prefix=${PREFIX} purge=$([ "$PURGE" -eq 
 
 # ── systemd units ───────────────────────────────────────────────────────
 if [ "${NO_SYSTEMD}" -eq 0 ] && command -v systemctl >/dev/null 2>&1; then
-  systemctl stop loombre-server.service loombre-worker.service 2>/dev/null || true
-  systemctl disable loombre-server.service loombre-worker.service 2>/dev/null || true
-  rm -f /etc/systemd/system/loombre-server.service /etc/systemd/system/loombre-worker.service
+  # loombre-web.service included since the installer completeness audit
+  # added the third (web UI) unit — a pre-audit install without it is fine
+  # too, systemctl failures here are tolerated by design (|| true / -f).
+  systemctl stop loombre-server.service loombre-worker.service loombre-web.service 2>/dev/null || true
+  systemctl disable loombre-server.service loombre-worker.service loombre-web.service 2>/dev/null || true
+  rm -f /etc/systemd/system/loombre-server.service /etc/systemd/system/loombre-worker.service /etc/systemd/system/loombre-web.service
   systemctl daemon-reload
   echo "uninstall.sh: systemd units stopped, disabled, removed"
 fi

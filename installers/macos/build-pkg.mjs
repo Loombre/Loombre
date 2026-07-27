@@ -184,6 +184,22 @@ function buildWorkspace() {
   log("building @loombre/server and @loombre/worker (deps already built above)");
   run("npx", ["tsc", "-p", path.join(REPO_ROOT, "apps", "server", "tsconfig.json")]);
   run("npx", ["tsc", "-p", path.join(REPO_ROOT, "apps", "worker", "tsconfig.json")]);
+
+  // apps/web: Next.js production build — installer completeness audit
+  // (gap 1): the workspace build built server + worker but NEVER the web
+  // app, so earlier payloads shipped no UI at all (the readme even pointed
+  // users at :3001, the API). Invoked as a DIRECT `npx next build` with
+  // cwd=apps/web — the same never-`pnpm run` rationale as every tsc call
+  // above (npx resolves apps/web/node_modules/.bin/next without ever
+  // invoking pnpm's pre-script deps-status check). `--webpack` matches
+  // apps/web's own build script byte-for-byte (Turbopack lacks
+  // extensionAlias — see next.config.mjs's header). next.config.mjs's
+  // `output: "standalone"` makes this produce the self-contained
+  // .next/standalone tree stageWeb() stages into the payload. Workspace
+  // deps (@loombre/sdk, @loombre/shared, @loombre/playback-engine) were
+  // built by the tsc loop above, so ordering here is load-bearing.
+  log("building @loombre/web (npx next build --webpack; output: standalone per next.config.mjs)");
+  run("npx", ["next", "build", "--webpack"], { cwd: path.join(REPO_ROOT, "apps", "web") });
 }
 
 function compileJobsWithScratchConfig() {
@@ -493,6 +509,71 @@ function stagePackagesReleaseManifestForRawRelativeImport(payloadRoot) {
 }
 
 // ---------------------------------------------------------------------
+// 4b. Web app staging (installer completeness audit, gap 1)
+//
+// apps/web builds a Next `output: "standalone"` tree (next.config.mjs) in
+// the MONOREPO layout: `<standalone>/apps/web/server.js` +
+// `<standalone>/node_modules` (+ a nested `<standalone>/apps/web/
+// node_modules`). Runnable staging = copy the whole standalone root into
+// `<versionDir>/web/`, then overlay the two pieces Next's standalone
+// output contract deliberately leaves to the deployer (their docs:
+// "should be copied by deployment"): `apps/web/.next/static` and
+// `apps/web/public`. bin/loombre-web then runs
+// `<versionDir>/web/apps/web/server.js` on the bundled Node with
+// NODE_ENV=production + PORT/HOSTNAME (see that shim).
+//
+// verbatimSymlinks is NOT just safety consistency here: measured on this
+// tree, the standalone output contains 22 RELATIVE symlinks (pnpm-style
+// links into its own .pnpm level, e.g. apps/web/node_modules/next) — the
+// cpSync default would rewrite them to absolute build-machine paths, the
+// exact ERR_MODULE_NOT_FOUND class of failure deployApp()'s prune copy
+// comment documents from the v0.9.0-rc.1 incident.
+// ---------------------------------------------------------------------
+function stageWeb(versionDir) {
+  const webAppDir = path.join(REPO_ROOT, "apps", "web");
+  const standaloneDir = path.join(webAppDir, ".next", "standalone");
+  const standaloneServerJs = path.join(standaloneDir, "apps", "web", "server.js");
+  if (!existsSync(standaloneServerJs)) {
+    throw new Error(
+      `stageWeb: ${standaloneServerJs} missing — apps/web has no production standalone build. ` +
+        "Run `pnpm --filter @loombre/web build`, or rerun build-pkg without --skip-workspace-build " +
+        "(buildWorkspace() now builds the web app itself via `npx next build --webpack`).",
+    );
+  }
+
+  const destDir = path.join(versionDir, "web");
+  cpSync(standaloneDir, destDir, { recursive: true, verbatimSymlinks: true });
+
+  // Static chunks: REQUIRED (the app is unstyled, script-less HTML without
+  // them). Copied from the real build output — the authoritative source —
+  // over whatever the standalone tree contained.
+  const staticSrc = path.join(webAppDir, ".next", "static");
+  if (!existsSync(staticSrc)) {
+    throw new Error(
+      `stageWeb: ${staticSrc} missing — inconsistent .next build output (standalone exists but static does not). ` +
+        "Re-run `pnpm --filter @loombre/web build`.",
+    );
+  }
+  cpSync(staticSrc, path.join(destDir, "apps", "web", ".next", "static"), {
+    recursive: true,
+    verbatimSymlinks: true,
+  });
+
+  // public/: optional in principle (Next tolerates its absence), copied
+  // when present.
+  const publicSrc = path.join(webAppDir, "public");
+  if (existsSync(publicSrc)) {
+    cpSync(publicSrc, path.join(destDir, "apps", "web", "public"), {
+      recursive: true,
+      verbatimSymlinks: true,
+    });
+  }
+
+  log(`web staged: standalone + .next/static + public -> web/ (${duSizeMb(destDir)} MB)`);
+  return destDir;
+}
+
+// ---------------------------------------------------------------------
 // 5. Payload assembly
 // ---------------------------------------------------------------------
 function assemblePayload(serverDeployDir, workerDeployDir) {
@@ -504,9 +585,9 @@ function assemblePayload(serverDeployDir, workerDeployDir) {
   const versionDir = path.join(payloadRoot, "opt", "loombre", version);
   mkdirSync(versionDir, { recursive: true });
 
-  // bin/ shims
+  // bin/ shims (loombre-web: installer completeness audit, gap 1)
   mkdirSync(path.join(versionDir, "bin"), { recursive: true });
-  for (const shim of ["loombre-server", "loombre-worker"]) {
+  for (const shim of ["loombre-server", "loombre-worker", "loombre-web"]) {
     cpSync(path.join(PKG_DIR, "bin", shim), path.join(versionDir, "bin", shim));
     chmodSync(path.join(versionDir, "bin", shim), 0o755);
   }
@@ -516,6 +597,11 @@ function assemblePayload(serverDeployDir, workerDeployDir) {
   // relative .pnpm links to absolute build-machine paths.
   cpSync(serverDeployDir, path.join(versionDir, "server"), { recursive: true, verbatimSymlinks: true });
   cpSync(workerDeployDir, path.join(versionDir, "worker"), { recursive: true, verbatimSymlinks: true });
+
+  // web/ — the third service's payload (installer completeness audit,
+  // gap 1): Next standalone tree + static assets, run by bin/loombre-web
+  // under com.loombre.web.plist. See stageWeb()'s own header.
+  stageWeb(versionDir);
 
   stagePackagesReleaseManifestForRawRelativeImport(payloadRoot);
 
@@ -534,10 +620,16 @@ function assemblePayload(serverDeployDir, workerDeployDir) {
   // /Library/Logs/Loombre
   mkdirSync(path.join(payloadRoot, "Library", "Logs", "Loombre"), { recursive: true });
 
-  // /Library/LaunchDaemons
+  // /Library/LaunchDaemons — THREE daemons since the completeness audit
+  // (server, worker, web UI). The upgrade path stays coherent across all
+  // three: preinstall boots each out, this payload lays the plists back
+  // down, postinstall bootstraps them again — anyone adding a fourth
+  // daemon must touch this list, preinstall's LABEL list, postinstall's
+  // PLIST loop, and the homebrew cask's `uninstall launchctl:` stanza
+  // together (plus LAYOUT.md).
   const launchDaemonsDir = path.join(payloadRoot, "Library", "LaunchDaemons");
   mkdirSync(launchDaemonsDir, { recursive: true });
-  for (const plist of ["com.loombre.server.plist", "com.loombre.worker.plist"]) {
+  for (const plist of ["com.loombre.server.plist", "com.loombre.worker.plist", "com.loombre.web.plist"]) {
     cpSync(path.join(PKG_DIR, "launchd", plist), path.join(launchDaemonsDir, plist));
   }
 

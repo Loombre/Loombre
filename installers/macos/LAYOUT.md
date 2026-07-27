@@ -2,19 +2,22 @@
 
 Lane I4, Phase 4 Wave 1. This document is the "decide and document the
 layout properly" deliverable referenced in the lane brief. Every path below
-is load-bearing for `pkg/postinstall`, the two LaunchDaemon plists, and
-`build-pkg.mjs` — if you change one, change all three plus this file in the
-same commit.
+is load-bearing for `pkg/postinstall`, the three LaunchDaemon plists, and
+`build-pkg.mjs` — if you change one, change all of them plus this file in
+the same commit.
 
 ## Summary table
 
 | What | Where | Owner (uid:gid) | Mode |
 |------|-------|------------------|------|
-| Node runtime + server/worker dist + bundled ffmpeg (+ future embedded-PG) | `/opt/loombre/<version>/` (symlinked from `/opt/loombre/current`) | `root:wheel` (read-only payload) | `0755` dirs, `0755` executables |
+| Node runtime + server/worker dist + web standalone + bundled ffmpeg + embedded-PG | `/opt/loombre/<version>/` (symlinked from `/opt/loombre/current`) | `root:wheel` (read-only payload) | `0755` dirs, `0755` executables |
 | Menubar controller app | `/Applications/Loombre.app` | `root:wheel` | `0755` |
-| App-data (embedded-PG data dir, config, secrets, future IPC discovery/token files) | `/Library/Application Support/Loombre/` | `_loombre:_loombre` | `0750` |
+| App-data ROOT (holds the IPC discovery/token files at its top level — see §4) | `/Library/Application Support/Loombre/` | `_loombre:admin` (completeness audit: group `admin` so the console user's menubar can TRAVERSE to the 0640 group-admin IPC files; root dir only, never `-R`) | `0750` |
+| App-data subtrees created by postinstall (`db/`, `config/`, `ipc/`) | `/Library/Application Support/Loombre/{db,config,ipc}` | `_loombre:_loombre` | `0750` |
+| Secrets (P4.7 file0600 SecretRef fallback dir) | `/Library/Application Support/Loombre/secrets/` | `_loombre:_loombre` | `0700` — never loosened |
+| Embedded-PG subtree (created by the SERVER at first boot, not postinstall) | `/Library/Application Support/Loombre/postgres/` | `_loombre:_loombre` | initdb-enforced `0700` on `postgres/data`, `superuser.secret` file0600 — never loosened |
 | Logs | `/Library/Logs/Loombre/` | `_loombre:_loombre` | `0755` (dir), `0644` (files, so `tail`/Console.app work for an admin without sudo) |
-| LaunchDaemons | `/Library/LaunchDaemons/com.loombre.server.plist`, `com.loombre.worker.plist` | `root:wheel` | `0644` |
+| LaunchDaemons (three since the completeness audit) | `/Library/LaunchDaemons/com.loombre.server.plist`, `com.loombre.worker.plist`, `com.loombre.web.plist` | `root:wheel` | `0644` |
 | Service account | `_loombre` (system, UID < 500, `dsAttrTypeStandard:UniqueID` auto-picked in the system range) | — | — |
 
 ## 1. Binaries: `/opt/loombre`, not `/usr/local/loombre`
@@ -47,15 +50,23 @@ Layout inside `/opt/loombre/<version>/`:
 /opt/loombre/<version>/
   bin/loombre-server          # thin shim: exec runtime/node against server/dist/main.js
   bin/loombre-worker          # thin shim: exec runtime/node against worker/dist/index.js
+  bin/loombre-web             # thin shim: exec runtime/node against web/apps/web/server.js
+                              # (completeness audit — see §11 for the whole web story)
   runtime/node/bin/node      # bundled Node (fetch-node.mjs), pinned to .nvmrc's major
   runtime/ffmpeg/{ffmpeg,ffprobe}   # bundled ffmpeg (fetch-ffmpeg.mjs / placeholder)
-  runtime/pg/...             # embedded-PG placeholder (fetch-embedded-pg.mjs, lane B)
+  runtime/pg/...             # embedded-PG, vendor-layout shape (fetch-embedded-pg.mjs)
   server/{dist,node_modules,package.json}  # `pnpm deploy` output for @loombre/server,
                               # pruned to exactly these three (no src/test/*.turbo —
                               # see §9, "self-contained pnpm-deploy output, not a
                               # dist-only copy: two workspace deps ship no
                               # dist/ at all")
   worker/{dist,node_modules,package.json}  # same, for @loombre/worker
+  web/                       # apps/web's Next `output: "standalone"` tree, monorepo
+    apps/web/server.js       # layout — plus .next/static + public overlaid at
+    apps/web/.next/static    # stage time (Next's standalone contract leaves both
+    apps/web/public          # to the deployer). See build-pkg.mjs stageWeb() + §11.
+    node_modules/            # standalone-pruned deps (contains RELATIVE symlinks —
+                             # copied verbatimSymlinks, same rationale as server/)
   VERSION                    # plain-text version stamp (see §5)
 /opt/loombre/current -> <version>   # atomic upgrade swap point; LaunchDaemons
                                     # reference `current`, never a version dir,
@@ -76,13 +87,28 @@ service account and readable/writable independent of any login session, is
 the only location consistent with the LaunchDaemon posture chosen below.
 
 ```
-/Library/Application Support/Loombre/
-  db/          # ProvisioningRequest.dataDir target (embedded PG data dir, P4.2)
-  config/      # future instance config (not populated by this lane)
+/Library/Application Support/Loombre/          # ROOT: _loombre:admin 0750 (see §4 —
+  controller-ipc.json                          #   the IPC discovery + token files
+  controller-ipc.token                         #   live HERE, at the root, 0640
+                                               #   group-admin, written by the server
+                                               #   at every boot per the FROZEN
+                                               #   transport.ts wording "under the
+                                               #   platform app-data dir")
+  postgres/    # embedded-PG subtree, created by the SERVER at first boot
+               # (apps/server/src/bootstrap/provisioning.ts): postgres/data
+               # (initdb-enforced 0700) + postgres/superuser.secret (file0600).
+               # postinstall never creates or loosens this — _loombre-only.
+  db/          # VESTIGIAL (completeness audit finding): postinstall still
+               # creates it, but the provisioner actually uses postgres/
+               # above — kept for now so upgrades don't delete anything,
+               # candidate for removal once confirmed nothing references it
+  config/      # loombre.env (seeded once by postinstall, upgrade-surviving)
   secrets/     # file0600 SecretRef backend fallback (P4.7) — 0700, _loombre-owned
-  ipc/         # RESERVED for @loombre/controller-ipc's discovery+token files —
-               # see §4, "known gap" — created empty by postinstall, not yet
-               # written to by anything in this tree
+  ipc/         # VESTIGIAL (was "RESERVED for discovery+token files"): the
+               # real IPC implementation landed the files at the ROOT (see
+               # above + §4) per transport.ts's literal wording; the menubar
+               # was fixed to read the root accordingly. Left in place,
+               # harmless, candidate for removal
 ```
 
 ## 3. LaunchDaemon, not LaunchAgent — and why that matters for `_loombre`
@@ -92,9 +118,12 @@ domain) and is gated on loginwindow; it stops when that user logs out. A
 **LaunchDaemon** runs in the `system` domain, starts at boot before any
 login, and keeps running through logout/user-switch. Per the mission
 statement ("a media server serves while logged out") this is not a close
-call — server + worker MUST be LaunchDaemons.
+call — server + worker MUST be LaunchDaemons. The web UI daemon
+(`com.loombre.web`, added by the completeness audit — §11) follows for the
+same reason: the UI must be reachable from another device on the LAN with
+nobody logged in at the Mac's console.
 
-Both daemons run as the dedicated `_loombre` system account (created by
+All three daemons run as the dedicated `_loombre` system account (created by
 `pkg/scripts/postinstall` via `sysadminctl -addUser`, `UniqueID` picked
 automatically in the system range, `UserShell /usr/bin/false`,
 `NFSHomeDirectory /var/empty` — the standard macOS "hidden service account"
@@ -116,9 +145,38 @@ EnvironmentVariables -> PORT / DATABASE_URL / LOOMBRE_FFMPEG / LOOMBRE_FFPROBE
                         "path-isolated from any system ffmpeg" per plan §7.3)
 ```
 
-## 4. Known gap, logged honestly: controller-ipc's 0600 token vs. a system daemon
+## 4. IPC token-file permissions — formerly a "known gap", now RESOLVED
 
-`packages/controller-ipc/src/transport.ts` is explicit and FROZEN: the
+**RESOLUTION (installer completeness audit)** — the tension documented
+below was settled by a recorded orchestrator decision (see
+`apps/server/src/ipc/env.ts` + `posix-permissions.ts`): discovery + token
+files are written **0640 with the file GROUP set from `LOOMBRE_IPC_GROUP`**
+(a deliberate, documented widening from transport.ts's original 0600 —
+still no world bits, never wider than group-read). The macOS installer's
+half of the contract, implemented across this tree:
+
+1. `bin/loombre-server` exports `LOOMBRE_IPC_GROUP=admin` (overridable in
+   `config/loombre.env`) — every interactive macOS admin account is a
+   member of group `admin`, and the menubar runs as that console user.
+2. The server writes `controller-ipc.json` + `controller-ipc.token` at the
+   app-support **ROOT** (`discovery-files.ts` follows FROZEN transport.ts
+   literally: "under the platform app-data dir", no `ipc/` subdirectory —
+   the menubar's `AppPaths.swift` was fixed to match) and chowns their
+   group to `admin` on every boot.
+3. `postinstall` makes the root dir itself `_loombre:admin` `0750` — the
+   missing traversal link: group-read on a 0640 file is useless if the
+   containing directory can't be entered by that group. Root dir ONLY —
+   `postgres/` and `secrets/` stay `_loombre`-only 0700 (see §2's tree).
+4. `bin/loombre-server` also exports `LOOMBRE_DATA_DIR` in **both**
+   database modes (it used to be embedded-mode-only, which silently
+   disabled the entire IPC listener for external-PG operators —
+   `env.ts` gates the listener on `LOOMBRE_DATA_DIR` being set).
+
+Non-admin console users cannot read the token (fails closed). The
+historical analysis below is kept because it explains WHY the naive 0600
+design could never work and what the alternatives were:
+
+`packages/controller-ipc/src/transport.ts` originally said: the
 bearer token file "MUST be created 0600 (owner-read/write only)." Taken
 literally, only the file's owning OS user can ever read it via standard
 POSIX permission bits — group bits are irrelevant at `0600` regardless of
@@ -262,6 +320,14 @@ either script is absent, but is not what a normal build exercises today.
   **external-PG path** (D1) — exactly what this lane's mandated local
   smoke test exercises (`loombre_i4` on 5442) — with the vendored binaries
   staged and ready for whichever lane does that fuller integration.
+  **SUPERSEDED — that fuller integration has since landed**: the payload
+  stages embedded-PG vendor-layout-shaped
+  (`runtime/pg/<platform>/<version>` — see `build-pkg.mjs`
+  `fetchRuntimes()`), `bin/loombre-server` no longer defaults
+  `DATABASE_URL` (unset = the server's own bootstrap provisions +
+  supervises the bundled PostgreSQL under the app-data dir's `postgres/`
+  subtree, auto-migrating at boot), and external PG remains the
+  one-env-var `DATABASE_URL` override in `config/loombre.env`.
 
 ## 9. Two build-system discoveries, worked around here, flagged for lane I
 
@@ -347,3 +413,47 @@ in-flight changes to those same directories. `build-pkg.mjs` never edits a
 fresh inode) before writing. **Flagged for every other lane whose
 packaging script might call `pnpm deploy` against a live, shared,
 multi-lane checkout**: this is a real footgun, not a macOS-only one.
+
+## 11. Web UI serving (installer completeness audit — the third daemon)
+
+The rc payloads shipped **no web UI at all**: server + worker were staged
+and daemonized, but nothing built or served `apps/web` (the readme even
+pointed users at `http://localhost:3001`, which is the API). STATE.md's
+"web-serving architecture unresolved for installed deployments" Open item
+was since resolved upstream — `apps/web/next.config.mjs` sets
+`output: "standalone"` precisely so installers can run the web app as its
+own Node service — and this installer now completes its half:
+
+- **Build**: `build-pkg.mjs` `buildWorkspace()` runs a direct
+  `npx next build --webpack` (cwd `apps/web`; same never-`pnpm run`
+  rationale as every tsc call there). Standalone output is monorepo-shaped:
+  `<standalone>/apps/web/server.js` + `<standalone>/node_modules`.
+- **Stage** (`stageWeb()`): copy the standalone root to
+  `<version>/web/`, then overlay `apps/web/.next/static` and
+  `apps/web/public` — Next's standalone contract deliberately leaves both
+  to the deployer. All copies use `verbatimSymlinks: true`; the standalone
+  tree really does contain relative pnpm-style symlinks (measured: 22),
+  so the default's absolute-path rewrite would reproduce the §1/rc.1
+  `ERR_MODULE_NOT_FOUND` failure class.
+- **Run**: `com.loombre.web.plist` (LaunchDaemon, `_loombre`, logs
+  `/Library/Logs/Loombre/web.{out,err}.log`) → `bin/loombre-web` →
+  bundled node against `web/apps/web/server.js`, `NODE_ENV=production`,
+  `HOSTNAME=0.0.0.0`, port 3000.
+- **PORT namespacing (deliberate, documented in all three places)**: all
+  three shims source the same `config/loombre.env`, and BOTH the API
+  server and Next's standalone server read a bare `PORT`. A bare `PORT`
+  in `loombre.env` is therefore defined to be the **SERVER's** (3001);
+  the web UI's is the namespaced `LOOMBRE_WEB_PORT` (3000), mapped onto
+  `PORT` only inside `bin/loombre-web`, after sourcing.
+- **Cross-service wiring**: `bin/loombre-server` exports
+  `LOOMBRE_WEB_URL=http://localhost:3000` (menubar "Open Web UI" target —
+  `apps/server/src/ipc/web-url.ts` would otherwise fall back to the API's
+  own origin); `bin/loombre-web` exports
+  `LOOMBRE_SERVER_ORIGIN=http://localhost:3001` (the web app's CSP/API
+  pairing). LAN access needs `LOOMBRE_CORS_ORIGINS` (the API's allowlist
+  defaults to localhost:3000 only) + `LOOMBRE_SERVER_ORIGIN` set in
+  `loombre.env` — the seeded file documents both.
+- **Upgrade/uninstall**: `preinstall` boots out all three labels;
+  `postinstall` bootstraps all three; the homebrew cask's
+  `uninstall launchctl:` stanza must list `com.loombre.web` too (cask is
+  outside this audit's file ownership — flagged in its report).

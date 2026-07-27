@@ -334,6 +334,22 @@ jobs:
           fi
           echo "VERDICT:SERVER_BOOT:PASS"
 
+          # The full-app bar (installer completeness audit): the WEB UI must
+          # answer too — com.loombre.web serving the Next standalone build.
+          webup=0
+          for _ in $(seq 1 30); do
+            if curl -sf -o /dev/null "http://127.0.0.1:3000/login"; then webup=1; break; fi
+            sleep 2
+          done
+          if [ "$webup" != "1" ]; then
+            echo "::error::web UI did not answer on :3000/login within 60s — log tails follow"
+            sudo tail -40 /Library/Logs/Loombre/web.err.log || true
+            sudo tail -20 /Library/Logs/Loombre/web.out.log || true
+            echo "VERDICT:WEB_BOOT:FAIL"
+            exit 1
+          fi
+          echo "VERDICT:WEB_BOOT:PASS"
+
       - name: Upload artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -417,19 +433,28 @@ jobs:
           export LOOMBRE_IMAGE="ghcr.io/${REPO_LOWER,,}"
           bash installers/docker/build.sh --push --metadata-file /tmp/docker-metadata.json
           digest=$(node -e "console.log(JSON.parse(require('fs').readFileSync('/tmp/docker-metadata.json','utf8'))['loombre']['containerimage.digest'])")
+          # Second image since the installer completeness audit: the bake
+          # default group now also builds/pushes the WEB image
+          # (docker-bake.hcl target 'loombre-web' -> ${LOOMBRE_IMAGE}-web).
+          web_digest=$(node -e "console.log(JSON.parse(require('fs').readFileSync('/tmp/docker-metadata.json','utf8'))['loombre-web']['containerimage.digest'])")
           echo "digest=$digest" >> "$GITHUB_OUTPUT"
+          echo "web_digest=$web_digest" >> "$GITHUB_OUTPUT"
           echo "image=$LOOMBRE_IMAGE" >> "$GITHUB_OUTPUT"
 
-      - name: cosign sign (keyless, GH OIDC identity)
+      - name: cosign sign (keyless, GH OIDC identity) — both images
         env:
           COSIGN_EXPERIMENTAL: "1"
-        run: cosign sign --yes "${{ steps.build.outputs.image }}@${{ steps.build.outputs.digest }}"
+        run: |
+          set -euo pipefail
+          cosign sign --yes "${{ steps.build.outputs.image }}@${{ steps.build.outputs.digest }}"
+          cosign sign --yes "${{ steps.build.outputs.image }}-web@${{ steps.build.outputs.web_digest }}"
 
       - name: Write docker-image.json sidecar (build-manifest.mjs's docker-artifact convention)
         env:
           LOOMBRE_VERSION: ${{ needs.prepare.outputs.version }}
           IMAGE: ${{ steps.build.outputs.image }}
           DIGEST: ${{ steps.build.outputs.digest }}
+          WEB_DIGEST: ${{ steps.build.outputs.web_digest }}
         run: |
           set -euo pipefail
           mkdir -p dist/release
@@ -452,6 +477,18 @@ jobs:
               sizeBytes: 0,
               sha256: process.env.DIGEST_HEX,
               url: \`https://\${process.env.IMAGE}:\${process.env.LOOMBRE_VERSION}\`,
+            }, null, 2) + '\n');
+          "
+          # Same convention for the web image (installer completeness audit:
+          # the Docker channel now ships two images).
+          export WEB_DIGEST_HEX="${WEB_DIGEST#sha256:}"
+          node -e "
+            const fs = require('node:fs');
+            fs.writeFileSync('dist/release/docker-web-image.json', JSON.stringify({
+              filename: \`\${process.env.IMAGE}-web:\${process.env.LOOMBRE_VERSION}\`,
+              sizeBytes: 0,
+              sha256: process.env.WEB_DIGEST_HEX,
+              url: \`https://\${process.env.IMAGE}-web:\${process.env.LOOMBRE_VERSION}\`,
             }, null, 2) + '\n');
           "
 

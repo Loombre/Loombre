@@ -7,13 +7,17 @@
 // source, brings up the full docker-compose.prod.yml stack under a
 // dedicated compose project (never the default project — resource
 // isolation), runs the real migration + seed one-shot the same way an
-// operator would, exercises a real login + catalog request over HTTP, then
-// proves the worker container shuts down cleanly on SIGTERM before tearing
-// everything down.
+// operator would, exercises a real login + catalog request over HTTP,
+// asserts the web container serves the real login page through its
+// published port (installer completeness audit — the standalone Next
+// server must actually render, not merely pass its manifest healthcheck),
+// then proves the worker container shuts down cleanly on SIGTERM before
+// tearing everything down.
 //
 // Resource isolation (this lane's brief): compose project `loombre_i2`,
-// host port 3200-3299 range only (default 3201, override with
-// LOOMBRE_SMOKE_PORT), never touches the `loombre` dev DB or ports 3000/3001.
+// host port 3200-3299 range only (API default 3201, web default 3202 —
+// override with LOOMBRE_SMOKE_PORT / LOOMBRE_SMOKE_WEB_PORT), never
+// touches the `loombre` dev DB or ports 3000/3001.
 //
 // Usage: node installers/docker/smoke.mjs
 // Exit code 0 = all assertions passed and cleanup completed. Non-zero =
@@ -31,6 +35,8 @@ const COMPOSE_FILE = path.join(REPO_ROOT, "docker-compose.prod.yml");
 const PROJECT = "loombre_i2";
 const HOST_PORT = process.env.LOOMBRE_SMOKE_PORT ?? "3201";
 const BASE_URL = `http://127.0.0.1:${HOST_PORT}`;
+const WEB_HOST_PORT = process.env.LOOMBRE_SMOKE_WEB_PORT ?? "3202";
+const WEB_BASE_URL = `http://127.0.0.1:${WEB_HOST_PORT}`;
 
 const SMOKE_ENV = {
   ...process.env,
@@ -40,6 +46,13 @@ const SMOKE_ENV = {
   POSTGRES_PASSWORD: "loombre-i2-smoke-password",
   LOOMBRE_JWT_SECRET: "loombre-i2-smoke-jwt-secret-not-for-production",
   LOOMBRE_PORT: HOST_PORT,
+  // Keeps the web container inside the smoke port range (its compose
+  // default is 3000 — exactly the dev port this script's isolation brief
+  // forbids touching). LOOMBRE_SERVER_ORIGIN is left to its compose
+  // default (http://localhost:<LOOMBRE_PORT>) — CSP only constrains the
+  // BROWSER, and this script's plain fetch() of /login below never
+  // executes the page, so no override is needed.
+  LOOMBRE_WEB_PORT: WEB_HOST_PORT,
 };
 
 let stepNum = 0;
@@ -143,7 +156,7 @@ async function main() {
   step(`build (project=${PROJECT}, host port=${HOST_PORT})`);
   compose(["build"]);
 
-  step("up -d (postgres, server, worker)");
+  step("up -d (postgres, server, worker, web)");
   compose(["up", "-d"]);
 
   step("wait for postgres healthy");
@@ -153,6 +166,16 @@ async function main() {
   step("wait for server healthy (HEALTHCHECK: GET /healthz)");
   await waitForHealthy("server", 60_000);
   console.log("  server is healthy");
+
+  step("wait for web healthy (HEALTHCHECK: GET /manifest.webmanifest)");
+  await waitForHealthy("web", 60_000);
+  console.log("  web is healthy");
+
+  step("web UI: GET /login through the published port (the standalone Next server actually renders — installer completeness audit)");
+  const loginPageRes = await fetch(`${WEB_BASE_URL}/login`);
+  assert(loginPageRes.status === 200, `GET /login -> 200 (got ${loginPageRes.status})`);
+  const loginPageType = loginPageRes.headers.get("content-type") ?? "";
+  assert(loginPageType.includes("text/html"), `GET /login serves HTML (got content-type: ${loginPageType})`);
 
   step("run migrations inside the network (docker compose run --rm server) — this is also the documented upgrade step, see docs/install/docker.md");
   compose(["run", "--rm", "server", "node", "packages/db/scripts/migrate.mjs", "migrate"]);
