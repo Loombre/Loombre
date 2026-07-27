@@ -97,11 +97,11 @@ them already; minimal/container images may not:
 
 ```sh
 # Debian/Ubuntu
-apt install libgssapi-krb5-2 libxml2
+apt install libgssapi-krb5-2 libxml2 libreadline8
 # openSUSE
-zypper install krb5 libxml2-2
+zypper install krb5 libxml2-2 libreadline8
 # Fedora/RHEL
-dnf install krb5-libs libxml2
+dnf install krb5-libs libxml2 readline
 ```
 
 `install.sh` warns if they are missing (installs pointed at an external

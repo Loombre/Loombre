@@ -271,9 +271,9 @@ if [ -n "${_pg_bin}" ] && command -v ldd >/dev/null 2>&1; then
   if [ -n "${_missing}" ]; then
     echo "WARNING: the bundled PostgreSQL is missing shared libraries: ${_missing}" >&2
     echo "         Embedded database mode (the default) will fail to start until they are installed:" >&2
-    echo "           Debian/Ubuntu: apt install libgssapi-krb5-2 libxml2" >&2
-    echo "           openSUSE:      zypper install krb5 libxml2-2" >&2
-    echo "           Fedora/RHEL:   dnf install krb5-libs libxml2" >&2
+    echo "           Debian/Ubuntu: apt install libgssapi-krb5-2 libxml2 libreadline8" >&2
+    echo "           openSUSE:      zypper install krb5 libxml2-2 libreadline8" >&2
+    echo "           Fedora/RHEL:   dnf install krb5-libs libxml2 readline" >&2
     echo "         (Installs using an external DATABASE_URL are unaffected.)" >&2
   fi
 fi
