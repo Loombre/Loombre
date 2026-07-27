@@ -19,6 +19,7 @@
     "@loombre/playback-engine": "workspace:*",
     "@loombre/plugin-host": "workspace:*",
     "@loombre/plugin-protocol": "workspace:*",
+    "@loombre/provisioning-pg": "workspace:*",
     "@loombre/secrets": "workspace:*",
     "@loombre/shared": "workspace:*",
     "blurhash": "^2.0.5",
