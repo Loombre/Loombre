@@ -134,7 +134,12 @@ jobs:
           # node_modules links surviving the zip/extract hop — the class
           # that broke rc.1 on macOS. Worker has no import guard
           # (importing boots it), so server-only.
-          node -e "const{pathToFileURL}=require('node:url');import(pathToFileURL(process.argv[1]).href).then(()=>console.log('server import graph resolves')).catch((e)=>{console.error(e);process.exit(1)})" "C:\Program Files\Loombre\server\dist\main.js"
+          # argv[1] is a DUMMY: main.ts's isDirectEntrypoint guard compares
+          # import.meta.url against pathToFileURL(argv[1]) — passing the
+          # script path there made this probe BOOT the server in the
+          # runner's bare env (round 17: BinaryMissingError from the
+          # provisioning path, misattributed as a broken import graph).
+          node -e "const{pathToFileURL}=require('node:url');import(pathToFileURL(process.argv[2]).href).then(()=>console.log('server import graph resolves')).catch((e)=>{console.error(e);process.exit(1)})" guard-dummy "C:\Program Files\Loombre\server\dist\main.js"
           if ($LASTEXITCODE -ne 0) { Write-Host "VERDICT:INSTALL:FAIL (server import graph broken in extracted payload)"; exit 1 }
           # ---- Live-boot assertions (installer completeness audit) ----
           # Services are Start="auto" + ServiceControl Start="install" now,
