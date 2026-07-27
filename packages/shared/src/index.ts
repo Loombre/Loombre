@@ -9,3 +9,4 @@ export * from "./crash-dir.js";
 export * from "./settings-registry.js";
 export * from "./settings-resolve.js";
 export * from "./language-codes.js";
+export * from "./admin-only-event-types.js";

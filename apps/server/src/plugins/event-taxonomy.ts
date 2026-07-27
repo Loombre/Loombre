@@ -24,6 +24,7 @@
 import { createRequire } from "node:module";
 import { readFileSync } from "node:fs";
 import path from "node:path";
+import { ADMIN_ONLY_EVENT_TYPES } from "@loombre/shared/admin-only-event-types";
 
 let cachedTaxonomy: readonly string[] | undefined;
 
@@ -36,53 +37,37 @@ interface EnvelopeSchemaShape {
 }
 
 /**
- * H-4 fix wave: the eight event `type`s `apps/server/src/gateway/
- * ws-broadcaster.service.ts` never delivers to a non-admin socket — this IS
- * the single source of truth for that classification now (ws-broadcaster.ts
- * imports this constant rather than keeping its own private copy). Before
- * this fix, `getOutboxEventTaxonomy()` returned the WHOLE envelope enum with
- * no such exclusion, so a plugin's manifest could REQUEST any of these, an
- * admin could GRANT them, and the delivery loop had no admin-only gate at
- * all — an out-of-process third party could receive `plugin.updated`
- * (another plugin's full baseUrl/config/grants), `settings.updated` (every
- * server-setting value), or `job.updated` (see M-7) purely by grant, on a
- * platform that otherwise refuses to show any of this to a logged-in
- * non-admin USER over the very same live-event mechanism (ws-broadcaster's
- * own ADMIN_ONLY gate). Excluding these from the GRANTABLE taxonomy in v1
- * means: a manifest requesting one is rejected exactly like requesting an
- * event type Loombre does not publish at all (same 422, same message —
- * `validateGrantAgainstManifest`'s existing "does not publish" check),
- * never silently ignored, and no grant referencing one can ever be created.
+ * L3 (owner brief): `ADMIN_ONLY_EVENT_TYPES` moved to
+ * packages/shared/src/admin-only-event-types.ts — that module is now the
+ * single canonical source (full provenance/derivation-site list lives in
+ * its header) and this is a straight re-export, kept under its original
+ * name so both of this module's importers
+ * (apps/server/src/gateway/ws-broadcaster.service.ts and
+ * apps/server/src/plugins/plugin-registration.service.ts's
+ * validateGrantAgainstManifest) keep working unchanged.
  *
- * `metadata.match-candidates` (Phosphor retheme Wave 2, Lane L2 — Fix
- * Match) joins this set for the same reason `job.updated` does: it is
- * admin-tool operational data (a bounded provider-search result for one
- * admin's Fix Match flow), not a catalog event any content-scoped viewer
- * predicate could sensibly gate.
- *
- * `user.restricted-pin-reset` (H2, owner brief) joins this set for the same
- * reason: it is instance-administration/audit activity emitted by the
- * server-local `loombre admin reset-pin <username>` CLI command
- * (packages/db/src/query/identity.ts's resetRestrictedPinAndEmit), not
- * content any viewer-scoped predicate should gate, and never something a
- * plugin subscriber should be able to request a grant for.
+ * H-4 fix wave (why this classification exists at all): the ten event
+ * `type`s here are the ones `ws-broadcaster.service.ts` never delivers to
+ * a non-admin socket. Before that fix, `getOutboxEventTaxonomy()` returned
+ * the WHOLE envelope enum with no such exclusion, so a plugin's manifest
+ * could REQUEST any of these, an admin could GRANT them, and the delivery
+ * loop had no admin-only gate at all — an out-of-process third party could
+ * receive `plugin.updated` (another plugin's full baseUrl/config/grants),
+ * `settings.updated` (every server-setting value), or `job.updated` (see
+ * M-7) purely by grant, on a platform that otherwise refuses to show any
+ * of this to a logged-in non-admin USER over the very same live-event
+ * mechanism (ws-broadcaster's own ADMIN_ONLY gate). Excluding these from
+ * the GRANTABLE taxonomy in v1 means: a manifest requesting one is
+ * rejected exactly like requesting an event type Loombre does not publish
+ * at all (same 422, same message — `validateGrantAgainstManifest`'s
+ * existing "does not publish" check), never silently ignored, and no
+ * grant referencing one can ever be created.
  */
-export const ADMIN_ONLY_EVENT_TYPES: readonly string[] = [
-  "job.updated",
-  "settings.updated",
-  "plugin.registered",
-  "plugin.updated",
-  "plugin.enabled",
-  "plugin.disabled",
-  "plugin.removed",
-  "plugin.health-changed",
-  "metadata.match-candidates",
-  "user.restricted-pin-reset",
-];
+export { ADMIN_ONLY_EVENT_TYPES };
 
 /** Returns the GRANTABLE set of outbox event `type` values — the closed
  *  envelope enum (packages/contract/event-schemas/envelope.schema.json's
- *  `type.enum`) MINUS `ADMIN_ONLY_EVENT_TYPES` (H-4 fix wave: those eight
+ *  `type.enum`) MINUS `ADMIN_ONLY_EVENT_TYPES` (H-4 fix wave: those ten
  *  types can be neither requested by a plugin manifest nor granted by an
  *  admin in LPP v1 — see this file's header). Throws if the file cannot be
  *  located or is shaped unexpectedly (a packaging defect, not a plugin's

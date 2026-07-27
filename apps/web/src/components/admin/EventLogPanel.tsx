@@ -8,11 +8,19 @@
 // bounded ring buffer (lib/admin-dashboard-live.ts's useEventLog) over the
 // SAME shared events websocket every authenticated session already holds
 // open, no new endpoint or persisted log surface ("existing... events
-// surfaces reflowed, not rebuilt"). Admin-only outbox types (job.updated,
-// settings.updated, plugin.*, metadata.match-candidates) only ever reach
-// an admin socket in the first place (ws-broadcaster.service.ts's
-// ADMIN_ONLY_TYPES), so this panel — admin-only by construction, it only
-// ever renders inside /admin — never needs its own extra filtering.
+// surfaces reflowed, not rebuilt"). Admin-only outbox types (the canonical
+// list: packages/shared/src/admin-only-event-types.ts's
+// ADMIN_ONLY_EVENT_TYPES) only ever reach an admin socket in the first
+// place (apps/server/src/gateway/ws-broadcaster.service.ts's
+// ADMIN_ONLY_TYPES, derived from that same canonical list), so this panel
+// — admin-only by construction, it only ever renders inside /admin — never
+// needs its own extra filtering. L3 (owner brief): this comment used to
+// hand-enumerate the admin-only types itself and had drifted (it omitted
+// `user.restricted-pin-reset`); it now points at the canonical module
+// instead of re-listing, so it cannot drift again. No import is added
+// here — this component performs no admin-only filtering of its own to
+// derive, by construction (see above), so there is nothing for it to
+// import.
 
 import { useEventLog } from "../../lib/admin-dashboard-live.js";
 import styles from "./EventLogPanel.module.css";

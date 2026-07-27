@@ -3,6 +3,18 @@
   "$id": "https://loombre.com/schemas/events/envelope.schema.json",
   "title": "EventEnvelope",
   "description": "Envelope for every message delivered over the websocket /v1/events channel and every row written to the events outbox table (docs/PLAN.md §4.3, §6.3). The payload schema is selected by `type`. Additive-only evolution: see README.md in this directory.",
+  "x-loombre-admin-only-event-types": [
+    "job.updated",
+    "settings.updated",
+    "plugin.registered",
+    "plugin.updated",
+    "plugin.enabled",
+    "plugin.disabled",
+    "plugin.removed",
+    "plugin.health-changed",
+    "metadata.match-candidates",
+    "user.restricted-pin-reset"
+  ],
   "type": "object",
   "additionalProperties": false,
   "required": ["id", "type", "tsMs", "actorUserId", "payload"],
