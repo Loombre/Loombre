@@ -39,8 +39,10 @@
 
 import { resolveAppPaths } from "../cli/app-paths.js";
 import {
+  EMBEDDED_PG_DEFAULT_PORT,
   EmbeddedPostgres,
   ExternalPostgresProvisioner,
+  embeddedSuperuserSecretPath,
   resolveEmbeddedPgPlatform,
   resolveVendorBinaries,
   type ProvisioningController,
@@ -55,7 +57,10 @@ import { fileURLToPath } from "node:url";
  *  LOOMBRE_EMBEDDED_PG_VERSION for an operator who has vendored a different
  *  pinned minor. */
 export const EMBEDDED_PG_DEFAULT_VERSION = "18.4.0";
-export const EMBEDDED_PG_DEFAULT_PORT = 5433;
+// Re-exported from @loombre/provisioning-pg's shared defaults (P4.2
+// discovery seam: apps/worker reconstructs the same URL and must agree
+// on this port) — no longer pinned independently here.
+export { EMBEDDED_PG_DEFAULT_PORT } from "@loombre/provisioning-pg";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -113,7 +118,10 @@ export async function bootstrapProvisioning(env: NodeJS.ProcessEnv = process.env
 
   const { dataDir } = resolveAppPaths(process.platform, env);
   const pgDataDir = join(dataDir, "postgres", "data");
-  const secretPath = join(dataDir, "postgres", "superuser.secret");
+  // Via the package's ONE path definition — apps/worker's discovery seam
+  // (resolveEmbeddedDatabaseUrl) reads the same helper, so writer and
+  // reader cannot drift (P4.2).
+  const secretPath = embeddedSuperuserSecretPath(dataDir);
 
   const vendorDir = env["LOOMBRE_EMBEDDED_PG_VENDOR_DIR"]?.trim() || defaultVendorDir();
   const pgFullVersion = env["LOOMBRE_EMBEDDED_PG_VERSION"]?.trim() || EMBEDDED_PG_DEFAULT_VERSION;

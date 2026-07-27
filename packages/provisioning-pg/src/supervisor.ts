@@ -44,6 +44,7 @@ import { writeOwnerOnlySecretFile } from "./secret/file0600.js";
 import { detectCorruption, classifyStartupFailureLog, formatCorruptDetail } from "./corruption.js";
 import { runBinary, spawnServer } from "./exec.js";
 import { UpgradeStepFailedError, BinaryExecutionError } from "./errors.js";
+import { EMBEDDED_PG_DEFAULT_DATABASE, EMBEDDED_PG_SUPERUSER_USERNAME } from "./defaults.js";
 import type { ProvisioningController } from "./controller.js";
 import { socketScratchBase } from "./scratch-paths.js";
 
@@ -99,8 +100,10 @@ export interface UpgradeResult {
   spotCheckResults: SpotCheckResult[];
 }
 
-const DEFAULT_USERNAME = "loombre";
-const DEFAULT_DATABASE = "loombre";
+// Shared with discovery.ts (the worker-side reader) via defaults.ts —
+// see that module's header for why these cannot be private here anymore.
+const DEFAULT_USERNAME = EMBEDDED_PG_SUPERUSER_USERNAME;
+const DEFAULT_DATABASE = EMBEDDED_PG_DEFAULT_DATABASE;
 const DEFAULT_START_TIMEOUT_MS = 20_000;
 const HEALTH_POLL_INTERVAL_MS = 150;
 const STOP_GRACE_TIMEOUT_MS = 15_000;
