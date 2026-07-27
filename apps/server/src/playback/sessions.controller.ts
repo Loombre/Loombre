@@ -94,8 +94,12 @@ export class PlaybackSessionsController {
       throw notFound("Item or media file not found.", req.originalUrl);
     }
 
+    // See plan.controller.ts's computePlaybackPlan for why both prefs are
+    // read here (H1, orchestrator adjudication A-5: user_settings.prefs is
+    // a real writer now, not a no-op).
     const settings = await getUserSettings(this.dbProvider.db, ctx.userId);
     const audioLanguagePref = (settings?.prefs?.["audioPreferredLanguage"] as string | null | undefined) ?? null;
+    const subtitleLanguagePref = (settings?.prefs?.["subtitlePreferredLanguage"] as string | null | undefined) ?? null;
 
     const planInput = await assemblePlanInput({
       db: this.dbProvider.db,
@@ -103,6 +107,7 @@ export class PlaybackSessionsController {
       assembly,
       parsed: parsed.value,
       audioLanguagePref,
+      subtitleLanguagePref,
       settingsService: this.settingsService,
     });
 

@@ -143,6 +143,9 @@ importers:
       '@loombre/sdk':
         specifier: workspace:*
         version: link:../../packages/sdk
+      '@loombre/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
       blurhash:
         specifier: 2.0.5
         version: 2.0.5

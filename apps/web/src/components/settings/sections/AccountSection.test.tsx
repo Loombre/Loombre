@@ -7,9 +7,11 @@
 //      `birthDate: [string, 'null']` null-to-clear semantics) — omitting
 //      the key leaves the stored value untouched server-side
 //      (apps/server/src/catalog/users.controller.ts's updateMe).
-//   2. No control may exist here for a preference GET/PUT
-//      /users/me/settings does not persist (owner ledger item 6 /
-//      STATE.md "GET/PUT /users/me/settings is a COMPLETE STUB").
+//   2. The Playback card's two language pickers (H1, owner ledger item 6,
+//      closed) round-trip through the REAL GET/PUT /users/me/settings, and
+//      "Saved" renders ONLY after a genuine 2xx — a rejected PUT must show
+//      the error state, never "Saved" (the lying-save bug this restores
+//      from, commit 9552333).
 //   3. The change-password form submits ONLY the password (never the
 //      profile fields) and clears its inputs on success.
 //   4. The restricted-content PIN card can only ever submit a PIN the
@@ -89,23 +91,39 @@ function setNativeValue(el: HTMLInputElement, value: string): void {
 describe("AccountSection", () => {
   let view: TestRender | null = null;
 
+  const SETTINGS_DEFAULT = {
+    restrictedOptIn: false,
+    locale: "en-US",
+    theme: "system",
+    subtitlePreferredLanguage: null,
+    audioPreferredLanguage: null,
+    autoplayNextEpisode: true,
+    updatedAtMs: 0,
+  };
+
   beforeEach(() => {
     apiGetMock.mockReset();
     apiPatchMock.mockReset();
     apiPutMock.mockReset();
     restrictedState = { ...RESTRICTED_DEFAULT };
-    apiPutMock.mockImplementation(() => Promise.resolve({ optIn: true, hasPin: true, unlockedUntilMs: null }));
+    // apiPut is shared by BOTH the restricted-content card (PUT
+    // /users/me/restricted) and the Playback card (PUT /users/me/settings)
+    // below — path-aware so each gets its own realistic response shape.
+    // The settings branch echoes the body back with a fresh updatedAtMs,
+    // mirroring putMySettings' real "returns what it just persisted"
+    // contract (apps/server/src/catalog/users.controller.ts).
+    apiPutMock.mockImplementation((path: string, options?: { body?: Record<string, unknown> }) => {
+      if (path === "/users/me/restricted") {
+        return Promise.resolve({ optIn: true, hasPin: true, unlockedUntilMs: null });
+      }
+      if (path === "/users/me/settings") {
+        return Promise.resolve({ ...SETTINGS_DEFAULT, ...options?.body, updatedAtMs: 999 });
+      }
+      return Promise.resolve({});
+    });
     apiGetMock.mockImplementation((path: string) => {
       if (path === "/users/me") return Promise.resolve({ ...ME });
-      return Promise.resolve({
-        restrictedOptIn: false,
-        locale: "en-US",
-        theme: "system",
-        subtitlePreferredLanguage: null,
-        audioPreferredLanguage: null,
-        autoplayNextEpisode: true,
-        updatedAtMs: 0,
-      });
+      return Promise.resolve({ ...SETTINGS_DEFAULT });
     });
     apiPatchMock.mockImplementation(() => Promise.resolve({ ...ME }));
   });
@@ -126,6 +144,23 @@ describe("AccountSection", () => {
     );
     if (!label) throw new Error(`no field labelled "${labelText}"`);
     return label.querySelector("input")!;
+  }
+
+  function selectFor(labelText: string): HTMLSelectElement {
+    const label = Array.from(view!.container.querySelectorAll("label")).find((l) =>
+      (l.textContent ?? "").startsWith(labelText),
+    );
+    if (!label) throw new Error(`no field labelled "${labelText}"`);
+    return label.querySelector("select")!;
+  }
+
+  // React's <select> onChange listens for the native 'change' event (unlike
+  // <input>, which it tracks via 'input') — mirrors setNativeValue above for
+  // the picker fields.
+  function setSelectValue(el: HTMLSelectElement, value: string): void {
+    const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")!.set!;
+    setter.call(el, value);
+    el.dispatchEvent(new Event("change", { bubbles: true }));
   }
 
   function buttonFor(text: string): HTMLButtonElement {
@@ -162,12 +197,81 @@ describe("AccountSection", () => {
     expect(options.body["birthDate"]).toBe("1991-02-03");
   });
 
-  it("exposes no control for preferences PUT /users/me/settings does not persist", async () => {
-    await render();
-    const text = view!.container.textContent ?? "";
-    expect(text).not.toMatch(/Preferred audio language/);
-    expect(text).not.toMatch(/Preferred subtitle language/);
-    expect(apiPutMock.mock.calls.some(([path]) => path === "/users/me/settings")).toBe(false);
+  // ── Playback preferences (H1, owner ledger item 6, closed) ─────────────
+  describe("Playback preferences (language pickers)", () => {
+    it("renders both pickers defaulted to 'No preference' when the server has no stored prefs", async () => {
+      await render();
+      expect(selectFor("Preferred audio language").value).toBe("");
+      expect(selectFor("Preferred subtitle language").value).toBe("");
+    });
+
+    it("pre-selects whatever GET /users/me/settings returned", async () => {
+      apiGetMock.mockImplementation((path: string) => {
+        if (path === "/users/me") return Promise.resolve({ ...ME });
+        return Promise.resolve({ ...SETTINGS_DEFAULT, audioPreferredLanguage: "fra", subtitlePreferredLanguage: "jpn" });
+      });
+      await render();
+      expect(selectFor("Preferred audio language").value).toBe("fra");
+      expect(selectFor("Preferred subtitle language").value).toBe("jpn");
+    });
+
+    it("saving sends the picked ISO 639-2 codes, and 'Saved' renders only after the PUT resolves 2xx", async () => {
+      await render();
+      setSelectValue(selectFor("Preferred audio language"), "fra");
+      setSelectValue(selectFor("Preferred subtitle language"), "eng");
+
+      const playbackCard = selectFor("Preferred audio language").closest("form")!;
+      await click(Array.from(playbackCard.querySelectorAll("button")).find((b) => b.textContent === "Save")!);
+
+      const call = apiPutMock.mock.calls.find(([path]) => path === "/users/me/settings");
+      expect(call).toBeDefined();
+      const [, options] = call as [string, { body: Record<string, unknown> }];
+      expect(options.body["audioPreferredLanguage"]).toBe("fra");
+      expect(options.body["subtitlePreferredLanguage"]).toBe("eng");
+      // theme/autoplayNextEpisode/restrictedOptIn round-trip UNCHANGED —
+      // this form offers no control for any of them (A-6).
+      expect(options.body["theme"]).toBe(SETTINGS_DEFAULT.theme);
+      expect(options.body["autoplayNextEpisode"]).toBe(SETTINGS_DEFAULT.autoplayNextEpisode);
+      expect(options.body["restrictedOptIn"]).toBe(SETTINGS_DEFAULT.restrictedOptIn);
+
+      expect(playbackCard.textContent ?? "").toMatch(/Saved/);
+    });
+
+    it("selecting 'No preference' after a stored language sends null", async () => {
+      apiGetMock.mockImplementation((path: string) => {
+        if (path === "/users/me") return Promise.resolve({ ...ME });
+        return Promise.resolve({ ...SETTINGS_DEFAULT, audioPreferredLanguage: "fra" });
+      });
+      await render();
+      expect(selectFor("Preferred audio language").value).toBe("fra");
+
+      setSelectValue(selectFor("Preferred audio language"), "");
+      const playbackCard = selectFor("Preferred audio language").closest("form")!;
+      await click(Array.from(playbackCard.querySelectorAll("button")).find((b) => b.textContent === "Save")!);
+
+      const [, options] = apiPutMock.mock.calls.find(([path]) => path === "/users/me/settings") as [
+        string,
+        { body: Record<string, unknown> },
+      ];
+      expect(options.body["audioPreferredLanguage"]).toBeNull();
+    });
+
+    it("a rejected PUT shows the error state and never 'Saved' — the lying-save bug this restores from", async () => {
+      await render();
+      apiPutMock.mockImplementation((path: string) => {
+        if (path === "/users/me/settings") {
+          return Promise.reject(new FakeApiError("subtitlePreferredLanguage must be a known ISO 639-2 language code."));
+        }
+        return Promise.resolve({ optIn: true, hasPin: true, unlockedUntilMs: null });
+      });
+
+      setSelectValue(selectFor("Preferred audio language"), "fra");
+      const playbackCard = selectFor("Preferred audio language").closest("form")!;
+      await click(Array.from(playbackCard.querySelectorAll("button")).find((b) => b.textContent === "Save")!);
+
+      expect(playbackCard.textContent ?? "").toMatch(/must be a known ISO 639-2 language code/);
+      expect(playbackCard.textContent ?? "").not.toMatch(/Saved/);
+    });
   });
 
   it("changing the password submits only the password and clears the inputs", async () => {

@@ -164,8 +164,21 @@ interface VerifiedCapabilities {
 ### 2.6 TrackSelection (resolved by session service BEFORE plan(); rules here so
 they are testable): video = first non-thumbnail video stream unless user pins;
 audio = user pin → else language-pref match → else `isDefault` → else index 0;
-subtitle = user pin → else forced-flag stream matching audio language (auto)
-→ else none. Selection emits no reasons; it is input.
+subtitle = user pin → else forced-flag stream matching the user's subtitle-
+language preference when they have one, else the RESOLVED audio stream's
+language (auto) → else none. Selection emits no reasons; it is input.
+
+Both language-preference legs above (user_settings.prefs'
+`audioPreferredLanguage`/`subtitlePreferredLanguage`, H1) match via
+ISO 639-2 bibliographic/terminologic equivalence — a preference stored as
+one code (e.g. "fra") matches a stream tagged with its equivalence-pair
+partner ("fre") — see `packages/shared/src/language-codes.ts`'s
+`languageMatches()`. The subtitle leg's matching key is
+`subtitleLanguagePref ?? resolvedAudioLanguage`: an explicit subtitle-
+language preference always takes priority over the audio-language auto-
+match when both exist; this is still ONLY ever a forced-track auto-match —
+a subtitle-language preference does not cause a non-forced subtitle to be
+auto-selected.
 
 ## 3. The decision algorithm (ordered; later stages may upgrade, never
 downgrade, the transcode requirement)

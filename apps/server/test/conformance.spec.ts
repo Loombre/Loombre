@@ -293,7 +293,12 @@ const IMPLEMENTED_NON_PUBLIC_EXPECTATIONS: Record<string, number> = {
   getMe: 200,
   updateMe: 200, // bodyless body is valid (no required fields) -> no-op update of the caller
   getMySettings: 200,
-  putMySettings: 200,
+  // H1 (owner ledger item 6, closed): putMySettings now requires+validates
+  // a real UserSettings body (locale/theme/language-pref/autoplay/etc, all
+  // required per the contract) — this walk sends no body at all, so it 422s
+  // the same way createUser/putProgress do above ("bodyless -> required
+  // field missing").
+  putMySettings: 422, // bodyless -> "restrictedOptIn is required"
   listDevices: 200,
   getDevice: 404,
   revokeDevice: 404,

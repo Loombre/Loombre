@@ -111,3 +111,59 @@ describe("resolveTrackSelection — subtitle", () => {
     expect(sel.subtitleStreamIndex).toBeNull();
   });
 });
+
+// H1 / orchestrator adjudication A-2: languageMatches() equivalence-pair
+// matching, and the explicit subtitleLanguagePref leg (matching key
+// `subtitleLanguagePref ?? resolvedAudioLanguage`).
+describe("resolveTrackSelection — language-preference equivalence (A-1/A-2)", () => {
+  it("audio language-pref matches via a bibliographic/terminologic equivalence pair (stored 'fre' matches stream 'fra')", () => {
+    // AUDIO index 4 is tagged 'fra' (terminologic); the stored preference
+    // uses the bibliographic code 'fre' for the SAME language.
+    const sel = resolveTrackSelection(media(), {}, "fre");
+    expect(sel.audioStreamIndex).toBe(4);
+  });
+
+  it("audio language-pref matches the other direction too ('ger' pref matches a stream tagged 'deu')", () => {
+    const germanAudio = AUDIO.map((a) => (a.index === 4 ? { ...a, language: "deu" } : a));
+    const sel = resolveTrackSelection(media({ audio: germanAudio }), {}, "ger");
+    expect(sel.audioStreamIndex).toBe(4);
+  });
+
+  it("subtitlePreferredLanguage, when present, is the matching key INSTEAD of the resolved audio language", () => {
+    // Resolved audio (no pin, no pref) is index 3, language 'jpn' — the
+    // forced 'jpn' subtitle is index 6. An explicit subtitle-language
+    // preference of 'fra' must select the forced 'fra' subtitle (index 7)
+    // instead, even though it disagrees with the audio language.
+    const sel = resolveTrackSelection(media(), {}, null, "fra");
+    expect(sel.audioStreamIndex).toBe(3);
+    expect(sel.subtitleStreamIndex).toBe(7);
+  });
+
+  it("subtitlePreferredLanguage matches via equivalence too (stored 'chi' matches a stream tagged 'zho')", () => {
+    const chineseSubtitle = SUBTITLE.map((s) => (s.index === 7 ? { ...s, language: "zho" } : s));
+    const sel = resolveTrackSelection(media({ subtitle: chineseSubtitle }), {}, null, "chi");
+    expect(sel.subtitleStreamIndex).toBe(7);
+  });
+
+  it("null/undefined subtitlePreferredLanguage falls back to the resolved audio language (unchanged pre-H1 behavior)", () => {
+    const sel = resolveTrackSelection(media(), {}, null, null);
+    expect(sel.audioStreamIndex).toBe(3); // isDefault, language 'jpn'
+    expect(sel.subtitleStreamIndex).toBe(6); // forced 'jpn' subtitle
+  });
+
+  it("omitting subtitlePreferredLanguage entirely behaves identically to passing null (backward compatible)", () => {
+    const withArg = resolveTrackSelection(media(), {}, null, null);
+    const withoutArg = resolveTrackSelection(media(), {}, null);
+    expect(withoutArg).toEqual(withArg);
+  });
+
+  it("a subtitle pin still wins over an explicit subtitle-language preference", () => {
+    const sel = resolveTrackSelection(media(), { subtitleStreamIndex: 5 }, null, "fra");
+    expect(sel.subtitleStreamIndex).toBe(5);
+  });
+
+  it("an unmatched subtitle-language preference falls through to none (no forced stream in that language)", () => {
+    const sel = resolveTrackSelection(media(), { audioStreamIndex: 2 }, null, "deu"); // no 'deu' subtitle at all
+    expect(sel.subtitleStreamIndex).toBeNull();
+  });
+});

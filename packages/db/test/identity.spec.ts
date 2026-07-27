@@ -42,6 +42,7 @@ import {
   setRestrictedUnlockUntilAndEmit,
   updateDeviceForLogin,
   updateRestrictedSettings,
+  updateUserPrefs,
 } from '../src/query/identity.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -178,6 +179,73 @@ describe('identity queries (users / user_settings / library_permissions / device
     });
     expect(optedOut.restricted_opt_in).toBe(false);
     expect(optedOut.restricted_pin_hash).toBeNull();
+  });
+
+  it('updateUserPrefs writes prefs (H1) without touching restricted_* columns', async () => {
+    const casual = await getUserByUsername(db, 'casual');
+    const userId = casual!.id;
+
+    // Establish a known restricted_opt_in/pin state first, so we can prove
+    // updateUserPrefs below leaves it alone (A-5).
+    await updateRestrictedSettings(db, {
+      userId,
+      optIn: true,
+      pinHash: 'pref-test-pin-hash',
+      updatedAtMs: 500,
+    });
+
+    const written = await updateUserPrefs(db, {
+      userId,
+      prefs: {
+        locale: 'fr-FR',
+        theme: 'dark',
+        subtitlePreferredLanguage: 'fra',
+        audioPreferredLanguage: null,
+        autoplayNextEpisode: false,
+      },
+      updatedAtMs: 1_234,
+    });
+
+    expect(written.prefs).toEqual({
+      locale: 'fr-FR',
+      theme: 'dark',
+      subtitlePreferredLanguage: 'fra',
+      audioPreferredLanguage: null,
+      autoplayNextEpisode: false,
+    });
+    expect(written.updated_at_ms).toBe(1_234);
+    // restricted_* untouched by this writer (A-5).
+    expect(written.restricted_opt_in).toBe(true);
+    expect(written.restricted_pin_hash).toBe('pref-test-pin-hash');
+
+    const reread = await getUserSettings(db, userId);
+    expect(reread?.prefs).toEqual({
+      locale: 'fr-FR',
+      theme: 'dark',
+      subtitlePreferredLanguage: 'fra',
+      audioPreferredLanguage: null,
+      autoplayNextEpisode: false,
+    });
+    expect(reread?.restricted_opt_in).toBe(true);
+  });
+
+  it('updateUserPrefs REPLACES the whole prefs object, not a partial merge', async () => {
+    const casual = await getUserByUsername(db, 'casual');
+    const userId = casual!.id;
+
+    await updateUserPrefs(db, {
+      userId,
+      prefs: { locale: 'en-US', theme: 'system', extra: 'stale-key' },
+      updatedAtMs: 1,
+    });
+    const second = await updateUserPrefs(db, {
+      userId,
+      prefs: { locale: 'de-DE', theme: 'dark' },
+      updatedAtMs: 2,
+    });
+
+    expect(second.prefs).toEqual({ locale: 'de-DE', theme: 'dark' });
+    expect(second.prefs).not.toHaveProperty('extra');
   });
 
   it('createDevice / getDeviceById round-trip', async () => {

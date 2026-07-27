@@ -18,21 +18,26 @@
 // removed"; W0 already deleted the data-theme mechanism and ThemeToggle),
 // so that control could no longer do anything.
 //
-// Cleanup 3: the WHOLE Playback-preferences form is gone with it. Its two
-// survivors (preferred audio/subtitle language) showed a green "Saved" for
-// values nothing ever stored — PUT /users/me/settings
-// (apps/server/src/catalog/users.controller.ts's putMySettings) declares no
-// @Body() at all and mapSettings returns fixed defaults, so every save
-// silently reverted on the next load. Deleting a control with no backing
-// write is this repo's established handling (cleanup 1 above; the autoplay
-// toggle hidden by the Addendum A doc-lane fix F3(c)) — a fake success
-// state is not. Restore the form — audio/subtitle language, autoplay and
-// UserSettings.theme's fate together — once user_settings.prefs is
-// genuinely wired (STATE.md owner ledger item 6, "GET/PUT
-// /users/me/settings is a COMPLETE STUB ... persists nothing for ANY key").
-// The contract's UserSettings fields stay UNTOUCHED: removing a required
-// contract field is a breaking change / an owner decision, per this lane's
-// hard line.
+// Cleanup 3 (H1, owner ledger item 6, CLOSED): the Playback-preferences form
+// was removed here because its two fields (preferred audio/subtitle
+// language) showed a green "Saved" for values PUT /users/me/settings
+// silently discarded (it declared no @Body() at all, and mapSettings
+// returned fixed defaults no matter what was sent) — the lying-save bug
+// commit 9552333's audit flagged. That write path is now real
+// (apps/server/src/catalog/users.controller.ts's putMySettings validates
+// and persists into user_settings.prefs via @loombre/db's updateUserPrefs),
+// so PlaybackPrefsSection below is restored — as two styled native <select>
+// pickers under the Phosphor design language (packages/shared's
+// LANGUAGE_CODES known-language list, NOT the old free-text maxLength=3
+// TextInput markup this section used before cleanup 3 — that shape is
+// gone for good, see `git show 9552333^` if the old form is ever needed for
+// reference). Autoplay and UserSettings.theme's own UI fate are still OUT
+// OF SCOPE here (orchestrator adjudication A-6): autoplay has no consuming
+// player feature yet (Addendum A doc-lane fix F3(c)'s original reasoning
+// still holds) and theme stays a separate owner decision (owner ledger item
+// 6's remaining half) — both values still round-trip through the PUT body
+// below UNCHANGED, exactly as fetched, so this form can never silently
+// revert either one even though it offers no control for them.
 //
 // Cleanup 2 (duplicate title): `heading` is null when the mobile shell
 // chrome already shows a large "Settings" title for this exact content
@@ -50,10 +55,16 @@ import { SegmentedControl } from "../../ui/SegmentedControl.js";
 import { useRestricted } from "../../restricted/RestrictedProvider.js";
 import { apiGet, apiPatch, apiPut, LoombreApiError } from "../../../lib/api-client.js";
 import { PIN_LENGTH, isPinComplete, sanitizePinInput, stripPinDigits } from "../../../lib/pin-entry.js";
+import { LANGUAGE_CODES } from "@loombre/shared";
 import type { components } from "@loombre/sdk";
 import styles from "./AccountSection.module.css";
 
 type User = components["schemas"]["User"];
+type UserSettings = components["schemas"]["UserSettings"];
+
+// Sorted once at module load, not per render — LANGUAGE_CODES is a fixed,
+// immutable module-level constant (packages/shared/src/language-codes.ts).
+const SORTED_LANGUAGE_OPTIONS = [...LANGUAGE_CODES].sort((a, b) => a.name.localeCompare(b.name));
 
 function SaveStatus({ status }: { status: "idle" | "saving" | "saved" | "error" }): React.JSX.Element | null {
   if (status === "idle") return null;
@@ -356,6 +367,105 @@ function ChangePasswordSection(): React.JSX.Element {
   );
 }
 
+// H1 (owner ledger item 6, closed) — see this file's header (cleanup 3) for
+// the lying-save bug this restores from. "No preference" is represented as
+// the empty string in this form's OWN local state (a <select>'s `value`
+// can't be `null`) and translated to/from the contract's `null` only at the
+// GET/PUT boundary — never held as `null` in React state.
+function PlaybackPrefsSection(): React.JSX.Element {
+  const [settings, setSettings] = useState<UserSettings | null>(null);
+  const [audioLang, setAudioLang] = useState("");
+  const [subtitleLang, setSubtitleLang] = useState("");
+  const [status, setStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    void apiGet("/users/me/settings").then((s) => {
+      setSettings(s);
+      setAudioLang(s.audioPreferredLanguage ?? "");
+      setSubtitleLang(s.subtitlePreferredLanguage ?? "");
+    });
+  }, []);
+
+  async function handleSubmit(event: FormEvent): Promise<void> {
+    event.preventDefault();
+    if (!settings) return;
+    setStatus("saving");
+    setError(null);
+    try {
+      // restrictedOptIn/theme/autoplayNextEpisode/updatedAtMs all round-trip
+      // EXACTLY as fetched — this form offers no control for any of them
+      // (see this file's header, A-6): restrictedOptIn is readOnly server-
+      // side regardless of what's sent, and the other three simply aren't
+      // this form's concern. Only the two language fields, below, can
+      // actually change here.
+      const updated = await apiPut("/users/me/settings", {
+        body: {
+          restrictedOptIn: settings.restrictedOptIn,
+          locale: settings.locale,
+          theme: settings.theme,
+          subtitlePreferredLanguage: subtitleLang || null,
+          audioPreferredLanguage: audioLang || null,
+          autoplayNextEpisode: settings.autoplayNextEpisode,
+          updatedAtMs: settings.updatedAtMs,
+        },
+      });
+      // "Saved" is reached ONLY via this line — it runs only after apiPut
+      // resolves without throwing, i.e. only after a genuine 2xx (the
+      // lying-save bug this whole section exists to not repeat: see this
+      // file's header, cleanup 3).
+      setSettings(updated);
+      setAudioLang(updated.audioPreferredLanguage ?? "");
+      setSubtitleLang(updated.subtitlePreferredLanguage ?? "");
+      setStatus("saved");
+    } catch (err) {
+      setStatus("error");
+      setError(err instanceof LoombreApiError ? err.message : "Network error");
+    }
+  }
+
+  if (!settings) return <p className={styles.sectionBody}>Loading…</p>;
+
+  return (
+    <form className={styles.section} onSubmit={handleSubmit}>
+      <h2 className={styles.sectionTitle}>Playback</h2>
+      <label className={styles.field}>
+        <span className={styles.label}>Preferred audio language</span>
+        <select className={styles.select} value={audioLang} onChange={(e) => setAudioLang(e.target.value)}>
+          <option value="">No preference</option>
+          {SORTED_LANGUAGE_OPTIONS.map((l) => (
+            <option key={l.code} value={l.code}>
+              {l.name}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className={styles.field}>
+        <span className={styles.label}>Preferred subtitle language</span>
+        <select className={styles.select} value={subtitleLang} onChange={(e) => setSubtitleLang(e.target.value)}>
+          <option value="">No preference</option>
+          {SORTED_LANGUAGE_OPTIONS.map((l) => (
+            <option key={l.code} value={l.code}>
+              {l.name}
+            </option>
+          ))}
+        </select>
+      </label>
+      <div className={styles.actions}>
+        {error && (
+          <span className={styles.status} data-tone="error">
+            {error}
+          </span>
+        )}
+        <SaveStatus status={status} />
+        <Button type="submit" variant="primary" disabled={status === "saving"}>
+          Save
+        </Button>
+      </div>
+    </form>
+  );
+}
+
 export function AccountSection({ heading }: { heading: string | null }): React.JSX.Element {
   return (
     <div className={styles.page}>
@@ -368,6 +478,9 @@ export function AccountSection({ heading }: { heading: string | null }): React.J
       </Card>
       <Card>
         <RestrictedSection />
+      </Card>
+      <Card>
+        <PlaybackPrefsSection />
       </Card>
     </div>
   );

@@ -16,11 +16,28 @@
 //   audio:    request-body pin -> else language-pref match (from user
 //             prefs, when present) -> else isDefault -> else lowest index.
 //   subtitle: request-body pin -> else forced-flag stream matching the
-//             RESOLVED audio stream's language (auto) -> else none.
+//             SUBTITLE-LANGUAGE-PREF when the user has one, else the
+//             RESOLVED audio stream's language (auto) -> else none (H1,
+//             orchestrator adjudication A-2 — see below).
 // Selection never emits reasons (§2.6: "it is input").
+//
+// H1 (orchestrator adjudication A-2, closed alongside user_settings.prefs
+// becoming a real writer): both language-preference legs above now match
+// via @loombre/shared's languageMatches() rather than `===`, so a preference
+// stored as one ISO 639-2 bibliographic/terminologic code (e.g. "fra")
+// matches a stream tagged with its equivalence-pair partner ("fre") — see
+// packages/shared/src/language-codes.ts's LANGUAGE_EQUIVALENCE_PAIRS. The
+// subtitle leg's matching key is `subtitleLanguagePref ?? resolvedAudioLanguage`
+// — an EXPLICIT subtitle-language preference always wins over the
+// audio-language auto-match when both are present; neither present ->
+// unchanged "no forced-sub match -> none" behavior. This is deliberately
+// NOT "auto-select any subtitle in the preferred language" (only forced
+// tracks are ever auto-selected here) — that would be a materially bigger
+// behavior change than H1 authorizes.
 
 import type { AssembledAudioStream, AssembledMediaInfo, AssembledSubtitleStream, AssembledVideoStream } from "@loombre/db";
 import type { TrackSelection } from "@loombre/playback-engine";
+import { languageMatches } from "@loombre/shared";
 
 /** Request-body pins (PlanRequest.selection, all optional/nullable per the
  *  contract's TrackSelection schema — see plan-request.ts's parsing). */
@@ -60,7 +77,7 @@ function resolveAudioIndex(
   if (pinned) return pinned.index;
 
   if (audioLanguagePref) {
-    const byLanguage = audio.find((a) => a.language === audioLanguagePref);
+    const byLanguage = audio.find((a) => languageMatches(a.language, audioLanguagePref));
     if (byLanguage) return byLanguage.index;
   }
 
@@ -74,12 +91,17 @@ function resolveSubtitleIndex(
   subtitle: readonly AssembledSubtitleStream[],
   pins: SelectionPins,
   resolvedAudioLanguage: string | null,
+  subtitleLanguagePref: string | null | undefined,
 ): number | null {
   const pinned = pinnedStream(subtitle, pins.subtitleStreamIndex);
   if (pinned) return pinned.index;
 
-  if (resolvedAudioLanguage) {
-    const forced = subtitle.find((s) => s.isForced && s.language === resolvedAudioLanguage);
+  // A-2: an explicit subtitle-language preference is the matching key when
+  // present; otherwise fall back to the RESOLVED audio stream's language,
+  // exactly as before this preference existed.
+  const matchLanguage = subtitleLanguagePref ?? resolvedAudioLanguage;
+  if (matchLanguage) {
+    const forced = subtitle.find((s) => s.isForced && languageMatches(s.language, matchLanguage));
     if (forced) return forced.index;
   }
 
@@ -87,23 +109,28 @@ function resolveSubtitleIndex(
 }
 
 /**
- * Resolves the full §2.6 TrackSelection. `audioLanguagePref` is the
- * caller's already-read user setting (this module takes it as plain data —
- * reading `user_settings.prefs` is the CALLER's job, see
- * plan-assembly.ts); `null`/`undefined`/empty-string all mean "no
- * preference", falling through to the isDefault/lowest-index rule exactly
- * as if no preference had ever been asked for.
+ * Resolves the full §2.6 TrackSelection. `audioLanguagePref`/
+ * `subtitleLanguagePref` are the caller's already-read user settings (this
+ * module takes them as plain data — reading `user_settings.prefs` is the
+ * CALLER's job, see plan-assembly.ts); `null`/`undefined`/empty-string all
+ * mean "no preference" for either, falling through to the next rule in the
+ * cascade exactly as if that preference had never been asked for.
+ * `subtitleLanguagePref` is optional (omitted entirely by any caller that
+ * predates H1) and, when present, takes priority over the resolved audio
+ * language for the forced-subtitle auto-match (A-2) — see this module's
+ * header.
  */
 export function resolveTrackSelection(
   media: Pick<AssembledMediaInfo, "video" | "audio" | "subtitle">,
   pins: SelectionPins,
   audioLanguagePref: string | null | undefined,
+  subtitleLanguagePref?: string | null | undefined,
 ): TrackSelection {
   const videoStreamIndex = resolveVideoIndex(media.video, pins);
   const audioStreamIndex = resolveAudioIndex(media.audio, pins, audioLanguagePref);
   const resolvedAudioLanguage =
     audioStreamIndex !== null ? (media.audio.find((a) => a.index === audioStreamIndex)?.language ?? null) : null;
-  const subtitleStreamIndex = resolveSubtitleIndex(media.subtitle, pins, resolvedAudioLanguage);
+  const subtitleStreamIndex = resolveSubtitleIndex(media.subtitle, pins, resolvedAudioLanguage, subtitleLanguagePref);
 
   return { videoStreamIndex, audioStreamIndex, subtitleStreamIndex };
 }
