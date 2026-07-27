@@ -238,6 +238,7 @@ function stageWeb(targetDir) {
   // Run with `node <stage>/apps/web/server.js`, env NODE_ENV=production,
   // PORT, HOSTNAME=0.0.0.0 — exactly what Services.wxs's LoombreWeb
   // service registration does against the installed WEBDIR copy.
+  log("staging apps/web standalone bundle");
   const webSrc = path.join(REPO_ROOT, "apps", "web");
   const standaloneDir = path.join(webSrc, ".next", "standalone");
   if (!existsSync(standaloneDir)) {
@@ -249,14 +250,21 @@ function stageWeb(targetDir) {
   }
   rmSync(targetDir, { recursive: true, force: true });
   mkdirSync(targetDir, { recursive: true });
-  cpSync(standaloneDir, targetDir, { recursive: true, dereference: true });
+  // verbatimSymlinks (NOT dereference): payload.zip's bsdtar -L is this
+  // lane's one materialization boundary (proven, diag run 30299041676-era
+  // rounds), and a dereferencing cpSync walk over a Windows pnpm/junction
+  // tree can cycle-recurse into a silent hard crash — diag run
+  // 30303262774 died inside this function with exit 127 and ZERO output.
+  cpSync(standaloneDir, targetDir, { recursive: true, verbatimSymlinks: true });
+  log("staged standalone tree; overlaying .next/static");
   cpSync(path.join(webSrc, ".next", "static"), path.join(targetDir, "apps", "web", ".next", "static"), {
     recursive: true,
-    dereference: true,
+    verbatimSymlinks: true,
   });
   const publicDir = path.join(webSrc, "public");
   if (existsSync(publicDir)) {
-    cpSync(publicDir, path.join(targetDir, "apps", "web", "public"), { recursive: true, dereference: true });
+    log("overlaying public/");
+    cpSync(publicDir, path.join(targetDir, "apps", "web", "public"), { recursive: true, verbatimSymlinks: true });
   }
   const entrypoint = path.join(targetDir, "apps", "web", "server.js");
   if (!existsSync(entrypoint)) {
