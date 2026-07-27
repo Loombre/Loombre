@@ -245,6 +245,64 @@ function buildDeviceProfile() {
   };
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+// L2: /usr/local/bin/loombre PATH shim — the H2-recovery invocability fix
+// (docs-verbatim proof: `loombre --version` / `loombre admin reset-pin
+// --help` must both work from a fresh shell with no path prefix once
+// install.sh has run). See installers/linux/install.sh's shim block and
+// the writeWrapperScripts() bin/loombre wrapper in build-tarball.mjs.
+// ─────────────────────────────────────────────────────────────────────────
+
+function combinedOutput(result) {
+  return `${result.stdout}\n${result.stderr}`;
+}
+
+function assertShimResolvesUnderPrefix(containerName, prefix) {
+  const resolved = dockerExecCapture(containerName, ["bash", "-c", "readlink -f /usr/local/bin/loombre"]);
+  const target = resolved.stdout.trim();
+  console.log(`smoke: readlink -f /usr/local/bin/loombre -> ${JSON.stringify(target)}`);
+  if (resolved.status !== 0 || !target.startsWith(`${prefix}/`)) {
+    throw new Error(`smoke: /usr/local/bin/loombre does not resolve under ${prefix} (readlink -f gave ${JSON.stringify(target)}, exit ${resolved.status})`);
+  }
+}
+
+/** The docs-verbatim proof (B-5): from a FRESH shell with no path prefix
+ *  (`bash -lc`, no inherited cwd/env from this script) — both commands
+ *  below must work via the bare `loombre` name on PATH. This is the
+ *  H2-recovery invocability fix: `admin reset-pin` is the PIN-reset
+ *  recovery procedure (docs/ops/cli.md), and it must be reachable without
+ *  first hunting down the tarball's install root. */
+function assertCliInvocable(containerName) {
+  const version = dockerExecCapture(containerName, ["bash", "-lc", "loombre --version"]);
+  console.log(`smoke: [H2-recovery invocability fix] loombre --version -> exit=${version.status} stdout=${JSON.stringify(version.stdout.trim())}`);
+  if (version.status !== 0) {
+    throw new Error(`smoke: 'loombre --version' exited ${version.status} from a fresh shell (H2-recovery invocability fix) — stderr: ${version.stderr}`);
+  }
+  if (!/^Loombre \d+\.\d+\.\d+/.test(version.stdout.trim())) {
+    throw new Error(`smoke: 'loombre --version' printed unexpected output: ${JSON.stringify(version.stdout)}`);
+  }
+
+  const help = dockerExecCapture(containerName, ["bash", "-lc", "loombre admin reset-pin --help"]);
+  console.log(`smoke: [H2-recovery invocability fix] loombre admin reset-pin --help -> exit=${help.status}`);
+  console.log(
+    help.stdout
+      .trim()
+      .split("\n")
+      .map((l) => `    ${l}`)
+      .join("\n"),
+  );
+  if (help.status !== 0) {
+    throw new Error(`smoke: 'loombre admin reset-pin --help' exited ${help.status} from a fresh shell (H2-recovery invocability fix) — stderr: ${help.stderr}`);
+  }
+  if (!help.stdout.includes("loombre admin reset-pin <username>")) {
+    throw new Error(`smoke: 'loombre admin reset-pin --help' did not print usage: ${JSON.stringify(help.stdout)}`);
+  }
+  console.log(
+    "smoke: H2-recovery invocability fix PROVEN — `loombre --version` and `loombre admin reset-pin --help` " +
+      "both work from a fresh shell with no path prefix.",
+  );
+}
+
 async function loginRoundTrip(port) {
   const res = await fetch(`http://127.0.0.1:${port}/auth/login`, {
     method: "POST",
@@ -300,6 +358,10 @@ async function main(argv) {
     console.log("--- install.sh --no-systemd ---");
     dockerExec(args.containerName, ["bash", "-c", `cd /tmp/${tarballName} && ./install.sh --no-systemd`]);
 
+    console.log("--- L2 / H2-recovery invocability fix: PATH shim + CLI reachability (docs-verbatim proof) ---");
+    assertShimResolvesUnderPrefix(args.containerName, "/opt/loombre");
+    assertCliInvocable(args.containerName);
+
     console.log("--- booting server + worker (bundled node, external-PG path) ---");
     // `docker exec -d` is required to actually background inside the
     // container — dockerExec()/run() otherwise block (spawnSync + stdio
@@ -348,10 +410,87 @@ async function main(argv) {
     const opt = dockerExecCapture(args.containerName, ["bash", "-c", "[ -d /opt/loombre ] && echo EXISTS || echo GONE"]);
     const etc = dockerExecCapture(args.containerName, ["bash", "-c", "[ -d /etc/loombre ] && echo EXISTS || echo GONE"]);
     const data = dockerExecCapture(args.containerName, ["bash", "-c", "[ -d /var/lib/loombre ] && echo EXISTS || echo GONE"]);
-    console.log(`smoke: /opt/loombre=${opt.stdout.trim()} /etc/loombre=${etc.stdout.trim()} /var/lib/loombre=${data.stdout.trim()}`);
+    const shim = dockerExecCapture(args.containerName, ["bash", "-c", "[ -e /usr/local/bin/loombre ] && echo EXISTS || echo GONE"]);
+    console.log(
+      `smoke: /opt/loombre=${opt.stdout.trim()} /etc/loombre=${etc.stdout.trim()} /var/lib/loombre=${data.stdout.trim()} /usr/local/bin/loombre=${shim.stdout.trim()}`,
+    );
     if (opt.stdout.trim() !== "GONE") throw new Error("smoke: /opt/loombre still present after uninstall");
     if (etc.stdout.trim() !== "GONE") throw new Error("smoke: /etc/loombre still present after uninstall");
     if (data.stdout.trim() !== "EXISTS") throw new Error("smoke: /var/lib/loombre (data dir) missing after a non-purge uninstall — should be preserved");
+    if (shim.stdout.trim() !== "GONE") throw new Error("smoke: /usr/local/bin/loombre (PATH shim, L2) still present after uninstall");
+
+    // ── B-5 extra scenario (a): idempotency — re-run install.sh over a ────
+    //    fresh install, then again over a PRE-PLANTED STALE symlink, and
+    //    assert the shim is correct after both (B-3's "stale-link upgrade
+    //    path").
+    console.log("\n--- extra scenario (a): idempotency — re-install over a fresh install, then over a stale symlink ---");
+    dockerExec(args.containerName, ["bash", "-c", `cd /tmp/${tarballName} && ./install.sh --no-systemd`]);
+    assertShimResolvesUnderPrefix(args.containerName, "/opt/loombre");
+    console.log("smoke: idempotency (a.1) OK — fresh re-install after a prior uninstall produced a correct shim");
+
+    const stalePlant = dockerExecCapture(args.containerName, [
+      "bash", "-c", "rm -f /usr/local/bin/loombre && ln -s /nonexistent/stale-target/loombre /usr/local/bin/loombre && readlink /usr/local/bin/loombre",
+    ]);
+    console.log(`smoke: planted a stale symlink -> ${stalePlant.stdout.trim()}`);
+    dockerExec(args.containerName, ["bash", "-c", `cd /tmp/${tarballName} && ./install.sh --no-systemd`]);
+    assertShimResolvesUnderPrefix(args.containerName, "/opt/loombre");
+    assertCliInvocable(args.containerName);
+    console.log("smoke: idempotency (a.2) OK — re-install over a stale symlink replaced it with a correct one");
+
+    // ── B-5 extra scenario (b): foreign-file safety — a non-symlink file ──
+    //    at the shim path must never be clobbered, by either script.
+    console.log("\n--- extra scenario (b): foreign-file safety — a non-symlink file at the shim path must never be clobbered ---");
+    dockerExecCapture(args.containerName, [
+      "bash", "-c", "rm -f /usr/local/bin/loombre && printf 'not loombre — do not touch this file' > /usr/local/bin/loombre && chmod 644 /usr/local/bin/loombre",
+    ]);
+    const foreignBefore = dockerExecCapture(args.containerName, ["bash", "-c", "sha256sum /usr/local/bin/loombre | cut -d' ' -f1"]).stdout.trim();
+    console.log(`smoke: planted a foreign (non-symlink) file at /usr/local/bin/loombre, sha256=${foreignBefore}`);
+
+    const installOverForeign = dockerExecCapture(args.containerName, ["bash", "-c", `cd /tmp/${tarballName} && ./install.sh --no-systemd`]);
+    if (installOverForeign.status !== 0) {
+      throw new Error(`smoke: install.sh must NEVER fail just because a foreign file occupies the shim path — exited ${installOverForeign.status}\n${combinedOutput(installOverForeign)}`);
+    }
+    const installForeignOutput = combinedOutput(installOverForeign);
+    if (!installForeignOutput.includes("WARNING") || !installForeignOutput.includes("foreign file")) {
+      throw new Error(`smoke: install.sh did not print the expected foreign-file WARNING:\n${installForeignOutput}`);
+    }
+    console.log(
+      installForeignOutput
+        .split("\n")
+        .filter((l) => l.includes("install.sh:"))
+        .map((l) => `    ${l}`)
+        .join("\n"),
+    );
+    const foreignAfterInstall = dockerExecCapture(args.containerName, [
+      "bash", "-c", "sha256sum /usr/local/bin/loombre | cut -d' ' -f1; [ -L /usr/local/bin/loombre ] && echo IS_SYMLINK || echo NOT_SYMLINK",
+    ]);
+    if (!foreignAfterInstall.stdout.includes(foreignBefore)) {
+      throw new Error(`smoke: install.sh MODIFIED the foreign file's contents at /usr/local/bin/loombre — this must never happen (got: ${foreignAfterInstall.stdout})`);
+    }
+    if (!foreignAfterInstall.stdout.includes("NOT_SYMLINK")) {
+      throw new Error(`smoke: install.sh replaced the foreign file with a symlink — this must never happen`);
+    }
+    console.log("smoke: foreign-file safety (b.1) OK — install.sh warned and left the foreign file byte-identical + untouched");
+
+    const uninstallOverForeign = dockerExecCapture(args.containerName, ["bash", "-c", `cd /tmp/${tarballName} && ./uninstall.sh --no-systemd`]);
+    if (uninstallOverForeign.status !== 0) {
+      throw new Error(`smoke: uninstall.sh must NEVER fail just because a foreign file occupies the shim path — exited ${uninstallOverForeign.status}\n${combinedOutput(uninstallOverForeign)}`);
+    }
+    const uninstallForeignOutput = combinedOutput(uninstallOverForeign);
+    if (!uninstallForeignOutput.includes("not a symlink") || !uninstallForeignOutput.includes("leaving it alone")) {
+      throw new Error(`smoke: uninstall.sh did not print the expected foreign-file notice:\n${uninstallForeignOutput}`);
+    }
+    const foreignAfterUninstall = dockerExecCapture(args.containerName, [
+      "bash", "-c",
+      "[ -e /usr/local/bin/loombre ] && { sha256sum /usr/local/bin/loombre | cut -d' ' -f1; [ -L /usr/local/bin/loombre ] && echo IS_SYMLINK || echo NOT_SYMLINK; } || echo MISSING",
+    ]);
+    if (!foreignAfterUninstall.stdout.includes(foreignBefore) || !foreignAfterUninstall.stdout.includes("NOT_SYMLINK")) {
+      throw new Error(`smoke: uninstall.sh did not leave the foreign file at /usr/local/bin/loombre present + untouched: ${JSON.stringify(foreignAfterUninstall.stdout)}`);
+    }
+    console.log("smoke: foreign-file safety (b.2) OK — uninstall.sh left the foreign file present + byte-identical + untouched");
+
+    dockerExecCapture(args.containerName, ["bash", "-c", "rm -f /usr/local/bin/loombre"]);
+    console.log("smoke: cleaned up the planted foreign file");
 
     console.log("\n=== smoke: ALL CHECKS PASSED ===");
   } finally {

@@ -56,6 +56,22 @@ export interface AdminCliResult {
 
 const USAGE = "loombre admin reset-pin <username>";
 
+// H2-recovery invocability fix (L2, owner brief): `admin reset-pin --help`
+// must work standalone — an operator following the docs-verbatim install
+// flow needs to be able to sanity-check the shim/command before touching a
+// real user, without a reachable Postgres. Kept as plain lines (mirrors
+// run-cli.ts's HELP_TEXT shape) rather than reusing admin-reset-pin.ts's
+// runtime confirmation prompt text verbatim, since that prompt names a
+// specific username at call time and doesn't read as free-standing usage.
+const RESET_PIN_HELP: string[] = [
+  USAGE,
+  "",
+  "Clear a user's restricted-content PIN/opt-in (recovery for a forgotten PIN).",
+  "Interactive confirmation required (type y/yes) — there is no --yes flag;",
+  "the confirmation prompt IS the privilege boundary. Needs DATABASE_URL / a",
+  "reachable Postgres; every other `loombre` command does not.",
+];
+
 function isAffirmative(answer: string): boolean {
   const normalized = answer.trim().toLowerCase();
   return normalized === "y" || normalized === "yes";
@@ -66,6 +82,8 @@ function isAffirmative(answer: string): boolean {
  * today — any other shape (missing subcommand, unknown subcommand, missing
  * or extra arguments) is a usage error that NEVER touches `deps` (proven by
  * apps/server/test/cli/run-cli.spec.ts's THROWING_ADMIN_DEPS fixture).
+ * `reset-pin --help`/`reset-pin -h` is the one branch below that succeeds
+ * (exit 0) without ever reaching `deps` either — see RESET_PIN_HELP above.
  */
 export async function runAdminCommand(rest: string[], deps: AdminDeps): Promise<AdminCliResult> {
   const [subcommand, username, ...extra] = rest;
@@ -75,6 +93,9 @@ export async function runAdminCommand(rest: string[], deps: AdminDeps): Promise<
   }
   if (subcommand !== "reset-pin") {
     return { exitCode: 1, stdout: [], stderr: [`loombre: unknown admin subcommand "${subcommand}"`, `Usage: ${USAGE}`] };
+  }
+  if (username === "--help" || username === "-h") {
+    return { exitCode: 0, stdout: [...RESET_PIN_HELP], stderr: [] };
   }
   if (!username || extra.length > 0) {
     return { exitCode: 1, stdout: [], stderr: [`loombre: usage: ${USAGE}`] };
