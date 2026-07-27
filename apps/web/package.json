@@ -14,6 +14,7 @@
   },
   "dependencies": {
     "@loombre/sdk": "workspace:*",
+    "@loombre/shared": "workspace:*",
     "blurhash": "2.0.5",
     "hls.js": "1.6.16",
     "lucide-react": "1.26.0",

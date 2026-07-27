@@ -1948,9 +1948,9 @@ export interface components {
             locale: string;
             /** @enum {string} */
             theme: "light" | "dark" | "system";
-            /** @description ISO 639-2 */
+            /** @description ISO 639-2 (lowercase 3-letter code, e.g. "eng"), or null for no preference. Server-side membership in the known-language list (packages/shared/src/language-codes.ts) is validated beyond this shape (P4.22-style pre-release narrowing: the shape alone cannot express "a real language code"). */
             subtitlePreferredLanguage: string | null;
-            /** @description ISO 639-2 */
+            /** @description ISO 639-2 (lowercase 3-letter code, e.g. "eng"), or null for no preference. Same known-language-list validation as subtitlePreferredLanguage above. */
             audioPreferredLanguage: string | null;
             autoplayNextEpisode: boolean;
             /** Format: int64 */

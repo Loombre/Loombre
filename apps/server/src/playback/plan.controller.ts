@@ -51,14 +51,15 @@ export class PlaybackPlanController {
       throw notFound("Item or media file not found.", req.originalUrl);
     }
 
-    // §2.6 selection's optional language-preference fallback (STATE.md
-    // Wave-3 note n4: user_settings.prefs is a free-form JSONB whitelist
-    // entry — audioPreferredLanguage has no typed column and PUT
-    // /users/me/settings never persists it today, but reading it here
-    // costs nothing and honors any future/manual write to that key
-    // honestly rather than hard-coding "no preference ever exists").
+    // §2.6 selection's language-preference legs (H1, orchestrator
+    // adjudication A-5): user_settings.prefs is written for real by PUT
+    // /users/me/settings (apps/server/src/catalog/users.controller.ts's
+    // putMySettings, via @loombre/db's updateUserPrefs) — both preferences
+    // read here reflect whatever the user actually saved, honoring a manual
+    // DB edit too since this reads the same JSONB column either way.
     const settings = await getUserSettings(this.dbProvider.db, ctx.userId);
     const audioLanguagePref = (settings?.prefs?.["audioPreferredLanguage"] as string | null | undefined) ?? null;
+    const subtitleLanguagePref = (settings?.prefs?.["subtitlePreferredLanguage"] as string | null | undefined) ?? null;
 
     const planInput = await assemblePlanInput({
       db: this.dbProvider.db,
@@ -66,6 +67,7 @@ export class PlaybackPlanController {
       assembly,
       parsed: parsed.value,
       audioLanguagePref,
+      subtitleLanguagePref,
       settingsService: this.settingsService,
     });
 

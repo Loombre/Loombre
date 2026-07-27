@@ -8,3 +8,4 @@ export * from "./update-public-key.js";
 export * from "./crash-dir.js";
 export * from "./settings-registry.js";
 export * from "./settings-resolve.js";
+export * from "./language-codes.js";
