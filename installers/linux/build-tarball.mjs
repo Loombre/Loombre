@@ -1275,7 +1275,13 @@ async function assembleTarball(args) {
   mkdirSync(args.outDir, { recursive: true });
   const outputPath = join(args.outDir, `${tarballName}.tar.gz`);
   rmSync(outputPath, { force: true });
-  run("tar", ["-czf", outputPath, "-C", join(stageDir, ".."), tarballName]);
+  // COPYFILE_DISABLE: on a macOS build host, bsdtar otherwise embeds
+  // AppleDouble "._*" metadata entries for every file — one of which
+  // ("._0001_init.sql") reached PostgreSQL as a migration and died with
+  // "invalid message format" (linux smoke round 9). Inert on Linux/CI.
+  run("tar", ["-czf", outputPath, "-C", join(stageDir, ".."), tarballName], {
+    env: { ...process.env, COPYFILE_DISABLE: "1" },
+  });
 
   console.log("--- sign hook (P4.1 unsigned posture, no-op) ---");
   run(process.execPath, [join(REPO_ROOT, "installers", "sign-hook.mjs"), outputPath]);
