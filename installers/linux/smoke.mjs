@@ -443,9 +443,9 @@ async function main(argv) {
     // The bundled PostgreSQL (theseus-rs builds) dynamically links
     // libgssapi_krb5.so.2 + libxml2.so.2 — present on ordinary server
     // installs, absent from minimal containers. ldd-probed exhaustively
-    // (installer completeness follow-up): these two are the ONLY missing
-    // deps on ubuntu:24.04. install.sh warns about them; docs list them.
-    dockerExec(args.containerName, ["bash", "-c", "apt-get update -qq && apt-get install -y -qq libgssapi-krb5-2 libxml2 >/dev/null"]);
+    // (installer completeness follow-up): ldd-probed over EVERY pg binary
+    // (psql needs libreadline8 too — round-8 smoke). install.sh warns about them; docs list them.
+    dockerExec(args.containerName, ["bash", "-c", "apt-get update -qq && apt-get install -y -qq libgssapi-krb5-2 libxml2 libreadline8 >/dev/null"]);
 
     console.log("--- copying + extracting tarball ---");
     run("docker", ["cp", tarballPath, `${args.containerName}:/tmp/${tarballName}.tar.gz`]);
