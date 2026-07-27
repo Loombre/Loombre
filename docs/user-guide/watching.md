@@ -56,9 +56,10 @@ files were left out and why (see the [Admin Guide](../admin-guide/libraries.md))
 
 Occasionally a file that looks like it should work turns out not to be
 playable video or audio at all — a corrupted download, or a file that
-somehow got renamed to look like one. Loombre never guesses or shows a
-broken entry for these — they're flagged for your administrator to look
-into, the same way an unsupported file type is.
+somehow got renamed to look like one. A file like that can still show up
+in your library at first (Loombre finds out it's unreadable only after
+taking a closer look), but it won't play — and it's flagged for your
+administrator to look into, the same way an unsupported file type is.
 
 ## When something won't play smoothly
 

@@ -111,7 +111,10 @@ echo "install.sh: app payload installed at ${PREFIX}"
 #    but never fails the install (owner-brief adjudication B-1).
 SHIM_PATH="/usr/local/bin/loombre"
 SHIM_TARGET="${PREFIX}/bin/loombre"
-SHIM_MANUAL_CMD="ln -s \"${SHIM_TARGET}\" \"${SHIM_PATH}\""
+# -sfn so the printed command works even when a (stale) symlink already
+# occupies the path; sudo because the operator pasting it later is most
+# likely NOT in the root shell this installer required (Lane R F3).
+SHIM_MANUAL_CMD="sudo ln -sfn \"${SHIM_TARGET}\" \"${SHIM_PATH}\""
 if [ -L "${SHIM_PATH}" ]; then
   # Already a symlink — a prior install/upgrade, or a stale link left over
   # from a different prefix. Always safe to replace outright (B-3): this is

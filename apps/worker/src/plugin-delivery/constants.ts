@@ -60,8 +60,8 @@ export const LPP_DELIVERY_BACKOFF_MAX_MS = 5 * 60_000;
  * H-4 fix wave, defense in depth (why this filter exists here at all,
  * independent of import path): the registration-time gate
  * (apps/server/src/plugins/event-taxonomy.ts's `ADMIN_ONLY_EVENT_TYPES`
- * exclusion) is what actually PREVENTS a `plugin_event_grants` row for one
- * of these ten types from ever being created — this delivery-loop copy
+ * exclusion) is what actually PREVENTS a `plugin_event_grants` row for an
+ * admin-only type from ever being created — this delivery-loop copy
  * exists so the loop itself can never fan one out even if that upstream
  * gate were ever bypassed (a stale pre-fix DB row, a future bug) — LD8's
  * "no plugin can stall/leak" posture applied to this one axis too.

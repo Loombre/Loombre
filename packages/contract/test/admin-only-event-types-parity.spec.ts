@@ -56,4 +56,15 @@ describe("admin-only event-type parity (canonical TS list vs. contract x- mirror
     // structure to see what drifted.
     expect(message, message).toBeUndefined();
   });
+
+  it("the schema mirror carries no duplicate entries (set semantics in the diff would hide them — Lane R F9)", () => {
+    // The canonical side has its own no-duplicates test in
+    // packages/shared/test; the mirror side needs one too, because
+    // diffAdminOnlyEventTypes compares Sets and a duplicated schema entry
+    // would otherwise be invisible to the parity gate.
+    const schemaMirror = loadEnvelopeAdminOnlyMirror();
+    expect(new Set(schemaMirror).size, `duplicate entries in ${SCHEMA_FILE}'s x-loombre-admin-only-event-types`).toBe(
+      schemaMirror.length,
+    );
+  });
 });
