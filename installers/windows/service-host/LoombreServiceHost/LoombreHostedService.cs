@@ -75,15 +75,34 @@ public sealed class LoombreHostedService : ServiceBase
 
     protected override void OnStart(string[] args)
     {
+        // Pre-logger breadcrumb (diag run 30306181370: LoombreWeb died
+        // with an EXISTING-but-empty log — the host never reached its
+        // first write and nothing said why). Appended raw, own try/catch,
+        // so even a failure in log setup itself leaves a trace.
+        try
+        {
+            var traceDir = Path.GetDirectoryName(_options.LogFilePath);
+            if (!string.IsNullOrEmpty(traceDir))
+            {
+                Directory.CreateDirectory(traceDir);
+                File.AppendAllText(
+                    Path.Combine(traceDir, "svc-trace.log"),
+                    $"{DateTime.UtcNow:O} {_options.ServiceName} OnStart entered{Environment.NewLine}");
+            }
+        }
+        catch
+        {
+            // trace is best-effort by definition
+        }
+
+        try
+        {
         var logDir = Path.GetDirectoryName(_options.LogFilePath);
         if (!string.IsNullOrEmpty(logDir))
         {
             Directory.CreateDirectory(logDir);
         }
         _log = new StreamWriter(_options.LogFilePath, append: true) { AutoFlush = true };
-
-        try
-        {
             if (_options.ExtractZipPath is not null && _options.ExtractToDir is not null)
             {
                 // First boot after install/upgrade extracts the multi-hundred-MB
@@ -110,14 +129,6 @@ public sealed class LoombreHostedService : ServiceBase
                 }
                 PayloadExtractor.ExtractIfNeeded(_options.ExtractZipPath, _options.ExtractToDir, Log);
             }
-        }
-        catch (Exception ex)
-        {
-            // NEVER die silently in OnStart again: name the failure in our
-            // own log before SCM sees the start fail.
-            Log($"OnStart FAILED before child spawn: {ex}");
-            throw;
-        }
 
         Log($"starting: \"{_options.ExecutablePath}\" {string.Join(' ', _options.Arguments)}");
 
@@ -160,6 +171,28 @@ public sealed class LoombreHostedService : ServiceBase
         child.BeginOutputReadLine();
         child.BeginErrorReadLine();
         _child = child;
+        }
+        catch (Exception ex)
+        {
+            // NEVER die silently in OnStart: breadcrumb first (works even
+            // when the main logger itself is the failure), then the main
+            // log if it exists, then rethrow so SCM sees the start fail.
+            try
+            {
+                var traceDir = Path.GetDirectoryName(_options.LogFilePath);
+                if (!string.IsNullOrEmpty(traceDir))
+                {
+                    File.AppendAllText(
+                        Path.Combine(traceDir, "svc-trace.log"),
+                        $"{DateTime.UtcNow:O} {_options.ServiceName} OnStart THREW: {ex}{Environment.NewLine}");
+                }
+            }
+            catch
+            {
+            }
+            Log($"OnStart FAILED: {ex}");
+            throw;
+        }
     }
 
     private async Task PumpAsync(StreamReader reader)
