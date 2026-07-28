@@ -31,11 +31,19 @@ export const ARTIFACT_PLATFORMS: readonly ArtifactPlatform[] = [
   "docker",
 ];
 
-export type ArtifactKind = "tarball" | "msi" | "pkg" | "docker-image" | "checksums-file";
+/** "bundle" is the Windows Burn BOOTSTRAPPER (.exe) — distinct from "msi"
+ *  on purpose. They are two different installable units of the same
+ *  release: the bundle detects and installs the Visual C++ redistributable
+ *  prerequisite and then runs the MSI, while the bare MSI is for managed
+ *  deployment and refuses to install without that prerequisite already
+ *  present. A download page or updater must be able to tell them apart to
+ *  recommend the right one, which a shared kind would prevent. */
+export type ArtifactKind = "tarball" | "msi" | "bundle" | "pkg" | "docker-image" | "checksums-file";
 
 export const ARTIFACT_KINDS: readonly ArtifactKind[] = [
   "tarball",
   "msi",
+  "bundle",
   "pkg",
   "docker-image",
   "checksums-file",
