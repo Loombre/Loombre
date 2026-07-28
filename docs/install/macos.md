@@ -112,11 +112,16 @@ nobody except you will ever know you hit this — verify anyway.
    `_loombre` service account — see `installers/macos/LAYOUT.md` for exactly
    what and why).
 7. The installer creates the `_loombre` service account, lays down
-   `/opt/loombre/<version>` + `/Applications/Loombre.app`, and loads two
-   LaunchDaemons (**com.loombre.server**, **com.loombre.worker**) that start
-   immediately and on every future boot — no login required (this is a
-   media server; it needs to serve while nobody is signed in, see
-   LAYOUT.md §3).
+   `/opt/loombre/<version>` + `/Applications/Loombre.app`, and loads three
+   LaunchDaemons (**com.loombre.server**, **com.loombre.web**,
+   **com.loombre.worker**) that start immediately and on every future boot
+   — no login required (this is a media server; it needs to serve while
+   nobody is signed in, see LAYOUT.md §3). It also loads the
+   **com.loombre.menubar** LaunchAgent into your login session, so the
+   menu bar icon appears without you having to go find the app.
+8. The final installer pane tells you where to go: `http://localhost:3000`.
+   The database is provisioned, migrated and serving by then — the first
+   page you see is the account-setup wizard. Nothing else to configure.
 
 ### The CLI path (no GUI clicks)
 
@@ -157,11 +162,13 @@ verifies the download before `--no-quarantine` ever comes into play.
   **Start/Stop Server**, **Reveal Crash Files**, and the installed +
   contract version.
   [SCREENSHOT: macOS menubar showing Loombre icon and context menu with Open Loombre, Start/Stop, Reveal Crash Files, version info]
-- The menubar app is **not** added to your Login Items automatically in
-  v1 — add it yourself (System Settings → General → Login Items) if you
-  want it to reappear after you log out/in; the server/worker themselves
-  don't need it running (they're LaunchDaemons, independent of any login
-  session or menubar app).
+- The menubar app starts **automatically at every login**, via the
+  `com.loombre.menubar` LaunchAgent the installer places in
+  `/Library/LaunchAgents` (system-wide, so every account on the Mac gets
+  it — not one user's Login Items). If you choose **Quit** from its menu it
+  stays closed until your next login; nothing else depends on it. The
+  server, web UI and worker are LaunchDaemons and keep serving with the
+  menubar closed, logged out, or never launched at all.
 - First launch of the menubar app may **also** trigger the same Gatekeeper
   block described above (it's a separate executable) — click through the
   same **Open Anyway** flow if so.
