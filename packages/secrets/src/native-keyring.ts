@@ -31,7 +31,11 @@
 // service registered on it) and detect.ts's auto-detect probe catches that
 // and falls back to file0600. This module never tries to start one.
 
-import { AsyncEntry } from "@napi-rs/keyring";
+// TYPE-ONLY import (erased at compile time — it emits no require/import
+// and cannot execute the addon). The runtime load is deliberately LAZY,
+// below; see loadAsyncEntryCtor's header for the v0.9.0-rc.1 Windows
+// outage that made this non-negotiable.
+import type { AsyncEntry } from "@napi-rs/keyring";
 import type { SecretBackend, SecretRef } from "@loombre/provisioning";
 import type { SecretBackendImpl } from "./types.js";
 import { AmbiguousSecretError, SecretNotFoundError, UnsupportedSecretBackendError } from "./errors.js";
@@ -83,6 +87,59 @@ function classifyKeyringError(err: unknown): "no-entry" | "ambiguous" | "other" 
   return "other";
 }
 
+type AsyncEntryConstructor = new (service: string, key: string) => AsyncEntry;
+
+/** Resolves once and is reused; a rejected load stays rejected on purpose
+ *  (a missing system DLL does not appear later in the process's lifetime,
+ *  and retrying a failed dlopen on every secret operation would just burn
+ *  syscalls). */
+let keyringLoad: Promise<AsyncEntryConstructor> | undefined;
+
+/**
+ * Loads @napi-rs/keyring's AsyncEntry ON DEMAND, converting any load
+ * failure into this package's own typed error.
+ *
+ * WHY LAZY — v0.9.0-rc.1, real Windows 11 install, both LoombreServer and
+ * LoombreWorker dead on arrival with three restarts each and zero
+ * application log output:
+ *
+ *   Error: Cannot find native binding.
+ *     [cause]: Error: The specified module could not be found.
+ *       ...\@napi-rs\keyring-win32-x64-msvc\keyring.win32-x64-msvc.node
+ *       code: 'ERR_DLOPEN_FAILED'
+ *
+ * The .node file was present and correct. The addon imports
+ * VCRUNTIME140.dll, which ships with the Visual C++ redistributable and
+ * NOT with Windows — so it loaded on every CI runner (Visual Studio
+ * preinstalled) and on no clean machine. This module used to import the
+ * addon at module scope, so that environmental failure propagated up the
+ * whole import graph and killed the process, taking down a server whose
+ * OTHER secret backend (file0600) works everywhere and needs nothing
+ * native at all.
+ *
+ * detect.ts has always documented `source: "fallback"` as covering "the
+ * addon didn't load"; a static import made that documented path
+ * unreachable. Deferring the load to first USE is what makes it real: the
+ * module graph stays clean, detect.ts's probe catches the failure, and an
+ * install with no OS credential store simply keeps its secrets in
+ * file0600 — degraded, working, and logged, instead of a boot loop.
+ */
+async function loadAsyncEntryCtor(backend: SecretBackend): Promise<AsyncEntryConstructor> {
+  keyringLoad ??= import("@napi-rs/keyring").then((mod) => mod.AsyncEntry as AsyncEntryConstructor);
+  try {
+    return await keyringLoad;
+  } catch (cause) {
+    const detail = cause instanceof Error ? cause.message : String(cause);
+    throw new UnsupportedSecretBackendError(
+      backend,
+      `the @napi-rs/keyring native addon failed to load on this host (${detail.split("\n")[0]}). ` +
+        `On Windows this is usually a missing Visual C++ redistributable (VCRUNTIME140.dll); ` +
+        `on Linux, a build with no prebuilt for this OS/arch. Auto-detect falls back to the ` +
+        `file0600 backend automatically — set LOOMBRE_SECRET_BACKEND=file0600 to select it explicitly.`,
+    );
+  }
+}
+
 async function safeGetPassword(entry: AsyncEntry, backend: SecretBackend, key: string): Promise<string | null> {
   try {
     const value = await entry.getPassword();
@@ -98,11 +155,19 @@ async function safeGetPassword(entry: AsyncEntry, backend: SecretBackend, key: s
 export function createNativeKeyringBackend(backend: SecretBackend, platform: NodeJS.Platform = process.platform): SecretBackendImpl {
   assertPlatformSupportsBackend(backend, platform);
 
-  const entryFor = (key: string): AsyncEntry => new AsyncEntry(SERVICE, key);
+  // Async now (it awaits the deferred addon load) — note that
+  // createNativeKeyringBackend itself stays SYNCHRONOUS and still throws
+  // eagerly for a wrong-platform request. Only the part that genuinely
+  // needs native code is deferred; the pure-logic guard above keeps
+  // failing loudly at construction, as it always did.
+  const entryFor = async (key: string): Promise<AsyncEntry> => {
+    const AsyncEntryCtor = await loadAsyncEntryCtor(backend);
+    return new AsyncEntryCtor(SERVICE, key);
+  };
 
   return {
     async generate(key: string) {
-      const entry = entryFor(key);
+      const entry = await entryFor(key);
       const existing = await safeGetPassword(entry, backend, key);
       if (existing !== null) {
         return { ref: { backend, key }, value: existing };
@@ -113,21 +178,24 @@ export function createNativeKeyringBackend(backend: SecretBackend, platform: Nod
     },
 
     async store(key: string, value: string): Promise<SecretRef> {
-      await entryFor(key).setPassword(value);
+      await (await entryFor(key)).setPassword(value);
       return { backend, key };
     },
 
     async resolve(ref: SecretRef): Promise<string> {
-      const value = await safeGetPassword(entryFor(ref.key), backend, ref.key);
+      const value = await safeGetPassword(await entryFor(ref.key), backend, ref.key);
       if (value === null) throw new SecretNotFoundError(ref);
       return value;
     },
 
     async remove(ref: SecretRef): Promise<void> {
       try {
-        await entryFor(ref.key).deletePassword();
+        await (await entryFor(ref.key)).deletePassword();
       } catch {
-        // Best-effort per SecretBackendImpl.remove's contract.
+        // Best-effort per SecretBackendImpl.remove's contract — which now
+        // also absorbs "the addon never loaded", so an uninstall/rotate
+        // path on a host with no native store stays silent rather than
+        // erroring about a credential that cannot exist there anyway.
       }
     },
   };
