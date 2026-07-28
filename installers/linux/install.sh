@@ -30,6 +30,9 @@ DATA_DIR="/var/lib/loombre"
 CONFIG_DIR="/etc/loombre"
 LOOMBRE_USER="loombre"
 NO_SYSTEMD=0
+NO_START=0
+INSTALL_DEPS=0
+NO_INSTALL_DEPS=0
 
 usage() {
   cat <<'EOF'
@@ -44,6 +47,23 @@ Options:
   --user NAME          System user the services run as (default: loombre)
   --no-systemd         Skip systemd unit install (containerized/rootless
                         testing — see installers/linux/smoke.mjs)
+  --no-start           Install and enable the units but do NOT start them.
+                        Use when you want to edit the env file (external
+                        PostgreSQL, non-default ports) before anything
+                        binds a port or creates a database. Without this,
+                        install.sh starts the stack immediately — the
+                        default configuration is designed to work
+                        out of the box with no editing at all.
+  --install-deps       Install missing system libraries the bundled
+                        PostgreSQL needs, without asking. Use for
+                        unattended installs. Without it, an interactive
+                        run PROMPTS (showing the exact command first) and
+                        a non-interactive run only reports what is
+                        missing — this script will not silently change
+                        your package set in a pipeline.
+  --no-install-deps    Never install anything; just report. Implies the
+                        services are enabled but not started when a
+                        library is genuinely missing.
   --help               Show this help
 EOF
 }
@@ -55,6 +75,9 @@ while [ $# -gt 0 ]; do
     --config-dir) CONFIG_DIR="$2"; shift 2 ;;
     --user) LOOMBRE_USER="$2"; shift 2 ;;
     --no-systemd) NO_SYSTEMD=1; shift ;;
+    --no-start) NO_START=1; shift ;;
+    --install-deps) INSTALL_DEPS=1; shift ;;
+    --no-install-deps) NO_INSTALL_DEPS=1; shift ;;
     --help|-h) usage; exit 0 ;;
     *) echo "install.sh: unrecognized argument: $1" >&2; usage >&2; exit 1 ;;
   esac
@@ -231,6 +254,115 @@ EOF
   echo "install.sh: wrote ${ENV_FILE} (0640, root:${LOOMBRE_USER})"
 fi
 
+# ── embedded-PostgreSQL shared-library preflight ────────────────────────
+# Runs BEFORE anything is started. It used to run at the very end of this
+# script, printing a warning — which was survivable only while install.sh
+# left the services stopped. Now that a default install STARTS them, a
+# missing library would mean the operator's first experience is a
+# crash-looping server and a warning that scrolled past underneath it.
+#
+# Detect, then OFFER TO FIX (owner directive: "installers detect that the
+# necessary dependencies are installed and if not, automatically prompt
+# the user to install them prior to continuing"). ldd against the real
+# bundled binary is the detection — not a distro/version lookup table,
+# which would go stale and cannot know how the host was actually built.
+DEPS_MISSING=0
+pg_lib_preflight() {
+  _pg_bin="$(ls "${PREFIX}"/pg/*/*/bin/postgres 2>/dev/null | head -n 1)"
+  [ -n "${_pg_bin}" ] || return 0
+  command -v ldd >/dev/null 2>&1 || return 0
+
+  _missing="$(ldd "${_pg_bin}" 2>/dev/null | awk '/not found/ {print $1}' | sort -u | tr '\n' ' ')"
+  [ -n "${_missing}" ] || return 0
+
+  echo "install.sh: the bundled PostgreSQL is missing shared libraries: ${_missing}"
+
+  # Package names differ per distro for the SAME sonames; pick by which
+  # package manager actually exists rather than by parsing /etc/os-release
+  # (derivatives lie about ID, but they cannot fake having apt-get).
+  _pm=""
+  _pkgs=""
+  if command -v apt-get >/dev/null 2>&1; then
+    _pm="apt-get"; _install="apt-get install -y"; _pkgs="libgssapi-krb5-2 libxml2 libreadline8"
+  elif command -v dnf >/dev/null 2>&1; then
+    _pm="dnf"; _install="dnf install -y"; _pkgs="krb5-libs libxml2 readline"
+  elif command -v zypper >/dev/null 2>&1; then
+    _pm="zypper"; _install="zypper --non-interactive install"; _pkgs="krb5 libxml2-2 libreadline8"
+  elif command -v pacman >/dev/null 2>&1; then
+    _pm="pacman"; _install="pacman -S --noconfirm"; _pkgs="krb5 libxml2 readline"
+  elif command -v apk >/dev/null 2>&1; then
+    _pm="apk"; _install="apk add"; _pkgs="krb5-libs libxml2 readline"
+  fi
+
+  if [ -z "${_pm}" ]; then
+    echo "install.sh: no supported package manager found (looked for apt-get, dnf, zypper, pacman, apk)." >&2
+    echo "install.sh: install the packages providing ${_missing} yourself, then re-run this script." >&2
+    DEPS_MISSING=1
+    return 0
+  fi
+
+  _do_install=0
+  if [ "${INSTALL_DEPS}" -eq 1 ]; then
+    _do_install=1
+  elif [ "${NO_INSTALL_DEPS}" -eq 1 ]; then
+    _do_install=0
+  elif [ -t 0 ]; then
+    # Interactive: ask. Never install packages on someone's machine without
+    # showing the exact command and getting a yes.
+    printf 'install.sh: run "%s %s" now? [Y/n] ' "${_install}" "${_pkgs}"
+    read -r _reply || _reply="n"
+    case "${_reply}" in
+      ""|y|Y|yes|YES) _do_install=1 ;;
+      *) _do_install=0 ;;
+    esac
+  else
+    # Non-interactive (CI, piped installs, config management): do NOT
+    # silently mutate the system's package set. Say what is needed and let
+    # the caller decide with --install-deps.
+    echo "install.sh: non-interactive shell — not installing packages automatically." >&2
+    echo "install.sh: re-run with --install-deps, or run: ${_install} ${_pkgs}" >&2
+    DEPS_MISSING=1
+    return 0
+  fi
+
+  if [ "${_do_install}" -eq 1 ]; then
+    echo "install.sh: installing dependencies: ${_install} ${_pkgs}"
+    if [ "${_pm}" = "apt-get" ]; then
+      apt-get update -qq || true
+    fi
+    # shellcheck disable=SC2086
+    if ! ${_install} ${_pkgs}; then
+      echo "install.sh: dependency install FAILED — resolve it manually, then re-run this script." >&2
+      DEPS_MISSING=1
+      return 0
+    fi
+    # Re-probe: trust the linker, not the package manager's exit code.
+    _still="$(ldd "${_pg_bin}" 2>/dev/null | awk '/not found/ {print $1}' | sort -u | tr '\n' ' ')"
+    if [ -n "${_still}" ]; then
+      echo "install.sh: STILL missing after install: ${_still}" >&2
+      DEPS_MISSING=1
+    else
+      echo "install.sh: dependencies satisfied — the bundled PostgreSQL resolves all its libraries."
+    fi
+  else
+    echo "install.sh: skipping dependency install at your request."
+    DEPS_MISSING=1
+  fi
+}
+
+pg_lib_preflight
+
+if [ "${DEPS_MISSING}" -eq 1 ]; then
+  # Not fatal: an operator using an external DATABASE_URL never runs these
+  # binaries, and that is a first-class supported mode (D1). But do not
+  # START a server that provably cannot provision its default database —
+  # that just buries the real message under a restart loop.
+  echo "install.sh: WARNING — embedded database mode cannot start until the libraries above are present." >&2
+  echo "install.sh: services will be installed and enabled but NOT started." >&2
+  echo "install.sh: (Installs using an external DATABASE_URL are unaffected — set it in ${ENV_FILE} and start manually.)" >&2
+  NO_START=1
+fi
+
 # ── systemd units ───────────────────────────────────────────────────────
 if [ "${NO_SYSTEMD}" -eq 1 ]; then
   echo "install.sh: --no-systemd — skipping unit install. Start manually:"
@@ -255,26 +387,36 @@ else
       "${SCRIPT_DIR}/systemd/${svc}.service.template" > "${UNIT_DIR}/${svc}.service"
   done
   systemctl daemon-reload
-  systemctl enable loombre-server.service loombre-worker.service loombre-web.service
-  echo "install.sh: systemd units installed + enabled (not started — configure ${ENV_FILE} first, then:"
-  echo "  sudo systemctl start loombre-server loombre-worker loombre-web"
-fi
-
-# Embedded-PostgreSQL shared-library preflight (installer completeness
-# follow-up): the bundled PG links libgssapi_krb5.so.2 + libxml2.so.2 —
-# ldd-probed as the ONLY two non-default deps on minimal Debian/Ubuntu.
-# WARN (not fail): external-DATABASE_URL installs never run these
-# binaries, and the server's own boot error names the missing lib too.
-_pg_bin="$(ls "${PREFIX}"/pg/*/*/bin/postgres 2>/dev/null | head -n 1)"
-if [ -n "${_pg_bin}" ] && command -v ldd >/dev/null 2>&1; then
-  _missing="$(ldd "${_pg_bin}" 2>/dev/null | awk '/not found/ {print $1}' | sort -u | tr '\n' ' ')"
-  if [ -n "${_missing}" ]; then
-    echo "WARNING: the bundled PostgreSQL is missing shared libraries: ${_missing}" >&2
-    echo "         Embedded database mode (the default) will fail to start until they are installed:" >&2
-    echo "           Debian/Ubuntu: apt install libgssapi-krb5-2 libxml2 libreadline8" >&2
-    echo "           openSUSE:      zypper install krb5 libxml2-2 libreadline8" >&2
-    echo "           Fedora/RHEL:   dnf install krb5-libs libxml2 readline" >&2
-    echo "         (Installs using an external DATABASE_URL are unaffected.)" >&2
+  if [ "${NO_START}" -eq 1 ]; then
+    systemctl enable loombre-server.service loombre-worker.service loombre-web.service
+    echo "install.sh: systemd units installed + enabled, NOT started (--no-start). Configure ${ENV_FILE}, then:"
+    echo "  sudo systemctl start loombre-server loombre-worker loombre-web"
+  else
+    # `enable --now` (enable + start in one transaction), the DEFAULT since
+    # the rc.1 install-visibility fix. It used to enable only, printing a
+    # `systemctl start` line and exiting — which meant a successful install
+    # left a machine with nothing running and no UI to look at, matching
+    # the macOS/Windows complaint from the same report.
+    #
+    # "Configure the env file first" was the old justification, and it does
+    # not hold: the shipped defaults are a COMPLETE working configuration
+    # (embedded PostgreSQL provisioned + migrated on first boot, API on
+    # 3001, web UI on 3000). Editing is for people who want something other
+    # than the default — and they now have --no-start to say so explicitly,
+    # instead of every operator paying for that minority case.
+    #
+    # Start order matters here in a way `enable` never exposed: the server
+    # provisions the embedded cluster and writes the credentials the worker
+    # discovers, so it goes first. systemd handles the rest via the units'
+    # own After=/Wants= (a slow first-boot initdb is absorbed by the
+    # worker's bounded discovery poll and Restart= — see the unit
+    # templates), so this is ordering, not a race to win.
+    systemctl enable --now loombre-server.service loombre-worker.service loombre-web.service
+    echo "install.sh: systemd units installed, enabled and STARTED."
+    echo "install.sh: web UI    -> http://localhost:${LOOMBRE_WEB_PORT:-3000}"
+    echo "install.sh: API       -> http://localhost:${PORT:-3001}"
+    echo "install.sh: status    -> systemctl status loombre-server loombre-web loombre-worker"
+    echo "install.sh: first boot provisions + migrates the bundled database; give it a few seconds."
   fi
 fi
 

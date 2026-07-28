@@ -406,6 +406,22 @@ function assembleAppBundle(payloadRoot) {
   cpSync(binPath, path.join(macosDir, "Loombre"));
   chmodSync(path.join(macosDir, "Loombre"), 0o755);
 
+  // Contents/Resources/AppIcon.icns — without it Finder, the Dock and the
+  // "Loombre.app wants to..." system prompts all render the generic blank
+  // application document. The .icns is a COMMITTED, regenerable container
+  // (scripts/build-app-icons.mjs, from design/blaze's 1024px source);
+  // generating it here would tie the pkg build to macOS-only `iconutil`
+  // for no benefit, since it is identical for every build.
+  const resourcesDir = path.join(contentsDir, "Resources");
+  mkdirSync(resourcesDir, { recursive: true });
+  const icnsSource = path.join(REPO_ROOT, "design", "blaze", "assets", "icons", "loombre.icns");
+  if (!existsSync(icnsSource)) {
+    throw new Error(
+      `assembleAppBundle: missing ${icnsSource} — run \`node scripts/build-app-icons.mjs\` to regenerate the icon containers`,
+    );
+  }
+  cpSync(icnsSource, path.join(resourcesDir, "AppIcon.icns"));
+
   const version = readVersion();
   const infoPlist = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -417,6 +433,11 @@ function assembleAppBundle(payloadRoot) {
   <key>CFBundleVersion</key><string>${version}</string>
   <key>CFBundleShortVersionString</key><string>${version}</string>
   <key>CFBundleExecutable</key><string>Loombre</string>
+  <!-- Names Resources/AppIcon.icns. NO extension, by convention — macOS
+       appends .icns itself, and writing "AppIcon.icns" here works on some
+       OS versions and silently falls back to the blank generic icon on
+       others. -->
+  <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>LSMinimumSystemVersion</key><string>13.0</string>
   <!-- Menu-bar-only utility: no Dock icon, no Cmd-Tab entry. Belt-and-
@@ -632,6 +653,18 @@ function assemblePayload(serverDeployDir, workerDeployDir) {
   for (const plist of ["com.loombre.server.plist", "com.loombre.worker.plist", "com.loombre.web.plist"]) {
     cpSync(path.join(PKG_DIR, "launchd", plist), path.join(launchDaemonsDir, plist));
   }
+
+  // /Library/LaunchAgents — the menubar controller, the ONE piece that
+  // runs in the logged-in user's GUI session rather than as _loombre.
+  // Without it the rc.1 pkg installed a fully working stack and put
+  // nothing whatsoever on screen; see the plist's own header for the
+  // field report and the Windows HKLM-Run-key precedent it mirrors.
+  const launchAgentsDir = path.join(payloadRoot, "Library", "LaunchAgents");
+  mkdirSync(launchAgentsDir, { recursive: true });
+  cpSync(
+    path.join(PKG_DIR, "launchagents", "com.loombre.menubar.plist"),
+    path.join(launchAgentsDir, "com.loombre.menubar.plist"),
+  );
 
   return { payloadRoot, versionDir, version };
 }
