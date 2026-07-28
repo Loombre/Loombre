@@ -60,17 +60,19 @@ jobs:
           echo "version under test: $LOOMBRE_VERSION"
           node installers/windows/build-msi.mjs --version "$LOOMBRE_VERSION"
 
-      - name: Stage the built MSI into dist/release
+      - name: Stage the built MSI + bootstrapper into dist/release
         shell: bash
         run: |
           set -euo pipefail
           LOOMBRE_VERSION="$(node -p "require('./package.json').version")"
-          src="installers/windows/out/loombre-${LOOMBRE_VERSION}-windows-x64.msi"
-          if [ ! -f "$src" ]; then
-            echo "VERDICT:MSI:FAIL (expected MSI not found at $src)"
-            exit 1
-          fi
-          cp "$src" dist/release/
+          for ext in msi exe; do
+            src="installers/windows/out/loombre-${LOOMBRE_VERSION}-windows-x64.${ext}"
+            if [ ! -f "$src" ]; then
+              echo "VERDICT:MSI:FAIL (expected Windows artifact not found at $src)"
+              exit 1
+            fi
+            cp "$src" dist/release/
+          done
           ls -l dist/release
           echo "VERDICT:MSI:PASS"
 
@@ -191,3 +193,61 @@ jobs:
           }
           if (Get-Service LoombreServer -ErrorAction SilentlyContinue) { Write-Host "VERDICT:UNINSTALL:FAIL (LoombreServer service remains)"; exit 1 }
           Write-Host "VERDICT:UNINSTALL:PASS"
+
+      # The Burn bootstrapper (loombre-<version>-windows-x64.exe), added
+      # after the rc.1 VCRUNTIME140 field failure. This runner ALREADY has
+      # the VC++ redistributable (Visual Studio is preinstalled), so what
+      # this proves is the bundle's DETECT-AND-SKIP path plus its chaining
+      # of the MSI — NOT the install-the-prerequisite path, which by
+      # definition cannot be exercised on a machine that already has it.
+      # Stated plainly rather than left to look like full coverage: the
+      # missing-runtime path is provable only on a clean image, and that
+      # is exactly the gap that let rc.1 ship broken.
+      - name: Bootstrapper install/uninstall smoke (Burn .exe, real elevation)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $version = node -p "require('./package.json').version"
+          $exe = "dist/release/loombre-$version-windows-x64.exe"
+          if (-not (Test-Path $exe)) { Write-Host "VERDICT:BUNDLE:FAIL (bootstrapper missing at $exe)"; exit 1 }
+          Write-Host "bundle size: $([Math]::Round((Get-Item $exe).Length / 1MB, 1)) MiB"
+
+          # /quiet /norestart: unattended. Burn logs to %TEMP%\Loombre_*.log.
+          $proc = Start-Process $exe -ArgumentList "/quiet /norestart /log bundle-install.log" -Wait -PassThru
+          # 3010 = success, reboot required (a serviced runtime in use).
+          if ($proc.ExitCode -ne 0 -and $proc.ExitCode -ne 3010) {
+            Get-Content bundle-install.log -Tail 120 -ErrorAction SilentlyContinue
+            Get-ChildItem $env:TEMP -Filter "Loombre_*.log" -ErrorAction SilentlyContinue |
+              Sort-Object LastWriteTime -Descending | Select-Object -First 1 |
+              ForEach-Object { Write-Host "== $($_.Name) =="; Get-Content $_.FullName -Tail 120 }
+            Write-Host "VERDICT:BUNDLE:FAIL (bootstrapper exit $($proc.ExitCode))"
+            exit 1
+          }
+          $root = "C:\Program Files\Loombre"
+          if (-not (Test-Path "$root\server\dist\main.js")) { Write-Host "VERDICT:BUNDLE:FAIL (chained MSI did not lay down the payload)"; exit 1 }
+          foreach ($svc in "LoombreServer","LoombreWorker","LoombreWeb") {
+            if (-not (Get-Service $svc -ErrorAction SilentlyContinue)) { Write-Host "VERDICT:BUNDLE:FAIL (service $svc not installed by the bundle)"; exit 1 }
+          }
+          # The bundle must register ONE Add/Remove Programs entry (its own,
+          # with the brand icon) — the chained MSI's entry is hidden by Burn.
+          Write-Host "VERDICT:BUNDLE_INSTALL:PASS"
+
+          $un = Start-Process $exe -ArgumentList "/uninstall /quiet /norestart /log bundle-uninstall.log" -Wait -PassThru
+          if ($un.ExitCode -ne 0 -and $un.ExitCode -ne 3010) {
+            Get-Content bundle-uninstall.log -Tail 120 -ErrorAction SilentlyContinue
+            Write-Host "VERDICT:BUNDLE_UNINSTALL:FAIL (exit $($un.ExitCode))"
+            exit 1
+          }
+          if (Test-Path $root) {
+            Get-ChildItem -Recurse $root | Select-Object -First 20 FullName
+            Write-Host "VERDICT:BUNDLE_UNINSTALL:FAIL (residue remains at $root)"
+            exit 1
+          }
+          # Permanent="yes" on the redistributable: uninstalling Loombre must
+          # NEVER remove a shared C++ runtime other software may now depend on.
+          $vc = Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64" -ErrorAction SilentlyContinue
+          if ($null -eq $vc -or $vc.Installed -ne 1) {
+            Write-Host "VERDICT:BUNDLE_UNINSTALL:FAIL (the VC++ redistributable was removed — ExePackage Permanent=yes is not holding)"
+            exit 1
+          }
+          Write-Host "VERDICT:BUNDLE_UNINSTALL:PASS"
