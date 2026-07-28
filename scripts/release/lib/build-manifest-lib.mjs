@@ -104,6 +104,15 @@ const ARTIFACT_FILENAME_PATTERN = /^loombre-(.+?)-(linux-x64|linux-arm64|windows
 const EXTENSION_TO_KIND = {
   "tar.gz": "tarball",
   msi: "msi",
+  // The Windows Burn bootstrapper. Its ABSENCE here is what silently
+  // dropped loombre-0.9.0-rc.2-windows-x64.exe from the signed manifest:
+  // inferPlatformAndKind returned null, and build-manifest console.warn'd
+  // and skipped it, so SHA256SUMS (which globs the directory) listed the
+  // file while manifest.json — the artifact a download page or updater
+  // actually reads — did not. Adding an artifact type now requires a line
+  // here, and collectFileArtifacts FAILS on an unrecognized file rather
+  // than warning, so the next one cannot vanish the same way.
+  exe: "bundle",
   pkg: "pkg",
 };
 

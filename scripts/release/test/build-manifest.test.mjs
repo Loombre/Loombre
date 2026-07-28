@@ -21,6 +21,14 @@ test("inferPlatformAndKind: recognizes the documented naming convention", () => 
   assert.deepEqual(inferPlatformAndKind("loombre-0.9.0-linux-x64.tar.gz"), { platform: "linux-x64", kind: "tarball" });
   assert.deepEqual(inferPlatformAndKind("loombre-1.2.3-linux-arm64.tar.gz"), { platform: "linux-arm64", kind: "tarball" });
   assert.deepEqual(inferPlatformAndKind("loombre-0.9.0-windows-x64.msi"), { platform: "windows-x64", kind: "msi" });
+  // The Burn bootstrapper ships ALONGSIDE the msi and must land in the
+  // signed manifest as its own kind — rc.2 published it in SHA256SUMS but
+  // not in manifest.json, because this mapping did not exist.
+  assert.deepEqual(inferPlatformAndKind("loombre-0.9.0-windows-x64.exe"), { platform: "windows-x64", kind: "bundle" });
+  assert.deepEqual(inferPlatformAndKind("loombre-0.9.0-rc.2-windows-x64.exe"), {
+    platform: "windows-x64",
+    kind: "bundle",
+  });
   assert.deepEqual(inferPlatformAndKind("loombre-0.9.0-macos-arm64.pkg"), { platform: "macos-arm64", kind: "pkg" });
   assert.deepEqual(inferPlatformAndKind("loombre-0.9.0-macos-x64.pkg"), { platform: "macos-x64", kind: "pkg" });
 });
@@ -37,7 +45,13 @@ test("inferPlatformAndKind: returns null for an unrecognized filename", () => {
   assert.equal(inferPlatformAndKind("manifest.json"), null);
   assert.equal(inferPlatformAndKind("manifest.json.minisig"), null);
   assert.equal(inferPlatformAndKind("loombre-0.9.0-freebsd-x64.tar.gz"), null); // unknown platform
-  assert.equal(inferPlatformAndKind("loombre-0.9.0-linux-x64.exe"), null); // unknown extension
+  // NOTE: this used to assert on a linux .exe as the "unknown extension"
+  // case. `.exe` is now a recognized artifact type (the Windows Burn
+  // bootstrapper), so the example moved to an extension we genuinely do
+  // not publish. The linux/.exe pairing being nonsensical is NOT what this
+  // function rejects — it maps platform and extension independently, the
+  // same way it does not reject a macOS .msi.
+  assert.equal(inferPlatformAndKind("loombre-0.9.0-linux-x64.deb"), null); // unknown extension
 });
 
 test("buildManifest: assembles a single-release, stable-channel manifest from artifacts", () => {
