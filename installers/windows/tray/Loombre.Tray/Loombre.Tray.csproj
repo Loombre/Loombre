@@ -21,6 +21,14 @@
     <RootNamespace>Loombre.Tray</RootNamespace>
     <AssemblyName>Loombre.Tray</AssemblyName>
 
+    <!-- Embeds the brand icon as the exe's Win32 resource, so Explorer,
+         the taskbar, Alt-Tab and the UAC prompt all show it instead of the
+         default blank-window glyph. $(MSBuildThisFileDirectory) keeps this
+         correct regardless of the cwd `dotnet publish` is invoked from
+         (build-msi.mjs runs it from the repo root). The .ico is committed
+         and regenerable — scripts/build-app-icons.mjs. -->
+    <ApplicationIcon>$(MSBuildThisFileDirectory)..\..\..\..\design\blaze\assets\icons\loombre.ico</ApplicationIcon>
+
     <!-- Self-contained single-file win-x64 publish, per mission deliverable
          2. P4.1: unsigned — build-msi.mjs's sign step (no-op today,
          installers/sign-hook.mjs) is the insertion point for a future
