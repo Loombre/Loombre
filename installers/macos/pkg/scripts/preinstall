@@ -27,4 +27,22 @@ for LABEL in "$SERVER_LABEL" "$WORKER_LABEL" "$WEB_LABEL"; do
   fi
 done
 
+# The menubar app is a LaunchAGENT in the console user's GUI domain, not a
+# system daemon, so it needs its own bootout with that user's uid — the
+# system-domain loop above cannot see it. Left running, the old
+# Loombre.app binary would be replaced underneath a live process, and the
+# stale menu bar item would keep polling with the previous build's IPC
+# expectations until the user logged out. Best-effort throughout: no
+# console user (installing over SSH / at the login window) simply means
+# there is no GUI session holding the bundle open.
+CONSOLE_UID="$(stat -f %u /dev/console 2>/dev/null || echo 0)"
+if [ "${CONSOLE_UID:-0}" -gt 0 ]; then
+  if launchctl print "gui/${CONSOLE_UID}/com.loombre.menubar" >/dev/null 2>&1; then
+    echo "loombre preinstall: stopping gui/${CONSOLE_UID}/com.loombre.menubar for upgrade"
+    launchctl bootout "gui/${CONSOLE_UID}/com.loombre.menubar" 2>/dev/null || true
+  else
+    echo "loombre preinstall: com.loombre.menubar not loaded for uid ${CONSOLE_UID}"
+  fi
+fi
+
 exit 0

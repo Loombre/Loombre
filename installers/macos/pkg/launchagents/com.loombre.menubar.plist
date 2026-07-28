@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Loombre :: /Library/LaunchAgents/com.loombre.menubar.plist
+
+  LaunchAGENT (per-user GUI domain), the deliberate counterpart to the
+  three LaunchDAEMONs next door in installers/macos/pkg/launchd/. The
+  daemons run the stack headlessly as `_loombre`; this agent runs the
+  menubar controller as whoever is logged in, because a menu bar item
+  only exists inside a GUI session and must run as that session's user.
+
+  WHY THIS FILE EXISTS (rc.1 field report: "the install will be
+  successful but nothing happens nor opens"): the pkg installed a fully
+  working server, worker, web UI and embedded PostgreSQL — all verified
+  running — and then put NOTHING on screen. Loombre.app was laid down in
+  /Applications with no autostart of any kind: no login item, no agent.
+  The operator saw a finished progress bar and an empty menu bar, with no
+  way to tell a healthy install from a dead one. Windows has had the
+  equivalent autostart since day one (installers/windows/msi/
+  Shortcuts.wxs's HKLM Run key); macOS simply shipped without its peer.
+
+  IN /Library/LaunchAgents (system-wide), not ~/Library/LaunchAgents: the
+  install is per-machine (rootVolumeOnly, enable_localSystem — see
+  Distribution.xml.tmpl) and runs as root, so it has no business writing
+  into one particular user's home. A plist here applies to EVERY user who
+  logs in, which matches the daemons' all-users posture and means a
+  second account on the same Mac gets the menubar too.
+
+  KeepAlive is deliberately ABSENT (i.e. false). RunAtLoad starts the app
+  at login and at install time (postinstall bootstraps it into the console
+  user's gui/<uid> domain); if the operator then chooses "Quit" from the
+  menu, it STAYS quit until the next login. A KeepAlive'd menu bar item
+  that respawns itself the instant you dismiss it is hostile — and unlike
+  the daemons, nothing depends on this process: the server, worker and web
+  UI keep serving with the menubar closed. It is a viewer, not a component.
+
+  LSUIElement=true in the app's own Info.plist (build-pkg.mjs
+  assembleAppBundle) keeps it out of the Dock and Cmd-Tab, so launching it
+  here does not steal focus or clutter the session.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.loombre.menubar</string>
+
+  <!-- The executable INSIDE the bundle, not `open -a Loombre`: launchd
+       needs a process it can actually own and track. `open` would fork
+       the app off into LaunchServices and exit immediately, making this
+       agent look like it crash-loops on every login. -->
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Applications/Loombre.app/Contents/MacOS/Loombre</string>
+  </array>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <!-- Agents inherit the logged-in user; no UserName key (that is a
+       LaunchDaemon-only concept and launchd rejects it in the GUI
+       domain). -->
+
+  <key>ProcessType</key>
+  <string>Interactive</string>
+
+  <!-- NO StandardOutPath/StandardErrorPath, deliberately. The obvious
+       choice — /Library/Logs/Loombre/ alongside the daemons — is a trap:
+       that directory is _loombre-owned 0755, and this agent runs as the
+       LOGGED-IN user, who cannot create files in it. launchd treats a
+       redirect it cannot open as a spawn failure, so a "helpful" log path
+       here would resurrect the exact symptom this agent was added to fix
+       (nothing appears in the menu bar). The app's own output goes to the
+       unified log instead:
+         log stream --predicate 'process == "Loombre"' --level debug
+       No per-user log directory is invented either — writing into one
+       specific user's home from a per-machine, root-run installer is the
+       same overreach this file's /Library placement avoids. -->
+</dict>
+</plist>

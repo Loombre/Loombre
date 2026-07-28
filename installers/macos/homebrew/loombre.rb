@@ -43,15 +43,25 @@ cask "loombre" do
 
   pkg "loombre-#{version}-macos-#{arch}.pkg"
 
+  # Every label the pkg bootstraps must appear here, or `brew uninstall`
+  # leaves a live process behind whose files it then deletes out from
+  # under it. This list drifted behind the payload once already (the web
+  # daemon shipped without ever being added), so: FOUR labels — the three
+  # LaunchDaemons plus the com.loombre.menubar LaunchAgent, which runs in
+  # the logged-in user's GUI domain rather than the system domain.
   uninstall launchctl: [
               "com.loombre.server",
               "com.loombre.worker",
+              "com.loombre.web",
+              "com.loombre.menubar",
             ],
             delete: [
               "/opt/loombre",
               "/Applications/Loombre.app",
               "/Library/LaunchDaemons/com.loombre.server.plist",
               "/Library/LaunchDaemons/com.loombre.worker.plist",
+              "/Library/LaunchDaemons/com.loombre.web.plist",
+              "/Library/LaunchAgents/com.loombre.menubar.plist",
               "/Library/Logs/Loombre",
             ]
 

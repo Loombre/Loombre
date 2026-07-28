@@ -76,6 +76,12 @@ async function main() {
   const expectedPaths = [
     `opt/loombre/${report.version}/bin/loombre-server`,
     `opt/loombre/${report.version}/bin/loombre-worker`,
+    // bin/loombre-web + the Next standalone entrypoint it execs: this
+    // smoke asserted only two of the three shipped services until the
+    // post-rc.1 install-visibility fix, which is how "the web daemon is
+    // in the payload" stayed an owner-review item instead of a check.
+    `opt/loombre/${report.version}/bin/loombre-web`,
+    `opt/loombre/${report.version}/web/apps/web/server.js`,
     `opt/loombre/${report.version}/server/dist/main.js`,
     `opt/loombre/${report.version}/worker/dist/index.js`,
     `opt/loombre/${report.version}/runtime/node/bin/node`,
@@ -83,8 +89,22 @@ async function main() {
     `opt/loombre/current`,
     `Applications/Loombre.app/Contents/MacOS/Loombre`,
     `Applications/Loombre.app/Contents/Info.plist`,
+    // Without this the app shows Finder's generic blank-document icon —
+    // the "it installed but looks broken" complaint from the same field
+    // report that produced the LaunchAgent above.
+    `Applications/Loombre.app/Contents/Resources/AppIcon.icns`,
     `Library/LaunchDaemons/com.loombre.server.plist`,
     `Library/LaunchDaemons/com.loombre.worker.plist`,
+    `Library/LaunchDaemons/com.loombre.web.plist`,
+    // THE install-visibility fix (rc.1 field report: "the install will be
+    // successful but nothing happens nor opens"). A LaunchDaemon runs the
+    // stack headlessly; nothing in the payload ever put a FACE on it. The
+    // menubar app had no autostart of any kind — not a login item, not an
+    // agent — so it appeared only if the operator went hunting in
+    // /Applications, and never came back after a reboot. Windows has had
+    // the equivalent since day one (Shortcuts.wxs's HKLM Run key); macOS
+    // shipped without it. This LaunchAgent is that missing peer.
+    `Library/LaunchAgents/com.loombre.menubar.plist`,
     `Library/Application Support/Loombre/db`,
     `Library/Application Support/Loombre/ipc`,
     `Library/Logs/Loombre`,
@@ -108,10 +128,60 @@ async function main() {
     if (!existsSync(path.join(scriptsDir, "postinstall"))) throw new Error("missing Scripts/postinstall");
   });
 
+  // The install-visibility contract, asserted against the postinstall
+  // script that ACTUALLY SHIPS inside the pkg (not the repo copy) — an
+  // installer that lays a LaunchAgent down but never bootstraps it into
+  // the console user's GUI domain still leaves the operator staring at a
+  // finished progress bar with nothing on screen until their next login,
+  // which is the exact rc.1 complaint. Both halves are load-bearing:
+  //   - `bootstrap gui/<uid>` is what makes the icon appear NOW;
+  //   - the plist living in /Library/LaunchAgents with RunAtLoad is what
+  //     makes it come back at every subsequent login.
+  const shippedPostinstall = readFileSync(path.join(componentPkgDir, "Scripts", "postinstall"), "utf8");
+  check("postinstall resolves the console user (stat -f %u /dev/console)", () => {
+    if (!/stat\s+-f\s+%u\s+\/dev\/console/.test(shippedPostinstall)) {
+      throw new Error("postinstall never resolves the console user's uid — a root-context `open` would launch the app in the wrong session (or not at all)");
+    }
+  });
+  check("postinstall bootstraps the menubar agent into the console user's GUI domain", () => {
+    if (!/launchctl\s+bootstrap\s+gui\//.test(shippedPostinstall)) {
+      throw new Error("postinstall never runs `launchctl bootstrap gui/<uid>` — the menubar app would not appear until the operator's next login");
+    }
+    if (!/com\.loombre\.menubar\.plist/.test(shippedPostinstall)) {
+      throw new Error("postinstall never references com.loombre.menubar.plist");
+    }
+  });
+  check("Info.plist declares CFBundleIconFile (extension-less, as macOS expects)", () => {
+    const plistPath = path.join(payloadDir, "Applications", "Loombre.app", "Contents", "Info.plist");
+    const res = run("plutil", ["-extract", "CFBundleIconFile", "raw", "-o", "-", plistPath]);
+    const value = res.stdout.trim();
+    if (res.status !== 0 || value.length === 0) {
+      throw new Error("CFBundleIconFile is absent — the app renders the generic blank icon");
+    }
+    if (value.endsWith(".icns")) {
+      throw new Error(
+        `CFBundleIconFile is "${value}" — write it WITHOUT the extension ("AppIcon"). macOS appends .icns ` +
+          "itself; the suffixed form silently falls back to the blank icon on some OS versions.",
+      );
+    }
+    if (!existsSync(path.join(payloadDir, "Applications", "Loombre.app", "Contents", "Resources", `${value}.icns`))) {
+      throw new Error(`CFBundleIconFile names "${value}" but Resources/${value}.icns is not in the payload`);
+    }
+  });
+
+  check("preinstall boots the menubar agent out (upgrade replaces a running app bundle)", () => {
+    const shippedPreinstall = readFileSync(path.join(componentPkgDir, "Scripts", "preinstall"), "utf8");
+    if (!/com\.loombre\.menubar/.test(shippedPreinstall)) {
+      throw new Error("preinstall never boots out com.loombre.menubar — the new Loombre.app would land under the running old one");
+    }
+  });
+
   console.log(`\n=== 2. plutil -lint on every shipped plist, xmllint on Distribution.xml ===`);
   const plistTargets = [
     path.join(payloadDir, "Library", "LaunchDaemons", "com.loombre.server.plist"),
     path.join(payloadDir, "Library", "LaunchDaemons", "com.loombre.worker.plist"),
+    path.join(payloadDir, "Library", "LaunchDaemons", "com.loombre.web.plist"),
+    path.join(payloadDir, "Library", "LaunchAgents", "com.loombre.menubar.plist"),
     path.join(payloadDir, "Applications", "Loombre.app", "Contents", "Info.plist"),
   ];
   for (const p of plistTargets) {

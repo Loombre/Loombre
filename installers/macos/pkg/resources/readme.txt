@@ -12,6 +12,8 @@ Installs to:
   /Library/LaunchDaemons/com.loombre.server.plist
   /Library/LaunchDaemons/com.loombre.worker.plist
   /Library/LaunchDaemons/com.loombre.web.plist
+  /Library/LaunchAgents/com.loombre.menubar.plist   starts the menu bar
+                               app at login (and right after this install)
 
 Creates a dedicated, unprivileged system account (_loombre) that the
 server, worker, and web UI run as — never root, never your login account.

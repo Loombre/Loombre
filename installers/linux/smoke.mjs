@@ -454,6 +454,49 @@ async function main(argv) {
     console.log("--- install.sh --no-systemd ---");
     dockerExec(args.containerName, ["bash", "-c", `cd /tmp/${tarballName} && ./install.sh --no-systemd`]);
 
+    // The systemd path itself cannot run here — this container has no
+    // init — so assert the CONTRACT against the install.sh that actually
+    // shipped in the tarball. Until the rc.1 install-visibility fix this
+    // script `enable`d the units and stopped, printing a `systemctl start`
+    // line: a successful install left the machine with nothing running,
+    // the Linux face of the same "install succeeded, nothing happened"
+    // report that hit macOS and Windows.
+    console.log("--- shipped install.sh starts the stack by default (--no-start opts out) ---");
+    const shippedInstallSh = dockerExecCapture(args.containerName, [
+      "bash",
+      "-c",
+      `cat /tmp/${tarballName}/install.sh`,
+    ]).stdout;
+    if (!/systemctl\s+enable\s+--now\s/.test(shippedInstallSh)) {
+      throw new Error(
+        "shipped install.sh never runs `systemctl enable --now` — an install would enable the units without starting them, leaving no running server and no UI",
+      );
+    }
+    if (!/--no-start\)/.test(shippedInstallSh)) {
+      throw new Error(
+        "shipped install.sh does not accept --no-start — operators who need to edit the env file before anything binds a port have no opt-out",
+      );
+    }
+    // The dependency preflight must run BEFORE the units are started, or a
+    // default install's first visible behaviour on a host missing
+    // libgssapi/libxml2/libreadline is a crash-looping server with the
+    // explanation scrolled off the top. Ordering is the whole point, so
+    // assert ordering, not mere presence.
+    const preflightAt = shippedInstallSh.indexOf("pg_lib_preflight");
+    const enableNowAt = shippedInstallSh.search(/systemctl\s+enable\s+--now\s/);
+    if (preflightAt === -1) {
+      throw new Error("shipped install.sh has no pg_lib_preflight — missing PostgreSQL libraries would surface as a crash loop, not a message");
+    }
+    if (preflightAt > enableNowAt) {
+      throw new Error("pg_lib_preflight runs AFTER `systemctl enable --now` — the dependency check must precede any service start");
+    }
+    for (const flag of ["--install-deps", "--no-install-deps"]) {
+      if (!shippedInstallSh.includes(`${flag})`)) {
+        throw new Error(`shipped install.sh does not accept ${flag}`);
+      }
+    }
+    console.log("smoke: install.sh dependency-preflight contract OK (runs before start; --install-deps/--no-install-deps present)");
+
     console.log("--- L2 / H2-recovery invocability fix: PATH shim + CLI reachability (docs-verbatim proof) ---");
     assertShimResolvesUnderPrefix(args.containerName, "/opt/loombre");
     assertCliInvocable(args.containerName);

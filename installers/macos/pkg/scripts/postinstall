@@ -162,4 +162,36 @@ for PLIST in /Library/LaunchDaemons/com.loombre.server.plist /Library/LaunchDaem
   fi
 done
 
+# --- 6. show the operator that something happened --------------------------
+# THE rc.1 FIELD BUG: everything above this line worked perfectly — server,
+# worker, web UI and embedded PostgreSQL all came up — and the operator's
+# entire experience was a progress bar reaching 100% and then nothing. No
+# window, no menu bar item, no indication the machine was now running a
+# media server. Loombre.app sat in /Applications, launched by nobody.
+#
+# `launchctl bootstrap gui/<uid>` is the documented way for a root-context
+# installer to load an agent into a live login session; it both starts the
+# app NOW and (because the plist lives in /Library/LaunchAgents with
+# RunAtLoad) registers it for every future login, on every account.
+#
+# Everything here is best-effort by design — a failure to raise the UI must
+# never fail an install whose services are already running:
+#   - No console user at all (`installer -pkg` over SSH, or sitting at the
+#     login window) => CONSOLE_UID is 0/root and we skip. The agent still
+#     loads by itself the next time somebody logs in, which is the whole
+#     point of putting it in /Library/LaunchAgents.
+#   - Already bootstrapped (re-running the installer without a logout)
+#     => bootstrap exits non-zero with "service already loaded"; the
+#     preceding bootout makes that path rare, and it is harmless anyway.
+MENUBAR_AGENT="/Library/LaunchAgents/com.loombre.menubar.plist"
+CONSOLE_UID="$(stat -f %u /dev/console 2>/dev/null || echo 0)"
+if [ -f "$MENUBAR_AGENT" ] && [ "${CONSOLE_UID:-0}" -gt 0 ]; then
+  echo "loombre postinstall: starting the menubar app for uid ${CONSOLE_UID}"
+  launchctl bootout "gui/${CONSOLE_UID}/com.loombre.menubar" 2>/dev/null || true
+  launchctl bootstrap "gui/${CONSOLE_UID}" "$MENUBAR_AGENT" 2>&1 ||
+    echo "loombre postinstall: WARNING could not bootstrap the menubar agent — it will load at the next login"
+else
+  echo "loombre postinstall: no console user (uid=${CONSOLE_UID}) — the menubar agent will load at the next login"
+fi
+
 exit 0
