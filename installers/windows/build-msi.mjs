@@ -476,7 +476,14 @@ const PINNED_FIREWALL_EXT = `WixToolset.Firewall.wixext/${PINNED_WIX_VERSION}`;
 // Util supplies util:RemoveFolderEx (Package.wxs's uninstall cleanup of
 // the extracted payload trees) — pinned in lockstep like Firewall.
 const PINNED_UTIL_EXT = `WixToolset.Util.wixext/${PINNED_WIX_VERSION}`;
-const PINNED_EXTENSIONS = [PINNED_FIREWALL_EXT, PINNED_UTIL_EXT];
+// BootstrapperApplications supplies bal:WixStandardBootstrapperApplication
+// for Bundle.wxs (the Burn bootstrapper that installs the VC++
+// redistributable prerequisite before the MSI). NOTE THE PACKAGE NAME: WiX
+// v5 renamed this from v4's `WixToolset.Bal.wixext` — the `bal:` XML
+// namespace stayed at .../v4/wxs/bal, so the namespace URI is NOT a clue
+// about which package id to pin. Same lockstep versioning as the others.
+const PINNED_BAL_EXT = `WixToolset.BootstrapperApplications.wixext/${PINNED_WIX_VERSION}`;
+const PINNED_EXTENSIONS = [PINNED_FIREWALL_EXT, PINNED_UTIL_EXT, PINNED_BAL_EXT];
 
 function ensureWixInstalled() {
   // Restore first: with a tool manifest present, `dotnet tool run` errors
@@ -533,6 +540,23 @@ function ensureWixInstalled() {
 // undefined", and MajorUpgrade comparisons key on this value). The full
 // semver (incl. any -rc.N label) still names the .msi FILE; only the MSI
 // metadata version is stripped. Identical for a final x.y.z release.
+/** The committed, regenerable brand icon container (scripts/
+ *  build-app-icons.mjs). Consumed by Package.wxs's Icon/ARPPRODUCTICON +
+ *  the Start Menu shortcut, and by Bundle.wxs's IconSourceFile. Checked
+ *  here rather than left to `wix build`'s file-not-found so the failure
+ *  names the regeneration command. */
+function brandIconPath() {
+  const iconPath = path.join(REPO_ROOT, "design", "blaze", "assets", "icons", "loombre.ico");
+  if (!existsSync(iconPath)) {
+    stop(
+      `missing brand icon at ${iconPath} — run \`node scripts/build-app-icons.mjs\` on a macOS host ` +
+        "to regenerate the committed icon containers (the generator needs sips/iconutil; the OUTPUTS " +
+        "are committed precisely so this Windows build never has to).",
+    );
+  }
+  return iconPath;
+}
+
 function msiNumericVersion(version) {
   const numeric = version.split("-")[0];
   const match = /^(\d+)\.(\d+)\.(\d+)$/.exec(numeric);
@@ -601,6 +625,8 @@ function wixBuild(version, payloadDirs) {
     `SvcHostDir=${path.join(STAGE_DIR, "svc")}`,
     "-d",
     `TrayPublishDir=${path.join(STAGE_DIR, "tray")}`,
+    "-d",
+    `BrandIcon=${brandIconPath()}`,
     "-out",
     outFile,
   ], {
@@ -615,6 +641,72 @@ function wixBuild(version, payloadDirs) {
 
   const sizeBytes = existsSync(outFile) ? statSync(outFile).size : 0;
   log(`MSI built: ${outFile} (${(sizeBytes / (1024 * 1024)).toFixed(1)} MiB)`);
+  return outFile;
+}
+
+// ---------------------------------------------------------------------------
+// Step 6b: wix build (Burn bundle) — the prerequisite-installing .exe
+// ---------------------------------------------------------------------------
+// Produces loombre-<version>-windows-x64.exe ALONGSIDE the .msi, never
+// instead of it. The bundle detects the VC++ 2015-2022 redistributable and
+// installs it before the MSI when missing; the bare MSI keeps its blocking
+// LaunchCondition for managed/silent deployment where chaining a reboot-
+// capable prerequisite behind an admin's back would be wrong. See
+// Bundle.wxs's header for the full split.
+
+function fetchVcRedist() {
+  const destDir = path.join(STAGE_DIR, "prereq");
+  mkdirSync(destDir, { recursive: true });
+  // Shared, manifest-pinned fetcher (immutable versioned Microsoft URL +
+  // sha256, verified on every run including cache hits) — same discipline
+  // as fetchNodeRuntime above.
+  run("node", [path.join(REPO_ROOT, "scripts", "fetch-vcredist.mjs"), "--dest", destDir]);
+  const exePath = path.join(destDir, "VC_redist.x64.exe");
+  if (!existsSync(exePath)) {
+    stop(`fetch-vcredist.mjs reported success but ${exePath} is missing`);
+  }
+  return exePath;
+}
+
+function wixBuildBundle(version, msiPath) {
+  log("Step 6b/7: wix build (Burn bundle with the VC++ redistributable prerequisite)");
+  const vcRedistExe = fetchVcRedist();
+  const msiDir = path.join(WINDOWS_DIR, "msi");
+  const outFile = path.join(OUT_DIR, `loombre-${version}-windows-x64.exe`);
+
+  run("dotnet", [
+    "tool",
+    "run",
+    "wix",
+    "build",
+    path.join(msiDir, "Bundle.wxs"),
+    "-arch",
+    "x64",
+    "-ext",
+    PINNED_BAL_EXT,
+    "-ext",
+    PINNED_UTIL_EXT,
+    "-d",
+    // Burn requires a purely numeric bundle version for upgrade
+    // comparison, exactly like the MSI's ProductVersion — reuse the same
+    // conversion so the two artifacts of one release can never disagree.
+    `MsiVersion=${msiNumericVersion(version)}`,
+    "-d",
+    `LoombreMsi=${msiPath}`,
+    "-d",
+    `VcRedistExe=${vcRedistExe}`,
+    "-d",
+    `BrandIcon=${brandIconPath()}`,
+    "-out",
+    outFile,
+  ], {
+    // Same cwd requirement as wixBuild — the .wix/ extension cache that
+    // `wix extension add` populated lives here (WIX0144 otherwise).
+    cwd: WINDOWS_DIR,
+  });
+
+  const sizeBytes = existsSync(outFile) ? statSync(outFile).size : 0;
+  log(`Bundle built: ${outFile} (${(sizeBytes / (1024 * 1024)).toFixed(1)} MiB)`);
   return outFile;
 }
 
@@ -661,6 +753,13 @@ function main() {
   buildDotnetProjects(version);
   const msiPath = wixBuild(version, payloadDirs);
   callSignHook(msiPath);
+
+  // The bundle embeds the MSI, so it must be built AFTER the MSI is final
+  // — including after the sign hook, or the .exe would carry an unsigned
+  // copy of a signed .msi (and, once P4.1's real certificate lands, the
+  // chained package would fail its own signature check).
+  const bundlePath = wixBuildBundle(version, msiPath);
+  callSignHook(bundlePath);
 
   log("Done.");
 }

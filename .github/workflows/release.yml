@@ -195,18 +195,29 @@ jobs:
           set -euo pipefail
           node installers/windows/build-msi.mjs --version "$LOOMBRE_VERSION"
 
-      - name: Stage the built MSI into dist/release
+      - name: Stage the built MSI + bootstrapper into dist/release
         shell: bash
         env:
           LOOMBRE_VERSION: ${{ needs.prepare.outputs.version }}
         run: |
           set -euo pipefail
-          src="installers/windows/out/loombre-${LOOMBRE_VERSION}-windows-x64.msi"
-          if [ ! -f "$src" ]; then
-            echo "::error::expected MSI not found at $src — build-msi.mjs's documented output path may have changed; update this step to match"
-            exit 1
-          fi
-          cp "$src" dist/release/
+          # TWO Windows artifacts since the rc.1 VCRUNTIME140 field failure:
+          #   .exe — the Burn bootstrapper. Detects the VC++ 2015-2022
+          #          redistributable and installs it before the MSI. This is
+          #          what a person should download.
+          #   .msi — unchanged, for silent/managed deployment. Carries a
+          #          blocking LaunchCondition for the same prerequisite.
+          # Both are staged; SHA256SUMS/manifest.json cover whatever lands
+          # in dist/release, so no separate wiring is needed downstream.
+          for ext in msi exe; do
+            src="installers/windows/out/loombre-${LOOMBRE_VERSION}-windows-x64.${ext}"
+            if [ ! -f "$src" ]; then
+              echo "::error::expected Windows artifact not found at $src — build-msi.mjs's documented output paths may have changed; update this step to match"
+              exit 1
+            fi
+            cp "$src" dist/release/
+          done
+          ls -la dist/release/
 
       - name: Upload artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
