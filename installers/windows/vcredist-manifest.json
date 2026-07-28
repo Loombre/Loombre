@@ -1,0 +1,37 @@
+{
+  "manifestSchemaVersion": 1,
+  "pinnedAtMs": 1785297600000,
+  "pinnedAtIso": "2026-07-28T00:00:00Z",
+  "why": {
+    "summary": "The Microsoft Visual C++ 2015-2022 Redistributable (x64) is a HARD runtime requirement of two binaries this MSI ships, and it is NOT part of Windows. Bundle.wxs chains this installer ahead of the MSI so a fresh machine acquires it automatically instead of installing a Loombre that cannot start.",
+    "discoveredBy": "v0.9.0-rc.1 owner install on a clean Windows 11 VM. LoombreServer and LoombreWorker died at boot, three restarts each, with ERR_DLOPEN_FAILED on @napi-rs/keyring's .node — the file was present (Node resolved it; resolution checks existence), so what was missing was a DEPENDENCY of it. Confirmed on the host: Test-Path %SystemRoot%\\System32\\vcruntime140.dll -> False.",
+    "whoNeedsIt": [
+      "pg\\windows-x64\\<version>\\bin\\postgres.exe (and every pg client tool) — imports KERNEL32, VCRUNTIME140.dll, Secur32, WS2_32, libcrypto-3-x64, icu*, api-ms-win-crt-*. This is the DEFAULT database; without the runtime there is no working install to degrade into.",
+      "server|worker\\node_modules\\@napi-rs\\keyring-win32-x64-msvc\\keyring.win32-x64-msvc.node — imports KERNEL32, VCRUNTIME140.dll, advapi32, bcryptprimitives, api-ms-win-crt-*."
+    ],
+    "whoDoesNot": [
+      "node.exe — official Node Windows builds link the CRT statically. This is why the LoombreWeb service kept serving :3000 while the server and worker were dead on the same machine, which was the single most misleading symptom in the field report.",
+      "@img/sharp-win32-x64 — imports only KERNEL32, libnode.dll and the libvips DLLs shipped inside its own package; both libvips-42.dll and libvips-cpp-8.18.3.dll were checked and import no vcruntime/msvcp/concrt at all (CRT-static). Verified rather than assumed, precisely because keyring taught us not to assume."
+    ],
+    "whyCiNeverCaughtIt": "Every GitHub Actions windows runner has Visual Studio preinstalled, so VCRUNTIME140.dll is always present there. The MSI diag's install smoke could therefore assert /healthz 200 against a package that was dead on arrival on any clean machine. A runner's toolchain is a SUPERSET of a user's machine by construction — a green install smoke proves the package is coherent, never that a clean machine can run it.",
+    "ucrtNote": "The api-ms-win-crt-* imports above are the Universal CRT, which IS a Windows component from Windows 10 onward and needs nothing installed. Only VCRUNTIME140.dll comes from the redistributable. Neither binary imports VCRUNTIME140_1.dll, so a 2015-era redistributable would technically satisfy them — the detect condition below still keys on the shared 14.x 'Runtimes\\x64\\Installed' marker rather than a version floor, so an existing older-but-sufficient runtime is not needlessly reinstalled."
+  },
+  "sourcing": {
+    "decision": "Microsoft's own versioned download.visualstudio.microsoft.com permalink, embedded in the Burn bundle (Compressed=yes).",
+    "whyNotAkaMs": "https://aka.ms/vs/17/release/vc_redist.x64.exe is a ROLLING pointer — Microsoft repoints it at every servicing update, so any sha256 pinned against it starts failing verification the day the runtime is refreshed. The download.visualstudio.microsoft.com URL below is version-stable and immutable, which is what makes a pinned hash meaningful. Same reasoning as node-manifest.json and embedded-pg-manifest.json.",
+    "whyEmbeddedNotDownloaded": "Burn can acquire an ExePackage at install time from a DownloadUrl instead of embedding it. Embedding is chosen so the bundle installs on a machine with no internet (a media server is exactly the kind of thing people set up on an isolated LAN) and so the artifact a user checksums is the complete artifact they install. Cost is ~18 MB on a bundle already dominated by a ~400 MB MSI.",
+    "verification": "Downloaded in full on this build host and sha256'd: 843068991daaa1f73ad9f6239bce4d0f6a07a51f18c37ea2a867e9beca71295c (18,731,856 bytes). This matches the hash Microsoft embeds in the URL path itself (the /download/pr/<guid>/<SHA256>/ convention their own winget manifests use) — an independent second confirmation of the same bytes, from the publisher, over TLS.",
+    "licenseNote": "vc_redist.x64.exe is Microsoft 'Distributable Code' and is explicitly redistributable with an application under the Visual Studio license terms; redistributing it alongside Loombre is the intended, documented use, not a grey area. It is a separate, unmodified Microsoft installer that Burn chains — Loombre links nothing of Microsoft's into its own binaries, and the runtime it installs is a system library in the GPL/AGPL 'System Library' sense. DISCOVERY for the owner / LICENSE-INTENT.md: this belongs in the same 'Vendored non-npm binaries' section that ffmpeg-manifest.json and embedded-pg-manifest.json already flagged as needing to exist — license-checker never sees any of these, since none is an npm dependency."
+  },
+  "version": "14.51.36247.0",
+  "url": "https://download.visualstudio.microsoft.com/download/pr/ebdab8e5-1d7b-4d9f-a11b-cbb1720c3b12/843068991DAAA1F73AD9F6239BCE4D0F6A07A51F18C37EA2A867E9BECA71295C/VC_redist.x64.exe",
+  "sha256": "843068991daaa1f73ad9f6239bce4d0f6a07a51f18c37ea2a867e9beca71295c",
+  "sizeBytes": 18731856,
+  "fileName": "VC_redist.x64.exe",
+  "detect": {
+    "registryKey": "SOFTWARE\\Microsoft\\VisualStudio\\14.0\\VC\\Runtimes\\x64",
+    "registryValue": "Installed",
+    "bitness": "always64",
+    "note": "The redistributable's own canonical install marker. '14.0' is the VC toolset lineage, shared by 2015 / 2017 / 2019 / 2022 — exactly the span that provides VCRUNTIME140.dll. always64 because an x64 payload must not read the WOW6432Node view, where the x86 runtime records itself."
+  }
+}

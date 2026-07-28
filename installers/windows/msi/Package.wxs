@@ -73,6 +73,96 @@
 
     <MediaTemplate EmbedCab="yes" />
 
+    <!-- Brand icon. Without these two lines Add/Remove Programs (Settings >
+         Installed apps) renders Loombre with the generic blank-package
+         glyph, and the Start Menu shortcut inherits whatever the tray exe
+         carries. The .ico is a committed, regenerable container built from
+         design/blaze's 1024px source by scripts/build-app-icons.mjs; it
+         holds 16/24/32/48/64/128/256 px so the shell never has to upscale
+         a small bitmap for a high-DPI Start Menu tile.
+         ARPPRODUCTICON takes the Icon/@Id — MSI resolves it through the
+         Icon table, NOT a file path. -->
+    <Icon Id="loombre.ico" SourceFile="$(var.BrandIcon)" />
+    <Property Id="ARPPRODUCTICON" Value="loombre.ico" />
+
+    <!-- ==================================================================
+         Visual C++ runtime prerequisite (v0.9.0-rc.1 field failure)
+         ==================================================================
+         A clean Windows 11 machine installed this MSI with "Installation
+         success or error status: 0" and then could not run Loombre at all:
+         LoombreServer and LoombreWorker died at boot, three restarts each,
+         on ERR_DLOPEN_FAILED loading @napi-rs/keyring's .node — and had
+         they survived that, embedded PostgreSQL would have failed next.
+         Both binaries import VCRUNTIME140.dll:
+
+           keyring.win32-x64-msvc.node -> KERNEL32, VCRUNTIME140.dll,
+               advapi32, bcryptprimitives, api-ms-win-crt-*
+           pg\...\bin\postgres.exe     -> KERNEL32, VCRUNTIME140.dll,
+               Secur32, WS2_32, libcrypto-3-x64, icu*, api-ms-win-crt-*
+
+         The api-ms-win-crt-* (UCRT) half IS part of Windows 10+.
+         VCRUNTIME140.dll is NOT — it comes from the Visual C++ 2015-2022
+         redistributable. Every GitHub Actions windows runner has it
+         (Visual Studio is preinstalled), which is precisely why the
+         release's own install smoke could assert /healthz 200 against an
+         MSI that was dead on arrival everywhere else. Node itself is fine
+         (official Windows builds link the CRT statically), which is why
+         the web service kept serving :3000 while nothing else worked —
+         the single most confusing part of the field report.
+
+         A blocking LaunchCondition, not a warning: the redistributable is
+         required for the DEFAULT database. Without it there is no working
+         install to degrade into, and the failure mode it replaces is a
+         silent one that cost a full debugging session to diagnose.
+
+         SystemFolder is the NATIVE (64-bit) System32 here because this
+         package is x64 (Package/@InstallerVersion + ProgramFiles64Folder);
+         a 32-bit package would be redirected to SysWOW64 and find the
+         wrong architecture's copy. FileSearch keys on the file, not on a
+         registry version stamp, because the DLL is what actually has to
+         load — a present-but-repaired/rolled-back registry entry is not
+         evidence, and the loader does not consult it. -->
+    <Property Id="LOOMBRE_VCRUNTIME140">
+      <DirectorySearch Id="dir.SystemFolderForVcRuntime" Path="[SystemFolder]">
+        <FileSearch Id="file.VcRuntime140" Name="vcruntime140.dll" />
+      </DirectorySearch>
+    </Property>
+    <!-- Second, INDEPENDENT signal, OR'd with the file search below. This
+         is deliberately fail-OPEN rather than fail-closed. A blocking
+         condition that depends on one detection mechanism is only as good
+         as that mechanism: if the AppSearch above ever failed to populate
+         its property (a locked-down SystemFolder, a future WiX change in
+         how DrLocator resolves a property-valued Path), the condition
+         would refuse to install on machines that are perfectly fine — a
+         strictly worse outcome than the bug it guards against, and one
+         that would hit EVERY user rather than the subset with no runtime.
+         Requiring both signals to be absent before blocking means a
+         detection bug degrades to today's behaviour, not to a brick.
+         `SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64` is the
+         redistributable's own canonical install marker (the "14.0" is the
+         VC toolset lineage — 2015 through 2022 all share it, which is
+         exactly the span that provides VCRUNTIME140.dll).
+         Bitness="always64" because an x64 package must not be redirected
+         into the WOW6432Node view, where the x86 runtime's key lives. -->
+    <Property Id="LOOMBRE_VCREDIST_REGISTERED">
+      <RegistrySearch
+        Id="reg.VcRedistX64"
+        Root="HKLM"
+        Key="SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64"
+        Name="Installed"
+        Type="raw"
+        Bitness="always64" />
+    </Property>
+    <Launch
+      Condition="Installed OR REMOVE OR LOOMBRE_VCRUNTIME140 OR LOOMBRE_VCREDIST_REGISTERED"
+      Message="Loombre requires the Microsoft Visual C++ 2015-2022 Redistributable (x64), which is not installed on this computer. Loombre's bundled PostgreSQL database and its secure-credential support both depend on it, and neither can start without it.
+
+Install it first, then run this installer again:
+
+  winget install --id Microsoft.VCRedist.2015+.x64 -e
+
+or download it from https://aka.ms/vs/17/release/vc_redist.x64.exe" />
+
     <!-- ProgramData\Loombre\{data,logs} must exist even on a bare
          install before any service has run once (LoombreServiceHost writes
          its log file lazily but the ServiceInstall log-path argument's
@@ -164,8 +254,48 @@
       Execute="deferred"
       Impersonate="no"
       Return="check" />
+    <!-- Launch the tray controller when the install finishes (rc.1 field
+         report: "nothing happens ... I open the app via the start menu").
+         The MSI already registered the tray for autostart (Shortcuts.wxs's
+         HKLM Run key) — but a Run key fires at LOGON, so on the install
+         itself nothing appeared, and the operator had no on-screen
+         evidence that three services had just started. This closes that
+         gap on the same install, without waiting for a logout.
+
+         Type-50 (Property + ExeCommand) rather than FileRef: the tray's
+         files are harvested wholesale by Files.wxs's `<Files Include>`,
+         so their File ids are compiler-generated and NOT stable enough to
+         reference by name. SetProperty resolves [TRAYDIR] at run time
+         (a literal `<Property>` value would ship the unexpanded token —
+         Property-table values are not Formatted).
+
+         Impersonate="yes" + Execute="immediate" runs it as the operator
+         who started the install, NOT as the elevated installer identity —
+         a tray icon spawned from the SYSTEM/elevated context would land
+         in the wrong session (or none) and could not talk to that user's
+         desktop. Return="asyncNoWait" so a UI app that stays running
+         cannot hang the installer's final progress bar.
+
+         UILevel > 2 skips this for fully-silent (`/qn`) installs — an
+         unattended/enterprise deployment must not have a tray icon pop up
+         on whoever happens to be logged in; those installs still get the
+         Run key for the next logon. -->
+    <SetProperty
+      Id="LOOMBRETRAYEXE"
+      Value="[TRAYDIR]Loombre.Tray.exe"
+      After="CostFinalize"
+      Sequence="execute"
+      Condition="NOT REMOVE" />
+    <CustomAction
+      Id="ca.LaunchTray"
+      Property="LOOMBRETRAYEXE"
+      ExeCommand=""
+      Execute="immediate"
+      Impersonate="yes"
+      Return="asyncNoWait" />
     <InstallExecuteSequence>
       <Custom Action="ca.ExtractPayload" After="InstallFiles" Condition="NOT REMOVE" />
+      <Custom Action="ca.LaunchTray" After="InstallFinalize" Condition="NOT REMOVE AND UILevel &gt; 2" />
     </InstallExecuteSequence>
 
     <Feature Id="Main" Title="Loombre" Level="1" AllowAbsent="no" AllowAdvertise="no">

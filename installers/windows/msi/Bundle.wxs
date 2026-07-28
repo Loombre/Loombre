@@ -1,0 +1,133 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Loombre :: installers/windows/msi/Bundle.wxs
+
+  A WiX Burn BOOTSTRAPPER that chains the Microsoft Visual C++ 2015-2022
+  Redistributable (x64) ahead of loombre-<version>-windows-x64.msi, and is
+  built alongside it as loombre-<version>-windows-x64.exe.
+
+  ==========================================================================
+  WHY THIS EXISTS
+  ==========================================================================
+  v0.9.0-rc.1 installed cleanly on a fresh Windows 11 machine — "Installation
+  success or error status: 0" in the event log — and then could not run.
+  LoombreServer and LoombreWorker died at boot, three restarts each, on
+  ERR_DLOPEN_FAILED loading @napi-rs/keyring's native addon; had they got
+  past that, the bundled PostgreSQL would have failed identically on the
+  next line. Both import VCRUNTIME140.dll, which is NOT part of Windows —
+  it ships with this redistributable. See vcredist-manifest.json for the
+  full evidence trail (PE import tables of both binaries, and the proof
+  that node.exe and sharp/libvips do NOT need it, which is why the web
+  service kept serving :3000 while everything else was dead).
+
+  Package.wxs carries a blocking LaunchCondition for the same requirement.
+  That is the honest floor for someone running the bare .msi — it converts
+  a silent, hours-to-diagnose runtime failure into an install-time message.
+  But "here is a URL, go install it yourself, then start over" is not what
+  an installer is for. THIS bundle is the answer to the owner's directive:
+  detect the dependency and, if it is missing, install it as part of the
+  same flow the user already started. Both artifacts ship:
+
+    loombre-<version>-windows-x64.exe   <- what a person should run.
+                                           Detects and installs the
+                                           prerequisite, then the MSI.
+    loombre-<version>-windows-x64.msi   <- unchanged, for silent/managed
+                                           deployment (Intune, GPO, MDT),
+                                           where the prerequisite is the
+                                           deploying admin's job and a
+                                           surprise chained reboot would be
+                                           unwelcome. Its LaunchCondition
+                                           still refuses to install blind.
+
+  ==========================================================================
+  DESIGN NOTES
+  ==========================================================================
+  Permanent="yes" on the redistributable: uninstalling Loombre must NEVER
+  remove a shared C++ runtime that arbitrary other software on the machine
+  may have started depending on in the meantime. Burn's reference counting
+  is per-bundle, not machine-wide, and there is no safe way for us to know
+  we were the only consumer. Leaving it is the conventional and correct
+  behaviour for a redistributable prerequisite.
+
+  Vital="yes": if the runtime genuinely cannot be installed, stop. There is
+  no degraded mode worth shipping — the default database cannot start.
+
+  DetectCondition keys on the redistributable's own install marker, so a
+  machine that already has it (most do — plenty of software installs it)
+  skips straight to the MSI and sees no extra UI at all.
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:bal="http://wixtoolset.org/schemas/v4/wxs/bal"
+     xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
+
+  <!-- Bundle/@UpgradeCode is PERMANENT, like Package.wxs's own: Burn keys
+       bundle upgrade/downgrade detection on this GUID across every future
+       release. Distinct from the MSI's UpgradeCode by necessity — they are
+       two different installable units. Never regenerate it. -->
+  <Bundle
+    Name="Loombre"
+    Manufacturer="Loombre"
+    Version="$(var.MsiVersion)"
+    Compressed="yes"
+    IconSourceFile="$(var.BrandIcon)"
+    UpgradeCode="9F2C1E7A-4B85-4D26-9E13-6C0A5F8B7D42">
+
+    <!-- The stock WiX bootstrapper UI. `hyperlinkLicense` renders a small
+         window with a link rather than an embedded RTF pane, which suits a
+         project whose license (AGPL-3.0-only) lives in the repository and
+         whose installer has no bespoke pages. SuppressOptionsUI: the MSI
+         is per-machine with a fixed layout (Package.wxs sets Scope, and
+         ProgramFiles64Folder is not negotiable — the payload is x64), so
+         an install-location option here would be a lie. -->
+    <BootstrapperApplication>
+      <bal:WixStandardBootstrapperApplication
+        Theme="hyperlinkLicense"
+        LicenseUrl="https://github.com/Loombre/Loombre/blob/main/LICENSE"
+        SuppressOptionsUI="yes" />
+    </BootstrapperApplication>
+
+    <!-- Detection, evaluated BEFORE the chain runs. Mirrors the MSI's own
+         RegistrySearch (Package.wxs) so the two agree on what "installed"
+         means and the chained MSI's LaunchCondition can never contradict
+         the bundle that just satisfied it. -->
+    <util:RegistrySearch
+      Id="search.VcRedistX64Installed"
+      Variable="VcRedistX64Installed"
+      Root="HKLM"
+      Key="SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64"
+      Value="Installed"
+      Result="value"
+      Bitness="always64" />
+
+    <Chain>
+      <ExePackage
+        Id="VCRedist2015to2022X64"
+        DisplayName="Microsoft Visual C++ 2015-2022 Redistributable (x64)"
+        Description="Required by Loombre's bundled PostgreSQL database and secure credential storage."
+        DetectCondition="VcRedistX64Installed = 1"
+        InstallArguments="/install /quiet /norestart"
+        Permanent="yes"
+        Vital="yes"
+        Compressed="yes">
+        <ExePackagePayload SourceFile="$(var.VcRedistExe)" />
+        <!-- 3010 = ERROR_SUCCESS_REBOOT_REQUIRED. Servicing a runtime that
+             is currently loaded by a running process defers part of the
+             work to a reboot. Burn must be told this is success-with-
+             reboot, or it reports a failed prerequisite and aborts an
+             install that actually worked. -->
+        <ExitCode Value="3010" Behavior="forceReboot" />
+        <!-- 1638 = ANOTHER_VERSION_INSTALLED: a NEWER redistributable is
+             already present, so this one declines. That is a satisfied
+             prerequisite, not a failure. -->
+        <ExitCode Value="1638" Behavior="success" />
+      </ExePackage>
+
+      <MsiPackage
+        Id="LoombreMsi"
+        SourceFile="$(var.LoombreMsi)"
+        DisplayInternalUI="no"
+        Vital="yes"
+        Compressed="yes" />
+    </Chain>
+  </Bundle>
+</Wix>

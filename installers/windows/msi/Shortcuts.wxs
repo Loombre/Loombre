@@ -17,12 +17,19 @@
   <Fragment>
     <ComponentGroup Id="ShortcutComponents">
       <Component Id="cmp.StartMenuShortcut" Directory="APPLICATIONPROGRAMSFOLDER" Guid="*">
+        <!-- Icon references the Icon/@Id authored in Package.wxs (WiX links
+             Icon rows across fragments in the same package). Belt-and-
+             braces alongside the tray exe's own embedded ApplicationIcon:
+             an explicit shortcut icon is what the Start Menu actually
+             caches, and it keeps the tile correct even if the exe is ever
+             rebuilt without its resource. -->
         <Shortcut
           Id="shortcut.LoombreTray"
           Name="Loombre"
           Description="Loombre tray controller — status, start/stop, open web client."
           Target="[TRAYDIR]Loombre.Tray.exe"
-          WorkingDirectory="TRAYDIR" />
+          WorkingDirectory="TRAYDIR"
+          Icon="loombre.ico" />
         <!-- A Component that only contains a Shortcut still needs its own
              KeyPath and needs the Start Menu folder cleaned up on
              uninstall when it's the last thing in it. -->
