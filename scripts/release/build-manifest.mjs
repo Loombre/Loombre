@@ -58,7 +58,16 @@ function sha256File(filePath) {
 function collectFileArtifacts(artifactsDir, baseUrl) {
   const artifacts = [];
   for (const entry of readdirSync(artifactsDir)) {
-    if (entry === "docker-image.json" || entry.endsWith(".minisig") || entry === "SHA256SUMS" || entry === "manifest.json") {
+    // Explicit allow-list of NON-artifact files that legitimately sit in
+    // dist/release. Anything else must be a real artifact — see the throw
+    // below for why this list is exhaustive rather than a prefix match.
+    if (
+      entry === "docker-image.json" ||
+      entry === "docker-web-image.json" ||
+      entry.endsWith(".minisig") ||
+      entry === "SHA256SUMS" ||
+      entry === "manifest.json"
+    ) {
       continue;
     }
     const full = path.join(artifactsDir, entry);
@@ -66,8 +75,20 @@ function collectFileArtifacts(artifactsDir, baseUrl) {
 
     const inferred = inferPlatformAndKind(entry);
     if (!inferred) {
-      console.warn(`build-manifest: skipping ${entry} — does not match the loombre-<version>-<platform>.<ext> naming convention`);
-      continue;
+      // FAIL, not warn. This was a console.warn, and it cost the rc.2
+      // release its bootstrapper: the new .exe had no EXTENSION_TO_KIND
+      // entry, so it was skipped with a warning nobody read, and shipped
+      // in SHA256SUMS (which globs the directory) but NOT in the signed
+      // manifest.json that a download page or updater reads. A release
+      // artifact that the pipeline does not understand is a release
+      // problem, not a log line.
+      throw new Error(
+        `build-manifest: ${entry} is in the release directory but does not match the ` +
+          `loombre-<version>-<platform>.<ext> convention with a known extension. ` +
+          `If it is a new artifact type, add its extension to EXTENSION_TO_KIND (and its kind to ` +
+          `ARTIFACT_KINDS in packages/release-manifest). If it is not an artifact, add it to the ` +
+          `skip list above. Refusing to publish a manifest that silently omits it.`,
+      );
     }
 
     artifacts.push({
