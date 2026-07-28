@@ -29,12 +29,21 @@ boundary.
 
 ## Downloading
 
-Get `loombre-<version>-windows-x64.msi` from the release you want, plus its
-two companion files, from the [releases page] (or your own mirror):
+Two Windows artifacts ship on the [releases page]. **Take the `.exe` unless
+you know you want the `.msi`:**
 
-- `loombre-<version>-windows-x64.msi` — the installer
-- `loombre-<version>-windows-x64.msi.sha256` — the checksum
-- `loombre-<version>-windows-x64.msi.minisig` — the minisign signature
+- `loombre-<version>-windows-x64.exe` — **recommended.** Checks for the
+  Visual C++ redistributable Loombre needs and installs it for you if it's
+  missing, then installs Loombre. On a machine that already has the runtime
+  (most do) it goes straight through with no extra prompts.
+- `loombre-<version>-windows-x64.msi` — the bare installer, for silent or
+  managed deployment (Intune, GPO, MDT). It does **not** install the
+  prerequisite — it refuses to install without it, so a managed rollout
+  fails loudly at deploy time instead of shipping dead services. Install
+  the redistributable yourself first (see the section below).
+
+Checksums and signatures are published for both, in the release's
+`SHA256SUMS` and `manifest.json` (each with a `.minisig`).
 
 [releases page]: #
 
@@ -90,6 +99,35 @@ will ever know you hit this — verify anyway.
 
 [minisign]: https://jedisct1.github.io/minisign/
 
+## Prerequisite: the Visual C++ 2015-2022 Redistributable (x64)
+
+**If you're installing with the `.exe`, skip this section — it handles the
+runtime for you.** This is for the `.msi` path.
+
+Loombre needs the Microsoft Visual C++ runtime. Install it first:
+
+```powershell
+winget install --id Microsoft.VCRedist.2015+.x64 -e
+```
+
+(or download <https://aka.ms/vs/17/release/vc_redist.x64.exe> and run it).
+Most machines already have it — plenty of software installs it — but a
+freshly imaged Windows does **not**, because it is not part of Windows.
+Check with:
+
+```powershell
+Test-Path "$env:SystemRoot\System32\vcruntime140.dll"
+```
+
+**Why Loombre needs it.** Two bundled native components import
+`VCRUNTIME140.dll`: the PostgreSQL binaries that back Loombre's built-in
+database, and the addon that stores credentials in Windows Credential
+Manager. The Universal CRT half of the runtime *does* ship with Windows
+10/11; `VCRUNTIME140.dll` specifically does not. The installer checks for
+it and refuses to install rather than leaving you with services that
+register successfully and then die on every start — the exact failure
+v0.9.0-rc.1 shipped with.
+
 ## Installing
 
 1. Double-click `loombre-<version>-windows-x64.msi`.
@@ -102,10 +140,14 @@ will ever know you hit this — verify anyway.
    in v1 (a first-run web setup wizard, not this installer, is where you
    create the admin account and pick library folders — see
    `docs/admin-guide/wizard.md` for the full walkthrough).
-6. The installer registers two Windows services (**Loombre Server**,
-   **Loombre Worker**), a firewall exception for the server's port, and a
-   tray application (**Loombre.Tray.exe**) that starts automatically the
-   next time you log in.
+6. The installer registers three Windows services (**Loombre Server**,
+   **Loombre Web**, **Loombre Worker**), firewall exceptions for the server
+   and web ports, and a tray application (**Loombre.Tray.exe**). All three
+   services start immediately and on every boot; the tray starts at the end
+   of the install and again at every logon.
+7. When it finishes, open `http://localhost:3000`. The database provisions
+   and migrates itself on first boot — give it a few seconds — and the
+   first page you get is the account-setup wizard.
 
 Nothing here is different in kind from any other unsigned, legitimately
 open-source Windows installer (Notepad++, many others) — SmartScreen's
