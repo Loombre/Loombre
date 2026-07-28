@@ -11,6 +11,14 @@
     <options customize="never" require-scripts="true" rootVolumeOnly="true" hostArchitectures="arm64"/>
     <welcome file="welcome.txt" mime-type="text/plain"/>
     <readme file="readme.txt" mime-type="text/plain"/>
+    <!-- The final pane. Added after the rc.1 field report ("the install
+         will be successful but nothing happens nor opens"): the stack came
+         up correctly every time, but Installer's last screen said only
+         "The installation was successful" and the operator was left with
+         no URL, no window, and no way to tell a working install from a
+         dead one. This pane names the URL and the menu bar item that
+         postinstall has just started. -->
+    <conclusion file="conclusion.txt" mime-type="text/plain"/>
 
     <!--
       UNSIGNED build (P4.1 — no Apple notarization/Developer ID anywhere in
