@@ -100,16 +100,31 @@
       Bitness="always64" />
 
     <Chain>
+      <!-- PerMachine="yes" — the schema's default is "no", and it is what
+           tells Burn this package "must be executed elevated". The
+           redistributable installs machine-wide and would fail unelevated;
+           without this the chain could try to run it before Burn has any
+           reason to elevate (the per-machine MSI that forces elevation
+           comes AFTER it).
+
+           SourceFile as an ATTRIBUTE, not a child <ExePackagePayload>:
+           WiX rejects the pair (WIX0372 — "cannot have a child element
+           'ExePackagePayload' when any of attributes 'SourceFile', 'Name',
+           'DownloadUrl', or 'Compressed' are set"). The child-element form
+           exists for payloads that need per-payload naming or a download
+           URL; a plain embedded local file wants the attribute, which is
+           also the shape MsiPackage uses below. -->
       <ExePackage
         Id="VCRedist2015to2022X64"
         DisplayName="Microsoft Visual C++ 2015-2022 Redistributable (x64)"
         Description="Required by Loombre's bundled PostgreSQL database and secure credential storage."
+        SourceFile="$(var.VcRedistExe)"
         DetectCondition="VcRedistX64Installed = 1"
         InstallArguments="/install /quiet /norestart"
+        PerMachine="yes"
         Permanent="yes"
         Vital="yes"
         Compressed="yes">
-        <ExePackagePayload SourceFile="$(var.VcRedistExe)" />
         <!-- 3010 = ERROR_SUCCESS_REBOOT_REQUIRED. Servicing a runtime that
              is currently loaded by a running process defers part of the
              work to a reboot. Burn must be told this is success-with-
@@ -122,10 +137,14 @@
         <ExitCode Value="1638" Behavior="success" />
       </ExePackage>
 
+      <!-- No DisplayInternalUI: the attribute does not exist on MsiPackage
+           in WiX v5 (WIX0004), and it would be redundant anyway — Burn
+           runs a chained MSI silently and drives the progress UI itself,
+           which is the whole point of the bootstrapper owning the
+           experience. -->
       <MsiPackage
         Id="LoombreMsi"
         SourceFile="$(var.LoombreMsi)"
-        DisplayInternalUI="no"
         Vital="yes"
         Compressed="yes" />
     </Chain>
