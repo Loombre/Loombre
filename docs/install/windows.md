@@ -1,7 +1,7 @@
-# Installing Loombre on Windows (MSI + tray controller)
+# Installing Loombre on Windows (installer + tray controller)
 
-Loombre ships as an unsigned MSI installer. That is a deliberate choice, not
-an oversight — read on for why, and for exactly how to verify what you are
+Loombre ships as a single unsigned Windows installer. That is a deliberate
+choice, not an oversight — read on for why, and for exactly how to verify what you are
 installing is genuinely what the Loombre project built.
 
 ## Why Windows will warn you before you can run this
@@ -29,21 +29,15 @@ boundary.
 
 ## Downloading
 
-Two Windows artifacts ship on the [releases page]. **Take the `.exe` unless
-you know you want the `.msi`:**
+One file, from the [releases page]:
 
-- `loombre-<version>-windows-x64.exe` — **recommended.** Checks for the
-  Visual C++ redistributable Loombre needs and installs it for you if it's
-  missing, then installs Loombre. On a machine that already has the runtime
-  (most do) it goes straight through with no extra prompts.
-- `loombre-<version>-windows-x64.msi` — the bare installer, for silent or
-  managed deployment (Intune, GPO, MDT). It does **not** install the
-  prerequisite — it refuses to install without it, so a managed rollout
-  fails loudly at deploy time instead of shipping dead services. Install
-  the redistributable yourself first (see the section below).
+- `loombre-<version>-windows-x64.exe`
 
-Checksums and signatures are published for both, in the release's
-`SHA256SUMS` and `manifest.json` (each with a `.minisig`).
+That's the whole Windows download. It installs everything Loombre needs,
+including the Microsoft Visual C++ runtime if your machine doesn't already
+have it (most do, in which case you won't notice). Checksums and
+signatures are in the release's `SHA256SUMS` and `manifest.json`, each
+with a `.minisig`.
 
 [releases page]: #
 
@@ -58,11 +52,11 @@ release.
 PowerShell:
 
 ```powershell
-Get-FileHash .\loombre-<version>-windows-x64.msi -Algorithm SHA256
+Get-FileHash .\loombre-<version>-windows-x64.exe -Algorithm SHA256
 ```
 
 Compare the printed hash, byte-for-byte, against the contents of
-`loombre-<version>-windows-x64.msi.sha256`. A mismatch means a corrupted or
+`loombre-<version>-windows-x64.exe.sha256`. A mismatch means a corrupted or
 tampered download — **do not run the installer**; re-download from a
 different network path and check again.
 
@@ -78,7 +72,7 @@ ed25519-based signing tool. Install it once (`scoop install minisign`, or
 download a release binary from the minisign project), then:
 
 ```powershell
-minisign -V -p loombre-minisign.pub -m loombre-<version>-windows-x64.msi -x loombre-<version>-windows-x64.msi.minisig
+minisign -V -p loombre-minisign.pub -m loombre-<version>-windows-x64.exe -x loombre-<version>-windows-x64.exe.minisig
 ```
 
 `loombre-minisign.pub` is Loombre's public signing key, published in **three
@@ -99,44 +93,46 @@ will ever know you hit this — verify anyway.
 
 [minisign]: https://jedisct1.github.io/minisign/
 
-## Prerequisite: the Visual C++ 2015-2022 Redistributable (x64)
+## About the Visual C++ runtime (you don't need to do anything)
 
-**If you're installing with the `.exe`, skip this section — it handles the
-runtime for you.** This is for the `.msi` path.
+The installer handles this — it's documented only so nothing about the
+install is a mystery.
 
-Loombre needs the Microsoft Visual C++ runtime. Install it first:
+Two of Loombre's bundled native components import `VCRUNTIME140.dll`: the
+PostgreSQL binaries behind Loombre's built-in database, and the addon that
+stores credentials in Windows Credential Manager. That DLL comes from the
+Microsoft Visual C++ 2015-2022 Redistributable and is **not** part of
+Windows (the Universal CRT half of the runtime is; this piece isn't).
+Plenty of software installs it, so most machines already have it — but a
+freshly imaged Windows does not, which is exactly how v0.9.0-rc.1 shipped
+an installer whose services registered successfully and then died on every
+start.
+
+The installer now detects it and installs it if absent. If you'd rather
+install it yourself first:
 
 ```powershell
 winget install --id Microsoft.VCRedist.2015+.x64 -e
 ```
 
-(or download <https://aka.ms/vs/17/release/vc_redist.x64.exe> and run it).
-Most machines already have it — plenty of software installs it — but a
-freshly imaged Windows does **not**, because it is not part of Windows.
-Check with:
+and to check whether you already have it:
 
 ```powershell
 Test-Path "$env:SystemRoot\System32\vcruntime140.dll"
 ```
 
-**Why Loombre needs it.** Two bundled native components import
-`VCRUNTIME140.dll`: the PostgreSQL binaries that back Loombre's built-in
-database, and the addon that stores credentials in Windows Credential
-Manager. The Universal CRT half of the runtime *does* ship with Windows
-10/11; `VCRUNTIME140.dll` specifically does not. The installer checks for
-it and refuses to install rather than leaving you with services that
-register successfully and then die on every start — the exact failure
-v0.9.0-rc.1 shipped with.
+Uninstalling Loombre deliberately leaves the runtime in place — other
+software on your machine may have come to depend on it.
 
 ## Installing
 
-1. Double-click `loombre-<version>-windows-x64.msi`.
+1. Double-click `loombre-<version>-windows-x64.exe`.
 2. Windows shows **"Windows protected your PC"** (SmartScreen).
    [SCREENSHOT: SmartScreen blocked-app dialog, showing blocked message and More info button]
 3. Click **More info**.
    [SCREENSHOT: SmartScreen dialog after clicking More info, showing the Run anyway button]
 4. Click **Run anyway**.
-5. Follow the installer. It is a standard per-machine MSI — no custom pages
+5. Follow the installer. It installs per-machine, with no custom pages
    in v1 (a first-run web setup wizard, not this installer, is where you
    create the admin account and pick library folders — see
    `docs/admin-guide/wizard.md` for the full walkthrough).
@@ -167,11 +163,11 @@ verdict on the software itself.
 
 ## Managing the services
 
-Loombre installs as two standard Windows services, manageable the same way
-as any other:
+Loombre installs as three standard Windows services, manageable the same
+way as any other:
 
 - **services.msc** (Start menu → type `services.msc` → Enter): find
-  **Loombre Server** and **Loombre Worker**, right-click for Start/Stop/
+  **Loombre Server**, **Loombre Web** and **Loombre Worker**, right-click for Start/Stop/
   Restart/Properties (startup type, recovery actions).
   [SCREENSHOT: services.msc with Loombre Server and Loombre Worker services visible]
 - Or PowerShell (run as Administrator):
@@ -222,7 +218,7 @@ completely clean removal.
 
 ## Updating
 
-Re-run a newer `loombre-<version>-windows-x64.msi` (after verifying it the
+Re-run a newer `loombre-<version>-windows-x64.exe` (after verifying it the
 same way, every time — see [Verify what you downloaded](#verify-what-you-downloaded)).
 Windows Installer's standard major-upgrade handling replaces the old
 version cleanly; your data under `%ProgramData%\Loombre\` is untouched.
@@ -254,10 +250,10 @@ trust model as Linux:
 ### 1. Checksum (integrity)
 
 ```powershell
-Get-FileHash .\loombre-<version>-windows-x64.msi -Algorithm SHA256
+Get-FileHash .\loombre-<version>-windows-x64.exe -Algorithm SHA256
 ```
 
-Compare the printed hash against the contents of `loombre-<version>-windows-x64.msi.sha256`.
+Compare the printed hash against the contents of `loombre-<version>-windows-x64.exe.sha256`.
 A mismatch means a corrupted or tampered download — **do not run the installer**.
 
 ### 2. minisign signature (authenticity)
@@ -267,7 +263,7 @@ A mismatch means a corrupted or tampered download — **do not run the installer
 # scoop install minisign
 # or: choco install minisign
 
-minisign -V -p <public key> -m loombre-<version>-windows-x64.msi -x loombre-<version>-windows-x64.msi.minisig
+minisign -V -p <public key> -m loombre-<version>-windows-x64.exe -x loombre-<version>-windows-x64.exe.minisig
 ```
 
 The minisign public key is published in three places (see `keys/minisign.pub` in
