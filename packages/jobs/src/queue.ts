@@ -86,10 +86,30 @@ export interface CreateJobQueueOptions {
   startRetryWindowMs?: number;
   /** @default 2_000 */
   startRetryIntervalMs?: number;
+  /**
+   * PostgreSQL `application_name` for this queue's connections.
+   *
+   * apps/worker sets it to `loombre-worker:<pid>:<startedAtMs>` so the
+   * server can answer "is the worker running?" from pg_stat_activity
+   * (packages/db/src/query/worker-liveness.ts) rather than inferring it
+   * from job-ledger activity, which reports a healthy IDLE worker as
+   * stopped. This pool is the right place to carry that label because
+   * pg-boss polls continuously — the connection persists while an idle
+   * ordinary pool would have closed its clients.
+   */
+  applicationName?: string;
 }
 
 export function createJobQueue(connectionString: string, options: CreateJobQueueOptions = {}): JobQueue {
-  const boss = new PgBoss(connectionString);
+  // application_name goes through PgBoss's OBJECT config rather than being
+  // spliced into the URL as a query parameter: the connection string may
+  // already carry parameters (sslmode et al.), and hand-editing a URL that
+  // also contains a generated password is a needless place to introduce an
+  // escaping bug. pg-boss forwards unknown options to node-postgres, which
+  // treats application_name as a first-class connection parameter.
+  const boss = options.applicationName
+    ? new PgBoss({ connectionString, application_name: options.applicationName })
+    : new PgBoss(connectionString);
   const ledger: Ledger = createLedger(connectionString);
   const startRetryWindowMs = options.startRetryWindowMs ?? 90_000;
   const startRetryIntervalMs = options.startRetryIntervalMs ?? 2_000;

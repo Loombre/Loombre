@@ -40,6 +40,7 @@ import { checkAuth } from "./auth.js";
 import { sendIpcError, sendJson } from "./responses.js";
 import { detectStaleDiscoveryFile, removeDiscoveryFiles, writeDiscoveryFiles } from "./discovery-files.js";
 import { listCrashFiles } from "./crash-dir.js";
+import type { WorkerLiveness } from "@loombre/db";
 import { computeWorkerProcessInfo, type RecentJobSignal } from "./worker-liveness.js";
 import { resolveWebUrl } from "./web-url.js";
 
@@ -56,6 +57,11 @@ export interface IpcListenerDeps {
   version: string;
   getProvisioningStatus: () => ProvisioningStatus;
   listRecentJobs: () => Promise<RecentJobSignal[]>;
+  /** Worker liveness straight from pg_stat_activity — null means "no
+   *  worker connected", which is a real answer, unlike the ledger
+   *  heuristic's inability to tell idle from dead. Rejecting is what
+   *  demotes /status back to that heuristic. */
+  getWorkerLiveness: () => Promise<WorkerLiveness | null>;
   /** Test seams; default to the real process's own pid/start time. */
   serverPid?: number;
   serverStartedAtMs?: number;
@@ -226,10 +232,23 @@ export class IpcListener {
   }
 
   private async handleStatus(res: ServerResponse): Promise<void> {
-    const jobs = await this.deps.listRecentJobs().catch((err: unknown) => {
-      console.error("ipc: listRecentJobs failed while building /status — reporting worker as stopped:", err);
-      return [] as RecentJobSignal[];
+    // PRIMARY signal: is a worker actually connected with queue consumers
+    // running (pg_stat_activity, labelled by apps/worker). The job-ledger
+    // heuristic below is now only the FALLBACK, for the case where this
+    // query itself fails — it reports a healthy idle worker as stopped,
+    // which is the false negative this whole seam exists to stop emitting.
+    const liveness = await this.deps.getWorkerLiveness().catch((err: unknown) => {
+      console.error("ipc: getWorkerLiveness failed while building /status — falling back to the job-ledger heuristic:", err);
+      return undefined;
     });
+
+    const jobs =
+      liveness === undefined
+        ? await this.deps.listRecentJobs().catch((err: unknown) => {
+            console.error("ipc: listRecentJobs failed while building /status — reporting worker as stopped:", err);
+            return [] as RecentJobSignal[];
+          })
+        : [];
 
     const body: IpcStatusResponse = {
       ipcContractVersion: CONTROLLER_IPC_CONTRACT_VERSION,
@@ -243,7 +262,17 @@ export class IpcListener {
         startedAtMs: this.serverStartedAtMs,
         version: this.deps.version,
       },
-      worker: computeWorkerProcessInfo(jobs, this.deps.version),
+      worker:
+        liveness === undefined
+          ? computeWorkerProcessInfo(jobs, this.deps.version)
+          : liveness === null
+            ? { state: "stopped", pid: null, startedAtMs: null, version: this.deps.version }
+            : {
+                state: "running",
+                pid: liveness.pid,
+                startedAtMs: liveness.startedAtMs,
+                version: this.deps.version,
+              },
       webUrl: resolveWebUrl(this.deps.env, this.deps.serverPort, this.deps.serverTlsMode),
       provisioning: this.deps.getProvisioningStatus(),
     };
