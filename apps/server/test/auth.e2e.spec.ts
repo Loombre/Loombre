@@ -162,6 +162,41 @@ describe("GET /system/capabilities (public)", () => {
     const res = await request(app.getHttpServer()).get("/system/capabilities");
     expect(res.status).not.toBe(401);
   });
+
+  // This map was a hand-maintained literal written before several features
+  // landed, and it went stale silently: it advertised hardware transcoding,
+  // built-in ACME and data export/import as "Not yet implemented" long
+  // after all three shipped, and the Settings UI faithfully rendered that
+  // to operators. These pin each flag to its real backing implementation so
+  // the map cannot rot the same way twice.
+  it("does not claim implemented features are unimplemented", async () => {
+    const res = await request(app.getHttpServer()).get("/system/capabilities");
+    const details = res.body.details as Record<string, { enabled: boolean; description: string }>;
+
+    // Implemented: packages/contract's exportData/importData, served by
+    // apps/server/src/catalog/data-freedom.controller.ts.
+    expect(details["data-export"].enabled).toBe(true);
+    expect(details["data-import"].enabled).toBe(true);
+    expect(res.body.flags).toContain("data-export");
+    expect(res.body.flags).toContain("data-import");
+
+    // Implemented: apps/worker/src/hwcaps/args.ts emits real -hwaccel args.
+    // `enabled` may legitimately be false (this route is public and does no
+    // I/O, so it cannot consult the probe snapshot) — but it must not tell
+    // an operator the feature does not exist.
+    expect(details["hw-transcode"].description).not.toMatch(/not yet implemented/i);
+
+    // Implemented: LOOMBRE_TLS_MODE=acme (apps/server/src/tls/acme/).
+    // Reflects the CURRENT mode, so it is false in this suite's default
+    // env — the description must still not deny the feature.
+    expect(details["remote-access"].description).not.toMatch(/not yet implemented/i);
+
+    // The control: hls-ll genuinely is not implemented (`lowLatency` is
+    // only a device-profile input field; nothing emits EXT-X-PART). If this
+    // ever starts failing, the map was flipped wholesale instead of
+    // per-flag.
+    expect(details["hls-ll"].description).toMatch(/not yet implemented/i);
+  });
 });
 
 describe("POST /auth/login (public)", () => {
