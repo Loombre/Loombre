@@ -195,28 +195,43 @@ jobs:
           set -euo pipefail
           node installers/windows/build-msi.mjs --version "$LOOMBRE_VERSION"
 
-      - name: Stage the built MSI + bootstrapper into dist/release
+      - name: Stage the Windows bootstrapper into dist/release
         shell: bash
         env:
           LOOMBRE_VERSION: ${{ needs.prepare.outputs.version }}
         run: |
           set -euo pipefail
-          # TWO Windows artifacts since the rc.1 VCRUNTIME140 field failure:
-          #   .exe — the Burn bootstrapper. Detects the VC++ 2015-2022
-          #          redistributable and installs it before the MSI. This is
-          #          what a person should download.
-          #   .msi — unchanged, for silent/managed deployment. Carries a
-          #          blocking LaunchCondition for the same prerequisite.
-          # Both are staged; SHA256SUMS/manifest.json cover whatever lands
-          # in dist/release, so no separate wiring is needed downstream.
-          for ext in msi exe; do
-            src="installers/windows/out/loombre-${LOOMBRE_VERSION}-windows-x64.${ext}"
-            if [ ! -f "$src" ]; then
-              echo "::error::expected Windows artifact not found at $src — build-msi.mjs's documented output paths may have changed; update this step to match"
-              exit 1
-            fi
-            cp "$src" dist/release/
-          done
+          # ONE Windows artifact, deliberately: loombre-<version>-windows-x64.exe
+          #
+          # rc.2 published the .msi alongside it and the owner's immediate
+          # reaction was "this new setup is confusing me as a user. what am I
+          # supposed to run?" — which is the correct reaction to two files
+          # whose names differ by three characters and whose difference is
+          # Windows Installer trivia. Making a user understand why an MSI
+          # cannot install another MSI, in order to pick a download, is a
+          # failure of the installer, not of the user.
+          #
+          # Nothing is lost. The .exe is a SUPERSET: Burn embeds the very
+          # same .msi, adds the VC++ redistributable prerequisite the rc.1
+          # field failure proved is required, registers a normal Add/Remove
+          # Programs entry, and supports /quiet /norestart /log (the diag's
+          # bootstrapper smoke drives it with exactly those). The MSI's own
+          # advantages are all fleet-management features — Group Policy
+          # Software Installation, ProductCode detection in Intune/SCCM,
+          # .mst transforms, msiexec /a, .msp patching — none of which apply
+          # to a self-hosted media server, and none of which anyone has
+          # asked for.
+          #
+          # The .msi is still BUILT (the bundle requires it) and still
+          # smoke-tested end-to-end by windows-msi-diag.yml, so re-publishing
+          # it later is a one-line change here if a real managed-deployment
+          # user ever appears.
+          src="installers/windows/out/loombre-${LOOMBRE_VERSION}-windows-x64.exe"
+          if [ ! -f "$src" ]; then
+            echo "::error::expected Windows bootstrapper not found at $src — build-msi.mjs's documented output paths may have changed; update this step to match"
+            exit 1
+          fi
+          cp "$src" dist/release/
           ls -la dist/release/
 
       - name: Upload artifact
