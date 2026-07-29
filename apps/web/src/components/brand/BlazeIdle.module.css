@@ -1,0 +1,90 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+
+/* Loombre :: components/brand/BlazeIdle.module.css
+ *
+ * The Blaze mark's IDLE BURN (design/blaze/README.md "Motion" §3), as a
+ * shared pair of animation-hook classes for BlazeMark's `classNames` prop.
+ *
+ * BlazeMark deliberately ships no keyframes of its own — a caller supplies
+ * the hooks — which is right for the splash, whose motion is a bespoke
+ * entrance sequence. But the plain idle burn is now wanted on several
+ * static surfaces (login, the setup wizard), and copying the same
+ * keyframes into each page's module would mean the spec's timings living
+ * in N places and drifting the first time one of them is touched.
+ *
+ * BootSplash.module.css keeps its OWN copy on purpose: it composes these
+ * timings with an entrance delay and a one-shot bloom flash, and its
+ * fidelity map is line-referenced against the reference HTML. Sharing that
+ * file's classes here would couple the splash's choreography to every
+ * surface that just wants a flame that breathes.
+ *
+ * Values are the spec's, identical to BootSplash's: outer shell 1.05s,
+ * inner core 0.72s. They run OUT OF PHASE on purpose — per the spec, that
+ * phase difference is what makes the flame read as alive rather than as a
+ * pulsing shape.
+ */
+
+.blaze {
+  transform-box: view-box;
+  transform-origin: 50% 84%;
+  animation: loombre-blaze-idle 1.05s ease-in-out infinite;
+}
+
+.core {
+  transform-box: view-box;
+  transform-origin: 50% 68%;
+  animation: loombre-blaze-flicker 0.72s ease-in-out infinite;
+}
+
+@keyframes loombre-blaze-idle {
+  0%,
+  100% {
+    transform: scale(1, 1) rotate(0);
+  }
+
+  20% {
+    transform: scale(0.94, 1.07) rotate(-2.4deg);
+  }
+
+  45% {
+    transform: scale(1.06, 0.92) rotate(1.6deg);
+  }
+
+  70% {
+    transform: scale(0.95, 1.05) rotate(-1.2deg);
+  }
+
+  85% {
+    transform: scale(1.03, 0.97) rotate(0.8deg);
+  }
+}
+
+@keyframes loombre-blaze-flicker {
+  0%,
+  100% {
+    transform: scale(1, 1);
+  }
+
+  25% {
+    transform: scale(0.96, 1.05) rotate(-1.5deg);
+  }
+
+  50% {
+    transform: scale(1.04, 0.94);
+  }
+
+  75% {
+    transform: scale(0.97, 1.03) rotate(1.2deg);
+  }
+}
+
+/* An INFINITE idle is exactly what prefers-reduced-motion exists to stop,
+   and the global .01s duration collapse is the wrong remedy for one — it
+   produces a strobe rather than stillness. These settle instead. Same
+   reasoning already written into BootSplash.module.css's own block. */
+@media (prefers-reduced-motion: reduce) {
+  .blaze,
+  .core {
+    animation: none !important;
+  }
+}

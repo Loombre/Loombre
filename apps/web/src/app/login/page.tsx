@@ -64,6 +64,7 @@ import { LoombreClient, LoombreApiError } from "@loombre/sdk";
 import { Button } from "../../components/ui/Button.js";
 import { TextInput } from "../../components/ui/Input.js";
 import { BlazeMark } from "../../components/brand/BlazeMark.js";
+import blazeIdle from "../../components/brand/BlazeIdle.module.css";
 import { buildDeviceProfile } from "../../lib/device-profile.js";
 import { getAuthStore } from "../../lib/auth-store.js";
 import { defaultServerUrlGuess, describeServerUrl } from "../../lib/server-url.js";
@@ -155,13 +156,13 @@ export default function LoginPage(): React.JSX.Element {
           size={56}
           animated
           surface="var(--color-bg)"
-          // Non-null assertions for the same reason BootSplash.tsx states at
-          // its own BlazeMark call: noUncheckedIndexedAccess types every
-          // CSS-module lookup as `string | undefined`, which
-          // exactOptionalPropertyTypes then rejects against
-          // BlazeMarkClassNames's `blaze?: string`. Both classes are declared
-          // in this file's own .module.css, so they are guaranteed present.
-          classNames={{ blaze: styles.markBlaze!, core: styles.markCore! }}
+          // Shared idle-burn hooks (components/brand/BlazeIdle.module.css)
+          // rather than a per-page copy of the spec's keyframes — the setup
+          // wizard uses the same ones. Non-null assertions for the reason
+          // BootSplash.tsx states at its own call: noUncheckedIndexedAccess
+          // types CSS-module lookups as `string | undefined`, which
+          // exactOptionalPropertyTypes rejects against `blaze?: string`.
+          classNames={{ blaze: blazeIdle.blaze!, core: blazeIdle.core! }}
         />
         <span className={styles.wordmark}>Loombre</span>
       </div>
