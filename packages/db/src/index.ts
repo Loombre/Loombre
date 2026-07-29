@@ -122,6 +122,17 @@ export type {
 export { getCurrentHwCapabilitySnapshot, getCurrentVerifiedCapabilities } from './query/hwcaps.js';
 export type { HwPlatform } from './types.js';
 
+// Worker liveness from pg_stat_activity — the same "instance fact, not
+// viewer-scoped catalog data" precedent as hwcaps above. apps/worker
+// imports workerApplicationName to label its queue connection; the server's
+// IPC status imports getWorkerLiveness to read it back.
+export type { WorkerLiveness } from './query/worker-liveness.js';
+export {
+  getWorkerLiveness,
+  workerApplicationName,
+  WORKER_APPLICATION_NAME_PREFIX,
+} from './query/worker-liveness.js';
+
 // Catalog detail / hierarchy reads (satellite fields, genres, images,
 // parent-chain resolution) — additive query surface, see
 // src/query/catalog-detail.ts header for why this exists and how it stays
