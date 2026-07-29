@@ -57,6 +57,7 @@ import { JobQueueProvider } from "../common/job-queue.provider.js";
 import { UpdateCheckService } from "../common/update-check/update-check.service.js";
 import { resolveAppPaths } from "../cli/app-paths.js";
 import { isValidCrashFileName, listCrashFileMetas, readCrashFileContent } from "./admin-crash-files.js";
+import { DirectoryBrowseError, listDirectories, listRoots } from "./admin-directories.js";
 import { tailLogFile } from "./admin-logs-tail.js";
 import { computeStoragePool } from "./admin-storage-pool.js";
 import { parseListQuery, resolveViewer } from "./viewer.js";
@@ -240,6 +241,40 @@ export class AdminController {
         })),
       },
     };
+  }
+
+  @Get("admin/filesystem/directories")
+  async browseDirectories(@Query("path") pathParam: string | undefined, @Req() req: AuthenticatedRequest) {
+    // requireAdmin (the module's requireLiveAdmin wrapper), not a bare
+    // token claim: enumerating a server's directory tree is reconnaissance,
+    // so a demoted admin's still-valid access token must not keep working
+    // here. Same guard every other admin route on this controller uses.
+    await requireAdmin(this.dbProvider.db, req);
+
+    const requested = pathParam?.trim();
+    if (requested === undefined || requested === "") {
+      return listRoots();
+    }
+
+    try {
+      return listDirectories(requested);
+    } catch (err) {
+      if (!(err instanceof DirectoryBrowseError)) throw err;
+      const instance = sanitizeInstancePath(req);
+      switch (err.failure.kind) {
+        case "not-absolute":
+          throw unprocessableEntity("A library path must be absolute.", instance);
+        case "not-a-directory":
+          throw unprocessableEntity("That path is a file, not a directory.", instance);
+        case "permission-denied":
+          // The server genuinely cannot read it, and saying so is useful:
+          // the fix is an OS permission change (or, on the installers, the
+          // service account's access), not a different path.
+          throw forbidden("The server does not have permission to read that directory.", instance);
+        case "not-found":
+          throw notFound("No such directory on the server.", instance);
+      }
+    }
   }
 
   @Get("admin/crash-files")

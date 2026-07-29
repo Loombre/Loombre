@@ -17,6 +17,7 @@ export const API_OPERATIONS = [
   { path: "/admin/capabilities", method: "get", operationId: "getAdminCapabilities" },
   { path: "/admin/crash-files", method: "get", operationId: "listCrashFiles" },
   { path: "/admin/crash-files/{name}", method: "get", operationId: "getCrashFile" },
+  { path: "/admin/filesystem/directories", method: "get", operationId: "browseDirectories" },
   { path: "/admin/items/{id}/apply-match", method: "post", operationId: "applyItemMatch" },
   { path: "/admin/items/{id}/match-search", method: "post", operationId: "searchItemMatchCandidates" },
   { path: "/admin/jobs", method: "get", operationId: "listJobs" },
