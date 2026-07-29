@@ -47,11 +47,12 @@ export function DirectoryPicker({ open, onClose, onSelect }: DirectoryPickerProp
   const load = useCallback((path: string | null) => {
     setLoading(true);
     setError(null);
-    // No `path` parameter at all = the roots listing. Passing an empty
-    // string would be a different request; the server treats absent and
-    // blank the same, but keeping the URL honest costs nothing.
-    const query = path === null ? "" : `?path=${encodeURIComponent(path)}`;
-    apiGet(`/admin/filesystem/directories${query}`)
+    // Typed query params, not a hand-built URL: apiGet is generic over the
+    // SDK's literal path union, so a template string is not even
+    // assignable — which is the generated client doing its job. It also
+    // handles the encoding, so a path with spaces or a '#' cannot escape.
+    // Omitting `path` entirely = the roots listing.
+    apiGet("/admin/filesystem/directories", path === null ? undefined : { params: { query: { path } } })
       .then((next) => {
         setListing(next as DirectoryListing);
         setLoading(false);
