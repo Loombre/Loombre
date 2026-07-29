@@ -238,13 +238,17 @@ public sealed class LoombreHostedService : ServiceBase
             // provisioning outlasts the poll window. Without a failure exit
             // code, a slow first boot is terminal instead of self-healing.
             //
-            // ServiceSpecificExitCode carries the child's real code so it
-            // shows up in `Get-CimInstance Win32_Service` /
-            // `sc queryex` rather than being flattened to a generic error.
+            // Only ExitCode is set. The SERVICE_STATUS struct also carries a
+            // dwServiceSpecificExitCode field, which would have been the
+            // natural place for the child's real code — but .NET's
+            // ServiceBase exposes no managed setter for it (CS0103, caught by
+            // the installer diag on this file's first compile). It maps only
+            // dwWin32ExitCode, via this property. The child's actual exit
+            // code is already on the line logged above, which is where anyone
+            // debugging a specific failure will look anyway.
             if (childExitCode != 0)
             {
                 ExitCode = ERROR_PROCESS_ABORTED;
-                ServiceSpecificExitCode = childExitCode;
             }
             Stop();
         }
