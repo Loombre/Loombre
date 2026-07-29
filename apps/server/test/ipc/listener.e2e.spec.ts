@@ -29,6 +29,7 @@ import type { ProvisioningStatus } from "@loombre/provisioning";
 import { IpcListener, type IpcListenerHandle } from "../../src/ipc/listener.js";
 import { discoveryFilePath, tokenFilePath } from "../../src/ipc/discovery-files.js";
 import type { RecentJobSignal } from "../../src/ipc/worker-liveness.js";
+import type { WorkerLiveness } from "@loombre/db";
 import {
   IPC_BASE_PATH,
   IPC_LOOPBACK_HOST,
@@ -73,12 +74,16 @@ describe("IPC listener (real HTTP, ephemeral loopback port)", () => {
   let listener: IpcListener;
   let handle: IpcListenerHandle;
   let recentJobs: RecentJobSignal[];
+  /** null = no worker connected; an object = one is; "unavailable" makes the
+   *  liveness query REJECT, which is what demotes /status to the ledger. */
+  let workerLiveness: WorkerLiveness | null | "unavailable";
   let provisioningStatus: ProvisioningStatus;
   let stopSignalCount: number;
 
   beforeEach(async () => {
     dataDir = mkdtempSync(join(tmpdir(), "loombre-ipc-e2e-"));
     recentJobs = [];
+    workerLiveness = null;
     provisioningStatus = { state: "external", pgVersion: null, dataDir: null, lastCheckMs: Date.now() };
     stopSignalCount = 0;
 
@@ -92,6 +97,12 @@ describe("IPC listener (real HTTP, ephemeral loopback port)", () => {
       serverStartedAtMs: SERVER_STARTED_AT_MS,
       getProvisioningStatus: () => provisioningStatus,
       listRecentJobs: async () => recentJobs,
+      getWorkerLiveness: async () => {
+        if (workerLiveness === "unavailable") {
+          throw new Error("pg_stat_activity unavailable (simulated)");
+        }
+        return workerLiveness;
+      },
       sendStopSignal: () => {
         stopSignalCount += 1;
       },
@@ -161,18 +172,49 @@ describe("IPC listener (real HTTP, ephemeral loopback port)", () => {
       expect(body.provisioning).toEqual(provisioningStatus);
     });
 
-    it("reports worker 'stopped' when the job ledger has no recent activity", async () => {
+    // PRIMARY signal: pg_stat_activity (packages/db/src/query/worker-liveness.ts).
+    // The job-ledger heuristic below it is only a fallback now, because it
+    // cannot tell an IDLE worker from a dead one — a healthy fresh install
+    // reported "stopped" forever, which is what this whole seam exists to stop.
+    it("reports worker 'running' with the REAL pid and start time when one is connected", async () => {
+      workerLiveness = { pid: 4242, startedAtMs: 1_700_000_000_000, connectedAtMs: 1_700_000_005_000 };
+      // Deliberately empty: an idle worker has NO recent ledger activity, and
+      // must still be reported as running. This is the exact false negative
+      // that was observed on a real macOS install (IPC said stopped while the
+      // worker ran as pid 64084).
       recentJobs = [];
       const res = await fetch(opUrl("/status"), { headers: authHeaders() });
       const body = (await res.json()) as IpcStatusResponse;
-      expect(body.worker.state).toBe("stopped");
+      expect(body.worker.state).toBe("running");
+      expect(body.worker.pid).toBe(4242);
+      expect(body.worker.startedAtMs).toBe(1_700_000_000_000);
     });
 
-    it("reports worker 'running' when a job is currently active", async () => {
+    it("reports worker 'stopped' when nothing is connected, even with recent ledger activity", async () => {
+      workerLiveness = null;
+      // A job touched moments ago is NOT evidence the worker is alive now —
+      // it may have died mid-run. The connection is the authority.
+      recentJobs = [{ status: "active", updatedAtMs: Date.now() }];
+      const res = await fetch(opUrl("/status"), { headers: authHeaders() });
+      const body = (await res.json()) as IpcStatusResponse;
+      expect(body.worker.state).toBe("stopped");
+      expect(body.worker.pid).toBeNull();
+    });
+
+    it("falls back to the job-ledger heuristic when the liveness query itself fails", async () => {
+      workerLiveness = "unavailable";
       recentJobs = [{ status: "active", updatedAtMs: Date.now() }];
       const res = await fetch(opUrl("/status"), { headers: authHeaders() });
       const body = (await res.json()) as IpcStatusResponse;
       expect(body.worker.state).toBe("running");
+    });
+
+    it("falls back to 'stopped' when the liveness query fails and the ledger is quiet", async () => {
+      workerLiveness = "unavailable";
+      recentJobs = [];
+      const res = await fetch(opUrl("/status"), { headers: authHeaders() });
+      const body = (await res.json()) as IpcStatusResponse;
+      expect(body.worker.state).toBe("stopped");
     });
 
     it("reflects a live provisioning status passthrough change", async () => {

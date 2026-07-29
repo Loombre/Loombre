@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { cpus } from "node:os";
 import { createJobQueue } from "@loombre/jobs";
-import { createDb, getCurrentHwCapabilitySnapshot } from "@loombre/db";
+import { createDb, getCurrentHwCapabilitySnapshot, workerApplicationName } from "@loombre/db";
 import { listLibraries, listImagesNeedingDominantColor, hasQueuedOrActiveJobOfType } from "@loombre/db/internal";
 import { LOOMBRE_VERSION_FULL } from "@loombre/shared";
 import { installCrashHandlers, installGracefulShutdown, type ShutdownSignal } from "./crash/index.js";
@@ -53,7 +53,19 @@ installCrashHandlers({
 // Top-level await: nothing below can exist without a database URL.
 const DATABASE_URL = await resolveWorkerDatabaseUrl(process.env);
 
-const queue = createJobQueue(DATABASE_URL);
+// Label the QUEUE's connection with this process's identity so the server
+// can answer "is the worker running?" from pg_stat_activity instead of
+// guessing from job-ledger activity (packages/db/src/query/worker-liveness.ts
+// has the full rationale). pg-boss's pool is the right one to label: it
+// polls continuously, so the connection persists while an ORDINARY pg pool
+// closes its idle clients after ~10s and would make a healthy idle worker
+// look dead — the exact false negative being fixed. It is also the more
+// truthful signal, because it exists only while queue consumers are really
+// registered and running.
+const WORKER_STARTED_AT_MS = Date.now();
+const queue = createJobQueue(DATABASE_URL, {
+  applicationName: workerApplicationName(process.pid, WORKER_STARTED_AT_MS),
+});
 const db = createDb(DATABASE_URL);
 
 // Addendum A, lane S3 (STATE.md, A3/AD1 read-site migration): the hash
