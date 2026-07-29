@@ -292,3 +292,15 @@
     min-height: 44px;
   }
 }
+
+/* Add-library paths field: label on the left, "Browse…" on the right.
+   The textarea moved out of a wrapping <label> so this row can hold a
+   BUTTON — a button nested inside a label steals the label's click, which
+   would make tapping "Browse…" focus the textarea instead. The textarea is
+   tied to the label by aria-labelledby instead. */
+.pathsHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+}

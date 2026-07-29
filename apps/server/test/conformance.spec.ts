@@ -217,6 +217,12 @@ const PUBLIC_OPERATION_IDS = new Set([
  *  ever touching the DB). */
 const IMPLEMENTED_NON_PUBLIC_EXPECTATIONS: Record<string, number> = {
   authLogout: 204,
+  // Directory browsing for the Add-library picker: with an admin token and
+  // no `path` parameter it returns the roots listing, so 200. (The separate
+  // unauthenticated walk in this same suite is what pins the 401 — the
+  // route must never be reachable without a token, since enumerating a
+  // server's directory tree is reconnaissance.)
+  browseDirectories: 200,
   putMyRestrictedSettings: 422, // bodyless -> "optIn is required"
   unlockRestricted: 422, // bodyless -> "pin is required"
   lockRestricted: 204,
