@@ -29,6 +29,7 @@
 
 import { useState } from "react";
 import { SheetOrModal } from "../../ui/SheetOrModal.js";
+import { DirectoryPicker } from "./DirectoryPicker.js";
 import { TextInput } from "../../ui/Input.js";
 import { Button } from "../../ui/Button.js";
 import { SegmentedControl } from "../../ui/SegmentedControl.js";
@@ -56,6 +57,7 @@ export function AddLibrarySheet({
   const [mediaKind, setMediaKind] = useState<MediaKind>("movie");
   const [restricted, setRestricted] = useState(false);
   const [pathsText, setPathsText] = useState("");
+  const [pickerOpen, setPickerOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -70,6 +72,7 @@ export function AddLibrarySheet({
     setMediaKind("movie");
     setRestricted(false);
     setPathsText("");
+    setPickerOpen(false);
     setError(null);
     setSubmitting(false);
   }
@@ -121,17 +124,34 @@ export function AddLibrarySheet({
           <span className={styles.label}>Kind</span>
           <SegmentedControl options={MEDIA_KINDS} defaultValue="movie" onChange={(v) => setMediaKind(v as MediaKind)} />
         </label>
-        <label className={styles.field}>
-          <span className={styles.label}>Paths (one per line)</span>
+        <div className={styles.field}>
+          <div className={styles.pathsHeader}>
+            <span className={styles.label} id="library-paths-label">
+              Paths (one per line)
+            </span>
+            {/* Browse ADDS to the textarea rather than replacing it. A
+                headless install, a path that only exists inside a
+                container, or a mount this browser's host cannot see all
+                still need typing — see DirectoryPicker's header for why an
+                OS file dialog cannot serve this at all. */}
+            <Button type="button" variant="ghost" onClick={() => setPickerOpen(true)}>
+              Browse…
+            </Button>
+          </div>
           <textarea
             className={styles.textarea}
+            aria-labelledby="library-paths-label"
             value={pathsText}
             onChange={(e) => setPathsText(e.target.value)}
-            placeholder="/data/movies"
+            // Platform-neutral: the old "/data/movies" is wrong on the
+            // Windows install this dialog is most often used on, and a
+            // placeholder that cannot be right everywhere should not
+            // pretend to be an example.
+            placeholder={"One folder per line, e.g.\nD:\\Media\\Movies"}
             rows={3}
             required
           />
-        </label>
+        </div>
         <div className={styles.formRow}>
           <span className={styles.label}>Restricted content</span>
           <SegmentedControl options={["General", "Restricted"]} defaultValue="General" onChange={(v) => setRestricted(v === "Restricted")} />
@@ -160,6 +180,19 @@ export function AddLibrarySheet({
           </Button>
         </div>
       </form>
+      <DirectoryPicker
+        open={pickerOpen}
+        onClose={() => setPickerOpen(false)}
+        onSelect={(picked) => {
+          // Append as a new line, de-duplicating: a library with the same
+          // path twice would have the scanner walk it twice for nothing.
+          setPathsText((prev) => {
+            const lines = prev.split("\n").map((l) => l.trim()).filter(Boolean);
+            if (lines.includes(picked)) return prev;
+            return [...lines, picked].join("\n");
+          });
+        }}
+      />
     </SheetOrModal>
   );
 }
