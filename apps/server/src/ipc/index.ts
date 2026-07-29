@@ -14,7 +14,7 @@
 //   await wireServerIpc(app, { serverPort: boundPort, serverTlsMode: tlsConfig.mode });
 
 import type { INestApplication } from "@nestjs/common";
-import { listJobsAdmin } from "@loombre/db";
+import { getWorkerLiveness, listJobsAdmin } from "@loombre/db";
 import { LOOMBRE_VERSION_FULL } from "@loombre/shared";
 import type { ProvisioningStatus } from "@loombre/provisioning";
 import { resolveAppPaths } from "../cli/app-paths.js";
@@ -95,6 +95,10 @@ export async function wireServerIpc(
       const page = await listJobsAdmin(dbProvider.db, { limit: 20 });
       return page.rows.map((row) => ({ status: row.status, updatedAtMs: row.updated_at_ms }));
     },
+    // Primary worker signal. See packages/db/src/query/worker-liveness.ts
+    // for why this reads pg_stat_activity rather than a heartbeat file or
+    // the job ledger.
+    getWorkerLiveness: () => getWorkerLiveness(dbProvider.db),
   });
 
   return listener.start();
