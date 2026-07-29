@@ -12,6 +12,16 @@
   max-width: 560px;
 }
 
+/* Brand mark above the step pills. aria-hidden on the mark itself: it is
+   decoration here, and the page's heading structure already names what
+   this screen is — announcing "Loombre" again before every step label
+   would just be noise to a screen reader. */
+.brand {
+  display: flex;
+  justify-content: center;
+  margin-bottom: var(--space-lg);
+}
+
 .card {
   composes: glass from global;
   border-radius: var(--radius-lg);
