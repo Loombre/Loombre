@@ -1218,6 +1218,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/filesystem/directories": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List directories on the server, for picking library paths (admin)
+         * @description Backs the "Browse" affordance in the Add-library dialog. A library path names a directory on the SERVER's filesystem, and the browser cannot see that filesystem — the web client may not even be running on the same machine (Docker runs it in a separate container). An OS file dialog is therefore structurally unable to pick these paths; the server has to enumerate them.
+         *
+         *     Returns DIRECTORY NAMES ONLY. It never lists files, never returns file contents, and never reveals sizes — everything it exposes is already implied by the paths an admin is about to configure. Omit `path` to list this machine's roots (drive letters on Windows, "/" plus common mount points on POSIX), then walk down one level at a time via the returned entries.
+         *
+         *     Admin-only, and deliberately so: enumerating a server's directory tree is reconnaissance in the wrong hands. Free-text path entry stays supported alongside it, because headless and remote installs still need to type a path that this host cannot browse to.
+         */
+        get: operations["browseDirectories"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/settings": {
         parameters: {
             query?: never;
@@ -1879,6 +1903,20 @@ export interface components {
             sizeBytes: number;
             /** Format: int64 */
             mtimeMs: number;
+        };
+        DirectoryEntry: {
+            /** @description The directory's own name (its last path segment). */
+            name: string;
+            /** @description Absolute path, ready to pass straight back as this endpoint's `path` parameter or to use as a library path. Built by the server so the client never has to join path segments itself and get the separator wrong on the other platform. */
+            path: string;
+        };
+        DirectoryListing: {
+            /** @description The directory that was listed, or null for the roots listing (no `path` parameter was supplied). */
+            path: string | null;
+            /** @description Absolute path one level up, or null when already at a root. Supplied by the server because "the parent of this path" is a platform-specific question the client should not answer. */
+            parent: string | null;
+            /** @description Immediate subdirectories, name-sorted. Entries the server cannot read are OMITTED rather than failing the whole listing — one unreadable system directory must not make a browsable parent un-browsable. */
+            entries: components["schemas"]["DirectoryEntry"][];
         };
         CrashFileList: {
             /** @description Newest first; bounded by the crash writer's retention cap. */
@@ -5234,6 +5272,34 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    browseDirectories: {
+        parameters: {
+            query?: {
+                /** @description Absolute path whose immediate subdirectories to list. Must be absolute — a relative path is rejected rather than resolved against the server's working directory, which would be an unpredictable base an operator cannot see. */
+                path?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The directory's immediate subdirectories */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DirectoryListing"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["UnprocessableEntity"];
             default: components["responses"]["Problem"];
         };
     };
