@@ -13,18 +13,30 @@
 # uses package.json, which the release prepare job pins to the tag
 # anyway), so a green run here is direct evidence for the release leg.
 #
+# RENAMED from windows-msi-diag: releases now publish only the .exe
+# bootstrapper, so "msi" in the name reads as testing something we no
+# longer ship. It tests BOTH, and both still matter — the .exe EMBEDS the
+# .msi (Burn installs the VC++ prerequisite, then hands off to the MSI,
+# which is still what lays down files, registers the three services and
+# writes the registry). The MSI became the payload, not dead code.
+#
+# It is also the ONLY place the C# gets compiled: there is no .NET SDK on
+# the dev host, so LoombreServiceHost + Loombre.Tray reach a compiler here
+# or nowhere. That is not theoretical — one run caught WIX0372, WIX0004 and
+# a missing PerMachine="yes" in a single pass.
+#
 # METHOD NOTE (see windows-tls-diag.yml): continue-on-error steps report
 # conclusion=success in the API even when they fail — this workflow uses
 # hard-failing steps plus an explicit `VERDICT:` line, so read the log,
 # not the step conclusions.
-name: windows-msi-diag
+name: windows-installer-diag
 
 on:
   workflow_dispatch:
 
 jobs:
   msi:
-    name: windows MSI lane — release build-windows rehearsal
+    name: windows installer lane — release build-windows rehearsal
     runs-on: windows-latest
     steps:
       - name: Checkout
@@ -79,7 +91,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: windows-msi-diag
+          name: windows-installer-diag
           path: dist/release/**
           if-no-files-found: error
 
