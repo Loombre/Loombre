@@ -209,17 +209,51 @@ public sealed class LoombreHostedService : ServiceBase
     private void OnChildExited(object? sender, EventArgs e)
     {
         if (_child is null) return;
-        Log($"child exited with code {_child.ExitCode}");
+        var childExitCode = _child.ExitCode;
+        Log($"child exited with code {childExitCode}");
         if (!_stopRequested)
         {
             // The child died on its own (crash, or it self-terminated) —
             // take the whole service down with it rather than reporting
-            // SERVICE_RUNNING over an empty shell. SCM's own service-
-            // recovery options (configurable outside this wrapper via
-            // `sc failure`) govern whether/how it gets restarted.
+            // SERVICE_RUNNING over an empty shell.
+            //
+            // ExitCode FIRST, and this is load-bearing, not tidiness. SCM
+            // applies the recovery actions configured by util:ServiceConfig
+            // (Services.wxs: restart every tier, 10s delay) only when a
+            // service terminates UNEXPECTEDLY — which, to SCM, means it
+            // stopped while reporting a non-zero exit code. A plain Stop()
+            // is a graceful stop, so SCM concludes all is well and never
+            // restarts anything.
+            //
+            // Observed on the owner's machine, v0.9.0-rc.1/rc.2:
+            //     LoombreWorker  status=Stopped  exit=0  svcExit=0
+            // with no 7031 "terminated unexpectedly" event for the worker
+            // (LoombreWeb, which really did crash inside SCM's view, got
+            // one). The worker's node child had died, this handler stopped
+            // the service cleanly, and the configured restarts never fired.
+            //
+            // That silently defeated a documented design decision:
+            // Services.wxs states the worker's bounded credential-discovery
+            // poll DEPENDS on SCM restarting it when first-boot embedded-PG
+            // provisioning outlasts the poll window. Without a failure exit
+            // code, a slow first boot is terminal instead of self-healing.
+            //
+            // ServiceSpecificExitCode carries the child's real code so it
+            // shows up in `Get-CimInstance Win32_Service` /
+            // `sc queryex` rather than being flattened to a generic error.
+            if (childExitCode != 0)
+            {
+                ExitCode = ERROR_PROCESS_ABORTED;
+                ServiceSpecificExitCode = childExitCode;
+            }
             Stop();
         }
     }
+
+    /// <summary>Win32 ERROR_PROCESS_ABORTED (1067) — "The process
+    /// terminated unexpectedly", the conventional service exit code for
+    /// exactly this situation and what SCM's own messages report.</summary>
+    private const int ERROR_PROCESS_ABORTED = 1067;
 
     protected override void OnStop() => StopChild();
 
