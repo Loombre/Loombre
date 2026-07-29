@@ -20,6 +20,8 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { getAuthStore } from "../../lib/auth-store.js";
+import { BlazeMark } from "../../components/brand/BlazeMark.js";
+import blazeIdle from "../../components/brand/BlazeIdle.module.css";
 import { PillProgress } from "./_components/PillProgress.js";
 import { WelcomeStep } from "./_components/WelcomeStep.js";
 import { AdminStep } from "./_components/AdminStep.js";
@@ -84,6 +86,23 @@ export default function SetupPage(): React.JSX.Element | null {
   return (
     <div className={styles.page}>
       <div className={styles.shell}>
+        {/* The wizard had no brand mark at all — the first screen of a
+            first-run experience showed step pills and nothing else. Same
+            animated treatment as /login, driven by the SHARED idle-burn
+            hooks so the spec's timings live in one file rather than being
+            copied per surface. `surface` is --color-bg because the core is
+            a cut-out filled with whatever sits behind it, and this page is
+            not the splash. */}
+        <div className={styles.brand}>
+          <BlazeMark
+            variant="gradient"
+            size={44}
+            animated
+            surface="var(--color-bg)"
+            aria-hidden
+            classNames={{ blaze: blazeIdle.blaze!, core: blazeIdle.core! }}
+          />
+        </div>
         <PillProgress current={step} labels={STEP_LABELS} />
         <div className={styles.card}>
           {step === "welcome" && <WelcomeStep onNext={() => advance()} />}
