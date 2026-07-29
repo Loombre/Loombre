@@ -144,7 +144,25 @@ export default function LoginPage(): React.JSX.Element {
   return (
     <div className={styles.page}>
       <div className={styles.brand}>
-        <BlazeMark variant="gradient" size={56} />
+        {/* animated: two paths (outer + surface-filled core) so the shell
+            and the negative-space core can burn independently — the idle
+            motion from design/blaze/README.md's Motion §3. `surface` is the
+            LOGIN page's background, not --color-bg-splash: the core is a
+            cut-out filled with whatever sits behind it, and this page is
+            --color-bg under a radial amber wash, not the splash surface. */}
+        <BlazeMark
+          variant="gradient"
+          size={56}
+          animated
+          surface="var(--color-bg)"
+          // Non-null assertions for the same reason BootSplash.tsx states at
+          // its own BlazeMark call: noUncheckedIndexedAccess types every
+          // CSS-module lookup as `string | undefined`, which
+          // exactOptionalPropertyTypes then rejects against
+          // BlazeMarkClassNames's `blaze?: string`. Both classes are declared
+          // in this file's own .module.css, so they are guaranteed present.
+          classNames={{ blaze: styles.markBlaze!, core: styles.markCore! }}
+        />
         <span className={styles.wordmark}>Loombre</span>
       </div>
       <div className={styles.tagline}>Your media. Your hardware. Your rules.</div>
