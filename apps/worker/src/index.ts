@@ -422,6 +422,26 @@ async function main(): Promise<void> {
   // delivery-loop.ts's header for the full per-tick algorithm.
   pluginDeliveryLoopHandle = startPluginDeliveryLoop({ db });
 
+  // Assert the consumers ACTUALLY registered before saying so. The ten
+  // queue.work() calls at module scope are fire-and-forget, and they run at
+  // IMPORT time — before waitForDatabaseReady() above has had any chance to
+  // wait for anything. On the rc.2 Windows install the worker lost that race
+  // with the server's first-boot PostgreSQL provisioning by ~8 seconds, all
+  // ten registrations failed with ECONNREFUSED, and this line printed the
+  // full list of "registered" consumers anyway. The result was a live worker
+  // process with zero consumers: no job ever ran, hwprobe never reported, the
+  // setup wizard sat on "Worker not detected yet" forever, and because the
+  // process stayed alive no supervisor ever restarted it.
+  //
+  // @loombre/jobs now retries its pg-boss start (a database that is still
+  // coming up is "not yet", not "broken"), so this normally just resolves.
+  // If it does not, throwing is the correct outcome: main()'s catch exits
+  // non-zero, and every installer supervises this process (Windows SCM
+  // recovery actions, systemd Restart=, launchd KeepAlive) so it comes back
+  // once the database is genuinely reachable. A silent no-op worker is far
+  // worse than a loud restart.
+  await queue.ready();
+
   console.log(
     "worker up — pg-boss consumers registered: scan, probe, metadata, image, import, image-backfill, hwprobe, transcode, subtitle-extract",
   );

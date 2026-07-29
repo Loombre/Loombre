@@ -54,21 +54,74 @@ export type JobHandler<T extends JobType> = (
 export interface JobQueue {
   enqueue<T extends JobType>(type: T, payload: JobPayloads[T], opts?: EnqueueOptions): Promise<string>;
   work<T extends JobType>(type: T, handler: JobHandler<T>, opts?: WorkOptions<T>): void;
+  /**
+   * Resolves once every work() registration made so far has actually
+   * landed; rejects with the first failure otherwise.
+   *
+   * work() is deliberately fire-and-forget (it is called ten times at
+   * module scope in apps/worker), which meant a caller had NO WAY to learn
+   * that registration failed. v0.9.0-rc.2 on a real Windows install:
+   * every consumer registration failed with ECONNREFUSED because the
+   * worker raced the server's first-boot PostgreSQL provisioning by ~8
+   * seconds, each failure was logged and swallowed, and the worker then
+   * printed "worker up — pg-boss consumers registered: scan, probe, …"
+   * and sat there as a live process with ZERO consumers. Nothing was
+   * queued or run again until someone restarted it by hand.
+   *
+   * Callers should await this before claiming to be up.
+   */
+  ready(): Promise<void>;
   stop(): Promise<void>;
 }
 
-export function createJobQueue(connectionString: string): JobQueue {
+export interface CreateJobQueueOptions {
+  /**
+   * How long ensureStarted() keeps retrying pg-boss's start before giving
+   * up. The embedded-PostgreSQL installers start the worker and the server
+   * concurrently, and the server has to run initdb + start the cluster
+   * before anything can connect, so "the database is not up YET" is the
+   * expected state on a first boot rather than an error.
+   * @default 90_000
+   */
+  startRetryWindowMs?: number;
+  /** @default 2_000 */
+  startRetryIntervalMs?: number;
+}
+
+export function createJobQueue(connectionString: string, options: CreateJobQueueOptions = {}): JobQueue {
   const boss = new PgBoss(connectionString);
   const ledger: Ledger = createLedger(connectionString);
+  const startRetryWindowMs = options.startRetryWindowMs ?? 90_000;
+  const startRetryIntervalMs = options.startRetryIntervalMs ?? 2_000;
 
   boss.on('error', (err: unknown) => {
     console.error('[@loombre/jobs] pg-boss error:', err);
   });
 
+  /** Every work() registration, so ready() can report whether they landed.
+   *  Typed as unknown because boss.work() resolves with its own work id,
+   *  which nothing here needs — only whether it settled. */
+  const registrations: Promise<unknown>[] = [];
+
   let startPromise: Promise<void> | null = null;
   function ensureStarted(): Promise<void> {
     startPromise ??= (async () => {
-      await boss.start();
+      // RETRY, rather than fail on the first refused connection. Every
+      // installer starts the worker alongside the server, and on a first
+      // boot the server still has to run initdb and bring the cluster up —
+      // so ECONNREFUSED here is "not yet", not "broken". Waiting is what
+      // lets the very first install register its consumers successfully
+      // instead of depending on a crash-and-restart to paper over the race.
+      const deadline = Date.now() + startRetryWindowMs;
+      for (;;) {
+        try {
+          await boss.start();
+          break;
+        } catch (err) {
+          if (Date.now() + startRetryIntervalMs >= deadline) throw err;
+          await new Promise((resolve) => setTimeout(resolve, startRetryIntervalMs));
+        }
+      }
       for (const type of JOB_TYPES) {
         const options = JOB_QUEUE_OPTIONS[type];
         // createQueue's INSERT is ON CONFLICT DO NOTHING, so on any install
@@ -78,7 +131,22 @@ export function createJobQueue(connectionString: string): JobQueue {
         await boss.createQueue(type, options);
         await boss.updateQueue(type, options);
       }
-    })();
+    })().catch((err: unknown) => {
+      // DO NOT keep a rejected promise cached. `startPromise ??= …` alone
+      // meant the FIRST failure was memoized forever: on the rc.2 Windows
+      // install every later enqueue re-awaited a rejection produced seconds
+      // earlier and reported ECONNREFUSED long after PostgreSQL was
+      // accepting connections (the giveaway was a PgBoss.start stack on a
+      // call that never tried to connect). Clearing it lets a subsequent
+      // call genuinely retry.
+      //
+      // Contrast packages/secrets/src/native-keyring.ts, which deliberately
+      // DOES cache its rejection: a missing system DLL cannot appear later
+      // in a process's lifetime, whereas a database that is still starting
+      // very much can.
+      startPromise = null;
+      throw err;
+    });
     return startPromise;
   }
 
@@ -127,7 +195,7 @@ export function createJobQueue(connectionString: string): JobQueue {
       // abstraction's API (matches the task's `work(...): void` shape), so
       // the async pg-boss registration is chained onto ensureStarted()
       // rather than awaited here.
-      void ensureStarted()
+      const registration = ensureStarted()
         .then(() =>
           boss.work(
             type,
@@ -189,7 +257,25 @@ export function createJobQueue(connectionString: string): JobQueue {
         )
         .catch((err: unknown) => {
           console.error(`[@loombre/jobs] failed to register work handler for "${type}":`, err);
+          // Rethrow into the tracked promise below so ready() can surface
+          // it. The console.error stays because it names the specific queue
+          // that failed, which the aggregate ready() rejection cannot.
+          throw err;
         });
+      // work() still returns void (ten call sites at module scope depend on
+      // that), but the failure is no longer unobservable.
+      registrations.push(registration);
+      // A caller that never calls ready() must not get an unhandled
+      // rejection — the .catch above RETHROWS, so `registration` is a
+      // rejected promise with no consumer until ready() awaits it. This
+      // separate no-op branch marks it handled without swallowing the
+      // rejection that ready() still sees.
+      void registration.catch(() => undefined);
+    },
+
+    async ready() {
+      await ensureStarted();
+      await Promise.all(registrations);
     },
 
     async stop() {
