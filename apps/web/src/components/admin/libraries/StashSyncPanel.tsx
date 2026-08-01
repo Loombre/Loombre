@@ -15,12 +15,13 @@
 // server-computed point-in-time snapshot, StashSyncReport's own doc
 // comment).
 //
-// unmatchedScenes/staleScenes are independently keyset-paginated (each
-// carries its own cursor) — `listSections` below is the single array both
-// render through, exactly so a third list (FX3's planned Loombre-side
-// unmatched files, once that endpoint field lands) is one array entry plus
-// one loader function, not a hand-copied third JSX block. Only fields the
-// current SDK types actually expose are read here.
+// unmatchedScenes/staleScenes/unmatchedLoombreFiles are independently
+// keyset-paginated (each carries its own cursor) — `listSections` below is
+// the single array all three render through (the third, FX3's Loombre-side
+// unmatched files, landed exactly as the one-array-entry addition this
+// structure was built for). Rows are normalized to {key, primary,
+// secondary} at the section boundary because scene refs and file refs are
+// different shapes on purpose (S4's two sides of the set-difference).
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
@@ -39,15 +40,20 @@ import styles from "./StashSyncPanel.module.css";
 type AdminStashConnection = components["schemas"]["AdminStashConnection"];
 type StashSyncReport = components["schemas"]["StashSyncReport"];
 type StashSyncSceneRef = components["schemas"]["StashSyncSceneRef"];
+type StashSyncLoombreFileRef = components["schemas"]["StashSyncLoombreFileRef"];
 type SyncMode = components["schemas"]["PostAdminStashSyncRequest"]["mode"];
 
-interface SceneListState {
-  items: StashSyncSceneRef[];
+interface ListState<T> {
+  items: T[];
   nextCursor: string | null;
   loadingMore: boolean;
 }
 
+type SceneListState = ListState<StashSyncSceneRef>;
+type FileListState = ListState<StashSyncLoombreFileRef>;
+
 const EMPTY_LIST: SceneListState = { items: [], nextCursor: null, loadingMore: false };
+const EMPTY_FILE_LIST: FileListState = { items: [], nextCursor: null, loadingMore: false };
 
 interface StashSyncStartedPayload {
   jobId: string;
@@ -68,37 +74,47 @@ function formatTime(ms: number | null): string {
   return new Date(ms).toLocaleString();
 }
 
-function SceneRefListSection({
+interface RefRow {
+  key: string;
+  primary: string;
+  secondary: string | null;
+}
+
+function RefListSection({
   title,
   emptyLabel,
-  state,
+  rows,
+  nextCursor,
+  loadingMore,
   onLoadMore,
 }: {
   title: string;
   emptyLabel: string;
-  state: SceneListState;
+  rows: RefRow[];
+  nextCursor: string | null;
+  loadingMore: boolean;
   onLoadMore: () => void;
 }): React.JSX.Element {
   return (
     <div className={styles.listSection}>
       <p className={styles.listTitle}>
-        {title} <span className={styles.countMono}>· {state.items.length}</span>
+        {title} <span className={styles.countMono}>· {rows.length}</span>
       </p>
-      {state.items.length === 0 ? (
+      {rows.length === 0 ? (
         <p className={styles.hint}>{emptyLabel}</p>
       ) : (
         <ul className={styles.sceneList}>
-          {state.items.map((scene) => (
-            <li key={scene.stashSceneId} className={styles.sceneRow}>
-              <span className={styles.scenePath}>{scene.stashPath}</span>
-              {scene.stashUpdatedAtMs !== null && <span className={styles.sceneTime}>{formatTime(scene.stashUpdatedAtMs)}</span>}
+          {rows.map((row) => (
+            <li key={row.key} className={styles.sceneRow}>
+              <span className={styles.scenePath}>{row.primary}</span>
+              {row.secondary !== null && <span className={styles.sceneTime}>{row.secondary}</span>}
             </li>
           ))}
         </ul>
       )}
-      {state.nextCursor !== null && (
-        <Button variant="ghost" onClick={onLoadMore} disabled={state.loadingMore}>
-          {state.loadingMore ? "Loading…" : "Load more"}
+      {nextCursor !== null && (
+        <Button variant="ghost" onClick={onLoadMore} disabled={loadingMore}>
+          {loadingMore ? "Loading…" : "Load more"}
         </Button>
       )}
     </div>
@@ -111,6 +127,7 @@ export function StashSyncPanel({ libraryId, connection }: { libraryId: string; c
   const [report, setReport] = useState<StashSyncReport | null>(null);
   const [unmatched, setUnmatched] = useState<SceneListState>(EMPTY_LIST);
   const [stale, setStale] = useState<SceneListState>(EMPTY_LIST);
+  const [unmatchedFiles, setUnmatchedFiles] = useState<FileListState>(EMPTY_FILE_LIST);
 
   const [triggering, setTriggering] = useState<SyncMode | null>(null);
   const [triggerError, setTriggerError] = useState<string | null>(null);
@@ -123,6 +140,11 @@ export function StashSyncPanel({ libraryId, connection }: { libraryId: string; c
         setReport(res.report);
         setUnmatched({ items: res.unmatchedScenes.items, nextCursor: res.unmatchedScenes.nextCursor, loadingMore: false });
         setStale({ items: res.staleScenes.items, nextCursor: res.staleScenes.nextCursor, loadingMore: false });
+        setUnmatchedFiles({
+          items: res.unmatchedLoombreFiles.items,
+          nextCursor: res.unmatchedLoombreFiles.nextCursor,
+          loadingMore: false,
+        });
         setLoadError(null);
         setLoading(false);
       })
@@ -156,7 +178,21 @@ export function StashSyncPanel({ libraryId, connection }: { libraryId: string; c
     };
   }, [libraryId]);
 
-  function loadMore(which: "unmatched" | "stale"): void {
+  function loadMore(which: "unmatched" | "stale" | "loombreFiles"): void {
+    if (which === "loombreFiles") {
+      if (unmatchedFiles.nextCursor === null || unmatchedFiles.loadingMore) return;
+      const cursor = unmatchedFiles.nextCursor;
+      setUnmatchedFiles((prev) => ({ ...prev, loadingMore: true }));
+      apiGet("/admin/libraries/{id}/stash-sync-report", {
+        params: { path: { id: libraryId }, query: { unmatchedLoombreFilesCursor: cursor } },
+      })
+        .then((res) => {
+          const page = res.unmatchedLoombreFiles;
+          setUnmatchedFiles((prev) => ({ items: [...prev.items, ...page.items], nextCursor: page.nextCursor, loadingMore: false }));
+        })
+        .catch(() => setUnmatchedFiles((prev) => ({ ...prev, loadingMore: false })));
+      return;
+    }
     const current = which === "unmatched" ? unmatched : stale;
     const setState = which === "unmatched" ? setUnmatched : setStale;
     if (current.nextCursor === null || current.loadingMore) return;
@@ -190,9 +226,50 @@ export function StashSyncPanel({ libraryId, connection }: { libraryId: string; c
   const canSync = connection.configured && connection.enabled;
   const syncing = liveJobId !== null || triggering !== null;
 
-  const listSections: { key: string; title: string; emptyLabel: string; state: SceneListState; onLoadMore: () => void }[] = [
-    { key: "unmatched", title: "Unmatched Stash scenes", emptyLabel: "No unmatched scenes.", state: unmatched, onLoadMore: () => loadMore("unmatched") },
-    { key: "stale", title: "Stale (removed from Stash)", emptyLabel: "No stale scenes.", state: stale, onLoadMore: () => loadMore("stale") },
+  const listSections: {
+    key: string;
+    title: string;
+    emptyLabel: string;
+    rows: RefRow[];
+    nextCursor: string | null;
+    loadingMore: boolean;
+    onLoadMore: () => void;
+  }[] = [
+    {
+      key: "unmatched",
+      title: "Unmatched Stash scenes",
+      emptyLabel: "No unmatched scenes.",
+      rows: unmatched.items.map((s) => ({
+        key: s.stashSceneId,
+        primary: s.stashPath,
+        secondary: s.stashUpdatedAtMs !== null ? formatTime(s.stashUpdatedAtMs) : null,
+      })),
+      nextCursor: unmatched.nextCursor,
+      loadingMore: unmatched.loadingMore,
+      onLoadMore: () => loadMore("unmatched"),
+    },
+    {
+      key: "stale",
+      title: "Stale (removed from Stash)",
+      emptyLabel: "No stale scenes.",
+      rows: stale.items.map((s) => ({
+        key: s.stashSceneId,
+        primary: s.stashPath,
+        secondary: s.stashUpdatedAtMs !== null ? formatTime(s.stashUpdatedAtMs) : null,
+      })),
+      nextCursor: stale.nextCursor,
+      loadingMore: stale.loadingMore,
+      onLoadMore: () => loadMore("stale"),
+    },
+    {
+      key: "loombreFiles",
+      title: "Library files with no Stash scene",
+      emptyLabel: "Every library file has a matching Stash scene.",
+      rows: unmatchedFiles.items.map((f) => ({ key: f.mediaFileId, primary: f.path, secondary: f.itemTitle })),
+      nextCursor: unmatchedFiles.nextCursor,
+      loadingMore: unmatchedFiles.loadingMore,
+      onLoadMore: () => loadMore("loombreFiles"),
+    },
   ];
 
   return (
@@ -270,15 +347,23 @@ export function StashSyncPanel({ libraryId, connection }: { libraryId: string; c
             <p className={styles.hint}>
               Started {formatTime(report.startedAtMs)} — {report.status === "running" ? "still running" : `finished ${formatTime(report.finishedAtMs)}`}
             </p>
+            {report.usedSnapshotFallback === true && (
+              <p className={styles.hint}>
+                Read from a temporary snapshot copy — your Stash was holding the database locked, so Loombre copied it
+                aside and read the copy. The original was not touched.
+              </p>
+            )}
           </div>
 
           <div className={styles.listsWrap}>
             {listSections.map((section) => (
-              <SceneRefListSection
+              <RefListSection
                 key={section.key}
                 title={section.title}
                 emptyLabel={section.emptyLabel}
-                state={section.state}
+                rows={section.rows}
+                nextCursor={section.nextCursor}
+                loadingMore={section.loadingMore}
                 onLoadMore={section.onLoadMore}
               />
             ))}
