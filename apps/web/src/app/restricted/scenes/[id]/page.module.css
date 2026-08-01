@@ -1,0 +1,179 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+}
+
+/* Full-bleed banner: cancels AppShell.module.css's `.main` padding with a
+   matching negative margin (components/detail/SceneBanner.module.css's
+   own precedent/header explains the recipe) so the cover bleeds to the
+   real edges of the content area, not just to this route's own padding
+   box (which no longer exists — see `.page`/`.body` below). */
+.cover {
+  position: relative;
+  width: 100%;
+  height: 340px;
+  overflow: hidden;
+  margin: calc(-1 * var(--space-xl)) calc(-1 * var(--space-xl)) 0;
+}
+
+.coverImage {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.coverScrim {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgb(4 5 7 / 10%) 0%, var(--color-bg) 100%);
+}
+
+/* No horizontal padding of its own — sits inside `.main`'s existing
+   padding (the cover above is what needs to escape it, not this). Pulled
+   up over the cover's bottom edge via negative top margin. */
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  padding-bottom: var(--space-2xl);
+  margin-top: -80px;
+  position: relative;
+}
+
+.eyebrowRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  flex-wrap: wrap;
+}
+
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: var(--mono-lg);
+  letter-spacing: var(--track-mono-wide);
+  text-transform: uppercase;
+  color: var(--color-warning);
+}
+
+.title {
+  font-stretch: var(--wdth-display);
+  font-size: var(--text-display);
+  font-weight: var(--weight-black);
+  line-height: var(--leading-tight);
+  text-transform: uppercase;
+}
+
+.studioLink {
+  align-self: flex-start;
+  font-size: var(--text-sm);
+  color: var(--muted);
+  text-decoration: underline;
+}
+
+.overview {
+  max-width: 720px;
+  color: var(--color-text-secondary);
+  line-height: var(--leading-normal);
+  text-wrap: pretty;
+}
+
+.actions {
+  display: flex;
+  gap: var(--space-sm);
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.sectionHeading {
+  font-family: var(--font-mono);
+  font-size: var(--mono-md);
+  letter-spacing: var(--track-mono);
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.chipRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2xs);
+}
+
+.chip,
+.tagChip {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  padding: var(--space-3xs) var(--space-sm);
+  font-size: var(--text-sm);
+  color: var(--text);
+  text-decoration: none;
+  background: var(--color-surface);
+}
+
+.chip:hover {
+  border-color: color-mix(in srgb, var(--color-warning) 40%, transparent);
+  color: var(--color-warning);
+}
+
+.markerList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3xs);
+  list-style: none;
+}
+
+.markerRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-2xs) var(--space-sm);
+  border-radius: var(--radius-sm);
+  text-decoration: none;
+  color: var(--text);
+}
+
+.markerRow:hover {
+  background: var(--fill-2);
+}
+
+.markerTime {
+  font-family: var(--font-mono);
+  font-size: var(--mono-md);
+  color: var(--color-warning);
+  min-width: 3.5em;
+}
+
+.markerTitle {
+  font-size: var(--text-sm);
+}
+
+.notFound {
+  padding: var(--space-2xl);
+  text-align: center;
+  color: var(--muted);
+}
+
+@media (width <= 767.98px) {
+  .cover {
+    height: 232px;
+
+    /* `.main`'s mobile L/R padding is var(--space-md), not the desktop
+       var(--space-xl) the base rule cancels above. */
+    margin: calc(-1 * var(--space-md)) calc(-1 * var(--space-md)) 0;
+  }
+
+  .body {
+    padding-bottom: var(--space-lg);
+    margin-top: -50px;
+  }
+
+  .title {
+    font-size: var(--text-2xl);
+  }
+}

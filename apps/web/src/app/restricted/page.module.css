@@ -3,7 +3,7 @@
 .page {
   display: flex;
   flex-direction: column;
-  gap: var(--space-md);
+  gap: var(--space-lg);
 }
 
 .header {
@@ -20,10 +20,11 @@
   margin: 0;
 }
 
-/* LOCK NOW: header placement on desktop, a dedicated row above the grid on
-   mobile (design/phosphor/README.md, verbatim) — one handler, two CSS-
+/* LOCK NOW: header placement on desktop, a dedicated row above the content
+   on mobile (design/phosphor/README.md, verbatim) — one handler, two CSS-
    swapped renders rather than a single element repositioned, matching the
-   rest of the shell's dual-render convention (Sidebar vs MobileTabBar). */
+   rest of the shell's dual-render convention (Sidebar vs MobileTabBar).
+   UNCHANGED from the pre-S9 design (see page.tsx's module header). */
 .lockNowDesktop,
 .lockNowMobile {
   display: inline-flex;
@@ -55,18 +56,69 @@
   color: var(--color-warning-text);
 }
 
-.emptyZone {
+/* Zone home shell (S9): nav tiles to Browse/Performers/Studios/Search. */
+.navGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: var(--space-md);
+}
+
+.navTile {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2xs);
+  padding: var(--space-lg);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  background: var(--color-surface);
+  text-decoration: none;
+  color: inherit;
+  transition:
+    border-color var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-spring);
+}
+
+.navTile:hover,
+.navTile:focus-visible {
+  border-color: color-mix(in srgb, var(--color-warning) 45%, transparent);
+  transform: translateY(-2px);
+}
+
+.navTileIcon {
+  color: var(--color-warning);
+}
+
+.navTileLabel {
+  font-size: var(--text-lg);
+  font-weight: var(--weight-semibold);
+}
+
+.navTileDescription {
+  font-size: var(--text-sm);
+  color: var(--muted);
+}
+
+/* Rails placeholder (S9 — the RAIL UI itself is Lane E's scope; this is a
+   minimal, real-data one-line summary, never rail rows/cards). */
+.railsPlaceholder {
   border-radius: var(--radius-lg);
   border: 1px dashed var(--color-border);
-  padding: var(--space-2xl);
-  color: var(--muted);
+  padding: var(--space-xl);
   text-align: center;
 }
 
-.grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
-  gap: var(--space-md);
+.railsSummary {
+  font-family: var(--font-mono);
+  font-size: var(--mono-md);
+  letter-spacing: var(--track-mono);
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.railsNote {
+  margin-top: var(--space-2xs);
+  font-size: var(--text-sm);
+  color: var(--color-text-subtle);
 }
 
 @media (width <= 767.98px) {
@@ -76,5 +128,9 @@
 
   .lockNowMobile {
     display: flex;
+  }
+
+  .navGrid {
+    grid-template-columns: 1fr;
   }
 }
