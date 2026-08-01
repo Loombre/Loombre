@@ -482,6 +482,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/items/{id}/chapters": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["IdPathParam"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Chapter markers for an item's timeline
+         * @description Generic and content-agnostic (`chapter_markers`, migrations/0019 — item_type 'movie' rows today, i.e. Stash scene markers, S7/K9; the schema does not restrict this to any one item type). Visibility rides the owning item: byte-identical 401/404 to what a direct GET on the item itself would return for the same viewer, including for a restricted item to an uncleared viewer (house pattern — see GET /movies/{id}). An item with zero chapter markers returns 200 with an empty `items` array, never a 404 — "no chapters" and "item not visible" are deliberately distinguishable states. Ordered by `startMs` ascending. GET /restricted/scenes/{id} embeds the SAME rows inline as `chapters` for the zone's own scene-detail page; this operation is the generic twin the player itself consumes (works for any item id, not only zone scenes).
+         */
+        get: operations["getItemChapters"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/artists": {
         parameters: {
             query?: never;
@@ -1253,7 +1275,7 @@ export interface paths {
         get: operations["getAdminLibraryStashConnection"];
         /**
          * Configure (or reconfigure) a library's Stash SQLite connection (admin)
-         * @description Writes ONLY sqlitePath/enabled — never genreTagNames (Lane E's own field on this resource, K15). Enqueues a `stash-inventory` job on every successful save so the path-mapping preview has fresh data without a separate button. 404 if the library itself does not exist (checked before body validation).
+         * @description Writes sqlitePath/enabled, plus genreTagNames (K15 — see PutAdminStashConnectionRequest.genreTagNames for its omit/null/ array tri-state). Enqueues a `stash-inventory` job on every successful save so the path-mapping preview has fresh data without a separate button. 404 if the library itself does not exist (checked before body validation).
          */
         put: operations["putAdminLibraryStashConnection"];
         post?: never;
@@ -2516,6 +2538,22 @@ export interface components {
             items: components["schemas"]["Episode"][];
             nextCursor: string | null;
         };
+        /** @description One chapter_markers row (migrations/0019, S7/K9) — GET /items/{id}/chapters and RestrictedSceneDetail.chapters both use this exact shape. */
+        ChapterMarker: {
+            title: string;
+            /** Format: int64 */
+            startMs: number;
+            /**
+             * @description The producer that wrote this marker (chapter_markers.source).
+             * @enum {string}
+             */
+            source: "stash";
+        };
+        /** @description GET /items/{id}/chapters — a small, complete, already-ordered list (never large enough to need cursor pagination, unlike this contract's other list endpoints). */
+        ItemChapters: {
+            /** @description Ordered by startMs ascending. */
+            items: components["schemas"]["ChapterMarker"][];
+        };
         Artist: components["schemas"]["CatalogItemBase"] & {
             /** @constant */
             itemType: "artist";
@@ -3016,7 +3054,7 @@ export interface components {
         };
         /** @enum {string} */
         AdminStashConnectionStatus: "never_connected" | "ok" | "unsupported_schema" | "unreachable";
-        /** @description GET/PUT /admin/libraries/{id}/stash-connection — packages/db's library_stash_connections row (migrations/0018), config fields admin-written, status fields worker-written at connect time (S2/S3). */
+        /** @description GET/PUT /admin/libraries/{id}/stash-connection — packages/db's library_stash_connections row (migrations/0018 + 0019's additive genre_tag_names), config fields admin-written, status fields worker-written at connect time (S2/S3). */
         AdminStashConnection: {
             /** Format: uuid */
             libraryId: string;
@@ -3024,6 +3062,8 @@ export interface components {
             configured: boolean;
             sqlitePath: string | null;
             enabled: boolean;
+            /** @description S6/K15: which Stash tag names map to Loombre genre rather than general tags. `null` (the default, including before any connection has ever been saved) means the mapper's documented heuristic applies — a Stash tag with NO parent tag maps to genre, a child tag maps to a plain tag; explicit tag names here override that heuristic wholesale, case-insensitively. */
+            genreTagNames: string[] | null;
             status: components["schemas"]["AdminStashConnectionStatus"];
             /** @description The exact S3 admin notice when status=unsupported_schema; null otherwise. */
             statusDetail: string | null;
@@ -3037,6 +3077,8 @@ export interface components {
             sqlitePath: string;
             /** @description Defaults to true when omitted on first configure. */
             enabled?: boolean;
+            /** @description Omit this field to leave the saved genreTagNames untouched. Send `null` to explicitly clear it back to the default heuristic (see AdminStashConnection.genreTagNames). Send a (possibly empty) array to replace it wholesale. */
+            genreTagNames?: string[] | null;
         };
         AdminStashPathMapping: {
             stashPrefix: string;
@@ -4587,6 +4629,31 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Episode"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    getItemChapters: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["IdPathParam"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Ordered chapter markers for this item (possibly empty) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ItemChapters"];
                 };
             };
             401: components["responses"]["Unauthorized"];
