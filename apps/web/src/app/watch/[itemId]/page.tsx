@@ -38,6 +38,17 @@ export default function WatchPage(): React.JSX.Element | null {
   // (packages/contract/openapi.yaml) — so a plain /watch/{itemId} link
   // behaves exactly as before.
   const mediaFileId = searchParams.get("mediaFileId") ?? undefined;
+  // Deep-link start offset (S7 chapters): app/restricted/scenes/[id]/
+  // page.tsx's markers list already links here with `?t=<wholeSeconds>`
+  // (Math.floor(marker.startMs / 1000)) — `t`, not `startMs`, to keep the
+  // URL short/shareable the way a video site's timestamp link reads;
+  // converted to ms (VideoPlayer's/CLAUDE.md invariant 5's unit) at this
+  // one boundary. Ignored if missing/non-numeric/negative rather than
+  // thrown — a malformed deep link should degrade to "start from the
+  // beginning" (or the normal resume prompt), never a crashed route.
+  const tParam = searchParams.get("t");
+  const startSeconds = tParam !== null ? Number(tParam) : NaN;
+  const startMs = Number.isFinite(startSeconds) && startSeconds >= 0 ? startSeconds * 1000 : undefined;
 
   useEffect(() => {
     const store = getAuthStore();
@@ -84,6 +95,7 @@ export default function WatchPage(): React.JSX.Element | null {
         onBack={() => router.back()}
         {...(hintType ? { hintType } : {})}
         {...(mediaFileId ? { mediaFileId } : {})}
+        {...(startMs !== undefined ? { startMs } : {})}
       />
     );
   }

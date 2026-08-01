@@ -21,10 +21,22 @@ export interface BufferedRange {
   endMs: number;
 }
 
+/** The one field the track needs to draw a tick (S7/K9 chapter markers) —
+ *  deliberately narrower than the SDK's ChapterMarker (no title/source):
+ *  this component only ever positions a mark, never renders label text on
+ *  the track itself (PlayerControls' chapter list surfaces the title). */
+export interface ChapterTick {
+  startMs: number;
+}
+
 export interface ScrubberProps {
   positionMs: number;
   durationMs: number | null;
   buffered?: BufferedRange[];
+  /** S7/K9: chapter marker ticks drawn on the rail. Omitted/empty renders
+   *  no ticks at all — zero chapters means zero UI (mission spec), same as
+   *  every other optional overlay this track draws. */
+  chapters?: ChapterTick[];
   onSeek: (ms: number) => void;
   formatTime?: (ms: number) => string;
 }
@@ -39,7 +51,14 @@ export function defaultFormatTime(ms: number): string {
   return hours > 0 ? `${hours}:${mm}:${ss}` : `${mm}:${ss}`;
 }
 
-export function Scrubber({ positionMs, durationMs, buffered = [], onSeek, formatTime = defaultFormatTime }: ScrubberProps): React.JSX.Element {
+export function Scrubber({
+  positionMs,
+  durationMs,
+  buffered = [],
+  chapters = [],
+  onSeek,
+  formatTime = defaultFormatTime,
+}: ScrubberProps): React.JSX.Element {
   const trackRef = useRef<HTMLDivElement>(null);
   const [dragging, setDragging] = useState(false);
   const [hoverX, setHoverX] = useState<number | null>(null);
@@ -114,6 +133,15 @@ export function Scrubber({ positionMs, durationMs, buffered = [], onSeek, format
           ) : null,
         )}
         <div className={styles.played} style={{ width: `${playedPercent}%` }} />
+        {duration > 0 &&
+          chapters
+            // A marker AT 0 or AT the very end has nothing meaningful to
+            // divide (no preceding/following segment to mark the boundary
+            // of) — real fixtures (seed.mjs's "Opening" at startMs 0) would
+            // otherwise draw a tick flush against the track's own rounded
+            // end-cap, reading as a stray pixel rather than a chapter mark.
+            .filter((c) => c.startMs > 0 && c.startMs < duration)
+            .map((c, i) => <div key={i} className={styles.chapterTick} style={{ left: `${(c.startMs / duration) * 100}%` }} />)}
       </div>
       <div className={styles.handle} style={{ left: `${playedPercent}%` }} />
       {hoverX !== null && hoverMs !== null && (
