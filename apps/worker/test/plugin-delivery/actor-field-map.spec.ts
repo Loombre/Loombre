@@ -53,8 +53,8 @@ function readRealActorFields(eventType: string): string[] {
 describe("ACTOR_FIELD_MAP exhaustiveness over the REAL envelope enum", () => {
   const realTypes = readEnvelopeEventTypes();
 
-  it("envelope.schema.json enumerates exactly 27 types (15 pre-LPP + 6 plugin.* + 2 watchlist.* [L3] + 1 metadata.match-candidates [L2], Phosphor Wave 2 + 1 user.restricted-pin-reset [H2] + 1 probe.failed [owner ledger L1] + 1 stash.provider.disabled [Stash SQLite metadata sync, S3/K12])", () => {
-    expect(realTypes).toHaveLength(27);
+  it("envelope.schema.json enumerates exactly 29 types (15 pre-LPP + 6 plugin.* + 2 watchlist.* [L3] + 1 metadata.match-candidates [L2], Phosphor Wave 2 + 1 user.restricted-pin-reset [H2] + 1 probe.failed [owner ledger L1] + 1 stash.provider.disabled [Stash SQLite metadata sync, S3/K12] + 2 stash.sync.* [Stash SQLite metadata sync, S8/K12, Lane C])", () => {
+    expect(realTypes).toHaveLength(29);
     expect(realTypes.filter((t) => t.startsWith("plugin."))).toHaveLength(6);
     expect(realTypes.filter((t) => t.startsWith("watchlist."))).toHaveLength(2);
   });

@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://loombre.com/schemas/events/stash.sync.completed.schema.json",
+  "title": "StashSyncCompletedPayload",
+  "description": "Payload for envelope.type === 'stash.sync.completed'. STATE.md S8/K12 (Stash SQLite metadata sync, Lane C sync engine): emitted when a `stash-sync` job (packages/jobs, StashSyncJobPayload) finishes, successfully or not, in the SAME transaction as the paired migrations/0020_stash_sync_reports.sql report row's finalization (writeEvent(trx, ...) alongside finishStashSyncReport). `status: 'failed'` is written from apps/worker/src/stash/sync-consumer.ts's onTerminalFailure hook (mirroring apps/worker/src/probe/terminal-failure-hook.ts's precedent) once pg-boss retries are exhausted — counts then reflect whatever the checkpoint had recorded at that point, never fabricated to look complete. `counts` mirrors the report row's five S8 columns exactly (matched/updated/unmatched/stale/skipped) — H3 'no-silent-anything': every scene this run looked at lands in exactly one bucket. ADMIN-ONLY delivery, same posture as stash.sync.started.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["jobId", "libraryId", "mode", "status", "counts", "durationMs", "completedAtMs"],
+  "properties": {
+    "jobId": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Matches the paired stash.sync.started event's jobId."
+    },
+    "libraryId": {
+      "type": "string",
+      "format": "uuid",
+      "description": "The library whose Stash connection this sync run was for."
+    },
+    "mode": {
+      "type": "string",
+      "enum": ["full", "incremental"]
+    },
+    "status": {
+      "type": "string",
+      "enum": ["succeeded", "failed", "partial"],
+      "description": "'succeeded': no unhandled error. 'partial': completed but skippedCount > 0 for a documented per-scene reason short of a full failure. 'failed': retries exhausted (onTerminalFailure) before the run reached its own end."
+    },
+    "counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["matched", "updated", "unmatched", "stale", "skipped"],
+      "description": "Mirrors migrations/0020_stash_sync_reports.sql's five count columns for this run — a point-in-time snapshot, not a live query.",
+      "properties": {
+        "matched": { "type": "integer", "minimum": 0 },
+        "updated": { "type": "integer", "minimum": 0 },
+        "unmatched": { "type": "integer", "minimum": 0 },
+        "stale": { "type": "integer", "minimum": 0 },
+        "skipped": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "durationMs": { "type": "integer", "minimum": 0 },
+    "completedAtMs": { "type": "integer", "minimum": 0 }
+  }
+}
