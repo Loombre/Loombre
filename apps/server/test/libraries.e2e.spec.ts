@@ -779,6 +779,55 @@ describe("Restricted Content surface (STATE.md Stash run, S9)", () => {
     expect(asAdmin.body.sqlitePath).toBe("/home/owner/.stash/stash-go.sqlite");
   });
 
+  it("R1: the /watch deep link's own API path is closed for an uncleared viewer — POST /playback/plan and POST /playback/sessions for a zone item answer the SAME 'Item or media file not found' 404 the general item-detail read does, so a shared zone URL degrades to 'no such item' rather than 'you may not play this'", async () => {
+    const browseRes = await request(app.getHttpServer())
+      .get("/restricted/browse")
+      .set("Authorization", `Bearer ${adminToken}`);
+    const sceneId: string = browseRes.body.items.find(
+      (it: { title: string; durationMs: number | null }) => it.durationMs !== null,
+    ).id;
+
+    const casual = await r1CasualToken();
+    const planBody = {
+      itemId: sceneId,
+      device: buildDeviceProfile("libraries-e2e-casual-watch"),
+      network: { maxBitrateBps: 50_000_000, isLocal: true },
+      mode: "stream" as const,
+    };
+
+    const plan = await request(app.getHttpServer())
+      .post("/playback/plan")
+      .send(planBody)
+      .set("Authorization", `Bearer ${casual}`);
+    expect(plan.status, JSON.stringify(plan.body)).toBe(404);
+
+    const session = await request(app.getHttpServer())
+      .post("/playback/sessions")
+      .send(planBody)
+      .set("Authorization", `Bearer ${casual}`);
+    expect(session.status, JSON.stringify(session.body)).toBe(404);
+
+    // Byte-identical to the same call for an itemId that does not exist —
+    // "not cleared" and "not a thing" are the same answer.
+    const nonexistent = await request(app.getHttpServer())
+      .post("/playback/plan")
+      .send({ ...planBody, itemId: "00000000-0000-7000-8000-000000000000" })
+      .set("Authorization", `Bearer ${casual}`);
+    expect(nonexistent.status).toBe(404);
+    const { instance: _planInstance, ...planRest } = plan.body;
+    const { instance: _nonexistentInstance, ...nonexistentRest } = nonexistent.body;
+    expect(planRest).toEqual(nonexistentRest);
+
+    // Positive control: the SAME plan request from the unlocked admin
+    // resolves — the 404s above are clearance, not a broken request body.
+    const cleared = await request(app.getHttpServer())
+      .post("/playback/plan")
+      .send({ ...planBody, device: buildDeviceProfile("libraries-e2e-admin-watch") })
+      .set("Authorization", `Bearer ${adminToken}`);
+    expect(cleared.status, JSON.stringify(cleared.body)).toBe(200);
+    expect(typeof cleared.body.decision).toBe("string");
+  });
+
   it("R1: the general (non-zone) surfaces never surface Stash-mapped zone entities to an uncleared viewer over real HTTP — no studio names, no zone performers, no zone titles through /search, /people or /tags", async () => {
     const casual = await r1CasualToken();
 
