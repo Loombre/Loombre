@@ -86,6 +86,26 @@
         SuppressOptionsUI="yes" />
     </BootstrapperApplication>
 
+    <!-- WixStdBA's launch variables: defining LaunchTarget makes the
+         success page grow a "Launch" button — the "option at the
+         installation completion window" the rc field reports asked for.
+         Load-bearing here because Burn runs the chained MSI SILENTLY, so
+         the MSI's own ca.LaunchTray (UILevel-gated) never fires for
+         bundle installs — without this button a bundle install ends with
+         nothing on screen at all.
+
+         Clicking it runs the tray with the open-web flag
+         (TrayLaunchModes.cs): icon appears, waits for the just-started
+         services' first boot
+         (payload extraction + initdb + migrations), then opens the
+         browser — which on a fresh install lands on the /setup wizard.
+         WixStdBA formats the variable at launch time, so the
+         ProgramFiles64Folder reference resolves then; the path is
+         deterministic because the MSI is per-machine with a fixed layout
+         (Package.wxs Scope + Directories.wxs, no install-dir UI). -->
+    <Variable Name="LaunchTarget" Value="[ProgramFiles64Folder]Loombre\tray\Loombre.Tray.exe" />
+    <Variable Name="LaunchArguments" Value="--open-web" />
+
     <!-- Detection, evaluated BEFORE the chain runs. Mirrors the MSI's own
          RegistrySearch (Package.wxs) so the two agree on what "installed"
          means and the chained MSI's LaunchCondition can never contradict

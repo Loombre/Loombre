@@ -48,13 +48,21 @@
              per-machine install (Package/@Scope="perMachine" in
              Package.wxs) with no per-user install context, and the tray is
              a lightweight status client any interactively-logged-in user
-             on the machine should see, not a per-account preference. -->
+             on the machine should see, not a per-account preference.
+
+             The literal flag here is pinned by
+             Loombre.Tray.Tests/TrayLaunchModeTests.cs: logon autostart
+             must stay a silent icon (no browser popping up at every
+             login), which is exactly what distinguishes it from the
+             flagless Start Menu shortcut above — the "nothing happens"
+             rc field-report fix gave the three launch paths three
+             intents (TrayLaunchModes.cs). -->
         <RegistryValue
           Root="HKLM"
           Key="SOFTWARE\Microsoft\Windows\CurrentVersion\Run"
           Name="LoombreTray"
           Type="string"
-          Value="&quot;[TRAYDIR]Loombre.Tray.exe&quot;"
+          Value="&quot;[TRAYDIR]Loombre.Tray.exe&quot; --autostart"
           KeyPath="yes" />
       </Component>
     </ComponentGroup>

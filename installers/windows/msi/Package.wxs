@@ -286,10 +286,17 @@ or download it from https://aka.ms/vs/17/release/vc_redist.x64.exe" />
       After="CostFinalize"
       Sequence="execute"
       Condition="NOT REMOVE" />
+    <!-- The open-web flag (TrayLaunchModes.cs): an interactive install's
+         launch should not just park an icon in the tray — it waits out
+         the server's first boot and opens the browser, which on a fresh
+         install lands on the /setup wizard. Only reachable on interactive
+         MSI runs (the UILevel condition below); the shipped .exe bundle
+         runs this MSI silently and provides the same flow via its own
+         success-page Launch button (Bundle.wxs LaunchTarget). -->
     <CustomAction
       Id="ca.LaunchTray"
       Property="LOOMBRETRAYEXE"
-      ExeCommand=""
+      ExeCommand="--open-web"
       Execute="immediate"
       Impersonate="yes"
       Return="asyncNoWait" />
