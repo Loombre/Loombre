@@ -23,7 +23,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ENVELOPE_SCHEMA_PATH = path.resolve(__dirname, "../../contract/event-schemas/envelope.schema.json");
 
 describe("ADMIN_ONLY_EVENT_TYPES (canonical, L3)", () => {
-  it("is exactly this 11-item inventory (the single place a human confirms the list)", () => {
+  it("is exactly this 12-item inventory (the single place a human confirms the list)", () => {
     expect([...ADMIN_ONLY_EVENT_TYPES].sort()).toEqual(
       [
         "job.updated",
@@ -38,6 +38,8 @@ describe("ADMIN_ONLY_EVENT_TYPES (canonical, L3)", () => {
         "user.restricted-pin-reset",
         // Owner ledger L1 (adjudication A-2).
         "probe.failed",
+        // Stash SQLite metadata sync, S3/K12.
+        "stash.provider.disabled",
       ].sort(),
     );
   });

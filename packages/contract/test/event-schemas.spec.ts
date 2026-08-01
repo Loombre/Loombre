@@ -70,8 +70,8 @@ describe("event-schemas (docs/PLAN.md §4.3)", () => {
     }
   });
 
-  it("envelope enum has exactly 26 types (15 through Addendum A + 6 plugin.* [LPP] + 2 watchlist.* [W2 L3] + 1 metadata.match-candidates [W2 L2] + 1 user.restricted-pin-reset [H2] + 1 probe.failed [owner ledger L1])", () => {
-    expect(envelopeTypeEnum).toHaveLength(26);
+  it("envelope enum has exactly 27 types (15 through Addendum A + 6 plugin.* [LPP] + 2 watchlist.* [W2 L3] + 1 metadata.match-candidates [W2 L2] + 1 user.restricted-pin-reset [H2] + 1 probe.failed [owner ledger L1] + 1 stash.provider.disabled [Stash SQLite metadata sync, S3/K12])", () => {
+    expect(envelopeTypeEnum).toHaveLength(27);
     expect(envelopeTypeEnum).toEqual(
       expect.arrayContaining([
         "item.added",
@@ -100,6 +100,7 @@ describe("event-schemas (docs/PLAN.md §4.3)", () => {
         "metadata.match-candidates",
         "user.restricted-pin-reset",
         "probe.failed",
+        "stash.provider.disabled",
       ]),
     );
   });
@@ -297,6 +298,13 @@ describe("event-schemas (docs/PLAN.md §4.3)", () => {
         libraryId: "018f6f1e-0000-7000-8000-000000000002",
         path: "/media/movies/Garbage File.mkv",
         code: "nonzero-exit",
+      },
+      "stash.provider.disabled": {
+        libraryId: "018f6f1e-0000-7000-8000-000000000002",
+        seenVersion: 58,
+        supportedMin: 67,
+        supportedMax: 85,
+        notice: "Stash schema v58 unsupported; supported: 67-85",
       },
     };
 
