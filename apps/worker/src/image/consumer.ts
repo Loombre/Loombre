@@ -27,7 +27,7 @@
 import type { JobHandler } from '@loombre/jobs';
 import type { DbOrTx } from '@loombre/db/internal';
 import { upsertImage, type UpsertImageInput } from '@loombre/db/internal';
-import { isRemoteSource } from './download.js';
+import { isProviderSource } from './download.js';
 import { runImagePipeline, type RunImagePipelineInput } from './pipeline.js';
 import { getWorkerSettingValue, loadWorkerEffectiveSettings } from '../settings/effective-settings.js';
 
@@ -39,19 +39,34 @@ export interface ImageConsumerDeps {
   clock?: () => number;
 }
 
-/** Only 'catalog_item' is implemented (matches metadata/consumer.ts's
- *  enqueue convention — the only entity type anything in this wave
- *  produces image jobs for). Any other/unknown entityType is treated as
- *  non-existent, not an error: a conservative default that never writes
- *  for an entity kind this module doesn't yet know how to verify. */
+/** 'catalog_item' (metadata/consumer.ts's original enqueue convention),
+ *  plus 'tag' and 'person' (Stash mission, STATE.md S5/S6/K11 — studio
+ *  logos land on a kind='studio' tag row, performer portraits on a person
+ *  row; apps/worker/src/stash/apply.ts enqueues both). Any other/unknown
+ *  entityType is treated as non-existent, not an error: a conservative
+ *  default that never writes for an entity kind this module doesn't yet
+ *  know how to verify. */
 async function entityExists(db: DbOrTx, entityType: string, entityId: string): Promise<boolean> {
-  if (entityType !== 'catalog_item') return false;
-  const row = await db.selectFrom('catalog_items').select('id').where('id', '=', entityId).executeTakeFirst();
-  return row !== undefined;
+  switch (entityType) {
+    case 'catalog_item': {
+      const row = await db.selectFrom('catalog_items').select('id').where('id', '=', entityId).executeTakeFirst();
+      return row !== undefined;
+    }
+    case 'tag': {
+      const row = await db.selectFrom('tags').select('id').where('id', '=', entityId).executeTakeFirst();
+      return row !== undefined;
+    }
+    case 'person': {
+      const row = await db.selectFrom('people').select('id').where('id', '=', entityId).executeTakeFirst();
+      return row !== undefined;
+    }
+    default:
+      return false;
+  }
 }
 
 function sourceFor(sourcePath: string): UpsertImageInput['source'] {
-  return isRemoteSource(sourcePath) ? 'provider' : 'local';
+  return isProviderSource(sourcePath) ? 'provider' : 'local';
 }
 
 export function imageConsumerHandler(deps: ImageConsumerDeps): JobHandler<'image'> {
