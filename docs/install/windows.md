@@ -47,46 +47,56 @@ This is the primary trust ritual for an unsigned build — treat it as
 mandatory, not optional, especially the first time you install a given
 release.
 
-### 1. Checksum (integrity — did the download complete correctly?)
+### 1. GitHub artifact attestation (no key handling required)
 
-PowerShell:
+```powershell
+gh attestation verify .\loombre-<version>-windows-x64.exe --repo Loombre/Loombre
+```
+
+Proves this exact file was built by Loombre's own CI, from this exact
+repository, at this exact commit. Needs the `gh` CLI, signed in
+(`gh auth login`).
+
+### 2. Checksum (integrity — did the download complete correctly?)
+
+Download the release's shared `SHA256SUMS` file (it lists every artifact in
+the release), then in PowerShell:
 
 ```powershell
 Get-FileHash .\loombre-<version>-windows-x64.exe -Algorithm SHA256
+Select-String "loombre-<version>-windows-x64.exe" SHA256SUMS
 ```
 
-Compare the printed hash, byte-for-byte, against the contents of
-`loombre-<version>-windows-x64.exe.sha256`. A mismatch means a corrupted or
+Compare the two hashes byte-for-byte. A mismatch means a corrupted or
 tampered download — **do not run the installer**; re-download from a
-different network path and check again.
+different network path and check again. (There is no per-artifact
+`<file>.sha256` — one signed checksum list covers the whole release.)
 
 A checksum alone only proves the file wasn't corrupted in transit; it does
 **not** prove the file came from the Loombre project, since anyone can
 compute a checksum for a file they tampered with. That's what the next step
 is for.
 
-### 2. minisign signature (authenticity — did this actually come from Loombre?)
+### 3. minisign signature (authenticity — did this actually come from Loombre?)
 
-Loombre signs every release artifact with [minisign], a small, auditable,
-ed25519-based signing tool. Install it once (`scoop install minisign`, or
-download a release binary from the minisign project), then:
+The signature covers `SHA256SUMS` itself — not each individual artifact —
+so verifying it, combined with the checksum match above, transitively
+proves the `.exe` is authentic too. Install [minisign] once
+(`scoop install minisign`, or download a release binary from the minisign
+project), then:
 
 ```powershell
-minisign -V -p loombre-minisign.pub -m loombre-<version>-windows-x64.exe -x loombre-<version>-windows-x64.exe.minisig
+minisign -Vm SHA256SUMS -P <public key — see below>
 ```
 
-`loombre-minisign.pub` is Loombre's public signing key, published in **three
-independent places** so that forging a match would require compromising all
-three at once, not just one:
+The public key is published, byte-identical, in multiple
+independently-maintained places — `keys/minisign.pub` in the repository,
+`docs/install/linux.md`'s "Verify what you downloaded" section (which
+embeds it inline), `docs/ops/updating.md`'s "Verifying releases" section,
+and every release's notes — so substituting all of them simultaneously
+would be required to defeat verification.
 
-1. **In this repository** — `SECURITY.md` / a pinned file in `docs/` (see
-   the repo root for the exact path once the release-signing lane lands).
-2. **On the docs site**, on a page that is itself covered by the site's own
-   HTTPS/domain trust — not just this repo.
-3. **In every release's notes**, pasted as plain text alongside the
-   checksums.
-
-If those three don't agree, or the signature does not verify, **stop and do
+If those don't agree, or the signature does not verify, **stop and do
 not run the installer** — that is exactly the scenario minisign verification
 exists to catch. This project reports no telemetry, so nobody except you
 will ever know you hit this — verify anyway.
@@ -139,11 +149,15 @@ software on your machine may have come to depend on it.
 6. The installer registers three Windows services (**Loombre Server**,
    **Loombre Web**, **Loombre Worker**), firewall exceptions for the server
    and web ports, and a tray application (**Loombre.Tray.exe**). All three
-   services start immediately and on every boot; the tray starts at the end
-   of the install and again at every logon.
-7. When it finishes, open `http://localhost:3000`. The database provisions
-   and migrates itself on first boot — give it a few seconds — and the
-   first page you get is the account-setup wizard.
+   services start immediately and on every boot; the tray starts at every
+   logon.
+7. On the installer's finish page, click **Launch**. The Loombre tray icon
+   appears and, once the server finishes its first boot (the database
+   provisions and migrates itself — this can take a minute on first
+   install), **your browser opens automatically** to the account-setup
+   wizard. If you skipped the Launch button, open `http://localhost:3000`
+   yourself, or launch **Loombre** from the Start menu — it does the same
+   wait-then-open.
 
 Nothing here is different in kind from any other unsigned, legitimately
 open-source Windows installer (Notepad++, many others) — SmartScreen's
@@ -179,9 +193,13 @@ way as any other:
   ```
 
 - The tray's **Start/Stop server** menu item is the everyday equivalent of
-  the above, without needing an elevated prompt (it talks to the services
-  through Loombre's local control API, not through SCM directly — see
-  `packages/controller-ipc` if you're curious about the mechanism).
+  the above, normally without an elevated prompt. **Stop** goes through
+  Loombre's local control API (a graceful in-band shutdown — see
+  `packages/controller-ipc` if you're curious); **Start** goes through the
+  Windows Service Control Manager directly (the installer grants local
+  users start permission on the Loombre services for exactly this).
+  Installs from before that permission existed fall back to a single UAC
+  prompt when you click Start.
 
 ## Data locations
 
@@ -189,7 +207,7 @@ way as any other:
 |---|---|
 | Application files | `%ProgramFiles%\Loombre\` |
 | Application data (embedded database, logs, crash files) | `%ProgramData%\Loombre\` |
-| — embedded PostgreSQL data | `%ProgramData%\Loombre\pgdata\` |
+| — embedded PostgreSQL data | `%ProgramData%\Loombre\postgres\data\` |
 | — logs | `%ProgramData%\Loombre\logs\` |
 
 `%ProgramData%` is normally `C:\ProgramData` — a hidden folder by default;
@@ -207,8 +225,8 @@ is entirely your call, every time.
 ## Uninstalling
 
 **Settings → Apps → Installed apps → Loombre → Uninstall** (or
-`appwiz.cpl` on older Windows). This removes the two services, the
-firewall exception, the tray autostart entry, and everything under
+`appwiz.cpl` on older Windows). This removes the three services, the
+firewall exceptions, the tray autostart entry, and everything under
 `%ProgramFiles%\Loombre\`.
 
 **`%ProgramData%\Loombre\` (your library metadata, embedded database, and
@@ -232,42 +250,11 @@ is available — it never downloads or applies anything automatically (see
   first install.** Expected while Loombre stays unsigned — see
   [Why Windows will warn you](#why-windows-will-warn-you-before-you-can-run-this).
 - **Server won't reach the internet / other devices can't reach it.** Check
-  Windows Defender Firewall → the installer adds an inbound rule named
-  **Loombre Server** automatically; confirm it's enabled if you use a
-  third-party firewall product instead of (or alongside) Windows Defender.
+  Windows Defender Firewall → the installer adds two inbound rules,
+  **Loombre Server** and **Loombre Web**, automatically; confirm both are
+  enabled if you use a third-party firewall product instead of (or
+  alongside) Windows Defender.
 - **Services show "Starting" and never reach "Running."** Check
   `%ProgramData%\Loombre\logs\server.log` / `worker.log` for the underlying
   Node.js process's own output — the Windows Service wrapper forwards it
   there verbatim.
-
----
-
-## Verify what you downloaded
-
-Before running the installer, verify your download using the same three-layer
-trust model as Linux:
-
-### 1. Checksum (integrity)
-
-```powershell
-Get-FileHash .\loombre-<version>-windows-x64.exe -Algorithm SHA256
-```
-
-Compare the printed hash against the contents of `loombre-<version>-windows-x64.exe.sha256`.
-A mismatch means a corrupted or tampered download — **do not run the installer**.
-
-### 2. minisign signature (authenticity)
-
-```powershell
-# Install minisign first (if you don't have it):
-# scoop install minisign
-# or: choco install minisign
-
-minisign -V -p <public key> -m loombre-<version>-windows-x64.exe -x loombre-<version>-windows-x64.exe.minisig
-```
-
-The minisign public key is published in three places (see `keys/minisign.pub` in
-the repository, `docs/ops/updating.md`, and every GitHub Release's notes).
-
-If verification fails, **do not install** — that is exactly what minisign verification
-exists to catch.

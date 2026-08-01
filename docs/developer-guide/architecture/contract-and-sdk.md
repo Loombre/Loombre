@@ -5,7 +5,7 @@
      rather than a step-by-step workflow. -->
 
 ```
- packages/contract/openapi.yaml   (≈3,700 lines, 64 paths — hand-written,
+ packages/contract/openapi.yaml   (≈5,300 lines, 85 paths — hand-written,
         │                          lint-checked via `redocly lint`)
         │
         │  redocly build-docs                 openapi-typescript + a small

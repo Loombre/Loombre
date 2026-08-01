@@ -13,7 +13,7 @@
      signing via GitHub OIDC — confirmed present in that workflow file.
      keys/README.md — three-location minisign public-key consistency
      check (checked in CI by scripts/release/check-pubkey-consistency.mjs).
-     Version 0.9.0, no release published yet — root package.json,
+     Version 0.9.0-rc.3, no release published yet — root package.json,
      CHANGELOG.md's "Convention note (pre-v1.0)". -->
 
 Loombre ships as four independent artifact types from one source tree, all
@@ -32,7 +32,7 @@ built from the same version-stamped source.
         ┌───────────┬─────────┼─────────┬───────────┐
         ▼           ▼         ▼         ▼           ▼
    Linux tarball  Windows   macOS    Docker      release
-   + systemd      MSI       .pkg     image        manifest
+   + systemd      .exe      .pkg     images       manifest
    (installers/   (install- (install- (root       (scripts/
    linux/)        ers/      ers/      Dockerfile,  release/
                   windows/) macos/)   multi-arch)  build-
@@ -48,8 +48,14 @@ from-scratch production-only install, not a mutated copy of the build
 stage's tree) → `ffmpeg-fetch` (vendors pinned static ffmpeg/ffprobe
 binaries) → `runtime` (the actual shipped image, assembled from the
 previous stages' outputs). `server` and `worker` run from this same image
-with different startup commands — see `docs/install/docker.md` for the
-operator-facing detail on why one image serves both roles.
+with different startup commands. Three further stages — `web-pruner` →
+`web-builder` → `web` — build apps/web's Next.js standalone server as a
+**second, independently shipped image** (`ghcr.io/loombre/loombre-web`,
+its own bake target in `installers/docker/docker-bake.hcl`, cosign-signed
+separately by release.yml). So the Docker distribution is two images:
+`loombre` (server+worker, role chosen by startup command) and
+`loombre-web` (the browser-facing UI) — see `docs/install/docker.md` for
+the operator-facing detail.
 
 ## The other three installers
 
@@ -87,8 +93,13 @@ replaced.
 
 ## `.github/workflows/release.yml`
 
-The tag-triggered pipeline that builds the Linux tarball, Windows MSI, and
+The tag-triggered pipeline that builds the Linux tarball, the Windows
+Burn-bundle `.exe` (which chains the VC++ redistributable ahead of an
+internally-built MSI — the MSI itself is deliberately **not** published
+as a separate release asset; the bundle's success page offers a Launch
+button that opens the tray and then the browser at the setup wizard), and
 macOS `.pkg` (arm64; x64 is a known pending gap, needing an Intel runner),
-pushes the multi-arch Docker image, assembles and signs the release
+pushes the two multi-arch Docker images (`loombre`, `loombre-web`),
+assembles and signs the release
 manifest and `SHA256SUMS`, and attests build provenance for every
 artifact.

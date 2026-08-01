@@ -45,11 +45,14 @@ noted inline:
    your proxy's own address for every request (still safe, just useless
    for per-client limiting). See "Trust-proxy configuration" below.
 
-## Caddy (2 lines, recommended)
+## Caddy (recommended)
 
 ```caddyfile
 media.example.com {
-    reverse_proxy 127.0.0.1:3001
+    # API paths -> the server (:3001); everything else -> the web UI (:3000)
+    @api path /v1/* /playback/* /healthz /setup/*
+    reverse_proxy @api 127.0.0.1:3001
+    reverse_proxy 127.0.0.1:3000
 }
 ```
 
@@ -107,8 +110,23 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 
-    location / {
+    # Remaining API paths (requirements 3-5) — everything the browser
+    # calls on the server origin rather than the web UI.
+    location ~ ^/(v1|playback|setup)/ {
         proxy_pass http://127.0.0.1:3001;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location /healthz {
+        proxy_pass http://127.0.0.1:3001;
+    }
+
+    # Everything else is the browser-facing web UI (the Next.js standalone
+    # server every install channel runs as its own service on :3000).
+    location / {
+        proxy_pass http://127.0.0.1:3000;
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
@@ -128,9 +146,16 @@ than blindly trusts — any inbound value).
 # docker-compose labels (or the equivalent static/dynamic file config)
 labels:
   - "traefik.enable=true"
-  - "traefik.http.routers.loombre.rule=Host(`media.example.com`)"
-  - "traefik.http.routers.loombre.tls.certresolver=letsencrypt"
-  - "traefik.http.services.loombre.loadbalancer.server.port=3001"
+  # API router (server, :3001) — higher priority than the catch-all
+  - "traefik.http.routers.loombre-api.rule=Host(`media.example.com`) && (PathPrefix(`/v1`) || PathPrefix(`/playback`) || PathPrefix(`/setup`) || Path(`/healthz`))"
+  - "traefik.http.routers.loombre-api.tls.certresolver=letsencrypt"
+  - "traefik.http.routers.loombre-api.service=loombre-api"
+  - "traefik.http.services.loombre-api.loadbalancer.server.port=3001"
+  # Web UI router (everything else, :3000)
+  - "traefik.http.routers.loombre-web.rule=Host(`media.example.com`)"
+  - "traefik.http.routers.loombre-web.tls.certresolver=letsencrypt"
+  - "traefik.http.routers.loombre-web.service=loombre-web"
+  - "traefik.http.services.loombre-web.loadbalancer.server.port=3000"
   # Uploads (requirement 4) — Traefik has no default body-size cap of its
   # own; a cap here only matters if you've added one elsewhere in your
   # chain (e.g. a WAF/CDN in front of Traefik itself).
@@ -209,12 +234,13 @@ increasingly common single-tenant case) to get a materially tighter CSP —
 `connect-src`/`img-src`/`media-src` collapse to `'self'` plus exactly your
 server's origin instead of any HTTPS host.
 
-**Single-image deployments** (the Docker/Compose distribution documented in
-`docs/install/docker.md`): only `server` and `worker` run today, both from
-one image — there is no separate web service in that distribution yet, so
-`LOOMBRE_SERVER_ORIGIN` doesn't apply there. It's relevant once you run the
-web client as its own deployment (its own container, its own static host,
-etc.) pointed at a Loombre server.
+**Docker/Compose deployments** (documented in `docs/install/docker.md`)
+run three services from two images: `server` and `worker` share one image,
+and the web UI runs as its own `web` service from a second image
+(`ghcr.io/loombre/loombre-web`). The compose file already sets
+`LOOMBRE_SERVER_ORIGIN` on the `web` service the same way a native
+install's web service does, so the tighter CSP described above applies
+there too.
 
 ## HSTS is yours, not Loombre's
 

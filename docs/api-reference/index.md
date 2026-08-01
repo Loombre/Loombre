@@ -24,7 +24,7 @@ browse it locally.
 
 ## What's in the contract
 
-- **~60 endpoints** under `/v1`, covering authentication, catalog browse
+- **Over 100 operations** under `/v1`, covering authentication, catalog browse
   and search, libraries, playback sessions, restricted-content unlock,
   users and permissions, jobs, system info and capabilities, and data
   export/import.

@@ -147,7 +147,7 @@ happens exactly the same; only the unit-file install is skipped:
 sudo ./install.sh --no-systemd
 ```
 
-See [Start](#5-start) below for how to run the three processes directly in
+See [Start](#_5-start) below for how to run the three processes directly in
 this mode — there's no `systemctl start` without systemd.
 
 ## 4. Configure
@@ -164,7 +164,7 @@ repo checkout, no separate database, no manual migration step, ever.
 **External PostgreSQL instead?** Point `DATABASE_URL` at your own
 PostgreSQL 17+ instance (first-class and equally tested), and run
 migrations against it yourself. `loombre` (now on `PATH` — see
-[step 3](#3-extract--install)) does not have a migration subcommand yet;
+[step 3](#_3-extract-install)) does not have a migration subcommand yet;
 until it does, external mode still means a repo checkout:
 
 ```sh
@@ -208,7 +208,7 @@ curl http://127.0.0.1:3001/healthz
 the API begins listening — give `/healthz` a little longer on that very
 first boot.)
 
-**If you installed with `--no-systemd`** (see [step 3](#3-extract--install)),
+**If you installed with `--no-systemd`** (see [step 3](#_3-extract-install)),
 there are no units to start — `install.sh` printed the exact commands at
 the end of its own output; they run the three binaries directly, as the
 `loombre` user, with the env file's contents exported:

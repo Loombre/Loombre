@@ -6,7 +6,7 @@
      order/naming (this page summarizes it, doesn't restate every step's
      rationale — see that file for the full reasoning behind each step's
      position). Prerequisites (Node 24, pnpm 11, Docker) — README.md
-     "Prerequisites". `pnpm dev` = `docker compose -f docker-compose.dev.yml
+     "Running from source". `pnpm dev` = `docker compose -f docker-compose.dev.yml
      up -d && turbo run dev` (root package.json) — the compose step is
      idempotent, which is why steps 2 and 3 below can both invoke it safely.
      ffmpeg prerequisite + LOOMBRE_REQUIRE_FFMPEG semantics —
