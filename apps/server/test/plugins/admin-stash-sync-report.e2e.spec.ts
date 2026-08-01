@@ -231,6 +231,54 @@ describe("GET /admin/libraries/{id}/stash-sync-report", () => {
     }
   });
 
+  it("a report that never learned whether it read from source surfaces usedSnapshotFallback: null — present, not omitted (FX4 null semantics)", async () => {
+    // R2 audit. The `true` case above was the only one crossing the HTTP
+    // hop, yet NULL is the case FX4 argued hardest for: a run finalized by
+    // the onTerminalFailure hook (which never obtains a connection, so
+    // finishStashSyncReport omits the field and the column keeps its
+    // insert-time NULL) and any row written before 0022 existed. Both are
+    // reproduced exactly by leaving the column unset here.
+    //
+    // The distinction that matters to a client: the contract declares
+    // usedSnapshotFallback REQUIRED with type ['boolean','null'], so
+    // "unknown" must arrive as an explicit null. An `undefined` would drop
+    // the key from the JSON entirely — still truthy-false to a careless
+    // reader, but a contract violation and an invisible one.
+    const libraryId = await makeRestrictedLibrary("stash-report-null-fallback-lib");
+    const db = createDb(databaseUrl);
+    try {
+      const now = Date.now();
+      await db
+        .insertInto("stash_sync_reports")
+        .values({
+          library_id: libraryId,
+          job_id: "018f6f1e-0000-7000-8000-0000000000bb",
+          mode: "incremental",
+          status: "failed",
+          matched_count: 3,
+          updated_count: 0,
+          unmatched_count: 0,
+          stale_count: 0,
+          skipped_count: 0,
+          started_at_ms: now - 500,
+          finished_at_ms: now,
+          // used_snapshot_fallback deliberately NOT set — the terminal-
+          // failure / pre-0022 shape.
+        })
+        .execute();
+
+      const res = await request(app.getHttpServer())
+        .get(`/admin/libraries/${libraryId}/stash-sync-report`)
+        .set("Authorization", `Bearer ${adminToken}`);
+      expect(res.status, JSON.stringify(res.body)).toBe(200);
+      expect(res.body.report.status).toBe("failed");
+      expect(res.body.report.usedSnapshotFallback).toBeNull();
+      expect(Object.keys(res.body.report)).toContain("usedSnapshotFallback");
+    } finally {
+      await db.destroy();
+    }
+  });
+
   it("unmatchedScenes keyset pagination via unmatchedCursor", async () => {
     const libraryId = await makeRestrictedLibrary("stash-report-keyset-lib");
     const db = createDb(databaseUrl);
