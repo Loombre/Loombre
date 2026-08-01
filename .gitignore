@@ -30,6 +30,11 @@ vendor/
 # generated media fixtures (scripts/gen-media-fixtures.mjs) — real binaries,
 # regenerated on demand, never committed (docs/PLAYBACK.md §8.1/§10)
 test-fixtures/media/
+
+# generated Stash SQLite scale fixtures (scripts/gen-stash-fixtures.mjs,
+# STATE.md Stash SQLite metadata sync S10) — regenerated on demand by
+# scripts/stash-scale-proof.mjs, never committed.
+test-fixtures/stash/
 .claude/worktrees/
 
 # local evidence artifacts (screenshots, perf runs) — the handful of
