@@ -536,6 +536,10 @@ export type {
   StashSyncReportRow,
   StashSyncSceneListResult,
   StashSyncSceneListRow,
+  // FX3 fix wave: the Loombre-side twin of the Stash-side unmatched/stale
+  // list types immediately above (S4/S8 "both unmatched sides" law).
+  UnmatchedLoombreFileListResult,
+  UnmatchedLoombreFileRow,
 } from './query/stash-sync-reports.js';
 export {
   createStashSyncReport,
@@ -545,6 +549,7 @@ export {
   getStashSceneLinkCounts,
   getStashSyncReportByJobId,
   listStaleStashScenes,
+  listUnmatchedLoombreFiles,
   listUnmatchedStashScenes,
   markStashScenesStale,
 } from './query/stash-sync-reports.js';

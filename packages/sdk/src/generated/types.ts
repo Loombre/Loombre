@@ -1906,7 +1906,7 @@ export interface paths {
         };
         /**
          * The latest Stash metadata-sync report for a library (admin)
-         * @description STATE.md S8/K14 (Stash SQLite metadata sync, Lane C sync engine). `report` is the most recently STARTED `stash-sync` job's counts (matched/updated/unmatched/stale/skipped) and status — null when no sync has ever run for this library yet, same honest-empty-shape precedent as GET /admin/capabilities's `{report: null}` before the first hwprobe. `unmatchedScenes`/`staleScenes` are NOT a frozen snapshot from the report row — both are LIVE, keyset-paginated queries over the current stash_scene_links table (K10/S4/S8), so they reflect fixes (a corrected path mapping, a scene reappearing in Stash) immediately, without waiting for the next sync run.
+         * @description STATE.md S8/K14 (Stash SQLite metadata sync, Lane C sync engine). `report` is the most recently STARTED `stash-sync` job's counts (matched/updated/unmatched/stale/skipped) and status — null when no sync has ever run for this library yet, same honest-empty-shape precedent as GET /admin/capabilities's `{report: null}` before the first hwprobe. `unmatchedScenes`/`staleScenes` are NOT a frozen snapshot from the report row — both are LIVE, keyset-paginated queries over the current stash_scene_links table (K10/S4/S8), so they reflect fixes (a corrected path mapping, a scene reappearing in Stash) immediately, without waiting for the next sync run. `unmatchedLoombreFiles` (FX3 fix wave) is the Loombre-side twin — S4/S8 document BOTH unmatched sides as the report's job; this is also a live query, over media_files/catalog_items, never a report snapshot.
          */
         get: operations["getAdminStashSyncReport"];
         put?: never;
@@ -3586,11 +3586,29 @@ export interface components {
             items: components["schemas"]["StashSyncSceneRef"][];
             nextCursor: string | null;
         };
+        /** @description FX3 fix wave (S4/S8 "both unmatched sides" law): one media_files row in the connected library with NO stash_scene_links row pointing at its item — the Loombre-side half of S4's matching set-difference (apps/worker/src/stash/matching.ts documents this as the caller's responsibility; nothing computed it until now). Live-read, same posture as StashSyncSceneRef (never a report snapshot). */
+        StashSyncLoombreFileRef: {
+            /** Format: uuid */
+            mediaFileId: string;
+            /** Format: uuid */
+            itemId: string;
+            /** @description The catalog item's title — what an admin needs to recognize the file. */
+            itemTitle: string;
+            /** @description The Loombre-side media_files.path. */
+            path: string;
+            /** Format: int64 */
+            sizeBytes: number | null;
+        };
+        StashSyncLoombreFileRefPage: {
+            items: components["schemas"]["StashSyncLoombreFileRef"][];
+            nextCursor: string | null;
+        };
         StashSyncReportEnvelope: {
             /** @description Null when no stash-sync job has ever run for this library. */
             report: components["schemas"]["StashSyncReport"] | null;
             unmatchedScenes: components["schemas"]["StashSyncSceneRefPage"];
             staleScenes: components["schemas"]["StashSyncSceneRefPage"];
+            unmatchedLoombreFiles: components["schemas"]["StashSyncLoombreFileRefPage"];
         };
     };
     responses: {
@@ -6948,6 +6966,8 @@ export interface operations {
                 unmatchedCursor?: string;
                 /** @description Opaque pagination cursor for `staleScenes`, from a previous response's `staleScenes.nextCursor`. */
                 staleCursor?: string;
+                /** @description Opaque pagination cursor for `unmatchedLoombreFiles`, from a previous response's `unmatchedLoombreFiles.nextCursor`. */
+                unmatchedLoombreFilesCursor?: string;
                 limit?: components["parameters"]["Limit"];
             };
             header?: never;
@@ -6958,7 +6978,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description The library's latest Stash sync report, plus live unmatched/stale scene lists */
+            /** @description The library's latest Stash sync report, plus live unmatched/stale/unmatched-Loombre-file lists */
             200: {
                 headers: {
                     [name: string]: unknown;

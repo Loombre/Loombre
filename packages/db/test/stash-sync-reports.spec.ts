@@ -29,6 +29,7 @@ import {
   findRunningStashSyncReport,
   getLatestStashSyncReport,
   listStaleStashScenes,
+  listUnmatchedLoombreFiles,
   listUnmatchedStashScenes,
 } from '../src/query/stash-sync-reports.js';
 
@@ -67,6 +68,29 @@ async function makeRestrictedLibrary(): Promise<string> {
     .returningAll()
     .executeTakeFirstOrThrow();
   return row.id;
+}
+
+/** FX3 fix wave fixture helper: one catalog item + its one media_files row,
+ *  the exact candidate shape listCandidateMediaFilesForLibrary/
+ *  listUnmatchedLoombreFiles both read. */
+async function makeCatalogItemWithFile(
+  libraryId: string,
+  title: string,
+  filePath: string,
+  sizeBytes: number
+): Promise<{ itemId: string; mediaFileId: string }> {
+  const now = Date.now();
+  const item = await db
+    .insertInto('catalog_items')
+    .values({ library_id: libraryId, item_type: 'movie', title, sort_title: title, added_at_ms: now, updated_at_ms: now })
+    .returningAll()
+    .executeTakeFirstOrThrow();
+  const file = await db
+    .insertInto('media_files')
+    .values({ item_id: item.id, path: filePath, size_bytes: sizeBytes })
+    .returningAll()
+    .executeTakeFirstOrThrow();
+  return { itemId: item.id, mediaFileId: file.id };
 }
 
 describe('stash-sync-reports (S8/K14)', () => {
@@ -178,5 +202,86 @@ describe('stash-sync-reports (S8/K14)', () => {
 
     const after = await listStaleStashScenes(db, libraryId);
     expect(after.rows).toEqual([]);
+  });
+});
+
+describe('listUnmatchedLoombreFiles (FX3 fix wave — the Loombre-side twin of listUnmatchedStashScenes, S4/S8 "both unmatched sides" law)', () => {
+  it('a library file without a link appears, and one with a link does not', async () => {
+    const libraryId = await makeRestrictedLibrary();
+    const linked = await makeCatalogItemWithFile(libraryId, 'Linked Item', `/media/linked-${randomUUID()}.mp4`, 1000);
+    const unlinked = await makeCatalogItemWithFile(libraryId, 'Unlinked Item', `/media/unlinked-${randomUUID()}.mp4`, 2000);
+
+    const now = Date.now();
+    await upsertStashSceneLinksFromInventory(
+      db,
+      libraryId,
+      [{ stashSceneId: 'scene-1', stashPath: '/stash/scene-1.mp4', stashSizeBytes: 1000, stashOshash: null, stashUpdatedAtMs: now }],
+      now
+    );
+    // Match the ONE stash scene to the "linked" item — matching.ts's own
+    // writer shape (applyStashSceneMatchResults), reproduced directly here
+    // since this test only needs the resulting stash_scene_links.item_id,
+    // not a real matching pass.
+    await db
+      .updateTable('stash_scene_links')
+      .set({ item_id: linked.itemId, matched_by: 'path' })
+      .where('library_id', '=', libraryId)
+      .where('stash_scene_id', '=', 'scene-1')
+      .execute();
+
+    const result = await listUnmatchedLoombreFiles(db, libraryId);
+    expect(result.rows.map((r) => r.itemTitle)).toEqual(['Unlinked Item']);
+    expect(result.rows[0]).toMatchObject({
+      mediaFileId: unlinked.mediaFileId,
+      itemId: unlinked.itemId,
+      path: expect.stringContaining('unlinked-'),
+      sizeBytes: 2000,
+    });
+  });
+
+  it('a library file whose item has a stash_scene_links row that is itself UNMATCHED (item_id IS NULL for a DIFFERENT scene) is unaffected — the predicate is "a link pointing at THIS item", not "any link exists for the library"', async () => {
+    const libraryId = await makeRestrictedLibrary();
+    const item = await makeCatalogItemWithFile(libraryId, 'Solo Item', `/media/solo-${randomUUID()}.mp4`, 500);
+
+    const now = Date.now();
+    // An unrelated Stash scene, never matched to anything — must not make
+    // `item`'s own file look "linked".
+    await upsertStashSceneLinksFromInventory(
+      db,
+      libraryId,
+      [{ stashSceneId: 'unrelated-scene', stashPath: '/stash/unrelated.mp4', stashSizeBytes: 999, stashOshash: null, stashUpdatedAtMs: now }],
+      now
+    );
+
+    const result = await listUnmatchedLoombreFiles(db, libraryId);
+    expect(result.rows.map((r) => r.itemId)).toEqual([item.itemId]);
+  });
+
+  it('keyset pagination across a page boundary, ordered by media_files.id', async () => {
+    const libraryId = await makeRestrictedLibrary();
+    for (let i = 0; i < 3; i++) {
+      await makeCatalogItemWithFile(libraryId, `Item ${i}`, `/media/page-${i}-${randomUUID()}.mp4`, 100);
+    }
+
+    const page1 = await listUnmatchedLoombreFiles(db, libraryId, { limit: 2 });
+    expect(page1.rows.length).toBe(2);
+    expect(page1.nextCursor).not.toBeNull();
+
+    const page2 = await listUnmatchedLoombreFiles(db, libraryId, { limit: 2, cursor: page1.nextCursor! });
+    expect(page2.rows.length).toBe(1);
+    expect(page2.nextCursor).toBeNull();
+
+    const allIds = [...page1.rows, ...page2.rows].map((r) => r.mediaFileId);
+    expect(new Set(allIds).size).toBe(3);
+  });
+
+  it('scoped strictly to the given libraryId — another library\'s unmatched files never leak in', async () => {
+    const libraryA = await makeRestrictedLibrary();
+    const libraryB = await makeRestrictedLibrary();
+    await makeCatalogItemWithFile(libraryA, 'Library A Item', `/media/a-${randomUUID()}.mp4`, 100);
+    await makeCatalogItemWithFile(libraryB, 'Library B Item', `/media/b-${randomUUID()}.mp4`, 100);
+
+    const resultA = await listUnmatchedLoombreFiles(db, libraryA);
+    expect(resultA.rows.map((r) => r.itemTitle)).toEqual(['Library A Item']);
   });
 });
