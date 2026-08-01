@@ -1608,37 +1608,464 @@ paths:
     get:
       operationId: listRestrictedZoneItems
       tags: [restricted]
+      deprecated: true
       summary: >-
-        List the restricted zone's own items (design/phosphor
-        README "Restricted content": the zone's OWN query surface — a
-        dedicated read, separate from /movies /series /search, so the
-        zone's UI never shares a code path with the general catalog's
-        listing/search surfaces).
+        DEPRECATED — superseded by GET /restricted/browse (STATE.md Stash
+        run, K4). Kept for CLAUDE.md's evolution policy (additive-only;
+        removed operations are deprecated for two minor releases minimum,
+        never hard-deleted mid-major).
       description: >-
-        404 for a viewer with NO restricted-library entitlement at all —
-        same posture as GET /restricted/count, the zone does not exist for
-        them. For an entitled viewer, this responds with the real page ONLY
-        while the current session is unlock-cleared (gate 5); an entitled-
-        but-locked viewer gets a 200 with an EMPTY page, never titles or
-        artwork (the affordance-level PIN gate is backed by this same
-        server-side rule, not just a client-side redirect). Deliberately no
-        `libraryId`/`q` params: the zone's library membership is resolved
-        server-side from the viewer's own entitlement, never client-
-        supplied, and there is no separate zone-search endpoint — the
-        client fetches the (small, curated) zone in full and searches/
-        sorts/filters it locally, which is also how genre pills are
-        derived rather than hardcoded.
+        Same 404-for-not-entitled / empty-while-locked posture as GET
+        /restricted/browse, which this now thinly delegates to (unsorted-
+        filter, `added`-sorted, server-side) — kept working, not stubbed,
+        for the deprecation window. New clients should call GET
+        /restricted/browse directly; this operation carries a `Sunset`
+        response header and will be removed after that window closes.
       parameters:
         - $ref: '#/components/parameters/Cursor'
         - $ref: '#/components/parameters/Limit'
       responses:
         '200':
-          description: Page of restricted zone items
+          description: Page of restricted zone items (deprecated shape — superset-compatible with RestrictedBrowseItem)
+          headers:
+            Sunset:
+              schema: { type: string }
+              description: RFC 8594 Sunset date/time — informational, no enforced removal date set yet.
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/RestrictedZoneItemPage' }
+              schema: { $ref: '#/components/schemas/RestrictedBrowseItemPage' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
+        default: { $ref: '#/components/responses/Problem' }
+
+  /restricted/home:
+    get:
+      operationId: getRestrictedHome
+      tags: [restricted]
+      summary: Restricted zone home rails (continue watching, recently added, studios, performers)
+      description: >-
+        404 for a viewer with NO restricted-library entitlement at all —
+        same posture as every other zone read (GET /restricted/count). For
+        an entitled-but-LOCKED viewer (gate 5 not currently passed),
+        `continueWatchingInZone`/`recentlyAddedInZone` come back empty
+        (guard-consistent with GET /restricted/browse) while `studios`/
+        `performers` still resolve — aggregate names/counts only, no
+        title/artwork, the same U10 disclosure GET /restricted/count
+        already makes for the zone as a whole.
+      responses:
+        '200':
+          description: Zone home rails
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RestrictedHome' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        default: { $ref: '#/components/responses/Problem' }
+
+  /restricted/browse:
+    get:
+      operationId: listRestrictedBrowse
+      tags: [restricted]
+      summary: Keyset browse of the restricted zone with combinable filters
+      description: >-
+        SUPERSEDES the old full-fetch GET /restricted/items design (STATE.md
+        K4): real guarded server-side keyset pagination, proven at 33k-scene
+        scale (S10) rather than the client fetching the whole zone and
+        filtering locally. 404 for a viewer with NO restricted-library
+        entitlement at all; an entitled-but-locked viewer gets 200 with an
+        EMPTY page (gate 5 — same posture the old endpoint documented). A
+        malformed performerIds/studioTagIds/tagIds uuid entry answers with
+        an EMPTY page, never a dropped filter (house rule — packages/db/src/
+        query/catalog-detail.ts's own convention for list filters).
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+        - name: performerIds
+          in: query
+          required: false
+          description: Comma-separated performer (people.id) uuids — ANY match.
+          schema: { type: string }
+        - name: studioTagIds
+          in: query
+          required: false
+          description: Comma-separated studio (tags.id, kind=studio) uuids — ANY match.
+          schema: { type: string }
+        - name: tagIds
+          in: query
+          required: false
+          description: Comma-separated genre/tag (tags.id) uuids — ANY match.
+          schema: { type: string }
+        - name: ratingMin
+          in: query
+          required: false
+          schema: { type: number, minimum: 0, maximum: 10 }
+        - name: ratingMax
+          in: query
+          required: false
+          schema: { type: number, minimum: 0, maximum: 10 }
+        - name: durationMinMs
+          in: query
+          required: false
+          schema: { type: integer, format: int64, minimum: 0 }
+        - name: durationMaxMs
+          in: query
+          required: false
+          schema: { type: integer, format: int64, minimum: 0 }
+        - name: resolution
+          in: query
+          required: false
+          description: >-
+            Comma-separated RestrictedResolutionBand values — ANY match
+            (e.g. "FHD,UHD"). Derived per-item from the primary probed
+            video stream's height (S5's technical authority); an item with
+            no probed video stream never matches a non-empty filter.
+          schema: { type: string }
+        - name: yearMin
+          in: query
+          required: false
+          schema: { type: integer }
+        - name: yearMax
+          in: query
+          required: false
+          schema: { type: integer }
+        - name: sort
+          in: query
+          required: false
+          description: "Defaults to `added`. `order`'s default depends on which sort is active (title: asc; added/date/rating/duration: desc)."
+          schema: { $ref: '#/components/schemas/RestrictedBrowseSort' }
+        - $ref: '#/components/parameters/Order'
+      responses:
+        '200':
+          description: Page of restricted-zone scenes
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RestrictedBrowseItemPage' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        default: { $ref: '#/components/responses/Problem' }
+
+  /restricted/scenes/{id}:
+    parameters:
+      - $ref: '#/components/parameters/IdPathParam'
+    get:
+      operationId: getRestrictedScene
+      tags: [restricted]
+      summary: Restricted-zone scene detail
+      description: >-
+        Byte-identical 404 to an uncleared viewer, a nonexistent id, and a
+        general-catalog id (house pattern — see GET /movies/{id}). Markers
+        are embedded here (chapter_markers rows for this item) —
+        GET /items/{id}/chapters (Lane E) is the generic, content-agnostic
+        twin the player itself consumes.
+      responses:
+        '200':
+          description: Scene detail
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RestrictedScene' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        default: { $ref: '#/components/responses/Problem' }
+
+  /restricted/performers:
+    get:
+      operationId: listRestrictedPerformers
+      tags: [restricted]
+      summary: List performers (role=performer people) visible within the zone
+      description: >-
+        404 for a viewer with NO restricted-library entitlement at all. An
+        entitled-but-locked viewer gets 200 with an EMPTY page (same gate-5
+        posture as GET /restricted/browse).
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+        - name: q
+          in: query
+          required: false
+          description: Case-insensitive substring match on name.
+          schema: { type: string }
+      responses:
+        '200':
+          description: Page of zone performers
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RestrictedPerformerPage' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        default: { $ref: '#/components/responses/Problem' }
+
+  /restricted/performers/{id}:
+    parameters:
+      - $ref: '#/components/parameters/IdPathParam'
+    get:
+      operationId: getRestrictedPerformer
+      tags: [restricted]
+      summary: Restricted-zone performer detail
+      description: >-
+        Byte-identical 404 to an uncleared viewer, a nonexistent id, and a
+        performer with zero scenes currently visible within the zone.
+      responses:
+        '200':
+          description: Performer detail
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RestrictedPerformer' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        default: { $ref: '#/components/responses/Problem' }
+
+  /restricted/performers/{id}/scenes:
+    parameters:
+      - $ref: '#/components/parameters/IdPathParam'
+    get:
+      operationId: listRestrictedPerformerScenes
+      tags: [restricted]
+      summary: A performer's filmography within the restricted zone
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Page of the performer's zone scenes
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RestrictedBrowseItemPage' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        default: { $ref: '#/components/responses/Problem' }
+
+  /restricted/studios:
+    get:
+      operationId: listRestrictedStudios
+      tags: [restricted]
+      summary: List studios (kind=studio tags) visible within the zone
+      description: >-
+        404 for a viewer with NO restricted-library entitlement at all. An
+        entitled-but-locked viewer gets 200 with an EMPTY page (same gate-5
+        posture as GET /restricted/browse).
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+        - name: q
+          in: query
+          required: false
+          description: Case-insensitive substring match on name.
+          schema: { type: string }
+      responses:
+        '200':
+          description: Page of zone studios
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RestrictedStudioPage' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        default: { $ref: '#/components/responses/Problem' }
+
+  /restricted/studios/{id}:
+    parameters:
+      - $ref: '#/components/parameters/IdPathParam'
+    get:
+      operationId: getRestrictedStudio
+      tags: [restricted]
+      summary: Restricted-zone studio detail
+      description: >-
+        Byte-identical 404 to an uncleared viewer, a nonexistent id, and a
+        studio with zero scenes currently visible within the zone. Catalog
+        (a studio's scenes) is reached via GET /restricted/browse's
+        `studioTagIds` filter, not a dedicated sub-route.
+      responses:
+        '200':
+          description: Studio detail
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RestrictedStudio' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        default: { $ref: '#/components/responses/Problem' }
+
+  /restricted/search:
+    get:
+      operationId: restrictedSearch
+      tags: [restricted]
+      summary: Restricted-zone-scoped search (title, performer, studio, tag)
+      description: >-
+        A SEPARATE guarded index from GET /search — zone titles must never
+        surface through the general search surface, not even as a count/
+        timing side-channel, and vice versa (design/phosphor README
+        "Restricted content"). Entitlement is checked BEFORE `q` — a
+        viewer with NO restricted-library entitlement at all gets 404
+        regardless of whether `q` was supplied; an entitled viewer missing
+        `q` then gets 422, matching GET /search's own validation. An
+        entitled-but-locked viewer gets 200 with an EMPTY page.
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema: { type: string, minLength: 1 }
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Page of matching zone scenes
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RestrictedBrowseItemPage' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+        default: { $ref: '#/components/responses/Problem' }
+
+  # ──────────── Admin: Stash SQLite metadata sync (STATE.md S1-S4/S8) ────────
+  /admin/libraries/{id}/stash-connection:
+    parameters:
+      - $ref: '#/components/parameters/IdPathParam'
+    get:
+      operationId: getAdminLibraryStashConnection
+      tags: [admin]
+      summary: Read a library's Stash SQLite connection config (admin)
+      description: >-
+        `configured: false` (sqlitePath null, status never_connected) when
+        no connection has ever been saved for this library — GET never
+        404s for an otherwise-valid library id just because Stash hasn't
+        been configured yet (mirrors GET /admin/libraries/{id}/provider-chain's
+        `isDefault` precedent).
+      responses:
+        '200':
+          description: The library's Stash connection config + last observed status
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminStashConnection' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        default: { $ref: '#/components/responses/Problem' }
+    put:
+      operationId: putAdminLibraryStashConnection
+      tags: [admin]
+      summary: Configure (or reconfigure) a library's Stash SQLite connection (admin)
+      description: >-
+        Writes ONLY sqlitePath/enabled — never genreTagNames (Lane E's own
+        field on this resource, K15). Enqueues a `stash-inventory` job on
+        every successful save so the path-mapping preview has fresh data
+        without a separate button. 404 if the library itself does not
+        exist (checked before body validation).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PutAdminStashConnectionRequest' }
+      responses:
+        '200':
+          description: The saved connection config
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminStashConnection' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+        default: { $ref: '#/components/responses/Problem' }
+
+  /admin/libraries/{id}/stash-path-mappings:
+    parameters:
+      - $ref: '#/components/parameters/IdPathParam'
+    get:
+      operationId: getAdminLibraryStashPathMappings
+      tags: [admin]
+      summary: Read a library's Stash path-mapping table (admin)
+      responses:
+        '200':
+          description: The library's path mappings, in admin display order
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminStashPathMappings' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        default: { $ref: '#/components/responses/Problem' }
+    put:
+      operationId: putAdminLibraryStashPathMappings
+      tags: [admin]
+      summary: Replace a library's Stash path-mapping table wholesale (admin)
+      description: >-
+        `mappings` is the FULL replacement list — `position` is the array
+        index, not supplied explicitly. An empty array clears every
+        mapping (S4's oshash tier becomes the only match path). 404 if the
+        library itself does not exist (checked before body validation).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PutAdminStashPathMappingsRequest' }
+      responses:
+        '200':
+          description: The replaced path-mapping table
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminStashPathMappings' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+        default: { $ref: '#/components/responses/Problem' }
+
+  /admin/libraries/{id}/stash-path-mappings/preview:
+    parameters:
+      - $ref: '#/components/parameters/IdPathParam'
+    post:
+      operationId: previewAdminLibraryStashPathMappings
+      tags: [admin]
+      summary: Preview match counts for a CANDIDATE (unsaved) mapping set (admin)
+      description: >-
+        Pure SQL over the last inventory/sync snapshot's stored Stash paths
+        (K10) — never opens the Stash SQLite file itself, so this works as
+        soon as one `stash-inventory` job has run. Reflects `mappings` AS
+        SUBMITTED, not what is currently saved, so an admin can try a
+        mapping before committing it via PUT. 404 if the library itself
+        does not exist (checked before body validation).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PreviewAdminStashPathMappingsRequest' }
+      responses:
+        '200':
+          description: Match preview against the candidate mapping set
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminStashPathMappingPreview' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+        default: { $ref: '#/components/responses/Problem' }
+
+  /admin/libraries/{id}/stash-sync:
+    parameters:
+      - $ref: '#/components/parameters/IdPathParam'
+    post:
+      operationId: postAdminLibraryStashSync
+      tags: [admin]
+      summary: Enqueue a full or incremental Stash sync for a library (admin)
+      description: >-
+        Enqueues a `stash-sync` job (S8) and returns its id honestly — this
+        endpoint does not wait for the sync to complete. 404 if the library
+        itself does not exist (checked before body validation).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PostAdminStashSyncRequest' }
+      responses:
+        '202':
+          description: Sync job enqueued
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/JobRef' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
         default: { $ref: '#/components/responses/Problem' }
 
   # ────────────────────────────── Data freedom ──────────────────────────────
@@ -2726,7 +3153,7 @@ components:
 
     ImageEntityType:
       type: string
-      enum: [movie, series, season, episode, artist, album, track, person]
+      enum: [movie, series, season, episode, artist, album, track, person, tag]
       description: >-
         Entity types a managed image can belong to. `person` images are
         guarded by the SAME leak rule listPeople/getPersonById use
@@ -2734,7 +3161,9 @@ components:
         person invisible to the caller has no reachable images either.
         This value plus the server-side mapping
         fix close that gap so a Person page portrait
-        (GET /images/person/{id}/thumb) can be served.
+        (GET /images/person/{id}/thumb) can be served. `tag` (S9 — studio
+        logos: studios are kind=studio tags, S6) is guarded the same way,
+        via applyGuardToTags + applied-to->=1-visible-item.
 
     ImageKind:
       type: string
@@ -4445,25 +4874,87 @@ components:
 
     RestrictedZoneItemQuality:
       description: >-
-        Per-item 4K/HDR signal for the zone's own filter chips — not part of
-        Movie/Series (list responses there carry no mediaFiles/streams data,
-        Tier-0), so this is scoped to the zone's own dedicated read.
+        Per-item 4K/HDR/resolution-band signal for the zone's own filter
+        chips — not part of Movie/Series (list responses there carry no
+        mediaFiles/streams data, Tier-0), so this is scoped to the zone's
+        own dedicated reads (RestrictedBrowseItem/RestrictedScene).
       type: object
       additionalProperties: false
-      required: [is4k, hdr]
+      required: [is4k, hdr, resolution]
       properties:
         is4k:
           type: boolean
           description: Primary video stream >= 3840x2160 on any non-missing media file.
         hdr: { $ref: '#/components/schemas/HdrType' }
+        resolution:
+          description: >-
+            Derived from the primary probed video stream's height (S5's
+            technical authority) — null when no video stream has been
+            probed yet.
+          oneOf:
+            - { $ref: '#/components/schemas/RestrictedResolutionBand' }
+            - type: 'null'
 
-    RestrictedZoneItem:
+    RestrictedResolutionBand:
+      type: string
+      enum: [SD, HD, FHD, UHD]
+      description: >-
+        SD < 720p <= HD < 1080p <= FHD < 2160p <= UHD, by primary video
+        stream height (S9/S10).
+
+    RestrictedBrowseSort:
+      type: string
+      enum: [added, date, title, rating, duration]
+      description: >-
+        `added` (catalog_items.added_at_ms), `date` (movie_details.
+        premiere_at_ms, falling back to catalog_items.year — K1), `title`,
+        `rating` (community_rating), `duration` (probed media_files.
+        duration_ms).
+
+    RestrictedStudioRef:
+      type: object
+      additionalProperties: false
+      required: [id, name]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+
+    RestrictedPerformerRef:
+      type: object
+      additionalProperties: false
+      required: [id, name]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+
+    RestrictedTagChip:
+      type: object
+      additionalProperties: false
+      required: [id, name]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+
+    RestrictedBrowseItem:
+      description: >-
+        One restricted-zone scene row (GET /restricted/browse, GET
+        /restricted/search, GET /restricted/performers/{id}/scenes) —
+        itemType is always `movie` (K1: scenes are item_type='movie' rows
+        in restricted libraries).
       allOf:
         - { $ref: '#/components/schemas/CatalogItemBase' }
         - type: object
-          required: [itemType, genres, images, quality]
+          required: [itemType, premiereAtMs, durationMs, genres, images, quality, studio]
           properties:
-            itemType: { $ref: '#/components/schemas/ItemType' }
+            itemType: { type: string, const: movie }
+            premiereAtMs:
+              type: [integer, 'null']
+              format: int64
+              description: K1 editorial premiere date; null falls back to `year`.
+            durationMs:
+              type: [integer, 'null']
+              format: int64
+              description: Probed primary-file duration; null until the file is probed.
             genres:
               type: array
               items: { type: string }
@@ -4471,17 +4962,317 @@ components:
               type: array
               items: { $ref: '#/components/schemas/ImageDescriptor' }
             quality: { $ref: '#/components/schemas/RestrictedZoneItemQuality' }
+            studio:
+              oneOf:
+                - { $ref: '#/components/schemas/RestrictedStudioRef' }
+                - type: 'null'
       unevaluatedProperties: false
 
-    RestrictedZoneItemPage:
+    RestrictedBrowseItemPage:
       type: object
       additionalProperties: false
       required: [items, nextCursor]
       properties:
         items:
           type: array
-          items: { $ref: '#/components/schemas/RestrictedZoneItem' }
+          items: { $ref: '#/components/schemas/RestrictedBrowseItem' }
         nextCursor: { type: [string, 'null'] }
+
+    RestrictedSceneMarker:
+      description: One chapter_markers row (migrations/0019, K9/S7) for this scene.
+      type: object
+      additionalProperties: false
+      required: [id, title, startMs]
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string }
+        startMs: { type: integer, format: int64, minimum: 0 }
+
+    RestrictedSceneProgress:
+      description: >-
+        The caller's OWN progress on this scene — a lighter twin of
+        Progress without `itemId` (redundant: this object only ever
+        appears nested inside the scene it belongs to).
+      type: object
+      additionalProperties: false
+      required: [positionMs, durationMs, state, playCount, updatedAtMs]
+      properties:
+        positionMs: { type: integer, format: int64, minimum: 0 }
+        durationMs: { type: [integer, 'null'], format: int64 }
+        state: { $ref: '#/components/schemas/ProgressState' }
+        playCount: { type: integer, minimum: 0 }
+        updatedAtMs: { type: integer, format: int64 }
+
+    RestrictedScene:
+      description: GET /restricted/scenes/{id} — full scene detail.
+      allOf:
+        - { $ref: '#/components/schemas/CatalogItemBase' }
+        - type: object
+          required:
+            - itemType
+            - premiereAtMs
+            - contentRating
+            - runtimeMs
+            - durationMs
+            - overview
+            - tags
+            - studio
+            - performers
+            - images
+            - markers
+            - progress
+            - quality
+          properties:
+            itemType: { type: string, const: movie }
+            premiereAtMs:
+              type: [integer, 'null']
+              format: int64
+              description: K1 editorial premiere date (movie_details.premiere_at_ms); null falls back to `year`.
+            contentRating: { type: [string, 'null'] }
+            runtimeMs:
+              type: [integer, 'null']
+              format: int64
+              description: >-
+                Editorial runtime (movie_details.runtime_ms) — provider/
+                admin-set, not necessarily populated for Stash-sourced
+                scenes (S5: Stash supplies editorial facts, never technical
+                ones). Prefer `durationMs` (the PROBED primary-file
+                duration) for display; this is kept for parity with
+                Movie/Episode/Track's own `runtimeMs` field.
+            durationMs:
+              type: [integer, 'null']
+              format: int64
+              description: >-
+                Probed primary-file duration (S5 "Loombre ffprobe
+                authoritative for technical facts") — the same field
+                RestrictedBrowseItem carries; null until the file is probed.
+            overview: { type: [string, 'null'] }
+            tagline: { type: [string, 'null'] }
+            tags:
+              type: array
+              items: { $ref: '#/components/schemas/RestrictedTagChip' }
+              description: >-
+                Genre AND general item_tags (kind IN (genre,tag)) together
+                as one id/name chip list — the design's "tag chips", not
+                split from a separate genre list the way browse cards'
+                `genres` are (scene detail has no card-level genre badge to
+                keep separate).
+            studio:
+              oneOf:
+                - { $ref: '#/components/schemas/RestrictedStudioRef' }
+                - type: 'null'
+            performers:
+              type: array
+              items: { $ref: '#/components/schemas/RestrictedPerformerRef' }
+            images:
+              type: array
+              items: { $ref: '#/components/schemas/ImageDescriptor' }
+            markers:
+              type: array
+              items: { $ref: '#/components/schemas/RestrictedSceneMarker' }
+              description: Ordered by startMs ascending.
+            progress:
+              oneOf:
+                - { $ref: '#/components/schemas/RestrictedSceneProgress' }
+                - type: 'null'
+              description: Null if the caller has never played this scene.
+            quality: { $ref: '#/components/schemas/RestrictedZoneItemQuality' }
+      unevaluatedProperties: false
+
+    RestrictedPerformer:
+      description: >-
+        GET /restricted/performers row/detail — role=performer people
+        credited on >=1 scene visible within the zone. Mirrors Person's
+        shape (packages/db/src/query/people.ts's guard model) with a
+        zone-scoped `sceneCount` in place of Person's general `creditCount`.
+      type: object
+      additionalProperties: false
+      required: [id, name, contentClass, sceneCount]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        contentClass: { $ref: '#/components/schemas/ContentClass' }
+        sceneCount: { type: integer, minimum: 0 }
+
+    RestrictedPerformerPage:
+      type: object
+      additionalProperties: false
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/RestrictedPerformer' }
+        nextCursor: { type: [string, 'null'] }
+
+    RestrictedStudio:
+      description: >-
+        GET /restricted/studios row/detail — kind=studio tags (S6: studios
+        are first-class VIA tags, no dedicated entity table).
+      type: object
+      additionalProperties: false
+      required: [id, name, contentClass, sceneCount, images]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        contentClass: { $ref: '#/components/schemas/ContentClass' }
+        sceneCount: { type: integer, minimum: 0 }
+        images:
+          type: array
+          items: { $ref: '#/components/schemas/ImageDescriptor' }
+          description: The studio's logo, ingested from Stash (entity_type=tag).
+
+    RestrictedStudioPage:
+      type: object
+      additionalProperties: false
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/RestrictedStudio' }
+        nextCursor: { type: [string, 'null'] }
+
+    RestrictedHomeContinueWatchingEntry:
+      type: object
+      additionalProperties: false
+      required: [item, progress]
+      properties:
+        item: { $ref: '#/components/schemas/RestrictedBrowseItem' }
+        progress: { $ref: '#/components/schemas/Progress' }
+
+    RestrictedHome:
+      description: >-
+        GET /restricted/home — zone home rails (S9). Rail UI itself is
+        Lane E's scope; this endpoint + shape land here (K4/S9).
+      type: object
+      additionalProperties: false
+      required: [continueWatchingInZone, recentlyAddedInZone, studios, performers]
+      properties:
+        continueWatchingInZone:
+          type: array
+          items: { $ref: '#/components/schemas/RestrictedHomeContinueWatchingEntry' }
+        recentlyAddedInZone:
+          type: array
+          items: { $ref: '#/components/schemas/RestrictedBrowseItem' }
+        studios:
+          type: array
+          items: { $ref: '#/components/schemas/RestrictedStudio' }
+          description: Top-N studios by scene count.
+        performers:
+          type: array
+          items: { $ref: '#/components/schemas/RestrictedPerformer' }
+          description: Top-N performers by scene count.
+
+    # ──────────── Admin: Stash SQLite metadata sync (STATE.md S1-S4/S8) ────────
+    AdminStashConnectionStatus:
+      type: string
+      enum: [never_connected, ok, unsupported_schema, unreachable]
+
+    AdminStashConnection:
+      description: >-
+        GET/PUT /admin/libraries/{id}/stash-connection — packages/db's
+        library_stash_connections row (migrations/0018), config fields
+        admin-written, status fields worker-written at connect time (S2/S3).
+      type: object
+      additionalProperties: false
+      required:
+        - libraryId
+        - configured
+        - sqlitePath
+        - enabled
+        - status
+        - statusDetail
+        - lastSeenSchemaVersion
+        - lastConnectedAtMs
+        - lastCheckedAtMs
+      properties:
+        libraryId: { type: string, format: uuid }
+        configured:
+          type: boolean
+          description: False when no connection has ever been saved for this library.
+        sqlitePath: { type: [string, 'null'] }
+        enabled: { type: boolean }
+        status: { $ref: '#/components/schemas/AdminStashConnectionStatus' }
+        statusDetail:
+          type: [string, 'null']
+          description: The exact S3 admin notice when status=unsupported_schema; null otherwise.
+        lastSeenSchemaVersion: { type: [integer, 'null'] }
+        lastConnectedAtMs: { type: [integer, 'null'], format: int64 }
+        lastCheckedAtMs: { type: [integer, 'null'], format: int64 }
+
+    PutAdminStashConnectionRequest:
+      type: object
+      additionalProperties: false
+      required: [sqlitePath]
+      properties:
+        sqlitePath: { type: string, minLength: 1 }
+        enabled: { type: boolean, description: Defaults to true when omitted on first configure. }
+
+    AdminStashPathMapping:
+      type: object
+      additionalProperties: false
+      required: [stashPrefix, loombrePrefix]
+      properties:
+        stashPrefix: { type: string, minLength: 1 }
+        loombrePrefix: { type: string, minLength: 1 }
+
+    AdminStashPathMappings:
+      type: object
+      additionalProperties: false
+      required: [mappings]
+      properties:
+        mappings:
+          type: array
+          items: { $ref: '#/components/schemas/AdminStashPathMapping' }
+          description: Admin display order (position ASC) — matching is longest-prefix-wins, independent of this order.
+
+    PutAdminStashPathMappingsRequest:
+      type: object
+      additionalProperties: false
+      required: [mappings]
+      properties:
+        mappings:
+          type: array
+          items: { $ref: '#/components/schemas/AdminStashPathMapping' }
+
+    PreviewAdminStashPathMappingsRequest:
+      type: object
+      additionalProperties: false
+      required: [mappings]
+      properties:
+        mappings:
+          type: array
+          items: { $ref: '#/components/schemas/AdminStashPathMapping' }
+
+    AdminStashPathMappingPreviewUnmatchedScene:
+      type: object
+      additionalProperties: false
+      required: [stashSceneId, stashPath, rewrittenPath]
+      properties:
+        stashSceneId: { type: string }
+        stashPath: { type: string }
+        rewrittenPath:
+          type: [string, 'null']
+          description: Null when no candidate mapping's prefix matches this scene's raw Stash path at all.
+
+    AdminStashPathMappingPreview:
+      type: object
+      additionalProperties: false
+      required: [totalStashScenes, candidateMatchCount, unmatchedCount, unmatchedScenes]
+      properties:
+        totalStashScenes: { type: integer, minimum: 0 }
+        candidateMatchCount: { type: integer, minimum: 0 }
+        unmatchedCount: { type: integer, minimum: 0 }
+        unmatchedScenes:
+          type: array
+          items: { $ref: '#/components/schemas/AdminStashPathMappingPreviewUnmatchedScene' }
+          description: Capped list for admin display — unmatchedCount above is always the true total.
+
+    PostAdminStashSyncRequest:
+      type: object
+      additionalProperties: false
+      required: [mode]
+      properties:
+        mode: { type: string, enum: [full, incremental] }
 
     # ═════════════════════════════ Data freedom ════════════════════════════════
     ExportUser:
