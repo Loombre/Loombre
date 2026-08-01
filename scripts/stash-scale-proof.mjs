@@ -99,6 +99,18 @@ async function main() {
   const { runStashSync } = await importRepoModule("apps/worker/src/stash/sync-consumer.ts");
   const { createStubApplyStashSceneMetadata } = await importRepoModule("apps/worker/src/stash/apply-types.ts");
 
+  // --real-apply (orchestrator integration re-proof): use Lane B's real
+  // mapper instead of the stub, so the recorded numbers cover the FULL
+  // write path (catalog/satellite/people/tags/chapters/attrs/provenance).
+  // Image jobs remain a counted no-op either way — the image pipeline is
+  // its own tier-0-budgeted machinery, not part of sync wall-clock.
+  const REAL_APPLY = process.argv.includes("--real-apply");
+  let imageJobsEnqueued = 0;
+  const makeApply = async () =>
+    REAL_APPLY
+      ? (await importRepoModule("apps/worker/src/stash/apply.ts")).applyStashSceneMetadata
+      : createStubApplyStashSceneMetadata();
+
   // ── (i) initial full sync at scale ───────────────────────────────────
   log(`generating ${SCENE_COUNT}-scene Stash fixture...`);
   const fixture = generateStashFixture({ sceneCount: SCENE_COUNT, seed: 42 });
@@ -133,7 +145,14 @@ async function main() {
   await upsertLibraryStashConnectionConfig(db, { libraryId: library.id, sqlitePath: fixture.outputPath, nowMs: Date.now() });
   await replaceLibraryPathMappings(db, library.id, [{ stashPrefix: "/stash-media", loombrePrefix: mediaDir }]);
 
-  const deps = { db, applyStashSceneMetadata: createStubApplyStashSceneMetadata(), enqueueImageJob: async () => undefined };
+  const deps = {
+    db,
+    applyStashSceneMetadata: await makeApply(),
+    enqueueImageJob: async () => {
+      imageJobsEnqueued += 1;
+      return undefined;
+    },
+  };
 
   let peakRssBytes = 0;
   const rssTimer = setInterval(() => {
@@ -268,7 +287,14 @@ async function main() {
   console.log(
     JSON.stringify(
       {
-        fullSync: { scenes: SCENE_COUNT, wallClockMs: elapsedMs, peakRssMiB: Number((peakRssBytes / 1024 / 1024).toFixed(1)), counts: fullResult.counts, applyStubbed: true },
+        fullSync: {
+          scenes: SCENE_COUNT,
+          wallClockMs: elapsedMs,
+          peakRssMiB: Number((peakRssBytes / 1024 / 1024).toFixed(1)),
+          counts: fullResult.counts,
+          applyStubbed: !REAL_APPLY,
+          imageJobsEnqueued,
+        },
         incremental: { changed: INCREMENTAL_CHANGED, touchedCount: incResult.touchedCount },
         checkpointResume: { scenes: RESUME_SCENES, failAfter: FAIL_AFTER, distinctScenesApplied: appliedSceneIds.size, redundantApplyCount },
       },
