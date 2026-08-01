@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { cpus } from "node:os";
 import { createJobQueue } from "@loombre/jobs";
-import { createDb, getCurrentHwCapabilitySnapshot, workerApplicationName } from "@loombre/db";
+import { createDb, getCurrentHwCapabilitySnapshot, getLibraryStashConnection, workerApplicationName } from "@loombre/db";
 import { listLibraries, listImagesNeedingDominantColor, hasQueuedOrActiveJobOfType } from "@loombre/db/internal";
 import { LOOMBRE_VERSION_FULL } from "@loombre/shared";
 import { installCrashHandlers, installGracefulShutdown, type ShutdownSignal } from "./crash/index.js";
@@ -16,6 +16,11 @@ import { getWorkerSettingValue, loadWorkerEffectiveSettings, resolveScanConcurre
 import { runProbe } from "./probe/consumer.js";
 import { createProbeTerminalFailureHook } from "./probe/terminal-failure-hook.js";
 import { createStashProvider } from "./metadata/providers/stash.js";
+import { createStubApplyStashSceneMetadata } from "./stash/apply-types.js";
+import { stashInventoryConsumerHandler } from "./stash/inventory-consumer.js";
+import { stashSyncConsumerHandler, createStashSyncTerminalFailureHook } from "./stash/sync-consumer.js";
+import { startStashScheduleLoop, type StashScheduleLoopHandle } from "./stash/schedule-loop.js";
+import { startStashWatcher, type StashWatcherConnection } from "./stash/watcher.js";
 import {
   ProviderRegistry,
   createMusicBrainzProvider,
@@ -274,7 +279,36 @@ queue.work(
   { concurrency: 2 },
 );
 
+// Stash SQLite metadata sync, Lane C (S8): 'stash-inventory' is the cheap
+// K10 pass (path/size/oshash rows only, bounded even at 33k scenes);
+// 'stash-sync' is the full/incremental engine (checkpointed internally —
+// see apps/worker/src/stash/sync-consumer.ts's own header for the
+// checkpoint-pattern choice). Both concurrency:1, same reasoning as
+// 'scan'/'import'/'hwprobe' above — one run per worker node at a time per
+// job type; internal parallelism (if any) is the job's own, not a second
+// concurrent run racing the same library's checkpoint/report bookkeeping.
+//
+// applyStashSceneMetadata is STUBBED here (createStubApplyStashSceneMetadata,
+// apps/worker/src/stash/apply-types.ts) pending Lane B's apply.ts — a
+// documented, honest no-op (writes nothing, reports changed:false) rather
+// than a fabricated success. Swapping in Lane B's real
+// `applyStashSceneMetadata` export at integration is a one-line change at
+// THIS call site only (K11: "keep the adapter thin so integration is a
+// one-line wire-up") — no other file in this lane needs to change.
+queue.work("stash-inventory", stashInventoryConsumerHandler({ db }), { concurrency: 1 });
+queue.work(
+  "stash-sync",
+  stashSyncConsumerHandler({
+    db,
+    applyStashSceneMetadata: createStubApplyStashSceneMetadata(),
+    enqueueImageJob: (payload) => queue.enqueue("image", payload),
+  }),
+  { concurrency: 1, onTerminalFailure: createStashSyncTerminalFailureHook(db) },
+);
+
 let watcherHandle: WatcherHandle | undefined;
+let stashWatcherHandle: WatcherHandle | undefined;
+let stashScheduleLoopHandle: StashScheduleLoopHandle | undefined;
 let pluginDeliveryLoopHandle: PluginDeliveryLoopHandle | undefined;
 
 // P1.3: chokidar watch per library path (polling fallback auto-enabled for
@@ -297,6 +331,36 @@ async function startLibraryWatcher(): Promise<void> {
     );
   } catch (err) {
     console.error("worker: failed to start library watcher:", err);
+  }
+}
+
+// Stash SQLite metadata sync, Lane C, deliverable 7(c): chokidar watch of
+// each ENABLED library's Stash sqlite_path (+ -wal/-shm sidecars, WAL
+// mode) — apps/worker/src/stash/watcher.ts's own header. Best-effort at
+// boot, same posture as startLibraryWatcher immediately above: a
+// per-library lookup failure never blocks the other watcher or the rest
+// of the worker's boot sequence.
+async function startStashLibraryWatcher(): Promise<void> {
+  try {
+    const libraries = await listLibraries(db);
+    const connections: StashWatcherConnection[] = [];
+    for (const library of libraries) {
+      const connection = await getLibraryStashConnection(db, library.id);
+      if (connection?.enabled) {
+        connections.push({ libraryId: library.id, sqlitePath: connection.sqlite_path });
+      }
+    }
+    if (connections.length === 0) return;
+
+    stashWatcherHandle = startStashWatcher(connections, {
+      onChange: (libraryId) => {
+        queue.enqueue("stash-sync", { libraryId, mode: "incremental" }).catch((err: unknown) => {
+          console.error(`worker: failed to enqueue watch-triggered stash-sync for library ${libraryId}:`, err);
+        });
+      },
+    });
+  } catch (err) {
+    console.error("worker: failed to start Stash library watcher:", err);
   }
 }
 
@@ -389,6 +453,8 @@ async function shutdown(_signal: ShutdownSignal): Promise<void> {
     queue.stop(),
     hashPool.terminate(),
     watcherHandle?.stop() ?? Promise.resolve(),
+    stashWatcherHandle?.stop() ?? Promise.resolve(),
+    stashScheduleLoopHandle?.stop() ?? Promise.resolve(),
     pluginDeliveryLoopHandle?.stop() ?? Promise.resolve(),
     db.destroy(),
   ]);
@@ -430,6 +496,7 @@ async function waitForDatabaseReady(timeoutMs = 30_000, intervalMs = 1000): Prom
 async function main(): Promise<void> {
   await waitForDatabaseReady();
   await startLibraryWatcher();
+  await startStashLibraryWatcher();
   await enqueueImageBackfillIfNeeded();
   await checkHwCapabilitiesAndEnqueueIfNeeded();
 
@@ -439,6 +506,18 @@ async function main(): Promise<void> {
   // startLibraryWatcher above) — see apps/worker/src/plugin-delivery/
   // delivery-loop.ts's header for the full per-tick algorithm.
   pluginDeliveryLoopHandle = startPluginDeliveryLoop({ db });
+
+  // Stash SQLite metadata sync, Lane C, deliverable 7(b): the schedule
+  // trigger — see apps/worker/src/stash/schedule-loop.ts's own header for
+  // why this is a boot-timer rather than pg-boss's `.schedule()`. Default
+  // OFF (stash.sync.scheduleIntervalMs = 0); starting the loop
+  // unconditionally is cheap (each tick's own settings read decides
+  // whether anything happens) and lets a later admin-set interval take
+  // effect without a worker restart.
+  stashScheduleLoopHandle = startStashScheduleLoop({
+    db,
+    enqueueIncrementalSync: (libraryId) => queue.enqueue("stash-sync", { libraryId, mode: "incremental" }),
+  });
 
   // Assert the consumers ACTUALLY registered before saying so. The ten
   // queue.work() calls at module scope are fire-and-forget, and they run at
@@ -461,9 +540,10 @@ async function main(): Promise<void> {
   await queue.ready();
 
   console.log(
-    "worker up — pg-boss consumers registered: scan, probe, metadata, image, import, image-backfill, hwprobe, transcode, subtitle-extract",
+    "worker up — pg-boss consumers registered: scan, probe, metadata, image, import, image-backfill, hwprobe, transcode, subtitle-extract, stash-inventory, stash-sync",
   );
   console.log("worker up — plugin-delivery loop started (LPP v1 event-subscriber fanout)");
+  console.log("worker up — stash schedule-loop started (Stash SQLite metadata sync, trigger (b), default OFF)");
 
   installGracefulShutdown({ onShutdown: shutdown, processName: "@loombre/worker" });
 
