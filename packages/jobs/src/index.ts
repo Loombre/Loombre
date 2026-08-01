@@ -15,6 +15,8 @@ export type {
   TranscodeJobPayload,
   SubtitleExtractJobPayload,
   PgUpgradeJobPayload,
+  StashInventoryJobPayload,
+  StashSyncJobPayload,
 } from './types.js';
 export { JOB_TYPES } from './types.js';
 
