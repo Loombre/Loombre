@@ -75,6 +75,27 @@
 // "also stop updating Jane Doe's bio for every OTHER item she's credited
 // on".
 //
+// What CANNOT be locked today (stated because a half-stated lock feature
+// is worse than an honestly-bounded one — R2 audit). A lock is a row in
+// metadata_provenance keyed by FIELD NAME, and only the ten field names
+// above ever pass through mergeFields. Everything else this function
+// writes is therefore UNCONDITIONALLY refreshed from Stash on every apply,
+// no matter what an admin has locked:
+//   - chapter_markers (S7) — replaceChapterMarkers is a wholesale replace,
+//     so hand-edited chapter titles/offsets for a Stash-matched scene do
+//     not survive the next sync that touches the item.
+//   - item_attributes under the `stash:` namespace (sceneId, rating100,
+//     code, director, organized, primaryFilePath) and person_attributes
+//     under `stash:` (aliases, gender, country, measurements, birthdate).
+//   - provider_ids' stash row, and ingested artwork (scene cover always
+//     re-enqueued; performer/studio images guarded only by
+//     hasOriginalImage existence, never by a lock).
+// This is a deliberate v1 boundary, not an oversight: those surfaces have
+// no editing UI to conflict with yet, so there is nothing to protect. It
+// becomes a real gap the moment one is added, and the fix is the same in
+// every case — route the write through mergeFields under its own field
+// name rather than writing it directly.
+//
 // ============================================================================
 // Rating scale (S5 "rating100 → community_rating — scaled")
 // ============================================================================
