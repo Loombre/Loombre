@@ -15,9 +15,21 @@ export class StashConnectionUnavailableError extends Error {
   readonly path: string;
   readonly cause: unknown;
 
-  constructor(path: string, cause: unknown) {
+  /**
+   * `explanation` (optional) is prepended to the raw SQLite message when
+   * that message would otherwise mislead the admin who reads it —
+   * status_detail on library_stash_connections is shown verbatim in the
+   * admin UI (FX1), so a bare SQLite string is a user-facing string. The
+   * motivating case (R2 audit): opening a WAL-mode database whose
+   * DIRECTORY is not writable reports "attempt to write a readonly
+   * database", which reads as though Loombre tried to write the user's
+   * Stash database — the precise opposite of S2's guarantee. See
+   * adapter.ts's explainOpenFailure.
+   */
+  constructor(path: string, cause: unknown, explanation?: string) {
     const causeMessage = cause instanceof Error ? cause.message : String(cause);
-    super(`stash: could not open "${path}" (direct read-only open and snapshot-copy fallback both failed): ${causeMessage}`);
+    const detail = explanation ? `${explanation} (SQLite reported: ${causeMessage})` : causeMessage;
+    super(`stash: could not open "${path}" (direct read-only open and snapshot-copy fallback both failed): ${detail}`);
     this.name = 'StashConnectionUnavailableError';
     this.path = path;
     this.cause = cause;
