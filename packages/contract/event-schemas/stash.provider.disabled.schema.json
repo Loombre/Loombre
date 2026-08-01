@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://loombre.com/schemas/events/stash.provider.disabled.schema.json",
+  "title": "StashProviderDisabledPayload",
+  "description": "Payload for envelope.type === 'stash.provider.disabled'. STATE.md S3/K12 (Stash SQLite metadata sync, Lane A): emitted by apps/worker/src/stash/connect.ts whenever a library's configured Stash SQLite database reports a schema_migrations version OUTSIDE the pinned supported range (apps/worker/src/stash/guard.ts's STASH_SUPPORTED_SCHEMA_MIN/MAX) — never best-effort parsing of an unrecognized shape, the provider disables itself outright and this event is the admin-visible record of why. `notice` carries the EXACT S3 wording (guard.ts's formatUnsupportedSchemaNotice), byte-identical to library_stash_connections.status_detail for the same connection, so the two never say something different for the same event. envelope.actorUserId is always null (system-originated: a connect attempt has no human actor in the loop, same posture as probe.failed). ADMIN-ONLY delivery, mirroring probe.failed/scan.completed's operational-event posture — a Stash schema mismatch is instance-configuration diagnostic data, not content any viewer-scoped predicate should gate.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["libraryId", "seenVersion", "supportedMin", "supportedMax", "notice"],
+  "properties": {
+    "libraryId": {
+      "type": "string",
+      "format": "uuid",
+      "description": "The library whose library_stash_connections row this connect attempt was for."
+    },
+    "seenVersion": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "The Stash schema_migrations.version this connect attempt observed — mirrors library_stash_connections.last_seen_schema_version for the same connection."
+    },
+    "supportedMin": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "guard.ts's STASH_SUPPORTED_SCHEMA_MIN at the time this event was written (a value the code, not just this event, enforces — carried here so a historical event remains self-explanatory even after a future PR moves the pinned range)."
+    },
+    "supportedMax": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "guard.ts's STASH_SUPPORTED_SCHEMA_MAX at the time this event was written — see supportedMin's description."
+    },
+    "notice": {
+      "type": "string",
+      "description": "The exact S3 admin notice string, e.g. \"Stash schema v58 unsupported; supported: 67-85\" — byte-identical to guard.ts's formatUnsupportedSchemaNotice(seenVersion) and to library_stash_connections.status_detail for this connection."
+    }
+  }
+}
