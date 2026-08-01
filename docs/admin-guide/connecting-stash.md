@@ -7,8 +7,8 @@
      range — apps/worker/src/stash/guard.ts (STASH_SUPPORTED_SCHEMA_MIN/MAX,
      formatUnsupportedSchemaNotice) and apps/worker/src/stash/connect.ts
      (a database outside the range disables the connection rather than
-     guessing). Connection config shape (database path + on/off) —
-     packages/contract/openapi.yaml's AdminStashConnection /
+     guessing). Connection config shape (database path + on/off + tri-state
+     genreTagNames) — packages/contract/openapi.yaml's AdminStashConnection /
      PutAdminStashConnectionRequest schemas. Path mapping (longest-prefix-
      wins, segment-boundary matching) — packages/shared/src/stash-path-
      mapping.ts. Preview reflecting the last inventory pass, never opening
@@ -25,10 +25,23 @@
      watcher.ts (debounced database-file watch). Staleness (marked, never
      deleted) — packages/db/src/query/stash-sync-reports.ts's
      markStashScenesStale. Sync report shape — packages/contract/
-     openapi.yaml's StashSyncReport/StashSyncReportEnvelope schemas +
-     apps/server/src/plugins/admin-stash-sync-report.service.ts. A sync's
-     progress appears as an ordinary background job — apps/web/src/
-     components/admin/JobsPanel.tsx (see Jobs dashboard). -->
+     openapi.yaml's StashSyncReport/StashSyncSceneRef/StashSyncLoombreFileRef/
+     StashSyncReportEnvelope schemas + apps/server/src/plugins/admin-stash-
+     sync-report.service.ts. A sync's progress appears as an ordinary
+     background job — apps/web/src/components/admin/JobsPanel.tsx (see
+     Jobs dashboard).
+
+     Admin UI (FIX WAVE FX1): the "Stash" row-menu action, gated on a
+     library's restricted content class — apps/web/src/components/settings/
+     sections/LibrariesSection.tsx (RowMenu entry + the StashModal it
+     opens). The dialog itself, its three tabs, and the GET-on-open /
+     explicit-Save shape each tab owns — apps/web/src/components/admin/
+     libraries/StashModal.tsx, StashConnectionPanel.tsx (status card +
+     verbatim statusDetail + tri-state genre control),
+     StashPathMappingsPanel.tsx (row editor + 400ms-debounced live preview),
+     StashSyncPanel.tsx (sync buttons, live status via stash.sync.started/
+     completed, and the three-list report viewer incl. FX3's Loombre-side
+     unmatched list and FX4's snapshot-fallback notice). -->
 
 If you keep your own Stash database for a personal collection, Loombre
 can read it and bring that information into a restricted library here —
@@ -56,18 +69,34 @@ back to your actual Stash database. There is currently no way for changes
 made in Loombre to flow back to Stash; this is a one-way connection, by
 design.
 
-## Connecting a library
+## Opening the Stash settings
 
 A Stash connection belongs to one restricted library at a time, the same
 way that library already has its own name and its own folders (see
-[Libraries & scanning](libraries.md)). Two things make up the connection:
+[Libraries & scanning](libraries.md)). From **Settings → Libraries**, find
+that library's row and choose **Stash** from its **⋯** menu — this option
+only appears for restricted libraries. It opens a window with three tabs:
+**Connection**, **Path mappings**, and **Sync**, covered in turn below.
+
+[SCREENSHOT: A restricted library's row menu, showing the Stash action]
+
+## Connection
+
+Two things make up the connection itself:
 
 - **The Stash database file** — its location on the disk your Loombre
   server can see.
-- **On or off** — whether Loombre is currently allowed to read it.
-  Turning this off simply stops Loombre from reading that database; it
-  doesn't undo anything already brought in, and turning it back on later
-  picks up right where things left off.
+- **Enabled** — whether Loombre is currently allowed to read it. Turning
+  this off simply stops Loombre from reading that database; it doesn't
+  undo anything already brought in, and turning it back on later picks up
+  right where things left off.
+
+Above the fields, a status card shows what Loombre actually observed the
+last time it connected: a status of **Never connected**, **Connected**,
+**Unreachable**, or **Unsupported schema**, alongside the schema version
+Loombre last saw, and when it last connected and last checked.
+
+[SCREENSHOT: The Connection tab, showing the status card and the SQLite path field]
 
 The first time Loombre opens a database you've pointed it at (and again
 every time afterward), it checks which version of Stash produced it. Stash
@@ -75,36 +104,58 @@ has changed its own internal layout over the years, and Loombre only
 understands a tested range of them. If your database falls outside that
 range — usually because it's from a much older or a much newer Stash than
 this version of Loombre has been tested against — Loombre doesn't try to
-guess. It disables the connection and tells you exactly why, with a
-message naming both the version it saw and the range it supports, for
-example:
+guess. It disables the connection and shows you exactly why, right on the
+status card, with a message naming both the version it saw and the range
+it supports, for example:
 
 > Stash schema v58 unsupported; supported: 67–85
 
 Nothing about your Stash database is affected by this — it's simply left
 alone until either Stash or Loombre catches up to the other.
 
-## Path mapping
+### Genres
+
+Also on the Connection tab, a **Genre tags** control decides which Stash
+tags become genres in Loombre rather than plain tags. It offers two
+choices:
+
+- **Default (automatic)** — Loombre's own rule: a Stash tag with no
+  parent tag becomes a genre, and a tag that's a child of another tag
+  stays a plain tag.
+- **Custom list** — you type in the exact Stash tag names, one per line,
+  that should map to genre; every other tag stays a plain tag. An empty
+  list is a valid choice — it means nothing maps to genre.
+
+Whichever you pick, it's saved explicitly when you choose Save — there's
+no third, in-between state to worry about.
+
+## Path mappings
 
 Stash and Loombre don't always see your files at the same location. Stash
 might know a scene as `/data/videos/clip.mp4` while Loombre, running
 somewhere else or with a different set of folders attached, sees that same
-file as `/media/collection/clip.mp4`. A **path mapping** tells Loombre how
-to translate one into the other: a piece of the beginning of a Stash path,
-and what it corresponds to on Loombre's side.
+file as `/media/collection/clip.mp4`. A **path mapping**, added from the
+Path mappings tab, tells Loombre how to translate one into the other: a
+piece of the beginning of a Stash path, and what it corresponds to on
+Loombre's side.
 
-You can set up more than one mapping for a library — useful if only part
-of your collection lives somewhere different. When more than one mapping
+You can add more than one mapping for a library — useful if only part of
+your collection lives somewhere different. When more than one mapping
 could apply to the same file, Loombre always uses the most specific
-(longest) match, regardless of the order the mappings are listed in.
+(longest) match, regardless of the order the rows are listed in; the
+up/down controls on each row are only for your own reference.
 
-Before you commit to a mapping, Loombre can check it against what it
-already knows about your Stash library and show you how many files it
-would actually match — a running **"N of M matched"** count, plus a
-sample of anything that wouldn't. This reflects Loombre's most recent look
-at your Stash database, not a live check performed at that exact moment,
-so it's most useful right after a sync or right after Loombre first
-connects.
+As you edit mappings, a **live preview** below the list shows how many of
+your Stash files would actually match — a running count reading, for
+example, "214 of 220 files matched" — updating shortly after you stop
+typing. If anything doesn't match, the preview also shows how many didn't
+and a sample of them: the raw path Stash reported, and what your mapping
+would turn it into (or nothing shown, when no mapping applies to that path
+at all). This preview reflects Loombre's most recent look at your Stash
+database, not a live scan performed at that exact moment, so it's most
+useful right after a sync or right after Loombre first connects.
+
+[SCREENSHOT: The Path mappings tab, showing mapping rows and the live match preview]
 
 ## What syncs, and who's in charge of what
 
@@ -125,18 +176,19 @@ source does — a locked field is never overwritten.
 
 ## Keeping in sync
 
-A first sync brings in everything at once. Even for a very large
-collection, this is measured in minutes rather than hours, and it's
+A first, **full** sync brings in everything at once. Even for a very
+large collection, this is measured in minutes rather than hours, and it's
 resumable — if it's ever interrupted partway through, picking back up
 finds exactly where it left off instead of starting over. After that
 first pass, an **incremental** sync only looks at what actually changed on
 the Stash side since the last time, so a handful of edits in Stash stays a
 handful of updates in Loombre, not a full re-scan.
 
-A sync can start in three ways:
+From the Sync tab, you can start either kind at any time with its own
+button — **Incremental sync** or **Full sync** — as long as the
+connection is configured and enabled; otherwise the tab tells you which
+of those two things to fix first. A sync can also start two other ways:
 
-- **On demand** — you can trigger one yourself at any time, choosing a
-  full or an incremental sync.
 - **On a schedule** — an optional setting lets Loombre re-sync
   automatically at an interval you choose. It's off by default; Stash
   still syncs when you ask for it directly, or when its database file
@@ -145,9 +197,12 @@ A sync can start in three ways:
   file itself changes and, after things settle down, starts an
   incremental sync on its own.
 
-While a sync is running, it shows up like any other background task on
-the [Jobs dashboard](jobs-dashboard.md), so you can watch its progress or
-confirm it finished the same way you would for a library scan.
+While a sync is running, the Sync tab shows a live **Syncing** indicator,
+and starting one also tells you which job it started, with a link
+straight to that job on the [Jobs dashboard](jobs-dashboard.md) — the
+same place you'd watch progress on a library scan.
+
+[SCREENSHOT: The Sync tab, showing the sync buttons and a running sync]
 
 ## When something disappears from Stash
 
@@ -160,10 +215,30 @@ you want it gone, that's your call to make.
 
 ## The sync report
 
-Every library with a Stash connection keeps a running report of its most
-recent sync: how many scenes matched, how many were updated, how many
-couldn't be matched to anything, how many are stale, and how many were
-left untouched because nothing about them had changed. Alongside those
-counts, the report also lists which specific Stash scenes couldn't be
-matched to a file, and which of your items have gone stale — so you're
-never just told a number, you can see exactly what it refers to.
+The Sync tab also shows a running report of the library's most recent
+sync: how many scenes matched, how many were updated, how many couldn't
+be matched to anything, how many are stale, and how many were left
+untouched because nothing about them had changed.
+
+If that sync had to fall back to reading a temporary copy of your Stash
+database — because Stash itself was using it at the time (see
+[The one-way guarantee](#the-one-way-guarantee)) — the report says so
+plainly: "Read from a temporary snapshot copy — your Stash was holding
+the database locked, so Loombre copied it aside and read the copy. The
+original was not touched."
+
+Below the counts, three lists let you see exactly what those numbers
+refer to, rather than just a total:
+
+- **Unmatched Stash scenes** — scenes Stash knows about that couldn't be
+  matched to any file in this library.
+- **Stale** — items that used to be backed by a Stash scene that's since
+  been removed from Stash (see above).
+- **Library files with no Stash scene** — the other side of the same
+  coin: files already in this library that Stash doesn't have a matching
+  scene for at all.
+
+Each list can be expanded to show more if it's long, so nothing is ever
+hidden behind a bare number.
+
+[SCREENSHOT: The sync report, showing the counts and the three unmatched/stale lists]
