@@ -29,8 +29,8 @@ info:
     name: AGPL-3.0-relicense-pending
     identifier: LicenseRef-Loombre-Private
 externalDocs:
-  description: docs/PLAN.md (spec) and docs/PLAYBACK.md (playback engine annex)
-  url: https://example.invalid/docs/PLAN.md
+  description: Loombre documentation
+  url: https://loombre.com/docs/
 servers:
   - url: /v1
     description: Loombre API, version 1 (path-prefixed; host is deployment-specific)
@@ -55,9 +55,9 @@ tags:
   - name: cross-type
     description: Search and home-screen surfaces spanning item types
   - name: people
-    description: Credited people (actors, directors, ...) — a leak-checked metadata surface (docs/PLAN.md §6.4)
+    description: Credited people (actors, directors, ...) — a leak-checked metadata surface (restricted-content isolation applies)
   - name: tags
-    description: Genres and free-form tags — a leak-checked metadata surface (docs/PLAN.md §6.4)
+    description: Genres and free-form tags — a leak-checked metadata surface (restricted-content isolation applies)
   - name: images
     description: Pre-scaled managed image cache
   - name: playback
@@ -66,7 +66,7 @@ tags:
     description: Per-user watch/listen progress
   - name: watchlist
     description: >-
-      Per-user saved-items list (Phosphor Wave 2 lane L3) — syncs across
+      Per-user saved-items list — syncs across
       devices via the events socket (watchlist.added/watchlist.removed)
   - name: restricted
     description: Restricted (adult) content gating — session unlock/lock
@@ -76,7 +76,7 @@ tags:
     description: Admin-only job ledger introspection, settings, and plugin management (LPP v1)
   - name: setup
     description: >-
-      First-boot onboarding (STATE.md P4.6/P4.10): usable ONLY while the
+      First-boot onboarding: usable ONLY while the
       instance has zero users; permanently inert afterwards
 
 paths:
@@ -90,7 +90,7 @@ paths:
         Public by necessity (the wizard runs before any credentials exist).
         Deliberately answers ONE boolean and nothing else — no version, no
         counts, no capability data (that is authenticated surface). Rate-
-        limited like every unauthenticated endpoint (STATE.md P4.15).
+        limited like every unauthenticated endpoint.
       security: []
       responses:
         '200':
@@ -99,7 +99,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/SetupState' }
         '429':
-          description: Rate limited (unauthenticated surface, STATE.md P4.15)
+          description: Rate limited (unauthenticated surface)
           headers:
             Retry-After: { schema: { type: integer }, description: Seconds until the next attempt is allowed. }
         default: { $ref: '#/components/responses/Problem' }
@@ -110,7 +110,7 @@ paths:
       tags: [setup]
       summary: Create the instance's first admin account (first boot only)
       description: >-
-        STATE.md P4.10: succeeds ONLY while the users table is empty —
+        Succeeds ONLY while the users table is empty —
         the one-time escape from the admin-creates-users chicken-and-egg.
         Once ANY user exists this endpoint is permanently inert and
         returns a 404 byte-identical to an unknown route (an attacker
@@ -155,7 +155,7 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '422': { $ref: '#/components/responses/UnprocessableEntity' }
         '429':
-          description: Rate limited (per-IP login attempts, STATE.md P2.1)
+          description: Rate limited (per-IP login attempts)
           headers:
             Retry-After: { schema: { type: integer }, description: Seconds until the next attempt is allowed. }
           content:
@@ -182,7 +182,7 @@ paths:
               schema: { $ref: '#/components/schemas/TokenPair' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '429':
-          description: Rate limited (per-IP refresh attempts, STATE.md P2.1)
+          description: Rate limited (per-IP refresh attempts)
           headers:
             Retry-After: { schema: { type: integer }, description: Seconds until the next attempt is allowed. }
           content:
@@ -253,7 +253,7 @@ paths:
     get:
       operationId: getSystemCapabilities
       tags: [system]
-      summary: Public feature-flag negotiation (docs/PLAN.md §4.1)
+      summary: Public feature-flag negotiation
       security: []
       responses:
         '200':
@@ -287,7 +287,7 @@ paths:
     get:
       operationId: getSystemUpdate
       tags: [system]
-      summary: Admin-only notify-only update check (docs/PLAN.md §10, STATE.md P4.3/P4.16)
+      summary: Admin-only notify-only update check
       description: >-
         Never triggers a download and never auto-applies anything — this is
         display data only. Serves the server's last completed manifest
@@ -462,8 +462,9 @@ paths:
       operationId: putMyRestrictedSettings
       tags: [restricted]
       summary: >-
-        Self-service restricted-content opt-in and PIN management
-        (docs/PLAN.md §6.4 gate 3). Admins cannot perform this on behalf of
+        Self-service restricted-content opt-in and PIN management — the
+        opt-in gate of the restricted-content model. Admins cannot perform
+        this on behalf of
         another user — there is no admin path to this operation.
       requestBody:
         required: true
@@ -611,7 +612,8 @@ paths:
       summary: >-
         Replace per-user permission grants for a library (admin). Restricted
         libraries default-deny; a grant must be explicit even for admins'
-        own accounts (docs/PLAN.md §6.4 gate 4).
+        own accounts — the per-library grant gate of the restricted-content
+        model.
       requestBody:
         required: true
         content:
@@ -884,7 +886,7 @@ paths:
       tags: [people]
       summary: >-
         List credited people visible to the current user (leak-checked:
-        content_class isolation AND credited on >=1 visible item, docs/PLAN.md §6.4)
+        content_class isolation AND credited on >=1 visible item)
       parameters:
         - $ref: '#/components/parameters/Cursor'
         - $ref: '#/components/parameters/Limit'
@@ -927,12 +929,10 @@ paths:
       tags: [people]
       summary: >-
         Filmography: catalog items this person is credited on that are
-        ALSO currently visible to the caller (Phosphor Wave 2 lane L3,
-        /people/[id] route — gap-closure over GET /people/{id}, which only
-        ever carried a creditCount). Same leak model as GET /people:
+        ALSO currently visible to the caller. Same leak model as GET /people:
         content_class isolation on the person AND credited-on->=1-visible-
         item, replayed at the item-list surface instead of the count
-        surface (packages/db/src/query/people.ts's listItemsForPerson).
+        surface.
       parameters:
         - $ref: '#/components/parameters/Cursor'
         - $ref: '#/components/parameters/Limit'
@@ -998,7 +998,7 @@ paths:
       summary: >-
         In-progress items for the current user (computed per-viewer-context;
         never cached across users with different restricted-content
-        clearance, docs/PLAN.md §6.4)
+        clearance)
       parameters:
         - $ref: '#/components/parameters/Cursor'
         - $ref: '#/components/parameters/Limit'
@@ -1075,15 +1075,14 @@ paths:
       operationId: computePlaybackPlan
       tags: [playback]
       summary: >-
-        Phase 3 §11 step 6b (STATE.md P3.7, D23 pre-release contract
-        correction — second, PLANNED use of P2.19's slot): runs the real
+        Compute the full playback plan for a file without starting a
+        session: runs the
         `@loombre/playback-engine` `plan()` against the resolved MediaInfo,
         the request's DeviceProfile, server-resolved NetworkConditions/
         ServerPolicy/VerifiedCapabilities, and the resolved TrackSelection,
-        and returns the FULL docs/PLAYBACK.md §5 PlaybackPlan (ladder,
-        ffmpegArgs, hardware routing included) — REPLACING Phase 2's
-        {canDirectPlay, wouldBeReasons} preview (P2.17/P2.19), which is
-        deleted. This is a read-only preview: no session row is created and
+        and returns the FULL PlaybackPlan (ladder,
+        ffmpegArgs, hardware routing included).
+        This is a read-only preview: no session row is created and
         no job is enqueued (contrast POST /playback/sessions).
       requestBody:
         required: true
@@ -1092,7 +1091,7 @@ paths:
             schema: { $ref: '#/components/schemas/PlanRequest' }
       responses:
         '200':
-          description: The full PlaybackPlan (docs/PLAYBACK.md §5)
+          description: The full PlaybackPlan
           content:
             application/json:
               schema: { $ref: '#/components/schemas/PlaybackPlan' }
@@ -1123,16 +1122,14 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '409':
           description: >-
-            Phase 3 §11 step 6b (STATE.md P3.7): the computed PlaybackPlan
+            The computed PlaybackPlan
             is genuinely unplayable — `decision === 'transcode'` but
             `ffmpegArgs` is empty (tone-map refused by policy, or an
-            empty/degenerate ladder — docs/PLAYBACK.md §3's "the session
-            layer surfaces the failure" seam). The problem body's `reasons`
+            empty/degenerate ladder). The problem body's `reasons`
             extension member carries the plan's own (real, not
-            hypothetical) `PlanReason[]`. This REPLACES Phase 2's
-            wouldBeReasons-carrying 409 (P2.4/P2.17), which fired for any
-            non-direct-playable media; a session for playable-via-transcode
-            media now succeeds (201) instead.
+            hypothetical) `PlanReason[]`. A session for
+            playable-via-transcode media succeeds (201) — this response is
+            reserved for media no strategy can play.
           content:
             application/problem+json:
               schema: { $ref: '#/components/schemas/Problem' }
@@ -1140,7 +1137,7 @@ paths:
         '429':
           description: >-
             Transcode slots exhausted (`maxSimultaneousTranscodes`
-            semaphore, docs/PLAYBACK.md §9) — the global count of
+            semaphore) — the global count of
             active-ish transcode sessions (any non-direct-play decision, any
             non-terminal status) already meets or exceeds the resolved
             policy's cap.
@@ -1156,21 +1153,19 @@ paths:
       operationId: getPlaybackHlsManifest
       tags: [playback]
       summary: >-
-        Phase 3 §11 step 6b (docs/PLAYBACK.md §9): fetch the live HLS media
-        playlist for a transcode/direct-stream/remux session. REPLACES the
-        Phase-2-era contract-only `GET /playback/sessions/{id}/manifest.m3u8`
-        placeholder (which was never implemented — deleted, not kept
-        alongside this coherent HLS surface) with the real thing plus its
-        sibling segment-serving path below. Blocks up to 8s for the initial
+        Fetch the live HLS media
+        playlist for a transcode/direct-stream/remux session.
+        Blocks up to 8s for the initial
         segment to be produced (polling `status === 'active' AND
         produced_segment IS NOT NULL`) before returning 503. Also accepts
-        `?token=<accessToken>` (P2.18 pattern, scope extended to this path).
+        `?token=<accessToken>` for media elements that cannot send
+        Authorization headers.
       parameters:
         - name: token
           in: query
           required: false
           schema: { type: string }
-          description: Access JWT fallback for media elements that cannot send Authorization headers (P2.18 pattern).
+          description: Access JWT fallback for media elements that cannot send Authorization headers.
       responses:
         '200':
           description: HLS media playlist (Cache-Control private, no-store)
@@ -1184,7 +1179,7 @@ paths:
         '503':
           description: >-
             Initial segment not yet produced within the 8s poll window;
-            client should retry (Retry-After header set, docs/PLAYBACK.md §9)
+            client should retry (Retry-After header set)
           headers:
             Retry-After:
               schema: { type: integer }
@@ -1202,29 +1197,30 @@ paths:
         schema: { type: string }
         description: >-
           `runN/sNNNNNN.m4s`, `runN/sNNNNNN.ts`, or `runN/init.mp4` (fmp4
-          init segment) — the worker's per-run on-disk layout
-          (apps/worker/src/transcode staging). Strictly pattern-validated;
-          anything else is rejected (traversal-safe by construction, mirrors
-          GET .../file's "never trust a client-supplied path" posture).
+          init segment) — the transcoder's per-run
+          layout. Strictly pattern-validated;
+          anything else is rejected (traversal-safe by construction — a
+          client-supplied path is never trusted).
     get:
       operationId: getPlaybackHlsFile
       tags: [playback]
       summary: >-
-        Phase 3 §11 step 6b: serve one HLS init segment/media segment for a
+        Serve one HLS init segment/media segment for a
         session. Updates the session's `requested_segment` (parsed from
-        `file`) on every call — the worker's throttle input (docs/
-        PLAYBACK.md §9). A request for a segment index outside the
+        `file`) on every call — the transcoder's pacing
+        input. A request for a segment index outside the
         currently-produced window (before the current run's start, or more
         than 3 segments ahead of `produced_segment`) triggers a seek request
         (`requestSeek`) and responds 503 (hls.js-compatible retry
         behavior) instead of 404 while the worker restarts the pipeline.
-        Also accepts `?token=` (P2.18 pattern).
+        Also accepts `?token=` for media elements that cannot send
+        Authorization headers.
       parameters:
         - name: token
           in: query
           required: false
           schema: { type: string }
-          description: Access JWT fallback for media elements that cannot send Authorization headers (P2.18 pattern).
+          description: Access JWT fallback for media elements that cannot send Authorization headers.
       responses:
         '200':
           description: Segment or init-segment bytes (Cache-Control private, immutable)
@@ -1255,20 +1251,21 @@ paths:
       operationId: getPlaybackSubtitleManifest
       tags: [playback]
       summary: >-
-        Additive, Phase 3 §11 step 6b (STATE.md P3.9(e)): the segmented-VTT
-        subtitle side-track's single-segment HLS media playlist (docs/
-        PLAYBACK.md §9's "segmented WebVTT side-track" strategy, `subtitle.
-        strategy === 'hls-vtt'`). Populated by the 'subtitle-extract' worker
-        job (packages/jobs) enqueued at session create — works for
+        The segmented-VTT
+        subtitle side-track's single-segment HLS media playlist (the
+        "segmented WebVTT side-track" strategy, `subtitle.
+        strategy === 'hls-vtt'`). Populated by the subtitle-extract worker
+        job enqueued at session create — works for
         direct-play sessions too (a session can carry an hls-vtt subtitle
         side-track independent of its own video/audio decision). Also
-        accepts `?token=` (P2.18 pattern, scope extended to this path).
+        accepts `?token=` for media elements that cannot send Authorization
+        headers.
       parameters:
         - name: token
           in: query
           required: false
           schema: { type: string }
-          description: Access JWT fallback for media elements that cannot send Authorization headers (P2.18 pattern).
+          description: Access JWT fallback for media elements that cannot send Authorization headers.
       responses:
         '200':
           description: HLS subtitle media playlist (Cache-Control private, no-store)
@@ -1301,14 +1298,15 @@ paths:
       operationId: getPlaybackSubtitleFile
       tags: [playback]
       summary: >-
-        Additive, Phase 3 §11 step 6b (STATE.md P3.9(e)): serve the
-        extracted WebVTT file. Also accepts `?token=` (P2.18 pattern).
+        Serve the
+        extracted WebVTT file. Also accepts `?token=` for media elements
+        that cannot send Authorization headers.
       parameters:
         - name: token
           in: query
           required: false
           schema: { type: string }
-          description: Access JWT fallback for media elements that cannot send Authorization headers (P2.18 pattern).
+          description: Access JWT fallback for media elements that cannot send Authorization headers.
       responses:
         '200':
           description: WebVTT bytes (Cache-Control private, immutable)
@@ -1354,10 +1352,10 @@ paths:
       operationId: getPlaybackSessionFile
       tags: [playback]
       summary: >-
-        Additive, Phase 2 (STATE.md P2.13/P2.18): HTTP range-request byte
+        HTTP range-request byte
         serving of the session's own direct-play media file. Path resolution
         comes ONLY from the media_files row the session references — never
-        from client input. Also accepts `?token=<accessToken>` (P2.18) since
+        from client input. Also accepts `?token=<accessToken>` since
         an HTML `<video>`/`<audio>` element cannot set an Authorization
         header.
       parameters:
@@ -1374,7 +1372,7 @@ paths:
           in: query
           required: false
           schema: { type: string }
-          description: Access JWT fallback for media elements that cannot send Authorization headers (P2.18).
+          description: Access JWT fallback for media elements that cannot send Authorization headers.
       responses:
         '200':
           description: Full file (no/ignored Range)
@@ -1417,7 +1415,7 @@ paths:
       tags: [progress]
       summary: Read the current user's watch/listen progress for a single item
       description: >-
-        Guarded like every other catalog-adjacent read (docs/PLAN.md §6.4):
+        Guarded like every other catalog-adjacent read:
         an item that doesn't exist and an item that exists but is invisible
         to the caller (not in an allowed library, or restricted without full
         gate clearance) are byte-identical 404s. No progress row for an
@@ -1545,8 +1543,9 @@ paths:
       operationId: unlockRestricted
       tags: [restricted]
       summary: >-
-        Verify the restricted-content PIN and open a time-boxed unlock
-        (docs/PLAN.md §6.4 gate 5). Unlock state never persists across logins.
+        Verify the restricted-content PIN and open a time-boxed unlock —
+        the session-unlock gate of the restricted-content model. Unlock
+        state never persists across logins.
       requestBody:
         required: true
         content:
@@ -1562,7 +1561,7 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '422': { $ref: '#/components/responses/UnprocessableEntity' }
         '429':
-          description: Rate limited (per-user PIN attempts, STATE.md P2.1)
+          description: Rate limited (per-user PIN attempts)
           headers:
             Retry-After: { schema: { type: integer }, description: Seconds until the next attempt is allowed. }
           content:
@@ -1592,7 +1591,7 @@ paths:
         surface, count only).
       description: >-
         404 for a viewer with NO restricted-library entitlement at all
-        (docs/PLAN.md §6.4 gates 1-4 never passed) — the zone does not
+        (the earlier restricted-content gates never passed) — the zone does not
         exist for them, so this operation is absent rather than answering
         with `{count: 0}`, which would itself be a side channel.
       responses:
@@ -1649,7 +1648,7 @@ paths:
       tags: [data-freedom]
       summary: >-
         Stream an open JSON archive of the caller's accessible data
-        (docs/PLAN.md §8.4, P12) — no proprietary lock-in.
+        — no proprietary lock-in.
       responses:
         '200':
           description: Streamed JSON archive
@@ -1726,8 +1725,8 @@ paths:
       tags: [admin]
       summary: List active playback sessions across all users (admin, now-playing presence)
       description: >-
-        STATE.md P2.8/deliverable E. Admins are NOT exempt from restricted-
-        content gating (docs/PLAN.md §6.4 gate 4/5): item display fields on
+        Admins are NOT exempt from restricted-
+        content gating (the grant and session-unlock gates apply): item display fields on
         each session row are resolved through the REQUESTING ADMIN'S OWN
         ViewerContext, exactly like any other catalog read. A session on an
         item this admin isn't currently cleared to see is still listed (the
@@ -1754,7 +1753,7 @@ paths:
       tags: [admin]
       summary: The verified hardware-capability report (admin)
       description: >-
-        docs/PLAYBACK.md §8 / STATE.md Phase 3 step 5: the CURRENT
+        The CURRENT
         hw_capability snapshot the plan() engine consumes — what this
         machine's ffmpeg build PROVED it can decode/encode/tone-map, per
         backend, in probe order. `report` is null when no probe has
@@ -1775,12 +1774,12 @@ paths:
       tags: [admin]
       summary: List local crash files (admin)
       description: >-
-        STATE.md P4.5/P4.14: crash handlers write REDACTED local files
+        Crash handlers write REDACTED local files
         under the app-data crashes dir; this lists their metadata,
         newest-first. Deliberately NOT cursor-paginated (bounded set:
-        the crash writer caps retention; documented deviation from D10's
+        the crash writer caps retention; a documented deviation from the
         cursor-everywhere rule for a bounded, small, admin-only list).
-        Sharing remains entirely manual (D14) — nothing here transmits
+        Sharing remains entirely manual — nothing here transmits
         anything anywhere.
       responses:
         '200':
@@ -1808,7 +1807,7 @@ paths:
             Crash file basename exactly as returned by listCrashFiles.
             The strict pattern (no separators, no leading dot) makes path
             traversal structurally impossible — same posture as the HLS
-            file-serving routes (STATE.md step 6b).
+            file-serving routes.
       responses:
         '200':
           description: Redacted crash file content
@@ -1901,9 +1900,9 @@ paths:
       tags: [admin]
       summary: Effective settings + provider-key statuses (admin)
       description: >-
-        STATE.md Addendum A: every registered setting's CURRENT effective
-        value (env-pin > database > registry default precedence,
-        packages/shared/src/settings-resolve.ts), independent of scope —
+        Every registered setting's CURRENT effective
+        value (env-pin > database > registry default precedence),
+        independent of scope —
         env-only entries are included read-only alongside ui-editable ones,
         so an operator can always see what's actually governing the running
         instance. `restartPendingKeys` lists requiresRestart:true keys whose
@@ -1927,9 +1926,9 @@ paths:
       tags: [admin]
       summary: Settings registry projection (admin) — the UI form renderer's sole input
       description: >-
-        STATE.md Addendum A decision AD3: one JSON-schema-per-key projection
-        (z.toJSONSchema of packages/shared/src/settings-registry.ts's own
-        zod schema) feeds this endpoint, the admin settings UI's dynamic
+        One JSON-schema-per-key projection
+        (generated from the server's own settings registry)
+        feeds this endpoint, the admin settings UI's dynamic
         widget renderer, and the generated operator/admin docs alike —
         nobody hand-writes a second copy of a setting's shape anywhere.
         Carries no live value (see AdminSettingsResponse for that) — pair
@@ -1951,13 +1950,13 @@ paths:
       tags: [admin]
       summary: Update one UI-editable setting's value (admin)
       description: >-
-        STATE.md Addendum A decision A10: re-verifies the caller's admin
+        Re-verifies the caller's admin
         status with a FRESH database read at mutation time (never trusted
         from a possibly-stale access-token claim) before anything else,
         including before revealing whether `key` exists at all. Ordered
         checks: 403 (not currently an admin, live re-verify) -> 404 (unknown
         key, or a scope:'env-only' key — those are never writable through
-        this surface, the lockout boundary docs/PLAN.md describes) -> 409
+        this surface — the lockout boundary) -> 409
         (an active env pin governs this key right now; the submitted value
         is discarded unconditionally, valid or not) -> 422 (schema
         validation, including the restricted.majorityAgeYears >=18 floor,
@@ -2497,7 +2496,7 @@ paths:
       tags: [admin]
       summary: List catalog items in a library with no provider metadata match (Fix Match, admin)
       description: >-
-        Derived, never stored (U9): an item of an enrichable type
+        Derived, never stored: an item of an enrichable type
         (movie/series/artist/album) with zero provider_ids rows. Cursor-
         paginated, most-recently-added first. Goes through the standard
         catalog guard (packages/db/src/query/guard.ts's applyGuard) with the
@@ -2676,7 +2675,7 @@ components:
     ContentClass:
       type: string
       enum: [general, restricted]
-      description: docs/PLAN.md §6.4 — coarse gate on libraries, inherited by items.
+      description: Coarse restricted-content gate on libraries, inherited by items.
 
     MediaKind:
       type: string
@@ -2686,14 +2685,11 @@ components:
       type: string
       enum: [movie, series, season, episode, artist, album, track, person]
       description: >-
-        Additive (Phosphor Wave 2 lane L3, /people/[id] route): `person` was
-        never reachable through this path before — packages/db/src/query/
-        images.ts's getImageEntityAccess has always accepted a 'person'
-        entity type (the SAME guard rule listPeople/getPersonById use:
-        content_class isolation AND credited-on->=1-visible-item), but
-        apps/server/src/catalog/images.controller.ts previously hardcoded
-        every contract value to the DB's 'catalog_item' entity type with no
-        way to reach 'person' at all. This value plus the controller mapping
+        Entity types a managed image can belong to. `person` images are
+        guarded by the SAME leak rule listPeople/getPersonById use
+        (content_class isolation AND credited-on->=1-visible-item), so a
+        person invisible to the caller has no reachable images either.
+        This value plus the server-side mapping
         fix close that gap so a Person page portrait
         (GET /images/person/{id}/thumb) can be served.
 
@@ -2716,7 +2712,7 @@ components:
     ImageDescriptor:
       type: object
       description: >-
-        One pre-scaled managed image variant (P1.17). Never computed on
+        One pre-scaled managed image variant. Never computed on
         request (Tier-0 rule) — width/height/blurhash/dominantColor mirror
         the `images` table row an ingest-time worker_thread wrote.
       additionalProperties: false
@@ -2729,8 +2725,8 @@ components:
         dominantColor:
           type: [string, 'null']
           description: >-
-            Hex '#rrggbb' dominant colour extracted worker-side at ingest
-            (P2.11, migrations/0005_images_dominant_color.sql). Null when
+            Hex '#rrggbb' dominant colour extracted worker-side at ingest.
+            Null when
             not yet computed/unavailable.
 
     # ═══════════════════════════════ Auth / devices ═══════════════════════════
@@ -2748,11 +2744,11 @@ components:
           type: string
           format: uuid
           description: >-
-            Reuse an existing device row owned by the authenticating user
-            (docs/STATE.md P2.16): its refresh-token chain is rotated and
+            Reuse an existing device row owned by the authenticating user:
+            its refresh-token chain is rotated and
             profile/last-seen refreshed instead of a new row being created.
             Omitted, unknown, or owned by a different user -> a new device
-            is registered (Phase 1 behavior); device existence is never
+            is registered; device existence is never
             leaked either way.
 
     RefreshRequest:
@@ -2785,8 +2781,8 @@ components:
     DeviceProfile:
       type: object
       description: >-
-        Client-declared at login, server-validated against this schema
-        (docs/PLAYBACK.md §2.2). Never "best-guessed" when invalid — a
+        Client-declared at login, server-validated against this schema.
+        Never "best-guessed" when invalid — a
         malformed profile is rejected with 422, not patched inside plan().
       additionalProperties: false
       required:
@@ -2965,7 +2961,7 @@ components:
       type: string
       description: >-
         `verified`: the fetched manifest's minisign signature checked out
-        against the pinned public key (P4.9/P4.18) and `latestVersion`/
+        against the pinned public key and `latestVersion`/
         `notesUrl` reflect it. `signature-invalid`: a manifest was fetched
         but its signature did not verify (tampered, wrong key, or an
         unsupported prehashed-'ED' minisig — @loombre/release-manifest's
@@ -3036,7 +3032,7 @@ components:
         position:
           type: integer
           minimum: 0
-          description: Probe order (docs/PLAYBACK.md §8.2 — array order is Stage-G-load-bearing).
+          description: Probe order (docs/PLAYBACK.md §8.2 — array order is load-bearing for the plan engine).
         decode: { type: array, items: { type: string } }
         encode: { type: array, items: { type: string } }
         toneMap: { type: array, items: { type: string } }
@@ -3049,7 +3045,7 @@ components:
         platform: { type: string, enum: [linux, macos, windows] }
         ffmpegBuildHash:
           type: string
-          description: sha256 of the resolved ffmpeg's -version output (STATE.md P3.5 invalidation key).
+          description: sha256 of the resolved ffmpeg's -version output (the capability report's invalidation key).
         gpuFingerprint:
           type: [string, 'null']
           description: Best-effort GPU identity hash; null when the per-platform probe command failed.
@@ -3240,8 +3236,8 @@ components:
           description: >-
             ISO 639-2 (lowercase 3-letter code, e.g. "eng"), or null for no
             preference. Server-side membership in the known-language list
-            (packages/shared/src/language-codes.ts) is validated beyond this
-            shape (P4.22-style pre-release narrowing: the shape alone cannot
+            is validated beyond this
+            shape (the shape alone cannot
             express "a real language code").
         audioPreferredLanguage:
           type: [string, 'null']
@@ -3428,7 +3424,7 @@ components:
         so a client can link straight to GET /people/{id}. Restricted-class
         people are never credited on a visible general item's response —
         the same content_class join-guard search.ts/catalog-detail.ts
-        already use for tags (P1.21) applies here.
+        already use for tags applies here.
       type: object
       additionalProperties: false
       required: [id, name, role, order]
@@ -3441,9 +3437,8 @@ components:
 
     MediaFileAudioTrack:
       description: >-
-        One media_streams audio row on a MediaFileSummary (Phosphor W2 L4
-        movie-detail METADATA "Audio" row — packages/db's
-        MediaFileAudioTrackSummary).
+        One probed audio stream on a MediaFileSummary (what the
+        movie-detail METADATA "Audio" row displays).
       type: object
       additionalProperties: false
       required: [codec, channels, language, isDefault]
@@ -3472,11 +3467,10 @@ components:
         diagnosability. `width`/`height` come from that file's primary video
         stream (media_streams) and are null for audio-only files or files
         not yet probed. `path`/`isDefault`/`videoCodec`/`bitDepth`/`hdr`/
-        `audioTracks`/`subtitleTracks` (Phosphor W2 L4 movie-detail VERSIONS
+        `audioTracks`/`subtitleTracks` (the movie-detail VERSIONS
         + METADATA cards) are the same additive, already-probed columns —
-        see packages/db's catalog-detail.ts header ("full house" pattern:
         real columns already written by the scanner, newly exposed, nothing
-        derived or invented). Deliberately NOT in `required`, unlike the
+        derived or invented. Deliberately NOT in `required`, unlike the
         original seven fields: this schema doubles as POST /import's
         ExportArchive request body (data-freedom.controller.ts), and an
         archive written by an older Loombre version won't carry them —
@@ -4031,7 +4025,7 @@ components:
           type: string
           format: uuid
           description: >-
-            Optional playback session id (P2.14/P2.18). When present, this
+            Optional playback session id. When present, this
             write also heartbeats that session (docs/PLAYBACK.md §9): "the
             client progress PUT doubles as heartbeat".
 
@@ -4049,7 +4043,7 @@ components:
     Container:
       type: string
       description: >-
-        Source container (docs/PLAYBACK.md §2.1). v1.1 (STATE.md H3):
+        Source container (docs/PLAYBACK.md §2.1). Since v1.1,
         asf/mpeg/flv/aac/aiff admit legacy-format ingestion
         (wmv/wma->asf, mpg/mpeg/vob->mpeg) — never direct-playable.
       enum: [mp4, mkv, webm, avi, ts, mov, flac, mp3, ogg, m4a, wav, asf, mpeg, flv, aac, aiff]
@@ -4254,13 +4248,9 @@ components:
       type: string
       description: >-
         Method used for HDR->SDR tone mapping (docs/PLAYBACK.md §5/§8.3) —
-        MUST match @loombre/playback-engine's ToneMapMethod exactly. Fixed
-        (2026-07-24, Phase 3 §11 step 6b, D23-class correction): was
-        `[opencl, vulkan, videotoolbox, cuda, zscale-cpu, none]` — the
-        engine's actual value is `cpu-zscale` (not `zscale-cpu`), and
+        MUST match @loombre/playback-engine's ToneMapMethod exactly.
         `toneMap` is OPTIONAL (absent means "no tone-map"), never present
-        with a literal `'none'` value; the previous enum could never
-        validate a real software-tone-map plan.
+        with a literal `'none'` value.
       enum: [opencl, vulkan, videotoolbox, cuda, cpu-zscale]
 
     PlanContainer:
@@ -4528,10 +4518,8 @@ components:
     Job:
       type: object
       description: >-
-        Job ledger row (P1.15/P1.17), typed fields matching the packages/db
-        `jobs` table exactly — replaces the Phase-0 additionalProperties:true
-        stub now that the job-queue design (pg-boss driver + ledger mirror,
-        D5/P1.15) is final.
+        Job ledger row, typed fields matching the server's
+        `jobs` table exactly (pg-boss driver + ledger mirror).
       additionalProperties: false
       required:
         - id
@@ -4571,7 +4559,7 @@ components:
     AdminSession:
       type: object
       description: >-
-        STATE.md P2.8/deliverable E — GET /admin/sessions row. Item display
+        GET /admin/sessions row. Item display
         fields are gated through the requesting admin's OWN ViewerContext
         (see the operation description); a session whose item this admin
         cannot currently see keeps itemTitle null and contentHidden true
@@ -4620,11 +4608,11 @@ components:
             historical artifacts and must remain readable across engine
             upgrades. REDACTED like itemTitle: null when contentHidden is
             true (codec/resolution/bitrate choices can indirectly describe a
-            restricted item), null for direct-play Phase-2-era rows only if
-            the row predates plan storage. Additive field (Phase 4 lane D).
+            restricted item), null only if
+            the row predates plan storage. Additive field.
         engineVersion:
           type: [string, 'null']
-          description: ENGINE_VERSION that produced the stored plan; redacted with it. Additive (Phase 4 lane D).
+          description: ENGINE_VERSION that produced the stored plan; redacted with it. Additive field.
 
     AdminSessionPage:
       type: object
@@ -4773,8 +4761,7 @@ components:
       description: >-
         One GET /admin/settings/schema entry — the pure registry
         projection (no live value): what the admin UI's dynamic widget
-        renderer and the generated operator/admin docs both build from
-        (AD3).
+        renderer and the generated operator/admin docs both build from.
       additionalProperties: false
       required: [key, category, description, scope, requiresRestart, default, valueSchema, locked]
       properties:
@@ -4793,7 +4780,7 @@ components:
         valueSchema:
           type: object
           description: >-
-            z.toJSONSchema(entry.schema) (AD3) — the JSON Schema describing
+            The JSON Schema describing
             this key's value shape. The UI widget renderer's sole input for
             choosing a control: boolean -> toggle, number (with
             minimum/maximum) -> numeric input, enum -> segmented/select,

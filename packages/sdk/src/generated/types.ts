@@ -10,7 +10,7 @@ export interface paths {
         };
         /**
          * Whether this instance still needs first-boot setup
-         * @description Public by necessity (the wizard runs before any credentials exist). Deliberately answers ONE boolean and nothing else — no version, no counts, no capability data (that is authenticated surface). Rate- limited like every unauthenticated endpoint (STATE.md P4.15).
+         * @description Public by necessity (the wizard runs before any credentials exist). Deliberately answers ONE boolean and nothing else — no version, no counts, no capability data (that is authenticated surface). Rate- limited like every unauthenticated endpoint.
          */
         get: operations["getSetupState"];
         put?: never;
@@ -32,7 +32,7 @@ export interface paths {
         put?: never;
         /**
          * Create the instance's first admin account (first boot only)
-         * @description STATE.md P4.10: succeeds ONLY while the users table is empty — the one-time escape from the admin-creates-users chicken-and-egg. Once ANY user exists this endpoint is permanently inert and returns a 404 byte-identical to an unknown route (an attacker probing a configured instance learns nothing — same posture as restricted-content 404s, docs/PLAN.md §6.4). Responds with the created admin plus a real token pair so the wizard proceeds authenticated without a second login round-trip.
+         * @description Succeeds ONLY while the users table is empty — the one-time escape from the admin-creates-users chicken-and-egg. Once ANY user exists this endpoint is permanently inert and returns a 404 byte-identical to an unknown route (an attacker probing a configured instance learns nothing — same posture as restricted-content 404s, docs/PLAN.md §6.4). Responds with the created admin plus a real token pair so the wizard proceeds authenticated without a second login round-trip.
          */
         post: operations["createFirstAdmin"];
         delete?: never;
@@ -136,7 +136,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Public feature-flag negotiation (docs/PLAN.md §4.1) */
+        /** Public feature-flag negotiation */
         get: operations["getSystemCapabilities"];
         put?: never;
         post?: never;
@@ -171,7 +171,7 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Admin-only notify-only update check (docs/PLAN.md §10, STATE.md P4.3/P4.16)
+         * Admin-only notify-only update check
          * @description Never triggers a download and never auto-applies anything — this is display data only. Serves the server's last completed manifest check (LOOMBRE_UPDATE_CHECK=off|manual|daily, default daily; see docs/ops/updating.md for exactly what the outbound manifest request does and does not contain — zero identifying payload). When LOOMBRE_UPDATE_CHECK=off, `verification` is always `disabled` and `latestVersion`/`notesUrl`/`checkedAtMs` are always null; the manifest mirror is never contacted.
          */
         get: operations["getSystemUpdate"];
@@ -266,7 +266,7 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
-        /** Self-service restricted-content opt-in and PIN management (docs/PLAN.md §6.4 gate 3). Admins cannot perform this on behalf of another user — there is no admin path to this operation. */
+        /** Self-service restricted-content opt-in and PIN management — the opt-in gate of the restricted-content model. Admins cannot perform this on behalf of another user — there is no admin path to this operation. */
         put: operations["putMyRestrictedSettings"];
         post?: never;
         delete?: never;
@@ -344,7 +344,7 @@ export interface paths {
         };
         /** Get per-user permission grants for a library (admin) */
         get: operations["getLibraryPermissions"];
-        /** Replace per-user permission grants for a library (admin). Restricted libraries default-deny; a grant must be explicit even for admins' own accounts (docs/PLAN.md §6.4 gate 4). */
+        /** Replace per-user permission grants for a library (admin). Restricted libraries default-deny; a grant must be explicit even for admins' own accounts — the per-library grant gate of the restricted-content model. */
         put: operations["putLibraryPermissions"];
         post?: never;
         delete?: never;
@@ -601,7 +601,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List credited people visible to the current user (leak-checked: content_class isolation AND credited on >=1 visible item, docs/PLAN.md §6.4) */
+        /** List credited people visible to the current user (leak-checked: content_class isolation AND credited on >=1 visible item) */
         get: operations["listPeople"];
         put?: never;
         post?: never;
@@ -639,7 +639,7 @@ export interface paths {
             };
             cookie?: never;
         };
-        /** Filmography: catalog items this person is credited on that are ALSO currently visible to the caller (Phosphor Wave 2 lane L3, /people/[id] route — gap-closure over GET /people/{id}, which only ever carried a creditCount). Same leak model as GET /people: content_class isolation on the person AND credited-on->=1-visible- item, replayed at the item-list surface instead of the count surface (packages/db/src/query/people.ts's listItemsForPerson). */
+        /** Filmography: catalog items this person is credited on that are ALSO currently visible to the caller. Same leak model as GET /people: content_class isolation on the person AND credited-on->=1-visible- item, replayed at the item-list surface instead of the count surface. */
         get: operations["listPersonItems"];
         put?: never;
         post?: never;
@@ -690,7 +690,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** In-progress items for the current user (computed per-viewer-context; never cached across users with different restricted-content clearance, docs/PLAN.md §6.4) */
+        /** In-progress items for the current user (computed per-viewer-context; never cached across users with different restricted-content clearance) */
         get: operations["getContinueWatching"];
         put?: never;
         post?: never;
@@ -747,7 +747,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Phase 3 §11 step 6b (STATE.md P3.7, D23 pre-release contract correction — second, PLANNED use of P2.19's slot): runs the real `@loombre/playback-engine` `plan()` against the resolved MediaInfo, the request's DeviceProfile, server-resolved NetworkConditions/ ServerPolicy/VerifiedCapabilities, and the resolved TrackSelection, and returns the FULL docs/PLAYBACK.md §5 PlaybackPlan (ladder, ffmpegArgs, hardware routing included) — REPLACING Phase 2's {canDirectPlay, wouldBeReasons} preview (P2.17/P2.19), which is deleted. This is a read-only preview: no session row is created and no job is enqueued (contrast POST /playback/sessions). */
+        /** Compute the full playback plan for a file without starting a session: runs the `@loombre/playback-engine` `plan()` against the resolved MediaInfo, the request's DeviceProfile, server-resolved NetworkConditions/ ServerPolicy/VerifiedCapabilities, and the resolved TrackSelection, and returns the FULL PlaybackPlan (ladder, ffmpegArgs, hardware routing included). This is a read-only preview: no session row is created and no job is enqueued (contrast POST /playback/sessions). */
         post: operations["computePlaybackPlan"];
         delete?: never;
         options?: never;
@@ -781,7 +781,7 @@ export interface paths {
             };
             cookie?: never;
         };
-        /** Phase 3 §11 step 6b (docs/PLAYBACK.md §9): fetch the live HLS media playlist for a transcode/direct-stream/remux session. REPLACES the Phase-2-era contract-only `GET /playback/sessions/{id}/manifest.m3u8` placeholder (which was never implemented — deleted, not kept alongside this coherent HLS surface) with the real thing plus its sibling segment-serving path below. Blocks up to 8s for the initial segment to be produced (polling `status === 'active' AND produced_segment IS NOT NULL`) before returning 503. Also accepts `?token=<accessToken>` (P2.18 pattern, scope extended to this path). */
+        /** Fetch the live HLS media playlist for a transcode/direct-stream/remux session. Blocks up to 8s for the initial segment to be produced (polling `status === 'active' AND produced_segment IS NOT NULL`) before returning 503. Also accepts `?token=<accessToken>` for media elements that cannot send Authorization headers. */
         get: operations["getPlaybackHlsManifest"];
         put?: never;
         post?: never;
@@ -797,12 +797,12 @@ export interface paths {
             header?: never;
             path: {
                 id: components["parameters"]["IdPathParam"];
-                /** @description `runN/sNNNNNN.m4s`, `runN/sNNNNNN.ts`, or `runN/init.mp4` (fmp4 init segment) — the worker's per-run on-disk layout (apps/worker/src/transcode staging). Strictly pattern-validated; anything else is rejected (traversal-safe by construction, mirrors GET .../file's "never trust a client-supplied path" posture). */
+                /** @description `runN/sNNNNNN.m4s`, `runN/sNNNNNN.ts`, or `runN/init.mp4` (fmp4 init segment) — the transcoder's per-run layout. Strictly pattern-validated; anything else is rejected (traversal-safe by construction — a client-supplied path is never trusted). */
                 file: string;
             };
             cookie?: never;
         };
-        /** Phase 3 §11 step 6b: serve one HLS init segment/media segment for a session. Updates the session's `requested_segment` (parsed from `file`) on every call — the worker's throttle input (docs/ PLAYBACK.md §9). A request for a segment index outside the currently-produced window (before the current run's start, or more than 3 segments ahead of `produced_segment`) triggers a seek request (`requestSeek`) and responds 503 (hls.js-compatible retry behavior) instead of 404 while the worker restarts the pipeline. Also accepts `?token=` (P2.18 pattern). */
+        /** Serve one HLS init segment/media segment for a session. Updates the session's `requested_segment` (parsed from `file`) on every call — the transcoder's pacing input. A request for a segment index outside the currently-produced window (before the current run's start, or more than 3 segments ahead of `produced_segment`) triggers a seek request (`requestSeek`) and responds 503 (hls.js-compatible retry behavior) instead of 404 while the worker restarts the pipeline. Also accepts `?token=` for media elements that cannot send Authorization headers. */
         get: operations["getPlaybackHlsFile"];
         put?: never;
         post?: never;
@@ -821,7 +821,7 @@ export interface paths {
             };
             cookie?: never;
         };
-        /** Additive, Phase 3 §11 step 6b (STATE.md P3.9(e)): the segmented-VTT subtitle side-track's single-segment HLS media playlist (docs/ PLAYBACK.md §9's "segmented WebVTT side-track" strategy, `subtitle. strategy === 'hls-vtt'`). Populated by the 'subtitle-extract' worker job (packages/jobs) enqueued at session create — works for direct-play sessions too (a session can carry an hls-vtt subtitle side-track independent of its own video/audio decision). Also accepts `?token=` (P2.18 pattern, scope extended to this path). */
+        /** The segmented-VTT subtitle side-track's single-segment HLS media playlist (the "segmented WebVTT side-track" strategy, `subtitle. strategy === 'hls-vtt'`). Populated by the subtitle-extract worker job enqueued at session create — works for direct-play sessions too (a session can carry an hls-vtt subtitle side-track independent of its own video/audio decision). Also accepts `?token=` for media elements that cannot send Authorization headers. */
         get: operations["getPlaybackSubtitleManifest"];
         put?: never;
         post?: never;
@@ -842,7 +842,7 @@ export interface paths {
             };
             cookie?: never;
         };
-        /** Additive, Phase 3 §11 step 6b (STATE.md P3.9(e)): serve the extracted WebVTT file. Also accepts `?token=` (P2.18 pattern). */
+        /** Serve the extracted WebVTT file. Also accepts `?token=` for media elements that cannot send Authorization headers. */
         get: operations["getPlaybackSubtitleFile"];
         put?: never;
         post?: never;
@@ -881,7 +881,7 @@ export interface paths {
             };
             cookie?: never;
         };
-        /** Additive, Phase 2 (STATE.md P2.13/P2.18): HTTP range-request byte serving of the session's own direct-play media file. Path resolution comes ONLY from the media_files row the session references — never from client input. Also accepts `?token=<accessToken>` (P2.18) since an HTML `<video>`/`<audio>` element cannot set an Authorization header. */
+        /** HTTP range-request byte serving of the session's own direct-play media file. Path resolution comes ONLY from the media_files row the session references — never from client input. Also accepts `?token=<accessToken>` since an HTML `<video>`/`<audio>` element cannot set an Authorization header. */
         get: operations["getPlaybackSessionFile"];
         put?: never;
         post?: never;
@@ -902,7 +902,7 @@ export interface paths {
         };
         /**
          * Read the current user's watch/listen progress for a single item
-         * @description Guarded like every other catalog-adjacent read (docs/PLAN.md §6.4): an item that doesn't exist and an item that exists but is invisible to the caller (not in an allowed library, or restricted without full gate clearance) are byte-identical 404s. No progress row for an otherwise-visible item is ALSO a 404 (there is nothing to return — this is a single-resource read, not a list).
+         * @description Guarded like every other catalog-adjacent read: an item that doesn't exist and an item that exists but is invisible to the caller (not in an allowed library, or restricted without full gate clearance) are byte-identical 404s. No progress row for an otherwise-visible item is ALSO a 404 (there is nothing to return — this is a single-resource read, not a list).
          */
         get: operations["getProgress"];
         /** Upsert watch/listen progress for an item (also serves as a session heartbeat) */
@@ -986,7 +986,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Verify the restricted-content PIN and open a time-boxed unlock (docs/PLAN.md §6.4 gate 5). Unlock state never persists across logins. */
+        /** Verify the restricted-content PIN and open a time-boxed unlock — the session-unlock gate of the restricted-content model. Unlock state never persists across logins. */
         post: operations["unlockRestricted"];
         delete?: never;
         options?: never;
@@ -1020,7 +1020,7 @@ export interface paths {
         };
         /**
          * Aggregate item count for the restricted zone (design/phosphor README "Restricted content": the zone's EXISTENCE and aggregate count are deliberately visible to entitled users regardless of current lock state — titles/artwork never leak through this surface, count only).
-         * @description 404 for a viewer with NO restricted-library entitlement at all (docs/PLAN.md §6.4 gates 1-4 never passed) — the zone does not exist for them, so this operation is absent rather than answering with `{count: 0}`, which would itself be a side channel.
+         * @description 404 for a viewer with NO restricted-library entitlement at all (the earlier restricted-content gates never passed) — the zone does not exist for them, so this operation is absent rather than answering with `{count: 0}`, which would itself be a side channel.
          */
         get: operations["getRestrictedCount"];
         put?: never;
@@ -1058,7 +1058,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Stream an open JSON archive of the caller's accessible data (docs/PLAN.md §8.4, P12) — no proprietary lock-in. */
+        /** Stream an open JSON archive of the caller's accessible data — no proprietary lock-in. */
         get: operations["exportData"];
         put?: never;
         post?: never;
@@ -1130,7 +1130,7 @@ export interface paths {
         };
         /**
          * List active playback sessions across all users (admin, now-playing presence)
-         * @description STATE.md P2.8/deliverable E. Admins are NOT exempt from restricted- content gating (docs/PLAN.md §6.4 gate 4/5): item display fields on each session row are resolved through the REQUESTING ADMIN'S OWN ViewerContext, exactly like any other catalog read. A session on an item this admin isn't currently cleared to see is still listed (the session itself — id/user/device/status/timestamps — carries no restricted content), but `itemTitle` is `null` and `contentHidden` is `true` instead of leaking the title.
+         * @description Admins are NOT exempt from restricted- content gating (the grant and session-unlock gates apply): item display fields on each session row are resolved through the REQUESTING ADMIN'S OWN ViewerContext, exactly like any other catalog read. A session on an item this admin isn't currently cleared to see is still listed (the session itself — id/user/device/status/timestamps — carries no restricted content), but `itemTitle` is `null` and `contentHidden` is `true` instead of leaking the title.
          */
         get: operations["listAdminSessions"];
         put?: never;
@@ -1150,7 +1150,7 @@ export interface paths {
         };
         /**
          * The verified hardware-capability report (admin)
-         * @description docs/PLAYBACK.md §8 / STATE.md Phase 3 step 5: the CURRENT hw_capability snapshot the plan() engine consumes — what this machine's ffmpeg build PROVED it can decode/encode/tone-map, per backend, in probe order. `report` is null when no probe has completed yet (fresh install before the first hwprobe job).
+         * @description The CURRENT hw_capability snapshot the plan() engine consumes — what this machine's ffmpeg build PROVED it can decode/encode/tone-map, per backend, in probe order. `report` is null when no probe has completed yet (fresh install before the first hwprobe job).
          */
         get: operations["getAdminCapabilities"];
         put?: never;
@@ -1170,7 +1170,7 @@ export interface paths {
         };
         /**
          * List local crash files (admin)
-         * @description STATE.md P4.5/P4.14: crash handlers write REDACTED local files under the app-data crashes dir; this lists their metadata, newest-first. Deliberately NOT cursor-paginated (bounded set: the crash writer caps retention; documented deviation from D10's cursor-everywhere rule for a bounded, small, admin-only list). Sharing remains entirely manual (D14) — nothing here transmits anything anywhere.
+         * @description Crash handlers write REDACTED local files under the app-data crashes dir; this lists their metadata, newest-first. Deliberately NOT cursor-paginated (bounded set: the crash writer caps retention; a documented deviation from the cursor-everywhere rule for a bounded, small, admin-only list). Sharing remains entirely manual — nothing here transmits anything anywhere.
          */
         get: operations["listCrashFiles"];
         put?: never;
@@ -1251,7 +1251,7 @@ export interface paths {
         };
         /**
          * Effective settings + provider-key statuses (admin)
-         * @description STATE.md Addendum A: every registered setting's CURRENT effective value (env-pin > database > registry default precedence, packages/shared/src/settings-resolve.ts), independent of scope — env-only entries are included read-only alongside ui-editable ones, so an operator can always see what's actually governing the running instance. `restartPendingKeys` lists requiresRestart:true keys whose effective value has changed since this server instance booted; non-empty means a restart is needed for those changes to fully take effect. `providerKeys` (A9) carries TMDB/TVDB key status only — the key value itself is never returned by any endpoint.
+         * @description Every registered setting's CURRENT effective value (env-pin > database > registry default precedence), independent of scope — env-only entries are included read-only alongside ui-editable ones, so an operator can always see what's actually governing the running instance. `restartPendingKeys` lists requiresRestart:true keys whose effective value has changed since this server instance booted; non-empty means a restart is needed for those changes to fully take effect. `providerKeys` (A9) carries TMDB/TVDB key status only — the key value itself is never returned by any endpoint.
          */
         get: operations["getAdminSettings"];
         put?: never;
@@ -1271,7 +1271,7 @@ export interface paths {
         };
         /**
          * Settings registry projection (admin) — the UI form renderer's sole input
-         * @description STATE.md Addendum A decision AD3: one JSON-schema-per-key projection (z.toJSONSchema of packages/shared/src/settings-registry.ts's own zod schema) feeds this endpoint, the admin settings UI's dynamic widget renderer, and the generated operator/admin docs alike — nobody hand-writes a second copy of a setting's shape anywhere. Carries no live value (see AdminSettingsResponse for that) — pair with GET /admin/settings for the effective value alongside each entry's static metadata.
+         * @description One JSON-schema-per-key projection (generated from the server's own settings registry) feeds this endpoint, the admin settings UI's dynamic widget renderer, and the generated operator/admin docs alike — nobody hand-writes a second copy of a setting's shape anywhere. Carries no live value (see AdminSettingsResponse for that) — pair with GET /admin/settings for the effective value alongside each entry's static metadata.
          */
         get: operations["getAdminSettingsSchema"];
         put?: never;
@@ -1292,7 +1292,7 @@ export interface paths {
         get?: never;
         /**
          * Update one UI-editable setting's value (admin)
-         * @description STATE.md Addendum A decision A10: re-verifies the caller's admin status with a FRESH database read at mutation time (never trusted from a possibly-stale access-token claim) before anything else, including before revealing whether `key` exists at all. Ordered checks: 403 (not currently an admin, live re-verify) -> 404 (unknown key, or a scope:'env-only' key — those are never writable through this surface, the lockout boundary docs/PLAN.md describes) -> 409 (an active env pin governs this key right now; the submitted value is discarded unconditionally, valid or not) -> 422 (schema validation, including the restricted.majorityAgeYears >=18 floor, which cannot be configured below it through any path).
+         * @description Re-verifies the caller's admin status with a FRESH database read at mutation time (never trusted from a possibly-stale access-token claim) before anything else, including before revealing whether `key` exists at all. Ordered checks: 403 (not currently an admin, live re-verify) -> 404 (unknown key, or a scope:'env-only' key — those are never writable through this surface — the lockout boundary) -> 409 (an active env pin governs this key right now; the submitted value is discarded unconditionally, valid or not) -> 422 (schema validation, including the restricted.majorityAgeYears >=18 floor, which cannot be configured below it through any path).
          */
         put: operations["updateAdminSetting"];
         post?: never;
@@ -1605,7 +1605,7 @@ export interface paths {
         };
         /**
          * List catalog items in a library with no provider metadata match (Fix Match, admin)
-         * @description Derived, never stored (U9): an item of an enrichable type (movie/series/artist/album) with zero provider_ids rows. Cursor- paginated, most-recently-added first. Goes through the standard catalog guard (packages/db/src/query/guard.ts's applyGuard) with the REQUESTING ADMIN'S OWN ViewerContext — admins are not exempt from restricted-content gating or from needing their own library_permissions grant (docs/PLAN.md §6.4).
+         * @description Derived, never stored: an item of an enrichable type (movie/series/artist/album) with zero provider_ids rows. Cursor- paginated, most-recently-added first. Goes through the standard catalog guard (packages/db/src/query/guard.ts's applyGuard) with the REQUESTING ADMIN'S OWN ViewerContext — admins are not exempt from restricted-content gating or from needing their own library_permissions grant (docs/PLAN.md §6.4).
          */
         get: operations["listUnmatchedLibraryItems"];
         put?: never;
@@ -1684,14 +1684,14 @@ export interface components {
         /** @enum {string} */
         ItemType: "movie" | "series" | "season" | "episode" | "artist" | "album" | "track";
         /**
-         * @description docs/PLAN.md §6.4 — coarse gate on libraries, inherited by items.
+         * @description Coarse restricted-content gate on libraries, inherited by items.
          * @enum {string}
          */
         ContentClass: "general" | "restricted";
         /** @enum {string} */
         MediaKind: "movie" | "tv" | "music";
         /**
-         * @description Additive (Phosphor Wave 2 lane L3, /people/[id] route): `person` was never reachable through this path before — packages/db/src/query/ images.ts's getImageEntityAccess has always accepted a 'person' entity type (the SAME guard rule listPeople/getPersonById use: content_class isolation AND credited-on->=1-visible-item), but apps/server/src/catalog/images.controller.ts previously hardcoded every contract value to the DB's 'catalog_item' entity type with no way to reach 'person' at all. This value plus the controller mapping fix close that gap so a Person page portrait (GET /images/person/{id}/thumb) can be served.
+         * @description Entity types a managed image can belong to. `person` images are guarded by the SAME leak rule listPeople/getPersonById use (content_class isolation AND credited-on->=1-visible-item), so a person invisible to the caller has no reachable images either. This value plus the server-side mapping fix close that gap so a Person page portrait (GET /images/person/{id}/thumb) can be served.
          * @enum {string}
          */
         ImageEntityType: "movie" | "series" | "season" | "episode" | "artist" | "album" | "track" | "person";
@@ -1703,13 +1703,13 @@ export interface components {
         ProgressState: "unplayed" | "in-progress" | "played";
         /** @enum {string} */
         ItemTagKind: "genre" | "tag";
-        /** @description One pre-scaled managed image variant (P1.17). Never computed on request (Tier-0 rule) — width/height/blurhash/dominantColor mirror the `images` table row an ingest-time worker_thread wrote. */
+        /** @description One pre-scaled managed image variant. Never computed on request (Tier-0 rule) — width/height/blurhash/dominantColor mirror the `images` table row an ingest-time worker_thread wrote. */
         ImageDescriptor: {
             kind: components["schemas"]["ImageKind"];
             width: number | null;
             height: number | null;
             blurhash: string | null;
-            /** @description Hex '#rrggbb' dominant colour extracted worker-side at ingest (P2.11, migrations/0005_images_dominant_color.sql). Null when not yet computed/unavailable. */
+            /** @description Hex '#rrggbb' dominant colour extracted worker-side at ingest. Null when not yet computed/unavailable. */
             dominantColor?: string | null;
         };
         LoginRequest: {
@@ -1722,7 +1722,7 @@ export interface components {
             deviceProfile: components["schemas"]["DeviceProfile"];
             /**
              * Format: uuid
-             * @description Reuse an existing device row owned by the authenticating user (docs/STATE.md P2.16): its refresh-token chain is rotated and profile/last-seen refreshed instead of a new row being created. Omitted, unknown, or owned by a different user -> a new device is registered (Phase 1 behavior); device existence is never leaked either way.
+             * @description Reuse an existing device row owned by the authenticating user: its refresh-token chain is rotated and profile/last-seen refreshed instead of a new row being created. Omitted, unknown, or owned by a different user -> a new device is registered; device existence is never leaked either way.
              */
             deviceId?: string;
         };
@@ -1746,7 +1746,7 @@ export interface components {
             /** Format: uuid */
             deviceId: string;
         };
-        /** @description Client-declared at login, server-validated against this schema (docs/PLAYBACK.md §2.2). Never "best-guessed" when invalid — a malformed profile is rejected with 422, not patched inside plan(). */
+        /** @description Client-declared at login, server-validated against this schema. Never "best-guessed" when invalid — a malformed profile is rejected with 422, not patched inside plan(). */
         DeviceProfile: {
             /** @description e.g. 'web-chrome', 'web-safari' */
             profileId: string;
@@ -1835,7 +1835,7 @@ export interface components {
             totalBytes: number;
         };
         /**
-         * @description `verified`: the fetched manifest's minisign signature checked out against the pinned public key (P4.9/P4.18) and `latestVersion`/ `notesUrl` reflect it. `signature-invalid`: a manifest was fetched but its signature did not verify (tampered, wrong key, or an unsupported prehashed-'ED' minisig — @loombre/release-manifest's closed failure-reason set collapses to this one contract value). `unreachable`: the manifest mirror could not be reached, returned a non-2xx status, or returned a response that wasn't a well-formed manifest for this server's channel. `disabled`: LOOMBRE_UPDATE_CHECK=off — no network request was made.
+         * @description `verified`: the fetched manifest's minisign signature checked out against the pinned public key and `latestVersion`/ `notesUrl` reflect it. `signature-invalid`: a manifest was fetched but its signature did not verify (tampered, wrong key, or an unsupported prehashed-'ED' minisig — @loombre/release-manifest's closed failure-reason set collapses to this one contract value). `unreachable`: the manifest mirror could not be reached, returned a non-2xx status, or returned a response that wasn't a well-formed manifest for this server's channel. `disabled`: LOOMBRE_UPDATE_CHECK=off — no network request was made.
          * @enum {string}
          */
         SystemUpdateVerification: "verified" | "signature-invalid" | "unreachable" | "disabled";
@@ -1875,7 +1875,7 @@ export interface components {
         CapabilityBackend: {
             /** @description Backend identifier as probed (videotoolbox, nvenc, qsv, vaapi, d3d11va, software — closed set enforced by the DB CHECK, mirrored not re-enumerated here so a new backend is additive). */
             name: string;
-            /** @description Probe order (docs/PLAYBACK.md §8.2 — array order is Stage-G-load-bearing). */
+            /** @description Probe order (docs/PLAYBACK.md §8.2 — array order is load-bearing for the plan engine). */
             position: number;
             decode: string[];
             encode: string[];
@@ -1884,7 +1884,7 @@ export interface components {
         CapabilityReport: {
             /** @enum {string} */
             platform: "linux" | "macos" | "windows";
-            /** @description sha256 of the resolved ffmpeg's -version output (STATE.md P3.5 invalidation key). */
+            /** @description sha256 of the resolved ffmpeg's -version output (the capability report's invalidation key). */
             ffmpegBuildHash: string;
             /** @description Best-effort GPU identity hash; null when the per-platform probe command failed. */
             gpuFingerprint: string | null;
@@ -1986,7 +1986,7 @@ export interface components {
             locale: string;
             /** @enum {string} */
             theme: "light" | "dark" | "system";
-            /** @description ISO 639-2 (lowercase 3-letter code, e.g. "eng"), or null for no preference. Server-side membership in the known-language list (packages/shared/src/language-codes.ts) is validated beyond this shape (P4.22-style pre-release narrowing: the shape alone cannot express "a real language code"). */
+            /** @description ISO 639-2 (lowercase 3-letter code, e.g. "eng"), or null for no preference. Server-side membership in the known-language list is validated beyond this shape (the shape alone cannot express "a real language code"). */
             subtitlePreferredLanguage: string | null;
             /** @description ISO 639-2 (lowercase 3-letter code, e.g. "eng"), or null for no preference. Same known-language-list validation as subtitlePreferredLanguage above. */
             audioPreferredLanguage: string | null;
@@ -2070,7 +2070,7 @@ export interface components {
         };
         /** @enum {string} */
         PersonRole: "actor" | "director" | "writer" | "artist" | "album_artist" | "performer" | "guest";
-        /** @description Mirrors item_people/people (packages/db/migrations/0001_init.sql): `id` is the credited PERSON's id (not the item_people join-row id), so a client can link straight to GET /people/{id}. Restricted-class people are never credited on a visible general item's response — the same content_class join-guard search.ts/catalog-detail.ts already use for tags (P1.21) applies here. */
+        /** @description Mirrors item_people/people (packages/db/migrations/0001_init.sql): `id` is the credited PERSON's id (not the item_people join-row id), so a client can link straight to GET /people/{id}. Restricted-class people are never credited on a visible general item's response — the same content_class join-guard search.ts/catalog-detail.ts already use for tags applies here. */
         PersonCredit: {
             /** Format: uuid */
             id: string;
@@ -2080,7 +2080,7 @@ export interface components {
             credit?: string | null;
             order: number;
         };
-        /** @description One media_streams audio row on a MediaFileSummary (Phosphor W2 L4 movie-detail METADATA "Audio" row — packages/db's MediaFileAudioTrackSummary). */
+        /** @description One probed audio stream on a MediaFileSummary (what the movie-detail METADATA "Audio" row displays). */
         MediaFileAudioTrack: {
             codec: components["schemas"]["AudioCodec"];
             channels: number | null;
@@ -2093,7 +2093,7 @@ export interface components {
             language: string | null;
             isForced: boolean;
         };
-        /** @description One media_files row (packages/db/migrations/0001_init.sql), for the version/edition picker (multi-version/multi-part items, §8.1) and diagnosability. `width`/`height` come from that file's primary video stream (media_streams) and are null for audio-only files or files not yet probed. `path`/`isDefault`/`videoCodec`/`bitDepth`/`hdr`/ `audioTracks`/`subtitleTracks` (Phosphor W2 L4 movie-detail VERSIONS + METADATA cards) are the same additive, already-probed columns — see packages/db's catalog-detail.ts header ("full house" pattern: real columns already written by the scanner, newly exposed, nothing derived or invented). Deliberately NOT in `required`, unlike the original seven fields: this schema doubles as POST /import's ExportArchive request body (data-freedom.controller.ts), and an archive written by an older Loombre version won't carry them — making them required would be a breaking contract change for that import path (oasdiff-caught). GET /movies|episodes|tracks/{id} always populates every one of them; only a foreign/older import payload may omit them. */
+        /** @description One media_files row (packages/db/migrations/0001_init.sql), for the version/edition picker (multi-version/multi-part items, §8.1) and diagnosability. `width`/`height` come from that file's primary video stream (media_streams) and are null for audio-only files or files not yet probed. `path`/`isDefault`/`videoCodec`/`bitDepth`/`hdr`/ `audioTracks`/`subtitleTracks` (the movie-detail VERSIONS + METADATA cards) are the same additive, already-probed columns — real columns already written by the scanner, newly exposed, nothing derived or invented. Deliberately NOT in `required`, unlike the original seven fields: this schema doubles as POST /import's ExportArchive request body (data-freedom.controller.ts), and an archive written by an older Loombre version won't carry them — making them required would be a breaking contract change for that import path (oasdiff-caught). GET /movies|episodes|tracks/{id} always populates every one of them; only a foreign/older import payload may omit them. */
         MediaFileSummary: {
             /** Format: uuid */
             id: string;
@@ -2369,7 +2369,7 @@ export interface components {
             state: components["schemas"]["ProgressState"];
             /**
              * Format: uuid
-             * @description Optional playback session id (P2.14/P2.18). When present, this write also heartbeats that session (docs/PLAYBACK.md §9): "the client progress PUT doubles as heartbeat".
+             * @description Optional playback session id. When present, this write also heartbeats that session (docs/PLAYBACK.md §9): "the client progress PUT doubles as heartbeat".
              */
             sessionId?: string;
         };
@@ -2378,7 +2378,7 @@ export interface components {
             nextCursor: string | null;
         };
         /**
-         * @description Source container (docs/PLAYBACK.md §2.1). v1.1 (STATE.md H3): asf/mpeg/flv/aac/aiff admit legacy-format ingestion (wmv/wma->asf, mpg/mpeg/vob->mpeg) — never direct-playable.
+         * @description Source container (docs/PLAYBACK.md §2.1). Since v1.1, asf/mpeg/flv/aac/aiff admit legacy-format ingestion (wmv/wma->asf, mpg/mpeg/vob->mpeg) — never direct-playable.
          * @enum {string}
          */
         Container: "mp4" | "mkv" | "webm" | "avi" | "ts" | "mov" | "flac" | "mp3" | "ogg" | "m4a" | "wav" | "asf" | "mpeg" | "flv" | "aac" | "aiff";
@@ -2479,7 +2479,7 @@ export interface components {
             detail?: string | null;
         };
         /**
-         * @description Method used for HDR->SDR tone mapping (docs/PLAYBACK.md §5/§8.3) — MUST match @loombre/playback-engine's ToneMapMethod exactly. Fixed (2026-07-24, Phase 3 §11 step 6b, D23-class correction): was `[opencl, vulkan, videotoolbox, cuda, zscale-cpu, none]` — the engine's actual value is `cpu-zscale` (not `zscale-cpu`), and `toneMap` is OPTIONAL (absent means "no tone-map"), never present with a literal `'none'` value; the previous enum could never validate a real software-tone-map plan.
+         * @description Method used for HDR->SDR tone mapping (docs/PLAYBACK.md §5/§8.3) — MUST match @loombre/playback-engine's ToneMapMethod exactly. `toneMap` is OPTIONAL (absent means "no tone-map"), never present with a literal `'none'` value.
          * @enum {string}
          */
         ToneMapMethod: "opencl" | "vulkan" | "videotoolbox" | "cuda" | "cpu-zscale";
@@ -2620,7 +2620,7 @@ export interface components {
         };
         /** @enum {string} */
         JobStatus: "queued" | "active" | "completed" | "failed" | "cancelled";
-        /** @description Job ledger row (P1.15/P1.17), typed fields matching the packages/db `jobs` table exactly — replaces the Phase-0 additionalProperties:true stub now that the job-queue design (pg-boss driver + ledger mirror, D5/P1.15) is final. */
+        /** @description Job ledger row, typed fields matching the server's `jobs` table exactly (pg-boss driver + ledger mirror). */
         Job: {
             /** Format: uuid */
             id: string;
@@ -2645,7 +2645,7 @@ export interface components {
             items: components["schemas"]["Job"][];
             nextCursor: string | null;
         };
-        /** @description STATE.md P2.8/deliverable E — GET /admin/sessions row. Item display fields are gated through the requesting admin's OWN ViewerContext (see the operation description); a session whose item this admin cannot currently see keeps itemTitle null and contentHidden true rather than being omitted from the page. */
+        /** @description GET /admin/sessions row. Item display fields are gated through the requesting admin's OWN ViewerContext (see the operation description); a session whose item this admin cannot currently see keeps itemTitle null and contentHidden true rather than being omitted from the page. */
         AdminSession: {
             /** Format: uuid */
             id: string;
@@ -2668,11 +2668,11 @@ export interface components {
             updatedAtMs: number;
             /** Format: int64 */
             lastHeartbeatMs: number | null;
-            /** @description The session's STORED plan (the §6.3-whitelisted serialized-plan JSONB: the docs/PLAYBACK.md §5 shape as produced by the engineVersion below, possibly carrying the selection sidecar the worker's seek-restart path requires) — the admin "why is this transcoding" panel's data. Deliberately a free-form object, NOT a $ref to PlaybackPlan: stored plans are engine-versioned historical artifacts and must remain readable across engine upgrades. REDACTED like itemTitle: null when contentHidden is true (codec/resolution/bitrate choices can indirectly describe a restricted item), null for direct-play Phase-2-era rows only if the row predates plan storage. Additive field (Phase 4 lane D). */
+            /** @description The session's STORED plan (the §6.3-whitelisted serialized-plan JSONB: the docs/PLAYBACK.md §5 shape as produced by the engineVersion below, possibly carrying the selection sidecar the worker's seek-restart path requires) — the admin "why is this transcoding" panel's data. Deliberately a free-form object, NOT a $ref to PlaybackPlan: stored plans are engine-versioned historical artifacts and must remain readable across engine upgrades. REDACTED like itemTitle: null when contentHidden is true (codec/resolution/bitrate choices can indirectly describe a restricted item), null only if the row predates plan storage. Additive field. */
             plan?: {
                 [key: string]: unknown;
             } | null;
-            /** @description ENGINE_VERSION that produced the stored plan; redacted with it. Additive (Phase 4 lane D). */
+            /** @description ENGINE_VERSION that produced the stored plan; redacted with it. Additive field. */
             engineVersion?: string | null;
         };
         AdminSessionPage: {
@@ -2735,7 +2735,7 @@ export interface components {
             restartPendingKeys: string[];
             providerKeys: components["schemas"]["ProviderKeyStatus"][];
         };
-        /** @description One GET /admin/settings/schema entry — the pure registry projection (no live value): what the admin UI's dynamic widget renderer and the generated operator/admin docs both build from (AD3). */
+        /** @description One GET /admin/settings/schema entry — the pure registry projection (no live value): what the admin UI's dynamic widget renderer and the generated operator/admin docs both build from. */
         AdminSettingSchemaEntry: {
             key: string;
             category: components["schemas"]["SettingsCategory"];
@@ -2747,7 +2747,7 @@ export interface components {
             /** @description The real environment variable this entry is pinnable by (scope 'ui') or exclusively sourced from (scope 'env-only'). */
             envVar?: string;
             default: unknown;
-            /** @description z.toJSONSchema(entry.schema) (AD3) — the JSON Schema describing this key's value shape. The UI widget renderer's sole input for choosing a control: boolean -> toggle, number (with minimum/maximum) -> numeric input, enum -> segmented/select, string -> text input, array/object -> a structured editor. */
+            /** @description The JSON Schema describing this key's value shape. The UI widget renderer's sole input for choosing a control: boolean -> toggle, number (with minimum/maximum) -> numeric input, enum -> segmented/select, string -> text input, array/object -> a structured editor. */
             valueSchema: Record<string, never>;
             /** @description Mirrors AdminSettingValue.locked for the SAME key (A8), without a second round trip to GET /admin/settings. */
             locked: boolean;
@@ -3097,7 +3097,7 @@ export interface operations {
                     "application/json": components["schemas"]["SetupState"];
                 };
             };
-            /** @description Rate limited (unauthenticated surface, STATE.md P4.15) */
+            /** @description Rate limited (unauthenticated surface) */
             429: {
                 headers: {
                     /** @description Seconds until the next attempt is allowed. */
@@ -3160,7 +3160,7 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             422: components["responses"]["UnprocessableEntity"];
-            /** @description Rate limited (per-IP login attempts, STATE.md P2.1) */
+            /** @description Rate limited (per-IP login attempts) */
             429: {
                 headers: {
                     /** @description Seconds until the next attempt is allowed. */
@@ -3197,7 +3197,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
-            /** @description Rate limited (per-IP refresh attempts, STATE.md P2.1) */
+            /** @description Rate limited (per-IP refresh attempts) */
             429: {
                 headers: {
                     /** @description Seconds until the next attempt is allowed. */
@@ -4465,7 +4465,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description The full PlaybackPlan (docs/PLAYBACK.md §5) */
+            /** @description The full PlaybackPlan */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -4504,7 +4504,7 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
-            /** @description Phase 3 §11 step 6b (STATE.md P3.7): the computed PlaybackPlan is genuinely unplayable — `decision === 'transcode'` but `ffmpegArgs` is empty (tone-map refused by policy, or an empty/degenerate ladder — docs/PLAYBACK.md §3's "the session layer surfaces the failure" seam). The problem body's `reasons` extension member carries the plan's own (real, not hypothetical) `PlanReason[]`. This REPLACES Phase 2's wouldBeReasons-carrying 409 (P2.4/P2.17), which fired for any non-direct-playable media; a session for playable-via-transcode media now succeeds (201) instead. */
+            /** @description The computed PlaybackPlan is genuinely unplayable — `decision === 'transcode'` but `ffmpegArgs` is empty (tone-map refused by policy, or an empty/degenerate ladder). The problem body's `reasons` extension member carries the plan's own (real, not hypothetical) `PlanReason[]`. A session for playable-via-transcode media succeeds (201) — this response is reserved for media no strategy can play. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -4514,7 +4514,7 @@ export interface operations {
                 };
             };
             422: components["responses"]["UnprocessableEntity"];
-            /** @description Transcode slots exhausted (`maxSimultaneousTranscodes` semaphore, docs/PLAYBACK.md §9) — the global count of active-ish transcode sessions (any non-direct-play decision, any non-terminal status) already meets or exceeds the resolved policy's cap. */
+            /** @description Transcode slots exhausted (`maxSimultaneousTranscodes` semaphore) — the global count of active-ish transcode sessions (any non-direct-play decision, any non-terminal status) already meets or exceeds the resolved policy's cap. */
             429: {
                 headers: {
                     [name: string]: unknown;
@@ -4529,7 +4529,7 @@ export interface operations {
     getPlaybackHlsManifest: {
         parameters: {
             query?: {
-                /** @description Access JWT fallback for media elements that cannot send Authorization headers (P2.18 pattern). */
+                /** @description Access JWT fallback for media elements that cannot send Authorization headers. */
                 token?: string;
             };
             header?: never;
@@ -4552,7 +4552,7 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
-            /** @description Initial segment not yet produced within the 8s poll window; client should retry (Retry-After header set, docs/PLAYBACK.md §9) */
+            /** @description Initial segment not yet produced within the 8s poll window; client should retry (Retry-After header set) */
             503: {
                 headers: {
                     "Retry-After"?: number;
@@ -4568,13 +4568,13 @@ export interface operations {
     getPlaybackHlsFile: {
         parameters: {
             query?: {
-                /** @description Access JWT fallback for media elements that cannot send Authorization headers (P2.18 pattern). */
+                /** @description Access JWT fallback for media elements that cannot send Authorization headers. */
                 token?: string;
             };
             header?: never;
             path: {
                 id: components["parameters"]["IdPathParam"];
-                /** @description `runN/sNNNNNN.m4s`, `runN/sNNNNNN.ts`, or `runN/init.mp4` (fmp4 init segment) — the worker's per-run on-disk layout (apps/worker/src/transcode staging). Strictly pattern-validated; anything else is rejected (traversal-safe by construction, mirrors GET .../file's "never trust a client-supplied path" posture). */
+                /** @description `runN/sNNNNNN.m4s`, `runN/sNNNNNN.ts`, or `runN/init.mp4` (fmp4 init segment) — the transcoder's per-run layout. Strictly pattern-validated; anything else is rejected (traversal-safe by construction — a client-supplied path is never trusted). */
                 file: string;
             };
             cookie?: never;
@@ -4610,7 +4610,7 @@ export interface operations {
     getPlaybackSubtitleManifest: {
         parameters: {
             query?: {
-                /** @description Access JWT fallback for media elements that cannot send Authorization headers (P2.18 pattern). */
+                /** @description Access JWT fallback for media elements that cannot send Authorization headers. */
                 token?: string;
             };
             header?: never;
@@ -4649,7 +4649,7 @@ export interface operations {
     getPlaybackSubtitleFile: {
         parameters: {
             query?: {
-                /** @description Access JWT fallback for media elements that cannot send Authorization headers (P2.18 pattern). */
+                /** @description Access JWT fallback for media elements that cannot send Authorization headers. */
                 token?: string;
             };
             header?: never;
@@ -4729,7 +4729,7 @@ export interface operations {
     getPlaybackSessionFile: {
         parameters: {
             query?: {
-                /** @description Access JWT fallback for media elements that cannot send Authorization headers (P2.18). */
+                /** @description Access JWT fallback for media elements that cannot send Authorization headers. */
                 token?: string;
             };
             header?: {
@@ -4963,7 +4963,7 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             422: components["responses"]["UnprocessableEntity"];
-            /** @description Rate limited (per-user PIN attempts, STATE.md P2.1) */
+            /** @description Rate limited (per-user PIN attempts) */
             429: {
                 headers: {
                     /** @description Seconds until the next attempt is allowed. */
@@ -5228,7 +5228,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Crash file basename exactly as returned by listCrashFiles. The strict pattern (no separators, no leading dot) makes path traversal structurally impossible — same posture as the HLS file-serving routes (STATE.md step 6b). */
+                /** @description Crash file basename exactly as returned by listCrashFiles. The strict pattern (no separators, no leading dot) makes path traversal structurally impossible — same posture as the HLS file-serving routes. */
                 name: string;
             };
             cookie?: never;
