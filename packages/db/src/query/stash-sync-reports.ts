@@ -285,3 +285,95 @@ export async function listStaleStashScenes(
   const nextCursor = rows.length > limit ? encodeCursor<StashSceneCursorPayload>({ id: page[page.length - 1]!.stash_scene_id }) : null;
   return { rows: page.map(toSceneListRow), nextCursor };
 }
+
+// ============================================================================
+// FX3 fix wave: the Loombre-side half of S4/S8's "both unmatched sides"
+// law. listUnmatchedStashScenes/listStaleStashScenes above are the
+// Stash-side lists (a stash_scene_links row unmatched or stale);
+// apps/worker/src/stash/matching.ts's own header documents the Loombre
+// side ("unmatched Loombre files land visibly... a plain set-difference
+// the caller can compute directly from this function's output") as caller
+// responsibility — nothing computed it until now. This mirrors the SAME
+// candidate universe src/query/stash-inventory.ts's
+// listCandidateMediaFilesForLibrary uses for matching itself (every
+// media_files row belonging to the library via catalog_items, no
+// item_type/missing_since_ms filter of its own — a matching candidate and
+// an "unmatched, visible" candidate must stay the exact same set, or the
+// admin-visible list could disagree with what the sync engine itself
+// considers a candidate), just the half with no stash_scene_links row
+// pointing at its item.
+// ============================================================================
+
+export interface UnmatchedLoombreFileRow {
+  mediaFileId: string;
+  itemId: string;
+  itemTitle: string;
+  path: string;
+  sizeBytes: number | null;
+}
+
+export interface UnmatchedLoombreFileListResult {
+  rows: UnmatchedLoombreFileRow[];
+  nextCursor: string | null;
+}
+
+interface LoombreFileCursorPayload {
+  id: string;
+}
+
+function isLoombreFileCursorPayload(value: unknown): value is LoombreFileCursorPayload {
+  return typeof value === 'object' && value !== null && typeof (value as Record<string, unknown>).id === 'string';
+}
+
+/** Live keyset list of media_files rows in `libraryId` whose owning item has
+ *  NO stash_scene_links row (any stash_scene_id, matched or not — the
+ *  predicate is "does a link exist at all for this item", the mirror image
+ *  of "item_id IS NULL" on the Stash-side list). Ordered by media_files.id
+ *  ASC — no dedicated index added (admin-only surface, not a T0 zone-browse
+ *  path per S10's scope; the EXISTS subquery is already covered by
+ *  migrations/0018's partial stash_scene_links_item_id_idx and
+ *  media_files_item_id_idx, matching listCandidateMediaFilesForLibrary's
+ *  own unindexed-beyond-that precedent for the identical candidate join). */
+export async function listUnmatchedLoombreFiles(
+  db: Kysely<DB>,
+  libraryId: string,
+  params: ListStashScenesParams = {}
+): Promise<UnmatchedLoombreFileListResult> {
+  const limit = params.limit ?? DEFAULT_LIST_LIMIT;
+  let query = db
+    .selectFrom('media_files')
+    .innerJoin('catalog_items', 'catalog_items.id', 'media_files.item_id')
+    .where('catalog_items.library_id', '=', libraryId)
+    .where((eb) =>
+      eb.not(
+        eb.exists(
+          eb
+            .selectFrom('stash_scene_links')
+            .select('stash_scene_links.id')
+            .where('stash_scene_links.library_id', '=', libraryId)
+            .whereRef('stash_scene_links.item_id', '=', 'catalog_items.id')
+        )
+      )
+    );
+
+  if (params.cursor) {
+    const { id } = decodeCursor(params.cursor, isLoombreFileCursorPayload);
+    query = query.where('media_files.id', '>', id);
+  }
+
+  const rows = await query
+    .select([
+      'media_files.id as mediaFileId',
+      'catalog_items.id as itemId',
+      'catalog_items.title as itemTitle',
+      'media_files.path as path',
+      'media_files.size_bytes as sizeBytes',
+    ])
+    .orderBy('media_files.id', 'asc')
+    .limit(limit + 1)
+    .execute();
+
+  const page = rows.slice(0, limit);
+  const nextCursor = rows.length > limit ? encodeCursor<LoombreFileCursorPayload>({ id: page[page.length - 1]!.mediaFileId }) : null;
+  return { rows: page, nextCursor };
+}

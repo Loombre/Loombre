@@ -2966,6 +2966,10 @@ paths:
         queries over the current stash_scene_links table (K10/S4/S8), so
         they reflect fixes (a corrected path mapping, a scene reappearing
         in Stash) immediately, without waiting for the next sync run.
+        `unmatchedLoombreFiles` (FX3 fix wave) is the Loombre-side twin —
+        S4/S8 document BOTH unmatched sides as the report's job; this is
+        also a live query, over media_files/catalog_items, never a report
+        snapshot.
       parameters:
         - name: unmatchedCursor
           in: query
@@ -2977,10 +2981,15 @@ paths:
           required: false
           description: Opaque pagination cursor for `staleScenes`, from a previous response's `staleScenes.nextCursor`.
           schema: { type: string }
+        - name: unmatchedLoombreFilesCursor
+          in: query
+          required: false
+          description: Opaque pagination cursor for `unmatchedLoombreFiles`, from a previous response's `unmatchedLoombreFiles.nextCursor`.
+          schema: { type: string }
         - $ref: '#/components/parameters/Limit'
       responses:
         '200':
-          description: The library's latest Stash sync report, plus live unmatched/stale scene lists
+          description: The library's latest Stash sync report, plus live unmatched/stale/unmatched-Loombre-file lists
           content:
             application/json:
               schema: { $ref: '#/components/schemas/StashSyncReportEnvelope' }
@@ -6269,10 +6278,38 @@ components:
           items: { $ref: '#/components/schemas/StashSyncSceneRef' }
         nextCursor: { type: [string, 'null'] }
 
+    StashSyncLoombreFileRef:
+      type: object
+      description: >-
+        FX3 fix wave (S4/S8 "both unmatched sides" law): one media_files row
+        in the connected library with NO stash_scene_links row pointing at
+        its item — the Loombre-side half of S4's matching set-difference
+        (apps/worker/src/stash/matching.ts documents this as the caller's
+        responsibility; nothing computed it until now). Live-read, same
+        posture as StashSyncSceneRef (never a report snapshot).
+      additionalProperties: false
+      required: [mediaFileId, itemId, itemTitle, path, sizeBytes]
+      properties:
+        mediaFileId: { type: string, format: uuid }
+        itemId: { type: string, format: uuid }
+        itemTitle: { type: string, description: "The catalog item's title — what an admin needs to recognize the file." }
+        path: { type: string, description: 'The Loombre-side media_files.path.' }
+        sizeBytes: { type: [integer, 'null'], format: int64 }
+
+    StashSyncLoombreFileRefPage:
+      type: object
+      additionalProperties: false
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/StashSyncLoombreFileRef' }
+        nextCursor: { type: [string, 'null'] }
+
     StashSyncReportEnvelope:
       type: object
       additionalProperties: false
-      required: [report, unmatchedScenes, staleScenes]
+      required: [report, unmatchedScenes, staleScenes, unmatchedLoombreFiles]
       properties:
         report:
           oneOf:
@@ -6281,3 +6318,4 @@ components:
           description: Null when no stash-sync job has ever run for this library.
         unmatchedScenes: { $ref: '#/components/schemas/StashSyncSceneRefPage' }
         staleScenes: { $ref: '#/components/schemas/StashSyncSceneRefPage' }
+        unmatchedLoombreFiles: { $ref: '#/components/schemas/StashSyncLoombreFileRefPage' }
