@@ -127,7 +127,7 @@ describe("GET /admin/libraries/{id}/stash-sync-report", () => {
     expect(res.status).toBe(404);
   });
 
-  it("honest {report: null} envelope with live-but-empty scene lists before any sync has ever run", async () => {
+  it("honest {report: null} envelope with live-but-empty scene/file lists before any sync has ever run", async () => {
     const libraryId = await makeRestrictedLibrary("stash-report-empty-lib");
     const res = await request(app.getHttpServer())
       .get(`/admin/libraries/${libraryId}/stash-sync-report`)
@@ -137,6 +137,10 @@ describe("GET /admin/libraries/{id}/stash-sync-report", () => {
       report: null,
       unmatchedScenes: { items: [], nextCursor: null },
       staleScenes: { items: [], nextCursor: null },
+      // FX3 fix wave: unmatchedLoombreFiles is ALSO always-live (never
+      // gated on a report existing), same posture as unmatchedScenes/
+      // staleScenes above.
+      unmatchedLoombreFiles: { items: [], nextCursor: null },
     });
   });
 
@@ -261,6 +265,101 @@ describe("GET /admin/libraries/{id}/stash-sync-report", () => {
       expect(page2.status).toBe(200);
       expect(page2.body.unmatchedScenes.items.map((r: { stashSceneId: string }) => r.stashSceneId)).toEqual(["a3"]);
       expect(page2.body.unmatchedScenes.nextCursor).toBeNull();
+    } finally {
+      await db.destroy();
+    }
+  });
+
+  it("FX3: unmatchedLoombreFiles — a library file without a link appears, and one with a link does not", async () => {
+    const libraryId = await makeRestrictedLibrary("stash-report-unmatched-loombre-lib");
+    const db = createDb(databaseUrl);
+    try {
+      const now = Date.now();
+
+      const linkedItem = await db
+        .insertInto("catalog_items")
+        .values({ library_id: libraryId, item_type: "movie", title: "Linked Item", sort_title: "Linked Item", added_at_ms: now, updated_at_ms: now })
+        .returningAll()
+        .executeTakeFirstOrThrow();
+      await db.insertInto("media_files").values({ item_id: linkedItem.id, path: `/media/linked-${libraryId}.mp4`, size_bytes: 1000 }).execute();
+
+      const unlinkedItem = await db
+        .insertInto("catalog_items")
+        .values({ library_id: libraryId, item_type: "movie", title: "Unlinked Item", sort_title: "Unlinked Item", added_at_ms: now, updated_at_ms: now })
+        .returningAll()
+        .executeTakeFirstOrThrow();
+      const unlinkedFile = await db
+        .insertInto("media_files")
+        .values({ item_id: unlinkedItem.id, path: `/media/unlinked-${libraryId}.mp4`, size_bytes: 2000 })
+        .returningAll()
+        .executeTakeFirstOrThrow();
+
+      // ONE stash_scene_links row, matched to the "linked" item — the
+      // "unlinked" item has no stash_scene_links row pointing at it at all.
+      await db
+        .insertInto("stash_scene_links")
+        .values({
+          library_id: libraryId,
+          stash_scene_id: "scene-matched-1",
+          stash_path: "/stash/scene-matched-1.mp4",
+          stash_oshash: null,
+          stash_size_bytes: 1000,
+          stash_updated_at_ms: now,
+          item_id: linkedItem.id,
+          matched_by: "path",
+          stale: false,
+          last_synced_at_ms: now,
+        })
+        .execute();
+
+      const res = await request(app.getHttpServer())
+        .get(`/admin/libraries/${libraryId}/stash-sync-report`)
+        .set("Authorization", `Bearer ${adminToken}`);
+      expect(res.status, JSON.stringify(res.body)).toBe(200);
+      expect(res.body.unmatchedLoombreFiles.items).toEqual([
+        {
+          mediaFileId: unlinkedFile.id,
+          itemId: unlinkedItem.id,
+          itemTitle: "Unlinked Item",
+          path: `/media/unlinked-${libraryId}.mp4`,
+          sizeBytes: 2000,
+        },
+      ]);
+      expect(res.body.unmatchedLoombreFiles.nextCursor).toBeNull();
+    } finally {
+      await db.destroy();
+    }
+  });
+
+  it("unmatchedLoombreFiles keyset pagination via unmatchedLoombreFilesCursor", async () => {
+    const libraryId = await makeRestrictedLibrary("stash-report-unmatched-loombre-keyset-lib");
+    const db = createDb(databaseUrl);
+    try {
+      const now = Date.now();
+      for (let i = 0; i < 3; i++) {
+        const item = await db
+          .insertInto("catalog_items")
+          .values({ library_id: libraryId, item_type: "movie", title: `Item ${i}`, sort_title: `Item ${i}`, added_at_ms: now, updated_at_ms: now })
+          .returningAll()
+          .executeTakeFirstOrThrow();
+        await db.insertInto("media_files").values({ item_id: item.id, path: `/media/keyset-${i}-${libraryId}.mp4`, size_bytes: 100 }).execute();
+      }
+
+      const page1 = await request(app.getHttpServer())
+        .get(`/admin/libraries/${libraryId}/stash-sync-report`)
+        .query({ limit: 2 })
+        .set("Authorization", `Bearer ${adminToken}`);
+      expect(page1.status).toBe(200);
+      expect(page1.body.unmatchedLoombreFiles.items.length).toBe(2);
+      expect(page1.body.unmatchedLoombreFiles.nextCursor).not.toBeNull();
+
+      const page2 = await request(app.getHttpServer())
+        .get(`/admin/libraries/${libraryId}/stash-sync-report`)
+        .query({ limit: 2, unmatchedLoombreFilesCursor: page1.body.unmatchedLoombreFiles.nextCursor })
+        .set("Authorization", `Bearer ${adminToken}`);
+      expect(page2.status).toBe(200);
+      expect(page2.body.unmatchedLoombreFiles.items.length).toBe(1);
+      expect(page2.body.unmatchedLoombreFiles.nextCursor).toBeNull();
     } finally {
       await db.destroy();
     }

@@ -20,6 +20,7 @@ export class AdminStashSyncReportController {
     @Param("id") id: string,
     @Query("unmatchedCursor") unmatchedCursor: string | undefined,
     @Query("staleCursor") staleCursor: string | undefined,
+    @Query("unmatchedLoombreFilesCursor") unmatchedLoombreFilesCursor: string | undefined,
     @Query("limit") limit: string | undefined,
     @Req() req: AuthenticatedRequest,
   ): Promise<AdminStashSyncReportDto> {
@@ -27,6 +28,7 @@ export class AdminStashSyncReportController {
     return this.service.getReport(id, req.user!.userId, {
       ...(unmatchedCursor !== undefined ? { unmatchedCursor } : {}),
       ...(staleCursor !== undefined ? { staleCursor } : {}),
+      ...(unmatchedLoombreFilesCursor !== undefined ? { unmatchedLoombreFilesCursor } : {}),
       ...(parsedLimit !== undefined && Number.isFinite(parsedLimit) ? { limit: parsedLimit } : {}),
     });
   }
