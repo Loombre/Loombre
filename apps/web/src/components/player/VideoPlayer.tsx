@@ -42,7 +42,7 @@ import { findPlayableFallback, decisionLabel, type FallbackCandidate } from "../
 import { findProgressForItem, isWorthResuming } from "../../lib/progress-lookup.js";
 import { HeartbeatScheduler, type HeartbeatSnapshot, type ProgressState } from "../../lib/heartbeat.js";
 import { reportProgressOnUnload } from "../../lib/progress-report.js";
-import { apiPut } from "../../lib/api-client.js";
+import { apiGet, apiPut } from "../../lib/api-client.js";
 import { useToast } from "../ui/Toast.js";
 import { AmbientBackdrop } from "./AmbientBackdrop.js";
 import { UnavailableScreen } from "./UnavailableScreen.js";
@@ -50,6 +50,7 @@ import { ResumePrompt } from "./ResumePrompt.js";
 import { PlayerControls } from "./PlayerControls.js";
 import { applyAudioTrackSelection } from "./TrackPickers.js";
 import type { BufferedRange } from "./Scrubber.js";
+import type { ChapterListEntry } from "./ChapterList.js";
 import styles from "./VideoPlayer.module.css";
 
 type PlaybackSession = components["schemas"]["PlaybackSession"];
@@ -74,6 +75,14 @@ export interface VideoPlayerProps {
    *  "the item's primary media_files row", which is PlanRequest's own
    *  documented default (packages/contract/openapi.yaml). */
   mediaFileId?: string;
+  /** Deep-link start offset in ms — a chapter timestamp
+   *  (app/restricted/scenes/[id]/page.tsx's markers list, ?t=<seconds> ->
+   *  app/watch/[itemId]/page.tsx converts to ms) or any future caller that
+   *  wants playback to open at a specific position. WINS OVER the resume
+   *  prompt when present (see the session-create effect below for why) —
+   *  omitted means "behave exactly as before" (resume prompt if a
+   *  worth-resuming saved position exists, else start at 0). */
+  startMs?: number;
   onBack: () => void;
 }
 
@@ -85,9 +94,15 @@ function readBuffered(video: HTMLVideoElement): BufferedRange[] {
   return ranges;
 }
 
-export function VideoPlayer({ itemId, hintType, mediaFileId, onBack }: VideoPlayerProps): React.JSX.Element {
+export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: VideoPlayerProps): React.JSX.Element {
   const [phase, setPhase] = useState<Phase>("loading");
   const [item, setItem] = useState<ItemSummary | null>(null);
+  // S7/K9: loaded once per item via the SDK — see the fetch effect below.
+  // Empty ([]) both before the fetch resolves and for a genuine zero-
+  // chapters item; PlayerControls/Scrubber already treat an empty array as
+  // "render nothing" (mission spec: zero chapters -> zero UI), so no
+  // separate loading flag is needed here.
+  const [chapters, setChapters] = useState<ChapterListEntry[]>([]);
   const [unavailableReasons, setUnavailableReasons] = useState<PlanReason[]>([]);
   const [unavailableStatus, setUnavailableStatus] = useState<number | undefined>(undefined);
   const [fallback, setFallback] = useState<FallbackCandidate | null>(null);
@@ -153,6 +168,29 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, onBack }: VideoPlay
     };
   }, [itemId, hintType]);
 
+  // ── Chapters (S7/K9) ─────────────────────────────────────────────────────
+  // Loaded once per item, independent of session/playback state — chapters
+  // are catalog metadata (GET /items/{id}/chapters is guarded the same way
+  // the item itself is, house pattern), not something the playback session
+  // produces. A 401/404/network failure leaves `chapters` at its initial []
+  // (no chapter UI), matching "zero chapters -> zero UI": a player that
+  // can't fetch chapters degrades to the SAME experience as an item that
+  // genuinely has none, never a visible error state for what is a
+  // secondary affordance.
+  useEffect(() => {
+    let cancelled = false;
+    apiGet("/items/{id}/chapters", { params: { path: { id: itemId } } })
+      .then((res) => {
+        if (!cancelled) setChapters(res.items);
+      })
+      .catch(() => {
+        if (!cancelled) setChapters([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [itemId]);
+
   // ── Step 2: session create (or unavailable) ─────────────────────────────
   // Phase 3 Step 6c: no more plan-preview short-circuit (lib/playback-
   // session.ts's header) — go straight to session create and branch on the
@@ -163,6 +201,19 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, onBack }: VideoPlay
   // `mediaFileId` pins the session to the VERSION the user actually picked
   // (undefined = the item's primary file, PlanRequest's own default) — the
   // same third argument the fallback-accept path below already uses.
+  //
+  // `startMs` (S7 deep-link chapter offset) COMPOSES with the resume prompt
+  // by winning outright, never by merging: when a caller navigates here
+  // with an explicit offset (a chapter timestamp the user just clicked),
+  // that click IS the user's answer to "where do you want to start" — a
+  // SEPARATE resume prompt on arrival would ask the same question twice,
+  // and picking whichever of the two positions is "more correct" would
+  // second-guess a choice the user just made one navigation ago. So the
+  // saved-progress lookup is skipped entirely (never fetched, never shown)
+  // and playback seeks straight to `startMs` via `pendingSeekMsRef` — the
+  // SAME ref the resume prompt's own Resume button uses to hand a chosen
+  // position to the attach effects, so this is "as if the user had already
+  // chosen Resume at that offset", not a second code path.
   useEffect(() => {
     let cancelled = false;
 
@@ -181,13 +232,18 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, onBack }: VideoPlay
       const defaultAudio = result.session.media?.audio.find((a) => a.isDefault) ?? result.session.media?.audio[0];
       if (defaultAudio) setSelectedAudioIndex(defaultAudio.index);
 
-      const existing = await findProgressForItem(itemId).catch(() => null);
-      if (cancelled) return;
-      if (existing && isWorthResuming(existing)) {
-        setResumeCandidateMs(existing.positionMs);
-        setAwaitingResumeChoice(true);
-      } else {
+      if (startMs !== undefined) {
+        pendingSeekMsRef.current = startMs;
         setAwaitingResumeChoice(false);
+      } else {
+        const existing = await findProgressForItem(itemId).catch(() => null);
+        if (cancelled) return;
+        if (existing && isWorthResuming(existing)) {
+          setResumeCandidateMs(existing.positionMs);
+          setAwaitingResumeChoice(true);
+        } else {
+          setAwaitingResumeChoice(false);
+        }
       }
       setPhase("ready");
     }
@@ -196,7 +252,7 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, onBack }: VideoPlay
     return () => {
       cancelled = true;
     };
-  }, [itemId, mediaFileId]);
+  }, [itemId, mediaFileId, startMs]);
 
   // ── Session end on unmount ──────────────────────────────────────────────
   useEffect(() => {
@@ -775,6 +831,7 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, onBack }: VideoPlay
             subtitleStreams={session?.media?.subtitle ?? []}
             selectedAudioIndex={selectedAudioIndex}
             selectedSubtitleIndex={selectedSubtitleIndex}
+            chapters={chapters}
             // H6 (W3 fidelity audit, FX4): PlayerControls' capability chips
             // read the session's REAL decision — this is the one-line seam
             // threading it through; VideoPlayer.tsx itself is outside FX4's

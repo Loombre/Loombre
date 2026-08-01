@@ -38,6 +38,11 @@ const endPlaybackSession = vi.fn();
 const findProgressForItem = vi.fn();
 const reportProgressOnUnload = vi.fn();
 const apiPut = vi.fn();
+// S7/K9: GET /items/{id}/chapters, fetched once per item — see
+// VideoPlayer.tsx's "Chapters" effect. Defaults to zero chapters
+// (beforeEach below) so every pre-existing test in this file, none of
+// which cares about chapters, is unaffected.
+const apiGet = vi.fn();
 
 vi.mock("../../lib/playback-session.js", () => ({
   createPlaybackSession: (...args: unknown[]) => createPlaybackSession(...args),
@@ -67,7 +72,7 @@ vi.mock("../../lib/progress-report.js", () => ({
 }));
 
 vi.mock("../../lib/api-client.js", () => ({
-  apiGet: vi.fn(),
+  apiGet: (...args: unknown[]) => apiGet(...args),
   apiPost: vi.fn(),
   apiPut: (...args: unknown[]) => apiPut(...args),
   apiPatch: vi.fn(),
@@ -240,12 +245,17 @@ function button(view: TestRender, label: string): HTMLButtonElement {
 
 /** Renders and settles the two awaited lookups (session create, then the
  *  progress lookup) so the component reaches phase 'ready'. */
-async function renderReady(onBack = vi.fn(), mediaFileId?: string): Promise<TestRender> {
+async function renderReady(onBack = vi.fn(), mediaFileId?: string, startMs?: number): Promise<TestRender> {
   let view: TestRender | null = null;
   await act(async () => {
     view = renderIntoBody(
       <ToastProvider>
-        <VideoPlayer itemId={ITEM_ID} onBack={onBack} {...(mediaFileId ? { mediaFileId } : {})} />
+        <VideoPlayer
+          itemId={ITEM_ID}
+          onBack={onBack}
+          {...(mediaFileId ? { mediaFileId } : {})}
+          {...(startMs !== undefined ? { startMs } : {})}
+        />
       </ToastProvider>,
     );
   });
@@ -263,6 +273,7 @@ describe("VideoPlayer", () => {
     findProgressForItem.mockReset().mockResolvedValue(null);
     reportProgressOnUnload.mockReset();
     apiPut.mockReset().mockResolvedValue(undefined);
+    apiGet.mockReset().mockResolvedValue({ items: [] });
   });
 
   afterEach(() => {
@@ -409,5 +420,19 @@ describe("VideoPlayer", () => {
     const v = (view = await renderReady());
     expect(v.container.textContent).toContain("You stopped at 2:00");
     expect(videoEl(v).currentTime).toBe(0);
+  });
+
+  // S7 chapters (STATE.md deep-link start offset): a `startMs` prop — the
+  // /watch/{itemId}?t=<seconds> route param, threaded through by
+  // app/watch/[itemId]/page.tsx — must win over the resume prompt outright,
+  // never merge with it: the saved-progress lookup is skipped entirely
+  // (never even fetched), so there is no "compare the two positions"
+  // decision to get wrong, and no resume prompt can ever render for this
+  // session regardless of what a saved position would have said.
+  it("startMs (deep-link chapter offset) wins over the resume prompt: no saved-progress lookup, no prompt rendered", async () => {
+    findProgressForItem.mockResolvedValue({ itemId: ITEM_ID, positionMs: 120_000, state: "in-progress" });
+    const v = (view = await renderReady(vi.fn(), undefined, 90_000));
+    expect(findProgressForItem).not.toHaveBeenCalled();
+    expect(v.container.textContent).not.toContain("You stopped at");
   });
 });

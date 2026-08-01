@@ -21,14 +21,22 @@
 // before this lane, in lockstep — this preserves that 1:1 parity rather
 // than only changing the buttons).
 import { useState } from "react";
-import { ArrowLeft, Maximize, Minimize, SlidersHorizontal, Volume2, VolumeX } from "lucide-react";
+import { ArrowLeft, ListVideo, Maximize, Minimize, SlidersHorizontal, Volume2, VolumeX } from "lucide-react";
 import type { components } from "@loombre/sdk";
 import { Icon } from "../icon/Icon.js";
 import { BlazeSpinner } from "../ui/BlazeSpinner.js";
+import { BottomSheet } from "../ui/BottomSheet.js";
+import { useMediaQuery } from "../ui/use-media-query.js";
 import { decisionLabel } from "../../lib/playback-fallback.js";
 import { Scrubber, defaultFormatTime, type BufferedRange } from "./Scrubber.js";
 import { TrackPickers } from "./TrackPickers.js";
+import { ChapterList, type ChapterListEntry } from "./ChapterList.js";
 import styles from "./PlayerControls.module.css";
+
+// Same literal every other responsive seam in this app repeats (tokens.css
+// "Mobile chrome layout" note is the single source of truth — UnavailableScreen.tsx/
+// SheetOrModal.tsx carry the identical JS-side matchMedia copy this mirrors).
+const PHONE_QUERY = "(max-width: 767.98px)";
 
 type AudioStream = components["schemas"]["AudioStream"];
 type SubtitleStream = components["schemas"]["SubtitleStream"];
@@ -66,6 +74,11 @@ export interface PlayerControlsProps {
   subtitleStreams: SubtitleStream[];
   selectedAudioIndex: number | null;
   selectedSubtitleIndex: number | null;
+  /** S7/K9: chapter markers for this item, startMs-ascending — loaded once
+   *  per item by VideoPlayer.tsx. Empty for the common no-chapters case;
+   *  zero chapters means zero chapter UI (no button, no ticks) — mission
+   *  spec, "no empty affordance". */
+  chapters: ChapterListEntry[];
   videoElement: HTMLVideoElement | null;
   /** Forwarded straight to TrackPickers — see its header for why client-
    *  side audio switching only applies to direct-play. */
@@ -88,7 +101,15 @@ export interface PlayerControlsProps {
 
 export function PlayerControls(props: PlayerControlsProps): React.JSX.Element {
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [chaptersOpen, setChaptersOpen] = useState(false);
   const hasTracks = props.audioStreams.length > 0 || props.subtitleStreams.length > 0;
+  const hasChapters = props.chapters.length > 0;
+  const isPhone = useMediaQuery(PHONE_QUERY);
+
+  function handleSelectChapter(startMs: number): void {
+    props.onSeek(startMs);
+    setChaptersOpen(false);
+  }
 
   // H6 capability chips — every value below is a real fact the player
   // already holds (session plan / track lists / selection state), never a
@@ -125,7 +146,13 @@ export function PlayerControls(props: PlayerControlsProps): React.JSX.Element {
       <div className={[styles.bottomBar, props.visible ? "" : styles.hidden].join(" ")}>
         <div className={styles.scrubberRow}>
           <span className={styles.time}>{defaultFormatTime(props.positionMs)}</span>
-          <Scrubber positionMs={props.positionMs} durationMs={props.durationMs} buffered={props.buffered} onSeek={props.onSeek} />
+          <Scrubber
+            positionMs={props.positionMs}
+            durationMs={props.durationMs}
+            buffered={props.buffered}
+            chapters={props.chapters}
+            onSeek={props.onSeek}
+          />
           <span className={styles.time}>{props.durationMs !== null ? defaultFormatTime(props.durationMs) : "–:–"}</span>
         </div>
         <div className={styles.controlsRow}>
@@ -154,6 +181,37 @@ export function PlayerControls(props: PlayerControlsProps): React.JSX.Element {
           />
 
           <span className={styles.spacer} />
+
+          {hasChapters && (
+            <div className={styles.pickerAnchor}>
+              <button
+                type="button"
+                className={styles.iconButton}
+                aria-label="Chapters"
+                aria-pressed={chaptersOpen}
+                onClick={() => setChaptersOpen((v) => !v)}
+              >
+                <Icon icon={ListVideo} />
+              </button>
+              {/* Desktop: an anchored popover from this button, same shape
+                  as the track picker above. Mobile (<=767.98px): a
+                  BottomSheet — the design's phone-only sheet convention
+                  (README "Phone-only additions"), not the SAME popover
+                  shrunk down, since an anchored popover has no sensible
+                  position against a full-width bottom control bar on a
+                  narrow viewport. */}
+              {chaptersOpen && !isPhone && (
+                <div className={styles.pickerPopover}>
+                  <ChapterList chapters={props.chapters} positionMs={props.positionMs} onSelect={handleSelectChapter} />
+                </div>
+              )}
+              {isPhone && (
+                <BottomSheet open={chaptersOpen} onClose={() => setChaptersOpen(false)} title="Chapters">
+                  <ChapterList chapters={props.chapters} positionMs={props.positionMs} onSelect={handleSelectChapter} />
+                </BottomSheet>
+              )}
+            </div>
+          )}
 
           {hasTracks && (
             <div className={styles.pickerAnchor}>
