@@ -96,6 +96,17 @@ All additive. Zone ops tag `restricted` (gates 1–5 re-verified per request, ex
 - Premise corrections: stale worktree base again (self-fixed ff to 500c156); packages/jobs barrel never re-exported the K13 payload types (fixed, barrel-only); mid-run signature re-freeze to B's landed shape absorbed cleanly.
 - Integration: real applyStashSceneMetadata wired at **e6f1aa4** (the planned one-line swap; worker 1113 passed post-wire).
 
+### Lane D freeze (2026-08-01, orchestrator ground-truthed)
+
+**D LANDED 2a03cab..c0d64cc rebased onto C** (3 commits; gate:full ALL 14 PASSED in-worktree, /browse 166.4 KB gz). Facts:
+
+- All frozen zone + admin ops landed EXCEPT K14's two (sync-report=C ✓, chapters=E pending). `GET /restricted/items` kept DEPRECATED (oasdiff flagged hard removal as breaking; evolution policy) — thin delegate to listRestrictedBrowse. RestrictedScene gained `durationMs` additively (editorial runtimeMs is never populated for Stash scenes — probed duration is the honest field).
+- **Leak suite +26 cases (12a–12f) incl. a REAL fail-first catch:** getRestrictedSceneDetail originally resolved GENERAL item ids through the zone-only surface for cleared viewers — fixed with an explicit content_class='restricted' predicate; pinned by case "a general (non-zone) item id is ALSO undefined through this surface, even fully cleared". HTTP twins: 11 e2e in libraries.e2e.spec.ts (alongside the /restricted/count precedent — brief named seeded-conformance, D corrected).
+- Query modules: restricted-{browse,performers,studios,search,home}.ts; resolveEntitledRestrictedLibraryIds now exported from restricted-zone.ts and shared. Browse resolves primary file + video stream via leftJoinLateral (duration/resolution = probed facts, S5).
+- Web: 8 /restricted/* routes; Zone{BrowseGrid,FilterBar,SortControl,DensityToggle,DetailedRow} components; URL filter state in lib/zone-browse-filters.ts (CSV ids, minutes bands, defaults omitted); density = localStorage-only (personal pref, not shareable URL state — appearance-prefs precedent). Full-fetch machinery retired (restricted-zone-items/toolbar deleted); gate flow/PinModal/entitlement predicates untouched. Genre picker reuses GET /tags?kind=genre client-filtered to restricted (documented; no new surface).
+- **EXPLAIN evidence for E's 0021** (33k seeded, ANALYZE'd; full writeup preserved at reports/stash/explain-findings-0021.md + reusable seed/EXPLAIN scripts in session scratchpad): 6 T0-budget breaches, 5 collapsed by ONE composite `catalog_items (library_id, added_at_ms DESC, id DESC) [WHERE item_type='movie']` + sort_title twin; sort=duration unindexable (per-item LATERAL; denorm needs owner sign-off — measure after finding 1); performers-list aggregate → partial covering idx or LATERAL-count query reshape; top-N-by-count rails have an inherent aggregate floor (accept or clearance-digest cache).
+- Integration conflicts (recorded for honesty): sdk/generated regenerated from the auto-merged yaml (codegen is the authority), admin-plugins.module.ts + conformance expectations resolved as unions of C's and D's additions.
+
 ### Lane burn-up
 
 | Lane | Scope | Model | Status |
@@ -103,7 +114,7 @@ All additive. Zone ops tag `restricted` (gates 1–5 re-verified per request, ex
 | A | Provider core: SQLite RO adapter, S3 guard + schema fixtures, S4 matching + path-mapping + oshash, S2 lock lifecycle | sonnet | **LANDED ff488f6..e521912** |
 | B | Mapping S5–S7: apply.ts entity writers via 0019 schema, image ingest, precedence/lock, stash:/person attrs, genre heuristic | sonnet | **LANDED d4be893..24bbadf** |
 | C | Sync engine S8: consumers, checkpoints, incremental diff, staleness, events, 0020 + report endpoint; 33k fixture gen + scale proof | sonnet | **LANDED 0511653..3df8a8d + e6f1aa4 wire-up** |
-| D | Zone surface S9: contract+SDK atomic, guarded zone queries, routes, filters + URL state, performer/studio/scene pages, search, density | sonnet | **DISPATCHED** (worktree) |
+| D | Zone surface S9: contract+SDK atomic, guarded zone queries, routes, filters + URL state, performer/studio/scene pages, search, density | sonnet | **LANDED 2a03cab..c0d64cc** (rebased; conflicts: sdk regen + module/conformance unions) |
 | E | Player chapters UI + /items/{id}/chapters + zone home rails + genre-config exposure + 0021 indexes w/ query plans | sonnet | blocked on B/C/D integration |
 | R1 | opus: leak-suite extension + adversarial zone walk (fail-first then green) | opus | blocked on lanes |
 | R2 | opus: mapping fidelity + safety audit (S2 fs-proof, S3 both-ways, S4 visibility, staleness, authority split, S10 indexes) | opus | blocked on lanes |
