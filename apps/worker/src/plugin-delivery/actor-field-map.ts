@@ -91,6 +91,13 @@ export const ACTOR_FIELD_MAP: Record<string, readonly string[]> = {
   // ADMIN_ONLY (never grantable to a plugin subscriber in the first place
   // — see event-taxonomy.ts), same posture as metadata.match-candidates.
   "probe.failed": [],
+  // STATE.md "Stash SQLite metadata sync", S3/K12: stash.provider.disabled's
+  // payload names only {libraryId, seenVersion, supportedMin, supportedMax,
+  // notice} — libraryId is a library id, not a user id or another
+  // user-correlating identifier — empty for the same reason probe.failed's
+  // entry is. Also ADMIN_ONLY (never grantable to a plugin subscriber in
+  // the first place — see event-taxonomy.ts), same posture as probe.failed.
+  "stash.provider.disabled": [],
 };
 
 /**
