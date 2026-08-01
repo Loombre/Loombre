@@ -59,16 +59,24 @@ export interface UpsertLibraryStashConnectionConfigInput {
   libraryId: string;
   sqlitePath: string;
   enabled?: boolean;
+  /** K15/S6: which Stash tag names map to genre. `undefined` (the key
+   *  simply absent from the caller's input) means "leave the saved value
+   *  untouched" — the SAME omit-to-preserve convention `enabled` already
+   *  uses. `null` is a REAL, distinct value (explicitly reset to the
+   *  default heuristic), not a stand-in for "unspecified" — callers must
+   *  only pass this key at all when the admin actually sent one (see
+   *  apps/server/src/plugins/admin-stash.service.ts's putConnection). */
+  genreTagNames?: string[] | null;
   nowMs: number;
 }
 
 /**
  * Admin config write (Lane D's future HTTP surface): creates the
  * library_stash_connections row on first configure, or updates
- * sqlite_path/enabled on an existing one. Deliberately leaves every
- * status/last_seen_* column untouched on an UPDATE — those are owned
- * exclusively by recordStashConnectionOutcome below (the worker's
- * connect-time writer), so an admin editing the sqlite_path never
+ * sqlite_path/enabled/genre_tag_names on an existing one. Deliberately
+ * leaves every status/last_seen_* column untouched on an UPDATE — those
+ * are owned exclusively by recordStashConnectionOutcome below (the
+ * worker's connect-time writer), so an admin editing the sqlite_path never
  * fabricates a fresh "ok" status without an actual connect attempt.
  * Rejects a nonexistent library outright (mirrors
  * replaceLibraryProviderChain's "reject the whole call" precedent).
@@ -88,6 +96,7 @@ export async function upsertLibraryStashConnectionConfig(
       library_id: input.libraryId,
       sqlite_path: input.sqlitePath,
       ...(input.enabled !== undefined ? { enabled: input.enabled } : {}),
+      ...(input.genreTagNames !== undefined ? { genre_tag_names: input.genreTagNames } : {}),
       created_at_ms: input.nowMs,
       updated_at_ms: input.nowMs,
     })
@@ -95,6 +104,7 @@ export async function upsertLibraryStashConnectionConfig(
       oc.column('library_id').doUpdateSet({
         sqlite_path: (eb) => eb.ref('excluded.sqlite_path'),
         ...(input.enabled !== undefined ? { enabled: (eb) => eb.ref('excluded.enabled') } : {}),
+        ...(input.genreTagNames !== undefined ? { genre_tag_names: (eb) => eb.ref('excluded.genre_tag_names') } : {}),
         updated_at_ms: (eb) => eb.ref('excluded.updated_at_ms'),
       })
     )

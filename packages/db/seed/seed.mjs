@@ -628,6 +628,17 @@ async function main() {
         [restrictedMovies[0].id, title, startMs]
       );
     }
+    // GET /items/{id}/chapters leak-suite contrast fixture (Lane E, S7):
+    // one chapter marker on a fully GENERAL item (Harbor Lights, movies[0])
+    // — chapter_markers has no content_class of its own (visibility rides
+    // the owning item, packages/db/src/query/chapters.ts header), so the
+    // leak proof needs a general-item marker a casual uncleared viewer
+    // MUST see, alongside After Hours Redline's restricted markers the
+    // SAME viewer must NOT see.
+    await client.query(
+      `INSERT INTO chapter_markers (item_id, title, start_ms, source) VALUES ($1, $2, $3, 'stash')`,
+      [movies[0].id, 'Cold Open', 0]
+    );
 
     // ------------------------------------------------------------------
     // Leak-suite hardening fixtures (see the person/tag creation comments
