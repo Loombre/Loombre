@@ -354,6 +354,11 @@ const IMPLEMENTED_NON_PUBLIC_EXPECTATIONS: Record<string, number> = {
   getAdminLibraryProviderChain: 404,
   putAdminLibraryProviderChain: 404,
 
+  // Stash SQLite metadata sync, Lane C (S8/K14) — PLACEHOLDER_UUID never
+  // matches a real library; existence is checked before the report/scene
+  // reads run (same ordering as getAdminLibraryProviderChain above).
+  getAdminStashSyncReport: 404,
+
   // Fix Match (Phosphor retheme Wave 2, Lane L2) — PLACEHOLDER_UUID never
   // matches a real library/item either way; existence is checked before
   // the (bodyless) apply-match body is ever validated (same ordering as

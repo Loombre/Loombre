@@ -1594,6 +1594,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/libraries/{id}/stash-sync-report": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["IdPathParam"];
+            };
+            cookie?: never;
+        };
+        /**
+         * The latest Stash metadata-sync report for a library (admin)
+         * @description STATE.md S8/K14 (Stash SQLite metadata sync, Lane C sync engine). `report` is the most recently STARTED `stash-sync` job's counts (matched/updated/unmatched/stale/skipped) and status — null when no sync has ever run for this library yet, same honest-empty-shape precedent as GET /admin/capabilities's `{report: null}` before the first hwprobe. `unmatchedScenes`/`staleScenes` are NOT a frozen snapshot from the report row — both are LIVE, keyset-paginated queries over the current stash_scene_links table (K10/S4/S8), so they reflect fixes (a corrected path mapping, a scene reappearing in Stash) immediately, without waiting for the next sync run.
+         */
+        get: operations["getAdminStashSyncReport"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/libraries/{id}/unmatched": {
         parameters: {
             query?: never;
@@ -3014,6 +3036,52 @@ export interface components {
         };
         PutAdminLibraryProviderChainRequest: {
             entries: components["schemas"]["LibraryProviderChainEntryInput"][];
+        };
+        /** @description One migrations/0020_stash_sync_reports.sql row — the most recently STARTED stash-sync run for a library. Counts are a point-in-time snapshot recorded when the run finished (or failed), never a live query. */
+        StashSyncReport: {
+            /** Format: uuid */
+            jobId: string;
+            /** @enum {string} */
+            mode: "full" | "incremental";
+            /**
+             * @description 'running' means the job is still in flight (or crashed before its terminal-failure hook ran) — finishedAtMs is null in that case.
+             * @enum {string}
+             */
+            status: "running" | "succeeded" | "failed" | "partial";
+            matchedCount: number;
+            updatedCount: number;
+            unmatchedCount: number;
+            staleCount: number;
+            skippedCount: number;
+            /** Format: int64 */
+            startedAtMs: number;
+            /**
+             * Format: int64
+             * @description Null while status='running'.
+             */
+            finishedAtMs: number | null;
+        };
+        /** @description One stash_scene_links row, live-read (never a report snapshot) — see getAdminStashSyncReport's own description. */
+        StashSyncSceneRef: {
+            /** @description Stash's own scene identifier, as a string (never assumed numeric). */
+            stashSceneId: string;
+            /** @description The Stash-reported file path for this scene, UNMAPPED (raw, before any library path-mapping rewrite). */
+            stashPath: string;
+            /**
+             * Format: int64
+             * @description Stash's own updated_at for this scene, converted to epoch ms; null when Stash never recorded one for it.
+             */
+            stashUpdatedAtMs: number | null;
+        };
+        StashSyncSceneRefPage: {
+            items: components["schemas"]["StashSyncSceneRef"][];
+            nextCursor: string | null;
+        };
+        StashSyncReportEnvelope: {
+            /** @description Null when no stash-sync job has ever run for this library. */
+            report: components["schemas"]["StashSyncReport"] | null;
+            unmatchedScenes: components["schemas"]["StashSyncSceneRefPage"];
+            staleScenes: components["schemas"]["StashSyncSceneRefPage"];
         };
     };
     responses: {
@@ -5900,6 +5968,38 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             422: components["responses"]["UnprocessableEntity"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    getAdminStashSyncReport: {
+        parameters: {
+            query?: {
+                /** @description Opaque pagination cursor for `unmatchedScenes`, from a previous response's `unmatchedScenes.nextCursor`. */
+                unmatchedCursor?: string;
+                /** @description Opaque pagination cursor for `staleScenes`, from a previous response's `staleScenes.nextCursor`. */
+                staleCursor?: string;
+                limit?: components["parameters"]["Limit"];
+            };
+            header?: never;
+            path: {
+                id: components["parameters"]["IdPathParam"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The library's latest Stash sync report, plus live unmatched/stale scene lists */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StashSyncReportEnvelope"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
             default: components["responses"]["Problem"];
         };
     };
