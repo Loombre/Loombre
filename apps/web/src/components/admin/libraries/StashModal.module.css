@@ -1,0 +1,28 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+
+/* Modal.tsx's own dialog has no fixed width (Overlay.module.css's
+   `.dialog`: `min-width: 320px; max-width: 90vw;`, no `width`) — it
+   shrink-wraps to its content. RegisterPluginWizard.module.css's `.step`
+   sets `min-width` on the CHILD for exactly this reason (there is no
+   `.dialog`-override hook Modal.tsx exposes to a consumer's own module);
+   this mirrors that: the path-mapping rows and sync counts grid both want
+   more room than the 480px per-field-editor default, so `.wrap` (this
+   panel's own top-level child of Modal) carries the min-width instead. */
+.wrap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  min-width: min(620px, 90vw);
+}
+
+.errorText {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--color-danger);
+}
+
+.skeletonList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
