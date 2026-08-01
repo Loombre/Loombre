@@ -38,6 +38,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@loombre/shared": "workspace:*",
     "kysely": "^0.29.4",
     "pg": "^8.22.0"
   },

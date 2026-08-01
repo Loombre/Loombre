@@ -431,3 +431,38 @@ export {
   recordDeliveryFailure,
   recordDeliverySuccess,
 } from './query/plugins-delivery.js';
+
+// Stash SQLite metadata sync, Lane A (provider core) — migrations/
+// 0018_stash_provider_core.sql. See src/query/stash-connections.ts and
+// src/query/stash-inventory.ts headers for why these live in the PUBLIC
+// barrel without a ViewerContext (admin-only instance configuration /
+// connection-health / matching bookkeeping, not a viewer-scoped catalog
+// browse surface — same posture library-provider-chains.ts already
+// establishes for itself).
+export type { LibraryPathMappingRow, LibraryStashConnectionRow } from './query/stash-connections.js';
+export {
+  LibraryNotFoundForStashError,
+  StashConnectionNotConfiguredError,
+  deleteLibraryStashConnection,
+  getLibraryPathMappings,
+  getLibraryStashConnection,
+  recordStashConnectionOutcome,
+  replaceLibraryPathMappings,
+  upsertLibraryStashConnectionConfig,
+} from './query/stash-connections.js';
+export type {
+  CandidateMediaFile,
+  PathMappingMatchPreview,
+  PathMappingPreviewUnmatchedScene,
+  StashSceneLinkRow,
+  StashSceneMatchResultInput,
+  UpsertStashInventorySceneInput,
+} from './query/stash-inventory.js';
+export {
+  applyStashSceneMatchResults,
+  computePathMappingMatchPreview,
+  listCandidateMediaFilesForLibrary,
+  listStashSceneLinksForLibrary,
+  upsertStashSceneLinksFromInventory,
+} from './query/stash-inventory.js';
+export type { StashConnectionStatus, StashMatchedBy } from './types.js';

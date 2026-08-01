@@ -617,6 +617,52 @@ export interface LibraryProviderEntriesTable {
 }
 
 // ============================================================================
+// library_stash_connections / library_path_mappings / stash_scene_links
+// (migrations/0018_stash_provider_core.sql — Stash SQLite metadata sync,
+// Lane A provider core)
+// ============================================================================
+
+export type StashConnectionStatus = 'never_connected' | 'ok' | 'unsupported_schema' | 'unreachable';
+
+export interface LibraryStashConnectionsTable {
+  id: Generated<string>;
+  library_id: string;
+  sqlite_path: string;
+  enabled: Generated<boolean>;
+  status: Generated<StashConnectionStatus>;
+  status_detail: string | null;
+  last_seen_schema_version: number | null;
+  last_connected_at_ms: number | null;
+  last_checked_at_ms: number | null;
+  created_at_ms: number;
+  updated_at_ms: number;
+}
+
+export interface LibraryPathMappingsTable {
+  id: Generated<string>;
+  library_id: string;
+  stash_prefix: string;
+  loombre_prefix: string;
+  position: number;
+}
+
+export type StashMatchedBy = 'path' | 'oshash';
+
+export interface StashSceneLinksTable {
+  id: Generated<string>;
+  library_id: string;
+  stash_scene_id: string;
+  stash_path: string;
+  stash_oshash: string | null;
+  stash_size_bytes: number | null;
+  stash_updated_at_ms: number | null;
+  item_id: string | null;
+  matched_by: StashMatchedBy | null;
+  stale: Generated<boolean>;
+  last_synced_at_ms: number;
+}
+
+// ============================================================================
 // DB
 // ============================================================================
 
@@ -659,4 +705,7 @@ export interface DB {
   plugin_event_grants: PluginEventGrantsTable;
   library_provider_entries: LibraryProviderEntriesTable;
   plugin_delivery_cursors: PluginDeliveryCursorsTable;
+  library_stash_connections: LibraryStashConnectionsTable;
+  library_path_mappings: LibraryPathMappingsTable;
+  stash_scene_links: StashSceneLinksTable;
 }
