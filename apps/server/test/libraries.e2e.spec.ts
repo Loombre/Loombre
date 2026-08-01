@@ -375,12 +375,13 @@ describe("Restricted Content surface (STATE.md Stash run, S9)", () => {
     expect(Array.isArray(unlocked.body.performers)).toBe(true);
   });
 
-  it("GET /restricted/performers + /{id} + /{id}/scenes: 404 for casual, real rows once unlocked", async () => {
+  it("GET /restricted/performers + /{id} + /{id}/scenes: 404 for casual, real rows once unlocked, portrait images[] present (FX2)", async () => {
     const listRes = await request(app.getHttpServer())
       .get("/restricted/performers")
       .set("Authorization", `Bearer ${adminToken}`);
     expect(listRes.status, JSON.stringify(listRes.body)).toBe(200);
     expect(listRes.body.items.length).toBeGreaterThan(0);
+    expect(listRes.body.items.every((it: { images: unknown }) => Array.isArray(it.images))).toBe(true);
     const performerId: string = listRes.body.items[0].id;
 
     const casual = await casualToken("performers");
@@ -398,6 +399,7 @@ describe("Restricted Content surface (STATE.md Stash run, S9)", () => {
       .set("Authorization", `Bearer ${adminToken}`);
     expect(detailRes.status, JSON.stringify(detailRes.body)).toBe(200);
     expect(detailRes.body.sceneCount).toBeGreaterThan(0);
+    expect(Array.isArray(detailRes.body.images)).toBe(true);
 
     const scenesRes = await request(app.getHttpServer())
       .get(`/restricted/performers/${performerId}/scenes`)

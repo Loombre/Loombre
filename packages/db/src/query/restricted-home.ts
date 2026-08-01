@@ -251,6 +251,36 @@ async function getTopStudiosInZone(
   return rows.map((r) => ({ ...r, sceneCount: Number(r.sceneCount), images: imagesMap.get(r.id) ?? [] }));
 }
 
+/** FX2 fix wave: batch-fetch performer portraits — the SAME shape as this
+ *  file's own fetchStudioImagesBatch above (entity_type swapped, 'person'
+ *  instead of 'tag'), duplicated here rather than imported from
+ *  restricted-performers.ts for the same reason fetchStudioImagesBatch is
+ *  its own local copy rather than an import from restricted-studios.ts. */
+async function fetchPerformerImagesBatch(db: Kysely<DB>, ids: string[]): Promise<Map<string, ImageDescriptor[]>> {
+  const map = new Map<string, ImageDescriptor[]>();
+  if (ids.length === 0) return map;
+
+  const rows = await db
+    .selectFrom('images')
+    .select(['entity_id', 'kind', 'width', 'height', 'blurhash', 'dominant_color'])
+    .where('entity_type', '=', 'person')
+    .where('entity_id', 'in', ids)
+    .execute();
+
+  for (const row of rows) {
+    const arr = map.get(row.entity_id) ?? [];
+    arr.push({
+      kind: row.kind,
+      width: row.width,
+      height: row.height,
+      blurhash: row.blurhash,
+      dominantColor: row.dominant_color ? row.dominant_color : null,
+    });
+    map.set(row.entity_id, arr);
+  }
+  return map;
+}
+
 /** Top-N performers by scene count — see getTopStudiosInZone's doc comment
  *  (same rationale, applyGuardToPeople + applyGuardToJoined per
  *  restricted-performers.ts). */
@@ -279,7 +309,16 @@ async function getTopPerformersInZone(
     .limit(limit)
     .execute();
 
-  return rows.map((r) => ({ ...r, contentClass: r.contentClass as ContentClass, sceneCount: Number(r.sceneCount) }));
+  const imagesMap = await fetchPerformerImagesBatch(
+    db,
+    rows.map((r) => r.id)
+  );
+  return rows.map((r) => ({
+    ...r,
+    contentClass: r.contentClass as ContentClass,
+    sceneCount: Number(r.sceneCount),
+    images: imagesMap.get(r.id) ?? [],
+  }));
 }
 
 /**

@@ -7,7 +7,11 @@
 // filmography grid, imitating app/people/[id]/page.tsx's structure (see
 // that file's header) with the zone's own GET /restricted/performers/{id}
 // + GET /restricted/performers/{id}/scenes and amber ZoneBrowseGrid
-// instead of the general ChildPosterGrid.
+// instead of the general ChildPosterGrid. FX2 fix wave: the header now
+// renders a real portrait when `images` (entity_type='person', kind=
+// 'thumb') carries one, imitating studios/[id]/page.tsx's own logo/
+// logoFallback header exactly (round instead of contain-square, since this
+// is a face photo not a logo).
 
 import { use, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -21,6 +25,7 @@ import { useRestricted } from "../../../../components/restricted/RestrictedProvi
 import { hasRestrictedZoneEntitlement, useRestrictedZoneCount } from "../../../../lib/restricted-zone-count.js";
 import { useCursorFeed, type CursorPage } from "../../../../components/browse/useCursorFeed.js";
 import { apiGet, LoombreApiError } from "../../../../lib/api-client.js";
+import { buildImageUrl } from "../../../../lib/image-url.js";
 import { getAuthStore } from "../../../../lib/auth-store.js";
 import styles from "./page.module.css";
 
@@ -104,10 +109,19 @@ function PerformerContent({ id }: { id: string }): React.JSX.Element | null {
     );
   }
 
+  const portrait = performer.images.find((img) => img.kind === "thumb");
+  const portraitSrc = portrait
+    ? buildImageUrl({ serverUrl, accessToken, entityType: "person", entityId: performer.id, kind: "thumb", width: 320 })
+    : null;
+
   return (
     <div className={styles.page}>
       <div className={styles.header}>
-        <Avatar label={performer.name} size={140} />
+        {portraitSrc ? (
+          <img className={styles.portrait} src={portraitSrc} alt="" width={140} height={140} />
+        ) : (
+          <Avatar label={performer.name} size={140} />
+        )}
         <h1 className={styles.name}>{performer.name}</h1>
         <p className={styles.meta}>
           {performer.sceneCount} {performer.sceneCount === 1 ? "scene" : "scenes"}

@@ -6,7 +6,10 @@
 // STATE.md Stash run (S9): the zone's performer index — GET
 // /restricted/performers (q, cursor), keyset-paginated. Gate/entitlement
 // posture identical to every other zone route (see app/restricted/
-// browse/page.tsx's header).
+// browse/page.tsx's header). FX2 fix wave: portrait comes straight off
+// each row's own `images` (entity_type='person', kind='thumb') — same
+// "no per-row image fetch needed" shape studios/page.tsx's StudioLogo
+// already establishes for logos.
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
@@ -19,6 +22,8 @@ import { useRestricted } from "../../../components/restricted/RestrictedProvider
 import { hasRestrictedZoneEntitlement, useRestrictedZoneCount } from "../../../lib/restricted-zone-count.js";
 import { useCursorFeed, type CursorPage } from "../../../components/browse/useCursorFeed.js";
 import { apiGet } from "../../../lib/api-client.js";
+import { buildImageUrl } from "../../../lib/image-url.js";
+import { getAuthStore } from "../../../lib/auth-store.js";
 import type { components } from "@loombre/sdk";
 import styles from "./page.module.css";
 
@@ -33,16 +38,39 @@ async function fetchPerformersPage(q: string, cursor: string | null): Promise<Cu
   return { items: page.items, nextCursor: page.nextCursor };
 }
 
+function PerformerPortrait({
+  performer,
+  serverUrl,
+  accessToken,
+}: {
+  performer: RestrictedPerformer;
+  serverUrl: string;
+  accessToken: string;
+}): React.JSX.Element {
+  const portrait = performer.images.find((img) => img.kind === "thumb");
+  if (!portrait) return <Avatar label={performer.name} size={96} />;
+  const src = buildImageUrl({ serverUrl, accessToken, entityType: "person", entityId: performer.id, kind: "thumb", width: 192 });
+  return <img className={styles.portrait} src={src} alt="" width={96} height={96} loading="lazy" />;
+}
+
 function PerformersContent(): React.JSX.Element | null {
   const router = useRouter();
   const { state: restrictedState } = useRestricted();
   const { count, loading: countLoading } = useRestrictedZoneCount();
   const entitled = hasRestrictedZoneEntitlement(count);
   const [q, setQ] = useState("");
+  const [serverUrl] = useState(() => getAuthStore().getSnapshot().serverUrl);
+  const [accessToken, setAccessToken] = useState<string | null>(null);
 
   useEffect(() => {
     if (!countLoading && !entitled) router.replace("/home");
   }, [countLoading, entitled, router]);
+
+  useEffect(() => {
+    getAuthStore()
+      .getAccessToken()
+      .then(setAccessToken);
+  }, []);
 
   const resetKey = restrictedState.locked ? null : q;
   const { items, hasMore, loading, loadingMore, loadMore } = useCursorFeed<RestrictedPerformer>(
@@ -73,7 +101,7 @@ function PerformersContent(): React.JSX.Element | null {
         onChange={(e) => setQ(e.target.value)}
       />
 
-      {loading ? (
+      {loading || accessToken === null ? (
         <div className={styles.grid}>
           {Array.from({ length: 12 }, (_, i) => (
             <Skeleton key={i} radius="full" width={96} height={96} />
@@ -86,7 +114,7 @@ function PerformersContent(): React.JSX.Element | null {
           <div className={styles.grid}>
             {sorted.map((p) => (
               <Link key={p.id} href={`/restricted/performers/${p.id}`} className={styles.card}>
-                <Avatar label={p.name} size={96} />
+                <PerformerPortrait performer={p} serverUrl={serverUrl} accessToken={accessToken} />
                 <span className={styles.name}>{p.name}</span>
                 <span className={styles.count}>
                   {p.sceneCount} {p.sceneCount === 1 ? "scene" : "scenes"}

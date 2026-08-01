@@ -5,25 +5,49 @@
 //
 // STATE.md Stash run (S9 zone home rails, Lane E) — the performers rail's
 // own tile, a fixed-width rail form of app/restricted/performers/page.tsx's
-// own grid card. Avatar-only (no image): RestrictedPerformer carries no
-// `images` field in the contract — performer portraits are never exposed
-// on this surface today (unlike RestrictedStudio's logo) — so this is
-// honest to the available data, not a corner cut; ZoneStudioTile.tsx is
-// the sibling component for the surface that DOES have real art.
+// own grid card. FX2 fix wave: RestrictedPerformer now carries an `images`
+// field (mirrors RestrictedStudio's own — B ingests performer portraits,
+// entity_type='person', kind='thumb'), so this renders the portrait exactly
+// like ZoneStudioTile.tsx renders a logo, falling back to the existing
+// Avatar initials when the performer has no portrait fixture.
 
 import { Avatar } from "../ui/Card.js";
+import { buildImageUrl } from "../../lib/image-url.js";
 import styles from "./ZonePerformerTile.module.css";
 
 export interface ZonePerformerTileProps {
+  serverUrl: string;
+  accessToken: string;
+  performerId: string;
   name: string;
   sceneCount: number;
+  hasPortrait: boolean;
   href: string;
 }
 
-export function ZonePerformerTile({ name, sceneCount, href }: ZonePerformerTileProps): React.JSX.Element {
+export function ZonePerformerTile({
+  serverUrl,
+  accessToken,
+  performerId,
+  name,
+  sceneCount,
+  hasPortrait,
+  href,
+}: ZonePerformerTileProps): React.JSX.Element {
   return (
     <a href={href} className={styles.tile}>
-      <Avatar label={name} size={96} />
+      {hasPortrait ? (
+        <img
+          className={styles.portrait}
+          src={buildImageUrl({ serverUrl, accessToken, entityType: "person", entityId: performerId, kind: "thumb", width: 192 })}
+          alt=""
+          width={96}
+          height={96}
+          loading="lazy"
+        />
+      ) : (
+        <Avatar label={name} size={96} />
+      )}
       <span className={styles.name}>{name}</span>
       <span className={styles.count}>
         {sceneCount} {sceneCount === 1 ? "scene" : "scenes"}
