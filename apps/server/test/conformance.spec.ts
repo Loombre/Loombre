@@ -263,6 +263,11 @@ const IMPLEMENTED_NON_PUBLIC_EXPECTATIONS: Record<string, number> = {
   listSeriesSeasons: 404, // series lookup fails first
   listSeasonEpisodes: 404, // season lookup fails first
   getEpisode: 404,
+  // STATE.md Stash run (S7/K9, Lane E): PLACEHOLDER_UUID never resolves to
+  // a visible item -> getChaptersForItem returns undefined -> 404, same
+  // "item lookup fails first" posture as every other item-scoped sub-
+  // resource above.
+  getItemChapters: 404,
 
   // catalog-music
   listArtists: 200,

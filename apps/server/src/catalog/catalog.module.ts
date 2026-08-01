@@ -14,6 +14,7 @@ import { DevicesController } from "./devices.controller.js";
 import { AdminController } from "./admin.controller.js";
 import { DataFreedomController } from "./data-freedom.controller.js";
 import { WatchlistController } from "./watchlist.controller.js";
+import { ChaptersController } from "./chapters.controller.js";
 
 /**
  * Catalog module: scanner control, metadata, images, search (docs/PLAN.md §3,
@@ -50,6 +51,7 @@ import { WatchlistController } from "./watchlist.controller.js";
     AdminController,
     DataFreedomController,
     WatchlistController,
+    ChaptersController,
   ],
 })
 export class CatalogModule {}

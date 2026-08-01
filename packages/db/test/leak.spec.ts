@@ -31,6 +31,7 @@ import {
   addToWatchlistAndEmit,
   clearanceDigest,
   exportData,
+  getChaptersForItem,
   getContinueWatching,
   getImageEntityAccess,
   getLibraryItemCountsForViewer,
@@ -113,6 +114,7 @@ let restrictedPerformerOneId: string; // ordinary restricted person, has an imag
 let nightshadeFilmsTagId: string; // studio (kind='studio'), on After Hours Redline
 let auroraMediaTagId: string; // studio (kind='studio'), on Velvet Static
 let undertowConfidentialItemId: string; // restricted item, NO media_files at all (no-evidence case)
+let harborLightsItemId: string; // general item, carries ONE chapter marker (S7/K9 contrast fixture)
 
 beforeAll(async () => {
   run(path.join(PKG_ROOT, 'scripts', 'migrate.mjs'), ['reset']);
@@ -214,6 +216,7 @@ beforeAll(async () => {
   nightshadeFilmsTagId = await one("SELECT id FROM tags WHERE name = 'Nightshade Films'");
   auroraMediaTagId = await one("SELECT id FROM tags WHERE name = 'Aurora Media'");
   undertowConfidentialItemId = await one("SELECT id FROM catalog_items WHERE title = 'Undertow Confidential'");
+  harborLightsItemId = await one("SELECT id FROM catalog_items WHERE title = 'Harbor Lights'");
 });
 
 afterAll(async () => {
@@ -989,6 +992,50 @@ describe('restricted-content leak impossibility', () => {
         // admin's seeded restricted-item progress (After Hours Redline)
         // surfaces as a full card, not a bare id.
         expect(cleared?.continueWatchingInZone.some((e) => e.item.title === 'After Hours Redline')).toBe(true);
+      });
+    });
+
+    describe('12g. getChaptersForItem (S7/K9) — visibility rides the owning item', () => {
+      it('a GENERAL item with a chapter marker is visible to every viewer, cleared or not', async () => {
+        const uncleared = await getChaptersForItem(db, casualUncleared, harborLightsItemId);
+        expect(uncleared).toEqual([{ title: 'Cold Open', startMs: 0, source: 'stash' }]);
+
+        const cleared = await getChaptersForItem(db, adminCleared, harborLightsItemId);
+        expect(cleared).toEqual([{ title: 'Cold Open', startMs: 0, source: 'stash' }]);
+      });
+
+      it("THE REQUIRED CASE — an uncleared viewer's chapters read for a RESTRICTED item's markers is undefined, byte-identical to the item's own getItemById result, not merely an empty array", async () => {
+        const asCasualUncleared = await getChaptersForItem(db, casualUncleared, afterHoursRedlineItemId);
+        expect(asCasualUncleared).toBeUndefined();
+
+        // Gate 4 (library permission) without gate 5 (live unlock) must
+        // ALSO fail — the same gate-5-bypass check getItemById's own leak
+        // test proves, replayed one level down at the chapters surface.
+        const asAdminMissingUnlock = await getChaptersForItem(db, adminClearedButNotUnlocked, afterHoursRedlineItemId);
+        expect(asAdminMissingUnlock).toBeUndefined();
+      });
+
+      it("a fully cleared viewer sees the restricted item's three markers, ordered by startMs ascending", async () => {
+        const cleared = await getChaptersForItem(db, adminCleared, afterHoursRedlineItemId);
+        expect(cleared).toEqual([
+          { title: 'Opening', startMs: 0, source: 'stash' },
+          { title: 'Midpoint', startMs: 32 * 60_000, source: 'stash' },
+          { title: 'Finale', startMs: 71 * 60_000, source: 'stash' },
+        ]);
+      });
+
+      it('a visible item with ZERO chapter markers returns an empty array, never undefined — "no chapters" and "item not visible" are distinguishable', async () => {
+        // Velvet Static is a restricted item with no chapter_markers rows
+        // seeded (only After Hours Redline gets markers) — cleared, it
+        // must read as [], not the undefined a hidden/nonexistent item
+        // produces.
+        const cleared = await getChaptersForItem(db, adminCleared, velvetStaticItemId);
+        expect(cleared).toEqual([]);
+      });
+
+      it("undefined for a nonexistent item id, byte-identical to a hidden restricted item (indistinguishable, matching getItemById's own contract)", async () => {
+        const nonexistent = await getChaptersForItem(db, adminCleared, '00000000-0000-7000-8000-000000000000');
+        expect(nonexistent).toBeUndefined();
       });
     });
 

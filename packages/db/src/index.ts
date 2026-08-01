@@ -249,6 +249,13 @@ export type {
 } from './query/restricted-home.js';
 export { getRestrictedZoneHome } from './query/restricted-home.js';
 
+// Chapters (STATE.md Stash run S7/K9, Lane E) — GET /items/{id}/chapters,
+// the generic content-agnostic twin of RestrictedSceneDetail.chapters. See
+// src/query/chapters.ts header for the visibility model (rides the owning
+// item, house pattern).
+export type { ChapterMarkerRow } from './query/chapters.js';
+export { getChaptersForItem } from './query/chapters.js';
+
 // Identity plumbing (users/user_settings/library_permissions/devices/
 // refresh_tokens) — see src/query/identity.ts header for why this lives in
 // the public barrel rather than @loombre/db/internal.
