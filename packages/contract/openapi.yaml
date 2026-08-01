@@ -2487,6 +2487,49 @@ paths:
         '422': { $ref: '#/components/responses/UnprocessableEntity' }
         default: { $ref: '#/components/responses/Problem' }
 
+  # ──────── Admin: Stash sync report (Stash SQLite metadata sync, S8/K14,
+  # Lane C sync engine) ────────
+  /admin/libraries/{id}/stash-sync-report:
+    parameters:
+      - $ref: '#/components/parameters/IdPathParam'
+    get:
+      operationId: getAdminStashSyncReport
+      tags: [admin]
+      summary: The latest Stash metadata-sync report for a library (admin)
+      description: >-
+        STATE.md S8/K14 (Stash SQLite metadata sync, Lane C sync engine).
+        `report` is the most recently STARTED `stash-sync` job's counts
+        (matched/updated/unmatched/stale/skipped) and status — null when no
+        sync has ever run for this library yet, same honest-empty-shape
+        precedent as GET /admin/capabilities's `{report: null}` before the
+        first hwprobe. `unmatchedScenes`/`staleScenes` are NOT a frozen
+        snapshot from the report row — both are LIVE, keyset-paginated
+        queries over the current stash_scene_links table (K10/S4/S8), so
+        they reflect fixes (a corrected path mapping, a scene reappearing
+        in Stash) immediately, without waiting for the next sync run.
+      parameters:
+        - name: unmatchedCursor
+          in: query
+          required: false
+          description: Opaque pagination cursor for `unmatchedScenes`, from a previous response's `unmatchedScenes.nextCursor`.
+          schema: { type: string }
+        - name: staleCursor
+          in: query
+          required: false
+          description: Opaque pagination cursor for `staleScenes`, from a previous response's `staleScenes.nextCursor`.
+          schema: { type: string }
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: The library's latest Stash sync report, plus live unmatched/stale scene lists
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StashSyncReportEnvelope' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        default: { $ref: '#/components/responses/Problem' }
+
   # ──────────── Admin: Fix Match (Phosphor retheme Wave 2, Lane L2) ──────────
   /admin/libraries/{id}/unmatched:
     parameters:
@@ -5296,3 +5339,64 @@ components:
         entries:
           type: array
           items: { $ref: '#/components/schemas/LibraryProviderChainEntryInput' }
+
+    # ──────── Stash sync report (S8/K14, Lane C sync engine) ────────
+
+    StashSyncReport:
+      type: object
+      description: One migrations/0020_stash_sync_reports.sql row — the most recently STARTED stash-sync run for a library. Counts are a point-in-time snapshot recorded when the run finished (or failed), never a live query.
+      additionalProperties: false
+      required: [jobId, mode, status, matchedCount, updatedCount, unmatchedCount, staleCount, skippedCount, startedAtMs, finishedAtMs]
+      properties:
+        jobId: { type: string, format: uuid }
+        mode: { type: string, enum: [full, incremental] }
+        status:
+          type: string
+          enum: [running, succeeded, failed, partial]
+          description: '''running'' means the job is still in flight (or crashed before its terminal-failure hook ran) — finishedAtMs is null in that case.'
+        matchedCount: { type: integer, minimum: 0 }
+        updatedCount: { type: integer, minimum: 0 }
+        unmatchedCount: { type: integer, minimum: 0 }
+        staleCount: { type: integer, minimum: 0 }
+        skippedCount: { type: integer, minimum: 0 }
+        startedAtMs: { type: integer, format: int64 }
+        finishedAtMs:
+          type: [integer, 'null']
+          format: int64
+          description: Null while status='running'.
+
+    StashSyncSceneRef:
+      type: object
+      description: One stash_scene_links row, live-read (never a report snapshot) — see getAdminStashSyncReport's own description.
+      additionalProperties: false
+      required: [stashSceneId, stashPath, stashUpdatedAtMs]
+      properties:
+        stashSceneId: { type: string, description: "Stash's own scene identifier, as a string (never assumed numeric)." }
+        stashPath: { type: string, description: "The Stash-reported file path for this scene, UNMAPPED (raw, before any library path-mapping rewrite)." }
+        stashUpdatedAtMs:
+          type: [integer, 'null']
+          format: int64
+          description: Stash's own updated_at for this scene, converted to epoch ms; null when Stash never recorded one for it.
+
+    StashSyncSceneRefPage:
+      type: object
+      additionalProperties: false
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/StashSyncSceneRef' }
+        nextCursor: { type: [string, 'null'] }
+
+    StashSyncReportEnvelope:
+      type: object
+      additionalProperties: false
+      required: [report, unmatchedScenes, staleScenes]
+      properties:
+        report:
+          oneOf:
+            - { $ref: '#/components/schemas/StashSyncReport' }
+            - { type: 'null' }
+          description: Null when no stash-sync job has ever run for this library.
+        unmatchedScenes: { $ref: '#/components/schemas/StashSyncSceneRefPage' }
+        staleScenes: { $ref: '#/components/schemas/StashSyncSceneRefPage' }

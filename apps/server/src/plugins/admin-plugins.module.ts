@@ -22,6 +22,12 @@
 // provider-chain) — see the latter's own header for why it's mounted here
 // rather than alongside LibrariesController's other /libraries/{id}/*
 // routes in apps/server/src/catalog/.
+//
+// Stash SQLite metadata sync, Lane C (S8/K14) adds
+// AdminStashSyncReportController + AdminStashSyncReportService (GET
+// /admin/libraries/{id}/stash-sync-report) — same
+// under-/libraries/{id}/-but-plugins-area-owned rationale as the
+// provider-chain surface immediately above.
 
 import { Module } from "@nestjs/common";
 import { CommonModule } from "../common/common.module.js";
@@ -32,10 +38,18 @@ import { AdminPluginPreviewService } from "./admin-plugin-preview.service.js";
 import { AdminPluginPseudonymizationService } from "./admin-plugin-pseudonymization.service.js";
 import { AdminLibraryProviderChainController } from "./admin-library-provider-chain.controller.js";
 import { AdminLibraryProviderChainService } from "./admin-library-provider-chain.service.js";
+import { AdminStashSyncReportController } from "./admin-stash-sync-report.controller.js";
+import { AdminStashSyncReportService } from "./admin-stash-sync-report.service.js";
 
 @Module({
   imports: [CommonModule, PluginsModule],
-  controllers: [AdminPluginsController, AdminLibraryProviderChainController],
-  providers: [AdminPluginPreviewService, AdminPluginGrantsService, AdminPluginPseudonymizationService, AdminLibraryProviderChainService],
+  controllers: [AdminPluginsController, AdminLibraryProviderChainController, AdminStashSyncReportController],
+  providers: [
+    AdminPluginPreviewService,
+    AdminPluginGrantsService,
+    AdminPluginPseudonymizationService,
+    AdminLibraryProviderChainService,
+    AdminStashSyncReportService,
+  ],
 })
 export class AdminPluginsControllersModule {}
