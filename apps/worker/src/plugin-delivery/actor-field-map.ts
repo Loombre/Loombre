@@ -98,6 +98,15 @@ export const ACTOR_FIELD_MAP: Record<string, readonly string[]> = {
   // entry is. Also ADMIN_ONLY (never grantable to a plugin subscriber in
   // the first place — see event-taxonomy.ts), same posture as probe.failed.
   "stash.provider.disabled": [],
+  // STATE.md "Stash SQLite metadata sync", S8/K12 (Lane C sync engine):
+  // stash.sync.started's {jobId, libraryId, mode, startedAtMs} and
+  // stash.sync.completed's {jobId, libraryId, mode, status, counts,
+  // durationMs, completedAtMs} name only job/library ids and sync
+  // bookkeeping — no user id or another user-correlating identifier —
+  // empty for the same reason stash.provider.disabled's entry is. Also
+  // ADMIN_ONLY, same posture.
+  "stash.sync.started": [],
+  "stash.sync.completed": [],
 };
 
 /**
