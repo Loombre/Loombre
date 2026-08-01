@@ -466,4 +466,53 @@ describe("Restricted Content surface (STATE.md Stash run, S9)", () => {
     expect(zoneForGeneral.status).toBe(200);
     expect(zoneForGeneral.body.items).toEqual([]);
   });
+
+  // STATE.md Stash run (S7/K9, Lane E): GET /items/{id}/chapters HTTP twin
+  // of packages/db/test/leak.spec.ts's 12g cases — proves the SAME
+  // visibility-rides-the-owning-item posture end to end through the real
+  // route (requireUuidParam + notFound()), not just the guarded query.
+  // Reuses this describe block's already-unlocked admin state (beforeAll
+  // above) rather than its own lock/unlock cycle.
+  it("GET /items/{id}/chapters: general item's marker visible to every viewer; restricted item's markers byte-identical-404 to an uncleared viewer, real once unlocked", async () => {
+    const moviesRes = await request(app.getHttpServer()).get("/movies").set("Authorization", `Bearer ${adminToken}`);
+    const harborLightsRow = moviesRes.body.items.find((it: { title: string }) => it.title === "Harbor Lights");
+    const harborLightsId: string = harborLightsRow.id;
+
+    const casual = await casualToken("chapters-general");
+    const generalUncleared = await request(app.getHttpServer())
+      .get(`/items/${harborLightsId}/chapters`)
+      .set("Authorization", `Bearer ${casual}`);
+    expect(generalUncleared.status, JSON.stringify(generalUncleared.body)).toBe(200);
+    expect(generalUncleared.body).toEqual({ items: [{ title: "Cold Open", startMs: 0, source: "stash" }] });
+
+    const zoneBrowseRes = await request(app.getHttpServer())
+      .get("/restricted/browse")
+      .set("Authorization", `Bearer ${adminToken}`);
+    const sceneId: string = zoneBrowseRes.body.items.find(
+      (it: { title: string }) => it.title === "After Hours Redline",
+    ).id;
+
+    const restrictedCasual = await casualToken("chapters-restricted");
+    const uncleared = await request(app.getHttpServer())
+      .get(`/items/${sceneId}/chapters`)
+      .set("Authorization", `Bearer ${restrictedCasual}`);
+    expect(uncleared.status).toBe(404);
+
+    const nonexistent = await request(app.getHttpServer())
+      .get("/items/00000000-0000-7000-8000-000000000000/chapters")
+      .set("Authorization", `Bearer ${adminToken}`);
+    expect(nonexistent.status).toBe(404);
+    // Byte-identical apart from `instance` (house pattern — see the
+    // GET /restricted/scenes/{id} case above).
+    const { instance: _unclearedInstance, ...unclearedRest } = uncleared.body;
+    const { instance: _nonexistentInstance, ...nonexistentRest } = nonexistent.body;
+    expect(unclearedRest).toEqual(nonexistentRest);
+
+    const unlocked = await request(app.getHttpServer())
+      .get(`/items/${sceneId}/chapters`)
+      .set("Authorization", `Bearer ${adminToken}`);
+    expect(unlocked.status, JSON.stringify(unlocked.body)).toBe(200);
+    expect(unlocked.body.items.map((c: { title: string }) => c.title)).toEqual(["Opening", "Midpoint", "Finale"]);
+    expect(unlocked.body.items[0]).toEqual({ title: "Opening", startMs: 0, source: "stash" });
+  });
 });
