@@ -40,6 +40,10 @@
       }
     },
     "durationMs": { "type": "integer", "minimum": 0 },
-    "completedAtMs": { "type": "integer", "minimum": 0 }
+    "completedAtMs": { "type": "integer", "minimum": 0 },
+    "usedSnapshotFallback": {
+      "type": "boolean",
+      "description": "FX4 fix wave (S2, additive optional field per the evolution policy): whether this run's Stash connection had to fall back to a snapshot copy (apps/worker/src/stash/adapter.ts's readingFrom === 'snapshot') rather than reading the source database file directly. Omitted (not false) when the run never reached a successful connectToStashLibrary call — e.g. the terminal-failure path, which has no access to the failed attempt's connection."
+    }
   }
 }

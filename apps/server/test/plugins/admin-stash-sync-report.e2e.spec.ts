@@ -163,6 +163,9 @@ describe("GET /admin/libraries/{id}/stash-sync-report", () => {
           skipped_count: 0,
           started_at_ms: now - 1000,
           finished_at_ms: now,
+          // FX4 fix wave (migrations/0022, S2): this run's Stash connection
+          // fell back to a snapshot copy.
+          used_snapshot_fallback: true,
         })
         .returningAll()
         .executeTakeFirstOrThrow();
@@ -210,6 +213,7 @@ describe("GET /admin/libraries/{id}/stash-sync-report", () => {
         unmatchedCount: 1,
         staleCount: 1,
         skippedCount: 0,
+        usedSnapshotFallback: true,
       });
       expect(res.body.report.finishedAtMs).toBe(report.finished_at_ms);
       // Both seeded rows have item_id: null, so BOTH are unmatched
