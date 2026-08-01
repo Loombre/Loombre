@@ -85,13 +85,24 @@ All additive. Zone ops tag `restricted` (gates 1–5 re-verified per request, ex
 - New internal writers: item-attributes.ts, person-attributes.ts, chapter-markers.ts (wholesale replace); findOrCreateTag gained optional {kind, parentTagId} absent-means-don't-touch 4th arg; metadata/layers.ts extracted verbatim from consumer.ts (its 8 original cases prove behavior unchanged). runtime_ms/duration/resolution NEVER written from Stash (S5 authority split, tested).
 - **Process correction (affects C/D too): B's worktree branched from STALE 0f713a8 despite 500c156 being committed first — worktree creation snapshots at agent-session start, not dispatch. B self-diagnosed + fast-forwarded; orchestrator warned C/D mid-run.**
 
+### Lane C freeze (2026-08-01, orchestrator ground-truthed; real-apply wired at e6f1aa4)
+
+**C LANDED 0511653..3df8a8d rebased onto B** (9 commits; gate ALL 13 + gate:full ALL 14 PASSED in-worktree). Facts:
+
+- Checkpointing: scan_checkpoints' same-job-id-on-retry shape via NEW `stash_sync_checkpoints` (0020) — stash-sync is LONG_RUNNING/retryLimit 2, one promise per run; inventory+matching re-run fresh each attempt (idempotent), only the apply phase checkpoints/skip-resumes.
+- Schedule (S8 trigger b): boot-timer + settings-registry key `stash.sync.scheduleIntervalMs` (default 0/OFF) — plugin-delivery-loop shape, chosen over threading pg-boss .schedule() through the shared JobQueue (blast radius). Trigger c: chokidar mtime watch per enabled connection → debounced incremental enqueue.
+- Events stash.sync.started/completed landed (envelope 27→29, admin-only, parity + actor-field-map green). Contract op GET /admin/libraries/{id}/stash-sync-report + SDK atomic + conformance entry.
+- **SCALE PROOF (33k synthetic, apply STUBBED — honest caveat recorded):** initial full sync **69.3 s wall / 476.7 MiB peak RSS**; matched 32,314 / unmatched 686; incremental with 12 mutated scenes → touchedCount === 12 (asserted); checkpoint resume: crash after 666 applies → resume same job id → all scenes applied, zero lost (15 redone past last checkpoint, expected). Harness: scripts/gen-stash-fixtures.mjs + scripts/stash-scale-proof.mjs. END-TO-END re-proof with real apply = orchestrator item before exit gate.
+- Premise corrections: stale worktree base again (self-fixed ff to 500c156); packages/jobs barrel never re-exported the K13 payload types (fixed, barrel-only); mid-run signature re-freeze to B's landed shape absorbed cleanly.
+- Integration: real applyStashSceneMetadata wired at **e6f1aa4** (the planned one-line swap; worker 1113 passed post-wire).
+
 ### Lane burn-up
 
 | Lane | Scope | Model | Status |
 |---|---|---|---|
 | A | Provider core: SQLite RO adapter, S3 guard + schema fixtures, S4 matching + path-mapping + oshash, S2 lock lifecycle | sonnet | **LANDED ff488f6..e521912** |
 | B | Mapping S5–S7: apply.ts entity writers via 0019 schema, image ingest, precedence/lock, stash:/person attrs, genre heuristic | sonnet | **LANDED d4be893..24bbadf** |
-| C | Sync engine S8: consumers, checkpoints, incremental diff, staleness, events, 0020 + report endpoint; 33k fixture gen + scale proof | sonnet | **DISPATCHED** (worktree) |
+| C | Sync engine S8: consumers, checkpoints, incremental diff, staleness, events, 0020 + report endpoint; 33k fixture gen + scale proof | sonnet | **LANDED 0511653..3df8a8d + e6f1aa4 wire-up** |
 | D | Zone surface S9: contract+SDK atomic, guarded zone queries, routes, filters + URL state, performer/studio/scene pages, search, density | sonnet | **DISPATCHED** (worktree) |
 | E | Player chapters UI + /items/{id}/chapters + zone home rails + genre-config exposure + 0021 indexes w/ query plans | sonnet | blocked on B/C/D integration |
 | R1 | opus: leak-suite extension + adversarial zone walk (fail-first then green) | opus | blocked on lanes |
