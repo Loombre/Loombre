@@ -24,6 +24,7 @@ export const API_OPERATIONS = [
   { path: "/admin/jobs/{id}", method: "get", operationId: "getJob" },
   { path: "/admin/libraries/{id}/provider-chain", method: "get", operationId: "getAdminLibraryProviderChain" },
   { path: "/admin/libraries/{id}/provider-chain", method: "put", operationId: "putAdminLibraryProviderChain" },
+  { path: "/admin/libraries/{id}/stash-sync-report", method: "get", operationId: "getAdminStashSyncReport" },
   { path: "/admin/libraries/{id}/unmatched", method: "get", operationId: "listUnmatchedLibraryItems" },
   { path: "/admin/logs/tail", method: "get", operationId: "getAdminLogsTail" },
   { path: "/admin/plugins", method: "get", operationId: "listAdminPlugins" },
