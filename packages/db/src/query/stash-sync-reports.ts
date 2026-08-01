@@ -63,6 +63,14 @@ export interface FinishStashSyncReportInput {
   staleCount: number;
   skippedCount: number;
   finishedAtMs: number;
+  /** FX4 fix wave (S2): whether this run's Stash connection fell back to a
+   *  snapshot copy (adapter.ts's readingFrom === 'snapshot'). OMIT (do not
+   *  pass `false`) when the caller genuinely does not know — e.g.
+   *  createStashSyncTerminalFailureHook, which never obtained a connection
+   *  for the failed attempt — so the column keeps whatever it already held
+   *  (NULL from createStashSyncReport's insert) rather than a fabricated
+   *  answer. */
+  usedSnapshotFallback?: boolean;
 }
 
 /** Finalizes a report row (by its own id) — one call at run end, success
@@ -83,6 +91,7 @@ export async function finishStashSyncReport(
       stale_count: input.staleCount,
       skipped_count: input.skippedCount,
       finished_at_ms: input.finishedAtMs,
+      ...(input.usedSnapshotFallback !== undefined ? { used_snapshot_fallback: input.usedSnapshotFallback } : {}),
     })
     .where('id', '=', reportId)
     .returningAll()

@@ -720,6 +720,9 @@ export interface StashSyncReportsTable {
   skipped_count: Generated<number>;
   started_at_ms: number;
   finished_at_ms: number | null;
+  /** FX4 fix wave (migrations/0022_stash_sync_report_snapshot.sql, S2):
+   *  NULL means unknown (never fabricated to 'read from source'). */
+  used_snapshot_fallback: boolean | null;
 }
 
 export interface StashSyncCheckpointsTable {
