@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { ArgumentsHost, Catch, ExceptionFilter, HttpException, HttpStatus } from "@nestjs/common";
 import type { Request, Response } from "express";
+import { MalformedCursorError } from "@loombre/db";
 import { sanitizeInstancePath } from "./sanitize-instance.js";
+import { unprocessableEntity } from "./problem.exception.js";
 
 /**
  * Stable URN identifying the RFC 9457 problem type for "the server hit an
@@ -31,11 +33,37 @@ export const INTERNAL_PROBLEM_TYPE = "urn:loombre:problem:internal";
  * gateway/require-uuid-param.ts) is the PRIMARY fix — malformed ids are
  * now rejected before ever reaching the DB — this is the defense-in-depth
  * backstop for every other kind of unanticipated server error.
+ *
+ * R1 review lane (leak-suite extension): `MalformedCursorError`
+ * (packages/db/src/query/cursor.ts) is the SAME class of defect F1a
+ * describes, one layer over — a client-supplied pagination cursor this
+ * server did not mint (bad base64url/JSON, wrong payload shape, or a row
+ * id that is not a uuid) is a CLIENT input mistake, not an unanticipated
+ * server error, and every keyset-paginated list endpoint in the product
+ * answered it with a 500. Handling it here rather than in each controller
+ * is deliberate: cursors are minted and interpreted exclusively by the
+ * guarded query layer, so there is exactly one error class to recognize
+ * and one correct answer (422) for all of them — a per-controller
+ * try/catch would be N copies that drift. The zone list ops
+ * (openapi.yaml's `restricted` tag) declare the '422' explicitly since
+ * this lane pins them; every other list op stays covered by its
+ * `default: Problem` response, which is what that response is for.
  */
 @Catch()
 export class ProblemJsonExceptionFilter implements ExceptionFilter {
-  catch(exception: unknown, host: ArgumentsHost): void {
+  catch(rawException: unknown, host: ArgumentsHost): void {
     const res = host.switchToHttp().getResponse<Response>();
+
+    // Deliberately does NOT echo MalformedCursorError's own message (which
+    // quotes the offending payload back) — a fixed detail string, same
+    // posture as the generic 500 branch below.
+    const exception: unknown =
+      rawException instanceof MalformedCursorError
+        ? unprocessableEntity(
+            "Malformed cursor.",
+            sanitizeInstancePath(host.switchToHttp().getRequest<Request>()),
+          )
+        : rawException;
 
     if (exception instanceof HttpException) {
       const status = exception.getStatus();

@@ -1083,7 +1083,7 @@ export interface paths {
         };
         /**
          * Restricted zone home rails (continue watching, recently added, studios, performers)
-         * @description 404 for a viewer with NO restricted-library entitlement at all — same posture as every other zone read (GET /restricted/count). For an entitled-but-LOCKED viewer (gate 5 not currently passed), `continueWatchingInZone`/`recentlyAddedInZone` come back empty (guard-consistent with GET /restricted/browse) while `studios`/ `performers` still resolve — aggregate names/counts only, no title/artwork, the same U10 disclosure GET /restricted/count already makes for the zone as a whole.
+         * @description 404 for a viewer with NO restricted-library entitlement at all — same posture as every other zone read (GET /restricted/count). For an entitled-but-LOCKED viewer (gate 5 not currently passed) ALL FOUR rails come back empty — continueWatchingInZone, recentlyAddedInZone, studios and performers alike — guard-consistent with GET /restricted/browse. The zone's U10 aggregate disclosure (that a zone exists, and how many items are in it) is made by GET /restricted/count and by that endpoint ALONE; a locked viewer never learns a studio or performer NAME from this endpoint, because a studio/performer roster is zone content, not an aggregate. (R1 review lane: this paragraph previously said studios/performers "still resolve" while locked — the implementation has always returned them empty, and empty is the correct, safer reading of docs/PLAN.md §6.4. Corrected here so nobody "conforms" the code to the description and opens the leak. Pinned by packages/db/test/leak.spec.ts 12f/12h and the HTTP twin in apps/server/test/libraries.e2e.spec.ts.)
          */
         get: operations["getRestrictedHome"];
         put?: never;
@@ -5668,6 +5668,7 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
+            422: components["responses"]["UnprocessableEntity"];
             default: components["responses"]["Problem"];
         };
     };
@@ -5735,6 +5736,7 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
+            422: components["responses"]["UnprocessableEntity"];
             default: components["responses"]["Problem"];
         };
     };
@@ -5789,6 +5791,7 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
+            422: components["responses"]["UnprocessableEntity"];
             default: components["responses"]["Problem"];
         };
     };
@@ -5843,6 +5846,7 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
+            422: components["responses"]["UnprocessableEntity"];
             default: components["responses"]["Problem"];
         };
     };
@@ -5872,6 +5876,7 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
+            422: components["responses"]["UnprocessableEntity"];
             default: components["responses"]["Problem"];
         };
     };
