@@ -166,6 +166,46 @@ const DATE_HIGH_SENTINEL = 99_999_999_999_999;
 const DURATION_LOW_SENTINEL = -1;
 const DURATION_HIGH_SENTINEL = 99_999_999_999_999;
 
+// ─────────────────────────────────────────────────────────────────────────
+// S10 residue, MEASURED (R2 audit, 33k fixture, two-restricted-library
+// viewer, same hardware/warm-cache conditions as 0021's own table)
+// ─────────────────────────────────────────────────────────────────────────
+// migration 0021 declined rating/date/duration sorts as owner-sign-off
+// territory, following 0009's precedent, on the reasoning that "one index
+// does not cover both directions". That reasoning is correct but was never
+// taken to a measurement; here is the measurement, so the next person to
+// look at this decides from numbers instead of re-deriving them:
+//
+//   sort=rating — a per-direction PARTIAL EXPRESSION index on
+//     catalog_items DOES work, and works well:
+//       CREATE INDEX ... ON catalog_items ((COALESCE(community_rating, -1)) DESC, id DESC) WHERE item_type = 'movie'   -- order=desc
+//       CREATE INDEX ... ON catalog_items ((COALESCE(community_rating, 11)) ASC,  id ASC)  WHERE item_type = 'movie'   -- order=asc
+//     desc 238.7ms -> 7.4ms, asc 253.1ms -> 7.5ms, deep keyset (~page 21)
+//     7.7ms, ~1.3 MB each. The sentinel reaches Postgres as a bound
+//     PARAMETER rather than a literal, which would normally defeat
+//     expression-index matching — it does not here, because node-postgres
+//     issues unnamed statements and Postgres therefore plans each one with
+//     the parameter's actual value (a custom plan). Anything that changes
+//     that (naming/preparing these statements, or a future
+//     plan_cache_mode=force_generic_plan) would silently un-match the
+//     index, so a re-measurement belongs in the same change.
+//
+//   sort=date — NOT fixable this way, confirmed rather than assumed: the
+//     equivalent index on movie_details ((COALESCE(premiere_at_ms, ...)))
+//     is simply not chosen by the planner (240.2ms -> 238.2ms, index
+//     unused), because the COALESCE lives on a LEFT JOINed satellite and
+//     cannot order a scan driven from catalog_items.
+//
+//   sort=duration — structurally unindexable: the key comes out of the
+//     per-item LATERAL below (the primary-file resolution rule has no
+//     column to index). Needs the catalog_items.primary_duration_ms
+//     denormalization, i.e. a writer change, i.e. owner sign-off.
+//
+// So the honest split is: date + duration really are owner-decision
+// territory; rating is a two-index migration whose only open question is
+// whether the owner wants the zone to diverge from the general catalog's
+// own still-declined rating/year sorts (0009's header). Not landed here —
+// that symmetry call is the owner's, not a review lane's.
 function sortKeyExpr(sort: RestrictedBrowseSort, order: RestrictedBrowseOrder) {
   switch (sort) {
     case 'added':
