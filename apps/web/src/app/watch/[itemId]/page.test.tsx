@@ -64,17 +64,26 @@ vi.mock("../../../lib/item-lookup.js", () => ({
   backdropImage: () => null,
 }));
 
+const findProgressForItem = vi.fn();
+
 vi.mock("../../../lib/progress-lookup.js", () => ({
-  findProgressForItem: async () => null,
-  isWorthResuming: () => false,
+  findProgressForItem: (...args: unknown[]) => findProgressForItem(...args),
+  isWorthResuming: (p: { positionMs: number }) => p.positionMs >= 5000,
 }));
 
 vi.mock("../../../lib/progress-report.js", () => ({
   reportProgressOnUnload: vi.fn(),
 }));
 
+// Shared by two real callers: WatchPage's own album-track fetch (GET
+// /albums/{id}/tracks) and VideoPlayer's S7/K9 chapters fetch (GET
+// /items/{id}/chapters) — both only ever read `.items` off the result, so
+// a generic `{ items: [] }` default resolves both sensibly with no
+// per-test override needed.
+const apiGet = vi.fn();
+
 vi.mock("../../../lib/api-client.js", () => ({
-  apiGet: vi.fn(),
+  apiGet: (...args: unknown[]) => apiGet(...args),
   apiPost: vi.fn(),
   apiPut: vi.fn(),
   apiPatch: vi.fn(),
@@ -112,6 +121,25 @@ function installMediaStubs(): void {
 }
 
 installMediaStubs();
+
+/** jsdom has no window.matchMedia, which ResumePrompt's SheetOrModal needs
+ *  (VideoPlayer.test.tsx's identical note) — only needed for the deep-link-
+ *  vs-resume-prompt test below, but installing it unconditionally is
+ *  harmless for the rest of this file's tests. */
+function installMatchMedia(): void {
+  vi.stubGlobal(
+    "matchMedia",
+    vi.fn().mockImplementation((query: string) => ({
+      matches: false,
+      media: query,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+      addListener: () => undefined,
+      removeListener: () => undefined,
+      dispatchEvent: () => true,
+    })),
+  );
+}
 
 function movieSummary(): ItemSummary {
   return {
@@ -183,10 +211,13 @@ describe("WatchPage", () => {
   let view: TestRender | null = null;
 
   beforeEach(() => {
+    installMatchMedia();
     searchParams = new URLSearchParams();
     summary = movieSummary();
     createPlaybackSession.mockReset().mockResolvedValue({ ok: true, session: directPlaySession() });
     endPlaybackSession.mockReset().mockResolvedValue(undefined);
+    findProgressForItem.mockReset().mockResolvedValue(null);
+    apiGet.mockReset().mockResolvedValue({ items: [] });
     playTrack.mockReset();
     playQueue.mockReset();
     routerBack.mockReset();
@@ -196,6 +227,7 @@ describe("WatchPage", () => {
   afterEach(() => {
     view?.unmount();
     view = null;
+    vi.unstubAllGlobals();
   });
 
   it("starts the version named by ?mediaFileId, not the item's default file", async () => {
@@ -224,5 +256,30 @@ describe("WatchPage", () => {
     expect(playTrack).toHaveBeenCalledWith(
       expect.objectContaining({ itemId: ITEM_ID, title: "Heliotrope", mediaFileId: ALT_FILE_ID }),
     );
+  });
+
+  // S7 chapters: app/restricted/scenes/[id]/page.tsx's markers list links
+  // here with `?t=<wholeSeconds>` — this route must convert it to ms and
+  // hand it to VideoPlayer as `startMs`, which wins over the resume prompt
+  // (VideoPlayer.test.tsx covers the seek/no-prompt mechanics in full
+  // fidelity; this is the route-level proof the query param actually
+  // reaches it).
+  it("?t=<seconds> suppresses the resume prompt even when a worth-resuming saved position exists", async () => {
+    searchParams = new URLSearchParams({ t: "90" });
+    findProgressForItem.mockResolvedValue({ itemId: ITEM_ID, positionMs: 120_000, state: "in-progress" });
+    view = await renderRoute();
+    expect(view.container.textContent).not.toContain("You stopped at");
+  });
+
+  it("a plain /watch/{itemId} link (no ?t=) still shows the resume prompt when a worth-resuming saved position exists", async () => {
+    findProgressForItem.mockResolvedValue({ itemId: ITEM_ID, positionMs: 120_000, state: "in-progress" });
+    view = await renderRoute();
+    expect(view.container.textContent).toContain("You stopped at");
+  });
+
+  it("ignores a malformed ?t= (non-numeric/negative) rather than crashing the route", async () => {
+    searchParams = new URLSearchParams({ t: "not-a-number" });
+    view = await renderRoute();
+    expect(createPlaybackSession).toHaveBeenCalledWith(ITEM_ID, "stream", undefined);
   });
 });

@@ -18,6 +18,25 @@ type AudioStream = components["schemas"]["AudioStream"];
 type SubtitleStream = components["schemas"]["SubtitleStream"];
 type PlaybackPlan = components["schemas"]["PlaybackPlan"];
 
+// jsdom has no window.matchMedia, which PlayerControls now needs (S7/K9's
+// chapters button picks a desktop popover vs mobile BottomSheet via
+// useMediaQuery) — VideoPlayer.test.tsx's identical note. A static "always
+// desktop" stub is enough here: none of this file's cases exercise the
+// phone-vs-desktop chapters panel split, only the capability chips and
+// transport wiring around it.
+vi.stubGlobal(
+  "matchMedia",
+  vi.fn().mockImplementation((query: string) => ({
+    matches: false,
+    media: query,
+    addEventListener: () => undefined,
+    removeEventListener: () => undefined,
+    addListener: () => undefined,
+    removeListener: () => undefined,
+    dispatchEvent: () => true,
+  })),
+);
+
 function audio(index: number, overrides: Partial<AudioStream> = {}): AudioStream {
   return {
     index,
@@ -75,6 +94,7 @@ function props(overrides: Partial<PlayerControlsProps> = {}): PlayerControlsProp
     subtitleStreams: [],
     selectedAudioIndex: null,
     selectedSubtitleIndex: null,
+    chapters: [],
     videoElement: null,
     directPlay: true,
     plan: null,
@@ -192,5 +212,47 @@ describe("PlayerControls — transport wiring", () => {
     const toggle = button(view, "Audio and subtitle tracks");
     act(() => toggle.click());
     expect(view.container.textContent).toContain("server-selected for this session");
+  });
+});
+
+// S7/K9: the Chapters button/list — mission spec "zero chapters -> zero
+// UI" (no button at all when the item has none) and "clicking a chapter
+// seeks" (via the same onSeek prop the scrubber/seek buttons use).
+describe("PlayerControls — chapters", () => {
+  let view: TestRender | null = null;
+
+  afterEach(() => {
+    view?.unmount();
+    view = null;
+  });
+
+  it("renders no Chapters button at all for an item with zero chapters", () => {
+    view = renderIntoBody(<PlayerControls {...props({ chapters: [] })} />);
+    expect(view.container.querySelector('button[aria-label="Chapters"]')).toBeNull();
+  });
+
+  it("opens the chapter list from the Chapters button and seeks + closes on a click", () => {
+    const p = props({
+      chapters: [
+        { title: "Opening", startMs: 0 },
+        { title: "Midpoint", startMs: 32 * 60_000 },
+      ],
+    });
+    view = renderIntoBody(<PlayerControls {...p} />);
+
+    const toggle = button(view, "Chapters");
+    expect(view.container.textContent).not.toContain("Midpoint");
+    act(() => toggle.click());
+    expect(view.container.textContent).toContain("Opening");
+    expect(view.container.textContent).toContain("Midpoint");
+
+    const midpointEntry = Array.from(view.container.querySelectorAll("button")).find((b) => b.textContent?.includes("Midpoint"));
+    expect(midpointEntry).toBeTruthy();
+    act(() => midpointEntry?.click());
+    expect(p.onSeek).toHaveBeenCalledWith(32 * 60_000);
+    // Selecting a chapter closes the popover, same as TrackPickers-style
+    // pickers don't (this one is a one-shot navigation, not a persistent
+    // toggle) — the list content unmounts.
+    expect(view.container.textContent).not.toContain("Midpoint");
   });
 });
