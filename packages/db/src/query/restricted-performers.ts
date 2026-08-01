@@ -49,6 +49,7 @@ import { applyGuardToJoined, applyGuardToPeople } from './guard.js';
 import { decodeCursor, encodeCursor } from './cursor.js';
 import { resolveEntitledRestrictedLibraryIds } from './restricted-zone.js';
 import { listRestrictedBrowse, type ListRestrictedBrowseResult } from './restricted-browse.js';
+import type { ImageDescriptor } from './catalog-detail.js';
 
 export interface RestrictedPerformerRow {
   id: string;
@@ -58,6 +59,12 @@ export interface RestrictedPerformerRow {
    *  credited on (role='performer'), scoped to the viewer's entitled
    *  restricted libraries — never a raw credit-row count. */
   sceneCount: number;
+  /** FX2 fix wave: the performer's portrait (images entity_type='person',
+   *  kind='thumb', ingested by Lane B) — mirrors RestrictedStudioRow's own
+   *  `images` field exactly (fetchStudioImagesBatch's shape, entity_type
+   *  swapped). A person with no image fixture gets an honest empty array,
+   *  never a leak of some OTHER performer's portrait. */
+  images: ImageDescriptor[];
 }
 
 export interface ListRestrictedPerformersParams {
@@ -153,6 +160,39 @@ async function fetchPerformerSceneCountsBatch(
   return map;
 }
 
+/** FX2 fix wave: batch-fetch performer portraits for a page's worth of
+ *  already-resolved person ids — same "batch over an already-limited id
+ *  set" shape as fetchPerformerSceneCountsBatch above, and BYTE-IDENTICAL
+ *  to restricted-studios.ts's fetchStudioImagesBatch except entity_type
+ *  ('person' vs 'tag') — no guard/visibility logic of its own, because the
+ *  ids handed in already passed applyGuardToPeople + the qualifying-credit
+ *  EXISTS check (an uncleared/nonexistent/wrong-role person id can never
+ *  reach this function to begin with — see this file's header). */
+async function fetchPerformerImagesBatch(db: Kysely<DB>, ids: string[]): Promise<Map<string, ImageDescriptor[]>> {
+  const map = new Map<string, ImageDescriptor[]>();
+  if (ids.length === 0) return map;
+
+  const rows = await db
+    .selectFrom('images')
+    .select(['entity_id', 'kind', 'width', 'height', 'blurhash', 'dominant_color'])
+    .where('entity_type', '=', 'person')
+    .where('entity_id', 'in', ids)
+    .execute();
+
+  for (const row of rows) {
+    const arr = map.get(row.entity_id) ?? [];
+    arr.push({
+      kind: row.kind,
+      width: row.width,
+      height: row.height,
+      blurhash: row.blurhash,
+      dominantColor: row.dominant_color ? row.dominant_color : null,
+    });
+    map.set(row.entity_id, arr);
+  }
+  return map;
+}
+
 export async function listRestrictedPerformers(
   db: Kysely<DB>,
   ctx: ViewerContext,
@@ -198,19 +238,18 @@ export async function listRestrictedPerformers(
   const nextCursor =
     idRows.length === limit && last ? encodeCursor({ name: last.name, id: last.id }) : null;
 
-  const sceneCounts = await fetchPerformerSceneCountsBatch(
-    db,
-    ctx,
-    restrictedLibraryIds,
-    idRows.map((r) => r.id)
-  );
+  const ids = idRows.map((r) => r.id);
+  const [sceneCounts, imagesMap] = await Promise.all([
+    fetchPerformerSceneCountsBatch(db, ctx, restrictedLibraryIds, ids),
+    fetchPerformerImagesBatch(db, ids),
+  ]);
 
   return {
     // sceneCounts.get(r.id) is never undefined in practice — the EXISTS
     // check above and qualifyingCreditQuery share the exact same predicate,
     // so every id in idRows has >=1 matching row in the batch. The ?? 0
     // fallback is defense-in-depth, not an expected path.
-    rows: idRows.map((r) => ({ ...r, sceneCount: sceneCounts.get(r.id) ?? 0 })),
+    rows: idRows.map((r) => ({ ...r, sceneCount: sceneCounts.get(r.id) ?? 0, images: imagesMap.get(r.id) ?? [] })),
     nextCursor,
   };
 }
@@ -245,8 +284,11 @@ export async function getRestrictedPerformerById(
     .executeTakeFirst();
   if (!person) return undefined;
 
-  const sceneCounts = await fetchPerformerSceneCountsBatch(db, ctx, restrictedLibraryIds, [person.id]);
-  return { ...person, sceneCount: sceneCounts.get(person.id) ?? 0 };
+  const [sceneCounts, imagesMap] = await Promise.all([
+    fetchPerformerSceneCountsBatch(db, ctx, restrictedLibraryIds, [person.id]),
+    fetchPerformerImagesBatch(db, [person.id]),
+  ]);
+  return { ...person, sceneCount: sceneCounts.get(person.id) ?? 0, images: imagesMap.get(person.id) ?? [] };
 }
 
 /**

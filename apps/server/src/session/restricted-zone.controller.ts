@@ -219,7 +219,7 @@ function toSceneDto(detail: RestrictedSceneDetail) {
 }
 
 function toPerformerDto(row: RestrictedPerformerRow) {
-  return { id: row.id, name: row.name, contentClass: row.contentClass, sceneCount: row.sceneCount };
+  return { id: row.id, name: row.name, contentClass: row.contentClass, sceneCount: row.sceneCount, images: row.images };
 }
 
 function toStudioDto(row: RestrictedStudioRow) {

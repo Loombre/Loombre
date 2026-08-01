@@ -239,8 +239,12 @@ function RestrictedHomeContent(): React.JSX.Element | null {
             {home.performers.map((performer) => (
               <ZonePerformerTile
                 key={performer.id}
+                serverUrl={serverUrl}
+                accessToken={accessToken}
+                performerId={performer.id}
                 name={performer.name}
                 sceneCount={performer.sceneCount}
+                hasPortrait={performer.images.some((img) => img.kind === "thumb")}
                 href={`/restricted/performers/${performer.id}`}
               />
             ))}

@@ -5147,14 +5147,22 @@ components:
         credited on >=1 scene visible within the zone. Mirrors Person's
         shape (packages/db/src/query/people.ts's guard model) with a
         zone-scoped `sceneCount` in place of Person's general `creditCount`.
+        FX2 fix wave: `images` mirrors RestrictedStudio's own field exactly
+        (same shape, same guard posture) — B ingests performer portraits
+        (images entity_type='person', kind='thumb') but this field was
+        missing here until now.
       type: object
       additionalProperties: false
-      required: [id, name, contentClass, sceneCount]
+      required: [id, name, contentClass, sceneCount, images]
       properties:
         id: { type: string, format: uuid }
         name: { type: string }
         contentClass: { $ref: '#/components/schemas/ContentClass' }
         sceneCount: { type: integer, minimum: 0 }
+        images:
+          type: array
+          items: { $ref: '#/components/schemas/ImageDescriptor' }
+          description: The performer's portrait, ingested from Stash (entity_type=person, kind=thumb).
 
     RestrictedPerformerPage:
       type: object
