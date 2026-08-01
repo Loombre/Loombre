@@ -16,7 +16,7 @@ import { getWorkerSettingValue, loadWorkerEffectiveSettings, resolveScanConcurre
 import { runProbe } from "./probe/consumer.js";
 import { createProbeTerminalFailureHook } from "./probe/terminal-failure-hook.js";
 import { createStashProvider } from "./metadata/providers/stash.js";
-import { createStubApplyStashSceneMetadata } from "./stash/apply-types.js";
+import { applyStashSceneMetadata } from "./stash/apply.js";
 import { stashInventoryConsumerHandler } from "./stash/inventory-consumer.js";
 import { stashSyncConsumerHandler, createStashSyncTerminalFailureHook } from "./stash/sync-consumer.js";
 import { startStashScheduleLoop, type StashScheduleLoopHandle } from "./stash/schedule-loop.js";
@@ -288,19 +288,16 @@ queue.work(
 // job type; internal parallelism (if any) is the job's own, not a second
 // concurrent run racing the same library's checkpoint/report bookkeeping.
 //
-// applyStashSceneMetadata is STUBBED here (createStubApplyStashSceneMetadata,
-// apps/worker/src/stash/apply-types.ts) pending Lane B's apply.ts — a
-// documented, honest no-op (writes nothing, reports changed:false) rather
-// than a fabricated success. Swapping in Lane B's real
-// `applyStashSceneMetadata` export at integration is a one-line change at
-// THIS call site only (K11: "keep the adapter thin so integration is a
-// one-line wire-up") — no other file in this lane needs to change.
+// applyStashSceneMetadata is Lane B's REAL mapper (apps/worker/src/stash/
+// apply.ts) — wired at integration exactly as K11 planned (this line was
+// the stub during Lane C's parallel build; apply-types.ts's stub remains
+// only as a test double).
 queue.work("stash-inventory", stashInventoryConsumerHandler({ db }), { concurrency: 1 });
 queue.work(
   "stash-sync",
   stashSyncConsumerHandler({
     db,
-    applyStashSceneMetadata: createStubApplyStashSceneMetadata(),
+    applyStashSceneMetadata,
     enqueueImageJob: (payload) => queue.enqueue("image", payload),
   }),
   { concurrency: 1, onTerminalFailure: createStashSyncTerminalFailureHook(db) },
