@@ -17,7 +17,7 @@
 import { afterAll, afterEach, describe, expect, it } from "vitest";
 import { DatabaseSync } from "node:sqlite";
 import { createHash } from "node:crypto";
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { StashConnectionUnavailableError } from "../../src/stash/errors.js";
@@ -118,6 +118,62 @@ function makeLockedFixture(name: string): {
   };
 }
 
+/**
+ * A lock that blocks a concurrent reader WITHOUT ever changing a byte of
+ * the source database (R2 audit). `PRAGMA locking_mode=EXCLUSIVE` plus a
+ * `BEGIN IMMEDIATE` that writes NOTHING takes the write lock — a
+ * concurrent read-only opener still gets SQLITE_BUSY (errcode 5, verified
+ * empirically before this helper was written) — and `ROLLBACK` + `close()`
+ * releases it leaving the `.db` file byte- and mtime-identical to before
+ * the lock was taken, sidecars removed.
+ *
+ * That last property is the whole point, and it is what makeLockedFixture
+ * above CANNOT offer: its release() COMMITs a real insert, so the source
+ * legitimately changes at release time and no fs-immutability assertion
+ * can span it. This helper therefore makes the SUCCESSFUL snapshot-
+ * fallback path assertable at the fs level — previously only the FAILED
+ * fallback path (both tiers exhausted) carried a bytes/mtime proof, which
+ * left S2's actual production fallback unproven where it matters most.
+ */
+function makeWriteFreeLockedFixture(name: string): {
+  dbFilePath: string;
+  baselineHash: string;
+  baselineMtimeMs: number;
+  release: () => void;
+} {
+  const p = dbPath(name);
+  const writer = new DatabaseSync(p);
+  writer.exec("PRAGMA journal_mode=WAL;");
+  writer.exec("CREATE TABLE t (id INTEGER PRIMARY KEY, v TEXT);");
+  writer.exec("INSERT INTO t (v) VALUES ('committed-before-lock');");
+  writer.close(); // checkpoints + removes sidecars, so the baseline is a settled file
+
+  const baselineHash = fileHash(p);
+  const baselineMtimeMs = statSync(p).mtimeMs;
+
+  const locker = new DatabaseSync(p);
+  locker.exec("PRAGMA locking_mode=EXCLUSIVE;");
+  locker.exec("BEGIN IMMEDIATE;"); // takes the write lock; writes nothing
+  writerHandles.push(locker);
+
+  let released = false;
+  return {
+    dbFilePath: p,
+    baselineHash,
+    baselineMtimeMs,
+    release: () => {
+      if (released) return;
+      released = true;
+      try {
+        locker.exec("ROLLBACK;");
+      } catch {
+        // already rolled back — the close below is what releases the lock.
+      }
+      locker.close();
+    },
+  };
+}
+
 describe("openStashConnection — uncontended open", () => {
   it("opens a plain fixture read-only and can query it", async () => {
     const p = makePlainFixture("plain.db");
@@ -204,6 +260,108 @@ describe("openStashConnection — S2 fs-level proof (bytes/mtime unchanged)", ()
 
     expect(fileHash(dbFilePath)).toBe(baselineHash);
     expect(statSync(dbFilePath).mtimeMs).toBe(baselineMtimeMs);
+  });
+
+  it("source file bytes AND mtime are unchanged across a SUCCESSFUL snapshot-copy fallback", async () => {
+    // The production fallback path (S2's whole point), asserted at the fs
+    // level for the first time — the test above only covers the case where
+    // the fallback FAILS. Uses the write-free lock (see its helper's doc
+    // comment) so the lock-holder itself contributes no byte changes and
+    // any difference in the source can only be Loombre's own doing.
+    const { dbFilePath, baselineHash, baselineMtimeMs, release } = makeWriteFreeLockedFixture("fs-proof-snapshot-success.db");
+    const releaseTimer = setTimeout(() => release(), 150);
+
+    const conn = await openStashConnection({
+      path: dbFilePath,
+      busyTimeoutMs: 20,
+      maxDirectRetries: 1,
+      directRetryBackoffMs: 20,
+      maxSnapshotRetries: 20,
+      snapshotRetryBackoffMs: 40,
+    });
+    clearTimeout(releaseTimer);
+    release();
+
+    expect(conn.readingFrom).toBe("snapshot");
+    // Read through the snapshot the way a real sync would, then close it
+    // (which removes the temp copy) — the source must be untouched by all
+    // of it.
+    expect((conn.db.prepare("SELECT v FROM t").all() as { v: string }[]).map((r) => r.v)).toContain("committed-before-lock");
+    conn.close();
+
+    expect(fileHash(dbFilePath)).toBe(baselineHash);
+    expect(statSync(dbFilePath).mtimeMs).toBe(baselineMtimeMs);
+  }, 20_000);
+});
+
+describe("openStashConnection — WAL sidecar reality next to the user's file (S2 honest boundary)", () => {
+  it("a read-only open of a WAL-mode database CREATES -wal/-shm siblings and leaves them behind — while the .db itself is untouched", async () => {
+    // Empirically pinned rather than hand-waved, because it is the one
+    // place where "Loombre never writes your Stash database" needs its
+    // exact scope stated. SQLite's WAL reader protocol requires the shared
+    // wal-index; `readOnly: true` does NOT opt out of creating it, and a
+    // read-only connection cannot checkpoint-and-delete it on close the
+    // way a read-write connection does. So after Loombre reads a
+    // WAL-mode Stash database that had no sidecars, two zero-content
+    // sibling files remain in the user's Stash directory.
+    //
+    // This is not a write to the database: the `.db` file's own bytes and
+    // mtime are unchanged (asserted below), the leftover `-wal` carries no
+    // frames, and Stash reopening the database treats an empty WAL as
+    // empty. It IS, however, a real filesystem effect in the user's
+    // directory, and the S11 "one-way guarantee" wording should be read
+    // against this test, not against a stronger claim nobody proved.
+    const p = makePlainFixture("wal-sidecars.db");
+    const dir = path.dirname(p);
+    const base = path.basename(p);
+    const siblings = () => readdirSync(dir).filter((f) => f.startsWith(`${base}-`)).sort();
+
+    expect(siblings()).toEqual([]); // makePlainFixture's writer close() checkpointed them away
+    const hashBefore = fileHash(p);
+    const mtimeBefore = statSync(p).mtimeMs;
+
+    const conn = await openStashConnection({ path: p });
+    conn.db.prepare("SELECT * FROM t").all();
+    const duringSession = siblings();
+    conn.close();
+    const afterClose = siblings();
+
+    expect(duringSession).toEqual([`${base}-shm`, `${base}-wal`]);
+    expect(afterClose).toEqual([`${base}-shm`, `${base}-wal`]); // read-only readers cannot clean up
+    expect(fileHash(p)).toBe(hashBefore);
+    expect(statSync(p).mtimeMs).toBe(mtimeBefore);
+  });
+
+  it("a WAL-mode database in a NON-WRITABLE directory fails honestly and fast, without attempting the snapshot tier", async () => {
+    // The direct consequence of the sidecar fact above, and a realistic
+    // deployment shape (a Stash config directory owned by another user or
+    // exported read-only). SQLite reports it as SQLITE_READONLY_DIRECTORY,
+    // whose raw message — "attempt to write a readonly database" — reads
+    // like Loombre tried to WRITE the user's Stash database, the exact
+    // opposite of S2. adapter.ts therefore names the real cause in the
+    // error it raises; this test pins that wording so it cannot silently
+    // regress to the bare SQLite string.
+    const roDir = mkdtempSync(path.join(tmpdir(), "loombre-stash-adapter-rodir-"));
+    const roDbPath = path.join(roDir, "stash.db");
+    const writer = new DatabaseSync(roDbPath);
+    writer.exec("PRAGMA journal_mode=WAL;");
+    writer.exec("CREATE TABLE t (id INTEGER PRIMARY KEY);");
+    writer.close();
+    chmodSync(roDir, 0o500); // r-x: readable, not writable
+
+    try {
+      const started = Date.now();
+      await expect(
+        openStashConnection({ path: roDbPath, busyTimeoutMs: 10, maxDirectRetries: 5, directRetryBackoffMs: 500, maxSnapshotRetries: 5, snapshotRetryBackoffMs: 500 })
+      ).rejects.toThrow(/cannot create its SQLite sidecar files/);
+      // Not a lock — never retried, and never dragged through the snapshot
+      // tier (which needs the very same sidecars and would fail identically).
+      expect(Date.now() - started).toBeLessThan(1000);
+      expect(readdirSync(roDir)).toEqual(["stash.db"]); // nothing was created in the user's directory
+    } finally {
+      chmodSync(roDir, 0o700);
+      rmSync(roDir, { recursive: true, force: true });
+    }
   });
 });
 

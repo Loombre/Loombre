@@ -6,9 +6,23 @@
 // guard.ts (schema-version check) and read-model.ts (typed reads) — its
 // only job is: open the file read-only, retry through transient
 // contention, and fall back to a snapshot copy, all without ever writing
-// a byte to the source file (proven in test/stash/adapter.spec.ts's fs-
-// level test: source bytes + mtime are byte-identical after a full
-// session, including a WAL-locked session that exercises the fallback).
+// a byte to the source file.
+//
+// What "never writes the Stash DB" is proven to mean (test/stash/
+// adapter.spec.ts, fs-level; test/stash/sync-consumer.spec.ts, across a
+// WHOLE sync run — inventory + matching + apply):
+//   - the source `.db` file's bytes AND mtime are identical after an
+//     uncontended session, after a SUCCESSFUL snapshot-copy fallback, and
+//     after a fallback where both retry tiers are exhausted;
+//   - it does NOT mean the directory is untouched: reading a WAL-mode
+//     database makes SQLite create the `-wal`/`-shm` sidecars beside it,
+//     and a read-only connection cannot remove them on close (unlike a
+//     read-write one). That is a requirement of SQLite's WAL reader
+//     protocol, not a Loombre choice, and it is pinned empirically rather
+//     than assumed — as is its consequence: a WAL-mode database in a
+//     directory this process cannot write cannot be read AT ALL, which
+//     explainOpenFailure below turns into an honest admin-facing message
+//     instead of SQLite's own "attempt to write a readonly database".
 //
 // K6 empirical findings this design is built on (node:sqlite, Node 24,
 // spiked by hand before writing this file — see adapter.spec.ts's header
@@ -92,6 +106,36 @@ function isSqliteError(err: unknown): err is Error & { code: string; errcode: nu
 
 function isRetryableDirectOpenError(err: unknown): boolean {
   return isSqliteError(err) && RETRYABLE_SQLITE_ERRCODES.has(err.errcode);
+}
+
+/**
+ * Turns a misleading SQLite failure into a sentence an admin can act on,
+ * or returns undefined to let the raw message stand (R2 audit —
+ * library_stash_connections.status_detail is rendered verbatim in the
+ * admin UI, so these strings are user-facing).
+ *
+ * The one case that genuinely needs it: SQLite's extended result codes in
+ * the SQLITE_READONLY family (primary code 8) — most importantly
+ * SQLITE_READONLY_DIRECTORY (1544), raised when a WAL-mode database sits
+ * in a directory this process cannot write. SQLite's own wording is
+ * "attempt to write a readonly database", which describes Loombre doing
+ * the exact thing S2 promises it never does. What actually happened is
+ * that SQLite's WAL reader protocol needs the shared wal-index (`-shm`,
+ * and an empty `-wal`) BESIDE the database file, and could not create it
+ * — a directory-permission problem, not a write to the user's data. The
+ * real-world shapes are a Stash config directory owned by another user
+ * (Stash in a container, Loombre as a service account) or a read-only
+ * export/mount.
+ */
+function explainOpenFailure(err: unknown): string | undefined {
+  if (!isSqliteError(err)) return undefined;
+  const primaryCode = err.errcode & 0xff;
+  if (primaryCode !== 8 /* SQLITE_READONLY */) return undefined;
+  return (
+    'Loombre can read this file but cannot create its SQLite sidecar files (-wal/-shm) beside it, ' +
+    "which SQLite requires to read a WAL-mode database. Loombre did NOT write, and never writes, your Stash database — " +
+    'the directory containing it needs to be writable by the user Loombre runs as (or the database copied somewhere that is)'
+  );
 }
 
 async function defaultSleep(ms: number): Promise<void> {
@@ -221,9 +265,10 @@ export async function openStashConnection(options: OpenStashConnectionOptions, d
   }
 
   if (!direct.busy) {
-    // A non-retryable error (e.g. CANTOPEN, corruption) — the snapshot
-    // tier would fail identically, so fail fast instead of copying.
-    throw new StashConnectionUnavailableError(options.path, direct.lastError);
+    // A non-retryable error (e.g. CANTOPEN, a non-writable directory,
+    // corruption) — the snapshot tier opens the SAME source file and would
+    // fail identically, so fail fast instead of copying.
+    throw new StashConnectionUnavailableError(options.path, direct.lastError, explainOpenFailure(direct.lastError));
   }
 
   // Direct tier exhausted its retry budget while still busy — fall back
