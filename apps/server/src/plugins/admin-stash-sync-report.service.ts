@@ -20,21 +20,29 @@
 // Honest-empty-shape (K14): `report: null` when no stash-sync job has ever
 // run for this library — mirrors GET /admin/capabilities's own `{report:
 // null}` precedent (apps/server/src/catalog/admin.controller.ts) rather
-// than fabricating a placeholder report. unmatchedScenes/staleScenes are
-// ALWAYS live queries (never null, never gated on whether a report
-// exists) — a library can have unmatched/stale scenes recorded by an
-// inventory pass even before its first full sync completes (K10: the
-// inventory pass runs independently of a sync).
+// than fabricating a placeholder report. unmatchedScenes/staleScenes/
+// unmatchedLoombreFiles are ALWAYS live queries (never null, never gated on
+// whether a report exists) — a library can have unmatched/stale scenes
+// recorded by an inventory pass even before its first full sync completes
+// (K10: the inventory pass runs independently of a sync), and Loombre-side
+// unmatched files exist independently of any Stash activity at all.
+//
+// FX3 fix wave: unmatchedLoombreFiles is the Loombre-side twin of
+// unmatchedScenes (S4/S8's "both unmatched sides" law) — media_files rows
+// in this library with no stash_scene_links row pointing at their item,
+// paged independently via its own unmatchedLoombreFilesCursor.
 
 import { Injectable } from "@nestjs/common";
 import {
   getLibraryByIdAdmin,
   getLatestStashSyncReport,
   listStaleStashScenes,
+  listUnmatchedLoombreFiles,
   listUnmatchedStashScenes,
   type LibraryRow,
   type StashSyncReportRow,
   type StashSyncSceneListResult,
+  type UnmatchedLoombreFileListResult,
 } from "@loombre/db";
 import { DbProvider } from "../common/db.provider.js";
 import { notFound } from "../gateway/problem.exception.js";
@@ -43,6 +51,7 @@ import { requireLiveAdmin } from "../common/require-live-admin.js";
 export interface GetAdminStashSyncReportParams {
   unmatchedCursor?: string;
   staleCursor?: string;
+  unmatchedLoombreFilesCursor?: string;
   limit?: number;
 }
 
@@ -54,6 +63,19 @@ interface StashSyncSceneRefDto {
 
 interface StashSyncSceneRefPageDto {
   items: StashSyncSceneRefDto[];
+  nextCursor: string | null;
+}
+
+interface StashSyncLoombreFileRefDto {
+  mediaFileId: string;
+  itemId: string;
+  itemTitle: string;
+  path: string;
+  sizeBytes: number | null;
+}
+
+interface StashSyncLoombreFileRefPageDto {
+  items: StashSyncLoombreFileRefDto[];
   nextCursor: string | null;
 }
 
@@ -74,6 +96,7 @@ export interface AdminStashSyncReportDto {
   report: StashSyncReportDto | null;
   unmatchedScenes: StashSyncSceneRefPageDto;
   staleScenes: StashSyncSceneRefPageDto;
+  unmatchedLoombreFiles: StashSyncLoombreFileRefPageDto;
 }
 
 function toReportDto(row: StashSyncReportRow): StashSyncReportDto {
@@ -95,6 +118,10 @@ function toScenePageDto(result: StashSyncSceneListResult): StashSyncSceneRefPage
   return { items: result.rows, nextCursor: result.nextCursor };
 }
 
+function toLoombreFilePageDto(result: UnmatchedLoombreFileListResult): StashSyncLoombreFileRefPageDto {
+  return { items: result.rows, nextCursor: result.nextCursor };
+}
+
 @Injectable()
 export class AdminStashSyncReportService {
   constructor(private readonly dbProvider: DbProvider) {}
@@ -110,7 +137,7 @@ export class AdminStashSyncReportService {
     const library: LibraryRow | undefined = await getLibraryByIdAdmin(this.dbProvider.db, libraryId);
     if (!library) throw notFound("Library not found.", instancePath);
 
-    const [report, unmatchedScenes, staleScenes] = await Promise.all([
+    const [report, unmatchedScenes, staleScenes, unmatchedLoombreFiles] = await Promise.all([
       getLatestStashSyncReport(this.dbProvider.db, libraryId),
       listUnmatchedStashScenes(this.dbProvider.db, libraryId, {
         ...(params.unmatchedCursor !== undefined ? { cursor: params.unmatchedCursor } : {}),
@@ -120,12 +147,17 @@ export class AdminStashSyncReportService {
         ...(params.staleCursor !== undefined ? { cursor: params.staleCursor } : {}),
         ...(params.limit !== undefined ? { limit: params.limit } : {}),
       }),
+      listUnmatchedLoombreFiles(this.dbProvider.db, libraryId, {
+        ...(params.unmatchedLoombreFilesCursor !== undefined ? { cursor: params.unmatchedLoombreFilesCursor } : {}),
+        ...(params.limit !== undefined ? { limit: params.limit } : {}),
+      }),
     ]);
 
     return {
       report: report ? toReportDto(report) : null,
       unmatchedScenes: toScenePageDto(unmatchedScenes),
       staleScenes: toScenePageDto(staleScenes),
+      unmatchedLoombreFiles: toLoombreFilePageDto(unmatchedLoombreFiles),
     };
   }
 }
