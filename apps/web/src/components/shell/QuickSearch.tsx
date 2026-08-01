@@ -132,10 +132,21 @@ export function QuickSearch({ isAdmin }: { isAdmin: boolean }): React.JSX.Elemen
   // rather than admin business logic (scan triggers etc. need per-library
   // ids and would duplicate app/admin/libraries/page.tsx — see this file's
   // header and the freeze report for the scope call).
+  //
+  // The lock/unlock action is gated on isRestrictedEntitled EXACTLY like the
+  // restricted SCREEN entry (filterPaletteScreens above) and every other
+  // zone affordance (Sidebar/MobileTabBar/UserMenu) — an unentitled viewer
+  // must see NO trace the zone exists, and "Unlock restricted content" is a
+  // trace. Caught by the orchestrator's exit-gate UI walk (R1's API walk
+  // could not reach this client-only palette state).
   const actions: PaletteAction[] = [
-    restricted.state.locked
-      ? { key: "unlock-restricted", label: "Unlock restricted content", onSelect: restricted.openUnlockModal }
-      : { key: "lock-restricted", label: "Lock restricted content", onSelect: () => void restricted.lock() },
+    ...(isRestrictedEntitled
+      ? [
+          restricted.state.locked
+            ? ({ key: "unlock-restricted", label: "Unlock restricted content", onSelect: restricted.openUnlockModal } as PaletteAction)
+            : ({ key: "lock-restricted", label: "Lock restricted content", onSelect: () => void restricted.lock() } as PaletteAction),
+        ]
+      : []),
     {
       key: "sign-out",
       label: "Sign out",
