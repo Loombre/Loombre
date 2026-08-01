@@ -281,7 +281,11 @@ describe("GET /admin/libraries/{id}/provider-chain", () => {
     expect(res.body.libraryId).toBe(generalLibraryId);
     expect(res.body.isDefault).toBe(true);
     expect(res.body.entries).toEqual([{ position: 0, providerKind: "builtin", builtinName: "tmdb", pluginId: null, plugin: null }]);
-    expect(res.body.builtinProviderNames.sort()).toEqual(["musicbrainz", "tmdb", "tvdb"]);
+    // Stash SQLite metadata sync, K7: `stash` joined the known-builtin set
+    // (KNOWN_BUILTIN_PROVIDER_NAMES) but is deliberately absent from
+    // LEGACY_DEFAULT_PROVIDER_CHAIN — this endpoint's `entries` above stays
+    // ["tmdb"]-only for a zero-row general library, unchanged.
+    expect(res.body.builtinProviderNames.sort()).toEqual(["musicbrainz", "stash", "tmdb", "tvdb"]);
   });
 
   it("eligiblePlugins is filtered to the library's OWN contentClass", async () => {
