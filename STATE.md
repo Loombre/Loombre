@@ -95,6 +95,7 @@ All additive. Zone ops tag `restricted` (gates 1–5 re-verified per request, ex
 - **SCALE PROOF (33k synthetic, apply STUBBED — honest caveat recorded):** initial full sync **69.3 s wall / 476.7 MiB peak RSS**; matched 32,314 / unmatched 686; incremental with 12 mutated scenes → touchedCount === 12 (asserted); checkpoint resume: crash after 666 applies → resume same job id → all scenes applied, zero lost (15 redone past last checkpoint, expected). Harness: scripts/gen-stash-fixtures.mjs + scripts/stash-scale-proof.mjs. END-TO-END re-proof with real apply = orchestrator item before exit gate.
 - Premise corrections: stale worktree base again (self-fixed ff to 500c156); packages/jobs barrel never re-exported the K13 payload types (fixed, barrel-only); mid-run signature re-freeze to B's landed shape absorbed cleanly.
 - Integration: real applyStashSceneMetadata wired at **e6f1aa4** (the planned one-line swap; worker 1113 passed post-wire).
+- **END-TO-END 33k RE-PROOF (orchestrator, real apply, quiet machine, harness --real-apply at 778158b): ALL PROOFS PASSED — full sync 287.9 s wall / 404 MiB peak RSS, matched 32,314 = updated 32,314, unmatched 686 (the fixture's deliberate set), stale 0; incremental 12 changed → touchedCount 12; resume all-2000/zero-lost (15 redone past last checkpoint, expected).** Caveat recorded: the synthetic fixture carries NO cover blobs (imageJobsEnqueued 0) — image enqueue-at-scale rides the owner's real-DB subset validation (§4), not this proof.
 
 ### Lane D freeze (2026-08-01, orchestrator ground-truthed)
 
