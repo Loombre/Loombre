@@ -69,6 +69,21 @@ back to your actual Stash database. There is currently no way for changes
 made in Loombre to flow back to Stash; this is a one-way connection, by
 design.
 
+One honest footnote about the **folder** the database sits in. Stash
+usually keeps its database in a journaling mode where any program reading
+it — even strictly for reading — needs two small companion files beside
+it (their names end in `-wal` and `-shm`), and will create them if they
+are not already there. The database file itself is still never modified;
+only those companions are. This means the folder holding your Stash
+database must allow Loombre to create files in it. If it doesn't — common
+when Stash runs in a container and its folder belongs to another user —
+the connection status will report that the database can't be read, with a
+message explaining that the folder needs to allow those companion files.
+(The usual culprit is Stash running in a container — an isolated
+environment whose files belong to a different user account than the one
+running Loombre.) Pointing Loombre at a copy of the database in a folder
+of your own is a simple way around it.
+
 ## Opening the Stash settings
 
 A Stash connection belongs to one restricted library at a time, the same
