@@ -4,6 +4,7 @@ import { AuthController } from "./auth.controller.js";
 import { SystemController } from "./system.controller.js";
 import { UsersMeController } from "./users-me.controller.js";
 import { RestrictedController } from "./restricted.controller.js";
+import { RestrictedZoneController } from "./restricted-zone.controller.js";
 import { CommonModule } from "../common/common.module.js";
 import { CommonSettingsModule } from "../common/common-settings.module.js";
 import { TokenService } from "./token.service.js";
@@ -41,10 +42,20 @@ import { AnomalyLogService } from "./anomaly-log.service.js";
  * CommonSettingsModule directly — keep getting ViewerContextProvider
  * (ws-broadcaster.service.ts) and SurfaceRateLimitGuard (setup.controller.ts)
  * exactly like they did when everything lived in plain CommonModule.
+ *
+ * STATE.md Stash run (S9): RestrictedZoneController (the dedicated zone's
+ * home/browse/scene-detail/performers/studios/search reads) is a SEPARATE
+ * controller class from RestrictedController, both mounted on the same
+ * "restricted" prefix — parallel files rather than one growing file, same
+ * organizational posture apps/server already uses elsewhere (e.g.
+ * LibrariesController vs AdminLibraryProviderChainController both touching
+ * "/libraries"). No new module import needed: it only uses DbProvider/
+ * ViewerContextProvider, already available via CommonModule/
+ * CommonSettingsModule above.
  */
 @Module({
   imports: [CommonModule, CommonSettingsModule],
-  controllers: [AuthController, SystemController, UsersMeController, RestrictedController],
+  controllers: [AuthController, SystemController, UsersMeController, RestrictedController, RestrictedZoneController],
   providers: [TokenService, RefreshTokenService, AuthRateLimiterService, AnomalyLogService],
   exports: [CommonModule, CommonSettingsModule, TokenService],
 })
