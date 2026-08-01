@@ -44,6 +44,16 @@ Recon: 6 read-only scouts over providers/db/jobs/web/contract/tests. Facts + rul
 - **K12 (events):** new event types follow the 8-step closed-list process (envelope enum + payload schema + spec count/samples + admin-only list + x-mirror + parity). A adds `stash.provider.disabled` (admin-only, carries the exact S3 notice); C adds `stash.sync.started`/`stash.sync.completed` (admin-only, counts per S8). Events are NOT in openapi.yaml — no SDK step.
 - **Ground truth worth repeating:** conformance law — every new endpoint needs an `IMPLEMENTED_NON_PUBLIC_EXPECTATIONS` entry (apps/server/test/conformance.spec.ts) and mounted-route↔contract bijection holds both ways. Leak-suite pattern — three-viewer fixtures (casualUncleared / adminClearedButNotUnlocked / adminCleared) in packages/db/test/leak.spec.ts + HTTP byte-identical-404 twins in apps/server/test/seeded-conformance.spec.ts. Index law — indexes land WITH the query change, EXPLAIN evidence in the migration comment. oasdiff reports but does not hard-block (P4.22 convention) — all additions here are additive anyway. No fps harness exists — 60fps proof stays the empirical DOM-pinned walk. `reports/` is gitignored evidence space. No cron machinery exists — C picks pg-boss `.schedule()` or watcher+debounce (chokidar precedent) and records the choice.
 
+### FIX WAVE queue (2026-08-01 — docs lane's code-verified gap audit; dispatch after Lane E lands, before the opus reviews)
+
+The docs lane verified every S11 claim against code and surfaced real coverage gaps (docs were written to actual landed behavior — no invented UI; touch-ups ride this wave):
+
+- **FX1 (the big one — never assigned to any lane): admin web UI for the Stash surface.** Zero references to StashConnection/PathMapping/Sync anywhere in apps/web. Needed per S4 ("admin configures mappings in the library settings with a live preview")/S8 (admin sync button, report artifact)/S11: library-settings section with connection editor (sqlite path, enable, genreTagNames), path-mapping editor + live N-of-M preview (the preview POST exists), sync trigger button, sync-report viewer (counts + unmatched + stale lists). All admin-gated; Phosphor both breakpoints.
+- **FX2: performer portraits not exposed** — B ingests person images (kind thumb) but RestrictedPerformer has no image field (RestrictedStudio does). Additive schema field + query join + UI avatar on performer pages/rails.
+- **FX3: sync report lacks the Loombre-side unmatched list** — S4/S8 say BOTH sides fully listed; C's endpoint returns Stash-side + stale only (matching.ts documents the set-difference as "caller responsibility", and no caller does it). Add the media_files-without-links query + endpoint field + report UI list (additive).
+- **FX4: S2's snapshot-copy fallback is not event-logged** — adapter sets readingFrom:'snapshot' but nothing surfaces it. Additive optional field on stash.sync.completed's payload (evolution policy allows) + carried into the report row.
+- **FX5: docs touch-ups post-E + post-FX1** — rails, chapter jump-to-moment (E), the real admin click-paths + screenshot placeholders (FX1), performer photos (FX2).
+
 ### Contract additions FREEZE (orchestrator, 2026-08-01 — D's dispatch basis; D authors the yaml + regenerated SDK atomically, shapes below are the frozen surface list)
 
 All additive. Zone ops tag `restricted` (gates 1–5 re-verified per request, existing pattern); admin ops under `/admin/...` with the 401/403 pair + requireLiveAdmin.
@@ -116,7 +126,8 @@ All additive. Zone ops tag `restricted` (gates 1–5 re-verified per request, ex
 | B | Mapping S5–S7: apply.ts entity writers via 0019 schema, image ingest, precedence/lock, stash:/person attrs, genre heuristic | sonnet | **LANDED d4be893..24bbadf** |
 | C | Sync engine S8: consumers, checkpoints, incremental diff, staleness, events, 0020 + report endpoint; 33k fixture gen + scale proof | sonnet | **LANDED 0511653..3df8a8d + e6f1aa4 wire-up** |
 | D | Zone surface S9: contract+SDK atomic, guarded zone queries, routes, filters + URL state, performer/studio/scene pages, search, density | sonnet | **LANDED 2a03cab..c0d64cc** (rebased; conflicts: sdk regen + module/conformance unions) |
-| E | Player chapters UI + /items/{id}/chapters + zone home rails + genre-config exposure + 0021 indexes w/ query plans | sonnet | blocked on B/C/D integration |
+| E | Player chapters UI + /items/{id}/chapters + zone home rails + genre-config exposure + 0021 indexes w/ query plans | sonnet | **DISPATCHED** (worktree, base 5d4efb2) |
+| Docs | S11 both registers: admin "Connecting Stash" chapter + user-guide zone browsing | sonnet | **LANDED 6460361** (register lint 0 warnings for both files; gate green) |
 | R1 | opus: leak-suite extension + adversarial zone walk (fail-first then green) | opus | blocked on lanes |
 | R2 | opus: mapping fidelity + safety audit (S2 fs-proof, S3 both-ways, S4 visibility, staleness, authority split, S10 indexes) | opus | blocked on lanes |
 
