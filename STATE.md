@@ -58,15 +58,32 @@ All additive. Zone ops tag `restricted` (gates 1–5 re-verified per request, ex
 - Admin: `GET/PUT /admin/libraries/{id}/stash-connection`; `GET/PUT /admin/libraries/{id}/stash-path-mappings` (wholesale replace, provider-chain shape) + `POST .../stash-path-mappings/preview` (candidate mappings in body → N-of-M + unmatched samples, pure SQL per K10 — works pre-save); `POST /admin/libraries/{id}/stash-sync` ({mode: full|incremental} → job id); `GET /admin/libraries/{id}/stash-sync-report` (latest report incl. unmatched + stale lists, S8).
 - Conformance law applies to every op (IMPLEMENTED_NON_PUBLIC_EXPECTATIONS + route↔contract bijection).
 
+### Lane A freeze + orchestrator ground-truth (2026-08-01)
+
+**A LANDED ff488f6..e521912** (7 commits, rebased linear onto main; gate ALL STEPS PASSED twice in-worktree; 91 written test cases / ~105 executed). Facts the other lanes cite:
+
+- Read model FROZEN at `apps/worker/src/stash/read-model.ts`: SqliteReadable; StashScene/getScene/listSceneIds; StashSceneFile/getSceneFiles; StashPerformer/getScenePerformers; StashStudio/getStudio; StashTag/getTag/getSceneTags; StashSceneMarker/getSceneMarkers; StashBlob/getBlob; StashInventoryScene/listScenesForInventory. `folders.path` is absolute in every pinned version — no version branching.
+- Pinned schema range **67–85** (Stash v0.27.0 → v0.31.1, newest stable at recon), provenance + release→version table in apps/worker/test/stash/fixtures/README.md. Driver: **node:sqlite** (zero new deps — the lockfile delta is only a @loombre/shared workspace link into packages/db).
+- ProviderDetails gaps (documented in providers/stash.ts header): performer aliases/birthdate/measurements, studio parent+image, tag hierarchy, markers have NO home in MovieProviderDetails — S5's rich mapping goes through Lane B's apply.ts consuming read-model.ts DIRECTLY, not fetchDetails. `fetchImages`/`search` are deliberate no-ops (covers are local blob bytes; matching is path/oshash never title search). provider_ids convention: externalId = `"<libraryId>:<stashSceneId>"`.
+- Event `stash.provider.disabled` landed (envelope 26→27, admin-only, parity green).
+- Process correction (cost A a detour): worktrees branch from committed HEAD — run law must be COMMITTED to main before lane dispatch. Done from here on.
+
+### Orchestrator seam commits (2026-08-01, post-A — dependency-graph surgery so B/C/D parallelize cleanly)
+
+- **K13 implemented at 57e0f72**: `stash-inventory` + `stash-sync` job types pre-added to the closed registry (C implements consumers, D enqueues; NEITHER edits packages/jobs). job.updated jobType enum widened.
+- **K8 AMENDED, implemented at 48a81e1**: recon showed D's zone queries need B's editorial schema (tags.kind, premiere_at_ms) — a hidden serialization. The shared DDL landed as ORCHESTRATOR migration `0019_restricted_editorial_schema.sql` (K1 premiere_at_ms w/ absent-means-don't-touch upsert seam, K2 tags.kind + item_tags CHECK widening, S5 tags.parent_tag_id, K3 person_attributes, K9 chapter_markers, K15 genre_tag_names). New numbering: **C→0020 (sync reports), E→0021 (S10 measured-index additions)**; B and D ship NO migrations. Index law honored: 0019 carries the obviously-structural indexes with reasoning; E's 0021 adds what 33k-scale EXPLAIN evidence demands.
+- **K14 (contract split):** `GET /admin/libraries/{id}/stash-sync-report` ships with C (its schema+SDK+controller+conformance entry, atomic); `GET /items/{id}/chapters` ships with E (needs chapter query + player UI anyway); genre_tag_names admin exposure on the stash-connection PUT ships with E. Everything else in the freeze list ships with D. C and D both regenerate the SDK in parallel — integration re-runs codegen after the yaml merge, sdk-drift proves the result.
+- **K15:** genre mapping config = `library_stash_connections.genre_tag_names TEXT[] NULL` (NULL = Lane B mapper's documented heuristic; explicit array replaces it wholesale). B owns the heuristic; E exposes the field.
+
 ### Lane burn-up
 
 | Lane | Scope | Model | Status |
 |---|---|---|---|
-| A | Provider core: SQLite RO adapter, S3 guard + schema fixtures, S4 matching + path-mapping + oshash, S2 lock lifecycle | sonnet | **DISPATCHED** (worktree) |
-| B | Mapping S5–S7: entity writers, tags.kind migration, chapter_markers, image ingest, precedence/lock, stash: attrs | sonnet | blocked on A |
-| C | Sync engine S8: jobs, checkpoints, incremental diff, staleness, events, sync report; 33k fixture gen + scale proof | sonnet | blocked on A |
-| D | Zone surface S9: routes, filters + URL state, performer/studio pages, scene detail, density, search; contract+SDK atomic | sonnet | contract frozen — blocked on A landing |
-| E | Player chapters UI (S7) + zone home rails + S10 indexes w/ query plans | sonnet | blocked on B/D |
+| A | Provider core: SQLite RO adapter, S3 guard + schema fixtures, S4 matching + path-mapping + oshash, S2 lock lifecycle | sonnet | **LANDED ff488f6..e521912** |
+| B | Mapping S5–S7: apply.ts entity writers via 0019 schema, image ingest, precedence/lock, stash:/person attrs, genre heuristic | sonnet | **DISPATCHED** (worktree) |
+| C | Sync engine S8: consumers, checkpoints, incremental diff, staleness, events, 0020 + report endpoint; 33k fixture gen + scale proof | sonnet | **DISPATCHED** (worktree) |
+| D | Zone surface S9: contract+SDK atomic, guarded zone queries, routes, filters + URL state, performer/studio/scene pages, search, density | sonnet | **DISPATCHED** (worktree) |
+| E | Player chapters UI + /items/{id}/chapters + zone home rails + genre-config exposure + 0021 indexes w/ query plans | sonnet | blocked on B/C/D integration |
 | R1 | opus: leak-suite extension + adversarial zone walk (fail-first then green) | opus | blocked on lanes |
 | R2 | opus: mapping fidelity + safety audit (S2 fs-proof, S3 both-ways, S4 visibility, staleness, authority split, S10 indexes) | opus | blocked on lanes |
 
