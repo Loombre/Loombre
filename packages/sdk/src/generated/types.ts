@@ -3013,13 +3013,15 @@ export interface components {
             progress: components["schemas"]["RestrictedSceneProgress"] | null;
             quality: components["schemas"]["RestrictedZoneItemQuality"];
         };
-        /** @description GET /restricted/performers row/detail — role=performer people credited on >=1 scene visible within the zone. Mirrors Person's shape (packages/db/src/query/people.ts's guard model) with a zone-scoped `sceneCount` in place of Person's general `creditCount`. */
+        /** @description GET /restricted/performers row/detail — role=performer people credited on >=1 scene visible within the zone. Mirrors Person's shape (packages/db/src/query/people.ts's guard model) with a zone-scoped `sceneCount` in place of Person's general `creditCount`. FX2 fix wave: `images` mirrors RestrictedStudio's own field exactly (same shape, same guard posture) — B ingests performer portraits (images entity_type='person', kind='thumb') but this field was missing here until now. */
         RestrictedPerformer: {
             /** Format: uuid */
             id: string;
             name: string;
             contentClass: components["schemas"]["ContentClass"];
             sceneCount: number;
+            /** @description The performer's portrait, ingested from Stash (entity_type=person, kind=thumb). */
+            images: components["schemas"]["ImageDescriptor"][];
         };
         RestrictedPerformerPage: {
             items: components["schemas"]["RestrictedPerformer"][];
