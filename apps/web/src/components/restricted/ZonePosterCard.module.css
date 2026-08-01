@@ -29,6 +29,12 @@
     box-shadow var(--motion-base) var(--ease-spring);
 }
 
+/* Lane E (S9 zone home rails): continueWatchingInZone's 16:9 treatment —
+   same aspect PosterCard.tsx's own Continue Watching rail uses. */
+.tile[data-aspect="16/9"] .imageWrap {
+  aspect-ratio: 16 / 9;
+}
+
 /* S7 poster signature, zone law variant (W3 fidelity audit): the zone
    grid keeps WARNING-toned ring/border, never accent (dc:1187's own
    literal: `border:1px solid rgba(224,165,72,.22)`,
@@ -55,6 +61,53 @@
   border: 1px solid rgb(255 255 255 / 16%);
   border-radius: var(--radius-sm);
   pointer-events: none;
+}
+
+/* Lane E (S9 zone home rails): continueWatchingInZone's progress overlay +
+   nested play button — same shapes as components/home/PosterCard.module.css,
+   copied rather than shared (this module already duplicates that file's
+   image-loading recipe per this file's own header) with ONE deliberate
+   difference: the play button's hover tone is --color-warning, never
+   --color-accent (design/phosphor/README.md "the zone keeps its warning
+   colour"). */
+.progressOverlay {
+  position: absolute;
+  left: var(--space-xs);
+  right: var(--space-xs);
+  bottom: var(--space-xs);
+  border-radius: var(--radius-pill);
+  padding: var(--space-3xs) var(--space-xs);
+  background: color-mix(in srgb, var(--color-bg) 75%, transparent);
+}
+
+.playButton {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-full);
+  background: rgb(11 12 15 / 65%);
+  border: 1px solid var(--color-border-strong);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text);
+  backdrop-filter: blur(4px);
+  cursor: pointer;
+  padding: 0;
+  transition:
+    background var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out),
+    border-color var(--motion-fast) var(--ease-out);
+}
+
+.playButton:hover,
+.playButton:focus-visible {
+  background: var(--color-warning);
+  color: var(--color-accent-text);
+  border-color: var(--color-warning);
 }
 
 .artTitle {
