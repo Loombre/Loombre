@@ -8,7 +8,8 @@
 // (sync-consumer.ts) — one implementation so the two job types can never
 // drift on what "run inventory" or "run matching" means. Neither function
 // here touches pg-boss/jobs — pure DB+Stash orchestration, unit-testable
-// without a real queue (test/stash/pipeline.spec.ts).
+// without a real queue (test/stash/pipeline.spec.ts, which counts real
+// file reads to hold runMatchingPass to S4's lazy-oshash bound).
 
 import type { DbOrTx } from '@loombre/db/internal';
 import {
@@ -80,10 +81,28 @@ export interface RunMatchingPassResult {
  * touched subset (incremental sync).
  *
  * Pass 1 resolves every path-tier match for free (no I/O). Pass 2 lazily
- * computes Loombre-side oshash ONLY for candidates whose size matches a
- * STILL-unmatched scene's stashOshash target — bounded far below the
- * full candidate list at scale, matching S4's explicit "lazily... only
- * for unmatched candidates" requirement.
+ * computes Loombre-side oshash ONLY for candidates that are BOTH (a) not
+ * already claimed by a pass-1 path match and (b) the same size as a
+ * still-unmatched scene's oshash target — bounded far below the full
+ * candidate list at scale, matching S4's explicit "lazily... only for
+ * unmatched candidates" requirement.
+ *
+ * Condition (a) is load-bearing in both directions, and was missing until
+ * the R2 audit (test/stash/pipeline.spec.ts's "an ALREADY PATH-MATCHED
+ * candidate is never hashed" case is its fail-first pin):
+ *   - PERFORMANCE, which is what S4's wording is about: without it, every
+ *     path-matched file whose byte count happens to collide with an
+ *     unmatched scene's gets opened and hashed for nothing. At the owner's
+ *     33k scale a common encode size makes that collision the rule, not
+ *     the exception.
+ *   - CORRECTNESS, as a free consequence: a candidate already claimed by
+ *     one scene's path match can no longer be handed to a DIFFERENT scene
+ *     by the oshash tier, so two Stash scenes can never silently link to
+ *     the same Loombre item (which would leave both scenes applying
+ *     conflicting metadata to it, last writer winning). The second scene
+ *     instead stays unmatched — VISIBLE in the sync report's unmatched
+ *     list, which is exactly where S4/H3 want a situation a human needs
+ *     to look at.
  */
 export async function runMatchingPass(db: DbOrTx, libraryId: string, scenes: readonly StashSceneMatchInput[], nowMs: number): Promise<RunMatchingPassResult> {
   if (scenes.length === 0) return { results: [] };
@@ -109,6 +128,11 @@ export async function runMatchingPass(db: DbOrTx, libraryId: string, scenes: rea
     return { results: pass1 };
   }
 
+  // S4's "for UNMATCHED candidates only" — a candidate a pass-1 path match
+  // already claimed is out of scope for the oshash tier entirely (see this
+  // function's doc comment for both halves of why).
+  const claimedMediaFileIds = new Set(pass1.map((r) => r.mediaFileId).filter((id): id is string => id != null));
+
   const candidatesWithOshash: LoombreFileCandidate[] = await Promise.all(
     candidateRows.map(async (c) => ({
       ...c,
@@ -116,7 +140,10 @@ export async function runMatchingPass(db: DbOrTx, libraryId: string, scenes: rea
       // file (a stale media_files row pointing at a since-deleted file is
       // a real, unremarkable state) — just leaves that one candidate's
       // oshash null, same as "not computed".
-      oshash: c.sizeBytes != null && targetSizes.has(c.sizeBytes) ? await computeOshashForFile(c.path).catch(() => null) : null,
+      oshash:
+        !claimedMediaFileIds.has(c.mediaFileId) && c.sizeBytes != null && targetSizes.has(c.sizeBytes)
+          ? await computeOshashForFile(c.path).catch(() => null)
+          : null,
     }))
   );
   const pass2 = matchStashScenes(scenes, mappings, candidatesWithOshash);
