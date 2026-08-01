@@ -21,11 +21,19 @@ let menubarBuildVersion = loombreGeneratedVersion
 
 let pollIntervalSeconds: TimeInterval = 3.0
 
+/// UserDefaults key for the once-per-user post-install browser open —
+/// lives in this app's own com.loombre.menubar defaults domain.
+let autoOpenWebDefaultsKey = "didAutoOpenWebOnFirstRun"
+
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private var pollTimer: Timer?
     private var lastStatus: IPCStatusResponse?
     private var lastConnection: IPCConnection?
+    /// True while the launchctl admin prompt is up or the daemon it just
+    /// started hasn't been observed running yet — keeps a second click
+    /// from stacking credential prompts.
+    private var launchdStartInFlight = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // No Dock icon, no Cmd-Tab entry — menu-bar-only utility. Works
@@ -58,8 +66,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let status = try await client.fetchStatus()
             lastStatus = status
             let state = MenuState.derive(from: status)
+            if state == .running {
+                launchdStartInFlight = false
+            }
             applyState(state)
             rebuildMenu(for: state)
+            autoOpenWebOnFirstRunIfNeeded(status: status)
         } catch {
             lastStatus = nil
             lastConnection = nil
@@ -93,12 +105,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         openItem.isEnabled = lastStatus?.webUrl != nil
         menu.addItem(openItem)
 
-        let isRunning = lastStatus?.server.state == .running || lastStatus?.server.state == .starting
-        let lifecycleItem = isRunning
-            ? NSMenuItem(title: "Stop Server", action: #selector(stopServer), keyEquivalent: "")
-            : NSMenuItem(title: "Start Server", action: #selector(startServer), keyEquivalent: "")
+        // Decision table in LoombreIPCKit (LifecyclePlanTests) — the old
+        // inline condition here required a live IPC connection to enable
+        // "Start Server", i.e. required the server to be running in order
+        // to offer starting it (the rc "always grayed out" field report).
+        let plan = MenuState.lifecyclePlan(isConnected: lastConnection != nil, state: state)
+        let lifecycleItem = NSMenuItem(
+            title: launchdStartInFlight && plan.action == .startViaLaunchd ? "Starting…" : plan.title,
+            action: plan.action == .stopViaIpc ? #selector(stopServer) : #selector(startServer),
+            keyEquivalent: ""
+        )
         lifecycleItem.target = self
-        lifecycleItem.isEnabled = lastConnection != nil && state.isActionable
+        lifecycleItem.isEnabled = plan.isEnabled && !(launchdStartInFlight && plan.action == .startViaLaunchd)
         menu.addItem(lifecycleItem)
 
         menu.addItem(.separator())
@@ -144,9 +162,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func startServer() {
-        guard let connection = lastConnection else { return }
-        Task {
-            _ = try? await IPCClient(connection: connection).startServer()
+        // The IPC start endpoint can never start a stopped server
+        // (IPC_SERVER_START_SEMANTICS: it is hosted BY the server), so
+        // Start always goes through launchd, connection or not.
+        guard !launchdStartInFlight else { return }
+        launchdStartInFlight = true
+        rebuildMenu(for: lastStatus.map(MenuState.derive(from:)) ?? MenuState.deriveFromUnreachable())
+        Task { @MainActor in
+            let outcome = PrivilegedLaunchdStart.startServer()
+            switch outcome {
+            case .started:
+                // Leave launchdStartInFlight set — poll() clears it when
+                // the daemon is observed running, so the item shows
+                // "Starting…" instead of a misleading enabled "Start".
+                break
+            case .cancelled:
+                launchdStartInFlight = false
+            case .failed(let message):
+                launchdStartInFlight = false
+                let alert = NSAlert()
+                alert.messageText = "Could not start the Loombre server"
+                alert.informativeText = "\(message)\n\nYou can start it manually with:\nsudo launchctl kickstart system/\(LaunchdFallback.serverLabel)"
+                alert.alertStyle = .warning
+                alert.runModal()
+            }
             await poll()
         }
     }
@@ -157,6 +196,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             _ = try? await IPCClient(connection: connection).stopServer()
             await poll()
         }
+    }
+
+    /// Installer completion flow (see pkg/resources/conclusion.txt): the
+    /// pkg's postinstall bootstraps this agent while the Installer window
+    /// is still open; the first time the server advertises a web URL we
+    /// open the browser — on a fresh install that lands on the /setup
+    /// first-run wizard (the web root auto-routes there while no account
+    /// exists). Once per user, ever — UserDefaults-guarded, so upgrades
+    /// and later logins never spawn surprise tabs.
+    @MainActor
+    private func autoOpenWebOnFirstRunIfNeeded(status: IPCStatusResponse) {
+        let defaults = UserDefaults.standard
+        guard MenuState.shouldAutoOpenWeb(
+            alreadyOpened: defaults.bool(forKey: autoOpenWebDefaultsKey),
+            webUrl: status.webUrl
+        ) else { return }
+        guard let webUrl = status.webUrl, let url = URL(string: webUrl) else { return }
+        defaults.set(true, forKey: autoOpenWebDefaultsKey)
+        NSWorkspace.shared.open(url)
     }
 
     @objc private func revealCrashFiles() {

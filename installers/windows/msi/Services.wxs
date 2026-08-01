@@ -86,6 +86,11 @@
   <?include ServerPort.wxi ?>
   <?include WebPort.wxi ?>
   <Fragment>
+    <!-- Localizes to this machine's BUILTIN\Users spelling (util's
+         QueryOsWellKnownSID custom action) for the per-service
+         util:PermissionEx grants below — a literal "Users" account name
+         would break on non-English Windows. -->
+    <PropertyRef Id="WIX_ACCOUNT_USERS" />
     <ComponentGroup Id="ServiceComponents" Directory="SVCHOSTDIR">
       <!-- ONE component, THREE ServiceInstall/ServiceControl pairs: all
            three Windows services launch the SAME shared
@@ -139,7 +144,21 @@
           Type="ownProcess"
           ErrorControl="normal"
           Account="LocalSystem"
-          Arguments='--name LoombreServer --exe "[NODEDIR]node.exe" --arg "[SERVERDIR]dist\main.js" --cwd "[SERVERDIR]." --log "[APPDATA_LOGS]server.log" --envfile "[APPDATA_DATA]server.env" --stop-timeout-ms 10000 --extract-zip "[PAYLOADDIR]payload.zip" --extract-to "[INSTALLFOLDER]." --spawn-restricted' />
+          Arguments='--name LoombreServer --exe "[NODEDIR]node.exe" --arg "[SERVERDIR]dist\main.js" --cwd "[SERVERDIR]." --log "[APPDATA_LOGS]server.log" --envfile "[APPDATA_DATA]server.env" --stop-timeout-ms 10000 --extract-zip "[PAYLOADDIR]payload.zip" --extract-to "[INSTALLFOLDER]." --spawn-restricted'>
+          <!-- SERVICE_START (+ explicit SERVICE_QUERY_STATUS) for local
+               users: the non-elevated tray's "Start server" fix. The SCM's
+               default service DACL lets interactive users QUERY but not
+               START — and the IPC start endpoint can never start a
+               stopped server (it is hosted BY the server;
+               IPC_SERVER_START_SEMANTICS), so without this grant the
+               tray's only start path is a UAC prompt. SAME trust boundary
+               the owner already accepted for the IPC token file
+               (LOOMBRE_IPC_WINDOWS_GRANT below: any local user may drive
+               status/start/stop) — this widens nothing, it makes the SCM
+               agree with the IPC posture. No ServiceStop: stop stays an
+               IPC-only, in-band graceful shutdown. -->
+          <util:PermissionEx User="[WIX_ACCOUNT_USERS]" ServiceQueryStatus="yes" ServiceStart="yes" />
+        </ServiceInstall>
         <ServiceControl
           Id="svcctl.LoombreServer"
           Name="LoombreServer"
@@ -173,6 +192,9 @@
           Account="LocalSystem"
           Arguments='--name LoombreWorker --exe "[NODEDIR]node.exe" --arg "[WORKERDIR]dist\index.js" --cwd "[WORKERDIR]." --log "[APPDATA_LOGS]worker.log" --envfile "[APPDATA_DATA]worker.env" --stop-timeout-ms 15000 --extract-zip "[PAYLOADDIR]payload.zip" --extract-to "[INSTALLFOLDER]."'>
           <ServiceDependency Id="LoombreServer" />
+          <!-- Same grant + rationale as LoombreServer's above: the tray's
+               full-stack start touches all three services. -->
+          <util:PermissionEx User="[WIX_ACCOUNT_USERS]" ServiceQueryStatus="yes" ServiceStart="yes" />
         </ServiceInstall>
         <ServiceControl
           Id="svcctl.LoombreWorker"
@@ -212,6 +234,8 @@
           Account="LocalSystem"
           Arguments='--name LoombreWeb --exe "[NODEDIR]node.exe" --arg "[WEBDIR]node_modules\next\dist\bin\next" --arg start --arg --hostname --arg 0.0.0.0 --cwd "[WEBDIR]." --log "[APPDATA_LOGS]web.log" --envfile "[APPDATA_DATA]web.env" --stop-timeout-ms 10000'>
           <ServiceDependency Id="LoombreServer" />
+          <!-- Same grant + rationale as LoombreServer's above. -->
+          <util:PermissionEx User="[WIX_ACCOUNT_USERS]" ServiceQueryStatus="yes" ServiceStart="yes" />
         </ServiceInstall>
         <ServiceControl
           Id="svcctl.LoombreWeb"

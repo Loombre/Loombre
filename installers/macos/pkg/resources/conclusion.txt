@@ -1,11 +1,15 @@
 Loombre is installed and running.
 =================================
 
-Open the web UI:   http://localhost:3000
+Web UI:   http://localhost:3000
+
+Your browser will open to the Loombre setup screen automatically in a few
+seconds (as soon as the server finishes its first start). If it does not,
+open the address above yourself.
 
 The Loombre icon is now in your menu bar (top-right of the screen). Click
-it for live server status, the version, and a shortcut straight to the web
-UI. It reappears automatically every time you log in.
+it for live server status, start/stop control, the version, and a shortcut
+straight to the web UI. It reappears automatically every time you log in.
 
 There is nothing else to set up. The server has already provisioned its
 own bundled PostgreSQL database, applied the schema, and started serving —
