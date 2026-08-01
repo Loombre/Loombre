@@ -6236,7 +6236,7 @@ components:
       type: object
       description: One migrations/0020_stash_sync_reports.sql row — the most recently STARTED stash-sync run for a library. Counts are a point-in-time snapshot recorded when the run finished (or failed), never a live query.
       additionalProperties: false
-      required: [jobId, mode, status, matchedCount, updatedCount, unmatchedCount, staleCount, skippedCount, startedAtMs, finishedAtMs]
+      required: [jobId, mode, status, matchedCount, updatedCount, unmatchedCount, staleCount, skippedCount, startedAtMs, finishedAtMs, usedSnapshotFallback]
       properties:
         jobId: { type: string, format: uuid }
         mode: { type: string, enum: [full, incremental] }
@@ -6254,6 +6254,17 @@ components:
           type: [integer, 'null']
           format: int64
           description: Null while status='running'.
+        usedSnapshotFallback:
+          type: ['boolean', 'null']
+          description: >-
+            FX4 fix wave (S2): whether this run's Stash connection had to
+            fall back to a snapshot copy (apps/worker/src/stash/adapter.ts's
+            readingFrom === 'snapshot' — the WAL-locked-past-retry-budget
+            path) rather than reading the source database file directly.
+            Null when unknown — a run finalized by the terminal-failure
+            hook never learns the answer (no access to the failed attempt's
+            connection), and rows written before this field existed are
+            also null, never a false claim of 'read from source'.
 
     StashSyncSceneRef:
       type: object

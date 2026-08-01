@@ -71,7 +71,7 @@ import {
   markStashScenesStale,
   type StashSyncReportRow,
 } from '@loombre/db';
-import { connectToStashLibrary } from './connect.js';
+import { connectToStashLibrary, type ConnectToStashLibraryDeps } from './connect.js';
 import { getBlob, getScene, getSceneFiles, getScenePerformers, getSceneTags, getSceneMarkers, getStudio, listScenesForInventory, type SqliteReadable, type StashInventoryScene, type StashStudio } from './read-model.js';
 import { runInventoryPass, runMatchingPass, upsertInventorySubset, toMatchInput } from './pipeline.js';
 import type { StashSceneMatchResult } from './matching.js';
@@ -119,6 +119,14 @@ export interface StashSyncConsumerDeps {
    *  tests so a small fixture set can exercise the checkpoint-write/
    *  resume path without needing 50+ scenes. */
   checkpointIntervalScenes?: number;
+  /** FX4 fix wave test seams: forwarded VERBATIM to connectToStashLibrary
+   *  (ConnectToStashLibraryDeps.adapterDeps/openOptions — that interface's
+   *  own doc comment: "production callers never set this"). Lets a test
+   *  force S2's snapshot-copy fallback deterministically and fast (small
+   *  retry/backoff budgets) rather than waiting out adapter.ts's real
+   *  multi-second default retry budget. */
+  stashAdapterDeps?: ConnectToStashLibraryDeps['adapterDeps'];
+  stashOpenOptions?: ConnectToStashLibraryDeps['openOptions'];
 }
 
 export interface StashSyncRunResult {
@@ -349,7 +357,15 @@ export async function runStashSync(deps: StashSyncConsumerDeps, payload: StashSy
     });
   }
 
-  const connectResult = await connectToStashLibrary({ db: deps.db, clock }, payload.libraryId);
+  const connectResult = await connectToStashLibrary(
+    {
+      db: deps.db,
+      clock,
+      ...(deps.stashAdapterDeps !== undefined ? { adapterDeps: deps.stashAdapterDeps } : {}),
+      ...(deps.stashOpenOptions !== undefined ? { openOptions: deps.stashOpenOptions } : {}),
+    },
+    payload.libraryId
+  );
   if (connectResult.status !== 'ok') {
     const reason = connectResult.status === 'unreachable' ? connectResult.reason : connectResult.notice;
     // Thrown, not swallowed: pg-boss's own retry/onTerminalFailure
@@ -358,6 +374,12 @@ export async function runStashSync(deps: StashSyncConsumerDeps, payload: StashSy
     // this handler never writes a 'failed' status itself.
     throw new Error(`stash-sync: cannot open Stash connection for library ${payload.libraryId} (${connectResult.status}): ${reason}`);
   }
+
+  // FX4 fix wave (S2): captured NOW, while the connection is still open —
+  // readingFrom is a property of the open connection itself, known at
+  // openStashConnection's return, not something close() invalidates. Never
+  // re-derived after the fact.
+  const usedSnapshotFallback = connectResult.connection.readingFrom === 'snapshot';
 
   const counts: RunCounts = { updated: 0, skipped: 0 };
   let touchedCount: number;
@@ -376,7 +398,16 @@ export async function runStashSync(deps: StashSyncConsumerDeps, payload: StashSy
   const finalCounts = { matched: snapshot.matched, updated: counts.updated, unmatched: snapshot.unmatched, stale: snapshot.stale, skipped: counts.skipped };
 
   await withTransaction(deps.db, async (trx) => {
-    await finishStashSyncReport(trx, report!.id, { status: 'succeeded', matchedCount: finalCounts.matched, updatedCount: finalCounts.updated, unmatchedCount: finalCounts.unmatched, staleCount: finalCounts.stale, skippedCount: finalCounts.skipped, finishedAtMs });
+    await finishStashSyncReport(trx, report!.id, {
+      status: 'succeeded',
+      matchedCount: finalCounts.matched,
+      updatedCount: finalCounts.updated,
+      unmatchedCount: finalCounts.unmatched,
+      staleCount: finalCounts.stale,
+      skippedCount: finalCounts.skipped,
+      finishedAtMs,
+      usedSnapshotFallback,
+    });
     await writeEvent(trx, {
       type: 'stash.sync.completed',
       tsMs: finishedAtMs,
@@ -389,6 +420,7 @@ export async function runStashSync(deps: StashSyncConsumerDeps, payload: StashSy
         counts: finalCounts,
         durationMs: finishedAtMs - report!.started_at_ms,
         completedAtMs: finishedAtMs,
+        usedSnapshotFallback,
       },
     });
   });
@@ -423,7 +455,12 @@ export function stashSyncConsumerHandler(deps: StashSyncConsumerDeps): JobHandle
  * closure (a fresh function call, no shared state with the handler that
  * threw). matched/unmatched/stale remain accurate live snapshots
  * regardless (getStashSceneLinkCounts), since those were never this-run
- * tallies to begin with.
+ * tallies to begin with. Same honesty applies to FX4's usedSnapshotFallback
+ * (S2): deliberately OMITTED from both finishStashSyncReport's input (the
+ * column stays whatever it already was — NULL, from createStashSyncReport's
+ * insert) and the event payload (the field is optional/omittable per the
+ * evolution policy) — this hook never obtains a StashConnection for the
+ * failed attempt, so it genuinely does not know the answer.
  */
 export function createStashSyncTerminalFailureHook(db: DbOrTx): (payload: StashSyncJobPayload, error: unknown) => Promise<void> {
   return async (payload, error) => {

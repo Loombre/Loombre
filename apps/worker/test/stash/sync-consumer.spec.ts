@@ -25,6 +25,10 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { randomUUID } from "node:crypto";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
+// FX4 fix wave: forces S2's snapshot-copy fallback the same way apps/
+// worker/test/stash/adapter.spec.ts's makeLockedFixture does — locking_mode
+// EXCLUSIVE + an uncommitted BEGIN IMMEDIATE transaction on the fixture's
+// own OWNER handle, held open past the direct-open tier's retry budget.
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
@@ -297,4 +301,85 @@ describe("stash-sync — incremental mode touches only new/changed scenes", () =
 
     rmSync(updatedFixture.dir, { recursive: true, force: true });
   });
+});
+
+describe("stash-sync — S2 snapshot-copy fallback surfaces (FX4 fix wave)", () => {
+  it("a sync forced through the snapshot path records it in the stash.sync.completed event AND the report row", async () => {
+    const scenes: FixtureScene[] = [
+      { id: 1, title: "Locked Scene", folderPath: "/stash-media", basename: "locked.mp4", sizeBytes: 100, updatedAt: "2023-01-01 00:00:00" },
+    ];
+    const libraryId = await makeLibrary();
+    mediaDir = mkdtempSync(path.join(tmpdir(), "loombre-stash-sync-media-"));
+    const fixture = buildSyncFixtureDb(scenes);
+
+    await upsertLibraryStashConnectionConfig(db, { libraryId, sqlitePath: fixture.dbPath, nowMs: Date.now() });
+    await replaceLibraryPathMappings(db, libraryId, [{ stashPrefix: "/stash-media", loombrePrefix: mediaDir }]);
+    await makeCatalogItemWithFile(libraryId, path.join(mediaDir, "locked.mp4"), 100);
+
+    // Force the fixture's OWN open handle (buildSyncFixtureDb returns one
+    // read-write handle; every other test in this file closes it right
+    // away — this one instead holds it open) into the WAL-locked state —
+    // mirrors adapter.spec.ts's makeLockedFixture exactly: journal_mode
+    // WAL + locking_mode EXCLUSIVE + an uncommitted BEGIN IMMEDIATE
+    // transaction, which reliably forces a concurrent read-only opener
+    // into SQLITE_BUSY/LOCKED (adapter.ts's own header documents why this
+    // simulation, not real WAL contention, is the standard way to prove
+    // this path).
+    fixture.db.exec("PRAGMA journal_mode=WAL;");
+    fixture.db.exec("PRAGMA locking_mode=EXCLUSIVE;");
+    fixture.db.exec("BEGIN IMMEDIATE;");
+    fixture.db.exec("UPDATE scenes SET title = title WHERE id = 1;");
+
+    // Released shortly after the sync starts — same timing shape as
+    // adapter.spec.ts's own fallback test (`setTimeout(() => release(),
+    // 200)` before awaiting the connection). CRITICAL (matches
+    // makeLockedFixture's own release() exactly): in WAL mode, EXCLUSIVE
+    // locking_mode holds its lock for the connection's WHOLE SESSION, not
+    // just for the open transaction — a bare COMMIT does NOT release it;
+    // the connection must be CLOSED. The small direct-open retry budget
+    // below exhausts well before this fires, so the direct tier reliably
+    // observes the lock; the snapshot tier's own retry budget then
+    // succeeds once the close() lands.
+    let released = false;
+    const releaseTimer = setTimeout(() => {
+      released = true;
+      try {
+        fixture.db.exec("COMMIT;");
+      } catch {
+        // fine either way — close() below is what actually matters.
+      }
+      fixture.db.close();
+    }, 150);
+
+    const { fn } = fakeApply();
+    const jobId = randomUUID();
+    const result = await runStashSync(
+      baseDeps(fn, {
+        // FX4's own test seam (StashSyncConsumerDeps.stashOpenOptions,
+        // forwarded verbatim to connectToStashLibrary/openStashConnection)
+        // — small, fast retry/backoff budgets so this test proves the
+        // fallback deterministically in well under a second rather than
+        // waiting out adapter.ts's real multi-second production defaults.
+        stashOpenOptions: { busyTimeoutMs: 20, maxDirectRetries: 1, directRetryBackoffMs: 20, maxSnapshotRetries: 20, snapshotRetryBackoffMs: 40 },
+      }),
+      { libraryId, mode: "full" },
+      { jobId },
+    );
+
+    clearTimeout(releaseTimer);
+    if (!released) fixture.db.close();
+
+    expect(result.touchedCount).toBe(1);
+
+    // Durable report row (migrations/0022_stash_sync_report_snapshot.sql).
+    const report = await getLatestStashSyncReport(db, libraryId);
+    expect(report?.used_snapshot_fallback).toBe(true);
+
+    // stash.sync.completed event payload (packages/contract/event-schemas/
+    // stash.sync.completed.schema.json's additive optional field).
+    const events = await db.selectFrom("events").selectAll().where("type", "=", "stash.sync.completed").execute();
+    const event = events.find((e) => (e.payload as { jobId: string }).jobId === jobId);
+    expect(event).toBeDefined();
+    expect((event!.payload as { usedSnapshotFallback: boolean }).usedSnapshotFallback).toBe(true);
+  }, 20_000);
 });

@@ -31,6 +31,11 @@
 // unmatchedScenes (S4/S8's "both unmatched sides" law) — media_files rows
 // in this library with no stash_scene_links row pointing at their item,
 // paged independently via its own unmatchedLoombreFilesCursor.
+//
+// FX4 fix wave: report.usedSnapshotFallback surfaces
+// stash_sync_reports.used_snapshot_fallback (migrations/0022, S2) — null
+// straight through when the column is null (unknown), never coerced to
+// false.
 
 import { Injectable } from "@nestjs/common";
 import {
@@ -90,6 +95,7 @@ interface StashSyncReportDto {
   skippedCount: number;
   startedAtMs: number;
   finishedAtMs: number | null;
+  usedSnapshotFallback: boolean | null;
 }
 
 export interface AdminStashSyncReportDto {
@@ -111,6 +117,7 @@ function toReportDto(row: StashSyncReportRow): StashSyncReportDto {
     skippedCount: row.skipped_count,
     startedAtMs: row.started_at_ms,
     finishedAtMs: row.finished_at_ms,
+    usedSnapshotFallback: row.used_snapshot_fallback,
   };
 }
 
