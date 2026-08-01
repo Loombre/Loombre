@@ -44,7 +44,16 @@
 
 import type { MediaKind } from "@loombre/db";
 
-export const KNOWN_BUILTIN_PROVIDER_NAMES = ["tmdb", "tvdb", "musicbrainz"] as const;
+// Stash SQLite metadata sync, K7: `stash` is a restricted-scoped built-in
+// (apps/worker/src/metadata/providers/stash.ts) that attaches per-library
+// via library_provider_entries — like tmdb/tvdb it must be a KNOWN name so
+// putAdminLibraryProviderChain can validate a builtinName spelling, but
+// unlike them it is DELIBERATELY absent from LEGACY_DEFAULT_PROVIDER_CHAIN
+// below (K7: "NEVER add to the default PROVIDER_CHAIN — it attaches
+// per-library only"). ProviderRegistry.assertScope (apps/worker/src/
+// metadata/registry.ts) already refuses to run a restricted provider
+// against a general library, independent of this list.
+export const KNOWN_BUILTIN_PROVIDER_NAMES = ["tmdb", "tvdb", "musicbrainz", "stash"] as const;
 
 export const LEGACY_DEFAULT_PROVIDER_CHAIN: Record<MediaKind, readonly string[]> = {
   movie: ["tmdb"],
