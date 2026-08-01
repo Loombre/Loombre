@@ -41,6 +41,14 @@ export default defineConfig({
   title: "Loombre",
   description: "Self-hosted media streaming platform — documentation",
   lang: "en-US",
+  // The docs site is published under loombre.com/docs/, alongside the
+  // hand-built marketing pages at the root — so every asset URL, router
+  // path and preload hint has to be rooted there, not at /. Left at the
+  // default "/", the built site requests /assets/* and collides with the
+  // marketing site's own /assets/ directory. `pnpm docs:dev` serves at
+  // localhost:4750/docs/ for the same reason, which is what production
+  // looks like.
+  base: "/docs/",
   cleanUrls: true,
   // Deterministic builds: "last updated" timestamps would depend on git log
   // depth/availability at build time (shallow CI checkouts, worktrees) —
@@ -73,6 +81,15 @@ export default defineConfig({
 
   themeConfig: {
     logo: undefined,
+    // The docs hub at loombre.com/docs is a hand-built page belonging to the
+    // marketing site, not a VitePress route — so the router has no chunk for
+    // it and a client-side navigation there would render this site's own home
+    // instead. `target` is what makes it a real navigation: the router skips
+    // any link carrying one (vitepress/dist/client/app/router.js), and _self
+    // is a no-op for the browser. Setting it here rather than patching the
+    // built HTML matters because Vue drops attributes it does not own when it
+    // hydrates the nav.
+    logoLink: { link: "/docs", target: "_self" },
     nav: [
       { text: "Install", link: "/install/" },
       { text: "User Guide", link: "/user-guide/" },
@@ -90,7 +107,7 @@ export default defineConfig({
             { text: "Overview & requirements", link: "/install/" },
             { text: "Docker / Compose (recommended)", link: "/install/docker" },
             { text: "Linux (tarball + systemd)", link: "/install/linux" },
-            { text: "Windows (MSI)", link: "/install/windows" },
+            { text: "Windows (.exe)", link: "/install/windows" },
             { text: "macOS (.pkg)", link: "/install/macos" },
             { text: "Troubleshooting", link: "/install/troubleshooting" },
           ],
