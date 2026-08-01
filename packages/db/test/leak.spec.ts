@@ -910,6 +910,36 @@ describe('restricted-content leak impossibility', () => {
         expect(result).toBeUndefined();
       });
 
+      it('FX2: images field carries the real portrait fixture when cleared, an honest empty array with no fixture, and never leaks to an uncleared/locked viewer', async () => {
+        // Positive half: a cleared row's `images` matches seed.mjs's real
+        // fixture (insertImage('person', restrictedPeople[0].id, 'thumb',
+        // ...) — Restricted Performer One), not a placeholder.
+        const cleared = await getRestrictedPerformerById(db, adminCleared, restrictedPerformerOneId);
+        expect(cleared?.images).toEqual([
+          { kind: 'thumb', width: 400, height: 600, blurhash: 'L2PZfSi_.AyE_3t7t7R**0o#DgR8', dominantColor: null },
+        ]);
+
+        // The list surface carries the SAME batched images (not just the
+        // single-id getter) — and a sibling performer with NO image
+        // fixture gets an honest [], never another performer's portrait
+        // (proves the batch-fetch keys strictly by person id).
+        const list = await listRestrictedPerformers(db, adminCleared, { limit: 200 });
+        const withImage = list?.rows.find((r) => r.name === 'Restricted Performer One');
+        expect(withImage?.images).toEqual([
+          { kind: 'thumb', width: 400, height: 600, blurhash: 'L2PZfSi_.AyE_3t7t7R**0o#DgR8', dominantColor: null },
+        ]);
+        const withoutImage = list?.rows.find((r) => r.name === 'Restricted Performer Two');
+        expect(withoutImage?.images).toEqual([]);
+
+        // Leak half: an uncleared/locked viewer never gets ANY performer
+        // object back for this id — there is no `.images` to leak because
+        // there is no object at all (byte-identical undefined, same as the
+        // rest of this describe block) — asserted again here so this
+        // images-specific case is independently fail-first-provable.
+        expect(await getRestrictedPerformerById(db, casualUncleared, restrictedPerformerOneId)).toBeUndefined();
+        expect(await getRestrictedPerformerById(db, adminClearedButNotUnlocked, restrictedPerformerOneId)).toBeUndefined();
+      });
+
       it('listRestrictedPerformerScenes delegates to the SAME guarded browse (pure delegation, cannot diverge in leak posture)', async () => {
         expect(await listRestrictedPerformerScenes(db, casualUncleared, restrictedPerformerOneId)).toBeUndefined();
         const cleared = await listRestrictedPerformerScenes(db, adminCleared, restrictedPerformerOneId);

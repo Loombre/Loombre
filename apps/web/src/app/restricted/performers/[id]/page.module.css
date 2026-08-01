@@ -17,6 +17,14 @@
   text-align: center;
 }
 
+.portrait {
+  width: 140px;
+  height: 140px;
+  object-fit: cover;
+  border-radius: var(--radius-full);
+  background: var(--color-dominant-fallback);
+}
+
 .name {
   font-stretch: var(--wdth-title);
   font-size: var(--text-xl);
