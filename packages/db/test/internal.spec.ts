@@ -39,6 +39,7 @@ import {
   findOrCreateTag,
   replaceItemTags,
   upsertImage,
+  hasOriginalImage,
 } from '../src/internal/index.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -384,6 +385,42 @@ describe('src/internal (P1.13)', () => {
     });
   });
 
+  describe('hasOriginalImage (Stash mapper dedup guard)', () => {
+    it('false before an original row exists, true after — variant (non-NULL width) rows do not count', async () => {
+      expect(await hasOriginalImage(db, 'person', itemId, 'thumb')).toBe(false);
+
+      await upsertImage(db, {
+        entityType: 'person',
+        entityId: itemId,
+        kind: 'thumb',
+        source: 'provider',
+        width: 320,
+        height: 480,
+        filePath: '/data/images/person/thumb-320.webp',
+        createdAtMs: 1,
+      });
+      // Only a VARIANT (width IS NOT NULL) row exists so far.
+      expect(await hasOriginalImage(db, 'person', itemId, 'thumb')).toBe(false);
+
+      await upsertImage(db, {
+        entityType: 'person',
+        entityId: itemId,
+        kind: 'thumb',
+        source: 'provider',
+        width: null,
+        height: 480,
+        filePath: '/data/images/person/thumb-original.webp',
+        createdAtMs: 1,
+      });
+      expect(await hasOriginalImage(db, 'person', itemId, 'thumb')).toBe(true);
+    });
+
+    it('is scoped by entity_type/entity_id/kind — an unrelated combination stays false', async () => {
+      expect(await hasOriginalImage(db, 'tag', itemId, 'logo')).toBe(false);
+      expect(await hasOriginalImage(db, 'person', itemId, 'poster')).toBe(false);
+    });
+  });
+
   describe('people / item_people', () => {
     it('findOrCreatePerson is idempotent per (name, content_class), and content classes never collapse into one row', async () => {
       const first = await findOrCreatePerson(db, 'Jane Doe', 'general');
@@ -438,6 +475,40 @@ describe('src/internal (P1.13)', () => {
 
       const rows = await rawClient.query<{ n: number }>('SELECT count(*)::int AS n FROM item_tags WHERE item_id = $1', [itemId]);
       expect(rows.rows[0]!.n).toBe(1);
+    });
+
+    // migrations/0019 (K2/S5) — findOrCreateTag's 4th-argument opts,
+    // additive for the Stash mapper (apps/worker/src/stash/apply.ts).
+    it('findOrCreateTag with no 4th argument never touches kind/parent_tag_id (pre-0019 call sites stay byte-identical)', async () => {
+      const first = await findOrCreateTag(db, 'Untouched Kind Tag', 'general');
+      expect(first.kind).toBe('general');
+      expect(first.parent_tag_id).toBeNull();
+
+      // Someone else classified this tag as a studio; a plain 3-arg call
+      // (the shape metadata/consumer.ts uses) must not clobber that.
+      await db.updateTable('tags').set({ kind: 'studio' }).where('id', '=', first.id).execute();
+      const second = await findOrCreateTag(db, 'Untouched Kind Tag', 'general');
+      expect(second.id).toBe(first.id);
+      expect(second.kind).toBe('studio');
+    });
+
+    it('findOrCreateTag({kind}) sets entity-level kind on insert AND on conflict', async () => {
+      const created = await findOrCreateTag(db, 'Comedy', 'restricted', { kind: 'genre' });
+      expect(created.kind).toBe('genre');
+
+      const reclassified = await findOrCreateTag(db, 'Comedy', 'restricted', { kind: 'general' });
+      expect(reclassified.id).toBe(created.id);
+      expect(reclassified.kind).toBe('general');
+    });
+
+    it('findOrCreateTag({parentTagId}) links a tag to a parent, and explicit null detaches it', async () => {
+      const parent = await findOrCreateTag(db, 'Action (root)', 'restricted', { kind: 'genre' });
+      const child = await findOrCreateTag(db, 'Fight Scene (child)', 'restricted', { parentTagId: parent.id });
+      expect(child.parent_tag_id).toBe(parent.id);
+
+      const detached = await findOrCreateTag(db, 'Fight Scene (child)', 'restricted', { parentTagId: null });
+      expect(detached.id).toBe(child.id);
+      expect(detached.parent_tag_id).toBeNull();
     });
   });
 });
