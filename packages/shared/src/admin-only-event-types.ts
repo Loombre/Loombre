@@ -74,6 +74,12 @@
 //     failed to probe and why), not content any viewer-scoped predicate
 //     should gate, same posture as scan.completed's own skip-visibility
 //     fields.
+//   - `stash.provider.disabled` (STATE.md "Stash SQLite metadata sync",
+//     S3/K12): emitted by apps/worker/src/stash/connect.ts when a
+//     library's Stash SQLite database reports a schema_migrations version
+//     outside the pinned supported range — instance-configuration
+//     diagnostic data (which library, which schema version, the exact
+//     admin notice), same posture as probe.failed.
 //
 // Dependency-free data only (no zod, no I/O) — importable from
 // apps/server, apps/worker, and (via the prose pointer above, not a real
@@ -95,4 +101,6 @@ export const ADMIN_ONLY_EVENT_TYPES: readonly string[] = [
   "user.restricted-pin-reset",
   // Owner ledger L1 (adjudication A-2).
   "probe.failed",
+  // Stash SQLite metadata sync, S3/K12.
+  "stash.provider.disabled",
 ];
