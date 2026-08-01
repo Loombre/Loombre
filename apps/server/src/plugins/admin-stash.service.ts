@@ -40,6 +40,7 @@ export interface AdminStashConnectionDto {
   configured: boolean;
   sqlitePath: string | null;
   enabled: boolean;
+  genreTagNames: string[] | null;
   status: string;
   statusDetail: string | null;
   lastSeenSchemaVersion: number | null;
@@ -54,6 +55,7 @@ function toConnectionDto(libraryId: string, row: LibraryStashConnectionRow | und
       configured: false,
       sqlitePath: null,
       enabled: false,
+      genreTagNames: null,
       status: "never_connected",
       statusDetail: null,
       lastSeenSchemaVersion: null,
@@ -66,6 +68,7 @@ function toConnectionDto(libraryId: string, row: LibraryStashConnectionRow | und
     configured: true,
     sqlitePath: row.sqlite_path,
     enabled: row.enabled,
+    genreTagNames: row.genre_tag_names,
     status: row.status,
     statusDetail: row.status_detail,
     lastSeenSchemaVersion: row.last_seen_schema_version,
@@ -113,10 +116,12 @@ export class AdminStashService {
     return toConnectionDto(libraryId, row);
   }
 
-  /** Writes sqlitePath/enabled ONLY (never genreTagNames — Lane E's own
-   *  field on this resource, K15) and enqueues a `stash-inventory` job on
-   *  every successful save so the path-mapping preview has fresh data
-   *  without a separate admin button. */
+  /** Writes sqlitePath/enabled, plus genreTagNames (K15) with a tri-state
+   *  contract: the key ABSENT from the body leaves the saved value
+   *  untouched, `null` explicitly resets it to the default heuristic, and
+   *  a (possibly empty) array of strings replaces it wholesale. Enqueues a
+   *  `stash-inventory` job on every successful save so the path-mapping
+   *  preview has fresh data without a separate admin button. */
   async putConnection(libraryId: string, rawBody: unknown, actorUserId: string): Promise<AdminStashConnectionDto> {
     const instancePath = this.instancePath(libraryId, "stash-connection");
     await requireLiveAdmin(this.dbProvider.db, actorUserId, instancePath);
@@ -132,12 +137,30 @@ export class AdminStashService {
     const enabledRaw = body["enabled"];
     const enabled = typeof enabledRaw === "boolean" ? enabledRaw : undefined;
 
+    // Tri-state: only include the key in the writer's input at all when
+    // the admin's body actually carried it — "in" distinguishes an absent
+    // key (leave untouched) from a key present with value `null` (reset to
+    // the heuristic), which `body["genreTagNames"] !== undefined` alone
+    // cannot (both read as `undefined` off a plain object).
+    let genreTagNames: string[] | null | undefined;
+    if ("genreTagNames" in body) {
+      const raw = body["genreTagNames"];
+      if (raw === null) {
+        genreTagNames = null;
+      } else if (Array.isArray(raw) && raw.every((v) => typeof v === "string")) {
+        genreTagNames = raw;
+      } else {
+        throw unprocessableEntity("genreTagNames must be an array of strings or null.", instancePath);
+      }
+    }
+
     let row: LibraryStashConnectionRow;
     try {
       row = await upsertLibraryStashConnectionConfig(this.dbProvider.db, {
         libraryId,
         sqlitePath,
         ...(enabled !== undefined ? { enabled } : {}),
+        ...(genreTagNames !== undefined ? { genreTagNames } : {}),
         nowMs: clockNowMs(),
       });
     } catch (err) {
