@@ -98,16 +98,13 @@
   color: var(--muted);
 }
 
-/* Rails placeholder (S9 — the RAIL UI itself is Lane E's scope; this is a
-   minimal, real-data one-line summary, never rail rows/cards). */
-.railsPlaceholder {
+/* Loading state (home/accessToken not resolved yet) — a one-line real-data
+   summary, shown only until the rails below have something to render. */
+.railsSummary {
   border-radius: var(--radius-lg);
   border: 1px dashed var(--color-border);
   padding: var(--space-xl);
   text-align: center;
-}
-
-.railsSummary {
   font-family: var(--font-mono);
   font-size: var(--mono-md);
   letter-spacing: var(--track-mono);
@@ -115,10 +112,11 @@
   color: var(--color-text-muted);
 }
 
-.railsNote {
-  margin-top: var(--space-2xs);
-  font-size: var(--text-sm);
-  color: var(--color-text-subtle);
+/* Lane E (S9): the real rails — Continue Watching / Recently Added /
+   Studios / Performers, each a Row.tsx section. */
+.rails {
+  display: flex;
+  flex-direction: column;
 }
 
 @media (width <= 767.98px) {
