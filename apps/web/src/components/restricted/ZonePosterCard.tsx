@@ -14,6 +14,15 @@
 // this zone anyway. This file duplicates PosterCell's image-loading
 // recipe (blurhash placeholder crossfade) rather than sharing it, so the
 // amber border can be added here without touching a file Browse owns.
+//
+// STATE.md Stash run (S9): `tabIndex`/`cellRef`/`onFocus` (additive,
+// optional) let this card double as a components/browse/VirtualPosterGrid
+// `renderItem` cell for /restricted/browse's own grid — same roving-
+// tabindex wiring PosterCell.tsx's identical trio implements, so the zone
+// grid gets the SAME 60fps windowing + keyboard nav (S10) without a second
+// grid implementation. Omitted (the original /restricted gate-grid usage,
+// a plain un-virtualized list): the tile is just a normal, always-focusable
+// anchor.
 
 import { useMemo, useState } from "react";
 import { blurhashToDataUri } from "../../lib/blurhash-canvas.js";
@@ -29,6 +38,12 @@ export interface ZonePosterCardProps {
   subtitle?: string | undefined;
   blurhash: string | null;
   href: string;
+  /** VirtualPosterGrid's roving-tabindex trio (CellHandlers) — all three
+   *  optional so this component still works as a plain, always-tabbable
+   *  anchor outside a virtualized grid. */
+  tabIndex?: number | undefined;
+  cellRef?: ((el: HTMLAnchorElement | null) => void) | undefined;
+  onFocus?: (() => void) | undefined;
 }
 
 export function ZonePosterCard({
@@ -40,6 +55,9 @@ export function ZonePosterCard({
   subtitle,
   blurhash,
   href,
+  tabIndex,
+  cellRef,
+  onFocus,
 }: ZonePosterCardProps): React.JSX.Element {
   const [loaded, setLoaded] = useState(false);
   const placeholderUri = useMemo(() => (blurhash ? blurhashToDataUri(blurhash) : null), [blurhash]);
@@ -48,7 +66,15 @@ export function ZonePosterCard({
   const srcSet = buildImageSrcSet({ serverUrl, accessToken, entityType: itemType, entityId: itemId, kind: "poster" });
 
   return (
-    <a href={href} className={styles.tile} aria-label={subtitle ? `${title}, ${subtitle}` : title}>
+    <a
+      ref={cellRef}
+      href={href}
+      className={styles.tile}
+      tabIndex={tabIndex}
+      onFocus={onFocus}
+      aria-label={subtitle ? `${title}, ${subtitle}` : title}
+    >
+
       <div className={styles.imageWrap}>
         {placeholderUri && (
           <img className={styles.placeholder} data-loaded={loaded} src={placeholderUri} alt="" aria-hidden="true" />
