@@ -63,7 +63,8 @@ export type SettingsCategory =
   | "network"
   | "tls"
   | "paths"
-  | "ffmpeg";
+  | "ffmpeg"
+  | "stash";
 
 /**
  * Converts a raw environment-variable string into the pre-validation value
@@ -622,6 +623,36 @@ const UI_ENTRIES: SettingsRegistryEntry[] = [
     scope: "ui",
     envVar: "LOOMBRE_RATE_MEDIA_TOKEN",
     parseEnv: parseEnvPositiveInt,
+  }),
+
+  // ---- stash (STATE.md "Stash SQLite metadata sync", S8, trigger (b)) ----
+  // Deliverable 7(b)'s schedule trigger: no cron machinery exists anywhere
+  // in this repo (K-notes "ground truth worth repeating"), and extending
+  // packages/jobs' shared JobQueue abstraction (every job type's foundation)
+  // for a single feature's `.schedule()` need is a bigger blast radius than
+  // this lane's scope justifies. Instead, apps/worker/src/stash/
+  // schedule-loop.ts runs its OWN setInterval poll loop — the exact "own
+  // interval, own handle, own clean shutdown" shape
+  // apps/worker/src/plugin-delivery/delivery-loop.ts's LPP v1 outbox-fanout
+  // loop already established (see that module's header) — and re-reads
+  // this key fresh on every tick via loadWorkerEffectiveSettings (the SAME
+  // per-tick-boundary re-resolution convention scan/probe/transcode all
+  // use, per this file's own header). 0 (the default) means OFF: no
+  // schedule-triggered sync fires until an admin sets a positive interval —
+  // trigger (a) (the admin button, Lane D) and (c) (chokidar Stash-DB mtime
+  // watch, this lane's watcher.ts) both keep working regardless of this
+  // setting's value.
+  defineSetting({
+    key: "stash.sync.scheduleIntervalMs",
+    // Floor is 0 (off); ceiling is 30 days — far past any sane periodic
+    // resync cadence, just a sanity bound (mirrors scanner.concurrency's
+    // F9 "unbounded above meant an absurd value was schema-legal" fix).
+    schema: z.number().int().min(0).max(30 * 24 * 60 * 60 * 1000),
+    default: 0,
+    category: "stash",
+    description: "How often Loombre automatically re-syncs metadata from a connected Stash database, in milliseconds. 0 (the default) turns automatic scheduling off — Stash still syncs when you click the sync button or when its database file changes on disk.",
+    requiresRestart: false,
+    scope: "ui",
   }),
 ];
 
