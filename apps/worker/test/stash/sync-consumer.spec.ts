@@ -21,9 +21,10 @@
 // Connection: DATABASE_URL env var, default
 //   postgres://loombre:loombre@localhost:5442/loombre
 
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { randomUUID } from "node:crypto";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { createHash, randomUUID } from "node:crypto";
+import { DatabaseSync } from "node:sqlite";
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 // FX4 fix wave: forces S2's snapshot-copy fallback the same way apps/
 // worker/test/stash/adapter.spec.ts's makeLockedFixture does — locking_mode
@@ -35,15 +36,19 @@ import { spawnSync } from "node:child_process";
 import {
   createDb,
   getLatestStashSyncReport,
+  getRestrictedSceneDetail,
   getStashSceneLinkCounts,
+  listRestrictedBrowse,
   listStashSceneLinksForLibrary,
   replaceLibraryPathMappings,
   upsertLibraryStashConnectionConfig,
 } from "@loombre/db";
 import { getStashSyncCheckpoint } from "@loombre/db/internal";
 import { runStashSync, type StashSyncConsumerDeps } from "../../src/stash/sync-consumer.js";
+import { applyStashSceneMetadata } from "../../src/stash/apply.js";
 import type { ApplyStashSceneMetadataFn } from "../../src/stash/apply-types.js";
 import { buildSyncFixtureDb, type FixtureScene } from "./sync-fixtures/build-sync-fixture.js";
+import { buildFixtureDb } from "./fixtures/build-fixture-db.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PKG_DB_ROOT = path.resolve(__dirname, "../../../../packages/db");
@@ -139,6 +144,55 @@ async function setupLibraryWithMappedFixture(scenes: FixtureScene[]): Promise<{ 
   return { libraryId, dbPath: fixture.dbPath, fixtureDir: fixture.dir };
 }
 
+describe("stash-sync — S2 fs-level proof across the WHOLE sync path (R2 audit)", () => {
+  // adapter.spec.ts proves the ADAPTER SESSION never writes the source.
+  // That is not the same statement as "a sync never writes the source":
+  // between opening and closing the connection, a real run also executes
+  // the inventory pass, the two matching passes, and one applyStashSceneMetadata
+  // per matched scene, every one of which holds the same live SQLite handle.
+  // This closes that gap by asserting the source file's bytes AND mtime
+  // across a complete runStashSync with the REAL mapper, not a fake.
+  it("a full sync (inventory + matching + real apply) leaves the Stash .db byte-identical, mtime included", async () => {
+    const scenes: FixtureScene[] = [
+      { id: 1, title: "FS Proof One", folderPath: "/stash-media", basename: "fs-one.mp4", sizeBytes: 1000, updatedAt: "2023-06-15 10:00:00" },
+      { id: 2, title: "FS Proof Two", folderPath: "/stash-media", basename: "fs-two.mp4", sizeBytes: 2000, updatedAt: "2023-06-16 10:00:00" },
+    ];
+    const libraryId = await makeLibrary();
+    mediaDir = mkdtempSync(path.join(tmpdir(), "loombre-stash-sync-media-"));
+    const fixture = buildSyncFixtureDb(scenes);
+    // WAL mode, like every real Stash database — the shape that makes this
+    // assertion non-trivial (a rollback-journal database has no sidecar
+    // machinery to confuse the question).
+    fixture.db.exec("PRAGMA journal_mode=WAL;");
+    fixture.db.close();
+
+    await upsertLibraryStashConnectionConfig(db, { libraryId, sqlitePath: fixture.dbPath, nowMs: Date.now() });
+    await replaceLibraryPathMappings(db, libraryId, [{ stashPrefix: "/stash-media", loombrePrefix: mediaDir }]);
+    for (const scene of scenes) await makeCatalogItemWithFile(libraryId, path.join(mediaDir, scene.basename), scene.sizeBytes);
+
+    const hashBefore = createHash("sha256").update(readFileSync(fixture.dbPath)).digest("hex");
+    const mtimeBefore = statSync(fixture.dbPath).mtimeMs;
+
+    const result = await runStashSync(
+      baseDeps(applyStashSceneMetadata, { enqueueImageJob: vi.fn(async () => "job-id") }),
+      { libraryId, mode: "full" },
+      { jobId: randomUUID() }
+    );
+    expect(result.counts).toMatchObject({ matched: 2, updated: 2 }); // the run really did work
+
+    expect(createHash("sha256").update(readFileSync(fixture.dbPath)).digest("hex")).toBe(hashBefore);
+    expect(statSync(fixture.dbPath).mtimeMs).toBe(mtimeBefore);
+
+    // Scope stated honestly (adapter.ts's header): the DIRECTORY does gain
+    // SQLite's WAL sidecars, which a read-only connection cannot remove.
+    // Nothing else appears, and nothing pre-existing is removed.
+    const dirNow = readdirSync(fixture.dir).sort();
+    expect(dirNow.filter((f) => !f.endsWith("-wal") && !f.endsWith("-shm"))).toEqual(["stash.sqlite"]);
+
+    rmSync(fixture.dir, { recursive: true, force: true });
+  }, 20_000);
+});
+
 describe("stash-sync full mode — happy path", () => {
   it("matches, applies via the injected fake, and writes a succeeded report + events", async () => {
     const scenes: FixtureScene[] = [
@@ -175,6 +229,153 @@ describe("stash-sync full mode — happy path", () => {
     expect(result.counts.updated).toBe(0);
     expect(result.counts.skipped).toBe(1);
   });
+});
+
+// ============================================================================
+// S3 "both ways", at the level S3 actually promises (R2 audit)
+// ============================================================================
+// connect.spec.ts proves the supported/unsupported CONNECT outcomes, and
+// read-model.spec.ts proves typed reads against both pinned boundary
+// fixtures. Neither proves the thing S3's pinned range is FOR: that a
+// database at either end of 67-85 syncs end to end through the real
+// mapper. The two suites below close that, and add the third S3 case
+// nobody covered — an IN-RANGE version whose tables are not the shape the
+// read model expects, which must fail loudly rather than best-effort.
+
+const BOUNDARY_FIXTURES = [
+  ["schema-v67-supported-min.sql", 67],
+  ["schema-v85-supported-max.sql", 85],
+] as const;
+
+describe.each(BOUNDARY_FIXTURES)("stash-sync end to end against the pinned range boundary %s (S3)", (fixtureFile, version) => {
+  it(`syncs a schema-v${version} database through the REAL mapper: matched, editorial fields written, technical facts untouched`, async () => {
+    const libraryId = await makeLibrary();
+    mediaDir = mkdtempSync(path.join(tmpdir(), "loombre-stash-boundary-media-"));
+    mkdirSync(path.join(mediaDir, "sub"), { recursive: true });
+
+    const fixtureDir = mkdtempSync(path.join(tmpdir(), "loombre-stash-boundary-fixture-"));
+    const sqlitePath = path.join(fixtureDir, "stash.sqlite");
+    buildFixtureDb(path.join(__dirname, "fixtures", fixtureFile), sqlitePath).close();
+
+    await upsertLibraryStashConnectionConfig(db, { libraryId, sqlitePath, nowMs: Date.now() });
+    // The checked-in fixtures put their files under /data/videos (scene 2
+    // in a nested subfolder — the path-reconstruction case read-model.ts
+    // handles without a version branch).
+    await replaceLibraryPathMappings(db, libraryId, [{ stashPrefix: "/data/videos", loombrePrefix: mediaDir }]);
+    const sceneOneItem = await makeCatalogItemWithFile(libraryId, path.join(mediaDir, "scene-one.mp4"), 1024);
+    await db.updateTable("media_files").set({ size_bytes: 104_857_600 }).where("item_id", "=", sceneOneItem).execute();
+    const sceneTwoItem = await makeCatalogItemWithFile(libraryId, path.join(mediaDir, "sub", "scene-two.mkv"), 1024);
+    await db.updateTable("media_files").set({ size_bytes: 52_428_800 }).where("item_id", "=", sceneTwoItem).execute();
+    // A probed technical fact that predates the sync — S5's authority split
+    // says the Stash path must leave it exactly as it found it.
+    await db.insertInto("movie_details").values({ item_id: sceneOneItem, runtime_ms: 5_400_000, content_rating: "R", tagline: "probed", overview: null }).execute();
+
+    const enqueueImageJob = vi.fn(async () => "job-id");
+    const result = await runStashSync(
+      baseDeps(applyStashSceneMetadata, { enqueueImageJob }),
+      { libraryId, mode: "full" },
+      { jobId: randomUUID() }
+    );
+
+    expect(result.touchedCount).toBe(2);
+    expect(result.counts).toMatchObject({ matched: 2, updated: 2, unmatched: 0, stale: 0 });
+
+    const item = await db.selectFrom("catalog_items").selectAll().where("id", "=", sceneOneItem).executeTakeFirstOrThrow();
+    expect(item.title).toBe("Scene One");
+    expect(item.year).toBe(2023);
+    expect(item.community_rating).toBeCloseTo(8.5); // S5's documented rating100/10 conversion
+
+    const details = await db.selectFrom("movie_details").selectAll().where("item_id", "=", sceneOneItem).executeTakeFirstOrThrow();
+    expect(details.overview).toBe("Details for scene one.");
+    expect(details.premiere_at_ms).toBe(Date.parse("2023-06-15"));
+    // S5 technical/editorial split, proven through the WHOLE sync path
+    // rather than only at apply.ts's unit boundary.
+    expect(details.runtime_ms).toBe(5_400_000);
+    expect(details.content_rating).toBe("R");
+    expect(details.tagline).toBe("probed");
+
+    const people = await db
+      .selectFrom("item_people")
+      .innerJoin("people", "people.id", "item_people.person_id")
+      .select("people.name as name")
+      .where("item_people.item_id", "=", sceneOneItem)
+      .execute();
+    expect(people.map((p) => p.name).sort()).toEqual(["Jane Doe", "John Smith"]);
+
+    const chapters = await db.selectFrom("chapter_markers").selectAll().where("item_id", "=", sceneOneItem).execute();
+    expect(chapters).toHaveLength(1);
+    expect(chapters[0]!.start_ms).toBe(30_500); // K9: Stash's REAL seconds -> BIGINT ms
+
+    // The studio ancestor walk C performs before calling apply (the B/C
+    // seam) really ran for this fixture, not just in apply.spec.ts's
+    // hand-built bundles.
+    const studioEdge = await db
+      .selectFrom("item_tags")
+      .innerJoin("tags", "tags.id", "item_tags.tag_id")
+      .select("tags.name as name")
+      .where("item_tags.item_id", "=", sceneOneItem)
+      .where("item_tags.kind", "=", "studio")
+      .executeTakeFirstOrThrow();
+    expect(studioEdge.name).toBe("Acme Studios");
+
+    const links = await listStashSceneLinksForLibrary(db, libraryId);
+    expect(links.map((l) => l.matched_by).sort()).toEqual(["path", "path"]);
+
+    rmSync(fixtureDir, { recursive: true, force: true });
+  }, 20_000);
+});
+
+describe("stash-sync — an IN-RANGE schema version with a mangled table fails loudly (S3: never best-effort)", () => {
+  it("schema_migrations says 85 but `scenes` is missing a column the read model needs — the run throws, never half-applies", async () => {
+    const libraryId = await makeLibrary();
+    mediaDir = mkdtempSync(path.join(tmpdir(), "loombre-stash-mangled-media-"));
+    const fixtureDir = mkdtempSync(path.join(tmpdir(), "loombre-stash-mangled-fixture-"));
+    const sqlitePath = path.join(fixtureDir, "stash.sqlite");
+
+    // A database that passes the version guard (85 IS in range) but whose
+    // `scenes` table has lost `rating` — the shape a hand-edited/partially
+    // migrated/foreign database can genuinely have. S3's rule is that
+    // Loombre must not shrug and map whatever it can find.
+    const mangled = new DatabaseSync(sqlitePath);
+    mangled.exec(`
+      CREATE TABLE schema_migrations (version uint64, dirty bool);
+      INSERT INTO schema_migrations (version, dirty) VALUES (85, 0);
+      CREATE TABLE folders (id INTEGER PRIMARY KEY, path TEXT, parent_folder_id INTEGER, mod_time DATETIME, created_at DATETIME, updated_at DATETIME);
+      CREATE TABLE files (id INTEGER PRIMARY KEY, basename TEXT, parent_folder_id INTEGER, size INTEGER, mod_time DATETIME, created_at DATETIME, updated_at DATETIME);
+      CREATE TABLE files_fingerprints (file_id INTEGER, type TEXT, fingerprint TEXT);
+      CREATE TABLE scenes_files (scene_id INTEGER, file_id INTEGER, "primary" BOOLEAN);
+      -- no "rating" column, which read-model.ts's getScene selects by name
+      CREATE TABLE scenes (id INTEGER PRIMARY KEY, title TEXT, details TEXT, date DATE, studio_id INTEGER, code TEXT, director TEXT, organized BOOLEAN, cover_blob TEXT, created_at DATETIME, updated_at DATETIME);
+      INSERT INTO folders (id, path, parent_folder_id, mod_time, created_at, updated_at) VALUES (1, '/stash-media', NULL, '2023-01-01 00:00:00', '2023-01-01 00:00:00', '2023-01-01 00:00:00');
+      INSERT INTO files (id, basename, parent_folder_id, size, mod_time, created_at, updated_at) VALUES (1, 'mangled.mp4', 1, 100, '2023-01-01 00:00:00', '2023-01-01 00:00:00', '2023-01-01 00:00:00');
+      INSERT INTO scenes (id, title, details, date, studio_id, code, director, organized, cover_blob, created_at, updated_at) VALUES (1, 'Mangled', NULL, NULL, NULL, NULL, NULL, 0, NULL, '2023-01-01 00:00:00', '2023-01-01 00:00:00');
+      INSERT INTO scenes_files (scene_id, file_id, "primary") VALUES (1, 1, 1);
+    `);
+    mangled.close();
+
+    await upsertLibraryStashConnectionConfig(db, { libraryId, sqlitePath, nowMs: Date.now() });
+    await replaceLibraryPathMappings(db, libraryId, [{ stashPrefix: "/stash-media", loombrePrefix: mediaDir }]);
+    const itemId = await makeCatalogItemWithFile(libraryId, path.join(mediaDir, "mangled.mp4"), 100);
+
+    // Inventory + matching survive (they never read `rating`), so the run
+    // gets far enough to be dangerous — and then refuses, rather than
+    // applying a scene with a silently-missing field.
+    await expect(runStashSync(baseDeps(applyStashSceneMetadata), { libraryId, mode: "full" }, { jobId: randomUUID() })).rejects.toThrow(
+      /no such column: rating/i
+    );
+
+    // Nothing partially written for the scene it could not honestly read.
+    const item = await db.selectFrom("catalog_items").selectAll().where("id", "=", itemId).executeTakeFirstOrThrow();
+    expect(item.title).not.toBe("Mangled");
+    expect(await db.selectFrom("movie_details").selectAll().where("item_id", "=", itemId).execute()).toEqual([]);
+
+    // The report stays 'running' — the terminal-failure hook (pg-boss
+    // retries exhausted) is what finalizes it 'failed', never this handler.
+    const report = await getLatestStashSyncReport(db, libraryId);
+    expect(report?.status).toBe("running");
+
+    rmSync(fixtureDir, { recursive: true, force: true });
+  }, 20_000);
 });
 
 describe("stash-sync — checkpoint resume (same job.id)", () => {
@@ -263,6 +464,159 @@ describe("stash-sync — staleness (S8)", () => {
     const afterReappear = await listStashSceneLinksForLibrary(db, libraryId);
     expect(afterReappear.find((r) => r.stash_scene_id === "2")?.stale).toBe(false);
   });
+
+  // R2 audit: the case above proves the LINK ROW survives. S8's actual
+  // promise is bigger — "metadata marked STALE (kept, provenance-flagged,
+  // admin-filterable) — never destructive" — and the metadata is spread
+  // across eight tables the link row says nothing about. A regression that
+  // cascaded a delete from any of them would have passed the test above.
+  it("everything a vanished scene's item owns survives: satellite, tag/people edges, chapters, images, attributes, provenance", async () => {
+    const scenes: FixtureScene[] = [
+      { id: 1, title: "Stays", folderPath: "/stash-media", basename: "keeps.mp4", sizeBytes: 100, updatedAt: "2023-01-01 00:00:00" },
+      { id: 2, title: "Vanishes", folderPath: "/stash-media", basename: "goes.mp4", sizeBytes: 200, updatedAt: "2023-01-02 00:00:00" },
+    ];
+    const libraryId = await makeLibrary();
+    mediaDir = mkdtempSync(path.join(tmpdir(), "loombre-stash-sync-media-"));
+    const rich = buildSyncFixtureDb(scenes);
+    // buildSyncFixtureDb ships scenes only (its own doc comment: "tests
+    // that need those insert them directly against the returned db
+    // handle") — the vanishing scene needs a studio, a genre/tag pair, a
+    // performer and a marker, or the survival assertions below would be
+    // measuring an empty graph.
+    rich.db.exec(`
+      INSERT INTO studios (id, name, parent_id, details, rating, image_blob, created_at, updated_at) VALUES (1, 'Vanishing Studio', NULL, NULL, NULL, NULL, '2023-01-01 00:00:00', '2023-01-01 00:00:00');
+      INSERT INTO tags (id, name, description, image_blob, created_at, updated_at) VALUES (1, 'Root Genre', NULL, NULL, '2023-01-01 00:00:00', '2023-01-01 00:00:00');
+      INSERT INTO tags (id, name, description, image_blob, created_at, updated_at) VALUES (2, 'Child Tag', NULL, NULL, '2023-01-01 00:00:00', '2023-01-01 00:00:00');
+      INSERT INTO tags_relations (parent_id, child_id) VALUES (1, 2);
+      INSERT INTO performers (id, name, disambiguation, gender, birthdate, country, measurements, details, rating, image_blob, created_at, updated_at) VALUES (1, 'Vanishing Performer', NULL, 'FEMALE', '1990-01-01', 'USA', NULL, NULL, NULL, NULL, '2023-01-01 00:00:00', '2023-01-01 00:00:00');
+      UPDATE scenes SET studio_id = 1, details = 'Editorial detail', date = '2023-02-03', rating = 70 WHERE id = 2;
+      INSERT INTO scenes_tags (scene_id, tag_id) VALUES (2, 1);
+      INSERT INTO scenes_tags (scene_id, tag_id) VALUES (2, 2);
+      INSERT INTO performers_scenes (performer_id, scene_id) VALUES (1, 2);
+      INSERT INTO scene_markers (title, seconds, end_seconds, primary_tag_id, scene_id, created_at, updated_at) VALUES ('Vanishing Marker', 12.5, NULL, 2, 2, '2023-01-01 00:00:00', '2023-01-01 00:00:00');
+    `);
+    rich.db.close();
+
+    await upsertLibraryStashConnectionConfig(db, { libraryId, sqlitePath: rich.dbPath, nowMs: Date.now() });
+    await replaceLibraryPathMappings(db, libraryId, [{ stashPrefix: "/stash-media", loombrePrefix: mediaDir }]);
+    for (const scene of scenes) await makeCatalogItemWithFile(libraryId, path.join(mediaDir, scene.basename), scene.sizeBytes);
+
+    // A real apply, so the item genuinely acquires the full satellite
+    // graph rather than a hand-planted row or two.
+    await runStashSync(
+      baseDeps(applyStashSceneMetadata, { enqueueImageJob: vi.fn(async () => "job-id") }),
+      { libraryId, mode: "full" },
+      { jobId: randomUUID() }
+    );
+
+    const vanishingItemId = (await listStashSceneLinksForLibrary(db, libraryId)).find((r) => r.stash_scene_id === "2")!.item_id!;
+    expect(vanishingItemId).not.toBeNull();
+
+    // Stand in for the image-job pipeline's own output (apply only
+    // ENQUEUES; the images row is written by the image consumer) so the
+    // "ingested artwork survives staleness" half is actually covered.
+    await db
+      .insertInto("images")
+      .values({ entity_type: "catalog_item", entity_id: vanishingItemId, kind: "poster", source: "provider", width: null, height: null, file_path: "/data/poster.jpg", created_at_ms: Date.now() })
+      .execute();
+
+    async function snapshotItemGraph(itemId: string) {
+      const [item, satellite, tags, people, chapters, images, attrs, provenance, files] = await Promise.all([
+        db.selectFrom("catalog_items").selectAll().where("id", "=", itemId).executeTakeFirst(),
+        db.selectFrom("movie_details").selectAll().where("item_id", "=", itemId).executeTakeFirst(),
+        db.selectFrom("item_tags").selectAll().where("item_id", "=", itemId).execute(),
+        db.selectFrom("item_people").selectAll().where("item_id", "=", itemId).execute(),
+        db.selectFrom("chapter_markers").selectAll().where("item_id", "=", itemId).execute(),
+        db.selectFrom("images").selectAll().where("entity_type", "=", "catalog_item").where("entity_id", "=", itemId).execute(),
+        db.selectFrom("item_attributes").selectAll().where("item_id", "=", itemId).execute(),
+        db.selectFrom("metadata_provenance").selectAll().where("item_id", "=", itemId).execute(),
+        db.selectFrom("media_files").selectAll().where("item_id", "=", itemId).execute(),
+      ]);
+      return { item, satellite, tags, people, chapters, images, attrs, provenance, files };
+    }
+
+    const before = await snapshotItemGraph(vanishingItemId);
+    // Guard the guard: an all-empty "before" would make every assertion
+    // below vacuously true.
+    expect(before.item).toBeDefined();
+    expect(before.satellite).toBeDefined();
+    expect(before.tags.length + before.people.length).toBeGreaterThan(0);
+    expect(before.attrs.length).toBeGreaterThan(0);
+    expect(before.provenance.length).toBeGreaterThan(0);
+    expect(before.images).toHaveLength(1);
+    expect(before.files).toHaveLength(1);
+
+    // Scene 2 disappears from Stash entirely.
+    const remainingOnly = buildSyncFixtureDb([scenes[0]!]);
+    remainingOnly.db.close();
+    await upsertLibraryStashConnectionConfig(db, { libraryId, sqlitePath: remainingOnly.dbPath, nowMs: Date.now() });
+    await runStashSync(
+      baseDeps(applyStashSceneMetadata, { enqueueImageJob: vi.fn(async () => "job-id") }),
+      { libraryId, mode: "full" },
+      { jobId: randomUUID() }
+    );
+
+    const link = (await listStashSceneLinksForLibrary(db, libraryId)).find((r) => r.stash_scene_id === "2");
+    expect(link?.stale).toBe(true);
+    expect(link?.item_id).toBe(vanishingItemId); // the match itself is kept, not cleared
+
+    const after = await snapshotItemGraph(vanishingItemId);
+    expect(after.item).toEqual(before.item);
+    expect(after.satellite).toEqual(before.satellite);
+    expect(after.tags).toEqual(before.tags);
+    expect(after.people).toEqual(before.people);
+    expect(after.chapters).toEqual(before.chapters);
+    expect(after.images).toEqual(before.images);
+    expect(after.attrs).toEqual(before.attrs);
+    expect(after.provenance).toEqual(before.provenance);
+    expect(after.files).toEqual(before.files);
+
+    rmSync(remainingOnly.dir, { recursive: true, force: true });
+    rmSync(rich.dir, { recursive: true, force: true });
+  }, 30_000);
+
+  it("a stale scene's item stays fully visible to a cleared viewer — flagged, never hidden from the zone", async () => {
+    // The brief's wording is "kept, flagged, filterable — never hidden".
+    // Staleness lives on stash_scene_links, which no zone query reads, so
+    // this holds BY CONSTRUCTION — and a construction nobody tests is one
+    // a future "hide stale items" convenience could quietly break.
+    const scenes: FixtureScene[] = [
+      { id: 1, title: "Zone Survivor", folderPath: "/stash-media", basename: "survivor.mp4", sizeBytes: 100, updatedAt: "2023-01-01 00:00:00" },
+    ];
+    const { libraryId } = await setupLibraryWithMappedFixture(scenes);
+    // The zone's guard keys off catalog_items.content_class, which the
+    // scanner sets from the library and this suite's minimal helper does
+    // not — make it match what a real restricted-library scan produces.
+    await db.updateTable("catalog_items").set({ content_class: "restricted" }).where("library_id", "=", libraryId).execute();
+    await runStashSync(
+      baseDeps(applyStashSceneMetadata, { enqueueImageJob: vi.fn(async () => "job-id") }),
+      { libraryId, mode: "full" },
+      { jobId: randomUUID() }
+    );
+    const itemId = (await listStashSceneLinksForLibrary(db, libraryId))[0]!.item_id!;
+
+    // A fully cleared viewer entitled to this library: gates 1-4 via
+    // allowedLibraryIds, gate 5 via restrictedCleared (ViewerContext is a
+    // plain value object — no users row is needed to exercise the guard).
+    const ctx = { userId: randomUUID(), allowedLibraryIds: [libraryId], restrictedCleared: true };
+
+    const beforeStale = await listRestrictedBrowse(db, ctx, {});
+    expect(beforeStale?.rows.map((r) => r.id)).toContain(itemId);
+
+    // Vanish it from Stash.
+    const emptyFixture = buildSyncFixtureDb([]);
+    emptyFixture.db.close();
+    await upsertLibraryStashConnectionConfig(db, { libraryId, sqlitePath: emptyFixture.dbPath, nowMs: Date.now() });
+    await runStashSync(baseDeps(fakeApply().fn), { libraryId, mode: "full" }, { jobId: randomUUID() });
+    expect((await listStashSceneLinksForLibrary(db, libraryId))[0]!.stale).toBe(true);
+
+    const afterStale = await listRestrictedBrowse(db, ctx, {});
+    expect(afterStale?.rows.map((r) => r.id)).toContain(itemId);
+    const detail = await getRestrictedSceneDetail(db, ctx, itemId);
+    expect(detail?.id).toBe(itemId); // still openable, still playable
+
+    rmSync(emptyFixture.dir, { recursive: true, force: true });
+  }, 30_000);
 });
 
 describe("stash-sync — incremental mode touches only new/changed scenes", () => {
