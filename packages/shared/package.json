@@ -18,6 +18,10 @@
     "./admin-only-event-types": {
       "types": "./dist/admin-only-event-types.d.ts",
       "default": "./dist/admin-only-event-types.js"
+    },
+    "./stash-path-mapping": {
+      "types": "./dist/stash-path-mapping.d.ts",
+      "default": "./dist/stash-path-mapping.js"
     }
   },
   "scripts": {
