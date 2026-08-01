@@ -485,6 +485,16 @@ export {
   recordDeliverySuccess,
 } from './query/plugins-delivery.js';
 
+// Keyset-cursor codec errors (R1 review lane): MalformedCursorError is the
+// ONE thing apps/server needs from src/query/cursor.ts — a typed class so
+// a controller can map "this client sent a cursor we did not mint" to a
+// 4xx problem+json without string-matching an Error message (the same
+// typed-error-across-the-boundary pattern LibraryNotFoundForStashError
+// below already establishes). encode/decodeCursor themselves stay
+// package-private: minting and interpreting cursors is the guarded query
+// layer's job, never a caller's.
+export { MalformedCursorError } from './query/cursor.js';
+
 // Stash SQLite metadata sync, Lane A (provider core) — migrations/
 // 0018_stash_provider_core.sql. See src/query/stash-connections.ts and
 // src/query/stash-inventory.ts headers for why these live in the PUBLIC

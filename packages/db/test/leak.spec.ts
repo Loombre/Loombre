@@ -55,6 +55,7 @@ import {
   removeFromWatchlistAndEmit,
   searchCatalog,
   searchRestrictedZone,
+  type ListRestrictedBrowseParams,
 } from '../src/index.js';
 import type { ViewerContext } from '../src/context.js';
 import type { DB } from '../src/types.js';
@@ -1066,6 +1067,249 @@ describe('restricted-content leak impossibility', () => {
       it("undefined for a nonexistent item id, byte-identical to a hidden restricted item (indistinguishable, matching getItemById's own contract)", async () => {
         const nonexistent = await getChaptersForItem(db, adminCleared, '00000000-0000-7000-8000-000000000000');
         expect(nonexistent).toBeUndefined();
+      });
+    });
+
+    // ------------------------------------------------------------------
+    // 12h. R1 adversarial sweep — the bypasses sections 12a-12g did NOT
+    //      cover. Two real findings landed here fail-first (documented
+    //      per case), the rest are pinned no-leak probes: a probe that
+    //      finds nothing is only worth its cost once, so it is worth
+    //      paying that cost exactly once, here, rather than re-deriving
+    //      the same reasoning at every future review.
+    // ------------------------------------------------------------------
+    describe('12h. R1 adversarial sweep (zone surfaces, both uncleared classes)', () => {
+      it("THE FINDING (D's general-id class, replayed at the sub-resource): a person the zone's OWN performer surface denies must not resolve through /restricted/performers/{id}/scenes either — a GENERAL-class person holding a non-performer ('guest') credit on a zone scene is EMPTY at both, never a real filmography page", async () => {
+        // marginalGeneralActor is content_class='general' and holds
+        // role='guest' (not 'performer') on Velvet Static — so
+        // getRestrictedPerformerById denies it (12c's own case proves the
+        // list surface never mints this id). listRestrictedPerformerScenes
+        // delegates to listRestrictedBrowse's performerIds filter, which
+        // originally EXISTS'd over item_people with NO role predicate at
+        // all: the zone answered 404 for the performer and 200 with a real
+        // scene card for that same performer's "filmography", i.e. the
+        // filter admitted a credit class the surface that mints its ids
+        // never admits. Same shape as D's own catch (a general item id
+        // resolving through getRestrictedSceneDetail), one level down.
+        expect(await getRestrictedPerformerById(db, adminCleared, marginalGeneralActorId)).toBeUndefined();
+
+        const scenes = await listRestrictedPerformerScenes(db, adminCleared, marginalGeneralActorId);
+        expect(scenes).not.toBeUndefined();
+        expect(scenes?.rows).toEqual([]);
+        expect(scenes?.nextCursor).toBeNull();
+      });
+
+      it("browse's performerIds filter uses the SAME 'is a zone performer' predicate the performer surfaces use (role='performer'), so a non-performer credit can never widen a filtered page", async () => {
+        // Positive control first: the filter still works for a real zone
+        // performer (this is a narrowing fix, not a filter that now
+        // matches nothing).
+        const real = await listRestrictedBrowse(db, adminCleared, { performerIds: [restrictedPerformerOneId] });
+        expect(real?.rows.length).toBeGreaterThan(0);
+        expect(real?.rows.every((r) => r.contentClass === 'restricted')).toBe(true);
+
+        // A general person whose ONLY zone credit is role='guest' matches
+        // nothing — the empty page is the filter being APPLIED, not
+        // dropped (house rule, restricted-browse.ts's header).
+        const guestOnly = await listRestrictedBrowse(db, adminCleared, { performerIds: [marginalGeneralActorId] });
+        expect(guestOnly?.rows).toEqual([]);
+
+        // restrictedCameoPerformer holds role='guest' on a GENERAL item —
+        // it was already unreachable through the zone's library scoping;
+        // pinned so the two exclusion reasons stay independently proven.
+        const cameo = await listRestrictedBrowse(db, adminCleared, { performerIds: [restrictedCameoPerformerId] });
+        expect(cameo?.rows).toEqual([]);
+      });
+
+      it('THE SECOND FINDING (forged cursor): a cursor payload whose `id` is not a uuid must never reach Postgres — every zone list surface rejects it with a MALFORMED-CURSOR error, never a driver-level 22P02 "invalid input syntax for type uuid" (which the HTTP layer can only render as a 500)', async () => {
+        const forge = (payload: unknown) => Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url');
+        const notAUuid = forge({ name: '', id: "not-a-uuid'; --" });
+
+        await expect(
+          listRestrictedPerformers(db, adminCleared, { cursor: notAUuid })
+        ).rejects.toThrow(/malformed cursor/);
+        await expect(
+          listRestrictedStudios(db, adminCleared, { cursor: notAUuid })
+        ).rejects.toThrow(/malformed cursor/);
+        await expect(
+          searchRestrictedZone(db, adminCleared, { q: 'After', cursor: forge({ rank: 1, id: 'not-a-uuid' }) })
+        ).rejects.toThrow(/malformed cursor/);
+        // listRestrictedBrowse already validated its cursor id (its own
+        // isBrowseCursorPayload) — pinned alongside so the four surfaces
+        // are proven to share one posture, not three plus an exception.
+        await expect(
+          listRestrictedBrowse(db, adminCleared, {
+            cursor: forge({ sort: 'added', order: 'desc', sortKey: 0, id: 'not-a-uuid' }),
+          })
+        ).rejects.toThrow(/malformed cursor/);
+      });
+
+      it('structurally malformed cursors (not base64url JSON, wrong payload shape) raise the same malformed-cursor error on every zone list surface — never a silently ignored cursor that would re-serve page 1', async () => {
+        for (const bad of ['%%%not-base64%%%', Buffer.from('[]', 'utf8').toString('base64url')]) {
+          await expect(listRestrictedBrowse(db, adminCleared, { cursor: bad })).rejects.toThrow(/malformed cursor/);
+          await expect(listRestrictedPerformers(db, adminCleared, { cursor: bad })).rejects.toThrow(/malformed cursor/);
+          await expect(listRestrictedStudios(db, adminCleared, { cursor: bad })).rejects.toThrow(/malformed cursor/);
+          await expect(searchRestrictedZone(db, adminCleared, { q: 'After', cursor: bad })).rejects.toThrow(
+            /malformed cursor/
+          );
+        }
+      });
+
+      it('gate-4-only (entitled, NOT unlocked): EVERY combinable filter and EVERY sort answers a real, EMPTY page with nextCursor null — no row count, no cursor shape, no filter-selectivity side channel that could confirm a title exists', async () => {
+        const combinations: ListRestrictedBrowseParams[] = [
+          {},
+          { performerIds: [restrictedPerformerOneId] },
+          { studioTagIds: [nightshadeFilmsTagId] },
+          { studioTagIds: [auroraMediaTagId], performerIds: [restrictedPerformerOneId] },
+          { tagIds: [restrictedGenreATagId] },
+          { tagIds: [rareTagId] },
+          { tagIds: [generalDramaTagId, restrictedDramaTagId] },
+          { ratingMin: 0, ratingMax: 10 },
+          { ratingMin: 6.9, ratingMax: 6.9 },
+          { yearMin: 1900, yearMax: 2100 },
+          { durationMinMs: 0, durationMaxMs: 999_999_999 },
+          { resolution: ['SD', 'HD', 'FHD', 'UHD'] },
+          { resolution: ['UHD'] },
+          { sort: 'added', order: 'asc', limit: 1 },
+          { sort: 'title', order: 'desc', limit: 1 },
+          { sort: 'rating', order: 'asc', limit: 1 },
+          { sort: 'date', order: 'desc', limit: 1 },
+          { sort: 'duration', order: 'asc', limit: 1 },
+        ];
+
+        for (const params of combinations) {
+          const locked = await listRestrictedBrowse(db, adminClearedButNotUnlocked, params);
+          expect(locked, `filter combination ${JSON.stringify(params)} leaked a signal`).toEqual({
+            rows: [],
+            nextCursor: null,
+          });
+          // The SAME combination against a fully cleared viewer is a real
+          // query (not a no-op that trivially returns nothing for
+          // everyone) — otherwise the assertion above proves nothing.
+          const cleared = await listRestrictedBrowse(db, adminCleared, params);
+          expect(cleared).not.toBeUndefined();
+        }
+
+        // limit:1 combinations above are the sharpest probe: a leak that
+        // preserved nextCursor while emptying rows would still confirm
+        // "there is more than one title in here". Asserted by the
+        // toEqual({rows: [], nextCursor: null}) above; restated here so
+        // the intent survives a future edit of the loop.
+        const clearedPage = await listRestrictedBrowse(db, adminCleared, { sort: 'title', limit: 1 });
+        expect(clearedPage?.nextCursor).not.toBeNull();
+      });
+
+      it('gate-4-only: the entity list/search surfaces answer empty too, under a q that MATCHES real zone data — the query runs, it just cannot see anything', async () => {
+        expect((await listRestrictedPerformers(db, adminClearedButNotUnlocked, { q: 'Restricted Performer' }))?.rows).toEqual([]);
+        expect((await listRestrictedStudios(db, adminClearedButNotUnlocked, { q: 'Nightshade' }))?.rows).toEqual([]);
+        expect((await searchRestrictedZone(db, adminClearedButNotUnlocked, { q: 'Nightshade Films' }))?.rows).toEqual([]);
+        expect((await searchRestrictedZone(db, adminClearedButNotUnlocked, { q: 'Restricted Performer One' }))?.rows).toEqual([]);
+        // Same four queries, cleared: real hits — the empties above are
+        // clearance-driven, not "this q matches nothing".
+        expect((await listRestrictedPerformers(db, adminCleared, { q: 'Restricted Performer' }))?.rows.length).toBeGreaterThan(0);
+        expect((await listRestrictedStudios(db, adminCleared, { q: 'Nightshade' }))?.rows.length).toBeGreaterThan(0);
+        expect((await searchRestrictedZone(db, adminCleared, { q: 'Nightshade Films' }))?.rows.length).toBeGreaterThan(0);
+      });
+
+      it('cross-entity id probes: a tag id through the performer surface and a person id through the studio surface are BOTH undefined even fully cleared — the zone detail reads are entity-typed, not "any uuid that happens to exist"', async () => {
+        expect(await getRestrictedPerformerById(db, adminCleared, nightshadeFilmsTagId)).toBeUndefined();
+        expect(await getRestrictedPerformerById(db, adminCleared, restrictedLibraryId)).toBeUndefined();
+        expect(await getRestrictedStudioById(db, adminCleared, restrictedPerformerOneId)).toBeUndefined();
+        expect(await getRestrictedStudioById(db, adminCleared, afterHoursRedlineItemId)).toBeUndefined();
+        expect(await getRestrictedSceneDetail(db, adminCleared, restrictedPerformerOneId)).toBeUndefined();
+        // And a zone-scene id through the CHAPTERS surface still works —
+        // the probes above must not have proven "everything is undefined".
+        expect(await getChaptersForItem(db, adminCleared, afterHoursRedlineItemId)).not.toBeUndefined();
+      });
+
+      it('cursor forgery, zone edition: a hand-crafted browse cursor positioned before the whole result set repositions ONLY inside the already-guarded page — it can never reposition an uncleared viewer INTO the zone', async () => {
+        const forged = Buffer.from(
+          JSON.stringify({ sort: 'added', order: 'desc', sortKey: Number.MAX_SAFE_INTEGER, id: afterHoursRedlineItemId }),
+          'utf8'
+        ).toString('base64url');
+
+        // Fully cleared: the cursor is honoured, and every row it walks
+        // is still guard-filtered zone content.
+        const cleared = await listRestrictedBrowse(db, adminCleared, { cursor: forged, limit: 200 });
+        expect(cleared?.rows.every((r) => r.contentClass === 'restricted')).toBe(true);
+        expect(cleared?.rows.every((r) => r.libraryId === restrictedLibraryId)).toBe(true);
+
+        // Gate-4-only and no-entitlement viewers are unmoved by it.
+        expect(await listRestrictedBrowse(db, adminClearedButNotUnlocked, { cursor: forged, limit: 200 })).toEqual({
+          rows: [],
+          nextCursor: null,
+        });
+        expect(await listRestrictedBrowse(db, casualUncleared, { cursor: forged, limit: 200 })).toBeUndefined();
+      });
+
+      it('the zone home rails are entitlement-gated BEFORE any rail query runs: a railLimit big enough to cover the whole zone still yields nothing for either uncleared class', async () => {
+        expect(await getRestrictedZoneHome(db, casualUncleared, { railLimit: 1000 })).toBeUndefined();
+        expect(await getRestrictedZoneHome(db, adminClearedButNotUnlocked, { railLimit: 1000 })).toEqual({
+          continueWatchingInZone: [],
+          recentlyAddedInZone: [],
+          studios: [],
+          performers: [],
+        });
+        // Cleared, same railLimit: real rails — the two assertions above
+        // are not passing because railLimit itself broke the query.
+        const cleared = await getRestrictedZoneHome(db, adminCleared, { railLimit: 1000 });
+        expect(cleared?.recentlyAddedInZone.length).toBeGreaterThan(0);
+        expect(cleared?.studios.length).toBeGreaterThan(0);
+      });
+
+      it('the GENERAL surfaces stay zone-free for the gate-4-only viewer too, not just the no-entitlement one — studios (kind=studio tags), zone performers and zone titles are absent from listTags/listPeople/searchCatalog, byte-level', async () => {
+        const tags = await listTags(db, adminClearedButNotUnlocked, { limit: 200 });
+        const tagNames = tags.rows.map((t) => t.name);
+        expect(tagNames).not.toContain('Nightshade Films');
+        expect(tagNames).not.toContain('Aurora Media');
+        expect(tagNames).not.toContain('Restricted Genre A');
+        expect(JSON.stringify(tags)).not.toContain(nightshadeFilmsTagId);
+        expect(JSON.stringify(tags)).not.toContain(restrictedDramaTagId);
+        // 'Rare' is a GENERAL-class tag used ONLY on a zone item — the
+        // "applied to >=1 visible item" clause has to hide it too.
+        expect(tagNames).not.toContain('Rare');
+
+        const people = await listPeople(db, adminClearedButNotUnlocked, { limit: 200 });
+        const peopleNames = people.rows.map((p) => p.name);
+        expect(peopleNames).not.toContain('Restricted Performer One');
+        expect(peopleNames).not.toContain('Marginal General Actor');
+        expect(JSON.stringify(people)).not.toContain(restrictedPerformerOneId);
+
+        for (const q of ['Velvet Static', 'Nightshade Films', 'Restricted Performer One', 'Restricted Genre A']) {
+          expect((await searchCatalog(db, adminClearedButNotUnlocked, { q })).rows, `general search leaked on q=${q}`).toEqual([]);
+          expect((await searchCatalog(db, casualUncleared, { q })).rows, `general search leaked on q=${q}`).toEqual([]);
+        }
+        // Cleared: the zone's own tags/people/titles DO resolve through
+        // the general surfaces (established §6.4 posture — a cleared
+        // viewer's general reads are not a second, narrower zone), so the
+        // exclusions above are clearance-driven.
+        expect((await listTags(db, adminCleared, { limit: 200 })).rows.map((t) => t.name)).toContain('Nightshade Films');
+        expect((await searchCatalog(db, adminCleared, { q: 'Velvet Static' })).rows.length).toBeGreaterThan(0);
+      });
+
+      it("the zone's image batches never widen an entity's own visibility: getImageEntityAccess denies a restricted performer's portrait and a studio tag's logo to BOTH uncleared classes, byte-identical to a nonexistent entity id", async () => {
+        const nonexistent = await getImageEntityAccess(db, adminCleared, {
+          entityType: 'person',
+          entityId: '00000000-0000-7000-8000-000000000000',
+        });
+        expect(nonexistent).toEqual([]);
+
+        for (const ctx of [casualUncleared, adminClearedButNotUnlocked]) {
+          expect(await getImageEntityAccess(db, ctx, { entityType: 'person', entityId: restrictedPerformerOneId })).toEqual([]);
+          expect(await getImageEntityAccess(db, ctx, { entityType: 'tag', entityId: nightshadeFilmsTagId })).toEqual([]);
+          expect(await getImageEntityAccess(db, ctx, { entityType: 'tag', entityId: rareTagId })).toEqual([]);
+          expect(await getImageEntityAccess(db, ctx, { entityType: 'person', entityId: marginalGeneralActorId })).toEqual([]);
+          expect(await getImageEntityAccess(db, ctx, { entityType: 'catalog_item', entityId: afterHoursRedlineItemId })).toEqual([]);
+        }
+
+        // Positive control: the SAME person id, fully cleared, returns the
+        // real portrait row — without this the five denials above would
+        // also pass with the guard deleted and no fixture present.
+        const cleared = await getImageEntityAccess(db, adminCleared, {
+          entityType: 'person',
+          entityId: restrictedPerformerOneId,
+        });
+        expect(cleared.length).toBeGreaterThan(0);
+        expect(cleared.every((row) => row.entity_type === 'person' && row.entity_id === restrictedPerformerOneId)).toBe(true);
       });
     });
 
