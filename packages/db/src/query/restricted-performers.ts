@@ -46,7 +46,7 @@ import { sql, type Kysely } from 'kysely';
 import type { ContentClass, DB } from '../types.js';
 import type { ViewerContext } from '../context.js';
 import { applyGuardToJoined, applyGuardToPeople } from './guard.js';
-import { decodeCursor, encodeCursor } from './cursor.js';
+import { decodeCursor, encodeCursor, isCursorRowId } from './cursor.js';
 import { resolveEntitledRestrictedLibraryIds } from './restricted-zone.js';
 import { listRestrictedBrowse, type ListRestrictedBrowseResult } from './restricted-browse.js';
 import type { ImageDescriptor } from './catalog-detail.js';
@@ -84,12 +84,19 @@ interface PerformerCursorPayload {
   id: string;
 }
 
+/** `id` must be a real uuid, not merely a string (R1 review lane,
+ *  leak.spec 12h): this payload's id is bound straight into a
+ *  `people.id > ?` keyset comparison, so a forged non-uuid cursor
+ *  otherwise reaches Postgres and raises 22P02 — a 500 for what is
+ *  client input. isCursorRowId is the codec's own shared check
+ *  (src/query/cursor.ts), the same one restricted-browse.ts's
+ *  isBrowseCursorPayload already applied. */
 function isPerformerCursorPayload(value: unknown): value is PerformerCursorPayload {
   return (
     typeof value === 'object' &&
     value !== null &&
     typeof (value as Record<string, unknown>).name === 'string' &&
-    typeof (value as Record<string, unknown>).id === 'string'
+    isCursorRowId((value as Record<string, unknown>).id)
   );
 }
 

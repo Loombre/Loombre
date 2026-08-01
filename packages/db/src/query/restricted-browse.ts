@@ -64,7 +64,7 @@ import { sql, type Kysely } from 'kysely';
 import type { DB, HdrType, ItemType } from '../types.js';
 import type { ViewerContext } from '../context.js';
 import { applyContentClassFilter, applyGuard } from './guard.js';
-import { decodeCursor, encodeCursor } from './cursor.js';
+import { decodeCursor, encodeCursor, isCursorRowId } from './cursor.js';
 import { resolveEntitledRestrictedLibraryIds } from './restricted-zone.js';
 import type { ImageDescriptor } from './catalog-detail.js';
 
@@ -256,7 +256,11 @@ function isBrowseCursorPayload(
 ): value is BrowseCursorPayload {
   if (typeof value !== 'object' || value === null) return false;
   const v = value as Record<string, unknown>;
-  if (typeof v.id !== 'string' || !UUID_PATTERN.test(v.id)) return false;
+  // isCursorRowId (src/query/cursor.ts) is the shared form of the check
+  // this validator originated — restricted-performers/-studios/-search's
+  // own payload validators now call the SAME helper, so the four zone
+  // list surfaces cannot drift back apart (R1 review lane, leak.spec 12h).
+  if (!isCursorRowId(v.id)) return false;
   if (typeof v.sort !== 'string' || !VALID_SORTS.has(v.sort)) return false;
   if (typeof v.order !== 'string' || !VALID_ORDERS.has(v.order)) return false;
   if (v.sort !== activeSort || v.order !== activeOrder) return false;
@@ -425,12 +429,33 @@ export async function listRestrictedBrowse(
 
   if (params.performerIds && params.performerIds.length > 0) {
     const performerIds = params.performerIds;
+    // `role = 'performer'` (R1 review lane, leak.spec 12h): the zone's
+    // notion of "performer" is role='performer' EVERYWHERE else —
+    // restricted-performers.ts's qualifyingCreditQuery (which is what
+    // mints every id a client can legitimately pass in here, via GET
+    // /restricted/performers and the home rail) and
+    // getRestrictedPerformerById both require it. Without the same
+    // predicate on this filter the zone answered 404 for
+    // GET /restricted/performers/{id} and 200-with-a-real-scene-card for
+    // GET /restricted/performers/{id}/scenes on the SAME id — a person
+    // holding only a non-performer credit (seed.mjs's 'Marginal General
+    // Actor', role='guest' on a zone scene) resolved through the
+    // sub-resource its own parent surface denies. Same shape as Lane D's
+    // catch (a general item id resolving through getRestrictedSceneDetail),
+    // one level down.
+    //
+    // Person-side content_class isolation is deliberately NOT added here:
+    // it would be a strict no-op (when ctx.restrictedCleared is false
+    // applyGuard has already emptied every zone row this query can reach,
+    // and when it is true the clause is the identity), and the guard law
+    // is that filters narrow — the OUTPUT rows carry the isolation.
     query = query.where((eb) =>
       eb.exists(
         eb
           .selectFrom('item_people')
           .select('item_people.id')
           .whereRef('item_people.item_id', '=', 'catalog_items.id')
+          .where('item_people.role', '=', 'performer')
           .where('item_people.person_id', 'in', performerIds)
       )
     );
