@@ -19,12 +19,14 @@
 import "reflect-metadata";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { spawnSync } from "node:child_process";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import request from "supertest";
 import { NestFactory } from "@nestjs/core";
 import type { INestApplication } from "@nestjs/common";
-import { ensureTestDatabase } from "@loombre/db";
+import { createDb, ensureTestDatabase } from "@loombre/db";
 import { AppModule } from "../src/app.module.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -259,6 +261,18 @@ describe("Restricted Content surface (STATE.md Stash run, S9)", () => {
     });
     expect(login.status, JSON.stringify(login.body)).toBe(200);
     return login.body.accessToken;
+  }
+
+  // POST /auth/login is rate-limited per identity (auth-rate-limiter.
+  // service.ts) and the cases above already spend most of that budget on
+  // one fresh casual login each. The R1 review-lane cases at the bottom of
+  // this block all need the SAME thing — "a viewer with no restricted
+  // entitlement" — so they share ONE memoized token rather than each
+  // minting another login the limiter would (correctly) refuse.
+  let sharedCasual: string | undefined;
+  async function r1CasualToken(): Promise<string> {
+    sharedCasual ??= await casualToken("r1-shared");
+    return sharedCasual;
   }
 
   beforeAll(async () => {
@@ -516,5 +530,291 @@ describe("Restricted Content surface (STATE.md Stash run, S9)", () => {
     expect(unlocked.status, JSON.stringify(unlocked.body)).toBe(200);
     expect(unlocked.body.items.map((c: { title: string }) => c.title)).toEqual(["Opening", "Midpoint", "Finale"]);
     expect(unlocked.body.items[0]).toEqual({ title: "Opening", startMs: 0, source: "stash" });
+  });
+
+  // ==========================================================================
+  // R1 review lane (adversarial zone walk) — HTTP twins of packages/db/
+  // test/leak.spec.ts's 12h sweep, plus the surfaces that have no query-layer
+  // equivalent at all (the image-serving controller, the admin Stash ops).
+  // Rides this block's already-unlocked admin (see the describe's beforeAll)
+  // — no extra lock/unlock cycle, so the 5/min unlock budget is untouched.
+  // ==========================================================================
+
+  it("R1 FINDING (HTTP twin): GET /restricted/performers/{id}/scenes must not resolve a person GET /restricted/performers/{id} denies — a general-class person with only a 'guest' credit on a zone scene answers 404 and an EMPTY page, never a real filmography", async () => {
+    const db = createDb(databaseUrl);
+    let marginalId: string;
+    try {
+      marginalId = (
+        await db.selectFrom("people").select("id").where("name", "=", "Marginal General Actor").executeTakeFirstOrThrow()
+      ).id;
+    } finally {
+      await db.destroy();
+    }
+
+    const detail = await request(app.getHttpServer())
+      .get(`/restricted/performers/${marginalId}`)
+      .set("Authorization", `Bearer ${adminToken}`);
+    expect(detail.status).toBe(404);
+
+    const scenes = await request(app.getHttpServer())
+      .get(`/restricted/performers/${marginalId}/scenes`)
+      .set("Authorization", `Bearer ${adminToken}`);
+    expect(scenes.status, JSON.stringify(scenes.body)).toBe(200);
+    expect(scenes.body).toEqual({ items: [], nextCursor: null });
+
+    // Positive control: a REAL zone performer's filmography is still a
+    // real page — the fix narrowed the filter, it did not break it.
+    const listRes = await request(app.getHttpServer())
+      .get("/restricted/performers")
+      .set("Authorization", `Bearer ${adminToken}`);
+    const realPerformerId: string = listRes.body.items[0].id;
+    const realScenes = await request(app.getHttpServer())
+      .get(`/restricted/performers/${realPerformerId}/scenes`)
+      .set("Authorization", `Bearer ${adminToken}`);
+    expect(realScenes.status).toBe(200);
+    expect(realScenes.body.items.length).toBeGreaterThan(0);
+  });
+
+  it("R1 FINDING (HTTP twin): a forged or malformed pagination cursor answers 422 problem+json on EVERY zone list op — never the 500 a driver-level uuid cast error produced", async () => {
+    const forge = (payload: unknown) => Buffer.from(JSON.stringify(payload), "utf8").toString("base64url");
+    const probes: Array<[string, string]> = [
+      ["/restricted/browse", forge({ sort: "added", order: "desc", sortKey: 0, id: "not-a-uuid" })],
+      ["/restricted/browse", "%%%not-base64%%%"],
+      ["/restricted/items", "%%%not-base64%%%"],
+      ["/restricted/performers", forge({ name: "", id: "not-a-uuid" })],
+      ["/restricted/studios", forge({ name: "", id: "not-a-uuid" })],
+      ["/restricted/performers", "%%%not-base64%%%"],
+    ];
+
+    for (const [route, cursor] of probes) {
+      const res = await request(app.getHttpServer())
+        .get(route)
+        .query({ cursor })
+        .set("Authorization", `Bearer ${adminToken}`);
+      expect(res.status, `${route} cursor=${cursor} -> ${JSON.stringify(res.body)}`).toBe(422);
+      expect(res.headers["content-type"]).toContain("application/problem+json");
+      expect(res.body.type).toBe("urn:loombre:problem:validation");
+      // The offending payload is never echoed back.
+      expect(JSON.stringify(res.body)).not.toContain("not-a-uuid");
+    }
+
+    // /restricted/search takes q AND a cursor — the cursor check must not
+    // shadow the entitlement/validation ordering the op documents.
+    const searchRes = await request(app.getHttpServer())
+      .get("/restricted/search")
+      .query({ q: "After", cursor: forge({ rank: 1, id: "not-a-uuid" }) })
+      .set("Authorization", `Bearer ${adminToken}`);
+    expect(searchRes.status, JSON.stringify(searchRes.body)).toBe(422);
+
+    // A viewer with NO entitlement still gets the zone's 404 for the same
+    // forged cursor — the 422 must never become an entitlement oracle.
+    const casual = await r1CasualToken();
+    const casualRes = await request(app.getHttpServer())
+      .get("/restricted/browse")
+      .query({ cursor: "%%%not-base64%%%" })
+      .set("Authorization", `Bearer ${casual}`);
+    expect(casualRes.status).toBe(404);
+  });
+
+  it("R1: the image-serving controller actually gates the zone's NEW image consumers — a restricted performer's portrait and a studio's logo are byte-identical 404s for an uncleared viewer and REAL bytes for a cleared one (previously unprovable: no fixture in this repo pointed at a file that exists, so every viewer got 404 and the denials proved nothing)", async () => {
+    const listRes = await request(app.getHttpServer())
+      .get("/restricted/performers")
+      .set("Authorization", `Bearer ${adminToken}`);
+    const performerId: string = listRes.body.items.find(
+      (p: { name: string }) => p.name === "Restricted Performer One",
+    ).id;
+    const studiosRes = await request(app.getHttpServer())
+      .get("/restricted/studios")
+      .set("Authorization", `Bearer ${adminToken}`);
+    const studioId: string = studiosRes.body.items[0].id;
+
+    // A real 1x1 PNG on disk: without it the controller's `stat()` throws
+    // and EVERY caller gets the same 404 regardless of clearance.
+    const tmpDir = await mkdtemp(path.join(tmpdir(), "loombre-r1-image-"));
+    const filePath = path.join(tmpDir, "fixture.png");
+    await writeFile(
+      filePath,
+      Buffer.from(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+        "base64",
+      ),
+    );
+
+    const db = createDb(databaseUrl);
+    try {
+      await db
+        .updateTable("images")
+        .set({ file_path: filePath })
+        .where("entity_type", "=", "person")
+        .where("entity_id", "=", performerId)
+        .execute();
+      // Studio logos (S9/K2: a studio is a kind='studio' tag, its logo is
+      // ingested at entity_type='tag') had NO fixture anywhere in the repo.
+      await db
+        .insertInto("images")
+        .values({
+          entity_type: "tag",
+          entity_id: studioId,
+          kind: "thumb",
+          source: "local",
+          width: 400,
+          height: 400,
+          blurhash: null,
+          file_path: filePath,
+          created_at_ms: Date.now(),
+        })
+        .execute();
+    } finally {
+      await db.destroy();
+    }
+
+    try {
+      // Cleared: real bytes. This is the assertion that makes the denials
+      // below mean something.
+      for (const url of [`/images/person/${performerId}/thumb`, `/images/tag/${studioId}/thumb`]) {
+        const ok = await request(app.getHttpServer()).get(url).set("Authorization", `Bearer ${adminToken}`);
+        expect(ok.status, `${url} -> ${JSON.stringify(ok.body)}`).toBe(200);
+        expect(ok.headers["content-type"]).toBe("image/png");
+        expect(Number(ok.headers["content-length"])).toBeGreaterThan(0);
+      }
+
+      // Uncleared: byte-identical 404s, indistinguishable from an entity
+      // id that does not exist at all.
+      const casual = await r1CasualToken();
+      const nonexistent = await request(app.getHttpServer())
+        .get("/images/person/00000000-0000-7000-8000-000000000000/thumb")
+        .set("Authorization", `Bearer ${casual}`);
+      expect(nonexistent.status).toBe(404);
+      const { instance: _nonexistentInstance, ...nonexistentRest } = nonexistent.body;
+
+      for (const url of [`/images/person/${performerId}/thumb`, `/images/tag/${studioId}/thumb`]) {
+        const denied = await request(app.getHttpServer()).get(url).set("Authorization", `Bearer ${casual}`);
+        expect(denied.status, `${url} leaked to an uncleared viewer`).toBe(404);
+        const { instance: _deniedInstance, ...deniedRest } = denied.body;
+        expect(deniedRest).toEqual(nonexistentRest);
+      }
+    } finally {
+      await rm(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("R1: every admin Stash op answers 403 to a non-admin — before any library lookup, so it is never a library-existence oracle, and no sqlitePath/Stash prefix ever appears in the body", async () => {
+    const db = createDb(databaseUrl);
+    let restrictedLibraryId: string;
+    try {
+      restrictedLibraryId = (
+        await db.selectFrom("libraries").select("id").where("content_class", "=", "restricted").executeTakeFirstOrThrow()
+      ).id;
+      // A configured connection with a real-looking Stash path: the
+      // 403 must hold with data present, not merely because there is
+      // nothing to return.
+      const now = Date.now();
+      await db
+        .insertInto("library_stash_connections")
+        .values({
+          library_id: restrictedLibraryId,
+          sqlite_path: "/home/owner/.stash/stash-go.sqlite",
+          enabled: true,
+          status: "never_connected",
+          created_at_ms: now,
+          updated_at_ms: now,
+        })
+        .onConflict((oc) => oc.column("library_id").doNothing())
+        .execute();
+    } finally {
+      await db.destroy();
+    }
+
+    const casual = await r1CasualToken();
+    const unknownLibraryId = "11111111-1111-4111-8111-111111111111";
+    const probes: Array<{ method: "get" | "post"; url: string; body?: unknown }> = [
+      { method: "get", url: `/admin/libraries/${restrictedLibraryId}/stash-connection` },
+      { method: "get", url: `/admin/libraries/${restrictedLibraryId}/stash-path-mappings` },
+      {
+        method: "post",
+        url: `/admin/libraries/${restrictedLibraryId}/stash-path-mappings/preview`,
+        body: { mappings: [{ stashPrefix: "/home/owner/media", loombrePrefix: "/data/restricted" }] },
+      },
+      { method: "post", url: `/admin/libraries/${restrictedLibraryId}/stash-sync`, body: { mode: "incremental" } },
+      { method: "get", url: `/admin/libraries/${restrictedLibraryId}/stash-sync-report` },
+      // Same op, a library id that does not exist: a non-admin must get
+      // the IDENTICAL 403, never the 404 that would confirm the id above
+      // names a real library.
+      { method: "get", url: `/admin/libraries/${unknownLibraryId}/stash-connection` },
+    ];
+
+    for (const probe of probes) {
+      const res =
+        probe.method === "get"
+          ? await request(app.getHttpServer()).get(probe.url).set("Authorization", `Bearer ${casual}`)
+          : await request(app.getHttpServer())
+              .post(probe.url)
+              .send(probe.body ?? {})
+              .set("Authorization", `Bearer ${casual}`);
+      expect(res.status, `${probe.method.toUpperCase()} ${probe.url} -> ${JSON.stringify(res.body)}`).toBe(403);
+      const serialized = JSON.stringify(res.body);
+      expect(serialized).not.toContain("stash-go.sqlite");
+      expect(serialized).not.toContain("/home/owner");
+      expect(serialized).not.toContain("sqlitePath");
+    }
+
+    // The two 403s (real library vs nonexistent library) are byte-identical
+    // apart from `instance` — no existence oracle.
+    const real = await request(app.getHttpServer())
+      .get(`/admin/libraries/${restrictedLibraryId}/stash-connection`)
+      .set("Authorization", `Bearer ${casual}`);
+    const unknown = await request(app.getHttpServer())
+      .get(`/admin/libraries/${unknownLibraryId}/stash-connection`)
+      .set("Authorization", `Bearer ${casual}`);
+    const { instance: _realInstance, ...realRest } = real.body;
+    const { instance: _unknownInstance, ...unknownRest } = unknown.body;
+    expect(realRest).toEqual(unknownRest);
+
+    // Admin, same op: the path IS returned — proving the redaction above
+    // is authorization, not an endpoint that never returns anything.
+    const asAdmin = await request(app.getHttpServer())
+      .get(`/admin/libraries/${restrictedLibraryId}/stash-connection`)
+      .set("Authorization", `Bearer ${adminToken}`);
+    expect(asAdmin.status, JSON.stringify(asAdmin.body)).toBe(200);
+    expect(asAdmin.body.sqlitePath).toBe("/home/owner/.stash/stash-go.sqlite");
+  });
+
+  it("R1: the general (non-zone) surfaces never surface Stash-mapped zone entities to an uncleared viewer over real HTTP — no studio names, no zone performers, no zone titles through /search, /people or /tags", async () => {
+    const casual = await r1CasualToken();
+
+    for (const q of ["Velvet Static", "Nightshade Films", "Restricted Performer One", "Restricted Genre A"]) {
+      const res = await request(app.getHttpServer())
+        .get("/search")
+        .query({ q })
+        .set("Authorization", `Bearer ${casual}`);
+      expect(res.status, JSON.stringify(res.body)).toBe(200);
+      expect(res.body.items, `general search leaked on q=${q}`).toEqual([]);
+    }
+
+    const people = await request(app.getHttpServer()).get("/people?limit=200").set("Authorization", `Bearer ${casual}`);
+    expect(people.status).toBe(200);
+    const peopleSerialized = JSON.stringify(people.body);
+    expect(peopleSerialized).not.toContain("Restricted Performer");
+    expect(peopleSerialized).not.toContain("Marginal General Actor");
+
+    const tags = await request(app.getHttpServer()).get("/tags?limit=200").set("Authorization", `Bearer ${casual}`);
+    expect(tags.status).toBe(200);
+    const tagsSerialized = JSON.stringify(tags.body);
+    expect(tagsSerialized).not.toContain("Nightshade Films");
+    expect(tagsSerialized).not.toContain("Aurora Media");
+    expect(tagsSerialized).not.toContain("Restricted Genre");
+    // 'Rare' is a GENERAL-class tag applied ONLY to a zone item — the
+    // "used on >=1 visible item" clause has to hide it too.
+    expect(tagsSerialized).not.toContain("Rare");
+
+    // Control: the same three surfaces DO return general content for this
+    // viewer, so the exclusions above are not "the endpoints are empty".
+    const generalSearch = await request(app.getHttpServer())
+      .get("/search")
+      .query({ q: "Harbor" })
+      .set("Authorization", `Bearer ${casual}`);
+    expect(generalSearch.body.items.length).toBeGreaterThan(0);
+    expect(people.body.items.length).toBeGreaterThan(0);
+    expect(tags.body.items.length).toBeGreaterThan(0);
   });
 });

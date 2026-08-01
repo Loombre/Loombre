@@ -631,4 +631,112 @@ describe("websocket broadcaster (mission-mandated two-live-sockets test)", () =>
       casualWs.close();
     }
   }, 20_000);
+
+  // R1 review lane (STATE.md Stash run, S8/K12): the three stash.* event
+  // types are ADMIN_ONLY, and the existing coverage for that classification
+  // is a LIST-membership parity test (packages/contract/test/
+  // admin-only-event-types-parity.spec.ts + apps/server/src/plugins/
+  // event-taxonomy.spec.ts) — the ENFORCEMENT is only ever exercised here,
+  // and only ever with job.updated/user.restricted-pin-reset. That matters
+  // for the Stash types specifically because packages/db's own
+  // eventVisibilityWhere() deliberately CANNOT gate them (ViewerContext
+  // carries no isAdmin — they fall in its documented "no item/library/user
+  // association to gate on, passes through unfiltered" bucket), so this
+  // socket-level check is the ONLY thing standing between a non-admin
+  // socket and a restricted library's id + its sync counts. Proven with a
+  // real payload, not a synthetic type string.
+  it("stash.sync.completed: ADMIN_ONLY delivery — a non-admin socket never learns a restricted library's id or sync counts, admin socket receives them", async () => {
+    const httpServer = app.getHttpServer();
+
+    const adminLogin = await request(httpServer).post("/auth/login").send({
+      username: "admin",
+      password: "loombre-seed-admin",
+      deviceName: "ws-test-admin-stash-sync",
+      deviceProfile: buildDeviceProfile("ws-test-admin-stash-sync"),
+    });
+    expect(adminLogin.status, JSON.stringify(adminLogin.body)).toBe(200);
+    const adminToken: string = adminLogin.body.accessToken;
+
+    const casualLogin = await request(httpServer).post("/auth/login").send({
+      username: "casual",
+      password: "loombre-seed-casual",
+      deviceName: "ws-test-casual-stash-sync",
+      deviceProfile: buildDeviceProfile("ws-test-casual-stash-sync"),
+    });
+    expect(casualLogin.status, JSON.stringify(casualLogin.body)).toBe(200);
+    const casualToken: string = casualLogin.body.accessToken;
+
+    const adminWs = new WebSocket(`${baseWsUrl}?token=${encodeURIComponent(adminToken)}`);
+    const casualWs = new WebSocket(`${baseWsUrl}?token=${encodeURIComponent(casualToken)}`);
+
+    const adminMessages: unknown[] = [];
+    const casualMessages: unknown[] = [];
+    adminWs.on("message", (data) => adminMessages.push(JSON.parse(data.toString())));
+    casualWs.on("message", (data) => casualMessages.push(JSON.parse(data.toString())));
+
+    await Promise.all([waitForOpen(adminWs), waitForOpen(casualWs)]);
+
+    const db = createDb(process.env["DATABASE_URL"]!);
+    const jobId = "018f6f1e-0000-7000-8000-0000000000e1";
+    try {
+      // The REAL restricted library's id — the exact value the payload
+      // would carry in production, so "the casual socket never sees it" is
+      // a statement about real zone data, not a placeholder uuid.
+      const restrictedLibrary = await db
+        .selectFrom("libraries")
+        .select("id")
+        .where("content_class", "=", "restricted")
+        .executeTakeFirstOrThrow();
+
+      const nowMs = Date.now();
+      await db
+        .insertInto("events")
+        .values({
+          type: "stash.sync.completed",
+          ts_ms: nowMs,
+          actor_user_id: null,
+          payload: {
+            jobId,
+            libraryId: restrictedLibrary.id,
+            mode: "incremental",
+            status: "succeeded",
+            counts: { matched: 12, updated: 12, unmatched: 3, stale: 1, skipped: 0 },
+            durationMs: 4200,
+            completedAtMs: nowMs,
+          },
+        })
+        .execute();
+
+      // Two poll ticks' worth of margin (POLL_INTERVAL_MS = 500ms).
+      await sleep(1500);
+
+      const isSyncCompletedFor = (m: unknown, wantJobId: string): boolean => {
+        const envelope = m as { type?: unknown; payload?: { jobId?: unknown } };
+        return envelope.type === "stash.sync.completed" && envelope.payload?.jobId === wantJobId;
+      };
+
+      expect(
+        adminMessages.some((m) => isSyncCompletedFor(m, jobId)),
+        `admin socket should receive stash.sync.completed; got ${JSON.stringify(adminMessages)}`,
+      ).toBe(true);
+      expect(
+        casualMessages.some((m) => (m as { type?: unknown }).type === "stash.sync.completed"),
+        `casual (non-admin) socket must NEVER receive stash.sync.completed; got ${JSON.stringify(casualMessages)}`,
+      ).toBe(false);
+      // Byte-level: the restricted library's id must not appear ANYWHERE
+      // in anything that socket received, under any event type.
+      expect(JSON.stringify(casualMessages)).not.toContain(restrictedLibrary.id);
+
+      const casualCountAfterFirstWindow = casualMessages.length;
+      await sleep(750);
+      expect(
+        casualMessages.length,
+        "casual socket received additional message(s) during the negative-window grace period",
+      ).toBe(casualCountAfterFirstWindow);
+    } finally {
+      await db.destroy();
+      adminWs.close();
+      casualWs.close();
+    }
+  }, 20_000);
 });
