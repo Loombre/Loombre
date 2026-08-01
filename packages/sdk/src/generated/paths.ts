@@ -69,6 +69,7 @@ export const API_OPERATIONS = [
   { path: "/home/recently-added", method: "get", operationId: "getRecentlyAdded" },
   { path: "/images/{entityType}/{id}/{kind}", method: "get", operationId: "getImage" },
   { path: "/import", method: "post", operationId: "importData" },
+  { path: "/items/{id}/chapters", method: "get", operationId: "getItemChapters" },
   { path: "/libraries", method: "get", operationId: "listLibraries" },
   { path: "/libraries", method: "post", operationId: "createLibrary" },
   { path: "/libraries/{id}", method: "get", operationId: "getLibrary" },
