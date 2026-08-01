@@ -12,16 +12,18 @@
 // failure path below returns the SAME notFound() shape.
 //
 // entityType mapping: the contract's ImageEntityType enum (movie/series/
-// season/episode/artist/album/track/person) is a DIFFERENT vocabulary from
-// @loombre/db's ImageEntityType ('catalog_item'|'person'|'tag'|'library') —
-// see packages/db/src/query/images.ts's header, which explicitly calls this
-// mapping "the future image controller's job". Every contract value maps to
-// 'catalog_item' EXCEPT 'person' (Phosphor Wave 2 lane L3 addition, for the
-// /people/[id] route's portrait — packages/db's guard for this branch
-// already existed, unreachable until now because this controller hardcoded
-// 'catalog_item' regardless of the path param). tag/library images remain
-// unreachable via this REST path — the contract's enum still doesn't
-// include those two values.
+// season/episode/artist/album/track/person/tag) is a DIFFERENT vocabulary
+// from @loombre/db's ImageEntityType ('catalog_item'|'person'|'tag'|
+// 'library') — see packages/db/src/query/images.ts's header, which
+// explicitly calls this mapping "the future image controller's job". Every
+// contract value maps to 'catalog_item' EXCEPT 'person' (Phosphor Wave 2
+// lane L3 addition, for the /people/[id] route's portrait) and 'tag'
+// (STATE.md Stash run, S9: studio logos — a studio is a kind=studio tag,
+// migrations/0019, and its logo is ingested at entity_type='tag'; packages/
+// db's guard for this branch already existed, unreachable until now because
+// this controller hardcoded 'catalog_item' regardless of the path param).
+// `library` images remain unreachable via this REST path — the contract's
+// enum still doesn't include that one value.
 //
 // Nearest-width selection: among rows for the requested kind, the largest
 // width <= the requested `width` query param wins; if none qualify (all
@@ -123,10 +125,12 @@ export class ImagesController {
     const ctx = await resolveViewer(this.viewerContextProvider, req);
 
     // Every documented ImageEntityType value maps to the DB's
-    // 'catalog_item' EXCEPT 'person' — see module header. getImageEntityAccess
-    // itself is the authorization choke-point; it runs unconditionally,
-    // before anything else in this handler.
-    const dbEntityType = _entityType === "person" ? "person" : "catalog_item";
+    // 'catalog_item' EXCEPT 'person' and 'tag' — see module header (STATE.md
+    // Stash run, S9: studios are kind=studio tags with their logo stored at
+    // entity_type='tag', migrations/0019). getImageEntityAccess itself is
+    // the authorization choke-point; it runs unconditionally, before
+    // anything else in this handler.
+    const dbEntityType = _entityType === "person" ? "person" : _entityType === "tag" ? "tag" : "catalog_item";
     const rows = await getImageEntityAccess(this.dbProvider.db, ctx, {
       entityType: dbEntityType,
       entityId: id,

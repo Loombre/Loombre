@@ -233,10 +233,26 @@ const IMPLEMENTED_NON_PUBLIC_EXPECTATIONS: Record<string, number> = {
   // this instance). See apps/server/test/libraries.e2e.spec.ts for the
   // entitled-admin 200 case (that suite sets LOOMBRE_RESTRICTED_ENABLED).
   getRestrictedCount: 404,
-  // Wave 2 (Phosphor retheme, lane L8): same not-entitled-on-this-suite's-DB
-  // posture as getRestrictedCount immediately above — see
-  // apps/server/test/libraries.e2e.spec.ts for the entitled-admin
-  // locked-empty/unlocked-real-content round trip.
+  // STATE.md Stash run (S9): same not-entitled-on-this-suite's-DB posture
+  // as getRestrictedCount immediately above, for every dedicated zone
+  // surface op — see apps/server/test/seeded-conformance.spec.ts for the
+  // entitled-admin locked-empty/unlocked-real-content round trips.
+  getRestrictedHome: 404,
+  listRestrictedBrowse: 404,
+  getRestrictedScene: 404,
+  listRestrictedPerformers: 404,
+  getRestrictedPerformer: 404,
+  listRestrictedPerformerScenes: 404,
+  listRestrictedStudios: 404,
+  getRestrictedStudio: 404,
+  // Entitlement (404) is checked BEFORE `q` — PLACEHOLDER_UUID's walk sends
+  // no ?q= at all, so this seed-admin's zero entitlement wins over the
+  // would-be 422 (restricted-zone.controller.ts's own documented ordering).
+  restrictedSearch: 404,
+  // DEPRECATED (CLAUDE.md evolution policy — oasdiff's
+  // api-path-removed-without-deprecation finding, see openapi.yaml's own
+  // comment on this op): kept working, thinly delegating to
+  // listRestrictedBrowse, same not-entitled posture as every other zone op.
   listRestrictedZoneItems: 404,
 
   // catalog-video
@@ -354,10 +370,17 @@ const IMPLEMENTED_NON_PUBLIC_EXPECTATIONS: Record<string, number> = {
   getAdminLibraryProviderChain: 404,
   putAdminLibraryProviderChain: 404,
 
-  // Stash SQLite metadata sync, Lane C (S8/K14) — PLACEHOLDER_UUID never
-  // matches a real library; existence is checked before the report/scene
-  // reads run (same ordering as getAdminLibraryProviderChain above).
+  // Admin Stash surface (STATE.md Stash run, Lanes C+D) — same
+  // PLACEHOLDER_UUID library-never-exists posture; existence is checked
+  // before the report read / any (bodyless) PUT/POST body validation
+  // (same ordering as getAdminLibraryProviderChain above).
   getAdminStashSyncReport: 404,
+  getAdminLibraryStashConnection: 404,
+  putAdminLibraryStashConnection: 404,
+  getAdminLibraryStashPathMappings: 404,
+  putAdminLibraryStashPathMappings: 404,
+  previewAdminLibraryStashPathMappings: 404,
+  postAdminLibraryStashSync: 404,
 
   // Fix Match (Phosphor retheme Wave 2, Lane L2) — PLACEHOLDER_UUID never
   // matches a real library/item either way; existence is checked before

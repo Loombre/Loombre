@@ -32,25 +32,19 @@
 // restricted-zone.ts's header for the full entitlement-model writeup this
 // implements.
 //
-// GET /restricted/items (STATE.md Phosphor retheme, Wave 2 lane L8): the
-// zone's own item listing — same 404-for-not-entitled posture as count(),
-// but ADDITIONALLY gate-5 (lock-state) sensitive: an entitled-but-locked
-// caller gets 200 with an empty page (packages/db/src/query/
-// restricted-zone.ts's "Restricted zone item listing" section explains why
-// this, unlike count(), routes through the normal guard). No libraryId/q
-// params — the zone's own library membership is resolved server-side from
-// entitlement, and there is no separate zone-search endpoint (the web
-// client fetches the small, curated zone in full and filters/sorts/
-// searches it locally, deriving genre pills from the results rather than
-// hardcoding them).
+// GET /restricted/items — RETIRED (STATE.md Stash run, K4): the old "fetch
+// the whole zone client-side" design is superseded by the dedicated zone
+// surface's real, guarded, keyset-paginated reads —
+// restricted-zone.controller.ts's GET /restricted/home, /browse,
+// /scenes/{id}, /performers(+/{id},+/{id}/scenes), /studios(+/{id}),
+// /search. This controller now carries only unlock/lock/count.
 
-import { Body, Controller, Get, HttpCode, HttpStatus, Post, Query, Req, UseFilters } from "@nestjs/common";
+import { Body, Controller, Get, HttpCode, HttpStatus, Post, Req, UseFilters } from "@nestjs/common";
 import {
   getLibraryPermissionSummary,
   getRestrictedZoneCountForViewer,
   getUserById,
   getUserSettings,
-  listRestrictedZoneItemsForViewer,
   setRestrictedUnlockUntilAndEmit,
 } from "@loombre/db";
 import { nowMs as clockNowMs } from "@loombre/shared";
@@ -184,41 +178,5 @@ export class RestrictedController {
       throw notFound("Not found.", req.originalUrl);
     }
     return result;
-  }
-
-  // GET /restricted/items (STATE.md Phosphor retheme, Wave 2 lane L8;
-  // design/phosphor README "Restricted content" — the zone's OWN query
-  // surface). Same 404-for-not-entitled posture as count() above; unlike
-  // count(), a real page (possibly EMPTY) requires the caller to also be
-  // gate-5 unlocked — that distinction lives entirely inside
-  // listRestrictedZoneItemsForViewer (packages/db/src/query/
-  // restricted-zone.ts), this controller only maps undefined -> 404.
-  @Get("items")
-  async items(
-    @Query() query: Record<string, unknown>,
-    @Req() req: AuthenticatedRequest,
-  ): Promise<{ items: unknown[]; nextCursor: string | null }> {
-    const ctx = await this.viewerContextProvider.resolve(req.user!.userId, clockNowMs());
-
-    const cursor = typeof query["cursor"] === "string" ? query["cursor"] : undefined;
-    let limit: number | undefined;
-    if (typeof query["limit"] === "string") {
-      const n = Number.parseInt(query["limit"], 10);
-      if (Number.isFinite(n) && n > 0) limit = n;
-    }
-
-    const page = await listRestrictedZoneItemsForViewer(this.dbProvider.db, ctx, {
-      ...(cursor !== undefined ? { cursor } : {}),
-      ...(limit !== undefined ? { limit } : {}),
-    });
-    if (!page) {
-      // Not entitled at all — same "the zone does not exist for this
-      // viewer" posture as count() (U10); never an empty-but-200 body for
-      // this case specifically, since that would let a restricted-profile
-      // viewer distinguish "zone exists, empty" from "no zone" via this
-      // endpoint even though count() already refuses them the same way.
-      throw notFound("Not found.", req.originalUrl);
-    }
-    return { items: page.rows, nextCursor: page.nextCursor };
   }
 }
