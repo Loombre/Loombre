@@ -50,6 +50,7 @@ export const SETTING_TITLES = {
   "rateLimit.capabilities": "Capability check request limit",
   "rateLimit.export": "Data export request limit",
   "rateLimit.mediaToken": "Media playback request limit",
+  "stash.sync.scheduleIntervalMs": "Automatic Stash re-sync interval",
 
   "database.url": "Database connection",
   "http.port": "HTTP port",
@@ -74,9 +75,10 @@ export const ADMIN_CATEGORY_TITLES = {
   updateCheck: { title: "Update checking", blurb: "Whether Loombre checks for newer versions. Never installs anything automatically." },
   security: { title: "Security & sign-in logging", blurb: "Local logging of suspicious sign-in activity." },
   rateLimit: { title: "Sign-in & request limits", blurb: "How many attempts or requests are allowed in a given time window, per person or device — protects against automated guessing without locking anyone out under normal use." },
+  stash: { title: "Stash sync", blurb: "Automatic scheduling for re-syncing metadata from a connected Stash database. See the Restricted content chapter for connecting Stash in the first place." },
 };
 
-export const ADMIN_CATEGORY_ORDER = ["transcode", "scanner", "images", "restricted", "sessions", "updateCheck", "security", "rateLimit"];
+export const ADMIN_CATEGORY_ORDER = ["transcode", "scanner", "images", "restricted", "sessions", "updateCheck", "security", "rateLimit", "stash"];
 
 /** Operator Guide category grouping — env-only entries only. */
 export const ENV_CATEGORY_TITLES = {

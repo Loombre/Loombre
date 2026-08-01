@@ -286,3 +286,16 @@ How many media requests one person may make per minute — posters, video, and s
 - **Applies:** immediately — no restart needed.
 - **Can be locked:** if `LOOMBRE_RATE_MEDIA_TOKEN` is set by whoever installed Loombre, this setting becomes fixed to that value and shows as controlled by the environment here — ask them, or see the [Operator Guide's environment reference](/ops/env-reference).
 
+## Stash sync
+
+Automatic scheduling for re-syncing metadata from a connected Stash database. See the Restricted content chapter for connecting Stash in the first place.
+
+### Automatic Stash re-sync interval
+
+<small>Setting key: `stash.sync.scheduleIntervalMs`</small>
+
+How often Loombre automatically re-syncs metadata from a connected Stash database, in milliseconds. 0 (the default) turns automatic scheduling off — Stash still syncs when you click the sync button or when its database file changes on disk.
+
+- **Default:** 0 ms
+- **Applies:** immediately — no restart needed.
+
