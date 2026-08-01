@@ -3569,6 +3569,8 @@ export interface components {
              * @description Null while status='running'.
              */
             finishedAtMs: number | null;
+            /** @description FX4 fix wave (S2): whether this run's Stash connection had to fall back to a snapshot copy (apps/worker/src/stash/adapter.ts's readingFrom === 'snapshot' — the WAL-locked-past-retry-budget path) rather than reading the source database file directly. Null when unknown — a run finalized by the terminal-failure hook never learns the answer (no access to the failed attempt's connection), and rows written before this field existed are also null, never a false claim of 'read from source'. */
+            usedSnapshotFallback: boolean | null;
         };
         /** @description One stash_scene_links row, live-read (never a report snapshot) — see getAdminStashSyncReport's own description. */
         StashSyncSceneRef: {

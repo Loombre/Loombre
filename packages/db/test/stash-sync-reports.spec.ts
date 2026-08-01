@@ -121,6 +121,41 @@ describe('stash-sync-reports (S8/K14)', () => {
     expect(finished.finished_at_ms).toBe(started + 5000);
   });
 
+  it('FX4: usedSnapshotFallback persists when the caller passes it, and stays NULL when the caller omits it (the onTerminalFailure hook posture)', async () => {
+    const libraryId = await makeRestrictedLibrary();
+
+    const created = await createStashSyncReport(db, { libraryId, jobId: randomUUID(), mode: 'full', startedAtMs: Date.now() });
+    expect(created.used_snapshot_fallback).toBeNull();
+
+    const finishedWithFallback = await finishStashSyncReport(db, created.id, {
+      status: 'succeeded',
+      matchedCount: 1,
+      updatedCount: 0,
+      unmatchedCount: 0,
+      staleCount: 0,
+      skippedCount: 0,
+      finishedAtMs: Date.now(),
+      usedSnapshotFallback: true,
+    });
+    expect(finishedWithFallback.used_snapshot_fallback).toBe(true);
+
+    // A second run's caller OMITS the field entirely (createStashSync
+    // TerminalFailureHook's own posture — it never obtains a connection
+    // for the failed attempt) — the column must stay NULL, never coerced
+    // to false.
+    const secondRun = await createStashSyncReport(db, { libraryId, jobId: randomUUID(), mode: 'full', startedAtMs: Date.now() });
+    const finishedOmitted = await finishStashSyncReport(db, secondRun.id, {
+      status: 'failed',
+      matchedCount: 0,
+      updatedCount: 0,
+      unmatchedCount: 0,
+      staleCount: 0,
+      skippedCount: 0,
+      finishedAtMs: Date.now(),
+    });
+    expect(finishedOmitted.used_snapshot_fallback).toBeNull();
+  });
+
   it('getLatestStashSyncReport returns the most recently STARTED row, not insertion order', async () => {
     const libraryId = await makeRestrictedLibrary();
     const older = await createStashSyncReport(db, { libraryId, jobId: randomUUID(), mode: 'full', startedAtMs: 1000 });
