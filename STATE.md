@@ -2,6 +2,41 @@
 
 ## Stash SQLite metadata sync + dedicated Restricted Content surface (kicked off 2026-08-01, authority: owner "Stash SQLite Metadata Sync + the Dedicated Restricted Content Surface" brief; docs/PLAN.md §6.4 gates, docs/PLAYBACK.md unchanged, design/phosphor/README.md design language)
 
+### EXIT GATE — WALKED 2026-08-01 (final tree; gate:full ALL 14 STEPS PASSED)
+
+Automated exit met; owner-in-the-loop + home-lab items logged Open (not simulated). Coverage vs the verbatim mission + §5 exit gate:
+
+| Exit-gate item | Status |
+|---|---|
+| gate:full green, contract+SDK atomic, redocly zero-warn | ✅ ALL 14 steps; every contract addition shipped with its regenerated SDK (sdk-drift enforced); redocly clean |
+| S3 guard both ways (supported fixtures sync; unsupported disables w/ exact notice + event) | ✅ A + R2: v67/v85 sync end-to-end; unsupported disables with byte-exact notice + stash.provider.disabled + status columns; mangled-in-range table fails loudly |
+| S2 fs-level: Stash DB byte-identical after full sync | ✅ A + R2 (strengthened): byte/mtime/dir unchanged across full sync incl. successful-snapshot path. HONEST SCOPE: the .db is untouched; a WAL-mode DB's -wal/-shm siblings are created by any read-only open — documented (adapter header + admin guide), a read-only DIRECTORY now fails with a clear cause |
+| Subset validation (match rate, unmatched lists, owner spot-check, preview functional) | ⏳ OPEN — owner action; runbook + report template staged (reports/stash/). No real Stash DB copy on this host — cannot run without owner |
+| 33k scale proof (runtime/memory; incremental touches only changed; zone p95 in budget; 60fps wall) | ✅ 287.9 s / 404 MiB real-apply; incremental 12→12; **5 of 6 zone-browse budget breaches fixed by 0021's partial index (240→7–33ms); 3 sort paths OPEN (below)**; 60fps = empirical DOM-pinned (no fps harness exists) |
+| Chapters render + deep-link seek (both breakpoints) | ✅ E + UI walk: scene-page CHAPTERS list deep-links /watch?t=<s>; Scrubber ticks + ChapterList (desktop popover / mobile sheet); deep-link beats the resume prompt |
+| Leak suite extended + green; adversarial walk clean (UI + API + images + events + search + palette) | ✅ R1 (+18 API pins, 4 findings fixed) + orchestrator UI walk (**caught + fixed 1 real leak: palette lock/unlock action was ungated**). Uncleared viewer: no nav/rails/palette-action, zone URLs redirect home. Cleared: full zone renders |
+| Staleness non-destructive; sync report complete per S8 | ✅ R2: 9-table before/after graph proves kept-not-deleted; stale still visible to cleared; report has all counts + BOTH unmatched sides (FX3) |
+| Docs both registers (register lint clean); no Stash brand assets | ✅ admin "Connecting Stash" + user zone-browsing, 0 warnings on both; nominative name only, no assets |
+| STATE.md: decisions recorded; coverage vs mission; home-lab pass logged Open | ✅ this section |
+
+**UI adversarial walk record (orchestrator, 2026-08-01; screenshots reports/stash/r1-walk/):** booted server:3001 + web:3300 against a seeded walk DB (gate 1 capability toggled on, admin holds gates 2–4, PIN 0000). Uncleared (casual): home shows zero zone trace; palette "restricted" → nothing (post-fix); /restricted + /restricted/browse?filters redirect to /home. Cleared (admin): entitlement makes the "Restricted" nav entry + lock control appear; gate screen → PIN unlock → zone home with all four rails (studios w/ logos, performers w/ photos), browse with 5 sorts + density toggle + filters, scene detail with technical facts (NC-17/1H35M/FHD — the S5 authority split visible), performer/studio/tag chips, and 3 chapter deep-links. Direct scene URL re-gated (fail-closed on fresh load — gate 5 holds on direct entry).
+**THE UI-WALK LEAK (fixed d0160c3):** the command palette built its lock/unlock action from restricted.state.locked alone (defaults locked for everyone) with NO isRestrictedEntitled gate — an unentitled viewer typing "restricted"/"lock"/"unlock" saw "Unlock restricted content", a trace the zone exists. R1's API walk structurally could not reach this client-only palette state. Fixed to the same fail-closed predicate every other affordance uses; fail-first regression test (+2 cases) pins it.
+
+### OPEN ledger (Stash run — owner-decision + home-lab; nothing silently dropped)
+
+1. **Subset validation (§4)** — owner stages a copy of the real Stash DB + ~500-scene media subset; runbook at reports/stash/subset-validation-runbook.md, report template reports/stash-sync-report.md. ~15 min once staged.
+2. **Home-lab full pass** — the real 33k + SMB end-to-end (real mounts, real Stash). The synthetic proof is NOT a substitute.
+3. **K3 person_attributes JSONB whitelist** — added by analogy to §6.3's item_attributes; needs owner sign-off to formalize in the plan's whitelist.
+4. **S10 sort residue** — sort=duration (needs catalog_items.primary_duration_ms denorm = a writer change across probe + apply, owner call); sort=date (COALESCE-sentinel + LEFT-JOIN satellite key); **sort=rating is CHEAPLY fixable (R2: two ~1.3MB partial expression indexes, 238→7ms measured) — deliberately not landed because it reverses a recorded 0009 decision (zone-vs-general symmetry = owner call); evidence at the site in restricted-browse.ts. A 0023 migration closes it on a yes.**
+5. **Zone-home rails aggregate** — top-N-by-scene-count has an index-proof floor (~150–190ms); accept or add a clearance-digest cache (§6.4 cache-key precedent).
+6. **No DELETE for stash-connection** (FX1) — disable-only today; "forget this connection entirely" is an API gap.
+7. **No success-connect event** — the admin must reopen the Stash modal to see a status flip (only stash.provider.disabled exists; no stash.provider.connected).
+8. **List-param limit clamp** (R1) — no endpoint clamps limit to the contract's maximum:200 (repo-wide, pre-existing); ?limit=100000 returns a whole list in one page. Conformance + S10-budget item.
+9. **Lock scope bounded** (R2) — chapters, stash:/person attributes, provider_ids, artwork cannot be field-locked today (only mergeFields' 10 editorial fields have provenance rows); fine for v1 (no editing UI), a named risk before one lands.
+10. **playback.e2e flake** (R1) — "transcode-slots-exhausted" got a non-Loombre 401 once, unreproducible across later runs; someone's eye.
+
+
+
 ### Mission (verbatim)
 
 Implement the Stash integration end-to-end: a read-only Stash SQLite provider (schema-version-guarded, path-mapped, restricted-scoped) with full metadata mapping (scenes, performers, studios, tags, ratings, dates, details, markers, cover art), an initial + incremental sync engine proven at the owner's 33k-scene scale, and the dedicated Restricted Content surface — browse with filters (performers, studios, tags/genres, rating, duration, resolution, year), performer and studio pages, sort/view options, marker chapters in the player, and restricted-scoped search — all inside the five-gate zone, Phosphor-styled at both breakpoints, with the leak suite extended to every new surface and green.
@@ -146,8 +181,32 @@ All additive. Zone ops tag `restricted` (gates 1–5 re-verified per request, ex
 | D | Zone surface S9: contract+SDK atomic, guarded zone queries, routes, filters + URL state, performer/studio/scene pages, search, density | sonnet | **LANDED 2a03cab..c0d64cc** (rebased; conflicts: sdk regen + module/conformance unions) |
 | E | Player chapters UI + /items/{id}/chapters + zone home rails + genre-config exposure + 0021 indexes w/ query plans | sonnet | **LANDED a13c0e2..7fbf66b** (rebased; both gates green in-worktree) |
 | Docs | S11 both registers: admin "Connecting Stash" chapter + user-guide zone browsing | sonnet | **LANDED 6460361** (register lint 0 warnings for both files; gate green) |
-| R1 | opus: leak-suite extension + adversarial zone walk (fail-first then green) | opus | blocked on lanes |
-| R2 | opus: mapping fidelity + safety audit (S2 fs-proof, S3 both-ways, S4 visibility, staleness, authority split, S10 indexes) | opus | blocked on lanes |
+| R1 | opus: leak-suite extension + adversarial zone walk (fail-first then green) | opus | **LANDED 2eacbf5..f067429** (rebased) |
+| R2 | opus: mapping fidelity + safety audit (S2 fs-proof, S3 both-ways, S4 visibility, staleness, authority split, S10 indexes) | opus | **LANDED fbea941..3518bec** (rebased) |
+
+### Review freeze — R1 adversarial leak sweep (2026-08-01)
+
+Four findings, all fail-first, all fixed in the same lane; 18 no-leak probes pinned permanently; leak.spec 67→78, libraries.e2e 12→18, ws-broadcaster 5→6; gate green.
+
+1. **REAL LEAK (D's general-id class, replayed one level down):** /restricted/performers/{id}/scenes accepted a GENERAL-class person id (role='guest' credit on a zone scene) that the parent surface 404s — 200 with a real scene card. Fix: browse's performerIds EXISTS now carries `role='performer'`, the same predicate every surface that MINTS a performer id uses.
+2. **Forged cursors were 500s** (driver 22P02 surfaced as urn:loombre:problem:internal). Typed MalformedCursorError + uuid-format checks in the lagging validators + one ProblemJsonExceptionFilter branch → 422 problem+json PRODUCT-WIDE, payload never echoed; five zone ops declare 422; SDK regenerated. Case pins "the 422 must never become an entitlement oracle."
+3. **Contract-description leak-in-waiting:** /restricted/home's prose promised locked viewers aggregate studio/performer rails; the code (correctly) returns all-empty, pinned by 12f — contract text corrected toward the safe behavior before anyone "conformed" the code to it.
+4. **Unproven image gate:** the existing uncleared-404 image assertions passed vacuously (no fixture pointed at a real file — stat() failed for EVERYONE; studio logos had no fixture). Fixed test-side with a real PNG + repointed rows; the production gate was correct all along, now actually proven.
+- Out-of-scope finding logged Open: NO limit clamp to the contract's maximum:200 anywhere (repo-wide, pre-existing) — ?limit=100000 returns the whole zone in one page; conformance + S10-budget item.
+- **UI walk NOT performed by R1** (chrome-devtools MCP: profile-lock, no isolation flag reachable; claude-in-chrome: extension not connected). Server-rendered HTML of zone routes carries zero zone strings (app is client-auth'd, so HTML proves only the shell). API walk done + permanent. Visual walk = orchestrator/owner item.
+- One unrelated flake noted for someone's eye: playback.e2e "transcode-slots-exhausted" got a non-Loombre-shaped 401 once, unreproducible across two later full runs.
+
+### Review freeze — R2 fidelity + safety audit (2026-08-01)
+
+Nine checklist items: 3 DEFECT-FIXED, 5 STRENGTHENED, all green; +30 tests (worker stash 84→114); gate green.
+
+- **S2:** proof covered only the adapter session + failed-snapshot path — now: successful-snapshot fs-assertion (write-free BEGIN IMMEDIATE lock trick), full-sync-path byte/mtime/directory assertion, and the WAL truth: read-only open of a WAL DB ALWAYS creates -wal/-shm siblings it cannot remove — the .db is untouched (asserted) but a read-only DIRECTORY makes the DB unreadable with SQLite blaming "readonly database"; explainOpenFailure now names the real cause; guarantee's true scope written into the adapter header + admin guide (orchestrator commit 7f8bf50).
+- **S3:** boundary fixtures (67/85) now SYNC end-to-end, not just connect; in-range-but-mangled-table fails loudly, nothing half-applied.
+- **S4 DEFECT:** oshash laziness was false — path-matched candidates were re-hashed on size collision AND two Stash scenes could silently link one item; fixed (pass-1-claimed candidates excluded), pipeline.spec.ts created (the file pipeline.ts's header always cited but nobody wrote).
+- **S8:** staleness proof widened from link-row-survives to a full 9-table before/after graph with non-vacuity guard; stale scenes proven still visible/playable to cleared viewers.
+- **S5:** the premiere_at_ms seam was unpinned on the CONSUMER side (one plausible line in the tmdb refresh would NULL every scene's date with a green suite) — mutation-verified test added. Lock-scope honesty written into apply.ts: chapters/attributes/provider_ids/artwork CANNOT be locked today (fine v1, named risk before any editing UI).
+- **S10:** E's partial-index correction empirically confirmed (D's composite is NOT EVEN USED at 33k/two libraries: 240.9ms seq-scan vs 0021's 7.6ms). date/duration honestly owner territory (expression index confirmed unused). **sort=rating IS cheaply fixable: two ~1.3 MB per-direction partial expression indexes, 238.7→7.4ms measured — deliberately NOT landed (reversing a recorded decision citing 0009's precedent = owner symmetry call); evidence at the exact site in restricted-browse.ts.**
+- **FX4 chain + 33k proof integrity:** honest at every hop; the proof script's headline line printed "[apply STUBBED]" unconditionally — including for the --real-apply run STATE.md recorded (JSON was correct; the human-copied line wasn't) — fixed, label derived from the flag; imageJobsEnqueued:0 verified as a fixture fact (NULL blobs), now stated in the script header.
 
 ## rc.3 field UX round — controllers can now START a stopped server; installs end in the browser, not silence (2026-07-31)
 
