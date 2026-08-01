@@ -698,6 +698,43 @@ export interface StashSceneLinksTable {
 }
 
 // ============================================================================
+// stash_sync_reports / stash_sync_checkpoints
+// (migrations/0020_stash_sync_reports.sql — Stash SQLite metadata sync,
+// Lane C sync engine, S8/K14)
+// ============================================================================
+
+export type StashSyncMode = 'full' | 'incremental';
+
+export type StashSyncReportStatus = 'running' | 'succeeded' | 'failed' | 'partial';
+
+export interface StashSyncReportsTable {
+  id: Generated<string>;
+  library_id: string;
+  job_id: string;
+  mode: StashSyncMode;
+  status: Generated<StashSyncReportStatus>;
+  matched_count: Generated<number>;
+  updated_count: Generated<number>;
+  unmatched_count: Generated<number>;
+  stale_count: Generated<number>;
+  skipped_count: Generated<number>;
+  started_at_ms: number;
+  finished_at_ms: number | null;
+}
+
+export interface StashSyncCheckpointsTable {
+  /** No DEFAULT — supplied by the caller (the sync job's own id), same
+   *  convention as ScanCheckpointsTable.job_id above. */
+  job_id: string;
+  library_id: string;
+  phase: string;
+  last_processed_stash_scene_id: string | null;
+  scenes_seen: Generated<number>;
+  scenes_processed: Generated<number>;
+  updated_at_ms: number;
+}
+
+// ============================================================================
 // DB
 // ============================================================================
 
@@ -745,4 +782,6 @@ export interface DB {
   library_stash_connections: LibraryStashConnectionsTable;
   library_path_mappings: LibraryPathMappingsTable;
   stash_scene_links: StashSceneLinksTable;
+  stash_sync_reports: StashSyncReportsTable;
+  stash_sync_checkpoints: StashSyncCheckpointsTable;
 }

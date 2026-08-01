@@ -466,3 +466,33 @@ export {
   upsertStashSceneLinksFromInventory,
 } from './query/stash-inventory.js';
 export type { StashConnectionStatus, StashMatchedBy } from './types.js';
+
+// Stash SQLite metadata sync, Lane C (sync engine) — migrations/
+// 0020_stash_sync_reports.sql. See src/query/stash-sync-reports.ts's
+// header for why these live in the PUBLIC barrel (same posture as the
+// Lane A stash exports immediately above): apps/worker (writing report
+// rows) and apps/server's admin surface (K14, reading the latest report +
+// the live unmatched/stale lists) are both fenced off from
+// @loombre/db/internal.
+export type {
+  CreateStashSyncReportInput,
+  FinishStashSyncReportInput,
+  ListStashScenesParams,
+  MarkStashScenesStaleInput,
+  StashSceneLinkCounts,
+  StashSyncReportRow,
+  StashSyncSceneListResult,
+  StashSyncSceneListRow,
+} from './query/stash-sync-reports.js';
+export {
+  createStashSyncReport,
+  finishStashSyncReport,
+  findRunningStashSyncReport,
+  getLatestStashSyncReport,
+  getStashSceneLinkCounts,
+  getStashSyncReportByJobId,
+  listStaleStashScenes,
+  listUnmatchedStashScenes,
+  markStashScenesStale,
+} from './query/stash-sync-reports.js';
+export type { StashSyncMode, StashSyncReportStatus } from './types.js';
