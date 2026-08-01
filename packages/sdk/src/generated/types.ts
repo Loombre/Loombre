@@ -1039,12 +1039,291 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * List the restricted zone's own items (design/phosphor README "Restricted content": the zone's OWN query surface — a dedicated read, separate from /movies /series /search, so the zone's UI never shares a code path with the general catalog's listing/search surfaces).
-         * @description 404 for a viewer with NO restricted-library entitlement at all — same posture as GET /restricted/count, the zone does not exist for them. For an entitled viewer, this responds with the real page ONLY while the current session is unlock-cleared (gate 5); an entitled- but-locked viewer gets a 200 with an EMPTY page, never titles or artwork (the affordance-level PIN gate is backed by this same server-side rule, not just a client-side redirect). Deliberately no `libraryId`/`q` params: the zone's library membership is resolved server-side from the viewer's own entitlement, never client- supplied, and there is no separate zone-search endpoint — the client fetches the (small, curated) zone in full and searches/ sorts/filters it locally, which is also how genre pills are derived rather than hardcoded.
+         * DEPRECATED — superseded by GET /restricted/browse (STATE.md Stash run, K4). Kept for CLAUDE.md's evolution policy (additive-only; removed operations are deprecated for two minor releases minimum, never hard-deleted mid-major).
+         * @deprecated
+         * @description Same 404-for-not-entitled / empty-while-locked posture as GET /restricted/browse, which this now thinly delegates to (unsorted- filter, `added`-sorted, server-side) — kept working, not stubbed, for the deprecation window. New clients should call GET /restricted/browse directly; this operation carries a `Sunset` response header and will be removed after that window closes.
          */
         get: operations["listRestrictedZoneItems"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/restricted/home": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Restricted zone home rails (continue watching, recently added, studios, performers)
+         * @description 404 for a viewer with NO restricted-library entitlement at all — same posture as every other zone read (GET /restricted/count). For an entitled-but-LOCKED viewer (gate 5 not currently passed), `continueWatchingInZone`/`recentlyAddedInZone` come back empty (guard-consistent with GET /restricted/browse) while `studios`/ `performers` still resolve — aggregate names/counts only, no title/artwork, the same U10 disclosure GET /restricted/count already makes for the zone as a whole.
+         */
+        get: operations["getRestrictedHome"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/restricted/browse": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Keyset browse of the restricted zone with combinable filters
+         * @description SUPERSEDES the old full-fetch GET /restricted/items design (STATE.md K4): real guarded server-side keyset pagination, proven at 33k-scene scale (S10) rather than the client fetching the whole zone and filtering locally. 404 for a viewer with NO restricted-library entitlement at all; an entitled-but-locked viewer gets 200 with an EMPTY page (gate 5 — same posture the old endpoint documented). A malformed performerIds/studioTagIds/tagIds uuid entry answers with an EMPTY page, never a dropped filter (house rule — packages/db/src/ query/catalog-detail.ts's own convention for list filters).
+         */
+        get: operations["listRestrictedBrowse"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/restricted/scenes/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["IdPathParam"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Restricted-zone scene detail
+         * @description Byte-identical 404 to an uncleared viewer, a nonexistent id, and a general-catalog id (house pattern — see GET /movies/{id}). Markers are embedded here (chapter_markers rows for this item) — GET /items/{id}/chapters (Lane E) is the generic, content-agnostic twin the player itself consumes.
+         */
+        get: operations["getRestrictedScene"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/restricted/performers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List performers (role=performer people) visible within the zone
+         * @description 404 for a viewer with NO restricted-library entitlement at all. An entitled-but-locked viewer gets 200 with an EMPTY page (same gate-5 posture as GET /restricted/browse).
+         */
+        get: operations["listRestrictedPerformers"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/restricted/performers/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["IdPathParam"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Restricted-zone performer detail
+         * @description Byte-identical 404 to an uncleared viewer, a nonexistent id, and a performer with zero scenes currently visible within the zone.
+         */
+        get: operations["getRestrictedPerformer"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/restricted/performers/{id}/scenes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["IdPathParam"];
+            };
+            cookie?: never;
+        };
+        /** A performer's filmography within the restricted zone */
+        get: operations["listRestrictedPerformerScenes"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/restricted/studios": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List studios (kind=studio tags) visible within the zone
+         * @description 404 for a viewer with NO restricted-library entitlement at all. An entitled-but-locked viewer gets 200 with an EMPTY page (same gate-5 posture as GET /restricted/browse).
+         */
+        get: operations["listRestrictedStudios"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/restricted/studios/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["IdPathParam"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Restricted-zone studio detail
+         * @description Byte-identical 404 to an uncleared viewer, a nonexistent id, and a studio with zero scenes currently visible within the zone. Catalog (a studio's scenes) is reached via GET /restricted/browse's `studioTagIds` filter, not a dedicated sub-route.
+         */
+        get: operations["getRestrictedStudio"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/restricted/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Restricted-zone-scoped search (title, performer, studio, tag)
+         * @description A SEPARATE guarded index from GET /search — zone titles must never surface through the general search surface, not even as a count/ timing side-channel, and vice versa (design/phosphor README "Restricted content"). Entitlement is checked BEFORE `q` — a viewer with NO restricted-library entitlement at all gets 404 regardless of whether `q` was supplied; an entitled viewer missing `q` then gets 422, matching GET /search's own validation. An entitled-but-locked viewer gets 200 with an EMPTY page.
+         */
+        get: operations["restrictedSearch"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/libraries/{id}/stash-connection": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["IdPathParam"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Read a library's Stash SQLite connection config (admin)
+         * @description `configured: false` (sqlitePath null, status never_connected) when no connection has ever been saved for this library — GET never 404s for an otherwise-valid library id just because Stash hasn't been configured yet (mirrors GET /admin/libraries/{id}/provider-chain's `isDefault` precedent).
+         */
+        get: operations["getAdminLibraryStashConnection"];
+        /**
+         * Configure (or reconfigure) a library's Stash SQLite connection (admin)
+         * @description Writes ONLY sqlitePath/enabled — never genreTagNames (Lane E's own field on this resource, K15). Enqueues a `stash-inventory` job on every successful save so the path-mapping preview has fresh data without a separate button. 404 if the library itself does not exist (checked before body validation).
+         */
+        put: operations["putAdminLibraryStashConnection"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/libraries/{id}/stash-path-mappings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["IdPathParam"];
+            };
+            cookie?: never;
+        };
+        /** Read a library's Stash path-mapping table (admin) */
+        get: operations["getAdminLibraryStashPathMappings"];
+        /**
+         * Replace a library's Stash path-mapping table wholesale (admin)
+         * @description `mappings` is the FULL replacement list — `position` is the array index, not supplied explicitly. An empty array clears every mapping (S4's oshash tier becomes the only match path). 404 if the library itself does not exist (checked before body validation).
+         */
+        put: operations["putAdminLibraryStashPathMappings"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/libraries/{id}/stash-path-mappings/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["IdPathParam"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview match counts for a CANDIDATE (unsaved) mapping set (admin)
+         * @description Pure SQL over the last inventory/sync snapshot's stored Stash paths (K10) — never opens the Stash SQLite file itself, so this works as soon as one `stash-inventory` job has run. Reflects `mappings` AS SUBMITTED, not what is currently saved, so an admin can try a mapping before committing it via PUT. 404 if the library itself does not exist (checked before body validation).
+         */
+        post: operations["previewAdminLibraryStashPathMappings"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/libraries/{id}/stash-sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["IdPathParam"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Enqueue a full or incremental Stash sync for a library (admin)
+         * @description Enqueues a `stash-sync` job (S8) and returns its id honestly — this endpoint does not wait for the sync to complete. 404 if the library itself does not exist (checked before body validation).
+         */
+        post: operations["postAdminLibraryStashSync"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1713,10 +1992,10 @@ export interface components {
         /** @enum {string} */
         MediaKind: "movie" | "tv" | "music";
         /**
-         * @description Entity types a managed image can belong to. `person` images are guarded by the SAME leak rule listPeople/getPersonById use (content_class isolation AND credited-on->=1-visible-item), so a person invisible to the caller has no reachable images either. This value plus the server-side mapping fix close that gap so a Person page portrait (GET /images/person/{id}/thumb) can be served.
+         * @description Entity types a managed image can belong to. `person` images are guarded by the SAME leak rule listPeople/getPersonById use (content_class isolation AND credited-on->=1-visible-item), so a person invisible to the caller has no reachable images either. This value plus the server-side mapping fix close that gap so a Person page portrait (GET /images/person/{id}/thumb) can be served. `tag` (S9 — studio logos: studios are kind=studio tags, S6) is guarded the same way, via applyGuardToTags + applied-to->=1-visible-item.
          * @enum {string}
          */
-        ImageEntityType: "movie" | "series" | "season" | "episode" | "artist" | "album" | "track" | "person";
+        ImageEntityType: "movie" | "series" | "season" | "episode" | "artist" | "album" | "track" | "person" | "tag";
         /** @enum {string} */
         ImageKind: "poster" | "backdrop" | "logo" | "disc" | "thumb";
         /** @enum {string} */
@@ -2588,21 +2867,207 @@ export interface components {
              */
             count: number;
         };
-        /** @description Per-item 4K/HDR signal for the zone's own filter chips — not part of Movie/Series (list responses there carry no mediaFiles/streams data, Tier-0), so this is scoped to the zone's own dedicated read. */
+        /** @description Per-item 4K/HDR/resolution-band signal for the zone's own filter chips — not part of Movie/Series (list responses there carry no mediaFiles/streams data, Tier-0), so this is scoped to the zone's own dedicated reads (RestrictedBrowseItem/RestrictedScene). */
         RestrictedZoneItemQuality: {
             /** @description Primary video stream >= 3840x2160 on any non-missing media file. */
             is4k: boolean;
             hdr: components["schemas"]["HdrType"];
+            /** @description Derived from the primary probed video stream's height (S5's technical authority) — null when no video stream has been probed yet. */
+            resolution: components["schemas"]["RestrictedResolutionBand"] | null;
         };
-        RestrictedZoneItem: components["schemas"]["CatalogItemBase"] & {
-            itemType: components["schemas"]["ItemType"];
+        /**
+         * @description SD < 720p <= HD < 1080p <= FHD < 2160p <= UHD, by primary video stream height (S9/S10).
+         * @enum {string}
+         */
+        RestrictedResolutionBand: "SD" | "HD" | "FHD" | "UHD";
+        /**
+         * @description `added` (catalog_items.added_at_ms), `date` (movie_details. premiere_at_ms, falling back to catalog_items.year — K1), `title`, `rating` (community_rating), `duration` (probed media_files. duration_ms).
+         * @enum {string}
+         */
+        RestrictedBrowseSort: "added" | "date" | "title" | "rating" | "duration";
+        RestrictedStudioRef: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+        };
+        RestrictedPerformerRef: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+        };
+        RestrictedTagChip: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+        };
+        /** @description One restricted-zone scene row (GET /restricted/browse, GET /restricted/search, GET /restricted/performers/{id}/scenes) — itemType is always `movie` (K1: scenes are item_type='movie' rows in restricted libraries). */
+        RestrictedBrowseItem: components["schemas"]["CatalogItemBase"] & {
+            /** @constant */
+            itemType: "movie";
+            /**
+             * Format: int64
+             * @description K1 editorial premiere date; null falls back to `year`.
+             */
+            premiereAtMs: number | null;
+            /**
+             * Format: int64
+             * @description Probed primary-file duration; null until the file is probed.
+             */
+            durationMs: number | null;
             genres: string[];
             images: components["schemas"]["ImageDescriptor"][];
             quality: components["schemas"]["RestrictedZoneItemQuality"];
+            studio: components["schemas"]["RestrictedStudioRef"] | null;
         };
-        RestrictedZoneItemPage: {
-            items: components["schemas"]["RestrictedZoneItem"][];
+        RestrictedBrowseItemPage: {
+            items: components["schemas"]["RestrictedBrowseItem"][];
             nextCursor: string | null;
+        };
+        /** @description One chapter_markers row (migrations/0019, K9/S7) for this scene. */
+        RestrictedSceneMarker: {
+            /** Format: uuid */
+            id: string;
+            title: string;
+            /** Format: int64 */
+            startMs: number;
+        };
+        /** @description The caller's OWN progress on this scene — a lighter twin of Progress without `itemId` (redundant: this object only ever appears nested inside the scene it belongs to). */
+        RestrictedSceneProgress: {
+            /** Format: int64 */
+            positionMs: number;
+            /** Format: int64 */
+            durationMs: number | null;
+            state: components["schemas"]["ProgressState"];
+            playCount: number;
+            /** Format: int64 */
+            updatedAtMs: number;
+        };
+        /** @description GET /restricted/scenes/{id} — full scene detail. */
+        RestrictedScene: components["schemas"]["CatalogItemBase"] & {
+            /** @constant */
+            itemType: "movie";
+            /**
+             * Format: int64
+             * @description K1 editorial premiere date (movie_details.premiere_at_ms); null falls back to `year`.
+             */
+            premiereAtMs: number | null;
+            contentRating: string | null;
+            /**
+             * Format: int64
+             * @description Editorial runtime (movie_details.runtime_ms) — provider/ admin-set, not necessarily populated for Stash-sourced scenes (S5: Stash supplies editorial facts, never technical ones). Prefer `durationMs` (the PROBED primary-file duration) for display; this is kept for parity with Movie/Episode/Track's own `runtimeMs` field.
+             */
+            runtimeMs: number | null;
+            /**
+             * Format: int64
+             * @description Probed primary-file duration (S5 "Loombre ffprobe authoritative for technical facts") — the same field RestrictedBrowseItem carries; null until the file is probed.
+             */
+            durationMs: number | null;
+            overview: string | null;
+            tagline?: string | null;
+            /** @description Genre AND general item_tags (kind IN (genre,tag)) together as one id/name chip list — the design's "tag chips", not split from a separate genre list the way browse cards' `genres` are (scene detail has no card-level genre badge to keep separate). */
+            tags: components["schemas"]["RestrictedTagChip"][];
+            studio: components["schemas"]["RestrictedStudioRef"] | null;
+            performers: components["schemas"]["RestrictedPerformerRef"][];
+            images: components["schemas"]["ImageDescriptor"][];
+            /** @description Ordered by startMs ascending. */
+            markers: components["schemas"]["RestrictedSceneMarker"][];
+            /** @description Null if the caller has never played this scene. */
+            progress: components["schemas"]["RestrictedSceneProgress"] | null;
+            quality: components["schemas"]["RestrictedZoneItemQuality"];
+        };
+        /** @description GET /restricted/performers row/detail — role=performer people credited on >=1 scene visible within the zone. Mirrors Person's shape (packages/db/src/query/people.ts's guard model) with a zone-scoped `sceneCount` in place of Person's general `creditCount`. */
+        RestrictedPerformer: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            contentClass: components["schemas"]["ContentClass"];
+            sceneCount: number;
+        };
+        RestrictedPerformerPage: {
+            items: components["schemas"]["RestrictedPerformer"][];
+            nextCursor: string | null;
+        };
+        /** @description GET /restricted/studios row/detail — kind=studio tags (S6: studios are first-class VIA tags, no dedicated entity table). */
+        RestrictedStudio: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            contentClass: components["schemas"]["ContentClass"];
+            sceneCount: number;
+            /** @description The studio's logo, ingested from Stash (entity_type=tag). */
+            images: components["schemas"]["ImageDescriptor"][];
+        };
+        RestrictedStudioPage: {
+            items: components["schemas"]["RestrictedStudio"][];
+            nextCursor: string | null;
+        };
+        RestrictedHomeContinueWatchingEntry: {
+            item: components["schemas"]["RestrictedBrowseItem"];
+            progress: components["schemas"]["Progress"];
+        };
+        /** @description GET /restricted/home — zone home rails (S9). Rail UI itself is Lane E's scope; this endpoint + shape land here (K4/S9). */
+        RestrictedHome: {
+            continueWatchingInZone: components["schemas"]["RestrictedHomeContinueWatchingEntry"][];
+            recentlyAddedInZone: components["schemas"]["RestrictedBrowseItem"][];
+            /** @description Top-N studios by scene count. */
+            studios: components["schemas"]["RestrictedStudio"][];
+            /** @description Top-N performers by scene count. */
+            performers: components["schemas"]["RestrictedPerformer"][];
+        };
+        /** @enum {string} */
+        AdminStashConnectionStatus: "never_connected" | "ok" | "unsupported_schema" | "unreachable";
+        /** @description GET/PUT /admin/libraries/{id}/stash-connection — packages/db's library_stash_connections row (migrations/0018), config fields admin-written, status fields worker-written at connect time (S2/S3). */
+        AdminStashConnection: {
+            /** Format: uuid */
+            libraryId: string;
+            /** @description False when no connection has ever been saved for this library. */
+            configured: boolean;
+            sqlitePath: string | null;
+            enabled: boolean;
+            status: components["schemas"]["AdminStashConnectionStatus"];
+            /** @description The exact S3 admin notice when status=unsupported_schema; null otherwise. */
+            statusDetail: string | null;
+            lastSeenSchemaVersion: number | null;
+            /** Format: int64 */
+            lastConnectedAtMs: number | null;
+            /** Format: int64 */
+            lastCheckedAtMs: number | null;
+        };
+        PutAdminStashConnectionRequest: {
+            sqlitePath: string;
+            /** @description Defaults to true when omitted on first configure. */
+            enabled?: boolean;
+        };
+        AdminStashPathMapping: {
+            stashPrefix: string;
+            loombrePrefix: string;
+        };
+        AdminStashPathMappings: {
+            /** @description Admin display order (position ASC) — matching is longest-prefix-wins, independent of this order. */
+            mappings: components["schemas"]["AdminStashPathMapping"][];
+        };
+        PutAdminStashPathMappingsRequest: {
+            mappings: components["schemas"]["AdminStashPathMapping"][];
+        };
+        PreviewAdminStashPathMappingsRequest: {
+            mappings: components["schemas"]["AdminStashPathMapping"][];
+        };
+        AdminStashPathMappingPreviewUnmatchedScene: {
+            stashSceneId: string;
+            stashPath: string;
+            /** @description Null when no candidate mapping's prefix matches this scene's raw Stash path at all. */
+            rewrittenPath: string | null;
+        };
+        AdminStashPathMappingPreview: {
+            totalStashScenes: number;
+            candidateMatchCount: number;
+            unmatchedCount: number;
+            /** @description Capped list for admin display — unmatchedCount above is always the true total. */
+            unmatchedScenes: components["schemas"]["AdminStashPathMappingPreviewUnmatchedScene"][];
+        };
+        PostAdminStashSyncRequest: {
+            /** @enum {string} */
+            mode: "full" | "incremental";
         };
         /** @description A user record sans secrets (no password hash, no PIN hash, no tokens). */
         ExportUser: {
@@ -5101,17 +5566,453 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Page of restricted zone items */
+            /** @description Page of restricted zone items (deprecated shape — superset-compatible with RestrictedBrowseItem) */
+            200: {
+                headers: {
+                    /** @description RFC 8594 Sunset date/time — informational, no enforced removal date set yet. */
+                    Sunset?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RestrictedBrowseItemPage"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    getRestrictedHome: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Zone home rails */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["RestrictedZoneItemPage"];
+                    "application/json": components["schemas"]["RestrictedHome"];
                 };
             };
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    listRestrictedBrowse: {
+        parameters: {
+            query?: {
+                /** @description Opaque pagination cursor from a previous page's `nextCursor`. */
+                cursor?: components["parameters"]["Cursor"];
+                limit?: components["parameters"]["Limit"];
+                /** @description Comma-separated performer (people.id) uuids — ANY match. */
+                performerIds?: string;
+                /** @description Comma-separated studio (tags.id, kind=studio) uuids — ANY match. */
+                studioTagIds?: string;
+                /** @description Comma-separated genre/tag (tags.id) uuids — ANY match. */
+                tagIds?: string;
+                ratingMin?: number;
+                ratingMax?: number;
+                durationMinMs?: number;
+                durationMaxMs?: number;
+                /** @description Comma-separated RestrictedResolutionBand values — ANY match (e.g. "FHD,UHD"). Derived per-item from the primary probed video stream's height (S5's technical authority); an item with no probed video stream never matches a non-empty filter. */
+                resolution?: string;
+                yearMin?: number;
+                yearMax?: number;
+                /** @description Defaults to `added`. `order`'s default depends on which sort is active (title: asc; added/date/rating/duration: desc). */
+                sort?: components["schemas"]["RestrictedBrowseSort"];
+                order?: components["parameters"]["Order"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Page of restricted-zone scenes */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RestrictedBrowseItemPage"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    getRestrictedScene: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["IdPathParam"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Scene detail */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RestrictedScene"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    listRestrictedPerformers: {
+        parameters: {
+            query?: {
+                /** @description Opaque pagination cursor from a previous page's `nextCursor`. */
+                cursor?: components["parameters"]["Cursor"];
+                limit?: components["parameters"]["Limit"];
+                /** @description Case-insensitive substring match on name. */
+                q?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Page of zone performers */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RestrictedPerformerPage"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    getRestrictedPerformer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["IdPathParam"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Performer detail */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RestrictedPerformer"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    listRestrictedPerformerScenes: {
+        parameters: {
+            query?: {
+                /** @description Opaque pagination cursor from a previous page's `nextCursor`. */
+                cursor?: components["parameters"]["Cursor"];
+                limit?: components["parameters"]["Limit"];
+            };
+            header?: never;
+            path: {
+                id: components["parameters"]["IdPathParam"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Page of the performer's zone scenes */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RestrictedBrowseItemPage"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    listRestrictedStudios: {
+        parameters: {
+            query?: {
+                /** @description Opaque pagination cursor from a previous page's `nextCursor`. */
+                cursor?: components["parameters"]["Cursor"];
+                limit?: components["parameters"]["Limit"];
+                /** @description Case-insensitive substring match on name. */
+                q?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Page of zone studios */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RestrictedStudioPage"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    getRestrictedStudio: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["IdPathParam"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Studio detail */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RestrictedStudio"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    restrictedSearch: {
+        parameters: {
+            query: {
+                q: string;
+                /** @description Opaque pagination cursor from a previous page's `nextCursor`. */
+                cursor?: components["parameters"]["Cursor"];
+                limit?: components["parameters"]["Limit"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Page of matching zone scenes */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RestrictedBrowseItemPage"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["UnprocessableEntity"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    getAdminLibraryStashConnection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["IdPathParam"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The library's Stash connection config + last observed status */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminStashConnection"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    putAdminLibraryStashConnection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["IdPathParam"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PutAdminStashConnectionRequest"];
+            };
+        };
+        responses: {
+            /** @description The saved connection config */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminStashConnection"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["UnprocessableEntity"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    getAdminLibraryStashPathMappings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["IdPathParam"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The library's path mappings, in admin display order */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminStashPathMappings"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    putAdminLibraryStashPathMappings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["IdPathParam"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PutAdminStashPathMappingsRequest"];
+            };
+        };
+        responses: {
+            /** @description The replaced path-mapping table */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminStashPathMappings"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["UnprocessableEntity"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    previewAdminLibraryStashPathMappings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["IdPathParam"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PreviewAdminStashPathMappingsRequest"];
+            };
+        };
+        responses: {
+            /** @description Match preview against the candidate mapping set */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminStashPathMappingPreview"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["UnprocessableEntity"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    postAdminLibraryStashSync: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["IdPathParam"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PostAdminStashSyncRequest"];
+            };
+        };
+        responses: {
+            /** @description Sync job enqueued */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobRef"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["UnprocessableEntity"];
             default: components["responses"]["Problem"];
         };
     };

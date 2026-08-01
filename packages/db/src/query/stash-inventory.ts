@@ -177,14 +177,33 @@ export interface PathMappingMatchPreview {
 
 const UNMATCHED_SCENES_PREVIEW_CAP = 200;
 
-export async function computePathMappingMatchPreview(db: Kysely<DB>, libraryId: string): Promise<PathMappingMatchPreview> {
+/**
+ * `mappingsOverride` (STATE.md Stash run, Lane D's admin surface —
+ * POST /admin/libraries/{id}/stash-path-mappings/preview): when supplied,
+ * the preview reflects THESE candidate (not-yet-saved) mappings instead of
+ * the library's currently-stored `library_path_mappings` rows — an admin
+ * drafting a new mapping set can see its match counts before committing it
+ * via PUT. Omitted (the original, still-tested behavior): the currently
+ * saved mappings, unchanged. Either way this stays "pure SQL over the last
+ * inventory/sync snapshot's stored Stash paths" (K10) — only WHICH mapping
+ * set is applied to those stored paths changes, never where the paths
+ * themselves come from.
+ */
+export async function computePathMappingMatchPreview(
+  db: Kysely<DB>,
+  libraryId: string,
+  mappingsOverride?: readonly StashPathMapping[]
+): Promise<PathMappingMatchPreview> {
   const [mappingRows, sceneLinks, candidateFiles] = await Promise.all([
-    getLibraryPathMappings(db, libraryId),
+    mappingsOverride === undefined ? getLibraryPathMappings(db, libraryId) : Promise.resolve(undefined),
     listStashSceneLinksForLibrary(db, libraryId),
     listCandidateMediaFilesForLibrary(db, libraryId),
   ]);
 
-  const mappings: StashPathMapping[] = mappingRows.map((m) => ({ stashPrefix: m.stash_prefix, loombrePrefix: m.loombre_prefix }));
+  const mappings: StashPathMapping[] =
+    mappingsOverride !== undefined
+      ? [...mappingsOverride]
+      : (mappingRows ?? []).map((m) => ({ stashPrefix: m.stash_prefix, loombrePrefix: m.loombre_prefix }));
   const candidatePaths = new Set(candidateFiles.map((f) => f.path));
 
   let candidateMatchCount = 0;

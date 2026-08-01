@@ -215,12 +215,34 @@ async function main() {
       ['Restricted Genre A', 'genre'],
       ['Restricted Genre B', 'genre'],
     ]) {
+      // `kind` here is set on BOTH the tag row itself (migrations/0019's
+      // entity-level tags.kind, K2/S6) AND the JS-local tagRow.kind the
+      // tagItem() helper below writes into the item_tags EDGE — a genre
+      // tag is genre at both levels in this seed's data, matching how a
+      // real Stash-mapped genre tag would land (S6's mapper sets both).
       restrictedTags[name] = await insertOne(
         client,
-        `INSERT INTO tags (name, content_class) VALUES ($1, 'restricted') RETURNING id`,
-        [name]
+        `INSERT INTO tags (name, content_class, kind) VALUES ($1, 'restricted', $2) RETURNING id`,
+        [name, kind]
       );
       restrictedTags[name].kind = kind;
+    }
+
+    // Restricted Content surface (STATE.md Stash run, S9/K2/S6) fixtures:
+    // studios are first-class VIA tags.kind='studio' (entity level) +
+    // item_tags.kind='studio' (edge level) — Lane D's zone studios
+    // surface (packages/db/src/query/restricted-studios.ts) and its leak
+    // suite need at least two real studio rows attached to restricted
+    // movies, which no earlier fixture wave provided (tags.kind did not
+    // exist before migration 0019).
+    const restrictedStudioTags = {};
+    for (const name of ['Nightshade Films', 'Aurora Media']) {
+      restrictedStudioTags[name] = await insertOne(
+        client,
+        `INSERT INTO tags (name, content_class, kind) VALUES ($1, 'restricted', 'studio') RETURNING id`,
+        [name]
+      );
+      restrictedStudioTags[name].kind = 'studio';
     }
 
     // Leak-suite hardening: a restricted tag sharing a NAME with a general
@@ -505,20 +527,34 @@ async function main() {
     // ------------------------------------------------------------------
     // Restricted movies (4)
     // ------------------------------------------------------------------
-    const restrictedTitles = ['After Hours Redline', 'Velvet Static', 'Midnight Ledger', 'Undertow Confidential'];
+    // [title, year, communityRating, premiereAtMs] — Restricted Content
+    // surface fixtures (STATE.md Stash run S9): varied year/rating/date so
+    // Lane D's zone browse filter+sort tests (yearMin/Max, ratingMin/Max,
+    // 'date' sort with a real K1 movie_details.premiere_at_ms AND the
+    // NULL-sentinel case) have real, non-identical data to distinguish —
+    // the earlier fixed (2021, 6.9, no date) wave only ever exercised
+    // visibility, never filtering/sorting. premiereAtMs is `null` for two
+    // of the four (index 2/3) on purpose: the 'date' sort's NULL-pushed-
+    // last sentinel needs a real case to prove against.
+    const restrictedTitles = [
+      ['After Hours Redline', 2019, 6.9, Date.UTC(2019, 5, 14)],
+      ['Velvet Static', 2022, 8.2, Date.UTC(2022, 10, 2)],
+      ['Midnight Ledger', 2021, 5.1, null],
+      ['Undertow Confidential', 2020, null, null],
+    ];
     const restrictedMovies = [];
-    for (const title of restrictedTitles) {
+    for (const [title, year, communityRating, premiereAtMs] of restrictedTitles) {
       const item = await insertCatalogItem({
         libraryId: libRestricted.id,
         itemType: 'movie',
         title,
         sortTitle: title,
-        year: 2021,
-        communityRating: 6.9,
+        year,
+        communityRating,
       });
       await client.query(
-        `INSERT INTO movie_details (item_id, content_rating, runtime_ms, tagline, overview) VALUES ($1, 'NC-17', $2, $3, $4)`,
-        [item.id, 95 * 60_000, 'Not for general audiences.', `${title} — restricted-library placeholder content for Phase 0 seed data.`]
+        `INSERT INTO movie_details (item_id, content_rating, runtime_ms, tagline, overview, premiere_at_ms) VALUES ($1, 'NC-17', $2, $3, $4, $5)`,
+        [item.id, 95 * 60_000, 'Not for general audiences.', `${title} — restricted-library placeholder content for Phase 0 seed data.`, premiereAtMs]
       );
       restrictedMovies.push(item);
     }
@@ -527,20 +563,69 @@ async function main() {
       await creditItem(movie.id, restrictedPeople[i % restrictedPeople.length].id, 'performer', 'Featured', 0);
       await tagItem(movie.id, i % 2 === 0 ? restrictedTags['Restricted Genre A'] : restrictedTags['Restricted Genre B']);
     }
-    // media_files for two of the restricted movies
-    for (const movie of restrictedMovies.slice(0, 2)) {
-      await client.query(
+    // Studio attribution (K2/S6) — two of the four scenes get a studio
+    // edge, one each, so Lane D's zone studios surface + browse
+    // studioTagIds filter have real, distinct fixture data; the other two
+    // stay studio-less (an item with no studio chip is a legitimate,
+    // tested state — Undertow Confidential/Midnight Ledger).
+    await tagItem(restrictedMovies[0].id, restrictedStudioTags['Nightshade Films']);
+    await tagItem(restrictedMovies[1].id, restrictedStudioTags['Aurora Media']);
+    // media_files for three of the four restricted movies, with distinct
+    // probed durations AND (below) distinct primary-video heights — S9's
+    // browse duration/resolution filters and 'duration' sort need real,
+    // non-identical values to distinguish; Undertow Confidential (index 3)
+    // deliberately keeps NO media_files at all (the "unprobed, no
+    // evidence" case listRestrictedBrowse's resolution/duration fields
+    // must report as `null`, never a fabricated value).
+    const restrictedFileDurationsMs = [95 * 60_000, 110 * 60_000, 80 * 60_000];
+    const restrictedFiles = [];
+    for (const [i, movie] of restrictedMovies.slice(0, 3).entries()) {
+      const file = await insertOne(
+        client,
         `INSERT INTO media_files (item_id, path, content_hash, size_bytes, container, duration_ms, probe, probed_at_ms)
-         VALUES ($1, $2, $3, $4, 'mkv', $5, $6::jsonb, $7)`,
+         VALUES ($1, $2, $3, $4, 'mkv', $5, $6::jsonb, $7)
+         RETURNING id`,
         [
           movie.id,
           `/data/restricted/${movie.id}.mkv`,
           `xxh3-${movie.id}`,
           4_800_000_000,
-          95 * 60_000,
+          restrictedFileDurationsMs[i],
           JSON.stringify({ format: 'matroska', probed: true }),
           nextMs(),
         ]
+      );
+      restrictedFiles.push(file);
+    }
+    // Primary video stream per file — one FHD, one UHD, one HD, so all
+    // three non-empty RestrictedResolutionBand values have a real fixture
+    // (SD has no fixture today; the band function itself is exercised by
+    // packages/db/test/restricted-browse.spec.ts's unit cases instead).
+    const restrictedFileResolutions = [
+      { width: 1920, height: 1080, hdr: 'none' }, // After Hours Redline -> FHD
+      { width: 3840, height: 2160, hdr: 'hdr10' }, // Velvet Static -> UHD
+      { width: 1280, height: 720, hdr: 'none' }, // Midnight Ledger -> HD
+    ];
+    for (const [i, file] of restrictedFiles.entries()) {
+      const { width, height, hdr } = restrictedFileResolutions[i];
+      await client.query(
+        `INSERT INTO media_streams (file_id, stream_index, stream_type, codec, width, height, bit_depth, color_transfer, channels, sample_rate, bitrate_bps, frame_rate, language, is_default, is_forced, hdr)
+         VALUES ($1, 0, 'video', 'hevc', $2, $3, 8, NULL, NULL, NULL, 9000000, 23.976, NULL, TRUE, FALSE, $4)`,
+        [file.id, width, height, hdr]
+      );
+    }
+    // Chapter markers (K9/S7) — After Hours Redline (index 0) gets three,
+    // proving the scene-detail chapters list AND its ORDER BY start_ms
+    // against real, non-trivial data (the other three scenes stay
+    // marker-less, the common case).
+    for (const [title, startMs] of [
+      ['Opening', 0],
+      ['Midpoint', 32 * 60_000],
+      ['Finale', 71 * 60_000],
+    ]) {
+      await client.query(
+        `INSERT INTO chapter_markers (item_id, title, start_ms, source) VALUES ($1, $2, $3, 'stash')`,
+        [restrictedMovies[0].id, title, startMs]
       );
     }
 

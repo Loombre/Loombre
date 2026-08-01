@@ -36,16 +36,24 @@ import {
   getLibraryItemCountsForViewer,
   getPersonById,
   getRecentlyAdded,
+  getRestrictedPerformerById,
+  getRestrictedSceneDetail,
+  getRestrictedStudioById,
   getRestrictedZoneCountForViewer,
+  getRestrictedZoneHome,
   listItemsForPerson,
   listPeople,
   listProgress,
-  listRestrictedZoneItemsForViewer,
+  listRestrictedBrowse,
+  listRestrictedPerformers,
+  listRestrictedPerformerScenes,
+  listRestrictedStudios,
   listTags,
   listWatchlist,
   readEventsForViewer,
   removeFromWatchlistAndEmit,
   searchCatalog,
+  searchRestrictedZone,
 } from '../src/index.js';
 import type { ViewerContext } from '../src/context.js';
 import type { DB } from '../src/types.js';
@@ -101,6 +109,10 @@ let rareTagId: string;
 let restrictedGenreATagId: string;
 let elenaMarshId: string; // ordinary general person, has an image fixture
 let restrictedPerformerOneId: string; // ordinary restricted person, has an image fixture
+// STATE.md Stash run (S9) fixtures.
+let nightshadeFilmsTagId: string; // studio (kind='studio'), on After Hours Redline
+let auroraMediaTagId: string; // studio (kind='studio'), on Velvet Static
+let undertowConfidentialItemId: string; // restricted item, NO media_files at all (no-evidence case)
 
 beforeAll(async () => {
   run(path.join(PKG_ROOT, 'scripts', 'migrate.mjs'), ['reset']);
@@ -199,6 +211,9 @@ beforeAll(async () => {
   restrictedGenreATagId = await one("SELECT id FROM tags WHERE name = 'Restricted Genre A'");
   elenaMarshId = await one("SELECT id FROM people WHERE name = 'Elena Marsh'");
   restrictedPerformerOneId = await one("SELECT id FROM people WHERE name = 'Restricted Performer One'");
+  nightshadeFilmsTagId = await one("SELECT id FROM tags WHERE name = 'Nightshade Films'");
+  auroraMediaTagId = await one("SELECT id FROM tags WHERE name = 'Aurora Media'");
+  undertowConfidentialItemId = await one("SELECT id FROM catalog_items WHERE title = 'Undertow Confidential'");
 });
 
 afterAll(async () => {
@@ -720,69 +735,261 @@ describe('restricted-content leak impossibility', () => {
     });
 
     // ------------------------------------------------------------------
-    // 12. Restricted zone ITEM LISTING (Wave 2, lane L8) — the zone's own
-    //     query surface. UNLIKE the count above, this IS lock-sensitive:
-    //     entitled-but-locked gets a real page with zero items (never
-    //     titles/artwork), not-entitled-at-all gets undefined (the
-    //     caller's 404, same posture as the count surface).
+    // 12. Restricted Content surface (STATE.md Stash run, S9/K4) — SUPERSEDES
+    //     the old "fetch the whole zone client-side" design this section used
+    //     to test. Every new query module (restricted-browse/-performers/
+    //     -studios/-search/-home.ts) shares the SAME two-step entitlement
+    //     gate the count surface above established: zero entitlement ->
+    //     undefined (caller: 404); entitled -> a real, guard-filtered result,
+    //     empty while entitled-but-locked (never a 404) — U10's "zone exists
+    //     but I'm locked out" disclosure, replayed at every new surface.
     // ------------------------------------------------------------------
-    it('listRestrictedZoneItemsForViewer: undefined for a viewer with no restricted-library entitlement at all', async () => {
-      const result = await listRestrictedZoneItemsForViewer(db, casualUncleared);
-      expect(result).toBeUndefined();
+
+    describe('12a. listRestrictedBrowse (S9 zone browse)', () => {
+      it('undefined for a viewer with no restricted-library entitlement at all', async () => {
+        const result = await listRestrictedBrowse(db, casualUncleared, {});
+        expect(result).toBeUndefined();
+      });
+
+      it('entitled but NOT gate-5 unlocked gets a real, EMPTY page — never titles/artwork while locked', async () => {
+        const result = await listRestrictedBrowse(db, adminClearedButNotUnlocked, {});
+        expect(result).not.toBeUndefined();
+        expect(result?.rows).toEqual([]);
+        expect(result?.nextCursor).toBeNull();
+      });
+
+      it('entitled AND unlocked gets the real zone contents, guard-consistent with the count surface', async () => {
+        const result = await listRestrictedBrowse(db, adminCleared, { limit: 200 });
+        expect(result).not.toBeUndefined();
+        const rows = result!.rows;
+
+        const countResult = await getRestrictedZoneCountForViewer(db, adminCleared);
+        expect(rows).toHaveLength(countResult!.count);
+        expect(rows.map((r) => r.title).sort()).toEqual(
+          ['After Hours Redline', 'Midnight Ledger', 'Undertow Confidential', 'Velvet Static'].sort()
+        );
+        expect(rows.every((r) => r.contentClass === 'restricted')).toBe(true);
+        expect(rows.every((r) => r.libraryId === restrictedLibraryId)).toBe(true);
+
+        const afterHours = rows.find((r) => r.title === 'After Hours Redline');
+        expect(afterHours?.genres).toEqual(expect.arrayContaining(['Restricted Genre A', 'Drama']));
+        expect(afterHours?.studio).toEqual({ id: nightshadeFilmsTagId, name: 'Nightshade Films' });
+
+        // The one seeded item with NO media_files row at all — resolution/
+        // duration must report the honest "no evidence" null, never a
+        // fabricated value.
+        const undertow = rows.find((r) => r.title === 'Undertow Confidential');
+        expect(undertow?.resolution).toBeNull();
+        expect(undertow?.durationMs).toBeNull();
+        expect(undertow?.studio).toBeNull();
+      });
+
+      it('empty allowedLibraryIds compiles to no entitlement, not a crash', async () => {
+        const emptyLibsCleared: ViewerContext = {
+          userId: adminCleared.userId,
+          allowedLibraryIds: [],
+          restrictedCleared: true,
+        };
+        const result = await listRestrictedBrowse(db, emptyLibsCleared, {});
+        expect(result).toBeUndefined();
+      });
+
+      it('resolution band filter is real, index-backed technical fact (S9) — FHD/UHD/HD partition the fixture data exactly, never overlapping', async () => {
+        const fhd = await listRestrictedBrowse(db, adminCleared, { resolution: ['FHD'] });
+        expect(fhd?.rows.map((r) => r.title)).toEqual(['After Hours Redline']);
+        const uhd = await listRestrictedBrowse(db, adminCleared, { resolution: ['UHD'] });
+        expect(uhd?.rows.map((r) => r.title)).toEqual(['Velvet Static']);
+        const hdOrFhd = await listRestrictedBrowse(db, adminCleared, { resolution: ['HD', 'FHD'] });
+        expect(hdOrFhd?.rows.map((r) => r.title).sort()).toEqual(['After Hours Redline', 'Midnight Ledger'].sort());
+      });
+
+      it('studioTagIds filter narrows to exactly that studio, never widening to the whole zone', async () => {
+        const result = await listRestrictedBrowse(db, adminCleared, { studioTagIds: [auroraMediaTagId] });
+        expect(result?.rows.map((r) => r.title)).toEqual(['Velvet Static']);
+      });
+
+      it('malformed UUID filter params answer an EMPTY page, never a silently dropped filter (house rule)', async () => {
+        const result = await listRestrictedBrowse(db, adminCleared, { performerIds: ['not-a-uuid'] });
+        expect(result).toEqual({ rows: [], nextCursor: null });
+        // Confirms the filter was actually APPLIED (not dropped): without
+        // any filter at all, adminCleared sees all 4 zone rows.
+        const unfiltered = await listRestrictedBrowse(db, adminCleared, {});
+        expect(unfiltered?.rows.length).toBe(4);
+      });
+
+      it('yearMin/yearMax and ratingMin/ratingMax filters exclude non-matching zone rows without leaking general rows', async () => {
+        const byYear = await listRestrictedBrowse(db, adminCleared, { yearMin: 2021 });
+        expect(byYear?.rows.map((r) => r.title).sort()).toEqual(['Midnight Ledger', 'Velvet Static'].sort());
+        const byRating = await listRestrictedBrowse(db, adminCleared, { ratingMin: 7 });
+        expect(byRating?.rows.map((r) => r.title)).toEqual(['Velvet Static']);
+      });
     });
 
-    it('listRestrictedZoneItemsForViewer: entitled but NOT gate-5 unlocked gets a real, EMPTY page — never titles/artwork while locked', async () => {
-      const result = await listRestrictedZoneItemsForViewer(db, adminClearedButNotUnlocked);
-      // Distinguishes from "not entitled" above: this must be a real page
-      // object (undefined would incorrectly 404 an entitled viewer), just
-      // with zero rows — "opening a restricted item while locked routes to
-      // PIN entry, never content" enforced one layer below the UI redirect.
-      expect(result).not.toBeUndefined();
-      expect(result?.rows).toEqual([]);
-      expect(result?.nextCursor).toBeNull();
+    describe('12b. getRestrictedSceneDetail (S9 scene detail)', () => {
+      it('byte-identical undefined for a truly nonexistent id, an uncleared casual viewer, AND an entitled-but-locked admin — no distinguishing signal between them', async () => {
+        const nonexistent = await getRestrictedSceneDetail(db, adminCleared, '00000000-0000-7000-8000-000000000000');
+        const uncleared = await getRestrictedSceneDetail(db, casualUncleared, afterHoursRedlineItemId);
+        const lockedAdmin = await getRestrictedSceneDetail(db, adminClearedButNotUnlocked, afterHoursRedlineItemId);
+        expect(nonexistent).toBeUndefined();
+        expect(uncleared).toBeUndefined();
+        expect(lockedAdmin).toBeUndefined();
+      });
+
+      it('a general (non-zone) item id is ALSO undefined through this surface, even fully cleared — the zone detail read is scene-only (K1)', async () => {
+        const result = await getRestrictedSceneDetail(db, adminCleared, lastFerryOutItemId);
+        expect(result).toBeUndefined();
+      });
+
+      it('entitled AND unlocked gets the real scene: chapters, performer chips, studio chip, tag chips, and the caller\'s own progress', async () => {
+        const result = await getRestrictedSceneDetail(db, adminCleared, afterHoursRedlineItemId);
+        expect(result).not.toBeUndefined();
+        expect(result?.title).toBe('After Hours Redline');
+        expect(result?.resolution).toBe('FHD');
+        expect(result?.studio).toEqual({ id: nightshadeFilmsTagId, name: 'Nightshade Films' });
+        expect(result?.performers.map((p) => p.name)).toContain('Restricted Performer One');
+        expect(result?.tags.map((t) => t.name).sort()).toEqual(['Drama', 'Restricted Genre A'].sort());
+        // Chapters (K9/S7): seeded with 3 markers on this exact item,
+        // ordered by start_ms.
+        expect(result?.chapters.map((c) => c.title)).toEqual(['Opening', 'Midpoint', 'Finale']);
+        expect(result?.chapters.every((c, i, arr) => i === 0 || c.startMs > arr[i - 1]!.startMs)).toBe(true);
+        // admin's own restricted-item progress fixture (seed.mjs) rides
+        // this exact item — proves the progress join is scoped to
+        // ctx.userId, not a global "latest progress on this item".
+        expect(result?.progress).not.toBeNull();
+      });
+
+      it('a scene with NO media_files row at all reports resolution/durationMs as null (no evidence), never fabricated', async () => {
+        const result = await getRestrictedSceneDetail(db, adminCleared, undertowConfidentialItemId);
+        expect(result?.resolution).toBeNull();
+        expect(result?.durationMs).toBeNull();
+        expect(result?.hdr).toBeNull();
+      });
     });
 
-    it('listRestrictedZoneItemsForViewer: entitled AND unlocked gets the real zone contents, guard-consistent with the count surface', async () => {
-      const result = await listRestrictedZoneItemsForViewer(db, adminCleared, { limit: 200 });
-      expect(result).not.toBeUndefined();
-      const rows = result!.rows;
+    describe('12c. Restricted performers (S9) — role=performer, zone-scoped', () => {
+      it('listRestrictedPerformers: undefined for no entitlement; empty while locked; real rows once cleared', async () => {
+        expect(await listRestrictedPerformers(db, casualUncleared, {})).toBeUndefined();
+        const locked = await listRestrictedPerformers(db, adminClearedButNotUnlocked, {});
+        expect(locked?.rows).toEqual([]);
+        const cleared = await listRestrictedPerformers(db, adminCleared, {});
+        expect(cleared?.rows.map((r) => r.name).sort()).toEqual(
+          ['Restricted Performer One', 'Restricted Performer Three', 'Restricted Performer Two'].sort()
+        );
+      });
 
-      // Same total the count surface reports for the identical cleared ctx
-      // (this suite's seed only ever creates restricted MOVIES, so the
-      // listing's movie/series-only itemType filter drops nothing).
-      const countResult = await getRestrictedZoneCountForViewer(db, adminCleared);
-      expect(rows).toHaveLength(countResult!.count);
+      it('THE FINDING (mirrored from listPeople/listTags): a restricted person credited on a GENERAL item with a non-performer role never appears, and a general person with only a non-performer credit on a restricted item never appears either', async () => {
+        const cleared = await listRestrictedPerformers(db, adminCleared, { limit: 200 });
+        const names = cleared?.rows.map((r) => r.name) ?? [];
+        // restrictedCameoPerformer: restricted-class, but role='guest' (not
+        // 'performer') and credited on a GENERAL item — must not surface.
+        expect(names).not.toContain('Restricted Cameo Performer');
+        // marginalGeneralActor: general-class, role='guest' on a restricted
+        // item — fails BOTH the role filter and (for a general person) has
+        // no reason to appear in a restricted-only performer rail.
+        expect(names).not.toContain('Marginal General Actor');
+      });
 
-      expect(rows.map((r) => r.title).sort()).toEqual(
-        ['After Hours Redline', 'Midnight Ledger', 'Undertow Confidential', 'Velvet Static'].sort()
-      );
-      // Every row is genuinely a restricted-zone row — library/content_class
-      // are never general, confirming this surface cannot smuggle in a
-      // general-library item alongside the zone's own.
-      expect(rows.every((r) => r.contentClass === 'restricted')).toBe(true);
-      expect(rows.every((r) => r.libraryId === restrictedLibraryId)).toBe(true);
+      it('getRestrictedPerformerById: byte-identical undefined for nonexistent id, uncleared viewer, AND locked admin', async () => {
+        const nonexistent = await getRestrictedPerformerById(db, adminCleared, '00000000-0000-7000-8000-000000000000');
+        const uncleared = await getRestrictedPerformerById(db, casualUncleared, restrictedPerformerOneId);
+        const locked = await getRestrictedPerformerById(db, adminClearedButNotUnlocked, restrictedPerformerOneId);
+        expect(nonexistent).toBeUndefined();
+        expect(uncleared).toBeUndefined();
+        expect(locked).toBeUndefined();
 
-      // Genre attach mirrors the item detail path's own content_class join
-      // rule (a restricted item can carry BOTH a restricted-class tag and,
-      // per seed.mjs, a general-class one — both are visible once cleared).
-      const afterHours = rows.find((r) => r.title === 'After Hours Redline');
-      expect(afterHours?.genres).toEqual(expect.arrayContaining(['Restricted Genre A', 'Drama']));
+        const cleared = await getRestrictedPerformerById(db, adminCleared, restrictedPerformerOneId);
+        expect(cleared?.name).toBe('Restricted Performer One');
+        expect(cleared?.sceneCount).toBeGreaterThan(0);
+      });
 
-      // Quality: the seed never inserts media_streams rows for the two
-      // restricted movies that do have a media_files row (probe JSONB
-      // only) — the honest "no evidence" default must surface, never a
-      // fabricated 4K/HDR signal.
-      expect(rows.every((r) => r.quality.is4k === false && r.quality.hdr === 'none')).toBe(true);
+      it('a GENERAL person id (e.g. Elena Marsh) never resolves through the restricted performer surface, even cleared', async () => {
+        const result = await getRestrictedPerformerById(db, adminCleared, elenaMarshId);
+        expect(result).toBeUndefined();
+      });
+
+      it('listRestrictedPerformerScenes delegates to the SAME guarded browse (pure delegation, cannot diverge in leak posture)', async () => {
+        expect(await listRestrictedPerformerScenes(db, casualUncleared, restrictedPerformerOneId)).toBeUndefined();
+        const cleared = await listRestrictedPerformerScenes(db, adminCleared, restrictedPerformerOneId);
+        expect(cleared?.rows.every((r) => r.contentClass === 'restricted')).toBe(true);
+        expect(cleared?.rows.length).toBeGreaterThan(0);
+      });
     });
 
-    it('listRestrictedZoneItemsForViewer: empty allowedLibraryIds compiles to no entitlement, not a crash', async () => {
-      const emptyLibsCleared: ViewerContext = {
-        userId: adminCleared.userId,
-        allowedLibraryIds: [],
-        restrictedCleared: true,
-      };
-      const result = await listRestrictedZoneItemsForViewer(db, emptyLibsCleared);
-      expect(result).toBeUndefined();
+    describe('12d. Restricted studios (S9/K2/S6) — tags.kind=\'studio\', zone-scoped', () => {
+      it('listRestrictedStudios: undefined for no entitlement; empty while locked; real rows once cleared', async () => {
+        expect(await listRestrictedStudios(db, casualUncleared, {})).toBeUndefined();
+        const locked = await listRestrictedStudios(db, adminClearedButNotUnlocked, {});
+        expect(locked?.rows).toEqual([]);
+        const cleared = await listRestrictedStudios(db, adminCleared, {});
+        expect(cleared?.rows.map((r) => r.name).sort()).toEqual(['Aurora Media', 'Nightshade Films'].sort());
+        expect(cleared?.rows.every((r) => r.sceneCount === 1)).toBe(true);
+      });
+
+      it('getRestrictedStudioById: byte-identical undefined for nonexistent id, uncleared viewer, AND locked admin', async () => {
+        const nonexistent = await getRestrictedStudioById(db, adminCleared, '00000000-0000-7000-8000-000000000000');
+        const uncleared = await getRestrictedStudioById(db, casualUncleared, nightshadeFilmsTagId);
+        const locked = await getRestrictedStudioById(db, adminClearedButNotUnlocked, nightshadeFilmsTagId);
+        expect(nonexistent).toBeUndefined();
+        expect(uncleared).toBeUndefined();
+        expect(locked).toBeUndefined();
+
+        const cleared = await getRestrictedStudioById(db, adminCleared, nightshadeFilmsTagId);
+        expect(cleared?.name).toBe('Nightshade Films');
+      });
+
+      it('a general-class or non-studio-kind tag id never resolves through the restricted studio surface, even cleared', async () => {
+        // generalDramaTagId: general-class, kind='general' — fails both.
+        expect(await getRestrictedStudioById(db, adminCleared, generalDramaTagId)).toBeUndefined();
+        // restrictedGenreATagId: restricted-class, but kind='genre', not
+        // 'studio' — proves the studio surface is NOT just "any restricted
+        // tag", it is specifically kind='studio' tags.
+        expect(await getRestrictedStudioById(db, adminCleared, restrictedGenreATagId)).toBeUndefined();
+      });
+    });
+
+    describe('12e. searchRestrictedZone (S9) — title/performer/studio/tag, zone-scoped', () => {
+      it('undefined for no entitlement; empty while locked; real hits once cleared', async () => {
+        expect(await searchRestrictedZone(db, casualUncleared, { q: 'After' })).toBeUndefined();
+        const locked = await searchRestrictedZone(db, adminClearedButNotUnlocked, { q: 'After' });
+        expect(locked?.rows).toEqual([]);
+        const cleared = await searchRestrictedZone(db, adminCleared, { q: 'After' });
+        expect(cleared?.rows.map((r) => r.title)).toEqual(['After Hours Redline']);
+      });
+
+      it('matches on a STUDIO name and a PERFORMER name, both surfacing the scene card (not just a title match)', async () => {
+        const byStudio = await searchRestrictedZone(db, adminCleared, { q: 'Aurora Media' });
+        expect(byStudio?.rows.map((r) => r.title)).toEqual(['Velvet Static']);
+        const byPerformer = await searchRestrictedZone(db, adminCleared, { q: 'Restricted Performer One' });
+        expect(byPerformer?.rows.length).toBeGreaterThan(0);
+      });
+
+      it('zone search NEVER surfaces a general-library title, and general searchCatalog NEVER surfaces a zone title to an uncleared viewer — the two surfaces stay mutually exclusive', async () => {
+        const zoneHitForGeneralTitle = await searchRestrictedZone(db, adminCleared, { q: 'Harbor Lights' });
+        expect(zoneHitForGeneralTitle?.rows).toEqual([]);
+        const generalHitForZoneTitle = await searchCatalog(db, casualUncleared, { q: 'After Hours Redline' });
+        expect(generalHitForZoneTitle.rows).toEqual([]);
+      });
+    });
+
+    describe('12f. getRestrictedZoneHome (S9) — rails', () => {
+      it('undefined for no entitlement; all-empty rails while locked; real rails once cleared', async () => {
+        expect(await getRestrictedZoneHome(db, casualUncleared, {})).toBeUndefined();
+        const locked = await getRestrictedZoneHome(db, adminClearedButNotUnlocked, {});
+        expect(locked).toEqual({
+          continueWatchingInZone: [],
+          recentlyAddedInZone: [],
+          studios: [],
+          performers: [],
+        });
+
+        const cleared = await getRestrictedZoneHome(db, adminCleared, {});
+        expect(cleared?.recentlyAddedInZone.length).toBe(4);
+        expect(cleared?.studios.map((s) => s.name).sort()).toEqual(['Aurora Media', 'Nightshade Films'].sort());
+        expect(cleared?.performers.length).toBeGreaterThan(0);
+        // admin's seeded restricted-item progress (After Hours Redline)
+        // surfaces as a full card, not a bare id.
+        expect(cleared?.continueWatchingInZone.some((e) => e.item.title === 'After Hours Redline')).toBe(true);
+      });
     });
 
     // 13. Watchlist (Phosphor Wave 2 lane L3) — migrations/
