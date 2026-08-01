@@ -15,6 +15,7 @@ import { startWatcher, type WatcherHandle } from "./scan/watcher.js";
 import { getWorkerSettingValue, loadWorkerEffectiveSettings, resolveScanConcurrencyFromEffective } from "./settings/effective-settings.js";
 import { runProbe } from "./probe/consumer.js";
 import { createProbeTerminalFailureHook } from "./probe/terminal-failure-hook.js";
+import { createStashProvider } from "./metadata/providers/stash.js";
 import {
   ProviderRegistry,
   createMusicBrainzProvider,
@@ -164,6 +165,11 @@ registry.register(
   }),
 );
 registry.register(createMusicBrainzProvider({ db }));
+// Stash SQLite metadata sync, K7: restricted-scoped, attaches per-library
+// via library_provider_entries (never in provider-chain-defaults.ts's
+// PROVIDER_CHAIN) — registered here alongside the other built-ins so a
+// per-item refresh through the registry can resolve it by name.
+registry.register(createStashProvider({ db }));
 for (const notice of registry.disabledProviders()) {
   console.warn(`worker: metadata provider "${notice.name}" disabled — ${notice.reason}`);
 }
