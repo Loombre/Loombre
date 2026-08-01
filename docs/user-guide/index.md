@@ -16,6 +16,7 @@ don't recognize, that's a mistake on our part — please report it.
 - **[Watching](watching.md)** — playing something, picking up where you left off, subtitles.
 - **[Listening to music](music.md)** — albums, artists, and playlists.
 - **[Restricted content](restricted-content.md)** — content that needs a PIN, and how it's kept private.
+- **[Browsing the restricted zone](restricted-content-browsing.md)** — finding your way around once it's unlocked.
 - **[Why is this converting?](why-is-it-converting.md)** — what that message means when it shows up.
 
 ## Something not working?
