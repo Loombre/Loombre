@@ -18,7 +18,7 @@
 // findOrCreateTag; this module does not infer it.
 
 import type { Selectable } from 'kysely';
-import type { ContentClass, ItemPeopleTable, ItemTagKind, ItemTagsTable, PeopleTable, PersonRole, ProviderIdsTable, TagsTable } from '../types.js';
+import type { ContentClass, ItemPeopleTable, ItemTagKind, ItemTagsTable, PeopleTable, PersonRole, ProviderIdsTable, TagKind, TagsTable } from '../types.js';
 import type { DbOrTx } from './tx.js';
 import { withTransaction } from './tx.js';
 
@@ -114,13 +114,52 @@ export async function replaceItemPeople(db: DbOrTx, itemId: string, people: Item
 export type TagRow = Selectable<TagsTable>;
 export type ItemTagRow = Selectable<ItemTagsTable>;
 
+export interface FindOrCreateTagOptions {
+  /** Entity-level classification (migrations/0019, K2/S6) — omit to leave
+   *  an existing row's `kind` untouched (INSERT still gets the column's
+   *  own DEFAULT 'general') and never include `kind` in the ON CONFLICT
+   *  UPDATE at all. Mirrors src/internal/catalog.ts's
+   *  UpsertSatelliteInput.premiere_at_ms "absent means don't touch"
+   *  convention — required so the Stash mapper (apps/worker/src/stash/
+   *  apply.ts) can (re)classify a tag it recognizes while every
+   *  pre-existing 3-arg call site (metadata/consumer.ts) keeps writing
+   *  exactly the columns it always has. */
+  kind?: TagKind;
+  /** Stash tag hierarchy (S5) — same absent-means-don't-touch convention
+   *  as `kind`. `null` is a real, writable value (detaches a tag from its
+   *  parent), distinct from omitting the option entirely. */
+  parentTagId?: string | null;
+}
+
 /** tags(name, content_class) IS uniqued (0001_init.sql), so this upserts
- *  rather than find-then-insert. */
-export async function findOrCreateTag(db: DbOrTx, name: string, contentClass: ContentClass): Promise<TagRow> {
+ *  rather than find-then-insert. `opts.kind`/`opts.parentTagId` are
+ *  OPTIONAL and absent-means-don't-touch (see FindOrCreateTagOptions) —
+ *  calling with no third argument, as every pre-Stash call site does, is
+ *  byte-identical to this function's original (pre-migrations/0019) shape. */
+export async function findOrCreateTag(
+  db: DbOrTx,
+  name: string,
+  contentClass: ContentClass,
+  opts?: FindOrCreateTagOptions
+): Promise<TagRow> {
+  const hasKind = opts?.kind !== undefined;
+  const hasParent = opts !== undefined && 'parentTagId' in opts;
+
   return db
     .insertInto('tags')
-    .values({ name, content_class: contentClass })
-    .onConflict((oc) => oc.columns(['name', 'content_class']).doUpdateSet({ name: (eb) => eb.ref('excluded.name') }))
+    .values({
+      name,
+      content_class: contentClass,
+      ...(hasKind ? { kind: opts!.kind } : {}),
+      ...(hasParent ? { parent_tag_id: opts!.parentTagId } : {}),
+    })
+    .onConflict((oc) =>
+      oc.columns(['name', 'content_class']).doUpdateSet({
+        name: (eb) => eb.ref('excluded.name'),
+        ...(hasKind ? { kind: (eb) => eb.ref('excluded.kind') } : {}),
+        ...(hasParent ? { parent_tag_id: (eb) => eb.ref('excluded.parent_tag_id') } : {}),
+      })
+    )
     .returningAll()
     .executeTakeFirstOrThrow();
 }
