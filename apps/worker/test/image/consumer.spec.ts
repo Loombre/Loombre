@@ -155,7 +155,56 @@ describe('imageConsumerHandler', () => {
     await expect(readdir(outputDirFor(workDir, 'catalog_item', bogusId))).rejects.toThrow();
   });
 
-  it('content-class safety: writes nothing for an unrecognized entityType', async () => {
+  // Stash mission (STATE.md S5/S6/K11): apps/worker/src/stash/apply.ts
+  // enqueues images for entityType 'tag' (studio logos) and 'person'
+  // (performer portraits) — image/consumer.ts's entityExists must
+  // recognize both, and local-temp:-staged Stash blobs must record
+  // source='provider' (same bucket as a url: fetch), not 'local'.
+  it('writes images for entityType "tag" (studio logo) when the tag row exists, source=provider for a local-temp: source', async () => {
+    const tag = await db.insertInto('tags').values({ name: 'Acme Studios', content_class: 'restricted', kind: 'studio' }).returningAll().executeTakeFirstOrThrow();
+    const sourcePath = join(workDir, 'logo.png');
+    await sharp({ create: { width: 200, height: 200, channels: 3, background: 'blue' } }).png().toFile(sourcePath);
+
+    const { stageLocalTempBlob } = await import('../../src/image/download.js');
+    const bytes = await (await import('node:fs/promises')).readFile(sourcePath);
+    const localTempSource = await stageLocalTempBlob(bytes, 'studio-logo-checksum');
+
+    const handler = imageConsumerHandler({ db, dataDir: workDir, execute: runVariantJob });
+    await handler({ entityType: 'tag', entityId: tag.id, kind: 'logo', sourcePath: localTempSource }, { jobId: 'img-job-tag-1' });
+
+    const rows = await db.selectFrom('images').select(['source', 'kind']).where('entity_type', '=', 'tag').where('entity_id', '=', tag.id).execute();
+    expect(rows.length).toBeGreaterThan(0);
+    expect(rows.every((r) => r.source === 'provider')).toBe(true);
+    expect(rows.every((r) => r.kind === 'logo')).toBe(true);
+  });
+
+  it('writes images for entityType "person" (performer portrait) when the person row exists', async () => {
+    const person = await db.insertInto('people').values({ name: 'Jane Doe', content_class: 'restricted' }).returningAll().executeTakeFirstOrThrow();
+    const sourcePath = join(workDir, 'portrait.png');
+    await sharp({ create: { width: 200, height: 300, channels: 3, background: 'green' } }).png().toFile(sourcePath);
+
+    const handler = imageConsumerHandler({ db, dataDir: workDir, execute: runVariantJob });
+    await handler({ entityType: 'person', entityId: person.id, kind: 'thumb', sourcePath }, { jobId: 'img-job-person-1' });
+
+    const rows = await db.selectFrom('images').select(['source', 'kind']).where('entity_type', '=', 'person').where('entity_id', '=', person.id).execute();
+    expect(rows.length).toBeGreaterThan(0);
+    expect(rows.every((r) => r.kind === 'thumb')).toBe(true);
+  });
+
+  it('content-class safety: writes nothing for entityType "tag"/"person" when the row does not exist', async () => {
+    const bogusId = '018f6f1e-0000-7000-8000-00000000feed';
+    const sourcePath = join(workDir, 'source.png');
+    await sharp({ create: { width: 100, height: 100, channels: 3, background: 'gray' } }).png().toFile(sourcePath);
+
+    const handler = imageConsumerHandler({ db, dataDir: workDir, execute: runVariantJob });
+    await handler({ entityType: 'tag', entityId: bogusId, kind: 'logo', sourcePath }, { jobId: 'img-job-tag-bogus' });
+    await handler({ entityType: 'person', entityId: bogusId, kind: 'thumb', sourcePath }, { jobId: 'img-job-person-bogus' });
+
+    const rows = await db.selectFrom('images').select('id').where('entity_id', '=', bogusId).execute();
+    expect(rows).toHaveLength(0);
+  });
+
+  it('content-class safety: writes nothing when entityType is "person" but entityId is not actually a people row (e.g. a catalog_items id)', async () => {
     const itemId = await insertItem('Irrelevant');
     const sourcePath = join(workDir, 'source.png');
     await sharp({ create: { width: 100, height: 100, channels: 3, background: 'gray' } }).png().toFile(sourcePath);
@@ -163,7 +212,18 @@ describe('imageConsumerHandler', () => {
     const handler = imageConsumerHandler({ db, dataDir: workDir, execute: runVariantJob });
     await handler({ entityType: 'person', entityId: itemId, kind: 'thumb', sourcePath }, { jobId: 'img-job-4' });
 
-    const rows = await db.selectFrom('images').select('id').where('entity_type', '=', 'person').execute();
+    const rows = await db.selectFrom('images').select('id').where('entity_type', '=', 'person').where('entity_id', '=', itemId).execute();
+    expect(rows).toHaveLength(0);
+  });
+
+  it('content-class safety: writes nothing for a genuinely unrecognized entityType', async () => {
+    const sourcePath = join(workDir, 'source.png');
+    await sharp({ create: { width: 100, height: 100, channels: 3, background: 'gray' } }).png().toFile(sourcePath);
+
+    const handler = imageConsumerHandler({ db, dataDir: workDir, execute: runVariantJob });
+    await handler({ entityType: 'widget', entityId: 'anything', kind: 'thumb', sourcePath }, { jobId: 'img-job-4b' });
+
+    const rows = await db.selectFrom('images').select('id').where('entity_type', '=', 'widget').execute();
     expect(rows).toHaveLength(0);
   });
 
