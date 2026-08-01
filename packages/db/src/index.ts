@@ -186,22 +186,68 @@ export {
 // ground-truthed entitlement model (allowedLibraryIds carrying a
 // restricted library id, independent of restrictedCleared) and the U10
 // "visible regardless of lock state, count only" disclosure this
-// implements.
+// implements. resolveEntitledRestrictedLibraryIds is exported (STATE.md
+// Stash run K4) as the ONE entitlement resolver every restricted-zone
+// query module below shares.
 export type { RestrictedZoneCount } from './query/restricted-zone.js';
-export { getRestrictedZoneCountForViewer } from './query/restricted-zone.js';
+export { getRestrictedZoneCountForViewer, resolveEntitledRestrictedLibraryIds } from './query/restricted-zone.js';
 
-// Restricted zone item listing (Wave 2, lane L8) — the zone's own dedicated
-// read, separate from listCatalogItems/searchCatalog; see src/query/
-// restricted-zone.js's "Restricted zone item listing" section header for
-// why this routes through applyGuard (lock-sensitive) while the count above
-// deliberately does not.
+// Restricted Content surface (STATE.md Stash run, S9) — the dedicated
+// zone's own guarded, keyset-paginated query modules. SUPERSEDES the old
+// "fetch the whole list client-side" design (K4): listRestrictedZoneItemsForViewer
+// / GET /restricted/items is retired, replaced by real filtered/sorted
+// server-side browse below. Every export here is entitlement-gated the
+// SAME way (undefined for zero restricted-zone entitlement; a real,
+// guard-filtered — possibly empty while locked — result otherwise), built
+// entirely from src/query/guard.ts's primitives, so a leak here would have
+// to defeat the same guard every other catalog read already relies on.
 export type {
-  ListRestrictedZoneItemsParams,
-  ListRestrictedZoneItemsResult,
-  RestrictedZoneItemQuality,
-  RestrictedZoneItemRow,
-} from './query/restricted-zone.js';
-export { listRestrictedZoneItemsForViewer } from './query/restricted-zone.js';
+  RestrictedBrowseFilterParams,
+  RestrictedBrowseItemRow,
+  RestrictedBrowseSort,
+  RestrictedBrowseOrder,
+  RestrictedResolutionBand,
+  RestrictedSceneDetail,
+  RestrictedSceneChapter,
+  RestrictedScenePersonChip,
+  RestrictedSceneTagChip,
+  ListRestrictedBrowseParams,
+  ListRestrictedBrowseResult,
+} from './query/restricted-browse.js';
+export { getRestrictedSceneDetail, listRestrictedBrowse } from './query/restricted-browse.js';
+
+export type {
+  RestrictedPerformerRow,
+  ListRestrictedPerformersParams,
+  ListRestrictedPerformersResult,
+} from './query/restricted-performers.js';
+export {
+  getRestrictedPerformerById,
+  listRestrictedPerformers,
+  listRestrictedPerformerScenes,
+} from './query/restricted-performers.js';
+
+export type {
+  RestrictedStudioRow,
+  ListRestrictedStudiosParams,
+  ListRestrictedStudiosResult,
+} from './query/restricted-studios.js';
+export { getRestrictedStudioById, listRestrictedStudios } from './query/restricted-studios.js';
+
+export type {
+  RestrictedSearchResult,
+  RestrictedSearchResultPage,
+  SearchRestrictedZoneParams,
+} from './query/restricted-search.js';
+export { searchRestrictedZone } from './query/restricted-search.js';
+
+export type {
+  RestrictedZoneHome,
+  RestrictedContinueWatchingEntry,
+  RestrictedContinueWatchingProgress,
+  GetRestrictedZoneHomeParams,
+} from './query/restricted-home.js';
+export { getRestrictedZoneHome } from './query/restricted-home.js';
 
 // Identity plumbing (users/user_settings/library_permissions/devices/
 // refresh_tokens) — see src/query/identity.ts header for why this lives in
