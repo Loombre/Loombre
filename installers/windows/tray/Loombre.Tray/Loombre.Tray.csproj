@@ -45,6 +45,11 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Loombre.Tray.Ipc\Loombre.Tray.Ipc.csproj" />
+    <!-- SCM access for ServiceManagerProbe (query LoombreServer state +
+         start a stopped stack — the IPC_SERVER_START_SEMANTICS-sanctioned
+         start path). Same exact version as LoombreServiceHost.csproj;
+         recorded in LICENSE-INTENT.md (MIT). -->
+    <PackageReference Include="System.ServiceProcess.ServiceController" Version="8.0.1" />
   </ItemGroup>
 
 </Project>

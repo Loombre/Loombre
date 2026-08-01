@@ -37,6 +37,51 @@ public enum MenuIconState: Equatable {
     }
 }
 
+/// What the Start/Stop Server menu item should DO when clicked.
+public enum LifecycleAction: Equatable {
+    /// POST /ipc/v1/server/stop over the live IPC connection.
+    case stopViaIpc
+    /// Start the stopped LaunchDaemon via launchctl (admin-privileged) —
+    /// the IPC_SERVER_START_SEMANTICS-sanctioned path; the IPC start
+    /// endpoint can never start a stopped server (it lives inside it).
+    case startViaLaunchd
+    case none
+}
+
+/// Title + enablement + action for the Start/Stop Server menu item —
+/// pure data, derived in one place so the "Start Server is grayed out
+/// exactly when you need it" failure mode can never be reintroduced by
+/// UI-side condition drift.
+public struct LifecyclePlan: Equatable {
+    public let title: String
+    public let isEnabled: Bool
+    public let action: LifecycleAction
+
+    public init(title: String, isEnabled: Bool, action: LifecycleAction) {
+        self.title = title
+        self.isEnabled = isEnabled
+        self.action = action
+    }
+}
+
+/// Constants for the launchd fallback — kept in lockstep with
+/// installers/macos/pkg/launchd/com.loombre.server.plist and the
+/// postinstall bootstrap loop (LifecyclePlanTests pins both).
+public enum LaunchdFallback {
+    public static let serverLabel = "com.loombre.server"
+    public static let serverPlistPath = "/Library/LaunchDaemons/com.loombre.server.plist"
+
+    /// kickstart handles the common case (daemon loaded but not running —
+    /// e.g. after the menubar's own Stop, since the plist deliberately
+    /// sets KeepAlive.SuccessfulExit=false); bootstrap recovers the
+    /// loaded-out case (manual bootout, failed install step). Composed so
+    /// it can be embedded verbatim in an AppleScript `do shell script`
+    /// literal — no quotes or backslashes (test-enforced).
+    public static var startServerShellCommand: String {
+        "/bin/launchctl kickstart system/\(serverLabel) || /bin/launchctl bootstrap system \(serverPlistPath)"
+    }
+}
+
 public enum MenuState {
     public static func derive(from status: IPCStatusResponse) -> MenuIconState {
         guard status.matchesClientContractVersion else {
@@ -86,6 +131,43 @@ public enum MenuState {
     /// report anything more specific about.
     public static func deriveFromUnreachable() -> MenuIconState {
         .notRunning
+    }
+
+    /// Decision table for the Start/Stop Server menu item. The one rule
+    /// that fixes the rc field report ("Start Server is always grayed
+    /// out"): a not-running server yields an ENABLED Start routed to
+    /// launchd — it must never require the IPC connection whose absence
+    /// is the very reason the user wants to start the server.
+    public static func lifecyclePlan(isConnected: Bool, state: MenuIconState) -> LifecyclePlan {
+        switch state {
+        case .notRunning:
+            return LifecyclePlan(title: "Start Server", isEnabled: true, action: .startViaLaunchd)
+        case .running, .degraded:
+            return LifecyclePlan(title: "Stop Server", isEnabled: isConnected, action: isConnected ? .stopViaIpc : .none)
+        case .crashed:
+            // With a live connection this means a SIBLING process crashed
+            // while the server is up — an IPC stop is meaningful. Without
+            // one the server itself is dead, and recovery is a launchd
+            // start, exactly as for notRunning.
+            return isConnected
+                ? LifecyclePlan(title: "Stop Server", isEnabled: true, action: .stopViaIpc)
+                : LifecyclePlan(title: "Start Server", isEnabled: true, action: .startViaLaunchd)
+        case .starting, .stopping:
+            return LifecyclePlan(title: "Stop Server", isEnabled: false, action: .none)
+        case .contractMismatch:
+            // A server we can reach but whose contract we don't share:
+            // don't offer lifecycle actions we can't interpret replies to.
+            return LifecyclePlan(title: "Stop Server", isEnabled: false, action: .none)
+        }
+    }
+
+    /// First-run auto-open decision (installer completion flow): open the
+    /// browser to the web UI exactly once per user, the first time a
+    /// reachable server advertises a web URL — which, right after the pkg's
+    /// postinstall bootstraps this agent, is the moment the setup wizard
+    /// becomes reachable.
+    public static func shouldAutoOpenWeb(alreadyOpened: Bool, webUrl: String?) -> Bool {
+        !alreadyOpened && webUrl != nil
     }
 
     /// SF Symbol name for the given state — pure lookup table, no AppKit.

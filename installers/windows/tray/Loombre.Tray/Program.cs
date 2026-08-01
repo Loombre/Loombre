@@ -2,6 +2,7 @@
 // Loombre :: installers/windows/tray/Loombre.Tray/Program.cs
 
 using System.Threading;
+using Loombre.Tray.Ipc;
 
 namespace Loombre.Tray;
 
@@ -13,8 +14,8 @@ internal static class Program
     /// running at once on a real machine — two identical icons, two poll
     /// loops against the IPC listener, and a "quit" that only closes one of
     /// them. There are now three ways the tray can start (the Start Menu
-    /// shortcut, the HKLM Run key at logon, and ca.LaunchTray at the end of
-    /// an install), so duplicates are the expected case, not an accident.
+    /// shortcut, the HKLM Run key at logon, and the installer's completion
+    /// launch), so duplicates are the expected case, not an accident.
     ///
     /// "Local\" prefix, NOT "Global\": the tray is per-user, per-session by
     /// design (Services.wxs deliberately does not run it as LocalSystem).
@@ -24,14 +25,26 @@ internal static class Program
     ///
     /// initiallyOwned:false + WaitOne(0): asking for the mutex without
     /// blocking. Owning it means we are the first; failing means another
-    /// instance in this session already has it and we exit quietly (exit 0
-    /// — being second is a normal outcome, not an error worth a dialog or
-    /// a WER report).</summary>
+    /// instance in this session already has it — exit 0, being second is a
+    /// normal outcome. But NOT a silent one anymore: the next rc field
+    /// report was "nothing happens ... I open the app via the start menu",
+    /// which is exactly a second interactive launch hitting this guard.
+    /// A second INTERACTIVE launch now signals the live instance (the
+    /// event below) to surface the web UI before exiting.</summary>
     private const string SingleInstanceMutexName = "Local\\Loombre.Tray.SingleInstance";
 
+    /// <summary>Auto-reset event the live instance listens on
+    /// (TrayApplicationContext registers a wait). A second interactive
+    /// launch Set()s it — "the user just asked to see Loombre" — and the
+    /// live instance runs its surface-the-web-UI flow. Same "Local\"
+    /// per-session scoping rationale as the mutex.</summary>
+    internal const string OpenWebSignalName = "Local\\Loombre.Tray.OpenWebSignal";
+
     [STAThread]
-    private static void Main()
+    private static void Main(string[] args)
     {
+        var launchMode = TrayLaunchModes.Parse(args);
+
         using var singleInstance = new Mutex(initiallyOwned: false, name: SingleInstanceMutexName);
         bool isFirstInstance;
         try
@@ -48,12 +61,21 @@ internal static class Program
 
         if (!isFirstInstance)
         {
+            if (launchMode != TrayLaunchMode.Autostart)
+            {
+                SignalLiveInstanceToOpenWeb();
+            }
             return;
         }
 
+        // Created (not opened) by the owning instance, before the message
+        // loop starts, so a racing second launch can never miss it.
+        using var openWebSignal = new EventWaitHandle(
+            initialState: false, EventResetMode.AutoReset, OpenWebSignalName);
+
         try
         {
-            RunTray();
+            RunTray(launchMode, openWebSignal);
         }
         finally
         {
@@ -61,7 +83,22 @@ internal static class Program
         }
     }
 
-    private static void RunTray()
+    private static void SignalLiveInstanceToOpenWeb()
+    {
+        try
+        {
+            using var signal = EventWaitHandle.OpenExisting(OpenWebSignalName);
+            signal.Set();
+        }
+        catch (Exception ex) when (ex is WaitHandleCannotBeOpenedException or UnauthorizedAccessException or IOException)
+        {
+            // The live instance is mid-startup (owns the mutex, hasn't
+            // created the event yet) or the handle is inaccessible —
+            // nothing worth a dialog; the user still has the live tray.
+        }
+    }
+
+    private static void RunTray(TrayLaunchMode launchMode, EventWaitHandle openWebSignal)
     {
         // Classic manual setup (not the source-generated
         // ApplicationConfiguration.Initialize()) — deliberately, since that
@@ -72,6 +109,6 @@ internal static class Program
         Application.SetHighDpiMode(HighDpiMode.SystemAware);
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);
-        Application.Run(new TrayApplicationContext());
+        Application.Run(new TrayApplicationContext(launchMode, openWebSignal));
     }
 }

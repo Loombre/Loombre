@@ -2,14 +2,18 @@
 // Loombre :: installers/windows/tray/Loombre.Tray/TrayApplicationContext.cs
 //
 // Owns the NotifyIcon + its context menu + the status-poll timer. Talks to
-// the server/worker pair EXCLUSIVELY through Loombre.Tray.Ipc's IpcClient —
-// this class is Windows-UI plumbing only, deliberately thin, so the actual
-// contract logic stays in the testable (headless) Loombre.Tray.Ipc project.
+// the server/worker pair through Loombre.Tray.Ipc's IpcClient for status/
+// stop/open (the FROZEN controller-ipc contract) and through
+// ServiceManagerProbe for the one thing that contract deliberately cannot
+// do — starting a STOPPED server (IPC_SERVER_START_SEMANTICS). This class
+// stays Windows-UI plumbing only; every decision that can be headless
+// lives in the testable Loombre.Tray.Ipc project (ServerControl,
+// TrayLaunchModes).
 //
 // Menu surface per the mission brief: status, Open Loombre (GET
-// open-web-target -> launch browser), Start/Stop server (POSTs),
-// Reveal crash files (GET crash-files -> explorer /select), version +
-// IPC-contract-version mismatch notice.
+// open-web-target -> launch browser), Start/Stop server, Reveal crash
+// files (GET crash-files -> explorer /select), version + IPC-contract-
+// version mismatch notice.
 
 using System.Diagnostics;
 using Loombre.Tray.Ipc;
@@ -31,17 +35,29 @@ public sealed class TrayApplicationContext : ApplicationContext
     private static readonly string TrayVersion =
         typeof(TrayApplicationContext).Assembly.GetName().Version?.ToString() ?? "0.0.0";
 
+    /// <summary>How long the surface-the-web-UI flow waits for the server
+    /// to become reachable before giving up. Generous on purpose: a FIRST
+    /// service start pays payload-zip extraction + initdb + migrations,
+    /// which real-machine rounds have shown can take minutes.</summary>
+    private static readonly TimeSpan SurfaceDeadline = TimeSpan.FromSeconds(180);
+    private static readonly TimeSpan SurfaceRetryInterval = TimeSpan.FromSeconds(2);
+
     private readonly NotifyIcon _icon;
     private readonly Timer _pollTimer;
     private readonly ToolStripMenuItem _statusItem;
     private readonly ToolStripMenuItem _startStopItem;
     private readonly ToolStripMenuItem _openItem;
     private readonly ToolStripMenuItem _versionItem;
+    private readonly SynchronizationContext _uiContext;
+    private readonly RegisteredWaitHandle? _openWebWait;
 
     private IpcStatusResponse? _lastStatus;
+    private ServerControlPlan? _lastPlan;
     private bool _pollInFlight;
+    private bool _surfaceInFlight;
+    private bool _scmStartInFlight;
 
-    public TrayApplicationContext()
+    public TrayApplicationContext(TrayLaunchMode launchMode, WaitHandle? openWebSignal)
     {
         _statusItem = new ToolStripMenuItem("Loombre — checking…") { Enabled = false };
         _openItem = new ToolStripMenuItem("Open Loombre", null, OnOpenClicked) { Enabled = false };
@@ -70,12 +86,44 @@ public sealed class TrayApplicationContext : ApplicationContext
         };
         _icon.DoubleClick += (_, _) => OnOpenClicked(this, EventArgs.Empty);
 
+        // Creating the ContextMenuStrip above installed the WinForms
+        // synchronization context on this (STA/UI) thread; captured here
+        // so the open-web signal's thread-pool callback can marshal back.
+        _uiContext = SynchronizationContext.Current ?? new WindowsFormsSynchronizationContext();
+
+        if (openWebSignal is not null)
+        {
+            // A second interactive launch (Start Menu click while this
+            // instance is live) sets this event instead of showing a
+            // second icon — treat it exactly like "the user asked to see
+            // Loombre". executeOnlyOnce:false — every later launch
+            // signals again.
+            _openWebWait = ThreadPool.RegisterWaitForSingleObject(
+                openWebSignal,
+                (_, _) => _uiContext.Post(OnOpenWebSignal, null),
+                state: null,
+                Timeout.InfiniteTimeSpan,
+                executeOnlyOnce: false);
+        }
+
         _pollTimer = new Timer { Interval = 3000 };
         _pollTimer.Tick += async (_, _) => await PollAsync().ConfigureAwait(true);
         _pollTimer.Start();
 
         _ = PollAsync();
+
+        if (launchMode != TrayLaunchMode.Autostart)
+        {
+            // Interactive Start Menu launch or the installer's completion
+            // launch (--open-web): the user asked to SEE the app, so
+            // surface the web UI. Autostart (Run key at logon) stays a
+            // silent icon — a browser popping up at every logon would be
+            // hostile.
+            _ = SurfaceWebUiAsync();
+        }
     }
+
+    private void OnOpenWebSignal(object? state) => _ = SurfaceWebUiAsync();
 
     private async Task PollAsync()
     {
@@ -123,8 +171,12 @@ public sealed class TrayApplicationContext : ApplicationContext
 
         _statusItem.Text = $"Server: {serverState}   Worker: {status.Worker.State}";
         _openItem.Enabled = status.WebUrl is not null;
-        _startStopItem.Enabled = true;
-        _startStopItem.Text = serverState == ProcessStates.Running ? "Stop server" : "Start server";
+
+        // ServerControl.Decide only consults the SCM snapshot for states
+        // the live listener cannot actually report (stopped/crashed), so
+        // skip the SCM round-trip for the ones it can.
+        var needsScm = serverState is not (ProcessStates.Running or ProcessStates.Starting or ProcessStates.Stopping);
+        ApplyPlan(ServerControl.Decide(status, needsScm ? ServiceManagerProbe.Query() : null));
 
         if (status.IpcContractVersion != ContractVersion.ControllerIpcContractVersion)
         {
@@ -148,7 +200,25 @@ public sealed class TrayApplicationContext : ApplicationContext
         _icon.Text = Truncate($"Loombre — {message}");
         _statusItem.Text = message;
         _openItem.Enabled = false;
-        _startStopItem.Enabled = false;
+        // The rc "Start server is always grayed out" fix: unreachable no
+        // longer hard-disables the item — the SCM snapshot decides, and a
+        // stopped LoombreServer service yields an ENABLED Start.
+        ApplyPlan(ServerControl.Decide(null, ServiceManagerProbe.Query()));
+    }
+
+    private void ApplyPlan(ServerControlPlan plan)
+    {
+        _lastPlan = plan;
+        if (_scmStartInFlight)
+        {
+            // A start we issued is still settling — don't let a poll that
+            // raced the SCM transition briefly re-enable the item.
+            _startStopItem.Text = "Starting server…";
+            _startStopItem.Enabled = false;
+            return;
+        }
+        _startStopItem.Text = plan.Text;
+        _startStopItem.Enabled = plan.Enabled;
     }
 
     private static TrayIconState ToTrayIconState(string serverState)
@@ -163,12 +233,8 @@ public sealed class TrayApplicationContext : ApplicationContext
     {
         try
         {
-            var (baseAddress, token) = await Discovery.ReadAsync().ConfigureAwait(true);
-            using var client = new IpcClient(baseAddress, token);
-            var target = await client.GetOpenWebTargetAsync().ConfigureAwait(true);
-            // The contract explicitly leaves launching a browser to the
-            // controller (open-web-target.ts's header) — this is that step.
-            Process.Start(new ProcessStartInfo(target.Url) { UseShellExecute = true });
+            var url = await GetWebUrlAsync().ConfigureAwait(true);
+            OpenBrowser(url);
         }
         catch (Exception ex) when (ex is IpcException or IOException or UnauthorizedAccessException or HttpRequestException)
         {
@@ -178,25 +244,147 @@ public sealed class TrayApplicationContext : ApplicationContext
 
     private async void OnStartStopClicked(object? sender, EventArgs e)
     {
+        switch (_lastPlan?.Action)
+        {
+            case ServerLifecycleAction.StopViaIpc:
+                await StopServerViaIpcAsync().ConfigureAwait(true);
+                break;
+            case ServerLifecycleAction.StartViaScm:
+                await StartServerViaScmAsync().ConfigureAwait(true);
+                break;
+            default:
+                break;
+        }
+    }
+
+    private async Task StopServerViaIpcAsync()
+    {
         try
         {
             var (baseAddress, token) = await Discovery.ReadAsync().ConfigureAwait(true);
             using var client = new IpcClient(baseAddress, token);
-            var wantStart = _lastStatus?.Server.State != ProcessStates.Running;
-            if (wantStart)
-            {
-                await client.StartServerAsync().ConfigureAwait(true);
-            }
-            else
-            {
-                await client.StopServerAsync().ConfigureAwait(true);
-            }
+            await client.StopServerAsync().ConfigureAwait(true);
             await PollAsync().ConfigureAwait(true);
         }
         catch (Exception ex) when (ex is IpcException or IOException or UnauthorizedAccessException or HttpRequestException)
         {
             ShowWarning(ex);
         }
+    }
+
+    private async Task StartServerViaScmAsync()
+    {
+        if (_scmStartInFlight)
+        {
+            return;
+        }
+        _scmStartInFlight = true;
+        _startStopItem.Text = "Starting server…";
+        _startStopItem.Enabled = false;
+        try
+        {
+            // ServiceController blocks on SCM round-trips — keep them off
+            // the UI thread.
+            await Task.Run(ServiceManagerProbe.StartServerStack).ConfigureAwait(true);
+        }
+        catch (Exception ex) when (ServiceManagerProbe.IsAccessDenied(ex))
+        {
+            // Services installed before Services.wxs granted Users the
+            // start right — fall back to one UAC prompt.
+            var accepted = await Task.Run(ServiceManagerProbe.TryStartServerStackElevated).ConfigureAwait(true);
+            if (!accepted)
+            {
+                ShowBalloon("Starting the Loombre server needs administrator approval.", ToolTipIcon.Info);
+            }
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception)
+        {
+            ShowBalloon($"Could not start the Loombre server: {ex.Message}", ToolTipIcon.Warning);
+        }
+        finally
+        {
+            _scmStartInFlight = false;
+        }
+        await PollAsync().ConfigureAwait(true);
+    }
+
+    /// <summary>The "user asked to see Loombre" flow — runs on the UI
+    /// thread for every non-autostart launch, for the installer's
+    /// completion launch, and whenever a second interactive launch
+    /// signals this instance. Opens the browser as soon as the server
+    /// answers with its web URL (on a fresh install that lands on the
+    /// /setup wizard — the web root auto-routes there while no account
+    /// exists); otherwise says what is actually going on instead of the
+    /// rc field report's "nothing happens".</summary>
+    private async Task SurfaceWebUiAsync()
+    {
+        if (_surfaceInFlight)
+        {
+            return;
+        }
+        _surfaceInFlight = true;
+        try
+        {
+            var deadline = DateTime.UtcNow + SurfaceDeadline;
+            var announcedStarting = false;
+            while (DateTime.UtcNow < deadline)
+            {
+                try
+                {
+                    var url = await GetWebUrlAsync().ConfigureAwait(true);
+                    OpenBrowser(url);
+                    return;
+                }
+                catch (Exception ex) when (ex is IpcException or IOException or UnauthorizedAccessException or HttpRequestException)
+                {
+                    // Not reachable yet — fall through to the SCM check.
+                }
+
+                var scm = ServiceManagerProbe.Query();
+                if (scm is null || !scm.ServiceExists)
+                {
+                    ShowBalloon(
+                        "Loombre's server is not installed as a Windows service. Start it manually, then use \"Open Loombre\".",
+                        ToolTipIcon.Warning);
+                    return;
+                }
+                if (scm.State is ScmStates.Stopped or ScmStates.Paused)
+                {
+                    ShowBalloon(
+                        "The Loombre server is stopped. Right-click the Loombre icon and choose \"Start server\".",
+                        ToolTipIcon.Info);
+                    return;
+                }
+                if (!announcedStarting)
+                {
+                    announcedStarting = true;
+                    ShowBalloon("Loombre is starting — your browser will open when it's ready.", ToolTipIcon.Info);
+                }
+                await Task.Delay(SurfaceRetryInterval).ConfigureAwait(true);
+            }
+            ShowBalloon(
+                "Loombre did not become ready in time. Right-click the Loombre icon for status.",
+                ToolTipIcon.Warning);
+        }
+        finally
+        {
+            _surfaceInFlight = false;
+        }
+    }
+
+    private static async Task<string> GetWebUrlAsync()
+    {
+        var (baseAddress, token) = await Discovery.ReadAsync().ConfigureAwait(true);
+        using var client = new IpcClient(baseAddress, token);
+        var target = await client.GetOpenWebTargetAsync().ConfigureAwait(true);
+        return target.Url;
+    }
+
+    private static void OpenBrowser(string url)
+    {
+        // The contract explicitly leaves launching a browser to the
+        // controller (open-web-target.ts's header) — this is that step.
+        Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
     }
 
     private async void OnRevealCrashClicked(object? sender, EventArgs e)
@@ -220,6 +408,11 @@ public sealed class TrayApplicationContext : ApplicationContext
         }
     }
 
+    private void ShowBalloon(string text, ToolTipIcon icon)
+    {
+        _icon.ShowBalloonTip(10_000, "Loombre", text, icon);
+    }
+
     private static void ShowWarning(Exception ex)
     {
         var message = ex is IpcException ipcEx
@@ -234,6 +427,7 @@ public sealed class TrayApplicationContext : ApplicationContext
     {
         if (disposing)
         {
+            _openWebWait?.Unregister(null);
             _pollTimer.Dispose();
             _icon.Dispose();
         }
