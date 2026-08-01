@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://loombre.com/schemas/events/stash.sync.started.schema.json",
+  "title": "StashSyncStartedPayload",
+  "description": "Payload for envelope.type === 'stash.sync.started'. STATE.md S8/K12 (Stash SQLite metadata sync, Lane C sync engine): emitted by apps/worker/src/stash/sync-consumer.ts when a `stash-sync` job (packages/jobs, StashSyncJobPayload) transitions to active, in the SAME transaction as the paired migrations/0020_stash_sync_reports.sql report row's creation. Paired with stash.sync.completed for the same jobId — mirrors scan.started/scan.completed's own pairing shape. A pg-boss RETRY of the same job (same jobId, resuming from apps/worker/src/stash/sync-consumer.ts's checkpoint) does not re-emit this event — only a genuinely fresh run (no prior checkpoint for this jobId) does, so one stash.sync.started never implies exactly one stash.sync.completed on a job that crashed and resumed. ADMIN-ONLY delivery: instance-configuration/operational bookkeeping about a metadata sync run, same posture as scan.started (not itself admin-only) elevated here because it names a specific library's Stash connection, matching stash.provider.disabled's own admin-only rationale.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["jobId", "libraryId", "mode", "startedAtMs"],
+  "properties": {
+    "jobId": {
+      "type": "string",
+      "format": "uuid",
+      "description": "The pg-boss job id (packages/jobs, meta.jobId) — pairs this event with its stash.sync.completed and with the migrations/0020 stash_sync_reports.job_id row."
+    },
+    "libraryId": {
+      "type": "string",
+      "format": "uuid",
+      "description": "The library whose Stash connection this sync run is for."
+    },
+    "mode": {
+      "type": "string",
+      "enum": ["full", "incremental"],
+      "description": "S8: 'full' walks every linked scene; 'incremental' diffs on Stash's updated_at columns and touches only changed/new/vanished scenes."
+    },
+    "startedAtMs": { "type": "integer", "minimum": 0 }
+  }
+}

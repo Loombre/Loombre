@@ -80,6 +80,13 @@
 //     outside the pinned supported range — instance-configuration
 //     diagnostic data (which library, which schema version, the exact
 //     admin notice), same posture as probe.failed.
+//   - `stash.sync.started` / `stash.sync.completed` (STATE.md "Stash
+//     SQLite metadata sync", S8/K12, Lane C sync engine): emitted by
+//     apps/worker/src/stash/sync-consumer.ts around a `stash-sync` job
+//     run — instance-operational bookkeeping (which library, which mode,
+//     match/update/unmatched/stale/skipped counts), same posture as
+//     stash.provider.disabled, not content any viewer-scoped predicate
+//     should gate.
 //
 // Dependency-free data only (no zod, no I/O) — importable from
 // apps/server, apps/worker, and (via the prose pointer above, not a real
@@ -103,4 +110,7 @@ export const ADMIN_ONLY_EVENT_TYPES: readonly string[] = [
   "probe.failed",
   // Stash SQLite metadata sync, S3/K12.
   "stash.provider.disabled",
+  // Stash SQLite metadata sync, S8/K12 (Lane C sync engine).
+  "stash.sync.started",
+  "stash.sync.completed",
 ];
