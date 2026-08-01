@@ -50,7 +50,12 @@ function connection(overrides: Partial<AdminStashConnection> = {}): AdminStashCo
 }
 
 function emptyEnvelope() {
-  return { report: null, unmatchedScenes: { items: [], nextCursor: null }, staleScenes: { items: [], nextCursor: null } };
+  return {
+    report: null,
+    unmatchedScenes: { items: [], nextCursor: null },
+    staleScenes: { items: [], nextCursor: null },
+    unmatchedLoombreFiles: { items: [], nextCursor: null },
+  };
 }
 
 function reportEnvelope(overrides: Record<string, unknown> = {}) {
@@ -66,9 +71,14 @@ function reportEnvelope(overrides: Record<string, unknown> = {}) {
       skippedCount: 0,
       startedAtMs: 1000,
       finishedAtMs: 2000,
+      usedSnapshotFallback: null,
     },
     unmatchedScenes: { items: [{ stashSceneId: "s1", stashPath: "/data/a.mp4", stashUpdatedAtMs: 500 }], nextCursor: "cursor-1" },
     staleScenes: { items: [], nextCursor: null },
+    unmatchedLoombreFiles: {
+      items: [{ mediaFileId: "mf-1", itemId: "it-1", itemTitle: "Orphan Item", path: "/media/orphan.mp4", sizeBytes: 100 }],
+      nextCursor: null,
+    },
     ...overrides,
   };
 }
@@ -127,6 +137,31 @@ describe("StashSyncPanel", () => {
     view = renderIntoBody(<StashSyncPanel libraryId="lib-1" connection={connection()} />);
     await act(async () => {});
     expect(view.container.textContent).toContain("No stale scenes.");
+  });
+
+  it("renders the Loombre-side unmatched files list (FX3 — both sides of S4's set-difference)", async () => {
+    apiGetMock.mockResolvedValue(reportEnvelope());
+    view = renderIntoBody(<StashSyncPanel libraryId="lib-1" connection={connection()} />);
+    await act(async () => {});
+    expect(view.container.textContent).toContain("Library files with no Stash scene");
+    expect(view.container.textContent).toContain("/media/orphan.mp4");
+    expect(view.container.textContent).toContain("Orphan Item");
+  });
+
+  it("shows the snapshot-fallback notice only when usedSnapshotFallback is true (FX4)", async () => {
+    apiGetMock.mockResolvedValue(reportEnvelope());
+    view = renderIntoBody(<StashSyncPanel libraryId="lib-1" connection={connection()} />);
+    await act(async () => {});
+    expect(view.container.textContent).not.toContain("temporary snapshot copy");
+    view.unmount();
+
+    const envelope = reportEnvelope();
+    (envelope.report as Record<string, unknown>).usedSnapshotFallback = true;
+    apiGetMock.mockResolvedValue(envelope);
+    view = renderIntoBody(<StashSyncPanel libraryId="lib-1" connection={connection()} />);
+    await act(async () => {});
+    expect(view.container.textContent).toContain("temporary snapshot copy");
+    expect(view.container.textContent).toContain("The original was not touched.");
   });
 
   it("Load more appends to the unmatched list using its own cursor, without disturbing the stale list", async () => {
