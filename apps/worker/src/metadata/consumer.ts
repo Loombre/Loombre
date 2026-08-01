@@ -52,7 +52,8 @@ import {
   writeEvent,
 } from '@loombre/db/internal';
 import { getCurrentRelations, getCurrentSatelliteFields, getMetadataSourceItem, type MetadataItemType } from './item-read.js';
-import { mergeFields, type ExistingProvenance, type FieldSource, type LayeredFields, type ProviderFieldSource } from './precedence.js';
+import { mergeFields, type ProviderFieldSource } from './precedence.js';
+import { buildLayers, isEqual, toProvenanceMap } from './layers.js';
 import { pickBestMatch } from './match.js';
 import type { ProviderRegistry } from './registry.js';
 import type { ContentClass, MediaKind, PersonCredit, ProviderDetails, ProviderImageRef, ProviderRef } from './provider.js';
@@ -80,42 +81,6 @@ export interface MetadataConsumerDeps {
    *  tests (so a test can inspect/pre-seed breaker state); defaults to a
    *  fresh registry constructed once per metadataConsumerHandler() call. */
   pluginBreakers?: PluginBreakerRegistry;
-}
-
-function toProvenanceMap(rows: { field: string; source: string; locked: boolean }[]): ExistingProvenance {
-  const map: ExistingProvenance = {};
-  for (const row of rows) {
-    map[row.field] = { source: row.source as FieldSource, locked: row.locked };
-  }
-  return map;
-}
-
-/** Builds the {nfo, tags, provider, filename} layers for every field this
- *  consumer knows how to write, seeding the nfo/tag/filename layers from
- *  whatever is CURRENTLY persisted when that field's existing provenance
- *  says it came from that source ("read current provenance to know
- *  layers" — the DB has no separate shadow copy of each source's value,
- *  so the persisted value IS that source's value when provenance says so). */
-function buildLayers(
-  itemType: MetadataItemType,
-  providerFields: Record<string, unknown>,
-  current: Record<string, unknown>,
-  existingProvenance: ExistingProvenance
-): LayeredFields {
-  const fieldNames = new Set([...Object.keys(current), ...Object.keys(providerFields), 'genres', 'tags', 'people']);
-  const layers: LayeredFields = {};
-
-  for (const field of fieldNames) {
-    const source = existingProvenance[field]?.source;
-    const layer: LayeredFields[string] = {};
-    if (source === 'nfo' && field in current) layer.nfo = current[field];
-    if (source === 'tag' && field in current) layer.tags = current[field];
-    if (source === 'filename' && field in current) layer.filename = current[field];
-    if (field in providerFields) layer.provider = providerFields[field];
-    layers[field] = layer;
-  }
-
-  return layers;
 }
 
 /** Extracts the per-itemType scalar + relation fields ProviderDetails
@@ -146,18 +111,6 @@ function providerFieldsFor(itemType: MetadataItemType, details: ProviderDetails)
       // filters them out before this function is ever called.
       return common;
   }
-}
-
-function isEqual(a: unknown, b: unknown): boolean {
-  if (a === b) return true;
-  if (a == null || b == null) return false;
-  if (Array.isArray(a) && Array.isArray(b)) {
-    return a.length === b.length && a.every((v, i) => isEqual(v, b[i]));
-  }
-  if (typeof a === 'object' && typeof b === 'object') {
-    return JSON.stringify(a) === JSON.stringify(b);
-  }
-  return false;
 }
 
 interface MatchedProvider {
