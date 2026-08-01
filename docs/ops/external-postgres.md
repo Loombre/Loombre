@@ -28,12 +28,19 @@ by whether this one env var is set.
 
 ## Requirements
 
-- **PostgreSQL 17 or newer** (D1 — 17 is the supported floor for external
-  servers, `PROVISIONING_REQUEST_MIN_PG_MAJOR`; the embedded default is
-  PostgreSQL 18, and the schema's migrations run on both).
-- A database that exists already (Loombre runs migrations against it on
-  boot; it does not `CREATE DATABASE`) — `CREATE DATABASE loombre OWNER
-  loombre;` once, up front.
+- **PostgreSQL 17 or newer** (D1 — the same floor
+  `PROVISIONING_REQUEST_MIN_PG_MAJOR` pins for the embedded provisioner;
+  the embedded default is PostgreSQL 18, and the schema's migrations run
+  on both. Note Loombre does not re-check an external server's reported
+  version at connect time — an older external Postgres won't be caught
+  automatically, so verify yours yourself).
+- A database that exists already — `CREATE DATABASE loombre OWNER
+  loombre;` once, up front. Loombre does **not** `CREATE DATABASE`, and in
+  external mode it deliberately **never runs migrations automatically**
+  (an operator's database is not Loombre's to alter unprompted): run
+  `pnpm db:migrate` (or `node packages/db/scripts/migrate.mjs migrate`)
+  yourself after creating it, and again after every upgrade. Embedded
+  mode, by contrast, migrates itself at boot.
 - A role with ordinary DDL+DML privileges on that database (Loombre's
   migrations create/alter tables, so the role needs more than
   read/write — a role that OWNS the database, or one with full
@@ -53,7 +60,7 @@ by whether this one env var is set.
 | Data directory location/layout | Loombre-managed (`<app-data>/postgres/data`) | Entirely yours |
 | Major-version upgrades | Loombre's `UpgradePlan` flow (`docs/PLAN.md` §11, P4.2) | You (`pg_upgrade`, dump/restore, or your provider's own tooling) |
 | Backups | Your responsibility either way — see `docs/ops/backup.md` | Your responsibility — same page, "External PostgreSQL" section |
-| Superuser credential | Loombre-generated, stored via the P4.7 `SecretRef` seam (0600 file / OS keychain) | Whatever you put in `DATABASE_URL` — Loombre never generates or stores an external credential anywhere beyond that connection string |
+| Superuser credential | Loombre-generated, stored via the P4.7 `SecretRef` seam (0600 file today; OS keychain is a planned backend, not yet implemented) | Whatever you put in `DATABASE_URL` — Loombre never generates or stores an external credential anywhere beyond that connection string |
 | Corruption detection/recovery | Loombre's typed `CorruptionReport` surface (embedded mode only) | Your PostgreSQL host's own tooling |
 
 ## Migrating between modes

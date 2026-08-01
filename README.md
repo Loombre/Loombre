@@ -14,7 +14,7 @@ organizes and streams your library — locally and remotely — to any device. I
 is not a fork, client, or compatible implementation of any other media server;
 it shares no API surface, schema, or naming with one.
 
-> **Status:** version `0.9.0`, pre-release. No tagged release has shipped yet.
+> **Status:** version `0.9.0-rc.3`, pre-release. No published release has shipped yet.
 
 ## Screenshots
 
@@ -96,11 +96,12 @@ docker compose -f docker-compose.prod.yml --env-file installers/docker/loombre.e
 docker compose -f docker-compose.prod.yml --env-file installers/docker/loombre.env run --rm server \
   node packages/db/scripts/migrate.mjs migrate
 
-# 3) bring up the server + worker
+# 3) bring up the server + worker + web UI
 docker compose -f docker-compose.prod.yml --env-file installers/docker/loombre.env up -d
 ```
 
-Loombre is now reachable at `http://<this host>:3001`. A first-run web setup
+Loombre's web UI is now reachable at `http://<this host>:3000` (the HTTP
+API is on `:3001`). A first-run web setup
 wizard (admin account → library paths → hardware probe → optional
 restricted-content setup → optional restore-from-backup) runs the first time
 you open it — see [docs/admin-guide/wizard.md](docs/admin-guide/wizard.md) for

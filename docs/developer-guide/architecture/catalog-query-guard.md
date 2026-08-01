@@ -2,7 +2,7 @@
 
 <!-- Sourcing: ViewerContext (userId, allowedLibraryIds, restrictedCleared)
      — packages/db/src/context.ts:9-24. guardPredicateSql / applyGuard —
-     packages/db/src/query/guard.ts:55-87 (library-membership + content-
+     packages/db/src/query/guard.ts:80-98 (library-membership + content-
      class + missing-file-visibility predicate; applyGuard as sole
      entry point; guard.ts not exported from packages/db/src/index.ts's
      barrel — only pre-guarded functions like getItemById/listItems are).

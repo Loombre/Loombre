@@ -92,8 +92,9 @@ Full request/response detail is in the [API Reference](../api-reference/index.md
   `LOOMBRE_JWT_SECRET`) stay documented in
   `installers/docker/loombre.env.example`, linked from that page.
 
-<!-- Sourcing for the paragraph below: README.md's "Performance budgets"
-     table (Tier-0 figures: server idle RSS <= 220 MB, scan throughput >=
+<!-- Sourcing for the paragraph below:
+     docs/developer-guide/architecture/performance-budgets.md
+     (Tier-0 figures: server idle RSS <= 220 MB, scan throughput >=
      200 files/min) and docs/install/index.md's "System requirements"
      Tier-0 section (4-core @ 2GHz, 4GB RAM) — both already published;
      docs/ops/t0-audit-runbook.md is the owner-executed physical-hardware
@@ -106,9 +107,9 @@ Loombre is explicitly designed and performance-budgeted for Tier-0 hardware
 (a 4-core, ~2GHz machine with 4GB RAM — an Intel N100 mini PC or a
 Raspberry Pi 5 are the reference devices) — not a degraded experience, a
 first-class one. The enforced budgets (server idle memory, endpoint
-response time, scan throughput) are listed in the root
-[README](https://github.com/Loombre/Loombre#readme)'s "Performance
-budgets" section, and
+response time, scan throughput) are listed in
+[Performance budgets](../developer-guide/architecture/performance-budgets.md),
+and
 **[docs/ops/t0-audit-runbook.md](t0-audit-runbook.md)** is the runbook
 used to physically verify them against real hardware. If you're deploying
 to Tier-0 hardware, that runbook and

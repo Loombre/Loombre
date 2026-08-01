@@ -168,7 +168,7 @@ Verification, in order:
    the spec's default) and reject a timestamp too far in the past *or* the
    future.
 
-Step 2's signature-mismatch check is a **MUST** — a plugin that skips it
+Step 3's signature-mismatch check is a **MUST** — a plugin that skips it
 is a plugin trusting unauthenticated input. The replay-window check (step
 4) is a **SHOULD**: the conformance suite reports a plugin that skips it as
 a warning rather than a hard failure, but both reference plugins in this

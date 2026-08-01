@@ -161,10 +161,17 @@ lines.push(
   "## Secrets and other bootstrap variables not in this list",
   "",
   exampleExists
-    ? "A few bootstrap variables — notably `POSTGRES_PASSWORD` and `LOOMBRE_JWT_SECRET` — are " +
-      "secrets rather than settings and aren't part of the settings registry this page is " +
-      "generated from. The full, accurate, hand-maintained list of every variable Loombre's " +
-      "Docker Compose distribution reads (including these) lives in " +
+    ? "This page covers only registry-backed settings. A number of other operational " +
+      "variables live outside the registry and therefore aren't listed above: secrets " +
+      "(`POSTGRES_PASSWORD`, `LOOMBRE_JWT_SECRET`), performance-tier and transcode tuning " +
+      "(`LOOMBRE_TIER`, `LOOMBRE_ALLOW_TRANSCODE`, `LOOMBRE_MAX_STREAM_BITRATE`, " +
+      "`LOOMBRE_TRANSCODE_WORKER_CONCURRENCY`), metadata-provider keys " +
+      "(`LOOMBRE_TMDB_API_KEY`, `LOOMBRE_TVDB_API_KEY`), TLS/ACME companions to " +
+      "`LOOMBRE_TLS_MODE` (`LOOMBRE_TLS_CERT_PATH`/`KEY_PATH`, `LOOMBRE_HTTPS_PORT`, the " +
+      "`LOOMBRE_ACME_*` family — see [docs/ops/acme.md](/ops/acme)), IPC and logging " +
+      "(`LOOMBRE_IPC_*`, `LOOMBRE_LOG_FILE`), and embedded-PG plumbing " +
+      "(`LOOMBRE_EMBEDDED_PG_*`). The full, accurate, hand-maintained list of every variable " +
+      "Loombre's Docker Compose distribution reads lives in " +
       "[`installers/docker/loombre.env.example`](https://github.com/Loombre/Loombre/blob/main/installers/docker/loombre.env.example); " +
       "[docs/install/docker.md](/install/docker) walks the two you cannot skip."
     : "See `installers/docker/loombre.env.example` in the repository (not found in this " +
