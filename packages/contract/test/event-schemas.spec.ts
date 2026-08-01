@@ -70,8 +70,8 @@ describe("event-schemas (docs/PLAN.md §4.3)", () => {
     }
   });
 
-  it("envelope enum has exactly 27 types (15 through Addendum A + 6 plugin.* [LPP] + 2 watchlist.* [W2 L3] + 1 metadata.match-candidates [W2 L2] + 1 user.restricted-pin-reset [H2] + 1 probe.failed [owner ledger L1] + 1 stash.provider.disabled [Stash SQLite metadata sync, S3/K12])", () => {
-    expect(envelopeTypeEnum).toHaveLength(27);
+  it("envelope enum has exactly 29 types (15 through Addendum A + 6 plugin.* [LPP] + 2 watchlist.* [W2 L3] + 1 metadata.match-candidates [W2 L2] + 1 user.restricted-pin-reset [H2] + 1 probe.failed [owner ledger L1] + 1 stash.provider.disabled [Stash SQLite metadata sync, S3/K12] + 2 stash.sync.* [Stash SQLite metadata sync, S8/K12, Lane C])", () => {
+    expect(envelopeTypeEnum).toHaveLength(29);
     expect(envelopeTypeEnum).toEqual(
       expect.arrayContaining([
         "item.added",
@@ -101,6 +101,8 @@ describe("event-schemas (docs/PLAN.md §4.3)", () => {
         "user.restricted-pin-reset",
         "probe.failed",
         "stash.provider.disabled",
+        "stash.sync.started",
+        "stash.sync.completed",
       ]),
     );
   });
@@ -305,6 +307,21 @@ describe("event-schemas (docs/PLAN.md §4.3)", () => {
         supportedMin: 67,
         supportedMax: 85,
         notice: "Stash schema v58 unsupported; supported: 67-85",
+      },
+      "stash.sync.started": {
+        jobId: "018f6f1e-0000-7000-8000-000000000009",
+        libraryId: "018f6f1e-0000-7000-8000-000000000002",
+        mode: "full",
+        startedAtMs: 1_700_000_000_000,
+      },
+      "stash.sync.completed": {
+        jobId: "018f6f1e-0000-7000-8000-000000000009",
+        libraryId: "018f6f1e-0000-7000-8000-000000000002",
+        mode: "full",
+        status: "succeeded",
+        counts: { matched: 100, updated: 12, unmatched: 3, stale: 1, skipped: 0 },
+        durationMs: 45_000,
+        completedAtMs: 1_700_000_045_000,
       },
     };
 
