@@ -12,9 +12,22 @@
  *
  * Proves, in order:
  *   (i)   initial FULL sync at --scenes (default 33000) scenes — wall-clock
- *         runtime + peak RSS, applyStashSceneMetadata STUBBED (Lane B's
- *         apply.ts is out of this lane's scope — K11; see this script's
- *         own printed caveat and this lane's report).
+ *         runtime + peak RSS. applyStashSceneMetadata is STUBBED by
+ *         default (Lane B's apply.ts was out of Lane C's scope — K11) and
+ *         REAL under --real-apply; the printed headline and the JSON's
+ *         `applyStubbed` both report which one ran, and are derived from
+ *         the same flag so they cannot disagree.
+ *
+ *         Honest scope of what (i) measures under --real-apply: the full
+ *         Postgres write path (catalog_items, movie_details, item_tags,
+ *         item_people, chapter_markers, item/person_attributes,
+ *         provider_ids, metadata_provenance). It does NOT measure image
+ *         ingest: the generated fixture stores no blob bytes at all
+ *         (gen-stash-fixtures.mjs inserts NULL cover_blob/image_blob), so
+ *         `imageJobsEnqueued` is 0 because there was nothing to enqueue —
+ *         which is a fact about the FIXTURE, never evidence that artwork
+ *         ingest scales. That belongs to the owner's real-database
+ *         validation.
  *   (ii)  incremental sync touching exactly --incremental-changed (default
  *         12) of the same library's scenes, count-verified.
  *   (iii) checkpoint resume, at a smaller --resume-scenes sub-scale (see
@@ -164,7 +177,14 @@ async function main() {
   const elapsedMs = Date.now() - startedAtMs;
   clearInterval(rssTimer);
 
-  log(`(i) FULL SYNC @ ${SCENE_COUNT} scenes — wall-clock ${elapsedMs}ms (${(elapsedMs / 1000).toFixed(1)}s), peak RSS ${(peakRssBytes / 1024 / 1024).toFixed(1)} MiB [apply STUBBED]`);
+  // The apply-mode label is DERIVED, never hardcoded: this headline line is
+  // the one a human copies into a report, so it must not be able to
+  // contradict the machine-readable `applyStubbed` field below it (it did
+  // — it read "[apply STUBBED]" for --real-apply runs too, including the
+  // one whose numbers were recorded as the end-to-end re-proof).
+  log(
+    `(i) FULL SYNC @ ${SCENE_COUNT} scenes — wall-clock ${elapsedMs}ms (${(elapsedMs / 1000).toFixed(1)}s), peak RSS ${(peakRssBytes / 1024 / 1024).toFixed(1)} MiB [apply ${REAL_APPLY ? "REAL (applyStashSceneMetadata)" : "STUBBED"}]`
+  );
   log(`    counts: ${JSON.stringify(fullResult.counts)}, touchedCount=${fullResult.touchedCount}`);
 
   if (fullResult.touchedCount !== SCENE_COUNT) fail(`full sync touchedCount ${fullResult.touchedCount} !== ${SCENE_COUNT}`);
