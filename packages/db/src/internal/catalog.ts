@@ -87,7 +87,14 @@ export async function upsertCatalogItem(
 }
 
 export type UpsertSatelliteInput =
-  | ({ itemType: 'movie' } & Selectable<MovieDetailsTable>)
+  // premiere_at_ms (migrations/0019, K1) is deliberately OPTIONAL with
+  // "absent = don't touch" semantics: the pre-0019 writers (scan
+  // hierarchy, import, general metadata refresh) don't know the field and
+  // must never clobber a value another producer (the Stash mapper) wrote.
+  // Passing it — including an explicit null — writes it.
+  | ({ itemType: 'movie' } & Omit<Selectable<MovieDetailsTable>, 'premiere_at_ms'> & {
+      premiere_at_ms?: number | null;
+    })
   | ({ itemType: 'series' } & Selectable<SeriesDetailsTable>)
   | ({ itemType: 'season' } & Selectable<SeasonDetailsTable>)
   | ({ itemType: 'episode' } & Selectable<EpisodeDetailsTable>)
@@ -104,16 +111,20 @@ export type UpsertSatelliteInput =
 export async function upsertSatellite(db: DbOrTx, input: UpsertSatelliteInput): Promise<void> {
   switch (input.itemType) {
     case 'movie': {
-      const { itemType: _itemType, ...row } = input;
+      const { itemType: _itemType, premiere_at_ms, ...row } = input;
+      const hasPremiere = premiere_at_ms !== undefined;
       await db
         .insertInto('movie_details')
-        .values(row)
+        .values(hasPremiere ? { ...row, premiere_at_ms } : row)
         .onConflict((oc) =>
           oc.column('item_id').doUpdateSet({
             content_rating: (eb) => eb.ref('excluded.content_rating'),
             runtime_ms: (eb) => eb.ref('excluded.runtime_ms'),
             tagline: (eb) => eb.ref('excluded.tagline'),
             overview: (eb) => eb.ref('excluded.overview'),
+            // Only touched when the caller supplied it — see
+            // UpsertSatelliteInput's premiere_at_ms doc comment.
+            ...(hasPremiere ? { premiere_at_ms: (eb) => eb.ref('excluded.premiere_at_ms') } : {}),
           })
         )
         .execute();
