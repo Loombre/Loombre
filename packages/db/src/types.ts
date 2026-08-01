@@ -79,7 +79,11 @@ export type PlaybackSessionStatus =
   | 'ended'
   | 'failed';
 
-export type ItemTagKind = 'genre' | 'tag';
+export type ItemTagKind = 'genre' | 'tag' | 'studio';
+
+/** Entity-level tag kind (migrations/0019, K2/S6): what kind of thing the
+ *  tag names — distinct from ItemTagKind, which classifies one edge. */
+export type TagKind = 'general' | 'genre' | 'studio';
 
 /** migrations/0002_phase1_catalog.sql */
 export type HdrType = 'none' | 'hdr10' | 'hlg' | 'dv';
@@ -180,6 +184,7 @@ export interface MovieDetailsTable {
   runtime_ms: number | null;
   tagline: string | null;
   overview: string | null;
+  premiere_at_ms: number | null;
 }
 
 export interface SeriesDetailsTable {
@@ -256,6 +261,8 @@ export interface TagsTable {
   id: Generated<string>;
   name: string;
   content_class: Generated<ContentClass>;
+  kind: Generated<TagKind>;
+  parent_tag_id: string | null;
 }
 
 export interface ItemTagsTable {
@@ -275,6 +282,33 @@ export interface ItemAttributesTable {
   namespace: string;
   key: string;
   value: Record<string, unknown>;
+}
+
+// ============================================================================
+// person_attributes (migrations/0019 — K3: person-scoped twin of
+// item_attributes; namespaced sandbox, core code never reads it)
+// ============================================================================
+
+export interface PersonAttributesTable {
+  id: Generated<string>;
+  person_id: string;
+  namespace: string;
+  key: string;
+  value: Record<string, unknown>;
+}
+
+// ============================================================================
+// chapter_markers (migrations/0019 — K9/S7: Stash markers -> chapters)
+// ============================================================================
+
+export type ChapterMarkerSource = 'stash';
+
+export interface ChapterMarkersTable {
+  id: Generated<string>;
+  item_id: string;
+  title: string;
+  start_ms: number;
+  source: ChapterMarkerSource;
 }
 
 // ============================================================================
@@ -634,6 +668,7 @@ export interface LibraryStashConnectionsTable {
   last_seen_schema_version: number | null;
   last_connected_at_ms: number | null;
   last_checked_at_ms: number | null;
+  genre_tag_names: string[] | null;
   created_at_ms: number;
   updated_at_ms: number;
 }
@@ -686,6 +721,8 @@ export interface DB {
   tags: TagsTable;
   item_tags: ItemTagsTable;
   item_attributes: ItemAttributesTable;
+  person_attributes: PersonAttributesTable;
+  chapter_markers: ChapterMarkersTable;
   media_files: MediaFilesTable;
   media_streams: MediaStreamsTable;
   progress: ProgressTable;
