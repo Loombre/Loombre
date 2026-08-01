@@ -74,7 +74,7 @@ A few design choices, made from the start rather than bolted on later:
 |---|---|---|
 | Docker / Compose | Recommended today | [docs/install/docker.md](docs/install/docker.md) |
 | Linux | Tarball + systemd units | [docs/install/linux.md](docs/install/linux.md) |
-| Windows | MSI installer + tray controller | [docs/install/windows.md](docs/install/windows.md) |
+| Windows | `.exe` installer + tray controller | [docs/install/windows.md](docs/install/windows.md) |
 | macOS | `.pkg` + menubar controller | [docs/install/macos.md](docs/install/macos.md) |
 
 Installer artifacts are published with tagged releases, and no tagged release
