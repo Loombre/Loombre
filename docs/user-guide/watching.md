@@ -16,8 +16,9 @@
 ## Starting something
 
 Select **Play** on any movie, episode, or track. If you've watched part of
-it before, Loombre picks up right where you left off automatically — you
-won't need to find your spot by hand.
+it before, Loombre asks whether you want to pick up where you left off or
+start over — just tap **Resume** to jump straight back to your spot (it
+never silently auto-resumes without asking).
 
 [SCREENSHOT: Player screen, mid-playback, showing progress bar and controls]
 
@@ -28,10 +29,18 @@ progress bar you can drag to jump to any point.
 
 ## Subtitles and audio
 
-If subtitles are available for what you're watching, a subtitle button
-lets you turn them on, turn them off, or choose a different language.
-The same idea applies to audio — if more than one audio language or mix
-is available, you can switch between them from the player.
+If your file has subtitles, Loombre may show them automatically based on
+the file and your language settings. Choosing a different subtitle
+language (or turning a shown one off) from inside the player isn't
+available yet — the picker shows what exists in the file, and switching
+is planned for a future release.
+
+Audio is further along: if more than one audio language or mix is
+available, you can often switch between them from the player. This
+depends on your browser (Safari supports it most fully today) and on
+whether Loombre is converting the video — when it converts, the server
+picks one audio track for the session (see
+[Why is this converting?](why-is-it-converting.md)).
 
 [SCREENSHOT: Player subtitle and audio selection menu]
 

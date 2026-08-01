@@ -27,6 +27,12 @@ just:
 loombre --help
 ```
 
+**Channel availability:** as of this writing the `loombre` CLI ships in
+source checkouts and the Linux tarball only — the macOS `.pkg` and Windows
+installer do not currently include it (their server payloads are pruned to
+runtime files). On those platforms, commands documented here (including
+the PIN reset below) need a source checkout pointed at the same database.
+
 If the shim couldn't be placed (a foreign, non-symlink file already sat at
 `/usr/local/bin/loombre`, or `/usr/local/bin` wasn't writable — `install.sh`
 warns and prints the exact `ln -s` command to create it yourself when this

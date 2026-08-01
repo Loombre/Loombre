@@ -1,14 +1,19 @@
 # systemd
 
 Loombre's Linux tarball install (the alternative to the Docker/Compose
-canonical path — see `docs/install/linux.md`) ships two systemd unit
+canonical path — see `docs/install/linux.md`) ships three systemd unit
 templates and an installer that renders them for your system:
 
 - `installers/linux/systemd/loombre-server.service.template`
 - `installers/linux/systemd/loombre-worker.service.template`
-- `installers/linux/install.sh` — renders both templates (substituting
-  the install prefix, data dir, config dir, and service user you choose)
-  and installs them via `systemctl enable`.
+- `installers/linux/systemd/loombre-web.service.template` — the
+  browser-facing web UI (Next.js standalone server on `LOOMBRE_WEB_PORT`,
+  default 3000); its `ReadWritePaths` additionally covers the web tree's
+  `.next/cache` for Next's runtime cache.
+- `installers/linux/install.sh` — renders all three templates
+  (substituting the install prefix, data dir, config dir, and service
+  user you choose) and installs them via `systemctl enable --now` by
+  default (`--no-start` opts out of the immediate start).
 
 Full install/upgrade/uninstall instructions: `docs/install/linux.md`.
 

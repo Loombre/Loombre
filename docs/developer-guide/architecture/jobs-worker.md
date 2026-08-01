@@ -4,9 +4,9 @@
      packages/jobs/src/queue.ts:16 (imports PgBoss from 'pg-boss'),
      packages/jobs/package.json:7,27. createJobQueue() — queue.ts:42,
      mirrors lifecycle into the jobs ledger (src/ledger.ts). Job types —
-     packages/jobs/src/types.ts:182-193 (JobPayloads), 199-209 (JOB_TYPES):
+     packages/jobs/src/types.ts:204-216 (JobPayloads), 222-234 (JOB_TYPES):
      scan, probe, image, metadata, import, image-backfill, hwprobe,
-     transcode, subtitle-extract, pg-upgrade. Consumer registration —
+     metadata-search, transcode, subtitle-extract, pg-upgrade. Consumer registration —
      apps/worker/src/index.ts (queue.work(...) call sites for each type).
      Outbox / events table — packages/db/migrations/0001_init.sql:590-609
      ("-- events (outbox)" comment, columns id/type/ts_ms/actor_user_id/
@@ -28,8 +28,11 @@ reads from this ledger, not from pg-boss's own internal tables directly).
 ## Job types
 
 A closed registry (`packages/jobs/src/types.ts`) — `scan`, `probe`,
-`image`, `metadata`, `import`, `image-backfill`, `hwprobe`, `transcode`,
-`subtitle-extract`, `pg-upgrade`. `apps/worker/src/index.ts` is the single
+`image`, `metadata`, `metadata-search`, `import`, `image-backfill`,
+`hwprobe`, `transcode`, `subtitle-extract`, `pg-upgrade`
+(`metadata-search` is the bounded candidate-search job behind the admin
+"Fix match" flow, distinct from the scan-time `metadata` job).
+`apps/worker/src/index.ts` is the single
 entry point that registers a consumer for each, via `queue.work(...)` —
 that file is the map from job type to handler module (`scan/scanner.ts`,
 `probe/consumer.ts`, `metadata/consumer.ts`, `image/consumer.ts`,

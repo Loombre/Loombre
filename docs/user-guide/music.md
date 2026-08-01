@@ -11,8 +11,9 @@ built to keep playing in the background while you keep browsing.
 
 ## Browsing your music
 
-Open the **Music** section to see your artists and albums. Select an
-artist to see everything by them, or an album to see its track list.
+Open **Browse** and select your Music library's pill to see your artists
+and albums. Select an artist to see everything by them, or an album to
+see its track list.
 
 [SCREENSHOT: Album detail page showing track listing]
 
@@ -35,6 +36,7 @@ you don't want to hear.
 
 ## Restricted music
 
-If a music library has been set up as restricted, you'll need a PIN to
-open it — see [Restricted content](restricted-content.md) for
-what that means and why.
+Restricted libraries (see [Restricted content](restricted-content.md))
+are a movies-and-TV feature today — the Restricted zone screen lists
+movies and series only, so a music library can't currently be browsed
+there even if it's marked restricted.

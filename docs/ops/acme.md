@@ -127,8 +127,9 @@ should document root-vs-redirect as a choice at onboarding time if
 
 ### Tests always use unprivileged ports
 
-Every test in `apps/server/test/tls/` sets `LOOMBRE_HTTP_PORT`/
-`LOOMBRE_HTTPS_PORT` into the 3680–3699 range specifically so `pnpm test`
+The pebble integration specs in `apps/server/test/tls/` pin unprivileged
+ports as literal config fields (`httpPort: 3680`, `httpsPort: 3643`/`3644`
+passed straight to `createTlsRuntime`) specifically so `pnpm test`
 never needs any of the above — the module itself has no privileged-port
 assumption baked in anywhere; the privilege question is purely an
 operator-deployment concern, documented here.

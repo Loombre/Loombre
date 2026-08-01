@@ -41,8 +41,8 @@ Get-NetTCPConnection -LocalPort 3001 | Select-Object -Property State, OwningProc
 1. **Embedded PostgreSQL (Linux, Windows, macOS):**
    - Check the data directory exists and is writable:
      - Linux: `ls -ld /var/lib/loombre/` should show `loombre` ownership
-     - macOS: `ls -ld "/Library/Application Support/Loombre/db/"`
-     - Windows: Check `%ProgramData%\Loombre\pgdata\`
+     - macOS: `ls -ld "/Library/Application Support/Loombre/postgres/data/"`
+     - Windows: Check `%ProgramData%\Loombre\postgres\data\`
    - If missing, the server should auto-provision it on first start. If it doesn't, check startup logs.
 
 2. **External PostgreSQL:**
@@ -112,13 +112,16 @@ sudo chmod 750 "/Library/Application Support/Loombre/"
 
 **Check:**
 ```bash
-sudo launchctl list | grep loombre
+sudo launchctl print system/com.loombre.server
+sudo launchctl print system/com.loombre.worker
+sudo launchctl print system/com.loombre.web
 ```
 
 **If missing, re-enable:**
 ```bash
-sudo launchctl load /Library/LaunchDaemons/com.loombre.server.plist
-sudo launchctl load /Library/LaunchDaemons/com.loombre.worker.plist
+sudo launchctl bootstrap system /Library/LaunchDaemons/com.loombre.server.plist
+sudo launchctl bootstrap system /Library/LaunchDaemons/com.loombre.worker.plist
+sudo launchctl bootstrap system /Library/LaunchDaemons/com.loombre.web.plist
 ```
 
 ### Windows
@@ -148,9 +151,10 @@ Get-Content -Tail 100 "$env:ProgramData\Loombre\logs\server.log"
 
 **Symptom:** Other devices on the network can't reach Loombre
 
-The installer registers an inbound firewall rule named **Loombre Server**.
-- Check: Windows Defender Firewall → Inbound Rules → Loombre Server (should be enabled)
-- If using a third-party firewall, manually add a rule allowing TCP port 3001 (or your custom `LOOMBRE_PORT`)
+The installer registers two inbound firewall rules, **Loombre Server** and
+**Loombre Web**.
+- Check: Windows Defender Firewall → Inbound Rules → Loombre Server and Loombre Web (both should be enabled)
+- If using a third-party firewall, manually add rules allowing TCP ports 3001 and 3000 (or your custom `LOOMBRE_PORT`/`LOOMBRE_WEB_PORT`)
 
 ### Linux
 

@@ -61,7 +61,8 @@ don't collide with anything else running.
   depending on your distro's packaging generation) — the bundled ffmpeg
   supports QSV by dynamically loading these at runtime; it does **not**
   bundle them itself (see `installers/ffmpeg-manifest.json`'s
-  `linux-x64.licenseNote`: only vaapi/nvenc/vdpau/OpenCL are dlopen'd
+  `linux-x64.components.ffmpeg.verification.notes`: only
+  vaapi/nvenc/vdpau/OpenCL are dlopen'd
   hw-accel deps it lists explicitly — confirm QSV works for your kernel/
   driver combination with `vainfo` before proceeding).
 - **Two things on this N100, not one**: (1) the installed tarball at
@@ -161,7 +162,9 @@ LOOMBRE_JWT_SECRET=<output of: openssl rand -base64 48>
 
 # Set this NOW, ahead of Step D, so you don't have to remember to come
 # back — the tier-0 DEFAULT is 1 simultaneous transcode
-# (apps/server/src/playback/resolve-policy.ts TIER_DEFAULT_MAX_TRANSCODES),
+# (packages/shared/src/settings-registry.ts's
+# transcode.maxSimultaneousTranscodes entry, tierDefaults {0: 1}, read by
+# apps/server/src/playback/resolve-policy.ts),
 # which would 429 the headline test's second session. Setting it here
 # means one clean provision -> boot -> audit run, not a restart mid-way:
 LOOMBRE_MAX_TRANSCODES=2
@@ -405,8 +408,10 @@ result.
 
 ### D.1 Pre-flight — the tier-0 default WILL block this test
 
-`apps/server/src/playback/resolve-policy.ts`'s tier-0 default
-`maxSimultaneousTranscodes` is **1**, not 2 — it is not auto-detected from
+The tier-0 default `maxSimultaneousTranscodes` is **1**, not 2
+(`packages/shared/src/settings-registry.ts`'s
+`transcode.maxSimultaneousTranscodes` entry, consumed by
+`apps/server/src/playback/resolve-policy.ts`) — it is not auto-detected from
 CPU/RAM (only scan concurrency is; transcode concurrency is a flat,
 deliberately-conservative per-tier default, overridable). If you set
 `LOOMBRE_MAX_TRANSCODES=2` in Step A.4 already, you're done — verify with:
@@ -537,18 +542,17 @@ pnpm perf:lighthouse
 # table — pass it to collect-report.mjs in Step F (--lighthouse-score).
 ```
 
-**Known, disclosed architecture gap** (not this lane's to close): nothing
-currently serves the packaged tarball's `web/` output as part of an
-installed deployment — STATE.md's Phase 4 Open list carries "Web-serving
-architecture unresolved for installed deployments" verbatim (no
-`output: standalone` in `next.config`, no static serving in
-`apps/server`). Both commands above therefore build+serve `apps/web`
-straight from the checkout (`pnpm run build && pnpm run start`, matching
-what CI already does) — real N100 CPU, real thermal conditions, correctly
-answering "does this app hit its web budgets on T0-class hardware," but
-**not** "does the shipped installer's web output get served" (nothing
-serves it yet, on any host). That second question stays exactly where
-STATE.md already logs it — out of scope here, not silently declared fixed.
+**Scope note** (updated — the old "nothing serves the packaged web
+output" gap this section used to disclose is CLOSED): the packaged web
+output is now served on every installed channel (`output: "standalone"`
+in `apps/web/next.config.mjs`; Linux's `loombre-web.service`, Docker's
+`web` container, Windows' `LoombreWeb` service, macOS's
+`com.loombre.web` daemon). Both commands above still build+serve
+`apps/web` straight from the checkout (`pnpm run build && pnpm run
+start`, matching what CI already does), because this step's question is
+"does this app hit its web budgets on T0-class hardware" — real N100
+CPU, real thermal conditions — not "is the installed web service
+serving," which Step A's install smoke already answered.
 
 ---
 

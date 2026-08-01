@@ -1,7 +1,8 @@
 # Capability report
 
-<!-- Sourcing: System panel's five cards (SystemInfo, CapabilityReport,
-     update notice, crash files, logs tail) — apps/web/src/app/admin/
+<!-- Sourcing: System panel's six cards (SystemInfo, CapabilityReport,
+     update notice, provider-keys notice, crash files, logs tail) —
+     apps/web/src/app/admin/
      system/page.tsx header comment. Capability report shape (backends x
      decode/encode/tone-mapping matrix, probe age, hardware-conversion
      software version identifier) and "null envelope rendered honestly"
@@ -14,12 +15,12 @@ behaves a certain way, or before reporting a problem.
 
 [SCREENSHOT: System screen overview showing all cards]
 
-## System info
+## System (the "System" card)
 
 Version, operating system, performance tier, and how long the server has
 been running.
 
-## Capability report
+## Capability report (the "Verified hardware capabilities" card)
 
 This is the detailed part: what Loombre's hardware probe found. It shows,
 for each conversion backend available on this machine, what it can play
@@ -40,6 +41,14 @@ Tells you whether a newer version of Loombre is available. Loombre never
 installs an update automatically — this is informational only. If the
 update information couldn't be verified as authentic, this is shown as a
 clear warning rather than silently trusted or hidden.
+
+## Metadata provider keys
+
+Shown only while no metadata-provider API key is configured on this
+instance. TMDB/TVDB enrichment (posters, overviews, cast) is inactive
+until at least one key is set — a scan without one still completes, just
+with no provider metadata or images. The card's **Configure provider
+keys** link takes you to the settings screen where keys are entered.
 
 ## Crash files
 

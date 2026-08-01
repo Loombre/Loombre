@@ -18,8 +18,8 @@ Jobs are listed newest first. Each one shows:
 
 - **What kind of job it is** — a library scan, a metadata lookup, image
   preparation, and so on.
-- **Status** — queued, running, completed, or failed, shown as a colored
-  status pill.
+- **Status** — queued, active, completed, failed, or cancelled, shown as
+  a colored status pill.
 - **Progress**, while a job is actively running.
 
 The list updates live while you have this screen open — you don't need
