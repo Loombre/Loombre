@@ -84,6 +84,12 @@ function screenEntryLabels(view: TestRender): string[] {
     .map((b) => b.querySelectorAll("span")[0]?.textContent ?? "");
 }
 
+function actionEntryLabels(view: TestRender): string[] {
+  return Array.from(view.container.querySelectorAll("button"))
+    .filter((b) => b.querySelectorAll("span")[1]?.textContent === "Action")
+    .map((b) => b.querySelectorAll("span")[0]?.textContent ?? "");
+}
+
 async function typeQuery(view: TestRender, value: string): Promise<void> {
   await act(async () => {
     setNativeValue(fieldInput(view), value);
@@ -143,5 +149,29 @@ describe("QuickSearch — Restricted palette entry entitlement wiring", () => {
     await typeQuery(view, "watchlist");
 
     expect(screenEntryLabels(view)).toContain("Watchlist");
+  });
+
+  // Regression (orchestrator exit-gate UI walk): the lock/unlock ACTION — not
+  // just the screen — must be entitlement-gated. An unentitled viewer seeing
+  // "Unlock restricted content" is a trace the zone exists.
+  it("offers the lock/unlock ACTION to a zone-entitled viewer", async () => {
+    restrictedZoneCountMock.mockReturnValue({ count: 7, loading: false });
+    view = renderIntoBody(<QuickSearch isAdmin={false} />);
+    await typeQuery(view, "restricted");
+    // mock state.locked === false ⇒ the action reads "Lock restricted content"
+    expect(actionEntryLabels(view)).toContain("Lock restricted content");
+  });
+
+  it("hides the lock/unlock ACTION entirely from a viewer with no zone entitlement (the leak fix)", async () => {
+    restrictedZoneCountMock.mockReturnValue({ count: null, loading: false });
+    view = renderIntoBody(<QuickSearch isAdmin={false} />);
+    for (const q of ["restricted", "unlock", "lock"]) {
+      await typeQuery(view, q);
+      expect(actionEntryLabels(view)).not.toContain("Lock restricted content");
+      expect(actionEntryLabels(view)).not.toContain("Unlock restricted content");
+    }
+    // the ungated Sign out action still works for everyone
+    await typeQuery(view, "sign");
+    expect(actionEntryLabels(view)).toContain("Sign out");
   });
 });
