@@ -10,20 +10,23 @@
 
 ## Adding people
 
-From the Users screen, choose **New user** to create an account for
-someone else in your household. You'll set their username and an initial
-password; they can change their own password once signed in.
+From the Users screen, choose **+ Add user** to create an account for
+someone else in your household. You'll set their name, username, email,
+and an initial password; they can change their own password once signed
+in.
 
-[SCREENSHOT: Users list with New user button]
+[SCREENSHOT: Users list with + Add user button]
 [SCREENSHOT: Create user modal]
 
 ## Library access
 
 Nobody — not even another admin — can see a library until you explicitly
 grant them access to it. Open a user's **Library access** to see every
-library and toggle which ones they can see. This works the same way for
-ordinary and restricted libraries alike; only the admin who *created* a
-library is automatically granted access to it at creation time.
+library and toggle which ones they can see. The one exception: the admin
+who *created* a **general** library is automatically granted access to it
+at creation time. A **restricted** library is never auto-granted to
+anyone — including its creator — so after creating one, grant yourself
+access here the same way you'd grant anyone else.
 
 [SCREENSHOT: Per-user library access editor]
 

@@ -1,6 +1,6 @@
 # Contract-first workflow
 
-<!-- Sourcing: openapi.yaml size (3415 lines, 60 top-level path keys) and
+<!-- Sourcing: openapi.yaml size (5311 lines, 85 top-level path keys) and
      codegen output location/mechanism — packages/contract/openapi.yaml,
      packages/contract/scripts/codegen.mjs (openapi-typescript for types,
      a hand-rolled operations table for paths, "GENERATED — do not edit"
@@ -18,8 +18,8 @@ page is the concrete workflow that invariant implies.
 
 ## The contract itself
 
-`packages/contract/openapi.yaml` is a single ≈3,700-line file describing
-64 paths under `/v1`. It's lint-checked
+`packages/contract/openapi.yaml` is a single ≈5,300-line file describing
+85 paths under `/v1`. It's lint-checked
 (`redocly lint openapi.yaml`, `packages/contract`'s own `lint` script) and
 is what the [API Reference](../api-reference/index.md) is generated from — the same
 file, no separate description to keep in sync.

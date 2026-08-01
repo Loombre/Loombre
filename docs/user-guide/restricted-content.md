@@ -33,7 +33,7 @@ on the home screen, nowhere — until every one of the following is true:
    the above, restricted content stays locked until you enter your PIN,
    and it locks again automatically after a while.
 
-[SCREENSHOT: PIN entry prompt when opening a restricted library]
+[SCREENSHOT: Restricted zone screen with its "Unlock with PIN" button]
 
 ## Unlocking
 

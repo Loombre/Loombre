@@ -1,7 +1,7 @@
 # Authoring a matrix case
 
 <!-- Sourcing: matrix case files as individual YAML files in
-     packages/playback-engine/matrix/*.yaml (506 files, verified by count,
+     packages/playback-engine/matrix/*.yaml (512 files, verified by count,
      matching matrix/burnup.json's entry count); case shape (name, why,
      input, expect) from an existing case file
      (matrix/013-mp4-direct-play-hevc-sdr-main10.yaml); matrix-meta.spec.ts
@@ -20,7 +20,7 @@ practice.
 ## What the matrix is
 
 `packages/playback-engine/matrix/` holds one YAML file per test case —
-currently 506 of them (docs/PLAYBACK.md §10 sets a Phase 3 exit bar of
+currently 512 of them (docs/PLAYBACK.md §10 sets a Phase 3 exit bar of
 "≥ 500 cases"; the matrix already exceeds it) — plus a manifest file,
 `burnup.json`, that records every case's name and current status.
 
@@ -28,8 +28,8 @@ A case looks like this (trimmed from
 `matrix/013-mp4-direct-play-hevc-sdr-main10.yaml`):
 
 ```yaml
-name: mp4-direct-play-hevc-sdr-main10
-why: "docs/PLAYBACK.md §3 stage 2 — HEVC Main10 SDR direct-play eligibility"
+name: direct-play — mp4 hevc main10@123 10-bit 2160p + aac 6ch, hevc-sdr (SDR source, no HDR involved)
+why: "Stage A (docs/PLAYBACK.md §3): mp4 IS in hevc-sdr's directPlayContainers, and every SELECTED stream is copy-eligible under Stages B-F's current permissive stubs, so the decision is direct-play with reasons=[]. …"
 input:
   media: { ... }
   device: { ... }

@@ -2,15 +2,19 @@
 
 <!-- Sourcing: apps/worker/src/metadata/provider.ts (MetadataProvider
      interface), registry.ts (ProviderRegistry, assertScope), consumer.ts
-     (PROVIDER_CHAIN, metadataConsumerHandler, pickBestMatch), precedence.ts
+     (metadataConsumerHandler, pickBestMatch),
+     provider-chain-defaults.ts (PROVIDER_CHAIN, the default fallback
+     chain) + chain-resolution.ts (per-library chain override resolved at
+     job time), precedence.ts
      (mergeFields, nfo > tags > provider > filename precedence,
-     metadata_lock), keys.ts (resolveApiKey — confirmed still env-var-only,
-     no keyring read, as of this writing), apps/server/src/settings/
+     metadata_lock), keys.ts (resolveApiKey — the env-var side — plus
+     resolveApiKeyWithKeyring, which falls back to the OS keyring via
+     @loombre/secrets when the env var is unset), apps/server/src/settings/
      provider-keys.service.ts (Addendum A: the admin-settings-screen ->
-     OS-keyring seam, env-still-wins precedence — its own header comment
-     names keys.ts's resolveApiKey call sites as the env side of that
-     precedence, but nothing in apps/worker imports the keyring package),
-     apps/worker/src/index.ts:79-96 (manual registration, no DI framework),
+     OS-keyring seam, env-still-wins precedence — keys.ts's
+     resolveApiKeyWithKeyring is the worker-side consumer of that seam,
+     called at boot from index.ts),
+     apps/worker/src/index.ts:151-169 (manual registration, no DI framework),
      apps/worker/src/metadata/providers/{tmdb,tvdb,musicbrainz}.ts (the
      three built-in providers), apps/worker/test/metadata/** (tests to
      mirror), apps/worker/src/metadata/test-support.ts (makeFakeProvider).
@@ -92,7 +96,13 @@ and `provider_ids` rows, writes in one transaction.
    can never be registered against a general-content library.
 4. **Add it to the fallback chain**: if it should participate in the
    automatic lookup for a given media kind, add its name to the relevant
-   entry in `PROVIDER_CHAIN` (`consumer.ts`).
+   entry in `PROVIDER_CHAIN` (`provider-chain-defaults.ts`). Note that
+   this constant is only the *default*: since LPP v1, the chain actually
+   used for a job is resolved per library at job time
+   (`chain-resolution.ts`, backed by the `library_provider_entries` table
+   and editable via `PUT /admin/libraries/{id}/provider-chain`), so a
+   library with a customized chain won't pick up your provider until it's
+   added to that library's chain too.
 5. **Write tests mirroring the existing providers**:
    - `apps/worker/test/metadata/providers/your-provider.spec.ts` — unit
      tests against fixture data (see the fixture layout under

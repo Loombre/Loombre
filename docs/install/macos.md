@@ -25,12 +25,15 @@ boundary.
 ## Downloading
 
 Get `loombre-<version>-macos-<arch>.pkg` for your Mac (`arch` is `arm64` for
-Apple Silicon, `x64` for Intel) plus its two companion files, from the
-[releases page] (or your own mirror):
+Apple Silicon, `x64` for Intel) plus the release's shared verification
+files, from the [releases page] (or your own mirror):
 
 - `loombre-<version>-macos-<arch>.pkg` — the installer
-- `loombre-<version>-macos-<arch>.pkg.sha256` — the checksum
-- `loombre-<version>-macos-<arch>.pkg.minisig` — the minisign signature
+- `SHA256SUMS` — checksums for every artifact in the release
+- `SHA256SUMS.minisig` — the minisign signature over that checksum list
+
+(There is no per-artifact `<file>.sha256`/`<file>.minisig` — one signed
+checksum list covers the whole release, same as on Linux.)
 
 [releases page]: #
 
@@ -40,45 +43,51 @@ This is the primary trust ritual for an unsigned build — treat it as
 mandatory, not optional, especially the first time you install a given
 release.
 
-### 1. Checksum (integrity — did the download complete correctly?)
+### 1. GitHub artifact attestation (no key handling required)
 
 ```sh
-shasum -a 256 -c loombre-<version>-macos-<arch>.pkg.sha256
+gh attestation verify loombre-<version>-macos-<arch>.pkg --repo Loombre/Loombre
 ```
 
-Compare the printed result against the contents of
-`loombre-<version>-macos-<arch>.pkg.sha256`. A mismatch means a corrupted or
-tampered download — **do not open the installer**; re-download from a
-different network path and check again.
+Proves this exact file was built by Loombre's own CI, from this exact
+repository, at this exact commit. Needs the `gh` CLI, signed in
+(`gh auth login`).
+
+### 2. Checksum (integrity — did the download complete correctly?)
+
+```sh
+grep "loombre-<version>-macos-<arch>.pkg" SHA256SUMS | shasum -a 256 -c -
+```
+
+`SHA256SUMS` lists every artifact in the release, not just this `.pkg` —
+the `grep` selects the line for the file you actually downloaded. A
+mismatch means a corrupted or tampered download — **do not open the
+installer**; re-download from a different network path and check again.
 
 A checksum alone only proves the file wasn't corrupted in transit; it does
 **not** prove the file came from the Loombre project, since anyone can
 compute a checksum for a file they tampered with. That's what the next step
 is for.
 
-### 2. minisign signature (authenticity — did this actually come from Loombre?)
+### 3. minisign signature (authenticity — did this actually come from Loombre?)
 
-Loombre signs every release artifact with [minisign], a small, auditable,
-ed25519-based signing tool (`brew install minisign`), then:
+The signature covers `SHA256SUMS` itself — not each individual artifact —
+so verifying it, combined with the checksum match above, transitively
+proves the `.pkg` is authentic too. Install [minisign]
+(`brew install minisign`), then:
 
 ```sh
-minisign -V -p loombre-minisign.pub \
-  -m loombre-<version>-macos-<arch>.pkg \
-  -x loombre-<version>-macos-<arch>.pkg.minisig
+minisign -Vm SHA256SUMS -P <public key — see below>
 ```
 
-`loombre-minisign.pub` is Loombre's public signing key, published in **three
-independent places** so that forging a match would require compromising all
-three at once, not just one:
+The public key is published, byte-identical, in multiple
+independently-maintained places — `keys/minisign.pub` in the repository,
+`docs/install/linux.md`'s "Verify what you downloaded" section (which
+embeds it inline), `docs/ops/updating.md`'s "Verifying releases" section,
+and every release's notes — so substituting all of them simultaneously
+would be required to defeat verification.
 
-1. **In this repository** — `SECURITY.md` / a pinned file in `docs/` (see
-   the repo root for the exact path once the release-signing lane lands).
-2. **On the docs site**, on a page that is itself covered by the site's own
-   HTTPS/domain trust — not just this repo.
-3. **In every release's notes**, pasted as plain text alongside the
-   checksums.
-
-If those three don't agree, or the signature does not verify, **stop and do
+If those don't agree, or the signature does not verify, **stop and do
 not open the installer** — that is exactly the scenario minisign
 verification exists to catch. This project reports no telemetry, so
 nobody except you will ever know you hit this — verify anyway.
@@ -119,9 +128,14 @@ nobody except you will ever know you hit this — verify anyway.
    nobody is signed in, see LAYOUT.md §3). It also loads the
    **com.loombre.menubar** LaunchAgent into your login session, so the
    menu bar icon appears without you having to go find the app.
-8. The final installer pane tells you where to go: `http://localhost:3000`.
-   The database is provisioned, migrated and serving by then — the first
-   page you see is the account-setup wizard. Nothing else to configure.
+8. The final installer pane names the address (`http://localhost:3000`),
+   and **your browser opens to it automatically** a few seconds later —
+   the menubar app opens the web UI once, the first time the server
+   reports ready (once per user account, ever; upgrades don't re-open
+   it). The database is provisioned, migrated and serving by then — the
+   first page you see is the account-setup wizard. Nothing else to
+   configure. If the browser doesn't open, go to `http://localhost:3000`
+   yourself.
 
 ### The CLI path (no GUI clicks)
 
@@ -160,7 +174,10 @@ verifies the download before `--no-quarantine` ever comes into play.
   a background-only utility, `LSUIElement`). It polls server/worker status
   and gives you: **Open Loombre** (launches your browser to the web client),
   **Start/Stop Server**, **Reveal Crash Files**, and the installed +
-  contract version.
+  contract version. Starting a *stopped* server asks for administrator
+  authorization (password or Touch ID) — the server runs as a system
+  service, so starting it is a privileged operation; stopping it is not
+  prompted.
   [SCREENSHOT: macOS menubar showing Loombre icon and context menu with Open Loombre, Start/Stop, Reveal Crash Files, version info]
 - The menubar app starts **automatically at every login**, via the
   `com.loombre.menubar` LaunchAgent the installer places in
@@ -175,23 +192,31 @@ verifies the download before `--no-quarantine` ever comes into play.
 
 ## Configure
 
-Edit `/Library/Application Support/Loombre/config/loombre.env` — at minimum,
-point `DATABASE_URL` at a real PostgreSQL 17+ instance (external-PG path;
-embedded PostgreSQL is vendored into the payload but not yet wired into the
-service lifecycle — see `installers/macos/LAYOUT.md` §8) and set
+**Database: nothing to do by default.** Leave `DATABASE_URL` unset and the
+server provisions and supervises its own bundled PostgreSQL automatically
+at boot (data under
+`/Library/Application Support/Loombre/postgres/`), including running
+migrations — this is the default a fresh install is already using by the
+time the setup wizard appears.
+
+To use your own PostgreSQL 17+ instead, edit
+`/Library/Application Support/Loombre/config/loombre.env` and set
+`DATABASE_URL` (see `docs/ops/external-postgres.md`). Also consider setting
 `LOOMBRE_JWT_SECRET` (`openssl rand -base64 48`) so restarts don't log
 everyone out. This file is created once at install time and **never**
 overwritten by a later upgrade — your edits survive.
 
-Restart both services after editing:
+Restart the services after editing:
 
 ```sh
 sudo launchctl kickstart -k system/com.loombre.server
 sudo launchctl kickstart -k system/com.loombre.worker
+sudo launchctl kickstart -k system/com.loombre.web
 ```
 
-Run migrations against that database (until the `loombre` CLI gains a
-first-class subcommand for this):
+In external-Postgres mode only, run migrations against that database
+yourself (embedded mode migrates automatically; external mode **never**
+auto-migrates):
 
 ```sh
 # from a repo checkout with the same DATABASE_URL, or an equivalent tool
@@ -206,8 +231,8 @@ documented string committed in `packages/db/seed/seed.mjs`. Running either
 against your real database would give a LAN- or internet-reachable instance
 an admin account with a published password; treat that as a security
 mistake, not a shortcut. `pnpm db:migrate` alone leaves the `users` table
-empty, which is what the first-run setup wizard needs: with both services
-already running (see above), open `http://<this host>:3001` in a browser
+empty, which is what the first-run setup wizard needs: with the services
+already running (see above), open `http://<this host>:3000` in a browser
 and it walks you through creating the real admin account.
 
 ## Checking status
@@ -230,8 +255,12 @@ limitation, not a Loombre omission). Remove by hand:
 ```sh
 sudo launchctl bootout system/com.loombre.server
 sudo launchctl bootout system/com.loombre.worker
+sudo launchctl bootout system/com.loombre.web
+sudo launchctl bootout gui/$(id -u)/com.loombre.menubar
 sudo rm /Library/LaunchDaemons/com.loombre.server.plist
 sudo rm /Library/LaunchDaemons/com.loombre.worker.plist
+sudo rm /Library/LaunchDaemons/com.loombre.web.plist
+sudo rm /Library/LaunchAgents/com.loombre.menubar.plist
 sudo rm -rf /opt/loombre
 sudo rm -rf /Applications/Loombre.app
 sudo rm -rf "/Library/Logs/Loombre"
@@ -246,33 +275,6 @@ sudo dscl . -delete /Groups/_loombre
 itself can't fully close for any `pkg`-based cask — it removes what it
 tracked installing, which for a `.pkg` payload is limited; the manual steps
 above are the complete removal either way.)
-
-## Verify what you downloaded
-
-Before opening the installer, verify your download:
-
-### 1. Checksum (integrity)
-
-```sh
-shasum -a 256 -c loombre-<version>-macos-<arch>.pkg.sha256
-```
-
-Compare the printed result against the contents of
-`loombre-<version>-macos-<arch>.pkg.sha256`. A mismatch means corruption —
-**do not open the installer**.
-
-### 2. minisign signature (authenticity)
-
-```sh
-minisign -V -p <public key> \
-  -m loombre-<version>-macos-<arch>.pkg \
-  -x loombre-<version>-macos-<arch>.pkg.minisig
-```
-
-The minisign public key is published in three places (see `keys/minisign.pub`
-in the repository, `docs/ops/updating.md`, and every GitHub Release's notes).
-
-If verification fails, **do not open the installer**.
 
 ## Why unsigned?
 
@@ -314,8 +316,8 @@ Common issues:
 - **PostgreSQL won't start** — Embedded PostgreSQL data directory needs to be
   writable by `_loombre`:
   ```sh
-  sudo chown -R _loombre:_loombre "/Library/Application Support/Loombre/db"
-  sudo chmod 700 "/Library/Application Support/Loombre/db"
+  sudo chown -R _loombre:_loombre "/Library/Application Support/Loombre/postgres"
+  sudo chmod 700 "/Library/Application Support/Loombre/postgres/data"
   ```
 
 ### Permission errors scanning library paths

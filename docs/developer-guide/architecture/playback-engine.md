@@ -1,14 +1,14 @@
 # Architecture: Playback engine & matrix law
 
-<!-- Sourcing: plan() signature — packages/playback-engine/src/plan.ts:218
+<!-- Sourcing: plan() signature — packages/playback-engine/src/plan.ts:227
      (`export function plan(input: PlanInput): PlaybackPlan`); PlanInput
-     shape — packages/playback-engine/src/types.ts:247-262 (no clock
+     shape — packages/playback-engine/src/types.ts:257-271 (no clock
      field). Purity language — docs/PLAYBACK.md:14 ("calls no clock") and
      packages/playback-engine/src/args/builder.ts:5 ("no clock (docs/
      PLAYBACK.md §0 law 1)"). Reason taxonomy — packages/playback-engine/
      src/reasons.ts (closed BlockingReasonCode/FixedInformationalReasonCode
      unions), docs/PLAYBACK.md §4. Matrix — packages/playback-engine/matrix/
-     (506 *.yaml case files, burnup.json manifest, matrix-meta.spec.ts,
+     (512 *.yaml case files, burnup.json manifest, matrix-meta.spec.ts,
      matrix.spec.ts, properties.spec.ts). See
      docs/developer-guide/matrix-authoring.md for the full regression-law
      writeup — not repeated in full here. -->
@@ -58,7 +58,7 @@ a particular file played the way it did.
 
 ## The matrix
 
-`packages/playback-engine/matrix/` holds 506 individual YAML test cases
+`packages/playback-engine/matrix/` holds 512 individual YAML test cases
 (docs/PLAYBACK.md §10's Phase 3 exit bar was "≥ 500"), each citing the
 spec section it proves. Two specs enforce the regression law described in
 full in [Authoring a matrix case](../matrix-authoring.md):
@@ -71,7 +71,7 @@ suite directly; CI also runs it as its own "playback matrix burn-up" step.
 
 ## Admission control is process-local
 
-The transcode admission gate (`docs/PLAYBACK.md`:379's
+The transcode admission gate (`docs/PLAYBACK.md`:403's
 `maxSimultaneousTranscodes` semaphore) — `TranscodeAdmissionGate` in
 `apps/server/src/playback/transcode-admission.ts` — is a process-local
 promise-chain mutex, not a `plan()` concern. Correct for v1's

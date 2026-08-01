@@ -7,7 +7,7 @@ This guide covers the key installation paths and what hardware you need.
 
 - **[Docker/Compose (recommended)](docker.md)** — Friction-free path if you have Docker. No OS-level signing checks, no Gatekeeper/SmartScreen prompts. Single environment file, `docker compose` commands.
 - **[Linux (tarball + systemd)](linux.md)** — Bare-metal installs, containers without Docker-in-Docker. Bundled Node, ffmpeg, systemd units.
-- **[Windows (MSI installer)](windows.md)** — Native installer, Windows services, system tray controller. Embedded PostgreSQL and bundled ffmpeg.
+- **[Windows (.exe installer)](windows.md)** — Native installer, Windows services, system tray controller. Embedded PostgreSQL and bundled ffmpeg.
 - **[macOS (.pkg + menubar)](macos.md)** — Native installer, LaunchDaemons, menubar controller. Runs while logged out (ideal for a shared Mac).
 
 ## System requirements
@@ -78,7 +78,7 @@ The wizard saves these settings and opens the web client. From there, you can ad
 
 ## After install: next steps
 
-- **Local access only** — No extra configuration needed. Open `http://localhost:3001` and start streaming.
+- **Local access only** — No extra configuration needed. Open `http://localhost:3000` and start streaming.
 - **Remote access (inside your own network)** — Set up a reverse proxy (nginx, Caddy, Traefik) if Loombre isn't already on port 80/443; see `docs/ops/reverse-proxy.md`.
 - **Remote access (from outside your network)** — Use built-in ACME (Let's Encrypt) for automatic TLS, or bring your own certificate behind a reverse proxy; see `docs/ops/acme.md`.
 
@@ -87,7 +87,7 @@ The wizard saves these settings and opens the web client. From there, you can ad
 ## Troubleshooting
 
 - **The installer won't run** — Gatekeeper (macOS) / SmartScreen (Windows) are blocking it. See your platform's guide for the exact click-through steps.
-- **Loombre starts but I can't access it** — Check `http://127.0.0.1:3001` first (localhost only). If that works, check your firewall. `docs/ops/reverse-proxy.md` has working reverse-proxy recipes for external access.
+- **Loombre starts but I can't access it** — Check `http://127.0.0.1:3000` first (localhost only). If that works, check your firewall. `docs/ops/reverse-proxy.md` has working reverse-proxy recipes for external access.
 - **I'm getting permission errors** — On Linux/macOS, Loombre runs as a dedicated system user (`loombre` or `_loombre`). If you're bind-mounting library paths, make sure that user can read them: `sudo chown -R loombre:loombre /path/to/library` (Linux) or check File Sharing system settings (macOS).
 - **The database won't start** — Embedded PostgreSQL needs the data directory to be writable and owned by the service user. See the platform-specific docs for exact paths and troubleshooting.
 

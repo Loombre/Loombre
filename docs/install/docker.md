@@ -189,7 +189,7 @@ run and manage:
 2. Set `DATABASE_URL` directly in your env file to your own instance's
    connection string, overriding the `postgres://...@postgres:5432/...`
    value the compose file otherwise assembles from `POSTGRES_*`.
-3. Run the same [migration command](#migrating--upgrading) against it once.
+3. Run the same [migration command](#migrating-upgrading) against it once.
 
 This is the `ProvisioningStatus: 'external'` path (`packages/provisioning`)
 — the server behaves identically either way; it never probes or manages a
@@ -343,7 +343,7 @@ are the first thing to check today.
 - **`server` never reports healthy.** `docker compose -f
   docker-compose.prod.yml logs server` — a common cause before the first
   migration run is simply that the schema doesn't exist yet; run
-  [the migration command](#migrating--upgrading). The healthcheck itself
+  [the migration command](#migrating-upgrading). The healthcheck itself
   only probes `GET /healthz` (a liveness check, not a DB check — see
   `apps/server/src/gateway/health.controller.ts`), so a server reporting
   healthy with an unmigrated database is expected, not a bug; catalog

@@ -27,7 +27,7 @@ Shows" pointing at a folder of shows.
 
 ## Creating a library
 
-From the Libraries screen, choose **New library** and fill in:
+From **Settings → Libraries**, choose **+ Add library** and fill in:
 
 - **Name** — whatever you want to call it.
 - **Kind** — Movie, TV, or Music. This affects how Loombre reads
@@ -35,18 +35,23 @@ From the Libraries screen, choose **New library** and fill in:
 - **Restricted** — turn this on if this library should require a PIN and
   explicit permission to view (see
   [Users & permissions](users-permissions.md)). Off by default.
-- **Paths** — one or more folder locations. Ask whoever installed Loombre
-  for the correct value here if you're not sure — it depends on how
-  Loombre was installed (see the [Operator Guide](../ops/index.md) if that's you).
+- **Paths** — one or more folder locations. The **Browse…** button opens
+  a picker that navigates the *server's* own folders, so you can find the
+  right location without knowing the path by heart. You can still type a
+  path manually (useful for locations the picker can't show, e.g. inside
+  a container); if you're unsure what's right, ask whoever installed
+  Loombre (see the [Operator Guide](../ops/index.md) if that's you).
 
 [SCREENSHOT: Create library modal, showing name/kind/restricted/paths fields]
 
-Only you (the admin who created it) can see a newly created library at
-first — **every library needs an explicit permission grant to be visible
-to anyone**, including other admins, with one exception: the admin who
-creates a library is automatically granted access to it. See
-[Users & permissions](users-permissions.md) for granting access
-to everyone else.
+**Every library needs an explicit permission grant to be visible to
+anyone**, including other admins, with one exception that applies to
+*general* libraries only: the admin who creates a general library is
+automatically granted access to it. A **restricted** library is never
+auto-granted to anyone — including its creator: you must grant yourself
+access the same way you'd grant anyone else, so a newly created
+restricted library is invisible to everybody until you do. See
+[Users & permissions](users-permissions.md) for granting access.
 
 ## What scanning does
 
@@ -56,9 +61,10 @@ embedded tags) to figure out what it is.
 
 - **It keeps watching.** After the first scan, Loombre notices new,
   changed, or removed files in that folder automatically — you don't need
-  to trigger a scan by hand every time you add something, though a
-  **Scan now** button is available on each library if you want to force
-  an immediate check.
+  to trigger a scan by hand every time you add something. To force an
+  immediate check anyway, use the **Scan now** button on the admin
+  Dashboard's Libraries panel, or the **Scan** / **Full rescan** actions
+  in a library's **⋯** menu under Settings → Libraries.
 - **It recognizes renamed or moved files.** If you rename or reorganize a
   file within your library, Loombre matches it to the same file it already
   knew about (by its content, not just its name), so your watch history
