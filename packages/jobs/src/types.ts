@@ -201,6 +201,23 @@ export interface PgUpgradeJobPayload {
   reason: 'boot-major-upgrade';
 }
 
+/** Cheap Stash-DB inventory pass: repopulates stash_scene_links with every
+ *  scene's path/size/oshash/updated_at so the admin path-mapping preview is
+ *  pure SQL (STATE.md Stash run, K10). Enqueued on connection save and as
+ *  the first phase of a full sync. */
+export interface StashInventoryJobPayload {
+  libraryId: string;
+}
+
+/** Stash metadata sync (STATE.md Stash run, S8): 'full' walks every linked
+ *  scene; 'incremental' diffs on Stash's updated_at columns and touches only
+ *  changed scenes. Payload stays minimal — all connection state (sqlite
+ *  path, mappings, checkpoints) lives in the db, keyed by libraryId. */
+export interface StashSyncJobPayload {
+  libraryId: string;
+  mode: 'full' | 'incremental';
+}
+
 export interface JobPayloads {
   scan: ScanJobPayload;
   probe: ProbeJobPayload;
@@ -213,6 +230,8 @@ export interface JobPayloads {
   transcode: TranscodeJobPayload;
   'subtitle-extract': SubtitleExtractJobPayload;
   'pg-upgrade': PgUpgradeJobPayload;
+  'stash-inventory': StashInventoryJobPayload;
+  'stash-sync': StashSyncJobPayload;
 }
 
 export type JobType = keyof JobPayloads;
@@ -231,6 +250,8 @@ export const JOB_TYPES: readonly JobType[] = [
   'transcode',
   'subtitle-extract',
   'pg-upgrade',
+  'stash-inventory',
+  'stash-sync',
 ];
 
 /** pg-boss provisioning options for one queue (queue.ts passes these to
@@ -282,4 +303,9 @@ export const JOB_QUEUE_OPTIONS: Readonly<Record<JobType, JobQueueOptions>> = {
   // Never dispatched through pg-boss at all (see PgUpgradeJobPayload) — the
   // queue exists only so JOB_TYPES stays a total map.
   'pg-upgrade': { expireInSeconds: BOUNDED_EXPIRE_SECONDS, retryLimit: 0 },
+  // Path/size/oshash rows only — bounded even at 33k scenes.
+  'stash-inventory': { expireInSeconds: BOUNDED_EXPIRE_SECONDS, retryLimit: 2 },
+  // A full 33k-scene sync holds its handler promise for the whole run
+  // (checkpointed internally; a pg-boss retry resumes from the checkpoint).
+  'stash-sync': { expireInSeconds: LONG_RUNNING_EXPIRE_SECONDS, retryLimit: 2 },
 };

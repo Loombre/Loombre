@@ -8,7 +8,7 @@
   "required": ["jobId", "jobType", "status", "updatedAtMs"],
   "properties": {
     "jobId": { "type": "string", "format": "uuid" },
-    "jobType": { "type": "string", "enum": ["scan", "probe", "image", "metadata", "metadata-search", "import", "hwprobe", "subtitle-extract", "transcode", "image-backfill", "pg-upgrade"] },
+    "jobType": { "type": "string", "enum": ["scan", "probe", "image", "metadata", "metadata-search", "import", "hwprobe", "subtitle-extract", "transcode", "image-backfill", "pg-upgrade", "stash-inventory", "stash-sync"] },
     "status": { "type": "string", "enum": ["queued", "active", "completed", "failed"] },
     "progress": {
       "type": ["object", "null"],
