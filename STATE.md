@@ -75,12 +75,22 @@ All additive. Zone ops tag `restricted` (gates 1–5 re-verified per request, ex
 - **K14 (contract split):** `GET /admin/libraries/{id}/stash-sync-report` ships with C (its schema+SDK+controller+conformance entry, atomic); `GET /items/{id}/chapters` ships with E (needs chapter query + player UI anyway); genre_tag_names admin exposure on the stash-connection PUT ships with E. Everything else in the freeze list ships with D. C and D both regenerate the SDK in parallel — integration re-runs codegen after the yaml merge, sdk-drift proves the result.
 - **K15:** genre mapping config = `library_stash_connections.genre_tag_names TEXT[] NULL` (NULL = Lane B mapper's documented heuristic; explicit array replaces it wholesale). B owns the heuristic; E exposes the field.
 
+### Lane B freeze (2026-08-01, orchestrator ground-truthed)
+
+**B LANDED d4be893..24bbadf** (4 commits, ff onto main; gate ALL STEPS PASSED ×3 in-worktree; 52 new cases). Facts lanes/reviews cite:
+
+- `applyStashSceneMetadata(trx, deps, input)` FROZEN as landed: input = StashSceneBundle {scene, files primary-first, performers, **studioChain resolved ancestor chain ([0]=own, [1]=parent…)**, tags, markers} & {libraryId, itemId, stashSceneId, genreTagNames}; deps {getBlob, enqueueImageJob, clock?}; returns {changedFields}. Opens/joins its own withTransaction; image jobs enqueue AFTER commit. **Seam requirement on C: C resolves studioChain via read-model parent walks before calling apply.**
+- Genre heuristic (K15 NULL case): root Stash tags (no parent) ⇒ genre; child tags ⇒ plain tag; explicit genre_tag_names overrides case-insensitively. Rating: community_rating = rating100/10 (matches tmdb's native 0–10 usage; conversion documented both in apply.ts and providers/stash.ts).
+- Image pipeline extended additively: `local-temp:` sourcePath prefix (staged blob bytes, temp-deleted post-read; bare local paths stay permanent — the distinction is the point), entityExists now recognizes 'tag' (studio logos) + 'person' (performer portraits) — previously enqueue for those silently no-opped. Performer/studio images deduped via hasOriginalImage; scene cover never gated (C's diffing bounds apply frequency).
+- New internal writers: item-attributes.ts, person-attributes.ts, chapter-markers.ts (wholesale replace); findOrCreateTag gained optional {kind, parentTagId} absent-means-don't-touch 4th arg; metadata/layers.ts extracted verbatim from consumer.ts (its 8 original cases prove behavior unchanged). runtime_ms/duration/resolution NEVER written from Stash (S5 authority split, tested).
+- **Process correction (affects C/D too): B's worktree branched from STALE 0f713a8 despite 500c156 being committed first — worktree creation snapshots at agent-session start, not dispatch. B self-diagnosed + fast-forwarded; orchestrator warned C/D mid-run.**
+
 ### Lane burn-up
 
 | Lane | Scope | Model | Status |
 |---|---|---|---|
 | A | Provider core: SQLite RO adapter, S3 guard + schema fixtures, S4 matching + path-mapping + oshash, S2 lock lifecycle | sonnet | **LANDED ff488f6..e521912** |
-| B | Mapping S5–S7: apply.ts entity writers via 0019 schema, image ingest, precedence/lock, stash:/person attrs, genre heuristic | sonnet | **DISPATCHED** (worktree) |
+| B | Mapping S5–S7: apply.ts entity writers via 0019 schema, image ingest, precedence/lock, stash:/person attrs, genre heuristic | sonnet | **LANDED d4be893..24bbadf** |
 | C | Sync engine S8: consumers, checkpoints, incremental diff, staleness, events, 0020 + report endpoint; 33k fixture gen + scale proof | sonnet | **DISPATCHED** (worktree) |
 | D | Zone surface S9: contract+SDK atomic, guarded zone queries, routes, filters + URL state, performer/studio/scene pages, search, density | sonnet | **DISPATCHED** (worktree) |
 | E | Player chapters UI + /items/{id}/chapters + zone home rails + genre-config exposure + 0021 indexes w/ query plans | sonnet | blocked on B/C/D integration |
