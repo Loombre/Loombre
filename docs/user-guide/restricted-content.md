@@ -64,3 +64,9 @@ If you'd like restricted content available to you and it isn't yet, ask
 whoever administers your Loombre — they'll need to grant you access to the
 specific library, and then you can opt in and set your own PIN from your
 account settings.
+
+## Next
+
+Once you've unlocked it, restricted content has its own home, its own
+filters and search, separate from the rest of your library. See
+[Browsing the restricted zone](restricted-content-browsing.md).

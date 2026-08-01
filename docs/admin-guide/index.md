@@ -19,6 +19,7 @@ admin screens, one level below where this guide operates.
 - **[The setup wizard](wizard.md)** — what happens the first time Loombre starts.
 - **[Libraries & scanning](libraries.md)** — adding your media folders and what scanning does.
 - **[Users & permissions](users-permissions.md)** — adding people, and controlling what each of them can see.
+- **[Connecting Stash](connecting-stash.md)** — reading metadata from a Stash database into a restricted library, without ever writing back to it.
 - **[Capability report](capability-report.md)** — what Loombre knows about your hardware.
 - **[Jobs dashboard](jobs-dashboard.md)** — watching background work as it happens.
 - **[Plugins](plugins.md)** — connecting outside programs that look up media information or watch your server's activity feed, and exactly what each one can see.
