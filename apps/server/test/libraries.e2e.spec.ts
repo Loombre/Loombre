@@ -236,73 +236,234 @@ describe("GET /system/info storagePool + GET /restricted/count (Wave 1c)", () =>
   });
 });
 
-// Wave 2 (STATE.md Phosphor retheme, lane L8): the zone's own item listing,
-// GET /restricted/items — real HTTP round trip alongside GET /restricted/
-// count's own coverage above. UNLIKE count, this IS lock-sensitive (see
-// packages/db/src/query/restricted-zone.ts's "Restricted zone item
-// listing" section header).
-describe("GET /restricted/items (Wave 2, lane L8)", () => {
-  it("404 for a viewer with no restricted-library entitlement at all (seed 'casual' user) — same posture as GET /restricted/count", async () => {
-    const casualLogin = await request(app.getHttpServer()).post("/auth/login").send({
+// STATE.md Stash run (S9/K4): the dedicated Restricted Content surface's
+// real HTTP round trip — SUPERSEDES the old GET /restricted/items coverage
+// this block used to hold (K4: that endpoint is retired). Same
+// entitled/locked/unlocked posture GET /restricted/count already proves,
+// replayed at every new zone op, plus the byte-identical-404 proof for the
+// three detail reads (scenes/{id}, performers/{id}, studios/{id}).
+//
+// Lock/unlock budget: POST /restricted/unlock is rate-limited 5/min/user
+// (auth-rate-limiter.service.ts) — this suite proves the gate-5 (locked
+// vs. unlocked) distinction ONCE, across home+browse together in a single
+// lock/unlock cycle in beforeAll, then leaves the admin unlocked for every
+// remaining test in this block (each of which only needs ONE unlocked
+// state, not its own lock/unlock round trip) — well inside budget.
+describe("Restricted Content surface (STATE.md Stash run, S9)", () => {
+  async function casualToken(deviceSuffix: string): Promise<string> {
+    const login = await request(app.getHttpServer()).post("/auth/login").send({
       username: "casual",
       password: "loombre-seed-casual",
-      deviceName: "libraries-e2e-casual-items",
-      deviceProfile: buildDeviceProfile("libraries-e2e-casual-items"),
+      deviceName: `libraries-e2e-casual-${deviceSuffix}`,
+      deviceProfile: buildDeviceProfile(`libraries-e2e-casual-${deviceSuffix}`),
     });
-    expect(casualLogin.status, JSON.stringify(casualLogin.body)).toBe(200);
-    const casualToken: string = casualLogin.body.accessToken;
+    expect(login.status, JSON.stringify(login.body)).toBe(200);
+    return login.body.accessToken;
+  }
 
-    const res = await request(app.getHttpServer())
-      .get("/restricted/items")
-      .set("Authorization", `Bearer ${casualToken}`);
-    expect(res.status).toBe(404);
-  });
+  beforeAll(async () => {
+    const casual = await casualToken("gate");
+    const casualHome = await request(app.getHttpServer()).get("/restricted/home").set("Authorization", `Bearer ${casual}`);
+    expect(casualHome.status).toBe(404);
+    const casualBrowse = await request(app.getHttpServer())
+      .get("/restricted/browse")
+      .set("Authorization", `Bearer ${casual}`);
+    expect(casualBrowse.status).toBe(404);
 
-  it("entitled admin: 200 with an EMPTY page while locked, real titles/artwork once unlocked", async () => {
     const lock = await request(app.getHttpServer())
       .post("/restricted/lock")
       .set("Authorization", `Bearer ${adminToken}`);
     expect(lock.status).toBe(204);
 
-    const lockedItems = await request(app.getHttpServer())
-      .get("/restricted/items")
+    const lockedHome = await request(app.getHttpServer()).get("/restricted/home").set("Authorization", `Bearer ${adminToken}`);
+    expect(lockedHome.status, JSON.stringify(lockedHome.body)).toBe(200);
+    expect(lockedHome.body).toEqual({ continueWatchingInZone: [], recentlyAddedInZone: [], studios: [], performers: [] });
+    const lockedBrowse = await request(app.getHttpServer())
+      .get("/restricted/browse")
       .set("Authorization", `Bearer ${adminToken}`);
-    expect(lockedItems.status, JSON.stringify(lockedItems.body)).toBe(200);
-    expect(lockedItems.body.items).toEqual([]);
-    expect(lockedItems.body.nextCursor).toBeNull();
+    expect(lockedBrowse.status, JSON.stringify(lockedBrowse.body)).toBe(200);
+    expect(lockedBrowse.body).toEqual({ items: [], nextCursor: null });
 
     const unlock = await request(app.getHttpServer())
       .post("/restricted/unlock")
       .set("Authorization", `Bearer ${adminToken}`)
       .send({ pin: "0000" });
     expect(unlock.status, JSON.stringify(unlock.body)).toBe(200);
+  });
 
-    const unlockedItems = await request(app.getHttpServer())
-      .get("/restricted/items")
-      .set("Authorization", `Bearer ${adminToken}`);
-    expect(unlockedItems.status, JSON.stringify(unlockedItems.body)).toBe(200);
-    expect(Array.isArray(unlockedItems.body.items)).toBe(true);
-    expect(unlockedItems.body.items.length).toBeGreaterThan(0);
-    expect(unlockedItems.body.items.every((it: { contentClass: string }) => it.contentClass === "restricted")).toBe(
-      true,
+  it("GET /restricted/home: real rails once unlocked", async () => {
+    const res = await request(app.getHttpServer()).get("/restricted/home").set("Authorization", `Bearer ${adminToken}`);
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+    expect(res.body.recentlyAddedInZone.length).toBeGreaterThan(0);
+    expect(res.body.studios.map((s: { name: string }) => s.name).sort()).toEqual(
+      ["Aurora Media", "Nightshade Films"].sort(),
     );
-    // Same aggregate the count surface reports for the identical (now
-    // unlocked) admin — one page is enough at seed scale (contract default
-    // limit 50, seed's restricted library holds 4 items).
+    expect(res.body.performers.length).toBeGreaterThan(0);
+  });
+
+  it("GET /restricted/browse: real page + combinable filters once unlocked", async () => {
+    const res = await request(app.getHttpServer()).get("/restricted/browse").set("Authorization", `Bearer ${adminToken}`);
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+    expect(res.body.items.length).toBeGreaterThan(0);
+    expect(res.body.items.every((it: { contentClass: string }) => it.contentClass === "restricted")).toBe(true);
+    for (const item of res.body.items) {
+      expect(item.itemType).toBe("movie");
+      expect(Array.isArray(item.genres)).toBe(true);
+      expect(Array.isArray(item.images)).toBe(true);
+      expect(typeof item.quality.is4k).toBe("boolean");
+      expect(typeof item.quality.hdr).toBe("string");
+    }
+
+    // Same aggregate GET /restricted/count reports for the identical
+    // (unlocked) admin — proves the two surfaces stay guard-consistent.
     const countRes = await request(app.getHttpServer())
       .get("/restricted/count")
       .set("Authorization", `Bearer ${adminToken}`);
     expect(countRes.status).toBe(200);
-    expect(unlockedItems.body.items.length).toBe(countRes.body.count);
-    expect(unlockedItems.body.nextCursor).toBeNull();
+    expect(res.body.items.length).toBe(countRes.body.count);
 
-    // Every item carries the additive genres/images/quality fields the
-    // contract's RestrictedZoneItem schema requires — proves the mapping
-    // from packages/db's row shape reached the wire intact.
-    for (const item of unlockedItems.body.items) {
-      expect(Array.isArray(item.genres)).toBe(true);
-      expect(Array.isArray(item.images)).toBe(true);
-      expect(item.quality).toEqual(expect.objectContaining({ is4k: expect.any(Boolean), hdr: expect.any(String) }));
-    }
+    // Combinable filter: yearMin narrows without dropping to zero (seed
+    // holds titles across 2019-2022 — packages/db/seed/seed.mjs).
+    const filteredRes = await request(app.getHttpServer())
+      .get("/restricted/browse?yearMin=2021")
+      .set("Authorization", `Bearer ${adminToken}`);
+    expect(filteredRes.status).toBe(200);
+    expect(filteredRes.body.items.length).toBeGreaterThan(0);
+    expect(filteredRes.body.items.length).toBeLessThan(res.body.items.length);
+    expect(filteredRes.body.items.every((it: { year: number }) => it.year >= 2021)).toBe(true);
+
+    // House rule: a malformed filter id answers an EMPTY page, never a
+    // silently dropped filter.
+    const malformedRes = await request(app.getHttpServer())
+      .get("/restricted/browse?performerIds=not-a-uuid")
+      .set("Authorization", `Bearer ${adminToken}`);
+    expect(malformedRes.status).toBe(200);
+    expect(malformedRes.body).toEqual({ items: [], nextCursor: null });
+  });
+
+  it("GET /restricted/scenes/{id}: byte-identical 404 for a nonexistent id and an uncleared casual viewer; real detail once unlocked", async () => {
+    const browseRes = await request(app.getHttpServer())
+      .get("/restricted/browse")
+      .set("Authorization", `Bearer ${adminToken}`);
+    const sceneId: string = browseRes.body.items.find(
+      (it: { title: string }) => it.title === "After Hours Redline",
+    ).id;
+
+    const casual = await casualToken("scene");
+    const uncleared = await request(app.getHttpServer())
+      .get(`/restricted/scenes/${sceneId}`)
+      .set("Authorization", `Bearer ${casual}`);
+    expect(uncleared.status).toBe(404);
+
+    const nonexistent = await request(app.getHttpServer())
+      .get("/restricted/scenes/00000000-0000-7000-8000-000000000000")
+      .set("Authorization", `Bearer ${adminToken}`);
+    expect(nonexistent.status).toBe(404);
+    // Byte-identical apart from `instance` (house pattern — see
+    // seeded-conformance.spec.ts's own restricted-vs-nonexistent proof).
+    const { instance: _unclearedInstance, ...unclearedRest } = uncleared.body;
+    const { instance: _nonexistentInstance, ...nonexistentRest } = nonexistent.body;
+    expect(unclearedRest).toEqual(nonexistentRest);
+
+    const unlocked = await request(app.getHttpServer())
+      .get(`/restricted/scenes/${sceneId}`)
+      .set("Authorization", `Bearer ${adminToken}`);
+    expect(unlocked.status, JSON.stringify(unlocked.body)).toBe(200);
+    expect(unlocked.body.title).toBe("After Hours Redline");
+    expect(unlocked.body.studio).toEqual({ id: expect.any(String), name: "Nightshade Films" });
+    expect(unlocked.body.markers.map((m: { title: string }) => m.title)).toEqual(["Opening", "Midpoint", "Finale"]);
+    expect(Array.isArray(unlocked.body.performers)).toBe(true);
+  });
+
+  it("GET /restricted/performers + /{id} + /{id}/scenes: 404 for casual, real rows once unlocked", async () => {
+    const listRes = await request(app.getHttpServer())
+      .get("/restricted/performers")
+      .set("Authorization", `Bearer ${adminToken}`);
+    expect(listRes.status, JSON.stringify(listRes.body)).toBe(200);
+    expect(listRes.body.items.length).toBeGreaterThan(0);
+    const performerId: string = listRes.body.items[0].id;
+
+    const casual = await casualToken("performers");
+    const casualList = await request(app.getHttpServer())
+      .get("/restricted/performers")
+      .set("Authorization", `Bearer ${casual}`);
+    expect(casualList.status).toBe(404);
+    const casualDetail = await request(app.getHttpServer())
+      .get(`/restricted/performers/${performerId}`)
+      .set("Authorization", `Bearer ${casual}`);
+    expect(casualDetail.status).toBe(404);
+
+    const detailRes = await request(app.getHttpServer())
+      .get(`/restricted/performers/${performerId}`)
+      .set("Authorization", `Bearer ${adminToken}`);
+    expect(detailRes.status, JSON.stringify(detailRes.body)).toBe(200);
+    expect(detailRes.body.sceneCount).toBeGreaterThan(0);
+
+    const scenesRes = await request(app.getHttpServer())
+      .get(`/restricted/performers/${performerId}/scenes`)
+      .set("Authorization", `Bearer ${adminToken}`);
+    expect(scenesRes.status, JSON.stringify(scenesRes.body)).toBe(200);
+    expect(scenesRes.body.items.length).toBeGreaterThan(0);
+    expect(scenesRes.body.items.every((it: { contentClass: string }) => it.contentClass === "restricted")).toBe(true);
+  });
+
+  it("GET /restricted/studios + /{id}: 404 for casual, real rows once unlocked, logo images[] present", async () => {
+    const listRes = await request(app.getHttpServer())
+      .get("/restricted/studios")
+      .set("Authorization", `Bearer ${adminToken}`);
+    expect(listRes.status, JSON.stringify(listRes.body)).toBe(200);
+    expect(listRes.body.items.map((s: { name: string }) => s.name).sort()).toEqual(
+      ["Aurora Media", "Nightshade Films"].sort(),
+    );
+    const studioId: string = listRes.body.items[0].id;
+
+    const casual = await casualToken("studios");
+    const casualList = await request(app.getHttpServer())
+      .get("/restricted/studios")
+      .set("Authorization", `Bearer ${casual}`);
+    expect(casualList.status).toBe(404);
+
+    const detailRes = await request(app.getHttpServer())
+      .get(`/restricted/studios/${studioId}`)
+      .set("Authorization", `Bearer ${adminToken}`);
+    expect(detailRes.status, JSON.stringify(detailRes.body)).toBe(200);
+    expect(Array.isArray(detailRes.body.images)).toBe(true);
+
+    // A studio's catalog is reached via browse's studioTagIds filter, not
+    // a dedicated sub-route (contract's documented design).
+    const catalogRes = await request(app.getHttpServer())
+      .get(`/restricted/browse?studioTagIds=${studioId}`)
+      .set("Authorization", `Bearer ${adminToken}`);
+    expect(catalogRes.status).toBe(200);
+    expect(catalogRes.body.items.length).toBeGreaterThan(0);
+  });
+
+  it("GET /restricted/search: entitlement (404) for casual; 422 for a missing q; real hits once unlocked, mutually exclusive from GET /search", async () => {
+    const casual = await casualToken("search");
+    const casualRes = await request(app.getHttpServer())
+      .get("/restricted/search")
+      .set("Authorization", `Bearer ${casual}`);
+    expect(casualRes.status).toBe(404);
+
+    const missingQ = await request(app.getHttpServer())
+      .get("/restricted/search")
+      .set("Authorization", `Bearer ${adminToken}`);
+    expect(missingQ.status).toBe(422);
+
+    const unlockedRes = await request(app.getHttpServer())
+      .get("/restricted/search")
+      .query({ q: "After" })
+      .set("Authorization", `Bearer ${adminToken}`);
+    expect(unlockedRes.status, JSON.stringify(unlockedRes.body)).toBe(200);
+    expect(unlockedRes.body.items.map((it: { title: string }) => it.title)).toEqual(["After Hours Redline"]);
+
+    // Zone search never surfaces a general title, general search never
+    // surfaces a zone title — the two indexes stay mutually exclusive.
+    const zoneForGeneral = await request(app.getHttpServer())
+      .get("/restricted/search")
+      .query({ q: "Harbor" })
+      .set("Authorization", `Bearer ${adminToken}`);
+    expect(zoneForGeneral.status).toBe(200);
+    expect(zoneForGeneral.body.items).toEqual([]);
   });
 });

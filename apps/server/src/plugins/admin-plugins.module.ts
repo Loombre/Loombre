@@ -28,6 +28,12 @@
 // /admin/libraries/{id}/stash-sync-report) — same
 // under-/libraries/{id}/-but-plugins-area-owned rationale as the
 // provider-chain surface immediately above.
+//
+// Lane D adds AdminStashController + AdminStashService (GET/PUT
+// /admin/libraries/{id}/stash-connection, GET/PUT .../stash-path-mappings,
+// POST .../stash-path-mappings/preview, POST .../stash-sync) on the same
+// precedent — AdminStashService additionally needs JobQueueProvider
+// (stash-inventory/stash-sync enqueue), already exported by CommonModule.
 
 import { Module } from "@nestjs/common";
 import { CommonModule } from "../common/common.module.js";
@@ -40,16 +46,24 @@ import { AdminLibraryProviderChainController } from "./admin-library-provider-ch
 import { AdminLibraryProviderChainService } from "./admin-library-provider-chain.service.js";
 import { AdminStashSyncReportController } from "./admin-stash-sync-report.controller.js";
 import { AdminStashSyncReportService } from "./admin-stash-sync-report.service.js";
+import { AdminStashController } from "./admin-stash.controller.js";
+import { AdminStashService } from "./admin-stash.service.js";
 
 @Module({
   imports: [CommonModule, PluginsModule],
-  controllers: [AdminPluginsController, AdminLibraryProviderChainController, AdminStashSyncReportController],
+  controllers: [
+    AdminPluginsController,
+    AdminLibraryProviderChainController,
+    AdminStashSyncReportController,
+    AdminStashController,
+  ],
   providers: [
     AdminPluginPreviewService,
     AdminPluginGrantsService,
     AdminPluginPseudonymizationService,
     AdminLibraryProviderChainService,
     AdminStashSyncReportService,
+    AdminStashService,
   ],
 })
 export class AdminPluginsControllersModule {}
