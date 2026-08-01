@@ -44,3 +44,30 @@ const SESSION_STATUS_INFO: Record<string, StatusPillInfo> = {
 export function describeSessionStatus(status: string): StatusPillInfo {
   return SESSION_STATUS_INFO[status] ?? { label: status, tone: "neutral" };
 }
+
+const STASH_CONNECTION_STATUS_INFO: Record<string, StatusPillInfo> = {
+  never_connected: { label: "Never connected", tone: "neutral" },
+  ok: { label: "Connected", tone: "success" },
+  unreachable: { label: "Unreachable", tone: "danger" },
+  unsupported_schema: { label: "Unsupported schema", tone: "warning" },
+};
+
+/** AdminStashConnectionStatus (STATE.md Stash run S3, FX1). Falls back to a
+ *  neutral pill showing the raw value — same forward-compat posture as
+ *  describeJobStatus/describeSessionStatus, never throws on a future
+ *  additive status value this client hasn't been updated for yet. */
+export function describeStashConnectionStatus(status: string): StatusPillInfo {
+  return STASH_CONNECTION_STATUS_INFO[status] ?? { label: status, tone: "neutral" };
+}
+
+const STASH_SYNC_REPORT_STATUS_INFO: Record<string, StatusPillInfo> = {
+  running: { label: "Running", tone: "info" },
+  succeeded: { label: "Succeeded", tone: "success" },
+  partial: { label: "Partial", tone: "warning" },
+  failed: { label: "Failed", tone: "danger" },
+};
+
+/** StashSyncReport.status (GET /admin/libraries/{id}/stash-sync-report, S8). */
+export function describeStashSyncReportStatus(status: string): StatusPillInfo {
+  return STASH_SYNC_REPORT_STATUS_INFO[status] ?? { label: status, tone: "neutral" };
+}

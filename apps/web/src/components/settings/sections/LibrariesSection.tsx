@@ -37,6 +37,7 @@ import { Skeleton } from "../../skeleton/Skeleton.js";
 import { EmptyState } from "../../admin/EmptyState.js";
 import { Modal } from "../../admin/Modal.js";
 import { ProviderChainModal } from "../../admin/libraries/ProviderChainEditor.js";
+import { StashModal } from "../../admin/libraries/StashModal.js";
 import { RowMenu } from "../RowMenu.js";
 import { AddLibrarySheet } from "./AddLibrarySheet.js";
 import { useLibraryScanStatus } from "./use-library-scan-status.js";
@@ -202,6 +203,7 @@ function LibraryRow({
   onEdit,
   onPermissions,
   onProviderChain,
+  onStash,
   onDelete,
 }: {
   library: Library;
@@ -210,6 +212,7 @@ function LibraryRow({
   onEdit: () => void;
   onPermissions: () => void;
   onProviderChain: () => void;
+  onStash: () => void;
   onDelete: () => void;
 }): React.JSX.Element {
   return (
@@ -241,6 +244,13 @@ function LibraryRow({
             { label: "Full rescan", onSelect: () => onScan(true) },
             { label: "Permissions", onSelect: onPermissions },
             { label: "Provider chain", onSelect: onProviderChain },
+            // STATE.md FIX WAVE FX1: Stash only ever applies to a
+            // restricted library (K7's contentClass 'restricted' — the
+            // only content class the built-in `stash` provider registers
+            // against) — offered here exactly like the "restricted" chip
+            // two lines up, off the SAME library.contentClass check, never
+            // a separate lookup.
+            ...(library.contentClass === "restricted" ? [{ label: "Stash", onSelect: onStash }] : []),
             { label: "Edit", onSelect: onEdit },
             { label: "Delete", onSelect: onDelete, danger: true },
           ]}
@@ -258,6 +268,7 @@ export function LibrariesSection({ heading }: { heading: string | null }): React
   const [editing, setEditing] = useState<Library | null>(null);
   const [managingPermissions, setManagingPermissions] = useState<Library | null>(null);
   const [managingProviderChain, setManagingProviderChain] = useState<Library | null>(null);
+  const [managingStash, setManagingStash] = useState<Library | null>(null);
   const scanStatuses = useLibraryScanStatus();
 
   function reload(): void {
@@ -318,6 +329,7 @@ export function LibrariesSection({ heading }: { heading: string | null }): React
               onEdit={() => setEditing(lib)}
               onPermissions={() => setManagingPermissions(lib)}
               onProviderChain={() => setManagingProviderChain(lib)}
+              onStash={() => setManagingStash(lib)}
               onDelete={() => void handleDelete(lib)}
             />
           ))}
@@ -339,6 +351,7 @@ export function LibrariesSection({ heading }: { heading: string | null }): React
       )}
       {managingPermissions && <PermissionsModal library={managingPermissions} onClose={() => setManagingPermissions(null)} />}
       {managingProviderChain && <ProviderChainModal library={managingProviderChain} onClose={() => setManagingProviderChain(null)} />}
+      {managingStash && <StashModal library={managingStash} onClose={() => setManagingStash(null)} />}
     </div>
   );
 }
