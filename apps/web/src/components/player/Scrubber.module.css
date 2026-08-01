@@ -40,6 +40,19 @@
   border-radius: var(--radius-pill);
 }
 
+/* S7/K9 chapter marker ticks — a thin scrim-colored divider on the rail,
+   above buffered/played (paints over both so it stays visible regardless
+   of playback progress) but below the handle. */
+.chapterTick {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  transform: translateX(-1px);
+  background: rgb(0 0 0 / 45%);
+  pointer-events: none;
+}
+
 .handle {
   position: absolute;
   top: 50%;
