@@ -29,6 +29,9 @@ import type { Kysely } from 'kysely';
 import { createDb } from '@loombre/db';
 import type { DB } from '@loombre/db';
 import { applyStashSceneMetadata, type ApplyStashSceneMetadataInput } from '../../src/stash/apply.js';
+import { metadataConsumerHandler } from '../../src/metadata/consumer.js';
+import { ProviderRegistry } from '../../src/metadata/registry.js';
+import { makeFakeProvider } from '../../src/metadata/test-support.js';
 import { openStashConnection, type StashConnection } from '../../src/stash/adapter.js';
 import { buildFixtureDb } from './fixtures/build-fixture-db.js';
 import { getBlob, getScene, getSceneFiles, getSceneMarkers, getScenePerformers, getSceneTags, getStudio } from '../../src/stash/read-model.js';
@@ -503,6 +506,70 @@ describe('applyStashSceneMetadata — synthetic bundles', () => {
     expect(chapters).toHaveLength(1);
     expect(chapters[0]!.title).toBe('Establishing Shot');
     expect(chapters[0]!.start_ms).toBe(12_250);
+  });
+
+  it('an editorial date written by Stash SURVIVES a later general metadata refresh (K1 absent-means-don\'t-touch, end to end)', async () => {
+    // R2 audit. K1 gave movie_details.premiere_at_ms "absent = don't
+    // touch" semantics precisely so "the pre-0019 writers (scan hierarchy,
+    // import, general metadata refresh) ... must never clobber a value
+    // another producer (the Stash mapper) wrote". That seam was real in
+    // the type (UpsertSatelliteInput) and real in the writer
+    // (packages/db/src/internal/catalog.ts), but NOTHING pinned the
+    // consumer side: adding `premiere_at_ms: field(...)` to
+    // metadata/consumer.ts's movie branch — a one-line, entirely
+    // plausible edit — would silently NULL the Stash-set date on the next
+    // TMDB refresh of every zone scene, and every test would still pass.
+    //
+    // This drives the REAL metadataConsumerHandler with a real (fake-
+    // backed) tmdb provider over an item Stash has already mapped, and
+    // asserts the refresh genuinely ran (it rewrote the fields it DOES
+    // own) while the date it does not own survived untouched.
+    const itemId = await insertPlaceholderItem('tmdb-after-stash.mp4');
+
+    await applyStashSceneMetadata(db, noopDeps(), {
+      libraryId,
+      itemId,
+      ...syntheticBundle({ scene: syntheticScene({ title: 'Stash Title', date: '2019-03-04', details: 'Stash overview.' }) }),
+    });
+
+    const afterStash = await db.selectFrom('movie_details').selectAll().where('item_id', '=', itemId).executeTakeFirstOrThrow();
+    expect(afterStash.premiere_at_ms).toBe(Date.parse('2019-03-04'));
+
+    const tmdb = makeFakeProvider({
+      name: 'tmdb',
+      contentClass: 'general',
+      kinds: ['movie'],
+      searchResults: [{ ref: { provider: 'tmdb', externalId: '999', mediaKind: 'movie' }, title: 'Stash Title', year: 2019 }],
+      details: {
+        itemType: 'movie',
+        title: 'TMDB Title',
+        sortTitle: 'TMDB Title',
+        year: 2019,
+        overview: 'TMDB overview.',
+        communityRating: 6.4,
+        contentRating: 'PG-13',
+        genres: [],
+        tags: [],
+        people: [],
+        providerIds: { tmdb: '999' },
+        tagline: 'A TMDB tagline.',
+        runtimeMs: 5_400_000,
+      },
+      images: [],
+    });
+    const registry = new ProviderRegistry();
+    registry.register(tmdb);
+    const handler = metadataConsumerHandler({ db, registry, enqueueImageJob: vi.fn(async () => 'job-id'), log: () => {} });
+
+    await handler({ itemId, mediaKind: 'movie', contentClass: 'restricted' }, { jobId: 'r2-tmdb-after-stash' });
+
+    const afterTmdb = await db.selectFrom('movie_details').selectAll().where('item_id', '=', itemId).executeTakeFirstOrThrow();
+    // The refresh really happened — these are the general path's own fields.
+    expect(afterTmdb.overview).toBe('TMDB overview.');
+    expect(afterTmdb.runtime_ms).toBe(5_400_000); // S5: technical facts are NOT Stash's
+    expect(afterTmdb.tagline).toBe('A TMDB tagline.');
+    // ...and the field only the Stash path knows how to write is untouched.
+    expect(afterTmdb.premiere_at_ms).toBe(Date.parse('2019-03-04'));
   });
 
   it('a studio parent chain sets parent_tag_id from root to leaf, and attaches the LEAF (index 0) to the item', async () => {
