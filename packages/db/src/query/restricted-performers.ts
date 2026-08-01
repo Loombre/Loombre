@@ -23,8 +23,26 @@
 // restricted item's credit to survive — entitled-but-locked yields a real,
 // empty page, never a 404 (matches every other zone list surface's U10
 // posture).
+//
+// QUERY SHAPE (STATE.md S10, 0021 migration, finding 6): the original
+// implementation joined people -> item_people -> catalog_items, GROUP BY
+// person, ORDER BY name LIMIT — a GroupAggregate that visits every
+// role='performer' credit row (65,916 at the 33k-scene fixture) before the
+// name-ordered LIMIT ever discards anything, EXPLAIN-measured at 209ms
+// (T0 budget: 100ms). Reshaped to the cheaper of 0021's two evidenced
+// options: keyset-page `people` DIRECTLY on (name, id) with an EXISTS
+// check for "has >=1 qualifying credit" (index-backed, early-exits — never
+// visits more than a handful of credit rows per candidate), THEN batch-
+// count scenes for ONLY the <=limit people the page actually returns
+// (fetchPerformerSceneCountsBatch below) — the same "batch the expensive
+// part over the already-page-bounded id list" shape catalog-detail.ts's
+// fetchPeopleBatch/fetchMediaFilesBatch use. Collapses the GroupAggregate's
+// 65,916-row visit to <=limit batched lookups; EXPLAIN-verified 209ms ->
+// low single-digit ms at the 33k fixture (0021's migration comment carries
+// the exact before/after numbers). getRestrictedPerformerById shares the
+// same EXISTS + batch-count shape for a single id, for the same reason.
 
-import type { Kysely } from 'kysely';
+import { sql, type Kysely } from 'kysely';
 import type { ContentClass, DB } from '../types.js';
 import type { ViewerContext } from '../context.js';
 import { applyGuardToJoined, applyGuardToPeople } from './guard.js';
@@ -76,6 +94,65 @@ function likeContainsPattern(q: string): string {
 
 const DEFAULT_LIMIT = 50;
 
+/** The "has >=1 qualifying credit" predicate shared by the EXISTS check
+ *  (list/get) and the batched scene-count query below — one implementation
+ *  so the two can never drift into inconsistent visibility (a person the
+ *  EXISTS check admits must always find itself in the count batch, and
+ *  vice versa). Callers add their own `item_people.person_id` predicate on
+ *  top (a correlated `sql.ref` equality for the EXISTS check, a bound `IN`
+ *  list for the batch query — see guard.ts's applyGuardToJoined header for
+ *  why a raw `sql.ref` is the house pattern for referencing a column on a
+ *  table outside this query's own FROM/JOIN list, e.g. the outer `people`
+ *  alias a correlated EXISTS subquery reaches into). */
+function qualifyingCreditQuery(
+  db: Kysely<DB>,
+  ctx: ViewerContext,
+  restrictedLibraryIds: string[]
+) {
+  return db
+    .selectFrom('item_people')
+    .innerJoin('catalog_items', 'catalog_items.id', 'item_people.item_id')
+    .where('item_people.role', '=', 'performer')
+    .where('catalog_items.item_type', '=', 'movie')
+    .where('catalog_items.library_id', 'in', restrictedLibraryIds)
+    .where(applyGuardToJoined(ctx, 'item_people.item_id'));
+}
+
+/** Correlated `item_people.person_id = people.id` for the EXISTS checks
+ *  below — see qualifyingCreditQuery's doc comment. */
+function correlatedToOuterPerson() {
+  return sql<boolean>`${sql.ref('item_people.person_id')} = ${sql.ref('people.id')}`;
+}
+
+/** Batch scene-count for a page's worth of already-resolved person ids
+ *  (0021 finding 6: never a GroupAggregate over every credit row — only
+ *  ever called with a page-bounded id list, same "batch the expensive part
+ *  over an already-limited id set" shape as catalog-detail.ts's
+ *  fetchPeopleBatch). */
+async function fetchPerformerSceneCountsBatch(
+  db: Kysely<DB>,
+  ctx: ViewerContext,
+  restrictedLibraryIds: string[],
+  personIds: string[]
+): Promise<Map<string, number>> {
+  const map = new Map<string, number>();
+  if (personIds.length === 0) return map;
+
+  const rows = await qualifyingCreditQuery(db, ctx, restrictedLibraryIds)
+    .where('item_people.person_id', 'in', personIds)
+    .groupBy('item_people.person_id')
+    .select((eb) => [
+      'item_people.person_id as personId',
+      eb.fn.count<string>('item_people.item_id').distinct().as('sceneCount'),
+    ])
+    .execute();
+
+  for (const r of rows) {
+    map.set(r.personId, Number(r.sceneCount));
+  }
+  return map;
+}
+
 export async function listRestrictedPerformers(
   db: Kysely<DB>,
   ctx: ViewerContext,
@@ -88,13 +165,13 @@ export async function listRestrictedPerformers(
 
   const limit = params.limit ?? DEFAULT_LIMIT;
 
-  let query = applyGuardToPeople(db.selectFrom('people'), ctx)
-    .innerJoin('item_people', 'item_people.person_id', 'people.id')
-    .innerJoin('catalog_items', 'catalog_items.id', 'item_people.item_id')
-    .where('item_people.role', '=', 'performer')
-    .where('catalog_items.item_type', '=', 'movie')
-    .where('catalog_items.library_id', 'in', restrictedLibraryIds)
-    .where(applyGuardToJoined(ctx, 'item_people.item_id'));
+  let query = applyGuardToPeople(db.selectFrom('people'), ctx).where((eb) =>
+    eb.exists(
+      qualifyingCreditQuery(db, ctx, restrictedLibraryIds)
+        .where(correlatedToOuterPerson())
+        .select('item_people.id')
+    )
+  );
 
   if (params.q) {
     query = query.where('people.name', 'ilike', likeContainsPattern(params.q));
@@ -110,25 +187,30 @@ export async function listRestrictedPerformers(
     );
   }
 
-  const rows = await query
-    .groupBy(['people.id', 'people.name', 'people.content_class'])
-    .select((eb) => [
-      'people.id as id',
-      'people.name as name',
-      'people.content_class as contentClass',
-      eb.fn.count<string>('item_people.item_id').distinct().as('sceneCount'),
-    ])
+  const idRows = await query
+    .select(['people.id as id', 'people.name as name', 'people.content_class as contentClass'])
     .orderBy('people.name', 'asc')
     .orderBy('people.id', 'asc')
     .limit(limit)
     .execute();
 
-  const last = rows[rows.length - 1];
+  const last = idRows[idRows.length - 1];
   const nextCursor =
-    rows.length === limit && last ? encodeCursor({ name: last.name, id: last.id }) : null;
+    idRows.length === limit && last ? encodeCursor({ name: last.name, id: last.id }) : null;
+
+  const sceneCounts = await fetchPerformerSceneCountsBatch(
+    db,
+    ctx,
+    restrictedLibraryIds,
+    idRows.map((r) => r.id)
+  );
 
   return {
-    rows: rows.map((r) => ({ ...r, sceneCount: Number(r.sceneCount) })),
+    // sceneCounts.get(r.id) is never undefined in practice — the EXISTS
+    // check above and qualifyingCreditQuery share the exact same predicate,
+    // so every id in idRows has >=1 matching row in the batch. The ?? 0
+    // fallback is defense-in-depth, not an expected path.
+    rows: idRows.map((r) => ({ ...r, sceneCount: sceneCounts.get(r.id) ?? 0 })),
     nextCursor,
   };
 }
@@ -150,24 +232,21 @@ export async function getRestrictedPerformerById(
     return undefined;
   }
 
-  const row = await applyGuardToPeople(db.selectFrom('people'), ctx)
-    .innerJoin('item_people', 'item_people.person_id', 'people.id')
-    .innerJoin('catalog_items', 'catalog_items.id', 'item_people.item_id')
+  const person = await applyGuardToPeople(db.selectFrom('people'), ctx)
     .where('people.id', '=', id)
-    .where('item_people.role', '=', 'performer')
-    .where('catalog_items.item_type', '=', 'movie')
-    .where('catalog_items.library_id', 'in', restrictedLibraryIds)
-    .where(applyGuardToJoined(ctx, 'item_people.item_id'))
-    .groupBy(['people.id', 'people.name', 'people.content_class'])
-    .select((eb) => [
-      'people.id as id',
-      'people.name as name',
-      'people.content_class as contentClass',
-      eb.fn.count<string>('item_people.item_id').distinct().as('sceneCount'),
-    ])
+    .where((eb) =>
+      eb.exists(
+        qualifyingCreditQuery(db, ctx, restrictedLibraryIds)
+          .where(correlatedToOuterPerson())
+          .select('item_people.id')
+      )
+    )
+    .select(['people.id as id', 'people.name as name', 'people.content_class as contentClass'])
     .executeTakeFirst();
+  if (!person) return undefined;
 
-  return row ? { ...row, sceneCount: Number(row.sceneCount) } : undefined;
+  const sceneCounts = await fetchPerformerSceneCountsBatch(db, ctx, restrictedLibraryIds, [person.id]);
+  return { ...person, sceneCount: sceneCounts.get(person.id) ?? 0 };
 }
 
 /**
