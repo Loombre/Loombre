@@ -90,6 +90,7 @@ export {
   listImagesNeedingDominantColor,
   setImageDominantColor,
   copyDominantColorToVariants,
+  hasOriginalImage,
 } from './images.js';
 
 export type { EventRow, WriteEventInput } from './events.js';
@@ -137,6 +138,7 @@ export type {
   TagRow,
   ItemTagRow,
   ItemTagInput,
+  FindOrCreateTagOptions,
 } from './relations.js';
 export {
   upsertProviderId,
@@ -146,6 +148,16 @@ export {
   findOrCreateTag,
   replaceItemTags,
 } from './relations.js';
+
+// Stash SQLite metadata sync (STATE.md K11) — namespaced extension-sandbox
+// writers (item_attributes/person_attributes) and the chapter_markers
+// wholesale-replace writer, all consumed by apps/worker/src/stash/apply.ts.
+export type { ItemAttributeRow, UpsertItemAttributeInput } from './item-attributes.js';
+export { upsertItemAttribute, getItemAttributes } from './item-attributes.js';
+export type { PersonAttributeRow, UpsertPersonAttributeInput } from './person-attributes.js';
+export { upsertPersonAttribute, getPersonAttributes } from './person-attributes.js';
+export type { ChapterMarkerRow, ChapterMarkerInput } from './chapter-markers.js';
+export { replaceChapterMarkers, getChapterMarkers } from './chapter-markers.js';
 
 // Phase 3 §11 step 6a — transcode session runtime (docs/PLAYBACK.md §9).
 // See src/internal/transcode-sessions.ts's header for the guard-free

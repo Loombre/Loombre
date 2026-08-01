@@ -59,6 +59,30 @@ export async function upsertImage(db: DbOrTx, input: UpsertImageInput): Promise<
     .executeTakeFirstOrThrow();
 }
 
+/**
+ * True if an "original" (width IS NULL) row already exists for
+ * (entityType, entityId, kind) — the Stash mapper's (apps/worker/src/
+ * stash/apply.ts) dedup guard for SHARED entities (performers/studios) a
+ * full sync visits once per referencing scene: without this check, a
+ * performer credited on N scenes would re-stage bytes and re-enqueue an
+ * 'image' job N times per sync. Deliberately an EXISTENCE check, not a
+ * checksum comparison — this module has no record of which Stash blob
+ * checksum produced a given images row, so a changed Stash performer/
+ * studio image after first ingest is a documented v1 gap (apply.ts's
+ * header), not something this helper detects.
+ */
+export async function hasOriginalImage(db: DbOrTx, entityType: string, entityId: string, kind: ImagesTable['kind']): Promise<boolean> {
+  const row = await db
+    .selectFrom('images')
+    .select('id')
+    .where('entity_type', '=', entityType)
+    .where('entity_id', '=', entityId)
+    .where('kind', '=', kind)
+    .where('width', 'is', null)
+    .executeTakeFirst();
+  return row !== undefined;
+}
+
 // ============================================================================
 // One-time dominant_color backfill (P2.11) — worker-only queries backing
 // apps/worker/src/image/backfill-consumer.ts. Only the width-NULL
