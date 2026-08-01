@@ -25,7 +25,7 @@ import type { Kysely } from 'kysely';
 import type { ContentClass, DB } from '../types.js';
 import type { ViewerContext } from '../context.js';
 import { applyGuardToJoined, applyGuardToTags } from './guard.js';
-import { decodeCursor, encodeCursor } from './cursor.js';
+import { decodeCursor, encodeCursor, isCursorRowId } from './cursor.js';
 import { resolveEntitledRestrictedLibraryIds } from './restricted-zone.js';
 import type { ImageDescriptor } from './catalog-detail.js';
 
@@ -56,12 +56,16 @@ interface StudioCursorPayload {
   id: string;
 }
 
+/** `id` must be a real uuid (R1 review lane, leak.spec 12h) — see
+ *  restricted-performers.ts's isPerformerCursorPayload for the rationale:
+ *  this value is bound into a `tags.id > ?` keyset comparison, and a
+ *  forged non-uuid otherwise raises 22P02 inside the driver. */
 function isStudioCursorPayload(value: unknown): value is StudioCursorPayload {
   return (
     typeof value === 'object' &&
     value !== null &&
     typeof (value as Record<string, unknown>).name === 'string' &&
-    typeof (value as Record<string, unknown>).id === 'string'
+    isCursorRowId((value as Record<string, unknown>).id)
   );
 }
 
