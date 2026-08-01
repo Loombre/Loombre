@@ -102,6 +102,9 @@ export { upsertProviderCacheEntry, getProviderCacheEntry } from './provider-cach
 export type { ScanCheckpointRow, WriteCheckpointInput } from './checkpoints.js';
 export { writeCheckpoint, getCheckpoint } from './checkpoints.js';
 
+export type { StashSyncCheckpointRow, WriteStashSyncCheckpointInput } from './stash-sync-checkpoints.js';
+export { writeStashSyncCheckpoint, getStashSyncCheckpoint, deleteStashSyncCheckpoint } from './stash-sync-checkpoints.js';
+
 export type {
   MetadataProvenanceRow,
   UpsertMetadataProvenanceInput,
