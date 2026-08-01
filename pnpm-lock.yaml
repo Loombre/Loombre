@@ -303,6 +303,9 @@ importers:
 
   packages/db:
     dependencies:
+      '@loombre/shared':
+        specifier: workspace:*
+        version: link:../shared
       kysely:
         specifier: ^0.29.4
         version: 0.29.4
