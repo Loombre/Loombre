@@ -18,7 +18,14 @@
 //     candidates and lazily compute oshash.ts's computeOshashForFile
 //     ONLY for those; (3) call this function again with the now-populated
 //     oshash values to resolve the OSHASH tier. Lane C's sync engine owns
-//     wiring that loop against real DB candidate queries + real files.
+//     wiring that loop against real DB candidate queries + real files
+//     (pipeline.ts's runMatchingPass), including the part this function
+//     cannot enforce for itself: a candidate ALREADY claimed by a pass-1
+//     path match must be left with `oshash: null` in pass 2, so the tier-2
+//     branch below can never hand one Loombre file to a second Stash
+//     scene. This module deliberately does not re-derive claim state from
+//     its own previous output (it is a pure function of its arguments,
+//     called once per pass); pipeline.spec.ts pins the caller's half.
 //   - "unmatched Loombre files land visibly" (the other half of S4) is a
 //     plain set-difference the caller can compute directly from this
 //     function's output (every `mediaFileId` this function claims minus
