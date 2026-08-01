@@ -1,0 +1,72 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+
+/* No page-level padding — AppShell.module.css's `.main` already pads the
+   content area (see app/restricted/browse/page.module.css's identical
+   header note). */
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xl);
+}
+
+.header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-sm);
+  text-align: center;
+}
+
+.logo {
+  width: 140px;
+  height: 140px;
+  object-fit: contain;
+  border-radius: var(--radius-md);
+  background: var(--color-dominant-fallback);
+}
+
+.logoFallback {
+  width: 140px;
+  height: 140px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-md);
+  background: var(--color-dominant-fallback);
+  font-size: var(--text-display);
+  font-weight: var(--weight-black);
+  color: var(--color-text-subtle);
+}
+
+.name {
+  font-stretch: var(--wdth-title);
+  font-size: var(--text-xl);
+  font-weight: var(--weight-black);
+  text-transform: uppercase;
+}
+
+.meta {
+  font-family: var(--font-mono);
+  font-size: var(--mono-md);
+  letter-spacing: var(--track-mono);
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.sectionHeading {
+  font-size: var(--text-lg);
+  font-weight: var(--weight-semibold);
+}
+
+.notFound {
+  padding: var(--space-2xl);
+  text-align: center;
+  color: var(--muted);
+}
+
