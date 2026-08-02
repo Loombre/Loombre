@@ -99,6 +99,14 @@
 //     (packages/db/src/query/invites.ts) — instance-administration/audit
 //     data, same posture as user.restricted-pin-reset; none of the three
 //     payloads carry token or password material.
+//   - `user.password-reset` (E3/M14/M15, STATE.md "Optional mail
+//     transport + invitation & reset flows", Lane B): emitted by
+//     packages/db/src/query/identity.ts's resetUserPasswordAndEmit (CLI/
+//     admin tiers) and src/query/password-reset.ts's
+//     resetPasswordViaTokenAndEmit (self-service tier) — instance-
+//     administration/audit activity, same posture as
+//     user.restricted-pin-reset, not content any viewer-scoped predicate
+//     should gate.
 //
 // Dependency-free data only (no zod, no I/O) — importable from
 // apps/server, apps/worker, and (via the prose pointer above, not a real
@@ -131,4 +139,6 @@ export const ADMIN_ONLY_EVENT_TYPES: readonly string[] = [
   "user.invited",
   "user.invite-revoked",
   "user.claimed",
+  // E3/M14/M15 (Optional mail transport + invitation & reset flows, Lane B).
+  "user.password-reset",
 ];
