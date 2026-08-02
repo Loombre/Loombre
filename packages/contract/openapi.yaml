@@ -137,7 +137,19 @@ paths:
         default: { $ref: '#/components/responses/Problem' }
 
   # ────────────────────────── Public claim surface (E2/M12) ─────────────────
-  /claim/{token}:
+  # F1 (opus adversarial review, fix wave): mounted under /invites, NOT the
+  # bare /claim/{token} this pair originally shared with the Next.js web
+  # page at apps/web/src/app/claim/[token] — docs/ops/reverse-proxy.md
+  # routes /claim/* to the API, so a real invite link opened JSON instead
+  # of the claim page. /reset/{token} and /forgot avoided this collision
+  # from the start by living under distinct API paths (/auth/*-password);
+  # this pair now does too. The WEB PAGE ROUTE is UNCHANGED — still
+  # /claim/[token], still the human URL in every invite link
+  # (composeClaimUrl in invites.controller.ts) — only the JSON API's own
+  # mounted path moved. operationIds are UNCHANGED (getClaimState/
+  # claimInvite), so nothing keyed by operationId (conformance's
+  # PUBLIC_OPERATION_IDS/IMPLEMENTED maps) needed a key change.
+  /invites/claim/{token}:
     parameters:
       - name: token
         in: path
@@ -3664,7 +3676,11 @@ components:
       required: [token, password]
       properties:
         token: { type: string, minLength: 1 }
-        password: { type: string, format: password, minLength: 1 }
+        # F8 (fix wave): aligned with POST /setup/first-admin's own
+        # minLength:8 — a deliberate tightening (this used to accept a
+        # 1-char password); createUser/PATCH /users/me stay minLength:1,
+        # out of scope.
+        password: { type: string, format: password, minLength: 8 }
 
     AdminResetPasswordResponse:
       type: object
@@ -4286,7 +4302,11 @@ components:
           type: string
           minLength: 1
           description: Required iff the invite has no usernamePreset; the preset wins if both are present.
-        password: { type: string, format: password, minLength: 1 }
+        # F8 (fix wave): aligned with POST /setup/first-admin's own
+        # minLength:8 — a deliberate tightening (claim used to accept a
+        # 1-char password); createUser/PATCH /users/me stay minLength:1,
+        # out of scope.
+        password: { type: string, format: password, minLength: 8 }
         email: { type: string, format: email, description: Defaults to the invite's own email preset when omitted. }
         displayName: { type: string, description: Defaults to the invite's own displayNamePreset when omitted. }
         deviceName: { type: string }
