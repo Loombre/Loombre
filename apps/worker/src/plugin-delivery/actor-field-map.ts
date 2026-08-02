@@ -138,6 +138,13 @@ export const ACTOR_FIELD_MAP: Record<string, readonly string[]> = {
   // (this map tracks "does the schema carry a user-id-bearing field", not
   // "is this type reachable by a plugin today" — see this file's header).
   "user.password-reset": ["userId"],
+  // G5 (STATE.md "Current-password re-auth on self-changes"):
+  // session.revoked-by-password-change's payload carries a real userId
+  // (the account whose other sessions were revoked) — mapped for the same
+  // reason user.password-reset's entry is, despite ALSO being ADMIN_ONLY
+  // (this map tracks "does the schema carry a user-id-bearing field", not
+  // "is this type reachable by a plugin today" — see this file's header).
+  "session.revoked-by-password-change": ["userId"],
 };
 
 /**

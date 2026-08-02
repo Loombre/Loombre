@@ -346,6 +346,15 @@ export type ClaimInviteResult =
       inviteId: string;
       grantedLibraryIds: string[];
       skippedRestrictedLibraryIds: string[];
+      /** G6 (STATE.md "Current-password re-auth on self-changes"): the
+       *  submitted email address, when it collided with ANOTHER account's
+       *  and was therefore silently dropped (the pre-SELECT below, already
+       *  R-F3/F3's E8 behavior) — INTERNAL field, never serialized to any
+       *  HTTP response; the controller consults it only to decide whether
+       *  to dispatch the email-in-use notice post-commit (G7). `null` when
+       *  no collision occurred (including "no email was submitted at
+       *  all"). */
+      collidedEmail: string | null;
     };
 
 /**
@@ -426,6 +435,10 @@ export async function claimInviteAndEmit(db: Kysely<DB>, input: ClaimInviteInput
       // state), so it stays a hard rollback+422 rather than a second
       // silent-retry attempt.
       let email = input.email;
+      // G6: the collided address itself (never serialized to any HTTP
+      // response) — surfaced in the ok:true result below so the CONTROLLER
+      // can dispatch the email-in-use notice post-commit (G7).
+      let collidedEmail: string | null = null;
       if (email !== null) {
         const existingByEmail = await trx
           .selectFrom('users')
@@ -433,6 +446,7 @@ export async function claimInviteAndEmit(db: Kysely<DB>, input: ClaimInviteInput
           .where('email', '=', email)
           .executeTakeFirst();
         if (existingByEmail) {
+          collidedEmail = email;
           email = null;
         }
       }
@@ -520,6 +534,7 @@ export async function claimInviteAndEmit(db: Kysely<DB>, input: ClaimInviteInput
         inviteId: invite.id,
         grantedLibraryIds,
         skippedRestrictedLibraryIds,
+        collidedEmail,
       };
     });
   } catch (err) {
