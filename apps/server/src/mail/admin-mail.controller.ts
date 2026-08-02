@@ -32,7 +32,7 @@
 // surface "mail isn't configured" as a real error and wants zero retries.
 
 import { Body, Controller, Delete, HttpCode, HttpStatus, Post, Put, Req } from "@nestjs/common";
-import { nowMs as clockNowMs } from "@loombre/shared";
+import { isValidEmailFormat, nowMs as clockNowMs } from "@loombre/shared";
 import type { AuthenticatedRequest } from "../gateway/auth.guard.js";
 import { DbProvider } from "../common/db.provider.js";
 import { JobQueueProvider } from "../common/job-queue.provider.js";
@@ -40,12 +40,6 @@ import { requireLiveAdmin } from "../common/require-live-admin.js";
 import { conflict, unprocessableEntity } from "../gateway/problem.exception.js";
 import { MailCredentialsService } from "../settings/mail-credentials.service.js";
 import { MailConfigService } from "./mail-config.service.js";
-
-// Deliberately permissive (matches @loombre/shared's OPTIONAL_EMAIL_SCHEMA
-// use of zod's z.email() elsewhere — this is a shape check, not a
-// deliverability test; the worker's real send attempt is that test) — a
-// single `@` with something on both sides and no whitespace.
-const LOOSE_EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 interface TestSendMailResponseDto {
   jobId: string;
@@ -104,7 +98,10 @@ export class AdminMailController {
 
     const body = rawBody ?? {};
     const to = typeof body["to"] === "string" ? body["to"].trim() : "";
-    if (to.length === 0 || !LOOSE_EMAIL_PATTERN.test(to)) {
+    // R-F4 (opus adversarial review, fix wave): shared with users.
+    // controller.ts / invites.controller.ts — one canonical email-format
+    // check, not a third hand-rolled regex.
+    if (to.length === 0 || !isValidEmailFormat(to)) {
       throw unprocessableEntity('"to" must be a valid email address.', instancePath);
     }
 

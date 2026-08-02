@@ -441,7 +441,11 @@ export {
 
 // Email-collision notice ledger (G7, STATE.md "Current-password re-auth on
 // self-changes") — see src/query/email-collision-notice.ts header.
-export { EMAIL_COLLISION_NOTICE_WINDOW_MS, claimEmailCollisionNoticeWindow } from './query/email-collision-notice.js';
+export {
+  EMAIL_COLLISION_NOTICE_WINDOW_MS,
+  claimEmailCollisionNoticeWindow,
+  releaseEmailCollisionNoticeWindow,
+} from './query/email-collision-notice.js';
 
 // Addendum A/A4 (STATE.md, admin-configurable server settings) —
 // server_settings reads/writes + outbox emission, see src/query/

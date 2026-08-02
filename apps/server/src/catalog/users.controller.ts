@@ -18,6 +18,22 @@
 // collision-bearing request pays the same wall-clock floor as a clean one
 // (G8); updateUser (admin) now surfaces a real 409 on an email conflict
 // instead of an uncaught 500 (G9).
+//
+// Opus adversarial review fix wave (STATE.md, same run): R-F3 closes a
+// self-takeover hole — an admin resetting THEIR OWN account via
+// resetUserPassword now also requires currentPassword (a stolen bearer
+// token alone must never mint a permanent takeover, same F1 reasoning as
+// updateMe/putRestricted; admin-on-ANOTHER-user stays exactly as before,
+// live-admin-verified + audited). R-F4 validates email FORMAT (not just
+// `typeof === "string"`) via @loombre/shared's isValidEmailFormat
+// (zod's z.email(), same primitive settings-registry.ts already uses for
+// mail.fromAddress) on every stored address here (updateMe, createUser) —
+// trimmed first, so a whitespace-padded copy of an existing address
+// normalizes into the SAME address (and is caught by the ordinary
+// collision path) rather than becoming a second, visually-identical row.
+// R-F5/LOW-8 (the email-in-use notice's post-commit block) and R-F6 (the
+// email-collision 23505 backstop) are fixed in packages/db/src/query/
+// admin.ts and email-collision-notice.ts — see those files' own headers.
 
 import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post, Put, Query, Req, UseFilters } from "@nestjs/common";
 import {
@@ -27,13 +43,14 @@ import {
   getUserById,
   getUserSettings,
   listUsersAdmin,
+  releaseEmailCollisionNoticeWindow,
   resetUserPasswordAndEmit,
   updateUserAdmin,
   updateUserPrefs,
   updateUserSelf,
   type AdminUserRow,
 } from "@loombre/db";
-import { generateTemporaryPassword, isKnownLanguageCode, nowMs as clockNowMs } from "@loombre/shared";
+import { generateTemporaryPassword, isKnownLanguageCode, isValidEmailFormat, nowMs as clockNowMs } from "@loombre/shared";
 import { conflict, forbidden, notFound, unprocessableEntity } from "../gateway/problem.exception.js";
 import { requireUuidParam } from "../gateway/require-uuid-param.js";
 import type { AuthenticatedRequest } from "../gateway/auth.guard.js";
@@ -123,6 +140,10 @@ function mapSettings(
  *  CLAIM_INVITE_BODY_KEYS precedent (invites.controller.ts). */
 const UPDATE_ME_BODY_KEYS = new Set(["displayName", "email", "birthDate", "password", "currentPassword"]);
 
+/** AdminResetPasswordRequest's full property set (additionalProperties:false,
+ *  R-F3 fix wave) — same allowlist pattern as UPDATE_ME_BODY_KEYS above. */
+const RESET_PASSWORD_BODY_KEYS = new Set(["currentPassword"]);
+
 /** UserSettings' full property set (additionalProperties:false) — putMySettings
  *  422s on any OTHER key so an unknown property is rejected rather than
  *  silently ignored. */
@@ -184,6 +205,16 @@ export class UsersController {
     if (body["email"] !== undefined && (typeof body["email"] !== "string" || body["email"].length === 0)) {
       throw unprocessableEntity("email must be a non-empty string when present.", instance);
     }
+    // R-F4 (opus adversarial review, fix wave): trim first — a
+    // whitespace-padded address normalizes to the same string a clean
+    // submission would, rather than becoming a second, visually-identical
+    // stored value — then reject anything that isn't a real email shape
+    // (the contract declares `format: email`; this used to be the only
+    // gap between it and the server).
+    const email = typeof body["email"] === "string" ? body["email"].trim() : null;
+    if (email !== null && !isValidEmailFormat(email)) {
+      throw unprocessableEntity("email must be a valid email address.", instance);
+    }
     if (typeof body["password"] !== "string" || body["password"].length === 0) {
       throw unprocessableEntity("password is required.", instance);
     }
@@ -198,7 +229,7 @@ export class UsersController {
     // exists for first-run onboarding only).
     const created = await createUserAdminAndEmit(this.dbProvider.db, {
       username: body["username"],
-      email: typeof body["email"] === "string" ? body["email"] : null,
+      email,
       passwordHash,
       isAdmin: body["isAdmin"] === true,
       maxContentRating: typeof body["maxContentRating"] === "string" ? body["maxContentRating"] : null,
@@ -271,11 +302,33 @@ export class UsersController {
       passwordHash = await this.hashService.hash(body["password"]);
     }
 
+    // R-F4 (opus adversarial review, fix wave): trim, THEN validate format
+    // — a taken address padded with whitespace (`" victim@x.y "`) must
+    // normalize into the SAME string the collision pre-SELECT already
+    // catches, not become a second, visually-identical stored value; a
+    // string that still isn't a real email shape after trimming 422s
+    // (target-agnostic — a syntax check on the caller's OWN submitted
+    // string reveals nothing about any other account, E8-safe). Explicit
+    // `null` (clear) bypasses this entirely, matching the null-to-clear
+    // convention every other nullable field here already uses.
+    let emailInput: string | null | undefined;
+    if (body["email"] !== undefined) {
+      if (typeof body["email"] === "string") {
+        const trimmed = body["email"].trim();
+        if (!isValidEmailFormat(trimmed)) {
+          throw unprocessableEntity("email must be a valid email address.", instance);
+        }
+        emailInput = trimmed;
+      } else {
+        emailInput = null;
+      }
+    }
+
     const result = await updateUserSelf(this.dbProvider.db, userId, {
       // M1: UpdateMeRequest's email is now `[string, 'null']` — present-but-
       // not-a-string (i.e. explicit `null`) clears it, matching birthDate's
       // own established null-to-clear convention below.
-      ...(body["email"] !== undefined ? { email: typeof body["email"] === "string" ? body["email"] : null } : {}),
+      ...(emailInput !== undefined ? { email: emailInput } : {}),
       ...(body["birthDate"] !== undefined
         ? { birthDate: typeof body["birthDate"] === "string" ? body["birthDate"] : null }
         : {}),
@@ -301,14 +354,34 @@ export class UsersController {
     // claim, THEN trySend (an unconfigured install never burns the
     // window; a mail-configured install that's already inside another
     // notice's 24h window for the SAME address never sends a second one).
+    //
+    // R-F5/LOW-8 (opus adversarial review, fix wave): the profile update
+    // above already COMMITTED — this whole block is best-effort from here
+    // on, so ANY throw in it (the ledger claim is a live DB call) is
+    // caught and swallowed rather than failing an otherwise-successful
+    // request on the collision-only path (a distinguishable-failure
+    // signal LOW-8 named in its own right). R-F5: trySend's `dispatched`
+    // result is no longer ignored — when the queue enqueue itself throws
+    // and trySend degrades to `{dispatched:false}` (its documented E6
+    // posture), the window this call just won is immediately released so
+    // a LATER collision on the same address can still notify, instead of
+    // silently burning the full 24h on a notice nobody received.
     if (result.collidedEmail !== null && this.mailConfigService.isConfigured()) {
-      const won = await claimEmailCollisionNoticeWindow(this.dbProvider.db, result.collidedEmail, clockNowMs());
-      if (won) {
-        await this.mailDispatchService.trySend({
-          templateId: "email-in-use-notice",
-          to: result.collidedEmail,
-          params: { serverName: this.mailConfigService.fromName() },
-        });
+      try {
+        const claimedAtMs = clockNowMs();
+        const won = await claimEmailCollisionNoticeWindow(this.dbProvider.db, result.collidedEmail, claimedAtMs);
+        if (won) {
+          const { dispatched } = await this.mailDispatchService.trySend({
+            templateId: "email-in-use-notice",
+            to: result.collidedEmail,
+            params: { serverName: this.mailConfigService.fromName() },
+          });
+          if (!dispatched) {
+            await releaseEmailCollisionNoticeWindow(this.dbProvider.db, result.collidedEmail, claimedAtMs);
+          }
+        }
+      } catch (err) {
+        console.error("users.controller: email-in-use-notice dispatch failed (profile update already committed):", err);
       }
     }
 
@@ -468,21 +541,60 @@ export class UsersController {
   // op above) BEFORE requireUuidParam-first for the target — order
   // matches the M14/brief instruction and every other admin action in
   // this file (requireAdmin is always the very first line). Self-reset
-  // (an admin resetting THEIR OWN account) is deliberately PERMITTED —
-  // decision recorded here: they are the one person who unambiguously
-  // knows the consequence (every session, including this one's refresh
-  // token, dies; the very next request needs the printed temporary
-  // password), and forbidding it would just push them to the equally
-  // unrestricted `loombre admin reset-password` CLI instead, which has no
-  // self-exclusion either — the HTTP action being stricter than the CLI
-  // for the identical actor would be a distinction without a difference.
+  // (an admin resetting THEIR OWN account) is PERMITTED — they are the
+  // one person who unambiguously knows the consequence (every session,
+  // including this one's refresh token, dies; the very next request needs
+  // the printed temporary password).
+  //
+  // R-F3 (opus adversarial review, fix wave): self-reset used to need
+  // NOTHING beyond the bearer token itself — a stolen admin access token
+  // was a complete, silent account takeover (a printed temporary
+  // password, a working login, and the real owner locked out, their own
+  // password now 401ing). That is exactly the threat F1 exists to close
+  // on every OTHER self-service credential change ("a re-auth prompt must
+  // not become a password-guessing oracle" presumes the token ALONE
+  // cannot set a password) — users-me.controller.ts's own header draws
+  // the identical distinction for the CLI comparison this endpoint used
+  // to lean on: "filesystem access to the running server is that
+  // privilege boundary, not a bearer token." So: id === the caller's OWN
+  // userId now goes through the SAME requireCurrentPassword helper
+  // updateMe/putRestricted use (target-agnostic 422/403, the shared
+  // per-user rate limiter, the same anomaly-log entries). Resetting
+  // ANOTHER user's password is UNCHANGED — that path is already
+  // live-admin-verified + audited, a different actor's credential
+  // entirely, not the caller's own.
   @Post("users/:id/reset-password")
   @HttpCode(HttpStatus.OK)
-  async resetUserPassword(@Param("id") id: string, @Req() req: AuthenticatedRequest) {
+  async resetUserPassword(
+    @Param("id") id: string,
+    @Body() rawBody: Record<string, unknown> | undefined,
+    @Req() req: AuthenticatedRequest,
+  ) {
     await requireAdmin(this.dbProvider.db, req);
     requireUuidParam(id, "User not found.", req.originalUrl);
 
     const db = this.dbProvider.db;
+    const instance = req.originalUrl;
+    const body = rawBody ?? {};
+
+    for (const key of Object.keys(body)) {
+      if (!RESET_PASSWORD_BODY_KEYS.has(key)) {
+        throw unprocessableEntity(`Unknown property "${key}".`, instance);
+      }
+    }
+
+    if (id === req.user!.userId) {
+      await requireCurrentPassword({
+        db,
+        userId: req.user!.userId,
+        currentPasswordValue: body["currentPassword"],
+        instance,
+        hashService: this.hashService,
+        rateLimiter: this.currentPasswordRateLimiter,
+        anomalyLog: this.anomalyLog,
+      });
+    }
+
     const target = await getUserById(db, id);
     if (!target) {
       throw notFound("User not found.", req.originalUrl);
