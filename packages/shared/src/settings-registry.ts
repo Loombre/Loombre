@@ -672,6 +672,8 @@ const UI_ENTRIES: SettingsRegistryEntry[] = [
     requiresRestart: false,
     scope: "ui",
     envVar: "LOOMBRE_RATE_CLAIM",
+    parseEnv: parseEnvPositiveInt,
+  }),
   // Password recovery (E3b/M12, STATE.md "Optional mail transport +
   // invitation & reset flows"): shared by both new unauthenticated routes,
   // POST /auth/forgot-password and POST /auth/reset-password

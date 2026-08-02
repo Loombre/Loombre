@@ -1,13 +1,16 @@
 # The loombre command-line tool
 
 Loombre ships a small, server-local command-line tool (`loombre`) for
-read-only environment checks and one privileged recovery operation. It
-does not talk to your instance over the network — it runs directly on the
-machine your server runs on, against the same `DATABASE_URL` your server
-uses. Running it at all requires filesystem access to that machine; that
-access **is** the privilege boundary for the one command that changes
-data (`admin reset-pin`, below) — there is no equivalent over HTTP, and
-none is planned.
+read-only environment checks and a small set of privileged recovery
+operations. It does not talk to your instance over the network — it runs
+directly on the machine your server runs on, against the same
+`DATABASE_URL` your server uses. Running it at all requires filesystem
+access to that machine; that access **is** the privilege boundary for the
+commands that change data (`admin reset-pin` and `admin reset-password`,
+below) — there is no equivalent over HTTP for `admin reset-pin`, and none
+is planned for it (`admin reset-password`'s own admin-UI equivalent does
+exist over HTTP, for a signed-in admin — see the admin guide's
+[Users & permissions](../admin-guide/users-permissions.md) page).
 
 ## Running it
 
@@ -59,6 +62,11 @@ command works without it.
   only reports.
 - `loombre admin reset-pin <username>` — the PIN-reset recovery procedure
   below.
+- `loombre admin reset-password <username>` — sets a random temporary
+  password for a user (recovery for a forgotten account password), shown
+  once; the user must change it on next login and every existing session
+  for that account is signed out immediately. Same interactive-confirmation
+  posture as `admin reset-pin` (no `--yes` flag, needs `DATABASE_URL`).
 
 ## Forgot a PIN?
 
