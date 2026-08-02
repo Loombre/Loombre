@@ -35,6 +35,7 @@
 import { Body, Controller, Delete, Get, HttpCode, HttpStatus, NotFoundException, Param, Post, Query, Req, UseFilters, UseGuards } from "@nestjs/common";
 import type { Request } from "express";
 import {
+  claimEmailCollisionNoticeWindow,
   claimInviteAndEmit,
   createDevice,
   createInviteAndEmit,
@@ -68,6 +69,22 @@ const EXPIRES_IN_MS_MIN = 3_600_000; // 1h
 const EXPIRES_IN_MS_MAX = 2_592_000_000; // 30d
 const CLAIM_DEVICE_NAME_DEFAULT = "Invite claim";
 const CLAIM_PASSWORD_MIN_LENGTH = 8;
+
+// G8 (STATE.md "Current-password re-auth on self-changes"): claimInvite's
+// own wall-clock floor — FORGOT_PASSWORD_MIN_MS precedent
+// (auth.controller.ts). Unlike updateMe (floored only when the body
+// carries an email member), claimInvite is floored UNCONDITIONALLY — this
+// is the account-CREATION endpoint, and the collision-vs-clean timing
+// distinction G8 exists to close applies to every claim alike (an email
+// value is ALWAYS resolved here, whether submitted or defaulted from the
+// invite's own preset).
+const CLAIM_INVITE_MIN_MS = 200;
+
+async function waitOutClaimInviteFloor(startedAtMs: number): Promise<void> {
+  const remainingMs = CLAIM_INVITE_MIN_MS - (clockNowMs() - startedAtMs);
+  if (remainingMs <= 0) return;
+  await new Promise<void>((resolve) => setTimeout(resolve, remainingMs));
+}
 
 // F6 (fix wave): CreateInviteRequest/ClaimInviteRequest both declare
 // `additionalProperties: false` in openapi.yaml, but nothing enforced it —
@@ -349,6 +366,7 @@ export class InvitesController {
     @Body() rawBody: Record<string, unknown> | undefined,
     @Req() req: Request,
   ) {
+    const startedAtMs = clockNowMs();
     const db = this.dbProvider.db;
     const tokenHash = this.refreshTokenService.hashToken(token);
     const nowMs = clockNowMs();
@@ -480,6 +498,25 @@ export class InvitesController {
       nowMs,
     );
     const { refreshToken } = await this.refreshTokenService.issue(db, result.user.id, device.id, nowMs);
+
+    // G7: post-commit, mail-configured-only dispatch of the email-in-use
+    // notice to the EXISTING owner of a colliding address — collision &&
+    // MailConfigService.isConfigured() FIRST, THEN the ledger window
+    // claim, THEN trySend (mirrors users.controller.ts's updateMe
+    // dispatch exactly).
+    if (result.collidedEmail !== null && this.mailConfig.isConfigured()) {
+      const won = await claimEmailCollisionNoticeWindow(db, result.collidedEmail, clockNowMs());
+      if (won) {
+        await this.mailDispatch.trySend({
+          templateId: "email-in-use-notice",
+          to: result.collidedEmail,
+          params: { serverName: this.mailConfig.fromName() },
+        });
+      }
+    }
+
+    // G8: unconditional wall-clock floor — see this file's header.
+    await waitOutClaimInviteFloor(startedAtMs);
 
     return { accessToken, refreshToken, accessTokenExpiresAtMs: expiresAtMs, deviceId: device.id };
   }
