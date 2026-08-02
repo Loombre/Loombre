@@ -190,6 +190,145 @@ describe("SETTINGS_REGISTRY", () => {
   });
 
   // ==========================================================================
+  // Optional mail transport run (E5/M10): cross-field/validation cases for
+  // the new mail.* + network.publicUrl entries.
+  // ==========================================================================
+
+  describe("optional mail transport run: network.publicUrl", () => {
+    const entry = () => getSettingsRegistryEntry("network.publicUrl")!;
+
+    it("accepts the empty string (unset)", () => {
+      expect(entry().schema.safeParse("").success).toBe(true);
+    });
+
+    it("accepts absolute http:// and https:// URLs", () => {
+      expect(entry().schema.safeParse("https://loombre.example.com").success).toBe(true);
+      expect(entry().schema.safeParse("http://10.0.0.5:3001").success).toBe(true);
+    });
+
+    it("accepts a trailing slash at the SCHEMA level (normalization happens at the MailConfigService.publicUrl() read site, not here — z.toJSONSchema can't represent a .transform(), see PUBLIC_URL_SCHEMA's own header)", () => {
+      expect(entry().schema.safeParse("https://loombre.example.com/").success).toBe(true);
+    });
+
+    it("rejects a bare hostname with no scheme", () => {
+      expect(entry().schema.safeParse("loombre.example.com").success).toBe(false);
+    });
+
+    it("rejects a non-http(s) scheme", () => {
+      expect(entry().schema.safeParse("ftp://loombre.example.com").success).toBe(false);
+      expect(entry().schema.safeParse("javascript:alert(1)").success).toBe(false);
+    });
+
+    it("rejects whitespace-only garbage", () => {
+      expect(entry().schema.safeParse("   ").success).toBe(false);
+    });
+
+    it("category is 'network' and it carries the LOOMBRE_PUBLIC_URL env pin", () => {
+      expect(entry().category).toBe("network");
+      expect(entry().envVar).toBe("LOOMBRE_PUBLIC_URL");
+    });
+  });
+
+  describe("optional mail transport run: mail.smtpPort bounds", () => {
+    const entry = () => getSettingsRegistryEntry("mail.smtpPort")!;
+
+    it("rejects 0 and negative values", () => {
+      expect(entry().schema.safeParse(0).success).toBe(false);
+      expect(entry().schema.safeParse(-1).success).toBe(false);
+    });
+
+    it("accepts the boundaries 1 and 65535", () => {
+      expect(entry().schema.safeParse(1).success).toBe(true);
+      expect(entry().schema.safeParse(65535).success).toBe(true);
+    });
+
+    it("rejects above 65535", () => {
+      expect(entry().schema.safeParse(65536).success).toBe(false);
+    });
+
+    it("rejects a non-integer", () => {
+      expect(entry().schema.safeParse(587.5).success).toBe(false);
+    });
+
+    it("default is 587 (the common encrypted-submission port)", () => {
+      expect(entry().default).toBe(587);
+    });
+  });
+
+  describe("optional mail transport run: mail.fromAddress format", () => {
+    const entry = () => getSettingsRegistryEntry("mail.fromAddress")!;
+
+    it("accepts the empty string (mail turned off)", () => {
+      expect(entry().schema.safeParse("").success).toBe(true);
+    });
+
+    it("accepts a syntactically valid email address", () => {
+      expect(entry().schema.safeParse("server@loombre.example.com").success).toBe(true);
+    });
+
+    it("rejects a string with no @", () => {
+      expect(entry().schema.safeParse("not-an-email").success).toBe(false);
+    });
+
+    it("rejects a string with no domain", () => {
+      expect(entry().schema.safeParse("server@").success).toBe(false);
+    });
+
+    it("rejects whitespace-only garbage", () => {
+      expect(entry().schema.safeParse("   ").success).toBe(false);
+    });
+  });
+
+  describe("optional mail transport run: mail.smtpSecurity enum + caution", () => {
+    const entry = () => getSettingsRegistryEntry("mail.smtpSecurity")!;
+
+    it("accepts exactly the three closed values", () => {
+      expect(entry().schema.safeParse("starttls").success).toBe(true);
+      expect(entry().schema.safeParse("implicit-tls").success).toBe(true);
+      expect(entry().schema.safeParse("none").success).toBe(true);
+    });
+
+    it("rejects anything outside the closed set", () => {
+      expect(entry().schema.safeParse("tls").success).toBe(false);
+      expect(entry().schema.safeParse("NONE").success).toBe(false);
+      expect(entry().schema.safeParse("").success).toBe(false);
+    });
+
+    it("default is 'starttls'", () => {
+      expect(entry().default).toBe("starttls");
+    });
+
+    it("carries a caution warning that 'none' sends credentials and mail in cleartext — LAN-relay use only", () => {
+      expect(entry().caution).toBeDefined();
+      expect(entry().caution).toMatch(/none/i);
+      expect(entry().caution).toMatch(/plain|cleartext|readable text/i);
+    });
+  });
+
+  describe("optional mail transport run: mail.smtpHost / mail.fromName", () => {
+    it("mail.smtpHost accepts any string including empty (mail turned off)", () => {
+      const entry = getSettingsRegistryEntry("mail.smtpHost")!;
+      expect(entry.schema.safeParse("").success).toBe(true);
+      expect(entry.schema.safeParse("smtp.example.com").success).toBe(true);
+      expect(entry.default).toBe("");
+    });
+
+    it("mail.fromName defaults to 'Loombre' and accepts any string", () => {
+      const entry = getSettingsRegistryEntry("mail.fromName")!;
+      expect(entry.default).toBe("Loombre");
+      expect(entry.schema.safeParse("My Server").success).toBe(true);
+    });
+  });
+
+  describe("optional mail transport run: no new entry is secret:true (credentials live in the keyring)", () => {
+    it("none of the six new mail/network.publicUrl entries carry secret:true", () => {
+      for (const key of ["mail.smtpHost", "mail.smtpPort", "mail.smtpSecurity", "mail.fromAddress", "mail.fromName", "network.publicUrl"]) {
+        expect(getSettingsRegistryEntry(key)?.secret, key).toBeFalsy();
+      }
+    });
+  });
+
+  // ==========================================================================
   // Security review F5/F6/F11d: every scope:'ui' entry's `description` is
   // admin-UI-facing copy — plain language, no repo paths, no class/function
   // names, no signal names, no internal decision-ID citations.
