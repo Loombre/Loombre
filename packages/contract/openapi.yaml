@@ -2527,6 +2527,102 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         default: { $ref: '#/components/responses/Problem' }
 
+  # ──────── Admin: mail (optional mail transport run, E5/E6/M10/M11) ────────
+  # SMTP host/port/security/from-address/from-name live in the settings
+  # registry (`mail` category, GET/PUT /admin/settings{,/{key}} above) —
+  # this surface covers only the two things that registry deliberately does
+  # NOT: the write-only credential pair (username/password, A9 keyring
+  # pattern — never server_settings, no encryption-at-rest story there) and
+  # the test-send action, which — same discipline as every other queued
+  # side effect in this contract (CLAUDE.md invariant 6) — enqueues a real
+  # job rather than sending inline on the request thread.
+  /admin/mail/credentials:
+    put:
+      operationId: setAdminMailCredentials
+      tags: [admin]
+      summary: Set (or replace) the SMTP username/password (admin, write-only)
+      description: >-
+        Write-only, same posture as setAdminProviderKey: the submitted
+        credentials are never echoed back, logged, or otherwise readable
+        again through this API — status reads (GET /admin/settings's
+        `mailCredentials`) report configured/setAtMs/source only, never the
+        values. Stored as one keyring entry (packages/secrets), never in
+        server_settings. Credentials are OPTIONAL overall — unauthenticated
+        SMTP (a private-network relay) is a legal configuration; this
+        endpoint exists for the common case of a real mail provider that
+        requires them. A10 live-admin re-verify gates this exactly like
+        setAdminProviderKey.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SetMailCredentialsRequest' }
+      responses:
+        '204': { description: Credentials stored }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409':
+          description: >-
+            LOOMBRE_SMTP_USERNAME/LOOMBRE_SMTP_PASSWORD are both set in the
+            environment — env wins unconditionally (same precedence as
+            every other env-pinned value in this contract); the submitted
+            credentials cannot take effect while the pin is active.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+        default: { $ref: '#/components/responses/Problem' }
+    delete:
+      operationId: clearAdminMailCredentials
+      tags: [admin]
+      summary: Clear the stored SMTP username/password (admin)
+      description: >-
+        Removes the stored keyring entry. A real LOOMBRE_SMTP_USERNAME/
+        LOOMBRE_SMTP_PASSWORD pair, if both set, still wins on the next
+        status read regardless (env precedence) — this only clears the
+        keyring-stored fallback. Idempotent: clearing when nothing is
+        stored still returns 204.
+      responses:
+        '204': { description: Credentials cleared }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        default: { $ref: '#/components/responses/Problem' }
+
+  /admin/mail/test-send:
+    post:
+      operationId: testSendMail
+      tags: [admin]
+      summary: Send a real test email through the configured transport (admin)
+      description: >-
+        Enqueues a real `mail-send` job (template "test", no retries) —
+        never sends inline on this request thread (CLAUDE.md invariant 6).
+        The admin observes the outcome (delivered, or the real SMTP
+        conversation error) via the existing admin-only job-update live
+        feed and the job ledger's error detail for the returned `jobId`, the
+        same surface every other queued job already reports through.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TestSendMailRequest' }
+      responses:
+        '202':
+          description: Test send enqueued
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TestSendMailResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409':
+          description: >-
+            Mail is not configured yet (`mail.smtpHost`, `mail.fromAddress`,
+            and `network.publicUrl` must all be set) — nothing was enqueued.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+        default: { $ref: '#/components/responses/Problem' }
+
   # ──────── Admin: plugins (LPP v1, Lane W5 — packages/plugin-protocol/spec/
   # lpp-v1.md is the frozen wire contract this surface administers;
   # apps/server/src/plugins/* holds the registration/lifecycle/health
@@ -5656,6 +5752,15 @@ components:
         - tls
         - paths
         - ffmpeg
+        # `stash` (STATE.md "Stash SQLite metadata sync" run): used by
+        # packages/shared/src/settings-registry.ts's stash.sync.scheduleIntervalMs
+        # entry since that run landed, but never added to this contract enum
+        # — a pre-existing gap fixed here (optional mail transport run, M10)
+        # alongside this run's own new `mail` category.
+        - stash
+        # Optional mail transport run (E5/M10): the generic SMTP transport
+        # settings (mail.smtpHost/smtpPort/smtpSecurity/fromAddress/fromName).
+        - mail
 
     ProviderName:
       type: string
@@ -5702,6 +5807,15 @@ components:
         providerKeys:
           type: array
           items: { $ref: '#/components/schemas/ProviderKeyStatus' }
+        mailCredentials:
+          description: >-
+            Optional mail transport run (E5/M10) — ADDITIVE field: the SMTP
+            username/password keyring entry's status (never the values
+            themselves; see MailCredentialsStatus). Absent on an older
+            client's cached shape is never load-bearing — mail credentials
+            are optional overall (unauthenticated SMTP relays are legal).
+          allOf:
+            - $ref: '#/components/schemas/MailCredentialsStatus'
 
     AdminSettingSchemaEntry:
       type: object
@@ -5794,6 +5908,60 @@ components:
           type: string
           minLength: 1
           description: The raw provider API key. Write-only — never returned by any endpoint.
+
+    # ═══════════ Admin: mail (optional mail transport run, E5/E6/M10/M11) ═══════════
+    MailCredentialsStatus:
+      type: object
+      description: >-
+        GET /admin/settings' additive `mailCredentials` field — the ENTIRE
+        shape a mail-credentials status read ever returns, same discipline
+        as ProviderKeyStatus: never the username/password themselves.
+      additionalProperties: false
+      required: [configured, setAtMs, source]
+      properties:
+        configured: { type: boolean }
+        setAtMs:
+          type: [integer, 'null']
+          format: int64
+          description: Null when not configured, or when sourced from the environment (which has no "when was it set" concept this server can observe).
+        source:
+          type: [string, 'null']
+          enum: [keyring, env, null]
+          description: Null when `configured` is false.
+
+    SetMailCredentialsRequest:
+      type: object
+      additionalProperties: false
+      required: [username, password]
+      properties:
+        username:
+          type: string
+          minLength: 1
+          description: Write-only — never returned by any endpoint.
+        password:
+          type: string
+          minLength: 1
+          description: Write-only — never returned by any endpoint.
+
+    TestSendMailRequest:
+      type: object
+      additionalProperties: false
+      required: [to]
+      properties:
+        to:
+          type: string
+          format: email
+          description: The address to send the test message to.
+
+    TestSendMailResponse:
+      type: object
+      additionalProperties: false
+      required: [jobId]
+      properties:
+        jobId:
+          type: string
+          format: uuid
+          description: The enqueued `mail-send` job's id — poll GET /admin/jobs/{id} or watch the admin-only job.updated live feed for the outcome.
 
     # ═══════════════════ Admin: plugins (LPP v1, Lane W5) ═══════════════════
     PluginHealthState:
