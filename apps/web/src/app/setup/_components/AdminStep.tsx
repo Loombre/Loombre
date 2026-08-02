@@ -10,6 +10,13 @@
 // is the actual source of truth either way. On success the returned
 // TokenPair is applied to the auth store immediately (SDK-typed calls only,
 // no hand-rolled fetch) so every step after this one is authenticated.
+//
+// G10 (STATE.md "Current-password re-auth on self-changes"): `onNext` now
+// hands the just-created password back to the page (../page.tsx), which
+// threads it to RestrictedStep — PUT /users/me/restricted requires
+// currentPassword on every call, and this wizard just proved it seconds
+// ago. Threading beats asking the admin to retype a password they typed
+// twice already in this same form.
 
 import { useState, type FormEvent } from "react";
 import { UserPlus } from "lucide-react";
@@ -23,7 +30,9 @@ import { validateAdminForm, type AdminFormErrors } from "../wizard-state.js";
 import styles from "./steps.module.css";
 
 export interface AdminStepProps {
-  onNext: () => void;
+  /** Called with the password just set, so later steps (RestrictedStep)
+   *  can prove currentPassword without asking the admin to retype it. */
+  onNext: (password: string) => void;
 }
 
 export function AdminStep({ onNext }: AdminStepProps): React.JSX.Element {
@@ -52,7 +61,7 @@ export function AdminStep({ onNext }: AdminStepProps): React.JSX.Element {
         body: { username, email, password },
       });
       getAuthStore().applyTokenPair(result.tokens);
-      onNext();
+      onNext(password);
     } catch (err) {
       if (err instanceof LoombreApiError) {
         setSubmitError(
