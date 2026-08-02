@@ -70,8 +70,8 @@ describe("event-schemas (docs/PLAN.md §4.3)", () => {
     }
   });
 
-  it("envelope enum has exactly 34 types (15 through Addendum A + 6 plugin.* [LPP] + 2 watchlist.* [W2 L3] + 1 metadata.match-candidates [W2 L2] + 1 user.restricted-pin-reset [H2] + 1 probe.failed [owner ledger L1] + 1 stash.provider.disabled [Stash SQLite metadata sync, S3/K12] + 2 stash.sync.* [Stash SQLite metadata sync, S8/K12, Lane C] + 1 mail.failed [optional mail transport run, E6/M6] + 3 user.invited/user.invite-revoked/user.claimed [E2, Lane A] + 1 user.password-reset [Optional mail transport + invitation & reset flows, E3/M14/M15, Lane B])", () => {
-    expect(envelopeTypeEnum).toHaveLength(34);
+  it("envelope enum has exactly 35 types (15 through Addendum A + 6 plugin.* [LPP] + 2 watchlist.* [W2 L3] + 1 metadata.match-candidates [W2 L2] + 1 user.restricted-pin-reset [H2] + 1 probe.failed [owner ledger L1] + 1 stash.provider.disabled [Stash SQLite metadata sync, S3/K12] + 2 stash.sync.* [Stash SQLite metadata sync, S8/K12, Lane C] + 1 mail.failed [optional mail transport run, E6/M6] + 3 user.invited/user.invite-revoked/user.claimed [E2, Lane A] + 1 user.password-reset [Optional mail transport + invitation & reset flows, E3/M14/M15, Lane B] + 1 session.revoked-by-password-change [Current-password re-auth on self-changes, G5])", () => {
+    expect(envelopeTypeEnum).toHaveLength(35);
     expect(envelopeTypeEnum).toEqual(
       expect.arrayContaining([
         "item.added",
@@ -107,6 +107,7 @@ describe("event-schemas (docs/PLAN.md §4.3)", () => {
         "user.invite-revoked",
         "user.claimed",
         "user.password-reset",
+        "session.revoked-by-password-change",
       ]),
     );
   });
@@ -353,6 +354,11 @@ describe("event-schemas (docs/PLAN.md §4.3)", () => {
         userId: "018f6f1e-0000-7000-8000-000000000005",
         username: "casual",
         actor: "self-service",
+      },
+      "session.revoked-by-password-change": {
+        userId: "018f6f1e-0000-7000-8000-000000000005",
+        username: "casual",
+        revokedCount: 2,
       },
     };
 

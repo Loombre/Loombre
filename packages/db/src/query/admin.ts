@@ -47,7 +47,7 @@
 import { sql, type Kysely, type Selectable } from 'kysely';
 import type { DB, DevicesTable, ItemType, JobsTable, PlaybackSessionStatus, UsersTable } from '../types.js';
 import type { ViewerContext } from '../context.js';
-import { withTransaction } from '../internal/index.js';
+import { withTransaction, writeEvent } from '../internal/index.js';
 import { applyGuard, applyGuardToJoined } from './guard.js';
 import { decodeCursor, encodeCursor } from './cursor.js';
 
@@ -56,6 +56,22 @@ export type DeviceRow = Selectable<DevicesTable>;
 export type JobRow = Selectable<JobsTable>;
 
 const DEFAULT_LIMIT = 50;
+
+// G6/G9 (STATE.md "Current-password re-auth on self-changes"): the SAME
+// 23505-classification helpers src/query/invites.ts's claim transaction
+// already established for the identical constraint — duplicated here
+// (rather than shared) per this file's own per-file-self-contained
+// convention (isUserCursorPayload/isDeviceCursorPayload etc. are likewise
+// duplicated per entity across this package rather than centralized).
+function isPgUniqueViolation(err: unknown): boolean {
+  return typeof err === 'object' && err !== null && (err as { code?: unknown }).code === '23505';
+}
+function pgConstraintName(err: unknown): string | undefined {
+  if (typeof err !== 'object' || err === null) return undefined;
+  const constraint = (err as { constraint?: unknown }).constraint;
+  return typeof constraint === 'string' ? constraint : undefined;
+}
+const USERS_EMAIL_UNIQUE_CONSTRAINT = 'users_email_key';
 
 // ============================================================================
 // users (admin CRUD)
@@ -147,23 +163,52 @@ export interface UpdateUserAdminInput {
   nowMs: number;
 }
 
+/**
+ * G9 (STATE.md "Current-password re-auth on self-changes"): a discriminated
+ * result rather than `UserRow | undefined` — admins already enumerate
+ * every account via GET /users, so unlike updateUserSelf's SILENT
+ * collision drop (E8/G6), an admin-facing email collision is a real,
+ * NAMED 409 conflict, not a no-op. `not-found` covers the existing
+ * "no row matched this id" case (unchanged behavior, just now a tagged
+ * member of this union instead of a bare `undefined`).
+ */
+export type UpdateUserAdminResult =
+  | { ok: true; user: UserRow }
+  | { ok: false; reason: 'not-found' }
+  | { ok: false; reason: 'email-conflict' };
+
 export async function updateUserAdmin(
   db: Kysely<DB>,
   id: string,
   input: UpdateUserAdminInput
-): Promise<UserRow | undefined> {
-  return db
-    .updateTable('users')
-    .set({
-      ...(input.email !== undefined ? { email: input.email } : {}),
-      ...(input.isAdmin !== undefined ? { is_admin: input.isAdmin } : {}),
-      ...(input.maxContentRating !== undefined ? { max_content_rating: input.maxContentRating } : {}),
-      ...(input.displayName !== undefined ? { display_name: input.displayName } : {}),
-      updated_at_ms: input.nowMs,
-    })
-    .where('id', '=', id)
-    .returningAll()
-    .executeTakeFirst();
+): Promise<UpdateUserAdminResult> {
+  try {
+    const updated = await db
+      .updateTable('users')
+      .set({
+        ...(input.email !== undefined ? { email: input.email } : {}),
+        ...(input.isAdmin !== undefined ? { is_admin: input.isAdmin } : {}),
+        ...(input.maxContentRating !== undefined ? { max_content_rating: input.maxContentRating } : {}),
+        ...(input.displayName !== undefined ? { display_name: input.displayName } : {}),
+        updated_at_ms: input.nowMs,
+      })
+      .where('id', '=', id)
+      .returningAll()
+      .executeTakeFirst();
+    if (!updated) {
+      return { ok: false, reason: 'not-found' };
+    }
+    return { ok: true, user: updated };
+  } catch (err) {
+    // G9: today's pre-existing bug (scout-confirmed) — an uncaught 23505
+    // on `users_email_key` surfaced as an unhandled 500. Classified the
+    // same way invites.ts's claim transaction distinguishes constraints
+    // (never blame username/other columns for an email-only violation).
+    if (isPgUniqueViolation(err) && pgConstraintName(err) === USERS_EMAIL_UNIQUE_CONSTRAINT) {
+      return { ok: false, reason: 'email-conflict' };
+    }
+    throw err;
+  }
 }
 
 export async function deleteUserAdmin(db: Kysely<DB>, id: string): Promise<boolean> {
@@ -232,6 +277,24 @@ export interface UpdateUserSelfInput {
   nowMs: number;
 }
 
+/**
+ * G6 (STATE.md "Current-password re-auth on self-changes"): updateUserSelf's
+ * result now carries an INTERNAL `collidedEmail` field alongside the
+ * updated row — never serialized to any HTTP response (the controller
+ * consults it only to decide whether to dispatch the email-in-use notice
+ * post-commit, G7). `null` means no collision occurred.
+ */
+export interface UpdateUserSelfResult {
+  user: UserRow;
+  /** The submitted email address, when it collided with ANOTHER account's
+   *  (excluding self — re-setting your own current address is never a
+   *  collision) and was therefore silently dropped (E8: every OTHER
+   *  member in the same request still applied normally, generic success
+   *  either way). `null` when no email collision occurred (including
+   *  "email wasn't part of this request at all"). */
+  collidedEmail: string | null;
+}
+
 /** Self-service profile update — deliberately cannot touch isAdmin or
  *  maxContentRating (no parameter exists for either), matching the
  *  contract's UpdateMeRequest schema exactly.
@@ -257,33 +320,102 @@ export interface UpdateUserSelfInput {
  *  when cleanly identifiable — the caller is, by construction, already
  *  authenticated for this exact request — falling back to revoking
  *  everything when it isn't (see revokeOtherRefreshTokensForUser's own
- *  doc comment). A stronger `currentPassword` confirmation requirement is
- *  a separate, owner-acknowledged decision, deliberately NOT implemented
- *  here (freeze report). */
+ *  doc comment).
+ *
+ *  G3/G5 (STATE.md "Current-password re-auth on self-changes"): the
+ *  `currentPassword` confirmation this file's own header used to log as
+ *  "deliberately NOT implemented here" is now enforced one layer up
+ *  (apps/server/src/common/require-current-password.ts, BEFORE this
+ *  function is ever called) — this function stays password-verification-
+ *  free by design, same separation as every other query-layer function in
+ *  this package. The bulk-revoke above now also emits
+ *  `session.revoked-by-password-change` (ADMIN_ONLY, payload {userId,
+ *  username, revokedCount}) in the SAME transaction, right after the
+ *  revoke — `revokedCount` is the exact number that call already computed,
+ *  never a second COUNT query.
+ *
+ *  G6 (email-collision silent no-op, replacing a live 500): an in-trx
+ *  pre-SELECT excludes SELF (`email = X AND id != userId` — re-setting
+ *  your own address is not a collision) before the UPDATE; on a hit, ONLY
+ *  the email member is skipped (every other member in the same request —
+ *  displayName, birthDate, password — still applies normally), and the
+ *  function still returns a normal success shape (E8: a colliding
+ *  self-service email change must be indistinguishable, in status/body,
+ *  from one that simply had no email member at all). A narrow 23505
+ *  `users_email_key` backstop re-applies the SAME UPDATE minus the email
+ *  member for the vanishing race where the address registers in the gap
+ *  between the pre-SELECT and this UPDATE (not a usable enumeration
+ *  channel — same posture as invites.ts's claimInviteAndEmit narrow
+ *  backstop, mirrored here for the identical constraint). */
 export async function updateUserSelf(
   db: Kysely<DB>,
   userId: string,
   input: UpdateUserSelfInput
-): Promise<UserRow | undefined> {
+): Promise<UpdateUserSelfResult | undefined> {
   return withTransaction(db, async (trx) => {
-    const updated = await trx
-      .updateTable('users')
-      .set({
-        ...(input.email !== undefined ? { email: input.email } : {}),
+    let email = input.email;
+    let collidedEmail: string | null = null;
+
+    if (email !== undefined && email !== null) {
+      const existingByEmail = await trx
+        .selectFrom('users')
+        .select('id')
+        .where('email', '=', email)
+        .where('id', '!=', userId)
+        .executeTakeFirst();
+      if (existingByEmail) {
+        collidedEmail = email;
+        email = undefined; // drop ONLY the email member — every other member still applies.
+      }
+    }
+
+    function buildSetClause(includeEmail: boolean) {
+      return {
+        ...(includeEmail && email !== undefined ? { email } : {}),
         ...(input.birthDate !== undefined ? { birth_date: input.birthDate } : {}),
         ...(input.passwordHash !== undefined ? { password_hash: input.passwordHash, must_change_password: false } : {}),
         ...(input.displayName !== undefined ? { display_name: input.displayName } : {}),
         updated_at_ms: input.nowMs,
-      })
-      .where('id', '=', userId)
-      .returningAll()
-      .executeTakeFirst();
-
-    if (updated && input.passwordHash !== undefined) {
-      await revokeOtherRefreshTokensForUser(trx, userId, input.currentDeviceId ?? null, input.nowMs);
+      };
     }
 
-    return updated;
+    let updated: UserRow | undefined;
+    try {
+      updated = await trx
+        .updateTable('users')
+        .set(buildSetClause(true))
+        .where('id', '=', userId)
+        .returningAll()
+        .executeTakeFirst();
+    } catch (err) {
+      if (isPgUniqueViolation(err) && pgConstraintName(err) === USERS_EMAIL_UNIQUE_CONSTRAINT) {
+        collidedEmail = email ?? null;
+        updated = await trx
+          .updateTable('users')
+          .set(buildSetClause(false))
+          .where('id', '=', userId)
+          .returningAll()
+          .executeTakeFirst();
+      } else {
+        throw err;
+      }
+    }
+
+    if (!updated) {
+      return undefined;
+    }
+
+    if (input.passwordHash !== undefined) {
+      const revokedCount = await revokeOtherRefreshTokensForUser(trx, userId, input.currentDeviceId ?? null, input.nowMs);
+      await writeEvent(trx, {
+        type: 'session.revoked-by-password-change',
+        tsMs: input.nowMs,
+        actorUserId: userId,
+        payload: { userId, username: updated.username, revokedCount },
+      });
+    }
+
+    return { user: updated, collidedEmail };
   });
 }
 

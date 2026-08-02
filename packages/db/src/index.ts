@@ -385,7 +385,9 @@ export type {
   ListUsersResult,
   CreateUserAdminInput,
   UpdateUserAdminInput,
+  UpdateUserAdminResult,
   UpdateUserSelfInput,
+  UpdateUserSelfResult,
   ListDevicesParams,
   ListDevicesResult,
   ListJobsParams,
@@ -436,6 +438,10 @@ export {
   deriveInviteStatus,
   claimInviteAndEmit,
 } from './query/invites.js';
+
+// Email-collision notice ledger (G7, STATE.md "Current-password re-auth on
+// self-changes") — see src/query/email-collision-notice.ts header.
+export { EMAIL_COLLISION_NOTICE_WINDOW_MS, claimEmailCollisionNoticeWindow } from './query/email-collision-notice.js';
 
 // Addendum A/A4 (STATE.md, admin-configurable server settings) —
 // server_settings reads/writes + outbox emission, see src/query/
