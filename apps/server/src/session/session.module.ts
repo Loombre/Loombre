@@ -11,7 +11,6 @@ import { MailModule } from "../mail/mail.module.js";
 import { TokenService } from "./token.service.js";
 import { RefreshTokenService } from "./refresh-token.service.js";
 import { AuthRateLimiterService } from "./auth-rate-limiter.service.js";
-import { AnomalyLogService } from "./anomaly-log.service.js";
 
 /**
  * Session module: users, devices, auth, progress, events (docs/PLAN.md §3,
@@ -23,9 +22,17 @@ import { AnomalyLogService } from "./anomaly-log.service.js";
  * plus the token/hash/refresh-token services.
  *
  * P2.1/P2.12: AuthRateLimiterService (in-memory token-bucket, per-IP for
- * login/refresh, per-user for restricted-unlock) and AnomalyLogService
- * (fail2ban-compatible local log line) are session-scoped providers, not
- * moved to common/ — nothing outside the auth surface needs them.
+ * login/refresh, per-user for restricted-unlock) is a session-scoped
+ * provider, not moved to common/ — nothing outside the auth surface needs
+ * IT (contrast AnomalyLogService below).
+ *
+ * G3 (STATE.md "Current-password re-auth on self-changes"): AnomalyLogService
+ * RELOCATED out of this module to common/anomaly-log.service.ts, provided
+ * by CommonSettingsModule instead of here — catalog/users.controller.ts now
+ * logs CURRENT_PASSWORD_FAILURE too, and D2 forbids it importing anything
+ * under session/. Still reachable here (UsersMeController/AuthController/
+ * RestrictedController all use it) via the CommonSettingsModule import
+ * below, unchanged from their point of view.
  *
  * P1.17: DbProvider/ViewerContextProvider moved OUT to
  * apps/server/src/common (a fourth, D2-neutral directory) so catalog/
@@ -66,7 +73,7 @@ import { AnomalyLogService } from "./anomaly-log.service.js";
 @Module({
   imports: [CommonModule, CommonSettingsModule, MailModule],
   controllers: [AuthController, SystemController, UsersMeController, RestrictedController, RestrictedZoneController],
-  providers: [TokenService, RefreshTokenService, AuthRateLimiterService, AnomalyLogService],
+  providers: [TokenService, RefreshTokenService, AuthRateLimiterService],
   exports: [CommonModule, CommonSettingsModule, MailModule, TokenService],
 })
 export class SessionModule {}

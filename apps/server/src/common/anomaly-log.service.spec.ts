@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Loombre :: apps/server/src/session/anomaly-log.service.spec.ts
+// Loombre :: apps/server/src/common/anomaly-log.service.spec.ts
 //
 // fail2ban-compatible single-line auth anomaly log (STATE.md P2.1/P2.12,
 // docs/PLAN.md §10 "login anomaly log + optional fail2ban-compatible log
@@ -10,13 +10,17 @@
 // (common/test-support/fake-settings-service.ts, Addendum A lane S3)
 // resolves security.loginAnomalyLogEnabled through the SAME pure
 // resolveEffectiveSettings() production uses, just without a database.
+//
+// RELOCATED from session/ to common/ (G3, STATE.md "Current-password
+// re-auth on self-changes") alongside anomaly-log.service.ts itself — see
+// that file's header for the D2 cross-module rationale.
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { AnomalyLogService } from "./anomaly-log.service.js";
-import { createFakeSettingsService } from "../common/test-support/fake-settings-service.js";
+import { createFakeSettingsService } from "./test-support/fake-settings-service.js";
 
 let scratchDir: string;
 
@@ -69,14 +73,16 @@ describe("AnomalyLogService", () => {
     service.log("FAILED_LOGIN", { ip: "1.1.1.1" }, 1000);
     service.log("REFRESH_REUSE", { ip: "2.2.2.2", user: "bob", device: "dev-1" }, 2000);
     service.log("PIN_FAILURE", { user: "carol" }, 3000);
+    service.log("CURRENT_PASSWORD_FAILURE", { user: "dave" }, 3500);
     service.log("RATE_LIMITED", { ip: "3.3.3.3", op: "login" }, 4000);
 
     const lines = readFileSync(logPath, "utf8").split("\n").filter((l) => l.length > 0);
-    expect(lines).toHaveLength(4);
+    expect(lines).toHaveLength(5);
     expect(lines[0]).toContain("FAILED_LOGIN");
     expect(lines[1]).toContain("REFRESH_REUSE");
     expect(lines[2]).toContain("PIN_FAILURE");
-    expect(lines[3]).toContain("RATE_LIMITED");
+    expect(lines[3]).toBe("1970-01-01T00:00:03.500Z loombre-auth CURRENT_PASSWORD_FAILURE user=dave");
+    expect(lines[4]).toContain("RATE_LIMITED");
   });
 
   it("sanitizes field values so log-line injection (embedded newlines) is impossible", () => {

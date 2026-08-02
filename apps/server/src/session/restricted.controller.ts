@@ -59,7 +59,7 @@ import {
 } from "../common/capabilities.js";
 import { resolveClearance } from "../common/resolve-clearance.js";
 import { AuthRateLimiterService } from "./auth-rate-limiter.service.js";
-import { AnomalyLogService } from "./anomaly-log.service.js";
+import { AnomalyLogService } from "../common/anomaly-log.service.js";
 import { tooManyRequests } from "../common/rate-limit.exception.js";
 import { RateLimitExceptionFilter } from "../common/rate-limit-exception.filter.js";
 import { SettingsService } from "../settings/settings.service.js";
