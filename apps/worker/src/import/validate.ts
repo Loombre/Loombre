@@ -261,7 +261,16 @@ function validateUser(raw: unknown, index: number): ArchiveUser {
   return {
     id: reqString(raw, 'id', path),
     username: reqString(raw, 'username', path),
-    email: reqString(raw, 'email', path),
+    // M1: email is nullable now — every pre-M1 archive still has it as a
+    // real string (the column was NOT NULL then), so nullableString's
+    // "value must be present" behavior is exactly right here (unlike
+    // displayName below, no `undefined`-tolerance is needed).
+    email: nullableString(raw, 'email', path),
+    // M2: a genuinely NEW optional field — archives written before this
+    // migration never had it at all, so a missing key must be tolerated
+    // exactly like an explicit `null` (same convention validateTrack's
+    // discNumber uses above).
+    displayName: raw['displayName'] === undefined ? null : nullableString(raw, 'displayName', path),
     isAdmin: reqBoolean(raw, 'isAdmin', path),
     createdAtMs: reqNumber(raw, 'createdAtMs', path),
   };
