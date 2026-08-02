@@ -18,7 +18,10 @@
     "stash.provider.disabled",
     "stash.sync.started",
     "stash.sync.completed",
-    "mail.failed"
+    "mail.failed",
+    "user.invited",
+    "user.invite-revoked",
+    "user.claimed"
   ],
   "type": "object",
   "additionalProperties": false,
@@ -61,7 +64,10 @@
         "stash.provider.disabled",
         "stash.sync.started",
         "stash.sync.completed",
-        "mail.failed"
+        "mail.failed",
+        "user.invited",
+        "user.invite-revoked",
+        "user.claimed"
       ],
       "description": "Closed enum today; additions are additive contract PRs (new event types are always backward compatible for existing consumers)."
     },

@@ -70,8 +70,8 @@ describe("event-schemas (docs/PLAN.md §4.3)", () => {
     }
   });
 
-  it("envelope enum has exactly 30 types (15 through Addendum A + 6 plugin.* [LPP] + 2 watchlist.* [W2 L3] + 1 metadata.match-candidates [W2 L2] + 1 user.restricted-pin-reset [H2] + 1 probe.failed [owner ledger L1] + 1 stash.provider.disabled [Stash SQLite metadata sync, S3/K12] + 2 stash.sync.* [Stash SQLite metadata sync, S8/K12, Lane C] + 1 mail.failed [optional mail transport run, E6/M6])", () => {
-    expect(envelopeTypeEnum).toHaveLength(30);
+  it("envelope enum has exactly 33 types (15 through Addendum A + 6 plugin.* [LPP] + 2 watchlist.* [W2 L3] + 1 metadata.match-candidates [W2 L2] + 1 user.restricted-pin-reset [H2] + 1 probe.failed [owner ledger L1] + 1 stash.provider.disabled [Stash SQLite metadata sync, S3/K12] + 2 stash.sync.* [Stash SQLite metadata sync, S8/K12, Lane C] + 1 mail.failed [optional mail transport run, E6/M6] + 3 user.invited/user.invite-revoked/user.claimed [E2, Lane A])", () => {
+    expect(envelopeTypeEnum).toHaveLength(33);
     expect(envelopeTypeEnum).toEqual(
       expect.arrayContaining([
         "item.added",
@@ -103,6 +103,9 @@ describe("event-schemas (docs/PLAN.md §4.3)", () => {
         "stash.provider.disabled",
         "stash.sync.started",
         "stash.sync.completed",
+        "user.invited",
+        "user.invite-revoked",
+        "user.claimed",
       ]),
     );
   });
@@ -328,6 +331,22 @@ describe("event-schemas (docs/PLAN.md §4.3)", () => {
         to: "someone@example.com",
         smtpError: "535 5.7.8 Authentication failed",
         jobId: "018f6f1e-0000-7000-8000-00000000000a",
+      },
+      "user.invited": {
+        inviteId: "018f6f1e-0000-7000-8000-00000000000a",
+        usernamePreset: "preset-user",
+        libraryIds: ["018f6f1e-0000-7000-8000-000000000002"],
+        createdAtMs: 1_700_000_000_000,
+      },
+      "user.invite-revoked": {
+        inviteId: "018f6f1e-0000-7000-8000-00000000000a",
+        revokedAtMs: 1_700_000_010_000,
+      },
+      "user.claimed": {
+        userId: "018f6f1e-0000-7000-8000-000000000005",
+        inviteId: "018f6f1e-0000-7000-8000-00000000000a",
+        username: "claimed-user",
+        createdAtMs: 1_700_000_020_000,
       },
     };
 

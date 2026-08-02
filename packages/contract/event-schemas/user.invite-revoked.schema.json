@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://loombre.com/schemas/events/user.invite-revoked.schema.json",
+  "title": "UserInviteRevokedPayload",
+  "description": "Payload for envelope.type === 'user.invite-revoked'. ADMIN_ONLY. Emitted when an admin revokes a pending invite via DELETE /v1/invites/{id}.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["inviteId", "revokedAtMs"],
+  "properties": {
+    "inviteId": { "type": "string", "format": "uuid" },
+    "revokedAtMs": { "type": "integer", "minimum": 0 }
+  }
+}

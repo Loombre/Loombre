@@ -93,6 +93,12 @@
 //     template, which destination, the real SMTP conversation error, which
 //     job), same posture as probe.failed, not content any viewer-scoped
 //     predicate should gate.
+//   - `user.invited` / `user.invite-revoked` / `user.claimed` (STATE.md
+//     "Optional mail transport + invitation & reset flows", E2, Lane A):
+//     admin invite-creation/revocation bookkeeping and the claim outcome
+//     (packages/db/src/query/invites.ts) — instance-administration/audit
+//     data, same posture as user.restricted-pin-reset; none of the three
+//     payloads carry token or password material.
 //
 // Dependency-free data only (no zod, no I/O) — importable from
 // apps/server, apps/worker, and (via the prose pointer above, not a real
@@ -121,4 +127,8 @@ export const ADMIN_ONLY_EVENT_TYPES: readonly string[] = [
   "stash.sync.completed",
   // Optional mail transport run, E6/M6.
   "mail.failed",
+  // Optional mail transport + invitation & reset flows, E2 (Lane A).
+  "user.invited",
+  "user.invite-revoked",
+  "user.claimed",
 ];
