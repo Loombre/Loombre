@@ -27,8 +27,14 @@
 //     exists anywhere in auth-store.ts or the /auth/login contract — a
 //     checkbox that changes nothing on submit would be a dead control
 //     (U9).
-//   - FORGOT?: OMITTED. No password-reset endpoint exists
-//     (packages/contract/openapi.yaml has no such path).
+//   - FORGOT?: Lane D (Optional Mail Transport run) closes this — GET
+//     /system/capabilities now carries `passwordResetAvailable` (M8: true
+//     iff mail is configured with host/from-address/public-URL all set).
+//     The link is fetched and shown ONLY when that flag is true, per that
+//     schema field's own doc comment ("the login screen shows a forgot
+//     password affordance only when this is true") — see the new
+//     useEffect below. This comment is intentionally left in place (rather
+//     than deleted) as the historical record of the earlier omission.
 //   - "Use a passkey": OMITTED. No WebAuthn/passkey support exists
 //     anywhere in this codebase.
 //   - "FIRST RUN? SET UP THIS SERVER →": OMITTED. /setup exists as a real
@@ -43,8 +49,16 @@
 //     About tab's "GROUND-UP. NOT A FORK. NO TELEMETRY." — not a fixture
 //     value.
 //
-// csp/auth logic is untouched: handleSubmit below is byte-identical to the
-// pre-retheme version.
+// csp/auth logic was byte-identical to the pre-retheme version as of the
+// last retheme lane; Lane D (Optional Mail Transport run, M14) makes the
+// first real functional change to handleSubmit since — TokenPair now
+// additively carries `mustChangePassword`, and while it's true the server
+// restricts the account to auth routes + GET /users/me + PATCH /users/me
+// (a password change) until cleared. The session IS valid (M14: "the
+// current session is valid") — this page does not throw the token away or
+// treat it as a failed login; it stores it and renders a minimal
+// must-change screen (below) BEFORE ever reaching /home. The server
+// enforces the lockdown; this is the honest UX for it.
 //
 // STATE.md "Blaze logo rollout" G1 (Lane B owns this surface): the
 // pulsing accent-colored dot (class + keyframes now deleted; identifiers
@@ -60,6 +74,7 @@
 
 import { useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { LoombreClient, LoombreApiError } from "@loombre/sdk";
 import { Button } from "../../components/ui/Button.js";
 import { TextInput } from "../../components/ui/Input.js";
@@ -68,6 +83,13 @@ import blazeIdle from "../../components/brand/BlazeIdle.module.css";
 import { buildDeviceProfile } from "../../lib/device-profile.js";
 import { getAuthStore } from "../../lib/auth-store.js";
 import { defaultServerUrlGuess, describeServerUrl } from "../../lib/server-url.js";
+// apiPatch (not a plain LoombreClient call): mustChangePassword's PATCH
+// happens AFTER a real TokenPair is already stored (M14 — "the current
+// session is valid"), so it goes through the same authenticated,
+// 401-retrying wrapper every other in-app request uses, not a second raw
+// public client. LoombreApiError here is the identical class api-client.js
+// re-exports from @loombre/sdk — one import above already brought it in.
+import { apiPatch } from "../../lib/api-client.js";
 import { ServerIndicator } from "./ServerIndicator.js";
 import styles from "./page.module.css";
 
@@ -85,6 +107,17 @@ export default function LoginPage(): React.JSX.Element {
   // nothing sensible to summarize yet, so a first-ever visit never hides
   // the only way to set a server.
   const [showServerField, setShowServerField] = useState(false);
+  // M8: only rendered true when GET /system/capabilities (public) says so.
+  const [passwordResetAvailable, setPasswordResetAvailable] = useState(false);
+  // M14: set once a login response carries mustChangePassword:true. The
+  // TokenPair is already applied to the store by then (session IS valid) —
+  // this just switches which form renders, it never signs the user back
+  // out.
+  const [mustChange, setMustChange] = useState(false);
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmNewPassword, setConfirmNewPassword] = useState("");
+  const [mustChangeError, setMustChangeError] = useState<string | null>(null);
+  const [mustChangeSubmitting, setMustChangeSubmitting] = useState(false);
 
   useEffect(() => {
     const store = getAuthStore();
@@ -96,6 +129,17 @@ export default function LoginPage(): React.JSX.Element {
     const resolved = remembered ?? (store.getSnapshot().serverUrl || defaultServerUrlGuess());
     setServerUrl(resolved);
     if (!describeServerUrl(resolved)) setShowServerField(true);
+
+    // M8: a public, unauthenticated capability check — same client shape
+    // handleSubmit below builds, no bearer token. Best-effort: a failed
+    // fetch just leaves the Forgot-password link hidden (the safe default),
+    // never blocks the rest of the page from rendering.
+    if (resolved) {
+      new LoombreClient({ baseUrl: resolved.replace(/\/$/, ""), getAccessToken: () => null })
+        .get("/system/capabilities")
+        .then((capabilities) => setPasswordResetAvailable(capabilities.passwordResetAvailable ?? false))
+        .catch(() => undefined);
+    }
   }, [router]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>): Promise<void> {
@@ -130,7 +174,14 @@ export default function LoginPage(): React.JSX.Element {
       });
 
       store.applyTokenPair(pair);
-      router.replace("/home");
+      // M14: the session is valid either way — a pending temporary-password
+      // change routes to the must-change step INSTEAD of /home, it never
+      // discards the token pair just applied.
+      if (pair.mustChangePassword) {
+        setMustChange(true);
+      } else {
+        router.replace("/home");
+      }
     } catch (err) {
       if (err instanceof LoombreApiError) {
         setError(err.status === 401 ? "Invalid username or password." : err.message);
@@ -140,6 +191,79 @@ export default function LoginPage(): React.JSX.Element {
     } finally {
       setSubmitting(false);
     }
+  }
+
+  async function handleMustChangeSubmit(event: FormEvent<HTMLFormElement>): Promise<void> {
+    event.preventDefault();
+    setMustChangeError(null);
+    if (newPassword !== confirmNewPassword) {
+      setMustChangeError("Passwords don't match.");
+      return;
+    }
+    setMustChangeSubmitting(true);
+    try {
+      // A password change is one of the exact three routes the server
+      // still allows while mustChangePassword is set (M14) — this is the
+      // authenticated apiPatch wrapper, not a public client (see this
+      // file's import comment).
+      await apiPatch("/users/me", { body: { password: newPassword } });
+      router.replace("/home");
+    } catch (err) {
+      setMustChangeError(err instanceof LoombreApiError ? err.message : "Could not change your password. Try again.");
+    } finally {
+      setMustChangeSubmitting(false);
+    }
+  }
+
+  if (mustChange) {
+    return (
+      <div className={styles.page}>
+        <div className={styles.brand}>
+          <BlazeMark
+            variant="gradient"
+            size={56}
+            animated
+            surface="var(--color-bg)"
+            classNames={{ blaze: blazeIdle.blaze!, core: blazeIdle.core! }}
+          />
+          <span className={styles.wordmark}>Loombre</span>
+        </div>
+        <form className={styles.form} onSubmit={(e) => void handleMustChangeSubmit(e)}>
+          <div className={styles.formHeading}>Set a new password</div>
+          <p className={styles.mustChangeNote}>
+            An admin reset your password. Choose a new one to continue — you&apos;re already signed in.
+          </p>
+          <label className={styles.field} htmlFor="newPassword">
+            <span className={styles.label}>New password</span>
+            <TextInput
+              id="newPassword"
+              name="newPassword"
+              type="password"
+              autoComplete="new-password"
+              required
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+            />
+          </label>
+          <label className={styles.field} htmlFor="confirmNewPassword">
+            <span className={styles.label}>Confirm new password</span>
+            <TextInput
+              id="confirmNewPassword"
+              name="confirmNewPassword"
+              type="password"
+              autoComplete="new-password"
+              required
+              value={confirmNewPassword}
+              onChange={(e) => setConfirmNewPassword(e.target.value)}
+            />
+          </label>
+          {mustChangeError && <div className={styles.error}>{mustChangeError}</div>}
+          <Button type="submit" variant="primary" className={styles.submit} disabled={mustChangeSubmitting}>
+            {mustChangeSubmitting ? "Saving…" : "Continue"}
+          </Button>
+        </form>
+      </div>
+    );
   }
 
   return (
@@ -204,6 +328,11 @@ export default function LoginPage(): React.JSX.Element {
             onChange={(e) => setPassword(e.target.value)}
           />
         </label>
+        {passwordResetAvailable && (
+          <Link href="/forgot" className={styles.forgotLink}>
+            Forgot password?
+          </Link>
+        )}
         {error && <div className={styles.error}>{error}</div>}
         <Button type="submit" variant="primary" className={styles.submit} disabled={submitting}>
           {submitting ? "Signing in…" : "Sign in"}
