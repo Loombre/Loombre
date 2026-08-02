@@ -26,35 +26,30 @@
 // eagerly itself; AdminDeps.confirm() is the ONLY interactive-stdin
 // primitive in this repo (there is no other precedent — the real
 // implementation uses node:readline/promises).
+//
+// STATE.md "Optional mail transport + invitation & reset flows" (E3a/M14,
+// Lane B): `runAdminCommand` below is the ROUTER for the WHOLE `admin`
+// subcommand family — `reset-pin` (this file, unchanged) and
+// `reset-password` (apps/server/src/cli/admin-reset-password.ts, the SAME
+// AdminDeps shape reused unchanged, since neither subcommand needs
+// anything beyond connect()/confirm()/nowMs()). The dep-bag types moved to
+// admin-deps.ts (a one-directional import both this file AND
+// admin-reset-password.ts pull from — see that file's header for why:
+// this file importing admin-reset-password.ts for the router, WHILE
+// admin-reset-password.ts also imported types FROM this file, would be an
+// import cycle, and dependency-cruiser's "no-circular" rule fails the
+// build on that shape unconditionally). Re-exported below unchanged so
+// every existing import site (admin-node-deps.ts, run-cli.ts, the e2e
+// spec) needs no changes.
 
-export type AdminDb = Awaited<ReturnType<(typeof import("@loombre/db"))["createDb"]>>;
+import { runAdminResetPasswordCommand } from "./admin-reset-password.js";
+import type { AdminCliResult, AdminDeps } from "./admin-deps.js";
 
-export interface AdminConnection {
-  db: AdminDb;
-  end(): Promise<void>;
-}
-
-export interface AdminDeps {
-  /** Opens a fresh database connection for this one CLI invocation. Async
-   *  because the real implementation dynamically imports @loombre/db to
-   *  obtain `createDb` — see this file's header. */
-  connect(): Promise<AdminConnection> | AdminConnection;
-  /** Asks `question` on stdin/stdout (or a fake, in tests) and resolves
-   *  true only for an affirmative y/yes answer (case-insensitive) — see
-   *  runAdminResetPin below for the exact accept rule. There is NO --yes
-   *  flag anywhere in this CLI: the interactive confirmation IS the
-   *  privilege boundary (owner brief), not an optional courtesy. */
-  confirm(question: string): Promise<boolean>;
-  nowMs(): number;
-}
-
-export interface AdminCliResult {
-  exitCode: number;
-  stdout: string[];
-  stderr: string[];
-}
+export type { AdminDb, AdminConnection, AdminDeps, AdminCliResult } from "./admin-deps.js";
+export { isAffirmative } from "./admin-deps.js";
 
 const USAGE = "loombre admin reset-pin <username>";
+const RESET_PASSWORD_USAGE = "loombre admin reset-password <username>";
 
 // H2-recovery invocability fix (L2, owner brief): `admin reset-pin --help`
 // must work standalone — an operator following the docs-verbatim install
@@ -72,24 +67,33 @@ const RESET_PIN_HELP: string[] = [
   "reachable Postgres; every other `loombre` command does not.",
 ];
 
-function isAffirmative(answer: string): boolean {
-  const normalized = answer.trim().toLowerCase();
-  return normalized === "y" || normalized === "yes";
-}
-
 /**
- * Dispatches `loombre admin <rest...>`. Only `reset-pin <username>` exists
- * today — any other shape (missing subcommand, unknown subcommand, missing
- * or extra arguments) is a usage error that NEVER touches `deps` (proven by
+ * Dispatches `loombre admin <rest...>`. Two subcommands exist:
+ * `reset-pin <username>` (this file) and `reset-password <username>`
+ * (apps/server/src/cli/admin-reset-password.ts — imported lazily as a
+ * plain static import at module scope, same as this file's own
+ * RESET_PIN_HELP: NEITHER subcommand's parsing/help/usage-error branches
+ * touch `deps`/`@loombre/db` — only actually reaching the real reset does,
+ * per each subcommand's own dynamic `import("@loombre/db")`). Any other
+ * shape (missing subcommand, unknown subcommand, missing or extra
+ * arguments) is a usage error that NEVER touches `deps` (proven by
  * apps/server/test/cli/run-cli.spec.ts's THROWING_ADMIN_DEPS fixture).
- * `reset-pin --help`/`reset-pin -h` is the one branch below that succeeds
- * (exit 0) without ever reaching `deps` either — see RESET_PIN_HELP above.
+ * `reset-pin --help`/`reset-pin -h` is one branch below that succeeds
+ * (exit 0) without ever reaching `deps` either — see RESET_PIN_HELP above;
+ * `reset-password --help`/`-h` mirrors it in admin-reset-password.ts.
  */
 export async function runAdminCommand(rest: string[], deps: AdminDeps): Promise<AdminCliResult> {
   const [subcommand, username, ...extra] = rest;
 
   if (subcommand === undefined) {
-    return { exitCode: 1, stdout: [], stderr: [`loombre: missing admin subcommand.`, `Usage: ${USAGE}`] };
+    return {
+      exitCode: 1,
+      stdout: [],
+      stderr: [`loombre: missing admin subcommand.`, `Usage: ${USAGE}`, `   or: ${RESET_PASSWORD_USAGE}`],
+    };
+  }
+  if (subcommand === "reset-password") {
+    return runAdminResetPasswordCommand(username, extra, deps);
   }
   if (subcommand !== "reset-pin") {
     return { exitCode: 1, stdout: [], stderr: [`loombre: unknown admin subcommand "${subcommand}"`, `Usage: ${USAGE}`] };
@@ -153,8 +157,3 @@ export async function runAdminResetPin(username: string, deps: AdminDeps): Promi
     await end();
   }
 }
-
-/** True for a case-insensitive "y"/"yes" — exported so the real
- *  (readline-backed) confirm() implementation shares the exact same accept
- *  rule this module's tests exercise. */
-export { isAffirmative };
