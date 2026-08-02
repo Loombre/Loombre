@@ -2,6 +2,14 @@
 
 ## Current-password re-auth on self-changes + the email-collision signal (kicked off 2026-08-02, authority: owner "Current-Password Re-Auth on Self-Changes + the Email-Collision Signal" brief; closes Open items 3 and 4-follow-up of the mail/invites run below; docs/PLAN.md + design/phosphor/README.md for UI)
 
+### PUSHED + CI RESULTS (2026-08-02; origin/main 0570dd0, then 5ea11e6 with the MSI fix below)
+
+Owner authorised the push. main → origin (c672c73..0570dd0, ff, no force). **Push CI run 30760738406: SUCCESS** — perf-t0 GREEN (the stale-stats fix worked; the previously-red board is green), gate (ubuntu) + perf-web-budget + perf-lighthouse all green. Only red = the Node-26 `gate-node-next` job, NON-BLOCKING by the runtime policy (N2 — Current lines are evidence-only), overall conclusion success.
+
+**Windows installer lane (owner asked to watch it): found a PRE-EXISTING latent break, fixed it.** `windows-installer-diag` (manual-dispatch) failed the MSI build with `WIX0094: Property:WIX_ACCOUNT_USERS could not be found`. Root cause NOT this run: b3856df (2026-07-31, "controllers can START a stopped server") added three `util:PermissionEx` service grants keyed on `[WIX_ACCOUNT_USERS]` and referenced it with the WiX **v3** idiom `<PropertyRef Id="WIX_ACCOUNT_USERS"/>`, which does not link under the **v5** toolset — and it landed untested because the installer lane is `workflow_dispatch`-only, NOT part of push CI (2-day latent break). Fix (5ea11e6, installer-only): `<util:QueryWindowsWellKnownSIDs/>` (per FireGiant util-schema docs — defines the symbol AND schedules the CA that populates the localized BUILTIN\Users at install). Verified: installer lane re-run on the fix branch = SUCCESS (MSI builds + real install/uninstall + bootstrapper smoke tests all pass), then ff'd to main.
+
+⚠ **PROCESS GAP flagged for owner:** the Windows installer lane runs on manual dispatch only, so any commit touching `installers/` lands without an installer build — b3856df sat broken for 2 days undetected. Consider a `paths: installers/**` push/PR trigger (or a nightly) so installer breaks surface at merge, not at release time. The full four-platform installer set (release.yml: linux/windows/macos/docker) still only builds on a version tag — not exercised by this session.
+
 ### EXIT GATE — WALKED 2026-08-02 (final main tip b702999+R-F1-commit; gate:full ALL 14 STEPS PASSED, verdict read from the log)
 
 Automated exit met on the LOCAL assembly. Coverage vs the brief §4 exit gate:
