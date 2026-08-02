@@ -35,6 +35,21 @@
 //     to show inline for a whole list — kept as the existing on-demand
 //     "Library access" modal action instead (unchanged since the pre-IA
 //     page), not a row-level chip.
+//
+// Lane D additions (Optional Mail Transport + Invitation and Reset Flows
+// run, STATE.md): two backend-frozen surfaces land in THIS file/area per
+// the run brief's own layout call ("extend UsersSection or a sibling
+// card — your layout call, record it"):
+//   - RowMenu gains "Reset password" (E3a/M14) -> ResetPasswordDialog.tsx,
+//     a sibling file exactly like AddUserSheet.tsx already is.
+//   - The invites surface (E2) is InvitesPanel.tsx, a SIBLING CARD rendered
+//     below the user list rather than folded into this component — this
+//     file was already ~300 lines covering create/edit/library-access/
+//     delete; a fourth flow (create-invite/reveal/list/revoke) belongs in
+//     its own file for the same reason AddUserSheet already is one.
+//   - Email is now OPTIONAL everywhere it appears here (E4/M1): the
+//     row sub-line, EditUserModal, and AddUserSheet all handle a null
+//     email honestly instead of assuming one always exists.
 
 import { useEffect, useState } from "react";
 import { Users as UsersIcon } from "lucide-react";
@@ -49,6 +64,8 @@ import { EmptyState } from "../../admin/EmptyState.js";
 import { Modal } from "../../admin/Modal.js";
 import { RowMenu } from "../RowMenu.js";
 import { AddUserSheet } from "./AddUserSheet.js";
+import { ResetPasswordDialog } from "./ResetPasswordDialog.js";
+import { InvitesPanel } from "./InvitesPanel.js";
 import { apiDelete, apiGet, apiPatch, apiPut, LoombreApiError } from "../../../lib/api-client.js";
 import styles from "./shared.module.css";
 
@@ -83,8 +100,8 @@ function EditUserModal({ user, onClose, onUpdated }: { user: User; onClose: () =
     <Modal title={`Edit "${user.username}"`} onClose={onClose}>
       <form className={styles.form} onSubmit={handleSubmit}>
         <label className={styles.field}>
-          <span className={styles.label}>Email</span>
-          <TextInput type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+          <span className={styles.label}>Email (optional)</span>
+          <TextInput type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
         </label>
         <div className={styles.formRow}>
           <span className={styles.label}>Role</span>
@@ -198,11 +215,13 @@ function UserRow({
   user,
   onEdit,
   onLibraryAccess,
+  onResetPassword,
   onDelete,
 }: {
   user: User;
   onEdit: () => void;
   onLibraryAccess: () => void;
+  onResetPassword: () => void;
   onDelete: () => void;
 }): React.JSX.Element {
   const name = user.displayName ?? user.username;
@@ -212,7 +231,11 @@ function UserRow({
         <Avatar label={name} size={36} />
         <div className={styles.rowText}>
           <span className={styles.rowTitle}>{name}</span>
-          <span className={styles.rowSub}>{user.email}</span>
+          {/* E4/M1: email is now nullable — a username-only account has
+              nothing to show here. Render the username as the sub-line
+              fallback instead of an empty/undefined string, rather than a
+              blank line where the email used to always be. */}
+          <span className={styles.rowSub}>{user.email ?? (name !== user.username ? user.username : "No email on file")}</span>
         </div>
       </div>
       <div className={styles.rowChips}>
@@ -225,6 +248,7 @@ function UserRow({
           actions={[
             { label: "Library access", onSelect: onLibraryAccess },
             { label: "Edit", onSelect: onEdit },
+            { label: "Reset password", onSelect: onResetPassword },
             { label: "Delete", onSelect: onDelete, danger: true },
           ]}
         />
@@ -239,6 +263,11 @@ export function UsersSection({ heading }: { heading: string | null }): React.JSX
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<User | null>(null);
   const [managingAccess, setManagingAccess] = useState<User | null>(null);
+  const [resettingPassword, setResettingPassword] = useState<User | null>(null);
+  // E3a/M14: threaded into ResetPasswordDialog so it can name the
+  // admin-resetting-self case honestly (see that component's header) —
+  // fetched once, not stored on every User row.
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
   function reload(): void {
     apiGet("/users", { params: { query: { limit: 200 } } })
@@ -247,6 +276,11 @@ export function UsersSection({ heading }: { heading: string | null }): React.JSX
   }
 
   useEffect(reload, []);
+  useEffect(() => {
+    apiGet("/users/me")
+      .then((me) => setCurrentUserId(me.id))
+      .catch(() => undefined);
+  }, []);
 
   async function handleDelete(user: User): Promise<void> {
     if (!window.confirm(`Delete user "${user.username}"? This cannot be undone.`)) return;
@@ -293,6 +327,7 @@ export function UsersSection({ heading }: { heading: string | null }): React.JSX
               user={user}
               onEdit={() => setEditing(user)}
               onLibraryAccess={() => setManagingAccess(user)}
+              onResetPassword={() => setResettingPassword(user)}
               onDelete={() => void handleDelete(user)}
             />
           ))}
@@ -314,6 +349,15 @@ export function UsersSection({ heading }: { heading: string | null }): React.JSX
         />
       )}
       {managingAccess && <LibraryAccessModal user={managingAccess} onClose={() => setManagingAccess(null)} />}
+      {resettingPassword && (
+        <ResetPasswordDialog
+          user={resettingPassword}
+          isSelf={currentUserId !== null && currentUserId === resettingPassword.id}
+          onClose={() => setResettingPassword(null)}
+        />
+      )}
+
+      <InvitesPanel />
     </div>
   );
 }

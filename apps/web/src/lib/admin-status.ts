@@ -71,3 +71,17 @@ const STASH_SYNC_REPORT_STATUS_INFO: Record<string, StatusPillInfo> = {
 export function describeStashSyncReportStatus(status: string): StatusPillInfo {
   return STASH_SYNC_REPORT_STATUS_INFO[status] ?? { label: status, tone: "neutral" };
 }
+
+const INVITE_STATUS_INFO: Record<string, StatusPillInfo> = {
+  pending: { label: "Pending", tone: "info" },
+  claimed: { label: "Claimed", tone: "success" },
+  revoked: { label: "Revoked", tone: "danger" },
+  expired: { label: "Expired", tone: "neutral" },
+};
+
+/** Invite.status (packages/contract/openapi.yaml's InviteStatus enum, E2 —
+ *  "derived at read time from claimedAtMs/revokedAtMs/expiresAtMs, never
+ *  stored"). Used by InvitesPanel.tsx. */
+export function describeInviteStatus(status: string): StatusPillInfo {
+  return INVITE_STATUS_INFO[status] ?? { label: status, tone: "neutral" };
+}
