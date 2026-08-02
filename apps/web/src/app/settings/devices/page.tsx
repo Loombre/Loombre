@@ -24,8 +24,9 @@
 // (mobile-header.ts's settingsSection branch already generalizes over
 // SETTINGS_SECTIONS, so registering the entry there is sufficient — no
 // mobile-header.ts change needed). AccountSection.tsx's
-// ChangePasswordSection already says "revoke them from Devices if you need
-// to", so linking it from Account (or the hub) closes that reference.
+// ChangePasswordSection now states plainly that a password change signs
+// other devices out itself (G10/F3) — this route remains the place to
+// review/revoke individual sessions any other time.
 
 import Link from "next/link";
 import { AppShell } from "../../../components/shell/AppShell.js";
