@@ -7,6 +7,7 @@ import { RestrictedController } from "./restricted.controller.js";
 import { RestrictedZoneController } from "./restricted-zone.controller.js";
 import { CommonModule } from "../common/common.module.js";
 import { CommonSettingsModule } from "../common/common-settings.module.js";
+import { MailModule } from "../mail/mail.module.js";
 import { TokenService } from "./token.service.js";
 import { RefreshTokenService } from "./refresh-token.service.js";
 import { AuthRateLimiterService } from "./auth-rate-limiter.service.js";
@@ -52,11 +53,20 @@ import { AnomalyLogService } from "./anomaly-log.service.js";
  * "/libraries"). No new module import needed: it only uses DbProvider/
  * ViewerContextProvider, already available via CommonModule/
  * CommonSettingsModule above.
+ *
+ * STATE.md "Optional mail transport + invitation & reset flows" (Lane B):
+ * imports MailModule (mail/mail.module.ts — a fourth D2-neutral directory,
+ * same posture as CommonModule) for AuthController's forgot-password mail
+ * dispatch and SystemController's `passwordResetAvailable` capability
+ * read. Re-exported alongside CommonModule/CommonSettingsModule so
+ * GatewayModule (which only imports SessionModule) is unaffected, and so
+ * CatalogModule can import it directly for its own admin reset-password
+ * action (users.controller.ts) without importing SessionModule (D2).
  */
 @Module({
-  imports: [CommonModule, CommonSettingsModule],
+  imports: [CommonModule, CommonSettingsModule, MailModule],
   controllers: [AuthController, SystemController, UsersMeController, RestrictedController, RestrictedZoneController],
   providers: [TokenService, RefreshTokenService, AuthRateLimiterService, AnomalyLogService],
-  exports: [CommonModule, CommonSettingsModule, TokenService],
+  exports: [CommonModule, CommonSettingsModule, MailModule, TokenService],
 })
 export class SessionModule {}

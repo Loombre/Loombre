@@ -2,6 +2,7 @@
 import { Module } from "@nestjs/common";
 import { CommonModule } from "../common/common.module.js";
 import { CommonSettingsModule } from "../common/common-settings.module.js";
+import { MailModule } from "../mail/mail.module.js";
 import { VideoController } from "./video.controller.js";
 import { MusicController } from "./music.controller.js";
 import { CrossTypeController } from "./cross-type.controller.js";
@@ -35,9 +36,16 @@ import { ChaptersController } from "./chapters.controller.js";
  * module's header) plus SettingsService itself (re-exported by
  * CommonSettingsModule) for controllers reading A3 settings directly
  * (libraries.controller.ts's restricted.enabled check).
+ *
+ * STATE.md "Optional mail transport + invitation & reset flows" (Lane B):
+ * also imports MailModule for UsersController's admin reset-password
+ * action (POST /users/{id}/reset-password's non-fatal security-notice
+ * mail) — see mail/mail.module.ts's header for why this D2-neutral module
+ * is imported directly here rather than reached via SessionModule (D2:
+ * catalog may not import session).
  */
 @Module({
-  imports: [CommonModule, CommonSettingsModule],
+  imports: [CommonModule, CommonSettingsModule, MailModule],
   controllers: [
     VideoController,
     MusicController,

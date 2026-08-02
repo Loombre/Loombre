@@ -20,8 +20,9 @@
 //     an unknown or foreign deviceId falls back to Phase 1 behavior
 //     (silent new-device creation — device existence is never leaked).
 
-import { Body, Controller, HttpCode, HttpStatus, Post, Req, UseFilters } from "@nestjs/common";
+import { Body, Controller, HttpCode, HttpStatus, NotFoundException, Post, Req, UseFilters, UseGuards } from "@nestjs/common";
 import type { Request } from "express";
+import { randomUUID } from "node:crypto";
 import {
   createDevice,
   getDeviceForUser,
@@ -29,6 +30,9 @@ import {
   getUserById,
   getUserByUsername,
   getUserSettings,
+  invalidateUnusedPasswordResetTokens,
+  issuePasswordResetToken,
+  resetPasswordViaTokenAndEmit,
   revokeRefreshTokensForDevice,
   setRestrictedUnlockUntil,
   updateDeviceForLogin,
@@ -40,12 +44,16 @@ import type { AuthenticatedRequest } from "../gateway/auth.guard.js";
 import { DbProvider } from "../common/db.provider.js";
 import { HashService } from "../common/hash.service.js";
 import { DeviceProfileValidatorService } from "../common/device-profile-validator.js";
+import { RateLimit, SurfaceRateLimitGuard } from "../common/rate-limit.guard.js";
 import { TokenService } from "./token.service.js";
 import { RefreshTokenService } from "./refresh-token.service.js";
 import { AuthRateLimiterService } from "./auth-rate-limiter.service.js";
 import { AnomalyLogService } from "./anomaly-log.service.js";
+import { generatePasswordResetToken, hashPasswordResetToken, PASSWORD_RESET_TOKEN_TTL_MS } from "./reset-token.js";
 import { tooManyRequests } from "../common/rate-limit.exception.js";
 import { RateLimitExceptionFilter } from "../common/rate-limit-exception.filter.js";
+import { MailDispatchService } from "../mail/mail-dispatch.service.js";
+import { MailConfigService } from "../mail/mail-config.service.js";
 
 interface LoginRequestBody {
   email?: unknown;
@@ -65,11 +73,22 @@ interface LogoutRequestBody {
   deviceId?: unknown;
 }
 
+interface ForgotPasswordRequestBody {
+  identifier?: unknown;
+}
+
+interface ResetPasswordRequestBody {
+  token?: unknown;
+  password?: unknown;
+}
+
 interface TokenPairResponse {
   accessToken: string;
   refreshToken: string;
   accessTokenExpiresAtMs: number;
   deviceId: string;
+  /** E3a/M14 — additive; always sent (never omitted, even when false). */
+  mustChangePassword: boolean;
 }
 
 /** Every offline-generated seed hash starts this way (argon2id, m=19456,
@@ -104,6 +123,8 @@ export class AuthController {
     private readonly deviceProfileValidator: DeviceProfileValidatorService,
     private readonly rateLimiter: AuthRateLimiterService,
     private readonly anomalyLog: AnomalyLogService,
+    private readonly mailDispatchService: MailDispatchService,
+    private readonly mailConfigService: MailConfigService,
   ) {}
 
   @Post("login")
@@ -183,7 +204,13 @@ export class AuthController {
     );
     const { refreshToken } = await this.refreshTokenService.issue(db, user.id, device.id, nowMs);
 
-    return { accessToken, refreshToken, accessTokenExpiresAtMs: expiresAtMs, deviceId: device.id };
+    return {
+      accessToken,
+      refreshToken,
+      accessTokenExpiresAtMs: expiresAtMs,
+      deviceId: device.id,
+      mustChangePassword: user.must_change_password,
+    };
   }
 
   @Post("refresh")
@@ -243,6 +270,7 @@ export class AuthController {
       refreshToken: result.issued.refreshToken,
       accessTokenExpiresAtMs: expiresAtMs,
       deviceId: result.deviceId ?? body.deviceId,
+      mustChangePassword: user.must_change_password,
     };
   }
 
@@ -262,5 +290,114 @@ export class AuthController {
       return;
     }
     await this.refreshTokenService.logout(this.dbProvider.db, req.user.userId, deviceId, clockNowMs());
+  }
+
+  /**
+   * POST /auth/forgot-password (E3b, PUBLIC, M12 quartet). ALWAYS the
+   * identical 202 + identical (empty) body, regardless of whether
+   * `identifier` resolves to a real account, whether that account has an
+   * email on file, or whether mail is configured at all (E3b/E8 —
+   * anti-enumeration).
+   *
+   * Anti-timing (E8, mirroring login()'s DUMMY_PASSWORD_HASH discipline
+   * above): the real branch's dominant cost is two DB writes (invalidate
+   * previous tokens, insert the new one) plus a cheap crypto mint — there
+   * is no deliberately-slow hash in this path the way argon2id is for
+   * passwords, so the mitigation here is DB-shape parity rather than
+   * crypto-cost parity. The unknown-identifier branch performs the SAME
+   * crypto mint (discarded) and the SAME invalidate-shaped UPDATE
+   * statement (against a random, non-existent user id — real query, real
+   * index lookup, zero rows matched) so wall-clock timing cannot
+   * distinguish "no such account" from "account exists, nothing more
+   * happened". The one place this canNOT be made fully symmetric: the
+   * real branch's INSERT has no dummy counterpart, because
+   * password_reset_tokens.user_id is a foreign key to users(id) — there is
+   * no legal row to fabricate for a nonexistent user. Recorded as a
+   * decision (freeze report), not hidden.
+   */
+  @Post("forgot-password")
+  @HttpCode(HttpStatus.ACCEPTED)
+  @UseGuards(SurfaceRateLimitGuard)
+  @RateLimit("passwordReset", "ip")
+  async forgotPassword(
+    @Body() rawBody: ForgotPasswordRequestBody | undefined,
+    @Req() req: Request,
+  ): Promise<Record<string, never>> {
+    const body = rawBody ?? {};
+    if (!isNonEmptyString(body.identifier)) {
+      throw unprocessableEntity("identifier is required.", req.originalUrl);
+    }
+
+    const db = this.dbProvider.db;
+    const nowMs = clockNowMs();
+
+    const user = (await getUserByUsername(db, body.identifier)) ?? (await getUserByEmail(db, body.identifier));
+
+    if (user && user.email) {
+      const plaintext = generatePasswordResetToken();
+      await issuePasswordResetToken(db, {
+        userId: user.id,
+        tokenHash: hashPasswordResetToken(plaintext),
+        createdAtMs: nowMs,
+        expiresAtMs: nowMs + PASSWORD_RESET_TOKEN_TTL_MS,
+      });
+
+      // The seam decides whether mail is actually configured (M7: "never
+      // throws, returns dispatched:false when mail is unconfigured") —
+      // this call site never pre-checks MailConfigService.isConfigured()
+      // itself, so the stub in THIS worktree is exercised identically to
+      // how Lane C's real implementation will be at integration.
+      const publicUrl = this.mailConfigService.publicUrl() ?? "";
+      await this.mailDispatchService.trySend({
+        templateId: "password-reset",
+        to: user.email,
+        params: { resetLink: `${publicUrl}/reset/${plaintext}`, username: user.username },
+      });
+    } else {
+      // Unknown identifier, OR a real account with no email on file — see
+      // this method's doc comment for the anti-timing rationale. Neither
+      // sub-case is distinguishable from the other, or from the real
+      // branch above, by the caller.
+      hashPasswordResetToken(generatePasswordResetToken());
+      await invalidateUnusedPasswordResetTokens(db, randomUUID(), nowMs);
+    }
+
+    return {};
+  }
+
+  /**
+   * POST /auth/reset-password (E3b, PUBLIC, M12 quartet). Atomic consume +
+   * password set + refresh-token revocation + must_change_password clear +
+   * event emission, all one transaction
+   * (@loombre/db's resetPasswordViaTokenAndEmit). An invalid, expired, or
+   * already-used token — indistinguishable from one another — produces a
+   * BARE `NotFoundException()`, byte-identical to an unknown route (same
+   * precedent as setup.controller.ts's createFirstAdmin — see that file's
+   * header): no `detail`/`instance`, so `{"type":"about:blank","title":"Not
+   * Found","status":404}` every time.
+   */
+  @Post("reset-password")
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @UseGuards(SurfaceRateLimitGuard)
+  @RateLimit("passwordReset", "ip")
+  async resetPassword(
+    @Body() rawBody: ResetPasswordRequestBody | undefined,
+    @Req() req: Request,
+  ): Promise<void> {
+    const body = rawBody ?? {};
+    if (!isNonEmptyString(body.token) || !isNonEmptyString(body.password)) {
+      throw unprocessableEntity("token and password are required.", req.originalUrl);
+    }
+
+    const passwordHash = await this.hashService.hash(body.password);
+    const result = await resetPasswordViaTokenAndEmit(this.dbProvider.db, {
+      tokenHash: hashPasswordResetToken(body.token),
+      passwordHash,
+      nowMs: clockNowMs(),
+    });
+
+    if (!result.ok) {
+      throw new NotFoundException();
+    }
   }
 }
