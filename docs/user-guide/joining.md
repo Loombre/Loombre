@@ -24,8 +24,8 @@ soon as you've done that, you're signed in.
 
 ## Adding an email address
 
-Along the way, or later from your own account settings, you can add an
-email address if you want to. It's entirely optional — Loombre works
+Along the way, or later from your own [account settings](account-settings.md),
+you can add an email address if you want to. It's entirely optional — Loombre works
 completely fine without one. The one thing it's used for is getting back
 in if you ever forget your password, and only if whoever runs your
 household's Loombre has turned that on. If they haven't, or you don't add
@@ -50,5 +50,7 @@ it, Loombre asks you to choose a real one of your own right away.
 
 ## See also
 
+- [Account settings](account-settings.md) — changing your name, password,
+  and email once you're in.
 - [Restricted content](restricted-content.md) — a PIN, separate from your
   password, if the person who runs your Loombre has turned it on for you.

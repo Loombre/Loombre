@@ -120,6 +120,7 @@ export default defineConfig({
           items: [
             { text: "Overview", link: "/user-guide/" },
             { text: "Joining Loombre", link: "/user-guide/joining" },
+            { text: "Account settings", link: "/user-guide/account-settings" },
             { text: "Browsing your library", link: "/user-guide/browsing" },
             { text: "Watching", link: "/user-guide/watching" },
             { text: "Listening to music", link: "/user-guide/music" },
@@ -189,6 +190,7 @@ export default defineConfig({
             { text: "Jobs, worker & outbox", link: "/developer-guide/architecture/jobs-worker" },
             { text: "Packaging & release", link: "/developer-guide/architecture/packaging-release" },
             { text: "Performance budgets", link: "/developer-guide/architecture/performance-budgets" },
+            { text: "Security posture (implemented measures)", link: "/developer-guide/architecture/security-posture" },
           ],
         },
         {

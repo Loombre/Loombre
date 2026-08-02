@@ -13,6 +13,7 @@ don't recognize, that's a mistake on our part — please report it.
 ## What's in this guide
 
 - **[Joining Loombre](joining.md)** — using a link you were given, and getting back in if you forget your password.
+- **[Account settings](account-settings.md)** — changing your name, password, and email, and why big changes ask for your password again.
 - **[Browsing your library](browsing.md)** — finding movies, shows, and music.
 - **[Watching](watching.md)** — playing something, picking up where you left off, subtitles.
 - **[Listening to music](music.md)** — albums, artists, and playlists.

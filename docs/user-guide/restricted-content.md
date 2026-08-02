@@ -63,7 +63,7 @@ behind a click:
 If you'd like restricted content available to you and it isn't yet, ask
 whoever administers your Loombre — they'll need to grant you access to the
 specific library, and then you can opt in and set your own PIN from your
-account settings.
+[account settings](account-settings.md).
 
 ## Next
 
