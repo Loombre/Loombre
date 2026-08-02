@@ -115,6 +115,22 @@ export const ACTOR_FIELD_MAP: Record<string, readonly string[]> = {
   // entry is. Also ADMIN_ONLY (never grantable to a plugin subscriber in
   // the first place — see event-taxonomy.ts), same posture as probe.failed.
   "mail.failed": [],
+  // "Optional mail transport + invitation & reset flows", E2 (Lane A):
+  // user.invited's payload names {inviteId, usernamePreset, libraryIds,
+  // createdAtMs} — no field in USER_ID_FIELD_NAMES (a username preset is
+  // not a user id, and the invite has no user attached to it yet) — empty
+  // for the same reason plugin.*/probe.failed's entries are. ADMIN_ONLY
+  // (never grantable to a plugin subscriber — see event-taxonomy.ts).
+  "user.invited": [],
+  // user.invite-revoked's payload names only {inviteId, revokedAtMs} — same
+  // reasoning, empty. ADMIN_ONLY.
+  "user.invite-revoked": [],
+  // user.claimed's payload DOES carry a real userId (the newly claimed
+  // user) — mapped for the same reason user.restricted-pin-reset's userId
+  // is mapped despite ALSO being ADMIN_ONLY (ACTOR_FIELD_MAP tracks "does
+  // the schema carry a user-id-bearing field", not "is this type reachable
+  // by a plugin today" — see this file's header).
+  "user.claimed": ["userId"],
 };
 
 /**

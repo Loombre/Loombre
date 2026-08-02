@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://loombre.com/schemas/events/user.invited.schema.json",
+  "title": "UserInvitedPayload",
+  "description": "Payload for envelope.type === 'user.invited'. ADMIN_ONLY. Emitted when an admin creates an invite via POST /v1/invites. NEVER carries the raw claim token or its hash.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["inviteId", "usernamePreset", "libraryIds", "createdAtMs"],
+  "properties": {
+    "inviteId": { "type": "string", "format": "uuid" },
+    "usernamePreset": { "type": ["string", "null"] },
+    "libraryIds": {
+      "type": "array",
+      "items": { "type": "string", "format": "uuid" }
+    },
+    "createdAtMs": { "type": "integer", "minimum": 0 }
+  }
+}
