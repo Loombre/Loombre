@@ -143,6 +143,14 @@ How many PIN attempts one person may make per minute when unlocking restricted c
 
 - **Default when unset:** 5 (or whatever was last saved from the settings screen)
 
+### `LOOMBRE_RATE_CURRENT_PASSWORD`
+
+Pins **[Current-password re-authentication attempt limit](/admin-guide/settings-reference#current-password-re-authentication-attempt-limit)** (`rateLimit.currentPassword`) to a fixed value — set this and the admin settings screen shows the setting as controlled by the environment, read-only; any value stored from the settings screen is preserved but ignored until the variable is unset again.
+
+How many current-password re-authentication attempts one person may make per minute when changing their password, email, or restricted-content PIN. Guards against someone guessing the account password.
+
+- **Default when unset:** 10 (or whatever was last saved from the settings screen)
+
 ### `LOOMBRE_RATE_SETUP`
 
 Pins **[Setup wizard request limit](/admin-guide/settings-reference#setup-wizard-request-limit)** (`rateLimit.setup`) to a fixed value — set this and the admin settings screen shows the setting as controlled by the environment, read-only; any value stored from the settings screen is preserved but ignored until the variable is unset again.

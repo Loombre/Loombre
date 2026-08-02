@@ -246,6 +246,16 @@ How many PIN attempts one person may make per minute when unlocking restricted c
 - **Applies:** immediately — no restart needed.
 - **Can be locked:** if `LOOMBRE_RATE_UNLOCK` is set by whoever installed Loombre, this setting becomes fixed to that value and shows as controlled by the environment here — ask them, or see the [Operator Guide's environment reference](/ops/env-reference).
 
+### Current-password re-authentication attempt limit
+
+<small>Setting key: `rateLimit.currentPassword`</small>
+
+How many current-password re-authentication attempts one person may make per minute when changing their password, email, or restricted-content PIN. Guards against someone guessing the account password.
+
+- **Default:** 10
+- **Applies:** immediately — no restart needed.
+- **Can be locked:** if `LOOMBRE_RATE_CURRENT_PASSWORD` is set by whoever installed Loombre, this setting becomes fixed to that value and shows as controlled by the environment here — ask them, or see the [Operator Guide's environment reference](/ops/env-reference).
+
 ### Setup wizard request limit
 
 <small>Setting key: `rateLimit.setup`</small>
