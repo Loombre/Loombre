@@ -34,9 +34,32 @@ function isPgUniqueViolation(err: unknown): boolean {
   return typeof err === 'object' && err !== null && (err as { code?: unknown }).code === '23505';
 }
 
+/**
+ * R-F3/F3: `users` carries TWO unique constraints — `users_username_key`
+ * and `users_email_key` (CITEXT UNIQUE, 0001, loosened to nullable by
+ * 0023 — still unique when present). A 23505 raised by
+ * createUserAdminAndEmit's INSERT could be either one; the Postgres error
+ * object's own `constraint` field (never `detail`, which echoes the
+ * conflicting VALUE back — exactly the leak this function exists to avoid
+ * reading from) says which, so the caller below can raise a DISTINCT,
+ * accurate error instead of blaming the username for an email collision.
+ */
+function pgConstraintName(err: unknown): string | undefined {
+  if (typeof err !== 'object' || err === null) return undefined;
+  const constraint = (err as { constraint?: unknown }).constraint;
+  return typeof constraint === 'string' ? constraint : undefined;
+}
+
+const USERS_EMAIL_UNIQUE_CONSTRAINT = 'users_email_key';
+
 /** Thrown INSIDE the claim transaction to force a rollback (see
  *  claimInviteAndEmit's header) — never escapes this module. */
 class UsernameConflictError extends Error {}
+
+/** Same rollback contract as UsernameConflictError above, raised instead
+ *  when the 23505 is on `users_email_key` rather than `users_username_key`
+ *  — see claimInviteAndEmit's catch block and this module's header. */
+class EmailConflictError extends Error {}
 
 // ============================================================================
 // shape shared by createInvite/listInvites/getInvite's mappers
@@ -316,6 +339,7 @@ export interface ClaimInviteInput {
 export type ClaimInviteResult =
   | { ok: false; reason: 'invalid' }
   | { ok: false; reason: 'username-conflict' }
+  | { ok: false; reason: 'email-conflict' }
   | {
       ok: true;
       user: UserRow;
@@ -344,9 +368,12 @@ export type ClaimInviteResult =
  *   3. Create the user via createUserAdminAndEmit (the reused creation
  *      primitive, M6 — emits the EXISTING `user.created`, self-attributed
  *      since no actorUserId is passed). A username collision throws
- *      UsernameConflictError, which unwinds the WHOLE transaction
- *      (including step 2's claimed_at_ms write) so the invite is claimable
- *      again on retry — a username conflict must never burn the invite.
+ *      UsernameConflictError; an email collision (R-F3/F3 — users.email is
+ *      CITEXT UNIQUE too, distinguished via the 23505's own `constraint`
+ *      name, never blamed on the username) throws EmailConflictError.
+ *      Either unwinds the WHOLE transaction (including step 2's
+ *      claimed_at_ms write) so the invite is claimable again on retry — a
+ *      conflict, of either kind, must never burn the invite.
  *   4. library_permissions grants from user_invite_grants, RE-CHECKED
  *      against each library's current content_class (M4 defense in depth
  *      — a library could have flipped to restricted after the invite was
@@ -378,11 +405,43 @@ export async function claimInviteAndEmit(db: Kysely<DB>, input: ClaimInviteInput
         return { ok: false as const, reason: 'invalid' as const };
       }
 
+      // R-F3/F3 (E8, "no enumeration anywhere"): resolve the email BEFORE
+      // attempting to create the user. A candidate email that already
+      // belongs to another account is silently DROPPED — this claim
+      // proceeds exactly as if no email had been submitted at all — rather
+      // than rejected. A distinguishable rejection (even with perfectly
+      // accurate, username-agnostic wording) would still let an invite
+      // holder learn "this email exists" from the STATUS CODE alone
+      // (422 + rollback vs 201 + success); dropping it silently makes a
+      // taken-email claim and a free-email claim identical in status, body
+      // shape, AND invite-consumption behavior — there is nothing left to
+      // distinguish. Checked case-insensitively (CITEXT) via a plain
+      // SELECT inside this same transaction, not a second unique-
+      // constraint catch, specifically so the COMMON case never reaches a
+      // 23505/rollback at all. The (23505 -> EmailConflictError) branch
+      // below still exists as a narrow safety net for the vanishing race
+      // where the email is registered in the gap between this check and
+      // the INSERT below — that race is not a usable enumeration channel
+      // (an attacker cannot reliably trigger it to learn pre-existing
+      // state), so it stays a hard rollback+422 rather than a second
+      // silent-retry attempt.
+      let email = input.email;
+      if (email !== null) {
+        const existingByEmail = await trx
+          .selectFrom('users')
+          .select('id')
+          .where('email', '=', email)
+          .executeTakeFirst();
+        if (existingByEmail) {
+          email = null;
+        }
+      }
+
       let user: UserRow;
       try {
         user = await createUserAdminAndEmit(trx, {
           username: input.username,
-          email: input.email,
+          email,
           passwordHash: input.passwordHash,
           isAdmin: false,
           maxContentRating: null,
@@ -394,6 +453,12 @@ export async function claimInviteAndEmit(db: Kysely<DB>, input: ClaimInviteInput
         });
       } catch (err) {
         if (isPgUniqueViolation(err)) {
+          // Distinguish which constraint actually fired instead of
+          // blaming the username for every 23505 — a free username must
+          // never surface as a (false) username conflict.
+          if (pgConstraintName(err) === USERS_EMAIL_UNIQUE_CONSTRAINT) {
+            throw new EmailConflictError();
+          }
           throw new UsernameConflictError();
         }
         throw err;
@@ -460,6 +525,9 @@ export async function claimInviteAndEmit(db: Kysely<DB>, input: ClaimInviteInput
   } catch (err) {
     if (err instanceof UsernameConflictError) {
       return { ok: false, reason: 'username-conflict' };
+    }
+    if (err instanceof EmailConflictError) {
+      return { ok: false, reason: 'email-conflict' };
     }
     throw err;
   }

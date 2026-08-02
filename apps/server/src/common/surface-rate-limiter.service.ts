@@ -103,8 +103,10 @@ export class SurfaceRateLimiterService implements OnApplicationBootstrap {
   /** GET /setup/state + POST /setup/first-admin — per-IP (default 20/min,
    *  rateLimit.setup). Unauthenticated first-boot surface. */
   readonly setup: KeyedRateLimiter;
-  /** GET/POST /claim/{token} — per-IP (default 10/min, rateLimit.claim,
-   *  M12). Unauthenticated invite-claim surface. */
+  /** GET/POST /invites/claim/{token} — per-IP (default 10/min,
+   *  rateLimit.claim, M12; F1 fix wave moved this off bare /claim/{token},
+   *  which collided with the web page route). Unauthenticated
+   *  invite-claim surface. */
   readonly claim: KeyedRateLimiter;
   /** POST /auth/forgot-password + POST /auth/reset-password — per-IP
    *  (default 5/min, rateLimit.passwordReset). STATE.md "Optional mail

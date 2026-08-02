@@ -20,11 +20,12 @@
 // no isAuthenticated redirect anywhere in this file, by design, not
 // omission.
 //
-// Byte-identical-404 posture (E8/M12): GET /claim/{token} resolves
-// invalid/expired/already-claimed/revoked tokens to the SAME 404 an
-// unknown route returns — this screen therefore shows exactly ONE generic
-// "isn't valid" screen for all four cases and never tries to guess which
-// one applies; the server deliberately gives it nothing to guess from.
+// Byte-identical-404 posture (E8/M12): GET /invites/claim/{token} (F1: the
+// API's own path, distinct from this page's own /claim/[token] route)
+// resolves invalid/expired/already-claimed/revoked tokens to the SAME 404
+// — this screen therefore shows exactly ONE generic "isn't valid" screen
+// for all four cases and never tries to guess which one applies; the
+// server deliberately gives it nothing to guess from.
 //
 // Claim success (M13) mints a real TokenPair — applyTokenPair + redirect
 // straight to /home, same as a normal login.
@@ -66,7 +67,7 @@ export function ClaimScreen({ token }: { token: string }): React.JSX.Element {
   useEffect(() => {
     let cancelled = false;
     publicClient()
-      .get("/claim/{token}", { params: { path: { token } } })
+      .get("/invites/claim/{token}", { params: { path: { token } } })
       .then((state) => {
         if (cancelled) return;
         setClaimState(state);
@@ -99,7 +100,7 @@ export function ClaimScreen({ token }: { token: string }): React.JSX.Element {
     try {
       const deviceProfile = await buildDeviceProfile();
       const hasUsernamePreset = claimState.usernamePreset !== null;
-      const pair = await publicClient().post("/claim/{token}", {
+      const pair = await publicClient().post("/invites/claim/{token}", {
         params: { path: { token } },
         body: {
           ...(hasUsernamePreset ? {} : { username }),
