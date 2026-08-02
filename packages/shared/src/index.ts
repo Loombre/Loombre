@@ -12,3 +12,4 @@ export * from "./language-codes.js";
 export * from "./admin-only-event-types.js";
 export * from "./stash-path-mapping.js";
 export * from "./temporary-password.js";
+export * from "./email-format.js";
