@@ -20,6 +20,17 @@ import { JOB_QUEUE_OPTIONS, JOB_TYPES, type JobPayloads, type JobType } from './
 export interface EnqueueOptions {
   priority?: number;
   subjectItemId?: string | null;
+  /**
+   * Per-send override of this job type's queue-level retryLimit
+   * (JOB_QUEUE_OPTIONS, types.ts) — optional mail transport run, M7 ("
+   * enqueue() must support a per-send retryLimit override"). pg-boss's
+   * `send()` options accept every QueueOptions field (SendOptions =
+   * JobOptions & QueueOptions), so this passes straight through; first
+   * consumer is the admin test-send action (apps/server/src/mail/
+   * admin-mail.controller.ts), which always sends 0 — a manual probe
+   * should fail fast and visibly, not silently retry for minutes.
+   */
+  retryLimit?: number;
 }
 
 export interface WorkOptions<T extends JobType = JobType> {
@@ -42,8 +53,19 @@ export interface WorkOptions<T extends JobType = JobType> {
    * is the first) can turn a terminal job failure into something visible
    * beyond the generic jobs ledger's free-text last_error, without this
    * package taking on any opinion about WHAT that visibility looks like.
+   *
+   * Third parameter `jobId` (optional mail transport run, M6): added
+   * ADDITIVELY — apps/worker/src/mail/terminal-failure-hook.ts's
+   * `mail.failed` event payload is contractually required to carry the
+   * failed job's id (packages/contract/event-schemas/mail.failed.schema.json),
+   * which the pre-existing 2-argument hooks (probe, stash-sync) never
+   * needed (they resolve their own subject row from `payload` instead).
+   * Backward compatible by construction: a function value typed with fewer
+   * parameters than its declared type is a normal, safe JS/TS assignment
+   * (the extra argument is simply never read) — neither existing hook
+   * needed a signature change.
    */
-  onTerminalFailure?: (payload: JobPayloads[T], error: unknown) => void | Promise<void>;
+  onTerminalFailure?: (payload: JobPayloads[T], error: unknown, jobId: string) => void | Promise<void>;
 }
 
 export type JobHandler<T extends JobType> = (
@@ -188,6 +210,7 @@ export function createJobQueue(connectionString: string, options: CreateJobQueue
         sent = await boss.send(type, payload, {
           id: jobId,
           ...(opts.priority !== undefined ? { priority: opts.priority } : {}),
+          ...(opts.retryLimit !== undefined ? { retryLimit: opts.retryLimit } : {}),
         });
       } catch (err) {
         // The queued ledger row now describes a job that never made it into
@@ -263,7 +286,7 @@ export function createJobQueue(connectionString: string, options: CreateJobQueue
                   // onTerminalFailure's doc comment for the full rationale.
                   if (!willRetry && opts.onTerminalFailure) {
                     try {
-                      await opts.onTerminalFailure(job.data as JobPayloads[typeof type], err);
+                      await opts.onTerminalFailure(job.data as JobPayloads[typeof type], err, job.id);
                     } catch (hookErr) {
                       console.error(`[@loombre/jobs] onTerminalFailure hook threw for job ${job.id} (${type}):`, hookErr);
                     }
