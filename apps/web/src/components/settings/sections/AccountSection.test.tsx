@@ -188,6 +188,48 @@ describe("AccountSection", () => {
     expect(options.body["birthDate"]).toBe(null);
   });
 
+  // ── E4/M1: email is now an OPTIONAL profile field ───────────────────────
+  describe("optional email (E4/M1)", () => {
+    it("the email field has no `required` attribute and is labelled optional", async () => {
+      await render();
+      expect(inputFor("Email").hasAttribute("required")).toBe(false);
+      const label = Array.from(view!.container.querySelectorAll("label")).find((l) =>
+        (l.textContent ?? "").startsWith("Email"),
+      )!;
+      expect(label.textContent).toMatch(/optional/i);
+    });
+
+    it("clearing the email PATCHes email: null — the same null-to-clear precedent as birthDate", async () => {
+      await render();
+      expect(inputFor("Email").value).toBe(ME.email);
+      setNativeValue(inputFor("Email"), "");
+      await click(buttonFor("Save profile"));
+
+      expect(apiPatchMock).toHaveBeenCalledTimes(1);
+      const [path, options] = apiPatchMock.mock.calls[0] as [string, { body: Record<string, unknown> }];
+      expect(path).toBe("/users/me");
+      expect(options.body["email"]).toBe(null);
+    });
+
+    it("a user with no email on file loads with an empty field, not a crash", async () => {
+      apiGetMock.mockImplementation((path: string) => {
+        if (path === "/users/me") return Promise.resolve({ ...ME, email: null });
+        return Promise.resolve({ ...SETTINGS_DEFAULT });
+      });
+      await render();
+      expect(inputFor("Email").value).toBe("");
+    });
+
+    it("a set email still round-trips as the string", async () => {
+      await render();
+      setNativeValue(inputFor("Email"), "new@example.com");
+      await click(buttonFor("Save profile"));
+
+      const [, options] = apiPatchMock.mock.calls[0] as [string, { body: Record<string, unknown> }];
+      expect(options.body["email"]).toBe("new@example.com");
+    });
+  });
+
   it("a set birth date still round-trips as the ISO string", async () => {
     await render();
     setNativeValue(inputFor("Birth date"), "1991-02-03");
