@@ -23,7 +23,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ENVELOPE_SCHEMA_PATH = path.resolve(__dirname, "../../contract/event-schemas/envelope.schema.json");
 
 describe("ADMIN_ONLY_EVENT_TYPES (canonical, L3)", () => {
-  it("is exactly this 15-item inventory (the single place a human confirms the list)", () => {
+  it("is exactly this 18-item inventory (the single place a human confirms the list)", () => {
     expect([...ADMIN_ONLY_EVENT_TYPES].sort()).toEqual(
       [
         "job.updated",
@@ -45,6 +45,10 @@ describe("ADMIN_ONLY_EVENT_TYPES (canonical, L3)", () => {
         "stash.sync.completed",
         // Optional mail transport run, E6/M6.
         "mail.failed",
+        // Optional mail transport + invitation & reset flows, E2 (Lane A).
+        "user.invited",
+        "user.invite-revoked",
+        "user.claimed",
       ].sort(),
     );
   });
