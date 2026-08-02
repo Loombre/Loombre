@@ -1,17 +1,15 @@
 /* SPDX-License-Identifier: AGPL-3.0-only */
 
-/* Phosphor H1 retheme (design/phosphor/dc:2632-2663). ONE responsive tree
-   (U2) — the rules below reflow the same markup at the shared 767.98px
-   breakpoint (AppShell/MovieDetailScreen convention, tokens.css "Mobile
-   chrome layout"); there is no separate mobile branch in page.tsx. */
+/* Loombre :: apps/web/src/components/auth/AuthScreen.module.css
+ *
+ * Same measure/brand/wordmark/tagline recipe as apps/web/src/app/login/
+ * page.module.css (see AuthScreen.tsx's header) — one responsive tree (U2),
+ * no separate mobile branch; the shared 767.98px breakpoint reflows this
+ * same markup.
+ */
 
 .page {
-  /* ONE measure for the whole login column. The server pill used to be
-     width:100% with no cap, so it stretched to the viewport (~1940px on a
-     desktop) while the form sat at 340px — it read as a page-wide banner
-     rather than part of the sign-in card. Both now derive from this single
-     value, so they cannot drift apart again. */
-  --login-measure: 340px;
+  --auth-measure: 360px;
 
   min-height: 100vh;
   display: flex;
@@ -24,11 +22,6 @@
     var(--color-bg);
 }
 
-/* STATE.md "Blaze logo rollout" G1/D2 — stacked lockup: BlazeMark above
-   the wordmark, replacing the former pulsing accent-dot (its class +
-   keyframes deleted along with their reduced-motion rule — there's nothing
-   left to collapse; the exact identifiers are deliberately not named here,
-   the brand:pulse-dot gate bans them from apps/ source, comments included). */
 .brand {
   display: flex;
   flex-direction: column;
@@ -40,16 +33,9 @@
 .wordmark {
   font-family: var(--font-sans);
   font-stretch: var(--wdth-wordmark);
-
-  /* weight-800-over-900 law (W3 fidelity-audit conflict 5): build follows
-     the README, not the pre-Blaze retheme's 900 guess. */
   font-weight: var(--weight-black);
   font-size: 30px;
   letter-spacing: 0.24em;
-
-  /* D2's stacked-lockup optical centering — the wordmark's own left
-     letter-spacing needs a matching left inset or it reads off-center
-     under the mark above it. */
   padding-left: 0.24em;
   text-transform: uppercase;
   color: var(--color-text);
@@ -63,25 +49,26 @@
   color: var(--color-text-subtle);
   margin-bottom: var(--space-2xl);
   text-align: center;
+  max-width: var(--auth-measure);
 }
 
-/* Pill / SWITCH / server-input styling lives in ServerIndicator.module.css
-   (that component is its own file so it can be jsdom-tested without a
-   router/auth-store — see its header). */
-.serverRow {
-  margin-bottom: var(--space-2xl);
-  display: flex;
-  justify-content: center;
+.card {
   width: 100%;
-  max-width: var(--login-measure);
-}
-
-.form {
-  width: 100%;
-  max-width: var(--login-measure);
+  max-width: var(--auth-measure);
   display: flex;
   flex-direction: column;
   gap: var(--space-sm);
+}
+
+/* ── Shared form recipe (login/page.module.css's own field/label/error/
+   submit/footnote shapes, reused rather than reinvented — see this file's
+   header) ─────────────────────────────────────────────────────────────── */
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  width: 100%;
 }
 
 .formHeading {
@@ -94,29 +81,12 @@
   margin-bottom: var(--space-2xs);
 }
 
-/* M14 must-change-password step (Lane D, Optional Mail Transport run) —
-   plain sentence-case body copy, distinct from the mono uppercase
-   .formHeading/.footnote treatment above it. */
-.mustChangeNote {
+.bodyText {
   font-size: var(--text-sm);
   color: var(--color-text-secondary);
   line-height: var(--leading-normal);
   text-align: center;
-  margin: 0 0 var(--space-2xs);
-}
-
-/* M8 "Forgot password?" link, shown only when Capabilities.
-   passwordResetAvailable is true. */
-.forgotLink {
-  align-self: center;
-  font-size: var(--text-sm);
-  color: var(--color-accent);
-  text-decoration: none;
-  margin-top: var(--space-3xs);
-}
-
-.forgotLink:hover {
-  text-decoration: underline;
+  margin: 0 0 var(--space-xs);
 }
 
 .field {
@@ -158,6 +128,21 @@
   margin-top: var(--space-sm);
 }
 
+.linkRow {
+  text-align: center;
+  margin-top: var(--space-xs);
+}
+
+.link {
+  font-size: var(--text-sm);
+  color: var(--color-accent);
+  text-decoration: none;
+}
+
+.link:hover {
+  text-decoration: underline;
+}
+
 @media (width <= 767.98px) {
   .wordmark {
     font-size: 24px;
@@ -165,10 +150,6 @@
 
   .tagline {
     font-size: var(--mono-md);
-    margin-bottom: var(--space-xl);
-  }
-
-  .serverRow {
     margin-bottom: var(--space-xl);
   }
 }
