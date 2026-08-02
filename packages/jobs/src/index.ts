@@ -17,6 +17,7 @@ export type {
   PgUpgradeJobPayload,
   StashInventoryJobPayload,
   StashSyncJobPayload,
+  MailSendJobPayload,
 } from './types.js';
 export { JOB_TYPES } from './types.js';
 
