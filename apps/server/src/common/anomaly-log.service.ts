@@ -1,11 +1,23 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Loombre :: apps/server/src/session/anomaly-log.service.ts
+// Loombre :: apps/server/src/common/anomaly-log.service.ts
 //
 // fail2ban-compatible single-line auth anomaly log (STATE.md P2.1/P2.12,
 // docs/PLAN.md §10). Appended to a LOCAL file only — never a network call
 // of any kind (CLAUDE.md invariant 7, D14: no telemetry/phone-home, ever).
 // Path from LOOMBRE_AUTH_LOG_FILE, default <cwd>/logs/auth-anomaly.log; the
 // directory (and any missing parents) is created at construction.
+//
+// RELOCATED from session/ to common/ (G3, STATE.md "Current-password
+// re-auth on self-changes"): CURRENT_PASSWORD_FAILURE (below) is logged
+// from BOTH catalog/users.controller.ts's updateMe AND
+// session/users-me.controller.ts's putRestricted — dependency-cruiser's
+// D2 module-boundary rule (catalog and session may only share IDs, never
+// import one another) makes it structurally impossible for this to keep
+// living in session/ once catalog needs it too. Exact same relocation
+// rationale as common/rate-limiter.ts's own header (that file's P4.15
+// sweep) — zero behavior change, only the file's address (and its
+// SettingsService-consuming siblings' module, common-settings.module.ts)
+// changed; every import site was updated in the same change.
 //
 // Line format (stable, greppable, one event per line):
 //   <ISO-8601 UTC timestamp> loombre-auth <EVENT_KIND> key=value key=value...
@@ -14,7 +26,7 @@
 //
 // Example fail2ban filter (failregex), for an operator's jail.local:
 //   [Definition]
-//   failregex = ^\S+ loombre-auth (FAILED_LOGIN|PIN_FAILURE|RATE_LIMITED) .*ip=<HOST>
+//   failregex = ^\S+ loombre-auth (FAILED_LOGIN|PIN_FAILURE|CURRENT_PASSWORD_FAILURE|RATE_LIMITED) .*ip=<HOST>
 //   ignoreregex =
 //
 // Fields are a closed, non-secret vocabulary (ip/user/device/op) —
@@ -39,7 +51,16 @@ import { appendFileSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { SettingsService } from "../settings/settings.service.js";
 
-export type AnomalyEventKind = "FAILED_LOGIN" | "REFRESH_REUSE" | "PIN_FAILURE" | "RATE_LIMITED";
+// G3: CURRENT_PASSWORD_FAILURE — a well-formed but wrong currentPassword on
+// PATCH /users/me (when the body carries password/email) or
+// PUT /users/me/restricted (always) — same posture as PIN_FAILURE
+// (restricted.controller.ts's unlock handler), one line per failed compare.
+export type AnomalyEventKind =
+  | "FAILED_LOGIN"
+  | "REFRESH_REUSE"
+  | "PIN_FAILURE"
+  | "CURRENT_PASSWORD_FAILURE"
+  | "RATE_LIMITED";
 
 /** Closed, non-secret vocabulary — deliberately excludes anything
  *  password/PIN-shaped so a caller cannot pass a secret through even by
