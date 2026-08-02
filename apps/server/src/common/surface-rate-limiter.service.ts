@@ -103,12 +103,16 @@ export class SurfaceRateLimiterService implements OnApplicationBootstrap {
   /** GET /setup/state + POST /setup/first-admin — per-IP (default 20/min,
    *  rateLimit.setup). Unauthenticated first-boot surface. */
   readonly setup: KeyedRateLimiter;
+  /** GET/POST /claim/{token} — per-IP (default 10/min, rateLimit.claim,
+   *  M12). Unauthenticated invite-claim surface. */
+  readonly claim: KeyedRateLimiter;
 
   constructor(private readonly settingsService: SettingsService) {
     this.capabilities = new KeyedRateLimiter(perMinutePolicy(settingsService, "rateLimit.capabilities", 120));
     this.mediaToken = new KeyedRateLimiter(perMinutePolicy(settingsService, "rateLimit.mediaToken", 600));
     this.export = new KeyedRateLimiter(perHourPolicy(settingsService, "rateLimit.export", 5));
     this.setup = new KeyedRateLimiter(perMinutePolicy(settingsService, "rateLimit.setup", 20));
+    this.claim = new KeyedRateLimiter(perMinutePolicy(settingsService, "rateLimit.claim", 10));
 
     settingsService.onChange((event) => {
       switch (event.key) {
@@ -124,6 +128,9 @@ export class SurfaceRateLimiterService implements OnApplicationBootstrap {
         case "rateLimit.setup":
           this.setup.updatePolicy(perMinutePolicy(this.settingsService, "rateLimit.setup", 20));
           break;
+        case "rateLimit.claim":
+          this.claim.updatePolicy(perMinutePolicy(this.settingsService, "rateLimit.claim", 10));
+          break;
         default:
           break;
       }
@@ -138,5 +145,6 @@ export class SurfaceRateLimiterService implements OnApplicationBootstrap {
     this.mediaToken.updatePolicy(perMinutePolicy(this.settingsService, "rateLimit.mediaToken", 600));
     this.export.updatePolicy(perHourPolicy(this.settingsService, "rateLimit.export", 5));
     this.setup.updatePolicy(perMinutePolicy(this.settingsService, "rateLimit.setup", 20));
+    this.claim.updatePolicy(perMinutePolicy(this.settingsService, "rateLimit.claim", 10));
   }
 }

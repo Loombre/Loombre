@@ -14,11 +14,18 @@ import { SurfaceRateLimiterService } from "./surface-rate-limiter.service.js";
 import { createFakeSettingsService } from "./test-support/fake-settings-service.js";
 
 describe("SurfaceRateLimiterService", () => {
-  it("defaults: capabilities 120/min, mediaToken 600/min, export 5/hour", () => {
+  it("defaults: capabilities 120/min, mediaToken 600/min, export 5/hour, claim 10/min", () => {
     const service = new SurfaceRateLimiterService(createFakeSettingsService({ env: {} }).service);
     expect(service.capabilities.attempt("k").allowed).toBe(true);
     expect(service.mediaToken.attempt("k").allowed).toBe(true);
     expect(service.export.attempt("k").allowed).toBe(true);
+    expect(service.claim.attempt("k").allowed).toBe(true);
+  });
+
+  it("rateLimit.claim (M12): env override changes capacity, independent key bucket", () => {
+    const service = new SurfaceRateLimiterService(createFakeSettingsService({ env: { LOOMBRE_RATE_CLAIM: "1" } }).service);
+    expect(service.claim.attempt("only-key").allowed).toBe(true);
+    expect(service.claim.attempt("only-key").allowed).toBe(false);
   });
 
   it("env overrides change capacity", () => {

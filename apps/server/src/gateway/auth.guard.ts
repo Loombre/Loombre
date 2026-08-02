@@ -30,6 +30,13 @@ export interface AuthenticatedRequest extends Request {
  * becomes permanently inert (any user exists) — see
  * apps/server/src/setup/setup.controller.ts's header for why it 404s
  * byte-identically to an unknown route rather than ever answering 401.
+ *
+ * "Optional mail transport + invitation & reset flows" E2/M12 (Lane A)
+ * added GET/POST /claim/{token} — also `security: []`, and also public
+ * PERMANENTLY for a given token even after it's expired/claimed/revoked,
+ * same "invisible == nonexistent" posture as setup's own byte-identical
+ * 404 — see PUBLIC_ROUTE_PATTERNS below for why these two need a SEPARATE
+ * matching mechanism from the literal-string Set above.
  */
 const PUBLIC_ROUTES = new Set([
   "GET /healthz",
@@ -39,6 +46,31 @@ const PUBLIC_ROUTES = new Set([
   "GET /setup/state",
   "POST /setup/first-admin",
 ]);
+
+/**
+ * "Optional mail transport + invitation & reset flows", E2/M12 (Lane A):
+ * GET/POST /claim/{token} are public, but — unlike every PUBLIC_ROUTES
+ * entry above — carry a variable path segment (the raw invite token),
+ * which a literal-string Set can never match. This is the FIRST dynamic
+ * public route in the codebase; extending the guard with a small parallel
+ * pattern list (rather than rewriting PUBLIC_ROUTES into a router) keeps
+ * every existing literal entry's matching untouched and keeps the new
+ * behavior narrowly scoped to the one new shape. `[^/]+` deliberately
+ * matches ANY non-empty single path segment (never validated as a real
+ * token shape here) — a syntactically-wrong token is indistinguishable
+ * from an unknown one by the time it reaches the controller (byte-
+ * identical 404, invites.controller.ts), so this guard has no reason to
+ * pre-filter it.
+ */
+const PUBLIC_ROUTE_PATTERNS: ReadonlyArray<{ method: string; pattern: RegExp }> = [
+  { method: "GET", pattern: /^\/claim\/[^/]+$/ },
+  { method: "POST", pattern: /^\/claim\/[^/]+$/ },
+];
+
+function isPublicRoute(method: string, path: string): boolean {
+  if (PUBLIC_ROUTES.has(`${method} ${path}`)) return true;
+  return PUBLIC_ROUTE_PATTERNS.some((entry) => entry.method === method && entry.pattern.test(path));
+}
 
 const BEARER_PATTERN = /^Bearer\s+(\S+)$/;
 
@@ -75,7 +107,7 @@ export class AuthGuard implements CanActivate {
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const req = context.switchToHttp().getRequest<AuthenticatedRequest>();
 
-    if (PUBLIC_ROUTES.has(`${req.method} ${req.path}`)) {
+    if (isPublicRoute(req.method, req.path)) {
       return true;
     }
 
