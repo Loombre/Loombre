@@ -23,7 +23,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ENVELOPE_SCHEMA_PATH = path.resolve(__dirname, "../../contract/event-schemas/envelope.schema.json");
 
 describe("ADMIN_ONLY_EVENT_TYPES (canonical, L3)", () => {
-  it("is exactly this 18-item inventory (the single place a human confirms the list)", () => {
+  it("is exactly this 19-item inventory (the single place a human confirms the list)", () => {
     expect([...ADMIN_ONLY_EVENT_TYPES].sort()).toEqual(
       [
         "job.updated",
@@ -49,6 +49,8 @@ describe("ADMIN_ONLY_EVENT_TYPES (canonical, L3)", () => {
         "user.invited",
         "user.invite-revoked",
         "user.claimed",
+        // E3/M14/M15 (Optional mail transport + invitation & reset flows, Lane B).
+        "user.password-reset",
       ].sort(),
     );
   });
