@@ -47,8 +47,10 @@
 import { sql, type Kysely, type Selectable } from 'kysely';
 import type { DB, DevicesTable, ItemType, JobsTable, PlaybackSessionStatus, UsersTable } from '../types.js';
 import type { ViewerContext } from '../context.js';
+import { withTransaction } from '../internal/index.js';
 import { applyGuard, applyGuardToJoined } from './guard.js';
 import { decodeCursor, encodeCursor } from './cursor.js';
+import { revokeOtherRefreshTokensForUser } from './identity.js';
 
 export type UserRow = Selectable<UsersTable>;
 export type DeviceRow = Selectable<DevicesTable>;
@@ -178,6 +180,11 @@ export interface UpdateUserSelfInput {
   passwordHash?: string;
   /** M2: `undefined` -> untouched; `null` clears it. */
   displayName?: string | null;
+  /** F5 (fix wave): the CALLER's own device, from the access token's
+   *  `deviceId` claim — only consulted when `passwordHash` is present.
+   *  `undefined`/`null` both mean "no current session to preserve",
+   *  revoking every device the same as the dedicated reset paths do. */
+  currentDeviceId?: string | null;
   nowMs: number;
 }
 
@@ -187,31 +194,53 @@ export interface UpdateUserSelfInput {
  *
  *  E3a/M14 (STATE.md "Optional mail transport + invitation & reset
  *  flows"): whenever `passwordHash` is present, `must_change_password` is
- *  cleared in the SAME single-statement UPDATE (a single UPDATE is its own
- *  transaction — nothing else needs to change alongside it here: unlike
- *  the dedicated reset paths, an ordinary self-service password change via
- *  PATCH /users/me is not itself a recovery event, so it neither revokes
- *  refresh tokens nor emits `user.password-reset`). This is what makes
- *  "set a new password -> the flag clears -> the very next request with
- *  the SAME access token has full access" true for PATCH /users/me
- *  specifically. */
+ *  cleared in the SAME statement. This is what makes "set a new password
+ *  -> the flag clears -> the very next request with the SAME access token
+ *  has full access" true for PATCH /users/me specifically (the access
+ *  token itself is a JWT, unaffected by a refresh-token revocation below —
+ *  only a later refresh would be blocked).
+ *
+ *  F5 (opus adversarial review, fix wave): a password change also revokes
+ *  every OTHER refresh token this user holds, in the SAME transaction —
+ *  this is the one password-set path that used to revoke nothing at all
+ *  (resetUserPasswordAndEmit and resetPasswordViaTokenAndEmit both already
+ *  revoke everything), which mattered because the must-change-password
+ *  guard's allow-list (auth.guard.ts's MUST_CHANGE_PASSWORD_ALLOWED_ROUTES)
+ *  deliberately permits PATCH /users/me — a stolen access token could set
+ *  a new password and clear the flag without ever disturbing the
+ *  legitimate owner's OTHER sessions. `currentDeviceId` (the caller's own
+ *  device, from the access-token claim) is preserved rather than revoked
+ *  when cleanly identifiable — the caller is, by construction, already
+ *  authenticated for this exact request — falling back to revoking
+ *  everything when it isn't (see revokeOtherRefreshTokensForUser's own
+ *  doc comment). A stronger `currentPassword` confirmation requirement is
+ *  a separate, owner-acknowledged decision, deliberately NOT implemented
+ *  here (freeze report). */
 export async function updateUserSelf(
   db: Kysely<DB>,
   userId: string,
   input: UpdateUserSelfInput
 ): Promise<UserRow | undefined> {
-  return db
-    .updateTable('users')
-    .set({
-      ...(input.email !== undefined ? { email: input.email } : {}),
-      ...(input.birthDate !== undefined ? { birth_date: input.birthDate } : {}),
-      ...(input.passwordHash !== undefined ? { password_hash: input.passwordHash, must_change_password: false } : {}),
-      ...(input.displayName !== undefined ? { display_name: input.displayName } : {}),
-      updated_at_ms: input.nowMs,
-    })
-    .where('id', '=', userId)
-    .returningAll()
-    .executeTakeFirst();
+  return withTransaction(db, async (trx) => {
+    const updated = await trx
+      .updateTable('users')
+      .set({
+        ...(input.email !== undefined ? { email: input.email } : {}),
+        ...(input.birthDate !== undefined ? { birth_date: input.birthDate } : {}),
+        ...(input.passwordHash !== undefined ? { password_hash: input.passwordHash, must_change_password: false } : {}),
+        ...(input.displayName !== undefined ? { display_name: input.displayName } : {}),
+        updated_at_ms: input.nowMs,
+      })
+      .where('id', '=', userId)
+      .returningAll()
+      .executeTakeFirst();
+
+    if (updated && input.passwordHash !== undefined) {
+      await revokeOtherRefreshTokensForUser(trx, userId, input.currentDeviceId ?? null, input.nowMs);
+    }
+
+    return updated;
+  });
 }
 
 // ============================================================================

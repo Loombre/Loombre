@@ -304,6 +304,9 @@ export {
   // comments; revokeAllRefreshTokensForUser is also reused by
   // src/query/password-reset.js's resetPasswordViaTokenAndEmit.
   revokeAllRefreshTokensForUser,
+  // F5 (fix wave) — self-service PATCH /users/me password changes; see
+  // src/query/identity.js's own doc comment.
+  revokeOtherRefreshTokensForUser,
   resetUserPasswordAndEmit,
   // First-boot setup (STATE.md P4.6/P4.10) — see src/query/identity.js's
   // countUsers/createFirstAdminIfEmpty doc comments.
