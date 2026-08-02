@@ -13,6 +13,14 @@
 // IA rather than being dropped. Logged in this lane's freeze report as a
 // lane-decided addition, not a prototype tab.
 //
+// Lane D (Optional Mail Transport run, STATE.md): a 10th section, "mail",
+// for the new mail subsystem admin UI (E5/E6/M10/M11) — task spec: "new
+// SettingsSectionKey 'mail' wired through section-registry.ts +
+// SettingsShell.tsx renderSection + app/settings/mail/page.tsx". Placed
+// after "plugins" (both are provider-adjacent write-only-credential
+// surfaces) and before "advanced" (the registry fields this section ALSO
+// composes for its five mail.*/network.publicUrl keys).
+//
 // This file stays framework-free (no React) on purpose: mobile-header.ts
 // (a pure, hook-free route resolver) imports SETTINGS_SECTIONS directly to
 // title the mobile back-chevron chrome for every `/settings/<key>` drill-
@@ -44,6 +52,7 @@ export type SettingsSectionKey =
   | "playback"
   | "remote-access"
   | "plugins"
+  | "mail"
   | "advanced"
   | "about";
 
@@ -67,6 +76,7 @@ export const SETTINGS_SECTIONS: SettingsSectionConfig[] = [
   { key: "playback", label: "Playback", href: "/settings/playback", adminOnly: true },
   { key: "remote-access", label: "Remote Access", href: "/settings/remote-access", adminOnly: true },
   { key: "plugins", label: "Plugins", href: "/settings/plugins", adminOnly: true },
+  { key: "mail", label: "Mail", href: "/settings/mail", adminOnly: true },
   { key: "advanced", label: "Advanced Server", href: "/settings/advanced", adminOnly: true },
   { key: "about", label: "About", href: "/settings/about", adminOnly: true },
 ];
