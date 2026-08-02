@@ -195,3 +195,55 @@ describe("M1/M2: PATCH /users/{id} (admin) — displayName and email null-clear"
     expect(updated.body.email).toBeNull();
   });
 });
+
+describe("F5 (opus adversarial review, fix wave): PATCH /users/me {password} revokes the caller's OTHER sessions", () => {
+  it("a second device's refresh token is revoked; the CALLING device's own refresh token survives", async () => {
+    const username = `f5-self-password-${Date.now()}`;
+    const oldPassword = "correct-horse-battery-old-f5";
+    const created = await request(app.getHttpServer())
+      .post("/users")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ username, email: `${username}@example.invalid`, password: oldPassword });
+    expect(created.status).toBe(201);
+
+    const deviceA = await request(app.getHttpServer())
+      .post("/auth/login")
+      .send({ username, password: oldPassword, deviceName: "f5-device-a", deviceProfile: buildDeviceProfile("device-a") });
+    expect(deviceA.status).toBe(200);
+    const deviceB = await request(app.getHttpServer())
+      .post("/auth/login")
+      .send({ username, password: oldPassword, deviceName: "f5-device-b", deviceProfile: buildDeviceProfile("device-b") });
+    expect(deviceB.status).toBe(200);
+
+    // Change the password FROM device A's own (live) access token.
+    const newPassword = "correct-horse-battery-new-f5";
+    const patch = await request(app.getHttpServer())
+      .patch("/users/me")
+      .set("Authorization", `Bearer ${deviceA.body.accessToken}`)
+      .send({ password: newPassword });
+    expect(patch.status).toBe(200);
+
+    // Device B's refresh token is dead — its session is over.
+    const refreshB = await request(app.getHttpServer())
+      .post("/auth/refresh")
+      .send({ refreshToken: deviceB.body.refreshToken, deviceId: deviceB.body.deviceId });
+    expect(refreshB.status).toBe(401);
+
+    // Device A's own refresh token is UNTOUCHED — the calling session
+    // survives its own password change.
+    const refreshA = await request(app.getHttpServer())
+      .post("/auth/refresh")
+      .send({ refreshToken: deviceA.body.refreshToken, deviceId: deviceA.body.deviceId });
+    expect(refreshA.status, JSON.stringify(refreshA.body)).toBe(200);
+
+    // The new password works; the old one no longer does.
+    const oldLogin = await request(app.getHttpServer())
+      .post("/auth/login")
+      .send({ username, password: oldPassword, deviceName: "f5-old-check", deviceProfile: buildDeviceProfile("old-check") });
+    expect(oldLogin.status).toBe(401);
+    const newLogin = await request(app.getHttpServer())
+      .post("/auth/login")
+      .send({ username, password: newPassword, deviceName: "f5-new-check", deviceProfile: buildDeviceProfile("new-check") });
+    expect(newLogin.status).toBe(200);
+  });
+});
