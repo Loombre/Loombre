@@ -105,14 +105,17 @@ function ProfileSection(): React.JSX.Element {
     setStatus("saving");
     setError(null);
     try {
-      // `birthDate` is always sent, `null` when the input is empty: the
-      // contract types it `[string, 'null']` precisely so it can be
-      // cleared, and updateMe only touches the column when the key is
-      // PRESENT — omitting it (as this form used to) made clearing a
-      // stored birth date impossible.
-      const body: { displayName: string | null; email: string; birthDate: string | null } = {
+      // `birthDate` AND (E4/M1) `email` are always sent, `null` when the
+      // input is empty: the contract types both `[string, 'null']`
+      // precisely so either can be cleared, and updateMe only touches a
+      // column when its key is PRESENT — omitting it (as this form used to
+      // for birthDate) made clearing a stored value impossible. Email is
+      // now an OPTIONAL profile field (E4: a user may authenticate by
+      // username alone) — the same null-to-clear precedent birthDate
+      // already established, not a new pattern.
+      const body: { displayName: string | null; email: string | null; birthDate: string | null } = {
         displayName: displayName || null,
-        email,
+        email: email || null,
         birthDate: birthDate || null,
       };
       const u = await apiPatch("/users/me", { body });
@@ -138,8 +141,8 @@ function ProfileSection(): React.JSX.Element {
         <TextInput value={displayName} onChange={(e) => setDisplayName(e.target.value)} />
       </label>
       <label className={styles.field}>
-        <span className={styles.label}>Email</span>
-        <TextInput type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+        <span className={styles.label}>Email (optional)</span>
+        <TextInput type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
       </label>
       <label className={styles.field}>
         <span className={styles.label}>Birth date</span>

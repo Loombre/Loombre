@@ -12,13 +12,14 @@
 // Ground-truthed deviations from the prototype's literal fields (this
 // lane's freeze report has the full table — see UsersSection.tsx's header
 // for the role/PIN mismatch already logged there):
-//   - CreateUserRequest REQUIRES username, email, and password — none of
+//   - CreateUserRequest REQUIRES username and password (E4/M1: email is now
+//     OPTIONAL — a user may authenticate by username alone) — none of
 //     which the prototype's sheet collects. A user cannot be created with
-//     just a name; those three fields are added below (Name maps to
-//     displayName, which stays optional). "Create user disabled until
-//     named" becomes "disabled until every required field is filled" —
-//     the honest version of the same affordance, keeping Name first/
-//     prominent per the prototype.
+//     just a name; those fields are added below (Name maps to displayName,
+//     which stays optional). "Create user disabled until named" becomes
+//     "disabled until every required field is filled" — the honest version
+//     of the same affordance, keeping Name first/prominent per the
+//     prototype.
 //   - Role chips: MEMBER/RESTRICTED/GUEST -> Member/Admin (2 options,
 //     `isAdmin`). GUEST doesn't exist server-side at all; RESTRICTED as a
 //     ROLE doesn't either (see UsersSection.tsx's header) — reusing the
@@ -31,11 +32,14 @@
 //     available restriction field on CreateUserRequest: `maxContentRating`
 //     (a content-rating ceiling), unconditional — not tied to role,
 //     because no real link between the two exists.
-//   - Toast copy: "· INVITE LINK COPIED" is dropped — there is no
-//     invite-link/magic-link feature anywhere in this codebase (grepped;
-//     none). Toasting a capability that doesn't exist would be exactly the
-//     fabrication U9 forbids. "USER CREATED" alone is the honest version of
-//     the same confirmation, same visual treatment (uppercase mono pill).
+//   - Toast copy: "· INVITE LINK COPIED" is dropped from THIS flow — a
+//     direct admin-create never mints a claim link (that's the separate
+//     invite flow, InvitesPanel.tsx/CreateInviteSheet.tsx, this run's E2
+//     addition, which DOES reveal + copy a one-time link on creation).
+//     Toasting a capability this specific action doesn't perform would be
+//     exactly the fabrication U9 forbids. "USER CREATED" alone is the
+//     honest version of the same confirmation, same visual treatment
+//     (uppercase mono pill).
 
 import { useState } from "react";
 import { SheetOrModal } from "../../ui/SheetOrModal.js";
@@ -68,7 +72,9 @@ export function AddUserSheet({
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  const canSubmit = name.trim().length > 0 && username.trim().length > 0 && email.trim().length > 0 && password.length > 0;
+  // E4/M1: email is now an OPTIONAL profile field (a user may authenticate
+  // by username alone) — no longer part of the required-field gate.
+  const canSubmit = name.trim().length > 0 && username.trim().length > 0 && password.length > 0;
 
   function reset(): void {
     setName("");
@@ -88,7 +94,11 @@ export function AddUserSheet({
     setError(null);
     try {
       const user = await apiPost("/users", {
-        body: { username, email, password, displayName: name, isAdmin, maxContentRating: maxContentRating || null },
+        // E4/M1: CreateUserRequest.email is now optional/nullable — an
+        // admin may create an email-less user. `null`, not omitted, so a
+        // blank field is unambiguous (matches the null-to-clear precedent
+        // AccountSection's profile email already uses).
+        body: { username, email: email || null, password, displayName: name, isAdmin, maxContentRating: maxContentRating || null },
       });
       showToast(`USER CREATED — ${user.username.toUpperCase()}`);
       onCreated(user);
@@ -119,8 +129,8 @@ export function AddUserSheet({
           <TextInput value={username} onChange={(e) => setUsername(e.target.value)} required />
         </label>
         <label className={styles.field}>
-          <span className={styles.label}>Email</span>
-          <TextInput type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+          <span className={styles.label}>Email (optional)</span>
+          <TextInput type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
         </label>
         <label className={styles.field}>
           <span className={styles.label}>Password</span>
