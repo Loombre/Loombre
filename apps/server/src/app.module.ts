@@ -5,6 +5,7 @@ import { CatalogModule } from "./catalog/catalog.module.js";
 import { PlaybackModule } from "./playback/playback.module.js";
 import { SessionModule } from "./session/session.module.js";
 import { SetupModule } from "./setup/setup.module.js";
+import { InvitesModule } from "./invites/invites.module.js";
 import { SettingsModule } from "./settings/settings.module.js";
 import { AdminSettingsControllersModule } from "./settings/admin-settings.module.js";
 import { AdminPluginsControllersModule } from "./plugins/admin-plugins.module.js";
@@ -29,6 +30,13 @@ import { MailModule } from "./mail/mail.module.js";
  * /setup/first-admin, both public (see gateway/auth.guard.ts's
  * PUBLIC_ROUTES). Listed before GatewayModule for the same catch-all-must-
  * be-last reason as everything else here.
+ *
+ * InvitesModule ("Optional mail transport + invitation & reset flows", E2,
+ * Lane A): POST/GET /invites, DELETE /invites/{id} (admin) plus the public
+ * GET/POST /claim/{token} pair — see gateway/auth.guard.ts's
+ * PUBLIC_ROUTE_PATTERNS for the claim routes' public-but-dynamic-path
+ * matching. Listed before GatewayModule for the same catch-all-must-be-
+ * last reason as everything else here.
  *
  * SettingsModule / AdminSettingsControllersModule (STATE.md Addendum A,
  * decision A6, lane S2): admin-configurable server settings. SettingsModule
@@ -60,6 +68,7 @@ import { MailModule } from "./mail/mail.module.js";
     CatalogModule,
     PlaybackModule,
     SetupModule,
+    InvitesModule,
     SettingsModule,
     AdminSettingsControllersModule,
     AdminPluginsControllersModule,
