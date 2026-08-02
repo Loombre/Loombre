@@ -48,12 +48,23 @@ Implement (1) an invitation system: admin creates a one-time, expiring invite li
 
 | Lane | Scope | Model | Status |
 |---|---|---|---|
-| C | mail subsystem E5–E7: registry+keyring+transport+jobs+backoff+templates+test-send+publicUrl + M7/M8 seams | sonnet | dispatched |
-| A | invitations E2 + email/displayName E4/M1/M2: 0023, token lifecycle, claim route, race test, events, contract+SDK | sonnet | dispatched |
-| B | recovery E3/M14/M15: CLI + admin action + email-tier tokens + enumeration-safe endpoints + limiter | sonnet | dispatched |
-| D | UI (after A/B/C contract freeze): invites surface, reset action, mail settings+test-send, claim/reset pages, profile email | sonnet | pending freeze |
-| Docs | E9 three registers + sourced provider table | sonnet | pending integration |
+| C | mail subsystem E5–E7: registry+keyring+transport+jobs+backoff+templates+test-send+publicUrl + M7/M8 seams | sonnet | **LANDED 1baef34..eb9d996** (gate + gate:full ALL PASSED in-worktree; ff to main) |
+| A | invitations E2 + email/displayName E4/M1/M2: 0023, token lifecycle, claim route, race test, events, contract+SDK | sonnet | **LANDED 09f3daf..720d1d8 rebased** (gate ALL PASSED on the C+A assembly) |
+| B | recovery E3/M14/M15: CLI + admin action + email-tier tokens + enumeration-safe endpoints + limiter | sonnet | **LANDED 32c4d33..cbb7931 rebased** (gate ALL PASSED on the C+A+B assembly = main) |
+| D | UI (after A/B/C contract freeze): invites surface, reset action, mail settings+test-send, claim/reset pages, profile email | sonnet | dispatched |
+| Docs | E9 three registers + sourced provider table | sonnet | dispatched |
 | R | opus adversarial pass per brief §3 + E1 no-mail conformance walk | opus | pending |
+
+### Backend integration record (orchestrator, 2026-08-01; main = cbb7931, gate ALL 13 PASSED)
+
+Integration order C→A→B as planned (C ff'd clean; A and B rebased with orchestrator-resolved unions: envelope enum 29→34, admin-only inventory 14→19, registry 26→34 UI entries/19 pins, generated docs + schema.sql resolved by REGENERATION not hand-merge). Real findings, all fixed in the integration commits:
+
+- **DI seam trap (A, fixed 720d1d8):** InvitesModule re-provided MailConfigService/MailDispatchService in its own `providers` — second Nest-scoped instances meant the controller called one pair while `app.get()` spies watched the other; with C's real (unspied) config the invite-mail branch silently never fired. Fix: import MailModule (its exports), never re-provide seam services. B had wired this correctly on its own.
+- **Template-param seam drift (A+B, fixed c19aceb/cbb7931):** both lanes' trySend call sites spoke stub-era param names (claimUrl/usernamePreset, resetLink/username/reason); C's frozen template contract reads {actionUrl, displayName, expiresLabel?}. All call sites + test assertions aligned; A gained formatExpiresLabel ("3 days" prose per C's no-duration-arithmetic rule).
+- **Staged-markers hazard (B rebase, fixed cbb7931):** three files (rate-limit.guard + surface-rate-limiter service/spec) were staged with UNRESOLVED conflict markers during the rebase (git add -A after a partial resolution; the conflict list had scrolled past). Caught by typecheck/lint (incl. a real no-fallthrough from a dropped `break`). Tree-wide marker sweep is now a standing integration step.
+- **Generated-file law reconfirmed:** schema.sql, settings-reference.md, env-reference.md, SDK — every hand-merge of a generated file was wrong or fragile; regeneration from the merged source was always correct (migrate-check caught the one hand-merged schema.sql byte-for-byte).
+- Orchestrator process slip, recorded: the first C+A gate verdict was read from a notification whose exit code belonged to `| tail` — the gate had actually failed (the DI finding above); main was briefly ff'd then reset to the green tip while diagnosing. Lesson re-learned: never pipe a verification step; capture full output to a file and let the real exit code propagate.
+- Suite counts on the assembled main: server 1126/5skip, worker (green incl. mail e2e), db incl. invites 546-line + password-reset 306-line suites, shared/contract/jobs all green; oasdiff across the three lanes: the 8 predicted nullable-email findings (M1, recorded) + additive-only otherwise.
 
 ## Stash SQLite metadata sync + dedicated Restricted Content surface (kicked off 2026-08-01, authority: owner "Stash SQLite Metadata Sync + the Dedicated Restricted Content Surface" brief; docs/PLAN.md §6.4 gates, docs/PLAYBACK.md unchanged, design/phosphor/README.md design language)
 
