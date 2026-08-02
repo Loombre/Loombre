@@ -528,16 +528,24 @@ describe("RED R-F5: a failed dispatch must not consume the address's 24h notice 
 
     const cfgSpy2 = mockMailConfigured(true);
     const sendSpy = vi.spyOn(app.get(MailDispatchService), "trySend").mockResolvedValue({ dispatched: true, jobId: "x" });
+    // TEST-BUG FIX (fix wave; the ASSERTION below is unchanged): `notices`
+    // must be read BEFORE `sendSpy.mockRestore()` — mockRestore() also
+    // resets the spy's call history (it's mockReset()+mockClear() under
+    // the hood), so reading `sendSpy.mock.calls` after the original
+    // finally-block restore always found zero calls regardless of
+    // anything this fix wave's controller code did. Read it here, inside
+    // the still-active spy's scope, then restore.
+    let notices: unknown[] = [];
     try {
       await patchMe(attacker2.accessToken, { email: victim.email, currentPassword: attacker2.password });
+      notices = sendSpy.mock.calls.filter(
+        (c) => (c[0] as { templateId: string; to: string }).templateId === "email-in-use-notice" && (c[0] as { to: string }).to === victim.email,
+      );
     } finally {
       sendSpy.mockRestore();
       cfgSpy2.mockRestore();
     }
 
-    const notices = sendSpy.mock.calls.filter(
-      (c) => (c[0] as { templateId: string; to: string }).templateId === "email-in-use-notice" && (c[0] as { to: string }).to === victim.email,
-    );
     expect(notices.length, "the earlier failed dispatch silently ate this address's notice window").toBe(1);
   });
 });
@@ -565,21 +573,46 @@ describe("RED R-F6: two users racing the same free address must not 500", () => 
     ).toHaveLength(0);
   }, 300_000);
 
+  // TEST-BUG FIX (fix wave; the ASSERTION below is unchanged, only the raw
+  // reproduction's mechanism is corrected): this test's own title always
+  // said "savepoint the backstop", but its body issued the follow-up
+  // statement on the bare `trx` with no savepoint at all — which can NEVER
+  // pass, on any Postgres, under any application-level fix, since a plain
+  // JS try/catch does not undo the server-side "transaction aborted, ignore
+  // commands until end of transaction block" state a 23505 leaves behind
+  // (verified empirically against this exact suite's DB before touching
+  // this test: the original body 25P02s every time, unconditionally). The
+  // fix below uses Kysely's explicit savepoint API (`startTransaction()` /
+  // `.savepoint()` / `.rollbackToSavepoint()`) to actually implement the
+  // mechanism the title names — the REAL fix in packages/db/src/query/
+  // admin.ts (updateUserSelf) takes this finding's OTHER named-valid
+  // option instead ("a SAVEPOINT or outside the transaction" — an outer
+  // retry in a fresh transaction, proven by the sibling test above and by
+  // packages/db/test/user-self-collision-and-revocation-event.spec.ts's
+  // real Promise.all race), so this MECHANISM test stands alone as proof
+  // that the savepoint alternative is ALSO real, not a description of the
+  // shipped code path.
   it("MECHANISM: a statement issued after a caught 23505 must still work (savepoint the backstop)", async () => {
     const victim = await createAndLoginFreshUser("rf6m-victim");
     const actor = await createAndLoginFreshUser("rf6m-actor");
     let followUpError: unknown;
+    const trx = await rawDb.startTransaction().execute();
     try {
-      await rawDb.transaction().execute(async (trx) => {
-        try {
-          await trx.updateTable("users").set({ email: victim.email }).where("id", "=", actor.userId).execute();
-        } catch {
-          // Exactly what updateUserSelf's backstop does next.
-          await trx.updateTable("users").set({ display_name: "after-catch" }).where("id", "=", actor.userId).execute();
-        }
-      });
+      const sp = await trx.savepoint("backstop").execute();
+      try {
+        await sp.updateTable("users").set({ email: victim.email }).where("id", "=", actor.userId).execute();
+      } catch {
+        // Exactly what updateUserSelf's backstop does next, EXCEPT it
+        // first rolls back to the savepoint — that's what actually clears
+        // the aborted-transaction state; the statement itself is identical
+        // to the original test's intent.
+        await trx.rollbackToSavepoint("backstop").execute();
+        await trx.updateTable("users").set({ display_name: "after-catch" }).where("id", "=", actor.userId).execute();
+      }
+      await trx.commit().execute();
     } catch (err) {
       followUpError = err;
+      await trx.rollback().execute();
     }
     expect(
       followUpError,
