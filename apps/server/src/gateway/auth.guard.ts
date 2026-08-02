@@ -35,11 +35,15 @@ export interface AuthenticatedRequest extends Request {
  * byte-identically to an unknown route rather than ever answering 401.
  *
  * "Optional mail transport + invitation & reset flows" E2/M12 (Lane A)
- * added GET/POST /claim/{token} — also `security: []`, and also public
- * PERMANENTLY for a given token even after it's expired/claimed/revoked,
- * same "invisible == nonexistent" posture as setup's own byte-identical
- * 404 — see PUBLIC_ROUTE_PATTERNS below for why these two need a SEPARATE
- * matching mechanism from the literal-string Set above.
+ * added GET/POST /invites/claim/{token} — also `security: []`, and also
+ * public PERMANENTLY for a given token even after it's expired/claimed/
+ * revoked, same "invisible == nonexistent" posture as setup's own
+ * byte-identical 404 — see PUBLIC_ROUTE_PATTERNS below for why these two
+ * need a SEPARATE matching mechanism from the literal-string Set above.
+ * F1 (opus adversarial review, fix wave): mounted under /invites, NOT bare
+ * /claim/{token} — that path collided with the Next.js web PAGE route at
+ * apps/web/src/app/claim/[token] under docs/ops/reverse-proxy.md's
+ * routing (see invites.controller.ts's header for the full story).
  * STATE.md "Optional mail transport + invitation & reset flows" (E3b/M12,
  * Lane B) added POST /auth/forgot-password and POST /auth/reset-password —
  * both `security: []`, the self-service email-tier recovery surface.
@@ -87,8 +91,8 @@ const MUST_CHANGE_PASSWORD_ALLOWED_ROUTES = new Set([
  * pre-filter it.
  */
 const PUBLIC_ROUTE_PATTERNS: ReadonlyArray<{ method: string; pattern: RegExp }> = [
-  { method: "GET", pattern: /^\/claim\/[^/]+$/ },
-  { method: "POST", pattern: /^\/claim\/[^/]+$/ },
+  { method: "GET", pattern: /^\/invites\/claim\/[^/]+$/ },
+  { method: "POST", pattern: /^\/invites\/claim\/[^/]+$/ },
 ];
 
 function isPublicRoute(method: string, path: string): boolean {
