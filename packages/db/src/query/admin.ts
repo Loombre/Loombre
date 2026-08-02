@@ -183,7 +183,18 @@ export interface UpdateUserSelfInput {
 
 /** Self-service profile update — deliberately cannot touch isAdmin or
  *  maxContentRating (no parameter exists for either), matching the
- *  contract's UpdateMeRequest schema exactly. */
+ *  contract's UpdateMeRequest schema exactly.
+ *
+ *  E3a/M14 (STATE.md "Optional mail transport + invitation & reset
+ *  flows"): whenever `passwordHash` is present, `must_change_password` is
+ *  cleared in the SAME single-statement UPDATE (a single UPDATE is its own
+ *  transaction — nothing else needs to change alongside it here: unlike
+ *  the dedicated reset paths, an ordinary self-service password change via
+ *  PATCH /users/me is not itself a recovery event, so it neither revokes
+ *  refresh tokens nor emits `user.password-reset`). This is what makes
+ *  "set a new password -> the flag clears -> the very next request with
+ *  the SAME access token has full access" true for PATCH /users/me
+ *  specifically. */
 export async function updateUserSelf(
   db: Kysely<DB>,
   userId: string,
@@ -194,7 +205,7 @@ export async function updateUserSelf(
     .set({
       ...(input.email !== undefined ? { email: input.email } : {}),
       ...(input.birthDate !== undefined ? { birth_date: input.birthDate } : {}),
-      ...(input.passwordHash !== undefined ? { password_hash: input.passwordHash } : {}),
+      ...(input.passwordHash !== undefined ? { password_hash: input.passwordHash, must_change_password: false } : {}),
       ...(input.displayName !== undefined ? { display_name: input.displayName } : {}),
       updated_at_ms: input.nowMs,
     })
