@@ -302,11 +302,10 @@ export {
   revokeRefreshTokensForDevice,
   // Password recovery (E3/M14/M15) — see src/query/identity.js's own doc
   // comments; revokeAllRefreshTokensForUser is also reused by
-  // src/query/password-reset.js's resetPasswordViaTokenAndEmit.
+  // src/query/password-reset.js's resetPasswordViaTokenAndEmit. (F5's
+  // sibling revokeOtherRefreshTokensForUser lives in src/query/admin.js
+  // instead, private to that file — see its own doc comment for why.)
   revokeAllRefreshTokensForUser,
-  // F5 (fix wave) — self-service PATCH /users/me password changes; see
-  // src/query/identity.js's own doc comment.
-  revokeOtherRefreshTokensForUser,
   resetUserPasswordAndEmit,
   // First-boot setup (STATE.md P4.6/P4.10) — see src/query/identity.js's
   // countUsers/createFirstAdminIfEmpty doc comments.
