@@ -8,6 +8,7 @@ import { SetupModule } from "./setup/setup.module.js";
 import { SettingsModule } from "./settings/settings.module.js";
 import { AdminSettingsControllersModule } from "./settings/admin-settings.module.js";
 import { AdminPluginsControllersModule } from "./plugins/admin-plugins.module.js";
+import { MailModule } from "./mail/mail.module.js";
 
 /**
  * Root module. Catalog / Playback / Session are enforced boundaries
@@ -46,6 +47,12 @@ import { AdminPluginsControllersModule } from "./plugins/admin-plugins.module.js
  * AdminSettingsControllersModule's own shape exactly. Listed before
  * GatewayModule for the same catch-all-must-be-last reason as everything
  * else here.
+ *
+ * MailModule (optional mail transport run, M7): MailConfigService/
+ * MailDispatchService (FROZEN cross-lane seams — invitations/recovery
+ * inject them directly) + the admin mail credentials/test-send controller.
+ * Listed before GatewayModule for the same catch-all-must-be-last reason
+ * as everything else here — route order matters.
  */
 @Module({
   imports: [
@@ -56,6 +63,7 @@ import { AdminPluginsControllersModule } from "./plugins/admin-plugins.module.js
     SettingsModule,
     AdminSettingsControllersModule,
     AdminPluginsControllersModule,
+    MailModule,
     GatewayModule,
   ],
 })

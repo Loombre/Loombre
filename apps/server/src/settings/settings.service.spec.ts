@@ -401,7 +401,10 @@ describe("SettingsService response shaping", () => {
   it("toAdminSettingsResponse includes every registry key exactly once, plus the passed-in providerKeys", async () => {
     const service = freshService();
     await service.bootstrap();
-    const response = service.toAdminSettingsResponse([{ provider: "tmdb", set: false, source: null }]);
+    const response = service.toAdminSettingsResponse(
+      [{ provider: "tmdb", set: false, source: null }],
+      { configured: false, setAtMs: null, source: null },
+    );
     const keys = response.settings.map((s) => s.key);
     expect(new Set(keys).size).toBe(keys.length);
     expect(keys).toContain("restricted.majorityAgeYears");
@@ -429,7 +432,7 @@ describe("SettingsService — F1 secret masking (database.url)", () => {
     try {
       const service = freshService();
       await service.bootstrap();
-      const response = service.toAdminSettingsResponse([]);
+      const response = service.toAdminSettingsResponse([], { configured: false, setAtMs: null, source: null });
       const entry = response.settings.find((s) => s.key === "database.url");
       expect(entry?.value).toBe("postgres://loombre:***@localhost:5442/whatever-db");
       expect(JSON.stringify(response)).not.toContain(distinctivePassword);
@@ -454,7 +457,7 @@ describe("SettingsService — F1 secret masking (database.url)", () => {
   it("no other entry's value/default is masked (secret masking is opt-in per entry.secret, not blanket)", async () => {
     const service = freshService();
     await service.bootstrap();
-    const adminResponse = service.toAdminSettingsResponse([]);
+    const adminResponse = service.toAdminSettingsResponse([], { configured: false, setAtMs: null, source: null });
     const maxTranscodes = adminResponse.settings.find((s) => s.key === "transcode.maxSimultaneousTranscodes");
     expect(maxTranscodes?.value).toBe(1);
 

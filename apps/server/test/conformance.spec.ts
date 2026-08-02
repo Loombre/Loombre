@@ -351,6 +351,11 @@ const IMPLEMENTED_NON_PUBLIC_EXPECTATIONS: Record<string, number> = {
   setAdminProviderKey: 404, // placeholder provider ("tmdb"/"tvdb" only) -> unknown-provider 404, before any body validation
   clearAdminProviderKey: 404, // same reasoning, no body involved at all
 
+  // optional mail transport run (E5/E6/M10/M11)
+  setAdminMailCredentials: 422, // bodyless -> coerced to empty username/password -> "must not be empty"
+  clearAdminMailCredentials: 204, // idempotent — clearing when nothing is stored still succeeds, no body involved
+  testSendMail: 409, // fresh reseeded DB: mail is never configured on this suite -> "mail is not configured yet"
+
   // admin plugins (LPP v1, Lane W5) — fresh reseeded DB has zero registered
   // plugins, so every path-param op 404s before touching its (bodyless)
   // request; the two no-path-param writes 422 on a missing `url`.
