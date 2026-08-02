@@ -131,6 +131,13 @@ export const ACTOR_FIELD_MAP: Record<string, readonly string[]> = {
   // the schema carry a user-id-bearing field", not "is this type reachable
   // by a plugin today" — see this file's header).
   "user.claimed": ["userId"],
+  // STATE.md "Optional mail transport + invitation & reset flows" (E3/M14/
+  // M15, Lane B): user.password-reset's payload carries a real userId (the
+  // account whose password was reset) — mapped for the same reason
+  // user.restricted-pin-reset's entry is, despite ALSO being ADMIN_ONLY
+  // (this map tracks "does the schema carry a user-id-bearing field", not
+  // "is this type reachable by a plugin today" — see this file's header).
+  "user.password-reset": ["userId"],
 };
 
 /**
