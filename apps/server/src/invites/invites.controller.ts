@@ -2,9 +2,17 @@
 // Loombre :: apps/server/src/invites/invites.controller.ts
 //
 // E2 (invitations): POST/GET /invites, DELETE /invites/{id} (admin) plus
-// the PUBLIC GET/POST /claim/{token} pair (M12 quartet: contract
+// the PUBLIC GET/POST /invites/claim/{token} pair (M12 quartet: contract
 // `security: []` + auth.guard.ts PUBLIC_ROUTE_PATTERNS + conformance
 // PUBLIC_OPERATION_IDS + dedicated public-op response assertions).
+//
+// F1 (opus adversarial review, fix wave): mounted at /invites/claim/{token},
+// NOT bare /claim/{token} — that path belongs to the Next.js web PAGE
+// (apps/web/src/app/claim/[token]), and docs/ops/reverse-proxy.md routed
+// /claim/* to this API, so the two collided and a real invite link opened
+// JSON instead of the claim page. The human-facing invite link
+// (composeClaimUrl below) is UNCHANGED — still `${publicUrl}/claim/${token}`,
+// the web page's own route — only this JSON API's mounted path moved.
 //
 // Token handling (M3, "the refresh-token posture EXACTLY"): the raw invite
 // token is generated + hashed via RefreshTokenService's OWN
@@ -19,7 +27,10 @@
 // same call setup.controller.ts's createFirstAdmin makes once configured
 // — so ProblemJsonExceptionFilter serializes all of them to
 // `{"type":"about:blank","title":"Not Found","status":404}`, indistinguishable
-// from an unknown route or from each other.
+// from each other and from POST /setup/first-admin's own inert 404 (F11:
+// NOT from an unknown route — an unknown route is unauthenticated-401'd by
+// AuthGuard first; setup's post-configuration 404 is the true, verified
+// twin, since both are public routes an AuthGuard never touches).
 
 import { Body, Controller, Delete, Get, HttpCode, HttpStatus, NotFoundException, Param, Post, Query, Req, UseFilters, UseGuards } from "@nestjs/common";
 import type { Request } from "express";
@@ -39,6 +50,7 @@ import {
 import { nowMs as clockNowMs } from "@loombre/shared";
 import { forbidden, notFound, unprocessableEntity } from "../gateway/problem.exception.js";
 import { requireUuidParam } from "../gateway/require-uuid-param.js";
+import { sanitizeInstancePath } from "../gateway/sanitize-instance.js";
 import type { AuthenticatedRequest } from "../gateway/auth.guard.js";
 import { DbProvider, type LoombreDb } from "../common/db.provider.js";
 import { requireLiveAdmin } from "../common/require-live-admin.js";
@@ -55,6 +67,21 @@ const EXPIRES_IN_MS_DEFAULT = 259_200_000; // 72h
 const EXPIRES_IN_MS_MIN = 3_600_000; // 1h
 const EXPIRES_IN_MS_MAX = 2_592_000_000; // 30d
 const CLAIM_DEVICE_NAME_DEFAULT = "Invite claim";
+const CLAIM_PASSWORD_MIN_LENGTH = 8;
+
+// F6 (fix wave): CreateInviteRequest/ClaimInviteRequest both declare
+// `additionalProperties: false` in openapi.yaml, but nothing enforced it —
+// an unknown key was silently ignored rather than rejected. Allowlists
+// mirror each schema's declared `properties` exactly (house precedent:
+// apps/server/src/catalog/users.controller.ts's SETTINGS_BODY_KEYS).
+const CREATE_INVITE_BODY_KEYS = new Set(["username", "displayName", "email", "expiresInMs", "libraryIds"]);
+const CLAIM_INVITE_BODY_KEYS = new Set(["username", "password", "email", "displayName", "deviceName", "deviceProfile"]);
+
+// F7 (fix wave): deliberately permissive shape check, not a deliverability
+// test (the worker's real SMTP attempt is that test) — same pattern and
+// same regex as apps/server/src/mail/admin-mail.controller.ts's
+// LOOSE_EMAIL_PATTERN (the one other hand-rolled email check in the repo).
+const LOOSE_EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.length > 0;
@@ -147,6 +174,13 @@ export class InvitesController {
     const body = rawBody ?? {};
     const instance = req.originalUrl;
 
+    // F6: CreateInviteRequest declares additionalProperties:false.
+    for (const key of Object.keys(body)) {
+      if (!CREATE_INVITE_BODY_KEYS.has(key)) {
+        throw unprocessableEntity(`Unknown property "${key}".`, instance);
+      }
+    }
+
     if (!Array.isArray(body["libraryIds"])) {
       throw unprocessableEntity("libraryIds is required and must be an array.", instance);
     }
@@ -176,10 +210,17 @@ export class InvitesController {
     if (body["expiresInMs"] !== undefined) {
       if (
         typeof body["expiresInMs"] !== "number" ||
-        !Number.isFinite(body["expiresInMs"]) ||
+        !Number.isInteger(body["expiresInMs"]) ||
         body["expiresInMs"] < EXPIRES_IN_MS_MIN ||
         body["expiresInMs"] > EXPIRES_IN_MS_MAX
       ) {
+        // R-F2/F4: Number.isInteger subsumes Number.isFinite (NaN/Infinity
+        // are never integers) and additionally rejects a FRACTIONAL value
+        // inside the 1h-30d bounds — e.g. 3_600_000.7 previously sailed
+        // through this check and reached the BIGINT expires_at_ms column,
+        // where Postgres raised "invalid input syntax for type bigint" as
+        // an unhandled 500. The message already promised "integer"; now the
+        // check does too.
         throw unprocessableEntity("expiresInMs must be an integer between 1h and 30d (ms).", instance);
       }
       expiresInMs = body["expiresInMs"];
@@ -189,6 +230,12 @@ export class InvitesController {
     const displayName =
       typeof body["displayName"] === "string" && body["displayName"].length > 0 ? body["displayName"] : null;
     const email = typeof body["email"] === "string" && body["email"].length > 0 ? body["email"] : null;
+    // F7: CreateInviteRequest.email declares format:email — this preset
+    // feeds trySend's `to:` address directly (E6/E7), so a malformed value
+    // must 422 here rather than surface as an opaque SMTP failure later.
+    if (email !== null && !LOOSE_EMAIL_PATTERN.test(email)) {
+      throw unprocessableEntity("email must be a valid email address.", instance);
+    }
 
     const nowMs = clockNowMs();
     const claimToken = this.refreshTokenService.generateOpaqueToken();
@@ -264,7 +311,13 @@ export class InvitesController {
   // public: claim
   // ==========================================================================
 
-  @Get("claim/:token")
+  // F1: mounted under /invites/claim/{token} — NOT bare /claim/{token},
+  // which apps/web/src/app/claim/[token] owns as the human-facing PAGE
+  // route (docs/ops/reverse-proxy.md routed /claim/* to the API, so the
+  // page and this JSON endpoint collided on the same path). The invite
+  // link itself (composeClaimUrl below) is unaffected — it still points
+  // at the web page, `${publicUrl}/claim/${token}`.
+  @Get("invites/claim/:token")
   @UseGuards(SurfaceRateLimitGuard)
   @RateLimit("claim", "ip")
   async getClaimState(@Param("token") token: string) {
@@ -280,14 +333,14 @@ export class InvitesController {
         nowMs,
       )
     ) {
-      // Byte-identical to the unknown-route 404 — see this file's header.
+      // Byte-identical to POST /setup/first-admin's inert 404 — see this file's header (F11).
       throw new NotFoundException();
     }
 
     return mapClaimState(invite);
   }
 
-  @Post("claim/:token")
+  @Post("invites/claim/:token")
   @UseGuards(SurfaceRateLimitGuard)
   @RateLimit("claim", "ip")
   @HttpCode(HttpStatus.CREATED)
@@ -299,7 +352,11 @@ export class InvitesController {
     const db = this.dbProvider.db;
     const tokenHash = this.refreshTokenService.hashToken(token);
     const nowMs = clockNowMs();
-    const instance = req.originalUrl;
+    // F9: a static, tokenless route template — req.originalUrl carries the
+    // raw invite token as a PATH SEGMENT (not a query param), which
+    // sanitizeInstancePath's own ?token= stripping alone would never
+    // catch; see that file's header for the extension that closes this.
+    const instance = sanitizeInstancePath(req);
 
     // Existence + liveness check FIRST (same ordering setup.controller.ts's
     // createFirstAdmin uses): a malformed/expired/claimed/revoked token
@@ -319,6 +376,13 @@ export class InvitesController {
 
     const body = rawBody ?? {};
 
+    // F6: ClaimInviteRequest declares additionalProperties:false.
+    for (const key of Object.keys(body)) {
+      if (!CLAIM_INVITE_BODY_KEYS.has(key)) {
+        throw unprocessableEntity(`Unknown property "${key}".`, instance);
+      }
+    }
+
     // M12: preset wins if both are present; required iff no preset.
     const usernamePreset = invite.username_preset;
     const submittedUsername = typeof body["username"] === "string" && body["username"].length > 0 ? body["username"] : null;
@@ -330,8 +394,24 @@ export class InvitesController {
     if (!isNonEmptyString(body["password"])) {
       throw unprocessableEntity("password is required.", instance);
     }
+    // F8: aligns claim's minimum with POST /setup/first-admin's own
+    // minLength:8 — a deliberate tightening (claim used to accept a
+    // 1-char password); createUser/PATCH /users/me are OUT of scope.
+    if (body["password"].length < CLAIM_PASSWORD_MIN_LENGTH) {
+      throw unprocessableEntity(`password must be at least ${CLAIM_PASSWORD_MIN_LENGTH} characters.`, instance);
+    }
 
     const email = typeof body["email"] === "string" && body["email"].length > 0 ? body["email"] : invite.email;
+    // F7: ClaimInviteRequest.email declares format:email — only the
+    // SUBMITTED value is checked (invite.email, the admin-set preset, was
+    // already validated at creation time by F7's createInvite check).
+    if (
+      typeof body["email"] === "string" &&
+      body["email"].length > 0 &&
+      !LOOSE_EMAIL_PATTERN.test(body["email"])
+    ) {
+      throw unprocessableEntity("email must be a valid email address.", instance);
+    }
     const displayName =
       typeof body["displayName"] === "string" && body["displayName"].length > 0
         ? body["displayName"]
@@ -361,6 +441,25 @@ export class InvitesController {
     if (!result.ok) {
       if (result.reason === "username-conflict") {
         throw unprocessableEntity(`Username "${username}" is already taken.`, instance);
+      }
+      if (result.reason === "email-conflict") {
+        // R-F3/F3 (E8): the COMMON case — a submitted email that already
+        // belongs to another account — never reaches this branch at all;
+        // packages/db's claimInviteAndEmit silently drops a conflicting
+        // email and completes the claim normally (201, same as a
+        // fresh-email claim — no distinguishable status, body, or
+        // invite-consumption difference an attacker could use as an
+        // oracle). This branch is the narrow safety net for the
+        // vanishing race where the email is registered in the gap
+        // between that check and the INSERT; the wording still never
+        // blames the username (untrue) and never confirms the email is
+        // "already registered"/"in use" (that phrasing would itself be
+        // the oracle) — "could not be completed" is accurate without
+        // confirming anything about the address.
+        throw unprocessableEntity(
+          "This invite could not be completed with the submitted email address. Try again without an email, or ask whoever sent the invite for a new one.",
+          instance,
+        );
       }
       // A concurrent claim won the race between this handler's pre-check
       // above and claimInviteAndEmit's own atomic consume — same

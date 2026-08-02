@@ -27,6 +27,7 @@ import { CanActivate, ExecutionContext, Injectable, SetMetadata } from "@nestjs/
 import { Reflector } from "@nestjs/core";
 import type { Request } from "express";
 import type { AuthenticatedRequest } from "../gateway/auth.guard.js";
+import { sanitizeInstancePath } from "../gateway/sanitize-instance.js";
 import { SurfaceRateLimiterService } from "./surface-rate-limiter.service.js";
 import { tooManyRequests } from "./rate-limit.exception.js";
 
@@ -93,7 +94,13 @@ export class SurfaceRateLimitGuard implements CanActivate {
     const key = resolveKey(meta.keyStrategy, req);
     const result = this.limiter[meta.policy].attempt(key);
     if (!result.allowed) {
-      throw tooManyRequests("Too many requests. Try again later.", req.originalUrl, result.retryAfterMs);
+      // F9: this guard is the ONE shared 429 path for every
+      // @RateLimit()-decorated route, including the invite-claim surface
+      // — sanitizeInstancePath collapses that route's raw path-segment
+      // token to its static template (and still strips a stray ?token=
+      // on any other decorated route) rather than echoing req.originalUrl
+      // verbatim.
+      throw tooManyRequests("Too many requests. Try again later.", sanitizeInstancePath(req), result.retryAfterMs);
     }
     return true;
   }

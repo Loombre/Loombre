@@ -33,7 +33,9 @@ import { MailModule } from "./mail/mail.module.js";
  *
  * InvitesModule ("Optional mail transport + invitation & reset flows", E2,
  * Lane A): POST/GET /invites, DELETE /invites/{id} (admin) plus the public
- * GET/POST /claim/{token} pair — see gateway/auth.guard.ts's
+ * GET/POST /invites/claim/{token} pair (F1 fix wave: moved off bare
+ * /claim/{token}, which collides with the Next.js web page route — see
+ * invites/invites.controller.ts's header) — see gateway/auth.guard.ts's
  * PUBLIC_ROUTE_PATTERNS for the claim routes' public-but-dynamic-path
  * matching. Listed before GatewayModule for the same catch-all-must-be-
  * last reason as everything else here.

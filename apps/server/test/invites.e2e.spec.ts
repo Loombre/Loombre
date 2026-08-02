@@ -350,7 +350,7 @@ describe("DELETE /invites/{id} (admin, E2)", () => {
 });
 
 // ============================================================================
-// GET /claim/{token} (public) — byte-identical 404 twins
+// GET /invites/claim/{token} (public) — byte-identical 404 twins
 // ============================================================================
 
 async function createInviteRaw(body: Record<string, unknown>) {
@@ -362,10 +362,10 @@ async function createInviteRaw(body: Record<string, unknown>) {
   return res.body as { claimToken: string; invite: { id: string } };
 }
 
-describe("GET /claim/{token} (public, M12)", () => {
+describe("GET /invites/claim/{token} (public, M12)", () => {
   it("a live invite resolves 200 with its presets, no Authorization header needed", async () => {
     const created = await createInviteRaw({ username: "claim-state-user", displayName: "Claim State", email: "claim-state@example.invalid" });
-    const res = await request(app.getHttpServer()).get(`/claim/${created.claimToken}`);
+    const res = await request(app.getHttpServer()).get(`/invites/claim/${created.claimToken}`);
     expect(res.status).toBe(200);
     expect(res.body).toEqual({
       usernamePreset: "claim-state-user",
@@ -376,20 +376,20 @@ describe("GET /claim/{token} (public, M12)", () => {
 
   it("garbage / expired / revoked / claimed tokens ALL 404 byte-identically to each other and to an unknown route", async () => {
     // garbage
-    const garbage = await request(app.getHttpServer()).get("/claim/not-a-real-token-at-all");
+    const garbage = await request(app.getHttpServer()).get("/invites/claim/not-a-real-token-at-all");
 
     // revoked
     const revokedInvite = await createInviteRaw({});
     await request(app.getHttpServer()).delete(`/invites/${revokedInvite.invite.id}`).set("Authorization", `Bearer ${adminToken}`);
-    const revoked = await request(app.getHttpServer()).get(`/claim/${revokedInvite.claimToken}`);
+    const revoked = await request(app.getHttpServer()).get(`/invites/claim/${revokedInvite.claimToken}`);
 
     // claimed
     const claimedInvite = await createInviteRaw({ username: `claim-twin-${Date.now()}` });
     const claimRes = await request(app.getHttpServer())
-      .post(`/claim/${claimedInvite.claimToken}`)
+      .post(`/invites/claim/${claimedInvite.claimToken}`)
       .send({ password: "a-fine-password" });
     expect(claimRes.status).toBe(201);
-    const claimed = await request(app.getHttpServer()).get(`/claim/${claimedInvite.claimToken}`);
+    const claimed = await request(app.getHttpServer()).get(`/invites/claim/${claimedInvite.claimToken}`);
 
     // an unknown route hit with a valid Bearer token, to get the REAL
     // catch-all body for comparison (same reasoning as setup.e2e.spec.ts's
@@ -409,15 +409,15 @@ describe("GET /claim/{token} (public, M12)", () => {
 });
 
 // ============================================================================
-// POST /claim/{token} (public, M12/M13) — the headline flow + races
+// POST /invites/claim/{token} (public, M12/M13) — the headline flow + races
 // ============================================================================
 
-describe("POST /claim/{token} (public, E1/M13) — the whole flow, zero mail config", () => {
+describe("POST /invites/claim/{token} (public, E1/M13) — the whole flow, zero mail config", () => {
   it("E1 headline: claims with zero mail configuration end to end — auto-login TokenPair works immediately", async () => {
     const created = await createInviteRaw({ username: "e1-headline-user", displayName: "E1 Headline", email: "e1-headline@example.invalid", libraryIds: [generalLibraryId] });
 
     const claim = await request(app.getHttpServer())
-      .post(`/claim/${created.claimToken}`)
+      .post(`/invites/claim/${created.claimToken}`)
       .send({ password: "correct-horse-battery-staple" });
 
     expect(claim.status, JSON.stringify(claim.body)).toBe(201);
@@ -438,7 +438,7 @@ describe("POST /claim/{token} (public, E1/M13) — the whole flow, zero mail con
   it("preset username wins even when the client submits a different one", async () => {
     const created = await createInviteRaw({ username: "preset-wins-user" });
     const claim = await request(app.getHttpServer())
-      .post(`/claim/${created.claimToken}`)
+      .post(`/invites/claim/${created.claimToken}`)
       .send({ username: "client-submitted-name", password: "a-fine-password" });
     expect(claim.status).toBe(201);
 
@@ -449,17 +449,17 @@ describe("POST /claim/{token} (public, E1/M13) — the whole flow, zero mail con
   it("no preset -> username required (422); password required (422)", async () => {
     const noPreset = await createInviteRaw({});
 
-    const missingUsername = await request(app.getHttpServer()).post(`/claim/${noPreset.claimToken}`).send({ password: "x" });
+    const missingUsername = await request(app.getHttpServer()).post(`/invites/claim/${noPreset.claimToken}`).send({ password: "claim-e2e-password" });
     expect(missingUsername.status).toBe(422);
 
     const anotherInvite = await createInviteRaw({ username: "password-required-user" });
-    const missingPassword = await request(app.getHttpServer()).post(`/claim/${anotherInvite.claimToken}`).send({});
+    const missingPassword = await request(app.getHttpServer()).post(`/invites/claim/${anotherInvite.claimToken}`).send({});
     expect(missingPassword.status).toBe(422);
   });
 
   it("email/displayName default to the invite's own preset when the claim body omits them", async () => {
     const created = await createInviteRaw({ username: "default-preset-claim", displayName: "Default Preset", email: "default-preset@example.invalid" });
-    const claim = await request(app.getHttpServer()).post(`/claim/${created.claimToken}`).send({ password: "x" });
+    const claim = await request(app.getHttpServer()).post(`/invites/claim/${created.claimToken}`).send({ password: "claim-e2e-password" });
     expect(claim.status).toBe(201);
 
     const me = await request(app.getHttpServer()).get("/users/me").set("Authorization", `Bearer ${claim.body.accessToken}`);
@@ -477,7 +477,7 @@ describe("POST /claim/{token} (public, E1/M13) — the whole flow, zero mail con
     const created = await createInviteRaw({ username: "grant-check-user", libraryIds: [generalLibraryId] });
     await rawDb.insertInto("user_invite_grants").values({ invite_id: created.invite.id, library_id: restrictedLibraryId }).execute();
 
-    const claim = await request(app.getHttpServer()).post(`/claim/${created.claimToken}`).send({ password: "x" });
+    const claim = await request(app.getHttpServer()).post(`/invites/claim/${created.claimToken}`).send({ password: "claim-e2e-password" });
     expect(claim.status).toBe(201);
 
     const me = await request(app.getHttpServer()).get("/users/me").set("Authorization", `Bearer ${claim.body.accessToken}`);
@@ -491,7 +491,7 @@ describe("POST /claim/{token} (public, E1/M13) — the whole flow, zero mail con
 
   it("emits user.claimed (ADMIN_ONLY, actorUserId = new user) with {userId, inviteId, username, createdAtMs} and never the token/password", async () => {
     const created = await createInviteRaw({ username: "claimed-event-user" });
-    const claim = await request(app.getHttpServer()).post(`/claim/${created.claimToken}`).send({ password: "a-fine-password" });
+    const claim = await request(app.getHttpServer()).post(`/invites/claim/${created.claimToken}`).send({ password: "a-fine-password" });
     expect(claim.status).toBe(201);
 
     const me = await request(app.getHttpServer()).get("/users/me").set("Authorization", `Bearer ${claim.body.accessToken}`);
@@ -512,17 +512,17 @@ describe("POST /claim/{token} (public, E1/M13) — the whole flow, zero mail con
 
   it("username conflict -> 422 (distinct from token-invalid 404), and the invite is STILL claimable afterward", async () => {
     const created = await createInviteRaw({});
-    const conflict = await request(app.getHttpServer()).post(`/claim/${created.claimToken}`).send({ username: "admin", password: "x" });
+    const conflict = await request(app.getHttpServer()).post(`/invites/claim/${created.claimToken}`).send({ username: "admin", password: "claim-e2e-password" });
     expect(conflict.status).toBe(422);
 
-    const retry = await request(app.getHttpServer()).post(`/claim/${created.claimToken}`).send({ username: "admin-retry-e2e-ok", password: "x" });
+    const retry = await request(app.getHttpServer()).post(`/invites/claim/${created.claimToken}`).send({ username: "admin-retry-e2e-ok", password: "claim-e2e-password" });
     expect(retry.status).toBe(201);
   });
 
   it("revoked-then-claim -> 404", async () => {
     const created = await createInviteRaw({ username: "revoke-then-claim" });
     await request(app.getHttpServer()).delete(`/invites/${created.invite.id}`).set("Authorization", `Bearer ${adminToken}`);
-    const claim = await request(app.getHttpServer()).post(`/claim/${created.claimToken}`).send({ password: "x" });
+    const claim = await request(app.getHttpServer()).post(`/invites/claim/${created.claimToken}`).send({ password: "claim-e2e-password" });
     expect(claim.status).toBe(404);
   });
 
@@ -531,15 +531,15 @@ describe("POST /claim/{token} (public, E1/M13) — the whole flow, zero mail con
     // Force expiry directly (this suite cannot wait an hour) — same
     // "instance-stripped" approach seeded-conformance-style suites use.
     await rawDb.updateTable("user_invites").set({ expires_at_ms: Date.now() - 1000 }).where("id", "=", created.invite.id).execute();
-    const claim = await request(app.getHttpServer()).post(`/claim/${created.claimToken}`).send({ password: "x" });
+    const claim = await request(app.getHttpServer()).post(`/invites/claim/${created.claimToken}`).send({ password: "claim-e2e-password" });
     expect(claim.status).toBe(404);
   });
 
   it("claim-then-claim -> 404 on the second attempt", async () => {
     const created = await createInviteRaw({ username: "claim-then-claim" });
-    const first = await request(app.getHttpServer()).post(`/claim/${created.claimToken}`).send({ password: "x" });
+    const first = await request(app.getHttpServer()).post(`/invites/claim/${created.claimToken}`).send({ password: "claim-e2e-password" });
     expect(first.status).toBe(201);
-    const second = await request(app.getHttpServer()).post(`/claim/${created.claimToken}`).send({ username: "claim-then-claim-again", password: "x" });
+    const second = await request(app.getHttpServer()).post(`/invites/claim/${created.claimToken}`).send({ username: "claim-then-claim-again", password: "claim-e2e-password" });
     expect(second.status).toBe(404);
   });
 
@@ -551,8 +551,8 @@ describe("POST /claim/{token} (public, E1/M13) — the whole flow, zero mail con
     const attempts = await Promise.all(
       Array.from({ length: N }, (_, i) =>
         request(app.getHttpServer())
-          .post(`/claim/${created.claimToken}`)
-          .send({ username: `${usernameBase}-${i}`, password: "x" }),
+          .post(`/invites/claim/${created.claimToken}`)
+          .send({ username: `${usernameBase}-${i}`, password: "claim-e2e-password" }),
       ),
     );
 
