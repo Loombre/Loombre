@@ -616,6 +616,24 @@ const UI_ENTRIES: SettingsRegistryEntry[] = [
     envVar: "LOOMBRE_RATE_UNLOCK",
     parseEnv: parseEnvPositiveInt,
   }),
+  // G4 (STATE.md "Current-password re-auth on self-changes"): per-USER,
+  // same default as login's own 10/min (F1: "same bucket class as
+  // login... a re-auth prompt must not become a password-guessing
+  // oracle") — apps/server/src/common/current-password-rate-limiter.
+  // service.ts's currentPassword KeyedRateLimiter, consulted by BOTH
+  // PATCH /users/me (when the body carries password/email) and
+  // PUT /users/me/restricted (always).
+  defineSetting({
+    key: "rateLimit.currentPassword",
+    schema: z.number().int().min(1),
+    default: 10,
+    category: "rateLimit",
+    description: "How many current-password re-authentication attempts one person may make per minute when changing their password, email, or restricted-content PIN. Guards against someone guessing the account password.",
+    requiresRestart: false,
+    scope: "ui",
+    envVar: "LOOMBRE_RATE_CURRENT_PASSWORD",
+    parseEnv: parseEnvPositiveInt,
+  }),
   defineSetting({
     key: "rateLimit.setup",
     schema: z.number().int().min(1),
