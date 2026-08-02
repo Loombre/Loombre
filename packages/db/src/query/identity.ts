@@ -722,3 +722,94 @@ export async function revokeRefreshTokensForDevice(
     .executeTakeFirst();
   return Number(result.numUpdatedRows ?? 0);
 }
+
+/**
+ * Password recovery (E3/M14/M15): revokes EVERY still-active refresh token
+ * for a user, across ALL devices — unlike revokeRefreshTokensForDevice
+ * (one device) or revokeRefreshTokenChain (one chain), this is a whole-
+ * account sweep. Used by resetUserPasswordAndEmit below and by
+ * packages/db/src/query/password-reset.ts's resetPasswordViaTokenAndEmit
+ * whenever a password changes by ANY path (admin/CLI temporary-password
+ * reset, or a self-service token-based reset): a stolen or shared password
+ * must not leave any existing session alive. `db` accepts a
+ * `Transaction<DB>` (Kysely's Transaction extends Kysely, see
+ * internal/tx.ts) so callers compose this into the SAME transaction as the
+ * password_hash write and the user.password-reset event (outbox pattern,
+ * docs/PLAN.md §4.3). Returns the number of rows revoked.
+ */
+export async function revokeAllRefreshTokensForUser(
+  db: Kysely<DB>,
+  userId: string,
+  revokedAtMs: number
+): Promise<number> {
+  const result = await db
+    .updateTable('refresh_tokens')
+    .set({ revoked_at_ms: revokedAtMs })
+    .where('user_id', '=', userId)
+    .where('revoked_at_ms', 'is', null)
+    .executeTakeFirst();
+  return Number(result.numUpdatedRows ?? 0);
+}
+
+// ============================================================================
+// password recovery — admin/CLI temporary-password reset (E3a, M14)
+// ============================================================================
+
+export interface ResetUserPasswordAdminInput {
+  userId: string;
+  username: string;
+  /** Already argon2id-hashed by the caller (apps/server's HashService, or
+   *  the CLI's own hash-wasm call — see apps/server/src/cli/
+   *  admin-reset-password.ts) — this module never hashes a plaintext
+   *  secret itself, same posture as createUserAdmin/updateUserSelf. */
+  passwordHash: string;
+  /** 'cli' (loombre admin reset-password <username>, actorUserId always
+   *  null — the CLI runs outside any authenticated session, same posture
+   *  as resetRestrictedPinAndEmit) or 'admin' (POST /users/{id}/reset-password,
+   *  actorUserId = the acting admin). */
+  actor: 'cli' | 'admin';
+  actorUserId: string | null;
+  nowMs: number;
+}
+
+/**
+ * H2 pattern applied to passwords (E3a/M14): the admin/CLI-driven
+ * temporary-password reset. One transaction: sets `users.password_hash` to
+ * the caller-supplied hash of a freshly generated temporary password (the
+ * PLAINTEXT is never seen by this module — the caller generates it,
+ * prints/returns it ONCE, and hands this function only the hash),
+ * `must_change_password -> TRUE` (enforced server-side by
+ * apps/server/src/gateway/auth.guard.ts's guard chain, not merely
+ * advisory), revokes EVERY refresh token the user holds (revokeAllRefreshTokensForUser
+ * above — every existing session dies, matching resetRestrictedPinAndEmit's
+ * "ends any active unlock" unconditional-clear posture), and emits
+ * `user.password-reset` (ADMIN_ONLY delivery, packages/contract/
+ * event-schemas/user.password-reset.schema.json) with payload
+ * `{userId, username, actor}` — NEVER the password or its hash, matching
+ * resetRestrictedPinAndEmit's own "never a hash or PIN" rule exactly.
+ */
+export async function resetUserPasswordAndEmit(
+  db: Kysely<DB>,
+  input: ResetUserPasswordAdminInput
+): Promise<void> {
+  return withTransaction(db, async (trx) => {
+    await trx
+      .updateTable('users')
+      .set({
+        password_hash: input.passwordHash,
+        must_change_password: true,
+        updated_at_ms: input.nowMs,
+      })
+      .where('id', '=', input.userId)
+      .execute();
+
+    await revokeAllRefreshTokensForUser(trx, input.userId, input.nowMs);
+
+    await writeEvent(trx, {
+      type: 'user.password-reset',
+      tsMs: input.nowMs,
+      actorUserId: input.actorUserId,
+      payload: { userId: input.userId, username: input.username, actor: input.actor },
+    });
+  });
+}

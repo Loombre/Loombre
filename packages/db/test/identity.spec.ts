@@ -38,6 +38,8 @@ import {
   getUserSettings,
   insertRefreshToken,
   resetRestrictedPinAndEmit,
+  resetUserPasswordAndEmit,
+  revokeAllRefreshTokensForUser,
   revokeRefreshTokenChain,
   revokeRefreshTokensForDevice,
   setRestrictedUnlockUntil,
@@ -492,6 +494,132 @@ describe('identity queries (users / user_settings / library_permissions / device
 
       const event = await latestUserEvent('user.restricted-pin-reset', created.id);
       expect(event).toBeUndefined();
+    });
+  });
+
+  describe('revokeAllRefreshTokensForUser (E3/M14/M15 — password recovery whole-account sweep)', () => {
+    it('revokes every still-active token across MULTIPLE devices, leaving other users untouched', async () => {
+      const casual = await getUserByUsername(db, 'casual');
+      const admin = await getUserByUsername(db, 'admin');
+      const deviceA = await createDevice(db, {
+        userId: casual!.id,
+        name: 'Sweep Device A',
+        platform: 'web',
+        profile: {},
+        nowMs: 200_000,
+      });
+      const deviceB = await createDevice(db, {
+        userId: casual!.id,
+        name: 'Sweep Device B',
+        platform: 'web',
+        profile: {},
+        nowMs: 200_000,
+      });
+      const adminDevice = await createDevice(db, {
+        userId: admin!.id,
+        name: 'Unrelated Admin Device',
+        platform: 'web',
+        profile: {},
+        nowMs: 200_000,
+      });
+
+      await insertRefreshToken(db, {
+        userId: casual!.id,
+        deviceId: deviceA.id,
+        tokenHash: 'hash-sweep-a',
+        issuedAtMs: 200_000,
+        expiresAtMs: 200_000 + 1000,
+        rotatedFrom: null,
+      });
+      await insertRefreshToken(db, {
+        userId: casual!.id,
+        deviceId: deviceB.id,
+        tokenHash: 'hash-sweep-b',
+        issuedAtMs: 200_000,
+        expiresAtMs: 200_000 + 1000,
+        rotatedFrom: null,
+      });
+      await insertRefreshToken(db, {
+        userId: admin!.id,
+        deviceId: adminDevice.id,
+        tokenHash: 'hash-sweep-admin',
+        issuedAtMs: 200_000,
+        expiresAtMs: 200_000 + 1000,
+        rotatedFrom: null,
+      });
+
+      const count = await revokeAllRefreshTokensForUser(db, casual!.id, 201_000);
+      expect(count).toBe(2);
+
+      const rowA = await findRefreshTokenByHash(db, 'hash-sweep-a');
+      const rowB = await findRefreshTokenByHash(db, 'hash-sweep-b');
+      const rowAdmin = await findRefreshTokenByHash(db, 'hash-sweep-admin');
+      expect(rowA?.revoked_at_ms).toBe(201_000);
+      expect(rowB?.revoked_at_ms).toBe(201_000);
+      expect(rowAdmin?.revoked_at_ms).toBeNull();
+    });
+  });
+
+  describe('resetUserPasswordAndEmit (E3a/M14 — admin/CLI temporary-password reset)', () => {
+    it('sets password_hash, must_change_password=true, revokes every refresh token, and writes user.password-reset (actor: cli, actorUserId: null)', async () => {
+      const casual = await getUserByUsername(db, 'casual');
+      const userId = casual!.id;
+      const device = await createDevice(db, {
+        userId,
+        name: 'Pre-Reset Device',
+        platform: 'web',
+        profile: {},
+        nowMs: 300_000,
+      });
+      await insertRefreshToken(db, {
+        userId,
+        deviceId: device.id,
+        tokenHash: 'hash-pre-reset',
+        issuedAtMs: 300_000,
+        expiresAtMs: 300_000 + 1000,
+        rotatedFrom: null,
+      });
+
+      await resetUserPasswordAndEmit(db, {
+        userId,
+        username: 'casual',
+        passwordHash: 'fake-argon2id-hash-for-test',
+        actor: 'cli',
+        actorUserId: null,
+        nowMs: 301_000,
+      });
+
+      const updated = await getUserById(db, userId);
+      expect(updated?.password_hash).toBe('fake-argon2id-hash-for-test');
+      expect(updated?.must_change_password).toBe(true);
+
+      const tokenRow = await findRefreshTokenByHash(db, 'hash-pre-reset');
+      expect(tokenRow?.revoked_at_ms).toBe(301_000);
+
+      const event = await latestUserEvent('user.password-reset', userId);
+      expect(event).toBeDefined();
+      expect(event!.payload).toEqual({ userId, username: 'casual', actor: 'cli' });
+      expect(event!.actor_user_id).toBeNull();
+      expect(JSON.stringify(event!.payload)).not.toContain('fake-argon2id-hash-for-test');
+    });
+
+    it("actor: 'admin' carries actorUserId = the acting admin", async () => {
+      const casual = await getUserByUsername(db, 'casual');
+      const admin = await getUserByUsername(db, 'admin');
+      const userId = casual!.id;
+
+      await resetUserPasswordAndEmit(db, {
+        userId,
+        username: 'casual',
+        passwordHash: 'another-fake-hash',
+        actor: 'admin',
+        actorUserId: admin!.id,
+        nowMs: 302_000,
+      });
+
+      const event = await latestUserEvent('user.password-reset', userId);
+      expect(event!.payload).toEqual({ userId, username: 'casual', actor: 'admin' });
+      expect(event!.actor_user_id).toBe(admin!.id);
     });
   });
 });
