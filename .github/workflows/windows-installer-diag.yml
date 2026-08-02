@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 #
-# DIAGNOSTIC, manual-dispatch only — not part of the gate, never runs on
-# push or PR. Exists so the release.yml build-windows leg (lane I3's
+# Runs on manual dispatch AND automatically whenever the Windows installer
+# sources change (see the `on:` block's paths filter). Exists so the
+# release.yml build-windows leg (lane I3's
 # installers/windows/build-msi.mjs) can be exercised on a real
 # windows-latest runner WITHOUT burning a tag cycle: the first rc tag
 # (v0.9.0-rc.1, run 30217169344) died at build-msi step 1/7 on
@@ -29,10 +30,41 @@
 # conclusion=success in the API even when they fail — this workflow uses
 # hard-failing steps plus an explicit `VERDICT:` line, so read the log,
 # not the step conclusions.
+#
+# WHY IT AUTO-RUNS NOW (2026-08-02): it used to be dispatch-only, which
+# meant a commit touching installers/ could merge without the installer
+# ever being built. That is not hypothetical — b3856df added three
+# util:PermissionEx grants referencing WIX_ACCOUNT_USERS with the WiX v3
+# `<PropertyRef>` idiom, which does not link under v5, and the MSI (and
+# therefore the .exe that embeds it) stayed broken for two days until the
+# next manual dispatch. The paths filter below keeps the cost proportionate
+# — this job builds the full payload, compiles the C#, and runs real
+# elevated install/uninstall smokes, so it must NOT run on every push, only
+# when something it actually builds changed.
 name: windows-installer-diag
 
 on:
   workflow_dispatch:
+  # NOTE: the two path lists below are duplicated deliberately — GitHub
+  # Actions does not support YAML anchors/aliases in workflow files, so a
+  # `&anchor`/`*alias` pair here would not expand. Keep them in sync by hand.
+  push:
+    branches: [main]
+    paths:
+      - "installers/**"
+      - "scripts/fetch-node.mjs"
+      - "scripts/fetch-vcredist.mjs"
+      - "scripts/fetch-embedded-pg.mjs"
+      - "scripts/fetch-ffmpeg.mjs"
+      - ".github/workflows/windows-installer-diag.yml"
+  pull_request:
+    paths:
+      - "installers/**"
+      - "scripts/fetch-node.mjs"
+      - "scripts/fetch-vcredist.mjs"
+      - "scripts/fetch-embedded-pg.mjs"
+      - "scripts/fetch-ffmpeg.mjs"
+      - ".github/workflows/windows-installer-diag.yml"
 
 jobs:
   msi:

@@ -18,7 +18,7 @@ curl -LO https://github.com/Loombre/Loombre/releases/download/v<version>/SHA256S
 ```
 
 `SHA256SUMS`/`SHA256SUMS.minisig` are **shared across every artifact in the
-release** (this tarball, the Windows `.msi`, the macOS `.pkg`, …) — one
+release** (this tarball, the Windows `.exe`, the macOS `.pkg`, …) — one
 checksum listing, one signature, covering the whole release; there is no
 per-artifact `<file>.sha256`/`<file>.minisig`. You don't need to know every
 other filename in it — the commands below only touch the line for the file
