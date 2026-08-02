@@ -267,7 +267,7 @@ export class InvitesController {
   @Get("claim/:token")
   @UseGuards(SurfaceRateLimitGuard)
   @RateLimit("claim", "ip")
-  async getClaimState(@Param("token") token: string, @Req() req: Request) {
+  async getClaimState(@Param("token") token: string) {
     const db = this.dbProvider.db;
     const tokenHash = this.refreshTokenService.hashToken(token);
     const invite = await getInviteByTokenHash(db, tokenHash);
