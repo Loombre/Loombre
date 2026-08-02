@@ -121,18 +121,47 @@ convention.
 
 ## Email-collision signal (F5)
 
-**The actor-visible behavior never changes.** Whether an email address
-submitted to `PATCH /users/me` or claimed via
+**The actor-visible behavior never changes across DIFFERENT actors/
+targets, and the STATUS never changes for any single actor.** Whether an
+email address submitted to `PATCH /users/me` or claimed via
 `POST /invites/claim/{token}` is genuinely free or already belongs to
-another account, the caller gets the identical response — status, and
-once request-scoped values like ids and tokens are set aside, the same
-response shape. A collision is a **silent no-op**: the email member is
-dropped, every other member in the same request still applies, and the
-caller sees an ordinary success. This is a direct continuation of E8
-(enumeration safety) as it already applied to the invite-claim flow —
-an authenticated re-auth gate is a new surface for the same class of
-bug, not an exemption from it, so it holds through this feature exactly
-as it did before.
+another account, the caller gets the identical HTTP status and, once
+request-scoped values like ids and tokens are set aside, the same body
+*shape* — this is what `email-collision-matrix.e2e.spec.ts`'s full
+`{claim, email-change} x {mail configured, unconfigured} x {notice window
+fresh, already claimed}` grid pins, comparing across different accounts.
+A collision is a **silent no-op**: the email member is dropped, every
+other member in the same request still applies, and the caller sees an
+ordinary success. This is a direct continuation of E8 (enumeration
+safety) as it already applied to the invite-claim flow — an
+authenticated re-auth gate is a new surface for the same class of bug,
+not an exemption from it.
+
+**⚠️ Known limitation, under owner review — read before citing this
+section as "enumeration-safe."** The claim above holds at the
+STATUS/SHAPE level, but a residual oracle survives inside the body
+*value* for the narrower case of ONE authenticated actor comparing their
+OWN successive attempts: `PATCH /users/me`'s 200 body echoes the
+submitted address back when it was free, and echoes the caller's
+UNCHANGED prior address back when it collided — the two are trivially
+distinguishable from the response alone (a 30-trial blind classifier
+scored 30/30; a follow-up `GET /users/me`, which carries no rate limit at
+all, confirms it independently). The claim-flow twin is the same bit one
+step later: a colliding claim's account is left `email: null`, readable
+with the access token the claim itself returns. Full write-up: STATE.md
+"Current-password re-auth on self-changes + the email-collision signal",
+opus adversarial review findings R-F1/R-F2. **This is a genuine E8-vs-E1/
+E4 trilemma, not an oversight an in-scope patch can close**: no server
+can simultaneously (1) apply an email change immediately with zero mail
+required (E1/E4), (2) let the actor read their own account back
+(inherent to any authenticated profile endpoint), and (3) hide from that
+SAME actor whether the address they just submitted was already taken
+(E8/F5) — closing it requires relaxing one of those three locked
+decisions, which is an owner call (STATE.md 🔶 OWNER DECISION REQUIRED),
+not a code fix. Pending that decision, `reauth-review-findings.e2e.spec.ts`
+pins the two proving cases as `it.skip(...)` with an inline pointer back
+here, rather than either weakening the assertions or leaving them failing
+in-tree.
 
 Both dispatch sites (`updateUserSelf` and `claimInviteAndEmit`) detect a
 collision with an in-transaction pre-`SELECT` that **excludes the
@@ -196,9 +225,18 @@ they expected. Concretely, this run's own adversarial test suite
 - A missing `currentPassword` produces byte-identical `422` bodies under
   the same conditions.
 - A colliding-email response is indistinguishable from a free-email
-  response across the full `{claim, email-change} x {mail configured,
-  unconfigured} x {notice window fresh, already claimed}` grid.
+  response, STATUS AND SHAPE, across the full `{claim, email-change} x
+  {mail configured, unconfigured} x {notice window fresh, already
+  claimed}` grid.
 
 None of this is enforced by convention alone — every claim above has a
 matrix or e2e case backing it, and a future change that breaks one of
 these fails a test, not just a review.
+
+**This does NOT extend to the residual body-VALUE oracle documented under
+"Email-collision signal (F5)" above (R-F1/R-F2)** — that gap is real,
+proven by live probe, tracked as a pending owner decision, and
+deliberately NOT claimed as closed here. Cite this page's E8 claims at
+the STATUS/SHAPE granularity they were actually tested at; do not extend
+them to "no enumeration channel exists anywhere on these endpoints"
+without reading the known-limitation callout above first.
