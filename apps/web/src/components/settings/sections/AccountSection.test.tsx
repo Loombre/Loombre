@@ -138,12 +138,53 @@ describe("AccountSection", () => {
     await act(async () => {});
   }
 
-  function inputFor(labelText: string): HTMLInputElement {
-    const label = Array.from(view!.container.querySelectorAll("label")).find((l) =>
+  // `root` scopes the lookup to a single card — needed once "Current
+  // password" (G10) appears in up to three cards at once (Profile only
+  // when email is dirty; Password and Restricted content always), so a
+  // container-wide search is ambiguous for anything but the first one in
+  // DOM order.
+  function inputFor(labelText: string, root: ParentNode = view!.container): HTMLInputElement {
+    const label = Array.from(root.querySelectorAll("label")).find((l) =>
       (l.textContent ?? "").startsWith(labelText),
     );
     if (!label) throw new Error(`no field labelled "${labelText}"`);
     return label.querySelector("input")!;
+  }
+
+  /** The `<form>` for the card whose `<h2>` reads exactly `title` — see
+   *  `inputFor`'s header for why cards need scoping now. */
+  function sectionForm(title: string): HTMLFormElement {
+    const heading = Array.from(view!.container.querySelectorAll("h2")).find((h) => (h.textContent ?? "") === title);
+    if (!heading) throw new Error(`no section titled "${title}"`);
+    const form = heading.closest("form");
+    if (!form) throw new Error(`section "${title}" is not inside a form`);
+    return form as HTMLFormElement;
+  }
+
+  /** A well-formed 403 `current-password-invalid` (G3) — the shape
+   *  apps/server/src/gateway/current-password-invalid.exception.ts sends,
+   *  reduced to what these components actually read (`.status`, `.problem.
+   *  code`, `.message`). */
+  function currentPasswordInvalidError(): FakeApiError {
+    const err = new FakeApiError("Current password is incorrect");
+    Object.assign(err, {
+      status: 403,
+      problem: {
+        type: "urn:loombre:problem:current-password-invalid",
+        title: "Current password is incorrect",
+        status: 403,
+        detail: "Current password is incorrect.",
+        code: "current-password-invalid",
+      },
+    });
+    return err;
+  }
+
+  /** A well-formed 429 (the shared per-user currentPassword limiter, G4). */
+  function rateLimitedError(): FakeApiError {
+    const err = new FakeApiError("Too Many Requests");
+    Object.assign(err, { status: 429, problem: { title: "Too Many Requests", status: 429 } });
+    return err;
   }
 
   function selectFor(labelText: string): HTMLSelectElement {
@@ -188,6 +229,65 @@ describe("AccountSection", () => {
     expect(options.body["birthDate"]).toBe(null);
   });
 
+  // ── G10: dirty-fields-only submission + the conditional currentPassword
+  //    field (STATE.md "Current-password re-auth on self-changes") ───────
+  describe("dirty-fields-only submission + currentPassword (G10)", () => {
+    it("no Current password field renders until email is actually touched", async () => {
+      await render();
+      expect(
+        Array.from(sectionForm("Profile").querySelectorAll("label")).some((l) =>
+          (l.textContent ?? "").startsWith("Current password"),
+        ),
+      ).toBe(false);
+    });
+
+    it("editing email reveals Current password (autoComplete=current-password); editing it back to the loaded value hides it again", async () => {
+      await render();
+      setNativeValue(inputFor("Email", sectionForm("Profile")), "new@example.com");
+      const field = inputFor("Current password", sectionForm("Profile"));
+      expect(field.getAttribute("autocomplete")).toBe("current-password");
+      expect(field.getAttribute("type")).toBe("password");
+
+      setNativeValue(inputFor("Email", sectionForm("Profile")), ME.email);
+      expect(
+        Array.from(sectionForm("Profile").querySelectorAll("label")).some((l) =>
+          (l.textContent ?? "").startsWith("Current password"),
+        ),
+      ).toBe(false);
+    });
+
+    it("a displayName-only save sends ONLY displayName — no email, no currentPassword, no birthDate", async () => {
+      await render();
+      setNativeValue(inputFor("Display name"), "Ada");
+      await click(buttonFor("Save profile"));
+
+      expect(apiPatchMock).toHaveBeenCalledTimes(1);
+      const [, options] = apiPatchMock.mock.calls[0] as [string, { body: Record<string, unknown> }];
+      expect(options.body).toEqual({ displayName: "Ada" });
+    });
+
+    it("a birthDate-only save sends ONLY birthDate — dirty-fields-only holds for both re-auth-free members", async () => {
+      await render();
+      setNativeValue(inputFor("Birth date"), "1991-02-03");
+      await click(buttonFor("Save profile"));
+
+      const [, options] = apiPatchMock.mock.calls[0] as [string, { body: Record<string, unknown> }];
+      expect(options.body).toEqual({ birthDate: "1991-02-03" });
+    });
+
+    it("changing displayName AND email sends both, plus currentPassword — never a full-form resubmit of the untouched field", async () => {
+      await render();
+      setNativeValue(inputFor("Display name"), "Ada");
+      setNativeValue(inputFor("Email"), "new@example.com");
+      setNativeValue(inputFor("Current password", sectionForm("Profile")), "hunter2");
+      await click(buttonFor("Save profile"));
+
+      const [, options] = apiPatchMock.mock.calls[0] as [string, { body: Record<string, unknown> }];
+      expect(options.body).toEqual({ displayName: "Ada", email: "new@example.com", currentPassword: "hunter2" });
+      expect(options.body).not.toHaveProperty("birthDate");
+    });
+  });
+
   // ── E4/M1: email is now an OPTIONAL profile field ───────────────────────
   describe("optional email (E4/M1)", () => {
     it("the email field has no `required` attribute and is labelled optional", async () => {
@@ -199,16 +299,18 @@ describe("AccountSection", () => {
       expect(label.textContent).toMatch(/optional/i);
     });
 
-    it("clearing the email PATCHes email: null — the same null-to-clear precedent as birthDate", async () => {
+    it("clearing the email PATCHes email: null and sends currentPassword — the same null-to-clear precedent as birthDate, plus re-auth", async () => {
       await render();
       expect(inputFor("Email").value).toBe(ME.email);
       setNativeValue(inputFor("Email"), "");
+      setNativeValue(inputFor("Current password", sectionForm("Profile")), "hunter2");
       await click(buttonFor("Save profile"));
 
       expect(apiPatchMock).toHaveBeenCalledTimes(1);
       const [path, options] = apiPatchMock.mock.calls[0] as [string, { body: Record<string, unknown> }];
       expect(path).toBe("/users/me");
       expect(options.body["email"]).toBe(null);
+      expect(options.body["currentPassword"]).toBe("hunter2");
     });
 
     it("a user with no email on file loads with an empty field, not a crash", async () => {
@@ -220,13 +322,28 @@ describe("AccountSection", () => {
       expect(inputFor("Email").value).toBe("");
     });
 
-    it("a set email still round-trips as the string", async () => {
+    it("a set email still round-trips as the string, alongside currentPassword", async () => {
       await render();
       setNativeValue(inputFor("Email"), "new@example.com");
+      setNativeValue(inputFor("Current password", sectionForm("Profile")), "hunter2");
       await click(buttonFor("Save profile"));
 
       const [, options] = apiPatchMock.mock.calls[0] as [string, { body: Record<string, unknown> }];
       expect(options.body["email"]).toBe("new@example.com");
+      expect(options.body["currentPassword"]).toBe("hunter2");
+    });
+
+    it("wrong currentPassword 403s onto the Current password field, preserving the typed email", async () => {
+      await render();
+      apiPatchMock.mockImplementationOnce(() => Promise.reject(currentPasswordInvalidError()));
+      setNativeValue(inputFor("Email"), "new@example.com");
+      setNativeValue(inputFor("Current password", sectionForm("Profile")), "wrong");
+      await click(buttonFor("Save profile"));
+
+      const field = inputFor("Current password", sectionForm("Profile"));
+      expect(field.closest("label")!.textContent).toMatch(/current password is incorrect/i);
+      expect(field.value).toBe("wrong");
+      expect(inputFor("Email").value).toBe("new@example.com");
     });
   });
 
@@ -316,40 +433,111 @@ describe("AccountSection", () => {
     });
   });
 
-  it("changing the password submits only the password and clears the inputs", async () => {
-    await render();
-    setNativeValue(inputFor("New password"), "correct horse battery");
-    setNativeValue(inputFor("Confirm new password"), "correct horse battery");
-    await click(buttonFor("Change password"));
+  // ── ChangePasswordSection: currentPassword re-auth (G10/F1-F3) ─────────
+  describe("ChangePasswordSection currentPassword re-auth (G10)", () => {
+    it("renders a Current password field with autoComplete=current-password", async () => {
+      await render();
+      const field = inputFor("Current password", sectionForm("Password"));
+      expect(field.getAttribute("autocomplete")).toBe("current-password");
+      expect(field.getAttribute("type")).toBe("password");
+    });
 
-    expect(apiPatchMock).toHaveBeenCalledTimes(1);
-    const [path, options] = apiPatchMock.mock.calls[0] as [string, { body: Record<string, unknown> }];
-    expect(path).toBe("/users/me");
-    expect(options.body).toEqual({ password: "correct horse battery" });
-    expect(inputFor("New password").value).toBe("");
-    expect(inputFor("Confirm new password").value).toBe("");
-  });
+    it("changing the password submits currentPassword + password and clears all three inputs", async () => {
+      await render();
+      setNativeValue(inputFor("Current password", sectionForm("Password")), "old-pw");
+      setNativeValue(inputFor("New password"), "correct horse battery");
+      setNativeValue(inputFor("Confirm new password"), "correct horse battery");
+      await click(buttonFor("Change password"));
 
-  it("a confirmation mismatch is rejected client-side without any request", async () => {
-    await render();
-    setNativeValue(inputFor("New password"), "correct horse battery");
-    setNativeValue(inputFor("Confirm new password"), "correct horse batteru");
-    await click(buttonFor("Change password"));
+      expect(apiPatchMock).toHaveBeenCalledTimes(1);
+      const [path, options] = apiPatchMock.mock.calls[0] as [string, { body: Record<string, unknown> }];
+      expect(path).toBe("/users/me");
+      expect(options.body).toEqual({ password: "correct horse battery", currentPassword: "old-pw" });
+      expect(inputFor("Current password", sectionForm("Password")).value).toBe("");
+      expect(inputFor("New password").value).toBe("");
+      expect(inputFor("Confirm new password").value).toBe("");
+    });
 
-    expect(apiPatchMock).not.toHaveBeenCalled();
-    expect(view!.container.textContent ?? "").toMatch(/don't match/i);
-  });
+    it("a confirmation mismatch is rejected client-side without any request", async () => {
+      await render();
+      setNativeValue(inputFor("Current password", sectionForm("Password")), "old-pw");
+      setNativeValue(inputFor("New password"), "correct horse battery");
+      setNativeValue(inputFor("Confirm new password"), "correct horse batteru");
+      await click(buttonFor("Change password"));
 
-  it("surfaces a server rejection instead of reporting success", async () => {
-    await render();
-    apiPatchMock.mockImplementationOnce(() => Promise.reject(new FakeApiError("Password is too short.")));
-    setNativeValue(inputFor("New password"), "x");
-    setNativeValue(inputFor("Confirm new password"), "x");
-    await click(buttonFor("Change password"));
+      expect(apiPatchMock).not.toHaveBeenCalled();
+      expect(view!.container.textContent ?? "").toMatch(/don't match/i);
+    });
 
-    const text = view!.container.textContent ?? "";
-    expect(text).toMatch(/Password is too short\./);
-    expect(text).not.toMatch(/Saved/);
+    it("surfaces a server rejection instead of reporting success", async () => {
+      await render();
+      apiPatchMock.mockImplementationOnce(() => Promise.reject(new FakeApiError("Password is too short.")));
+      setNativeValue(inputFor("Current password", sectionForm("Password")), "old-pw");
+      setNativeValue(inputFor("New password"), "x");
+      setNativeValue(inputFor("Confirm new password"), "x");
+      await click(buttonFor("Change password"));
+
+      const text = view!.container.textContent ?? "";
+      expect(text).toMatch(/Password is too short\./);
+      expect(text).not.toMatch(/Saved/);
+    });
+
+    it("wrong currentPassword 403s onto the Current password field, preserving the typed new password", async () => {
+      await render();
+      apiPatchMock.mockImplementationOnce(() => Promise.reject(currentPasswordInvalidError()));
+      setNativeValue(inputFor("Current password", sectionForm("Password")), "wrong");
+      setNativeValue(inputFor("New password"), "correct horse battery");
+      setNativeValue(inputFor("Confirm new password"), "correct horse battery");
+      await click(buttonFor("Change password"));
+
+      const field = inputFor("Current password", sectionForm("Password"));
+      expect(field.closest("label")!.textContent).toMatch(/current password is incorrect/i);
+      expect(field.value).toBe("wrong");
+      expect(inputFor("New password").value).toBe("correct horse battery");
+      expect(inputFor("Confirm new password").value).toBe("correct horse battery");
+      expect(view!.container.textContent ?? "").not.toMatch(/Saved/);
+    });
+
+    it("a 429 shows an honest rate-limited message, not a per-field error", async () => {
+      await render();
+      apiPatchMock.mockImplementationOnce(() => Promise.reject(rateLimitedError()));
+      setNativeValue(inputFor("Current password", sectionForm("Password")), "old-pw");
+      setNativeValue(inputFor("New password"), "correct horse battery");
+      setNativeValue(inputFor("Confirm new password"), "correct horse battery");
+      await click(buttonFor("Change password"));
+
+      expect(view!.container.textContent ?? "").toMatch(/too many attempts/i);
+      expect(
+        inputFor("Current password", sectionForm("Password")).closest("label")!.textContent,
+      ).not.toMatch(/incorrect/i);
+    });
+
+    it("'Other devices have been signed out.' renders only after the PATCH resolves 2xx — lying-Saved law", async () => {
+      await render();
+      setNativeValue(inputFor("Current password", sectionForm("Password")), "old-pw");
+      setNativeValue(inputFor("New password"), "correct horse battery");
+      setNativeValue(inputFor("Confirm new password"), "correct horse battery");
+
+      const form = sectionForm("Password");
+      // The intro paragraph legitimately says "your other devices" too —
+      // assert the SPECIFIC success sentence, not the broader phrase.
+      expect(form.textContent ?? "").not.toMatch(/other devices have been signed out/i);
+
+      await click(buttonFor("Change password"));
+      expect(form.textContent ?? "").toMatch(/saved/i);
+      expect(form.textContent ?? "").toMatch(/other devices have been signed out/i);
+    });
+
+    it("a rejected change never renders the devices-signed-out sentence", async () => {
+      await render();
+      apiPatchMock.mockImplementationOnce(() => Promise.reject(new FakeApiError("Password is too short.")));
+      setNativeValue(inputFor("Current password", sectionForm("Password")), "old-pw");
+      setNativeValue(inputFor("New password"), "x");
+      setNativeValue(inputFor("Confirm new password"), "x");
+      await click(buttonFor("Change password"));
+
+      expect(sectionForm("Password").textContent ?? "").not.toMatch(/other devices have been signed out/i);
+    });
   });
 
   // ── Restricted-content PIN card ───────────────────────────────────────
@@ -359,6 +547,31 @@ describe("AccountSection", () => {
   // PIN_LENGTH digits. Setting a 5-digit PIN here therefore made restricted
   // content permanently unreachable.
   describe("restricted-content PIN", () => {
+    // ── G10/F4: currentPassword is ALWAYS present on this card — every
+    //    call to PUT /users/me/restricted is account-critical, unlike the
+    //    New PIN / Current PIN fields which come and go with optIn/hasPin.
+    it("renders a Current password field (autoComplete=current-password) even before opting in", async () => {
+      await render();
+      const field = inputFor("Current password", sectionForm("Restricted content"));
+      expect(field.getAttribute("autocomplete")).toBe("current-password");
+      expect(field.getAttribute("type")).toBe("password");
+    });
+
+    it("wrong currentPassword 403s onto the Current password field, preserving the typed PIN", async () => {
+      restrictedState = { ...RESTRICTED_DEFAULT, optIn: true, hasPin: false };
+      await render();
+      apiPutMock.mockImplementationOnce(() => Promise.reject(currentPasswordInvalidError()));
+
+      setNativeValue(inputFor("New PIN"), "1234");
+      setNativeValue(inputFor("Current password", sectionForm("Restricted content")), "wrong");
+      await click(buttonFor("Save"));
+
+      const field = inputFor("Current password", sectionForm("Restricted content"));
+      expect(field.closest("label")!.textContent).toMatch(/current password is incorrect/i);
+      expect(field.value).toBe("wrong");
+      expect(inputFor("New PIN").value).toBe("1234");
+    });
+
     it("clamps the New PIN field to PIN_LENGTH digits and strips non-digits", async () => {
       restrictedState = { ...RESTRICTED_DEFAULT, optIn: true, hasPin: false };
       await render();
@@ -382,6 +595,10 @@ describe("AccountSection", () => {
       restrictedState = { ...RESTRICTED_DEFAULT, optIn: true, hasPin: false };
       await render();
 
+      // Current password is `required` now too (G10) — fill it so the
+      // native required-field check doesn't block the submit event before
+      // this form's own PIN guard ever gets a chance to run.
+      setNativeValue(inputFor("Current password", sectionForm("Restricted content")), "hunter2");
       setNativeValue(inputFor("New PIN"), "12");
       await click(buttonFor("Save"));
 
@@ -393,6 +610,7 @@ describe("AccountSection", () => {
       restrictedState = { ...RESTRICTED_DEFAULT, optIn: true, hasPin: false };
       await render();
 
+      setNativeValue(inputFor("Current password", sectionForm("Restricted content")), "hunter2");
       await click(buttonFor("Save"));
 
       expect(apiPutMock).not.toHaveBeenCalled();
@@ -404,12 +622,13 @@ describe("AccountSection", () => {
       await render();
 
       setNativeValue(inputFor("New PIN"), "1234");
+      setNativeValue(inputFor("Current password", sectionForm("Restricted content")), "hunter2");
       await click(buttonFor("Save"));
 
       expect(apiPutMock).toHaveBeenCalledTimes(1);
       const [path, options] = apiPutMock.mock.calls[0] as [string, { body: Record<string, unknown> }];
       expect(path).toBe("/users/me/restricted");
-      expect(options.body["pin"]).toBe("1234");
+      expect(options.body).toEqual({ optIn: true, pin: "1234", currentPassword: "hunter2" });
     });
 
     it("a blank New PIN with an existing PIN still saves — 'leave blank to keep current' is not a short PIN", async () => {
@@ -417,12 +636,14 @@ describe("AccountSection", () => {
       await render();
 
       setNativeValue(inputFor("Current PIN"), "1234");
+      setNativeValue(inputFor("Current password", sectionForm("Restricted content")), "hunter2");
       await click(buttonFor("Save"));
 
       expect(apiPutMock).toHaveBeenCalledTimes(1);
       const [, options] = apiPutMock.mock.calls[0] as [string, { body: Record<string, unknown> }];
       expect(options.body).not.toHaveProperty("pin");
       expect(options.body["currentPin"]).toBe("1234");
+      expect(options.body["currentPassword"]).toBe("hunter2");
     });
 
     // Opting out is server-side gated on `currentPin`, so the field that
@@ -440,11 +661,12 @@ describe("AccountSection", () => {
       expect(labels.some((t) => t.startsWith("New PIN"))).toBe(false);
 
       setNativeValue(inputFor("Current PIN"), "1234");
+      setNativeValue(inputFor("Current password", sectionForm("Restricted content")), "hunter2");
       await click(buttonFor("Save"));
 
       expect(apiPutMock).toHaveBeenCalledTimes(1);
       const [, options] = apiPutMock.mock.calls[0] as [string, { body: Record<string, unknown> }];
-      expect(options.body).toEqual({ optIn: false, currentPin: "1234" });
+      expect(options.body).toEqual({ optIn: false, currentPin: "1234", currentPassword: "hunter2" });
     });
 
     it("a half-typed New PIN abandoned by toggling Off never blocks or reaches the wire", async () => {
@@ -454,6 +676,7 @@ describe("AccountSection", () => {
       setNativeValue(inputFor("New PIN"), "12");
       await click(buttonFor("Off"));
       setNativeValue(inputFor("Current PIN"), "1234");
+      setNativeValue(inputFor("Current password", sectionForm("Restricted content")), "hunter2");
       await click(buttonFor("Save"));
 
       expect(apiPutMock).toHaveBeenCalledTimes(1);
@@ -474,11 +697,12 @@ describe("AccountSection", () => {
       expect(inputFor("Current PIN").value).toBe("54321");
 
       setNativeValue(inputFor("New PIN"), "1234");
+      setNativeValue(inputFor("Current password", sectionForm("Restricted content")), "hunter2");
       await click(buttonFor("Save"));
 
       expect(apiPutMock).toHaveBeenCalledTimes(1);
       const [, options] = apiPutMock.mock.calls[0] as [string, { body: Record<string, unknown> }];
-      expect(options.body).toEqual({ optIn: true, pin: "1234", currentPin: "54321" });
+      expect(options.body).toEqual({ optIn: true, pin: "1234", currentPin: "54321", currentPassword: "hunter2" });
     });
   });
 });

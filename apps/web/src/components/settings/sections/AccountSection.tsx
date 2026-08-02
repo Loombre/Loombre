@@ -72,6 +72,27 @@ type UserSettings = components["schemas"]["UserSettings"];
 // immutable module-level constant (packages/shared/src/language-codes.ts).
 const SORTED_LANGUAGE_OPTIONS = [...LANGUAGE_CODES].sort((a, b) => a.name.localeCompare(b.name));
 
+// ── Current-password re-auth (G10, STATE.md "Current-password re-auth on
+//    self-changes") — shared by ProfileSection, ChangePasswordSection, and
+//    RestrictedSection below. A wrong currentPassword 403s with the SAME
+//    fixed detail on every endpoint regardless of which field prompted the
+//    check (F2/G3) — `code: "current-password-invalid"` is what
+//    distinguishes it from every other 403/422 shape these forms already
+//    render (a 422 currentPin mismatch, a 429 rate-limit trip, ...), so the
+//    per-field error below is opt-in on that code alone, not on status.
+function isCurrentPasswordInvalid(err: unknown): boolean {
+  if (!(err instanceof LoombreApiError)) return false;
+  const problem = err.problem;
+  return (
+    typeof problem === "object" &&
+    problem !== null &&
+    "code" in problem &&
+    (problem as { code?: unknown }).code === "current-password-invalid"
+  );
+}
+
+const RATE_LIMITED_MESSAGE = "Too many attempts. Wait a moment and try again.";
+
 function SaveStatus({ status }: { status: "idle" | "saving" | "saved" | "error" }): React.JSX.Element | null {
   if (status === "idle") return null;
   const tone = status === "error" ? "error" : status === "saved" ? "success" : undefined;
@@ -83,47 +104,82 @@ function SaveStatus({ status }: { status: "idle" | "saving" | "saved" | "error" 
   );
 }
 
+// G10: dirty-fields-only submission (true PATCH semantics) — a member is
+// sent ONLY when its current value differs from the last-loaded/last-saved
+// snapshot (`initial` below), never the full form state. This is what lets
+// a bare displayName/birthDate-only save stay re-auth-free: updateMe's
+// `dependentRequired` triggers on `email` being PRESENT in the body, not on
+// its value, so omitting an unchanged email omits the requirement too.
+// `emailDirty` is derived at render time (Phosphor's "derived, not stored"
+// rule) — it governs BOTH whether `email`/`currentPassword` are sent and
+// whether the Current password field is even shown, so the two can never
+// drift apart.
 function ProfileSection(): React.JSX.Element {
   const [user, setUser] = useState<User | null>(null);
+  const [initial, setInitial] = useState({ displayName: "", email: "", birthDate: "" });
   const [displayName, setDisplayName] = useState("");
   const [email, setEmail] = useState("");
   const [birthDate, setBirthDate] = useState("");
+  const [currentPassword, setCurrentPassword] = useState("");
   const [status, setStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [error, setError] = useState<string | null>(null);
+  const [currentPasswordError, setCurrentPasswordError] = useState<string | null>(null);
 
   useEffect(() => {
     void apiGet("/users/me").then((u) => {
       setUser(u);
-      setDisplayName(u.displayName ?? "");
-      setEmail(u.email ?? "");
-      setBirthDate(u.birthDate ?? "");
+      const loaded = { displayName: u.displayName ?? "", email: u.email ?? "", birthDate: u.birthDate ?? "" };
+      setInitial(loaded);
+      setDisplayName(loaded.displayName);
+      setEmail(loaded.email);
+      setBirthDate(loaded.birthDate);
     });
   }, []);
+
+  // "set, changed, or cleared to null all count" (G10) — a plain string
+  // inequality against the last-loaded snapshot covers all three: a fresh
+  // value, an edited value, and "" (the form's empty-string-for-null
+  // convention) differing from a previously non-empty stored address.
+  const emailDirty = email !== initial.email;
 
   async function handleSubmit(event: FormEvent): Promise<void> {
     event.preventDefault();
     setStatus("saving");
     setError(null);
+    setCurrentPasswordError(null);
     try {
-      // `birthDate` AND (E4/M1) `email` are always sent, `null` when the
-      // input is empty: the contract types both `[string, 'null']`
-      // precisely so either can be cleared, and updateMe only touches a
-      // column when its key is PRESENT — omitting it (as this form used to
-      // for birthDate) made clearing a stored value impossible. Email is
-      // now an OPTIONAL profile field (E4: a user may authenticate by
-      // username alone) — the same null-to-clear precedent birthDate
-      // already established, not a new pattern.
-      const body: { displayName: string | null; email: string | null; birthDate: string | null } = {
-        displayName: displayName || null,
-        email: email || null,
-        birthDate: birthDate || null,
-      };
+      // `birthDate`/`email` are `null` when the input is empty: the
+      // contract types both `[string, 'null']` precisely so either can be
+      // cleared — but each member is only PRESENT at all when it changed
+      // (dirty-fields-only, see this function's header). displayName and
+      // birthDate carry no re-auth requirement; email does, exactly when
+      // present, so currentPassword rides along with it and nothing else.
+      const body: { displayName?: string | null; email?: string | null; birthDate?: string | null; currentPassword?: string } =
+        {};
+      if (displayName !== initial.displayName) body.displayName = displayName || null;
+      if (birthDate !== initial.birthDate) body.birthDate = birthDate || null;
+      if (emailDirty) {
+        body.email = email || null;
+        body.currentPassword = currentPassword;
+      }
       const u = await apiPatch("/users/me", { body });
       setUser(u);
+      const loaded = { displayName: u.displayName ?? "", email: u.email ?? "", birthDate: u.birthDate ?? "" };
+      setInitial(loaded);
+      setDisplayName(loaded.displayName);
+      setEmail(loaded.email);
+      setBirthDate(loaded.birthDate);
+      setCurrentPassword("");
       setStatus("saved");
     } catch (err) {
       setStatus("error");
-      setError(err instanceof LoombreApiError ? err.message : "Network error");
+      if (isCurrentPasswordInvalid(err)) {
+        setCurrentPasswordError(err instanceof LoombreApiError ? err.message : "Current password is incorrect.");
+      } else if (err instanceof LoombreApiError && err.status === 429) {
+        setError(RATE_LIMITED_MESSAGE);
+      } else {
+        setError(err instanceof LoombreApiError ? err.message : "Network error");
+      }
     }
   }
 
@@ -144,6 +200,19 @@ function ProfileSection(): React.JSX.Element {
         <span className={styles.label}>Email (optional)</span>
         <TextInput type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
       </label>
+      {emailDirty && (
+        <label className={styles.field}>
+          <span className={styles.label}>Current password</span>
+          <TextInput
+            type="password"
+            autoComplete="current-password"
+            value={currentPassword}
+            onChange={(e) => setCurrentPassword(e.target.value)}
+            required
+          />
+          {currentPasswordError && <span className={styles.fieldError}>{currentPasswordError}</span>}
+        </label>
+      )}
       <label className={styles.field}>
         <span className={styles.label}>Birth date</span>
         <TextInput type="date" value={birthDate} onChange={(e) => setBirthDate(e.target.value)} />
@@ -181,18 +250,27 @@ function ProfileSection(): React.JSX.Element {
 // user's entire recovery path — prove the old PIN, set a conforming new one
 // — and the contract leaves `currentPin` unconstrained for exactly this
 // reason. Clamping it would be strictly worse than the bug being fixed.
+//
+// G10/F4: `currentPassword` (below, always present) is ADDITIONAL to all of
+// the above, not a PIN replacement — every call to this endpoint is
+// account-critical (PIN set/change AND opt-in/out are one operation, F1),
+// so RestrictedSettingsUpdate requires it literally regardless of which of
+// optIn/pin/currentPin the call also carries.
 function RestrictedSection(): React.JSX.Element {
   const { state, applyRestrictedSettings } = useRestricted();
   const [optIn, setOptIn] = useState(state.optIn);
   const [pin, setPin] = useState("");
   const [currentPin, setCurrentPin] = useState("");
+  const [currentPassword, setCurrentPassword] = useState("");
   const [status, setStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [error, setError] = useState<string | null>(null);
+  const [currentPasswordError, setCurrentPasswordError] = useState<string | null>(null);
 
   useEffect(() => setOptIn(state.optIn), [state.optIn]);
 
   async function handleSubmit(event: FormEvent): Promise<void> {
     event.preventDefault();
+    setCurrentPasswordError(null);
 
     // Opting OUT never sets a PIN — the New PIN field isn't even rendered
     // then, so a value left over from before the toggle flipped is
@@ -222,17 +300,27 @@ function RestrictedSection(): React.JSX.Element {
     setStatus("saving");
     setError(null);
     try {
-      const body: { optIn: boolean; pin?: string; currentPin?: string } = { optIn };
+      const body: { optIn: boolean; currentPassword: string; pin?: string; currentPin?: string } = {
+        optIn,
+        currentPassword,
+      };
       if (newPin) body.pin = newPin;
       if (currentPin) body.currentPin = currentPin;
       const result = await apiPut("/users/me/restricted", { body });
       applyRestrictedSettings(result.optIn, result.hasPin);
       setPin("");
       setCurrentPin("");
+      setCurrentPassword("");
       setStatus("saved");
     } catch (err) {
       setStatus("error");
-      setError(err instanceof LoombreApiError ? err.message : "Network error");
+      if (isCurrentPasswordInvalid(err)) {
+        setCurrentPasswordError(err instanceof LoombreApiError ? err.message : "Current password is incorrect.");
+      } else if (err instanceof LoombreApiError && err.status === 429) {
+        setError(RATE_LIMITED_MESSAGE);
+      } else {
+        setError(err instanceof LoombreApiError ? err.message : "Network error");
+      }
     }
   }
 
@@ -252,6 +340,17 @@ function RestrictedSection(): React.JSX.Element {
           onChange={(v) => setOptIn(v === "On")}
         />
       </div>
+      <label className={styles.field}>
+        <span className={styles.label}>Current password</span>
+        <TextInput
+          type="password"
+          autoComplete="current-password"
+          value={currentPassword}
+          onChange={(e) => setCurrentPassword(e.target.value)}
+          required
+        />
+        {currentPasswordError && <span className={styles.fieldError}>{currentPasswordError}</span>}
+      </label>
       {optIn && (
         <label className={styles.field}>
           <span className={styles.label}>
@@ -301,22 +400,27 @@ function RestrictedSection(): React.JSX.Element {
 }
 
 // Its own form, deliberately NOT a field on ProfileSection: a display-name
-// or email save must never carry a password. PATCH /users/me is the only
-// password-change surface the contract has — UpdateMeRequest declares
-// `password` and, being additionalProperties:false, nothing to re-
-// authenticate with, so no current-password proof can be sent today.
-// Requiring one (contract field + a verify in
-// apps/server/src/catalog/users.controller.ts's updateMe) is an owner /
-// contract pass; until then a stolen session can already rotate the
-// password straight against the API, which this form does not widen.
+// or email save must never carry a password. G10/F1-F3 (STATE.md
+// "Current-password re-auth on self-changes"): PATCH /users/me's
+// `dependentRequired` now requires `currentPassword` whenever the body
+// carries `password` — verified server-side against the caller's OWN
+// stored hash (apps/server/src/catalog/users.controller.ts's updateMe via
+// require-current-password.ts) before the change is applied, closing the
+// stolen-session-can-rotate-the-password gap this comment used to name.
+// F3: a successful change also revokes every OTHER device's session
+// (the current one survives) — the success line below states that
+// plainly, and only after a genuine 2xx (lying-Saved law).
 function ChangePasswordSection(): React.JSX.Element {
+  const [currentPassword, setCurrentPassword] = useState("");
   const [password, setPassword] = useState("");
   const [confirmation, setConfirmation] = useState("");
   const [status, setStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [error, setError] = useState<string | null>(null);
+  const [currentPasswordError, setCurrentPasswordError] = useState<string | null>(null);
 
   async function handleSubmit(event: FormEvent): Promise<void> {
     event.preventDefault();
+    setCurrentPasswordError(null);
     if (password !== confirmation) {
       setStatus("error");
       setError("The two passwords don't match.");
@@ -325,13 +429,20 @@ function ChangePasswordSection(): React.JSX.Element {
     setStatus("saving");
     setError(null);
     try {
-      await apiPatch("/users/me", { body: { password } });
+      await apiPatch("/users/me", { body: { password, currentPassword } });
+      setCurrentPassword("");
       setPassword("");
       setConfirmation("");
       setStatus("saved");
     } catch (err) {
       setStatus("error");
-      setError(err instanceof LoombreApiError ? err.message : "Network error");
+      if (isCurrentPasswordInvalid(err)) {
+        setCurrentPasswordError(err instanceof LoombreApiError ? err.message : "Current password is incorrect.");
+      } else if (err instanceof LoombreApiError && err.status === 429) {
+        setError(RATE_LIMITED_MESSAGE);
+      } else {
+        setError(err instanceof LoombreApiError ? err.message : "Network error");
+      }
     }
   }
 
@@ -339,8 +450,19 @@ function ChangePasswordSection(): React.JSX.Element {
     <form className={styles.section} onSubmit={handleSubmit}>
       <h2 className={styles.sectionTitle}>Password</h2>
       <p className={styles.sectionBody}>
-        Changing your password does not sign your other devices out — revoke them from Devices if you need to.
+        Changing your password signs your other devices out — this one stays signed in.
       </p>
+      <label className={styles.field}>
+        <span className={styles.label}>Current password</span>
+        <TextInput
+          type="password"
+          autoComplete="current-password"
+          value={currentPassword}
+          onChange={(e) => setCurrentPassword(e.target.value)}
+          required
+        />
+        {currentPasswordError && <span className={styles.fieldError}>{currentPasswordError}</span>}
+      </label>
       <label className={styles.field}>
         <span className={styles.label}>New password</span>
         <TextInput
@@ -368,6 +490,7 @@ function ChangePasswordSection(): React.JSX.Element {
           </span>
         )}
         <SaveStatus status={status} />
+        {status === "saved" && <span className={styles.status}>Other devices have been signed out.</span>}
         <Button type="submit" variant="primary" disabled={status === "saving"}>
           Change password
         </Button>
