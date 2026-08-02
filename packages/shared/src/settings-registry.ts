@@ -672,6 +672,21 @@ const UI_ENTRIES: SettingsRegistryEntry[] = [
     requiresRestart: false,
     scope: "ui",
     envVar: "LOOMBRE_RATE_CLAIM",
+  // Password recovery (E3b/M12, STATE.md "Optional mail transport +
+  // invitation & reset flows"): shared by both new unauthenticated routes,
+  // POST /auth/forgot-password and POST /auth/reset-password
+  // (@RateLimit("passwordReset","ip") on both) — a low ceiling on purpose,
+  // since both are attempted-account-recovery surfaces (email-bombing via
+  // forgot-password, token-guessing via reset-password).
+  defineSetting({
+    key: "rateLimit.passwordReset",
+    schema: z.number().int().min(1),
+    default: 5,
+    category: "rateLimit",
+    description: "How many password-recovery requests (forgot-password or reset-password) one device may make per minute. Guards against email-bombing an account and against guessing a reset token.",
+    requiresRestart: false,
+    scope: "ui",
+    envVar: "LOOMBRE_RATE_PASSWORD_RESET",
     parseEnv: parseEnvPositiveInt,
   }),
 
