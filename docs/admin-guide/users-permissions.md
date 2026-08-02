@@ -6,14 +6,31 @@
      apps/web/src/app/admin/users/page.tsx header comment. Five-gate model
      for restricted content — docs/PLAN.md §6.4 (linked in full from the
      User Guide's restricted-content page; summarized here from the admin
-     side only). -->
+     side only). Optional mail transport + invitation & reset flows run:
+     contract CreateUserRequest (email now nullable, M1) — apps/server/src/
+     catalog/users.controller.ts's createUser header; admin/CLI password
+     recovery — apps/server/src/catalog/users.controller.ts's
+     resetUserPassword (temporary password shown once, must_change_password,
+     every refresh token revoked, non-fatal security-notice mail when
+     configured and an email is on file) and apps/server/src/cli/
+     admin-reset-password.ts (the CLI twin, actor "cli"); STATE.md
+     E3a/E4/M1/M14 for the email-optional framing and the two-tier
+     recovery design. -->
 
 ## Adding people
 
 From the Users screen, choose **+ Add user** to create an account for
-someone else in your household. You'll set their name, username, email,
-and an initial password; they can change their own password once signed
-in.
+someone else in your household yourself, right now — you choose their
+username and set an initial password together. Adding an email address
+is optional: without one, the account works exactly the same, except
+that person won't be able to recover a forgotten password themselves
+even once mail is set up (see "[Resetting a password](#resetting-a-password)"
+below for the alternative either way). They can change their own
+password, and add or remove their email address, once signed in.
+
+If you'd rather hand them a link and let them choose their own username
+and password instead of setting it up yourself, see
+[Inviting people](inviting-users.md).
 
 [SCREENSHOT: Users list with + Add user button]
 [SCREENSHOT: Create user modal]
@@ -56,6 +73,31 @@ your grant is necessary but not sufficient by itself, by design.
 Toggle a library off in the same **Library access** editor to revoke it,
 or delete a user's account entirely from the Users screen if they should
 no longer have any access at all.
+
+## Resetting a password
+
+If someone forgets their password, you can reset it for them from the
+Users screen — no need to know or guess what it was. Loombre generates a
+brand new, temporary password and shows it to you once, with a copy
+button; write it down or hand it straight over, because there's no way
+to see it again afterward.
+
+[SCREENSHOT: Users screen showing the reset-password action, and the resulting temporary password shown once]
+
+Hand the temporary password to whoever needs it. The next time they sign
+in, Loombre requires them to choose a real password of their own before
+they can do anything else — and every device they were previously signed
+in on is signed out immediately, so the reset takes effect everywhere at
+once, not just on whichever device signs in first.
+
+If mail is configured (see [Mail](mail.md)) and the person has an email
+address on file, Loombre also sends them a short notice that their
+password was reset — informational only; it never contains the temporary
+password itself.
+
+Prefer not to use a screen at all? The exact same reset is available to
+whoever runs your Loombre server directly — see the Operator Guide's
+[password-reset recovery steps](../ops/cli.md#forgot-a-password).
 
 ## Forgot PIN?
 
