@@ -60,6 +60,17 @@
 // must-change screen (below) BEFORE ever reaching /home. The server
 // enforces the lockdown; this is the honest UX for it.
 //
+// G10 (STATE.md "Current-password re-auth on self-changes"): that PATCH
+// now dependentRequires `currentPassword` alongside `password` — same rule
+// as every other self-service password change. The must-change screen's
+// "Temporary password" field supplies it — a genuine re-entry, not
+// auto-filled from the `password` state above even though that value is
+// sitting right there: this is a real re-authentication gate (the exact
+// same "prove you still hold the secret" property every other currentPassword
+// field on this app asks for), not busywork to route around. The copy just
+// says plainly that it IS the value they signed in with seconds ago, so
+// re-typing it reads as confirmation rather than confusion.
+//
 // STATE.md "Blaze logo rollout" G1 (Lane B owns this surface): the
 // pulsing accent-colored dot (class + keyframes now deleted; identifiers
 // not named here — the brand:pulse-dot gate bans them, comments included)
@@ -95,6 +106,22 @@ import styles from "./page.module.css";
 
 const SERVER_URL_KEY = "loombre.onboarding.serverUrl";
 
+// G10 (STATE.md "Current-password re-auth on self-changes") — same check as
+// AccountSection.tsx's isCurrentPasswordInvalid: a wrong `currentPassword`
+// 403s with `code: "current-password-invalid"` regardless of which endpoint
+// prompted it (F2/G3), which is what distinguishes it from every other
+// error this form already renders (a mismatch, a network failure, a 429).
+function isCurrentPasswordInvalid(err: unknown): boolean {
+  if (!(err instanceof LoombreApiError)) return false;
+  const problem = err.problem;
+  return (
+    typeof problem === "object" &&
+    problem !== null &&
+    "code" in problem &&
+    (problem as { code?: unknown }).code === "current-password-invalid"
+  );
+}
+
 export default function LoginPage(): React.JSX.Element {
   const router = useRouter();
   const [serverUrl, setServerUrl] = useState("");
@@ -114,9 +141,11 @@ export default function LoginPage(): React.JSX.Element {
   // this just switches which form renders, it never signs the user back
   // out.
   const [mustChange, setMustChange] = useState(false);
+  const [tempPassword, setTempPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmNewPassword, setConfirmNewPassword] = useState("");
   const [mustChangeError, setMustChangeError] = useState<string | null>(null);
+  const [tempPasswordError, setTempPasswordError] = useState<string | null>(null);
   const [mustChangeSubmitting, setMustChangeSubmitting] = useState(false);
 
   useEffect(() => {
@@ -196,6 +225,7 @@ export default function LoginPage(): React.JSX.Element {
   async function handleMustChangeSubmit(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
     setMustChangeError(null);
+    setTempPasswordError(null);
     if (newPassword !== confirmNewPassword) {
       setMustChangeError("Passwords don't match.");
       return;
@@ -205,11 +235,18 @@ export default function LoginPage(): React.JSX.Element {
       // A password change is one of the exact three routes the server
       // still allows while mustChangePassword is set (M14) — this is the
       // authenticated apiPatch wrapper, not a public client (see this
-      // file's import comment).
-      await apiPatch("/users/me", { body: { password: newPassword } });
+      // file's import comment). G10: currentPassword rides along, proving
+      // the temporary password the user just signed in with.
+      await apiPatch("/users/me", { body: { password: newPassword, currentPassword: tempPassword } });
       router.replace("/home");
     } catch (err) {
-      setMustChangeError(err instanceof LoombreApiError ? err.message : "Could not change your password. Try again.");
+      if (isCurrentPasswordInvalid(err)) {
+        setTempPasswordError(err instanceof LoombreApiError ? err.message : "Current password is incorrect.");
+      } else if (err instanceof LoombreApiError && err.status === 429) {
+        setMustChangeError("Too many attempts. Wait a moment and try again.");
+      } else {
+        setMustChangeError(err instanceof LoombreApiError ? err.message : "Could not change your password. Try again.");
+      }
     } finally {
       setMustChangeSubmitting(false);
     }
@@ -231,8 +268,22 @@ export default function LoginPage(): React.JSX.Element {
         <form className={styles.form} onSubmit={(e) => void handleMustChangeSubmit(e)}>
           <div className={styles.formHeading}>Set a new password</div>
           <p className={styles.mustChangeNote}>
-            An admin reset your password. Choose a new one to continue — you&apos;re already signed in.
+            An admin reset your password. Enter the temporary password you just signed in with, then choose a new
+            one to continue — you&apos;re already signed in.
           </p>
+          <label className={styles.field} htmlFor="tempPassword">
+            <span className={styles.label}>Temporary password</span>
+            <TextInput
+              id="tempPassword"
+              name="tempPassword"
+              type="password"
+              autoComplete="current-password"
+              required
+              value={tempPassword}
+              onChange={(e) => setTempPassword(e.target.value)}
+            />
+            {tempPasswordError && <span className={styles.fieldError}>{tempPasswordError}</span>}
+          </label>
           <label className={styles.field} htmlFor="newPassword">
             <span className={styles.label}>New password</span>
             <TextInput
