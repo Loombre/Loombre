@@ -340,6 +340,42 @@ async function main() {
     await client.query('COMMIT');
     console.log('seed-large: committed successfully.');
 
+    // Update planner statistics NOW, synchronously, rather than waiting on
+    // autovacuum's ANALYZE to fire at some nondeterministic point after this
+    // 50k-row bulk load. Without stats, Postgres estimates ~1 row for
+    // `WHERE library_id = $x AND item_type = 'movie'` (the browse hot path)
+    // and prices a scan-all-50k-rows + top-N Sort plan at cost 8.32 — a hair
+    // under the correct keyset-index seek's 8.43 — so it picks the Sort and
+    // the ENFORCING perf-t0 job's browsePageList p95 blows past its 100ms
+    // budget (measured 177ms on CI). With stats present the same query plans
+    // as a streaming index seek (~0.08ms). Production never sees the no-stats
+    // state persistently (autovacuum keeps stats fresh); only a fresh
+    // migrate+seed+measure run does, which is exactly what perf-t0 does — so
+    // the fix belongs here, at the end of the bulk loader, per the standard
+    // "ANALYZE after a bulk load" practice. This also makes perf-t0
+    // deterministic: the pass/fail was previously a race against autovacuum.
+    //
+    // Scoped to exactly the tables this script bulk-loads (not a bare
+    // whole-DB `ANALYZE`) so the "analyze what you just loaded" intent stays
+    // honest. This list mirrors the INSERTs above; extend it if this script
+    // starts loading another table.
+    //
+    // max_parallel_maintenance_workers = 0 pins the ANALYZE to the leader
+    // backend so it never allocates a parallel dynamic-shared-memory segment:
+    // the dev-compose Postgres container ships a 64 MiB /dev/shm, and under
+    // any concurrent /dev/shm pressure a parallel ANALYZE can die mid-run with
+    // "could not resize shared memory segment ... No space left on device".
+    // Serial ANALYZE of these nine tables is a fraction of a second and makes
+    // the stats refresh succeed deterministically in every environment, not
+    // just on CI's ample-memory runner.
+    console.log('seed-large: ANALYZE (refresh planner statistics after bulk load)...');
+    await client.query('SET max_parallel_maintenance_workers = 0');
+    await client.query('SET max_parallel_workers_per_gather = 0');
+    await client.query(
+      'ANALYZE catalog_items, movie_details, media_files, media_streams, ' +
+        'item_people, item_tags, images, people, tags',
+    );
+
     const { rows: counts } = await client.query(
       `SELECT
          (SELECT count(*)::int FROM catalog_items WHERE library_id = $1) AS movies,
