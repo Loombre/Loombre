@@ -197,7 +197,7 @@ const PUBLIC_OPERATION_IDS = new Set([
   "getSetupState",
   "createFirstAdmin",
   // "Optional mail transport + invitation & reset flows", E2/M12 (Lane A):
-  // GET/POST /claim/{token} — public by necessity, same posture as the
+  // GET/POST /invites/claim/{token} — public by necessity, same posture as the
   // setup pair above (see gateway/auth.guard.ts's PUBLIC_ROUTE_PATTERNS).
   "getClaimState",
   "claimInvite",
