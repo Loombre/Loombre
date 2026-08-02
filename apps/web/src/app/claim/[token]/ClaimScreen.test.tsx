@@ -156,7 +156,7 @@ describe("ClaimScreen — E2/M12/M16", () => {
 
     expect(postSpy).toHaveBeenCalledTimes(1);
     const [path, options] = postSpy.mock.calls[0] as [string, { params: { path: { token: string } }; body: Record<string, unknown> }];
-    expect(path).toBe("/claim/{token}");
+    expect(path).toBe("/invites/claim/{token}");
     expect(options.params.path.token).toBe("tok-4");
     expect(options.body["username"]).toBe("newperson");
     expect(routerReplace).toHaveBeenCalledWith("/home");
