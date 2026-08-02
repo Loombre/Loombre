@@ -594,6 +594,13 @@ paths:
       operationId: updateMe
       tags: [users]
       summary: Update the current user's own profile
+      description: >-
+        G3 (STATE.md "Current-password re-auth on self-changes"): a body
+        containing `password` and/or `email` (any value, `null` included)
+        requires `currentPassword` — see UpdateMeRequest's own
+        `dependentRequired`. A missing/wrong currentPassword when required
+        403s/422s; a bodyless or displayName/birthDate-only body needs no
+        re-auth.
       requestBody:
         required: true
         content:
@@ -606,7 +613,15 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/User' }
         '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
         '422': { $ref: '#/components/responses/UnprocessableEntity' }
+        '429':
+          description: Rate limited (per-user current-password attempts)
+          headers:
+            Retry-After: { schema: { type: integer }, description: Seconds until the next attempt is allowed. }
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
         default: { $ref: '#/components/responses/Problem' }
 
   /users/me/settings:
@@ -664,6 +679,13 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '422': { $ref: '#/components/responses/UnprocessableEntity' }
+        '429':
+          description: Rate limited (per-user current-password attempts)
+          headers:
+            Retry-After: { schema: { type: integer }, description: Seconds until the next attempt is allowed. }
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
         default: { $ref: '#/components/responses/Problem' }
 
   # ─────────────────────────────── Invites (E2) ─────────────────────────────
@@ -4153,6 +4175,27 @@ components:
           description: 'M1: null-to-clear (birthDate precedent below).'
         birthDate: { type: [string, 'null'], format: date }
         password: { type: string, format: password, minLength: 1 }
+        currentPassword:
+          type: string
+          format: password
+          description: >-
+            Current-password re-authentication (G2/G3, STATE.md
+            "Current-password re-auth on self-changes"). Required
+            (`dependentRequired` below) whenever this request's body
+            contains `password` and/or `email` — ANY value, including an
+            explicit `null` to clear email — since both are account-
+            critical self-service changes; a bare displayName/birthDate-
+            only profile save needs no re-auth. Deliberately UNCONSTRAINED,
+            same reasoning as RestrictedSettingsUpdate.currentPin below: it
+            proves an ALREADY-STORED secret and is only ever compared
+            against a stored hash, never itself stored, so a shape
+            constraint would add nothing. A wrong value 403s with the same
+            fixed detail regardless of which field (password or email) was
+            being changed (F2: never confirms which target value was the
+            problem).
+      dependentRequired:
+        password: [currentPassword]
+        email: [currentPassword]
 
     UserSettings:
       type: object
@@ -4315,7 +4358,7 @@ components:
     RestrictedSettingsUpdate:
       type: object
       additionalProperties: false
-      required: [optIn]
+      required: [optIn, currentPassword]
       properties:
         optIn: { type: boolean }
         pin:
@@ -4338,6 +4381,20 @@ components:
             user's only recovery path (prove the old PIN, set a conforming
             new one, or opt out). It is only ever compared against a stored
             hash, never stored, so the looser shape widens nothing.
+        currentPassword:
+          type: string
+          format: password
+          description: >-
+            Current-password re-authentication (G2/G3, STATE.md
+            "Current-password re-auth on self-changes"). ALWAYS required —
+            every call to this endpoint is account-critical (PIN set/change
+            AND opt-in/out are one operation, F1). Deliberately
+            UNCONSTRAINED, same reasoning as currentPin above: it proves an
+            already-stored secret and is only ever compared against a
+            stored hash, never itself stored. Distinct from currentPin —
+            proving the account password does not replace proving the PIN
+            where the PIN itself is also required (F4: "currentPassword is
+            additional, not a PIN replacement").
 
     RestrictedSettings:
       type: object
