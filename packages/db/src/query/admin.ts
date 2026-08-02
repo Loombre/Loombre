@@ -23,10 +23,13 @@
 // mirrors src/query/identity.ts's own stated reasoning for living in the
 // public barrel rather than @loombre/db/internal.
 //
-// displayName: the `users` table has no such column (0001_init.sql) — the
-// contract's User.displayName is optional/nullable and always returned as
-// `null` by every function here; a future migration would add real storage,
-// out of scope for this wave (no migration touched).
+// displayName / email (M1/M2, migrations/0023_user_invites.sql): the gap
+// this header used to document is CLOSED — users.display_name is a real
+// column now, and users.email lost its NOT NULL (an additive loosening,
+// still CITEXT UNIQUE). createUserAdmin/updateUserAdmin/updateUserSelf all
+// read/write both for real; mapUser at every call site (apps/server's
+// users.controller.ts, setup.controller.ts) returns the row's own value
+// instead of a hardcoded `null`.
 //
 // ADDENDUM (STATE.md P2.8/deliverable E, websocket-presence lane):
 // listActiveSessionsAdmin below is the one function in this file that DOES
@@ -103,10 +106,14 @@ export async function listUsersAdmin(db: Kysely<DB>, params: ListUsersParams = {
 
 export interface CreateUserAdminInput {
   username: string;
-  email: string;
+  /** M1: nullable — omitted/undefined-at-the-caller-layer becomes NULL,
+   *  matching CreateUserRequest.email's now-optional presence. */
+  email: string | null;
   passwordHash: string;
   isAdmin: boolean;
   maxContentRating: string | null;
+  /** M2: optional — omit or pass null/undefined for "unset". */
+  displayName?: string | null;
   nowMs: number;
 }
 
@@ -120,6 +127,7 @@ export async function createUserAdmin(db: Kysely<DB>, input: CreateUserAdminInpu
       birth_date: null,
       max_content_rating: input.maxContentRating,
       is_admin: input.isAdmin,
+      display_name: input.displayName ?? null,
       created_at_ms: input.nowMs,
       updated_at_ms: input.nowMs,
     })
@@ -128,9 +136,13 @@ export async function createUserAdmin(db: Kysely<DB>, input: CreateUserAdminInpu
 }
 
 export interface UpdateUserAdminInput {
-  email?: string;
+  /** M1: `undefined` -> untouched (same convention every other optional
+   *  field here already uses); an explicit `null` clears the email. */
+  email?: string | null;
   isAdmin?: boolean;
   maxContentRating?: string | null;
+  /** M2: `undefined` -> untouched; an explicit `null` clears the name. */
+  displayName?: string | null;
   nowMs: number;
 }
 
@@ -145,6 +157,7 @@ export async function updateUserAdmin(
       ...(input.email !== undefined ? { email: input.email } : {}),
       ...(input.isAdmin !== undefined ? { is_admin: input.isAdmin } : {}),
       ...(input.maxContentRating !== undefined ? { max_content_rating: input.maxContentRating } : {}),
+      ...(input.displayName !== undefined ? { display_name: input.displayName } : {}),
       updated_at_ms: input.nowMs,
     })
     .where('id', '=', id)
@@ -158,9 +171,13 @@ export async function deleteUserAdmin(db: Kysely<DB>, id: string): Promise<boole
 }
 
 export interface UpdateUserSelfInput {
-  email?: string;
+  /** M1: `undefined` -> untouched; `null` clears it (UpdateMeRequest's
+   *  null-to-clear convention, same as birthDate below). */
+  email?: string | null;
   birthDate?: string | null;
   passwordHash?: string;
+  /** M2: `undefined` -> untouched; `null` clears it. */
+  displayName?: string | null;
   nowMs: number;
 }
 
@@ -178,6 +195,7 @@ export async function updateUserSelf(
       ...(input.email !== undefined ? { email: input.email } : {}),
       ...(input.birthDate !== undefined ? { birth_date: input.birthDate } : {}),
       ...(input.passwordHash !== undefined ? { password_hash: input.passwordHash } : {}),
+      ...(input.displayName !== undefined ? { display_name: input.displayName } : {}),
       updated_at_ms: input.nowMs,
     })
     .where('id', '=', userId)

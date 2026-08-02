@@ -80,7 +80,11 @@ export interface ExportItemRow {
 export interface ExportUserRow {
   id: string;
   username: string;
-  email: string;
+  /** M1: nullable — an email-less user exports/imports with `email: null`. */
+  email: string | null;
+  /** M2: nullable — carried through the archive round trip like every
+   *  other user field (E4 archive check). */
+  displayName: string | null;
   isAdmin: boolean;
   createdAtMs: number;
 }
@@ -175,7 +179,7 @@ export async function* exportData(
   if (viewer?.is_admin) {
     const users = await db
       .selectFrom('users')
-      .select(['id', 'username', 'email', 'is_admin', 'created_at_ms'])
+      .select(['id', 'username', 'email', 'display_name', 'is_admin', 'created_at_ms'])
       .execute();
 
     for (const u of users) {
@@ -185,6 +189,7 @@ export async function* exportData(
           id: u.id,
           username: u.username,
           email: u.email,
+          displayName: u.display_name,
           isAdmin: u.is_admin,
           createdAtMs: u.created_at_ms,
         },
