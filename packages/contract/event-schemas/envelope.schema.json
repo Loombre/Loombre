@@ -21,7 +21,8 @@
     "mail.failed",
     "user.invited",
     "user.invite-revoked",
-    "user.claimed"
+    "user.claimed",
+    "user.password-reset"
   ],
   "type": "object",
   "additionalProperties": false,
@@ -67,7 +68,8 @@
         "mail.failed",
         "user.invited",
         "user.invite-revoked",
-        "user.claimed"
+        "user.claimed",
+        "user.password-reset"
       ],
       "description": "Closed enum today; additions are additive contract PRs (new event types are always backward compatible for existing consumers)."
     },
