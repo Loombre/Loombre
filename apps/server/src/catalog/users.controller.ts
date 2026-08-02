@@ -2,9 +2,12 @@
 // Loombre :: apps/server/src/catalog/users.controller.ts
 //
 // GET/POST /users, GET/PATCH/DELETE /users/{id} (admin), GET/PATCH /users/me,
-// GET/PUT /users/me/settings (self-service). See
-// packages/db/src/query/admin.ts's header for why displayName is always
-// `null` (no such column exists yet).
+// GET/PUT /users/me/settings (self-service).
+//
+// M1/M2 (migrations/0023_user_invites.sql): email is optional (an admin
+// may create/leave a user email-less) and displayName is a real column at
+// last — the H1 bug class this file's header used to document (the value
+// was silently discarded while the UI reported "Saved") is closed.
 
 import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Query, Req } from "@nestjs/common";
 import {
@@ -32,7 +35,7 @@ function mapUser(row: AdminUserRow) {
     id: row.id,
     username: row.username,
     email: row.email,
-    displayName: null,
+    displayName: row.display_name,
     isAdmin: row.is_admin,
     birthDate: row.birth_date,
     maxContentRating: row.max_content_rating,
@@ -128,8 +131,11 @@ export class UsersController {
     if (typeof body["username"] !== "string" || body["username"].length === 0) {
       throw unprocessableEntity("username is required.", instance);
     }
-    if (typeof body["email"] !== "string" || body["email"].length === 0) {
-      throw unprocessableEntity("email is required.", instance);
+    // M1: email is optional now (CreateUserRequest no longer requires it)
+    // — a present-but-non-string/empty value still 422s, matching every
+    // other field's "present but wrong shape" posture.
+    if (body["email"] !== undefined && (typeof body["email"] !== "string" || body["email"].length === 0)) {
+      throw unprocessableEntity("email must be a non-empty string when present.", instance);
     }
     if (typeof body["password"] !== "string" || body["password"].length === 0) {
       throw unprocessableEntity("password is required.", instance);
@@ -145,10 +151,11 @@ export class UsersController {
     // exists for first-run onboarding only).
     const created = await createUserAdminAndEmit(this.dbProvider.db, {
       username: body["username"],
-      email: body["email"],
+      email: typeof body["email"] === "string" ? body["email"] : null,
       passwordHash,
       isAdmin: body["isAdmin"] === true,
       maxContentRating: typeof body["maxContentRating"] === "string" ? body["maxContentRating"] : null,
+      displayName: typeof body["displayName"] === "string" ? body["displayName"] : null,
       nowMs: clockNowMs(),
       actorUserId: req.user!.userId,
     });
@@ -184,9 +191,15 @@ export class UsersController {
     }
 
     const updated = await updateUserSelf(this.dbProvider.db, req.user!.userId, {
-      ...(typeof body["email"] === "string" ? { email: body["email"] } : {}),
+      // M1: UpdateMeRequest's email is now `[string, 'null']` — present-but-
+      // not-a-string (i.e. explicit `null`) clears it, matching birthDate's
+      // own established null-to-clear convention below.
+      ...(body["email"] !== undefined ? { email: typeof body["email"] === "string" ? body["email"] : null } : {}),
       ...(body["birthDate"] !== undefined
         ? { birthDate: typeof body["birthDate"] === "string" ? body["birthDate"] : null }
+        : {}),
+      ...(body["displayName"] !== undefined
+        ? { displayName: typeof body["displayName"] === "string" ? body["displayName"] : null }
         : {}),
       ...(passwordHash !== undefined ? { passwordHash } : {}),
       nowMs: clockNowMs(),
@@ -306,10 +319,16 @@ export class UsersController {
     requireUuidParam(id, "User not found.", req.originalUrl);
     const body = rawBody ?? {};
     const updated = await updateUserAdmin(this.dbProvider.db, id, {
-      ...(typeof body["email"] === "string" ? { email: body["email"] } : {}),
+      // M1: UpdateUserRequest.email is `[string, 'null']` now — present-but-
+      // not-a-string clears it (same null-to-clear convention as
+      // maxContentRating below).
+      ...(body["email"] !== undefined ? { email: typeof body["email"] === "string" ? body["email"] : null } : {}),
       ...(typeof body["isAdmin"] === "boolean" ? { isAdmin: body["isAdmin"] } : {}),
       ...(body["maxContentRating"] !== undefined
         ? { maxContentRating: typeof body["maxContentRating"] === "string" ? body["maxContentRating"] : null }
+        : {}),
+      ...(body["displayName"] !== undefined
+        ? { displayName: typeof body["displayName"] === "string" ? body["displayName"] : null }
         : {}),
       nowMs: clockNowMs(),
     });
