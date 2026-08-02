@@ -77,7 +77,7 @@ const MUST_CHANGE_PASSWORD_ALLOWED_ROUTES = new Set([
 
 /**
  * "Optional mail transport + invitation & reset flows", E2/M12 (Lane A):
- * GET/POST /claim/{token} are public, but — unlike every PUBLIC_ROUTES
+ * GET/POST /invites/claim/{token} are public, but — unlike every PUBLIC_ROUTES
  * entry above — carry a variable path segment (the raw invite token),
  * which a literal-string Set can never match. This is the FIRST dynamic
  * public route in the codebase; extending the guard with a small parallel
