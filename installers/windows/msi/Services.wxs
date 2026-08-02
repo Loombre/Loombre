@@ -86,11 +86,17 @@
   <?include ServerPort.wxi ?>
   <?include WebPort.wxi ?>
   <Fragment>
-    <!-- Localizes to this machine's BUILTIN\Users spelling (util's
-         QueryOsWellKnownSID custom action) for the per-service
-         util:PermissionEx grants below — a literal "Users" account name
-         would break on non-English Windows. -->
-    <PropertyRef Id="WIX_ACCOUNT_USERS" />
+    <!-- Localizes to this machine's BUILTIN\Users spelling for the
+         per-service util:PermissionEx grants below — a literal "Users"
+         account name would break on non-English Windows. WiX v5's Util
+         extension defines AND populates WIX_ACCOUNT_USERS through the
+         util:QueryWindowsWellKnownSIDs element (which schedules the SID-
+         query custom action); the v3-era `<PropertyRef Id="WIX_ACCOUNT_
+         USERS"/>` idiom no longer links under v5 (WIX0094: the identifier
+         'Property:WIX_ACCOUNT_USERS' could not be found), since the
+         property is no longer a statically-defined symbol a PropertyRef
+         can resolve. -->
+    <util:QueryWindowsWellKnownSIDs />
     <ComponentGroup Id="ServiceComponents" Directory="SVCHOSTDIR">
       <!-- ONE component, THREE ServiceInstall/ServiceControl pairs: all
            three Windows services launch the SAME shared
