@@ -105,7 +105,7 @@ describe('issuePasswordResetToken (E3b/M15)', () => {
     expect(row.used_at_ms).toBeNull();
   });
 
-  it('invalidates every previously-issued unused token for the SAME user when a new one is issued (M15)', async () => {
+  it('invalidates every previously-issued unused token for the SAME user when a new one is issued, and (F10, fix wave) opportunistically PURGES it in the same pass', async () => {
     const casual = await getUserByUsername(db, 'casual');
     const userId = casual!.id;
 
@@ -122,9 +122,13 @@ describe('issuePasswordResetToken (E3b/M15)', () => {
       expiresAtMs: 3_000 + 30 * 60 * 1000,
     });
 
+    // F10: invalidateUnusedPasswordResetTokens marks the old row used, and
+    // purgeExpiredOrUsedPasswordResetTokens (same transaction, same call)
+    // deletes it in that same pass — the row doesn't linger as a
+    // used-but-present row the way it used to; it's gone outright.
     const oldRow = await findTokenRow('hash-supersede-old');
     const newRow = await findTokenRow('hash-supersede-new');
-    expect(oldRow?.used_at_ms).toBe(3000);
+    expect(oldRow).toBeUndefined();
     expect(newRow?.used_at_ms).toBeNull();
   });
 
