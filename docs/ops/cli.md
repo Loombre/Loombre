@@ -106,6 +106,49 @@ first time. This action is recorded in the admin event feed (a
 audit trail of who reset what and when — the entry never contains the
 PIN itself, old or new.
 
+## Forgot a password?
+
+If someone using your Loombre forgets their account password, an admin
+can reset it for them from the Users screen (see the admin guide's
+[Users & permissions](../admin-guide/users-permissions.md#resetting-a-password)
+page) — or, without a browser at all, this command, run on the server
+itself:
+
+```bash
+DATABASE_URL=<your server's connection string> \
+  loombre admin reset-password <username>
+```
+
+(substitute the source-checkout or full-path invocation from "Running it"
+above if that's your install type). It will:
+
+1. Look up the user, and print a clean error and exit if the username
+   doesn't exist — nothing changes.
+2. Print exactly what it's about to do and ask you to confirm **by
+   typing `y` or `yes`** — anything else (including just pressing enter)
+   aborts with nothing changed. There is no flag to skip this prompt;
+   the interactive confirmation is the point.
+3. On confirmation, generate a random temporary password, hash and store
+   it, and require the user to choose their own real password the next
+   time they sign in. Every device that user was signed in on is signed
+   out immediately, all together. Their existing library access grants
+   and every other account setting are untouched.
+4. Print the temporary password and a one-line summary of what changed.
+
+Write the temporary password down before you close the terminal — it is
+shown exactly once, and Loombre only ever stores its hash, never the
+password itself.
+
+A user who doesn't exist has nothing to reset — the command says so and
+changes nothing.
+
+Afterward, the person signs in with the temporary password and picks a
+real one of their own immediately — Loombre requires it before letting
+them do anything else. This action is recorded in the admin event feed (a
+`user.password-reset` entry, actor `cli`, visible to admins only) so
+there's an audit trail of who reset what and when — the entry never
+contains the password itself, temporary or new.
+
 ## See also
 
 - [`loombre doctor`](#commands) and [`loombre paths`](#commands) above,
