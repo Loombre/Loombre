@@ -207,6 +207,11 @@ export class UsersController {
         ? { displayName: typeof body["displayName"] === "string" ? body["displayName"] : null }
         : {}),
       ...(passwordHash !== undefined ? { passwordHash } : {}),
+      // F5: only consulted when passwordHash is present (see
+      // updateUserSelf's own doc comment) — the caller's OWN device, from
+      // the access-token claim, so THIS session survives its own password
+      // change while every other one is revoked.
+      currentDeviceId: req.user?.deviceId ?? null,
       nowMs: clockNowMs(),
     });
     if (!updated) {
