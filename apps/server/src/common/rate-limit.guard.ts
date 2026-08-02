@@ -30,7 +30,7 @@ import type { AuthenticatedRequest } from "../gateway/auth.guard.js";
 import { SurfaceRateLimiterService } from "./surface-rate-limiter.service.js";
 import { tooManyRequests } from "./rate-limit.exception.js";
 
-export type RateLimitPolicyName = "capabilities" | "mediaToken" | "export" | "setup";
+export type RateLimitPolicyName = "capabilities" | "mediaToken" | "export" | "setup" | "claim";
 export type RateLimitKeyStrategy = "ip" | "identity" | "user";
 
 export interface RateLimitMeta {
