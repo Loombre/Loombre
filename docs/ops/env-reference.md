@@ -175,6 +175,14 @@ How many media requests one person may make per minute — posters, video, and s
 
 - **Default when unset:** 600 (or whatever was last saved from the settings screen)
 
+### `LOOMBRE_RATE_CLAIM`
+
+Pins **[Claim](/admin-guide/settings-reference#claim)** (`rateLimit.claim`) to a fixed value — set this and the admin settings screen shows the setting as controlled by the environment, read-only; any value stored from the settings screen is preserved but ignored until the variable is unset again.
+
+How many invite-claim attempts one device may make per minute, before any account exists for it. Guards the claim link against brute-force guessing.
+
+- **Default when unset:** 10 (or whatever was last saved from the settings screen)
+
 ### `LOOMBRE_PUBLIC_URL`
 
 Pins **[Public web address](/admin-guide/settings-reference#public-web-address)** (`network.publicUrl`) to a fixed value — set this and the admin settings screen shows the setting as controlled by the environment, read-only; any value stored from the settings screen is preserved but ignored until the variable is unset again.

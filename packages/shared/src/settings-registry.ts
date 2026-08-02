@@ -660,6 +660,20 @@ const UI_ENTRIES: SettingsRegistryEntry[] = [
     envVar: "LOOMBRE_RATE_MEDIA_TOKEN",
     parseEnv: parseEnvPositiveInt,
   }),
+  // "Optional mail transport + invitation & reset flows", E2/M12 (Lane A):
+  // GET/POST /claim/{token} — unauthenticated, per-IP, same floor-of-1
+  // posture as every other entry in this group.
+  defineSetting({
+    key: "rateLimit.claim",
+    schema: z.number().int().min(1),
+    default: 10,
+    category: "rateLimit",
+    description: "How many invite-claim attempts one device may make per minute, before any account exists for it. Guards the claim link against brute-force guessing.",
+    requiresRestart: false,
+    scope: "ui",
+    envVar: "LOOMBRE_RATE_CLAIM",
+    parseEnv: parseEnvPositiveInt,
+  }),
 
   // ---- stash (STATE.md "Stash SQLite metadata sync", S8, trigger (b)) ----
   // Deliverable 7(b)'s schedule trigger: no cron machinery exists anywhere
