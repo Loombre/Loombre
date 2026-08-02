@@ -141,7 +141,14 @@ describe('import consumer: empty-target ID preservation', () => {
     const series = buildSeries(lib.id);
     const season = buildSeason(lib.id, series.id, 1);
     const episode = buildEpisode(lib.id, season.id, series.id, 1);
-    const user = buildUser({ id: 'aaaaaaaa-0000-4000-8000-000000000001', username: 'restored-user' });
+    // M1/M2 (E4 archive check): a null email + a real displayName both
+    // round-trip through the empty-target ID-preservation restore path.
+    const user = buildUser({
+      id: 'aaaaaaaa-0000-4000-8000-000000000001',
+      username: 'restored-user',
+      email: null,
+      displayName: 'Restored Display Name',
+    });
     const progress = buildProgress(movie.id);
 
     const archive = buildEmptyArchive({
@@ -169,6 +176,8 @@ describe('import consumer: empty-target ID preservation', () => {
     const userRow = await db.selectFrom('users').selectAll().where('id', '=', user.id).executeTakeFirstOrThrow();
     expect(userRow.username).toBe('restored-user');
     expect(userRow.password_hash).toContain('$argon2id$'); // the unmatchable sentinel, not a real hash.
+    expect(userRow.email).toBeNull(); // M1
+    expect(userRow.display_name).toBe('Restored Display Name'); // M2
 
     const progressRow = await db
       .selectFrom('progress')

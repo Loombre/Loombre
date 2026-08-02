@@ -193,6 +193,7 @@ export function buildUser(overrides: Partial<ExportArchive['users'][number]> = {
     id: fakeId('usr'),
     username: 'historic-user',
     email: 'historic@example.com',
+    displayName: null,
     isAdmin: false,
     createdAtMs: 1_700_000_000_000,
     ...overrides,

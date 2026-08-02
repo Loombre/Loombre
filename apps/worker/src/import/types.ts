@@ -134,7 +134,11 @@ export type ArchiveItem =
 export interface ArchiveUser {
   id: string;
   username: string;
-  email: string;
+  /** M1: nullable — ExportUser.email is optional-value now (an email-less
+   *  archived user round-trips as `null`). */
+  email: string | null;
+  /** M2: nullable — ExportUser.displayName (E4 archive check). */
+  displayName: string | null;
   isAdmin: boolean;
   createdAtMs: number;
 }
