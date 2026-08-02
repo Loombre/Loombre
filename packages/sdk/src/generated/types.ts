@@ -1629,6 +1629,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/mail/credentials": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set (or replace) the SMTP username/password (admin, write-only)
+         * @description Write-only, same posture as setAdminProviderKey: the submitted credentials are never echoed back, logged, or otherwise readable again through this API — status reads (GET /admin/settings's `mailCredentials`) report configured/setAtMs/source only, never the values. Stored as one keyring entry (packages/secrets), never in server_settings. Credentials are OPTIONAL overall — unauthenticated SMTP (a private-network relay) is a legal configuration; this endpoint exists for the common case of a real mail provider that requires them. A10 live-admin re-verify gates this exactly like setAdminProviderKey.
+         */
+        put: operations["setAdminMailCredentials"];
+        post?: never;
+        /**
+         * Clear the stored SMTP username/password (admin)
+         * @description Removes the stored keyring entry. A real LOOMBRE_SMTP_USERNAME/ LOOMBRE_SMTP_PASSWORD pair, if both set, still wins on the next status read regardless (env precedence) — this only clears the keyring-stored fallback. Idempotent: clearing when nothing is stored still returns 204.
+         */
+        delete: operations["clearAdminMailCredentials"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/mail/test-send": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Send a real test email through the configured transport (admin)
+         * @description Enqueues a real `mail-send` job (template "test", no retries) — never sends inline on this request thread (CLAUDE.md invariant 6). The admin observes the outcome (delivered, or the real SMTP conversation error) via the existing admin-only job-update live feed and the job ledger's error detail for the returned `jobId`, the same surface every other queued job already reports through.
+         */
+        post: operations["testSendMail"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/plugins/preview": {
         parameters: {
             query?: never;
@@ -3242,7 +3286,7 @@ export interface components {
          */
         SettingsScope: "ui" | "env-only";
         /** @enum {string} */
-        SettingsCategory: "transcode" | "scanner" | "images" | "restricted" | "sessions" | "updateCheck" | "security" | "rateLimit" | "database" | "network" | "tls" | "paths" | "ffmpeg";
+        SettingsCategory: "transcode" | "scanner" | "images" | "restricted" | "sessions" | "updateCheck" | "security" | "rateLimit" | "database" | "network" | "tls" | "paths" | "ffmpeg" | "stash" | "mail";
         /**
          * @description Closed set of metadata providers with an admin-manageable API key (A9).
          * @enum {string}
@@ -3265,6 +3309,8 @@ export interface components {
             /** @description requiresRestart:true keys whose current effective value differs from what it was at this server instance's boot (A5). Non-empty means a restart is needed for those changes to fully apply. */
             restartPendingKeys: string[];
             providerKeys: components["schemas"]["ProviderKeyStatus"][];
+            /** @description Optional mail transport run (E5/M10) — ADDITIVE field: the SMTP username/password keyring entry's status (never the values themselves; see MailCredentialsStatus). Absent on an older client's cached shape is never load-bearing — mail credentials are optional overall (unauthenticated SMTP relays are legal). */
+            mailCredentials?: components["schemas"]["MailCredentialsStatus"];
         };
         /** @description One GET /admin/settings/schema entry — the pure registry projection (no live value): what the admin UI's dynamic widget renderer and the generated operator/admin docs both build from. */
         AdminSettingSchemaEntry: {
@@ -3316,6 +3362,40 @@ export interface components {
         SetProviderKeyRequest: {
             /** @description The raw provider API key. Write-only — never returned by any endpoint. */
             key: string;
+        };
+        /** @description GET /admin/settings' additive `mailCredentials` field — the ENTIRE shape a mail-credentials status read ever returns, same discipline as ProviderKeyStatus: never the username/password themselves. */
+        MailCredentialsStatus: {
+            configured: boolean;
+            /**
+             * Format: int64
+             * @description Null when not configured, or when sourced from the environment (which has no "when was it set" concept this server can observe).
+             */
+            setAtMs: number | null;
+            /**
+             * @description Null when `configured` is false.
+             * @enum {string|null}
+             */
+            source: "keyring" | "env" | null;
+        };
+        SetMailCredentialsRequest: {
+            /** @description Write-only — never returned by any endpoint. */
+            username: string;
+            /** @description Write-only — never returned by any endpoint. */
+            password: string;
+        };
+        TestSendMailRequest: {
+            /**
+             * Format: email
+             * @description The address to send the test message to.
+             */
+            to: string;
+        };
+        TestSendMailResponse: {
+            /**
+             * Format: uuid
+             * @description The enqueued `mail-send` job's id — poll GET /admin/jobs/{id} or watch the admin-only job.updated live feed for the outcome.
+             */
+            jobId: string;
         };
         /**
          * @description One aggregate health value per plugin (LD7) — envelope reachability plus every GRANTED capability's static check.
@@ -6503,6 +6583,99 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    setAdminMailCredentials: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetMailCredentialsRequest"];
+            };
+        };
+        responses: {
+            /** @description Credentials stored */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            /** @description LOOMBRE_SMTP_USERNAME/LOOMBRE_SMTP_PASSWORD are both set in the environment — env wins unconditionally (same precedence as every other env-pinned value in this contract); the submitted credentials cannot take effect while the pin is active. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            422: components["responses"]["UnprocessableEntity"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    clearAdminMailCredentials: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Credentials cleared */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    testSendMail: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TestSendMailRequest"];
+            };
+        };
+        responses: {
+            /** @description Test send enqueued */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TestSendMailResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            /** @description Mail is not configured yet (`mail.smtpHost`, `mail.fromAddress`, and `network.publicUrl` must all be set) — nothing was enqueued. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            422: components["responses"]["UnprocessableEntity"];
             default: components["responses"]["Problem"];
         };
     };

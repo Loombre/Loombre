@@ -70,8 +70,8 @@ describe("event-schemas (docs/PLAN.md §4.3)", () => {
     }
   });
 
-  it("envelope enum has exactly 29 types (15 through Addendum A + 6 plugin.* [LPP] + 2 watchlist.* [W2 L3] + 1 metadata.match-candidates [W2 L2] + 1 user.restricted-pin-reset [H2] + 1 probe.failed [owner ledger L1] + 1 stash.provider.disabled [Stash SQLite metadata sync, S3/K12] + 2 stash.sync.* [Stash SQLite metadata sync, S8/K12, Lane C])", () => {
-    expect(envelopeTypeEnum).toHaveLength(29);
+  it("envelope enum has exactly 30 types (15 through Addendum A + 6 plugin.* [LPP] + 2 watchlist.* [W2 L3] + 1 metadata.match-candidates [W2 L2] + 1 user.restricted-pin-reset [H2] + 1 probe.failed [owner ledger L1] + 1 stash.provider.disabled [Stash SQLite metadata sync, S3/K12] + 2 stash.sync.* [Stash SQLite metadata sync, S8/K12, Lane C] + 1 mail.failed [optional mail transport run, E6/M6])", () => {
+    expect(envelopeTypeEnum).toHaveLength(30);
     expect(envelopeTypeEnum).toEqual(
       expect.arrayContaining([
         "item.added",
@@ -322,6 +322,12 @@ describe("event-schemas (docs/PLAN.md §4.3)", () => {
         counts: { matched: 100, updated: 12, unmatched: 3, stale: 1, skipped: 0 },
         durationMs: 45_000,
         completedAtMs: 1_700_000_045_000,
+      },
+      "mail.failed": {
+        templateId: "invite",
+        to: "someone@example.com",
+        smtpError: "535 5.7.8 Authentication failed",
+        jobId: "018f6f1e-0000-7000-8000-00000000000a",
       },
     };
 
