@@ -20,7 +20,7 @@ import { fileURLToPath } from "node:url";
 import request from "supertest";
 import { NestFactory } from "@nestjs/core";
 import type { INestApplication } from "@nestjs/common";
-import { ensureTestDatabase } from "@loombre/db";
+import { createDb, ensureTestDatabase, readEventsForViewer, type ViewerContext } from "@loombre/db";
 import { AppModule } from "../src/app.module.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -65,6 +65,9 @@ function buildDeviceProfile(profileId = "web-chrome") {
 
 let app: INestApplication;
 let adminToken: string;
+let rawDb: ReturnType<typeof createDb>;
+
+const ADMIN_PASSWORD = "loombre-seed-admin";
 
 async function loginAs(username: string, password: string) {
   const res = await request(app.getHttpServer())
@@ -89,16 +92,25 @@ beforeAll(async () => {
   process.env["DATABASE_URL"] = databaseUrl;
   process.env["LOOMBRE_JWT_SECRET"] = "users-profile-e2e-test-secret-not-for-production";
   process.env["LOOMBRE_RATE_LOGIN"] = "10000";
+  // G4 (STATE.md "Current-password re-auth on self-changes"): this file's
+  // many `it` blocks share one app instance/limiter and make several
+  // password/email PATCH /users/me calls against the SAME admin user —
+  // raised here for the same "pure behavioral suite" reason
+  // LOOMBRE_RATE_LOGIN is (auth.e2e.spec.ts's identical rationale).
+  process.env["LOOMBRE_RATE_CURRENT_PASSWORD"] = "10000";
 
   app = await NestFactory.create(AppModule, { logger: false });
   await app.init();
 
-  adminToken = await loginAs("admin", "loombre-seed-admin");
+  rawDb = createDb(databaseUrl);
+  adminToken = await loginAs("admin", ADMIN_PASSWORD);
 });
 
 afterAll(async () => {
   await app.close();
+  await rawDb?.destroy();
   delete process.env["LOOMBRE_RATE_LOGIN"];
+  delete process.env["LOOMBRE_RATE_CURRENT_PASSWORD"];
 });
 
 describe("M2 (H1 bug class): PATCH /users/me displayName -> GET /users/me round trip", () => {
@@ -128,19 +140,26 @@ describe("M2 (H1 bug class): PATCH /users/me displayName -> GET /users/me round 
   });
 });
 
+// G3 (STATE.md "Current-password re-auth on self-changes"): an email
+// member — INCLUDING an explicit `null` to clear — now requires
+// currentPassword (G2's dependentRequired). The dedicated re-auth matrix
+// (missing/wrong currentPassword, 403/422/429) lives in
+// reauth.e2e.spec.ts; this suite still proves the pre-existing M1
+// null-to-clear round trip is unchanged once a valid currentPassword is
+// supplied.
 describe("M1: PATCH /users/me email null-to-clear", () => {
   it("clears email with an explicit null (birthDate precedent) and can set it back", async () => {
     const cleared = await request(app.getHttpServer())
       .patch("/users/me")
       .set("Authorization", `Bearer ${adminToken}`)
-      .send({ email: null });
+      .send({ email: null, currentPassword: ADMIN_PASSWORD });
     expect(cleared.status).toBe(200);
     expect(cleared.body.email).toBeNull();
 
     const restored = await request(app.getHttpServer())
       .patch("/users/me")
       .set("Authorization", `Bearer ${adminToken}`)
-      .send({ email: "admin@loombre.local" });
+      .send({ email: "admin@loombre.local", currentPassword: ADMIN_PASSWORD });
     expect(restored.status).toBe(200);
     expect(restored.body.email).toBe("admin@loombre.local");
   });
@@ -197,7 +216,7 @@ describe("M1/M2: PATCH /users/{id} (admin) — displayName and email null-clear"
 });
 
 describe("F5 (opus adversarial review, fix wave): PATCH /users/me {password} revokes the caller's OTHER sessions", () => {
-  it("a second device's refresh token is revoked; the CALLING device's own refresh token survives", async () => {
+  it("a second device's refresh token is revoked; the CALLING device's own refresh token survives; session.revoked-by-password-change is emitted (G5)", async () => {
     const username = `f5-self-password-${Date.now()}`;
     const oldPassword = "correct-horse-battery-old-f5";
     const created = await request(app.getHttpServer())
@@ -216,11 +235,14 @@ describe("F5 (opus adversarial review, fix wave): PATCH /users/me {password} rev
     expect(deviceB.status).toBe(200);
 
     // Change the password FROM device A's own (live) access token.
+    // G3: password member present -> currentPassword required (the
+    // CURRENT/old password, proving the caller before letting them set a
+    // new one).
     const newPassword = "correct-horse-battery-new-f5";
     const patch = await request(app.getHttpServer())
       .patch("/users/me")
       .set("Authorization", `Bearer ${deviceA.body.accessToken}`)
-      .send({ password: newPassword });
+      .send({ password: newPassword, currentPassword: oldPassword });
     expect(patch.status).toBe(200);
 
     // Device B's refresh token is dead — its session is over.
@@ -245,5 +267,23 @@ describe("F5 (opus adversarial review, fix wave): PATCH /users/me {password} rev
       .post("/auth/login")
       .send({ username, password: newPassword, deviceName: "f5-new-check", deviceProfile: buildDeviceProfile("new-check") });
     expect(newLogin.status).toBe(200);
+
+    // G5: session.revoked-by-password-change emitted, payload {userId,
+    // username, revokedCount: 1} (only device B — device A's own token
+    // was preserved). No content/library association gates this type
+    // (events.ts's GATED_TYPES), so it passes through readEventsForViewer
+    // unfiltered regardless of the ViewerContext used to read it.
+    const ctx: ViewerContext = { userId: created.body.id, allowedLibraryIds: [], restrictedCleared: false };
+    const events = await readEventsForViewer(rawDb, ctx, {});
+    const revocationEvent = events.find(
+      (e) => e.type === "session.revoked-by-password-change" && (e.payload as { userId?: string }).userId === created.body.id,
+    );
+    expect(revocationEvent).toBeDefined();
+    expect(revocationEvent!.actor_user_id).toBe(created.body.id);
+    expect(revocationEvent!.payload).toEqual({
+      userId: created.body.id,
+      username,
+      revokedCount: 1,
+    });
   });
 });
