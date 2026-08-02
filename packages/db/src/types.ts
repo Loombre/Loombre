@@ -111,6 +111,12 @@ export interface UsersTable {
    *  temporary-password reset, cleared on the next successful self-service
    *  password change. */
   must_change_password: Generated<boolean>;
+  /** migrations/0026_password_changed_epoch.sql (R-F7) — the credentials-
+   *  changed epoch; NULL until the first password change. Set alongside
+   *  password_hash by every password-change path (self-service, admin/CLI
+   *  reset, self-service token reset). apps/server/src/gateway/
+   *  auth.guard.ts rejects an access token whose iat predates this. */
+  password_changed_at_ms: number | null;
   created_at_ms: number;
   updated_at_ms: number;
 }

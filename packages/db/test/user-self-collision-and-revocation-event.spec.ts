@@ -208,6 +208,68 @@ describe('session.revoked-by-password-change event (G5/F3)', () => {
   });
 });
 
+describe('password_changed_at_ms epoch (R-F7, opus adversarial review fix wave)', () => {
+  it('set to nowMs when the update carries a password member; untouched (stays null) for a bare profile save', async () => {
+    const user = await createUserAdmin(db, {
+      username: 'epoch-user',
+      email: 'epoch-user@example.invalid',
+      passwordHash: 'old-hash',
+      isAdmin: false,
+      maxContentRating: null,
+      nowMs: 7_000,
+    });
+    expect(user.password_changed_at_ms).toBeNull();
+
+    const afterProfileSave = await updateUserSelf(db, user.id, { displayName: 'Still No Password Change', nowMs: 7_100 });
+    expect(afterProfileSave?.user.password_changed_at_ms).toBeNull();
+
+    const afterPasswordChange = await updateUserSelf(db, user.id, { passwordHash: 'new-hash', nowMs: 7_200 });
+    expect(afterPasswordChange?.user.password_changed_at_ms).toBe(7_200);
+  });
+});
+
+describe('updateUserSelf 23505 backstop (R-F6, opus adversarial review fix wave) — the retry survives a REAL race, not just the deterministic pre-SELECT case', () => {
+  it('two concurrent updateUserSelf calls racing the SAME free address: neither throws, exactly one keeps it, the loser is a clean silent drop', async () => {
+    const a = await createUserAdmin(db, {
+      username: 'r-f6-racer-a',
+      email: null,
+      passwordHash: 'x',
+      isAdmin: false,
+      maxContentRating: null,
+      nowMs: 6_000,
+    });
+    const b = await createUserAdmin(db, {
+      username: 'r-f6-racer-b',
+      email: null,
+      passwordHash: 'x',
+      isAdmin: false,
+      maxContentRating: null,
+      nowMs: 6_001,
+    });
+
+    // Both pre-SELECTs observe the address as free (neither the other
+    // party's row exists yet) — only ONE of the two concurrent UPDATEs can
+    // win the users_email_key unique constraint; the loser must hit the
+    // OUTER retry (a fresh transaction, not a second statement on the
+    // aborted one — that was R-F6's actual bug) and complete with the
+    // email member cleanly dropped, never an uncaught 500.
+    const target = 'r-f6-race-target@example.invalid';
+    const [resultA, resultB] = await Promise.all([
+      updateUserSelf(db, a.id, { email: target, nowMs: 6_100 }),
+      updateUserSelf(db, b.id, { email: target, nowMs: 6_100 }),
+    ]);
+
+    expect(resultA, 'the loser must resolve, never throw/reject').toBeDefined();
+    expect(resultB, 'the loser must resolve, never throw/reject').toBeDefined();
+
+    const aGotIt = resultA!.user.email === target;
+    const bGotIt = resultB!.user.email === target;
+    expect(aGotIt !== bGotIt, 'exactly one racer ends up with the address').toBe(true);
+    expect(aGotIt ? resultB!.collidedEmail : resultA!.collidedEmail).toBe(target);
+    expect(aGotIt ? resultA!.collidedEmail : resultB!.collidedEmail).toBeNull();
+  });
+});
+
 describe('updateUserAdmin email conflict (G9) — a proper 409-shaped result instead of an uncaught 500', () => {
   it('a genuine email collision returns {ok:false, reason:"email-conflict"}, not a throw', async () => {
     await createUserAdmin(db, {

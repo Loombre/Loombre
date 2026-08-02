@@ -592,6 +592,9 @@ describe('identity queries (users / user_settings / library_permissions / device
       const updated = await getUserById(db, userId);
       expect(updated?.password_hash).toBe('fake-argon2id-hash-for-test');
       expect(updated?.must_change_password).toBe(true);
+      // R-F7 (opus adversarial review, fix wave): the credentials-changed
+      // epoch — apps/server/src/gateway/auth.guard.ts's verifyAndAttach.
+      expect(updated?.password_changed_at_ms).toBe(301_000);
 
       const tokenRow = await findRefreshTokenByHash(db, 'hash-pre-reset');
       expect(tokenRow?.revoked_at_ms).toBe(301_000);
