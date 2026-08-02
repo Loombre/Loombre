@@ -35,7 +35,7 @@ one, they can still help you get back in — see below.
 
 ## Forgetting your password
 
-If the sign-in screen has a "forgot your password" option, email recovery
+If the sign-in screen has a "Forgot password?" option, email recovery
 is turned on for your household's Loombre. Use it, and if you've added an
 email address, a message with a link to choose a new password will
 arrive — the link only works once, and only for half an hour, so use it
