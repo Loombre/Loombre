@@ -400,10 +400,13 @@ export class UsersController {
     // decides (M7: "never throws, returns dispatched:false when mail is
     // unconfigured").
     if (target.email) {
+      // Lane C's security-notice template reads only {actionUrl?,
+      // displayName?} (templates/types.ts) — the notice is informational,
+      // so no actionUrl is passed.
       await this.mailDispatchService.trySend({
         templateId: "security-notice",
         to: target.email,
-        params: { username: target.username, reason: "password-reset" },
+        params: { displayName: target.display_name ?? target.username },
       });
     }
 
