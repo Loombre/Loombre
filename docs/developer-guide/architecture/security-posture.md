@@ -137,7 +137,7 @@ safety) as it already applied to the invite-claim flow — an
 authenticated re-auth gate is a new surface for the same class of bug,
 not an exemption from it.
 
-**⚠️ Known limitation, under owner review — read before citing this
+**⚠️ Known, owner-ACCEPTED limitation — read before citing this
 section as "enumeration-safe."** The claim above holds at the
 STATUS/SHAPE level, but a residual oracle survives inside the body
 *value* for the narrower case of ONE authenticated actor comparing their
@@ -157,11 +157,15 @@ required (E1/E4), (2) let the actor read their own account back
 (inherent to any authenticated profile endpoint), and (3) hide from that
 SAME actor whether the address they just submitted was already taken
 (E8/F5) — closing it requires relaxing one of those three locked
-decisions, which is an owner call (STATE.md 🔶 OWNER DECISION REQUIRED),
-not a code fix. Pending that decision, `reauth-review-findings.e2e.spec.ts`
-pins the two proving cases as `it.skip(...)` with an inline pointer back
-here, rather than either weakening the assertions or leaving them failing
-in-tree.
+decisions, which was an owner call. **Resolved 2026-08-02: the owner
+accepted this limitation in favour of E1/E4** — a self-hosted household
+install keeps zero-mail, immediately-settable email, and the exploiter
+must already be an authenticated member (low real-world exposure), so the
+oracle is accepted and documented here rather than closed by relaxing E1
+or E4. `reauth-review-findings.e2e.spec.ts` keeps the two proving cases as
+`it.skip(...)` as a permanent record of the accepted behaviour; they are
+not to be re-enabled or "fixed" without re-opening the tradeoff with the
+owner.
 
 Both dispatch sites (`updateUserSelf` and `claimInviteAndEmit`) detect a
 collision with an in-transaction pre-`SELECT` that **excludes the
