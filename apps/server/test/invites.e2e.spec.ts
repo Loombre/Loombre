@@ -573,6 +573,118 @@ describe("POST /invites/claim/{token} (public, E1/M13) — the whole flow, zero 
   });
 });
 
+// G6/G7/G8 (STATE.md "Current-password re-auth on self-changes"): the
+// SAME collision/notice/floor wiring users.controller.ts's updateMe has
+// (apps/server/test/reauth.e2e.spec.ts), proven here for claimInvite's
+// own dispatch site. "casual@loombre.local" (seed) is the collision
+// target throughout — never actually mutated by any of these claims
+// (E8: the DROPPED member never touches the existing owner's account).
+describe("POST /invites/claim/{token}: G6/G7/G8 — email collision, notice dispatch, timing floor", () => {
+  it("claiming with an ALREADY-TAKEN email is a silent 201 no-op — the new account simply has no email", async () => {
+    const created = await createInviteRaw({ username: "claim-collision-silent" });
+    const claim = await request(app.getHttpServer())
+      .post(`/invites/claim/${created.claimToken}`)
+      .send({ email: "casual@loombre.local", password: "claim-collision-password" });
+    expect(claim.status, JSON.stringify(claim.body)).toBe(201);
+
+    const me = await request(app.getHttpServer()).get("/users/me").set("Authorization", `Bearer ${claim.body.accessToken}`);
+    expect(me.body.email).toBeNull();
+
+    // The existing owner is completely untouched.
+    const casualStillOwns = await rawDb.selectFrom("users").select("email").where("username", "=", "casual").executeTakeFirstOrThrow();
+    expect(casualStillOwns.email).toBe("casual@loombre.local");
+  });
+
+  it("mail CONFIGURED: a colliding claim dispatches email-in-use-notice to the existing owner, with serverName", async () => {
+    const mailConfig = app.get(MailConfigService);
+    const mailDispatch = app.get(MailDispatchService);
+    const isConfiguredSpy = vi.spyOn(mailConfig, "isConfigured").mockReturnValue(true);
+    const trySendSpy = vi.spyOn(mailDispatch, "trySend");
+    try {
+      const created = await createInviteRaw({ username: "claim-collision-notice" });
+      const claim = await request(app.getHttpServer())
+        .post(`/invites/claim/${created.claimToken}`)
+        .send({ email: "casual@loombre.local", password: "claim-collision-password" });
+      expect(claim.status).toBe(201);
+
+      const noticeCalls = trySendSpy.mock.calls.filter((c) => c[0].templateId === "email-in-use-notice");
+      expect(noticeCalls).toHaveLength(1);
+      expect(noticeCalls[0]![0].to).toBe("casual@loombre.local");
+      expect(typeof noticeCalls[0]![0].params["serverName"]).toBe("string");
+    } finally {
+      isConfiguredSpy.mockRestore();
+      trySendSpy.mockRestore();
+    }
+  });
+
+  it("mail UNCONFIGURED (this file's own default posture, E1): a colliding claim dispatches NO notice", async () => {
+    const mailDispatch = app.get(MailDispatchService);
+    const trySendSpy = vi.spyOn(mailDispatch, "trySend");
+    try {
+      const created = await createInviteRaw({ username: "claim-collision-nonotice" });
+      const claim = await request(app.getHttpServer())
+        .post(`/invites/claim/${created.claimToken}`)
+        .send({ email: "casual@loombre.local", password: "claim-collision-password" });
+      expect(claim.status).toBe(201);
+
+      const noticeCalls = trySendSpy.mock.calls.filter((c) => c[0].templateId === "email-in-use-notice");
+      expect(noticeCalls).toHaveLength(0);
+    } finally {
+      trySendSpy.mockRestore();
+    }
+  });
+
+  it("G7 window suppression: a SECOND colliding claim against the same address inside 24h dispatches no second notice", async () => {
+    const mailConfig = app.get(MailConfigService);
+    const mailDispatch = app.get(MailDispatchService);
+    const isConfiguredSpy = vi.spyOn(mailConfig, "isConfigured").mockReturnValue(true);
+    const trySendSpy = vi.spyOn(mailDispatch, "trySend");
+    try {
+      // A FRESH, UNIQUE victim address — never claimed against in any
+      // OTHER test in this file (the "mail CONFIGURED" test above already
+      // burned casual@loombre.local's own 24h window, which would
+      // otherwise make BOTH of this test's own attempts land inside an
+      // already-open window and defeat the point of this test).
+      const windowVictimEmail = `window-suppression-victim-${Date.now()}@example.invalid`;
+      const windowVictim = await request(app.getHttpServer())
+        .post("/users")
+        .set("Authorization", `Bearer ${adminToken}`)
+        .send({ username: `window-suppression-victim-${Date.now()}`, email: windowVictimEmail, password: "irrelevant-password" });
+      expect(windowVictim.status).toBe(201);
+
+      const first = await createInviteRaw({ username: "claim-collision-window-1" });
+      const firstClaim = await request(app.getHttpServer())
+        .post(`/invites/claim/${first.claimToken}`)
+        .send({ email: windowVictimEmail, password: "claim-collision-password" });
+      expect(firstClaim.status).toBe(201);
+
+      const second = await createInviteRaw({ username: "claim-collision-window-2" });
+      const secondClaim = await request(app.getHttpServer())
+        .post(`/invites/claim/${second.claimToken}`)
+        .send({ email: windowVictimEmail, password: "claim-collision-password" });
+      expect(secondClaim.status).toBe(201); // still a silent no-op either way
+
+      const noticeCalls = trySendSpy.mock.calls.filter((c) => c[0].templateId === "email-in-use-notice" && c[0].to === windowVictimEmail);
+      expect(noticeCalls).toHaveLength(1); // the SECOND attempt was suppressed by the ledger window
+    } finally {
+      isConfiguredSpy.mockRestore();
+      trySendSpy.mockRestore();
+    }
+  });
+
+  it("G8: claiming takes at least the wall-clock floor (~200ms), collision or not", async () => {
+    const created = await createInviteRaw({ username: "claim-floor-check" });
+    const startedAtMs = Date.now();
+    const claim = await request(app.getHttpServer())
+      .post(`/invites/claim/${created.claimToken}`)
+      .send({ email: `floor-clean-${Date.now()}@example.invalid`, password: "claim-collision-password" });
+    const elapsedMs = Date.now() - startedAtMs;
+
+    expect(claim.status).toBe(201);
+    expect(elapsedMs).toBeGreaterThanOrEqual(200 - 30); // 30ms scheduling-jitter margin
+  });
+});
+
 // composeClaimUrl's pure-function unit test lives in
 // apps/server/src/invites/invites.controller.spec.ts — this file already
 // proves the same composition end to end (both branches) via the spied
