@@ -122,6 +122,8 @@ const TOKEN_PAIR_SCHEMA = {
     refreshToken: { type: "string" },
     accessTokenExpiresAtMs: { type: "integer" },
     deviceId: { type: "string", format: "uuid" },
+    // E3a/M14: additive, always sent (never omitted) by authLogin/authRefresh.
+    mustChangePassword: { type: "boolean" },
   },
   required: ["accessToken", "refreshToken", "accessTokenExpiresAtMs", "deviceId"],
   additionalProperties: false,
@@ -150,8 +152,19 @@ const CAPABILITIES_SCHEMA = {
         additionalProperties: false,
       },
     },
+    // M8: additive, always sent (never omitted).
+    passwordResetAvailable: { type: "boolean" },
   },
   required: ["flags", "details"],
+  additionalProperties: false,
+} as const;
+
+// STATE.md "Optional mail transport + invitation & reset flows" (E3b/M12):
+// ForgotPasswordResponse is deliberately EMPTY (anti-enumeration) — this
+// mirror just proves the wire shape stays `{}`, not merely "any object".
+const FORGOT_PASSWORD_RESPONSE_SCHEMA = {
+  type: "object",
+  properties: {},
   additionalProperties: false,
 } as const;
 
@@ -161,6 +174,7 @@ const validateProblem: ValidateFunction = ajv.compile(PROBLEM_SCHEMA);
 const validateTokenPair: ValidateFunction = ajv.compile(TOKEN_PAIR_SCHEMA);
 const validateCapabilities: ValidateFunction = ajv.compile(CAPABILITIES_SCHEMA);
 const validateSetupState: ValidateFunction = ajv.compile(SETUP_STATE_SCHEMA);
+const validateForgotPasswordResponse: ValidateFunction = ajv.compile(FORGOT_PASSWORD_RESPONSE_SCHEMA);
 
 /** Express route layers with a bound HTTP verb, keyed by method+path (matches supertest's method names). */
 const SUPPORTED_METHODS = ["get", "put", "post", "delete", "options", "head", "patch"] as const;
@@ -187,6 +201,10 @@ const PUBLIC_OPERATION_IDS = new Set([
   // setup pair above (see gateway/auth.guard.ts's PUBLIC_ROUTE_PATTERNS).
   "getClaimState",
   "claimInvite",
+  // STATE.md "Optional mail transport + invitation & reset flows" (E3b/M12,
+  // Lane B): the self-service email-tier recovery surface.
+  "authForgotPassword",
+  "authResetPassword",
 ]);
 
 /** Every non-public documented operation's exact expected status when
@@ -322,6 +340,13 @@ const IMPLEMENTED_NON_PUBLIC_EXPECTATIONS: Record<string, number> = {
   getUser: 404,
   updateUser: 404,
   deleteUser: 404,
+  // STATE.md "Optional mail transport + invitation & reset flows" (E3a/M14,
+  // Lane B): no request body at all (bodyless status, per the op's own
+  // description) — PLACEHOLDER_UUID never resolves to a real user, so
+  // requireAdmin/requireUuidParam both pass (seed admin, syntactically
+  // valid UUID) and getUserById 404s, same ordering as getUser/updateUser
+  // above.
+  adminResetUserPassword: 404,
   getMe: 200,
   updateMe: 200, // bodyless body is valid (no required fields) -> no-op update of the caller
   getMySettings: 200,
@@ -571,6 +596,34 @@ describe("contract conformance (STATE.md D17/D21)", () => {
       expect(res.text).toBe(unknownRoute.text);
       expect(JSON.parse(res.text)).toEqual({ type: "about:blank", title: "Not Found", status: 404 });
     });
+
+    // STATE.md "Optional mail transport + invitation & reset flows" (E3b/M12,
+    // Lane B): the two new PUBLIC ops. Full behavioral coverage (real
+    // tokens, mail-dispatch spying, anti-timing, byte-identical 404s,
+    // replay/race) lives in apps/server/test/password-recovery.e2e.spec.ts —
+    // these are the M12-required "dedicated public-op response assertions".
+    it("POST /auth/forgot-password -> 202, Ajv-valid (EMPTY) ForgotPasswordResponse, unauthenticated", async () => {
+      const res = await request(app.getHttpServer()).post("/auth/forgot-password").send({ identifier: "conformance-unknown-identifier" });
+      expect(res.status).toBe(202);
+      const valid = validateForgotPasswordResponse(res.body);
+      expect(valid, ajv.errorsText(validateForgotPasswordResponse.errors)).toBe(true);
+      expect(res.body).toEqual({});
+    });
+
+    it("POST /auth/reset-password with an invalid token -> 404 byte-identical to the catch-all unknown-route problem body, unauthenticated", async () => {
+      const res = await request(app.getHttpServer())
+        .post("/auth/reset-password")
+        .send({ token: "conformance-invalid-token", password: "irrelevant-conformance-password" });
+      const unknownRoute = await request(app.getHttpServer())
+        .get("/this-route-does-not-exist-conformance-reset-password")
+        .set("Authorization", `Bearer ${adminAccessToken}`);
+
+      expect(res.status).toBe(404);
+      expect(unknownRoute.status).toBe(404);
+      expect(res.headers["content-type"]).toBe(unknownRoute.headers["content-type"]);
+      expect(res.text).toBe(unknownRoute.text);
+      expect(JSON.parse(res.text)).toEqual({ type: "about:blank", title: "Not Found", status: 404 });
+    });
   });
 
   it("authenticated walk: every NON-PUBLIC documented operation returns a non-401 status with a valid admin Bearer token", async () => {
@@ -655,6 +708,9 @@ describe("contract conformance (STATE.md D17/D21)", () => {
       "getSystemCapabilities",
       "getSetupState",
       "createFirstAdmin",
+      // STATE.md "Optional mail transport + invitation & reset flows" (E3b/M12).
+      "authForgotPassword",
+      "authResetPassword",
       ...Object.keys(IMPLEMENTED_NON_PUBLIC_EXPECTATIONS),
     ];
     for (const implementedOperationId of implementedOperationIds) {
