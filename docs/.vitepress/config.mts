@@ -119,6 +119,7 @@ export default defineConfig({
           text: "User Guide",
           items: [
             { text: "Overview", link: "/user-guide/" },
+            { text: "Joining Loombre", link: "/user-guide/joining" },
             { text: "Browsing your library", link: "/user-guide/browsing" },
             { text: "Watching", link: "/user-guide/watching" },
             { text: "Listening to music", link: "/user-guide/music" },
@@ -137,6 +138,8 @@ export default defineConfig({
             { text: "The setup wizard", link: "/admin-guide/wizard" },
             { text: "Libraries & scanning", link: "/admin-guide/libraries" },
             { text: "Users & permissions", link: "/admin-guide/users-permissions" },
+            { text: "Inviting people", link: "/admin-guide/inviting-users" },
+            { text: "Mail", link: "/admin-guide/mail" },
             { text: "Connecting Stash", link: "/admin-guide/connecting-stash" },
             { text: "Capability report", link: "/admin-guide/capability-report" },
             { text: "Jobs dashboard", link: "/admin-guide/jobs-dashboard" },
@@ -152,6 +155,7 @@ export default defineConfig({
           items: [
             { text: "Overview", link: "/ops/" },
             { text: "Reverse proxy", link: "/ops/reverse-proxy" },
+            { text: "Mail deliverability notes", link: "/ops/mail-notes" },
             { text: "Built-in ACME (TLS)", link: "/ops/acme" },
             { text: "Backups & restore", link: "/ops/backup" },
             { text: "External PostgreSQL", link: "/ops/external-postgres" },
