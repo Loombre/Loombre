@@ -1,7 +1,7 @@
 # External PostgreSQL
 
-Every Loombre install (Docker/Compose, the Linux tarball, the Windows MSI,
-the macOS package) works equally against an external, operator-managed
+Every Loombre install (Docker/Compose, the Linux tarball, the Windows
+installer, the macOS package) works equally against an external, operator-managed
 PostgreSQL instead of the bundled embedded one — a NAS-hosted Postgres, a
 managed cloud instance, a PostgreSQL your homelab already runs for other
 services, or anything else. This is a first-class, equally-tested path

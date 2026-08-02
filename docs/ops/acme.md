@@ -119,7 +119,7 @@ already has the privilege:
 - **macOS:** `pf` redirect rules (`rdr pass on en0 inet proto tcp from any to any port 80 -> 127.0.0.1 port 8080`), or run Loombre via `launchd` as root (macOS has no capabilities system — root or a redirect are the only two options; there is no macOS equivalent of `setcap`).
 - **Windows:** binding <1024 does **not** require Administrator on Windows since Vista, UNLESS the port has been explicitly reserved via `netsh http add urlacl`/`netsh int ipv4 add excludedportrange` (uncommon on a fresh box) — in practice `LOOMBRE_HTTP_PORT=80`/`LOOMBRE_HTTPS_PORT=443` usually just work unprivileged on Windows. If a port turns out reserved, either pick a free one or `netsh int ipv4 delete excludedportrange protocol=tcp startport=80 numberofports=1` (run as Administrator, one-time).
 
-*(Neither the Windows MSI nor the macOS pkg's
+*(Neither the Windows installer nor the macOS pkg's
 service/launchd configs need any privilege grant added for this — Windows
 generally doesn't restrict the ports at all, and macOS's launchd services
 should document root-vs-redirect as a choice at onboarding time if
