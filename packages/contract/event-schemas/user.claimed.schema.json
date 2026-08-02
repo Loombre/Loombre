@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://loombre.com/schemas/events/user.claimed.schema.json",
   "title": "UserClaimedPayload",
-  "description": "Payload for envelope.type === 'user.claimed'. ADMIN_ONLY. Emitted when a claim (POST /v1/claim/{token}) successfully provisions a new user; envelope.actorUserId is the NEW user (self-serve). Never carries the token or password material.",
+  "description": "Payload for envelope.type === 'user.claimed'. ADMIN_ONLY. Emitted when a claim (POST /invites/claim/{token}) successfully provisions a new user; envelope.actorUserId is the NEW user (self-serve). Never carries the token or password material.",
   "type": "object",
   "additionalProperties": false,
   "required": ["userId", "inviteId", "username", "createdAtMs"],
