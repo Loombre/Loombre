@@ -59,7 +59,9 @@ describe("RestrictedStep", () => {
   });
 
   async function render(): Promise<void> {
-    view = renderIntoBody(<RestrictedStep onNext={onNext} />);
+    // G10: adminPassword is threaded in from the wizard page's state (the
+    // password AdminStep just set) — see RestrictedStep.tsx's header.
+    view = renderIntoBody(<RestrictedStep adminPassword="hunter2" onNext={onNext} />);
     await act(async () => {});
   }
 
@@ -129,7 +131,25 @@ describe("RestrictedStep", () => {
     expect(apiPutMock).toHaveBeenCalledTimes(1);
     const [path, options] = apiPutMock.mock.calls[0] as [string, { body: Record<string, unknown> }];
     expect(path).toBe("/users/me/restricted");
-    expect(options.body).toEqual({ optIn: true, pin: "1234" });
+    expect(options.body).toEqual({ optIn: true, pin: "1234", currentPassword: "hunter2" });
     expect(onNext).toHaveBeenCalledTimes(1);
+  });
+
+  // ── G10: currentPassword is threaded from AdminStep via the wizard page,
+  //    never re-asked here (see RestrictedStep.tsx's header). ────────────
+  it("sends the threaded adminPassword as currentPassword — no password field of its own", async () => {
+    view = renderIntoBody(<RestrictedStep adminPassword="s3cret-admin-pw" onNext={onNext} />);
+    await act(async () => {});
+    await click(tabFor("On"));
+    setNativeValue(pinInput(), "1234");
+    await click(buttonFor("Continue"));
+
+    const [, options] = apiPutMock.mock.calls[0] as [string, { body: Record<string, unknown> }];
+    expect(options.body["currentPassword"]).toBe("s3cret-admin-pw");
+    expect(
+      Array.from(view!.container.querySelectorAll("label")).some((l) =>
+        (l.textContent ?? "").startsWith("Current password"),
+      ),
+    ).toBe(false);
   });
 });

@@ -50,6 +50,11 @@ export default function SetupPage(): React.JSX.Element | null {
   const [guard, setGuard] = useState<GuardState>("checking");
   const [step, setStep] = useState<StepId>("welcome");
   const [flags, setFlags] = useState<WizardFlags>({ adminCreated: false, libraryCreatedThisSession: false });
+  // G10 (STATE.md "Current-password re-auth on self-changes"): the admin's
+  // own password, threaded from AdminStep to RestrictedStep so the latter
+  // can supply currentPassword (ALWAYS required on PUT /users/me/restricted)
+  // without asking the admin to retype a value this same wizard just set.
+  const [adminPassword, setAdminPassword] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -106,12 +111,19 @@ export default function SetupPage(): React.JSX.Element | null {
         <PillProgress current={step} labels={STEP_LABELS} />
         <div className={styles.card}>
           {step === "welcome" && <WelcomeStep onNext={() => advance()} />}
-          {step === "admin" && <AdminStep onNext={() => advance({ adminCreated: true })} />}
+          {step === "admin" && (
+            <AdminStep
+              onNext={(password) => {
+                setAdminPassword(password);
+                advance({ adminCreated: true });
+              }}
+            />
+          )}
           {step === "libraries" && (
             <LibraryStep onNext={(created) => advance({ libraryCreatedThisSession: created })} />
           )}
           {step === "hardware" && <HardwareStep onNext={() => advance()} />}
-          {step === "restricted" && <RestrictedStep onNext={() => advance()} />}
+          {step === "restricted" && <RestrictedStep adminPassword={adminPassword} onNext={() => advance()} />}
           {step === "restore" && <RestoreStep flags={flags} onNext={() => advance()} />}
           {step === "done" && <DoneStep onFinish={() => router.replace("/home")} />}
         </div>

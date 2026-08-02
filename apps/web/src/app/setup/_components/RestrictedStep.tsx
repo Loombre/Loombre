@@ -10,6 +10,13 @@
 // self-service opt-in/PIN endpoint — no admin-on-behalf-of path exists,
 // which is fine here since the wizard's caller IS the admin). Mirrors
 // apps/web/src/app/settings/page.tsx's RestrictedSection UI pattern.
+//
+// G10 (STATE.md "Current-password re-auth on self-changes"): the PUT call
+// now requires currentPassword ALWAYS. `adminPassword` (below) is threaded
+// in from ../page.tsx, which captured it the moment AdminStep created the
+// account seconds earlier — no second password field here, per that
+// mission's explicit preference for threading over re-asking when the
+// wizard's own state already carries the value.
 
 import { useEffect, useState, type FormEvent } from "react";
 import { ShieldCheck } from "lucide-react";
@@ -24,10 +31,14 @@ import { deriveRestrictedViewState } from "../wizard-state.js";
 import styles from "./steps.module.css";
 
 export interface RestrictedStepProps {
+  /** The admin's just-set password (from AdminStep, via ../page.tsx) — the
+   *  proof PUT /users/me/restricted's now-always-required currentPassword
+   *  needs. See this file's header for why it's threaded, not re-asked. */
+  adminPassword: string;
   onNext: () => void;
 }
 
-export function RestrictedStep({ onNext }: RestrictedStepProps): React.JSX.Element {
+export function RestrictedStep({ adminPassword, onNext }: RestrictedStepProps): React.JSX.Element {
   const [capabilityEnabled, setCapabilityEnabled] = useState<boolean | null>(null);
   const [optIn, setOptIn] = useState(false);
   const [pin, setPin] = useState("");
@@ -62,7 +73,7 @@ export function RestrictedStep({ onNext }: RestrictedStepProps): React.JSX.Eleme
     }
     setSubmitting(true);
     try {
-      await apiPut("/users/me/restricted", { body: { optIn: true, pin } });
+      await apiPut("/users/me/restricted", { body: { optIn: true, pin, currentPassword: adminPassword } });
       onNext();
     } catch (err) {
       setError(err instanceof LoombreApiError ? err.message : "Could not reach the server.");
