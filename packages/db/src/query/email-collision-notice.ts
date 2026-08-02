@@ -55,3 +55,36 @@ export async function claimEmailCollisionNoticeWindow(
     .executeTakeFirst();
   return row !== undefined;
 }
+
+/**
+ * R-F5 (opus adversarial review, fix wave): releases the window a caller's
+ * OWN `claimEmailCollisionNoticeWindow(email, claimedAtMs)` call just won,
+ * when the notice it was claimed for turned out NOT to be dispatched
+ * (`MailDispatchService.trySend` degrading to `{dispatched: false}` — its
+ * documented E6 posture whenever the job-queue enqueue itself throws).
+ * Without this, a single transient queue hiccup silently costs that
+ * address its ENTIRE 24h notice window, and a later, genuine collision on
+ * the same address stays silent too.
+ *
+ * `claimedAtMs` must be the EXACT `nowMs` value passed to the winning
+ * `claimEmailCollisionNoticeWindow` call — the DELETE only matches a row
+ * whose `last_notice_at_ms` still equals it, so a caller can only ever
+ * release the row ITS OWN attempt just claimed, never a window a
+ * different (later) collision attempt against the same address may have
+ * legitimately re-claimed in the meantime. In practice that race cannot
+ * happen inside this window anyway (a re-claim within
+ * EMAIL_COLLISION_NOTICE_WINDOW_MS of this one can never satisfy the
+ * winning UPDATE's own `WHERE` clause), but the guard is cheap, correct
+ * either way, and self-documents the invariant rather than assuming it.
+ */
+export async function releaseEmailCollisionNoticeWindow(
+  db: Kysely<DB>,
+  email: string,
+  claimedAtMs: number
+): Promise<void> {
+  await db
+    .deleteFrom('email_collision_notice_ledger')
+    .where('email', '=', email)
+    .where('last_notice_at_ms', '=', claimedAtMs)
+    .execute();
+}

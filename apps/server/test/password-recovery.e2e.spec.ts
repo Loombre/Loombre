@@ -453,7 +453,14 @@ describe("POST /users/{id}/reset-password (E3a/M14, admin/CLI tier's HTTP twin)"
   // `if (target.email)` branch (apps/server/src/catalog/users.controller.ts)
   // is written defensively for that future either way.
 
-  it("self-reset is PERMITTED: an admin resetting their OWN account succeeds, and immediately restricts their OWN still-live access token (decision recorded: self-reset allowed)", async () => {
+  // R-F3 (opus adversarial review, fix wave — STATE.md "Current-password
+  // re-auth on self-changes + the email-collision signal"): self-reset is
+  // still PERMITTED, but a bearer token ALONE is no longer sufficient — it
+  // now requires currentPassword, same as every other self-service
+  // credential change (apps/server/test/reauth-review-findings.e2e.spec.ts
+  // covers the missing/wrong-currentPassword cases in full; this test
+  // stays focused on the happy path's post-reset lockdown behavior).
+  it("self-reset is PERMITTED with the correct currentPassword, and immediately restricts their OWN still-live access token (decision recorded: self-reset allowed)", async () => {
     const created = await request(app.getHttpServer())
       .post("/users")
       .set("Authorization", `Bearer ${adminAccessToken}`)
@@ -461,9 +468,18 @@ describe("POST /users/{id}/reset-password (E3a/M14, admin/CLI tier's HTTP twin)"
     expect(created.status, JSON.stringify(created.body)).toBe(201);
     const selfAdminLogin = await loginAs("reset-self-admin", "correct-horse-battery-selfadmin1");
 
-    const selfReset = await request(app.getHttpServer())
+    const missingCurrentPassword = await request(app.getHttpServer())
       .post(`/users/${created.body.id}/reset-password`)
       .set("Authorization", `Bearer ${selfAdminLogin.accessToken}`);
+    expect(
+      missingCurrentPassword.status,
+      "R-F3: a bearer token alone must never be a complete self-takeover",
+    ).toBe(422);
+
+    const selfReset = await request(app.getHttpServer())
+      .post(`/users/${created.body.id}/reset-password`)
+      .set("Authorization", `Bearer ${selfAdminLogin.accessToken}`)
+      .send({ currentPassword: "correct-horse-battery-selfadmin1" });
     expect(selfReset.status, JSON.stringify(selfReset.body)).toBe(200);
 
     // The SAME access token that just performed the reset is now

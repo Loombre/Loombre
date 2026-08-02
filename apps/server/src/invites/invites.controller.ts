@@ -45,10 +45,11 @@ import {
   isInviteClaimable,
   listInvitesAdmin,
   mapClaimState,
+  releaseEmailCollisionNoticeWindow,
   revokeInviteAndEmit,
   type InviteAdminRow,
 } from "@loombre/db";
-import { nowMs as clockNowMs } from "@loombre/shared";
+import { isValidEmailFormat, nowMs as clockNowMs } from "@loombre/shared";
 import { forbidden, notFound, unprocessableEntity } from "../gateway/problem.exception.js";
 import { requireUuidParam } from "../gateway/require-uuid-param.js";
 import { sanitizeInstancePath } from "../gateway/sanitize-instance.js";
@@ -95,10 +96,19 @@ const CREATE_INVITE_BODY_KEYS = new Set(["username", "displayName", "email", "ex
 const CLAIM_INVITE_BODY_KEYS = new Set(["username", "password", "email", "displayName", "deviceName", "deviceProfile"]);
 
 // F7 (fix wave): deliberately permissive shape check, not a deliverability
-// test (the worker's real SMTP attempt is that test) — same pattern and
-// same regex as apps/server/src/mail/admin-mail.controller.ts's
-// LOOSE_EMAIL_PATTERN (the one other hand-rolled email check in the repo).
-const LOOSE_EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+// test (the worker's real SMTP attempt is that test).
+//
+// R-F4 (opus adversarial review, fix wave): this used to be a locally
+// hand-rolled regex duplicated in TWO files (here and admin-mail.
+// controller.ts) — replaced by @loombre/shared's isValidEmailFormat
+// (zod's z.email(), the same primitive settings-registry.ts already uses
+// for mail.fromAddress), which additionally rejects embedded ASCII
+// control characters a bare `[^\s@]` class does not (e.g. a NUL byte is
+// not `\s`). Both createInvite and claimInvite below TRIM the submitted
+// value before validating it, same reasoning as users.controller.ts's
+// updateMe/createUser: a whitespace-padded copy of a real address must
+// normalize into the identical string, not become a second, visually-
+// distinct one.
 
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.length > 0;
@@ -246,11 +256,12 @@ export class InvitesController {
     const username = typeof body["username"] === "string" && body["username"].length > 0 ? body["username"] : null;
     const displayName =
       typeof body["displayName"] === "string" && body["displayName"].length > 0 ? body["displayName"] : null;
-    const email = typeof body["email"] === "string" && body["email"].length > 0 ? body["email"] : null;
-    // F7: CreateInviteRequest.email declares format:email — this preset
-    // feeds trySend's `to:` address directly (E6/E7), so a malformed value
-    // must 422 here rather than surface as an opaque SMTP failure later.
-    if (email !== null && !LOOSE_EMAIL_PATTERN.test(email)) {
+    const email = typeof body["email"] === "string" && body["email"].trim().length > 0 ? body["email"].trim() : null;
+    // F7/R-F4: CreateInviteRequest.email declares format:email — this
+    // preset feeds trySend's `to:` address directly (E6/E7), so a
+    // malformed value must 422 here rather than surface as an opaque SMTP
+    // failure later.
+    if (email !== null && !isValidEmailFormat(email)) {
       throw unprocessableEntity("email must be a valid email address.", instance);
     }
 
@@ -419,17 +430,20 @@ export class InvitesController {
       throw unprocessableEntity(`password must be at least ${CLAIM_PASSWORD_MIN_LENGTH} characters.`, instance);
     }
 
-    const email = typeof body["email"] === "string" && body["email"].length > 0 ? body["email"] : invite.email;
+    // R-F4: trim first (a whitespace-padded copy of an existing address
+    // must normalize into the identical string the collision check sees,
+    // not become a second, visually-distinct one) — an all-whitespace
+    // value trims to empty and falls back to the invite's own preset,
+    // same as an omitted member always has.
+    const trimmedSubmittedEmail = typeof body["email"] === "string" ? body["email"].trim() : null;
     // F7: ClaimInviteRequest.email declares format:email — only the
     // SUBMITTED value is checked (invite.email, the admin-set preset, was
     // already validated at creation time by F7's createInvite check).
-    if (
-      typeof body["email"] === "string" &&
-      body["email"].length > 0 &&
-      !LOOSE_EMAIL_PATTERN.test(body["email"])
-    ) {
+    if (trimmedSubmittedEmail !== null && trimmedSubmittedEmail.length > 0 && !isValidEmailFormat(trimmedSubmittedEmail)) {
       throw unprocessableEntity("email must be a valid email address.", instance);
     }
+    const email =
+      trimmedSubmittedEmail !== null && trimmedSubmittedEmail.length > 0 ? trimmedSubmittedEmail : invite.email;
     const displayName =
       typeof body["displayName"] === "string" && body["displayName"].length > 0
         ? body["displayName"]
@@ -504,14 +518,31 @@ export class InvitesController {
     // MailConfigService.isConfigured() FIRST, THEN the ledger window
     // claim, THEN trySend (mirrors users.controller.ts's updateMe
     // dispatch exactly).
+    //
+    // R-F5/LOW-8 (opus adversarial review, fix wave): the claim above
+    // already COMMITTED (the new account, device, and refresh token all
+    // exist) — this block is best-effort from here on, so any throw in it
+    // is caught and swallowed rather than 500ing an otherwise-successful
+    // claim on the collision-only path. R-F5: trySend's `dispatched`
+    // result is no longer ignored — a queue hiccup (trySend degrading to
+    // `{dispatched:false}`) releases the window it just won so a LATER
+    // collision on the same address can still notify.
     if (result.collidedEmail !== null && this.mailConfig.isConfigured()) {
-      const won = await claimEmailCollisionNoticeWindow(db, result.collidedEmail, clockNowMs());
-      if (won) {
-        await this.mailDispatch.trySend({
-          templateId: "email-in-use-notice",
-          to: result.collidedEmail,
-          params: { serverName: this.mailConfig.fromName() },
-        });
+      try {
+        const claimedAtMs = clockNowMs();
+        const won = await claimEmailCollisionNoticeWindow(db, result.collidedEmail, claimedAtMs);
+        if (won) {
+          const { dispatched } = await this.mailDispatch.trySend({
+            templateId: "email-in-use-notice",
+            to: result.collidedEmail,
+            params: { serverName: this.mailConfig.fromName() },
+          });
+          if (!dispatched) {
+            await releaseEmailCollisionNoticeWindow(db, result.collidedEmail, claimedAtMs);
+          }
+        }
+      } catch (err) {
+        console.error("invites.controller: email-in-use-notice dispatch failed (claim already committed):", err);
       }
     }
 
