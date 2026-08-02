@@ -368,6 +368,7 @@ export async function runImport(
           ...(preserveIds ? { id: u.id } : {}),
           username: u.username,
           email: u.email,
+          displayName: u.displayName,
           isAdmin: u.isAdmin,
           createdAtMs: u.createdAtMs,
           updatedAtMs: u.createdAtMs,
