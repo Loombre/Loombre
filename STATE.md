@@ -67,6 +67,12 @@ The push-triggered CI on c672c73 (run 30745168932) FAILED: `browsePageList p95 1
 
 Owner note: this fix makes CI deterministic; it does not change any budget or any request-path code. The §5 checklist item 1 (3-OS CI) can go green once this lands on origin.
 
+### Flake ROOT-CAUSED (4th sighting; NOT this run's code) — library-provider-chains C5 STRICT, `plugins_base_url_unique` dup-key
+
+The first main-tip gate:full re-run (after the perf fix) hit the recurring `@loombre/db` flake: `duplicate key value violates unique constraint "plugins_base_url_unique"` at plugins.ts:129, in library-provider-chains.spec.ts > C5 STRICT. Confirmed non-reproducing: 402/402 on two immediate reruns incl. the exact full-package invocation the gate uses. (Background-task wrapper misreported that first run as exit 0 — the LOG said `gate: FAILED`; caught by reading the log, not the wrapper's code. Lesson re-applied: trust the captured log's own verdict, never a wrapper's exit signal.)
+
+**Actual root cause (found this run, first time — not a mysterious "flake"):** the test helper `makePlugin` (library-provider-chains.spec.ts:102) builds `baseUrl: http://127.0.0.1:${1024 + Math.floor(Math.random()*10_000)}` — a RANDOM port. Three db-test files (library-provider-chains, plugins-delivery, plugins) insert into the SAME shared package test DB's `plugins` table (UNIQUE base_url) under vitest parallel workers, so across the suite's ~dozens of plugin inserts the random ports collide with birthday-paradox probability. NOT fixed here (out of a re-auth run's scope, non-reproducing so a fix is unverifiable in-run, and semantically delicate: base_url is origin-strict-matched by resolveDeliveryUrl (`new URL(baseUrl).origin` must equal the delivery origin) and the tests pin lanAllowlist to 127.0.0.1 — a correct fix must make base_url globally unique while staying a bare 127.0.0.1 origin, e.g. a process-global monotonic port counter shared across the three files, not a random port and not a path/host change). **Recommended owner follow-up: replace the random port with a collision-free unique source in an LPP-scoped change.**
+
 ### §5 Owner checklist (moved here from the mail-run Open ledger per this brief's preamble — NOT code items, unblocked by this run)
 
 1. **3-OS remote CI** — the owner-billed board WAS triggered by the 2026-08-01 push (run 30745168932 on c672c73, in progress at this kickoff); result to be recorded at this run's exit gate.
