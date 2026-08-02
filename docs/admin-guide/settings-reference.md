@@ -296,6 +296,16 @@ How many invite-claim attempts one device may make per minute, before any accoun
 - **Applies:** immediately — no restart needed.
 - **Can be locked:** if `LOOMBRE_RATE_CLAIM` is set by whoever installed Loombre, this setting becomes fixed to that value and shows as controlled by the environment here — ask them, or see the [Operator Guide's environment reference](/ops/env-reference).
 
+### Password Reset
+
+<small>Setting key: `rateLimit.passwordReset`</small>
+
+How many password-recovery requests (forgot-password or reset-password) one device may make per minute. Guards against email-bombing an account and against guessing a reset token.
+
+- **Default:** 5
+- **Applies:** immediately — no restart needed.
+- **Can be locked:** if `LOOMBRE_RATE_PASSWORD_RESET` is set by whoever installed Loombre, this setting becomes fixed to that value and shows as controlled by the environment here — ask them, or see the [Operator Guide's environment reference](/ops/env-reference).
+
 ## Network
 
 The web address people use to reach this server from outside your own network.
