@@ -56,7 +56,7 @@ type User = components["schemas"]["User"];
 type Library = components["schemas"]["Library"];
 
 function EditUserModal({ user, onClose, onUpdated }: { user: User; onClose: () => void; onUpdated: (u: User) => void }): React.JSX.Element {
-  const [email, setEmail] = useState(user.email);
+  const [email, setEmail] = useState(user.email ?? "");
   const [isAdmin, setIsAdmin] = useState(user.isAdmin);
   const [maxContentRating, setMaxContentRating] = useState(user.maxContentRating ?? "");
   const [error, setError] = useState<string | null>(null);
@@ -69,7 +69,7 @@ function EditUserModal({ user, onClose, onUpdated }: { user: User; onClose: () =
     try {
       const updated = await apiPatch("/users/{id}", {
         params: { path: { id: user.id } },
-        body: { email, isAdmin, maxContentRating: maxContentRating || null },
+        body: { email: email || null, isAdmin, maxContentRating: maxContentRating || null },
       });
       onUpdated(updated);
       onClose();
