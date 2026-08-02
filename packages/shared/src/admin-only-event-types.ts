@@ -87,6 +87,12 @@
 //     match/update/unmatched/stale/skipped counts), same posture as
 //     stash.provider.disabled, not content any viewer-scoped predicate
 //     should gate.
+//   - `mail.failed` (optional mail transport run, E6/M6): emitted by
+//     apps/worker/src/mail/terminal-failure-hook.ts around a terminal
+//     'mail-send' job failure — instance-operational/diagnostic data (which
+//     template, which destination, the real SMTP conversation error, which
+//     job), same posture as probe.failed, not content any viewer-scoped
+//     predicate should gate.
 //
 // Dependency-free data only (no zod, no I/O) — importable from
 // apps/server, apps/worker, and (via the prose pointer above, not a real
@@ -113,4 +119,6 @@ export const ADMIN_ONLY_EVENT_TYPES: readonly string[] = [
   // Stash SQLite metadata sync, S8/K12 (Lane C sync engine).
   "stash.sync.started",
   "stash.sync.completed",
+  // Optional mail transport run, E6/M6.
+  "mail.failed",
 ];

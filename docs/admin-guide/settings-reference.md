@@ -286,6 +286,75 @@ How many media requests one person may make per minute — posters, video, and s
 - **Applies:** immediately — no restart needed.
 - **Can be locked:** if `LOOMBRE_RATE_MEDIA_TOKEN` is set by whoever installed Loombre, this setting becomes fixed to that value and shows as controlled by the environment here — ask them, or see the [Operator Guide's environment reference](/ops/env-reference).
 
+## Network
+
+The web address people use to reach this server from outside your own network.
+
+### Public web address
+
+<small>Setting key: `network.publicUrl`</small>
+
+The web address people use to reach this server from outside your own network. Security-sensitive links in outgoing mail — invitation links, password-reset links — are built ONLY from this address, never guessed from wherever a request happened to come from. Leave blank and Loombre will not send mail containing a link.
+
+- **Default:** (empty — not set)
+- **Applies:** immediately — no restart needed.
+- **Can be locked:** if `LOOMBRE_PUBLIC_URL` is set by whoever installed Loombre, this setting becomes fixed to that value and shows as controlled by the environment here — ask them, or see the [Operator Guide's environment reference](/ops/env-reference).
+
+## Mail
+
+The outgoing mail server Loombre uses to send invitation and password-reset email. Entirely optional — every part of Loombre works without mail configured; see the Admin Guide's inviting-users and resetting-passwords pages for the copy-link alternative.
+
+### Mail server address
+
+<small>Setting key: `mail.smtpHost`</small>
+
+The address of the outgoing mail server Loombre sends email through. Leave blank to leave mail sending turned off.
+
+- **Default:** (empty — not set)
+- **Applies:** immediately — no restart needed.
+- **Can be locked:** if `LOOMBRE_SMTP_HOST` is set by whoever installed Loombre, this setting becomes fixed to that value and shows as controlled by the environment here — ask them, or see the [Operator Guide's environment reference](/ops/env-reference).
+
+### Mail server port
+
+<small>Setting key: `mail.smtpPort`</small>
+
+The port your mail server accepts outgoing mail on. 587 is the common port for encrypted mail submission; 465 is common for connections that are encrypted from the start; 25 is the plain, unencrypted default most mail servers refuse from outside their own network.
+
+- **Default:** 587
+- **Applies:** immediately — no restart needed.
+- **Can be locked:** if `LOOMBRE_SMTP_PORT` is set by whoever installed Loombre, this setting becomes fixed to that value and shows as controlled by the environment here — ask them, or see the [Operator Guide's environment reference](/ops/env-reference).
+
+### Mail connection security
+
+<small>Setting key: `mail.smtpSecurity`</small>
+
+How the connection to your mail server is protected. 'starttls' starts plain and upgrades to an encrypted connection (the common choice alongside port 587); 'implicit-tls' is encrypted from the first byte (the common choice alongside port 465); 'none' is a plain, unencrypted connection.
+
+- **Default:** `starttls`
+- **Applies:** immediately — no restart needed.
+- **Note:** Choosing 'none' sends your mail server password and every email in plain, readable text over the network — only use this for a private network relay you control, never for a mail server reached over the internet.
+- **Can be locked:** if `LOOMBRE_SMTP_SECURITY` is set by whoever installed Loombre, this setting becomes fixed to that value and shows as controlled by the environment here — ask them, or see the [Operator Guide's environment reference](/ops/env-reference).
+
+### From address
+
+<small>Setting key: `mail.fromAddress`</small>
+
+The email address your outgoing mail appears to come from. Leave blank to leave mail sending turned off.
+
+- **Default:** (empty — not set)
+- **Applies:** immediately — no restart needed.
+- **Can be locked:** if `LOOMBRE_SMTP_FROM_ADDRESS` is set by whoever installed Loombre, this setting becomes fixed to that value and shows as controlled by the environment here — ask them, or see the [Operator Guide's environment reference](/ops/env-reference).
+
+### From name
+
+<small>Setting key: `mail.fromName`</small>
+
+The display name shown alongside the from-address on outgoing mail.
+
+- **Default:** `Loombre`
+- **Applies:** immediately — no restart needed.
+- **Can be locked:** if `LOOMBRE_SMTP_FROM_NAME` is set by whoever installed Loombre, this setting becomes fixed to that value and shows as controlled by the environment here — ask them, or see the [Operator Guide's environment reference](/ops/env-reference).
+
 ## Stash sync
 
 Automatic scheduling for re-syncing metadata from a connected Stash database. See the Restricted content chapter for connecting Stash in the first place.

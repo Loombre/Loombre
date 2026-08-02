@@ -61,6 +61,7 @@ export const CATEGORY_LABELS: Record<string, string> = {
   tls: "TLS",
   paths: "Paths",
   ffmpeg: "ffmpeg",
+  mail: "Mail",
 };
 
 export interface SettingsCategoryCardProps {

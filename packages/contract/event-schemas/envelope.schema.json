@@ -17,7 +17,8 @@
     "probe.failed",
     "stash.provider.disabled",
     "stash.sync.started",
-    "stash.sync.completed"
+    "stash.sync.completed",
+    "mail.failed"
   ],
   "type": "object",
   "additionalProperties": false,
@@ -59,7 +60,8 @@
         "probe.failed",
         "stash.provider.disabled",
         "stash.sync.started",
-        "stash.sync.completed"
+        "stash.sync.completed",
+        "mail.failed"
       ],
       "description": "Closed enum today; additions are additive contract PRs (new event types are always backward compatible for existing consumers)."
     },

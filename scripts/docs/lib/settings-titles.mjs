@@ -51,6 +51,12 @@ export const SETTING_TITLES = {
   "rateLimit.export": "Data export request limit",
   "rateLimit.mediaToken": "Media playback request limit",
   "stash.sync.scheduleIntervalMs": "Automatic Stash re-sync interval",
+  "network.publicUrl": "Public web address",
+  "mail.smtpHost": "Mail server address",
+  "mail.smtpPort": "Mail server port",
+  "mail.smtpSecurity": "Mail connection security",
+  "mail.fromAddress": "From address",
+  "mail.fromName": "From name",
 
   "database.url": "Database connection",
   "http.port": "HTTP port",
@@ -75,10 +81,12 @@ export const ADMIN_CATEGORY_TITLES = {
   updateCheck: { title: "Update checking", blurb: "Whether Loombre checks for newer versions. Never installs anything automatically." },
   security: { title: "Security & sign-in logging", blurb: "Local logging of suspicious sign-in activity." },
   rateLimit: { title: "Sign-in & request limits", blurb: "How many attempts or requests are allowed in a given time window, per person or device — protects against automated guessing without locking anyone out under normal use." },
+  network: { title: "Network", blurb: "The web address people use to reach this server from outside your own network." },
+  mail: { title: "Mail", blurb: "The outgoing mail server Loombre uses to send invitation and password-reset email. Entirely optional — every part of Loombre works without mail configured; see the Admin Guide's inviting-users and resetting-passwords pages for the copy-link alternative." },
   stash: { title: "Stash sync", blurb: "Automatic scheduling for re-syncing metadata from a connected Stash database. See the Restricted content chapter for connecting Stash in the first place." },
 };
 
-export const ADMIN_CATEGORY_ORDER = ["transcode", "scanner", "images", "restricted", "sessions", "updateCheck", "security", "rateLimit", "stash"];
+export const ADMIN_CATEGORY_ORDER = ["transcode", "scanner", "images", "restricted", "sessions", "updateCheck", "security", "rateLimit", "network", "mail", "stash"];
 
 /** Operator Guide category grouping — env-only entries only. */
 export const ENV_CATEGORY_TITLES = {
