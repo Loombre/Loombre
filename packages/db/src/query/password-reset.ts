@@ -59,13 +59,41 @@ export interface IssuePasswordResetTokenInput {
 }
 
 /**
+ * F10 (opus adversarial review, fix wave): opportunistic cleanup of this
+ * user's own already-dead rows — used (`used_at_ms IS NOT NULL`) or
+ * expired (`expires_at_ms <= nowMs`) — deleted whenever a fresh token is
+ * about to be issued for them. No new job/cron: `password_reset_tokens`
+ * otherwise accumulates forever (every issuance leaves its predecessor's
+ * row behind, merely marked used by invalidateUnusedPasswordResetTokens
+ * above; expired-but-never-retried rows aren't touched by that function
+ * at all). Scoped to ONE user per call — this only ever runs from inside
+ * issuePasswordResetToken below, on that user's own issuance — not a
+ * table-wide sweep.
+ */
+export async function purgeExpiredOrUsedPasswordResetTokens(
+  db: Kysely<DB>,
+  userId: string,
+  nowMs: number
+): Promise<number> {
+  const result = await db
+    .deleteFrom('password_reset_tokens')
+    .where('user_id', '=', userId)
+    .where((eb) => eb.or([eb('used_at_ms', 'is not', null), eb('expires_at_ms', '<=', nowMs)]))
+    .executeTakeFirst();
+  return Number(result.numDeletedRows ?? 0);
+}
+
+/**
  * POST /auth/forgot-password's real-account branch (M15): invalidates
  * every previously-issued, still-unused token for this user
- * (invalidateUnusedPasswordResetTokens above) and inserts the new row,
- * atomically — a caller who requests two resets in a row can only ever
- * complete with the SECOND link; the first silently stops working rather
- * than staying live in parallel (M15: "Old tokens for the same user are
- * invalidated when a new one is issued").
+ * (invalidateUnusedPasswordResetTokens above), opportunistically purges
+ * this user's already-dead rows (F10, purgeExpiredOrUsedPasswordResetTokens
+ * above — runs AFTER the invalidate step so a row it just marked used is
+ * caught in the same pass), and inserts the new row, all atomically — a
+ * caller who requests two resets in a row can only ever complete with the
+ * SECOND link; the first silently stops working rather than staying live
+ * in parallel (M15: "Old tokens for the same user are invalidated when a
+ * new one is issued").
  */
 export async function issuePasswordResetToken(
   db: Kysely<DB>,
@@ -73,6 +101,7 @@ export async function issuePasswordResetToken(
 ): Promise<PasswordResetTokenRow> {
   return withTransaction(db, async (trx) => {
     await invalidateUnusedPasswordResetTokens(trx, input.userId, input.createdAtMs);
+    await purgeExpiredOrUsedPasswordResetTokens(trx, input.userId, input.createdAtMs);
 
     return trx
       .insertInto('password_reset_tokens')
