@@ -23,7 +23,7 @@ it in a message, whatever gets it to them.
 
 [SCREENSHOT: Users screen showing the option to invite someone]
 
-From the Users screen, choose the option to invite someone new. You can
+From the Users screen, choose **Create invite**. You can
 optionally set their username and display name in advance — leave either
 blank and the person picks their own when they open the link — and choose
 which of your libraries they'll be able to see from the start (the same
