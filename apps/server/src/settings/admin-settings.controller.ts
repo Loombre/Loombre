@@ -35,6 +35,7 @@ import { nowMs as clockNowMs } from "@loombre/shared";
 import type { AuthenticatedRequest } from "../gateway/auth.guard.js";
 import { SettingsService } from "./settings.service.js";
 import { ProviderKeysService } from "./provider-keys.service.js";
+import { MailCredentialsService } from "./mail-credentials.service.js";
 import type {
   AdminSettingsResponseDto,
   AdminSettingsSchemaResponseDto,
@@ -46,13 +47,15 @@ export class AdminSettingsController {
   constructor(
     private readonly settingsService: SettingsService,
     private readonly providerKeysService: ProviderKeysService,
+    private readonly mailCredentialsService: MailCredentialsService,
   ) {}
 
   @Get()
   async getSettings(@Req() req: AuthenticatedRequest): Promise<AdminSettingsResponseDto> {
     await this.settingsService.assertLiveAdmin(req.user!.userId, req.originalUrl);
     const providerKeys = await this.providerKeysService.allProviderKeyStatuses();
-    return this.settingsService.toAdminSettingsResponse(providerKeys);
+    const mailCredentials = await this.mailCredentialsService.status();
+    return this.settingsService.toAdminSettingsResponse(providerKeys, mailCredentials);
   }
 
   @Get("schema")

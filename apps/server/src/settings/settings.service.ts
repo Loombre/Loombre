@@ -58,6 +58,7 @@ import type {
   AdminSettingValueDto,
   AdminSettingsResponseDto,
   AdminSettingsSchemaResponseDto,
+  MailCredentialsStatusDto,
   ProviderKeyStatusDto,
   UpdateSettingResponseDto,
 } from "./settings.types.js";
@@ -429,7 +430,7 @@ export class SettingsService implements OnApplicationBootstrap {
   // through as the HTTP body verbatim (settings.types.ts's frozen DTOs).
   // ============================================================================
 
-  toAdminSettingsResponse(providerKeys: ProviderKeyStatusDto[]): AdminSettingsResponseDto {
+  toAdminSettingsResponse(providerKeys: ProviderKeyStatusDto[], mailCredentials: MailCredentialsStatusDto): AdminSettingsResponseDto {
     const settings: AdminSettingValueDto[] = this.registry.map((entry) => {
       const effective = this.getEffective(entry.key);
       const rawValue = effective?.value;
@@ -442,7 +443,7 @@ export class SettingsService implements OnApplicationBootstrap {
         ...(effective?.lockedBy !== undefined ? { lockedBy: effective.lockedBy } : {}),
       };
     });
-    return { settings, restartPendingKeys: this.restartPendingKeys, providerKeys };
+    return { settings, restartPendingKeys: this.restartPendingKeys, providerKeys, mailCredentials };
   }
 
   toSchemaResponse(): AdminSettingsSchemaResponseDto {
