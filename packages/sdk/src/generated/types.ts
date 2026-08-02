@@ -41,6 +41,33 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/claim/{token}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The raw one-time invite token (never the hash). */
+                token: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * Resolve an invite token's presets, without claiming it
+         * @description Public (M12). Invalid, expired, already-claimed, or revoked tokens all resolve to a 404 BYTE-IDENTICAL to an unknown route's 404 (the same "invisible == nonexistent" posture as POST /setup/first-admin once configured) — the four cases are deliberately indistinguishable from the outside.
+         */
+        get: operations["getClaimState"];
+        put?: never;
+        /**
+         * Claim an invite, creating an account and signing in
+         * @description Public (M12). Same byte-identical-404 posture as getClaimState for an invalid/expired/claimed/revoked token — a username collision against an OTHERWISE valid token is a distinct 422 (the token itself was fine). Auto-logs in on success (M13): the response is a real TokenPair, same composition as POST /setup/first-admin's own token minting.
+         */
+        post: operations["claimInvite"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/auth/login": {
         parameters: {
             query?: never;
@@ -270,6 +297,49 @@ export interface paths {
         put: operations["putMyRestrictedSettings"];
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/invites": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List invites (admin) */
+        get: operations["listInvites"];
+        put?: never;
+        /**
+         * Create a one-time, expiring invite link (admin)
+         * @description Rejects 422 on any restricted-class or unknown library id (M4) — invites can never grant restricted-library access or admin role (no such field exists on this request at all). The raw claim token is returned exactly once, in this response only.
+         */
+        post: operations["createInvite"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/invites/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["IdPathParam"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Revoke a pending invite (admin)
+         * @description 404 when the invite is unknown, already revoked, or already claimed — nothing left to revoke.
+         */
+        delete: operations["revokeInvite"];
         options?: never;
         head?: never;
         patch?: never;
@@ -2298,8 +2368,11 @@ export interface components {
             /** Format: uuid */
             id: string;
             username: string;
-            /** Format: email */
-            email: string;
+            /**
+             * Format: email
+             * @description M1: optional login identifier — an additive LOOSENING (the column was CITEXT NOT NULL UNIQUE before; still CITEXT UNIQUE, just nullable now). Null = no email on file; the user authenticates by username only.
+             */
+            email: string | null;
             displayName?: string | null;
             isAdmin: boolean;
             /**
@@ -2320,8 +2393,11 @@ export interface components {
         };
         CreateUserRequest: {
             username: string;
-            /** Format: email */
-            email: string;
+            /**
+             * Format: email
+             * @description M1: optional (was required) — an admin may create an email-less user.
+             */
+            email?: string | null;
             /** Format: password */
             password: string;
             displayName?: string | null;
@@ -2331,8 +2407,11 @@ export interface components {
         };
         /** @description Admin update of another user. Partial; only present fields change. */
         UpdateUserRequest: {
-            /** Format: email */
-            email?: string;
+            /**
+             * Format: email
+             * @description M1: null clears the email, matching displayName's own null-to-clear shape below.
+             */
+            email?: string | null;
             displayName?: string | null;
             isAdmin?: boolean;
             maxContentRating?: string | null;
@@ -2340,8 +2419,11 @@ export interface components {
         /** @description Self-service profile update; cannot change isAdmin or maxContentRating. */
         UpdateMeRequest: {
             displayName?: string | null;
-            /** Format: email */
-            email?: string;
+            /**
+             * Format: email
+             * @description M1: null-to-clear (birthDate precedent below).
+             */
+            email?: string | null;
             /** Format: date */
             birthDate?: string | null;
             /** Format: password */
@@ -2360,6 +2442,83 @@ export interface components {
             autoplayNextEpisode: boolean;
             /** Format: int64 */
             updatedAtMs: number;
+        };
+        /**
+         * @description Derived at read time from claimedAtMs/revokedAtMs/expiresAtMs — never stored.
+         * @enum {string}
+         */
+        InviteStatus: "pending" | "claimed" | "revoked" | "expired";
+        /** @description Admin-facing invite record. NEVER carries token material. */
+        Invite: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            createdByUserId: string;
+            /** Format: int64 */
+            createdAtMs: number;
+            /** Format: int64 */
+            expiresAtMs: number;
+            usernamePreset: string | null;
+            displayNamePreset: string | null;
+            /** Format: email */
+            email: string | null;
+            libraryIds: string[];
+            status: components["schemas"]["InviteStatus"];
+            /** Format: uuid */
+            claimedByUserId: string | null;
+            /** Format: int64 */
+            claimedAtMs: number | null;
+            /** Format: int64 */
+            revokedAtMs: number | null;
+        };
+        InvitePage: {
+            items: components["schemas"]["Invite"][];
+            nextCursor: string | null;
+        };
+        CreateInviteRequest: {
+            /** @description Username preset — authoritative at claim time (preset wins). */
+            username?: string;
+            displayName?: string | null;
+            /**
+             * Format: email
+             * @description Send-to address AND claim-time email default. If mail is configured, the invite email is sent here.
+             */
+            email?: string;
+            /**
+             * Format: int64
+             * @description Bounds 1h-30d; default 72h.
+             * @default 259200000
+             */
+            expiresInMs: number;
+            /** @description General-class libraries only (M4) — a restricted-class or unknown library id 422s the whole request; may be empty. */
+            libraryIds: string[];
+        };
+        /** @description claimToken is returned EXACTLY ONCE — never retrievable again, never logged, never in any event payload (M3). */
+        CreateInviteResponse: {
+            invite: components["schemas"]["Invite"];
+            claimToken: string;
+            /** @description publicUrl-derived claim link, or null when the public URL setting is unset (M9) — the web composes a browser-origin fallback in that case. */
+            claimUrl: string | null;
+        };
+        ClaimState: {
+            usernamePreset: string | null;
+            displayNamePreset: string | null;
+            emailPreset: string | null;
+        };
+        ClaimInviteRequest: {
+            /** @description Required iff the invite has no usernamePreset; the preset wins if both are present. */
+            username?: string;
+            /** Format: password */
+            password: string;
+            /**
+             * Format: email
+             * @description Defaults to the invite's own email preset when omitted.
+             */
+            email?: string;
+            /** @description Defaults to the invite's own displayNamePreset when omitted. */
+            displayName?: string;
+            deviceName?: string;
+            deviceProfile?: components["schemas"]["DeviceProfile"];
         };
         RestrictedSettingsUpdate: {
             optIn: boolean;
@@ -3157,13 +3316,18 @@ export interface components {
             /** @enum {string} */
             mode: "full" | "incremental";
         };
-        /** @description A user record sans secrets (no password hash, no PIN hash, no tokens). */
+        /** @description A user record sans secrets (no password hash, no PIN hash, no tokens). This schema is reused BOTH as GET /export's response shape AND (nested under Archive) as POST /import's request shape — `displayName` is deliberately NOT in `required` despite always being present on export, so an archive written before M2 (which never had this key at all) still validates as an import request; the import path treats a missing key exactly like an explicit null (apps/worker/src/import/validate.ts). */
         ExportUser: {
             /** Format: uuid */
             id: string;
             username: string;
-            /** Format: email */
-            email: string;
+            /**
+             * Format: email
+             * @description M1: nullable, an email-less user exports/imports as null.
+             */
+            email: string | null;
+            /** @description M2 (E4 archive check). Optional key: absent on a pre-M2 archive. */
+            displayName?: string | null;
             isAdmin: boolean;
             /** Format: int64 */
             createdAtMs: number;
@@ -3813,6 +3977,79 @@ export interface operations {
             default: components["responses"]["Problem"];
         };
     };
+    getClaimState: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The raw one-time invite token (never the hash). */
+                token: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Live invite presets */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClaimState"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            /** @description Rate limited (unauthenticated surface) */
+            429: {
+                headers: {
+                    /** @description Seconds until the next attempt is allowed. */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    claimInvite: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The raw one-time invite token (never the hash). */
+                token: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ClaimInviteRequest"];
+            };
+        };
+        responses: {
+            /** @description Claimed; account created and signed in */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TokenPair"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["UnprocessableEntity"];
+            /** @description Rate limited (unauthenticated surface) */
+            429: {
+                headers: {
+                    /** @description Seconds until the next attempt is allowed. */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
     authLogin: {
         parameters: {
             query?: never;
@@ -4321,6 +4558,85 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             422: components["responses"]["UnprocessableEntity"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    listInvites: {
+        parameters: {
+            query?: {
+                /** @description Opaque pagination cursor from a previous page's `nextCursor`. */
+                cursor?: components["parameters"]["Cursor"];
+                limit?: components["parameters"]["Limit"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Page of invites */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvitePage"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    createInvite: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateInviteRequest"];
+            };
+        };
+        responses: {
+            /** @description Invite created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreateInviteResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            422: components["responses"]["UnprocessableEntity"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    revokeInvite: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["IdPathParam"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Revoked */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
             default: components["responses"]["Problem"];
         };
     };
