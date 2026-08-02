@@ -46,6 +46,7 @@ export const SETTING_TITLES = {
   "rateLimit.login": "Sign-in attempt limit",
   "rateLimit.refresh": "Session refresh limit",
   "rateLimit.unlock": "Restricted-content PIN attempt limit",
+  "rateLimit.currentPassword": "Current-password re-authentication attempt limit",
   "rateLimit.setup": "Setup wizard request limit",
   "rateLimit.capabilities": "Capability check request limit",
   "rateLimit.export": "Data export request limit",
