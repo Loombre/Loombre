@@ -202,14 +202,16 @@ async function latestPinResetEvent(userId: string): Promise<{ payload: Record<st
 describe("loombre admin reset-pin <username> (H2)", () => {
   it("full loop: opt in -> unlock -> CLI reset -> old PIN rejected -> fresh opt-in -> event emitted", async () => {
     const username = "h2-reset-full-loop";
-    const { userId, accessToken } = await createRestrictedEligibleUser(username, "correct-horse-battery-1");
+    const password = "correct-horse-battery-1";
+    const { userId, accessToken } = await createRestrictedEligibleUser(username, password);
 
     // Gate 3: opt in with PIN 1234 through the real PUT /users/me/restricted
     // path (P4.22 contract — first-time opt-in requires a new PIN).
+    // G3: every call requires currentPassword (F1: account-critical).
     const optIn = await request(app.getHttpServer())
       .put("/users/me/restricted")
       .set("Authorization", `Bearer ${accessToken}`)
-      .send({ optIn: true, pin: "1234" });
+      .send({ optIn: true, pin: "1234", currentPassword: password });
     expect(optIn.status, JSON.stringify(optIn.body)).toBe(200);
     expect(optIn.body).toEqual({ optIn: true, hasPin: true, unlockedUntilMs: null });
 
@@ -252,7 +254,7 @@ describe("loombre admin reset-pin <username> (H2)", () => {
     const freshOptIn = await request(app.getHttpServer())
       .put("/users/me/restricted")
       .set("Authorization", `Bearer ${accessToken}`)
-      .send({ optIn: true, pin: "5678" });
+      .send({ optIn: true, pin: "5678", currentPassword: password });
     expect(freshOptIn.status, JSON.stringify(freshOptIn.body)).toBe(200);
     expect(freshOptIn.body).toEqual({ optIn: true, hasPin: true, unlockedUntilMs: null });
 
@@ -277,12 +279,13 @@ describe("loombre admin reset-pin <username> (H2)", () => {
 
   it("declined confirmation: nothing changes, no event, exit 1", async () => {
     const username = "h2-reset-declined";
-    const { userId, accessToken } = await createRestrictedEligibleUser(username, "correct-horse-battery-2");
+    const password = "correct-horse-battery-2";
+    const { userId, accessToken } = await createRestrictedEligibleUser(username, password);
 
     const optIn = await request(app.getHttpServer())
       .put("/users/me/restricted")
       .set("Authorization", `Bearer ${accessToken}`)
-      .send({ optIn: true, pin: "1111" });
+      .send({ optIn: true, pin: "1111", currentPassword: password });
     expect(optIn.status).toBe(200);
 
     const cliResult = await runCli({
