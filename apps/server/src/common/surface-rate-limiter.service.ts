@@ -103,29 +103,23 @@ export class SurfaceRateLimiterService implements OnApplicationBootstrap {
   /** GET /setup/state + POST /setup/first-admin — per-IP (default 20/min,
    *  rateLimit.setup). Unauthenticated first-boot surface. */
   readonly setup: KeyedRateLimiter;
-<<<<<<< HEAD
   /** GET/POST /claim/{token} — per-IP (default 10/min, rateLimit.claim,
    *  M12). Unauthenticated invite-claim surface. */
   readonly claim: KeyedRateLimiter;
-=======
   /** POST /auth/forgot-password + POST /auth/reset-password — per-IP
    *  (default 5/min, rateLimit.passwordReset). STATE.md "Optional mail
    *  transport + invitation & reset flows" (E3b/M12), Lane B: shared by
    *  both routes on purpose — a forgot-password flood and a reset-token
    *  guessing spree are the same abuse shape from the same caller. */
   readonly passwordReset: KeyedRateLimiter;
->>>>>>> 8f5fb8e (feat(server): password recovery — forgot/reset-password, admin reset action, must-change-password guard (E3/M8/M12/M14/M15))
 
   constructor(private readonly settingsService: SettingsService) {
     this.capabilities = new KeyedRateLimiter(perMinutePolicy(settingsService, "rateLimit.capabilities", 120));
     this.mediaToken = new KeyedRateLimiter(perMinutePolicy(settingsService, "rateLimit.mediaToken", 600));
     this.export = new KeyedRateLimiter(perHourPolicy(settingsService, "rateLimit.export", 5));
     this.setup = new KeyedRateLimiter(perMinutePolicy(settingsService, "rateLimit.setup", 20));
-<<<<<<< HEAD
     this.claim = new KeyedRateLimiter(perMinutePolicy(settingsService, "rateLimit.claim", 10));
-=======
     this.passwordReset = new KeyedRateLimiter(perMinutePolicy(settingsService, "rateLimit.passwordReset", 5));
->>>>>>> 8f5fb8e (feat(server): password recovery — forgot/reset-password, admin reset action, must-change-password guard (E3/M8/M12/M14/M15))
 
     settingsService.onChange((event) => {
       switch (event.key) {
@@ -141,13 +135,11 @@ export class SurfaceRateLimiterService implements OnApplicationBootstrap {
         case "rateLimit.setup":
           this.setup.updatePolicy(perMinutePolicy(this.settingsService, "rateLimit.setup", 20));
           break;
-<<<<<<< HEAD
         case "rateLimit.claim":
           this.claim.updatePolicy(perMinutePolicy(this.settingsService, "rateLimit.claim", 10));
-=======
+          break;
         case "rateLimit.passwordReset":
           this.passwordReset.updatePolicy(perMinutePolicy(this.settingsService, "rateLimit.passwordReset", 5));
->>>>>>> 8f5fb8e (feat(server): password recovery — forgot/reset-password, admin reset action, must-change-password guard (E3/M8/M12/M14/M15))
           break;
         default:
           break;
@@ -163,10 +155,7 @@ export class SurfaceRateLimiterService implements OnApplicationBootstrap {
     this.mediaToken.updatePolicy(perMinutePolicy(this.settingsService, "rateLimit.mediaToken", 600));
     this.export.updatePolicy(perHourPolicy(this.settingsService, "rateLimit.export", 5));
     this.setup.updatePolicy(perMinutePolicy(this.settingsService, "rateLimit.setup", 20));
-<<<<<<< HEAD
     this.claim.updatePolicy(perMinutePolicy(this.settingsService, "rateLimit.claim", 10));
-=======
     this.passwordReset.updatePolicy(perMinutePolicy(this.settingsService, "rateLimit.passwordReset", 5));
->>>>>>> 8f5fb8e (feat(server): password recovery — forgot/reset-password, admin reset action, must-change-password guard (E3/M8/M12/M14/M15))
   }
 }

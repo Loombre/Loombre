@@ -2988,7 +2988,8 @@ COMMENT ON COLUMN stash_sync_reports.used_snapshot_fallback IS
 -- (optional email + real display_name storage). Pre-assigned this migration
 -- number (M5, to avoid parallel-lane collisions with Lane B's 0024).
 --
--- =====================================================================-- users.email loosens to optional (M1)
+-- ============================================================================
+-- users.email loosens to optional (M1)
 -- ============================================================================
 --
 -- Reality check at kickoff: users.email was CITEXT NOT NULL UNIQUE
@@ -3121,7 +3122,8 @@ COMMENT ON TABLE user_invite_grants IS
   'general-class libraries only — rejected at invite creation for any '
   'restricted-class library id, and RE-CHECKED at claim time in case a '
   'library''s content_class changed after the invite was created).';
-=======
+
+-- SPDX-License-Identifier: AGPL-3.0-only
 -- Loombre :: migration 0024_password_recovery
 --
 -- Additive-only (mirrors 0002/.../0023's discipline): no column drops, no

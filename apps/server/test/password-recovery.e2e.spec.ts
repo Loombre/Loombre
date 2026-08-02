@@ -165,9 +165,9 @@ describe("POST /auth/forgot-password (E3b, PUBLIC, M12)", () => {
       const call = spy.mock.calls[0]![0];
       expect(call.templateId).toBe("password-reset");
       expect(call.to).toBe("forgot-real-user@example.invalid");
-      expect(typeof call.params["resetLink"]).toBe("string");
-      expect(call.params["resetLink"]).toContain("/reset/");
-      expect(call.params["username"]).toBe("forgot-real-user");
+      expect(typeof call.params["actionUrl"]).toBe("string");
+      expect(call.params["actionUrl"]).toContain("/reset/");
+      expect(call.params["displayName"]).toBe("forgot-real-user");
     } finally {
       spy.mockRestore();
     }
@@ -218,7 +218,7 @@ describe("POST /auth/reset-password (E3b, PUBLIC, M12/E8)", () => {
     try {
       const forgot = await request(app.getHttpServer()).post("/auth/forgot-password").send({ identifier: "reset-happy-path" });
       expect(forgot.status).toBe(202);
-      const resetLink = spy.mock.calls[0]![0].params["resetLink"]!;
+      const resetLink = spy.mock.calls[0]![0].params["actionUrl"]!;
       plaintextToken = resetLink.split("/reset/")[1]!;
       expect(plaintextToken.length).toBeGreaterThan(0);
     } finally {
