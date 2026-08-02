@@ -155,21 +155,30 @@ describe("POST /auth/forgot-password (E3b, PUBLIC, M12)", () => {
   it("real account (by username), with an email on file: 202, IDENTICAL body to the unknown-identifier case, and trySend is called with the frozen payload", async () => {
     await createOrdinaryUser("forgot-real-user", "correct-horse-battery-fr1");
     const mailDispatchService = app.get(MailDispatchService);
-    const spy = vi.spyOn(mailDispatchService, "trySend");
+    const trySendSpy = vi.spyOn(mailDispatchService, "trySend");
+    // F2(2), fix wave: forgotPassword() now pre-checks isConfigured() and
+    // issues NO token at all when mail is unconfigured — this suite's
+    // baseline posture (E1, zero mail configuration) would otherwise mean
+    // trySend is never reached, so this specific case (proving the
+    // real-account/real-email branch's SHAPE) mocks isConfigured() true,
+    // same pattern as the capabilities test above.
+    const mailConfigService = app.get(MailConfigService);
+    const isConfiguredSpy = vi.spyOn(mailConfigService, "isConfigured").mockReturnValue(true);
     try {
       const res = await request(app.getHttpServer()).post("/auth/forgot-password").send({ identifier: "forgot-real-user" });
       expect(res.status).toBe(202);
       expect(res.body).toEqual({});
 
-      expect(spy).toHaveBeenCalledTimes(1);
-      const call = spy.mock.calls[0]![0];
+      expect(trySendSpy).toHaveBeenCalledTimes(1);
+      const call = trySendSpy.mock.calls[0]![0];
       expect(call.templateId).toBe("password-reset");
       expect(call.to).toBe("forgot-real-user@example.invalid");
       expect(typeof call.params["actionUrl"]).toBe("string");
       expect(call.params["actionUrl"]).toContain("/reset/");
       expect(call.params["displayName"]).toBe("forgot-real-user");
     } finally {
-      spy.mockRestore();
+      trySendSpy.mockRestore();
+      isConfiguredSpy.mockRestore();
     }
   });
 
@@ -194,7 +203,7 @@ describe("POST /auth/forgot-password (E3b, PUBLIC, M12)", () => {
   // on file here at all. A follow-up test belongs at integration, once
   // 0023 has landed on the assembled tree.
 
-  it("mail dispatch failing to send (dispatched:false, the LANE-B stub's own return) never changes the 202 response (E6)", async () => {
+  it("mail unconfigured (F2(2): no token minted, trySend never called) never changes the 202 response (E6)", async () => {
     await createOrdinaryUser("forgot-dispatch-false", "correct-horse-battery-fr4");
     const res = await request(app.getHttpServer()).post("/auth/forgot-password").send({ identifier: "forgot-dispatch-false" });
     expect(res.status).toBe(202);
@@ -213,16 +222,23 @@ describe("POST /auth/reset-password (E3b, PUBLIC, M12/E8)", () => {
     const preLogin = await loginAs("reset-happy-path", "correct-horse-battery-old-hp");
 
     const mailDispatchService = app.get(MailDispatchService);
-    const spy = vi.spyOn(mailDispatchService, "trySend");
+    const trySendSpy = vi.spyOn(mailDispatchService, "trySend");
+    // F2(2), fix wave: a token is only ever minted when mail is
+    // configured — mock isConfigured() true so this happy-path round trip
+    // actually gets a real token to consume below (see the earlier
+    // "with an email on file" test for the same pattern/rationale).
+    const mailConfigService = app.get(MailConfigService);
+    const isConfiguredSpy = vi.spyOn(mailConfigService, "isConfigured").mockReturnValue(true);
     let plaintextToken: string;
     try {
       const forgot = await request(app.getHttpServer()).post("/auth/forgot-password").send({ identifier: "reset-happy-path" });
       expect(forgot.status).toBe(202);
-      const resetLink = spy.mock.calls[0]![0].params["actionUrl"]!;
+      const resetLink = trySendSpy.mock.calls[0]![0].params["actionUrl"]!;
       plaintextToken = resetLink.split("/reset/")[1]!;
       expect(plaintextToken.length).toBeGreaterThan(0);
     } finally {
-      spy.mockRestore();
+      trySendSpy.mockRestore();
+      isConfiguredSpy.mockRestore();
     }
 
     const newPassword = "correct-horse-battery-new-hp";
