@@ -14,11 +14,16 @@ import { SurfaceRateLimiterService } from "./surface-rate-limiter.service.js";
 import { createFakeSettingsService } from "./test-support/fake-settings-service.js";
 
 describe("SurfaceRateLimiterService", () => {
+<<<<<<< HEAD
   it("defaults: capabilities 120/min, mediaToken 600/min, export 5/hour, claim 10/min", () => {
+=======
+  it("defaults: capabilities 120/min, mediaToken 600/min, export 5/hour, passwordReset 5/min", () => {
+>>>>>>> 8f5fb8e (feat(server): password recovery — forgot/reset-password, admin reset action, must-change-password guard (E3/M8/M12/M14/M15))
     const service = new SurfaceRateLimiterService(createFakeSettingsService({ env: {} }).service);
     expect(service.capabilities.attempt("k").allowed).toBe(true);
     expect(service.mediaToken.attempt("k").allowed).toBe(true);
     expect(service.export.attempt("k").allowed).toBe(true);
+<<<<<<< HEAD
     expect(service.claim.attempt("k").allowed).toBe(true);
   });
 
@@ -26,6 +31,21 @@ describe("SurfaceRateLimiterService", () => {
     const service = new SurfaceRateLimiterService(createFakeSettingsService({ env: { LOOMBRE_RATE_CLAIM: "1" } }).service);
     expect(service.claim.attempt("only-key").allowed).toBe(true);
     expect(service.claim.attempt("only-key").allowed).toBe(false);
+=======
+    expect(service.passwordReset.attempt("k").allowed).toBe(true);
+  });
+
+  // STATE.md "Optional mail transport + invitation & reset flows" (E3b/M12,
+  // Lane B): shared by both POST /auth/forgot-password and
+  // POST /auth/reset-password (same key, since both are attempted-recovery
+  // abuse from the same caller) — env-pinnable like every other policy here.
+  it("passwordReset: env override changes capacity", () => {
+    const service = new SurfaceRateLimiterService(
+      createFakeSettingsService({ env: { LOOMBRE_RATE_PASSWORD_RESET: "1" } }).service,
+    );
+    expect(service.passwordReset.attempt("only-key").allowed).toBe(true);
+    expect(service.passwordReset.attempt("only-key").allowed).toBe(false);
+>>>>>>> 8f5fb8e (feat(server): password recovery — forgot/reset-password, admin reset action, must-change-password guard (E3/M8/M12/M14/M15))
   });
 
   it("env overrides change capacity", () => {
