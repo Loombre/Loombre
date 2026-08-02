@@ -94,12 +94,34 @@ This message was sent by a Loombre server. If you weren't expecting it, you can 
 </html>`;
 }
 
+// F12 (opus adversarial review, fix wave): defense in depth only —
+// unreachable TODAY because every actionUrl this module ever receives is
+// built from MailConfigService.publicUrl(), which
+// packages/shared/src/settings-registry.ts's PUBLIC_URL_SCHEMA already
+// forces to http(s) at the settings-write layer (see this file's own
+// header: "the only http(s):// URL wrapEmail()/actionButton() ever emit is
+// the caller-supplied actionUrl"). A cheap allow-list here means a future
+// caller/registry change can't silently turn this into a `javascript:`/
+// `data:` sink in an HTML email a mail client might render as clickable.
+const ALLOWED_ACTION_URL_SCHEMES = ['http:', 'https:'];
+
+function hasAllowedActionUrlScheme(actionUrl: string): boolean {
+  try {
+    return ALLOWED_ACTION_URL_SCHEMES.includes(new URL(actionUrl).protocol);
+  } catch {
+    return false;
+  }
+}
+
 /** An amber CTA button/link — the ONE http(s) URL a template is allowed to
  *  emit (see this file's header). `label` is escaped here; `actionUrl` is
  *  escaped in BOTH places it's rendered — the href attribute (a raw `"`
  *  in the URL could otherwise break out of the attribute) and the visible
- *  fallback text. */
+ *  fallback text. F12: a non-http(s) scheme (`javascript:`, `data:`, ...)
+ *  drops the button entirely rather than ever rendering it — see this
+ *  module's header for why this is defense in depth, not a live gap. */
 export function actionButtonHtml(actionUrl: string, label: string): string {
+  if (!hasAllowedActionUrlScheme(actionUrl)) return '';
   const safeLabel = escapeHtml(label);
   const safeUrl = escapeHtml(actionUrl);
   return `<table role="presentation" cellpadding="0" cellspacing="0" style="margin:24px 0 8px 0;">
