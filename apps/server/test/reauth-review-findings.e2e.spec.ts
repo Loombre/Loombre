@@ -20,10 +20,10 @@
 // the email-collision signal", lane/reauth-fix): R-F3/R-F4/R-F5/R-F6/
 // R-F7/LOW-8 are fixed — their RED cases below are GREEN again. R-F1/R-F2
 // are the email-existence oracle: proven a genuine E8-vs-E1/E4 trilemma
-// (STATE.md 🔶 OWNER DECISION REQUIRED), not a code bug an in-scope fix
-// can close, so their `it(...)` cases are `it.skip(...)`'d with an inline
-// pointer back to that decision — every OTHER case in this file stays
-// active and green.
+// (STATE.md 🔶) that the owner RESOLVED on 2026-08-02 in favour of E1/E4 —
+// the oracle is an ACCEPTED, documented limitation on this surface, not a
+// bug to close, so their `it(...)` cases stay `it.skip(...)`'d as a
+// permanent record — every OTHER case in this file stays active and green.
 //
 // Findings pinned here (full write-up in the R-lane report):
 //
@@ -302,7 +302,11 @@ afterEach(() => {
 // ============================================================================
 
 describe("RED R-F1: the updateMe success body must not reveal whether the address was taken", () => {
-  // PENDING OWNER DECISION (STATE.md 🔶): E8-vs-E1/E4 email-oracle trilemma — see reauth run
+  // ACCEPTED LIMITATION (owner decision 2026-08-02, STATE.md 🔶): the E8-vs-
+  // E1/E4 email-oracle trilemma was resolved in favour of E1/E4 — this surface
+  // is a documented, accepted enumeration limitation, NOT a bug to close. Left
+  // skipped as a permanent record of the known behaviour; do not re-enable or
+  // "fix" without re-opening the tradeoff with the owner.
   it.skip("the SAME actor's colliding and free attempts must be indistinguishable, `email` included", async () => {
     const victim = await createAndLoginFreshUser("rf1a-victim");
     const attacker = await createAndLoginFreshUser("rf1a-attacker");
@@ -323,7 +327,11 @@ describe("RED R-F1: the updateMe success body must not reveal whether the addres
     ).toBe(free.body.email === freeTarget);
   });
 
-  // PENDING OWNER DECISION (STATE.md 🔶): E8-vs-E1/E4 email-oracle trilemma — see reauth run
+  // ACCEPTED LIMITATION (owner decision 2026-08-02, STATE.md 🔶): the E8-vs-
+  // E1/E4 email-oracle trilemma was resolved in favour of E1/E4 — this surface
+  // is a documented, accepted enumeration limitation, NOT a bug to close. Left
+  // skipped as a permanent record of the known behaviour; do not re-enable or
+  // "fix" without re-opening the tradeoff with the owner.
   it.skip("a 30-trial blind classifier over the 200 body must not beat chance", async () => {
     const trials: Array<{ email: string; taken: boolean }> = [];
     for (let i = 0; i < 15; i += 1) trials.push({ email: (await createAndLoginFreshUser(`rf1b-reg${i}`)).email, taken: true });
@@ -343,7 +351,11 @@ describe("RED R-F1: the updateMe success body must not reveal whether the addres
     expect(correct, `classifier scored ${correct}/30 from the response body alone (chance = 15/30)`).toBeLessThanOrEqual(20);
   }, 300_000);
 
-  // PENDING OWNER DECISION (STATE.md 🔶): E8-vs-E1/E4 email-oracle trilemma — see reauth run
+  // ACCEPTED LIMITATION (owner decision 2026-08-02, STATE.md 🔶): the E8-vs-
+  // E1/E4 email-oracle trilemma was resolved in favour of E1/E4 — this surface
+  // is a documented, accepted enumeration limitation, NOT a bug to close. Left
+  // skipped as a permanent record of the known behaviour; do not re-enable or
+  // "fix" without re-opening the tradeoff with the owner.
   it.skip("GET /users/me must not confirm it either (the un-rate-limited follow-up)", async () => {
     const victim = await createAndLoginFreshUser("rf1c-victim");
     const attacker = await createAndLoginFreshUser("rf1c-attacker");
@@ -360,7 +372,11 @@ describe("RED R-F1: the updateMe success body must not reveal whether the addres
     ).not.toBeNull();
   });
 
-  // PENDING OWNER DECISION (STATE.md 🔶): E8-vs-E1/E4 email-oracle trilemma — see reauth run
+  // ACCEPTED LIMITATION (owner decision 2026-08-02, STATE.md 🔶): the E8-vs-
+  // E1/E4 email-oracle trilemma was resolved in favour of E1/E4 — this surface
+  // is a documented, accepted enumeration limitation, NOT a bug to close. Left
+  // skipped as a permanent record of the known behaviour; do not re-enable or
+  // "fix" without re-opening the tradeoff with the owner.
   it.skip("the oracle is case-insensitive (CITEXT), so it does not even need the victim's exact casing", async () => {
     const victim = await createAndLoginFreshUser("rf1d-victim");
     const attacker = await createAndLoginFreshUser("rf1d-attacker");
@@ -378,7 +394,11 @@ describe("RED R-F1: the updateMe success body must not reveal whether the addres
 // ============================================================================
 
 describe("RED R-F2: a claimed account must not reveal whether its submitted address was taken", () => {
-  // PENDING OWNER DECISION (STATE.md 🔶): E8-vs-E1/E4 email-oracle trilemma — see reauth run
+  // ACCEPTED LIMITATION (owner decision 2026-08-02, STATE.md 🔶): the E8-vs-
+  // E1/E4 email-oracle trilemma was resolved in favour of E1/E4 — this surface
+  // is a documented, accepted enumeration limitation, NOT a bug to close. Left
+  // skipped as a permanent record of the known behaviour; do not re-enable or
+  // "fix" without re-opening the tradeoff with the owner.
   it.skip("colliding claim leaves email null, readable with the token the claim itself returned", async () => {
     const victim = await createAndLoginFreshUser("rf2-victim");
 
