@@ -169,6 +169,7 @@ export class DataFreedomController {
             id: chunk.user.id,
             username: chunk.user.username,
             email: chunk.user.email,
+            displayName: chunk.user.displayName,
             isAdmin: chunk.user.isAdmin,
             createdAtMs: chunk.user.createdAtMs,
           })}`,

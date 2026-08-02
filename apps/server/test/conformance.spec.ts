@@ -182,6 +182,11 @@ const PUBLIC_OPERATION_IDS = new Set([
   "getSystemCapabilities",
   "getSetupState",
   "createFirstAdmin",
+  // "Optional mail transport + invitation & reset flows", E2/M12 (Lane A):
+  // GET/POST /claim/{token} — public by necessity, same posture as the
+  // setup pair above (see gateway/auth.guard.ts's PUBLIC_ROUTE_PATTERNS).
+  "getClaimState",
+  "claimInvite",
 ]);
 
 /** Every non-public documented operation's exact expected status when
@@ -331,6 +336,10 @@ const IMPLEMENTED_NON_PUBLIC_EXPECTATIONS: Record<string, number> = {
   revokeDevice: 404,
   listJobs: 200,
   getJob: 404,
+  // invites (admin) — E2, Lane A.
+  listInvites: 200,
+  createInvite: 422, // bodyless -> "libraryIds is required"; validation fails before any row is inserted
+  revokeInvite: 404, // PLACEHOLDER_UUID never resolves to a real invite
   listAdminSessions: 200,
   getSystemInfo: 200,
   getSystemUpdate: 200, // release lane (STATE.md P4.3/P4.16); LOOMBRE_UPDATE_CHECK=off is set in beforeAll -> deterministic {verification: "disabled"}, zero network

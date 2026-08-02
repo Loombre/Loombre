@@ -79,7 +79,7 @@ interface TokenPairResponse {
 interface UserResponse {
   id: string;
   username: string;
-  email: string;
+  email: string | null;
   displayName: string | null;
   isAdmin: boolean;
   birthDate: string | null;
@@ -96,12 +96,7 @@ interface FirstAdminResponse {
 /** Generic device identity for the token pair this endpoint mints — there
  *  is no deviceName/deviceProfile in FirstAdminRequest (contract-frozen;
  *  see file header), so unlike POST /auth/login this is not device-
- *  specific. Mirrors createUserAdmin's `displayName` situation: the
- *  contract accepts a field this wave has nowhere to persist, so it is
- *  read (to keep the request shape self-documenting) and intentionally
- *  ignored — same as apps/server/src/catalog/users.controller.ts's
- *  createUser, which has the identical gap (see that file's mapUser
- *  header comment: the `users` table has no displayName column). */
+ *  specific. */
 const SETUP_DEVICE_NAME = "First-boot setup";
 
 function isNonEmptyString(value: unknown): value is string {
@@ -113,7 +108,7 @@ function mapUser(row: UserRow): UserResponse {
     id: row.id,
     username: row.username,
     email: row.email,
-    displayName: null,
+    displayName: row.display_name,
     isAdmin: row.is_admin,
     birthDate: row.birth_date,
     maxContentRating: row.max_content_rating,
@@ -190,6 +185,7 @@ export class SetupController {
       username: body.username,
       email: body.email,
       passwordHash,
+      displayName: typeof body.displayName === "string" && body.displayName.length > 0 ? body.displayName : null,
       nowMs,
     });
 
