@@ -107,6 +107,10 @@ export interface UsersTable {
    *  contract's User.displayName had nowhere to persist until this column
    *  existed. NULL = unset. */
   display_name: string | null;
+  /** migrations/0024_password_recovery.sql (E3a/M14) — set by an admin/CLI
+   *  temporary-password reset, cleared on the next successful self-service
+   *  password change. */
+  must_change_password: Generated<boolean>;
   created_at_ms: number;
   updated_at_ms: number;
 }
@@ -525,6 +529,18 @@ export interface RefreshTokensTable {
   revoked_at_ms: number | null;
 }
 
+/** migrations/0024_password_recovery.sql (E3b/M15) — self-service
+ *  password-reset tokens; see that migration's COMMENT ON TABLE for the
+ *  atomic-consume/invalidation-by-supersession contract. */
+export interface PasswordResetTokensTable {
+  id: Generated<string>;
+  user_id: string;
+  token_hash: string;
+  created_at_ms: number;
+  expires_at_ms: number;
+  used_at_ms: number | null;
+}
+
 // ============================================================================
 // user_invites / user_invite_grants
 // (migrations/0023_user_invites.sql — E2, M3/M4)
@@ -808,6 +824,7 @@ export interface DB {
   refresh_tokens: RefreshTokensTable;
   user_invites: UserInvitesTable;
   user_invite_grants: UserInviteGrantsTable;
+  password_reset_tokens: PasswordResetTokensTable;
   hw_capability_snapshots: HwCapabilitySnapshotsTable;
   hw_capability_backends: HwCapabilityBackendsTable;
   server_settings: ServerSettingsTable;

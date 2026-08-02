@@ -274,6 +274,7 @@ export type {
   CreateUserAdminAndEmitInput,
   ResetRestrictedPinInput,
   ResetRestrictedPinResult,
+  ResetUserPasswordAdminInput,
 } from './query/identity.js';
 export {
   getUserByUsername,
@@ -299,6 +300,11 @@ export {
   revokeRefreshTokenById,
   revokeRefreshTokenChain,
   revokeRefreshTokensForDevice,
+  // Password recovery (E3/M14/M15) — see src/query/identity.js's own doc
+  // comments; revokeAllRefreshTokensForUser is also reused by
+  // src/query/password-reset.js's resetPasswordViaTokenAndEmit.
+  revokeAllRefreshTokensForUser,
+  resetUserPasswordAndEmit,
   // First-boot setup (STATE.md P4.6/P4.10) — see src/query/identity.js's
   // countUsers/createFirstAdminIfEmpty doc comments.
   countUsers,
@@ -309,6 +315,23 @@ export {
   // createUserAdminAndEmit doc comment for why the split exists.
   createUserAdminAndEmit,
 } from './query/identity.js';
+
+// Self-service password recovery, email tier (E3b/M15) — see
+// src/query/password-reset.js header for the token posture (M3: same
+// hashed-opaque-token shape as refresh_tokens) and
+// resetPasswordViaTokenAndEmit's doc comment for the atomic-consume
+// contract.
+export type {
+  PasswordResetTokenRow,
+  IssuePasswordResetTokenInput,
+  ResetPasswordViaTokenInput,
+  ResetPasswordViaTokenResult,
+} from './query/password-reset.js';
+export {
+  invalidateUnusedPasswordResetTokens,
+  issuePasswordResetToken,
+  resetPasswordViaTokenAndEmit,
+} from './query/password-reset.js';
 
 // Playback sessions (P2.4/P2.13/P2.14/P2.17, Wave-1 lane B) — see
 // src/query/playback-sessions.ts header for guard posture (per-user scoped,
