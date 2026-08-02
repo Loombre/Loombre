@@ -53,6 +53,7 @@ import { UsersSection } from "./sections/UsersSection.js";
 import { PlaybackSection } from "./sections/PlaybackSection.js";
 import { RemoteAccessSection } from "./sections/RemoteAccessSection.js";
 import { PluginsSection } from "./sections/PluginsSection.js";
+import { MailSection } from "./sections/MailSection.js";
 import { AdvancedSection } from "./sections/AdvancedSection.js";
 import { AboutSection } from "./sections/AboutSection.js";
 import styles from "./SettingsShell.module.css";
@@ -80,6 +81,8 @@ function renderSection(key: SettingsSectionKey, heading: string | null): React.J
       return <RemoteAccessSection heading={heading} />;
     case "plugins":
       return <PluginsSection heading={heading} />;
+    case "mail":
+      return <MailSection heading={heading} />;
     case "advanced":
       return <AdvancedSection heading={heading} />;
     case "about":
