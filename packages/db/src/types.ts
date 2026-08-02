@@ -541,6 +541,17 @@ export interface PasswordResetTokensTable {
   used_at_ms: number | null;
 }
 
+/** migrations/0025_email_collision_notice_ledger.sql (G7, STATE.md
+ *  "Current-password re-auth on self-changes"): per-address 24h rate-limit
+ *  window for the email-in-use security notice; see that migration's
+ *  COMMENT ON TABLE. `email` (CITEXT) is the primary key — one row per
+ *  address ever notified, overwritten (never appended) on every successful
+ *  window claim. */
+export interface EmailCollisionNoticeLedgerTable {
+  email: string;
+  last_notice_at_ms: number;
+}
+
 // ============================================================================
 // user_invites / user_invite_grants
 // (migrations/0023_user_invites.sql — E2, M3/M4)
@@ -837,4 +848,5 @@ export interface DB {
   stash_scene_links: StashSceneLinksTable;
   stash_sync_reports: StashSyncReportsTable;
   stash_sync_checkpoints: StashSyncCheckpointsTable;
+  email_collision_notice_ledger: EmailCollisionNoticeLedgerTable;
 }

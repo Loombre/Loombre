@@ -502,6 +502,84 @@ describe('invites (E2)', () => {
       expect(result.user.display_name).toBe('Preset Display');
     });
 
+    // G6 (STATE.md "Current-password re-auth on self-changes"): the
+    // COMMON collision case — a submitted email already belonging to
+    // another account — was always silently dropped (R-F3/F3, E8); this
+    // lane's addition is that the dropped address now surfaces in the
+    // ok:true result's INTERNAL `collidedEmail` field (never serialized to
+    // any HTTP response) so the controller can dispatch the email-in-use
+    // notice post-commit (G7).
+    it('a colliding email is silently dropped AND surfaced via collidedEmail — the claim still succeeds', async () => {
+      await createInviteAndEmit(db, {
+        createdByUserId: adminId,
+        tokenHash: freshTokenHash(),
+        usernamePreset: null,
+        displayNamePreset: null,
+        email: null,
+        libraryIds: [],
+        expiresAtMs: Date.now() + 100_000,
+        nowMs: 5_750_000,
+      });
+
+      // A pre-existing account already owns this address (seed admin).
+      const admin = await getUserByUsername(db, 'admin');
+      const collidingEmail = admin!.email!;
+
+      const tokenHash = freshTokenHash();
+      await createInviteAndEmit(db, {
+        createdByUserId: adminId,
+        tokenHash,
+        usernamePreset: null,
+        displayNamePreset: null,
+        email: null,
+        libraryIds: [],
+        expiresAtMs: Date.now() + 100_000,
+        nowMs: 5_760_000,
+      });
+
+      const result = await claimInviteAndEmit(db, {
+        tokenHash,
+        username: 'collision-claim-user',
+        email: collidingEmail,
+        displayName: null,
+        passwordHash: 'x',
+        nowMs: 5_760_100,
+      });
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) throw new Error('unreachable');
+      expect(result.collidedEmail).toBe(collidingEmail);
+      expect(result.user.email).toBeNull(); // dropped, not the colliding address
+    });
+
+    it('no collision -> collidedEmail is null', async () => {
+      const tokenHash = freshTokenHash();
+      await createInviteAndEmit(db, {
+        createdByUserId: adminId,
+        tokenHash,
+        usernamePreset: null,
+        displayNamePreset: null,
+        email: null,
+        libraryIds: [],
+        expiresAtMs: Date.now() + 100_000,
+        nowMs: 5_770_000,
+      });
+
+      const result = await claimInviteAndEmit(db, {
+        tokenHash,
+        username: 'no-collision-claim-user',
+        email: 'genuinely-free@example.invalid',
+        displayName: null,
+        passwordHash: 'x',
+        nowMs: 5_770_100,
+      });
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) throw new Error('unreachable');
+      expect(result.collidedEmail).toBeNull();
+      expect(result.user.email).toBe('genuinely-free@example.invalid');
+    });
+
     it('N concurrent claims of the SAME invite: exactly one succeeds, the rest see reason:"invalid", exactly one user row is created', async () => {
       const tokenHash = freshTokenHash();
       await createInviteAndEmit(db, {
