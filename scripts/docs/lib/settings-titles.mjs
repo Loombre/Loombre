@@ -82,7 +82,7 @@ export const ADMIN_CATEGORY_TITLES = {
   security: { title: "Security & sign-in logging", blurb: "Local logging of suspicious sign-in activity." },
   rateLimit: { title: "Sign-in & request limits", blurb: "How many attempts or requests are allowed in a given time window, per person or device — protects against automated guessing without locking anyone out under normal use." },
   network: { title: "Network", blurb: "The web address people use to reach this server from outside your own network." },
-  mail: { title: "Mail", blurb: "The outgoing mail server Loombre uses to send invitation and password-reset email. Entirely optional — every part of Loombre works without mail configured; see the Admin Guide's inviting-users and resetting-passwords pages for the copy-link alternative." },
+  mail: { title: "Mail", blurb: "The outgoing mail server Loombre uses to send invitation and password-reset email. Entirely optional — every part of Loombre works without mail configured; see the Admin Guide's pages on inviting users and on users & permissions for the copy-link alternative." },
   stash: { title: "Stash sync", blurb: "Automatic scheduling for re-syncing metadata from a connected Stash database. See the Restricted content chapter for connecting Stash in the first place." },
 };
 

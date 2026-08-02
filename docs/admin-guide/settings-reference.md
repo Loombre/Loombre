@@ -322,7 +322,7 @@ The web address people use to reach this server from outside your own network. S
 
 ## Mail
 
-The outgoing mail server Loombre uses to send invitation and password-reset email. Entirely optional — every part of Loombre works without mail configured; see the Admin Guide's inviting-users and resetting-passwords pages for the copy-link alternative.
+The outgoing mail server Loombre uses to send invitation and password-reset email. Entirely optional — every part of Loombre works without mail configured; see the Admin Guide's pages on inviting users and on users & permissions for the copy-link alternative.
 
 ### Mail server address
 
