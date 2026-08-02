@@ -183,6 +183,14 @@ How many invite-claim attempts one device may make per minute, before any accoun
 
 - **Default when unset:** 10 (or whatever was last saved from the settings screen)
 
+### `LOOMBRE_RATE_PASSWORD_RESET`
+
+Pins **[Password Reset](/admin-guide/settings-reference#password-reset)** (`rateLimit.passwordReset`) to a fixed value — set this and the admin settings screen shows the setting as controlled by the environment, read-only; any value stored from the settings screen is preserved but ignored until the variable is unset again.
+
+How many password-recovery requests (forgot-password or reset-password) one device may make per minute. Guards against email-bombing an account and against guessing a reset token.
+
+- **Default when unset:** 5 (or whatever was last saved from the settings screen)
+
 ### `LOOMBRE_PUBLIC_URL`
 
 Pins **[Public web address](/admin-guide/settings-reference#public-web-address)** (`network.publicUrl`) to a fixed value — set this and the admin settings screen shows the setting as controlled by the environment, read-only; any value stored from the settings screen is preserved but ignored until the variable is unset again.
