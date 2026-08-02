@@ -46,6 +46,8 @@ tags:
     description: Capability negotiation and instance information
   - name: users
     description: User accounts, self-service profile and settings
+  - name: invites
+    description: One-time, expiring invite links (admin) and the public self-serve claim flow
   - name: libraries
     description: Media libraries, scanning, per-user permissions
   - name: catalog-video
@@ -132,6 +134,68 @@ paths:
               schema: { $ref: '#/components/schemas/FirstAdminResponse' }
         '404': { $ref: '#/components/responses/NotFound' }
         '422': { $ref: '#/components/responses/UnprocessableEntity' }
+        default: { $ref: '#/components/responses/Problem' }
+
+  # ────────────────────────── Public claim surface (E2/M12) ─────────────────
+  /claim/{token}:
+    parameters:
+      - name: token
+        in: path
+        required: true
+        schema: { type: string }
+        description: The raw one-time invite token (never the hash).
+    get:
+      operationId: getClaimState
+      tags: [invites]
+      summary: Resolve an invite token's presets, without claiming it
+      description: >-
+        Public (M12). Invalid, expired, already-claimed, or revoked tokens
+        all resolve to a 404 BYTE-IDENTICAL to an unknown route's 404
+        (the same "invisible == nonexistent" posture as
+        POST /setup/first-admin once configured) — the four cases are
+        deliberately indistinguishable from the outside.
+      security: []
+      responses:
+        '200':
+          description: Live invite presets
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ClaimState' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429':
+          description: Rate limited (unauthenticated surface)
+          headers:
+            Retry-After: { schema: { type: integer }, description: Seconds until the next attempt is allowed. }
+        default: { $ref: '#/components/responses/Problem' }
+    post:
+      operationId: claimInvite
+      tags: [invites]
+      summary: Claim an invite, creating an account and signing in
+      description: >-
+        Public (M12). Same byte-identical-404 posture as getClaimState for
+        an invalid/expired/claimed/revoked token — a username collision
+        against an OTHERWISE valid token is a distinct 422 (the token
+        itself was fine). Auto-logs in on success (M13): the response is a
+        real TokenPair, same composition as POST /setup/first-admin's own
+        token minting.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ClaimInviteRequest' }
+      responses:
+        '201':
+          description: Claimed; account created and signed in
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TokenPair' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+        '429':
+          description: Rate limited (unauthenticated surface)
+          headers:
+            Retry-After: { schema: { type: integer }, description: Seconds until the next attempt is allowed. }
         default: { $ref: '#/components/responses/Problem' }
 
   # ───────────────────────────── Auth / devices ─────────────────────────────
@@ -480,6 +544,64 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '422': { $ref: '#/components/responses/UnprocessableEntity' }
+        default: { $ref: '#/components/responses/Problem' }
+
+  # ─────────────────────────────── Invites (E2) ─────────────────────────────
+  /invites:
+    get:
+      operationId: listInvites
+      tags: [invites]
+      summary: List invites (admin)
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Page of invites
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InvitePage' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        default: { $ref: '#/components/responses/Problem' }
+    post:
+      operationId: createInvite
+      tags: [invites]
+      summary: Create a one-time, expiring invite link (admin)
+      description: >-
+        Rejects 422 on any restricted-class or unknown library id (M4) —
+        invites can never grant restricted-library access or admin role
+        (no such field exists on this request at all). The raw claim token
+        is returned exactly once, in this response only.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateInviteRequest' }
+      responses:
+        '201':
+          description: Invite created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CreateInviteResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+        default: { $ref: '#/components/responses/Problem' }
+
+  /invites/{id}:
+    parameters:
+      - $ref: '#/components/parameters/IdPathParam'
+    delete:
+      operationId: revokeInvite
+      tags: [invites]
+      summary: Revoke a pending invite (admin)
+      description: 404 when the invite is unknown, already revoked, or already claimed — nothing left to revoke.
+      responses:
+        '204': { description: Revoked }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
         default: { $ref: '#/components/responses/Problem' }
 
   # ─────────────────────────────── Libraries ────────────────────────────────
@@ -3778,7 +3900,14 @@ components:
       properties:
         id: { type: string, format: uuid }
         username: { type: string }
-        email: { type: string, format: email }
+        email:
+          type: [string, 'null']
+          format: email
+          description: >-
+            M1: optional login identifier — an additive LOOSENING (the
+            column was CITEXT NOT NULL UNIQUE before; still CITEXT UNIQUE,
+            just nullable now). Null = no email on file; the user
+            authenticates by username only.
         displayName: { type: [string, 'null'] }
         isAdmin: { type: boolean }
         birthDate:
@@ -3804,10 +3933,13 @@ components:
     CreateUserRequest:
       type: object
       additionalProperties: false
-      required: [username, email, password]
+      required: [username, password]
       properties:
         username: { type: string }
-        email: { type: string, format: email }
+        email:
+          type: [string, 'null']
+          format: email
+          description: 'M1: optional (was required) — an admin may create an email-less user.'
         password: { type: string, format: password, minLength: 1 }
         displayName: { type: [string, 'null'] }
         isAdmin: { type: boolean, default: false }
@@ -3818,7 +3950,10 @@ components:
       additionalProperties: false
       description: Admin update of another user. Partial; only present fields change.
       properties:
-        email: { type: string, format: email }
+        email:
+          type: [string, 'null']
+          format: email
+          description: 'M1: null clears the email, matching displayName''s own null-to-clear shape below.'
         displayName: { type: [string, 'null'] }
         isAdmin: { type: boolean }
         maxContentRating: { type: [string, 'null'] }
@@ -3829,7 +3964,10 @@ components:
       description: Self-service profile update; cannot change isAdmin or maxContentRating.
       properties:
         displayName: { type: [string, 'null'] }
-        email: { type: string, format: email }
+        email:
+          type: [string, 'null']
+          format: email
+          description: 'M1: null-to-clear (birthDate precedent below).'
         birthDate: { type: [string, 'null'], format: date }
         password: { type: string, format: password, minLength: 1 }
 
@@ -3873,6 +4011,119 @@ components:
             subtitlePreferredLanguage above.
         autoplayNextEpisode: { type: boolean }
         updatedAtMs: { type: integer, format: int64 }
+
+    # ═══════════════════════════════════ Invites (E2) ══════════════════════════
+    InviteStatus:
+      type: string
+      enum: [pending, claimed, revoked, expired]
+      description: Derived at read time from claimedAtMs/revokedAtMs/expiresAtMs — never stored.
+
+    Invite:
+      type: object
+      additionalProperties: false
+      description: Admin-facing invite record. NEVER carries token material.
+      required:
+        - id
+        - createdByUserId
+        - createdAtMs
+        - expiresAtMs
+        - usernamePreset
+        - displayNamePreset
+        - email
+        - libraryIds
+        - status
+        - claimedByUserId
+        - claimedAtMs
+        - revokedAtMs
+      properties:
+        id: { type: string, format: uuid }
+        createdByUserId: { type: string, format: uuid }
+        createdAtMs: { type: integer, format: int64 }
+        expiresAtMs: { type: integer, format: int64 }
+        usernamePreset: { type: [string, 'null'] }
+        displayNamePreset: { type: [string, 'null'] }
+        email: { type: [string, 'null'], format: email }
+        libraryIds:
+          type: array
+          items: { type: string, format: uuid }
+        status: { $ref: '#/components/schemas/InviteStatus' }
+        claimedByUserId: { type: [string, 'null'], format: uuid }
+        claimedAtMs: { type: [integer, 'null'], format: int64 }
+        revokedAtMs: { type: [integer, 'null'], format: int64 }
+
+    InvitePage:
+      type: object
+      additionalProperties: false
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Invite' }
+        nextCursor: { type: [string, 'null'] }
+
+    CreateInviteRequest:
+      type: object
+      additionalProperties: false
+      required: [libraryIds]
+      properties:
+        username: { type: string, minLength: 1, description: Username preset — authoritative at claim time (preset wins). }
+        displayName: { type: [string, 'null'] }
+        email:
+          type: string
+          format: email
+          description: Send-to address AND claim-time email default. If mail is configured, the invite email is sent here.
+        expiresInMs:
+          type: integer
+          format: int64
+          minimum: 3600000
+          maximum: 2592000000
+          default: 259200000
+          description: Bounds 1h-30d; default 72h.
+        libraryIds:
+          type: array
+          items: { type: string, format: uuid }
+          description: >-
+            General-class libraries only (M4) — a restricted-class or
+            unknown library id 422s the whole request; may be empty.
+
+    CreateInviteResponse:
+      type: object
+      additionalProperties: false
+      description: claimToken is returned EXACTLY ONCE — never retrievable again, never logged, never in any event payload (M3).
+      required: [invite, claimToken, claimUrl]
+      properties:
+        invite: { $ref: '#/components/schemas/Invite' }
+        claimToken: { type: string }
+        claimUrl:
+          type: [string, 'null']
+          description: >-
+            publicUrl-derived claim link, or null when the public URL
+            setting is unset (M9) — the web composes a browser-origin
+            fallback in that case.
+
+    ClaimState:
+      type: object
+      additionalProperties: false
+      required: [usernamePreset, displayNamePreset, emailPreset]
+      properties:
+        usernamePreset: { type: [string, 'null'] }
+        displayNamePreset: { type: [string, 'null'] }
+        emailPreset: { type: [string, 'null'] }
+
+    ClaimInviteRequest:
+      type: object
+      additionalProperties: false
+      required: [password]
+      properties:
+        username:
+          type: string
+          minLength: 1
+          description: Required iff the invite has no usernamePreset; the preset wins if both are present.
+        password: { type: string, format: password, minLength: 1 }
+        email: { type: string, format: email, description: Defaults to the invite's own email preset when omitted. }
+        displayName: { type: string, description: Defaults to the invite's own displayNamePreset when omitted. }
+        deviceName: { type: string }
+        deviceProfile: { $ref: '#/components/schemas/DeviceProfile' }
 
     RestrictedSettingsUpdate:
       type: object
@@ -5486,13 +5737,22 @@ components:
     # ═════════════════════════════ Data freedom ════════════════════════════════
     ExportUser:
       type: object
-      description: A user record sans secrets (no password hash, no PIN hash, no tokens).
+      description: >-
+        A user record sans secrets (no password hash, no PIN hash, no
+        tokens). This schema is reused BOTH as GET /export's response shape
+        AND (nested under Archive) as POST /import's request shape —
+        `displayName` is deliberately NOT in `required` despite always
+        being present on export, so an archive written before M2 (which
+        never had this key at all) still validates as an import request;
+        the import path treats a missing key exactly like an explicit null
+        (apps/worker/src/import/validate.ts).
       additionalProperties: false
       required: [id, username, email, isAdmin, createdAtMs]
       properties:
         id: { type: string, format: uuid }
         username: { type: string }
-        email: { type: string, format: email }
+        email: { type: [string, 'null'], format: email, description: 'M1: nullable, an email-less user exports/imports as null.' }
+        displayName: { type: [string, 'null'], description: 'M2 (E4 archive check). Optional key: absent on a pre-M2 archive.' }
         isAdmin: { type: boolean }
         createdAtMs: { type: integer, format: int64 }
 
