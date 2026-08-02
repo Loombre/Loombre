@@ -341,13 +341,46 @@ export interface UpdateUserSelfResult {
  *  displayName, birthDate, password — still applies normally), and the
  *  function still returns a normal success shape (E8: a colliding
  *  self-service email change must be indistinguishable, in status/body,
- *  from one that simply had no email member at all). A narrow 23505
- *  `users_email_key` backstop re-applies the SAME UPDATE minus the email
- *  member for the vanishing race where the address registers in the gap
- *  between the pre-SELECT and this UPDATE (not a usable enumeration
- *  channel — same posture as invites.ts's claimInviteAndEmit narrow
- *  backstop, mirrored here for the identical constraint). */
+ *  from one that simply had no email member at all).
+ *
+ *  R-F6 (opus adversarial review, fix wave): the vanishing race where the
+ *  address registers in the gap between the pre-SELECT and the UPDATE
+ *  used to be "handled" by a backstop that re-issued a second UPDATE on
+ *  the SAME transaction Postgres had already aborted on the first
+ *  UPDATE's 23505 (`withTransaction` opens no savepoint) — that second
+ *  statement always raised 25P02 ("current transaction is aborted") and
+ *  escaped as an uncaught 500, in the exact race G6 was written to close.
+ *  The fix is an OUTER retry, not an inner one: `updateUserSelf` below is
+ *  a thin wrapper that runs the real transaction (`runUpdateUserSelfTrx`)
+ *  once, and on a caught `users_email_key` 23505 runs a completely FRESH
+ *  transaction — this function is only ever called with a top-level
+ *  `Kysely<DB>` (never a shared `Transaction<DB>`; its one caller,
+ *  apps/server/src/catalog/users.controller.ts's updateMe, always passes
+ *  `this.dbProvider.db`), so a second, independent transaction is safe.
+ *  The retry's own pre-SELECT now sees the just-committed row (the
+ *  winner's transaction has, by definition, already committed by the time
+ *  ours aborted) and drops the email cleanly on its first statement — no
+ *  second statement ever runs against an aborted transaction. Same
+ *  posture as invites.ts's claimInviteAndEmit narrow backstop for the
+ *  identical constraint, just correctly scoped to a fresh transaction
+ *  boundary. `updateUserAdmin` (G9) is unaffected: single statement, no
+ *  transaction, its catch simply returns a 409. */
 export async function updateUserSelf(
+  db: Kysely<DB>,
+  userId: string,
+  input: UpdateUserSelfInput
+): Promise<UpdateUserSelfResult | undefined> {
+  try {
+    return await runUpdateUserSelfTransaction(db, userId, input);
+  } catch (err) {
+    if (isPgUniqueViolation(err) && pgConstraintName(err) === USERS_EMAIL_UNIQUE_CONSTRAINT) {
+      return await runUpdateUserSelfTransaction(db, userId, input);
+    }
+    throw err;
+  }
+}
+
+async function runUpdateUserSelfTransaction(
   db: Kysely<DB>,
   userId: string,
   input: UpdateUserSelfInput
@@ -369,37 +402,33 @@ export async function updateUserSelf(
       }
     }
 
-    function buildSetClause(includeEmail: boolean) {
-      return {
-        ...(includeEmail && email !== undefined ? { email } : {}),
+    const updated = await trx
+      .updateTable('users')
+      .set({
+        ...(email !== undefined ? { email } : {}),
         ...(input.birthDate !== undefined ? { birth_date: input.birthDate } : {}),
-        ...(input.passwordHash !== undefined ? { password_hash: input.passwordHash, must_change_password: false } : {}),
+        ...(input.passwordHash !== undefined
+          ? {
+              password_hash: input.passwordHash,
+              must_change_password: false,
+              // R-F7 (opus adversarial review, fix wave): the
+              // credentials-changed epoch — apps/server/src/gateway/
+              // auth.guard.ts rejects an access token whose `iat` predates
+              // this, so a revoked device's still-unexpired ACCESS token
+              // (only its REFRESH token was revoked above) actually loses
+              // API access instead of keeping it for up to
+              // ACCESS_TOKEN_TTL_MS. See that guard's own doc comment for
+              // why the check is unconditional rather than nested inside
+              // the must-change-password allow-list.
+              password_changed_at_ms: input.nowMs,
+            }
+          : {}),
         ...(input.displayName !== undefined ? { display_name: input.displayName } : {}),
         updated_at_ms: input.nowMs,
-      };
-    }
-
-    let updated: UserRow | undefined;
-    try {
-      updated = await trx
-        .updateTable('users')
-        .set(buildSetClause(true))
-        .where('id', '=', userId)
-        .returningAll()
-        .executeTakeFirst();
-    } catch (err) {
-      if (isPgUniqueViolation(err) && pgConstraintName(err) === USERS_EMAIL_UNIQUE_CONSTRAINT) {
-        collidedEmail = email ?? null;
-        updated = await trx
-          .updateTable('users')
-          .set(buildSetClause(false))
-          .where('id', '=', userId)
-          .returningAll()
-          .executeTakeFirst();
-      } else {
-        throw err;
-      }
-    }
+      })
+      .where('id', '=', userId)
+      .returningAll()
+      .executeTakeFirst();
 
     if (!updated) {
       return undefined;
