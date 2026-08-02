@@ -21,12 +21,18 @@ import { CommonModule } from "../common/common.module.js";
 import { CommonSettingsModule } from "../common/common-settings.module.js";
 import { SessionModule } from "../session/session.module.js";
 import { RefreshTokenService } from "../session/refresh-token.service.js";
-import { MailDispatchService } from "../mail/mail-dispatch.service.js";
-import { MailConfigService } from "../mail/mail-config.service.js";
+import { MailModule } from "../mail/mail.module.js";
 
+// MailConfigService/MailDispatchService come from MailModule's exports —
+// NOT re-listed in this module's own `providers`. Re-providing them here
+// would mint second Nest-scoped instances, and unlike RefreshTokenService
+// (stateless, duplicate-safe, see above) the mail pair is a cross-lane
+// seam whose tests spy on the app-root instance (integration finding:
+// a re-provided duplicate made the controller's calls invisible to
+// `app.get(MailConfigService)` spies).
 @Module({
-  imports: [CommonModule, CommonSettingsModule, SessionModule],
+  imports: [CommonModule, CommonSettingsModule, SessionModule, MailModule],
   controllers: [InvitesController],
-  providers: [RefreshTokenService, MailDispatchService, MailConfigService],
+  providers: [RefreshTokenService],
 })
 export class InvitesModule {}
