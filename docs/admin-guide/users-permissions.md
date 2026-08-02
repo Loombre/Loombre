@@ -99,6 +99,21 @@ Prefer not to use a screen at all? The exact same reset is available to
 whoever runs your Loombre server directly — see the Operator Guide's
 [password-reset recovery steps](../ops/cli.md#forgot-a-password).
 
+## If someone tries to use an email address already on another account
+
+People add or change their own email address from their own account
+settings — or from a claim link, when they first join. If the address
+they try turns out to already be on somebody else's account here, Loombre
+doesn't hand that account over, and it doesn't tell the person trying
+anything different — their sign-up or change goes through exactly the
+same as it always does, just without that particular address attached.
+
+If mail is configured (see [Mail](mail.md)), the person who actually owns
+that address gets a short, informational notice letting them know someone
+tried to use it — at most one such notice per address per day, so it can
+never be turned into a nuisance. Without mail configured, no notice goes
+out at all; the person trying still sees no difference either way.
+
 ## Forgot PIN?
 
 Nobody administering Loombre can see or set someone else's restricted-
