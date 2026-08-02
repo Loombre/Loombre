@@ -23,13 +23,19 @@
 // of --version/--help/paths/doctor (doctor's checks are advisory reads,
 // never a hard dependency on the thing being checked existing).
 //
-// H2 update: `admin reset-pin <username>` is the one exception to the
-// above — it DOES need a reachable Postgres (DATABASE_URL), since it reads
-// and writes real user_settings/events rows. @loombre/db is dynamically
+// H2 update: `admin reset-pin <username>` is one exception to the above —
+// it DOES need a reachable Postgres (DATABASE_URL), since it reads and
+// writes real user_settings/events rows. @loombre/db is dynamically
 // imported only once that branch actually runs (run-cli.ts / admin-
 // reset-pin.ts's own headers), so every other command here is completely
 // unaffected — help/version/paths/doctor still load no database code at
 // all and still work with Postgres unreachable.
+//
+// E3a/M14 update (STATE.md "Optional mail transport + invitation & reset
+// flows"): `admin reset-password <username>` is the second such exception
+// — same posture (needs DATABASE_URL, dynamically imports @loombre/db only
+// once that branch runs — admin-reset-password.ts's own header), reads and
+// writes real users/refresh_tokens/events rows.
 //
 // Wrapper scripts: platform installers should invoke this exact path —
 // `<install-root>/apps/server/bin/loombre.mjs` — via a thin OS-native
