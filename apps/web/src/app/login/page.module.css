@@ -141,6 +141,14 @@
   font-size: var(--text-sm);
 }
 
+/* Per-field server-driven error (current-password-invalid — G10, AdminStep's
+   styles.fieldError precedent) — sits under the Temporary password field
+   alone, distinct from the form-level .error banner above. */
+.fieldError {
+  font-size: var(--text-xs);
+  color: var(--color-danger);
+}
+
 .submit {
   width: 100%;
   min-height: 48px;

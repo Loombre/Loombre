@@ -190,7 +190,23 @@ describe("LoginPage — M8 forgot-link gating + M14 must-change routing", () => 
     expect(view.container.textContent).toMatch(/an admin reset your password/i);
   });
 
-  it("must-change: submitting a new password PATCHes /users/me then proceeds to /home", async () => {
+  // ── G10 (STATE.md "Current-password re-auth on self-changes"): the
+  //    must-change PATCH now dependentRequires currentPassword, supplied by
+  //    a "Temporary password" field on this screen. ────────────────────────
+  it("renders a Temporary password field with autoComplete=current-password", async () => {
+    getSpy.mockResolvedValue(CAPABILITIES_RESET_UNAVAILABLE);
+    postSpy.mockResolvedValue(tokenPair(true));
+    view = renderIntoBody(<LoginPage />);
+    await act(async () => {});
+    await signIn();
+
+    const field = inputFor("Temporary password");
+    expect(field.getAttribute("autocomplete")).toBe("current-password");
+    expect(field.getAttribute("type")).toBe("password");
+    expect(view.container.textContent).toMatch(/temporary password you just signed in with/i);
+  });
+
+  it("must-change: submitting sends currentPassword (the temporary password) + the new password, then proceeds to /home", async () => {
     getSpy.mockResolvedValue(CAPABILITIES_RESET_UNAVAILABLE);
     postSpy.mockResolvedValue(tokenPair(true));
     apiPatchMock.mockResolvedValue({});
@@ -198,6 +214,7 @@ describe("LoginPage — M8 forgot-link gating + M14 must-change routing", () => 
     await act(async () => {});
     await signIn();
 
+    setNativeValue(inputFor("Temporary password"), "correct horse battery");
     setNativeValue(inputFor("New password"), "a brand new password");
     setNativeValue(inputFor("Confirm new password"), "a brand new password");
     await click(buttonFor("Continue"));
@@ -205,7 +222,7 @@ describe("LoginPage — M8 forgot-link gating + M14 must-change routing", () => 
     expect(apiPatchMock).toHaveBeenCalledTimes(1);
     const [path, options] = apiPatchMock.mock.calls[0] as [string, { body: Record<string, unknown> }];
     expect(path).toBe("/users/me");
-    expect(options.body).toEqual({ password: "a brand new password" });
+    expect(options.body).toEqual({ password: "a brand new password", currentPassword: "correct horse battery" });
     expect(routerReplace).toHaveBeenCalledWith("/home");
   });
 
@@ -216,12 +233,58 @@ describe("LoginPage — M8 forgot-link gating + M14 must-change routing", () => 
     await act(async () => {});
     await signIn();
 
+    setNativeValue(inputFor("Temporary password"), "correct horse battery");
     setNativeValue(inputFor("New password"), "aaaaaaaa");
     setNativeValue(inputFor("Confirm new password"), "bbbbbbbb");
     await click(buttonFor("Continue"));
 
     expect(apiPatchMock).not.toHaveBeenCalled();
     expect(view.container.textContent).toMatch(/don't match/i);
+  });
+
+  it("must-change: wrong currentPassword 403s onto the Temporary password field, preserving the typed new password", async () => {
+    getSpy.mockResolvedValue(CAPABILITIES_RESET_UNAVAILABLE);
+    postSpy.mockResolvedValue(tokenPair(true));
+    apiPatchMock.mockRejectedValueOnce(
+      new LoombreApiError(403, {
+        type: "urn:loombre:problem:current-password-invalid",
+        title: "Current password is incorrect",
+        status: 403,
+        detail: "Current password is incorrect.",
+        code: "current-password-invalid",
+      }),
+    );
+    view = renderIntoBody(<LoginPage />);
+    await act(async () => {});
+    await signIn();
+
+    setNativeValue(inputFor("Temporary password"), "wrong");
+    setNativeValue(inputFor("New password"), "a brand new password");
+    setNativeValue(inputFor("Confirm new password"), "a brand new password");
+    await click(buttonFor("Continue"));
+
+    const field = inputFor("Temporary password");
+    expect(field.closest("label")!.textContent).toMatch(/current password is incorrect/i);
+    expect(field.value).toBe("wrong");
+    expect(inputFor("New password").value).toBe("a brand new password");
+    expect(routerReplace).not.toHaveBeenCalledWith("/home");
+  });
+
+  it("must-change: a 429 shows an honest rate-limited message, not a per-field error", async () => {
+    getSpy.mockResolvedValue(CAPABILITIES_RESET_UNAVAILABLE);
+    postSpy.mockResolvedValue(tokenPair(true));
+    apiPatchMock.mockRejectedValueOnce(new LoombreApiError(429, { title: "Too Many Requests", status: 429 }));
+    view = renderIntoBody(<LoginPage />);
+    await act(async () => {});
+    await signIn();
+
+    setNativeValue(inputFor("Temporary password"), "correct horse battery");
+    setNativeValue(inputFor("New password"), "a brand new password");
+    setNativeValue(inputFor("Confirm new password"), "a brand new password");
+    await click(buttonFor("Continue"));
+
+    expect(view.container.textContent).toMatch(/too many attempts/i);
+    expect(inputFor("Temporary password").closest("label")!.textContent).not.toMatch(/incorrect/i);
   });
 
   it("a failed login shows the usual 401 message and never touches must-change", async () => {
