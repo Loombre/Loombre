@@ -34,7 +34,20 @@ describe("TokenService", () => {
       isAdmin: true,
       deviceId: "device-1",
       restrictedUnlocked: true,
+      // R-F7: iat is jose's own NumericDate unit — whole seconds, not ms.
+      iat: Math.floor(nowMs / 1000),
     });
+  });
+
+  it("R-F7: exposes iat (whole seconds since epoch, jose's NumericDate unit)", async () => {
+    process.env["LOOMBRE_JWT_SECRET"] = "test-secret-value-not-for-prod";
+    const service = new TokenService();
+    const nowMs = 1_700_000_123_456;
+
+    const { token } = await service.signAccessToken({ sub: "user-iat", isAdmin: false }, nowMs);
+    const claims = await service.verifyAccessToken(token);
+
+    expect(claims.iat).toBe(Math.floor(nowMs / 1000));
   });
 
   it("defaults isAdmin/restrictedUnlocked false and omits deviceId when absent", async () => {

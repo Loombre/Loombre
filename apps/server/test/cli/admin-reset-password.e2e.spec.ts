@@ -14,8 +14,14 @@
 // access token expiring) -> temp-password login succeeds with
 // mustChangePassword:true -> an arbitrary authenticated endpoint 403s with
 // the distinct password-change-required problem type -> PATCH /users/me
-// with a new password succeeds -> mustChangePassword clears -> full access
-// resumes with the SAME still-live access token.
+// with a new password succeeds -> mustChangePassword clears.
+//
+// R-F7 (opus adversarial review, fix wave): the temp-login access token
+// itself is now epoch-stale the instant the password changes (same
+// credentials-changed-epoch mechanism that makes a REVOKED device's access
+// token stop working, not just its refresh token) — one refresh (the
+// calling device's own refresh token survives F5's bulk-revoke) mints a
+// fresh, epoch-valid access token, and full access resumes with THAT one.
 
 import "reflect-metadata";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -142,7 +148,7 @@ async function latestPasswordResetEvent(
 }
 
 describe("loombre admin reset-password <username> (E3a/M14)", () => {
-  it("full loop: reset -> old password 401 -> refresh also fails -> temp login mustChangePassword:true -> arbitrary endpoint 403 -> PATCH new password -> flag clears -> full access", async () => {
+  it("full loop: reset -> old password 401 -> refresh also fails -> temp login mustChangePassword:true -> arbitrary endpoint 403 -> PATCH new password -> flag clears -> stale access token 401s -> refresh -> full access", async () => {
     const username = "h14-reset-full-loop";
     const oldPassword = "correct-horse-battery-old-1";
     const { userId } = await createOrdinaryUser(username, oldPassword);
@@ -220,12 +226,34 @@ describe("loombre admin reset-password <username> (E3a/M14)", () => {
     expect(patch.status, JSON.stringify(patch.body)).toBe(200);
     expect(patch.body.mustChangePassword).toBe(false);
 
-    // Flag cleared -> the VERY SAME access token now has full access,
-    // no re-login/refresh required (proves the guard's live-read, not a
-    // stale JWT claim).
-    const fullAccess = await request(app.getHttpServer())
+    // R-F7 (opus adversarial review, fix wave — STATE.md "Current-password
+    // re-auth on self-changes + the email-collision signal"): the PATCH
+    // above just changed the password, which sets the credentials-changed
+    // epoch (users.password_changed_at_ms) — tempAccessToken was minted at
+    // the TEMP-password login, strictly BEFORE that epoch, so it is now
+    // stale by the exact same rule that makes a revoked OTHER device's
+    // access token stop working (auth.guard.ts's verifyAndAttach). This
+    // used to be phrased as "the VERY SAME access token now has full
+    // access, no re-login/refresh required" — that guarantee is
+    // deliberately WEAKENED by this fix: every password change, not only
+    // ones reachable while flagged, now requires a fresh access token.
+    const staleAccess = await request(app.getHttpServer())
       .get("/devices")
       .set("Authorization", `Bearer ${tempAccessToken}`);
+    expect(staleAccess.status, "the pre-password-change access token is now epoch-stale, same as a revoked device's").toBe(401);
+
+    // The refresh token IS preserved, though — F5's revokeOtherRefreshTokensForUser
+    // exempts the calling device (tempAccessToken's own deviceId claim) from
+    // the bulk-revoke — so one refresh (no re-login) mints a fresh,
+    // epoch-valid access token with full access restored.
+    const refreshed = await request(app.getHttpServer())
+      .post("/auth/refresh")
+      .send({ refreshToken: tempLogin.body.refreshToken, deviceId: tempLogin.body.deviceId });
+    expect(refreshed.status, JSON.stringify(refreshed.body)).toBe(200);
+
+    const fullAccess = await request(app.getHttpServer())
+      .get("/devices")
+      .set("Authorization", `Bearer ${refreshed.body.accessToken}`);
     expect(fullAccess.status).toBe(200);
 
     // A fresh login with the new password also reports mustChangePassword: false.

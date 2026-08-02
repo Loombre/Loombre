@@ -30,6 +30,24 @@ export interface AccessTokenClaims {
   restrictedUnlocked?: boolean;
 }
 
+/**
+ * R-F7 (opus adversarial review, fix wave): `verifyAccessToken`'s return
+ * shape — `AccessTokenClaims` PLUS the token's own `iat` claim, in whole
+ * SECONDS since epoch (jose/JWT's own NumericDate unit — this is NOT
+ * milliseconds). Deliberately a SEPARATE type from `AccessTokenClaims`
+ * (the SIGNING input, below) rather than adding `iat` there: a caller of
+ * `signAccessToken` never supplies `iat` — jose derives it from `nowMs` —
+ * so making it a required field on the shared interface would break every
+ * signing call site for a field only the VERIFY side ever produces.
+ * apps/server/src/gateway/auth.guard.ts compares this against
+ * `users.password_changed_at_ms` (the credentials-changed epoch,
+ * milliseconds) and rejects a token minted before the caller's last
+ * password change.
+ */
+export interface VerifiedAccessTokenClaims extends AccessTokenClaims {
+  iat: number;
+}
+
 export interface SignedAccessToken {
   token: string;
   expiresAtMs: number;
@@ -77,15 +95,22 @@ export class TokenService {
   }
 
   /** Throws on any invalid/expired/mis-signed token — callers translate to 401. */
-  async verifyAccessToken(token: string): Promise<AccessTokenClaims> {
+  async verifyAccessToken(token: string): Promise<VerifiedAccessTokenClaims> {
     const { payload } = await jwtVerify(token, this.secret, { algorithms: ["HS256"] });
     if (typeof payload.sub !== "string" || payload.sub.length === 0) {
       throw new Error("access token missing sub claim");
     }
-    const claims: AccessTokenClaims = {
+    if (typeof payload.iat !== "number") {
+      // Unreachable for any token this service itself signs (signAccessToken
+      // always calls .setIssuedAt) — defensive only, same posture as the
+      // sub check above.
+      throw new Error("access token missing iat claim");
+    }
+    const claims: VerifiedAccessTokenClaims = {
       sub: payload.sub,
       isAdmin: payload["isAdmin"] === true,
       restrictedUnlocked: payload["restrictedUnlocked"] === true,
+      iat: payload.iat,
     };
     if (typeof payload["deviceId"] === "string") {
       claims.deviceId = payload["deviceId"];
