@@ -560,12 +560,22 @@ paths:
         temporary password is returned ONCE in this response and is never
         retrievable again — the server keeps only its hash. Self-reset (an
         admin resetting their own account) is permitted — they know the
-        consequence. When the mail tier is active and the target user has
-        an email on file, a non-fatal `security-notice` mail is also
-        dispatched. No request body. The CLI twin of this action,
-        `loombre admin reset-password <username>`, performs the identical
-        semantics with `actor: "cli"` instead of `actor: "admin"` on the
-        resulting `user.password-reset` event.
+        consequence — but requires `currentPassword` (R-F3, opus
+        adversarial review fix wave: a bearer token alone must never mint
+        a permanent account takeover, same F1 reasoning as `PATCH
+        /users/me`/`PUT /users/me/restricted`). Resetting ANOTHER user's
+        password needs no `currentPassword` — that path is already
+        live-admin-verified and audited. When the mail tier is active and
+        the target user has an email on file, a non-fatal `security-notice`
+        mail is also dispatched. The CLI twin of this action, `loombre
+        admin reset-password <username>`, performs the identical semantics
+        with `actor: "cli"` instead of `actor: "admin"` on the resulting
+        `user.password-reset` event.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AdminResetPasswordRequest' }
       responses:
         '200':
           description: Temporary password generated; shown once
@@ -575,6 +585,14 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+        '429':
+          description: Rate limited (per-user current-password attempts, self-reset only)
+          headers:
+            Retry-After: { schema: { type: integer }, description: Seconds until the next attempt is allowed. }
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
         default: { $ref: '#/components/responses/Problem' }
 
   /users/me:
@@ -3703,6 +3721,29 @@ components:
         # 1-char password); createUser/PATCH /users/me stay minLength:1,
         # out of scope.
         password: { type: string, format: password, minLength: 8 }
+
+    AdminResetPasswordRequest:
+      type: object
+      additionalProperties: false
+      description: >-
+        R-F3 (opus adversarial review, fix wave): `currentPassword` is
+        required ONLY when the path `id` equals the caller's own userId —
+        a condition the schema itself cannot express (there is no
+        same-as-caller relational operator in JSON Schema), so it is an
+        optional property here and enforced server-side by the same
+        requireCurrentPassword helper UpdateMeRequest/
+        RestrictedSettingsUpdate use (target-agnostic 422/403, the shared
+        per-user rate limiter). Ignored entirely when resetting ANOTHER
+        user's password.
+      properties:
+        currentPassword:
+          type: string
+          format: password
+          description: >-
+            Current-password re-authentication for a SELF-reset. Deliberately
+            UNCONSTRAINED, same reasoning as UpdateMeRequest.currentPassword:
+            it proves an already-stored secret and is only ever compared
+            against a stored hash, never itself stored.
 
     AdminResetPasswordResponse:
       type: object

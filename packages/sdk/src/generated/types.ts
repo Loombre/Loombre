@@ -302,7 +302,7 @@ export interface paths {
         put?: never;
         /**
          * Admin/CLI password recovery, tier (a) (E3a/M14)
-         * @description Generates a random temporary password, argon2id-hashes and stores it, sets `mustChangePassword` on the target user, and revokes EVERY refresh token they hold (every existing session ends). The temporary password is returned ONCE in this response and is never retrievable again — the server keeps only its hash. Self-reset (an admin resetting their own account) is permitted — they know the consequence. When the mail tier is active and the target user has an email on file, a non-fatal `security-notice` mail is also dispatched. No request body. The CLI twin of this action, `loombre admin reset-password <username>`, performs the identical semantics with `actor: "cli"` instead of `actor: "admin"` on the resulting `user.password-reset` event.
+         * @description Generates a random temporary password, argon2id-hashes and stores it, sets `mustChangePassword` on the target user, and revokes EVERY refresh token they hold (every existing session ends). The temporary password is returned ONCE in this response and is never retrievable again — the server keeps only its hash. Self-reset (an admin resetting their own account) is permitted — they know the consequence — but requires `currentPassword` (R-F3, opus adversarial review fix wave: a bearer token alone must never mint a permanent account takeover, same F1 reasoning as `PATCH /users/me`/`PUT /users/me/restricted`). Resetting ANOTHER user's password needs no `currentPassword` — that path is already live-admin-verified and audited. When the mail tier is active and the target user has an email on file, a non-fatal `security-notice` mail is also dispatched. The CLI twin of this action, `loombre admin reset-password <username>`, performs the identical semantics with `actor: "cli"` instead of `actor: "admin"` on the resulting `user.password-reset` event.
          */
         post: operations["adminResetUserPassword"];
         delete?: never;
@@ -2260,6 +2260,14 @@ export interface components {
             token: string;
             /** Format: password */
             password: string;
+        };
+        /** @description R-F3 (opus adversarial review, fix wave): `currentPassword` is required ONLY when the path `id` equals the caller's own userId — a condition the schema itself cannot express (there is no same-as-caller relational operator in JSON Schema), so it is an optional property here and enforced server-side by the same requireCurrentPassword helper UpdateMeRequest/ RestrictedSettingsUpdate use (target-agnostic 422/403, the shared per-user rate limiter). Ignored entirely when resetting ANOTHER user's password. */
+        AdminResetPasswordRequest: {
+            /**
+             * Format: password
+             * @description Current-password re-authentication for a SELF-reset. Deliberately UNCONSTRAINED, same reasoning as UpdateMeRequest.currentPassword: it proves an already-stored secret and is only ever compared against a stored hash, never itself stored.
+             */
+            currentPassword?: string;
         };
         AdminResetPasswordResponse: {
             /** @description Shown exactly once; the server retains only its hash. */
@@ -4613,7 +4621,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["AdminResetPasswordRequest"];
+            };
+        };
         responses: {
             /** @description Temporary password generated; shown once */
             200: {
@@ -4627,6 +4639,18 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            422: components["responses"]["UnprocessableEntity"];
+            /** @description Rate limited (per-user current-password attempts, self-reset only) */
+            429: {
+                headers: {
+                    /** @description Seconds until the next attempt is allowed. */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
             default: components["responses"]["Problem"];
         };
     };
