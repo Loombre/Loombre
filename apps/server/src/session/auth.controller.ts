@@ -49,7 +49,7 @@ import { RateLimit, SurfaceRateLimitGuard } from "../common/rate-limit.guard.js"
 import { TokenService } from "./token.service.js";
 import { RefreshTokenService } from "./refresh-token.service.js";
 import { AuthRateLimiterService } from "./auth-rate-limiter.service.js";
-import { AnomalyLogService } from "./anomaly-log.service.js";
+import { AnomalyLogService } from "../common/anomaly-log.service.js";
 import { generatePasswordResetToken, hashPasswordResetToken, PASSWORD_RESET_TOKEN_TTL_MS } from "./reset-token.js";
 import { tooManyRequests } from "../common/rate-limit.exception.js";
 import { RateLimitExceptionFilter } from "../common/rate-limit-exception.filter.js";
