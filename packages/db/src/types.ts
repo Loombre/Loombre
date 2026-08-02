@@ -95,11 +95,18 @@ export type HdrType = 'none' | 'hdr10' | 'hlg' | 'dv';
 export interface UsersTable {
   id: Generated<string>;
   username: string;
-  email: string;
+  /** migrations/0023_user_invites.sql (M1): CITEXT NOT NULL UNIQUE loosened
+   *  to CITEXT NULL UNIQUE — an additive DROP NOT NULL, not a new column.
+   *  An email-less user authenticates by username only. */
+  email: string | null;
   password_hash: string;
   birth_date: string | null;
   max_content_rating: string | null;
   is_admin: Generated<boolean>;
+  /** migrations/0023_user_invites.sql (M2): the H1 bug-class fix — the
+   *  contract's User.displayName had nowhere to persist until this column
+   *  existed. NULL = unset. */
+  display_name: string | null;
   created_at_ms: number;
   updated_at_ms: number;
 }
@@ -519,6 +526,30 @@ export interface RefreshTokensTable {
 }
 
 // ============================================================================
+// user_invites / user_invite_grants
+// (migrations/0023_user_invites.sql — E2, M3/M4)
+// ============================================================================
+
+export interface UserInvitesTable {
+  id: Generated<string>;
+  token_hash: string;
+  created_by: string;
+  created_at_ms: number;
+  expires_at_ms: number;
+  username_preset: string | null;
+  display_name_preset: string | null;
+  email: string | null;
+  claimed_at_ms: number | null;
+  claimed_user_id: string | null;
+  revoked_at_ms: number | null;
+}
+
+export interface UserInviteGrantsTable {
+  invite_id: string;
+  library_id: string;
+}
+
+// ============================================================================
 // hw_capability_snapshots / hw_capability_backends
 // (migrations/0011_hw_capability_snapshots.sql — Phase 3 §11 step 5)
 // ============================================================================
@@ -775,6 +806,8 @@ export interface DB {
   provider_cache: ProviderCacheTable;
   metadata_provenance: MetadataProvenanceTable;
   refresh_tokens: RefreshTokensTable;
+  user_invites: UserInvitesTable;
+  user_invite_grants: UserInviteGrantsTable;
   hw_capability_snapshots: HwCapabilitySnapshotsTable;
   hw_capability_backends: HwCapabilityBackendsTable;
   server_settings: ServerSettingsTable;

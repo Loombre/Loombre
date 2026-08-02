@@ -52,7 +52,11 @@ export interface InsertUserWithIdInput {
    *  consumer's module header. */
   id?: string;
   username: string;
-  email: string;
+  /** M1: nullable — ExportUser.email round-trips `null` for an email-less
+   *  archived user. */
+  email: string | null;
+  /** M2: nullable — ExportUser.displayName round-trips the same way. */
+  displayName?: string | null;
   isAdmin: boolean;
   createdAtMs: number;
   /** ExportUser carries no updatedAtMs (see module header) — the caller
@@ -78,6 +82,7 @@ export async function insertUserWithId(db: DbOrTx, input: InsertUserWithIdInput)
       birth_date: null,
       max_content_rating: null,
       is_admin: input.isAdmin,
+      display_name: input.displayName ?? null,
       created_at_ms: input.createdAtMs,
       updated_at_ms: input.updatedAtMs,
     })
