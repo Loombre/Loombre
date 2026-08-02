@@ -10,7 +10,7 @@
 
 import { describe, expect, it } from "vitest";
 import { renderTemplate } from "../../src/mail/templates/index.js";
-import { escapeHtml } from "../../src/mail/templates/shared.js";
+import { actionButtonHtml, escapeHtml } from "../../src/mail/templates/shared.js";
 
 const TEMPLATE_IDS = ["invite", "password-reset", "security-notice", "test"] as const;
 
@@ -85,4 +85,28 @@ describe("escapeHtml", () => {
   it("escapes the five HTML metacharacters", () => {
     expect(escapeHtml(`&<>"'`)).toBe("&amp;&lt;&gt;&quot;&#39;");
   });
+});
+
+describe("actionButtonHtml — F12 (opus adversarial review, fix wave): scheme allow-list", () => {
+  it("a javascript: URL renders NO button at all — empty string", () => {
+    expect(actionButtonHtml("javascript:alert(1)", "Click me")).toBe("");
+  });
+
+  it("a data: URL also renders no button", () => {
+    expect(actionButtonHtml("data:text/html,<script>alert(1)</script>", "Click me")).toBe("");
+  });
+
+  it("http/https URLs are unaffected — the button still renders", () => {
+    expect(actionButtonHtml("https://loombre.example.com/claim/tok", "Click me")).toContain("<a href=");
+    expect(actionButtonHtml("http://loombre.example.com/claim/tok", "Click me")).toContain("<a href=");
+  });
+
+  it.each(["invite", "password-reset", "security-notice"] as const)(
+    "%s: a javascript: actionUrl renders NO <a> tag anywhere and never appears as a raw href",
+    (templateId) => {
+      const rendered = renderTemplate(templateId, { actionUrl: "javascript:alert(document.cookie)", displayName: "Ozzy" });
+      expect(rendered.html).not.toMatch(/<a\s/i);
+      expect(rendered.html).not.toContain("javascript:alert(document.cookie)");
+    },
+  );
 });
