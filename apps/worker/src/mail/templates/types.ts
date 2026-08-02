@@ -41,5 +41,13 @@ export interface TemplateParamKeys {
     actionUrl?: string;
     displayName?: string;
   };
+  /** G7 (STATE.md "Current-password re-auth on self-changes", F5):
+   *  deliberately carries NO actionUrl key at all — this template is
+   *  URL-FREE by design (nothing for the recipient to click). */
+  'email-in-use-notice': {
+    /** Optional — falls back to "Loombre" (the registry default for
+     *  mail.fromName) when absent/empty. */
+    serverName?: string;
+  };
   test: Record<string, never>;
 }

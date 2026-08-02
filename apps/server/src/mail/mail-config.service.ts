@@ -27,6 +27,14 @@
 // a database row written before this lane existed, or a value some other
 // future writer never normalized) — not just a value freshly written
 // through PUT /admin/settings/{key}.
+//
+// G7 (STATE.md "Current-password re-auth on self-changes"): `fromName()`
+// added ADDITIVELY (the two pre-existing methods' signatures are
+// unchanged) — the email-in-use-notice template's `serverName` param
+// (F5: "mail.fromName's effective value") reads mail.fromName the SAME
+// hot/in-memory-cache way isConfigured()/publicUrl() already read their
+// own settings, rather than a new registry key (G7: "NO new server-name
+// registry key — matches existing template posture").
 
 import { Injectable } from "@nestjs/common";
 import { SettingsService } from "../settings/settings.service.js";
@@ -34,6 +42,8 @@ import { SettingsService } from "../settings/settings.service.js";
 function nonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0;
 }
+
+const DEFAULT_FROM_NAME = "Loombre";
 
 @Injectable()
 export class MailConfigService {
@@ -49,5 +59,13 @@ export class MailConfigService {
     const raw = this.settingsService.getEffective("network.publicUrl")?.value;
     if (!nonEmptyString(raw)) return null;
     return raw.replace(/\/+$/, "");
+  }
+
+  /** mail.fromName's effective value (registry default "Loombre") — never
+   *  throws, falls back to the same default the registry declares if the
+   *  settings cache somehow isn't loaded yet. */
+  fromName(): string {
+    const raw = this.settingsService.getEffective("mail.fromName")?.value;
+    return nonEmptyString(raw) ? raw : DEFAULT_FROM_NAME;
   }
 }

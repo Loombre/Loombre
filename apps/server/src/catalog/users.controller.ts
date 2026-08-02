@@ -8,9 +8,20 @@
 // may create/leave a user email-less) and displayName is a real column at
 // last — the H1 bug class this file's header used to document (the value
 // was silently discarded while the UI reported "Saved") is closed.
+//
+// G3/G4/G6/G7/G8/G9 (STATE.md "Current-password re-auth on self-changes"):
+// updateMe now requires currentPassword whenever the body carries a
+// password and/or email member (requireCurrentPassword, common/), rate-
+// limited per-user (RateLimitExceptionFilter registered below, G4);
+// updateUserSelf's email-collision silent-no-op (G6) dispatches the
+// email-in-use notice post-commit when mail is configured (G7); a
+// collision-bearing request pays the same wall-clock floor as a clean one
+// (G8); updateUser (admin) now surfaces a real 409 on an email conflict
+// instead of an uncaught 500 (G9).
 
-import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post, Put, Query, Req } from "@nestjs/common";
+import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post, Put, Query, Req, UseFilters } from "@nestjs/common";
 import {
+  claimEmailCollisionNoticeWindow,
   createUserAdminAndEmit,
   deleteUserAdmin,
   getUserById,
@@ -23,14 +34,36 @@ import {
   type AdminUserRow,
 } from "@loombre/db";
 import { generateTemporaryPassword, isKnownLanguageCode, nowMs as clockNowMs } from "@loombre/shared";
-import { forbidden, notFound, unprocessableEntity } from "../gateway/problem.exception.js";
+import { conflict, forbidden, notFound, unprocessableEntity } from "../gateway/problem.exception.js";
 import { requireUuidParam } from "../gateway/require-uuid-param.js";
 import type { AuthenticatedRequest } from "../gateway/auth.guard.js";
 import { DbProvider, type LoombreDb } from "../common/db.provider.js";
 import { requireLiveAdmin } from "../common/require-live-admin.js";
 import { HashService } from "../common/hash.service.js";
+import { AnomalyLogService } from "../common/anomaly-log.service.js";
+import { CurrentPasswordRateLimiterService } from "../common/current-password-rate-limiter.service.js";
+import { requireCurrentPassword } from "../common/require-current-password.js";
+import { RateLimitExceptionFilter } from "../common/rate-limit-exception.filter.js";
 import { MailDispatchService } from "../mail/mail-dispatch.service.js";
+import { MailConfigService } from "../mail/mail-config.service.js";
 import { parseListQuery } from "./viewer.js";
+
+// G8 (STATE.md "Current-password re-auth on self-changes"): the collision
+// cell of updateMe (email member present, collided) does extra post-commit
+// work — a ledger claim + a mail-send enqueue — that the non-collision
+// cell never does, a fresh timing-oracle surface (a caller could time
+// "did my email attempt collide" from response latency alone). Same
+// FORGOT_PASSWORD_MIN_MS precedent (auth.controller.ts) — a fixed
+// wall-clock floor applied whenever the body carries an `email` member
+// (collision or not), so both cells cost the same from the caller's
+// point of view. Plain profile saves (no email member) are unfloored.
+const EMAIL_CHANGE_MIN_MS = 200;
+
+async function waitOutEmailChangeFloor(startedAtMs: number): Promise<void> {
+  const remainingMs = EMAIL_CHANGE_MIN_MS - (clockNowMs() - startedAtMs);
+  if (remainingMs <= 0) return;
+  await new Promise<void>((resolve) => setTimeout(resolve, remainingMs));
+}
 
 function mapUser(row: AdminUserRow) {
   return {
@@ -85,6 +118,11 @@ function mapSettings(
   };
 }
 
+/** UpdateMeRequest's full property set (additionalProperties:false, G3) —
+ *  updateMe 422s on any OTHER key, same SETTINGS_BODY_KEYS/
+ *  CLAIM_INVITE_BODY_KEYS precedent (invites.controller.ts). */
+const UPDATE_ME_BODY_KEYS = new Set(["displayName", "email", "birthDate", "password", "currentPassword"]);
+
 /** UserSettings' full property set (additionalProperties:false) — putMySettings
  *  422s on any OTHER key so an unknown property is rejected rather than
  *  silently ignored. */
@@ -109,11 +147,15 @@ async function requireAdmin(db: LoombreDb, req: AuthenticatedRequest): Promise<v
 }
 
 @Controller()
+@UseFilters(RateLimitExceptionFilter)
 export class UsersController {
   constructor(
     private readonly dbProvider: DbProvider,
     private readonly hashService: HashService,
     private readonly mailDispatchService: MailDispatchService,
+    private readonly mailConfigService: MailConfigService,
+    private readonly anomalyLog: AnomalyLogService,
+    private readonly currentPasswordRateLimiter: CurrentPasswordRateLimiterService,
   ) {}
 
   @Get("users")
@@ -183,10 +225,44 @@ export class UsersController {
     return mapUser(user);
   }
 
+  // G3/G6/G7/G8 (STATE.md "Current-password re-auth on self-changes"):
+  // re-auth is required iff the body carries a `password` and/or `email`
+  // member (ANY value, `email: null` to clear included) — the target-
+  // agnostic 422/403 both go through the shared requireCurrentPassword
+  // helper (common/), same detail regardless of which field prompted it
+  // (F2). The wall-clock floor (G8) always wraps the WHOLE handler when
+  // an email member is present, so the collision and non-collision cells
+  // cost the caller the same regardless of any early throw along the way
+  // — a `try/finally` would let a 422/403/404 skip the floor entirely,
+  // which is exactly the timing leak G8 exists to close, so the floor is
+  // applied on every exit path via the awaited helper below instead.
   @Patch("users/me")
   async updateMe(@Body() rawBody: Record<string, unknown> | undefined, @Req() req: AuthenticatedRequest) {
+    const startedAtMs = clockNowMs();
     const body = rawBody ?? {};
     const instance = req.originalUrl;
+    const userId = req.user!.userId;
+    const floorRequired = body["email"] !== undefined;
+
+    for (const key of Object.keys(body)) {
+      if (!UPDATE_ME_BODY_KEYS.has(key)) {
+        throw unprocessableEntity(`Unknown property "${key}".`, instance);
+      }
+    }
+
+    const reauthRequired = body["password"] !== undefined || body["email"] !== undefined;
+    if (reauthRequired) {
+      await requireCurrentPassword({
+        db: this.dbProvider.db,
+        userId,
+        currentPasswordValue: body["currentPassword"],
+        instance,
+        hashService: this.hashService,
+        rateLimiter: this.currentPasswordRateLimiter,
+        anomalyLog: this.anomalyLog,
+      });
+    }
+
     let passwordHash: string | undefined;
     if (body["password"] !== undefined) {
       if (typeof body["password"] !== "string" || body["password"].length === 0) {
@@ -195,7 +271,7 @@ export class UsersController {
       passwordHash = await this.hashService.hash(body["password"]);
     }
 
-    const updated = await updateUserSelf(this.dbProvider.db, req.user!.userId, {
+    const result = await updateUserSelf(this.dbProvider.db, userId, {
       // M1: UpdateMeRequest's email is now `[string, 'null']` — present-but-
       // not-a-string (i.e. explicit `null`) clears it, matching birthDate's
       // own established null-to-clear convention below.
@@ -214,10 +290,30 @@ export class UsersController {
       currentDeviceId: req.user?.deviceId ?? null,
       nowMs: clockNowMs(),
     });
-    if (!updated) {
+    if (!result) {
+      if (floorRequired) await waitOutEmailChangeFloor(startedAtMs);
       throw notFound("User not found.", instance);
     }
-    return mapUser(updated);
+
+    // G7: post-commit, mail-configured-only dispatch of the email-in-use
+    // notice to the EXISTING owner of a colliding address — collision &&
+    // MailConfigService.isConfigured() FIRST, THEN the ledger window
+    // claim, THEN trySend (an unconfigured install never burns the
+    // window; a mail-configured install that's already inside another
+    // notice's 24h window for the SAME address never sends a second one).
+    if (result.collidedEmail !== null && this.mailConfigService.isConfigured()) {
+      const won = await claimEmailCollisionNoticeWindow(this.dbProvider.db, result.collidedEmail, clockNowMs());
+      if (won) {
+        await this.mailDispatchService.trySend({
+          templateId: "email-in-use-notice",
+          to: result.collidedEmail,
+          params: { serverName: this.mailConfigService.fromName() },
+        });
+      }
+    }
+
+    if (floorRequired) await waitOutEmailChangeFloor(startedAtMs);
+    return mapUser(result.user);
   }
 
   @Get("users/me/settings")
@@ -328,7 +424,7 @@ export class UsersController {
     await requireAdmin(this.dbProvider.db, req);
     requireUuidParam(id, "User not found.", req.originalUrl);
     const body = rawBody ?? {};
-    const updated = await updateUserAdmin(this.dbProvider.db, id, {
+    const result = await updateUserAdmin(this.dbProvider.db, id, {
       // M1: UpdateUserRequest.email is `[string, 'null']` now — present-but-
       // not-a-string clears it (same null-to-clear convention as
       // maxContentRating below).
@@ -342,10 +438,17 @@ export class UsersController {
         : {}),
       nowMs: clockNowMs(),
     });
-    if (!updated) {
-      throw notFound("User not found.", req.originalUrl);
+    if (!result.ok) {
+      if (result.reason === "not-found") {
+        throw notFound("User not found.", req.originalUrl);
+      }
+      // G9: today's uncaught-23505 500 replaced with a real 409 — admins
+      // already enumerate every account via GET /users, so unlike
+      // updateUserSelf's silent E8 drop, no enumeration concern applies
+      // here (same posture as Addendum A's env-pin-lockout 409).
+      throw conflict("A user with this email address already exists.", req.originalUrl);
     }
-    return mapUser(updated);
+    return mapUser(result.user);
   }
 
   @Delete("users/:id")

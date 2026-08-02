@@ -232,7 +232,7 @@ export interface StashSyncJobPayload {
  * `<script>` in a display name).
  */
 export interface MailSendJobPayload {
-  templateId: 'invite' | 'password-reset' | 'security-notice' | 'test';
+  templateId: 'invite' | 'password-reset' | 'security-notice' | 'email-in-use-notice' | 'test';
   to: string;
   params: Record<string, string>;
 }
