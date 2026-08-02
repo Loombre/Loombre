@@ -325,7 +325,10 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        /** Update the current user's own profile */
+        /**
+         * Update the current user's own profile
+         * @description G3 (STATE.md "Current-password re-auth on self-changes"): a body containing `password` and/or `email` (any value, `null` included) requires `currentPassword` — see UpdateMeRequest's own `dependentRequired`. A missing/wrong currentPassword when required 403s/422s; a bodyless or displayName/birthDate-only body needs no re-auth.
+         */
         patch: operations["updateMe"];
         trace?: never;
     };
@@ -2511,6 +2514,11 @@ export interface components {
             birthDate?: string | null;
             /** Format: password */
             password?: string;
+            /**
+             * Format: password
+             * @description Current-password re-authentication (G2/G3, STATE.md "Current-password re-auth on self-changes"). Required (`dependentRequired` below) whenever this request's body contains `password` and/or `email` — ANY value, including an explicit `null` to clear email — since both are account- critical self-service changes; a bare displayName/birthDate- only profile save needs no re-auth. Deliberately UNCONSTRAINED, same reasoning as RestrictedSettingsUpdate.currentPin below: it proves an ALREADY-STORED secret and is only ever compared against a stored hash, never itself stored, so a shape constraint would add nothing. A wrong value 403s with the same fixed detail regardless of which field (password or email) was being changed (F2: never confirms which target value was the problem).
+             */
+            currentPassword?: string;
         };
         UserSettings: {
             /** @description Read-only mirror here; changed only via PUT /users/me/restricted. */
@@ -2609,6 +2617,11 @@ export interface components {
             pin?: string;
             /** @description Required to change an existing PIN or to opt out. Proves an ALREADY-STORED PIN and is therefore DELIBERATELY not length- or pattern-constrained: an install predating the 4-digit rule above may hold a PIN of some other length, and this field is that user's only recovery path (prove the old PIN, set a conforming new one, or opt out). It is only ever compared against a stored hash, never stored, so the looser shape widens nothing. */
             currentPin?: string;
+            /**
+             * Format: password
+             * @description Current-password re-authentication (G2/G3, STATE.md "Current-password re-auth on self-changes"). ALWAYS required — every call to this endpoint is account-critical (PIN set/change AND opt-in/out are one operation, F1). Deliberately UNCONSTRAINED, same reasoning as currentPin above: it proves an already-stored secret and is only ever compared against a stored hash, never itself stored. Distinct from currentPin — proving the account password does not replace proving the PIN where the PIN itself is also required (F4: "currentPassword is additional, not a PIN replacement").
+             */
+            currentPassword: string;
         };
         RestrictedSettings: {
             optIn: boolean;
@@ -4662,7 +4675,19 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             422: components["responses"]["UnprocessableEntity"];
+            /** @description Rate limited (per-user current-password attempts) */
+            429: {
+                headers: {
+                    /** @description Seconds until the next attempt is allowed. */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
             default: components["responses"]["Problem"];
         };
     };
@@ -4740,6 +4765,17 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             422: components["responses"]["UnprocessableEntity"];
+            /** @description Rate limited (per-user current-password attempts) */
+            429: {
+                headers: {
+                    /** @description Seconds until the next attempt is allowed. */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
             default: components["responses"]["Problem"];
         };
     };
