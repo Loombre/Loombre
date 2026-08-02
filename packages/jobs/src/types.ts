@@ -218,6 +218,25 @@ export interface StashSyncJobPayload {
   mode: 'full' | 'incremental';
 }
 
+/**
+ * Optional mail transport run (E6/M7): outbox-driven mail delivery. Callers
+ * NEVER build raw HTML/text themselves — only a closed templateId + the
+ * params its renderer (apps/worker/src/mail/templates/**) needs; the
+ * worker consumer resolves effective settings + credentials fresh AT JOB
+ * START (never once at worker boot, matching the image/scan consumers'
+ * per-job settings re-resolution convention) and renders+sends via
+ * nodemailer. `to` is a bare email address, never a display-name-plus-
+ * address string (the template itself is what may carry a display name,
+ * as one of `params`). Every field in `params` is HTML-escaped by the
+ * renderer before it ever reaches an outgoing message (someone WILL put
+ * `<script>` in a display name).
+ */
+export interface MailSendJobPayload {
+  templateId: 'invite' | 'password-reset' | 'security-notice' | 'test';
+  to: string;
+  params: Record<string, string>;
+}
+
 export interface JobPayloads {
   scan: ScanJobPayload;
   probe: ProbeJobPayload;
@@ -232,6 +251,7 @@ export interface JobPayloads {
   'pg-upgrade': PgUpgradeJobPayload;
   'stash-inventory': StashInventoryJobPayload;
   'stash-sync': StashSyncJobPayload;
+  'mail-send': MailSendJobPayload;
 }
 
 export type JobType = keyof JobPayloads;
@@ -252,16 +272,42 @@ export const JOB_TYPES: readonly JobType[] = [
   'pg-upgrade',
   'stash-inventory',
   'stash-sync',
+  'mail-send',
 ];
 
-/** pg-boss provisioning options for one queue (queue.ts passes these to
- *  createQueue/updateQueue). */
+/**
+ * pg-boss provisioning options for one queue (queue.ts passes these to
+ * createQueue/updateQueue).
+ *
+ * retryDelay/retryBackoff/retryDelayMax (optional mail transport run, M7):
+ * pg-boss 12 has supported exponential retry backoff since before this
+ * package existed, but nothing in @loombre/jobs exposed it — every prior
+ * job type either retries immediately (retryDelay implicitly 0) or doesn't
+ * retry at all. `mail-send` is the first job whose failure mode
+ * (transient SMTP hiccups, a mail provider's own rate limiting) actually
+ * benefits from spacing retries out rather than hammering the same
+ * connection immediately. Deliberate new package surface, not a
+ * side-effect edit — every OTHER job type's options object simply omits
+ * these three fields, which pg-boss defaults to "no delay, no backoff"
+ * (its own QueueOptions.retryDelay/retryBackoff defaults), so this is
+ * additive and changes nothing about any existing queue's behavior.
+ */
 export interface JobQueueOptions {
   /** Seconds a job may sit in pg-boss's `active` state before its
    *  maintenance sweep retries or fails the row. */
   expireInSeconds: number;
   /** Times pg-boss may re-dispatch a job after a handler failure. */
   retryLimit: number;
+  /** Seconds between retries (pg-boss QueueOptions.retryDelay) — the base
+   *  delay when retryBackoff is off, or the FIRST retry's delay (before
+   *  exponential growth) when it's on. */
+  retryDelay?: number;
+  /** Exponential backoff between retries, based on retryDelay (pg-boss
+   *  QueueOptions.retryBackoff). */
+  retryBackoff?: boolean;
+  /** Ceiling on the backed-off delay, in seconds — only consulted when
+   *  retryBackoff is true (pg-boss QueueOptions.retryDelayMax). */
+  retryDelayMax?: number;
 }
 
 // pg-boss asserts `expireInSeconds / 3600 < 24`, so this is effectively its
@@ -308,4 +354,26 @@ export const JOB_QUEUE_OPTIONS: Readonly<Record<JobType, JobQueueOptions>> = {
   // A full 33k-scene sync holds its handler promise for the whole run
   // (checkpointed internally; a pg-boss retry resumes from the checkpoint).
   'stash-sync': { expireInSeconds: LONG_RUNNING_EXPIRE_SECONDS, retryLimit: 2 },
+  // Optional mail transport run (E6/M7): a single send is a short-lived
+  // SMTP conversation (connect + auth + DATA), never long-running —
+  // BOUNDED_EXPIRE_SECONDS is generous for it. retryLimit 4 with
+  // exponential backoff starting at retryDelay 60s (pg-boss's own formula,
+  // this queue's own doc comment: `retryDelay * 2^retryCount` with jitter,
+  // capped at retryDelayMax) gives roughly 1m / 2m / 4m / 8m between
+  // attempts (~15 minutes end to end) — long enough to ride out a mail
+  // provider's transient rate limiting or a brief network blip, short
+  // enough that an admin waiting on an invite/reset email isn't left
+  // hanging for hours. retryDelayMax 600 (10 minutes) keeps the LAST gap
+  // from growing unbounded on a still-mostly-healthy provider. Per-send
+  // callers may override retryLimit down to 0 (EnqueueOptions.retryLimit,
+  // queue.ts) — the admin test-send action always does, since a manual
+  // probe should fail fast and visibly rather than silently retrying for
+  // 15 minutes.
+  'mail-send': {
+    expireInSeconds: BOUNDED_EXPIRE_SECONDS,
+    retryLimit: 4,
+    retryDelay: 60,
+    retryBackoff: true,
+    retryDelayMax: 600,
+  },
 };
