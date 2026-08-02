@@ -231,8 +231,19 @@ export class AuthGuard implements CanActivate {
       dbUser &&
       !dbUser.must_change_password &&
       dbUser.password_changed_at_ms !== null &&
-      claims.iat < Math.floor(dbUser.password_changed_at_ms / 1000)
+      claims.iat < Math.ceil(dbUser.password_changed_at_ms / 1000)
     ) {
+      // `iat` is JWT's NumericDate — whole SECONDS, no sub-second
+      // resolution (RFC 7519; jose's setIssuedAt always floors). Rounding
+      // the epoch UP (Math.ceil, not floor) to the next second boundary
+      // means a token whose iat-second is AMBIGUOUS with the epoch (minted
+      // in the exact same wall-clock second, before OR after the change)
+      // is treated as stale — the only conservative choice a 1-second-
+      // resolution comparison can make; ties resolve to "reject", never
+      // "accept". A token minted a full second or more after the change
+      // always passes; ceil never rejects one minted before an EXACT
+      // second-boundary change either (Math.ceil is a no-op when
+      // password_changed_at_ms % 1000 === 0).
       throw new UnauthenticatedException(sanitizeInstancePath(req));
     }
 

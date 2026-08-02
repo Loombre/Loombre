@@ -42,7 +42,12 @@ describe("TokenService", () => {
   it("R-F7: exposes iat (whole seconds since epoch, jose's NumericDate unit)", async () => {
     process.env["LOOMBRE_JWT_SECRET"] = "test-secret-value-not-for-prod";
     const service = new TokenService();
-    const nowMs = 1_700_000_123_456;
+    // Must be close to real wall-clock time — jwtVerify checks `exp`
+    // (nowMs + ACCESS_TOKEN_TTL_MS) against the ACTUAL current time, not
+    // the `nowMs` this test passes in, so a fixed-in-the-past timestamp
+    // here would sign an already-expired token and fail on verify with
+    // JWTExpired, unrelated to what this test is actually checking.
+    const nowMs = Date.now();
 
     const { token } = await service.signAccessToken({ sub: "user-iat", isAdmin: false }, nowMs);
     const claims = await service.verifyAccessToken(token);

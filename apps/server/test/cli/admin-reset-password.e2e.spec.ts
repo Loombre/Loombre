@@ -246,6 +246,14 @@ describe("loombre admin reset-password <username> (E3a/M14)", () => {
     // exempts the calling device (tempAccessToken's own deviceId claim) from
     // the bulk-revoke — so one refresh (no re-login) mints a fresh,
     // epoch-valid access token with full access restored.
+    //
+    // JWT `iat` is whole-SECOND resolution (RFC 7519 NumericDate) and
+    // auth.guard.ts's epoch check conservatively treats a token minted in
+    // the SAME wall-clock second as the password change as ambiguous (see
+    // that guard's own comment) — cross a full second so this refresh's
+    // `iat` is unambiguously in a LATER second than the PATCH above, same
+    // technique any second-resolution boundary needs to test deterministically.
+    await new Promise((resolve) => setTimeout(resolve, 1100));
     const refreshed = await request(app.getHttpServer())
       .post("/auth/refresh")
       .send({ refreshToken: tempLogin.body.refreshToken, deviceId: tempLogin.body.deviceId });
@@ -271,7 +279,7 @@ describe("loombre admin reset-password <username> (E3a/M14)", () => {
     const serialized = JSON.stringify(event!.payload);
     expect(serialized).not.toContain(temporaryPassword);
     expect(serialized).not.toContain(newPassword);
-  });
+  }, 30_000);
 
   it("declined confirmation: nothing changes, no event, exit 1", async () => {
     const username = "h14-reset-declined";
