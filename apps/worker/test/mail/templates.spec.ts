@@ -1,18 +1,25 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Loombre :: apps/worker/test/mail/templates.spec.ts
 //
-// Optional mail transport run (E7): EMAIL-SAFE proof for the four
-// templates — zero remote resources (no http(s) URL anywhere in the
-// rendered output OTHER than the caller-supplied actionUrl itself), every
-// dynamic param HTML-escaped (someone WILL put <script> in a display
-// name), and both an HTML and a plaintext alternative are always
-// non-empty.
+// Optional mail transport run (E7): EMAIL-SAFE proof for every template —
+// zero remote resources (no http(s) URL anywhere in the rendered output
+// OTHER than the caller-supplied actionUrl itself), every dynamic param
+// HTML-escaped (someone WILL put <script> in a display name), and both an
+// HTML and a plaintext alternative are always non-empty.
+//
+// G7 (STATE.md "Current-password re-auth on self-changes"): TEMPLATE_IDS
+// drives this whole suite — adding 'email-in-use-notice' here is the ONE
+// touch that pulls the new template through every E7 assertion below
+// automatically (URL-free even when an actionUrl param is passed, since
+// the template never reads it; no style/link/script/img; non-empty
+// subject/html/text with an EMPTY params object, proving its serverName
+// fallback to "Loombre" works with no params at all).
 
 import { describe, expect, it } from "vitest";
 import { renderTemplate } from "../../src/mail/templates/index.js";
 import { actionButtonHtml, escapeHtml } from "../../src/mail/templates/shared.js";
 
-const TEMPLATE_IDS = ["invite", "password-reset", "security-notice", "test"] as const;
+const TEMPLATE_IDS = ["invite", "password-reset", "security-notice", "email-in-use-notice", "test"] as const;
 
 /** Every http(s) URL literally present in a string, deduplicated. */
 function findUrls(text: string): string[] {
@@ -78,6 +85,42 @@ describe("mail templates — every param is HTML-escaped (E7)", () => {
     const rendered = renderTemplate("password-reset", { actionUrl: "https://x.example.com/reset?token=abc&foo=bar" });
     expect(rendered.html).not.toContain('token=abc&foo=bar"');
     expect(rendered.html).toContain("token=abc&amp;foo=bar");
+  });
+});
+
+describe("email-in-use-notice (G7) — URL-free, serverName-driven", () => {
+  it("subject and body interpolate the given serverName", () => {
+    const rendered = renderTemplate("email-in-use-notice", { serverName: "My Home Server" });
+    expect(rendered.subject).toBe("Your email address was used on My Home Server");
+    expect(rendered.html).toContain("My Home Server");
+    expect(rendered.text).toContain("My Home Server");
+  });
+
+  it("falls back to 'Loombre' when serverName is absent", () => {
+    const rendered = renderTemplate("email-in-use-notice", {});
+    expect(rendered.subject).toBe("Your email address was used on Loombre");
+  });
+
+  it("carries ZERO http(s) URLs even when an actionUrl param is (incorrectly) passed — the template never reads it", () => {
+    const rendered = renderTemplate("email-in-use-notice", {
+      actionUrl: "https://loombre.example.com/should-be-ignored",
+      serverName: "Test Server",
+    });
+    expect(findUrls(rendered.html)).toEqual([]);
+    expect(findUrls(rendered.text)).toEqual([]);
+  });
+
+  it("an XSS-bearing serverName never appears unescaped in the rendered HTML", () => {
+    const xssServerName = '<script>alert(1)</script>"onmouseover="x';
+    const rendered = renderTemplate("email-in-use-notice", { serverName: xssServerName });
+    expect(rendered.html).not.toContain("<script>alert(1)</script>");
+    expect(rendered.html).toContain(escapeHtml(xssServerName));
+  });
+
+  it("never mentions a password or PIN (calm, no-action-needed copy per F5)", () => {
+    const rendered = renderTemplate("email-in-use-notice", { serverName: "Test Server" });
+    expect(rendered.text.toLowerCase()).not.toContain("password");
+    expect(rendered.text.toLowerCase()).not.toContain("pin");
   });
 });
 
