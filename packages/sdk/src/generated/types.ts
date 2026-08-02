@@ -41,7 +41,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/claim/{token}": {
+    "/invites/claim/{token}": {
         parameters: {
             query?: never;
             header?: never;
