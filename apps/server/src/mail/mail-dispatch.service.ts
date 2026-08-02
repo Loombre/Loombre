@@ -34,7 +34,7 @@ import { JobQueueProvider } from "../common/job-queue.provider.js";
 import { MailConfigService } from "./mail-config.service.js";
 
 export interface MailSendInput {
-  templateId: "invite" | "password-reset" | "security-notice" | "test";
+  templateId: "invite" | "password-reset" | "security-notice" | "email-in-use-notice" | "test";
   to: string;
   params: Record<string, string>;
 }

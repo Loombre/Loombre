@@ -18,20 +18,35 @@
 // format-checked: it proves an already-stored secret that may predate the
 // rule, and this endpoint is that user's only route back to a conforming
 // PIN. Both are still checked for non-emptiness.
+//
+// G3/G4 (STATE.md "Current-password re-auth on self-changes"): EVERY call
+// to this endpoint is account-critical (PIN set/change AND opt-in/out are
+// one operation, F1) — currentPassword re-authentication is therefore
+// unconditionally required, checked via the SAME shared
+// requireCurrentPassword helper (common/) updateMe uses, BEFORE the optIn/
+// pin business logic (same "rate-limit attempt before the real check"
+// ordering restricted.controller.ts's unlock handler already establishes).
+// currentPin logic below is UNCHANGED (F4: currentPassword is additional,
+// never a PIN-verification replacement).
 
-import { Body, Controller, Put, Req } from "@nestjs/common";
+import { Body, Controller, Put, Req, UseFilters } from "@nestjs/common";
 import { getUserSettings, updateRestrictedSettings } from "@loombre/db";
 import { nowMs as clockNowMs } from "@loombre/shared";
 import { unprocessableEntity } from "../gateway/problem.exception.js";
 import type { AuthenticatedRequest } from "../gateway/auth.guard.js";
 import { DbProvider } from "../common/db.provider.js";
 import { HashService } from "../common/hash.service.js";
+import { AnomalyLogService } from "../common/anomaly-log.service.js";
+import { CurrentPasswordRateLimiterService } from "../common/current-password-rate-limiter.service.js";
+import { requireCurrentPassword } from "../common/require-current-password.js";
+import { RateLimitExceptionFilter } from "../common/rate-limit-exception.filter.js";
 import { PIN_LENGTH, isValidNewPin } from "./pin-format.js";
 
 interface RestrictedSettingsUpdateBody {
   optIn?: unknown;
   pin?: unknown;
   currentPin?: unknown;
+  currentPassword?: unknown;
 }
 
 interface RestrictedSettingsResponse {
@@ -40,15 +55,24 @@ interface RestrictedSettingsResponse {
   unlockedUntilMs: number | null;
 }
 
+/** RestrictedSettingsUpdate's full property set (additionalProperties:
+ *  false, G3) — putRestricted used to silently ignore an unknown key;
+ *  same allowlist precedent as catalog/users.controller.ts's
+ *  UPDATE_ME_BODY_KEYS/SETTINGS_BODY_KEYS. */
+const RESTRICTED_SETTINGS_BODY_KEYS = new Set(["optIn", "pin", "currentPin", "currentPassword"]);
+
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.length > 0;
 }
 
 @Controller("users/me")
+@UseFilters(RateLimitExceptionFilter)
 export class UsersMeController {
   constructor(
     private readonly dbProvider: DbProvider,
     private readonly hashService: HashService,
+    private readonly anomalyLog: AnomalyLogService,
+    private readonly currentPasswordRateLimiter: CurrentPasswordRateLimiterService,
   ) {}
 
   @Put("restricted")
@@ -60,11 +84,29 @@ export class UsersMeController {
     const instance = req.originalUrl;
     const userId = req.user!.userId; // AuthGuard guarantees this on any non-public route.
 
+    for (const key of Object.keys(body)) {
+      if (!RESTRICTED_SETTINGS_BODY_KEYS.has(key)) {
+        throw unprocessableEntity(`Unknown property "${key}".`, instance);
+      }
+    }
+
+    const db = this.dbProvider.db;
+
+    // G3: ALWAYS required on this endpoint — every call is account-critical.
+    await requireCurrentPassword({
+      db,
+      userId,
+      currentPasswordValue: body.currentPassword,
+      instance,
+      hashService: this.hashService,
+      rateLimiter: this.currentPasswordRateLimiter,
+      anomalyLog: this.anomalyLog,
+    });
+
     if (typeof body.optIn !== "boolean") {
       throw unprocessableEntity("optIn (boolean) is required.", instance);
     }
 
-    const db = this.dbProvider.db;
     const nowMs = clockNowMs();
     const current = await getUserSettings(db, userId);
     const currentlyOptedIn = current?.restricted_opt_in ?? false;

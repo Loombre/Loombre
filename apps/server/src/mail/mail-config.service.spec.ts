@@ -81,3 +81,20 @@ describe("MailConfigService.publicUrl", () => {
     expect(service.publicUrl()).toBe("https://loombre.example.com");
   });
 });
+
+describe("MailConfigService.fromName (G7)", () => {
+  it("returns the effective mail.fromName value when set", () => {
+    const service = new MailConfigService(fakeSettingsService({ "mail.fromName": "My Home Server" }));
+    expect(service.fromName()).toBe("My Home Server");
+  });
+
+  it("falls back to the registry default 'Loombre' when unset", () => {
+    const service = new MailConfigService(fakeSettingsService({}));
+    expect(service.fromName()).toBe("Loombre");
+  });
+
+  it("falls back to 'Loombre' for a whitespace-only value", () => {
+    const service = new MailConfigService(fakeSettingsService({ "mail.fromName": "   " }));
+    expect(service.fromName()).toBe("Loombre");
+  });
+});
