@@ -51,9 +51,21 @@ Implement (1) an invitation system: admin creates a one-time, expiring invite li
 | C | mail subsystem E5–E7: registry+keyring+transport+jobs+backoff+templates+test-send+publicUrl + M7/M8 seams | sonnet | **LANDED 1baef34..eb9d996** (gate + gate:full ALL PASSED in-worktree; ff to main) |
 | A | invitations E2 + email/displayName E4/M1/M2: 0023, token lifecycle, claim route, race test, events, contract+SDK | sonnet | **LANDED 09f3daf..720d1d8 rebased** (gate ALL PASSED on the C+A assembly) |
 | B | recovery E3/M14/M15: CLI + admin action + email-tier tokens + enumeration-safe endpoints + limiter | sonnet | **LANDED 32c4d33..cbb7931 rebased** (gate ALL PASSED on the C+A+B assembly = main) |
-| D | UI (after A/B/C contract freeze): invites surface, reset action, mail settings+test-send, claim/reset pages, profile email | sonnet | dispatched |
-| Docs | E9 three registers + sourced provider table | sonnet | dispatched |
-| R | opus adversarial pass per brief §3 + E1 no-mail conformance walk | opus | pending |
+| D | UI (after A/B/C contract freeze): invites surface, reset action, mail settings+test-send, claim/reset pages, profile email | sonnet | **LANDED e4d0f9a..37a2f7b rebased** (gate + gate:full ALL PASSED in-worktree; web 123 files/1055 tests; budget 166.5 KB unchanged) |
+| Docs | E9 three registers + sourced provider table | sonnet | **LANDED 584275b..187bfd0** (register-lint 25/25 zero new; docs:build ALL PASSED; provider table source-verified 2026-08-01, per-row URLs in the page's Sourcing comment) |
+| R | opus adversarial pass per brief §3 + E1 no-mail conformance walk | opus | dispatched |
+
+### D + Docs freeze notes (orchestrator-integrated; main = f1059b4, gate:full ALL 14 PASSED on the full assembly)
+
+- **D**: invites admin surface = sibling InvitesPanel card on /settings/users (all statuses visible, per-row revoke w/ danger confirm) + CreateInviteSheet (SheetOrModal) + shared ui/SecretReveal (extracted from the plugin-wizard precedent, reused for invite link + temp password); reset-password via RowMenu + Modal (self-reset warns about own sessions); Settings "Mail" tab (registry fields through the EXISTING SettingField renderer + write-only MailCredentialsCard + MailTestSendCard subscribing job.updated for the real outcome, 409-unconfigured explains the three missing prerequisites); /claim/[token], /forgot (constant copy), /reset/[token] on a shared AuthScreen shell (M16: authenticated viewers not bounced); /login gains the capabilities-gated "Forgot password?" + mustChangePassword routing to a forced change screen; email optional in profile (clear-to-null) + AddUserSheet. One real bug caught by D's own tests (revoke confirm-state stuck) — fixed in-lane.
+- **Docs**: inviting-users.md (copy-link FIRST), mail.md (5-fact generic form; provider table: Brevo/SMTP2GO/Mailgun 587 STARTTLS (relay class, recommended for internet-exposed, free tiers noted), Gmail 587+app-password+2FA, M365 587+SMTP-AUTH-off-by-default, Fastmail 587+app-password, Proton via Bridge 127.0.0.1:1025, iCloud 587+app-specific), joining.md (plain register, both recovery variants), ops: cli.md "Forgot a password?" mirrors the PIN section, reverse-proxy.md requirement 6 (claim/reset pass-through + LOOMBRE_PUBLIC_URL-vs-origin, all three snippets), mail-notes.md one-paragraph deliverability reality. Post-D accuracy pass f1059b4 names the real controls.
+- **Flake tally**: the known parallel-turbo conformance contention flake, third costume this file has seen — listSeriesSeasons' 401 arrived as application/json (not problem+json) once under the full gate; isolated 12/12 twice, next full run clean. Pre-existing endpoint, untouched by this run.
+
+### Open ledger additions (this run, so far)
+
+1. **ClaimInviteRequest.email has no null-to-clear** — a claimant cannot opt OUT of an invite's emailPreset (omit = preset wins; "" fails format). Contract design question, owner call (D flag).
+2. **reverse-proxy.md's three recipes historically matched only /v1|playback|setup prefixes** while most of the REST surface mounts at bare paths — the four new claim/reset routes are now listed explicitly, but the pre-existing general gap stands (Docs-lane flag; owner/R).
+3. **PATCH /users/me changes the caller's password without current-password confirmation** — pre-existing posture (recon flag), newly load-bearing since the must-change-password guard deliberately allows that op. Named for the R lane.
 
 ### Backend integration record (orchestrator, 2026-08-01; main = cbb7931, gate ALL 13 PASSED)
 
