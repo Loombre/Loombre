@@ -71,6 +71,7 @@ describe("runCli — --help", () => {
     expect(result.stdout.join("\n")).toContain("doctor");
     expect(result.stdout.join("\n")).toContain("paths");
     expect(result.stdout.join("\n")).toContain("admin reset-pin");
+    expect(result.stdout.join("\n")).toContain("admin reset-password");
     expect(result.stdout.join("\n")).toContain("DATABASE_URL");
   });
 });
@@ -201,6 +202,74 @@ describe("runCli — admin (dispatch only; full reset-pin behavior is apps/serve
     const adminDeps: AdminDeps = { connect, confirm: async () => true, nowMs: () => 0 };
     await expect(
       runCli({ argv: ["admin", "reset-pin", "casual"], env: BASE_ENV, nodePlatform: "linux", doctorDeps: OK_DOCTOR_DEPS, adminDeps }),
+    ).rejects.toThrow("stop here");
+    expect(connect).toHaveBeenCalledTimes(1);
+  });
+});
+
+// STATE.md "Optional mail transport + invitation & reset flows" (E3a/M14,
+// Lane B): dispatch-only coverage for the SECOND `admin` subcommand, mirroring
+// every `admin reset-pin` case above exactly (full reset-password behavior is
+// apps/server/test/cli/admin-reset-password.e2e.spec.ts). Both subcommands
+// share ONE dispatcher (admin-reset-pin.ts's runAdminCommand) and ONE
+// AdminDeps shape — see apps/server/src/cli/admin-deps.ts's header.
+describe("runCli — admin reset-password (dispatch only; full behavior is apps/server/test/cli/admin-reset-password.e2e.spec.ts)", () => {
+  it("`admin bogus` (still) never matches reset-password either — unknown-admin-command usage error, exit 1", async () => {
+    const result = await runCli({ argv: ["admin", "bogus"], env: BASE_ENV, nodePlatform: "linux", doctorDeps: OK_DOCTOR_DEPS, adminDeps: THROWING_ADMIN_DEPS });
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr.join("\n")).toContain("bogus");
+  });
+
+  it("`admin` with no subcommand mentions BOTH reset-pin and reset-password usage, exit 1, never touches adminDeps", async () => {
+    const result = await runCli({ argv: ["admin"], env: BASE_ENV, nodePlatform: "linux", doctorDeps: OK_DOCTOR_DEPS, adminDeps: THROWING_ADMIN_DEPS });
+    expect(result.exitCode).toBe(1);
+    expect(result.stdout).toEqual([]);
+    expect(result.stderr.join("\n")).toContain("reset-pin");
+    expect(result.stderr.join("\n")).toContain("reset-password");
+  });
+
+  it.each(["--help", "-h"])(
+    "`admin reset-password %s` prints usage and exits 0, and never touches adminDeps",
+    async (helpArg) => {
+      const result = await runCli({
+        argv: ["admin", "reset-password", helpArg],
+        env: BASE_ENV,
+        nodePlatform: "linux",
+        doctorDeps: OK_DOCTOR_DEPS,
+        adminDeps: THROWING_ADMIN_DEPS,
+      });
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout[0]).toBe("loombre admin reset-password <username>");
+      expect(result.stdout.join("\n")).toContain("DATABASE_URL");
+      expect(result.stderr).toEqual([]);
+    },
+  );
+
+  it("`admin reset-password` with no username is a usage error, exit 1, and never touches adminDeps", async () => {
+    const result = await runCli({ argv: ["admin", "reset-password"], env: BASE_ENV, nodePlatform: "linux", doctorDeps: OK_DOCTOR_DEPS, adminDeps: THROWING_ADMIN_DEPS });
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr.join("\n")).toContain("loombre admin reset-password <username>");
+  });
+
+  it("`admin reset-password <username> <extra>` (too many args) is a usage error, exit 1, and never touches adminDeps", async () => {
+    const result = await runCli({
+      argv: ["admin", "reset-password", "casual", "extra-arg"],
+      env: BASE_ENV,
+      nodePlatform: "linux",
+      doctorDeps: OK_DOCTOR_DEPS,
+      adminDeps: THROWING_ADMIN_DEPS,
+    });
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr.join("\n")).toContain("loombre admin reset-password <username>");
+  });
+
+  it("`admin reset-password <username>` DOES reach adminDeps.connect() once argv is well-formed", async () => {
+    const connect = vi.fn(() => {
+      throw new Error("stop here — this test only proves connect() was reached");
+    });
+    const adminDeps: AdminDeps = { connect, confirm: async () => true, nowMs: () => 0 };
+    await expect(
+      runCli({ argv: ["admin", "reset-password", "casual"], env: BASE_ENV, nodePlatform: "linux", doctorDeps: OK_DOCTOR_DEPS, adminDeps }),
     ).rejects.toThrow("stop here");
     expect(connect).toHaveBeenCalledTimes(1);
   });
