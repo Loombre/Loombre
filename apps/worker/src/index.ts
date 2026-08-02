@@ -40,6 +40,7 @@ import {
   runRealHwProbeBattery,
 } from "./hwcaps/index.js";
 import { startPluginDeliveryLoop, type PluginDeliveryLoopHandle } from "./plugin-delivery/index.js";
+import { createMailTerminalFailureHook, mailSendConsumerHandler } from "./mail/index.js";
 
 // Lane G1 (STATE.md P4.14): installed as the FIRST thing this module does
 // after its imports resolve — before createJobQueue()/createDb() below (or
@@ -303,6 +304,17 @@ queue.work(
   { concurrency: 1, onTerminalFailure: createStashSyncTerminalFailureHook(db) },
 );
 
+// Optional mail transport run (E6/M7): outbox-driven mail delivery.
+// concurrency: 1 — a single worker node never holds open more than one
+// SMTP connection at a time (mirrors 'import'/'stash-sync's "one run per
+// worker node" reasoning; a personal mail server or relay is exactly the
+// kind of target that benefits from not being hit concurrently).
+// onTerminalFailure (E6/M6): once retries are exhausted, writes an
+// admin-only mail.failed outbox event carrying the REAL SMTP error — see
+// ./mail/terminal-failure-hook.ts's header for the deliberate deviation
+// from probe.failed's closed-code posture.
+queue.work("mail-send", mailSendConsumerHandler({ db }), { concurrency: 1, onTerminalFailure: createMailTerminalFailureHook(db) });
+
 let watcherHandle: WatcherHandle | undefined;
 let stashWatcherHandle: WatcherHandle | undefined;
 let stashScheduleLoopHandle: StashScheduleLoopHandle | undefined;
@@ -537,7 +549,7 @@ async function main(): Promise<void> {
   await queue.ready();
 
   console.log(
-    "worker up — pg-boss consumers registered: scan, probe, metadata, image, import, image-backfill, hwprobe, transcode, subtitle-extract, stash-inventory, stash-sync",
+    "worker up — pg-boss consumers registered: scan, probe, metadata, image, import, image-backfill, hwprobe, transcode, subtitle-extract, stash-inventory, stash-sync, mail-send",
   );
   console.log("worker up — plugin-delivery loop started (LPP v1 event-subscriber fanout)");
   console.log("worker up — stash schedule-loop started (Stash SQLite metadata sync, trigger (b), default OFF)");
