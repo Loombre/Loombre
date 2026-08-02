@@ -286,6 +286,16 @@ How many media requests one person may make per minute — posters, video, and s
 - **Applies:** immediately — no restart needed.
 - **Can be locked:** if `LOOMBRE_RATE_MEDIA_TOKEN` is set by whoever installed Loombre, this setting becomes fixed to that value and shows as controlled by the environment here — ask them, or see the [Operator Guide's environment reference](/ops/env-reference).
 
+### Claim
+
+<small>Setting key: `rateLimit.claim`</small>
+
+How many invite-claim attempts one device may make per minute, before any account exists for it. Guards the claim link against brute-force guessing.
+
+- **Default:** 10
+- **Applies:** immediately — no restart needed.
+- **Can be locked:** if `LOOMBRE_RATE_CLAIM` is set by whoever installed Loombre, this setting becomes fixed to that value and shows as controlled by the environment here — ask them, or see the [Operator Guide's environment reference](/ops/env-reference).
+
 ## Network
 
 The web address people use to reach this server from outside your own network.
