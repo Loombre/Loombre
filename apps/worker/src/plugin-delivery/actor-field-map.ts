@@ -107,6 +107,14 @@ export const ACTOR_FIELD_MAP: Record<string, readonly string[]> = {
   // ADMIN_ONLY, same posture.
   "stash.sync.started": [],
   "stash.sync.completed": [],
+  // Optional mail transport run (E6/M6): mail.failed's payload names only
+  // {templateId, to, smtpError, jobId} — `to` is a mail DESTINATION
+  // address, not a user id or another user-correlating identifier this
+  // map's closed heuristic (USER_ID_FIELD_NAMES: userId/actorUserId/
+  // deviceId/sessionId) covers — empty for the same reason probe.failed's
+  // entry is. Also ADMIN_ONLY (never grantable to a plugin subscriber in
+  // the first place — see event-taxonomy.ts), same posture as probe.failed.
+  "mail.failed": [],
 };
 
 /**
