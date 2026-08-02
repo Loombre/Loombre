@@ -50,7 +50,6 @@ import type { ViewerContext } from '../context.js';
 import { withTransaction } from '../internal/index.js';
 import { applyGuard, applyGuardToJoined } from './guard.js';
 import { decodeCursor, encodeCursor } from './cursor.js';
-import { revokeOtherRefreshTokensForUser } from './identity.js';
 
 export type UserRow = Selectable<UsersTable>;
 export type DeviceRow = Selectable<DevicesTable>;
@@ -170,6 +169,51 @@ export async function updateUserAdmin(
 export async function deleteUserAdmin(db: Kysely<DB>, id: string): Promise<boolean> {
   const result = await db.deleteFrom('users').where('id', '=', id).executeTakeFirst();
   return Number(result.numDeletedRows ?? 0) > 0;
+}
+
+/**
+ * F5 (opus adversarial review, fix wave): self-service `PATCH /users/me`
+ * password changes (updateUserSelf below) revoke every OTHER refresh
+ * token the user holds — same "a password change ends other sessions"
+ * posture as src/query/identity.ts's revokeAllRefreshTokensForUser (used
+ * by resetUserPasswordAndEmit/resetPasswordViaTokenAndEmit), but
+ * narrower: this path is reachable with a live, unrevoked access token
+ * (the caller IS currently authenticated), so keeping THAT one session's
+ * own refresh token alive — rather than revoking everything and forcing
+ * an immediate re-auth — is both kinder and cleanly possible here (those
+ * two dedicated-reset paths have no "current session" to preserve; this
+ * one does). `exceptDeviceId` is the caller's own JWT `deviceId` claim; a
+ * token with a NULL device_id (a removed device, ON DELETE SET NULL per
+ * 0002's own comment) is never treated as "the current session" and is
+ * revoked along with everything else — `IS DISTINCT FROM` (not a plain
+ * `<>`) is required specifically so a NULL device_id row doesn't
+ * silently escape a `<>` comparison's three-valued-logic exception.
+ *
+ * Lives HERE, not alongside identity.ts's own refresh-token revocation
+ * siblings (revokeAllRefreshTokensForUser et al.) despite being the same
+ * kind of operation: identity.ts already imports createUserAdmin FROM
+ * this file, so this file importing something back FROM identity.ts
+ * would be a circular module dependency (depcruise's no-circular rule,
+ * caught it at gate time) — this function has no cross-file dependency
+ * of its own, so it stays self-contained in the one file that actually
+ * calls it.
+ */
+async function revokeOtherRefreshTokensForUser(
+  db: Kysely<DB>,
+  userId: string,
+  exceptDeviceId: string | null,
+  revokedAtMs: number
+): Promise<number> {
+  let query = db
+    .updateTable('refresh_tokens')
+    .set({ revoked_at_ms: revokedAtMs })
+    .where('user_id', '=', userId)
+    .where('revoked_at_ms', 'is', null);
+  if (exceptDeviceId !== null) {
+    query = query.where(sql<boolean>`device_id IS DISTINCT FROM ${exceptDeviceId}`);
+  }
+  const result = await query.executeTakeFirst();
+  return Number(result.numUpdatedRows ?? 0);
 }
 
 export interface UpdateUserSelfInput {
