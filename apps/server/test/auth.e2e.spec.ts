@@ -110,6 +110,11 @@ beforeAll(async () => {
   process.env["LOOMBRE_RATE_LOGIN"] = "1000";
   process.env["LOOMBRE_RATE_REFRESH"] = "1000";
   process.env["LOOMBRE_RATE_UNLOCK"] = "1000";
+  // G4 (STATE.md "Current-password re-auth on self-changes"): PUT
+  // /users/me/restricted now ALWAYS spends a currentPassword rate-limit
+  // attempt (F1) — the same "many it() blocks share one limiter" reason
+  // login/refresh/unlock are raised above applies here too.
+  process.env["LOOMBRE_RATE_CURRENT_PASSWORD"] = "1000";
 
   app = await NestFactory.create(AppModule, { logger: false });
   await app.init();
@@ -124,6 +129,7 @@ afterAll(async () => {
   delete process.env["LOOMBRE_RATE_LOGIN"];
   delete process.env["LOOMBRE_RATE_REFRESH"];
   delete process.env["LOOMBRE_RATE_UNLOCK"];
+  delete process.env["LOOMBRE_RATE_CURRENT_PASSWORD"];
 });
 
 /** Tests in this file share one live DB across the whole run (no reset
@@ -369,15 +375,25 @@ async function loginAs(username: string, password: string) {
   return res.body as { accessToken: string; refreshToken: string; deviceId: string };
 }
 
+// G3 (STATE.md "Current-password re-auth on self-changes"): PUT
+// /users/me/restricted now requires currentPassword on EVERY call (F1:
+// "every call to this endpoint is account-critical") — casual's seed
+// password, so every send() below carries it. The dedicated re-auth
+// matrix (missing/wrong currentPassword, 429 trip) lives in
+// reauth.e2e.spec.ts; this suite still proves the PRE-EXISTING currentPin/
+// opt-in/opt-out semantics are unchanged once a valid currentPassword is
+// supplied.
+const CASUAL_PASSWORD = "loombre-seed-casual";
+
 describe("PUT /users/me/restricted (self-service opt-in + PIN, gate 3)", () => {
   it("opts a fresh user in with a new PIN -> 200 RestrictedSettings", async () => {
     await resetCasualRestrictedSettings();
-    const casual = await loginAs("casual", "loombre-seed-casual");
+    const casual = await loginAs("casual", CASUAL_PASSWORD);
 
     const res = await request(app.getHttpServer())
       .put("/users/me/restricted")
       .set("Authorization", `Bearer ${casual.accessToken}`)
-      .send({ optIn: true, pin: "4242" });
+      .send({ optIn: true, pin: "4242", currentPassword: CASUAL_PASSWORD });
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ optIn: true, hasPin: true, unlockedUntilMs: null });
@@ -385,48 +401,48 @@ describe("PUT /users/me/restricted (self-service opt-in + PIN, gate 3)", () => {
 
   it("enabling opt-in without a pin -> 422", async () => {
     await resetCasualRestrictedSettings();
-    const casual = await loginAs("casual", "loombre-seed-casual");
+    const casual = await loginAs("casual", CASUAL_PASSWORD);
     const res = await request(app.getHttpServer())
       .put("/users/me/restricted")
       .set("Authorization", `Bearer ${casual.accessToken}`)
-      .send({ optIn: true });
+      .send({ optIn: true, currentPassword: CASUAL_PASSWORD });
     expect(res.status).toBe(422);
   });
 
   it("changing an existing PIN requires a correct currentPin", async () => {
     await resetCasualRestrictedSettings();
-    const casual = await loginAs("casual", "loombre-seed-casual");
+    const casual = await loginAs("casual", CASUAL_PASSWORD);
     await request(app.getHttpServer())
       .put("/users/me/restricted")
       .set("Authorization", `Bearer ${casual.accessToken}`)
-      .send({ optIn: true, pin: "1111" });
+      .send({ optIn: true, pin: "1111", currentPassword: CASUAL_PASSWORD });
 
     const wrongCurrent = await request(app.getHttpServer())
       .put("/users/me/restricted")
       .set("Authorization", `Bearer ${casual.accessToken}`)
-      .send({ optIn: true, pin: "2222", currentPin: "9999" });
+      .send({ optIn: true, pin: "2222", currentPin: "9999", currentPassword: CASUAL_PASSWORD });
     expect(wrongCurrent.status).toBe(422);
 
     const rightCurrent = await request(app.getHttpServer())
       .put("/users/me/restricted")
       .set("Authorization", `Bearer ${casual.accessToken}`)
-      .send({ optIn: true, pin: "2222", currentPin: "1111" });
+      .send({ optIn: true, pin: "2222", currentPin: "1111", currentPassword: CASUAL_PASSWORD });
     expect(rightCurrent.status).toBe(200);
     expect(rightCurrent.body.hasPin).toBe(true);
   });
 
   it("opting out requires currentPin and clears the pin", async () => {
     await resetCasualRestrictedSettings();
-    const casual = await loginAs("casual", "loombre-seed-casual");
+    const casual = await loginAs("casual", CASUAL_PASSWORD);
     await request(app.getHttpServer())
       .put("/users/me/restricted")
       .set("Authorization", `Bearer ${casual.accessToken}`)
-      .send({ optIn: true, pin: "3333" });
+      .send({ optIn: true, pin: "3333", currentPassword: CASUAL_PASSWORD });
 
     const optOut = await request(app.getHttpServer())
       .put("/users/me/restricted")
       .set("Authorization", `Bearer ${casual.accessToken}`)
-      .send({ optIn: false, currentPin: "3333" });
+      .send({ optIn: false, currentPin: "3333", currentPassword: CASUAL_PASSWORD });
     expect(optOut.status).toBe(200);
     expect(optOut.body).toEqual({ optIn: false, hasPin: false, unlockedUntilMs: null });
   });
@@ -434,7 +450,7 @@ describe("PUT /users/me/restricted (self-service opt-in + PIN, gate 3)", () => {
   it("without a Bearer token -> 401", async () => {
     const res = await request(app.getHttpServer())
       .put("/users/me/restricted")
-      .send({ optIn: true, pin: "1234" });
+      .send({ optIn: true, pin: "1234", currentPassword: CASUAL_PASSWORD });
     expect(res.status).toBe(401);
   });
 
@@ -444,13 +460,13 @@ describe("PUT /users/me/restricted (self-service opt-in + PIN, gate 3)", () => {
   // restricted content permanently.
   it("a new PIN that is not exactly 4 digits -> 422 (would be unenterable at unlock)", async () => {
     await resetCasualRestrictedSettings();
-    const casual = await loginAs("casual", "loombre-seed-casual");
+    const casual = await loginAs("casual", CASUAL_PASSWORD);
 
     for (const badPin of ["12345", "123", "", "12a4", "12 4"]) {
       const res = await request(app.getHttpServer())
         .put("/users/me/restricted")
         .set("Authorization", `Bearer ${casual.accessToken}`)
-        .send({ optIn: true, pin: badPin });
+        .send({ optIn: true, pin: badPin, currentPassword: CASUAL_PASSWORD });
       expect(res.status, `pin=${JSON.stringify(badPin)}`).toBe(422);
       expect(res.headers["content-type"]).toMatch(/^application\/problem\+json/);
     }
@@ -459,7 +475,7 @@ describe("PUT /users/me/restricted (self-service opt-in + PIN, gate 3)", () => {
     const stillNoPin = await request(app.getHttpServer())
       .put("/users/me/restricted")
       .set("Authorization", `Bearer ${casual.accessToken}`)
-      .send({ optIn: true, pin: "4242" });
+      .send({ optIn: true, pin: "4242", currentPassword: CASUAL_PASSWORD });
     expect(stillNoPin.status).toBe(200);
     expect(stillNoPin.body).toEqual({ optIn: true, hasPin: true, unlockedUntilMs: null });
   });
@@ -471,7 +487,7 @@ describe("PUT /users/me/restricted (self-service opt-in + PIN, gate 3)", () => {
   // leave them with no way out at all.
   it("currentPin is NOT length-constrained — a legacy longer PIN can still be rotated away", async () => {
     await resetCasualRestrictedSettings();
-    const casual = await loginAs("casual", "loombre-seed-casual");
+    const casual = await loginAs("casual", CASUAL_PASSWORD);
     const user = await getUserByUsername(rawDb, "casual");
 
     // Simulate a pre-rule install: a 6-digit PIN already in the column.
@@ -486,7 +502,7 @@ describe("PUT /users/me/restricted (self-service opt-in + PIN, gate 3)", () => {
     const rotated = await request(app.getHttpServer())
       .put("/users/me/restricted")
       .set("Authorization", `Bearer ${casual.accessToken}`)
-      .send({ optIn: true, pin: "1234", currentPin: "543210" });
+      .send({ optIn: true, pin: "1234", currentPin: "543210", currentPassword: CASUAL_PASSWORD });
     expect(rotated.status).toBe(200);
     expect(rotated.body.hasPin).toBe(true);
 
@@ -494,13 +510,13 @@ describe("PUT /users/me/restricted (self-service opt-in + PIN, gate 3)", () => {
     const staleProof = await request(app.getHttpServer())
       .put("/users/me/restricted")
       .set("Authorization", `Bearer ${casual.accessToken}`)
-      .send({ optIn: false, currentPin: "543210" });
+      .send({ optIn: false, currentPin: "543210", currentPassword: CASUAL_PASSWORD });
     expect(staleProof.status).toBe(422);
 
     const optOut = await request(app.getHttpServer())
       .put("/users/me/restricted")
       .set("Authorization", `Bearer ${casual.accessToken}`)
-      .send({ optIn: false, currentPin: "1234" });
+      .send({ optIn: false, currentPin: "1234", currentPassword: CASUAL_PASSWORD });
     expect(optOut.status).toBe(200);
   });
 });

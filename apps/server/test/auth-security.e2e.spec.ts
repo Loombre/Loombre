@@ -127,6 +127,11 @@ beforeAll(async () => {
   process.env["LOOMBRE_RATE_LOGIN"] = "3";
   process.env["LOOMBRE_RATE_REFRESH"] = "3";
   process.env["LOOMBRE_RATE_UNLOCK"] = "2";
+  // G4 (STATE.md "Current-password re-auth on self-changes"): same low-cap
+  // posture as login/refresh/unlock above, for the SAME reason — a
+  // deliberately small cap makes tripping/refill-adjacent behavior
+  // exercisable without real sleeps or a huge request count.
+  process.env["LOOMBRE_RATE_CURRENT_PASSWORD"] = "2";
   process.env["LOOMBRE_TRUST_PROXY"] = "1";
 
   app = await NestFactory.create(AppModule, { logger: false });
@@ -145,6 +150,7 @@ afterAll(async () => {
     "LOOMBRE_RATE_LOGIN",
     "LOOMBRE_RATE_REFRESH",
     "LOOMBRE_RATE_UNLOCK",
+    "LOOMBRE_RATE_CURRENT_PASSWORD",
     "LOOMBRE_AUTH_LOG_FILE",
     "LOOMBRE_TRUST_PROXY",
     "LOOMBRE_RESTRICTED_ENABLED",
@@ -471,6 +477,119 @@ describe("Auth rate limits (P2.1/P2.12) + LOOMBRE_TRUST_PROXY forwarded-IP keyin
       .set("Authorization", `Bearer ${casual.body.accessToken}`)
       .send({ pin: "0000" });
     expect(casualUnlock.status).toBe(403); // not 429 — independent per-user bucket
+  });
+});
+
+// G3/G4 (STATE.md "Current-password re-auth on self-changes"): the
+// CURRENT_PASSWORD_FAILURE anomaly log line and the currentPassword
+// rate-limit trip — this file's own low-cap posture (LOOMBRE_RATE_
+// CURRENT_PASSWORD=2 above) is exactly what makes tripping exercisable
+// without a huge request count, same reason login/refresh/unlock are
+// capped low here. Each test creates its OWN fresh user (via an admin
+// token) so this describe block never contends with casual/admin's
+// buckets from the describes above.
+describe("currentPassword re-auth (G3/G4): anomaly log + rate limit", () => {
+  async function loginAdmin(ip: string): Promise<request.Response> {
+    return request(app.getHttpServer())
+      .post("/auth/login")
+      .set("X-Forwarded-For", ip)
+      .send({
+        username: "admin",
+        password: "loombre-seed-admin",
+        deviceName: `cp-admin-${ip}`,
+        deviceProfile: buildDeviceProfile(),
+      });
+  }
+
+  async function createAndLoginFreshUser(
+    adminAccessToken: string,
+    username: string,
+    password: string,
+    ip: string,
+  ): Promise<request.Response> {
+    const created = await request(app.getHttpServer())
+      .post("/users")
+      .set("Authorization", `Bearer ${adminAccessToken}`)
+      .send({ username, email: `${username}@example.invalid`, password });
+    expect(created.status, JSON.stringify(created.body)).toBe(201);
+
+    return request(app.getHttpServer())
+      .post("/auth/login")
+      .set("X-Forwarded-For", ip)
+      .send({ username, password, deviceName: `${username}-device`, deviceProfile: buildDeviceProfile() });
+  }
+
+  it("logs CURRENT_PASSWORD_FAILURE on a wrong currentPassword (PATCH /users/me), without leaking it", async () => {
+    const admin = await loginAdmin("203.0.113.90");
+    expect(admin.status).toBe(200);
+
+    const target = await createAndLoginFreshUser(
+      admin.body.accessToken,
+      "cp-failure-target",
+      "cp-failure-target-password",
+      "203.0.113.91",
+    );
+    expect(target.status).toBe(200);
+
+    const res = await request(app.getHttpServer())
+      .patch("/users/me")
+      .set("Authorization", `Bearer ${target.body.accessToken}`)
+      .send({ displayName: "New Name", email: "still-cp-failure-target@example.invalid", currentPassword: "definitely-the-wrong-password" });
+    expect(res.status).toBe(403);
+
+    const lines = anomalyLogLines();
+    const cpFailureLine = lines.find((l) => l.includes("CURRENT_PASSWORD_FAILURE"));
+    expect(cpFailureLine).toBeDefined();
+    expect(cpFailureLine).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z loombre-auth CURRENT_PASSWORD_FAILURE /);
+    expect(cpFailureLine).not.toContain("definitely-the-wrong-password");
+  });
+
+  it("trips 429 + Retry-After after LOOMBRE_RATE_CURRENT_PASSWORD attempts; a DIFFERENT user is unaffected", async () => {
+    const admin = await loginAdmin("203.0.113.92");
+    expect(admin.status).toBe(200);
+
+    const userA = await createAndLoginFreshUser(
+      admin.body.accessToken,
+      "cp-trip-user-a",
+      "cp-trip-user-a-password",
+      "203.0.113.93",
+    );
+    expect(userA.status).toBe(200);
+
+    // Cap is 2 for this file — two wrong attempts spend the whole budget.
+    for (let i = 0; i < 2; i++) {
+      const res = await request(app.getHttpServer())
+        .patch("/users/me")
+        .set("Authorization", `Bearer ${userA.body.accessToken}`)
+        .send({ email: `cp-trip-attempt-${i}@example.invalid`, currentPassword: "wrong-every-time" });
+      expect(res.status).toBe(403);
+    }
+
+    const tripped = await request(app.getHttpServer())
+      .patch("/users/me")
+      .set("Authorization", `Bearer ${userA.body.accessToken}`)
+      .send({ email: "cp-trip-attempt-tripped@example.invalid", currentPassword: "wrong-every-time" });
+    expect(tripped.status).toBe(429);
+    expect(tripped.headers["content-type"]).toMatch(/^application\/problem\+json/);
+    expect(Number(tripped.headers["retry-after"])).toBeGreaterThan(0);
+
+    // A DIFFERENT user has an independent bucket — even with a wrong
+    // currentPassword, it 403s (not 429).
+    const userB = await createAndLoginFreshUser(
+      admin.body.accessToken,
+      "cp-trip-user-b",
+      "cp-trip-user-b-password",
+      "203.0.113.93", // same IP as userA — per-USER keying, not per-IP
+    );
+    expect(userB.status).toBe(200);
+    const userBAttempt = await request(app.getHttpServer())
+      .patch("/users/me")
+      .set("Authorization", `Bearer ${userB.body.accessToken}`)
+      .send({ email: "cp-trip-user-b-attempt@example.invalid", currentPassword: "wrong-every-time" });
+    expect(userBAttempt.status).toBe(403);
+
+    const anomalyLines = anomalyLogLines();
+    expect(anomalyLines.some((l) => l.includes("RATE_LIMITED") && l.includes("op=current-password"))).toBe(true);
   });
 });
 

@@ -206,11 +206,17 @@ describe("loombre admin reset-password <username> (E3a/M14)", () => {
     expect(meWhileFlagged.status).toBe(200);
     expect(meWhileFlagged.body.mustChangePassword).toBe(true);
 
+    // G3 (STATE.md "Current-password re-auth on self-changes"): a body
+    // member requires currentPassword — proven here by the temporary
+    // password ITSELF (the one thing this user, mid-must-change-password,
+    // is guaranteed to know — they just used it to log in). Confirms G3's
+    // documented must-change interplay: "only updateMe is reachable while
+    // flagged; the user just typed the temp password at login."
     const newPassword = "correct-horse-battery-new-2";
     const patch = await request(app.getHttpServer())
       .patch("/users/me")
       .set("Authorization", `Bearer ${tempAccessToken}`)
-      .send({ password: newPassword });
+      .send({ password: newPassword, currentPassword: temporaryPassword });
     expect(patch.status, JSON.stringify(patch.body)).toBe(200);
     expect(patch.body.mustChangePassword).toBe(false);
 
