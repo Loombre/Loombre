@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://loombre.com/schemas/events/mail.failed.schema.json",
+  "title": "MailFailedPayload",
+  "description": "Payload for envelope.type === 'mail.failed'. Optional mail transport run (E6/M6): emitted by the worker's 'mail-send' job onTerminalFailure hook (packages/jobs/src/queue.ts's queue.work() seam, mirroring apps/worker/src/probe/terminal-failure-hook.ts's shape) when a mail send exhausts its retries. DELIBERATE DEVIATION from probe.failed's closed-code/no-free-text posture (already adjudicated, M6): `smtpError` carries the REAL SMTP conversation error string verbatim — E6 requires the admin see the actual reason a send failed (auth rejected, relay refused, timeout, ...), which a closed enum of transport error classes cannot capture with the fidelity an admin needs to fix their own mail provider's configuration. `to` is the FULL destination address, not domain-only (this lane's own call, recorded in its freeze report) — the event is ADMIN-ONLY by construction (never reaches a non-admin viewer or a plugin subscriber, same delivery posture as probe.failed/stash.provider.disabled) and an admin already has access to every user's email via the admin users list, so the full address adds no new exposure while materially helping diagnose which recipient failed. envelope.actorUserId is always null (system-originated: a job failure has no human actor in the loop, same as probe.failed).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["templateId", "to", "smtpError", "jobId"],
+  "properties": {
+    "templateId": {
+      "type": "string",
+      "enum": ["invite", "password-reset", "security-notice", "test"],
+      "description": "The mail-send job's template id (packages/jobs's MailSendJobPayload.templateId, verbatim)."
+    },
+    "to": {
+      "type": "string",
+      "format": "email",
+      "description": "The destination address the send was attempted to (full address — see this schema's own description for why, not domain-only)."
+    },
+    "smtpError": {
+      "type": "string",
+      "description": "The real SMTP conversation error nodemailer reported, verbatim (E6's deliberate deviation from probe.failed's closed-code posture, M6). Never contains the SMTP credential itself — nodemailer's own error messages do not echo the password back."
+    },
+    "jobId": {
+      "type": "string",
+      "format": "uuid",
+      "description": "The mail-send job's id — the admin jobs surface's job.updated feed and job-ledger last_error both carry the same failure for this same id."
+    }
+  }
+}

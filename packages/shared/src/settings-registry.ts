@@ -64,7 +64,8 @@ export type SettingsCategory =
   | "tls"
   | "paths"
   | "ffmpeg"
-  | "stash";
+  | "stash"
+  | "mail";
 
 /**
  * Converts a raw environment-variable string into the pre-validation value
@@ -193,9 +194,44 @@ export const DEFAULT_LADDER_RUNGS: LadderRungValue[] = [
   { heightPx: 360, videoBitrateBps: 800_000, audioBitrateBps: 160_000, codec: "h264" },
 ];
 
-// ============================================================================
-// A2 — env-only entries (lockout/bootstrap boundary)
-// ============================================================================
+/** Optional mail transport run, M9/M10: `network.publicUrl` — empty (unset)
+ *  or an absolute http(s) URL. Validated with the `URL` constructor rather
+ *  than a hand-rolled regex (a regex would either reject legal URLs or
+ *  accept garbage the constructor itself would choke on later) — only the
+ *  scheme is constrained; host shape, port, and path are whatever `URL`
+ *  itself accepts. Every mail link the worker builds is derived ONLY from
+ *  this value (E7: zero Host-header trust for security-sensitive links).
+ *
+ *  Deliberately NOT a `.transform()` that strips a trailing slash at the
+ *  schema level (the brief's "store/normalize without trailing slash"):
+ *  settingsValueJsonSchema()/AD3 projects this exact schema through
+ *  `z.toJSONSchema()` for the admin UI's form renderer, and zod v4 cannot
+ *  represent a transform in JSON Schema at all (throws "Transforms cannot
+ *  be represented in JSON Schema" — verified at this lane's own test run).
+ *  Normalization instead happens at the READ site,
+ *  apps/server/src/mail/mail-config.service.ts's `publicUrl()` — which
+ *  covers a trailing slash arriving via ANY source (env pin, database row,
+ *  or default) uniformly, not just a value freshly written through PUT
+ *  /admin/settings/{key}. See that method's own doc comment. */
+function isAbsoluteHttpUrl(value: string): boolean {
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === "http:" || parsed.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+export const PUBLIC_URL_SCHEMA = z.string().refine((value) => value === "" || isAbsoluteHttpUrl(value), {
+  message: "Must be empty, or an absolute http:// or https:// address (e.g. https://loombre.example.com).",
+});
+
+/** Optional mail transport run, M10: `mail.fromAddress` — empty (mail
+ *  turned off) or a syntactically valid email address. `z.email()` (zod v4)
+ *  is deliberately permissive about deliverability (this is a display
+ *  field, not an SMTP handshake) — the worker's real send attempt is the
+ *  only genuine test of whether the address works. */
+export const OPTIONAL_EMAIL_SCHEMA = z.union([z.literal(""), z.email()]);
 
 const ENV_ONLY_ENTRIES: SettingsRegistryEntry[] = [
   defineSetting({
@@ -653,6 +689,80 @@ const UI_ENTRIES: SettingsRegistryEntry[] = [
     description: "How often Loombre automatically re-syncs metadata from a connected Stash database, in milliseconds. 0 (the default) turns automatic scheduling off — Stash still syncs when you click the sync button or when its database file changes on disk.",
     requiresRestart: false,
     scope: "ui",
+  }),
+
+  // ---- network (optional mail transport run, M9: the one sanctioned
+  // source for every security-sensitive link a piece of outgoing mail can
+  // ever contain) ----
+  defineSetting({
+    key: "network.publicUrl",
+    schema: PUBLIC_URL_SCHEMA,
+    default: "",
+    category: "network",
+    description: "The web address people use to reach this server from outside your own network. Security-sensitive links in outgoing mail — invitation links, password-reset links — are built ONLY from this address, never guessed from wherever a request happened to come from. Leave blank and Loombre will not send mail containing a link.",
+    requiresRestart: false,
+    scope: "ui",
+    envVar: "LOOMBRE_PUBLIC_URL",
+  }),
+
+  // ---- mail (optional mail transport run, E5/M10): a generic SMTP
+  // transport — provider-agnostic by design, no provider-specific fields.
+  // Credentials are NOT here: a username/password live in the keyring
+  // (mail-smtp-credentials, A9 pattern), never in server_settings —
+  // unauthenticated SMTP (a private-network relay) is a fully legal
+  // configuration with every key below set and no credentials at all.
+  defineSetting({
+    key: "mail.smtpHost",
+    schema: z.string(),
+    default: "",
+    category: "mail",
+    description: "The address of the outgoing mail server Loombre sends email through. Leave blank to leave mail sending turned off.",
+    requiresRestart: false,
+    scope: "ui",
+    envVar: "LOOMBRE_SMTP_HOST",
+  }),
+  defineSetting({
+    key: "mail.smtpPort",
+    schema: z.number().int().min(1).max(65535),
+    default: 587,
+    category: "mail",
+    description: "The port your mail server accepts outgoing mail on. 587 is the common port for encrypted mail submission; 465 is common for connections that are encrypted from the start; 25 is the plain, unencrypted default most mail servers refuse from outside their own network.",
+    requiresRestart: false,
+    scope: "ui",
+    envVar: "LOOMBRE_SMTP_PORT",
+    parseEnv: (raw) => Number.parseInt(raw.trim(), 10),
+  }),
+  defineSetting({
+    key: "mail.smtpSecurity",
+    schema: z.enum(["starttls", "implicit-tls", "none"]),
+    default: "starttls",
+    category: "mail",
+    description: "How the connection to your mail server is protected. 'starttls' starts plain and upgrades to an encrypted connection (the common choice alongside port 587); 'implicit-tls' is encrypted from the first byte (the common choice alongside port 465); 'none' is a plain, unencrypted connection.",
+    caution: "Choosing 'none' sends your mail server password and every email in plain, readable text over the network — only use this for a private network relay you control, never for a mail server reached over the internet.",
+    requiresRestart: false,
+    scope: "ui",
+    envVar: "LOOMBRE_SMTP_SECURITY",
+    parseEnv: (raw) => raw.trim().toLowerCase(),
+  }),
+  defineSetting({
+    key: "mail.fromAddress",
+    schema: OPTIONAL_EMAIL_SCHEMA,
+    default: "",
+    category: "mail",
+    description: "The email address your outgoing mail appears to come from. Leave blank to leave mail sending turned off.",
+    requiresRestart: false,
+    scope: "ui",
+    envVar: "LOOMBRE_SMTP_FROM_ADDRESS",
+  }),
+  defineSetting({
+    key: "mail.fromName",
+    schema: z.string(),
+    default: "Loombre",
+    category: "mail",
+    description: "The display name shown alongside the from-address on outgoing mail.",
+    requiresRestart: false,
+    scope: "ui",
+    envVar: "LOOMBRE_SMTP_FROM_NAME",
   }),
 ];
 

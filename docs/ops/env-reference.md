@@ -175,6 +175,55 @@ How many media requests one person may make per minute — posters, video, and s
 
 - **Default when unset:** 600 (or whatever was last saved from the settings screen)
 
+### `LOOMBRE_PUBLIC_URL`
+
+Pins **[Public web address](/admin-guide/settings-reference#public-web-address)** (`network.publicUrl`) to a fixed value — set this and the admin settings screen shows the setting as controlled by the environment, read-only; any value stored from the settings screen is preserved but ignored until the variable is unset again.
+
+The web address people use to reach this server from outside your own network. Security-sensitive links in outgoing mail — invitation links, password-reset links — are built ONLY from this address, never guessed from wherever a request happened to come from. Leave blank and Loombre will not send mail containing a link.
+
+- **Default when unset:** (empty — not set) (or whatever was last saved from the settings screen)
+
+### `LOOMBRE_SMTP_HOST`
+
+Pins **[Mail server address](/admin-guide/settings-reference#mail-server-address)** (`mail.smtpHost`) to a fixed value — set this and the admin settings screen shows the setting as controlled by the environment, read-only; any value stored from the settings screen is preserved but ignored until the variable is unset again.
+
+The address of the outgoing mail server Loombre sends email through. Leave blank to leave mail sending turned off.
+
+- **Default when unset:** (empty — not set) (or whatever was last saved from the settings screen)
+
+### `LOOMBRE_SMTP_PORT`
+
+Pins **[Mail server port](/admin-guide/settings-reference#mail-server-port)** (`mail.smtpPort`) to a fixed value — set this and the admin settings screen shows the setting as controlled by the environment, read-only; any value stored from the settings screen is preserved but ignored until the variable is unset again.
+
+The port your mail server accepts outgoing mail on. 587 is the common port for encrypted mail submission; 465 is common for connections that are encrypted from the start; 25 is the plain, unencrypted default most mail servers refuse from outside their own network.
+
+- **Default when unset:** 587 (or whatever was last saved from the settings screen)
+
+### `LOOMBRE_SMTP_SECURITY`
+
+Pins **[Mail connection security](/admin-guide/settings-reference#mail-connection-security)** (`mail.smtpSecurity`) to a fixed value — set this and the admin settings screen shows the setting as controlled by the environment, read-only; any value stored from the settings screen is preserved but ignored until the variable is unset again.
+
+How the connection to your mail server is protected. 'starttls' starts plain and upgrades to an encrypted connection (the common choice alongside port 587); 'implicit-tls' is encrypted from the first byte (the common choice alongside port 465); 'none' is a plain, unencrypted connection.
+
+- **Default when unset:** `starttls` (or whatever was last saved from the settings screen)
+- **Caution:** Choosing 'none' sends your mail server password and every email in plain, readable text over the network — only use this for a private network relay you control, never for a mail server reached over the internet.
+
+### `LOOMBRE_SMTP_FROM_ADDRESS`
+
+Pins **[From address](/admin-guide/settings-reference#from-address)** (`mail.fromAddress`) to a fixed value — set this and the admin settings screen shows the setting as controlled by the environment, read-only; any value stored from the settings screen is preserved but ignored until the variable is unset again.
+
+The email address your outgoing mail appears to come from. Leave blank to leave mail sending turned off.
+
+- **Default when unset:** (empty — not set) (or whatever was last saved from the settings screen)
+
+### `LOOMBRE_SMTP_FROM_NAME`
+
+Pins **[From name](/admin-guide/settings-reference#from-name)** (`mail.fromName`) to a fixed value — set this and the admin settings screen shows the setting as controlled by the environment, read-only; any value stored from the settings screen is preserved but ignored until the variable is unset again.
+
+The display name shown alongside the from-address on outgoing mail.
+
+- **Default when unset:** `Loombre` (or whatever was last saved from the settings screen)
+
 ## Secrets and other bootstrap variables not in this list
 
 This page covers only registry-backed settings. A number of other operational variables live outside the registry and therefore aren't listed above: secrets (`POSTGRES_PASSWORD`, `LOOMBRE_JWT_SECRET`), performance-tier and transcode tuning (`LOOMBRE_TIER`, `LOOMBRE_ALLOW_TRANSCODE`, `LOOMBRE_MAX_STREAM_BITRATE`, `LOOMBRE_TRANSCODE_WORKER_CONCURRENCY`), metadata-provider keys (`LOOMBRE_TMDB_API_KEY`, `LOOMBRE_TVDB_API_KEY`), TLS/ACME companions to `LOOMBRE_TLS_MODE` (`LOOMBRE_TLS_CERT_PATH`/`KEY_PATH`, `LOOMBRE_HTTPS_PORT`, the `LOOMBRE_ACME_*` family — see [docs/ops/acme.md](/ops/acme)), IPC and logging (`LOOMBRE_IPC_*`, `LOOMBRE_LOG_FILE`), and embedded-PG plumbing (`LOOMBRE_EMBEDDED_PG_*`). The full, accurate, hand-maintained list of every variable Loombre's Docker Compose distribution reads lives in [`installers/docker/loombre.env.example`](https://github.com/Loombre/Loombre/blob/main/installers/docker/loombre.env.example); [docs/install/docker.md](/install/docker) walks the two you cannot skip.
