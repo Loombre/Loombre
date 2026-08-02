@@ -42,6 +42,12 @@ export interface AdminSettingsResponseDto {
    *  restart to take effect". */
   restartPendingKeys: string[];
   providerKeys: ProviderKeyStatusDto[];
+  /** Optional mail transport run (E5/M10) — ADDITIVE field, mirrors
+   *  providerKeys' "status only, never the value" shape for the ONE
+   *  mail-credentials keyring entry (settings/mail-credentials.service.ts).
+   *  Mail credentials are optional overall (M8: unauthenticated SMTP relays
+   *  are legal), so this is never load-bearing for whether mail can send. */
+  mailCredentials: MailCredentialsStatusDto;
 }
 
 /** One entry of GET /v1/admin/settings/schema's `entries` array — the pure
@@ -105,4 +111,27 @@ export interface ProviderKeyStatusDto {
 
 export interface SetProviderKeyRequestDto {
   key: string;
+}
+
+// ---- Optional mail transport run (E5/M10): mail-credentials DTOs ----
+// (settings/mail-credentials.service.ts, sibling of provider-keys.service.ts
+// — A9 pattern, deliberately NOT grafted onto ProviderName's closed
+// tmdb|tvdb set.)
+//   PUT    /v1/admin/mail/credentials -> 204 no body (request body: SetMailCredentialsRequest)
+//   DELETE /v1/admin/mail/credentials -> 204 no body
+//   (No GET-per-credential exists, same A9 discipline as provider keys —
+//   status rides on GET /admin/settings's additive `mailCredentials` only.)
+
+export interface MailCredentialsStatusDto {
+  configured: boolean;
+  /** null when not configured, or when sourced from the environment (which
+   *  has no "when was it set" concept this server can observe). */
+  setAtMs: number | null;
+  /** null when `configured` is false. */
+  source: "env" | "keyring" | null;
+}
+
+export interface SetMailCredentialsRequestDto {
+  username: string;
+  password: string;
 }
