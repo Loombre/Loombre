@@ -18,10 +18,11 @@ import { Module } from "@nestjs/common";
 import { CommonModule } from "../common/common.module.js";
 import { SettingsService } from "./settings.service.js";
 import { ProviderKeysService } from "./provider-keys.service.js";
+import { MailCredentialsService } from "./mail-credentials.service.js";
 
 @Module({
   imports: [CommonModule],
-  providers: [SettingsService, ProviderKeysService],
-  exports: [SettingsService, ProviderKeysService],
+  providers: [SettingsService, ProviderKeysService, MailCredentialsService],
+  exports: [SettingsService, ProviderKeysService, MailCredentialsService],
 })
 export class SettingsModule {}
