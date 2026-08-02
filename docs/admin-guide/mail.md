@@ -100,5 +100,9 @@ schedule, so this page doesn't try to repeat them.
 - [Inviting people](inviting-users.md) and the "[Resetting a
   password](users-permissions.md#resetting-a-password)" section of Users
   & permissions — what mail sends automatically once it's set up.
+- The "[If someone tries to use an email address already on another
+  account](users-permissions.md#if-someone-tries-to-use-an-email-address-already-on-another-account)"
+  section of Users & permissions — another notice mail sends automatically,
+  and the honest delta when mail isn't configured at all.
 - The Operator Guide's [mail deliverability notes](../ops/mail-notes.md) —
   the technical side of getting mail actually delivered, not just sent.
