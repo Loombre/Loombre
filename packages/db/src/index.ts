@@ -389,6 +389,29 @@ export {
   getEnrichableCatalogItemForAdmin,
 } from './query/admin.js';
 
+// Invitations (E2, migrations/0023_user_invites.sql) — see src/query/
+// invites.ts header for why this lives in the public barrel.
+export type {
+  InviteAdminRow,
+  InviteStatus,
+  InviteClaimStateRow,
+  CreateInviteInput,
+  ListInvitesParams,
+  ListInvitesResult,
+  ClaimInviteInput,
+  ClaimInviteResult,
+} from './query/invites.js';
+export {
+  createInviteAndEmit,
+  listInvitesAdmin,
+  revokeInviteAndEmit,
+  getInviteByTokenHash,
+  isInviteClaimable,
+  mapClaimState,
+  deriveInviteStatus,
+  claimInviteAndEmit,
+} from './query/invites.js';
+
 // Addendum A/A4 (STATE.md, admin-configurable server settings) —
 // server_settings reads/writes + outbox emission, see src/query/
 // settings.ts header for why this is public-barrel and registry-unaware.

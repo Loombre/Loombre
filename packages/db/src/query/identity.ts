@@ -121,6 +121,13 @@ export interface CreateFirstAdminInput {
   username: string;
   email: string;
   passwordHash: string;
+  /** M2 (scope extension beyond the M1/M2 brief's explicit call sites —
+   *  logged in Lane A's freeze report): FirstAdminRequest has always
+   *  declared+read `displayName` (setup.controller.ts's own header
+   *  documented the identical silent-discard gap createUserAdmin had) but
+   *  had nowhere to persist it; wired through now that the column exists,
+   *  for the same H1-class reason. */
+  displayName?: string | null;
   nowMs: number;
 }
 
@@ -174,11 +181,22 @@ export async function createFirstAdminIfEmpty(
       passwordHash: input.passwordHash,
       isAdmin: true,
       maxContentRating: null,
+      displayName: input.displayName ?? null,
       nowMs: input.nowMs,
     });
   });
 }
 
+/**
+ * M1: `email` is now nullable (migrations/0023_user_invites.sql), but this
+ * function's own `= $literal` comparison ALREADY never matches a NULL row
+ * — SQL equality against NULL is never true, never false, it's NULL, which
+ * a WHERE clause treats as "exclude" — so an email-less user can never be
+ * returned here regardless of what string is looked up (verified;
+ * identity.spec.ts pins this with a dedicated regression case). No code
+ * change was needed for M1's "must never match NULL" requirement; this
+ * comment records that the invariant was checked, not assumed.
+ */
 export async function getUserByEmail(
   db: Kysely<DB>,
   email: string
