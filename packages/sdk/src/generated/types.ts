@@ -119,6 +119,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/auth/forgot-password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Request a self-service password-reset email (E3b)
+         * @description PUBLIC, unauthenticated, and deliberately unenumerable: the response is the SAME 202 with the SAME body whether or not `identifier` resolves to a real account, whether or not that account has an email on file, and whether or not mail is configured on this instance — a caller can never distinguish any of those cases from the response alone. When `identifier` does resolve to a real account with an email on file, a single-use, 30-minute reset token is minted (invalidating that account's previously-issued unused tokens) and a `password-reset` mail is dispatched through the mail seam (`MailDispatchService.trySend`, non-fatal — a dead/unconfigured mail system never changes this response). Rate-limited per `rateLimit.passwordReset` (shared with `authResetPassword`).
+         */
+        post: operations["authForgotPassword"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/reset-password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Complete a self-service password reset with a mailed token (E3b)
+         * @description PUBLIC, unauthenticated. Atomically consumes `token` (single-use; a concurrent second consume of the same token loses the race) and, on success, sets `password`, revokes every refresh token the account holds, and clears `mustChangePassword` if it was set — one transaction. An invalid, expired, already-used, or well-formed-but- unknown token all produce the IDENTICAL 404 this operation shares with an unknown route (bare, no `detail`/`instance` — M12/E8: none of those cases may be distinguishable from one another or from a malformed request to a nonexistent path). Rate-limited per `rateLimit.passwordReset` (shared with `authForgotPassword`).
+         */
+        post: operations["authResetPassword"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/devices": {
         parameters: {
             query?: never;
@@ -247,6 +287,28 @@ export interface paths {
         head?: never;
         /** Update a user (admin) */
         patch: operations["updateUser"];
+        trace?: never;
+    };
+    "/users/{id}/reset-password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["IdPathParam"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Admin/CLI password recovery, tier (a) (E3a/M14)
+         * @description Generates a random temporary password, argon2id-hashes and stores it, sets `mustChangePassword` on the target user, and revokes EVERY refresh token they hold (every existing session ends). The temporary password is returned ONCE in this response and is never retrievable again — the server keeps only its hash. Self-reset (an admin resetting their own account) is permitted — they know the consequence. When the mail tier is active and the target user has an email on file, a non-fatal `security-notice` mail is also dispatched. No request body. The CLI twin of this action, `loombre admin reset-password <username>`, performs the identical semantics with `actor: "cli"` instead of `actor: "admin"` on the resulting `user.password-reset` event.
+         */
+        post: operations["adminResetUserPassword"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/users/me": {
@@ -2182,6 +2244,23 @@ export interface components {
             accessTokenExpiresAtMs: number;
             /** Format: uuid */
             deviceId: string;
+            /** @description E3a/M14 — true iff an admin/CLI temporary-password reset is still pending a real password change. Additive; always sent by authLogin and authRefresh (never omitted, even when false) so older clients that ignore it are unaffected. While true, the server restricts this account to auth login/refresh/logout, GET /users/me, and PATCH /users/me (403 on everything else) — enforced server-side, not merely advisory. */
+            mustChangePassword?: boolean;
+        };
+        ForgotPasswordRequest: {
+            /** @description Username or email — resolved the same way authLogin resolves either. */
+            identifier: string;
+        };
+        /** @description Deliberately empty — the fixed, content-free 202 body every call returns regardless of outcome (E3b/E8 anti-enumeration). */
+        ForgotPasswordResponse: Record<string, never>;
+        ResetPasswordRequest: {
+            token: string;
+            /** Format: password */
+            password: string;
+        };
+        AdminResetPasswordResponse: {
+            /** @description Shown exactly once; the server retains only its hash. */
+            temporaryPassword: string;
         };
         /** @description Client-declared at login, server-validated against this schema. Never "best-guessed" when invalid — a malformed profile is rejected with 422, not patched inside plan(). */
         DeviceProfile: {
@@ -2253,6 +2332,8 @@ export interface components {
             details: {
                 [key: string]: components["schemas"]["CapabilityDetail"];
             };
+            /** @description M8 — true iff self-service "forgot password" (authForgotPassword/ authResetPassword) is usable on this instance: mail is configured (a generic SMTP transport with host/from-address/ public-URL all set — credentials optional). Additive; always sent (never omitted). The login screen shows a "forgot password" affordance only when this is true. */
+            passwordResetAvailable?: boolean;
         };
         SystemInfo: {
             version: string;
@@ -2386,6 +2467,8 @@ export interface components {
             createdAtMs: number;
             /** Format: int64 */
             updatedAtMs: number;
+            /** @description E3a/M14, admin visibility — true iff an admin/CLI temporary- password reset is pending a real password change. Additive; always sent (never omitted). */
+            mustChangePassword?: boolean;
         };
         UserPage: {
             items: components["schemas"]["User"][];
@@ -4149,6 +4232,79 @@ export interface operations {
             default: components["responses"]["Problem"];
         };
     };
+    authForgotPassword: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ForgotPasswordRequest"];
+            };
+        };
+        responses: {
+            /** @description Always this exact body, regardless of whether the account/email exists or mail is configured (anti-enumeration, E3b/E8). */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ForgotPasswordResponse"];
+                };
+            };
+            422: components["responses"]["UnprocessableEntity"];
+            /** @description Rate limited (per-IP, shared with authResetPassword) */
+            429: {
+                headers: {
+                    /** @description Seconds until the next attempt is allowed. */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    authResetPassword: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResetPasswordRequest"];
+            };
+        };
+        responses: {
+            /** @description Password reset; the token is now consumed */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["UnprocessableEntity"];
+            /** @description Rate limited (per-IP, shared with authForgotPassword) */
+            429: {
+                headers: {
+                    /** @description Seconds until the next attempt is allowed. */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
     listDevices: {
         parameters: {
             query?: {
@@ -4432,6 +4588,32 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             422: components["responses"]["UnprocessableEntity"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    adminResetUserPassword: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["IdPathParam"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Temporary password generated; shown once */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminResetPasswordResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
             default: components["responses"]["Problem"];
         };
     };
