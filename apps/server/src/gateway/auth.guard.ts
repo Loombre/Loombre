@@ -2,10 +2,13 @@
 import { CanActivate, ExecutionContext, Injectable } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
 import type { Request } from "express";
+import { getUserById } from "@loombre/db";
 import { UnauthenticatedException } from "./unauthenticated.exception.js";
+import { MustChangePasswordException } from "./must-change-password.exception.js";
 import { sanitizeInstancePath } from "./sanitize-instance.js";
 import { ALLOW_QUERY_TOKEN_KEY } from "./allow-query-token.decorator.js";
 import { TokenService } from "../session/token.service.js";
+import { DbProvider } from "../common/db.provider.js";
 
 export interface RequestUser {
   userId: string;
@@ -37,6 +40,9 @@ export interface AuthenticatedRequest extends Request {
  * same "invisible == nonexistent" posture as setup's own byte-identical
  * 404 — see PUBLIC_ROUTE_PATTERNS below for why these two need a SEPARATE
  * matching mechanism from the literal-string Set above.
+ * STATE.md "Optional mail transport + invitation & reset flows" (E3b/M12,
+ * Lane B) added POST /auth/forgot-password and POST /auth/reset-password —
+ * both `security: []`, the self-service email-tier recovery surface.
  */
 const PUBLIC_ROUTES = new Set([
   "GET /healthz",
@@ -45,6 +51,24 @@ const PUBLIC_ROUTES = new Set([
   "GET /system/capabilities",
   "GET /setup/state",
   "POST /setup/first-admin",
+  "POST /auth/forgot-password",
+  "POST /auth/reset-password",
+]);
+
+/**
+ * E3a/M14 (STATE.md "Optional mail transport + invitation & reset flows"):
+ * the ONLY routes a `must_change_password`-flagged user may reach. Login/
+ * refresh are already in PUBLIC_ROUTES above (never gated at all); logout
+ * and the two profile routes are ordinary authenticated routes that must
+ * stay reachable so the user can actually SEE the flag (GET /users/me),
+ * clear it (PATCH /users/me), or bail out (POST /auth/logout). Every other
+ * authenticated route 403s with MustChangePasswordException while flagged
+ * — see verifyAndAttach below.
+ */
+const MUST_CHANGE_PASSWORD_ALLOWED_ROUTES = new Set([
+  "POST /auth/logout",
+  "GET /users/me",
+  "PATCH /users/me",
 ]);
 
 /**
@@ -96,12 +120,26 @@ const BEARER_PATTERN = /^Bearer\s+(\S+)$/;
  * syntactically valid one. Every UnauthenticatedException below uses
  * sanitizeInstancePath(), never req.originalUrl directly, so a token
  * presented via the query string is never echoed back in the 401 body.
+ *
+ * E3a/M14: also enforces `must_change_password` — SERVER-SIDE, not merely
+ * advisory (unlike TokenService's own `restrictedUnlocked` claim, which is
+ * explicitly advisory-only and re-verified elsewhere). A live DB read
+ * (getUserById, the same primary-key lookup ViewerContextProvider already
+ * does per catalog request — not a Tier-0-violating cost) happens ONLY for
+ * routes outside MUST_CHANGE_PASSWORD_ALLOWED_ROUTES, so the common case
+ * (an unflagged user hitting an allow-listed route, or ANY user hitting
+ * one of the three always-open routes) never pays for it. This live read
+ * is also what makes "PATCH /users/me clears the flag -> the very next
+ * request with the SAME still-live access token gets full access" true
+ * without requiring a fresh login/refresh — a JWT claim baked at sign time
+ * could not do that.
  */
 @Injectable()
 export class AuthGuard implements CanActivate {
   constructor(
     private readonly tokenService: TokenService,
     private readonly reflector: Reflector,
+    private readonly dbProvider: DbProvider,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -135,16 +173,26 @@ export class AuthGuard implements CanActivate {
   }
 
   private async verifyAndAttach(req: AuthenticatedRequest, token: string): Promise<boolean> {
+    let claims;
     try {
-      const claims = await this.tokenService.verifyAccessToken(token);
-      const user: RequestUser = { userId: claims.sub, isAdmin: claims.isAdmin };
-      if (claims.deviceId !== undefined) {
-        user.deviceId = claims.deviceId;
-      }
-      req.user = user;
-      return true;
+      claims = await this.tokenService.verifyAccessToken(token);
     } catch {
       throw new UnauthenticatedException(sanitizeInstancePath(req));
     }
+
+    const user: RequestUser = { userId: claims.sub, isAdmin: claims.isAdmin };
+    if (claims.deviceId !== undefined) {
+      user.deviceId = claims.deviceId;
+    }
+    req.user = user;
+
+    if (!MUST_CHANGE_PASSWORD_ALLOWED_ROUTES.has(`${req.method} ${req.path}`)) {
+      const dbUser = await getUserById(this.dbProvider.db, claims.sub);
+      if (dbUser?.must_change_password) {
+        throw new MustChangePasswordException(sanitizeInstancePath(req));
+      }
+    }
+
+    return true;
   }
 }

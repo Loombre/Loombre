@@ -30,7 +30,11 @@ import type { AuthenticatedRequest } from "../gateway/auth.guard.js";
 import { SurfaceRateLimiterService } from "./surface-rate-limiter.service.js";
 import { tooManyRequests } from "./rate-limit.exception.js";
 
+<<<<<<< HEAD
 export type RateLimitPolicyName = "capabilities" | "mediaToken" | "export" | "setup" | "claim";
+=======
+export type RateLimitPolicyName = "capabilities" | "mediaToken" | "export" | "setup" | "passwordReset";
+>>>>>>> 8f5fb8e (feat(server): password recovery — forgot/reset-password, admin reset action, must-change-password guard (E3/M8/M12/M14/M15))
 export type RateLimitKeyStrategy = "ip" | "identity" | "user";
 
 export interface RateLimitMeta {

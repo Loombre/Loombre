@@ -9,25 +9,27 @@
 // last — the H1 bug class this file's header used to document (the value
 // was silently discarded while the UI reported "Saved") is closed.
 
-import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Query, Req } from "@nestjs/common";
+import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post, Put, Query, Req } from "@nestjs/common";
 import {
   createUserAdminAndEmit,
   deleteUserAdmin,
   getUserById,
   getUserSettings,
   listUsersAdmin,
+  resetUserPasswordAndEmit,
   updateUserAdmin,
   updateUserPrefs,
   updateUserSelf,
   type AdminUserRow,
 } from "@loombre/db";
-import { isKnownLanguageCode, nowMs as clockNowMs } from "@loombre/shared";
+import { generateTemporaryPassword, isKnownLanguageCode, nowMs as clockNowMs } from "@loombre/shared";
 import { forbidden, notFound, unprocessableEntity } from "../gateway/problem.exception.js";
 import { requireUuidParam } from "../gateway/require-uuid-param.js";
 import type { AuthenticatedRequest } from "../gateway/auth.guard.js";
 import { DbProvider, type LoombreDb } from "../common/db.provider.js";
 import { requireLiveAdmin } from "../common/require-live-admin.js";
 import { HashService } from "../common/hash.service.js";
+import { MailDispatchService } from "../mail/mail-dispatch.service.js";
 import { parseListQuery } from "./viewer.js";
 
 function mapUser(row: AdminUserRow) {
@@ -41,6 +43,8 @@ function mapUser(row: AdminUserRow) {
     maxContentRating: row.max_content_rating,
     createdAtMs: row.created_at_ms,
     updatedAtMs: row.updated_at_ms,
+    // E3a/M14, admin visibility — additive; always sent.
+    mustChangePassword: row.must_change_password,
   };
 }
 
@@ -109,6 +113,7 @@ export class UsersController {
   constructor(
     private readonly dbProvider: DbProvider,
     private readonly hashService: HashService,
+    private readonly mailDispatchService: MailDispatchService,
   ) {}
 
   @Get("users")
@@ -347,5 +352,61 @@ export class UsersController {
       throw notFound("User not found.", req.originalUrl);
     }
     await deleteUserAdmin(this.dbProvider.db, id);
+  }
+
+  // E3a/M14 (STATE.md "Optional mail transport + invitation & reset
+  // flows"): admin/CLI password recovery, tier (a). Admin fast-fail +
+  // requireLiveAdmin (requireAdmin does both, same as every other admin
+  // op above) BEFORE requireUuidParam-first for the target — order
+  // matches the M14/brief instruction and every other admin action in
+  // this file (requireAdmin is always the very first line). Self-reset
+  // (an admin resetting THEIR OWN account) is deliberately PERMITTED —
+  // decision recorded here: they are the one person who unambiguously
+  // knows the consequence (every session, including this one's refresh
+  // token, dies; the very next request needs the printed temporary
+  // password), and forbidding it would just push them to the equally
+  // unrestricted `loombre admin reset-password` CLI instead, which has no
+  // self-exclusion either — the HTTP action being stricter than the CLI
+  // for the identical actor would be a distinction without a difference.
+  @Post("users/:id/reset-password")
+  @HttpCode(HttpStatus.OK)
+  async resetUserPassword(@Param("id") id: string, @Req() req: AuthenticatedRequest) {
+    await requireAdmin(this.dbProvider.db, req);
+    requireUuidParam(id, "User not found.", req.originalUrl);
+
+    const db = this.dbProvider.db;
+    const target = await getUserById(db, id);
+    if (!target) {
+      throw notFound("User not found.", req.originalUrl);
+    }
+
+    const temporaryPassword = generateTemporaryPassword();
+    const passwordHash = await this.hashService.hash(temporaryPassword);
+
+    await resetUserPasswordAndEmit(db, {
+      userId: target.id,
+      username: target.username,
+      passwordHash,
+      actor: "admin",
+      actorUserId: req.user!.userId,
+      nowMs: clockNowMs(),
+    });
+
+    // E7/M14: when the mail tier is active AND the target has an email on
+    // file, a non-fatal security-notice mail follows — never blocks or
+    // changes this response either way (M7's trySend contract). Same
+    // posture as AuthController.forgotPassword(): this call site never
+    // pre-checks MailConfigService.isConfigured() itself — the seam
+    // decides (M7: "never throws, returns dispatched:false when mail is
+    // unconfigured").
+    if (target.email) {
+      await this.mailDispatchService.trySend({
+        templateId: "security-notice",
+        to: target.email,
+        params: { username: target.username, reason: "password-reset" },
+      });
+    }
+
+    return { temporaryPassword };
   }
 }

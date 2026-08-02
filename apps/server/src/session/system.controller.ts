@@ -22,6 +22,7 @@ import { isRestrictedContentEnabled } from "../common/capabilities.js";
 import { RateLimit, SurfaceRateLimitGuard } from "../common/rate-limit.guard.js";
 import { RateLimitExceptionFilter } from "../common/rate-limit-exception.filter.js";
 import { SettingsService } from "../settings/settings.service.js";
+import { MailConfigService } from "../mail/mail-config.service.js";
 
 interface CapabilityDetail {
   enabled: boolean;
@@ -31,12 +32,18 @@ interface CapabilityDetail {
 interface Capabilities {
   flags: string[];
   details: Record<string, CapabilityDetail>;
+  /** M8 — true iff self-service "forgot password" is usable on this
+   *  instance (mail configured). Additive; always sent. */
+  passwordResetAvailable: boolean;
 }
 
 @Controller("system")
 @UseFilters(RateLimitExceptionFilter)
 export class SystemController {
-  constructor(private readonly settingsService: SettingsService) {}
+  constructor(
+    private readonly settingsService: SettingsService,
+    private readonly mailConfigService: MailConfigService,
+  ) {}
 
   @Get("capabilities")
   @UseGuards(SurfaceRateLimitGuard)
@@ -89,6 +96,10 @@ export class SystemController {
       .filter(([, detail]) => detail.enabled)
       .map(([flag]) => flag);
 
-    return { flags, details };
+    // M8: a synchronous, zero-I/O read (the stub in this worktree is a
+    // constant `false`; Lane C's real MailConfigService reads its own
+    // cached SettingsService snapshot the same way isRestrictedContentEnabled
+    // does above) — this route stays a cheap in-memory read overall.
+    return { flags, details, passwordResetAvailable: this.mailConfigService.isConfigured() };
   }
 }
