@@ -95,7 +95,7 @@ function ProfileSection(): React.JSX.Element {
     void apiGet("/users/me").then((u) => {
       setUser(u);
       setDisplayName(u.displayName ?? "");
-      setEmail(u.email);
+      setEmail(u.email ?? "");
       setBirthDate(u.birthDate ?? "");
     });
   }, []);

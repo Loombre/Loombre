@@ -75,13 +75,6 @@ function parseCursorLimitQuery(query: Record<string, unknown>): CursorLimitQuery
 }
 
 /**
- * `${publicUrl}/claim/${token}` when publicUrl is set, else null (M9). A
- * pure function so the non-null composition shape is unit-testable without
- * ever needing MailConfigService's stub to return non-null for real (see
- * mail-config.service.ts's header) — invites.controller.spec.ts exercises
- * both branches directly.
- */
-/**
  * Human-readable expiry span for the invite email's `expiresLabel` template
  * param (Lane C's contract wants prose like "72 hours" / "3 days", not a
  * timestamp — the recipient's timezone is unknown).
@@ -93,6 +86,13 @@ export function formatExpiresLabel(expiresInMs: number): string {
   return `${days} ${days === 1 ? "day" : "days"}`;
 }
 
+/**
+ * `${publicUrl}/claim/${token}` when publicUrl is set, else null (M9). A
+ * pure function so the non-null composition shape is unit-testable without
+ * ever needing MailConfigService's stub to return non-null for real (see
+ * mail-config.service.ts's header) — invites.controller.spec.ts exercises
+ * both branches directly.
+ */
 export function composeClaimUrl(publicUrl: string | null, token: string): string | null {
   if (publicUrl === null) return null;
   return `${publicUrl}/claim/${token}`;
