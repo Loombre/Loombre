@@ -347,11 +347,17 @@ export class AuthController {
       // this call site never pre-checks MailConfigService.isConfigured()
       // itself, so the stub in THIS worktree is exercised identically to
       // how Lane C's real implementation will be at integration.
+      // Param names are Lane C's template contract (apps/worker/src/mail/
+      // templates/types.ts): `actionUrl` is the full publicUrl-derived
+      // reset link (E7 — never Host-header-derived), `displayName` greets.
       const publicUrl = this.mailConfigService.publicUrl() ?? "";
       await this.mailDispatchService.trySend({
         templateId: "password-reset",
         to: user.email,
-        params: { resetLink: `${publicUrl}/reset/${plaintext}`, username: user.username },
+        params: {
+          actionUrl: `${publicUrl}/reset/${plaintext}`,
+          displayName: user.display_name ?? user.username,
+        },
       });
     } else {
       // Unknown identifier, OR a real account with no email on file — see
