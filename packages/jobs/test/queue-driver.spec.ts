@@ -106,6 +106,33 @@ describe('createJobQueue queue provisioning', () => {
     // idempotent, so it opts out of pg-boss's automatic retries entirely.
     expect(JOB_QUEUE_OPTIONS.transcode.retryLimit).toBe(0);
   });
+
+  // Optional mail transport run (E6/M7): the new retryDelay/retryBackoff/
+  // retryDelayMax queue-level surface, chosen retry posture recorded here
+  // (also in this lane's freeze report) so a future change is a deliberate
+  // diff against an asserted value, not a silent drift.
+  it('gives mail-send exponential backoff starting at 60s, capped at 10 minutes, 4 retries', () => {
+    expect(JOB_QUEUE_OPTIONS['mail-send']).toMatchObject({
+      retryLimit: 4,
+      retryDelay: 60,
+      retryBackoff: true,
+      retryDelayMax: 600,
+    });
+  });
+
+  it('threads retryDelay/retryBackoff/retryDelayMax through to pg-boss createQueue/updateQueue for mail-send', async () => {
+    const queue = createJobQueue(DSN);
+    await queue.enqueue('mail-send', { templateId: 'test', to: 'a@b.com', params: {} });
+
+    expect(mocks.boss.createQueue).toHaveBeenCalledWith(
+      'mail-send',
+      expect.objectContaining({ retryDelay: 60, retryBackoff: true, retryDelayMax: 600 }),
+    );
+    expect(mocks.boss.updateQueue).toHaveBeenCalledWith(
+      'mail-send',
+      expect.objectContaining({ retryDelay: 60, retryBackoff: true, retryDelayMax: 600 }),
+    );
+  });
 });
 
 describe('createJobQueue job ids', () => {
@@ -124,6 +151,29 @@ describe('createJobQueue job ids', () => {
     expect(timestampMs).toBeLessThanOrEqual(after);
 
     expect(mocks.boss.send).toHaveBeenCalledWith('probe', { mediaFileId: 'file-abc' }, { id: jobId });
+  });
+
+  // Optional mail transport run (M7): "enqueue() must support a per-send
+  // retryLimit override" — the admin test-send action needs 0 (no
+  // retries) regardless of mail-send's queue-level default (4, with
+  // backoff). Verified against pg-boss's own send() directly, since
+  // SendOptions = JobOptions & QueueOptions accepts retryLimit per-call.
+  it('threads a per-send retryLimit override through to pg-boss send() (M7)', async () => {
+    const queue = createJobQueue(DSN);
+    const jobId = await queue.enqueue('mail-send', { templateId: 'test', to: 'a@b.com', params: {} }, { retryLimit: 0 });
+
+    expect(mocks.boss.send).toHaveBeenCalledWith(
+      'mail-send',
+      { templateId: 'test', to: 'a@b.com', params: {} },
+      { id: jobId, retryLimit: 0 },
+    );
+  });
+
+  it('omits retryLimit from the send() call entirely when no override is given (falls back to the queue-level default)', async () => {
+    const queue = createJobQueue(DSN);
+    const jobId = await queue.enqueue('mail-send', { templateId: 'test', to: 'a@b.com', params: {} });
+
+    expect(mocks.boss.send).toHaveBeenCalledWith('mail-send', { templateId: 'test', to: 'a@b.com', params: {} }, { id: jobId });
   });
 });
 
@@ -195,7 +245,7 @@ describe('createJobQueue onTerminalFailure hook (A-3, owner ledger L1)', () => {
     expect(onTerminalFailure).not.toHaveBeenCalled();
   });
 
-  it('fires exactly once, with (payload, error), AFTER the ledger recordFailed write, once retries are exhausted', async () => {
+  it('fires exactly once, with (payload, error, jobId), AFTER the ledger recordFailed write, once retries are exhausted', async () => {
     const order: string[] = [];
     mocks.ledger.recordFailed.mockImplementationOnce(async () => {
       order.push('recordFailed');
@@ -214,7 +264,7 @@ describe('createJobQueue onTerminalFailure hook (A-3, owner ledger L1)', () => {
     await batch([{ id: 'job-hook-2', data: { mediaFileId: 'file-2' }, retryCount: 2, retryLimit: 2 }]);
 
     expect(onTerminalFailure).toHaveBeenCalledTimes(1);
-    expect(onTerminalFailure).toHaveBeenCalledWith({ mediaFileId: 'file-2' }, thrown);
+    expect(onTerminalFailure).toHaveBeenCalledWith({ mediaFileId: 'file-2' }, thrown, 'job-hook-2');
     expect(order).toEqual(['recordFailed', 'hook']);
   });
 
