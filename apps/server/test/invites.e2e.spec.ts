@@ -246,12 +246,17 @@ describe("POST /invites (admin, E2)", () => {
     expect(res.status).toBe(201);
 
     expect(trySendSpy).toHaveBeenCalledTimes(1);
+    // Param names are Lane C's template contract (apps/worker/src/mail/
+    // templates/types.ts): actionUrl (the full publicUrl-derived claim
+    // link), displayName (greeting, empty when no preset), expiresLabel
+    // (human prose for the default 72h window).
     expect(trySendSpy).toHaveBeenCalledWith({
       templateId: "invite",
       to: "mail-seam@example.invalid",
       params: {
-        claimUrl: `https://loombre.example/claim/${res.body.claimToken}`,
-        usernamePreset: "mail-seam-invitee",
+        actionUrl: `https://loombre.example/claim/${res.body.claimToken}`,
+        displayName: "",
+        expiresLabel: "3 days",
       },
     });
     // The claimUrl composition end to end (M9's non-null branch), not just
