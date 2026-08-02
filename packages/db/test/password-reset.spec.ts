@@ -198,6 +198,9 @@ describe('resetPasswordViaTokenAndEmit (E3b/M15/M12 — atomic consume + passwor
     const updated = await getUserByUsername(db, 'casual');
     expect(updated?.password_hash).toBe('new-fake-hash');
     expect(updated?.must_change_password).toBe(false);
+    // R-F7 (opus adversarial review, fix wave): the credentials-changed
+    // epoch — apps/server/src/gateway/auth.guard.ts's verifyAndAttach.
+    expect(updated?.password_changed_at_ms).toBe(11_000);
 
     const refreshRow = await findRefreshTokenByHash(db, 'hash-self-reset-refresh');
     expect(refreshRow?.revoked_at_ms).toBe(11_000);

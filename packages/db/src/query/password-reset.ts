@@ -186,6 +186,10 @@ export async function resetPasswordViaTokenAndEmit(
       .set({
         password_hash: input.passwordHash,
         must_change_password: false,
+        // R-F7 (opus adversarial review, fix wave): credentials-changed
+        // epoch — see migrations/0026_password_changed_epoch.sql and
+        // apps/server/src/gateway/auth.guard.ts's verifyAndAttach.
+        password_changed_at_ms: input.nowMs,
         updated_at_ms: input.nowMs,
       })
       .where('id', '=', user.id)
