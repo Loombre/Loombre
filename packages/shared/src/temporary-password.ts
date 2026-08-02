@@ -9,14 +9,14 @@
 //
 // Format (recorded per the owner brief's instruction — this IS the
 // contract, not an implementation detail): 20 characters drawn uniformly
-// from a 58-character unambiguous charset (uppercase + lowercase + digits,
-// excluding 0/O, 1/l/I — characters an operator reading it off a terminal
-// or a user typing it off a screen could otherwise confuse). Entropy:
-// floor(log2(58) * 20) ≈ 117 bits — comfortably over the "~16+ chars"
-// floor the brief sets, and the charset choice trades a small amount of
-// entropy-per-character for zero read-back ambiguity, which matters more
-// here than for a machine-generated API key: a human is meant to read and
-// type this once.
+// from a 54-character unambiguous charset (uppercase + lowercase + digits,
+// with BOTH cases of I/L/O and digits 0/1 removed — six characters an
+// operator reading it off a terminal or a user typing it off a screen
+// could otherwise confuse: 0/O, 1/I/l/L). Entropy: floor(log2(54) * 20) ≈
+// 114 bits — comfortably over the "~16+ chars" floor the brief sets, and
+// the charset choice trades a small amount of entropy-per-character for
+// zero read-back ambiguity, which matters more here than for a
+// machine-generated API key: a human is meant to read and type this once.
 //
 // node:crypto only (no browser use — this module is imported by
 // apps/server and apps/server/src/cli/*, never by apps/web; see
@@ -26,7 +26,7 @@
 
 import { randomInt } from "node:crypto";
 
-/** Digits 0/1 and letters O/I/l excluded — see this file's header. */
+/** Digits 0/1 and both cases of I/L/O excluded — see this file's header. */
 const TEMPORARY_PASSWORD_CHARSET = "ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
 
 export const TEMPORARY_PASSWORD_LENGTH = 20;
