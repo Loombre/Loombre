@@ -137,6 +137,35 @@ const BEARER_PATTERN = /^Bearer\s+(\S+)$/;
  * request with the SAME still-live access token gets full access" true
  * without requiring a fresh login/refresh — a JWT claim baked at sign time
  * could not do that.
+ *
+ * R-F7 (opus adversarial review, fix wave — STATE.md "Current-password
+ * re-auth on self-changes + the email-collision signal"): a credentials-
+ * changed epoch, `users.password_changed_at_ms` (migration 0026). F3's
+ * self-service password change revokes every OTHER device's REFRESH
+ * token, but a revoked device's ACCESS token is a self-contained JWT that
+ * otherwise keeps full API access until its own ≤15-minute expiry — the
+ * web copy "Other devices have been signed out." was false for that whole
+ * window. Fix: a SEPARATE, unconditional live read (below) rejects any
+ * access token whose `iat` claim is strictly before the caller's current
+ * `password_changed_at_ms`, on EVERY route — deliberately NOT nested
+ * inside the `MUST_CHANGE_PASSWORD_ALLOWED_ROUTES` branch above, because
+ * R-F7's own regression (GET /users/me, one of those three routes, from a
+ * device whose session was just revoked by an ordinary self-service
+ * change) has to be caught there too. It IS skipped while
+ * `must_change_password` is true, for a load-bearing reason distinct from
+ * R-F7: the admin/CLI temporary-password reset flow (E3a/M14) deliberately
+ * lets a flagged user's PRE-reset access token keep authenticating them
+ * (as "this exact user", not as "already re-proven") on the narrow
+ * allow-listed surface while they re-prove identity with the temporary
+ * password via `requireCurrentPassword` — rejecting that same token by
+ * epoch here, before `requireCurrentPassword` ever runs, would 401 the
+ * legitimate recovery flow itself (see admin-reset-password.e2e.spec.ts's
+ * full-loop test, and reauth-review-findings.e2e.spec.ts's "G3: the
+ * must-change-password hole stays closed" — both pin this exemption).
+ * Once the flag clears, the epoch applies again on the very next request,
+ * same as any other password change; a client relying on `iat`-stale
+ * access token from that point on needs one refresh, exactly like a
+ * revoked-elsewhere device does.
  */
 @Injectable()
 export class AuthGuard implements CanActivate {
@@ -190,8 +219,24 @@ export class AuthGuard implements CanActivate {
     }
     req.user = user;
 
+    // R-F7: unconditional (every route, including the must-change-password
+    // allow-list) — see this class's own doc comment for why. One live
+    // read serves BOTH this check and the must-change-password check
+    // below, so the common "unflagged, epoch-clear" case still pays for
+    // exactly one getUserById per request outside the three always-open
+    // PUBLIC_ROUTES, same as before this fix.
+    const dbUser = await getUserById(this.dbProvider.db, claims.sub);
+
+    if (
+      dbUser &&
+      !dbUser.must_change_password &&
+      dbUser.password_changed_at_ms !== null &&
+      claims.iat < Math.floor(dbUser.password_changed_at_ms / 1000)
+    ) {
+      throw new UnauthenticatedException(sanitizeInstancePath(req));
+    }
+
     if (!MUST_CHANGE_PASSWORD_ALLOWED_ROUTES.has(`${req.method} ${req.path}`)) {
-      const dbUser = await getUserById(this.dbProvider.db, claims.sub);
       if (dbUser?.must_change_password) {
         throw new MustChangePasswordException(sanitizeInstancePath(req));
       }
