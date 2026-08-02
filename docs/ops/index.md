@@ -32,6 +32,14 @@ situation:
 - **LAN-only, no TLS** — no extra configuration beyond the defaults; see
   the final section of [Reverse proxy](reverse-proxy.md).
 
+## Mail
+
+- **[Mail deliverability notes](mail-notes.md)** — getting a message
+  *sent* isn't the same as getting it *delivered*; what's the mail
+  provider's job versus what's genuinely out of reach for a server on a
+  home connection. Setting mail up in the first place is the Admin
+  Guide's [Mail](../admin-guide/mail.md) page.
+
 ## Backups, restore & data export
 
 - **[Backups & restore](backup.md)** — what to actually back up (and
@@ -69,10 +77,12 @@ Full request/response detail is in the [API Reference](../api-reference/index.md
 ## The `loombre` command-line tool
 
 - **[The loombre command-line tool](cli.md)** — read-only environment
-  checks (`doctor`, `paths`) plus the one privileged operation it
-  exposes: `admin reset-pin <username>`, the recovery procedure for a
-  forgotten restricted-content PIN. Server-local by design — there is no
-  equivalent over HTTP.
+  checks (`doctor`, `paths`) plus the two privileged operations it
+  exposes: `admin reset-pin <username>` (a forgotten restricted-content
+  PIN — server-local by design, no equivalent over HTTP) and
+  `admin reset-password <username>` (a forgotten account password — the
+  same recovery the Admin Guide's Users screen offers over HTTP, for when
+  a browser isn't an option).
 
 ## Updating & verifying releases
 

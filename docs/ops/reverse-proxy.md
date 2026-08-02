@@ -8,7 +8,7 @@ already run for other services. The two alternatives — built-in ACME
 (`docs/ops/acme.md`) and LAN-only/no-TLS (below) — exist for installs
 that don't already have a proxy.
 
-Every recipe below satisfies the SAME five real requirements Loombre's
+Every recipe below satisfies the SAME six real requirements Loombre's
 HTTP surface has — skipping any one of them breaks something specific,
 noted inline:
 
@@ -44,13 +44,33 @@ noted inline:
    `LOOMBRE_TRUST_PROXY` makes Loombre's rate limiter/anomaly log key on
    your proxy's own address for every request (still safe, just useless
    for per-client limiting). See "Trust-proxy configuration" below.
+6. **The invite-claim and password-reset routes are public, and already
+   rate-limited inside Loombre itself** — `GET /claim/{token}`,
+   `POST /claim/{token}`, `POST /auth/forgot-password`, and
+   `POST /auth/reset-password` have to work with no session at all (a
+   brand-new person has no account yet; someone locked out has no way to
+   sign in). If your setup adds its own gate in front of everything —
+   basic auth, an IP allowlist, a separate rate limiter — exclude these
+   four the same way `/setup/*` already is; anything that blocks or
+   challenges them blocks exactly the people they exist for. Separately:
+   whichever address you set as the public web address setting
+   (`LOOMBRE_PUBLIC_URL` — see the Admin Guide's
+   [Mail](../admin-guide/mail.md) page) has to be the address people
+   reach from *outside*, i.e. this proxy's own hostname, never Loombre's
+   internal origin (`http://127.0.0.1:3001`) or an upstream target —
+   every invitation and password-reset link is built from that one
+   setting alone, so an internal address here means correctly-sent mail
+   with links nobody outside your network can open.
 
 ## Caddy (recommended)
 
 ```caddyfile
 media.example.com {
-    # API paths -> the server (:3001); everything else -> the web UI (:3000)
-    @api path /v1/* /playback/* /healthz /setup/*
+    # API paths -> the server (:3001); everything else -> the web UI (:3000).
+    # /claim/* and the two /auth/*-password routes (requirement 6) are the
+    # public invite-claim and password-reset API calls — bare paths, not
+    # under /v1, so they need listing explicitly like /healthz and /setup/*.
+    @api path /v1/* /playback/* /healthz /setup/* /claim/* /auth/forgot-password /auth/reset-password
     reverse_proxy @api 127.0.0.1:3001
     reverse_proxy 127.0.0.1:3000
 }
@@ -119,6 +139,16 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 
+    # Invite-claim and password-reset routes (requirement 6) — public,
+    # rate-limited inside Loombre itself, bare paths (not under /v1) so
+    # they need their own location the same way /healthz does above.
+    location ~ ^/(claim/[^/]+|auth/(forgot|reset)-password)$ {
+        proxy_pass http://127.0.0.1:3001;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
     location /healthz {
         proxy_pass http://127.0.0.1:3001;
     }
@@ -146,8 +176,12 @@ than blindly trusts — any inbound value).
 # docker-compose labels (or the equivalent static/dynamic file config)
 labels:
   - "traefik.enable=true"
-  # API router (server, :3001) — higher priority than the catch-all
-  - "traefik.http.routers.loombre-api.rule=Host(`media.example.com`) && (PathPrefix(`/v1`) || PathPrefix(`/playback`) || PathPrefix(`/setup`) || Path(`/healthz`))"
+  # API router (server, :3001) — higher priority than the catch-all.
+  # PathPrefix(`/claim`) + the two exact /auth/*-password paths
+  # (requirement 6) are the public invite-claim and password-reset API
+  # calls — bare paths, not under /v1, so they're listed explicitly here
+  # the same way /healthz and /setup are.
+  - "traefik.http.routers.loombre-api.rule=Host(`media.example.com`) && (PathPrefix(`/v1`) || PathPrefix(`/playback`) || PathPrefix(`/setup`) || Path(`/healthz`) || PathPrefix(`/claim`) || Path(`/auth/forgot-password`) || Path(`/auth/reset-password`))"
   - "traefik.http.routers.loombre-api.tls.certresolver=letsencrypt"
   - "traefik.http.routers.loombre-api.service=loombre-api"
   - "traefik.http.services.loombre-api.loadbalancer.server.port=3001"
