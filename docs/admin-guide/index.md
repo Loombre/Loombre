@@ -18,7 +18,9 @@ admin screens, one level below where this guide operates.
 
 - **[The setup wizard](wizard.md)** — what happens the first time Loombre starts.
 - **[Libraries & scanning](libraries.md)** — adding your media folders and what scanning does.
-- **[Users & permissions](users-permissions.md)** — adding people, and controlling what each of them can see.
+- **[Users & permissions](users-permissions.md)** — adding people, controlling what each of them can see, and resetting a forgotten password.
+- **[Inviting people](inviting-users.md)** — a one-time link that lets someone join themselves, no email required.
+- **[Mail](mail.md)** — the optional, provider-neutral setup that lets Loombre send those links and password resets by email.
 - **[Connecting Stash](connecting-stash.md)** — reading metadata from a Stash database into a restricted library, without ever writing back to it.
 - **[Capability report](capability-report.md)** — what Loombre knows about your hardware.
 - **[Jobs dashboard](jobs-dashboard.md)** — watching background work as it happens.
