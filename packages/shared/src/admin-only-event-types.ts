@@ -107,6 +107,13 @@
 //     administration/audit activity, same posture as
 //     user.restricted-pin-reset, not content any viewer-scoped predicate
 //     should gate.
+//   - `session.revoked-by-password-change` (G5, STATE.md "Current-password
+//     re-auth on self-changes"): emitted by packages/db/src/query/
+//     admin.ts's updateUserSelf whenever a self-service password change
+//     bulk-revokes the caller's OTHER refresh tokens (F3) — instance-
+//     administration/audit activity, same posture as user.password-reset;
+//     payload {userId, username, revokedCount} never carries a token or
+//     password.
 //
 // Dependency-free data only (no zod, no I/O) — importable from
 // apps/server, apps/worker, and (via the prose pointer above, not a real
@@ -141,4 +148,6 @@ export const ADMIN_ONLY_EVENT_TYPES: readonly string[] = [
   "user.claimed",
   // E3/M14/M15 (Optional mail transport + invitation & reset flows, Lane B).
   "user.password-reset",
+  // G5 (Current-password re-auth on self-changes).
+  "session.revoked-by-password-change",
 ];

@@ -22,7 +22,8 @@
     "user.invited",
     "user.invite-revoked",
     "user.claimed",
-    "user.password-reset"
+    "user.password-reset",
+    "session.revoked-by-password-change"
   ],
   "type": "object",
   "additionalProperties": false,
@@ -69,7 +70,8 @@
         "user.invited",
         "user.invite-revoked",
         "user.claimed",
-        "user.password-reset"
+        "user.password-reset",
+        "session.revoked-by-password-change"
       ],
       "description": "Closed enum today; additions are additive contract PRs (new event types are always backward compatible for existing consumers)."
     },

@@ -129,15 +129,21 @@ describe('users.email optional / users.display_name (M1/M2)', () => {
       displayName: 'Set By Admin',
       nowMs: 4_100,
     });
-    expect(withDisplayName?.display_name).toBe('Set By Admin');
-    expect(withDisplayName?.email).toBe('has-email@example.invalid'); // untouched
+    expect(withDisplayName.ok).toBe(true);
+    if (withDisplayName.ok) {
+      expect(withDisplayName.user.display_name).toBe('Set By Admin');
+      expect(withDisplayName.user.email).toBe('has-email@example.invalid'); // untouched
+    }
 
     const clearedEmail = await updateUserAdmin(db, created.id, {
       email: null,
       nowMs: 4_200,
     });
-    expect(clearedEmail?.email).toBeNull();
-    expect(clearedEmail?.display_name).toBe('Set By Admin'); // untouched
+    expect(clearedEmail.ok).toBe(true);
+    if (clearedEmail.ok) {
+      expect(clearedEmail.user.email).toBeNull();
+      expect(clearedEmail.user.display_name).toBe('Set By Admin'); // untouched
+    }
   });
 
   it('updateUserSelf can set displayName and clear email to null (UpdateMeRequest null-to-clear)', async () => {
@@ -154,14 +160,16 @@ describe('users.email optional / users.display_name (M1/M2)', () => {
       displayName: 'My Own Name',
       nowMs: 5_100,
     });
-    expect(withDisplayName?.display_name).toBe('My Own Name');
+    expect(withDisplayName?.user.display_name).toBe('My Own Name');
+    expect(withDisplayName?.collidedEmail).toBeNull();
 
     const clearedEmail = await updateUserSelf(db, created.id, {
       email: null,
       nowMs: 5_200,
     });
-    expect(clearedEmail?.email).toBeNull();
-    expect(clearedEmail?.display_name).toBe('My Own Name'); // untouched
+    expect(clearedEmail?.user.email).toBeNull();
+    expect(clearedEmail?.user.display_name).toBe('My Own Name'); // untouched
+    expect(clearedEmail?.collidedEmail).toBeNull();
   });
 
   it('E4 archive check: exportData carries email:null and displayName through for an admin viewer', async () => {
