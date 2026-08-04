@@ -173,12 +173,14 @@ verifies the download before `--no-quarantine` ever comes into play.
 - The **Loombre** menubar icon appears in the menu bar (no Dock icon — it's
   a background-only utility, `LSUIElement`). It polls server/worker status
   and gives you: **Open Loombre** (launches your browser to the web client),
-  **Start/Stop Server**, **Reveal Crash Files**, and the installed +
-  contract version. Starting a *stopped* server asks for administrator
-  authorization (password or Touch ID) — the server runs as a system
-  service, so starting it is a privileged operation; stopping it is not
-  prompted.
-  [SCREENSHOT: macOS menubar showing Loombre icon and context menu with Open Loombre, Start/Stop, Reveal Crash Files, version info]
+  **Start Loombre** / **Stop Server**, **Shut Down Loombre…** (stops
+  *everything* — see [Shutting Loombre down completely](#shutting-loombre-down-completely)),
+  **Reveal Crash Files**, and the installed + contract version. Starting
+  the stopped services and shutting everything down both ask for
+  administrator authorization (password or Touch ID) — the services run as
+  system daemons, so managing them is a privileged operation; stopping the
+  server alone is not prompted.
+  [SCREENSHOT: macOS menubar showing Loombre icon and context menu with Open Loombre, Start/Stop, Shut Down Loombre, Reveal Crash Files, version info]
 - The menubar app starts **automatically at every login**, via the
   `com.loombre.menubar` LaunchAgent the installer places in
   `/Library/LaunchAgents` (system-wide, so every account on the Mac gets
@@ -246,6 +248,34 @@ tail -f "/Library/Logs/Loombre/server.out.log"
 
 Or just use the menubar app's status indicator — same information, no
 terminal required.
+
+## Shutting Loombre down completely
+
+The menubar's **Shut Down Loombre…** item stops all three services — the
+worker, the web UI, then the server (which takes its embedded PostgreSQL
+down with it) — after a confirmation and a single administrator prompt,
+and then quits the menu bar controller itself. Nothing of Loombre is left
+running.
+
+Two things it deliberately does **not** do:
+
+- It does not disable Loombre permanently: the services start again the
+  next time the Mac boots (`RunAtLoad`), and the menu bar app returns at
+  your next login. To bring everything back sooner, open **Loombre** from
+  `/Applications` and choose **Start Loombre**.
+- It does not uninstall anything — see the next section for that.
+
+The equivalent from a terminal:
+
+```sh
+sudo launchctl bootout system/com.loombre.worker
+sudo launchctl bootout system/com.loombre.web
+sudo launchctl bootout system/com.loombre.server
+```
+
+(**Stop Server**, by contrast, stops only the API server process over
+local IPC — no admin prompt — and leaves the worker and web daemons
+running; it is a quick, reversible pause rather than a full shutdown.)
 
 ## Uninstalling
 

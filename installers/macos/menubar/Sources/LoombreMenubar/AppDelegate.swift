@@ -34,6 +34,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// started hasn't been observed running yet — keeps a second click
     /// from stacking credential prompts.
     private var launchdStartInFlight = false
+    /// Same stacking guard for the full-shutdown path ("Shut Down
+    /// Loombre…"). On success the app terminates, so this only ever
+    /// resets on cancel/failure.
+    private var shutdownInFlight = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // No Dock icon, no Cmd-Tab entry — menu-bar-only utility. Works
@@ -112,12 +116,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let plan = MenuState.lifecyclePlan(isConnected: lastConnection != nil, state: state)
         let lifecycleItem = NSMenuItem(
             title: launchdStartInFlight && plan.action == .startViaLaunchd ? "Starting…" : plan.title,
-            action: plan.action == .stopViaIpc ? #selector(stopServer) : #selector(startServer),
+            action: plan.action == .stopViaIpc ? #selector(stopServer) : #selector(startLoombre),
             keyEquivalent: ""
         )
         lifecycleItem.target = self
         lifecycleItem.isEnabled = plan.isEnabled && !(launchdStartInFlight && plan.action == .startViaLaunchd)
         menu.addItem(lifecycleItem)
+
+        // A kill switch must never depend on the thing it kills: this item
+        // is enabled regardless of MenuIconState or IPC reachability — the
+        // daemons may well be up while IPC is broken, which is exactly when
+        // the operator most needs a way to stop everything (the same lesson
+        // as the rc "Start Server permanently grayed out" report, applied
+        // in the opposite direction).
+        let shutdownItem = NSMenuItem(
+            title: shutdownInFlight ? "Shutting Down…" : "Shut Down Loombre…",
+            action: #selector(shutdownLoombre),
+            keyEquivalent: ""
+        )
+        shutdownItem.target = self
+        shutdownItem.isEnabled = !shutdownInFlight && !launchdStartInFlight
+        menu.addItem(shutdownItem)
 
         menu.addItem(.separator())
 
@@ -161,17 +180,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    @objc private func startServer() {
+    @objc private func startLoombre() {
         // The IPC start endpoint can never start a stopped server
         // (IPC_SERVER_START_SEMANTICS: it is hosted BY the server), so
-        // Start always goes through launchd, connection or not.
-        guard !launchdStartInFlight else { return }
+        // Start always goes through launchd, connection or not — and it
+        // starts all three daemons, so it also recovers from a full
+        // Shut Down (which boots the worker and web daemons out too).
+        guard !launchdStartInFlight, !shutdownInFlight else { return }
         launchdStartInFlight = true
         rebuildMenu(for: lastStatus.map(MenuState.derive(from:)) ?? MenuState.deriveFromUnreachable())
         Task { @MainActor in
-            let outcome = PrivilegedLaunchdStart.startServer()
+            let outcome = PrivilegedLaunchctl.startAll()
             switch outcome {
-            case .started:
+            case .success:
                 // Leave launchdStartInFlight set — poll() clears it when
                 // the daemon is observed running, so the item shows
                 // "Starting…" instead of a misleading enabled "Start".
@@ -181,8 +202,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             case .failed(let message):
                 launchdStartInFlight = false
                 let alert = NSAlert()
-                alert.messageText = "Could not start the Loombre server"
-                alert.informativeText = "\(message)\n\nYou can start it manually with:\nsudo launchctl kickstart system/\(LaunchdFallback.serverLabel)"
+                alert.messageText = "Could not start Loombre"
+                alert.informativeText = "\(message)\n\nYou can start the services manually with:\nsudo launchctl kickstart system/\(LaunchdFallback.serverLabel)\nsudo launchctl kickstart system/\(LaunchdFallback.workerLabel)\nsudo launchctl kickstart system/\(LaunchdFallback.webLabel)"
                 alert.alertStyle = .warning
                 alert.runModal()
             }
@@ -195,6 +216,46 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Task {
             _ = try? await IPCClient(connection: connection).stopServer()
             await poll()
+        }
+    }
+
+    /// The full kill switch: confirmation dialog → admin-privileged
+    /// bootout of all three daemons → quit this controller too, so
+    /// nothing of Loombre is left running ("shut down completely"). The
+    /// daemons return at the next boot (RunAtLoad) or via Start Loombre;
+    /// the menubar returns at next login or by opening Loombre.app.
+    @objc private func shutdownLoombre() {
+        guard !shutdownInFlight, !launchdStartInFlight else { return }
+        let confirm = NSAlert()
+        confirm.messageText = "Shut down Loombre completely?"
+        confirm.informativeText = "This stops the Loombre server, the background worker, and the web interface — streaming stops for every device using this server — and then quits this menu bar controller.\n\nmacOS will ask for administrator authorization. To use Loombre again, open Loombre from your Applications folder and choose \u{201C}Start Loombre\u{201D}, or restart your Mac (the services start automatically at boot)."
+        confirm.alertStyle = .warning
+        confirm.addButton(withTitle: "Shut Down")
+        confirm.addButton(withTitle: "Cancel")
+        guard confirm.runModal() == .alertFirstButtonReturn else { return }
+
+        shutdownInFlight = true
+        rebuildMenu(for: lastStatus.map(MenuState.derive(from:)) ?? MenuState.deriveFromUnreachable())
+        Task { @MainActor in
+            let outcome = PrivilegedLaunchctl.shutdownAll()
+            switch outcome {
+            case .success:
+                // Nothing left to control, and the point was "everything
+                // off" — quit. The com.loombre.menubar LaunchAgent has no
+                // KeepAlive, so this stays quit until the next login.
+                NSApp.terminate(nil)
+            case .cancelled:
+                shutdownInFlight = false
+                rebuildMenu(for: lastStatus.map(MenuState.derive(from:)) ?? MenuState.deriveFromUnreachable())
+            case .failed(let message):
+                shutdownInFlight = false
+                let alert = NSAlert()
+                alert.messageText = "Could not shut down Loombre"
+                alert.informativeText = "\(message)\n\nYou can stop the services manually with:\nsudo launchctl bootout system/\(LaunchdFallback.workerLabel)\nsudo launchctl bootout system/\(LaunchdFallback.webLabel)\nsudo launchctl bootout system/\(LaunchdFallback.serverLabel)"
+                alert.alertStyle = .warning
+                alert.runModal()
+                await poll()
+            }
         }
     }
 

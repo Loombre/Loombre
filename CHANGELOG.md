@@ -19,6 +19,28 @@ Until then, phase names are the version axis.
 
 ## [Unreleased]
 
+### macOS menubar: full shutdown UI (2026-08-04)
+
+The macOS menubar app gains **"Shut Down Loombre…"** — the first UI able
+to stop the whole installed stack. Previously "Stop Server" only ended the
+API server process and "Quit" only closed the menu bar item, leaving the
+worker and web LaunchDaemons running with no way to stop them short of
+`sudo launchctl` in a terminal. The new item, after a confirmation dialog
+and one administrator prompt, boots out all three daemons (worker → web →
+server, so the embedded-PostgreSQL-hosting server goes down last) and then
+quits the menubar controller — nothing of Loombre left running. Services
+still return at next boot (`RunAtLoad`); the dialog says so.
+
+**"Start Server" is now "Start Loombre" and starts all three daemons**,
+not just the server — required so a full shutdown is recoverable from the
+menu (a server-only start would have left worker + web booted out until
+reboot). Idempotent per-service `kickstart || bootstrap` groups; verified
+`launchctl` exit-code semantics are pinned in `LifecyclePlanTests`.
+
+Windows parity gap noted (tray "Exit" likewise leaves the services
+running, though `services.msc` at least exists there) — not addressed in
+this change.
+
 ### Phosphor movie/series detail screens + mark-watched (2026-07-25)
 
 Movie and series detail pages are rebuilt to the Phosphor prototype's full
