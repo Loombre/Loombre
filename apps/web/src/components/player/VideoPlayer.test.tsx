@@ -79,6 +79,26 @@ vi.mock("../../lib/api-client.js", () => ({
   apiDelete: vi.fn(),
 }));
 
+// This file is about playback mechanics, not system notices — the strip's
+// own rendering rules (severity, dismiss, countdown) get their own
+// coverage in NoticeOverlayStrip.test.tsx. Mocked away here exactly like
+// the other unrelated collaborators above, so VideoPlayer can render
+// without a real <SystemNoticeProvider> in the tree. Dynamic (a `let`, not
+// a fixed literal) so the ONE structural test below — "the strip mounts
+// inside the real stage element" — can arm an active notice; every other
+// test in this file never touches it and gets the inert default.
+let noticeMockValue = {
+  notice: null as { id: string; message: string; severity: string; effectiveAtMs: number | null; expiresAtMs: number | null; createdAtMs: number } | null,
+  severity: null as string | null,
+  serverOffsetMs: 0,
+  dismissed: false,
+  dismiss: vi.fn(),
+  bannerVisible: false,
+};
+vi.mock("../notices/SystemNoticeProvider.js", () => ({
+  useSystemNotice: () => noticeMockValue,
+}));
+
 vi.mock("../../lib/auth-store.js", () => ({
   getAuthStore: () => ({
     getSnapshot: () => ({ serverUrl: SERVER_URL, accessToken: "test-access-token" }),
@@ -274,6 +294,7 @@ describe("VideoPlayer", () => {
     reportProgressOnUnload.mockReset();
     apiPut.mockReset().mockResolvedValue(undefined);
     apiGet.mockReset().mockResolvedValue({ items: [] });
+    noticeMockValue = { notice: null, severity: null, serverOffsetMs: 0, dismissed: false, dismiss: vi.fn(), bannerVisible: false };
   });
 
   afterEach(() => {
@@ -434,5 +455,28 @@ describe("VideoPlayer", () => {
     const v = (view = await renderReady(vi.fn(), undefined, 90_000));
     expect(findProgressForItem).not.toHaveBeenCalled();
     expect(v.container.textContent).not.toContain("You stopped at");
+  });
+
+  // N3's player review checkpoint (STATE.md NG9): NoticeOverlayStrip must
+  // be a DESCENDANT of the real stage element (the `ref={stageRef}` div —
+  // the fullscreen target, the only DOM position proven to survive the
+  // real Fullscreen API), not a sibling or a separately-portaled node.
+  // `[data-idle]` is the stage's own always-present attribute, a stable
+  // locator that needs no CSS-module class-name matching.
+  it("mounts NoticeOverlayStrip as a descendant of the stage element when a notice is active", async () => {
+    noticeMockValue = {
+      notice: { id: "w1", message: "Heads up", severity: "warning", effectiveAtMs: null, expiresAtMs: Date.now() + 60_000, createdAtMs: 0 },
+      severity: "warning",
+      serverOffsetMs: 0,
+      dismissed: false,
+      dismiss: vi.fn(),
+      bannerVisible: true,
+    };
+    const v = (view = await renderReady());
+    const stage = v.container.querySelector("[data-idle]");
+    expect(stage).toBeTruthy();
+    const strip = v.container.querySelector('[data-severity="warning"]');
+    expect(strip).toBeTruthy();
+    expect(stage!.contains(strip)).toBe(true);
   });
 });
