@@ -53,6 +53,7 @@ function connectionFixture(): AdminStashConnection {
     sqlitePath: "/data/stash.sqlite",
     enabled: true,
     genreTagNames: null,
+    blobsPath: null,
     status: "ok",
     statusDetail: null,
     lastSeenSchemaVersion: 80,

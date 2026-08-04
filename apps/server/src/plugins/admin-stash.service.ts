@@ -41,6 +41,7 @@ export interface AdminStashConnectionDto {
   sqlitePath: string | null;
   enabled: boolean;
   genreTagNames: string[] | null;
+  blobsPath: string | null;
   status: string;
   statusDetail: string | null;
   lastSeenSchemaVersion: number | null;
@@ -56,6 +57,7 @@ function toConnectionDto(libraryId: string, row: LibraryStashConnectionRow | und
       sqlitePath: null,
       enabled: false,
       genreTagNames: null,
+      blobsPath: null,
       status: "never_connected",
       statusDetail: null,
       lastSeenSchemaVersion: null,
@@ -69,6 +71,7 @@ function toConnectionDto(libraryId: string, row: LibraryStashConnectionRow | und
     sqlitePath: row.sqlite_path,
     enabled: row.enabled,
     genreTagNames: row.genre_tag_names,
+    blobsPath: row.stash_blobs_path,
     status: row.status,
     statusDetail: row.status_detail,
     lastSeenSchemaVersion: row.last_seen_schema_version,
@@ -154,6 +157,18 @@ export class AdminStashService {
       }
     }
 
+    // Same tri-state as genreTagNames: absent = leave untouched, null =
+    // clear (DB-only art), string = the filesystem blob-store path.
+    let blobsPath: string | null | undefined;
+    if ("blobsPath" in body) {
+      const raw = body["blobsPath"];
+      if (raw === null || typeof raw === "string") {
+        blobsPath = raw;
+      } else {
+        throw unprocessableEntity("blobsPath must be a string or null.", instancePath);
+      }
+    }
+
     let row: LibraryStashConnectionRow;
     try {
       row = await upsertLibraryStashConnectionConfig(this.dbProvider.db, {
@@ -161,6 +176,7 @@ export class AdminStashService {
         sqlitePath,
         ...(enabled !== undefined ? { enabled } : {}),
         ...(genreTagNames !== undefined ? { genreTagNames } : {}),
+        ...(blobsPath !== undefined ? { blobsPath } : {}),
         nowMs: clockNowMs(),
       });
     } catch (err) {

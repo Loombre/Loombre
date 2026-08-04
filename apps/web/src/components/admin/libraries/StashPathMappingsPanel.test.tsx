@@ -43,6 +43,7 @@ function connection(overrides: Partial<AdminStashConnection> = {}): AdminStashCo
     sqlitePath: "/data/stash.sqlite",
     enabled: true,
     genreTagNames: null,
+    blobsPath: null,
     status: "ok",
     statusDetail: null,
     lastSeenSchemaVersion: 80,

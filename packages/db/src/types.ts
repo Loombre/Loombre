@@ -733,6 +733,7 @@ export interface LibraryStashConnectionsTable {
   last_connected_at_ms: number | null;
   last_checked_at_ms: number | null;
   genre_tag_names: string[] | null;
+  stash_blobs_path: string | null;
   created_at_ms: number;
   updated_at_ms: number;
 }

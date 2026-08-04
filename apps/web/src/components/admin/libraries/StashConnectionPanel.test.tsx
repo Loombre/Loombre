@@ -41,6 +41,7 @@ function unconfiguredConnection(): AdminStashConnection {
     sqlitePath: null,
     enabled: false,
     genreTagNames: null,
+    blobsPath: null,
     status: "never_connected",
     statusDetail: null,
     lastSeenSchemaVersion: null,
@@ -147,6 +148,32 @@ describe("StashConnectionPanel", () => {
     expect(apiPutMock).toHaveBeenCalledWith(
       "/admin/libraries/{id}/stash-connection",
       expect.objectContaining({ body: expect.objectContaining({ genreTagNames: ["Thriller", "Western"] }) }),
+    );
+  });
+
+  it("sends blobsPath when a filesystem blobs path is typed, and null when the field is left blank", async () => {
+    apiPutMock.mockResolvedValue({ ...unconfiguredConnection(), configured: true, sqlitePath: "/data/stash.sqlite" });
+    view = renderIntoBody(<StashConnectionPanel connection={unconfiguredConnection()} onSaved={() => {}} />);
+    const inputs = Array.from(view.container.querySelectorAll("input")) as HTMLInputElement[];
+    act(() => setNativeValue(inputs[0]!, "/data/stash.sqlite")); // sqlite path (first field)
+    const blobsInput = Array.from(view.container.querySelectorAll("input")).find(
+      (i) => (i as HTMLInputElement).placeholder === "/path/to/stash/blobs",
+    ) as HTMLInputElement;
+    act(() => setNativeValue(blobsInput, "/data/stash/blobs"));
+
+    let saveButton = Array.from(view.container.querySelectorAll("button")).find((b) => b.textContent === "Save") as HTMLButtonElement;
+    await act(async () => saveButton.click());
+    expect(apiPutMock).toHaveBeenLastCalledWith(
+      "/admin/libraries/{id}/stash-connection",
+      expect.objectContaining({ body: expect.objectContaining({ blobsPath: "/data/stash/blobs" }) }),
+    );
+
+    act(() => setNativeValue(blobsInput, "   ")); // cleared → null
+    saveButton = Array.from(view.container.querySelectorAll("button")).find((b) => b.textContent === "Save") as HTMLButtonElement;
+    await act(async () => saveButton.click());
+    expect(apiPutMock).toHaveBeenLastCalledWith(
+      "/admin/libraries/{id}/stash-connection",
+      expect.objectContaining({ body: expect.objectContaining({ blobsPath: null }) }),
     );
   });
 

@@ -3373,6 +3373,8 @@ export interface components {
             enabled: boolean;
             /** @description S6/K15: which Stash tag names map to Loombre genre rather than general tags. `null` (the default, including before any connection has ever been saved) means the mapper's documented heuristic applies — a Stash tag with NO parent tag maps to genre, a child tag maps to a plain tag; explicit tag names here override that heuristic wholesale, case-insensitively. */
             genreTagNames: string[] | null;
+            /** @description Filesystem path to Stash's on-disk blob store, when Stash uses Filesystem (not Database) blob storage. `null` (the default) means art is read only from database-stored blobs — a Filesystem-mode Stash then syncs no covers. A path opts into reading cover/portrait/logo bytes from Stash's sharded on-disk store. Worker-side path; the server never opens it. */
+            blobsPath: string | null;
             status: components["schemas"]["AdminStashConnectionStatus"];
             /** @description The exact S3 admin notice when status=unsupported_schema; null otherwise. */
             statusDetail: string | null;
@@ -3388,6 +3390,8 @@ export interface components {
             enabled?: boolean;
             /** @description Omit this field to leave the saved genreTagNames untouched. Send `null` to explicitly clear it back to the default heuristic (see AdminStashConnection.genreTagNames). Send a (possibly empty) array to replace it wholesale. */
             genreTagNames?: string[] | null;
+            /** @description Omit to leave the saved blobsPath untouched. Send `null` to clear it (back to DB-only art). Send a path to read covers from Stash's filesystem blob store (see AdminStashConnection.blobsPath). */
+            blobsPath?: string | null;
         };
         AdminStashPathMapping: {
             stashPrefix: string;
