@@ -128,6 +128,30 @@ test("classifyAdvisories: moderate/low/info are non-blocking regardless of allow
   assert.equal(result.nonBlocking.length, 3);
 });
 
+// Regression: nonBlocking used to receive BARE advisory objects while every
+// other bucket received {advisory, entry} wrappers. main()'s reporter
+// destructures `{ advisory }` from each bucket uniformly, so a bare entry made
+// `advisory` undefined and the whole gate step died with "Cannot read
+// properties of undefined (reading 'severity')" — the length assertion above
+// passed the entire time because it never looked at an element's SHAPE. Real
+// consequence: any repo state carrying a merely-moderate advisory crashed
+// dep-audit instead of reporting `[info]` and passing.
+test("classifyAdvisories: EVERY bucket yields {advisory, entry} — main()'s reporter destructures them uniformly", () => {
+  const allowlist = [{ advisoryId: "GHSA-aaaa-bbbb-cccc", reason: "test", expires: "2099-01-01" }];
+  const result = classifyAdvisories(
+    [advisory({ severity: "moderate" }), advisory({ severity: "high", id: "GHSA-unallowlisted" }), advisory()],
+    allowlist,
+    FIXED_NOW_MS,
+  );
+  for (const [bucket, rows] of Object.entries(result)) {
+    for (const row of rows) {
+      assert.ok(row.advisory, `${bucket} entry must expose .advisory (got ${JSON.stringify(row)})`);
+      assert.equal(typeof row.advisory.severity, "string", `${bucket} entry's .advisory needs a severity`);
+      assert.ok("entry" in row, `${bucket} entry must expose .entry (null when there is no allowlist entry)`);
+    }
+  }
+});
+
 test("classifyAdvisories: a high-severity advisory WITH a live (non-expired) allowlist entry is NOT blocking", () => {
   const allowlist = [{ advisoryId: "GHSA-aaaa-bbbb-cccc", reason: "test", expires: "2099-01-01" }];
   const result = classifyAdvisories([advisory()], allowlist, FIXED_NOW_MS);
