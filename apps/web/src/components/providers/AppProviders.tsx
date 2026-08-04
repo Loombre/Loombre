@@ -31,6 +31,7 @@ import { MusicPlayerProvider } from "../music/MusicPlayerProvider.js";
 import { MiniPlayerBar } from "../music/MiniPlayerBar.js";
 import { QueueDrawer } from "../music/QueueDrawer.js";
 import { ToastProvider } from "../ui/Toast.js";
+import { SystemNoticeProvider } from "../notices/SystemNoticeProvider.js";
 
 function EventsSocketLifecycle(): null {
   useEffect(() => {
@@ -70,18 +71,29 @@ export function AppProviders({ children }: { children: ReactNode }): React.JSX.E
   // ToastProvider is OUTERMOST (Wave-1 reconciliation): every Wave-2 flow
   // toasts, including ones living beside {children} here (PinModal relock
   // notices, mini-player actions) — nothing may sit outside its reach.
+  // SystemNoticeProvider sits directly inside it (system notices, kicked
+  // off 2026-08-04): it calls useToast() itself (info severity -> the
+  // single-slot toast) and is the ONE state owner BannerRegion/
+  // NoticeOverlayStrip/SettingsRestartBanner all read via useSystemNotice()
+  // — mounted here, above the per-route AppShell remount boundary, so a
+  // notice survives navigation exactly like Restricted/MusicPlayer state
+  // does (see this file's own header). It never calls socket connect()/
+  // disconnect() itself — EventsSocketLifecycle below owns that
+  // exclusively; SystemNoticeProvider only subscribes.
   return (
     <ToastProvider>
-      <RestrictedProvider>
-        <MusicPlayerProvider>
-          <AppearancePrefsLifecycle />
-          <EventsSocketLifecycle />
-          {children}
-          <MiniPlayerBar />
-          <QueueDrawer />
-          <PinModal />
-        </MusicPlayerProvider>
-      </RestrictedProvider>
+      <SystemNoticeProvider>
+        <RestrictedProvider>
+          <MusicPlayerProvider>
+            <AppearancePrefsLifecycle />
+            <EventsSocketLifecycle />
+            {children}
+            <MiniPlayerBar />
+            <QueueDrawer />
+            <PinModal />
+          </MusicPlayerProvider>
+        </RestrictedProvider>
+      </SystemNoticeProvider>
     </ToastProvider>
   );
 }

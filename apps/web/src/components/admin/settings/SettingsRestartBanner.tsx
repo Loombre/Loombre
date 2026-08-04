@@ -10,14 +10,28 @@
 // /admin/settings after every successful PUT, so this banner appears/
 // disappears within one round trip of a requiresRestart:true change
 // landing or being reverted.
+//
+// N6 precedence (system notices, kicked off 2026-08-04): "system notice >
+// restart-pending" — one top-of-page banner class at a time. While a
+// warning/critical system notice is showing (SystemNoticeProvider's
+// `bannerVisible`, the SAME signal BannerRegion itself renders on), this
+// component suppresses itself entirely and comes back the instant the
+// notice clears — pure precedence, no change to the restartPendingKeys
+// logic below.
 
 import Link from "next/link";
 import { AlertTriangle } from "lucide-react";
 import { Icon } from "../../icon/Icon.js";
+import { useSystemNoticeOptional } from "../../notices/SystemNoticeProvider.js";
 import styles from "./SettingsRestartBanner.module.css";
 
 export function SettingsRestartBanner({ keys }: { keys: string[] }): React.JSX.Element | null {
-  if (keys.length === 0) return null;
+  // Optional (non-throwing): see useSystemNoticeOptional's own header —
+  // this component is consumed by settings sections outside this lane's
+  // file ownership, so it degrades to "no active notice" rather than
+  // requiring every one of THEIR call sites to carry a provider.
+  const bannerVisible = useSystemNoticeOptional()?.bannerVisible ?? false;
+  if (bannerVisible || keys.length === 0) return null;
   return (
     <div className={styles.banner} role="status">
       <Icon icon={AlertTriangle} size="dense" aria-hidden />
