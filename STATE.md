@@ -288,6 +288,17 @@ Integration order C→A→B as planned (C ff'd clean; A and B rebased with orche
 
 ## Stash SQLite metadata sync + dedicated Restricted Content surface (kicked off 2026-08-01, authority: owner "Stash SQLite Metadata Sync + the Dedicated Restricted Content Surface" brief; docs/PLAN.md §6.4 gates, docs/PLAYBACK.md unchanged, design/phosphor/README.md design language)
 
+### SUBSET VALIDATION DONE + a real bug fixed + filesystem-blob support (2026-08-04, owner supplied a real Stash DB copy)
+
+Owner dropped `/Users/ozzy/Desktop/stash-go.sqlite` (a copy) — closes exit-gate Open item 1. Everything Stash-side read-only (S2 proven: file hash+mtime unchanged across every read incl. the full 43k sync). Report: reports/stash-sync-report.md (gitignored evidence).
+
+- **REAL BUG found + fixed (19438e5):** the read model crashed on the real DB. Stash stores a per-file `phash` as a raw signed int64 in the blob-affinity `files_fingerprints.fingerprint` column (e.g. -9223314888072965413); `readFingerprints` did a bare `SELECT fingerprint` grabbing every type, and node:sqlite threw ERR_OUT_OF_RANGE materializing it BEFORE type-filtering — crashing getSceneFiles, thus the apply phase, on ANY real library (phash is on by default). Fixed to `WHERE type IN ('oshash','md5')` (both text); v85 fixture gained real-shaped phash int64 rows + a regression case. Synthetic fixtures never had phash rows, so nothing caught it.
+- **Compatible + reads clean:** schema **v85** (top of the 67–85 pin — no disable path). Post-fix, 2,080 scenes sampled across the full catalog: **0 read errors**.
+- **Real-DATA scale proof (beats the 33k synthetic):** full real-apply sync over **43,679 scenes → 100% matched, 5.9 min, 562.6 MiB peak, 375,054 provenance rows, 6,934 performers, 12,811 premiere dates.** Round-trip spot-checks (title/date/studio/performers/tags) match the raw Stash DB; null Stash fields correctly don't clobber.
+- **Owner's data does NOT exercise:** ratings (0), markers/chapters (0), tag hierarchy (flat — so the default heuristic would call every tag a genre; owner can set an explicit list). Path mapping is one prefix (`/run/media/ozzy/Media Server/`).
+- **Filesystem blob-store support (3ca55a8, owner-approved — closes the cover-art gap):** owner's Stash uses Filesystem blob storage (all 53,394 blobs.blob NULL), so covers can't come from the DB. New on-disk reader (`apps/worker/src/stash/blob-store.ts`, sharding root/<c0:2>/<c2:4>/<checksum> verified vs Stash pkg/sqlite/blob/fs.go, reimplemented) composed behind the DB reader (DB bytes win; fs consulted only when DB byteless AND a path set). Migration **0027** (library_stash_connections.stash_blobs_path, NULL=DB-only unchanged); threaded through sync-consumer's getBlob via makeBlobResolver; contract+SDK tri-state PUT + GET field; admin UI blobs-path input. Gate:full green.
+  - **Still needs a real-cover pass** (owner has the blob files): point the setting at the blob dir and re-sync a subset to confirm real cover ingest end-to-end — the code + unit/e2e proof are in, but no real Stash blob directory was read this session. Logged Open (home-lab, alongside the media-files matching pass).
+
 ### EXIT GATE — WALKED 2026-08-01 (final tree; gate:full ALL 14 STEPS PASSED)
 
 Automated exit met; owner-in-the-loop + home-lab items logged Open (not simulated). Coverage vs the verbatim mission + §5 exit gate:
