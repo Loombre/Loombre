@@ -53,6 +53,7 @@ export function StashConnectionPanel({
   onSaved: (connection: AdminStashConnection) => void;
 }): React.JSX.Element {
   const [sqlitePath, setSqlitePath] = useState(connection.sqlitePath ?? "");
+  const [blobsPath, setBlobsPath] = useState(connection.blobsPath ?? "");
   const [enabled, setEnabled] = useState(connection.enabled);
   const [genreMode, setGenreMode] = useState<GenreMode>(connection.genreTagNames === null ? "Default (automatic)" : "Custom list");
   const [genreNamesText, setGenreNamesText] = useState((connection.genreTagNames ?? []).join("\n"));
@@ -75,9 +76,12 @@ export function StashConnectionPanel({
             .map((s) => s.trim())
             .filter((s) => s.length > 0);
     try {
+      // Empty field ⇒ null (clear, DB-only art); a path ⇒ set it. Always
+      // sent, so what's on screen is what's written (matches genreTagNames).
+      const trimmedBlobs = blobsPath.trim();
       const saved = await apiPut("/admin/libraries/{id}/stash-connection", {
         params: { path: { id: connection.libraryId } },
-        body: { sqlitePath: sqlitePath.trim(), enabled, genreTagNames },
+        body: { sqlitePath: sqlitePath.trim(), enabled, genreTagNames, blobsPath: trimmedBlobs.length > 0 ? trimmedBlobs : null },
       });
       onSaved(saved);
     } catch (err) {
@@ -127,6 +131,20 @@ export function StashConnectionPanel({
             placeholder="/path/to/stash-go.sqlite"
             required
           />
+        </label>
+
+        <label className={styles.field}>
+          <span className={styles.label}>Stash blobs path (optional)</span>
+          <TextInput
+            value={blobsPath}
+            onChange={(e) => setBlobsPath(e.target.value)}
+            placeholder="/path/to/stash/blobs"
+          />
+          <p className={styles.hint}>
+            Only needed if your Stash stores cover art on its filesystem rather than in the database. Point this at
+            Stash&apos;s blobs directory to sync cover, performer, and studio images. Leave blank to read art only from
+            the database.
+          </p>
         </label>
 
         <div className={styles.formRow}>

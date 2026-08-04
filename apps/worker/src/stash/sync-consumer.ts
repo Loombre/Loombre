@@ -73,6 +73,7 @@ import {
 } from '@loombre/db';
 import { connectToStashLibrary, type ConnectToStashLibraryDeps } from './connect.js';
 import { getBlob, getScene, getSceneFiles, getScenePerformers, getSceneTags, getSceneMarkers, getStudio, listScenesForInventory, type SqliteReadable, type StashInventoryScene, type StashStudio } from './read-model.js';
+import { makeBlobResolver } from './blob-store.js';
 import { runInventoryPass, runMatchingPass, upsertInventorySubset, toMatchInput } from './pipeline.js';
 import type { StashSceneMatchResult } from './matching.js';
 import type { ApplyStashSceneMetadataFn } from './apply-types.js';
@@ -155,7 +156,8 @@ async function applyOneScene(
   libraryId: string,
   stashSceneId: string,
   itemId: string,
-  genreTagNames: string[] | null
+  genreTagNames: string[] | null,
+  blobsPath: string | null
 ): Promise<{ changedFields: string[] }> {
   const scene = getScene(stashDb, stashSceneId);
   if (!scene) return { changedFields: [] };
@@ -177,7 +179,7 @@ async function applyOneScene(
   return withTransaction(deps.db, (trx) =>
     deps.applyStashSceneMetadata(
       trx,
-      { getBlob: (checksum) => getBlob(stashDb, checksum), enqueueImageJob: deps.enqueueImageJob, ...(deps.clock ? { clock: deps.clock } : {}) },
+      { getBlob: makeBlobResolver((checksum) => getBlob(stashDb, checksum), blobsPath), enqueueImageJob: deps.enqueueImageJob, ...(deps.clock ? { clock: deps.clock } : {}) },
       { libraryId, itemId, stashSceneId, scene, files, performers, studioChain, tags, markers, genreTagNames }
     )
   );
@@ -199,6 +201,7 @@ async function runApplyPhase(
   checkpoint: StashSyncCheckpointRow | undefined,
   clock: () => number,
   genreTagNames: string[] | null,
+  blobsPath: string | null,
   counts: RunCounts
 ): Promise<void> {
   const checkpointInterval = deps.checkpointIntervalScenes ?? DEFAULT_CHECKPOINT_INTERVAL_SCENES;
@@ -232,7 +235,7 @@ async function runApplyPhase(
     }
 
     if (result.itemId != null) {
-      const applyResult = await applyOneScene(deps, stashDb, libraryId, result.stashSceneId, result.itemId, genreTagNames);
+      const applyResult = await applyOneScene(deps, stashDb, libraryId, result.stashSceneId, result.itemId, genreTagNames, blobsPath);
       if (applyResult.changedFields.length > 0) counts.updated++;
       else counts.skipped++;
     }
@@ -271,6 +274,7 @@ async function runFullSync(
   checkpoint: StashSyncCheckpointRow | undefined,
   clock: () => number,
   genreTagNames: string[] | null,
+  blobsPath: string | null,
   counts: RunCounts
 ): Promise<{ touchedCount: number }> {
   // Staleness (S8): capture the pre-existing link set BEFORE the
@@ -285,7 +289,7 @@ async function runFullSync(
   await markStashScenesStale(deps.db, { libraryId, stashSceneIds: vanished, nowMs: clock() });
 
   const { results } = await runMatchingPass(deps.db, libraryId, scenes.map(toMatchInput), clock());
-  await runApplyPhase(deps, stashDb, libraryId, jobId, results, checkpoint, clock, genreTagNames, counts);
+  await runApplyPhase(deps, stashDb, libraryId, jobId, results, checkpoint, clock, genreTagNames, blobsPath, counts);
 
   return { touchedCount: scenes.length };
 }
@@ -298,6 +302,7 @@ async function runIncrementalSync(
   checkpoint: StashSyncCheckpointRow | undefined,
   clock: () => number,
   genreTagNames: string[] | null,
+  blobsPath: string | null,
   counts: RunCounts
 ): Promise<{ touchedCount: number }> {
   const freshScenes: StashInventoryScene[] = listScenesForInventory(stashDb);
@@ -319,7 +324,7 @@ async function runIncrementalSync(
   await markStashScenesStale(deps.db, { libraryId, stashSceneIds: vanished, nowMs: clock() });
 
   const { results } = await runMatchingPass(deps.db, libraryId, touched.map(toMatchInput), clock());
-  await runApplyPhase(deps, stashDb, libraryId, jobId, results, checkpoint, clock, genreTagNames, counts);
+  await runApplyPhase(deps, stashDb, libraryId, jobId, results, checkpoint, clock, genreTagNames, blobsPath, counts);
 
   return { touchedCount: touched.length };
 }
@@ -340,6 +345,7 @@ export async function runStashSync(deps: StashSyncConsumerDeps, payload: StashSy
 
   const connRow = await getLibraryStashConnection(deps.db, payload.libraryId);
   const genreTagNames = connRow?.genre_tag_names ?? null;
+  const blobsPath = connRow?.stash_blobs_path ?? null;
 
   const existingCheckpoint = await getStashSyncCheckpoint(deps.db, meta.jobId);
 
@@ -386,8 +392,8 @@ export async function runStashSync(deps: StashSyncConsumerDeps, payload: StashSy
   try {
     const result =
       payload.mode === 'full'
-        ? await runFullSync(deps, connectResult.connection.db, payload.libraryId, meta.jobId, existingCheckpoint, clock, genreTagNames, counts)
-        : await runIncrementalSync(deps, connectResult.connection.db, payload.libraryId, meta.jobId, existingCheckpoint, clock, genreTagNames, counts);
+        ? await runFullSync(deps, connectResult.connection.db, payload.libraryId, meta.jobId, existingCheckpoint, clock, genreTagNames, blobsPath, counts)
+        : await runIncrementalSync(deps, connectResult.connection.db, payload.libraryId, meta.jobId, existingCheckpoint, clock, genreTagNames, blobsPath, counts);
     touchedCount = result.touchedCount;
   } finally {
     connectResult.connection.close();
