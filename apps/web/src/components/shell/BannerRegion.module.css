@@ -1,0 +1,98 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+
+/* In-flow, not fixed/sticky (STATE.md NG9 mount note) — margin-top/left
+   mirror AppShell.module.css's own .topbar inset EXACTLY (64px height /
+   210px-then-76px sidebar offset / mobile-header-height + safe-area) so
+   this never renders under the fixed chrome. Keep those literals in sync
+   with AppShell.module.css + Sidebar.module.css by hand, same standing
+   note those two files already carry for each other. */
+
+.banner {
+  position: relative;
+  margin-top: 64px;
+  margin-left: 210px;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-lg);
+  border-bottom: 1px solid transparent;
+}
+
+@media (width <= 1279.98px) {
+  .banner {
+    margin-left: 76px;
+  }
+}
+
+@media (width <= 767.98px) {
+  .banner {
+    margin-top: calc(var(--mobile-header-height) + env(safe-area-inset-top, 0));
+    margin-left: 0;
+    padding: var(--space-sm) var(--space-md);
+  }
+}
+
+/* Severity accent — SettingsRestartBanner.module.css's own family
+   (color-mix from the severity color), warning vs. danger tint. */
+.banner[data-severity="warning"] {
+  background: color-mix(in srgb, var(--color-warning) 10%, var(--color-bg));
+  border-bottom-color: color-mix(in srgb, var(--color-warning) 35%, transparent);
+  color: var(--color-warning);
+}
+
+.banner[data-severity="critical"] {
+  background: color-mix(in srgb, var(--color-danger) 12%, var(--color-bg));
+  border-bottom-color: color-mix(in srgb, var(--color-danger) 40%, transparent);
+  color: var(--color-danger);
+}
+
+.text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3xs);
+  min-width: 0;
+}
+
+.message {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--color-text);
+  overflow-wrap: anywhere;
+}
+
+.countdown {
+  font-family: var(--font-mono);
+  font-size: var(--mono-sm);
+  letter-spacing: var(--track-mono);
+  color: inherit;
+}
+
+.dismiss {
+  margin-left: auto;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-full);
+  border: none;
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition: background-color var(--motion-fast) var(--ease-out);
+}
+
+.dismiss:hover,
+.dismiss:focus-visible {
+  background: var(--color-surface-hover);
+  color: var(--color-text);
+}
+
+/* Mobile hard line: touch targets never below 44px. */
+@media (width <= 767.98px) {
+  .dismiss {
+    width: 44px;
+    height: 44px;
+  }
+}
