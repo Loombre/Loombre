@@ -210,6 +210,15 @@ describe("POST /system/notices — validation (admin)", () => {
     expect((await publish(adminToken, { message: "x", severity: "info", expiresInMs: -5 })).status).toBe(422);
     expect((await publish(adminToken, { message: "x", severity: "info", expiresInMs: 1.5 })).status).toBe(422);
   });
+
+  it("422s durations beyond the contract maximum (365d) — review R-F3: 1e308 previously overflowed BIGINT into a 500", async () => {
+    expect((await publish(adminToken, { message: "x", severity: "critical", effectiveInMs: 1e308 })).status).toBe(422);
+    expect((await publish(adminToken, { message: "x", severity: "info", expiresInMs: Number.MAX_SAFE_INTEGER })).status).toBe(422);
+    expect((await publish(adminToken, { message: "x", severity: "info", expiresInMs: 31_536_000_001 })).status).toBe(422);
+    // The boundary itself is legal.
+    const atMax = await publish(adminToken, { message: "x", severity: "info", expiresInMs: 31_536_000_000 });
+    expect(atMax.status).toBe(201);
+  });
 });
 
 // ============================================================================

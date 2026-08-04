@@ -111,11 +111,14 @@
 
 /* ── Compose card ────────────────────────────────────────────────────── */
 
+/* Symmetric vertical rhythm: the shared .note above carries margin:0 (it
+   relies on its parent for spacing), so the presets row owns BOTH sides —
+   equal air above and below, instead of pills glued to the note. */
 .presetsRow {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-xs);
-  margin-bottom: var(--space-md);
+  margin: var(--space-md) 0;
 }
 
 .messageHeader {

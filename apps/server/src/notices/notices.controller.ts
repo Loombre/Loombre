@@ -48,11 +48,19 @@ function isNoticeSeverity(value: unknown): value is NoticeSeverity {
   return typeof value === "string" && (SEVERITIES as readonly string[]).includes(value);
 }
 
-/** Positive integer (>=1) — the contract's `minimum: 1` on both
- *  effectiveInMs/expiresInMs (a zero-or-negative duration is nonsense: "in
- *  0ms" is just "now", and "in -5ms" is not a duration at all). */
-function isPositiveInteger(value: unknown): value is number {
-  return typeof value === "number" && Number.isInteger(value) && value >= 1;
+/** Contract `maximum` on effectiveInMs/expiresInMs: 365 days. Beyond that
+ *  a duration is a mistake, not a plan — and it must be bounded here
+ *  regardless: `Number.isInteger(1e308)` is true, so an unbounded value
+ *  reaches `nowMs + v` and overflows the BIGINT column into a Postgres
+ *  error → 500 (review finding R-F3). */
+const MAX_DURATION_MS = 31_536_000_000;
+
+/** Bounded positive integer — the contract's `minimum: 1` / `maximum:
+ *  31536000000` on both effectiveInMs/expiresInMs (a zero-or-negative
+ *  duration is nonsense: "in 0ms" is just "now", and "in -5ms" is not a
+ *  duration at all). */
+function isValidDurationMs(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value >= 1 && value <= MAX_DURATION_MS;
 }
 
 interface CursorLimitQuery {
@@ -150,16 +158,16 @@ export class NoticesController {
 
     let effectiveInMs: number | undefined;
     if (body["effectiveInMs"] !== undefined) {
-      if (!isPositiveInteger(body["effectiveInMs"])) {
-        throw unprocessableEntity("effectiveInMs must be a positive integer (ms).", instance);
+      if (!isValidDurationMs(body["effectiveInMs"])) {
+        throw unprocessableEntity(`effectiveInMs must be a positive integer (ms), at most ${MAX_DURATION_MS} (365 days).`, instance);
       }
       effectiveInMs = body["effectiveInMs"];
     }
 
     let expiresInMs: number | undefined;
     if (body["expiresInMs"] !== undefined) {
-      if (!isPositiveInteger(body["expiresInMs"])) {
-        throw unprocessableEntity("expiresInMs must be a positive integer (ms).", instance);
+      if (!isValidDurationMs(body["expiresInMs"])) {
+        throw unprocessableEntity(`expiresInMs must be a positive integer (ms), at most ${MAX_DURATION_MS} (365 days).`, instance);
       }
       expiresInMs = body["expiresInMs"];
     }

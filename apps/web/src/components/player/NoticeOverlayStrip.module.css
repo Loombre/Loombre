@@ -4,18 +4,16 @@
    survive the real Fullscreen API — a descendant of `stageRef`, the
    fullscreen target. z-index sits ABOVE PlayerControls' own top bar
    (PlayerControls.module.css .topBar is z-index:5) so a notice is never
-   hidden behind the controls chrome when both happen to be visible at
-   once. `pointer-events:none` on the strip container keeps it non-
-   blocking (N6) — only the dismiss button re-enables pointer events for
-   itself.
+   hidden behind the controls chrome. `pointer-events:none` on the strip
+   container keeps it non-blocking (N6) — only the dismiss button
+   re-enables pointer events for itself.
 
-   KNOWN VISUAL CAVEAT (see freeze report): PlayerControls.tsx's own top
-   bar (back-button chip + title) occupies the same top-left corner of the
-   stage while controls are visible. PlayerControls.tsx is outside this
-   file's ownership for this run, so the two chrome layers are not
-   reflowed to coexist pixel-perfectly — the overlap is transient
-   (controls auto-hide after 3s idle) and never blocks input either way
-   (this strip is pointer-events:none except its own button). */
+   Review R-F4: while the controls' top bar is visible (back-button chip +
+   title, ~70px tall at top:0), the strip YIELDS position — VideoPlayer
+   passes `belowControls` (the same expression PlayerControls' `visible`
+   uses) and [data-below-controls] shifts the strip under the bar, so the
+   Back button and title are never covered. When controls idle-hide, the
+   strip glides back to top:0. */
 
 .strip {
   position: absolute;
@@ -28,6 +26,11 @@
   gap: var(--space-sm);
   padding: var(--space-sm) var(--space-lg);
   pointer-events: none;
+  transition: top var(--motion-base) var(--ease-out);
+}
+
+.strip[data-below-controls="true"] {
+  top: 70px;
 }
 
 .strip[data-severity="info"] {
