@@ -6,6 +6,7 @@ import { PlaybackModule } from "./playback/playback.module.js";
 import { SessionModule } from "./session/session.module.js";
 import { SetupModule } from "./setup/setup.module.js";
 import { InvitesModule } from "./invites/invites.module.js";
+import { NoticesModule } from "./notices/notices.module.js";
 import { SettingsModule } from "./settings/settings.module.js";
 import { AdminSettingsControllersModule } from "./settings/admin-settings.module.js";
 import { AdminPluginsControllersModule } from "./plugins/admin-plugins.module.js";
@@ -63,6 +64,13 @@ import { MailModule } from "./mail/mail.module.js";
  * inject them directly) + the admin mail credentials/test-send controller.
  * Listed before GatewayModule for the same catch-all-must-be-last reason
  * as everything else here — route order matters.
+ *
+ * NoticesModule (STATE.md "Admin broadcast notifications — system
+ * notices", Lane A): POST /system/notices, POST /system/notices/{id}/
+ * cancel, GET /system/notices (admin) plus the public-to-any-authenticated
+ * -user GET /notices/active (NG2's catch-up read — see notices/
+ * notices.controller.ts's header). Listed before GatewayModule for the
+ * same catch-all-must-be-last reason as everything else here.
  */
 @Module({
   imports: [
@@ -71,6 +79,7 @@ import { MailModule } from "./mail/mail.module.js";
     PlaybackModule,
     SetupModule,
     InvitesModule,
+    NoticesModule,
     SettingsModule,
     AdminSettingsControllersModule,
     AdminPluginsControllersModule,

@@ -33,6 +33,7 @@ import type { DB } from '../src/types.js';
 import type { ViewerContext } from '../src/context.js';
 import { createFirstAdminIfEmpty, createUserAdminAndEmit } from '../src/query/identity.js';
 import { upsertProgress } from '../src/query/progress-write.js';
+import { cancelNoticeAndEmit, getActiveNotice, publishNoticeAndEmit } from '../src/query/notices.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PKG_ROOT = path.resolve(__dirname, '..');
@@ -293,5 +294,137 @@ describe('progress.updated (packages/contract/event-schemas/progress.updated.sch
     expect(blocked).toBeUndefined();
 
     expect(await eventsOfType('progress.updated')).toHaveLength(before);
+  });
+});
+
+describe('notice.published / notice.cancelled (STATE.md "Admin broadcast notifications — system notices", packages/db/src/query/notices.ts)', () => {
+  let adminId: string;
+
+  beforeAll(async () => {
+    run(path.join(PKG_ROOT, 'scripts', 'migrate.mjs'), ['reset']);
+    run(path.join(PKG_ROOT, 'seed', 'seed.mjs'), []);
+    adminId = (await rawClient.query<{ id: string }>("SELECT id FROM users WHERE username = 'admin'")).rows[0]!.id;
+  });
+
+  it('publishNoticeAndEmit emits notice.published with the exact all-user shape (no createdBy) and the actor as envelope.actorUserId', async () => {
+    const before = (await eventsOfType('notice.published')).length;
+
+    const notice = await publishNoticeAndEmit(db, {
+      message: 'Scheduled maintenance tonight.',
+      severity: 'warning',
+      effectiveAtMs: null,
+      expiresAtMs: 100_000,
+      createdBy: adminId,
+      nowMs: 10_000,
+    });
+    expect(notice.status).toBe('active');
+
+    const rows = await eventsOfType('notice.published');
+    expect(rows).toHaveLength(before + 1);
+    const row = rows[rows.length - 1]!;
+    expect(row.actor_user_id).toBe(adminId);
+    expect(Number(row.ts_ms)).toBe(10_000);
+    // Exactly the schema's required properties — NG6: no createdBy, no
+    // user-id field of any kind.
+    expect(row.payload).toEqual({
+      id: notice.id,
+      message: 'Scheduled maintenance tonight.',
+      severity: 'warning',
+      effectiveAtMs: null,
+      expiresAtMs: 100_000,
+      createdAtMs: 10_000,
+    });
+  });
+
+  it('a second publish REPLACES the first: exactly one notice.published for the new row, NO notice.cancelled from the replace, and the old row is cancelled', async () => {
+    const first = await publishNoticeAndEmit(db, {
+      message: 'First notice.',
+      severity: 'info',
+      effectiveAtMs: null,
+      expiresAtMs: 200_000,
+      createdBy: adminId,
+      nowMs: 20_000,
+    });
+
+    const cancelledBefore = (await eventsOfType('notice.cancelled')).length;
+    const publishedBefore = (await eventsOfType('notice.published')).length;
+
+    const second = await publishNoticeAndEmit(db, {
+      message: 'Second notice replaces the first.',
+      severity: 'critical',
+      effectiveAtMs: 250_000,
+      expiresAtMs: null,
+      createdBy: adminId,
+      nowMs: 30_000,
+    });
+
+    // NG8: exactly one notice.published (for the SECOND row) — the
+    // replace of the first is NOT itself an event.
+    const publishedRows = await eventsOfType('notice.published');
+    expect(publishedRows).toHaveLength(publishedBefore + 1);
+    expect(publishedRows[publishedRows.length - 1]!.payload).toMatchObject({ id: second.id });
+
+    // NG8: NO notice.cancelled event for the superseded row.
+    expect(await eventsOfType('notice.cancelled')).toHaveLength(cancelledBefore);
+
+    const active = await getActiveNotice(db, 40_000);
+    expect(active?.id).toBe(second.id);
+
+    const firstRow = await rawClient.query<{ cancelled_at_ms: string | null }>(
+      'SELECT cancelled_at_ms FROM system_notices WHERE id = $1',
+      [first.id],
+    );
+    expect(firstRow.rows[0]!.cancelled_at_ms).not.toBeNull();
+  });
+
+  it('cancelNoticeAndEmit emits notice.cancelled {id} with the acting admin as actor; a second cancel is a no-op (returns false, emits nothing)', async () => {
+    const notice = await publishNoticeAndEmit(db, {
+      message: 'Cancel me.',
+      severity: 'critical',
+      effectiveAtMs: null,
+      expiresAtMs: null,
+      createdBy: adminId,
+      nowMs: 40_000,
+    });
+
+    const before = (await eventsOfType('notice.cancelled')).length;
+    const won = await cancelNoticeAndEmit(db, { id: notice.id, actorUserId: adminId, nowMs: 41_000 });
+    expect(won).toBe(true);
+
+    const rows = await eventsOfType('notice.cancelled');
+    expect(rows).toHaveLength(before + 1);
+    const row = rows[rows.length - 1]!;
+    expect(row.actor_user_id).toBe(adminId);
+    expect(row.payload).toEqual({ id: notice.id });
+
+    const again = await cancelNoticeAndEmit(db, { id: notice.id, actorUserId: adminId, nowMs: 42_000 });
+    expect(again).toBe(false);
+    expect(await eventsOfType('notice.cancelled')).toHaveLength(before + 1);
+  });
+
+  it('getActiveNotice returns null when nothing is active, and respects natural expiry', async () => {
+    const notice = await publishNoticeAndEmit(db, {
+      message: 'Expires soon.',
+      severity: 'info',
+      effectiveAtMs: null,
+      expiresAtMs: 100,
+      createdBy: adminId,
+      nowMs: 50_000,
+    });
+    // Cancel it so this test starts from a clean "nothing active" slate
+    // regardless of execution order.
+    await cancelNoticeAndEmit(db, { id: notice.id, actorUserId: adminId, nowMs: 50_050 });
+    expect(await getActiveNotice(db, 60_000)).toBeNull();
+
+    const expiring = await publishNoticeAndEmit(db, {
+      message: 'Expires at 61000.',
+      severity: 'info',
+      effectiveAtMs: null,
+      expiresAtMs: 61_000,
+      createdBy: adminId,
+      nowMs: 60_000,
+    });
+    expect((await getActiveNotice(db, 60_500))?.id).toBe(expiring.id);
+    expect(await getActiveNotice(db, 61_000)).toBeNull(); // expiresAtMs is exclusive (> now, not >=)
   });
 });

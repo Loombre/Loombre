@@ -41,7 +41,12 @@
 //   - everything else (user.created, and any future type not in the three
 //     lists below): passes through unfiltered — it carries no item/library/
 //     user association to gate on (task spec: "non-item events pass
-//     through").
+//     through"). notice.published / notice.cancelled (STATE.md "Admin
+//     broadcast notifications — system notices", N2/NG1) are deliberately
+//     LEFT UNBUCKETED here, same as user.created — they are all-user
+//     broadcast by definition (every notice is meant for every
+//     authenticated viewer, not scoped to any item/library/user), so the
+//     fallthrough is correct, not an oversight.
 //
 // Cursor: `afterId` is a raw events.id (UUIDv7) — `WHERE id > afterId`,
 // ordered by id ascending. UUIDv7's layout (48-bit big-endian unix_ts_ms in
