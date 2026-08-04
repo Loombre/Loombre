@@ -54,6 +54,22 @@ vi.mock("../../../components/music/MusicPlayerProvider.js", () => ({
   useMusicPlayer: () => ({ playTrack, playQueue }),
 }));
 
+// SystemNoticeProvider likewise lives above the route layout (AppProviders)
+// — this route's VideoPlayer mounts NoticeOverlayStrip against it, but
+// this file is about ?mediaFileId/?t deep-link plumbing, not system
+// notices (see NoticeOverlayStrip.test.tsx for that coverage), so it's
+// mocked away exactly like MusicPlayerProvider above.
+vi.mock("../../../components/notices/SystemNoticeProvider.js", () => ({
+  useSystemNotice: () => ({
+    notice: null,
+    severity: null,
+    serverOffsetMs: 0,
+    dismissed: false,
+    dismiss: vi.fn(),
+    bannerVisible: false,
+  }),
+}));
+
 vi.mock("../../../lib/playback-session.js", () => ({
   createPlaybackSession: (...args: unknown[]) => createPlaybackSession(...args),
   endPlaybackSession: (...args: unknown[]) => endPlaybackSession(...args),

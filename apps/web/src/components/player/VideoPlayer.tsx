@@ -48,6 +48,7 @@ import { AmbientBackdrop } from "./AmbientBackdrop.js";
 import { UnavailableScreen } from "./UnavailableScreen.js";
 import { ResumePrompt } from "./ResumePrompt.js";
 import { PlayerControls } from "./PlayerControls.js";
+import { NoticeOverlayStrip } from "./NoticeOverlayStrip.js";
 import { applyAudioTrackSelection } from "./TrackPickers.js";
 import type { BufferedRange } from "./Scrubber.js";
 import type { ChapterListEntry } from "./ChapterList.js";
@@ -780,6 +781,10 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
       onMouseMove={resetIdleTimer}
       onTouchStart={resetIdleTimer}
     >
+      {/* N3's player checkpoint: mounted directly inside stageRef (the
+          fullscreen target) so a notice survives the real Fullscreen API,
+          regardless of `phase` — see NoticeOverlayStrip.tsx's header. */}
+      <NoticeOverlayStrip />
       {(phase === "loading" || (!isPlaying && positionMs === 0)) && <AmbientBackdrop imageUrl={backdropUrl} dominantColor={dominantColor} />}
       {phase === "loading" ? (
         <div className={styles.loading}>Preparing playback…</div>

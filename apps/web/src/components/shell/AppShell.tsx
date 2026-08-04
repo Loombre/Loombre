@@ -6,9 +6,11 @@ import type { ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { ShellNav } from "./ShellNav.js";
 import { Topbar } from "./Topbar.js";
+import { BannerRegion } from "./BannerRegion.js";
 import { getAuthStore } from "../../lib/auth-store.js";
 import { apiGet } from "../../lib/api-client.js";
 import { BootSplashLazy as BootSplash } from "../brand/BootSplashLazy.js";
+import { useSystemNotice } from "../notices/SystemNoticeProvider.js";
 import styles from "./AppShell.module.css";
 
 /** Wraps every authenticated route: redirects to /login whenever the store
@@ -35,6 +37,11 @@ export function AppShell({ children }: { children: ReactNode }): React.JSX.Eleme
   // The Phosphor sidebar (Wave 0) reuses the same fetch for its user row
   // (real display name) and its admin-gated SYSTEM group.
   const [isAdmin, setIsAdmin] = useState(false);
+  // BannerRegion (NG9) needs its own margin to clear the fixed topbar;
+  // <main>'s ordinary topbar-clearance padding would then double it up
+  // when a banner is actually showing — see AppShell.module.css's
+  // `[data-banner="true"]` override and BannerRegion.module.css's header.
+  const { bannerVisible } = useSystemNotice();
 
   useEffect(() => {
     const store = getAuthStore();
@@ -105,7 +112,10 @@ export function AppShell({ children }: { children: ReactNode }): React.JSX.Eleme
           MobileHeader replaces it there — see Topbar's own module rule
           in AppShell.module.css). */}
       <Topbar username={username} isAdmin={isAdmin} />
-      <main className={styles.main}>{children}</main>
+      <BannerRegion />
+      <main className={styles.main} data-banner={bannerVisible}>
+        {children}
+      </main>
     </div>
   );
 }
