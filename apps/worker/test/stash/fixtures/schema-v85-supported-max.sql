@@ -196,7 +196,15 @@ INSERT INTO files (id, basename, parent_folder_id, size, mod_time, created_at, u
 
 INSERT INTO files_fingerprints (file_id, type, fingerprint) VALUES (1, 'oshash', 'a1b2c3d4e5f6a7b8');
 INSERT INTO files_fingerprints (file_id, type, fingerprint) VALUES (1, 'md5', 'deadbeefdeadbeefdeadbeefdeadbeef');
+-- Real Stash stores a per-file `phash` (perceptual hash) as a raw signed
+-- int64 in this same blob-affinity column — a value that routinely exceeds
+-- JS's safe-integer range. Present here so the read model is exercised
+-- against the real column shape (a bare SELECT of the fingerprint value
+-- would make node:sqlite throw ERR_OUT_OF_RANGE before type-filtering).
+-- The owner's real 43k-scene DB exposed this; the fixture now carries it.
+INSERT INTO files_fingerprints (file_id, type, fingerprint) VALUES (1, 'phash', -9223314888072965413);
 INSERT INTO files_fingerprints (file_id, type, fingerprint) VALUES (2, 'oshash', 'ffeeddccbbaa9988');
+INSERT INTO files_fingerprints (file_id, type, fingerprint) VALUES (2, 'phash', 8858502847294208013);
 
 INSERT INTO scenes (id, title, details, date, date_precision, rating, studio_id, code, director, organized, cover_blob, created_at, updated_at)
   VALUES (1, 'Scene One', 'Details for scene one.', '2023-06-15', 1, 85, 1, 'ABC-123', 'Some Director', 1, 'scene1cover', '2023-06-01 00:00:00', '2023-06-16 12:00:00');
