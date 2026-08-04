@@ -11,9 +11,10 @@
 // TrayLaunchModes).
 //
 // Menu surface per the mission brief: status, Open Loombre (GET
-// open-web-target -> launch browser), Start/Stop server, Reveal crash
-// files (GET crash-files -> explorer /select), version + IPC-contract-
-// version mismatch notice.
+// open-web-target -> launch browser), Start/Stop server, Shut down
+// Loombre (UAC-elevated whole-stack stop + tray exit — the full kill
+// switch), Reveal crash files (GET crash-files -> explorer /select),
+// version + IPC-contract-version mismatch notice.
 
 using System.Diagnostics;
 using Loombre.Tray.Ipc;
@@ -46,6 +47,7 @@ public sealed class TrayApplicationContext : ApplicationContext
     private readonly Timer _pollTimer;
     private readonly ToolStripMenuItem _statusItem;
     private readonly ToolStripMenuItem _startStopItem;
+    private readonly ToolStripMenuItem _shutdownItem;
     private readonly ToolStripMenuItem _openItem;
     private readonly ToolStripMenuItem _versionItem;
     private readonly SynchronizationContext _uiContext;
@@ -56,12 +58,19 @@ public sealed class TrayApplicationContext : ApplicationContext
     private bool _pollInFlight;
     private bool _surfaceInFlight;
     private bool _scmStartInFlight;
+    private bool _shutdownInFlight;
 
     public TrayApplicationContext(TrayLaunchMode launchMode, WaitHandle? openWebSignal)
     {
         _statusItem = new ToolStripMenuItem("Loombre — checking…") { Enabled = false };
         _openItem = new ToolStripMenuItem("Open Loombre", null, OnOpenClicked) { Enabled = false };
-        _startStopItem = new ToolStripMenuItem("Start server", null, OnStartStopClicked) { Enabled = false };
+        _startStopItem = new ToolStripMenuItem("Start Loombre", null, OnStartStopClicked) { Enabled = false };
+        // A kill switch must never depend on the thing it kills: enabled
+        // regardless of IPC reachability or plan state — the services may
+        // well be up while IPC is broken, which is exactly when the user
+        // most needs a way to stop everything (the rc "Start server is
+        // always grayed out" lesson, applied in the opposite direction).
+        _shutdownItem = new ToolStripMenuItem("Shut down Loombre…", null, OnShutdownClicked);
         var revealCrashItem = new ToolStripMenuItem("Reveal crash files", null, OnRevealCrashClicked);
         _versionItem = new ToolStripMenuItem($"Loombre Tray v{TrayVersion}") { Enabled = false };
         var exitItem = new ToolStripMenuItem("Exit", null, (_, _) => ExitThread());
@@ -71,6 +80,7 @@ public sealed class TrayApplicationContext : ApplicationContext
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(_openItem);
         menu.Items.Add(_startStopItem);
+        menu.Items.Add(_shutdownItem);
         menu.Items.Add(revealCrashItem);
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(_versionItem);
@@ -209,6 +219,14 @@ public sealed class TrayApplicationContext : ApplicationContext
     private void ApplyPlan(ServerControlPlan plan)
     {
         _lastPlan = plan;
+        if (_shutdownInFlight)
+        {
+            // Mid-shutdown a poll may race the services' stop transitions
+            // — don't let it re-enable lifecycle actions under the UAC
+            // prompt / stop wait.
+            _startStopItem.Enabled = false;
+            return;
+        }
         if (_scmStartInFlight)
         {
             // A start we issued is still settling — don't let a poll that
@@ -244,6 +262,10 @@ public sealed class TrayApplicationContext : ApplicationContext
 
     private async void OnStartStopClicked(object? sender, EventArgs e)
     {
+        if (_shutdownInFlight)
+        {
+            return;
+        }
         switch (_lastPlan?.Action)
         {
             case ServerLifecycleAction.StopViaIpc:
@@ -308,6 +330,91 @@ public sealed class TrayApplicationContext : ApplicationContext
         await PollAsync().ConfigureAwait(true);
     }
 
+    /// <summary>The full kill switch — the mirror of the macOS menubar's
+    /// "Shut Down Loombre…": confirmation dialog → ONE UAC prompt →
+    /// `net stop` of all three services consumers-first/server-last
+    /// (ServiceStack.StopOrder) → verify against the SCM → exit this
+    /// tray too, so nothing of Loombre is left running. The services
+    /// return at the next boot (Start=auto) or via Start Loombre; the
+    /// tray returns at next logon (HKLM Run key) or from the Start
+    /// Menu.</summary>
+    private async void OnShutdownClicked(object? sender, EventArgs e)
+    {
+        if (_shutdownInFlight || _scmStartInFlight)
+        {
+            return;
+        }
+        var page = new TaskDialogPage
+        {
+            Caption = "Loombre",
+            Heading = "Shut down Loombre completely?",
+            Text = "This stops the Loombre server, the background worker, and the web interface — "
+                + "streaming stops for every device using this server — and then closes this tray controller.\n\n"
+                + "Windows will ask for administrator approval. To use Loombre again, open Loombre from the "
+                + "Start Menu and choose “Start Loombre”, or restart this PC (the services start "
+                + "automatically at boot).",
+            Icon = TaskDialogIcon.Warning,
+        };
+        var shutDownButton = new TaskDialogButton("Shut Down");
+        page.Buttons.Add(shutDownButton);
+        page.Buttons.Add(TaskDialogButton.Cancel);
+        if (TaskDialog.ShowDialog(page) != shutDownButton)
+        {
+            return;
+        }
+
+        _shutdownInFlight = true;
+        _shutdownItem.Text = "Shutting down Loombre…";
+        _shutdownItem.Enabled = false;
+        _startStopItem.Enabled = false;
+        try
+        {
+            // ServiceController/UAC round-trips block — keep them off the
+            // UI thread (same rationale as StartServerViaScmAsync).
+            var accepted = await Task.Run(ServiceManagerProbe.TryStopServerStackElevated).ConfigureAwait(true);
+            if (!accepted)
+            {
+                ShowBalloon("Shutting down Loombre needs administrator approval.", ToolTipIcon.Info);
+                ResetShutdownItem();
+                return;
+            }
+
+            // TryStopServerStackElevated already waited for the elevated
+            // `net stop` chain to exit; this loop only covers services
+            // still draining a stop transition when it returned.
+            var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(20);
+            while (DateTime.UtcNow < deadline)
+            {
+                var allStopped = await Task.Run(ServiceManagerProbe.AllStackServicesStopped).ConfigureAwait(true);
+                if (allStopped)
+                {
+                    // Nothing left to control, and the point was
+                    // "everything off" — exit the tray as well.
+                    ExitThread();
+                    return;
+                }
+                await Task.Delay(500).ConfigureAwait(true);
+            }
+            ShowBalloon(
+                "Loombre's services did not all report stopped — check services.msc for their state.",
+                ToolTipIcon.Warning);
+            ResetShutdownItem();
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception)
+        {
+            ShowBalloon($"Could not shut down Loombre: {ex.Message}", ToolTipIcon.Warning);
+            ResetShutdownItem();
+        }
+        await PollAsync().ConfigureAwait(true);
+    }
+
+    private void ResetShutdownItem()
+    {
+        _shutdownInFlight = false;
+        _shutdownItem.Text = "Shut down Loombre…";
+        _shutdownItem.Enabled = true;
+    }
+
     /// <summary>The "user asked to see Loombre" flow — runs on the UI
     /// thread for every non-autostart launch, for the installer's
     /// completion launch, and whenever a second interactive launch
@@ -351,7 +458,7 @@ public sealed class TrayApplicationContext : ApplicationContext
                 if (scm.State is ScmStates.Stopped or ScmStates.Paused)
                 {
                     ShowBalloon(
-                        "The Loombre server is stopped. Right-click the Loombre icon and choose \"Start server\".",
+                        "The Loombre server is stopped. Right-click the Loombre icon and choose \"Start Loombre\".",
                         ToolTipIcon.Info);
                     return;
                 }

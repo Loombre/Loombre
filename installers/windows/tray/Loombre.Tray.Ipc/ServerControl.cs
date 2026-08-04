@@ -86,12 +86,12 @@ public static class ServerControl
         {
             // Nothing this tray could start: no SCM answer, or no
             // LoombreServer service installed at all.
-            return new ServerControlPlan("Start server", false, ServerLifecycleAction.None);
+            return new ServerControlPlan("Start Loombre", false, ServerLifecycleAction.None);
         }
         return scm.State switch
         {
             ScmStates.Stopped or ScmStates.Paused =>
-                new ServerControlPlan("Start server", true, ServerLifecycleAction.StartViaScm),
+                new ServerControlPlan("Start Loombre", true, ServerLifecycleAction.StartViaScm),
             // Service up but the IPC listener not reachable: the child is
             // still booting (first-start payload extraction, initdb,
             // migrations can take minutes) — say so instead of showing a
@@ -100,7 +100,7 @@ public static class ServerControl
                 new ServerControlPlan("Starting server…", false, ServerLifecycleAction.None),
             ScmStates.StopPending =>
                 new ServerControlPlan("Stopping server…", false, ServerLifecycleAction.None),
-            _ => new ServerControlPlan("Start server", false, ServerLifecycleAction.None),
+            _ => new ServerControlPlan("Start Loombre", false, ServerLifecycleAction.None),
         };
     }
 }
