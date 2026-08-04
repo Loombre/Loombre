@@ -210,4 +210,43 @@ describe("GET/PUT /admin/libraries/{id}/stash-connection", () => {
       .send({ sqlitePath: "/data/stash.sqlite", genreTagNames: [1, 2, 3] });
     expect(res.status, JSON.stringify(res.body)).toBe(422);
   });
+
+  it("blobsPath round-trip: null before any save; PUT sets it; omit leaves untouched; null clears it (filesystem blob-store support)", async () => {
+    const libraryId = await makeRestrictedLibrary("stash-conn-blobs-lib");
+
+    const before = await request(app.getHttpServer())
+      .get(`/admin/libraries/${libraryId}/stash-connection`)
+      .set("Authorization", `Bearer ${adminToken}`);
+    expect(before.body.blobsPath).toBeNull();
+
+    const set = await request(app.getHttpServer())
+      .put(`/admin/libraries/${libraryId}/stash-connection`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ sqlitePath: "/data/stash.sqlite", blobsPath: "/data/stash/blobs" });
+    expect(set.status, JSON.stringify(set.body)).toBe(200);
+    expect(set.body.blobsPath).toBe("/data/stash/blobs");
+
+    // Omitting blobsPath on a later PUT leaves it untouched.
+    const omit = await request(app.getHttpServer())
+      .put(`/admin/libraries/${libraryId}/stash-connection`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ sqlitePath: "/data/stash.sqlite", enabled: false });
+    expect(omit.body.blobsPath).toBe("/data/stash/blobs");
+
+    // Explicit null clears it back to DB-only art.
+    const clear = await request(app.getHttpServer())
+      .put(`/admin/libraries/${libraryId}/stash-connection`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ sqlitePath: "/data/stash.sqlite", blobsPath: null });
+    expect(clear.body.blobsPath).toBeNull();
+  });
+
+  it("422s when blobsPath is neither a string nor null", async () => {
+    const libraryId = await makeRestrictedLibrary("stash-conn-blobs-422-lib");
+    const res = await request(app.getHttpServer())
+      .put(`/admin/libraries/${libraryId}/stash-connection`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ sqlitePath: "/data/stash.sqlite", blobsPath: 42 });
+    expect(res.status, JSON.stringify(res.body)).toBe(422);
+  });
 });

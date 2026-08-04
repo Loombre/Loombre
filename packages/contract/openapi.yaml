@@ -5906,6 +5906,7 @@ components:
         - sqlitePath
         - enabled
         - genreTagNames
+        - blobsPath
         - status
         - statusDetail
         - lastSeenSchemaVersion
@@ -5928,6 +5929,15 @@ components:
             heuristic applies — a Stash tag with NO parent tag maps to
             genre, a child tag maps to a plain tag; explicit tag names here
             override that heuristic wholesale, case-insensitively.
+        blobsPath:
+          type: [string, 'null']
+          description: >-
+            Filesystem path to Stash's on-disk blob store, when Stash uses
+            Filesystem (not Database) blob storage. `null` (the default)
+            means art is read only from database-stored blobs — a
+            Filesystem-mode Stash then syncs no covers. A path opts into
+            reading cover/portrait/logo bytes from Stash's sharded on-disk
+            store. Worker-side path; the server never opens it.
         status: { $ref: '#/components/schemas/AdminStashConnectionStatus' }
         statusDetail:
           type: [string, 'null']
@@ -5951,6 +5961,12 @@ components:
             Send `null` to explicitly clear it back to the default
             heuristic (see AdminStashConnection.genreTagNames). Send a
             (possibly empty) array to replace it wholesale.
+        blobsPath:
+          type: [string, 'null']
+          description: >-
+            Omit to leave the saved blobsPath untouched. Send `null` to
+            clear it (back to DB-only art). Send a path to read covers from
+            Stash's filesystem blob store (see AdminStashConnection.blobsPath).
 
     AdminStashPathMapping:
       type: object
