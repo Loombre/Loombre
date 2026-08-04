@@ -35,3 +35,10 @@
   letter-spacing: var(--track-mono);
   color: var(--color-text-muted);
 }
+
+.restartLink {
+  font-size: var(--text-sm);
+  color: var(--color-warning);
+  text-decoration: underline;
+  width: fit-content;
+}

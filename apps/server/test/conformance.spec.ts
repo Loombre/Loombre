@@ -368,6 +368,14 @@ const IMPLEMENTED_NON_PUBLIC_EXPECTATIONS: Record<string, number> = {
   listAdminSessions: 200,
   getSystemInfo: 200,
   getSystemUpdate: 200, // release lane (STATE.md P4.3/P4.16); LOOMBRE_UPDATE_CHECK=off is set in beforeAll -> deterministic {verification: "disabled"}, zero network
+  // Admin power actions: 202 accepted — SAFE to walk here because the
+  // real SIGTERM triggers are armed only by main.ts's direct-entrypoint
+  // bootstrap; this suite boots AppModule embedded, so ServerPowerService
+  // stays unarmed and the post-response hook is a logged no-op (see
+  // common/server-power.service.ts — server-power.e2e.spec.ts covers the
+  // armed path with fake triggers).
+  restartServer: 202,
+  shutdownServer: 202, // LOOMBRE_SUPERVISOR unset in this suite -> never the container-supervision 409
   // Phase 4 deliverable D (this lane): admin ops surfaces.
   getAdminCapabilities: 200, // null envelope on this suite's fresh reseeded DB (no hwprobe has ever run) — still 200, per contract
   listCrashFiles: 200, // empty items[] — LOOMBRE_DATA_DIR unset in this suite, crashes dir doesn't exist

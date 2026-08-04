@@ -250,6 +250,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/system/restart": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Admin-only graceful server restart
+         * @description Gracefully restarts the server process. The 202 is flushed to the socket BEFORE teardown begins (same ordering contract as the controller-IPC stop), then the server runs its normal graceful shutdown (HTTP close, embedded-PostgreSQL stop) and exits with the documented restart exit code so the platform supervisor (launchd / systemd / Windows SCM recovery / Docker restart policy) starts it again — typically within 5–15 seconds. Settings marked `requiresRestart` take effect on the restarted process. Only the server process restarts; the worker and web services are untouched. In an unsupervised context (bare `node`, dev harness) the process simply exits and nothing restarts it — deployment docs state this.
+         */
+        post: operations["restartServer"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/shutdown": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Admin-only graceful server shutdown
+         * @description Gracefully stops the server process — the same in-band self-stop the desktop controllers' "Stop server" performs. The 202 is flushed before teardown begins; the process then exits cleanly (exit 0), which every shipped service supervisor except Docker treats as "stay stopped" (launchd `SuccessfulExit=false`, systemd `Restart=on-failure`, the Windows service host's clean-child-exit stop). The server stays down until started out-of-band (menubar/tray controller, launchctl/systemctl/SCM, or reboot — the services are boot-started). Only the server stops; worker and web services keep running. Under a container supervisor whose restart policy ignores exit codes (the shipped Docker compose file's `unless-stopped`), an in-process exit CANNOT keep the container down, so the request is refused with 409 instead of pretending.
+         */
+        post: operations["shutdownServer"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/users": {
         parameters: {
             query?: never;
@@ -2345,6 +2385,12 @@ export interface components {
             };
             /** @description M8 — true iff self-service "forgot password" (authForgotPassword/ authResetPassword) is usable on this instance: mail is configured (a generic SMTP transport with host/from-address/ public-URL all set — credentials optional). Additive; always sent (never omitted). The login screen shows a "forgot password" affordance only when this is true. */
             passwordResetAvailable?: boolean;
+        };
+        ServerPowerActionResponse: {
+            /** @enum {boolean} */
+            accepted: true;
+            /** @enum {string} */
+            action: "restart" | "shutdown";
         };
         SystemInfo: {
             version: string;
@@ -4477,6 +4523,61 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    restartServer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Restart accepted; teardown begins after this response. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ServerPowerActionResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    shutdownServer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Shutdown accepted; teardown begins after this response. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ServerPowerActionResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            /** @description This deployment's supervisor would immediately restart an exited server (container `restart: unless-stopped` — the server advertises this via its supervision environment), so an in-process shutdown cannot deliver "stays stopped." Stop the container from outside instead (`docker compose stop`). The problem `code` is `shutdown-unsupported-under-container-supervision`. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
             default: components["responses"]["Problem"];
         };
     };
