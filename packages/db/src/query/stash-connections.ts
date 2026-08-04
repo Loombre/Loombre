@@ -67,6 +67,11 @@ export interface UpsertLibraryStashConnectionConfigInput {
    *  only pass this key at all when the admin actually sent one (see
    *  apps/server/src/plugins/admin-stash.service.ts's putConnection). */
   genreTagNames?: string[] | null;
+  /** Filesystem blob-store path (owner-approved cover ingest). Same
+   *  omit-to-preserve / null-is-a-real-clear convention as genreTagNames:
+   *  `undefined` leaves the saved value untouched; `null` clears it (back
+   *  to DB-only art); a string sets the on-disk blob directory. */
+  blobsPath?: string | null;
   nowMs: number;
 }
 
@@ -97,6 +102,7 @@ export async function upsertLibraryStashConnectionConfig(
       sqlite_path: input.sqlitePath,
       ...(input.enabled !== undefined ? { enabled: input.enabled } : {}),
       ...(input.genreTagNames !== undefined ? { genre_tag_names: input.genreTagNames } : {}),
+      ...(input.blobsPath !== undefined ? { stash_blobs_path: input.blobsPath } : {}),
       created_at_ms: input.nowMs,
       updated_at_ms: input.nowMs,
     })
@@ -105,6 +111,7 @@ export async function upsertLibraryStashConnectionConfig(
         sqlite_path: (eb) => eb.ref('excluded.sqlite_path'),
         ...(input.enabled !== undefined ? { enabled: (eb) => eb.ref('excluded.enabled') } : {}),
         ...(input.genreTagNames !== undefined ? { genre_tag_names: (eb) => eb.ref('excluded.genre_tag_names') } : {}),
+        ...(input.blobsPath !== undefined ? { stash_blobs_path: (eb) => eb.ref('excluded.stash_blobs_path') } : {}),
         updated_at_ms: (eb) => eb.ref('excluded.updated_at_ms'),
       })
     )
