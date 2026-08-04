@@ -116,6 +116,21 @@ describe.each([
     expect(files[0]?.md5).toBeNull();
   });
 
+  it("getSceneFiles does not throw when a file carries a phash int64 fingerprint out of JS safe-integer range (real-DB regression)", () => {
+    // The v85 fixture's files carry a real-shaped phash row (a raw signed
+    // int64 in the blob-affinity fingerprint column). Before the type-
+    // filtered SELECT in readFingerprints, node:sqlite threw ERR_OUT_OF_RANGE
+    // materializing that value — crashing the whole apply phase on any real
+    // Stash library. Both fixtures must read cleanly; only oshash/md5 (text)
+    // are ever surfaced, phash is never touched.
+    return openFixture(fixtureFile).then((conn) => {
+      expect(() => getSceneFiles(conn.db, "1")).not.toThrow();
+      const files = getSceneFiles(conn.db, "1");
+      expect(files[0]?.oshash).toBe("a1b2c3d4e5f6a7b8");
+      expect(files[0]).not.toHaveProperty("phash");
+    });
+  });
+
   it("getScenePerformers includes aliases/birthdate/country/measurements", async () => {
     const conn = await openFixture(fixtureFile);
     const performers = getScenePerformers(conn.db, "1");
