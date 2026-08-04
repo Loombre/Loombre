@@ -1,0 +1,179 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+
+/* Loombre :: apps/web/src/components/settings/sections/NoticesSection.module.css
+ *
+ * Shared across NoticesSection.tsx + its three cards (ActiveNoticeCard,
+ * ComposeNoticeCard, NoticeHistoryPanel) — same multi-file-one-module
+ * pattern shared.module.css already establishes (InvitesPanel.tsx +
+ * CreateInviteSheet.tsx + UsersSection.tsx all import that one file).
+ * Row/list/form primitives still come from ./shared.module.css; this file
+ * only holds what's genuinely new to the Notices surface.
+ */
+
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  max-width: 640px;
+}
+
+.heading {
+  margin: 0;
+  font-size: var(--text-xl);
+  font-weight: var(--weight-semibold);
+}
+
+.cardTitle {
+  margin: 0 0 var(--space-sm);
+  font-size: var(--text-lg);
+  font-weight: var(--weight-semibold);
+}
+
+.errorBanner {
+  margin: 0;
+  padding: var(--space-sm) var(--space-md);
+  border-radius: var(--radius-md);
+  background: var(--color-accent-tint);
+  color: var(--color-accent);
+  font-size: var(--text-sm);
+}
+
+/* ── Active-notice card ──────────────────────────────────────────────── */
+
+.activeBlock {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.activeMessage {
+  margin: 0;
+  font-size: var(--text-base);
+  line-height: var(--leading-normal);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.activeMeta {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3xs);
+  margin: 0;
+}
+
+.metaRow {
+  display: flex;
+  gap: var(--space-xs);
+  font-size: var(--text-sm);
+}
+
+.metaRow dt {
+  color: var(--muted);
+  min-width: 96px;
+}
+
+.metaRow dd {
+  margin: 0;
+  color: var(--color-text);
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* Danger-tinted confirm (ProviderKeysCard/ServerPowerCard/InvitesPanel
+   recipe — same color-mix derivation from --color-danger everywhere it
+   appears in this app). */
+.confirmBlock {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  flex-wrap: wrap;
+  border: 1px solid color-mix(in srgb, var(--color-danger) 30%, transparent);
+  background: color-mix(in srgb, var(--color-danger) 6%, transparent);
+  border-radius: var(--radius-md);
+  padding: var(--space-sm) var(--space-md);
+}
+
+.confirmText {
+  flex: 1 1 220px;
+  min-width: 0;
+  font-size: var(--text-sm);
+  color: var(--muted);
+}
+
+.confirmActions {
+  display: flex;
+  gap: var(--space-xs);
+  flex-shrink: 0;
+}
+
+/* ── Compose card ────────────────────────────────────────────────────── */
+
+.presetsRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
+  margin-bottom: var(--space-md);
+}
+
+.messageHeader {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-sm);
+}
+
+/* "House mono-uppercase caption" — same recipe as shared.module.css's
+   .countMono, reproduced here since a live char count is new UI with no
+   direct precedent to import from. */
+.charCounter {
+  font-family: var(--font-mono);
+  font-size: var(--mono-lg);
+  letter-spacing: var(--track-mono);
+  text-transform: uppercase;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.charCounter[data-over="true"] {
+  color: var(--color-danger);
+}
+
+.customMinutesRow {
+  margin-top: var(--space-2xs);
+}
+
+/* ── History panel (InvitesPanel.tsx template: a hairline-separated panel
+   below the cards above, not itself boxed) ─────────────────────────── */
+
+.historyPanel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  margin-top: var(--space-xl);
+  padding-top: var(--space-lg);
+  border-top: 1px solid var(--color-border-subtle);
+}
+
+.loadMoreRow {
+  display: flex;
+  justify-content: center;
+}
+
+@media (width <= 767.98px) {
+  .confirmBlock {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .confirmActions > * {
+    flex: 1;
+    min-height: 44px;
+  }
+
+  .presetsRow > * {
+    flex: 1 1 auto;
+  }
+}
