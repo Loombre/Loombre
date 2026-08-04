@@ -111,11 +111,16 @@ interface FormErrors {
   cross?: string;
 }
 
+// Mirrors the contract's `maximum: 31536000000` ms (365 days) on both
+// durations — review R-F3. The server is authoritative (422 beyond); this
+// just keeps the error inline instead of a round-trip.
+const MAX_MINUTES = 525_600;
+
 function parseMinutes(raw: string): number | null {
   const trimmed = raw.trim();
   if (!/^\d+$/.test(trimmed)) return null;
   const n = Number(trimmed);
-  return n >= 1 ? n : null;
+  return n >= 1 && n <= MAX_MINUTES ? n : null;
 }
 
 type Resolved = { ok: true; ms: number | undefined } | { ok: false; error: string };
@@ -124,7 +129,7 @@ function resolveEffectiveInMs(choice: EffectiveChoice, customMinutes: string): R
   if (choice === "none") return { ok: true, ms: undefined };
   if (choice === "custom") {
     const n = parseMinutes(customMinutes);
-    if (n === null) return { ok: false, error: "Enter a whole number of minutes (1 or more)." };
+    if (n === null) return { ok: false, error: "Enter a whole number of minutes (1 to 525600 — a year)." };
     return { ok: true, ms: n * 60_000 };
   }
   return { ok: true, ms: (EFFECTIVE_MINUTES[choice] ?? 0) * 60_000 };
@@ -134,7 +139,7 @@ function resolveExpiresInMs(choice: ExpiryChoice, customMinutes: string): Resolv
   if (choice === "" || choice === "untilCancelled") return { ok: true, ms: undefined };
   if (choice === "custom") {
     const n = parseMinutes(customMinutes);
-    if (n === null) return { ok: false, error: "Enter a whole number of minutes (1 or more)." };
+    if (n === null) return { ok: false, error: "Enter a whole number of minutes (1 to 525600 — a year)." };
     return { ok: true, ms: n * 60_000 };
   }
   return { ok: true, ms: (EXPIRY_MINUTES[choice] ?? 0) * 60_000 };
@@ -284,7 +289,7 @@ export function ComposeNoticeCard({
           <Button type="button" variant="secondary" onClick={() => applyPreset(MAINTENANCE_PRESET)}>
             Maintenance
           </Button>
-          <Button type="button" variant="ghost" onClick={() => applyPreset(CUSTOM_PRESET)}>
+          <Button type="button" variant="secondary" onClick={() => applyPreset(CUSTOM_PRESET)}>
             Custom
           </Button>
         </div>

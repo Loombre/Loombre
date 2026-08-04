@@ -427,4 +427,25 @@ describe('notice.published / notice.cancelled (STATE.md "Admin broadcast notific
     expect((await getActiveNotice(db, 60_500))?.id).toBe(expiring.id);
     expect(await getActiveNotice(db, 61_000)).toBeNull(); // expiresAtMs is exclusive (> now, not >=)
   });
+
+  it('one-active invariant holds under CONCURRENT publishes (review R-F2: pg_advisory_xact_lock — without it READ COMMITTED lets overlapping transactions miss each other\'s uncommitted INSERT and BOTH new rows survive; red is probabilistic without the lock, green is deterministic with it)', async () => {
+    const nowMs = 500_000;
+    await Promise.all(
+      Array.from({ length: 8 }, (_, i) =>
+        publishNoticeAndEmit(db, {
+          message: `Concurrent probe ${i}.`,
+          severity: 'critical',
+          effectiveAtMs: null,
+          expiresAtMs: null,
+          createdBy: adminId,
+          nowMs,
+        }),
+      ),
+    );
+    const active = await rawClient.query(
+      'SELECT id FROM system_notices WHERE cancelled_at_ms IS NULL AND (expires_at_ms IS NULL OR expires_at_ms > $1)',
+      [nowMs],
+    );
+    expect(active.rows).toHaveLength(1);
+  });
 });

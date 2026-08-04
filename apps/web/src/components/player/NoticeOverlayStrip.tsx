@@ -24,9 +24,16 @@
 // button (itself `pointer-events: auto`) is interactive. Playback state
 // (play/pause/seek/volume/etc.) is never read or touched here — this
 // component is purely a render of SystemNoticeProvider's shared state.
-// Independent of PlayerControls' `controlsVisible` idle-hide by design —
-// this strip does not fight that timer and stays governed by its own
-// severity rules only.
+// VISIBILITY stays independent of PlayerControls' idle-hide (this strip
+// never hides because controls did) but POSITION yields (review R-F4):
+// while the controls' top bar is shown, `belowControls` shifts the strip
+// under that bar so the Back button and title are never covered — the
+// collision otherwise recurs at the highest-attention moment, every time
+// controls are revealed during a persistent warning/critical notice.
+// Under real fullscreen the strip is the ONLY notice surface a screen
+// reader can perceive (banner + toast live outside the fullscreen
+// subtree), so it carries the same role split BannerRegion uses:
+// critical = role "alert", info/warning = role "status" (review R-F5).
 
 import { useEffect, useState } from "react";
 import { AlertTriangle, Info, OctagonAlert, X } from "lucide-react";
@@ -44,7 +51,7 @@ const SEVERITY_ICON: Record<NoticeSeverity, typeof Info> = {
   critical: OctagonAlert,
 };
 
-export function NoticeOverlayStrip(): React.JSX.Element | null {
+export function NoticeOverlayStrip({ belowControls = false }: { belowControls?: boolean } = {}): React.JSX.Element | null {
   const { notice, severity, dismissed, dismiss, serverOffsetMs } = useSystemNotice();
   const countdown = useNoticeCountdown(notice?.effectiveAtMs ?? null, serverOffsetMs);
   const [autoHiddenId, setAutoHiddenId] = useState<string | null>(null);
@@ -66,7 +73,12 @@ export function NoticeOverlayStrip(): React.JSX.Element | null {
   if (!visible) return null;
 
   return (
-    <div className={styles.strip} data-severity={severity}>
+    <div
+      className={styles.strip}
+      data-severity={severity}
+      data-below-controls={belowControls ? "true" : undefined}
+      role={severity === "critical" ? "alert" : "status"}
+    >
       <Icon icon={SEVERITY_ICON[severity]} size="dense" aria-hidden />
       <div className={styles.text}>
         <span className={styles.message}>{notice.message}</span>

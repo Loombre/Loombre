@@ -108,9 +108,23 @@ export function SystemNoticeProvider({ children }: { children: ReactNode }): Rea
     [maybeToastInfo],
   );
 
+  // Staleness guard (review finding R-F1): a GET /notices/active response
+  // is a SNAPSHOT taken when the request started — if a socket
+  // notice.published/notice.cancelled lands while the fetch is in flight
+  // (or a newer fetch starts), the resolving snapshot is stale and must be
+  // DISCARDED, or it clobbers/resurrects over the newer truth and sticks
+  // until the next event. The triggering condition — a slow
+  // /notices/active while the server is mid-restart — is this feature's
+  // primary scenario. Mechanism: a monotonic generation, bumped by every
+  // fetch START and every socket-event application; a fetch only applies
+  // its result if the generation is unchanged since it began.
+  const stateGenRef = useRef(0);
+
   const fetchActive = useCallback(async (): Promise<void> => {
+    const gen = ++stateGenRef.current;
     try {
       const res = await apiGet("/notices/active");
+      if (stateGenRef.current !== gen) return; // superseded mid-flight (R-F1)
       applyActive(res.notice, res.serverNowMs);
     } catch {
       // Active-fetch failure keeps showing whatever is already held — a
@@ -143,6 +157,7 @@ export function SystemNoticeProvider({ children }: { children: ReactNode }): Rea
     const socket = getEventsSocket();
 
     const unsubPublished = socket.subscribe<SystemNotice>("notice.published", (event: EventEnvelope<SystemNotice>) => {
+      stateGenRef.current++; // invalidate any in-flight active fetch (R-F1)
       const payload = event.payload;
       const offset = computeServerOffsetMs(event.tsMs);
       setState((prev) => ({
@@ -157,6 +172,11 @@ export function SystemNoticeProvider({ children }: { children: ReactNode }): Rea
     });
 
     const unsubCancelled = socket.subscribe<CancelledPayload>("notice.cancelled", (event: EventEnvelope<CancelledPayload>) => {
+      // Bump UNCONDITIONALLY — even a cancel for an id we don't currently
+      // hold invalidates an in-flight fetch, because that fetch may be
+      // about to apply exactly the notice this event just cancelled
+      // (the resurrect-a-ghost variant of R-F1).
+      stateGenRef.current++;
       setState((prev) => (prev.notice && prev.notice.id === event.payload.id ? { ...prev, notice: null } : prev));
     });
 
