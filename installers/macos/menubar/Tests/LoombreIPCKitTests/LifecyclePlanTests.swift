@@ -17,7 +17,7 @@ import XCTest
 final class LifecyclePlanTests: XCTestCase {
     func test_unreachable_server_yields_enabled_start_via_launchd() {
         let plan = MenuState.lifecyclePlan(isConnected: false, state: .notRunning)
-        XCTAssertEqual(plan.title, "Start Server")
+        XCTAssertEqual(plan.title, "Start Loombre")
         XCTAssertTrue(plan.isEnabled)
         XCTAssertEqual(plan.action, .startViaLaunchd)
     }
@@ -28,7 +28,7 @@ final class LifecyclePlanTests: XCTestCase {
     /// path must win here too, not a doomed IPC POST.
     func test_connected_but_notRunning_still_routes_start_to_launchd() {
         let plan = MenuState.lifecyclePlan(isConnected: true, state: .notRunning)
-        XCTAssertEqual(plan.title, "Start Server")
+        XCTAssertEqual(plan.title, "Start Loombre")
         XCTAssertTrue(plan.isEnabled)
         XCTAssertEqual(plan.action, .startViaLaunchd)
     }
@@ -62,7 +62,7 @@ final class LifecyclePlanTests: XCTestCase {
     /// is exactly what recovers a dead server, so it behaves as notRunning.
     func test_crashed_without_connection_routes_start_to_launchd() {
         let plan = MenuState.lifecyclePlan(isConnected: false, state: .crashed)
-        XCTAssertEqual(plan.title, "Start Server")
+        XCTAssertEqual(plan.title, "Start Loombre")
         XCTAssertTrue(plan.isEnabled)
         XCTAssertEqual(plan.action, .startViaLaunchd)
     }
@@ -79,21 +79,66 @@ final class LifecyclePlanTests: XCTestCase {
 
     // MARK: - launchd fallback constants
 
-    func test_launchd_fallback_names_the_shipped_daemon() {
-        // Label + plist path must match installers/macos/pkg/launchd's
-        // com.loombre.server.plist and postinstall's bootstrap loop.
+    func test_launchd_fallback_names_the_shipped_daemons() {
+        // Labels + plist paths must match installers/macos/pkg/launchd's
+        // three shipped plists and postinstall's bootstrap loop.
         XCTAssertEqual(LaunchdFallback.serverLabel, "com.loombre.server")
+        XCTAssertEqual(LaunchdFallback.workerLabel, "com.loombre.worker")
+        XCTAssertEqual(LaunchdFallback.webLabel, "com.loombre.web")
         XCTAssertEqual(LaunchdFallback.serverPlistPath, "/Library/LaunchDaemons/com.loombre.server.plist")
+        XCTAssertEqual(LaunchdFallback.workerPlistPath, "/Library/LaunchDaemons/com.loombre.worker.plist")
+        XCTAssertEqual(LaunchdFallback.webPlistPath, "/Library/LaunchDaemons/com.loombre.web.plist")
     }
 
-    func test_launchd_start_command_kickstarts_then_bootstraps() {
-        let command = LaunchdFallback.startServerShellCommand
-        XCTAssertTrue(command.contains("launchctl kickstart system/com.loombre.server"))
-        XCTAssertTrue(command.contains("launchctl bootstrap system /Library/LaunchDaemons/com.loombre.server.plist"))
-        // No characters that would need escaping inside an AppleScript
-        // `do shell script "..."` literal — the caller embeds it verbatim.
-        XCTAssertFalse(command.contains("\""))
-        XCTAssertFalse(command.contains("\\"))
+    /// Start restores the WHOLE stack, not just the server: after a full
+    /// shutdown (bootout of all three daemons) a server-only start would
+    /// leave worker + web permanently down until the next reboot.
+    func test_launchd_start_command_kickstarts_then_bootstraps_all_three_daemons() {
+        let command = LaunchdFallback.startAllShellCommand
+        for (label, plist) in [
+            ("com.loombre.server", "/Library/LaunchDaemons/com.loombre.server.plist"),
+            ("com.loombre.worker", "/Library/LaunchDaemons/com.loombre.worker.plist"),
+            ("com.loombre.web", "/Library/LaunchDaemons/com.loombre.web.plist"),
+        ] {
+            // Per-service recovery pair, empirically verified semantics:
+            // kickstart exits 0 for running OR loaded-but-stopped services
+            // and fails for a booted-out one, where bootstrap recovers it.
+            XCTAssertTrue(command.contains("/bin/launchctl kickstart system/\(label) || /bin/launchctl bootstrap system \(plist)"), "missing kickstart||bootstrap pair for \(label)")
+        }
+        // The server hosts the embedded PostgreSQL the worker depends on —
+        // it must be started first, and a server-start failure must not be
+        // masked by the later groups (&&-joined subshell groups).
+        XCTAssertTrue(command.range(of: "kickstart system/com.loombre.server")!.lowerBound
+            < command.range(of: "kickstart system/com.loombre.worker")!.lowerBound)
+        XCTAssertTrue(command.contains(") && ("))
+        assertAppleScriptEmbeddable(command)
+    }
+
+    /// The full-shutdown command behind "Shut Down Loombre…": boots out all
+    /// three daemons. Consumers first (worker, web), the PostgreSQL-hosting
+    /// server LAST, so nothing spends its shutdown window flailing against
+    /// a dead database. A not-loaded daemon is SUCCESS (idempotent kill
+    /// switch), which is why each group is guarded by a print-probe rather
+    /// than blanket `|| true` — a genuine bootout failure must still fail.
+    func test_shutdown_command_boots_out_all_three_daemons_server_last() {
+        let command = LaunchdFallback.shutdownAllShellCommand
+        for label in ["com.loombre.server", "com.loombre.worker", "com.loombre.web"] {
+            XCTAssertTrue(command.contains("! /bin/launchctl print system/\(label)"), "missing not-loaded guard for \(label)")
+            XCTAssertTrue(command.contains("/bin/launchctl bootout system/\(label)"), "missing bootout for \(label)")
+        }
+        XCTAssertTrue(command.range(of: "bootout system/com.loombre.worker")!.lowerBound
+            < command.range(of: "bootout system/com.loombre.web")!.lowerBound)
+        XCTAssertTrue(command.range(of: "bootout system/com.loombre.web")!.lowerBound
+            < command.range(of: "bootout system/com.loombre.server")!.lowerBound)
+        XCTAssertTrue(command.contains(") && ("))
+        assertAppleScriptEmbeddable(command)
+    }
+
+    /// No characters that would need escaping inside an AppleScript
+    /// `do shell script "..."` literal — the caller embeds these verbatim.
+    private func assertAppleScriptEmbeddable(_ command: String, file: StaticString = #filePath, line: UInt = #line) {
+        XCTAssertFalse(command.contains("\""), "command must not contain double quotes", file: file, line: line)
+        XCTAssertFalse(command.contains("\\"), "command must not contain backslashes", file: file, line: line)
     }
 
     // MARK: - first-run auto-open decision
