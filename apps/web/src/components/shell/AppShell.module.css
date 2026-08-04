@@ -70,6 +70,20 @@
   overflow-x: hidden;
 }
 
+/* NG9/BannerRegion: when a warning/critical notice is showing,
+   BannerRegion.module.css's own margin-top/left ALREADY clears the fixed
+   topbar+sidebar (it renders directly above .main in the flow) — this
+   override drops the now-DUPLICATE topbar-clearance component from
+   .main's padding-top, leaving only the aesthetic --space-xl gap. AppShell
+   sets `data-banner` from the exact same `bannerVisible` BannerRegion
+   itself reads, so the two are never out of sync (one shared boolean, not
+   two independent guesses). No banner rendered (BannerRegion returns
+   null, no DOM node at all) -> this selector never matches -> .main keeps
+   its ordinary full clearance above, unchanged. */
+.main[data-banner="true"] {
+  padding-top: var(--space-xl);
+}
+
 @media (width <= 1279.98px) {
   .topbar {
     inset: 0 0 auto 76px;
@@ -90,6 +104,12 @@
     padding-top: calc(var(--mobile-header-height) + env(safe-area-inset-top, 0) + var(--space-md));
     padding-left: calc(var(--space-md) + env(safe-area-inset-left, 0));
     padding-right: calc(var(--space-md) + env(safe-area-inset-right, 0));
+  }
+
+  /* Mobile twin of the desktop override above: BannerRegion's own
+     margin-top already clears MobileHeader at this breakpoint. */
+  .main[data-banner="true"] {
+    padding-top: calc(var(--space-md) + env(safe-area-inset-top, 0));
   }
 }
 
