@@ -142,7 +142,19 @@ export interface StashSceneFile {
 }
 
 function readFingerprints(db: SqliteReadable, fileId: string): { oshash: string | null; md5: string | null } {
-  const rows = db.prepare('SELECT type, fingerprint FROM files_fingerprints WHERE file_id = ?').all(fileId) as {
+  // ONLY select the fingerprint types we actually consume (both stored as
+  // text). Real Stash also stores a `phash` row per file — a perceptual
+  // hash Stash persists as a raw signed int64 (blob-affinity column, so
+  // SQLite keeps the integer type) whose value routinely exceeds JS's
+  // safe-integer range, e.g. -9223314888072965413. A bare `SELECT
+  // fingerprint` would make node:sqlite throw ERR_OUT_OF_RANGE materializing
+  // that value BEFORE we ever filter by type — crashing every getSceneFiles
+  // (and thus the apply phase) on any real library. Filtering in SQL means
+  // the phash row is never read. (Found by the owner's real 43k-scene DB;
+  // the synthetic fixtures carried no phash rows, so nothing caught it.)
+  const rows = db
+    .prepare("SELECT type, fingerprint FROM files_fingerprints WHERE file_id = ? AND type IN ('oshash', 'md5')")
+    .all(fileId) as {
     type: unknown;
     fingerprint: unknown;
   }[];
