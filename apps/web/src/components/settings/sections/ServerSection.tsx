@@ -27,6 +27,7 @@ import type { components } from "@loombre/sdk";
 import { Card } from "../../ui/Card.js";
 import { apiGet, LoombreApiError } from "../../../lib/api-client.js";
 import { Skeleton } from "../../skeleton/Skeleton.js";
+import { ServerPowerCard } from "./ServerPowerCard.js";
 import styles from "./ServerSection.module.css";
 
 type Capabilities = components["schemas"]["Capabilities"];
@@ -67,6 +68,11 @@ export function ServerSection({ heading }: { heading: string | null }): React.JS
       {heading !== null && <h1 className={styles.heading}>{heading}</h1>}
 
       <HardwareTranscodeCard />
+
+      {/* Power (restart/shutdown — POST /system/restart|shutdown landed
+          with this card; the U9 no-fake-controls line above no longer
+          applies to these two, they have real backing endpoints). */}
+      <ServerPowerCard />
 
       <Card>
         <h2 className={styles.cardTitle}>Telemetry</h2>

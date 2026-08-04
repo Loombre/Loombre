@@ -19,6 +19,29 @@ Until then, phase names are the version axis.
 
 ## [Unreleased]
 
+### Web admin: Restart / Shut down server from Settings → Server (2026-08-04)
+
+New admin-only contract operations **POST /system/restart** and
+**POST /system/shutdown** (202-before-teardown, RFC 9457 refusals; SDK
+regenerated), surfaced as a "Power" card on the Server settings tab with
+danger-tinted confirm steps. Restart rides the existing graceful-shutdown
+path but exits with a NAMED restart code (86) that every shipped
+supervisor relaunches — launchd `SuccessfulExit=false`, systemd
+`on-failure`, Windows SCM recovery (the service host logs the code by
+name instead of calling it a crash), Docker `unless-stopped` — and the UI
+polls `/healthz`, claiming "back online" only after observing the server
+actually go down first. Shutdown reuses the tray/menubar in-band
+self-stop (clean exit, stays down everywhere except Docker); under
+container supervision the endpoint refuses honestly with a 409
+(`shutdown-unsupported-under-container-supervision`, the image sets
+`LOOMBRE_SUPERVISOR=container`) pointing at `docker compose stop`, and
+the UI renders that verbatim. The settings "RESTART REQUIRED" banner
+finally gets its pairing: a link to the new Power card. Triggers are
+armed only by the direct-entrypoint bootstrap, so embedded/test contexts
+(conformance walks the endpoints with a live admin token) get a logged
+no-op instead of a dead test runner. New admin-guide page "Restart &
+shut down".
+
 ### Full-shutdown parity: Windows tray + Linux/Docker docs (2026-08-04)
 
 Closes the Windows parity gap flagged in the macOS entry below. The

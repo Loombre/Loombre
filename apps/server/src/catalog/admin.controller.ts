@@ -46,12 +46,13 @@ import {
 } from "@loombre/db";
 import { LOOMBRE_VERSION_FULL } from "@loombre/shared";
 import os from "node:os";
-import { forbidden, notFound, unprocessableEntity } from "../gateway/problem.exception.js";
+import { conflict, forbidden, notFound, unprocessableEntity } from "../gateway/problem.exception.js";
 import { requireUuidParam } from "../gateway/require-uuid-param.js";
 import { sanitizeInstancePath } from "../gateway/sanitize-instance.js";
 import type { AuthenticatedRequest } from "../gateway/auth.guard.js";
 import { DbProvider, type LoombreDb } from "../common/db.provider.js";
 import { requireLiveAdmin } from "../common/require-live-admin.js";
+import { ServerPowerService, type PowerAction } from "../common/server-power.service.js";
 import { ViewerContextProvider } from "../common/viewer-context.provider.js";
 import { JobQueueProvider } from "../common/job-queue.provider.js";
 import { UpdateCheckService } from "../common/update-check/update-check.service.js";
@@ -133,6 +134,7 @@ export class AdminController {
     private readonly viewerContextProvider: ViewerContextProvider,
     private readonly updateCheckService: UpdateCheckService,
     private readonly jobQueueProvider: JobQueueProvider,
+    private readonly serverPowerService: ServerPowerService,
   ) {}
 
   @Get("admin/jobs")
@@ -205,6 +207,47 @@ export class AdminController {
   async getSystemUpdate(@Req() req: AuthenticatedRequest) {
     await requireAdmin(this.dbProvider.db, req);
     return this.updateCheckService.getUpdateInfo();
+  }
+
+  // POST /system/restart + /system/shutdown (contract: restartServer /
+  // shutdownServer). The 202 is flushed BEFORE any teardown begins
+  // (ServerPowerService hooks res "finish" — the ipc/listener.ts
+  // handleServerStop ordering contract), and the triggers themselves are
+  // armed only by main.ts's direct-entrypoint bootstrap, so embedded/test
+  // contexts walking these endpoints get a logged no-op, never a dead
+  // test runner. @Res passthrough keeps Nest serializing the return value
+  // while still exposing the raw response for the finish hook.
+
+  @Post("system/restart")
+  @HttpCode(HttpStatus.ACCEPTED)
+  async restartServer(@Req() req: AuthenticatedRequest, @Res({ passthrough: true }) res: Response) {
+    return this.handlePowerAction("restart", req, res);
+  }
+
+  @Post("system/shutdown")
+  @HttpCode(HttpStatus.ACCEPTED)
+  async shutdownServer(@Req() req: AuthenticatedRequest, @Res({ passthrough: true }) res: Response) {
+    // Under a restart-policy supervisor that ignores exit codes (the
+    // shipped Docker compose's `unless-stopped`), an in-process exit
+    // CANNOT keep the container down — refuse honestly instead of
+    // exiting into an immediate supervisor restart (contract 409).
+    if (this.serverPowerService.isContainerSupervised()) {
+      throw conflict(
+        "This deployment runs under a container supervisor that restarts the server on any exit. " +
+          "Stop the container from outside instead (docker compose stop).",
+        req.originalUrl,
+        "shutdown-unsupported-under-container-supervision",
+      );
+    }
+    return this.handlePowerAction("shutdown", req, res);
+  }
+
+  private async handlePowerAction(action: PowerAction, req: AuthenticatedRequest, res: Response) {
+    await requireAdmin(this.dbProvider.db, req);
+    // userId, not username — RequestUser carries only the JWT claims, and
+    // resolving a display name would add a DB read to a teardown path.
+    this.serverPowerService.scheduleAfterResponse(res, action, `admin user ${req.user?.userId ?? "unknown"}`);
+    return { accepted: true, action };
   }
 
   @Get("admin/capabilities")

@@ -4,6 +4,7 @@ import { DbProvider } from "./db.provider.js";
 import { JobQueueProvider } from "./job-queue.provider.js";
 import { HashService } from "./hash.service.js";
 import { DeviceProfileValidatorService } from "./device-profile-validator.js";
+import { ServerPowerService } from "./server-power.service.js";
 
 /**
  * Shared infrastructure module: DbProvider (the one @loombre/db handle),
@@ -34,7 +35,7 @@ import { DeviceProfileValidatorService } from "./device-profile-validator.js";
  * imports CommonSettingsModule alongside this one.
  */
 @Module({
-  providers: [DbProvider, JobQueueProvider, HashService, DeviceProfileValidatorService],
-  exports: [DbProvider, JobQueueProvider, HashService, DeviceProfileValidatorService],
+  providers: [DbProvider, JobQueueProvider, HashService, DeviceProfileValidatorService, ServerPowerService],
+  exports: [DbProvider, JobQueueProvider, HashService, DeviceProfileValidatorService, ServerPowerService],
 })
 export class CommonModule {}

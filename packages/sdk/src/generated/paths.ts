@@ -127,6 +127,8 @@ export const API_OPERATIONS = [
   { path: "/setup/state", method: "get", operationId: "getSetupState" },
   { path: "/system/capabilities", method: "get", operationId: "getSystemCapabilities" },
   { path: "/system/info", method: "get", operationId: "getSystemInfo" },
+  { path: "/system/restart", method: "post", operationId: "restartServer" },
+  { path: "/system/shutdown", method: "post", operationId: "shutdownServer" },
   { path: "/system/update", method: "get", operationId: "getSystemUpdate" },
   { path: "/tags", method: "get", operationId: "listTags" },
   { path: "/tracks/{id}", method: "get", operationId: "getTrack" },
