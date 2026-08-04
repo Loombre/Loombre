@@ -145,6 +145,7 @@ export default defineConfig({
             { text: "Capability report", link: "/admin-guide/capability-report" },
             { text: "Jobs dashboard", link: "/admin-guide/jobs-dashboard" },
             { text: "Restart & shut down", link: "/admin-guide/server-power" },
+            { text: "System notices", link: "/admin-guide/system-notices" },
             { text: "Plugins", link: "/admin-guide/plugins" },
             { text: "Settings reference", link: "/admin-guide/settings-reference" },
           ],

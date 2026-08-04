@@ -25,5 +25,6 @@ admin screens, one level below where this guide operates.
 - **[Capability report](capability-report.md)** — what Loombre knows about your hardware.
 - **[Jobs dashboard](jobs-dashboard.md)** — watching background work as it happens.
 - **[Restart & shut down](server-power.md)** — the two Power buttons on the Server settings tab, and what each one does and doesn't stop.
+- **[System notices](system-notices.md)** — a message every user sees live: restart warnings with a countdown, maintenance windows, or anything else worth announcing.
 - **[Plugins](plugins.md)** — connecting outside programs that look up media information or watch your server's activity feed, and exactly what each one can see.
 - **[Settings reference](settings-reference.md)** — every setting, what it does, and how to change it. Generated automatically from Loombre's own settings list, every time this site is built — so it can't drift from what the settings screen actually offers.
