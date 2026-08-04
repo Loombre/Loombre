@@ -48,6 +48,7 @@ import { SettingsTabs } from "./SettingsTabs.js";
 import { SettingsHub } from "./SettingsHub.js";
 import { AccountSection } from "./sections/AccountSection.js";
 import { ServerSection } from "./sections/ServerSection.js";
+import { NoticesSection } from "./sections/NoticesSection.js";
 import { LibrariesSection } from "./sections/LibrariesSection.js";
 import { UsersSection } from "./sections/UsersSection.js";
 import { PlaybackSection } from "./sections/PlaybackSection.js";
@@ -71,6 +72,8 @@ function renderSection(key: SettingsSectionKey, heading: string | null): React.J
       return <AccountSection heading={heading} />;
     case "server":
       return <ServerSection heading={heading} />;
+    case "notices":
+      return <NoticesSection heading={heading} />;
     case "libraries":
       return <LibrariesSection heading={heading} />;
     case "users":
