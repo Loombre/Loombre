@@ -138,6 +138,13 @@ were running when the daemon stopped. `up -d` brings everything back.
 and the Windows tray's "Shut down Loombre…" perform — with Docker,
 compose is the interface.)
 
+The web app's **Settings → Server → Power** "Shut down server" button
+deliberately refuses on Docker installs (the image tells the server it
+runs under a restart-on-any-exit supervisor, and an in-process shutdown
+would just bounce the container) and points you here instead. Its
+**Restart server** button works normally — the container restarting is
+exactly what a restart wants.
+
 ## Environment variables
 
 Every variable `docker-compose.prod.yml` reads is documented, with its

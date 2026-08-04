@@ -248,6 +248,19 @@ public sealed class LoombreHostedService : ServiceBase
             // debugging a specific failure will look anyway.
             if (childExitCode != 0)
             {
+                if (childExitCode == RestartRequestedExitCode)
+                {
+                    // Not a crash: the server exits with this named code
+                    // when an admin requested a restart over the REST API
+                    // (POST /system/restart — apps/server/src/common/
+                    // server-power.service.ts, RESTART_REQUESTED_EXIT_CODE,
+                    // kept in lockstep). The MECHANISM is identical to the
+                    // crash path on purpose — a non-zero service exit is
+                    // the only thing that makes SCM run the recovery
+                    // actions that bring the service back — this branch
+                    // only makes the log tell the truth about intent.
+                    Log("child exit code is the documented restart-request code — SCM recovery will relaunch the service");
+                }
                 ExitCode = ERROR_PROCESS_ABORTED;
             }
             Stop();
@@ -258,6 +271,11 @@ public sealed class LoombreHostedService : ServiceBase
     /// terminated unexpectedly", the conventional service exit code for
     /// exactly this situation and what SCM's own messages report.</summary>
     private const int ERROR_PROCESS_ABORTED = 1067;
+
+    /// <summary>Lockstep with apps/server/src/common/server-power.service.ts
+    /// RESTART_REQUESTED_EXIT_CODE — the server's "this exit is an
+    /// intentional admin-requested restart, not a crash" code.</summary>
+    private const int RestartRequestedExitCode = 86;
 
     protected override void OnStop() => StopChild();
 

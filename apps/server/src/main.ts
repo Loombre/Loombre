@@ -16,6 +16,7 @@ import { bootstrapProvisioning, getProvisioningController } from "./bootstrap/pr
 import { wireServerIpc } from "./ipc/index.js";
 import { resolveAppPaths } from "./cli/app-paths.js";
 import { installCrashHandlers, installGracefulShutdown, type ShutdownSignal } from "./crash/index.js";
+import { RESTART_REQUESTED_EXIT_CODE, ServerPowerService } from "./common/server-power.service.js";
 
 /**
  * LOOMBRE_TRUST_PROXY (STATE.md P2.2, docs/PLAN.md §10: "plain HTTP behind
@@ -338,7 +339,16 @@ if (isDirectEntrypoint) {
   installCrashHandlers({ dataDir, version: LOOMBRE_VERSION_FULL });
 
   bootstrap()
-    .then(({ closeServer }) => {
+    .then(({ app, closeServer }) => {
+      // Admin power endpoints (POST /system/restart|shutdown): a restart
+      // is "graceful shutdown, but exit with the named restart code so
+      // the supervisor relaunches" — launchd SuccessfulExit=false /
+      // systemd on-failure / the Windows service host's non-zero-child
+      // mapping / Docker unless-stopped all restart a non-zero exit.
+      // Success-path only: a FAILED graceful shutdown keeps its exit 1
+      // (also relaunched — a restart request that tears down badly should
+      // still come back).
+      let gracefulExitCode = 0;
       // The other half of P4.14 + the Windows I3 SIGBREAK gap this lane
       // closes: apps/server had ZERO signal handlers before this (STATE.md
       // P4.14's own audit finding) — every stop, on every platform,
@@ -365,6 +375,22 @@ if (isDirectEntrypoint) {
           if (provisioning && provisioning.getCurrentProvisioningStatus().state !== "external") {
             await provisioning.stop("fast");
           }
+        },
+        exit: (code) => process.exit(code === 0 ? gracefulExitCode : code),
+      });
+
+      // Arm the admin power endpoints' real triggers — ONLY here, in the
+      // direct entrypoint, mirroring installGracefulShutdown itself:
+      // embedded contexts (conformance/e2e suites boot AppModule and walk
+      // POST /system/restart with a live admin token) must get the
+      // service's logged no-op, never a SIGTERM into the test runner.
+      // Both triggers ride the existing graceful path (SIGTERM → the
+      // onShutdown above); restart differs ONLY in the success exit code.
+      app.get(ServerPowerService).arm({
+        shutdown: () => process.kill(process.pid, "SIGTERM"),
+        restart: () => {
+          gracefulExitCode = RESTART_REQUESTED_EXIT_CODE;
+          process.kill(process.pid, "SIGTERM");
         },
       });
     })

@@ -11,6 +11,7 @@
 // disappears within one round trip of a requiresRestart:true change
 // landing or being reverted.
 
+import Link from "next/link";
 import { AlertTriangle } from "lucide-react";
 import { Icon } from "../../icon/Icon.js";
 import styles from "./SettingsRestartBanner.module.css";
@@ -25,6 +26,12 @@ export function SettingsRestartBanner({ keys }: { keys: string[] }): React.JSX.E
           Restart required to fully apply: <span className={styles.keys}>{keys.join(", ")}</span>
         </div>
         <div className={styles.caption}>SAVED NOW · OLD VALUE STAYS IN USE UNTIL RESTART · NOTHING PLAYING IS EVER INTERRUPTED</div>
+        {/* Static pointer only — the actual action (confirm + POST
+            /system/restart) lives in the Server tab's Power card; this
+            banner still never computes or mutates anything itself. */}
+        <Link className={styles.restartLink} href="/settings/server">
+          Restart from Settings → Server
+        </Link>
       </div>
     </div>
   );
