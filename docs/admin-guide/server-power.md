@@ -20,6 +20,10 @@ What to expect:
 - Only the server program restarts. Background work (scanning, converting)
   and this web app's own service keep running.
 
+Want to warn everyone first? Publish a
+[system notice](system-notices.md) with a countdown, then restart when
+it reaches zero.
+
 ## Shut down server
 
 Stops the server and leaves it stopped. Streaming stops for every device,

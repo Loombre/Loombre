@@ -21,6 +21,14 @@ don't recognize, that's a mistake on our part — please report it.
 - **[Browsing the restricted zone](restricted-content-browsing.md)** — finding your way around once it's unlocked.
 - **[Why is this converting?](why-is-it-converting.md)** — what that message means when it shows up.
 
+## Banners and announcements
+
+Sometimes a message appears at the top of the page — or over what you're
+watching — like "The server will restart in about 5 minutes." That's the
+person who runs your Loombre giving everyone a heads-up. If it has a
+countdown, playback may pause briefly when it reaches zero, then come
+back on its own.
+
 ## Something not working?
 
 If Loombre isn't behaving the way this guide describes, the person who set
