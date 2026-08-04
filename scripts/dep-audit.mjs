@@ -107,7 +107,11 @@ export function classifyAdvisories(advisories, allowlist, nowMs) {
 
   for (const advisory of advisories) {
     if (!BLOCKING_SEVERITIES.has(advisory.severity)) {
-      nonBlocking.push(advisory);
+      // Wrapped, not bare: main()'s reporter destructures `{ advisory }` from
+      // EVERY bucket, so a bare push here made `advisory` undefined and threw
+      // mid-report — turning any merely-moderate advisory into a crashed gate
+      // step instead of an informational line.
+      nonBlocking.push({ advisory, entry: byId.get(advisory.id) ?? null });
       continue;
     }
     const entry = byId.get(advisory.id);
