@@ -453,6 +453,13 @@ const IMPLEMENTED_NON_PUBLIC_EXPECTATIONS: Record<string, number> = {
   getPlaybackHlsFile: 404, // placeholder {file} segment fails the strict filename pattern
   getPlaybackSubtitleManifest: 404, // placeholder session id -> immediate 404
   getPlaybackSubtitleFile: 404, // placeholder {file} segment isn't 'sub0.vtt'
+
+  // System notices (STATE.md "Admin broadcast notifications — system
+  // notices", N1-N6/NG1-NG10, Lane A).
+  getActiveSystemNotice: 200, // any authenticated user, not admin-only — {notice: null, serverNowMs} on a fresh reseeded DB with nothing published
+  listSystemNotices: 200, // empty items[] on a fresh reseeded DB
+  publishSystemNotice: 422, // bodyless -> "message is required"
+  cancelSystemNotice: 404, // PLACEHOLDER_UUID never resolves to a real notice
 };
 
 let app: INestApplication;

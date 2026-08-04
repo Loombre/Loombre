@@ -439,6 +439,27 @@ export {
   claimInviteAndEmit,
 } from './query/invites.js';
 
+// Admin broadcast notifications (STATE.md "Admin broadcast notifications —
+// system notices", N1-N6/NG1-NG10, migrations/0028_system_notices.sql) —
+// see src/query/notices.ts header for why this lives in the public barrel.
+export type { NoticeSeverity } from './types.js';
+export type {
+  NoticeRow,
+  NoticeStatus,
+  NoticeAdminRow,
+  PublishNoticeInput,
+  CancelNoticeInput,
+  ListNoticesParams,
+  ListNoticesResult,
+} from './query/notices.js';
+export {
+  deriveNoticeStatus,
+  publishNoticeAndEmit,
+  cancelNoticeAndEmit,
+  getActiveNotice,
+  listNoticesAdmin,
+} from './query/notices.js';
+
 // Email-collision notice ledger (G7, STATE.md "Current-password re-auth on
 // self-changes") — see src/query/email-collision-notice.ts header.
 export {
