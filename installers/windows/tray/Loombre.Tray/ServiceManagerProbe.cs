@@ -28,13 +28,7 @@ namespace Loombre.Tray;
 
 internal static class ServiceManagerProbe
 {
-    internal const string ServerServiceName = "LoombreServer";
-
-    /// <summary>Services.wxs' three registrations, in dependency order.
-    /// Worker and web declare SCM dependencies on the server, but SCM
-    /// dependencies only order starts — they never auto-start a stopped
-    /// dependent — so a full-stack start touches all three.</summary>
-    private static readonly string[] StackOrder = ["LoombreServer", "LoombreWorker", "LoombreWeb"];
+    internal const string ServerServiceName = ServiceStack.ServerServiceName;
 
     private const int ErrorAccessDenied = 5;
     private const int ErrorCancelled = 1223; // user declined the UAC prompt
@@ -67,7 +61,7 @@ internal static class ServiceManagerProbe
     /// downstream two are best-effort.</summary>
     internal static void StartServerStack()
     {
-        foreach (var name in StackOrder)
+        foreach (var name in ServiceStack.StartOrder)
         {
             try
             {
@@ -96,14 +90,12 @@ internal static class ServiceManagerProbe
     /// declined the elevation prompt — a normal outcome, not an error.</summary>
     internal static bool TryStartServerStackElevated()
     {
+        // Window hidden — the tray's balloon + poll loop are the
+        // user-visible feedback. Command shape pinned by ServiceStackTests.
         var startInfo = new ProcessStartInfo
         {
             FileName = "cmd.exe",
-            // /d: skip AutoRun registry commands; already-running
-            // downstream services make their `sc start` a harmless
-            // ERROR_SERVICE_ALREADY_RUNNING. Window hidden — the tray's
-            // balloon + poll loop are the user-visible feedback.
-            Arguments = "/d /c sc start LoombreServer & sc start LoombreWorker & sc start LoombreWeb",
+            Arguments = ServiceStack.ElevatedStartArguments,
             UseShellExecute = true,
             Verb = "runas",
             WindowStyle = ProcessWindowStyle.Hidden,
@@ -117,6 +109,69 @@ internal static class ServiceManagerProbe
         {
             return false;
         }
+    }
+
+    /// <summary>UAC-elevated full-stack stop — the "Shut down Loombre…"
+    /// path. ALWAYS elevated: Services.wxs deliberately grants Users
+    /// ServiceQueryStatus + ServiceStart but NOT ServiceStop (its own
+    /// comment: unelevated stop stays an IPC-only, in-band graceful
+    /// shutdown of the server alone), so a whole-stack stop is an admin
+    /// operation by design — the same posture as the macOS controller's
+    /// admin-prompted `launchctl bootout`. Blocks until the elevated
+    /// process exits (`net stop` waits per service — ServiceStack's
+    /// doc), bounded so a wedged service can't hang the caller forever.
+    /// Returns false if the user declined the elevation prompt — a
+    /// normal outcome, not an error.</summary>
+    internal static bool TryStopServerStackElevated()
+    {
+        var startInfo = new ProcessStartInfo
+        {
+            FileName = "cmd.exe",
+            Arguments = ServiceStack.ElevatedStopArguments,
+            UseShellExecute = true,
+            Verb = "runas",
+            WindowStyle = ProcessWindowStyle.Hidden,
+        };
+        try
+        {
+            using var process = Process.Start(startInfo);
+            process?.WaitForExit(120_000);
+            return true;
+        }
+        catch (Win32Exception ex) when (ex.NativeErrorCode == ErrorCancelled)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>Post-shutdown verification: true when every stack service
+    /// reports Stopped or is not installed. Anything else — still
+    /// running, a pending transition, or an SCM query failure — is
+    /// "cannot confirm stopped", so the caller reports instead of
+    /// silently exiting over services that may still be up.</summary>
+    internal static bool AllStackServicesStopped()
+    {
+        foreach (var name in ServiceStack.StopOrder)
+        {
+            try
+            {
+                using var controller = new ServiceController(name);
+                if (controller.Status != ServiceControllerStatus.Stopped)
+                {
+                    return false;
+                }
+            }
+            catch (InvalidOperationException ex)
+                when ((ex.InnerException as Win32Exception)?.NativeErrorCode == ErrorServiceDoesNotExist)
+            {
+                // Not installed — nothing to stop.
+            }
+            catch (Exception ex) when (ex is InvalidOperationException or Win32Exception)
+            {
+                return false;
+            }
+        }
+        return true;
     }
 
     private static string Map(ServiceControllerStatus status) => status switch

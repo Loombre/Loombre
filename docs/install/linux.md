@@ -236,6 +236,32 @@ library paths → hardware capability probe), exactly as described in
 [the overview's onboarding section](index.md#first-run-onboarding-wizard).
 There is no default account to look up — you create the real one here.
 
+## Stopping / shutting down completely
+
+One command stops the whole stack — worker and web first, then the
+server (systemd derives the stop order from the units' own
+`After=loombre-server.service` ordering, so the PostgreSQL-hosting
+server goes down last):
+
+```sh
+sudo systemctl stop loombre-worker loombre-web loombre-server
+```
+
+The services stay stopped until the next boot (they're enabled units) or
+until you `systemctl start` them again (the [Start](#_5-start) command).
+To keep Loombre off across reboots too:
+
+```sh
+sudo systemctl disable --now loombre-worker loombre-web loombre-server
+# and later, to bring it back:
+sudo systemctl enable --now loombre-server loombre-worker loombre-web
+```
+
+(This is the same full shutdown the macOS menubar's "Shut Down Loombre…"
+and the Windows tray's "Shut down Loombre…" perform — on Linux the
+platform's own service manager is the interface, so there is no separate
+Loombre UI for it.)
+
 ## Why unsigned?
 
 Code-signing certificates (Windows Authenticode, Apple notarization) cost
