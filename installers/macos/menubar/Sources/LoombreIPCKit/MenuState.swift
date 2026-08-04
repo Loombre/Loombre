@@ -64,21 +64,64 @@ public struct LifecyclePlan: Equatable {
     }
 }
 
-/// Constants for the launchd fallback — kept in lockstep with
-/// installers/macos/pkg/launchd/com.loombre.server.plist and the
-/// postinstall bootstrap loop (LifecyclePlanTests pins both).
+/// Constants for the launchd fallback — kept in lockstep with the three
+/// plists in installers/macos/pkg/launchd/ and the postinstall bootstrap
+/// loop (LifecyclePlanTests pins all of them).
 public enum LaunchdFallback {
     public static let serverLabel = "com.loombre.server"
+    public static let workerLabel = "com.loombre.worker"
+    public static let webLabel = "com.loombre.web"
     public static let serverPlistPath = "/Library/LaunchDaemons/com.loombre.server.plist"
+    public static let workerPlistPath = "/Library/LaunchDaemons/com.loombre.worker.plist"
+    public static let webPlistPath = "/Library/LaunchDaemons/com.loombre.web.plist"
 
-    /// kickstart handles the common case (daemon loaded but not running —
-    /// e.g. after the menubar's own Stop, since the plist deliberately
-    /// sets KeepAlive.SuccessfulExit=false); bootstrap recovers the
-    /// loaded-out case (manual bootout, failed install step). Composed so
-    /// it can be embedded verbatim in an AppleScript `do shell script`
-    /// literal — no quotes or backslashes (test-enforced).
-    public static var startServerShellCommand: String {
-        "/bin/launchctl kickstart system/\(serverLabel) || /bin/launchctl bootstrap system \(serverPlistPath)"
+    /// Per-service start recovery pair. kickstart handles the common cases
+    /// (empirically verified: exits 0 for a running service — harmless
+    /// no-op — AND for a loaded-but-stopped one, e.g. after the menubar's
+    /// own Stop, since the plists set KeepAlive.SuccessfulExit=false);
+    /// bootstrap recovers the booted-out case (a prior Shut Down, manual
+    /// bootout, failed install step — kickstart exits 113 "could not find
+    /// service" there).
+    private static func startGroup(_ label: String, _ plistPath: String) -> String {
+        "( /bin/launchctl kickstart system/\(label) || /bin/launchctl bootstrap system \(plistPath) )"
+    }
+
+    /// Starts ALL THREE daemons, server first (it hosts the embedded
+    /// PostgreSQL the worker and web UI depend on). &&-joined so a
+    /// server-start failure is reported instead of masked by the later
+    /// groups. Composed so it can be embedded verbatim in an AppleScript
+    /// `do shell script` literal — no quotes or backslashes
+    /// (test-enforced).
+    public static var startAllShellCommand: String {
+        [
+            startGroup(serverLabel, serverPlistPath),
+            startGroup(workerLabel, workerPlistPath),
+            startGroup(webLabel, webPlistPath),
+        ].joined(separator: " && ")
+    }
+
+    /// Per-service full-stop group: a daemon that is not loaded counts as
+    /// already shut down (the `! print` guard, mirroring preinstall's own
+    /// probe-then-bootout loop), while a loaded daemon must actually boot
+    /// out — a genuine bootout failure still fails the command, unlike a
+    /// blanket `|| true`.
+    private static func shutdownGroup(_ label: String) -> String {
+        "( ! /bin/launchctl print system/\(label) >/dev/null 2>&1 || /bin/launchctl bootout system/\(label) )"
+    }
+
+    /// The full-shutdown command behind "Shut Down Loombre…": boots out
+    /// all three daemons — until the next boot (RunAtLoad brings them back
+    /// when the Mac restarts) or the next Start from this menu. Consumers
+    /// first (worker, then web), the PostgreSQL-hosting server LAST, so
+    /// neither spends its shutdown window flailing against a database that
+    /// died before it did. AppleScript-embeddable, same rules as
+    /// startAllShellCommand (test-enforced).
+    public static var shutdownAllShellCommand: String {
+        [
+            shutdownGroup(workerLabel),
+            shutdownGroup(webLabel),
+            shutdownGroup(serverLabel),
+        ].joined(separator: " && ")
     }
 }
 
@@ -141,7 +184,7 @@ public enum MenuState {
     public static func lifecyclePlan(isConnected: Bool, state: MenuIconState) -> LifecyclePlan {
         switch state {
         case .notRunning:
-            return LifecyclePlan(title: "Start Server", isEnabled: true, action: .startViaLaunchd)
+            return LifecyclePlan(title: "Start Loombre", isEnabled: true, action: .startViaLaunchd)
         case .running, .degraded:
             return LifecyclePlan(title: "Stop Server", isEnabled: isConnected, action: isConnected ? .stopViaIpc : .none)
         case .crashed:
@@ -151,7 +194,7 @@ public enum MenuState {
             // start, exactly as for notRunning.
             return isConnected
                 ? LifecyclePlan(title: "Stop Server", isEnabled: true, action: .stopViaIpc)
-                : LifecyclePlan(title: "Start Server", isEnabled: true, action: .startViaLaunchd)
+                : LifecyclePlan(title: "Start Loombre", isEnabled: true, action: .startViaLaunchd)
         case .starting, .stopping:
             return LifecyclePlan(title: "Stop Server", isEnabled: false, action: .none)
         case .contractMismatch:

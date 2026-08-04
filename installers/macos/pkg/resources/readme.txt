@@ -5,7 +5,8 @@ Installs to:
   /opt/loombre/<version>       Node runtime, bundled ffmpeg + PostgreSQL,
                                server + worker + web UI
   /opt/loombre/current         symlink to the active version (upgrade swap point)
-  /Applications/Loombre.app    menubar controller (status, start/stop, logs)
+  /Applications/Loombre.app    menubar controller (status, start / stop /
+                               full shutdown, logs)
   /Library/Application Support/Loombre   app data (config, embedded-PG data
                                dir, local secrets)
   /Library/Logs/Loombre        server/worker/web .{out,err}.log

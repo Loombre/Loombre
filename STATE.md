@@ -1,5 +1,19 @@
 # STATE.md — Lumbre Phase 4 (Phases 0–2 complete; Phase 3 automated exit met, owner review items Open)
 
+## macOS full-shutdown UI (2026-08-04, owner-directed: "no way for the user to shut down the app services… include UI that enables the user to kill/shutdown the app completely including the services")
+
+**Gap confirmed then closed (macOS only — see the Windows flag below).** Before: menubar "Stop Server" only IPC-stopped the API server process (worker + web LaunchDaemons kept running), and "Quit" only closed the menubar — the ONLY full stop was `sudo launchctl` in Terminal. Linux has systemctl and Windows has services.msc as native affordances; macOS had none, hence "especially on the mac version".
+
+**What landed (installers/macos/menubar + docs; no contract/TS-package changes):**
+- **"Shut Down Loombre…" menu item** — always enabled regardless of MenuIconState/IPC reachability (a kill switch must never depend on the thing it kills — the rc "Start grayed out" lesson, opposite direction). Confirmation alert (states the boot-time comeback honestly) → ONE admin prompt → bootout of all three daemons **worker → web → server** (the embedded-PG-hosting server dies LAST so nothing flails against a dead DB) → `NSApp.terminate` (menubar agent has no KeepAlive, stays quit until next login). Cancel/failure paths keep the app alive; failure alert gives the manual `sudo launchctl bootout` lines.
+- **"Start Server" → "Start Loombre", now starts ALL THREE daemons** — required so a full shutdown is menu-recoverable (server-only start would leave worker/web booted out until reboot). Per-service `( kickstart || bootstrap )` groups, `&&`-joined, server first.
+- Refactor: PrivilegedLaunchdStart.swift → PrivilegedLaunchctl.swift (git mv; shared NSAppleScript admin runner, `startAll()`/`shutdownAll()`; same no-SMJobBless posture). LaunchdFallback gains worker/web labels + plist paths + `startAllShellCommand`/`shutdownAllShellCommand`.
+- **Empirical grounding, not guessed:** launchctl exit codes verified against a real launchd (scratch gui-domain agent): kickstart on RUNNING = 0 (safe no-op), on booted-out = 113 (→ bootstrap recovers); bootout not-loaded = 3 (why the shutdown groups use the `! print || bootout` probe — idempotent WITHOUT masking a genuine bootout failure behind `|| true`); both composed commands validated end-to-end via `/bin/sh -c` against that scratch service. AppleScript-embeddability (no quotes/backslashes) test-pinned for BOTH commands.
+- Red-first: LifecyclePlanTests extended (labels/plists lockstep, per-service pairs, server-first start order, worker-first/server-last shutdown order, `&&` joins) — confirmed failing-to-compile, then green: **swift test 55/55**; swift build clean.
+- Docs: docs/install/macos.md new "Shutting Loombre down completely" section + menubar bullet rewrite; pkg readme.txt + conclusion.txt mention full shutdown; CHANGELOG [Unreleased] entry.
+
+**Flagged, not done here:** (1) **Windows tray parity** — tray "Exit" likewise leaves the services running; a "Shut down Loombre" tray item stopping LoombreServer/Worker/Web services is the same feature there (services.msc exists as a native fallback, so Windows was never affordance-zero like macOS). (2) CI never exercises the menubar's swift test on push (macos installer lane builds only on release tags — the standing installer-lane process gap already flagged 2026-08-02 applies here too); local swift test + the smoke.mjs static checks are the evidence. (3) NOT pushed — pushes are owner-authorised per standing practice.
+
 ## Current-password re-auth on self-changes + the email-collision signal (kicked off 2026-08-02, authority: owner "Current-Password Re-Auth on Self-Changes + the Email-Collision Signal" brief; closes Open items 3 and 4-follow-up of the mail/invites run below; docs/PLAN.md + design/phosphor/README.md for UI)
 
 ### PUSHED + CI RESULTS (2026-08-02; origin/main 0570dd0, then 5ea11e6 with the MSI fix below)
