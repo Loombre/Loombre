@@ -29,7 +29,7 @@
 // module never calls Date.now() itself (house style; every other query
 // module in this package follows the same rule).
 
-import type { ExpressionBuilder, Kysely, Selectable } from 'kysely';
+import { sql, type ExpressionBuilder, type Kysely, type Selectable, type Transaction } from 'kysely';
 import type { DB, NoticeSeverity, SystemNoticesTable } from '../types.js';
 import { withTransaction, writeEvent } from '../internal/index.js';
 import { decodeCursor, encodeCursor } from './cursor.js';
@@ -131,8 +131,25 @@ export interface PublishNoticeInput {
  * src/query/invites.ts's InviteAdminRow vs the claim-state public shape
  * already establishes).
  */
+/**
+ * Transaction-scoped advisory lock serializing every notice mutation
+ * (review finding R-F2): under READ COMMITTED, two overlapping publish
+ * transactions cannot see each other's uncommitted INSERT, so both
+ * supersede the same old row and BOTH new rows survive — two ACTIVE
+ * notices, violating N1's one-active invariant (a partial unique index
+ * cannot express it either: "active" includes a time-derived expiry
+ * predicate no index predicate can hold). pg_advisory_xact_lock releases
+ * on commit/rollback automatically; the constant key means all notice
+ * publishes/cancels queue behind each other, which at admin-mutation
+ * rates is exactly the semantics N1 wants.
+ */
+async function lockNoticesForMutation(trx: Transaction<DB>): Promise<void> {
+  await sql`SELECT pg_advisory_xact_lock(hashtext('system_notices')::bigint)`.execute(trx);
+}
+
 export async function publishNoticeAndEmit(db: Kysely<DB>, input: PublishNoticeInput): Promise<NoticeAdminRow> {
   return withTransaction(db, async (trx) => {
+    await lockNoticesForMutation(trx);
     await trx
       .updateTable('system_notices')
       .set({ cancelled_at_ms: input.nowMs })
@@ -200,6 +217,9 @@ export interface CancelNoticeInput {
  */
 export async function cancelNoticeAndEmit(db: Kysely<DB>, input: CancelNoticeInput): Promise<boolean> {
   return withTransaction(db, async (trx) => {
+    // Same advisory lock as publishNoticeAndEmit — a cancel racing a
+    // publish must observe the supersede's outcome, not interleave with it.
+    await lockNoticesForMutation(trx);
     const result = await trx
       .updateTable('system_notices')
       .set({ cancelled_at_ms: input.nowMs })

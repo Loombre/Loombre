@@ -146,6 +146,36 @@ describe("NoticeOverlayStrip", () => {
     expect(view!.container.querySelector("button")).toBeNull();
   });
 
+  it("R-F5: exposes the BannerRegion role split — critical = alert, warning/info = status (in fullscreen this strip is the ONLY surface a screen reader can perceive)", () => {
+    setMock({
+      notice: { id: "c1", message: "Down soon", severity: "critical", effectiveAtMs: null, expiresAtMs: null, createdAtMs: 0 },
+      severity: "critical",
+    });
+    render();
+    expect(view!.container.querySelector('[role="alert"]')).toBeTruthy();
+    view!.unmount();
+
+    setMock({
+      notice: { id: "w1", message: "Maintenance", severity: "warning", effectiveAtMs: null, expiresAtMs: Date.now() + 60_000, createdAtMs: 0 },
+      severity: "warning",
+    });
+    render();
+    expect(view!.container.querySelector('[role="status"]')).toBeTruthy();
+  });
+
+  it("R-F4: belowControls yields the top band — data-below-controls set when the controls top bar is shown, absent otherwise (CSS moves the strip under the back-button bar)", () => {
+    setMock({
+      notice: { id: "w1", message: "Maintenance", severity: "warning", effectiveAtMs: null, expiresAtMs: Date.now() + 60_000, createdAtMs: 0 },
+      severity: "warning",
+    });
+    view = renderIntoBody(<NoticeOverlayStrip belowControls />);
+    expect(view.container.querySelector('[data-below-controls="true"]')).toBeTruthy();
+    view.unmount();
+
+    view = renderIntoBody(<NoticeOverlayStrip />);
+    expect(view.container.querySelector("[data-below-controls]")).toBeNull();
+  });
+
   it("carries a non-blocking pointer-events posture: the strip container opts out, only its own dismiss button opts back in (CSS hook, not real hit-testing — jsdom applies no cascade, so this pins the module CSS itself, same as Toast.test.tsx's reduced-motion check)", () => {
     setMock({
       notice: { id: "w1", message: "Maintenance soon", severity: "warning", effectiveAtMs: null, expiresAtMs: Date.now() + 60_000, createdAtMs: 0 },

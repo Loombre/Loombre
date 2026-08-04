@@ -2799,12 +2799,12 @@ export interface components {
             severity: components["schemas"]["NoticeSeverity"];
             /**
              * Format: int64
-             * @description RELATIVE ms from now (NOT an absolute timestamp) — the server anchors it to its own clock. Omit for a notice with no scheduled countdown moment.
+             * @description RELATIVE ms from now (NOT an absolute timestamp) — the server anchors it to its own clock. Omit for a notice with no scheduled countdown moment. Capped at 365 days (31536000000 ms) — a notice scheduled further out than that is a mistake, not a plan.
              */
             effectiveInMs?: number;
             /**
              * Format: int64
-             * @description RELATIVE ms from now. Required for severity=warning (422 when absent). Optional for severity=info (defaults to 1 hour). Optional for severity=critical (omitted = until cancelled).
+             * @description RELATIVE ms from now. Required for severity=warning (422 when absent). Optional for severity=info (defaults to 1 hour). Optional for severity=critical (omitted = until cancelled). Capped at 365 days (31536000000 ms).
              */
             expiresInMs?: number;
         };
