@@ -332,4 +332,60 @@ describe("SystemNoticeProvider", () => {
     await act(async () => {});
     expect(field(view, "bannerVisible")).toBe("false");
   });
+
+  it("R-F1: a stale /notices/active response resolving AFTER a socket publish is DISCARDED — never clobbers the newer notice", async () => {
+    view = await renderProvider();
+    await act(async () => {});
+
+    // The next fetch (reconnect-triggered) hangs until we resolve it — the
+    // review's live repro: a slow /notices/active while the server is
+    // mid-restart, exactly this feature's primary scenario.
+    let resolveStale: (v: unknown) => void = () => {};
+    apiGetMock.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveStale = resolve;
+        }),
+    );
+    await act(async () => {
+      emitStatus("open");
+    });
+
+    await act(async () => {
+      emit("notice.published", { tsMs: Date.now(), payload: makeNotice({ id: "NEW" }) });
+    });
+    expect(field(view, "id")).toBe("NEW");
+
+    await act(async () => {
+      resolveStale({ notice: makeNotice({ id: "OLD" }), serverNowMs: Date.now() });
+    });
+    expect(field(view, "id")).toBe("NEW"); // the stale snapshot must lose
+  });
+
+  it("R-F1 (resurrect variant): a cancel arriving mid-fetch stops the fetch from re-applying the just-cancelled notice", async () => {
+    view = await renderProvider();
+    await act(async () => {});
+
+    let resolveStale: (v: unknown) => void = () => {};
+    apiGetMock.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveStale = resolve;
+        }),
+    );
+    await act(async () => {
+      emitStatus("open");
+    });
+
+    // Cancel an id we don't even hold yet — the in-flight fetch is about
+    // to return exactly this notice; the bump must be unconditional.
+    await act(async () => {
+      emit("notice.cancelled", { tsMs: Date.now(), payload: { id: "GHOST" } });
+    });
+
+    await act(async () => {
+      resolveStale({ notice: makeNotice({ id: "GHOST" }), serverNowMs: Date.now() });
+    });
+    expect(field(view, "id")).toBe(""); // the ghost stays buried
+  });
 });

@@ -783,8 +783,11 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
     >
       {/* N3's player checkpoint: mounted directly inside stageRef (the
           fullscreen target) so a notice survives the real Fullscreen API,
-          regardless of `phase` — see NoticeOverlayStrip.tsx's header. */}
-      <NoticeOverlayStrip />
+          regardless of `phase` — see NoticeOverlayStrip.tsx's header.
+          belowControls mirrors PlayerControls' own `visible` expression so
+          the strip yields the top band whenever the back-button bar is
+          shown (review R-F4). */}
+      <NoticeOverlayStrip belowControls={controlsVisible || !isPlaying} />
       {(phase === "loading" || (!isPlaying && positionMs === 0)) && <AmbientBackdrop imageUrl={backdropUrl} dominantColor={dominantColor} />}
       {phase === "loading" ? (
         <div className={styles.loading}>Preparing playback…</div>
