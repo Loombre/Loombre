@@ -583,6 +583,24 @@ export interface UserInviteGrantsTable {
 }
 
 // ============================================================================
+// system_notices (migrations/0028_system_notices.sql — admin broadcast
+// notifications, N1/NG4/NG8)
+// ============================================================================
+
+export type NoticeSeverity = 'info' | 'warning' | 'critical';
+
+export interface SystemNoticesTable {
+  id: Generated<string>;
+  message: string;
+  severity: NoticeSeverity;
+  effective_at_ms: number | null;
+  expires_at_ms: number | null;
+  created_by: string | null;
+  created_at_ms: number;
+  cancelled_at_ms: number | null;
+}
+
+// ============================================================================
 // hw_capability_snapshots / hw_capability_backends
 // (migrations/0011_hw_capability_snapshots.sql — Phase 3 §11 step 5)
 // ============================================================================
@@ -856,4 +874,5 @@ export interface DB {
   stash_sync_reports: StashSyncReportsTable;
   stash_sync_checkpoints: StashSyncCheckpointsTable;
   email_collision_notice_ledger: EmailCollisionNoticeLedgerTable;
+  system_notices: SystemNoticesTable;
 }

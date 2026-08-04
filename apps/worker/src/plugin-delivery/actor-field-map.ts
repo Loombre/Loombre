@@ -145,6 +145,20 @@ export const ACTOR_FIELD_MAP: Record<string, readonly string[]> = {
   // (this map tracks "does the schema carry a user-id-bearing field", not
   // "is this type reachable by a plugin today" — see this file's header).
   "session.revoked-by-password-change": ["userId"],
+  // STATE.md "Admin broadcast notifications — system notices" (N2/NG1,
+  // Lane A): notice.published's payload names {id, message, severity,
+  // effectiveAtMs, expiresAtMs, createdAtMs} and notice.cancelled's names
+  // only {id} — neither carries a field in USER_ID_FIELD_NAMES (NG6's
+  // plain-content posture deliberately excludes createdBy/any admin-
+  // identity field from BOTH payloads; the acting admin lives only at the
+  // envelope's own actorUserId) — empty for the same reason plugin.*'s
+  // entries are. UNLIKE most of the other empty entries above, these two
+  // are NOT admin-only (see event-taxonomy.ts / admin-only-event-types.ts)
+  // — they are all-user broadcast types, so a plugin subscriber COULD be
+  // granted them, and this map's verdict is still "nothing to
+  // pseudonymize" because the payload itself never carries a user id.
+  "notice.published": [],
+  "notice.cancelled": [],
 };
 
 /**

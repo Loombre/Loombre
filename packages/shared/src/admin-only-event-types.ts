@@ -151,3 +151,15 @@ export const ADMIN_ONLY_EVENT_TYPES: readonly string[] = [
   // G5 (Current-password re-auth on self-changes).
   "session.revoked-by-password-change",
 ];
+
+// NOT added above, deliberately (STATE.md "Admin broadcast notifications —
+// system notices", N2/NG1): `notice.published` / `notice.cancelled` are
+// ALL-USER broadcast events by definition — every notice this pair
+// announces is meant for every authenticated user, admin or not, so they
+// fall through the ws-broadcaster's default path (the SAME fallthrough
+// user.created already relies on) rather than being gated here. Recorded
+// at this canonical list per N2's "recorded as such at the canonical list
+// with a comment" — this file is the L3 canonical source of the
+// admin-only classification, so its absence from ADMIN_ONLY_EVENT_TYPES
+// above is itself the decision, and this comment is the record of it
+// being deliberate rather than an oversight.
