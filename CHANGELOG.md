@@ -19,6 +19,36 @@ Until then, phase names are the version axis.
 
 ## [Unreleased]
 
+### System notices: admin broadcasts with live delivery everywhere (2026-08-04)
+
+Admins get a first-class broadcast channel — **Settings → Notices** —
+composing a message (500-char plain text, info/warning/critical) with
+quick presets ("Restart in 5/15/30 min" pre-fills a critical notice with
+a live countdown; "Maintenance" a warning with a composer-set window).
+One active notice at a time: publishing replaces the current one after
+an explicit confirm, cancel takes it down live. New contract surface
+(tag `notices`): POST /system/notices, POST /system/notices/{id}/cancel,
+GET /system/notices (admin history, cursor-paginated, derived status),
+and GET /notices/active — the all-user read every client calls on boot
+and socket reconnect, so late connectors see an active notice too. Two
+new ALL-USER event types (`notice.published`/`notice.cancelled`, enum
+35→37) ride the existing outbox → events-socket broadcast path with zero
+new plumbing. Rendering per severity: info → the standard toast;
+warning → persistent dismissible top banner (per-session, returns on
+reconnect); critical → non-dismissible banner — via the app's FIRST
+global banner region (AppShell), with system notices taking precedence
+over the settings restart-pending banner. All severities also render as
+a non-blocking overlay strip INSIDE the video player's stage element —
+the only DOM position that survives real fullscreen — so a fullscreen
+viewer never misses a restart warning. Countdowns are computed against
+server time (`serverNowMs` / envelope `tsMs` anchors), never the
+client's wall clock, and flip to a static "restarting now" state at
+zero — the notice system deliberately restarts nothing (the Power card
+remains the operator action). New table `system_notices` (migration
+0028, real severity enum, expiry CHECK: only critical may run
+"until cancelled"); audit = the broadcast events themselves (envelope
+actor). Admin + user docs.
+
 ### Web admin: Restart / Shut down server from Settings → Server (2026-08-04)
 
 New admin-only contract operations **POST /system/restart** and

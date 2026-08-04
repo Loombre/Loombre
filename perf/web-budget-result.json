@@ -1,9 +1,9 @@
 {
-  "recordedAtMs": 1785877752345,
+  "recordedAtMs": 1785883907294,
   "route": "/browse",
   "method": "gzip(level 9) of every external .js file the served /browse HTML references (script src + preload hints, noModule polyfills excluded), summed",
-  "totalGzipBytes": 170572,
-  "totalRawBytes": 553378,
+  "totalGzipBytes": 172986,
+  "totalRawBytes": 560567,
   "budgetGzipBytes": 204800,
   "breachedBudget": false,
   "chunks": [
@@ -18,14 +18,14 @@
       "gzipBytes": 61169
     },
     {
-      "file": "static/chunks/7258-d34d6a0cd9da2fb3.js",
-      "rawBytes": 42081,
-      "gzipBytes": 12412
+      "file": "static/chunks/5609-16a8b4d3e4ee66d6.js",
+      "rawBytes": 46182,
+      "gzipBytes": 13806
     },
     {
-      "file": "static/chunks/app/layout-72bd8a376fb90fc1.js",
-      "rawBytes": 16247,
-      "gzipBytes": 6259
+      "file": "static/chunks/app/layout-c67d724d1d2cc731.js",
+      "rawBytes": 16736,
+      "gzipBytes": 6431
     },
     {
       "file": "static/chunks/9018-ed1aefa6b725d0e2.js",
@@ -33,9 +33,14 @@
       "gzipBytes": 5485
     },
     {
-      "file": "static/chunks/app/browse/page-e415ffca3c842837.js",
-      "rawBytes": 11504,
-      "gzipBytes": 4517
+      "file": "static/chunks/app/browse/page-69972716a09013f7.js",
+      "rawBytes": 11513,
+      "gzipBytes": 4524
+    },
+    {
+      "file": "static/chunks/7280-24cc25491448f930.js",
+      "rawBytes": 10472,
+      "gzipBytes": 3751
     },
     {
       "file": "static/chunks/9894-e6e1ebf833911308.js",
@@ -43,29 +48,24 @@
       "gzipBytes": 3550
     },
     {
+      "file": "static/chunks/9111-3e86056a899adf29.js",
+      "rawBytes": 7974,
+      "gzipBytes": 3362
+    },
+    {
       "file": "static/chunks/3721-f519aca3b11fef30.js",
       "rawBytes": 9038,
       "gzipBytes": 3227
     },
     {
-      "file": "static/chunks/7770-0c65036362fe6a5e.js",
-      "rawBytes": 7168,
-      "gzipBytes": 3107
+      "file": "static/chunks/webpack-ebaa18de60714667.js",
+      "rawBytes": 4883,
+      "gzipBytes": 2361
     },
     {
-      "file": "static/chunks/1297-e95936442e65e5d6.js",
-      "rawBytes": 7330,
-      "gzipBytes": 2672
-    },
-    {
-      "file": "static/chunks/6289-6f13c5cf55726fc1.js",
-      "rawBytes": 6782,
-      "gzipBytes": 2468
-    },
-    {
-      "file": "static/chunks/webpack-1b8875fbefea00ce.js",
-      "rawBytes": 4977,
-      "gzipBytes": 2435
+      "file": "static/chunks/970-30c0e71ef091a022.js",
+      "rawBytes": 5518,
+      "gzipBytes": 2049
     },
     {
       "file": "static/chunks/app/not-found-05ec1c577d5a92da.js",
