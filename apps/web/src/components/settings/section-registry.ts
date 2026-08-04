@@ -21,6 +21,15 @@
 // surfaces) and before "advanced" (the registry fields this section ALSO
 // composes for its five mail.*/network.publicUrl keys).
 //
+// Admin broadcast notifications run (STATE.md, Lane B): an 11th section,
+// "notices", for the system-notices compose/history admin UI (N1-N6) —
+// task spec: "New settings section notices (label 'Notices', adminOnly:
+// true)". Placed right after "server": the flagship compose presets are
+// restart/maintenance notices, operationally paired with ServerPowerCard
+// on that same "server" page (a restart notice is communication ABOUT the
+// action that page's Power card actually performs), so the two admin
+// operational surfaces sit next to each other in the tab order.
+//
 // This file stays framework-free (no React) on purpose: mobile-header.ts
 // (a pure, hook-free route resolver) imports SETTINGS_SECTIONS directly to
 // title the mobile back-chevron chrome for every `/settings/<key>` drill-
@@ -47,6 +56,7 @@
 export type SettingsSectionKey =
   | "account"
   | "server"
+  | "notices"
   | "libraries"
   | "users"
   | "playback"
@@ -71,6 +81,7 @@ export interface SettingsSectionConfig {
 export const SETTINGS_SECTIONS: SettingsSectionConfig[] = [
   { key: "account", label: "Account", href: "/settings/account", adminOnly: false },
   { key: "server", label: "Server", href: "/settings/server", adminOnly: true },
+  { key: "notices", label: "Notices", href: "/settings/notices", adminOnly: true },
   { key: "libraries", label: "Libraries", href: "/settings/libraries", adminOnly: true },
   { key: "users", label: "Users & Profiles", href: "/settings/users", adminOnly: true },
   { key: "playback", label: "Playback", href: "/settings/playback", adminOnly: true },
