@@ -116,6 +116,28 @@ Only `server`'s and `web`'s HTTP ports are published to the host.
 `postgres` and `worker` are reachable only from inside the compose network
 — there is nothing to port-forward for either.
 
+## Stopping / shutting down completely
+
+```sh
+# Stop every Loombre container (keeps containers + data; `up -d` resumes):
+docker compose -f docker-compose.prod.yml --env-file installers/docker/loombre.env stop
+
+# Stop AND remove the containers + network (data volumes survive):
+docker compose -f docker-compose.prod.yml --env-file installers/docker/loombre.env down
+```
+
+Both leave your data intact — the catalog database and `/data` live on
+named volumes. **`down -v` additionally deletes those volumes** (catalog,
+covers, persisted secrets) — irreversible; don't add `-v` unless you mean
+to erase the instance.
+
+Stopped containers do **not** restart at the next host boot after a
+`stop`/`down` — compose's restart policy only revives containers that
+were running when the daemon stopped. `up -d` brings everything back.
+(This is the same full shutdown the macOS menubar's "Shut Down Loombre…"
+and the Windows tray's "Shut down Loombre…" perform — with Docker,
+compose is the interface.)
+
 ## Environment variables
 
 Every variable `docker-compose.prod.yml` reads is documented, with its

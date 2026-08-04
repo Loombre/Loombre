@@ -33,7 +33,7 @@ public sealed class ServerControlPlanTests
     public void Unreachable_with_stopped_service_yields_enabled_start_via_scm()
     {
         var plan = ServerControl.Decide(status: null, scm: new ScmSnapshot(true, ScmStates.Stopped));
-        Assert.Equal("Start server", plan.Text);
+        Assert.Equal("Start Loombre", plan.Text);
         Assert.True(plan.Enabled);
         Assert.Equal(ServerLifecycleAction.StartViaScm, plan.Action);
     }
@@ -81,7 +81,7 @@ public sealed class ServerControlPlanTests
     {
         // Dev runs / broken installs: nothing the tray could start.
         var plan = ServerControl.Decide(status: null, scm: new ScmSnapshot(false, ScmStates.Other));
-        Assert.Equal("Start server", plan.Text);
+        Assert.Equal("Start Loombre", plan.Text);
         Assert.False(plan.Enabled);
         Assert.Equal(ServerLifecycleAction.None, plan.Action);
     }
@@ -90,7 +90,7 @@ public sealed class ServerControlPlanTests
     public void Unreachable_without_scm_answer_disables_start()
     {
         var plan = ServerControl.Decide(status: null, scm: null);
-        Assert.Equal("Start server", plan.Text);
+        Assert.Equal("Start Loombre", plan.Text);
         Assert.False(plan.Enabled);
         Assert.Equal(ServerLifecycleAction.None, plan.Action);
     }
@@ -112,7 +112,7 @@ public sealed class ServerControlPlanTests
         // allows it, and the IPC start endpoint deterministically 409s,
         // so the SCM path must win here too, gated on the SCM snapshot.
         var plan = ServerControl.Decide(Status(ProcessStates.Stopped), new ScmSnapshot(true, ScmStates.Stopped));
-        Assert.Equal("Start server", plan.Text);
+        Assert.Equal("Start Loombre", plan.Text);
         Assert.True(plan.Enabled);
         Assert.Equal(ServerLifecycleAction.StartViaScm, plan.Action);
     }

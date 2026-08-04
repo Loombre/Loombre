@@ -168,9 +168,11 @@ verdict on the software itself.
 
 - The **Loombre** tray icon (system tray, bottom-right of the taskbar) shows
   server/worker status at a glance and gives you: **Open Loombre** (launches
-  your browser to the web client), **Start/Stop server**, **Reveal crash
-  files**, and the installed version.
-  [SCREENSHOT: Loombre tray icon with context menu showing Open Loombre, Start/Stop, Reveal crash files, and version]
+  your browser to the web client), **Start Loombre** / **Stop server**,
+  **Shut down Loombre…** (stops *everything* — see
+  [Shutting Loombre down completely](#shutting-loombre-down-completely)),
+  **Reveal crash files**, and the installed version.
+  [SCREENSHOT: Loombre tray icon with context menu showing Open Loombre, Start/Stop, Shut down Loombre, Reveal crash files, and version]
 - First launch of the tray or the services may **also** trigger a
   SmartScreen prompt (same reasoning as above — click **More info → Run
   anyway** again if so).
@@ -192,14 +194,42 @@ way as any other:
   Stop-Service LoombreWorker
   ```
 
-- The tray's **Start/Stop server** menu item is the everyday equivalent of
-  the above, normally without an elevated prompt. **Stop** goes through
-  Loombre's local control API (a graceful in-band shutdown — see
-  `packages/controller-ipc` if you're curious); **Start** goes through the
+- The tray's **Start Loombre** / **Stop server** menu item is the everyday
+  equivalent of the above, normally without an elevated prompt. **Stop
+  server** goes through Loombre's local control API (a graceful in-band
+  shutdown of the server alone — see `packages/controller-ipc` if you're
+  curious); **Start Loombre** starts all three services through the
   Windows Service Control Manager directly (the installer grants local
   users start permission on the Loombre services for exactly this).
   Installs from before that permission existed fall back to a single UAC
   prompt when you click Start.
+
+## Shutting Loombre down completely
+
+The tray's **Shut down Loombre…** item stops all three services — the
+worker, the web UI, then the server (which takes its bundled PostgreSQL
+down with it) — after a confirmation and a single administrator (UAC)
+prompt, and then closes the tray icon itself. Nothing of Loombre is left
+running. (Stopping the services is deliberately *not* granted to
+non-administrators, unlike starting them — hence the one prompt.)
+
+Two things it deliberately does **not** do:
+
+- It does not disable Loombre permanently: the services start again the
+  next time Windows boots (they're automatic-start services), and the
+  tray returns at your next sign-in. To bring everything back sooner,
+  open **Loombre** from the Start Menu and choose **Start Loombre**.
+- It does not uninstall anything — see [Uninstalling](#uninstalling).
+
+The equivalent from an elevated PowerShell:
+
+```powershell
+Stop-Service LoombreWorker, LoombreWeb, LoombreServer
+```
+
+(**Stop server**, by contrast, stops only the server process over the
+local control API — no prompt — and leaves the worker and web services
+running; it is a quick, reversible pause rather than a full shutdown.)
 
 ## Data locations
 

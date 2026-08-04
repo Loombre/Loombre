@@ -19,6 +19,30 @@ Until then, phase names are the version axis.
 
 ## [Unreleased]
 
+### Full-shutdown parity: Windows tray + Linux/Docker docs (2026-08-04)
+
+Closes the Windows parity gap flagged in the macOS entry below. The
+Windows tray gains **"Shut down Loombre…"**: confirmation dialog → one
+UAC prompt → `net stop` of all three services consumers-first
+(LoombreWorker → LoombreWeb → LoombreServer, so the bundled-PG-hosting
+server goes down last and SCM dependents stop before their dependency) →
+SCM verification that everything reports Stopped → the tray exits too.
+Stop stays deliberately admin-only (Services.wxs grants Users
+query+start, never stop) — the same one-prompt posture as macOS.
+**"Start server" is now "Start Loombre"** (it already started all three
+services; the label catches up). Canonical service names/orderings/
+elevated command lines move to the cross-platform-testable
+`Loombre.Tray.Ipc/ServiceStack.cs`, pinned by new `ServiceStackTests`
+(46/46 green on macOS via `dotnet test`; the WinForms tray compiles
+clean with `EnableWindowsTargeting`).
+
+Linux and Docker are headless — their service manager is the interface —
+so parity there is explicit documentation: `install/linux.md` gains a
+"Stopping / shutting down completely" section (one `systemctl stop` line
+with the correct ordering, plus `disable --now` for off-across-reboots)
+and `install/docker.md` gains the compose `stop`/`down`/`down -v`
+distinctions.
+
 ### macOS menubar: full shutdown UI (2026-08-04)
 
 The macOS menubar app gains **"Shut Down Loombre…"** — the first UI able
