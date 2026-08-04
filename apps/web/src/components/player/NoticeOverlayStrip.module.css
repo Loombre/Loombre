@@ -1,0 +1,100 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+
+/* N3's player review checkpoint (STATE.md NG9): the ONE overlay proven to
+   survive the real Fullscreen API — a descendant of `stageRef`, the
+   fullscreen target. z-index sits ABOVE PlayerControls' own top bar
+   (PlayerControls.module.css .topBar is z-index:5) so a notice is never
+   hidden behind the controls chrome when both happen to be visible at
+   once. `pointer-events:none` on the strip container keeps it non-
+   blocking (N6) — only the dismiss button re-enables pointer events for
+   itself.
+
+   KNOWN VISUAL CAVEAT (see freeze report): PlayerControls.tsx's own top
+   bar (back-button chip + title) occupies the same top-left corner of the
+   stage while controls are visible. PlayerControls.tsx is outside this
+   file's ownership for this run, so the two chrome layers are not
+   reflowed to coexist pixel-perfectly — the overlap is transient
+   (controls auto-hide after 3s idle) and never blocks input either way
+   (this strip is pointer-events:none except its own button). */
+
+.strip {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 6;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-lg);
+  pointer-events: none;
+}
+
+.strip[data-severity="info"] {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--color-accent) 26%, rgb(0 0 0 / 55%)), transparent);
+  color: var(--color-accent);
+}
+
+.strip[data-severity="warning"] {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--color-warning) 30%, rgb(0 0 0 / 55%)), transparent);
+  color: var(--color-warning);
+}
+
+.strip[data-severity="critical"] {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--color-danger) 34%, rgb(0 0 0 / 60%)), transparent);
+  color: var(--color-danger);
+}
+
+.text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3xs);
+  min-width: 0;
+}
+
+.message {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--color-text);
+  overflow-wrap: anywhere;
+}
+
+.countdown {
+  font-family: var(--font-mono);
+  font-size: var(--mono-sm);
+  letter-spacing: var(--track-mono);
+  color: inherit;
+}
+
+.dismiss {
+  pointer-events: auto;
+  margin-left: auto;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-full);
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  transition: background-color var(--motion-fast) var(--ease-out);
+}
+
+.dismiss:hover,
+.dismiss:focus-visible {
+  background: rgb(255 255 255 / 14%);
+}
+
+@media (width <= 767.98px) {
+  .strip {
+    padding: var(--space-sm) var(--space-md);
+  }
+
+  .dismiss {
+    width: 44px;
+    height: 44px;
+  }
+}
