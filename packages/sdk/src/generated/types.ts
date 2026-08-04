@@ -290,6 +290,67 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/system/notices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List notice history, newest first (admin)
+         * @description Every notice ever published, cursor-paginated newest-first — including cancelled and naturally-expired ones (an audit history, not just the currently-active notice; use GET /notices/active for that). Each row's `status` is derived at read time, never stored.
+         */
+        get: operations["listSystemNotices"];
+        put?: never;
+        /**
+         * Publish a system notice, replacing any currently-active one (admin)
+         * @description Publishing supersedes any active notice — v1 holds exactly ONE active notice at a time (a notice channel that stacks becomes noise), so this call cancels whichever notice is currently active and inserts the new one in the same transaction. The request carries RELATIVE durations (`effectiveInMs`/`expiresInMs`); the server anchors both to its own clock and returns absolute `effectiveAtMs`/`expiresAtMs`, eliminating compose-time clock skew by construction. Severity governs expiry defaults: `info` defaults to a 1-hour expiry when `expiresInMs` is omitted; `warning` REQUIRES `expiresInMs` (422 when absent — a maintenance banner must not linger forever by accident); `critical` may omit `expiresInMs` entirely, meaning "until cancelled". Delivered live over the events socket (`notice.published`, all-user broadcast) and via GET /notices/active for anyone who connects after publication.
+         */
+        post: operations["publishSystemNotice"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/notices/{id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel a notice (admin) */
+        post: operations["cancelSystemNotice"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/notices/active": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The currently-active notice, if any (any authenticated user)
+         * @description NOT admin-only — every authenticated user calls this, on auth boot and on every websocket reconnect (the catch-up read for anyone who was not connected at publish time; live delivery alone only reaches sockets connected at that moment). `serverNowMs` is the clock anchor a client renders any countdown against (`effectiveAtMs - (Date.now() + (serverNowMs - Date.now()))`), never the client's own wall clock alone.
+         */
+        get: operations["getActiveSystemNotice"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/users": {
         parameters: {
             query?: never;
@@ -2683,6 +2744,78 @@ export interface components {
             /** Format: int64 */
             unlockedUntilMs: number | null;
         };
+        /**
+         * @description info -> auto-dismiss toast; warning -> persistent, per-session- dismissible banner; critical -> persistent, NOT dismissible banner. Governs the expiry defaults on POST /system/notices (see that operation's own description).
+         * @enum {string}
+         */
+        NoticeSeverity: "info" | "warning" | "critical";
+        /** @description The all-user broadcast shape — delivered as notice.published's payload AND as GET /notices/active's `notice` field. Deliberately excludes createdBy/any admin-identity field (plain-content posture: every user sees this, never who published it). */
+        SystemNotice: {
+            /** Format: uuid */
+            id: string;
+            message: string;
+            severity: components["schemas"]["NoticeSeverity"];
+            /**
+             * Format: int64
+             * @description The countdown target ("restarting at this time"), absolute ms. Null when this notice carries no scheduled moment.
+             */
+            effectiveAtMs: number | null;
+            /**
+             * Format: int64
+             * @description Absolute ms this notice stops being active. Null means "until cancelled" (legal only for severity=critical).
+             */
+            expiresAtMs: number | null;
+            /** Format: int64 */
+            createdAtMs: number;
+        };
+        /** @description The all-user SystemNotice shape plus admin-only history fields. */
+        SystemNoticeAdmin: {
+            /** Format: uuid */
+            id: string;
+            message: string;
+            severity: components["schemas"]["NoticeSeverity"];
+            /** Format: int64 */
+            effectiveAtMs: number | null;
+            /** Format: int64 */
+            expiresAtMs: number | null;
+            /** Format: int64 */
+            createdAtMs: number;
+            /** Format: uuid */
+            createdBy: string | null;
+            /** Format: int64 */
+            cancelledAtMs: number | null;
+            /**
+             * @description Derived at read time from cancelledAtMs/expiresAtMs — never stored.
+             * @enum {string}
+             */
+            status: "active" | "cancelled" | "expired";
+        };
+        SystemNoticePage: {
+            items: components["schemas"]["SystemNoticeAdmin"][];
+            nextCursor: string | null;
+        };
+        PublishSystemNoticeRequest: {
+            message: string;
+            severity: components["schemas"]["NoticeSeverity"];
+            /**
+             * Format: int64
+             * @description RELATIVE ms from now (NOT an absolute timestamp) — the server anchors it to its own clock. Omit for a notice with no scheduled countdown moment.
+             */
+            effectiveInMs?: number;
+            /**
+             * Format: int64
+             * @description RELATIVE ms from now. Required for severity=warning (422 when absent). Optional for severity=info (defaults to 1 hour). Optional for severity=critical (omitted = until cancelled).
+             */
+            expiresInMs?: number;
+        };
+        ActiveSystemNoticeResponse: {
+            notice: components["schemas"]["SystemNotice"] | null;
+            /**
+             * Format: int64
+             * @description The server's clock at response time (NG3's anchor) — clients compute `offset = serverNowMs - Date.now()` at receipt and render any countdown against `effectiveAtMs - (Date.now() + offset)`, never their own wall clock alone.
+             */
+            serverNowMs: number;
+        };
         Library: {
             /** Format: uuid */
             id: string;
@@ -4578,6 +4711,115 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
+            default: components["responses"]["Problem"];
+        };
+    };
+    listSystemNotices: {
+        parameters: {
+            query?: {
+                /** @description Opaque pagination cursor from a previous page's `nextCursor`. */
+                cursor?: components["parameters"]["Cursor"];
+                limit?: components["parameters"]["Limit"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Page of notices */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SystemNoticePage"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    publishSystemNotice: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PublishSystemNoticeRequest"];
+            };
+        };
+        responses: {
+            /** @description Notice published */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SystemNotice"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            422: components["responses"]["UnprocessableEntity"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    cancelSystemNotice: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["IdPathParam"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Notice cancelled */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            /** @description Unknown notice id, OR the notice is already inactive (already cancelled, or its own expiresAtMs has already passed) — "nothing left to cancel" (invites revokeInvite precedent). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    getActiveSystemNotice: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Active notice, or null when none is active */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActiveSystemNoticeResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
             default: components["responses"]["Problem"];
         };
     };

@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://loombre.com/schemas/events/notice.published.schema.json",
+  "title": "NoticePublishedPayload",
+  "description": "Payload for envelope.type === 'notice.published'. ALL-USER broadcast (STATE.md \"Admin broadcast notifications — system notices\", N2/NG1) — deliberately NOT in packages/shared/src/admin-only-event-types.ts's ADMIN_ONLY_EVENT_TYPES, reaching every authenticated socket via the ws-broadcaster's fallthrough path (user.created precedent). The exact all-user SystemNotice shape (packages/contract/openapi.yaml): NEVER carries createdBy or any other admin-identity field (NG6 plain-content posture) — the acting admin is recorded only at the envelope's own actorUserId, not in this payload. Emitted by packages/db/src/query/notices.ts's publishNoticeAndEmit; a REPLACE (publishing over an already-active notice) emits exactly ONE of these for the new notice, never a notice.cancelled for the superseded row.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "message", "severity", "effectiveAtMs", "expiresAtMs", "createdAtMs"],
+  "properties": {
+    "id": { "type": "string", "format": "uuid" },
+    "message": { "type": "string", "maxLength": 500 },
+    "severity": { "type": "string", "enum": ["info", "warning", "critical"] },
+    "effectiveAtMs": { "type": ["integer", "null"], "minimum": 0 },
+    "expiresAtMs": { "type": ["integer", "null"], "minimum": 0 },
+    "createdAtMs": { "type": "integer", "minimum": 0 }
+  }
+}

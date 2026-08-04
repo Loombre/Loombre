@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://loombre.com/schemas/events/notice.cancelled.schema.json",
+  "title": "NoticeCancelledPayload",
+  "description": "Payload for envelope.type === 'notice.cancelled'. ALL-USER broadcast, same posture as notice.published — deliberately NOT admin-only (STATE.md \"Admin broadcast notifications — system notices\", N2/NG1). Emitted ONLY by an explicit admin cancel (POST /system/notices/{id}/cancel via packages/db/src/query/notices.ts's cancelNoticeAndEmit) — a notice superseded by a later publish does NOT emit this (NG8). The acting admin is recorded only at the envelope's own actorUserId, never in this payload.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id"],
+  "properties": {
+    "id": { "type": "string", "format": "uuid" }
+  }
+}

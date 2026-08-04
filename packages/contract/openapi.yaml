@@ -48,6 +48,11 @@ tags:
     description: User accounts, self-service profile and settings
   - name: invites
     description: One-time, expiring invite links (admin) and the public self-serve claim flow
+  - name: notices
+    description: >-
+      Admin broadcast notifications (publish/cancel/history, admin) and the
+      all-user active-notice read — delivered live over the events socket
+      AND polled on boot/reconnect (notice.published/notice.cancelled)
   - name: libraries
     description: Media libraries, scanning, per-user permissions
   - name: catalog-video
@@ -525,6 +530,109 @@ paths:
           content:
             application/problem+json:
               schema: { $ref: '#/components/schemas/Problem' }
+        default: { $ref: '#/components/responses/Problem' }
+
+  # ─────────────────────── System notices (admin broadcast) ─────────────────
+  /system/notices:
+    get:
+      operationId: listSystemNotices
+      tags: [notices]
+      summary: List notice history, newest first (admin)
+      description: >-
+        Every notice ever published, cursor-paginated newest-first —
+        including cancelled and naturally-expired ones (an audit history,
+        not just the currently-active notice; use GET /notices/active for
+        that). Each row's `status` is derived at read time, never stored.
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Page of notices
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SystemNoticePage' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        default: { $ref: '#/components/responses/Problem' }
+    post:
+      operationId: publishSystemNotice
+      tags: [notices]
+      summary: Publish a system notice, replacing any currently-active one (admin)
+      description: >-
+        Publishing supersedes any active notice — v1 holds exactly ONE
+        active notice at a time (a notice channel that stacks becomes
+        noise), so this call cancels whichever notice is currently active
+        and inserts the new one in the same transaction. The request
+        carries RELATIVE durations (`effectiveInMs`/`expiresInMs`); the
+        server anchors both to its own clock and returns absolute
+        `effectiveAtMs`/`expiresAtMs`, eliminating compose-time clock skew
+        by construction. Severity governs expiry defaults: `info` defaults
+        to a 1-hour expiry when `expiresInMs` is omitted; `warning`
+        REQUIRES `expiresInMs` (422 when absent — a maintenance banner
+        must not linger forever by accident); `critical` may omit
+        `expiresInMs` entirely, meaning "until cancelled". Delivered live
+        over the events socket (`notice.published`, all-user broadcast)
+        and via GET /notices/active for anyone who connects after
+        publication.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PublishSystemNoticeRequest' }
+      responses:
+        '201':
+          description: Notice published
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SystemNotice' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+        default: { $ref: '#/components/responses/Problem' }
+
+  /system/notices/{id}/cancel:
+    post:
+      operationId: cancelSystemNotice
+      tags: [notices]
+      summary: Cancel a notice (admin)
+      parameters:
+        - $ref: '#/components/parameters/IdPathParam'
+      responses:
+        '204':
+          description: Notice cancelled
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404':
+          description: >-
+            Unknown notice id, OR the notice is already inactive (already
+            cancelled, or its own expiresAtMs has already passed) —
+            "nothing left to cancel" (invites revokeInvite precedent).
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        default: { $ref: '#/components/responses/Problem' }
+
+  /notices/active:
+    get:
+      operationId: getActiveSystemNotice
+      tags: [notices]
+      summary: The currently-active notice, if any (any authenticated user)
+      description: >-
+        NOT admin-only — every authenticated user calls this, on auth boot
+        and on every websocket reconnect (the catch-up read for anyone who
+        was not connected at publish time; live delivery alone only
+        reaches sockets connected at that moment). `serverNowMs` is the
+        clock anchor a client renders any countdown against
+        (`effectiveAtMs - (Date.now() + (serverNowMs - Date.now()))`),
+        never the client's own wall clock alone.
+      responses:
+        '200':
+          description: Active notice, or null when none is active
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ActiveSystemNoticeResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
         default: { $ref: '#/components/responses/Problem' }
 
   # ────────────────────────────────── Users ──────────────────────────────────
@@ -4523,6 +4631,121 @@ components:
         optIn: { type: boolean }
         hasPin: { type: boolean }
         unlockedUntilMs: { type: [integer, 'null'], format: int64 }
+
+    # ═══════════════════ System notices (admin broadcast) ═════════════════════
+    NoticeSeverity:
+      type: string
+      enum: [info, warning, critical]
+      description: >-
+        info -> auto-dismiss toast; warning -> persistent, per-session-
+        dismissible banner; critical -> persistent, NOT dismissible banner.
+        Governs the expiry defaults on POST /system/notices (see that
+        operation's own description).
+
+    SystemNotice:
+      type: object
+      additionalProperties: false
+      description: >-
+        The all-user broadcast shape — delivered as notice.published's
+        payload AND as GET /notices/active's `notice` field. Deliberately
+        excludes createdBy/any admin-identity field (plain-content
+        posture: every user sees this, never who published it).
+      required: [id, message, severity, effectiveAtMs, expiresAtMs, createdAtMs]
+      properties:
+        id: { type: string, format: uuid }
+        message: { type: string, maxLength: 500 }
+        severity: { $ref: '#/components/schemas/NoticeSeverity' }
+        effectiveAtMs:
+          type: [integer, 'null']
+          format: int64
+          description: >-
+            The countdown target ("restarting at this time"), absolute ms.
+            Null when this notice carries no scheduled moment.
+        expiresAtMs:
+          type: [integer, 'null']
+          format: int64
+          description: Absolute ms this notice stops being active. Null means "until cancelled" (legal only for severity=critical).
+        createdAtMs: { type: integer, format: int64 }
+
+    SystemNoticeAdmin:
+      type: object
+      additionalProperties: false
+      description: The all-user SystemNotice shape plus admin-only history fields.
+      required:
+        - id
+        - message
+        - severity
+        - effectiveAtMs
+        - expiresAtMs
+        - createdAtMs
+        - createdBy
+        - cancelledAtMs
+        - status
+      properties:
+        id: { type: string, format: uuid }
+        message: { type: string, maxLength: 500 }
+        severity: { $ref: '#/components/schemas/NoticeSeverity' }
+        effectiveAtMs: { type: [integer, 'null'], format: int64 }
+        expiresAtMs: { type: [integer, 'null'], format: int64 }
+        createdAtMs: { type: integer, format: int64 }
+        createdBy: { type: [string, 'null'], format: uuid }
+        cancelledAtMs: { type: [integer, 'null'], format: int64 }
+        status:
+          type: string
+          enum: [active, cancelled, expired]
+          description: Derived at read time from cancelledAtMs/expiresAtMs — never stored.
+
+    SystemNoticePage:
+      type: object
+      additionalProperties: false
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/SystemNoticeAdmin' }
+        nextCursor: { type: [string, 'null'] }
+
+    PublishSystemNoticeRequest:
+      type: object
+      additionalProperties: false
+      required: [message, severity]
+      properties:
+        message: { type: string, minLength: 1, maxLength: 500 }
+        severity: { $ref: '#/components/schemas/NoticeSeverity' }
+        effectiveInMs:
+          type: integer
+          format: int64
+          minimum: 1
+          description: >-
+            RELATIVE ms from now (NOT an absolute timestamp) — the server
+            anchors it to its own clock. Omit for a notice with no
+            scheduled countdown moment.
+        expiresInMs:
+          type: integer
+          format: int64
+          minimum: 1
+          description: >-
+            RELATIVE ms from now. Required for severity=warning (422 when
+            absent). Optional for severity=info (defaults to 1 hour).
+            Optional for severity=critical (omitted = until cancelled).
+
+    ActiveSystemNoticeResponse:
+      type: object
+      additionalProperties: false
+      required: [notice, serverNowMs]
+      properties:
+        notice:
+          oneOf:
+            - { $ref: '#/components/schemas/SystemNotice' }
+            - type: 'null'
+        serverNowMs:
+          type: integer
+          format: int64
+          description: >-
+            The server's clock at response time (NG3's anchor) — clients
+            compute `offset = serverNowMs - Date.now()` at receipt and
+            render any countdown against `effectiveAtMs - (Date.now() +
+            offset)`, never their own wall clock alone.
 
     # ═══════════════════════════════ Libraries ═══════════════════════════════
     Library:
