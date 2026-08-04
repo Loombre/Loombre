@@ -460,6 +460,73 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         default: { $ref: '#/components/responses/Problem' }
 
+  /system/restart:
+    post:
+      operationId: restartServer
+      tags: [system]
+      summary: Admin-only graceful server restart
+      description: >-
+        Gracefully restarts the server process. The 202 is flushed to the
+        socket BEFORE teardown begins (same ordering contract as the
+        controller-IPC stop), then the server runs its normal graceful
+        shutdown (HTTP close, embedded-PostgreSQL stop) and exits with the
+        documented restart exit code so the platform supervisor (launchd /
+        systemd / Windows SCM recovery / Docker restart policy) starts it
+        again — typically within 5–15 seconds. Settings marked
+        `requiresRestart` take effect on the restarted process. Only the
+        server process restarts; the worker and web services are untouched.
+        In an unsupervised context (bare `node`, dev harness) the process
+        simply exits and nothing restarts it — deployment docs state this.
+      responses:
+        '202':
+          description: Restart accepted; teardown begins after this response.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ServerPowerActionResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        default: { $ref: '#/components/responses/Problem' }
+
+  /system/shutdown:
+    post:
+      operationId: shutdownServer
+      tags: [system]
+      summary: Admin-only graceful server shutdown
+      description: >-
+        Gracefully stops the server process — the same in-band self-stop the
+        desktop controllers' "Stop server" performs. The 202 is flushed
+        before teardown begins; the process then exits cleanly (exit 0),
+        which every shipped service supervisor except Docker treats as
+        "stay stopped" (launchd `SuccessfulExit=false`, systemd
+        `Restart=on-failure`, the Windows service host's clean-child-exit
+        stop). The server stays down until started out-of-band (menubar/tray
+        controller, launchctl/systemctl/SCM, or reboot — the services are
+        boot-started). Only the server stops; worker and web services keep
+        running. Under a container supervisor whose restart policy ignores
+        exit codes (the shipped Docker compose file's `unless-stopped`),
+        an in-process exit CANNOT keep the container down, so the request
+        is refused with 409 instead of pretending.
+      responses:
+        '202':
+          description: Shutdown accepted; teardown begins after this response.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ServerPowerActionResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409':
+          description: >-
+            This deployment's supervisor would immediately restart an
+            exited server (container `restart: unless-stopped` — the server
+            advertises this via its supervision environment), so an
+            in-process shutdown cannot deliver "stays stopped." Stop the
+            container from outside instead (`docker compose stop`). The
+            problem `code` is `shutdown-unsupported-under-container-supervision`.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        default: { $ref: '#/components/responses/Problem' }
+
   # ────────────────────────────────── Users ──────────────────────────────────
   /users:
     get:
@@ -3907,6 +3974,17 @@ components:
             public-URL all set — credentials optional). Additive; always
             sent (never omitted). The login screen shows a "forgot
             password" affordance only when this is true.
+
+    ServerPowerActionResponse:
+      type: object
+      additionalProperties: false
+      required: [accepted, action]
+      properties:
+        # Mirrors the controller-IPC lifecycle response shape ({accepted,
+        # state}) in spirit; `accepted: true` is the only value a 2xx ever
+        # carries — refusals are RFC 9457 problems, never accepted:false.
+        accepted: { type: boolean, enum: [true] }
+        action: { type: string, enum: [restart, shutdown] }
 
     SystemInfo:
       type: object

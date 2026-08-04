@@ -1,0 +1,82 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+
+/* Loombre :: ServerPowerCard — /settings/server "Power" card.
+   Danger-tinted confirm block copied from ProviderKeysCard.module.css
+   (design/phosphor/README.md "confirm step in a danger-tinted block") —
+   both derive border/background from --color-danger so a theme change
+   can never desync them. Mobile: flex-wrap only, no dedicated breakpoint
+   rules needed (same posture as the provider-keys rows). */
+
+.cardTitle {
+  margin: 0 0 var(--space-md);
+  font-size: var(--font-size-md);
+}
+
+.rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  flex-wrap: wrap;
+}
+
+.rowText {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2xs);
+  flex: 1 1 260px;
+  min-width: 0;
+}
+
+.rowLabel {
+  font-weight: 600;
+}
+
+.rowCaption {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.confirmBlock {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  flex-wrap: wrap;
+  border: 1px solid color-mix(in srgb, var(--color-danger) 30%, transparent);
+  background: color-mix(in srgb, var(--color-danger) 6%, transparent);
+  border-radius: var(--radius-sm);
+  padding: var(--space-sm) var(--space-md);
+}
+
+.confirmText {
+  flex: 1 1 260px;
+  min-width: 0;
+}
+
+.confirmActions {
+  display: flex;
+  gap: var(--space-xs);
+}
+
+.statusRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  flex-wrap: wrap;
+}
+
+.statusText {
+  margin: 0;
+  color: var(--color-text-muted);
+}
+
+.errorText {
+  margin: 0 0 var(--space-sm);
+  color: var(--color-danger);
+}

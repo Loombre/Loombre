@@ -12,7 +12,7 @@ Every setting Loombre's settings screen lets you change, grouped the way the scr
 ## How to read this page
 
 - **Applies immediately** means the change takes effect right away.
-- **Applies after a restart** means Loombre saves your change now but keeps using the old value until the server restarts — you'll see a reminder banner in the meantime. Nothing currently playing is ever interrupted by this.
+- **Applies after a restart** means Loombre saves your change now but keeps using the old value until the server restarts — you'll see a reminder banner in the meantime, and **Settings → Server → Power** has a [restart button](server-power.md) that applies it. Nothing currently playing is ever interrupted just by saving.
 - **Can be locked** means whoever installed Loombre can fix a setting to one value from outside the settings screen. When that's done, this screen shows the setting as controlled by the environment and you can't change it here — ask them if you need it changed.
 
 ## Video conversion & playback quality

@@ -433,7 +433,14 @@ ENV NODE_ENV=production \
     LOOMBRE_CONFIG_DIR=/data/config \
     LOOMBRE_TRANSCODE_DIR=/data/transcode \
     LOOMBRE_AUTH_LOG_FILE=/data/logs/auth-anomaly.log \
-    PORT=3001
+    PORT=3001 \
+    LOOMBRE_SUPERVISOR=container
+# LOOMBRE_SUPERVISOR=container: tells the server its supervisor restarts it
+# on ANY exit (compose ships restart:unless-stopped, which ignores exit
+# codes), so POST /system/shutdown refuses honestly (409 — an in-process
+# exit cannot keep the container down; `docker compose stop` is the real
+# shutdown) while POST /system/restart works unchanged. See
+# apps/server/src/common/server-power.service.ts.
 
 # App-data volume mount point (images, transcode staging — see
 # docker-compose.prod.yml's `loombre_data` named volume). Created + owned
