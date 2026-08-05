@@ -159,6 +159,35 @@ export const ACTOR_FIELD_MAP: Record<string, readonly string[]> = {
   // pseudonymize" because the payload itself never carries a user id.
   "notice.published": [],
   "notice.cancelled": [],
+  // STATE.md "Loombre Remote — embedded WireGuard + three-path wizard +
+  // reachability proof + posture card" (R9, Wave-0 freeze adjudication):
+  // remote.enabled/remote.disabled name only timestamps — empty, same
+  // reason plugin.enabled/plugin.disabled's entries are.
+  "remote.enabled": [],
+  "remote.disabled": [],
+  // remote.device.enrolled/remote.device.revoked payloads carry BOTH a real
+  // userId (the device's owner) AND a deviceId (the enrolled devices.id row
+  // — stable per device, same M-9 rationale as playback.*'s deviceId) —
+  // mapped for the same reason user.claimed's userId is, despite ALSO
+  // being ADMIN_ONLY (this map tracks "does the schema carry a
+  // user-id-bearing field", not "is this type reachable by a plugin
+  // today" — see this file's header).
+  "remote.device.enrolled": ["deviceId", "userId"],
+  "remote.device.revoked": ["deviceId", "userId"],
+  // remote.path.changed names only path enum values + a timestamp — empty.
+  "remote.path.changed": [],
+  // tunnel.connector.state names only connector-state enum values + a
+  // timestamp — empty, same reason plugin.health-changed's entry is.
+  "tunnel.connector.state": [],
+  // posture.regressed/posture.recovered name only a check-key enum, grade
+  // enums, and a timestamp — no user-correlating identifier — empty.
+  "posture.regressed": [],
+  "posture.recovered": [],
+  // probe.arrived names only {probeId, arrivedAtMs} — probeId is a probe
+  // row id, not a user id or another user-correlating identifier (R9
+  // deliberately excludes the caller's IP/token from this payload) —
+  // empty for the same reason probe.failed's entry is.
+  "probe.arrived": [],
 };
 
 /**
