@@ -253,6 +253,28 @@ export const REMOTE_SUBNET_SCHEMA = z.string().refine(isValidIpv4Cidr, {
   message: "Must be an IPv4 CIDR block (e.g. 10.82.146.0/24), prefix length between /8 and /30.",
 });
 
+/** STATE.md "Loombre Remote..." (RG12): `tls.acmeDomains` — a standard DNS
+ *  hostname shape (dot-separated labels, letters/digits/hyphens, no
+ *  leading/trailing hyphen per label). Deliberately permissive about
+ *  length/TLD validity beyond that — the real, load-bearing check is the
+ *  ACME server's own issuance attempt (the Direct path's staged test),
+ *  not this schema; this only rejects obvious garbage (spaces, no dot,
+ *  empty labels) before a value is ever stored. */
+function isValidAcmeDomain(value: string): boolean {
+  if (!/^(?!-)[a-z0-9-]{1,63}(?<!-)(\.(?!-)[a-z0-9-]{1,63}(?<!-))+$/i.test(value)) return false;
+  // ICANN never delegates an all-numeric TLD, so a value whose final label
+  // is all digits is an IPv4 address (or similar), not a real domain —
+  // rejected here rather than with a separate IP-literal parser.
+  const labels = value.split(".");
+  return !/^\d+$/.test(labels[labels.length - 1]!);
+}
+
+export const ACME_DOMAIN_SCHEMA = z.string().refine(isValidAcmeDomain, {
+  message: "Must be a domain name (e.g. media.example.com) — not an IP address, and not missing a dot.",
+});
+
+export const ACME_DOMAINS_SCHEMA = z.array(ACME_DOMAIN_SCHEMA);
+
 const ENV_ONLY_ENTRIES: SettingsRegistryEntry[] = [
   defineSetting({
     key: "database.url",
@@ -341,17 +363,6 @@ const ENV_ONLY_ENTRIES: SettingsRegistryEntry[] = [
     envVar: "LOOMBRE_FFPROBE",
   }),
   defineSetting({
-    key: "network.trustProxy",
-    schema: z.string(),
-    default: "",
-    category: "network",
-    description: "Express 'trust proxy' setting (boolean-like flag, hop count, or CIDR/preset list). Empty/unset means disabled — req.ip is the raw socket address and X-Forwarded-For is ignored (apps/server/src/main.ts's resolveTrustProxySetting).",
-    caution: "Only enable behind a reverse proxy you control — enabling this trusts client-supplied X-Forwarded-For for rate-limit and anomaly-log keying.",
-    requiresRestart: true,
-    scope: "env-only",
-    envVar: "LOOMBRE_TRUST_PROXY",
-  }),
-  defineSetting({
     key: "network.corsOrigins",
     schema: z.array(z.string()),
     default: ["http://localhost:3000", "http://127.0.0.1:3000"],
@@ -361,16 +372,6 @@ const ENV_ONLY_ENTRIES: SettingsRegistryEntry[] = [
     scope: "env-only",
     envVar: "LOOMBRE_CORS_ORIGINS",
     parseEnv: parseEnvCommaList,
-  }),
-  defineSetting({
-    key: "tls.mode",
-    schema: z.enum(["off", "manual", "acme"]),
-    default: "off",
-    category: "tls",
-    description: "TLS termination mode: 'off' (plain HTTP, e.g. behind a reverse proxy), 'manual' (operator-supplied cert/key files), or 'acme' (built-in Let's Encrypt issuance). See apps/server/src/tls/config.ts.",
-    requiresRestart: true,
-    scope: "env-only",
-    envVar: "LOOMBRE_TLS_MODE",
   }),
 ];
 
@@ -931,6 +932,85 @@ const UI_ENTRIES: SettingsRegistryEntry[] = [
     requiresRestart: false,
     scope: "ui",
     envVar: "LOOMBRE_TUNNEL_HOSTNAME",
+  }),
+
+  // ---- tls / Direct path (STATE.md "Loombre Remote — embedded WireGuard +
+  // three-path wizard + reachability proof + posture card", RG12): the
+  // MINIMUM key set promoted from env-only to ui-scope so the Direct
+  // path's wizard (apps/server/src/remote/remote-direct.controller.ts) can
+  // stage a real ACME test issuance and commit a validated result through
+  // the ordinary settings machinery, rather than requiring an operator to
+  // hand-edit environment variables to use a feature the admin UI walks
+  // them through. Every env var name is UNCHANGED from before this
+  // promotion (docs/ops/acme.md, apps/server/src/tls/config.ts) — env
+  // still wins whenever set (A8), and every one of these is
+  // requiresRestart:true because apps/server/src/main.ts resolves TLS
+  // mode once, at boot, before the settings service's own database read
+  // is consulted — exactly the same "cannot hot-apply to a live process"
+  // shape remote.wireguardPort/remote.subnet above already established.
+  // tls.mode's cross-field requirements (acmeDomains non-empty,
+  // acmeTosAgreed true, whenever mode is "acme") are enforced in
+  // apps/server/src/settings/settings.service.ts's
+  // assertCrossFieldInvariants — a single key's own zod schema cannot
+  // express "valid only in combination with these other keys' values",
+  // the same reasoning documented on the existing transcode/sessions pairs
+  // there.
+  defineSetting({
+    key: "tls.mode",
+    schema: z.enum(["off", "manual", "acme"]),
+    default: "off",
+    category: "tls",
+    description: "How Loombre handles HTTPS: 'off' serves plain HTTP (the right choice when a reverse proxy in front of Loombre handles HTTPS itself), 'manual' uses a certificate and key file you provide yourself, and 'acme' has Loombre request and automatically renew its own certificate from Let's Encrypt (or another compatible certificate authority) using the domain and verification settings below.",
+    requiresRestart: true,
+    scope: "ui",
+    envVar: "LOOMBRE_TLS_MODE",
+  }),
+  defineSetting({
+    key: "tls.acmeDomains",
+    schema: ACME_DOMAINS_SCHEMA,
+    default: [],
+    category: "tls",
+    description: "The domain name(s) this server requests an HTTPS certificate for when TLS mode is 'acme' — the address people use to reach it from outside your network (for example media.example.com). The first one becomes the certificate's primary name.",
+    requiresRestart: true,
+    scope: "ui",
+    envVar: "LOOMBRE_ACME_DOMAINS",
+    // Mirrors apps/server/src/tls/config.ts's own LOOMBRE_ACME_DOMAINS
+    // parsing exactly (lowercased, same as every domain match this value
+    // ever gets compared against) — parseEnvCommaList alone doesn't lowercase.
+    parseEnv: (raw) => parseEnvCommaList(raw).map((d) => d.toLowerCase()),
+  }),
+  defineSetting({
+    key: "tls.acmeChallengeType",
+    schema: z.enum(["http-01", "dns-01"]),
+    default: "http-01",
+    category: "tls",
+    description: "How Loombre proves it controls the domain above, to get a certificate for it: 'http-01' answers a request on port 80 (simplest, when that port is reachable from the internet), 'dns-01' creates a temporary DNS record instead (works even with no reachable inbound port, and is required for a wildcard certificate).",
+    requiresRestart: true,
+    scope: "ui",
+    envVar: "LOOMBRE_ACME_CHALLENGE_TYPE",
+    parseEnv: (raw) => raw.trim().toLowerCase(),
+  }),
+  defineSetting({
+    key: "tls.acmeTosAgreed",
+    schema: z.boolean(),
+    default: false,
+    category: "tls",
+    description: "Confirms you accept the certificate authority's Terms of Service on this server's behalf — required before Loombre will request a certificate automatically. Loombre never agrees on your behalf silently; this must be turned on explicitly.",
+    requiresRestart: true,
+    scope: "ui",
+    envVar: "LOOMBRE_ACME_TOS_AGREED",
+    parseEnv: parseEnvBoolean,
+  }),
+  defineSetting({
+    key: "network.trustProxy",
+    schema: z.string(),
+    default: "",
+    category: "network",
+    description: "Tells Loombre it is running behind a reverse proxy you control, so it can trust that proxy's forwarded address information when deciding who to rate-limit or note in the sign-in log. Accepts a hop count (e.g. \"1\"), a trusted address/range, or a comma-separated list of them. Leave blank unless you are running Loombre behind your own reverse proxy.",
+    caution: "Only enable behind a reverse proxy you control — enabling this trusts client-supplied forwarded-address information for rate-limit and sign-in-log keying.",
+    requiresRestart: true,
+    scope: "ui",
+    envVar: "LOOMBRE_TRUST_PROXY",
   }),
 ];
 

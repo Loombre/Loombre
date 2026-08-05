@@ -366,6 +366,95 @@ describe("SettingsService.updateSetting — F9 cross-field validation (registry 
       await service.updateSetting({ key: "sessions.staleCutoffMs", value: 900_000, actorUserId: adminId, nowMs: Date.now() });
     }
   });
+
+  // RG12 (STATE.md "Loombre Remote..."): tls.mode="acme" requires
+  // tls.acmeDomains non-empty AND tls.acmeTosAgreed=true — a settings-screen
+  // edit must never be able to produce the same boot-time TlsConfigError
+  // lockout a raw env-var typo could (apps/server/src/tls/config.ts).
+  // Defaults at boot: tls.mode="off", tls.acmeDomains=[], tls.acmeTosAgreed=false.
+
+  it("tls.mode: rejects flipping to 'acme' while acmeDomains is still empty and acmeTosAgreed is still false", async () => {
+    const service = freshService();
+    await service.bootstrap();
+    await expect(
+      service.updateSetting({ key: "tls.mode", value: "acme", actorUserId: adminId, nowMs: Date.now() }),
+    ).rejects.toMatchObject({ status: 422 });
+  });
+
+  it("tls.mode: rejects flipping to 'acme' with domains set but ToS not yet agreed", async () => {
+    const service = freshService();
+    await service.bootstrap();
+    await service.updateSetting({ key: "tls.acmeDomains", value: ["media.example.com"], actorUserId: adminId, nowMs: Date.now() });
+    try {
+      await expect(
+        service.updateSetting({ key: "tls.mode", value: "acme", actorUserId: adminId, nowMs: Date.now() }),
+      ).rejects.toMatchObject({ status: 422 });
+    } finally {
+      await service.updateSetting({ key: "tls.acmeDomains", value: [], actorUserId: adminId, nowMs: Date.now() });
+    }
+  });
+
+  it("tls.mode: 'acme' succeeds once both acmeDomains and acmeTosAgreed are set first", async () => {
+    const service = freshService();
+    await service.bootstrap();
+    try {
+      await service.updateSetting({ key: "tls.acmeDomains", value: ["media.example.com"], actorUserId: adminId, nowMs: Date.now() });
+      await service.updateSetting({ key: "tls.acmeTosAgreed", value: true, actorUserId: adminId, nowMs: Date.now() });
+      const result = await service.updateSetting({ key: "tls.mode", value: "acme", actorUserId: adminId, nowMs: Date.now() });
+      expect(result.value).toBe("acme");
+    } finally {
+      // Revert order matters the same way the pairs above do: drop mode
+      // back to "off" FIRST (still legal regardless of the other two),
+      // then clear domains/tosAgreed.
+      await service.updateSetting({ key: "tls.mode", value: "off", actorUserId: adminId, nowMs: Date.now() });
+      await service.updateSetting({ key: "tls.acmeDomains", value: [], actorUserId: adminId, nowMs: Date.now() });
+      await service.updateSetting({ key: "tls.acmeTosAgreed", value: false, actorUserId: adminId, nowMs: Date.now() });
+    }
+  });
+
+  it("tls.acmeDomains: rejects clearing to empty while tls.mode is currently 'acme'", async () => {
+    const service = freshService();
+    await service.bootstrap();
+    await service.updateSetting({ key: "tls.acmeDomains", value: ["media.example.com"], actorUserId: adminId, nowMs: Date.now() });
+    await service.updateSetting({ key: "tls.acmeTosAgreed", value: true, actorUserId: adminId, nowMs: Date.now() });
+    await service.updateSetting({ key: "tls.mode", value: "acme", actorUserId: adminId, nowMs: Date.now() });
+    try {
+      await expect(
+        service.updateSetting({ key: "tls.acmeDomains", value: [], actorUserId: adminId, nowMs: Date.now() }),
+      ).rejects.toMatchObject({ status: 422 });
+    } finally {
+      await service.updateSetting({ key: "tls.mode", value: "off", actorUserId: adminId, nowMs: Date.now() });
+      await service.updateSetting({ key: "tls.acmeDomains", value: [], actorUserId: adminId, nowMs: Date.now() });
+      await service.updateSetting({ key: "tls.acmeTosAgreed", value: false, actorUserId: adminId, nowMs: Date.now() });
+    }
+  });
+
+  it("tls.acmeTosAgreed: rejects un-agreeing while tls.mode is currently 'acme'", async () => {
+    const service = freshService();
+    await service.bootstrap();
+    await service.updateSetting({ key: "tls.acmeDomains", value: ["media.example.com"], actorUserId: adminId, nowMs: Date.now() });
+    await service.updateSetting({ key: "tls.acmeTosAgreed", value: true, actorUserId: adminId, nowMs: Date.now() });
+    await service.updateSetting({ key: "tls.mode", value: "acme", actorUserId: adminId, nowMs: Date.now() });
+    try {
+      await expect(
+        service.updateSetting({ key: "tls.acmeTosAgreed", value: false, actorUserId: adminId, nowMs: Date.now() }),
+      ).rejects.toMatchObject({ status: 422 });
+    } finally {
+      await service.updateSetting({ key: "tls.mode", value: "off", actorUserId: adminId, nowMs: Date.now() });
+      await service.updateSetting({ key: "tls.acmeDomains", value: [], actorUserId: adminId, nowMs: Date.now() });
+      await service.updateSetting({ key: "tls.acmeTosAgreed", value: false, actorUserId: adminId, nowMs: Date.now() });
+    }
+  });
+
+  it("tls.mode: 'off'/'manual' never require acmeDomains/acmeTosAgreed", async () => {
+    const service = freshService();
+    await service.bootstrap();
+    const off = await service.updateSetting({ key: "tls.mode", value: "off", actorUserId: adminId, nowMs: Date.now() });
+    expect(off.value).toBe("off");
+    const manual = await service.updateSetting({ key: "tls.mode", value: "manual", actorUserId: adminId, nowMs: Date.now() });
+    expect(manual.value).toBe("manual");
+    await service.updateSetting({ key: "tls.mode", value: "off", actorUserId: adminId, nowMs: Date.now() });
+  });
 });
 
 describe("SettingsService — live isAdmin re-verify rejects a freshly-demoted admin", () => {
