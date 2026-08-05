@@ -48,6 +48,7 @@ import { runStashSync, type StashSyncConsumerDeps } from "../../src/stash/sync-c
 import { applyStashSceneMetadata } from "../../src/stash/apply.js";
 import type { ApplyStashSceneMetadataFn } from "../../src/stash/apply-types.js";
 import { buildSyncFixtureDb, type FixtureScene } from "./sync-fixtures/build-sync-fixture.js";
+import { startWalLockHolder, stopAllWalLockHolders } from "./support/wal-lock-holder.js";
 import { buildFixtureDb } from "./fixtures/build-fixture-db.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -80,6 +81,9 @@ afterAll(async () => {
 
 afterEach(() => {
   if (mediaDir) rmSync(mediaDir, { recursive: true, force: true });
+  // Kill any WAL-lock-holding child a test forgot / that threw before its
+  // own stop() (the OS reclaims the file lock as the child exits).
+  stopAllWalLockHolders();
 });
 
 async function makeLibrary(): Promise<string> {
@@ -670,39 +674,28 @@ describe("stash-sync — S2 snapshot-copy fallback surfaces (FX4 fix wave)", () 
     await replaceLibraryPathMappings(db, libraryId, [{ stashPrefix: "/stash-media", loombrePrefix: mediaDir }]);
     await makeCatalogItemWithFile(libraryId, path.join(mediaDir, "locked.mp4"), 100);
 
-    // Force the fixture's OWN open handle (buildSyncFixtureDb returns one
-    // read-write handle; every other test in this file closes it right
-    // away — this one instead holds it open) into the WAL-locked state —
-    // mirrors adapter.spec.ts's makeLockedFixture exactly: journal_mode
-    // WAL + locking_mode EXCLUSIVE + an uncommitted BEGIN IMMEDIATE
-    // transaction, which reliably forces a concurrent read-only opener
-    // into SQLITE_BUSY/LOCKED (adapter.ts's own header documents why this
-    // simulation, not real WAL contention, is the standard way to prove
-    // this path).
+    // Force the fixture into the WAL-locked state with the lock held by a
+    // SEPARATE process (support/wal-lock-holder.ts) — the faithful, cross-
+    // platform-reliable simulation of a running Stash instance holding the
+    // database, and the same mechanism adapter.spec.ts now uses. (An earlier
+    // version locked via this test's OWN fixture.db handle; a same-process
+    // lock blocked the reader on Linux but NOT on the macOS CI runner, since
+    // SQLite's cross-connection locking is only guaranteed to conflict across
+    // PROCESSES.) Close our own read-write handle first so the child is the
+    // sole locker.
     fixture.db.exec("PRAGMA journal_mode=WAL;");
-    fixture.db.exec("PRAGMA locking_mode=EXCLUSIVE;");
-    fixture.db.exec("BEGIN IMMEDIATE;");
-    fixture.db.exec("UPDATE scenes SET title = title WHERE id = 1;");
+    fixture.db.close();
+    const lockHolder = await startWalLockHolder(fixture.dbPath);
 
     // Released shortly after the sync starts — same timing shape as
-    // adapter.spec.ts's own fallback test (`setTimeout(() => release(),
-    // 200)` before awaiting the connection). CRITICAL (matches
-    // makeLockedFixture's own release() exactly): in WAL mode, EXCLUSIVE
-    // locking_mode holds its lock for the connection's WHOLE SESSION, not
-    // just for the open transaction — a bare COMMIT does NOT release it;
-    // the connection must be CLOSED. The small direct-open retry budget
+    // adapter.spec.ts's own fallback test. The small direct-open retry budget
     // below exhausts well before this fires, so the direct tier reliably
-    // observes the lock; the snapshot tier's own retry budget then
-    // succeeds once the close() lands.
+    // observes the lock; the snapshot tier's own retry budget then succeeds
+    // once the holder is killed (the OS drops the file lock as it exits).
     let released = false;
     const releaseTimer = setTimeout(() => {
       released = true;
-      try {
-        fixture.db.exec("COMMIT;");
-      } catch {
-        // fine either way — close() below is what actually matters.
-      }
-      fixture.db.close();
+      lockHolder.stop();
     }, 150);
 
     const { fn } = fakeApply();
@@ -721,7 +714,7 @@ describe("stash-sync — S2 snapshot-copy fallback surfaces (FX4 fix wave)", () 
     );
 
     clearTimeout(releaseTimer);
-    if (!released) fixture.db.close();
+    if (!released) lockHolder.stop();
 
     expect(result.touchedCount).toBe(1);
 
