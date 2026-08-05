@@ -26,6 +26,17 @@
 // precedent for needing both) and re-provides NEITHER, or Nest mints a
 // second module-scoped instance that silently diverges from the one every
 // other controller/test spies on.
+//
+// Tunnel path providers (R4/R9/RG7, lane T1): TunnelProvider/
+// ConnectorManager/RemoteActivePathReader are all ABSTRACT-CLASS DI tokens
+// (see active-path-reader.ts's header for why) bound here to their default
+// implementations — CloudflareTunnelProvider (R4's "thin-but-real" ONE
+// implementation), NoopConnectorManager (T2, a LATER Batch-2 lane, replaces
+// this binding with the real supervised-cloudflared-child implementation —
+// STATE.md's own cross-lane seam note), NoopRemoteActivePathReader
+// (integration replaces this once WG1's/D1's own active-signal exist, same
+// seam shape). Swapping any of the three later is a ONE-LINE change here —
+// no call site anywhere else names a concrete class.
 import { Module } from "@nestjs/common";
 import { RemoteStateController } from "./remote-state.controller.js";
 import { RemoteWireguardController } from "./remote-wireguard.controller.js";
@@ -36,6 +47,12 @@ import { RemoteProbesController } from "./remote-probes.controller.js";
 import { ProbePageController } from "./probe-page.controller.js";
 import { CommonModule } from "../common/common.module.js";
 import { CommonSettingsModule } from "../common/common-settings.module.js";
+import { RemoteActivePathReader, NoopRemoteActivePathReader } from "./active-path-reader.js";
+import { TunnelProvider } from "./tunnel/tunnel-provider.js";
+import { CloudflareTunnelProvider } from "./tunnel/cloudflare-tunnel-provider.js";
+import { ConnectorManager, NoopConnectorManager } from "./tunnel/connector-manager.js";
+import { TunnelTokenService } from "./tunnel/tunnel-token.service.js";
+import { RemoteTunnelService } from "./tunnel/remote-tunnel.service.js";
 
 @Module({
   imports: [CommonModule, CommonSettingsModule],
@@ -48,5 +65,17 @@ import { CommonSettingsModule } from "../common/common-settings.module.js";
     RemoteProbesController,
     ProbePageController,
   ],
+  providers: [
+    { provide: TunnelProvider, useClass: CloudflareTunnelProvider },
+    { provide: ConnectorManager, useClass: NoopConnectorManager },
+    { provide: RemoteActivePathReader, useClass: NoopRemoteActivePathReader },
+    TunnelTokenService,
+    RemoteTunnelService,
+  ],
+  // NoopConnectorManager/NoopRemoteActivePathReader carry test-only
+  // introspection (getTestState()/activePathOverride) that e2e specs read
+  // via `app.get(ConnectorManager)`/`app.get(RemoteActivePathReader)` — no
+  // export needed for that (same-module `app.get` works on any provider,
+  // exported or not); nothing outside this module currently needs either.
 })
 export class RemoteModule {}
