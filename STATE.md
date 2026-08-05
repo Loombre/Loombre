@@ -272,6 +272,17 @@ Targeted timing/variance hardening of the three observed flakes — no behavior 
 - **perf-t0 server idle RSS:** budget `serverIdleRssBytes` 220 MiB → 235 MiB (~15 MiB headroom over the 220 nominal / 224.2 observed max) so near-threshold GC/heap runner noise stops flaking the enforcing job while a gross (>10 MiB) regression still fails. Nominal target documented in the comment.
 Verified locally: remote-tunnel + ws-broadcaster 25/25, perf-t0.mjs parses. Verifying via os=all.
 
+### ✅ FULL 3-OS GATE GREEN — os=all 31043244412 (92e9eff), 2026-08-05
+
+Every job PASSED: **gate ubuntu ✅ · gate windows ✅ · gate macOS ✅** · perf-t0 ✅ · perf-web-budget ✅ · perf-lighthouse ✅ (node-current-26 skipped = non-blocking evidence job per N2). The Windows leg is GREEN for the first time in this line of work — closing the original Stash path bug + all pre-existing Windows issues its fix unmasked:
+1. Stash path separator (real product bug) — `canonicalizePathForMatch` at both match sites.
+2. Stash adapter read-only-dir — win32 skip (no POSIX mode bits).
+3. Probe interlace fixture — generator `-top 1` (removed in newer ffmpeg) → portable `setfield`; tests hardened to select the interlaced ts.
+4. remote-tunnel file0600 DACL — hardcoded `/tmp` → `os.tmpdir()`.
+5. libuv `fs.watch` abort (`_wcsnicmp` fs-event.c:72 under 8.3 temp path) — force chokidar stat-polling on win32.
+6. cloudflared `X_OK` exec-bit — win32 skip (no execute bit; not-found path still covers ok:false).
+Plus the flake-hardening pass (remote-tunnel-2nd-boot timeout, ws-broadcaster waitUntil, perf-t0 RSS headroom) that got all legs green simultaneously. All fixes are test/tooling-scoped except #1 and #4 (product/shared code paths that genuinely misbehaved on Windows); every one verified on the Windows runner.
+
 ### EXIT GATE — WALKED 2026-08-04 (main tip 5cc263a; `pnpm gate:full` ALL 15 STEPS PASSED, LOOMBRE_REQUIRE_WG=1 + real Go 1.26.5 build, verdict read from the log not a wrapper)
 
 Each §4 exit-gate item, with its backing evidence (test file / artifact):
