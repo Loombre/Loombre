@@ -57,7 +57,7 @@ Those three answers sort into one recommended path:
 |---|---|
 | You don't need a plain shareable link, and everyone's willing to install a small app | **[Loombre Remote](loombre-remote.md)** |
 | You need a shareable link (or would rather not ask people to install anything), and you're comfortable with router settings | **[Direct](direct.md)** |
-| You need a shareable link, and you'd rather not touch your router's settings | **[Tunnel](tunnel.md)** |
+| You need a shareable link (or would rather not ask people to install anything), and you'd rather not touch your router's settings | **[Tunnel](tunnel.md)** |
 
 This is exactly the logic the in-app setup wizard uses (Settings → Remote
 access, inside Loombre itself) — this page and the wizard will always agree,
@@ -76,7 +76,7 @@ comparison below and pick one here first.
 | **Attack surface** | Silent to internet scanners. The WireGuard listener answers only a recognized device's own key — an unauthenticated probe gets no response at all, not even a rejection (verified by test). | No inbound ports opened on your router at all — the connection to Cloudflare is outbound-only. | The most exposed of the three: your server's HTTPS port is reachable by anyone on the public internet who finds the address (rate-limited, but reachable). |
 | **Third parties** | None. The tunnel terminates entirely inside Loombre — no outside service ever sees your traffic. | Cloudflare sits in the path for every connection — a real third-party dependency, not something this path can avoid (stated plainly, not glossed over). | None beyond the certificate authority issuing your TLS certificate — no traffic passes through anyone else's servers. |
 | **Setup difficulty** | Install the WireGuard app on every device that needs access and scan a QR code once per device. Requires forwarding one UDP port on your router. | Paste a scoped Cloudflare API token once. Loombre creates the tunnel and DNS route for you and runs a small connector process it supervises and restarts automatically. | Needs a real TLS certificate (Loombre can obtain one for you automatically) and manually forwarding a port on your router — the most router work of the three paths. |
-| **What breaks, and when** | Devices already enrolled keep working through most router or ISP address changes (WireGuard reconnects on its own). Replacing your router can require re-forwarding the port. | If the connector process or Cloudflare itself has an outage, remote access pauses until it recovers — your library keeps working normally on your own network the whole time. | An ISP address change or a missed certificate renewal breaks access until you update DNS/port-forwarding or renew — but once set up, it is the option most likely to "just work" as an ordinary shareable URL. |
+| **What breaks, and when** | Devices already enrolled keep working through most router or ISP address changes (WireGuard reconnects on its own). Replacing your router can require re-forwarding the port. | If the connector process or Cloudflare itself has an outage, remote access pauses until it recovers — your library keeps working normally on your own network the whole time. | An ISP address change or a missed certificate renewal breaks access until you update DNS/port-forwarding or renew — but once set up, it is the option most likely to 'just work' as an ordinary shareable URL. |
 
 Whichever path you pick, setup ends the same way: a reachability proof
 (you scan a code with your own phone, on cellular data, so the check comes
