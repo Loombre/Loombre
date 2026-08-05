@@ -20,6 +20,13 @@
 // them as done TOGETHER rather than staging a fake per-step progress
 // animation the API cannot actually back up (the honesty rule mission item
 // 4 calls out explicitly).
+//
+// U3 extensions (STATE.md "Loombre Remote ..." mission items 2 + 3):
+// ConnectorHealthPanel mounts here for the Tunnel path (self-contained,
+// live) and RemoteDevicesPanel mounts here for the Remote path (additive
+// to the existing self-service devices link above it) — both extend this
+// card's per-path section rather than living in a separate surface,
+// keeping U1's single "active path" view intact.
 
 import { useState } from "react";
 import Link from "next/link";
@@ -30,6 +37,8 @@ import { Button } from "../../ui/Button.js";
 import { StatusPill } from "../../admin/StatusPill.js";
 import { apiPost, LoombreApiError } from "../../../lib/api-client.js";
 import { PostureCardSlot } from "./PostureCardSlot.js";
+import { ConnectorHealthPanel } from "./ConnectorHealthPanel.js";
+import { RemoteDevicesPanel } from "./RemoteDevicesPanel.js";
 import { PATH_LABELS } from "./path-labels.js";
 import styles from "./PathManagementCard.module.css";
 
@@ -172,10 +181,15 @@ export function PathManagementCard({
       </dl>
 
       {path === "remote" && (
-        <Link href="/settings/devices" className={styles.devicesLink}>
-          Manage enrolled devices →
-        </Link>
+        <>
+          <Link href="/settings/devices" className={styles.devicesLink}>
+            Manage enrolled devices →
+          </Link>
+          <RemoteDevicesPanel />
+        </>
       )}
+
+      {path === "tunnel" && <ConnectorHealthPanel />}
 
       <PostureCardSlot activePath={path} />
 
