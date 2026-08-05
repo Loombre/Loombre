@@ -43,6 +43,7 @@ const DEVICES = [
     id: "device-1",
     userId: "11111111-1111-7111-8111-111111111111",
     name: "This laptop",
+    kind: "app",
     profileId: "web-chrome",
     capabilityProfile: null,
     lastSeenAtMs: 1_000,
@@ -52,6 +53,7 @@ const DEVICES = [
     id: "device-2",
     userId: "11111111-1111-7111-8111-111111111111",
     name: "Phone",
+    kind: "app",
     profileId: "web-safari",
     capabilityProfile: null,
     lastSeenAtMs: 2_000,
@@ -59,9 +61,41 @@ const DEVICES = [
   },
 ];
 
-describe("DevicesSection", () => {
-  let view: TestRender | null = null;
+// WG3 (R2 "enrolled devices appear in the existing devices list (kind:
+// remote)"): a device row enrolled through Loombre Remote — same Device
+// schema, kind='remote', no capabilityProfile (WG peers never log in
+// through the app's own DeviceProfile negotiation).
+const REMOTE_DEVICE = {
+  id: "device-3",
+  userId: "11111111-1111-7111-8111-111111111111",
+  name: "Alex's iPhone (Remote)",
+  kind: "remote",
+  profileId: "remote-wireguard",
+  capabilityProfile: null,
+  lastSeenAtMs: 3_000,
+  createdAtMs: 900,
+};
 
+// Module-scoped (not nested inside a single `describe`) so every describe
+// block below — including the WG3 kind:'remote' badge coverage, added
+// after the original suite — shares the same render/view/buttonFor
+// helpers rather than each hand-rolling its own copy.
+let view: TestRender | null = null;
+
+async function render(): Promise<void> {
+  view = renderIntoBody(<DevicesSection heading={null} />);
+  await act(async () => {});
+}
+
+function buttonFor(text: string): HTMLButtonElement {
+  const button = Array.from(view!.container.querySelectorAll("button")).find(
+    (b) => (b.textContent ?? "").trim() === text,
+  );
+  if (!button) throw new Error(`no button labelled "${text}"`);
+  return button as HTMLButtonElement;
+}
+
+describe("DevicesSection", () => {
   beforeEach(() => {
     apiGetMock.mockReset();
     apiDeleteMock.mockReset();
@@ -75,19 +109,6 @@ describe("DevicesSection", () => {
     view = null;
     vi.restoreAllMocks();
   });
-
-  async function render(): Promise<void> {
-    view = renderIntoBody(<DevicesSection heading={null} />);
-    await act(async () => {});
-  }
-
-  function buttonFor(text: string): HTMLButtonElement {
-    const button = Array.from(view!.container.querySelectorAll("button")).find(
-      (b) => (b.textContent ?? "").trim() === text,
-    );
-    if (!button) throw new Error(`no button labelled "${text}"`);
-    return button as HTMLButtonElement;
-  }
 
   it("lists every device GET /devices returns", async () => {
     await render();
@@ -125,5 +146,84 @@ describe("DevicesSection", () => {
     apiGetMock.mockImplementation(() => Promise.reject(new FakeApiError("Failed to load devices.")));
     await render();
     expect(view!.container.textContent ?? "").toMatch(/Failed to load devices\./);
+  });
+});
+
+describe("DevicesSection — kind:'remote' badge (WG3, R2)", () => {
+  beforeEach(() => {
+    apiGetMock.mockReset();
+    apiDeleteMock.mockReset();
+    apiDeleteMock.mockImplementation(() => Promise.resolve(undefined));
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+  });
+
+  afterEach(() => {
+    view?.unmount();
+    view = null;
+    vi.restoreAllMocks();
+  });
+
+  it('renders a "Remote" badge with a plain-language tooltip on a kind=\'remote\' row, and none on kind=\'app\' rows', async () => {
+    apiGetMock.mockImplementation(() => Promise.resolve({ items: [...DEVICES, REMOTE_DEVICE], nextCursor: null }));
+    await render();
+    const text = view!.container.textContent ?? "";
+    expect(text).toMatch(/Alex's iPhone \(Remote\)/);
+
+    const badges = Array.from(view!.container.querySelectorAll("span")).filter((el) => el.textContent === "Remote");
+    expect(badges).toHaveLength(1);
+    expect(badges[0]!.getAttribute("title")).toMatch(/WireGuard/);
+
+    // device-1 is "This device" here too (mocked auth-store deviceId) —
+    // only device-2 (kind='app') and device-3/REMOTE_DEVICE (kind='remote')
+    // are revocable; the badge doesn't change that.
+    const rows = Array.from(view!.container.querySelectorAll("button")).filter((b) => (b.textContent ?? "").trim() === "Sign out");
+    expect(rows).toHaveLength(2);
+  });
+
+  it("revoke works identically for a kind='remote' row — same DELETE /devices/{id} call as any other device", async () => {
+    apiGetMock.mockImplementation(() => Promise.resolve({ items: [REMOTE_DEVICE], nextCursor: null }));
+    await render();
+    await act(async () => {
+      buttonFor("Sign out").click();
+    });
+    expect(apiDeleteMock).toHaveBeenCalledWith("/devices/{id}", { params: { path: { id: "device-3" } } });
+    expect(view!.container.textContent ?? "").toMatch(/No devices/);
+  });
+});
+
+describe("DevicesSection — both breakpoints (matchMedia stub convention)", () => {
+  function installMatchMedia(matches: boolean): void {
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn().mockImplementation((query: string) => ({
+        matches,
+        media: query,
+        addEventListener: () => {},
+        removeEventListener: () => {},
+        addListener: () => {},
+        removeListener: () => {},
+        dispatchEvent: () => true,
+      })),
+    );
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("renders the same device list, including the Remote badge, whether the phone media query matches or not", async () => {
+    apiGetMock.mockImplementation(() => Promise.resolve({ items: [...DEVICES, REMOTE_DEVICE], nextCursor: null }));
+
+    installMatchMedia(true);
+    await render();
+    expect(view!.container.textContent ?? "").toMatch(/Alex's iPhone \(Remote\)/);
+    expect(Array.from(view!.container.querySelectorAll("span")).some((el) => el.textContent === "Remote")).toBe(true);
+    view?.unmount();
+    view = null;
+
+    installMatchMedia(false);
+    await render();
+    expect(view!.container.textContent ?? "").toMatch(/Alex's iPhone \(Remote\)/);
+    expect(Array.from(view!.container.querySelectorAll("span")).some((el) => el.textContent === "Remote")).toBe(true);
   });
 });
