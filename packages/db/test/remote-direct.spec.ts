@@ -164,41 +164,35 @@ describe('enableRemoteDirectStateAndEmit / disableRemoteDirectStateAndEmit', () 
 });
 
 describe('isRemoteWireguardActive', () => {
-  it('is false when remote_wireguard_state does not exist on this branch (42P01, WG1 not landed here)', async () => {
-    // Ground truth for this lane's own branch: WG1's migration genuinely
-    // isn't present here (Batch 1 dispatches sibling worktrees off the
-    // same base commit) — this proves the function's real, unmodified
-    // behavior against the CURRENT schema, not a fake.
+  // HISTORY: this suite originally simulated WG1's then-unlanded table with
+  // its own CREATE TABLE (Batch-1 sibling worktrees shared a base without
+  // migration 0029). WG1 has since landed the REAL remote_wireguard_state
+  // (singleton row, id BOOLEAN PK DEFAULT TRUE) — the simulation collided
+  // at integration ("relation already exists") and was rewritten by the
+  // orchestrator against the real table + WG1's own query helpers.
+
+  it('resolves false (not throw) when remote_wireguard_state is absent — the 42P01 tolerance branch, exercised by temporarily renaming the real table away', async () => {
+    await sql`ALTER TABLE remote_wireguard_state RENAME TO remote_wireguard_state_hidden_for_42p01_test`.execute(db);
+    try {
+      await expect(isRemoteWireguardActive(db)).resolves.toBe(false);
+    } finally {
+      await sql`ALTER TABLE remote_wireguard_state_hidden_for_42p01_test RENAME TO remote_wireguard_state`.execute(db);
+    }
+  });
+
+  it('reads enabled=true for real once the singleton row says so', async () => {
+    await sql`INSERT INTO remote_wireguard_state (id, enabled, updated_at_ms) VALUES (TRUE, TRUE, 1)
+              ON CONFLICT (id) DO UPDATE SET enabled = TRUE, updated_at_ms = 1`.execute(db);
+    await expect(isRemoteWireguardActive(db)).resolves.toBe(true);
+  });
+
+  it('reads enabled=false for real when the row says so', async () => {
+    await sql`UPDATE remote_wireguard_state SET enabled = FALSE`.execute(db);
     await expect(isRemoteWireguardActive(db)).resolves.toBe(false);
   });
 
-  describe('once a remote_wireguard_state-shaped table exists (simulating WG1 having landed)', () => {
-    beforeAll(async () => {
-      await sql`CREATE TABLE remote_wireguard_state (enabled boolean NOT NULL)`.execute(db);
-    });
-
-    afterAll(async () => {
-      await sql`DROP TABLE remote_wireguard_state`.execute(db);
-    });
-
-    it('reads enabled=true for real once the table has a row', async () => {
-      await sql`INSERT INTO remote_wireguard_state (enabled) VALUES (true)`.execute(db);
-      await expect(isRemoteWireguardActive(db)).resolves.toBe(true);
-      await sql`DELETE FROM remote_wireguard_state`.execute(db);
-    });
-
-    it('reads enabled=false for real when the row says so', async () => {
-      await sql`INSERT INTO remote_wireguard_state (enabled) VALUES (false)`.execute(db);
-      await expect(isRemoteWireguardActive(db)).resolves.toBe(false);
-      await sql`DELETE FROM remote_wireguard_state`.execute(db);
-    });
-
-    it('reads enabled=false when the table exists but is empty', async () => {
-      await expect(isRemoteWireguardActive(db)).resolves.toBe(false);
-    });
-  });
-
-  it('still resolves false (not throw) after the simulated table is dropped again', async () => {
+  it('reads enabled=false when the table exists but is empty', async () => {
+    await sql`DELETE FROM remote_wireguard_state`.execute(db);
     await expect(isRemoteWireguardActive(db)).resolves.toBe(false);
   });
 });
