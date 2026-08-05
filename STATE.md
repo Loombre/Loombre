@@ -2,6 +2,10 @@
 
 ## Admin broadcast notifications — system notices (kicked off 2026-08-04, owner brief "Admin Broadcast Notifications: Restart Warnings, Maintenance, Custom Notices")
 
+### PUSHED + CI RESULTS (2026-08-05; origin/main 5ef5c5d → 50b3e35, 11 commits: macOS/Windows full-shutdown + web power UI + the entire notices run)
+
+Owner authorized ("go ahead and push"). **Push CI run 30962561004: SUCCESS** — gate (ubuntu) + perf-t0 + perf-web-budget + perf-lighthouse all green on the first CI exercise of the notices feature. **windows-installer-diag run 30962560958: SUCCESS** — and it fired ON PUSH: the `paths: installers/**` trigger flagged as a process gap on 2026-08-02 has been implemented, so the tray build + 46 dotnet tests (incl. the ServiceStack full-shutdown suite) + real-Windows MSI install/uninstall ran without a manual dispatch; the 2-day-latent-break class is closed. Only red = `gate-node-next` (Node 26, NON-BLOCKING by N2), verified same single root cause as the standing evidence: Node 26's experimental localStorage breaks auth-store.test.ts — no new signal. Still tag-gated (not exercised): the release.yml four-platform installer set — the macOS menubar full-shutdown rides on local swift test 55/55 until the next release tag.
+
 ### Mission (verbatim)
 
 Implement system notices end-to-end: an admin compose surface (custom message + severity + optional scheduled-restart countdown + expiry, with quick presets), an active-notice model so both currently-connected users AND users who connect while a notice is active see it, live delivery over the events socket, severity-appropriate client rendering that surfaces over every surface including the fullscreen player, cancel/replace semantics, an audited notice history, and docs in the correct registers.
