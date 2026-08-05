@@ -114,6 +114,24 @@
 //     administration/audit activity, same posture as user.password-reset;
 //     payload {userId, username, revokedCount} never carries a token or
 //     password.
+//   - `remote.enabled` / `remote.disabled` / `remote.device.enrolled` /
+//     `remote.device.revoked` / `remote.path.changed` /
+//     `tunnel.connector.state` / `posture.regressed` / `posture.recovered` /
+//     `probe.arrived` (STATE.md "Loombre Remote — embedded WireGuard +
+//     three-path wizard + reachability proof + posture card", R9, Wave-0
+//     freeze adjudication — not itself an R/RG-numbered decision, flagged
+//     for the orchestrator at freeze): every mutation on the new
+//     apps/server/src/remote/ admin surface is instance-security-posture
+//     data (WireGuard peers, tunnel connector health, ACME/reverse-proxy
+//     state, exposure-grading regressions) — same class as plugin.*/
+//     user.invited/session.revoked-by-password-change above, never content
+//     any viewer-scoped predicate should gate, and R9's own "no secrets in
+//     payloads" rule (no keys, no tokens, no config text) makes every one
+//     of these payloads ids/names/timestamps only. `remote.device.enrolled`/
+//     `remote.device.revoked` carry a `userId` (the device owner, not
+//     necessarily the acting admin) but stay admin-only regardless — same
+//     posture as `user.invited` carrying an eventual claimant's preset
+//     username while remaining admin-only throughout.
 //
 // Dependency-free data only (no zod, no I/O) — importable from
 // apps/server, apps/worker, and (via the prose pointer above, not a real
@@ -150,6 +168,17 @@ export const ADMIN_ONLY_EVENT_TYPES: readonly string[] = [
   "user.password-reset",
   // G5 (Current-password re-auth on self-changes).
   "session.revoked-by-password-change",
+  // Loombre Remote — embedded WireGuard + three-path wizard + reachability
+  // proof + posture card (R9, Wave-0 freeze adjudication).
+  "remote.enabled",
+  "remote.disabled",
+  "remote.device.enrolled",
+  "remote.device.revoked",
+  "remote.path.changed",
+  "tunnel.connector.state",
+  "posture.regressed",
+  "posture.recovered",
+  "probe.arrived",
 ];
 
 // NOT added above, deliberately (STATE.md "Admin broadcast notifications —
