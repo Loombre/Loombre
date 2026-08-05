@@ -8,14 +8,79 @@
 // why it's a smoke test here, not a structural-swap test).
 
 import React, { act } from "react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { renderIntoBody, type TestRender } from "../../ui/test-render.js";
-import { RemoteWizard } from "./RemoteWizard.js";
 import { PATH_FLOW_STEPS } from "@loombre/shared/remote";
+
+// U2 (this lane): every path-flow step is now a real screen making real
+// apiGet/apiPost calls (RemoteEnableStepBody/RemoteEnrollStepBody/
+// TunnelTokenStepBody/TunnelEnableStepBody/DirectAcmeTestStepBody/
+// DirectEnableStepBody/DirectRouterInstructionsStepBody, plus the real
+// ProofStage) — U1's own RemoteWizard.test.tsx predates all of that and
+// never mocked api-client (nothing under test called it). Mocked here now,
+// with safe non-hanging DEFAULTS for every endpoint a step body might hit
+// on mere mount (most of the tests below only glance at a step's title,
+// never interact with it) — the two tests that actually WALK a path's
+// full flow through to 'proof'/'posture-handoff' additionally script
+// per-call responses for the exact sequence they drive.
+const apiGetMock = vi.fn();
+const apiPostMock = vi.fn();
+
+class FakeApiError extends Error {
+  status: number;
+  problem: unknown;
+  constructor(status: number, problem: unknown) {
+    const title =
+      typeof problem === "object" && problem !== null && "title" in problem
+        ? String((problem as { title?: unknown }).title)
+        : `Request failed with status ${status}`;
+    super(title);
+    this.status = status;
+    this.problem = problem;
+  }
+}
+
+const DEFAULT_WIREGUARD_STATUS = { enabled: false, listening: false, listenPort: 51820, subnet: "10.82.146.0/24", endpointHost: null, peerCount: 0 };
+const DEFAULT_TUNNEL_STATUS = { enabled: false, connectorState: "stopped", hostname: null, backoffMs: null, lastErrorMessage: null, tokenConfigured: false, tokenSetAtMs: null, tokenScopesOk: null };
+const DEFAULT_USERS_PAGE = {
+  items: [{ id: "u1", username: "admin", displayName: "Admin", email: null, isAdmin: true, birthDate: null, maxContentRating: null, createdAtMs: 1, updatedAtMs: 1 }],
+  nextCursor: null,
+};
+const DEFAULT_REMOTE_STATE = {
+  activePath: "none",
+  wireguard: DEFAULT_WIREGUARD_STATUS,
+  tunnel: DEFAULT_TUNNEL_STATUS,
+  direct: { enabled: false, mode: null, domain: null, certValid: null, certExpiresAtMs: null },
+};
+
+function installDefaultApiMocks(): void {
+  apiGetMock.mockReset();
+  apiPostMock.mockReset();
+  apiGetMock.mockImplementation((path: string) => {
+    if (path === "/admin/remote/wireguard/status") return Promise.resolve(DEFAULT_WIREGUARD_STATUS);
+    if (path === "/users") return Promise.resolve(DEFAULT_USERS_PAGE);
+    if (path === "/admin/remote/tunnel/status") return Promise.resolve(DEFAULT_TUNNEL_STATUS);
+    if (path === "/admin/remote/state") return Promise.resolve(DEFAULT_REMOTE_STATE);
+    return Promise.reject(new FakeApiError(501, { title: "Not Implemented", status: 501 }));
+  });
+  apiPostMock.mockImplementation(() => Promise.reject(new FakeApiError(501, { title: "Not Implemented", status: 501 })));
+}
+
+vi.mock("../../../lib/api-client.js", () => ({
+  apiGet: (...args: unknown[]) => apiGetMock(...args),
+  apiPost: (...args: unknown[]) => apiPostMock(...args),
+  LoombreApiError: FakeApiError,
+}));
+
+const { RemoteWizard } = await import("./RemoteWizard.js");
 
 let view: TestRender | undefined;
 const onCancel = vi.fn();
 const onFinished = vi.fn();
+
+beforeEach(() => {
+  installDefaultApiMocks();
+});
 
 afterEach(() => {
   view?.unmount();
@@ -97,19 +162,74 @@ describe("RemoteWizard — stage state machine renders the right stage component
     expect(textOf()).toContain("Enable Loombre Remote"); // remote-enable, the first step
   });
 
+  function setNativeValue(el: HTMLInputElement | HTMLSelectElement, value: string): void {
+    const proto = el instanceof HTMLSelectElement ? HTMLSelectElement.prototype : HTMLInputElement.prototype;
+    const setter = Object.getOwnPropertyDescriptor(proto, "value")!.set!;
+    setter.call(el, value);
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+  }
+
+  const ENABLED_WIREGUARD_STATUS = { enabled: true, listening: true, listenPort: 51820, subnet: "10.82.146.0/24", endpointHost: "vpn.example.com", peerCount: 0 };
+  const ENROLLMENT_RESPONSE = {
+    device: { id: "d1", userId: "u1", name: "Alex's iPhone", tunnelIp: "10.82.146.2", createdAtMs: 1, lastHandshakeAtMs: null },
+    configText: "[Interface]\nPrivateKey = a\n",
+  };
+
+  async function completeRemoteEnableStep(): Promise<void> {
+    apiPostMock.mockImplementation((path: string) => {
+      if (path === "/admin/remote/wireguard/enable") return Promise.resolve(ENABLED_WIREGUARD_STATUS);
+      if (path === "/admin/remote/wireguard/devices") return Promise.resolve(ENROLLMENT_RESPONSE);
+      return Promise.reject(new FakeApiError(501, { title: "Not Implemented", status: 501 }));
+    });
+    await click("Enable Loombre Remote");
+    await click("Continue");
+  }
+
+  async function completeRemoteEnrollStep(): Promise<void> {
+    await act(async () => {
+      const nameInput = document.body.querySelector('input[placeholder*="iPhone"]') as HTMLInputElement;
+      setNativeValue(nameInput, "Alex's iPhone");
+    });
+    await click("Enroll device");
+    await act(async () => {
+      (document.body.querySelector('input[type="checkbox"]') as HTMLInputElement).click();
+    });
+    await click("Continue");
+  }
+
   it("completing every step of a path's flow advances to 'proof'", async () => {
     await render({ initialPath: "remote" });
-    // remote has 2 steps: remote-enable, remote-enroll-first-device
-    await click("Continue");
-    await click("Continue");
+    // remote has 2 real steps: remote-enable (enable, then Continue),
+    // remote-enroll-first-device (fill + enroll + confirm + Continue).
+    await completeRemoteEnableStep();
+    await completeRemoteEnrollStep();
     expect(currentStagePill()).toContain("Prove it works");
     expect(textOf()).toContain("Prove Loombre Remote actually reaches you");
   });
 
   it("completing proof advances to 'posture-handoff'; Done calls onFinished", async () => {
+    apiGetMock.mockImplementation((path: string) => {
+      if (path === "/admin/remote/wireguard/status") return Promise.resolve(DEFAULT_WIREGUARD_STATUS);
+      if (path === "/users") return Promise.resolve(DEFAULT_USERS_PAGE);
+      if (path === "/admin/remote/state") return Promise.resolve({ ...DEFAULT_REMOTE_STATE, wireguard: ENABLED_WIREGUARD_STATUS });
+      // ProofStage's poll target — arrives on the very first poll (no
+      // fake timers needed: the poll effect fires once synchronously on
+      // mount, ahead of the interval).
+      if (path === "/admin/remote/probes/{id}") return Promise.resolve({ id: "p1", status: "arrived", arrivedAtMs: 1, diagnosis: null });
+      return Promise.reject(new FakeApiError(501, { title: "Not Implemented", status: 501 }));
+    });
+    apiPostMock.mockImplementation((path: string) => {
+      if (path === "/admin/remote/wireguard/devices") return Promise.resolve(ENROLLMENT_RESPONSE);
+      if (path === "/admin/remote/probes")
+        return Promise.resolve({ id: "p1", probeUrl: "https://vpn.example.com/probe/tok", qrPayload: "https://vpn.example.com/probe/tok", expiresAtMs: Date.now() + 900_000 });
+      return Promise.reject(new FakeApiError(501, { title: "Not Implemented", status: 501 }));
+    });
+
     await render({ initialPath: "remote", initialStep: "remote-enroll-first-device" });
-    await click("Continue"); // finishes remote's last step -> proof
-    await click("Continue"); // proof -> posture-handoff
+    await completeRemoteEnrollStep(); // finishes remote's last step -> proof
+    await act(async () => {}); // let ProofStage's mount effects (state read -> mint -> first poll) settle
+    await click("Continue →"); // proof (arrived) -> posture-handoff
+
     expect(currentStagePill()).toContain("Done");
     expect(textOf()).toContain("Loombre Remote is set up");
     expect(document.body.querySelector('[data-testid="posture-card-slot"]')).not.toBeNull();
