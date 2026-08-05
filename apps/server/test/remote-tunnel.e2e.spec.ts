@@ -69,6 +69,8 @@
 import "reflect-metadata";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { spawn as nodeSpawn, spawnSync, type ChildProcess } from "node:child_process";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import request from "supertest";
@@ -146,6 +148,7 @@ let casualToken: string;
 let cfProvider: CloudflareTunnelProvider;
 let connectorManager: CloudflaredConnectorManager;
 let dbProvider: DbProvider;
+let dataDir: string;
 /** Mode the stub connector process boots into for the CURRENT test —
  *  reset to 'healthy' in beforeEach; individual tests override it before
  *  calling enable. */
@@ -204,7 +207,14 @@ beforeAll(async () => {
   process.env["LOOMBRE_JWT_SECRET"] = "remote-tunnel-e2e-test-secret-not-for-production";
   process.env["LOOMBRE_RATE_LOGIN"] = "10000";
   process.env["LOOMBRE_SECRET_BACKEND"] = "file0600";
-  process.env["LOOMBRE_DATA_DIR"] = process.env["LOOMBRE_DATA_DIR"] ?? "/tmp/loombre-remote-tunnel-e2e-data";
+  // A REAL per-run OS temp dir (mkdtempSync), never a hardcoded POSIX
+  // "/tmp/..." path — the sibling remote-wireguard-loopback.e2e's exact
+  // pattern. On Windows the file0600 backend hardens the tunnel token with an
+  // owner-only icacls DACL and FAIL-CLOSES if it can't; a "/tmp/..." path
+  // there resolves to a location icacls rejects, 500ing every token-dependent
+  // op (9 cascading failures). os.tmpdir() is NTFS + DACL-able on every OS.
+  dataDir = mkdtempSync(path.join(tmpdir(), "loombre-remote-tunnel-e2e-"));
+  process.env["LOOMBRE_DATA_DIR"] = dataDir;
   // T2/RG7: pins remote.cloudflaredPath to the real `node` executable
   // (guaranteed present + executable on every platform, including
   // Windows CI) — resolveCloudflaredBinary's own real fs check passes,
@@ -236,6 +246,7 @@ afterAll(async () => {
   // an already-stopped manager.
   await connectorManager.stop();
   await app.close();
+  rmSync(dataDir, { recursive: true, force: true });
 });
 
 beforeEach(async () => {
