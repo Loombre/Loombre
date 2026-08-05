@@ -48,7 +48,7 @@ import {
 import { Button } from "../../ui/Button.js";
 import { TextInput } from "../../ui/Input.js";
 import { QrCode } from "../../ui/QrCode.js";
-import { apiGet, apiPost, LoombreApiError } from "../../../lib/api-client.js";
+import { apiGet, apiPost, LoombreApiError , apiErrorMessage } from "../../../lib/api-client.js";
 import { RouterBrandPicker, RouterCardPanel } from "./RouterCardView.js";
 import { PATH_LABELS } from "./path-labels.js";
 import styles from "./ProofStage.module.css";
@@ -118,7 +118,7 @@ export function ProofStage({ path, onComplete, onBack, onSwitchToTunnel }: Proof
         if (err instanceof LoombreApiError && err.status === 501) {
           setPhase("unavailable");
         } else {
-          setError(err instanceof LoombreApiError ? err.message : "Failed to read remote-access status.");
+          setError(apiErrorMessage(err, "Failed to read remote-access status."));
           setPhase("noEndpoint");
         }
       }
@@ -146,7 +146,7 @@ export function ProofStage({ path, onComplete, onBack, onSwitchToTunnel }: Proof
         setPhase("pending");
       } catch (err) {
         if (cancelled) return;
-        setError(err instanceof LoombreApiError ? err.message : "Failed to mint a reachability probe.");
+        setError(apiErrorMessage(err, "Failed to mint a reachability probe."));
         mintedForEndpoint.current = null;
       }
     }
@@ -214,7 +214,7 @@ export function ProofStage({ path, onComplete, onBack, onSwitchToTunnel }: Proof
       });
       setDiagnosis(res);
     } catch (err) {
-      setError(err instanceof LoombreApiError ? err.message : "Failed to run diagnosis.");
+      setError(apiErrorMessage(err, "Failed to run diagnosis."));
     } finally {
       setDiagnosing(false);
     }

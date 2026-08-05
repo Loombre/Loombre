@@ -23,7 +23,7 @@ import { useEffect, useState } from "react";
 import type { components } from "@loombre/sdk";
 import { Button } from "../../ui/Button.js";
 import { TextInput } from "../../ui/Input.js";
-import { apiGet, apiPost, LoombreApiError } from "../../../lib/api-client.js";
+import { apiGet, apiPost, apiErrorMessage } from "../../../lib/api-client.js";
 import type { PathFlowStepBodyProps } from "./path-flow-step-types.js";
 import styles from "./TunnelEnableStepBody.module.css";
 
@@ -83,7 +83,7 @@ export function TunnelEnableStepBody({ onStepComplete, onBack }: PathFlowStepBod
       setStatus(res);
       setEnabled(true);
     } catch (err) {
-      setError(err instanceof LoombreApiError ? err.message : "Failed to enable the tunnel.");
+      setError(apiErrorMessage(err, "Failed to enable the tunnel."));
     } finally {
       setEnabling(false);
     }

@@ -223,7 +223,30 @@ export class RemoteWireguardService implements OnApplicationBootstrap, OnModuleD
   }
 
   async disable(actorUserId: string, nowMs = Date.now()): Promise<RemoteWireguardStatusDto> {
+    // Stop the live runtime FIRST — this drops the UDP listener and every
+    // live peer at once, so no enrolled device can complete a handshake
+    // before its rows are deleted (the same live-before-DB ordering
+    // revokeDevice() documents, applied here in bulk).
     await this.stopRuntime();
+
+    // R8 ("disable = revoke peers ... verified") + the exit gate's "peers
+    // gone": disabling Remote REVOKES every enrolled device. This is not a
+    // pause — the server keypair is regenerated on the next enable(), so any
+    // surviving peer config would be cryptographically dead anyway, and the
+    // disable/switch UI promises "everything will need to be set up again."
+    // Leaving the rows behind (the pre-fix behavior) showed dead devices as
+    // active and never reset their tunnel IPs (V-UX F1). Each revoke deletes
+    // the device + wg_peers rows (ON DELETE CASCADE), revokes that device's
+    // refresh tokens, and emits remote.device.revoked, transactionally.
+    const peers = await listAllWgPeers(this.dbProvider.db);
+    for (const peer of peers) {
+      await revokeRemoteWireguardDeviceAndEmit(this.dbProvider.db, {
+        deviceId: peer.deviceId,
+        actorUserId,
+        nowMs,
+      });
+    }
+
     await disableRemoteWireguardAndEmit(this.dbProvider.db, { actorUserId, nowMs });
     return this.status();
   }

@@ -35,7 +35,7 @@ import { DISABLE_VERIFICATION_STEPS, type DisableVerificationStep, type PathId }
 import { Card } from "../../ui/Card.js";
 import { Button } from "../../ui/Button.js";
 import { StatusPill } from "../../admin/StatusPill.js";
-import { apiPost, LoombreApiError } from "../../../lib/api-client.js";
+import { apiPost, LoombreApiError , apiErrorMessage } from "../../../lib/api-client.js";
 import { PostureCardSlot } from "./PostureCardSlot.js";
 import { ConnectorHealthPanel } from "./ConnectorHealthPanel.js";
 import { RemoteDevicesPanel } from "./RemoteDevicesPanel.js";
@@ -115,7 +115,7 @@ export function PathManagementCard({
         setPhase("unavailable");
         return;
       }
-      setError(err instanceof LoombreApiError ? err.message : `Failed to disable ${PATH_LABELS[path]}.`);
+      setError(apiErrorMessage(err, `Failed to disable ${PATH_LABELS[path]}.`));
       setPhase("idle");
     }
   }

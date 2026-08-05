@@ -39,7 +39,7 @@ import type { components } from "@loombre/sdk";
 import { Button } from "../../ui/Button.js";
 import { EmptyState } from "../../admin/EmptyState.js";
 import { Skeleton } from "../../skeleton/Skeleton.js";
-import { apiDelete, apiGet, LoombreApiError } from "../../../lib/api-client.js";
+import { apiDelete, apiGet, LoombreApiError , apiErrorMessage } from "../../../lib/api-client.js";
 import { EnrollDeviceSheet } from "./EnrollDeviceSheet.js";
 import styles from "./RemoteDevicesPanel.module.css";
 
@@ -140,7 +140,7 @@ export function RemoteDevicesPanel(): React.JSX.Element {
           setDevices([]);
           return;
         }
-        setError(err instanceof LoombreApiError ? err.message : "Failed to load enrolled devices.");
+        setError(apiErrorMessage(err, "Failed to load enrolled devices."));
       })
       .finally(() => setLoadingMore(false));
   }
@@ -171,7 +171,7 @@ export function RemoteDevicesPanel(): React.JSX.Element {
         setConfirmingId(null);
         return;
       }
-      setError(err instanceof LoombreApiError ? err.message : `Failed to revoke "${device.name}".`);
+      setError(apiErrorMessage(err, `Failed to revoke "${device.name}".`));
     } finally {
       setRevokingId(null);
     }

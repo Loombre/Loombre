@@ -31,7 +31,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import type { components } from "@loombre/sdk";
 import { Button } from "../../ui/Button.js";
-import { apiGet, apiPost, LoombreApiError } from "../../../lib/api-client.js";
+import { apiGet, apiPost, apiErrorMessage } from "../../../lib/api-client.js";
 import type { PathFlowStepBodyProps } from "./path-flow-step-types.js";
 import styles from "./DirectEnableStepBody.module.css";
 
@@ -106,7 +106,7 @@ function ReverseProxyBranch({ onStepComplete, onBack }: PathFlowStepBodyProps): 
       await apiPost("/admin/remote/direct/enable", { body: { mode: "reverse-proxy" } });
       setEnabled(true);
     } catch (err) {
-      setError(err instanceof LoombreApiError ? err.message : "Failed to enable Direct access.");
+      setError(apiErrorMessage(err, "Failed to enable Direct access."));
     } finally {
       setEnabling(false);
     }

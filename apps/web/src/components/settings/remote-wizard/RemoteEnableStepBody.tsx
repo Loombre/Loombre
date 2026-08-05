@@ -29,7 +29,7 @@ import { useEffect, useState } from "react";
 import type { components } from "@loombre/sdk";
 import { buildPortForwardCard, type RouterBrandId } from "@loombre/shared/remote";
 import { Button } from "../../ui/Button.js";
-import { apiGet, apiPost, LoombreApiError } from "../../../lib/api-client.js";
+import { apiGet, apiPost, LoombreApiError , apiErrorMessage } from "../../../lib/api-client.js";
 import { RouterBrandPicker, RouterCardPanel } from "./RouterCardView.js";
 import type { PathFlowStepBodyProps } from "./path-flow-step-types.js";
 import styles from "./RemoteEnableStepBody.module.css";
@@ -59,7 +59,7 @@ export function RemoteEnableStepBody({ onStepComplete, onBack }: PathFlowStepBod
         if (err instanceof LoombreApiError && err.status === 501) {
           setPhase("unavailable");
         } else {
-          setError(err instanceof LoombreApiError ? err.message : "Failed to load Loombre Remote status.");
+          setError(apiErrorMessage(err, "Failed to load Loombre Remote status."));
           setPhase("idle");
         }
       }
@@ -82,7 +82,7 @@ export function RemoteEnableStepBody({ onStepComplete, onBack }: PathFlowStepBod
         setPhase("unavailable");
         return;
       }
-      setError(err instanceof LoombreApiError ? err.message : "Failed to enable Loombre Remote.");
+      setError(apiErrorMessage(err, "Failed to enable Loombre Remote."));
       setPhase("idle");
     }
   }
