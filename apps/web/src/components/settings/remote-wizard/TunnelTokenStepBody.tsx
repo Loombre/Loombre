@@ -25,7 +25,8 @@ import { useEffect, useState } from "react";
 import type { components } from "@loombre/sdk";
 import { Button } from "../../ui/Button.js";
 import { TextInput } from "../../ui/Input.js";
-import { apiGet, apiPost, apiErrorMessage } from "../../../lib/api-client.js";
+import { apiGet, apiPost } from "../../../lib/api-client.js";
+import { apiErrorMessage } from "../../../lib/api-error-message.js";
 import type { PathFlowStepBodyProps } from "./path-flow-step-types.js";
 import styles from "./TunnelTokenStepBody.module.css";
 
