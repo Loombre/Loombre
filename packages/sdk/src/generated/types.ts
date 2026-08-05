@@ -2263,6 +2263,375 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/remote/state": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Wizard re-entry read — derived active path + per-path status (admin)
+         * @description `activePath` is DERIVED, never stored (RG15/RG5 refinement — there is no `remote.activePath` setting): computed from the three subsystems' own enabled state, at most one of which can be enabled at a time (the staged enable flows below 409 rather than allowing two paths live together). Lets the wizard re-enter mid-flow or land on the posture handoff without the client tracking step state itself (RG10 — the server persists only outcomes).
+         */
+        get: operations["getRemoteState"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/remote/wireguard/enable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Enable Loombre Remote — embedded userspace WireGuard (admin)
+         * @description R1: generates the server WG keypair (private key in the KEYRING, never server_settings) and opens the in-process userspace listener (wireguard-go + netstack, RG1/RG2) — no kernel module, no root, no routing-table changes, LAN never exposed. Staged validate→stage→ commit (RG10, plugin-registration shape); 409 when a DIFFERENT path is already active (at most one active path, RG5/RG15).
+         */
+        post: operations["enableRemoteWireguard"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/remote/wireguard/disable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Disable Loombre Remote — verified teardown (admin)
+         * @description R8: revokes every enrolled peer and drops the listener, verified — not merely a flag flip. Idempotent: disabling an already-disabled listener still returns 200 with the (already-disabled) status.
+         */
+        post: operations["disableRemoteWireguard"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/remote/wireguard/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Listener state, port, subnet, endpoint host, peer count (admin) */
+        get: operations["getRemoteWireguardStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/remote/wireguard/devices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List enrolled Remote (WireGuard) devices (admin)
+         * @description R2: these ARE rows in the existing devices list (kind: remote) — this is the WireGuard-scoped view of that same population (tunnel IP, enrollment/handshake timestamps) rather than a separate entity.
+         */
+        get: operations["listRemoteWireguardDevices"];
+        put?: never;
+        /**
+         * Enroll a device — one-time provisioning payload (admin)
+         * @description R2/R3: generates a fresh peer keypair server-side, allocates the next free tunnel IP (RG9, subnet default 10.82.146.0/24, server =.1, devices from .2), and returns the FULL wg-quick config text ONCE — the private key is not retained after this response (same posture as invite links). The config is split-tunnel ONLY (AllowedIPs scoped to the Loombre tunnel address, R3) and APP-AGNOSTIC standard WireGuard semantics (packages/shared/src/ remote/provisioning.ts — today's official WireGuard app and tomorrow's native Loombre clients enroll through this identical shape). 409 when Wireguard is not enabled.
+         */
+        post: operations["enrollRemoteWireguardDevice"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/remote/wireguard/devices/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["IdPathParam"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Revoke an enrolled Remote device — removes the peer live (admin)
+         * @description R2/RG3: removes the live WG peer (handshake fails immediately after) AND revokes the underlying device row's refresh tokens (RG3's pre-existing-gap closure — WG2 wires this; this Wave-0 shell only reserves the operation's shape). Distinct from the self-service DELETE /devices/{id}: this is an ADMIN-scoped revoke of ANY user's enrolled device, not only the caller's own.
+         */
+        delete: operations["revokeRemoteWireguardDevice"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/remote/tunnel/token": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Set the BYO Cloudflare API token — write-only (admin)
+         * @description R4/R9: write-only, same posture as setAdminProviderKey/ setAdminMailCredentials — the submitted token is never echoed back, logged, or otherwise readable again through this API; stored in the platform KEYRING (packages/secrets), never server_settings. Returns a VALIDATION RESULT (a real, bounded Cloudflare API call proving the token's scope is usable), not the token itself.
+         */
+        post: operations["setRemoteTunnelToken"];
+        /**
+         * Clear the stored Cloudflare API token (admin)
+         * @description Removes the keyring entry. Idempotent — clearing when nothing is stored still returns 204.
+         */
+        delete: operations["clearRemoteTunnelToken"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/remote/tunnel/enable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Enable the Tunnel path — creates the tunnel + DNS route, starts the connector (admin)
+         * @description R4: creates a Cloudflare tunnel + DNS route via the stored token, then runs cloudflared as a managed, supervised child process (RG7 — EmbeddedPostgres supervisor / spawnFfmpegRun shape: SIGTERM→timeout→ SIGKILL, stderr ring buffer, full-jitter backoff). Staged validate→stage→commit (RG10); 409 when a different path is already active, or when no valid token is stored.
+         */
+        post: operations["enableRemoteTunnel"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/remote/tunnel/disable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Disable the Tunnel path — verified connector teardown (admin)
+         * @description R8 — tears down the tunnel + DNS route and stops the connector process, verified. Idempotent.
+         */
+        post: operations["disableRemoteTunnel"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/remote/tunnel/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Connector health, backoff, last error (admin) */
+        get: operations["getRemoteTunnelStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/remote/tunnel/logs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Bounded tail of the connector's stderr ring buffer (admin)
+         * @description RG7 — the supervised cloudflared child's in-memory stderr ring buffer, not a file (no LOOMBRE_LOG_FILE dependency).
+         */
+        get: operations["getRemoteTunnelLogs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/remote/direct/acme-test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Staged test certificate issuance before committing Direct/ACME (admin)
+         * @description RG12: runs a real STAGED test issuance through the existing issue-certificate.ts module BEFORE tls.mode is ever flipped (lockout-risk mitigation) — proves issuance is feasible for the given domain without touching live TLS config.
+         */
+        post: operations["testRemoteDirectAcme"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/remote/direct/enable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Enable the Direct path — ACME issuance or reverse-proxy mode (admin)
+         * @description R5: `mode: acme` commits tls.mode via the existing restart machinery (server-power UI) after a passing acme-test; `mode: reverse-proxy` records the trust-proxy configuration instead — the wizard never touches the router itself (HARD LINE: detect, instruct, verify, never auto-configure the network — no UPnP, ever). Staged validate→stage→commit (RG10); 409 when a different path is already active.
+         */
+        post: operations["enableRemoteDirect"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/remote/direct/disable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Disable the Direct path (admin)
+         * @description R8 — verified disable. Idempotent.
+         */
+        post: operations["disableRemoteDirect"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/remote/diagnosis": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Classify a failed reachability proof (admin)
+         * @description R5/R6/RG11 — pure WAN-classification decision function (packages/shared/src/remote/diagnosis.ts): RFC 6598 (100.64/10) WAN -> definite CGNAT; RFC1918 WAN -> double-NAT; WAN matches the DNS-resolved public endpoint but the probe never arrived -> a port/firewall block; WAN differs from the resolved endpoint -> CGNAT/dynamic-IP mismatch, routes the wizard to Tunnel. No third-party echo service and no router APIs — `wanAddress` is admin-supplied via a guided router-status-page instruction card.
+         */
+        post: operations["diagnoseRemote"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/remote/probes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Mint a one-time reachability-proof probe token (admin)
+         * @description R6: hashed at rest (SHA-256, house pattern M3/RG6 — constant-time by construction, argon2id deliberately NOT used on this unauth-reached token), 15-minute expiry, single-use, bound to `expectedEndpoint`. The raw token appears ONLY in THIS response, embedded in `probeUrl` (https://&lt;endpoint&gt;/probe/&lt;token&gt;) and `qrPayload` — never retrievable again. Scan `qrPayload` with a phone ON CELLULAR (the phone IS the external vantage; no third-party check service).
+         */
+        post: operations["createRemoteProbe"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/remote/probes/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["IdPathParam"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Poll a probe's arrival state (admin)
+         * @description The wizard watches this to light the reachability proof green end-to-end. `diagnosis` is populated once the probe has definitively failed to arrive (RG11's decision function) — never speculative while still `pending`.
+         */
+        get: operations["getRemoteProbe"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/probe/{token}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The raw one-time probe token (never the hash). */
+                token: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * Reachability-proof arrival page — PUBLIC by necessity (R6/R9)
+         * @description R6/R9: one of only THREE new unauthenticated surfaces this subsystem introduces (alongside the WireGuard UDP listener itself and the tunnel connector's own inbound edge) — necessarily public because the whole point is an external phone-on-cellular request with no prior credentials. Rate-limited (`rateLimit.probe`, per-IP), token-gated, constant-time lookup (RG6's SHA-256 hash equality — same posture as invite-claim), and returns a STATIC success page with ZERO server info (no version, no instance name, nothing an unauthenticated prober could use for reconnaissance). Invalid, expired, already-consumed, or well-formed-but-unknown tokens ALL resolve to the SAME byte-identical 404 this operation shares with an unknown route (bare, no `detail`/`instance` — the same "invisible == nonexistent" posture as POST /setup/first-admin once configured and GET/POST /invites/claim/{token}) — the four cases are deliberately indistinguishable from the outside (enumeration-resistant). Wave 0: this shell IS the final behavior for every case except a genuinely-arrived probe (no probe tokens exist yet, so every request legitimately 404s); a later lane adds the real single-use lookup + arrival-marking without changing this response shape.
+         */
+        get: operations["getProbePage"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -4142,6 +4511,161 @@ export interface components {
             unmatchedScenes: components["schemas"]["StashSyncSceneRefPage"];
             staleScenes: components["schemas"]["StashSyncSceneRefPage"];
             unmatchedLoombreFiles: components["schemas"]["StashSyncLoombreFileRefPage"];
+        };
+        /**
+         * @description DERIVED, never a stored setting (RG15 — RG5's activePath wording refined at Wave-0 freeze): `none` when no path is enabled; at most one of `remote`/`tunnel`/`direct` can be enabled at a time, enforced by each path's staged enable flow returning 409 against another active path.
+         * @enum {string}
+         */
+        RemotePathId: "none" | "remote" | "tunnel" | "direct";
+        RemoteState: {
+            activePath: components["schemas"]["RemotePathId"];
+            wireguard: components["schemas"]["RemoteWireguardStatus"];
+            tunnel: components["schemas"]["RemoteTunnelStatus"];
+            direct: components["schemas"]["RemoteDirectStatus"];
+        };
+        RemoteWireguardStatus: {
+            /** @description Configured on (a server keypair exists and enrollment is possible). */
+            enabled: boolean;
+            /** @description The in-process userspace UDP listener is actually live right now (RG1/RG2). */
+            listening: boolean;
+            /** @description remote.wireguardPort effective value. */
+            listenPort: number;
+            /** @description remote.subnet effective value, CIDR (RG9). */
+            subnet: string;
+            /** @description remote.wireguardEndpointHost effective value; null when unset. */
+            endpointHost: string | null;
+            peerCount: number;
+        };
+        RemoteWireguardDevice: {
+            /**
+             * Format: uuid
+             * @description Same id as the underlying devices row (kind='remote', R2) — this IS that row, not a separate entity.
+             */
+            id: string;
+            /** Format: uuid */
+            userId: string;
+            name: string;
+            /** @description Stable address from the tunnel subnet (RG9), e.g. 10.82.146.2. */
+            tunnelIp: string;
+            /** Format: int64 */
+            createdAtMs: number;
+            /**
+             * Format: int64
+             * @description Null until the peer has ever completed a WireGuard handshake.
+             */
+            lastHandshakeAtMs: number | null;
+        };
+        RemoteWireguardDevicePage: {
+            items: components["schemas"]["RemoteWireguardDevice"][];
+            nextCursor: string | null;
+        };
+        EnrollRemoteWireguardDeviceRequest: {
+            /** Format: uuid */
+            userId: string;
+            /** @description Device label, e.g. "Alex's iPhone". */
+            name: string;
+        };
+        /** @description The one-time provisioning payload (R2/R3) — configText is shown exactly once and never retrievable again through this API (same posture as invite links); the server does not retain the private key after this response. */
+        RemoteWireguardEnrollment: {
+            device: components["schemas"]["RemoteWireguardDevice"];
+            /** @description Standard wg-quick config text (packages/shared/src/remote/ provisioning.ts, PROVISIONING_FORMAT_VERSION), split-tunnel only (AllowedIPs = the server tunnel IP/32, R3). Render this as a QR for mobile import or offer it as a downloadable .conf for desktop WireGuard clients. */
+            configText: string;
+        };
+        SetRemoteTunnelTokenRequest: {
+            /** @description The scoped Cloudflare API token. Write-only — never returned by any endpoint. */
+            token: string;
+        };
+        RemoteTunnelTokenValidation: {
+            valid: boolean;
+            /** @description Human-readable validation detail (e.g. why an invalid token failed). Never echoes the token itself. */
+            detail: string | null;
+        };
+        EnableRemoteTunnelRequest: {
+            /** @description The public hostname to route through the tunnel (a DNS route is created for it, R4). */
+            hostname: string;
+        };
+        RemoteTunnelStatus: {
+            enabled: boolean;
+            /**
+             * @description The supervised cloudflared child process's current lifecycle state (RG7).
+             * @enum {string}
+             */
+            connectorState: "stopped" | "starting" | "running" | "degraded" | "error";
+            hostname: string | null;
+            /**
+             * Format: int64
+             * @description Current restart backoff (full jitter, RG7); null when not backing off.
+             */
+            backoffMs: number | null;
+            lastErrorMessage: string | null;
+        };
+        RemoteTunnelLogs: {
+            lines: string[];
+        };
+        TestRemoteDirectAcmeRequest: {
+            domain: string;
+        };
+        RemoteDirectAcmeTestResult: {
+            success: boolean;
+            detail: string | null;
+        };
+        EnableRemoteDirectRequest: {
+            /** @enum {string} */
+            mode: "acme" | "reverse-proxy";
+            /** @description Required in effect for mode=acme (422 when absent); ignored for mode=reverse-proxy. */
+            domain?: string | null;
+        };
+        RemoteDirectStatus: {
+            enabled: boolean;
+            /** @enum {string|null} */
+            mode: "acme" | "reverse-proxy" | null;
+            domain: string | null;
+            /** @description Null when mode is not acme, or no issuance has completed yet. */
+            certValid: boolean | null;
+            /** Format: int64 */
+            certExpiresAtMs: number | null;
+        };
+        /**
+         * @description packages/shared/src/remote/diagnosis.ts's closed classification union (R5/R6/RG11).
+         * @enum {string}
+         */
+        DiagnosisCode: "portBlocked" | "cgnat" | "doubleNat" | "dnsMismatch" | "tunnelDown" | "connectorUnhealthy" | "unknown";
+        DiagnoseRemoteRequest: {
+            /** @description The public endpoint the reachability proof was bound to. */
+            expectedEndpoint: string;
+            /** @description Admin-supplied WAN address from a guided router-status-page instruction card (RG11 — no third-party echo service, no router APIs). */
+            wanAddress?: string | null;
+        };
+        RemoteDiagnosisResult: {
+            code: components["schemas"]["DiagnosisCode"];
+            detail: string;
+        };
+        CreateRemoteProbeRequest: {
+            expectedEndpoint: string;
+        };
+        /** @description The raw token appears ONLY here (R6) — embedded in probeUrl/qrPayload, never retrievable again. */
+        RemoteProbeToken: {
+            /** Format: uuid */
+            id: string;
+            /** @description https://<endpoint>/probe/<token> — the exact URL GET /probe/{token} serves. */
+            probeUrl: string;
+            /** @description The payload to render as a QR code (probeUrl, R6/RG8). */
+            qrPayload: string;
+            /**
+             * Format: int64
+             * @description 15-minute expiry from mint time (R6).
+             */
+            expiresAtMs: number;
+        };
+        RemoteProbeStatus: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            status: "pending" | "arrived" | "expired";
+            /** Format: int64 */
+            arrivedAtMs: number | null;
+            /** @description Populated once the probe has definitively failed to arrive; null while still pending or once arrived. */
+            diagnosis: components["schemas"]["RemoteDiagnosisResult"] | null;
         };
     };
     responses: {
@@ -8162,6 +8686,565 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             422: components["responses"]["UnprocessableEntity"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    getRemoteState: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Derived remote-access state */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RemoteState"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    enableRemoteWireguard: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Wireguard enabled */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RemoteWireguardStatus"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            /** @description A different remote-access path is already active. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    disableRemoteWireguard: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Wireguard disabled */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RemoteWireguardStatus"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    getRemoteWireguardStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Wireguard status */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RemoteWireguardStatus"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    listRemoteWireguardDevices: {
+        parameters: {
+            query?: {
+                /** @description Opaque pagination cursor from a previous page's `nextCursor`. */
+                cursor?: components["parameters"]["Cursor"];
+                limit?: components["parameters"]["Limit"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Page of enrolled devices */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RemoteWireguardDevicePage"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    enrollRemoteWireguardDevice: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EnrollRemoteWireguardDeviceRequest"];
+            };
+        };
+        responses: {
+            /** @description Enrolled — the one-time provisioning payload */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RemoteWireguardEnrollment"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            /** @description Unknown userId. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Wireguard is not enabled. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            422: components["responses"]["UnprocessableEntity"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    revokeRemoteWireguardDevice: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["IdPathParam"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Revoked */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    setRemoteTunnelToken: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetRemoteTunnelTokenRequest"];
+            };
+        };
+        responses: {
+            /** @description Validation result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RemoteTunnelTokenValidation"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            422: components["responses"]["UnprocessableEntity"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    clearRemoteTunnelToken: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Token cleared */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    enableRemoteTunnel: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EnableRemoteTunnelRequest"];
+            };
+        };
+        responses: {
+            /** @description Tunnel enabled */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RemoteTunnelStatus"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            /** @description A different remote-access path is already active, or no valid tunnel token is stored. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            422: components["responses"]["UnprocessableEntity"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    disableRemoteTunnel: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Tunnel disabled */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RemoteTunnelStatus"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    getRemoteTunnelStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Tunnel status */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RemoteTunnelStatus"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    getRemoteTunnelLogs: {
+        parameters: {
+            query?: {
+                lines?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Connector log tail */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RemoteTunnelLogs"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    testRemoteDirectAcme: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TestRemoteDirectAcmeRequest"];
+            };
+        };
+        responses: {
+            /** @description Test issuance result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RemoteDirectAcmeTestResult"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            422: components["responses"]["UnprocessableEntity"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    enableRemoteDirect: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EnableRemoteDirectRequest"];
+            };
+        };
+        responses: {
+            /** @description Direct path enabled */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RemoteDirectStatus"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            /** @description A different remote-access path is already active. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            422: components["responses"]["UnprocessableEntity"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    disableRemoteDirect: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Direct path disabled */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RemoteDirectStatus"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    diagnoseRemote: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DiagnoseRemoteRequest"];
+            };
+        };
+        responses: {
+            /** @description Diagnosis */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RemoteDiagnosisResult"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            422: components["responses"]["UnprocessableEntity"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    createRemoteProbe: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateRemoteProbeRequest"];
+            };
+        };
+        responses: {
+            /** @description Probe minted — the one-time token, embedded in probeUrl/qrPayload */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RemoteProbeToken"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            422: components["responses"]["UnprocessableEntity"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    getRemoteProbe: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["IdPathParam"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Probe status */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RemoteProbeStatus"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    getProbePage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The raw one-time probe token (never the hash). */
+                token: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Static success page — no server info, nothing an unauthenticated caller can use for reconnaissance. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/html": string;
+                };
+            };
+            404: components["responses"]["NotFound"];
+            /** @description Rate limited (unauthenticated surface) */
+            429: {
+                headers: {
+                    /** @description Seconds until the next attempt is allowed. */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             default: components["responses"]["Problem"];
         };
     };
