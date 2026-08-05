@@ -4119,6 +4119,37 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         default: { $ref: '#/components/responses/Problem' }
 
+  # DRIFT DECISION #1 (STATE.md, logged at Wave-0 freeze — S1's to land):
+  # the frozen 20-op list above omitted a posture READ endpoint even though
+  # R7's card (and U3, the web posture-card surface) need one. Additive,
+  # landed with its real controller + conformance entries in the SAME
+  # commit series as this contract change (no 501 interim — the op did not
+  # exist at Wave 0, so there is nothing to replace).
+  /admin/remote/posture:
+    get:
+      operationId: getRemotePosture
+      tags: [remote]
+      summary: Exposure-aware security posture card (admin)
+      description: >-
+        R7: evaluates every posture check applicable to the currently
+        active remote-access path (packages/shared/src/remote/
+        posture-model.ts's frozen POSTURE_CHECK_KEYS/applicableChecks —
+        `checks` is empty when no path is enabled, since every active path
+        always yields at least one check). Grades link to fix actions.
+        Regressions/recoveries are separately reported via the admin-only
+        outbox (`posture.regressed`/`posture.recovered`, RG4) by a
+        background sweep — this endpoint itself is a stateless "evaluate
+        now" read with no side effects.
+      responses:
+        '200':
+          description: Current posture card
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RemotePostureCard' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        default: { $ref: '#/components/responses/Problem' }
+
   # ─────────────── Public probe-arrival page (R6/R9, M12 quartet) ───────────
   /probe/{token}:
     parameters:
@@ -8123,3 +8154,61 @@ components:
             - { $ref: '#/components/schemas/RemoteDiagnosisResult' }
             - { type: 'null' }
           description: Populated once the probe has definitively failed to arrive; null while still pending or once arrived.
+
+    # DRIFT DECISION #1 (S1 lane, logged at Wave-0 freeze): GET /admin/
+    # remote/posture's response schemas. Mirrors packages/shared/src/
+    # remote/posture-model.ts's frozen closed unions (POSTURE_CHECK_KEYS,
+    # PostureGrade) exactly — this contract enum and that TS union are
+    # pinned to stay identical by apps/server/src/remote/posture/checks/*
+    # (every grading function returns a PostureGrade) and by the shared
+    # module's own test suite; there is no separate cross-check test for
+    # contract-vs-TS-union drift here, the same posture DiagnosisCode above
+    # already takes with packages/shared/src/remote/diagnosis.ts.
+    RemotePostureCheckKey:
+      type: string
+      enum: [tlsValidity, rateLimitersActive, staleAccounts, inviteLinksReachable, wgPortSilence, connectorHealth, publicUrlCoherence]
+      description: packages/shared/src/remote/posture-model.ts's frozen POSTURE_CHECK_KEYS (R7).
+
+    RemotePostureGrade:
+      type: string
+      enum: [pass, warn, fail, info]
+      description: >-
+        packages/shared/src/remote/posture-model.ts's frozen PostureGrade.
+        `info` is a genuine, honest grade some checks can NEVER rise above
+        (e.g. wgPortSilence — a server can never confirm its own external
+        silence; see apps/server/src/remote/posture/checks/
+        wg-port-silence.ts) — never a "pass, softened for display."
+
+    RemotePostureFixAction:
+      type: object
+      additionalProperties: false
+      required: [label, href]
+      properties:
+        label: { type: string }
+        href: { type: string, description: 'An apps/web router path the admin UI can route to directly (posture-model.ts''s frozen POSTURE_CHECK_FIX_ACTIONS).' }
+
+    RemotePostureCheck:
+      type: object
+      additionalProperties: false
+      required: [key, grade, detail, fixAction]
+      properties:
+        key: { $ref: '#/components/schemas/RemotePostureCheckKey' }
+        grade: { $ref: '#/components/schemas/RemotePostureGrade' }
+        detail: { type: string, description: 'Human-readable sentence explaining this check''s current grade.' }
+        fixAction: { $ref: '#/components/schemas/RemotePostureFixAction' }
+
+    RemotePostureCard:
+      type: object
+      additionalProperties: false
+      required: [checks, overallGrade, evaluatedAtMs]
+      properties:
+        checks:
+          type: array
+          items: { $ref: '#/components/schemas/RemotePostureCheck' }
+          description: >-
+            Empty when no remote-access path is enabled (posture-model.ts's
+            deriveCardState: the card itself is inactive) — every active
+            path always yields at least one applicable check, so an empty
+            array is unambiguous and no separate "active" flag is exposed.
+        overallGrade: { $ref: '#/components/schemas/RemotePostureGrade' }
+        evaluatedAtMs: { type: integer, format: int64, description: 'When this evaluation ran — a stateless "evaluate now" read, not a cached value.' }
