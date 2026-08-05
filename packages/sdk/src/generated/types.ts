@@ -4630,18 +4630,24 @@ export interface components {
          * @enum {string}
          */
         DiagnosisCode: "portBlocked" | "cgnat" | "doubleNat" | "dnsMismatch" | "tunnelDown" | "connectorUnhealthy" | "unknown";
+        /** @description P1 ADJUDICATION (flagged, no R/RG number covers it exactly — logged at integration): `path` was added to this Wave-0-frozen schema (additive, D23-class precedent: F2's currentPassword/R-F3's maximum bound both landed the same way) because the Tunnel-path connector-health short-circuit (the freeze's own diagnosis note) and the per-path guidance mapping (packages/shared/src/remote/ diagnosis-guidance.ts) both need to know which path is being diagnosed, and nothing server-side can safely infer it — RemotePathId's activePath is cross-lane DERIVED state this lane's isolated worktree cannot read. The wizard already knows its own current flow, so it supplies it explicitly. */
         DiagnoseRemoteRequest: {
             /** @description The public endpoint the reachability proof was bound to. */
             expectedEndpoint: string;
             /** @description Admin-supplied WAN address from a guided router-status-page instruction card (RG11 — no third-party echo service, no router APIs). */
             wanAddress?: string | null;
+            /** @description Which path is being diagnosed (P1 adjudication, see this schema's own description). Must be remote/tunnel/direct — 'none' is rejected with 422 (there is nothing to diagnose when no path is even being set up). */
+            path: components["schemas"]["RemotePathId"];
         };
         RemoteDiagnosisResult: {
             code: components["schemas"]["DiagnosisCode"];
             detail: string;
         };
+        /** @description P1 ADJUDICATION (flagged — same reasoning as DiagnoseRemoteRequest's own description): `path` was added to this Wave-0-frozen schema so `probe_tokens.path` (migrations/0031_probe_tokens.sql — "which remote path is being proven") has somewhere to come from; a probe is always minted for one specific path's setup flow. */
         CreateRemoteProbeRequest: {
             expectedEndpoint: string;
+            /** @description Which path this probe proves. Must be remote/tunnel/direct — 'none' is rejected with 422. */
+            path: components["schemas"]["RemotePathId"];
         };
         /** @description The raw token appears ONLY here (R6) — embedded in probeUrl/qrPayload, never retrievable again. */
         RemoteProbeToken: {
