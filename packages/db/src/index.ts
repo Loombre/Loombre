@@ -460,6 +460,20 @@ export {
   listNoticesAdmin,
 } from './query/notices.js';
 
+// Loombre Remote — Tunnel path (STATE.md R4/R9/RG7, lane T1,
+// migrations/0032_remote_tunnel_state.sql) — see src/query/remote-tunnel.ts
+// header for why this lives in the public barrel.
+export type {
+  RemoteTunnelStateRow,
+  EnableTunnelStateInput,
+  DisableTunnelStateInput,
+} from './query/remote-tunnel.js';
+export {
+  getRemoteTunnelState,
+  enableTunnelStateAndEmit,
+  disableTunnelStateAndEmit,
+} from './query/remote-tunnel.js';
+
 // Email-collision notice ledger (G7, STATE.md "Current-password re-auth on
 // self-changes") — see src/query/email-collision-notice.ts header.
 export {
