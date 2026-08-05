@@ -30,6 +30,13 @@
     margin-left: 0;
     padding: var(--space-sm) var(--space-md);
   }
+
+  /* R-F7: back/zone-back routes render the 66px top-row-only header —
+     clear THAT height, not title mode's 112px (the component sets the
+     attribute from the header's own resolver, see BannerRegion.tsx). */
+  .banner[data-compact-header="true"] {
+    margin-top: calc(var(--mobile-header-height-back) + env(safe-area-inset-top, 0));
+  }
 }
 
 /* Severity accent — SettingsRestartBanner.module.css's own family

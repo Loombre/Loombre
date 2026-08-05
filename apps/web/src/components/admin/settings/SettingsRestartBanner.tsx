@@ -18,6 +18,18 @@
 // component suppresses itself entirely and comes back the instant the
 // notice clears — pure precedence, no change to the restartPendingKeys
 // logic below.
+//
+// Registry reality (review R-F6, adjudicated 2026-08-04): TODAY this
+// banner cannot render from real state — lane S3's hot-reload migration
+// deliberately left ZERO ui-scoped requiresRestart:true keys (every UI
+// setting hot-applies; every restart-only knob is env-only, which PUT
+// 404s and which resets its own boot snapshot by restarting). The
+// mechanism stays, pinned by settings.service.spec.ts via a synthetic
+// registry, for the first future key that genuinely cannot hot-apply —
+// future-proofing, not dead weight. The copy that used to PROMISE this
+// banner as a current fact was corrected instead (ServerPowerCard
+// caption, admin-guide/server-power.md, the generated settings-reference
+// legend, all 2026-08-04).
 
 import Link from "next/link";
 import { AlertTriangle } from "lucide-react";

@@ -130,11 +130,23 @@ const lines = [
   "## How to read this page",
   "",
   "- **Applies immediately** means the change takes effect right away.",
-  "- **Applies after a restart** means Loombre saves your change now but " +
-    "keeps using the old value until the server restarts — you'll see a " +
-    "reminder banner in the meantime, and **Settings → Server → Power** " +
-    "has a [restart button](server-power.md) that applies it. Nothing " +
-    "currently playing is ever interrupted just by saving.",
+  // The "Applies after a restart" legend renders ONLY when at least one
+  // listed (ui-scope) entry actually carries requiresRestart:true —
+  // today none do (lane S3's hot-reload migration made every UI setting
+  // hot-applying; review R-F6), and a legend explaining a state the page
+  // can never show is a promise the product doesn't keep. The banner
+  // machinery itself stays (settings.service.spec.ts pins it via a
+  // synthetic registry) for the first future key that can't hot-apply —
+  // this bullet comes back automatically with it.
+  ...(uiEntries.some((entry) => entry.requiresRestart)
+    ? [
+        "- **Applies after a restart** means Loombre saves your change now but " +
+          "keeps using the old value until the server restarts — you'll see a " +
+          "reminder banner in the meantime, and **Settings → Server → Power** " +
+          "has a [restart button](server-power.md) that applies it. Nothing " +
+          "currently playing is ever interrupted just by saving.",
+      ]
+    : []),
   "- **Can be locked** means whoever installed Loombre can fix a setting to " +
     "one value from outside the settings screen. When that's done, this " +
     "screen shows the setting as controlled by the environment and you " +

@@ -22,23 +22,41 @@
 // one control (the dismiss button) — never a modal, never intercepts
 // clicks outside that one button (N6).
 
+import { usePathname } from "next/navigation";
 import { AlertTriangle, OctagonAlert, X } from "lucide-react";
 import { Icon } from "../icon/Icon.js";
 import { defaultFormatTime } from "../player/Scrubber.js";
 import { useSystemNotice } from "../notices/SystemNoticeProvider.js";
 import { useNoticeCountdown } from "../notices/useNoticeCountdown.js";
+import { resolveMobileHeader } from "./mobile-header.js";
 import styles from "./BannerRegion.module.css";
 
 export function BannerRegion(): React.JSX.Element | null {
   const { notice, severity, dismiss, serverOffsetMs, bannerVisible } = useSystemNotice();
   const countdown = useNoticeCountdown(notice?.effectiveAtMs ?? null, serverOffsetMs);
+  const pathname = usePathname() ?? "";
 
   if (!bannerVisible || !notice || !severity) return null;
+
+  // R-F7: below the mobile breakpoint the banner clears the fixed
+  // MobileHeader by margin — but the header is only --mobile-header-height
+  // (112px, title mode) tall on tab-root routes; back/zone-back routes
+  // render the 66px top-row-only chrome, leaving ~46px of dead space if we
+  // over-clear by the title constant. Reuse the header's OWN resolver so
+  // the two can never disagree on mode; the library-id args are null-safe
+  // here because ids only ever pick TITLES (see mobile-header.ts's /browse
+  // branch — every arm is mode "title"), never the mode itself.
+  const compactHeader = resolveMobileHeader(pathname, null, null, null).mode !== "title";
 
   const isCritical = severity === "critical";
 
   return (
-    <div className={styles.banner} data-severity={severity} role={isCritical ? "alert" : "status"}>
+    <div
+      className={styles.banner}
+      data-severity={severity}
+      data-compact-header={compactHeader ? "true" : undefined}
+      role={isCritical ? "alert" : "status"}
+    >
       <Icon icon={isCritical ? OctagonAlert : AlertTriangle} size="dense" aria-hidden />
       <div className={styles.text}>
         <span className={styles.message}>{notice.message}</span>

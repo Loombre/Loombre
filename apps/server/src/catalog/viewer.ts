@@ -9,6 +9,7 @@ import { nowMs as clockNowMs } from "@loombre/shared";
 import type { ViewerContext } from "@loombre/db";
 import type { AuthenticatedRequest } from "../gateway/auth.guard.js";
 import { ViewerContextProvider } from "../common/viewer-context.provider.js";
+import { parseLimitParam } from "../common/limit-param.js";
 
 export function resolveViewer(
   provider: ViewerContextProvider,
@@ -40,9 +41,9 @@ export function parseListQuery(query: Record<string, unknown>): ListQuery {
   const result: ListQuery = {};
   if (typeof query["cursor"] === "string") result.cursor = query["cursor"];
   if (typeof query["libraryId"] === "string") result.libraryId = query["libraryId"];
-  if (typeof query["limit"] === "string") {
-    const n = Number.parseInt(query["limit"], 10);
-    if (Number.isFinite(n) && n > 0) result.limit = n;
+  {
+    const limit = parseLimitParam(query["limit"]);
+    if (limit !== undefined) result.limit = limit;
   }
   if (typeof query["sort"] === "string" && VALID_SORTS.has(query["sort"])) {
     result.sort = query["sort"] as "title" | "added" | "rating" | "year";

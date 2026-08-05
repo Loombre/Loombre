@@ -138,8 +138,9 @@ export function ServerPowerCard(): React.JSX.Element {
             <div className={styles.rowText}>
               <span className={styles.rowLabel}>Restart server</span>
               <span className={styles.rowCaption}>
-                Stops and starts the server process. Settings marked RESTART REQUIRED take effect. Anything streaming
-                is interrupted for a few seconds.
+                Stops and starts the server process. Settings apply immediately when saved — restart is for changes
+                made outside these screens, updates, and troubleshooting. Anything streaming is interrupted for a few
+                seconds.
               </span>
             </div>
             <Button variant="secondary" onClick={() => setPhase("confirmRestart")}>
