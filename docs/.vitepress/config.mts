@@ -177,6 +177,7 @@ export default defineConfig({
             { text: "Loombre Remote", link: "/ops/remote-access/loombre-remote" },
             { text: "Tunnel", link: "/ops/remote-access/tunnel" },
             { text: "Direct", link: "/ops/remote-access/direct" },
+            { text: "Home-lab validation runbook", link: "/ops/remote-access/home-lab-validation-runbook" },
             { text: "Appendix: Reverse proxy", link: "/ops/remote-access/reverse-proxy" },
             { text: "Appendix: Built-in ACME (TLS)", link: "/ops/remote-access/acme" },
           ],
