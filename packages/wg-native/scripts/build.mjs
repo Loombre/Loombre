@@ -22,6 +22,7 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 
 const PKG_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -71,12 +72,29 @@ function main() {
   const outFile = join(DIST_DIR, artifactName());
   const outHeader = outFile.replace(/\.(dylib|dll|so)$/, ".h");
 
+  const goEnv = { ...process.env, CGO_ENABLED: "1" };
+  // `go build` needs a build-cache directory, which it derives from GOCACHE
+  // or, failing that, the OS user-cache location (os.UserCacheDir): on
+  // Windows that is %LocalAppData% ONLY, on Linux $XDG_CACHE_HOME || $HOME,
+  // on macOS $HOME. Windows CI legs run this build through turbo → pnpm →
+  // node, and that spawn chain reached `go` WITHOUT %LocalAppData%, so go
+  // aborted before compiling: "build cache is required, but could not be
+  // located." Provide a stable fallback ONLY when go would otherwise have no
+  // location — a no-op on every environment that already has one (all local
+  // dev + the working Linux/macOS legs), so it disturbs nothing that works.
+  const hasGoCacheLocation =
+    goEnv["GOCACHE"] ||
+    (process.platform === "win32" ? goEnv["LOCALAPPDATA"] : goEnv["XDG_CACHE_HOME"] || goEnv["HOME"]);
+  if (!hasGoCacheLocation) {
+    goEnv["GOCACHE"] = join(tmpdir(), "loombre-wg-native-go-build-cache");
+  }
+
   console.log(`wg-native: building ${outFile} (go build -buildmode=c-shared)...`);
   try {
     execFileSync("go", ["build", "-buildmode=c-shared", "-o", outFile, "."], {
       cwd: NATIVE_DIR,
       stdio: "inherit",
-      env: { ...process.env, CGO_ENABLED: "1" },
+      env: goEnv,
     });
   } catch (err) {
     console.error(`wg-native: go build failed — ${err.message}`);
