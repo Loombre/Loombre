@@ -75,15 +75,16 @@ import {
   disableRemoteDirectStateAndEmit,
   enableRemoteDirectStateAndEmit,
   getRemoteDirectInternalState,
-  isRemoteWireguardActive,
+  type RemoteDirectMode,
   type RemotePathId,
 } from "@loombre/db";
 import { ACME_DOMAIN_SCHEMA, nowMs as clockNowMs } from "@loombre/shared";
 import { conflict, unprocessableEntity } from "../gateway/problem.exception.js";
 import type { AuthenticatedRequest } from "../gateway/auth.guard.js";
-import { DbProvider } from "../common/db.provider.js";
+import { DbProvider, type LoombreDb } from "../common/db.provider.js";
 import { requireAdmin } from "./require-admin.js";
 import { SettingsService } from "../settings/settings.service.js";
+import { RemoteActivePathReader } from "./active-path-reader.js";
 import {
   DEFAULT_ACME_DIRECTORY_URL_PRODUCTION,
   DEFAULT_ACME_DIRECTORY_URL_STAGING,
@@ -161,11 +162,51 @@ function buildAdHocAcmeConfig(domain: string): TlsConfigAcme {
  *  trust that SOME cert exists, verify it's the RIGHT one" check
  *  apps/server/test/tls/acme-http01-pebble.integration.spec.ts's own
  *  connectAndReadCert + X509Certificate#checkHost proof uses, applied here
- *  to a persisted PEM instead of a live TLS peer certificate. */
-function certCoversDomain(certPem: string, notAfterMs: number, domain: string, nowMsValue: number): boolean {
+ *  to a persisted PEM instead of a live TLS peer certificate. Exported
+ *  (WG2): remote-state.controller.ts's getRemoteState composition reuses
+ *  this exact check rather than re-deriving cert validity a second way. */
+export function certCoversDomain(certPem: string, notAfterMs: number, domain: string, nowMsValue: number): boolean {
   if (notAfterMs <= nowMsValue) return false;
   const x509 = new X509Certificate(certPem);
   return x509.checkHost(domain) !== undefined;
+}
+
+export interface RemoteDirectStatusDto {
+  enabled: boolean;
+  mode: RemoteDirectMode | null;
+  domain: string | null;
+  certValid: boolean | null;
+  certExpiresAtMs: number | null;
+}
+
+/**
+ * WG2 (getRemoteState composition, item 6): the Direct path has NO
+ * dedicated status op (the frozen Wave-0 surface is acme-test/enable/
+ * disable only — see this file's header) so this is the one place a
+ * point-in-time status READ (as opposed to enable/disable's own inline
+ * response bodies above) is derived. `domain` is read from the
+ * tls.acmeDomains setting (the ONLY place it survives past the original
+ * enable call — RemoteDirectInternalState itself does not store it, see
+ * packages/db/src/query/remote-direct.ts's header) rather than from any
+ * request; `certValid`/`certExpiresAtMs` re-check the SAME persisted
+ * certificate enableRemoteDirect itself verified at enable time, using the
+ * SAME certCoversDomain check above, so a getRemoteState read can never
+ * disagree with what enabling Direct actually required.
+ */
+export async function buildRemoteDirectStatus(db: LoombreDb, settingsService: SettingsService): Promise<RemoteDirectStatusDto> {
+  const state = await getRemoteDirectInternalState(db);
+  if (!state.enabled) {
+    return { enabled: false, mode: null, domain: null, certValid: null, certExpiresAtMs: null };
+  }
+  if (state.mode === "acme") {
+    const domains = (settingsService.getEffective("tls.acmeDomains")?.value as string[] | undefined) ?? [];
+    const domain = domains[0] ?? null;
+    const dataDir = resolveDataDir(process.env["LOOMBRE_DATA_DIR"]);
+    const persisted = loadPersistedCertificate(dataDir);
+    const certValid = persisted !== undefined && domain !== null && certCoversDomain(persisted.certPem, persisted.notAfterMs, domain, clockNowMs());
+    return { enabled: true, mode: "acme", domain, certValid, certExpiresAtMs: persisted?.notAfterMs ?? null };
+  }
+  return { enabled: true, mode: "reverse-proxy", domain: null, certValid: null, certExpiresAtMs: null };
 }
 
 @Controller()
@@ -173,6 +214,7 @@ export class RemoteDirectController {
   constructor(
     private readonly dbProvider: DbProvider,
     private readonly settingsService: SettingsService,
+    private readonly activePathReader: RemoteActivePathReader,
   ) {}
 
   @Post("admin/remote/direct/acme-test")
@@ -228,15 +270,15 @@ export class RemoteDirectController {
     }
     const mode = body["mode"] as "acme" | "reverse-proxy";
 
-    // RG15: 409 against another ACTIVE path — see packages/db/src/query/
-    // remote-direct.ts's isRemoteWireguardActive doc comment for what this
-    // does and does not cover today (WG only; Tunnel flagged, not checked).
-    if (await isRemoteWireguardActive(db)) {
-      throw conflict(
-        "Cannot enable the Direct path — Loombre Remote (WireGuard) is already active. Disable it first.",
-        instance,
-        "remote-path-active",
-      );
+    // RG15: 409 against another ACTIVE path — now the REAL canonical
+    // resolver (WG2 integration unification), replacing this lane's own
+    // isolated-worktree WG-only defensive raw-SQL check (see packages/db/
+    // src/query/remote-direct.ts's isRemoteWireguardActive doc comment for
+    // why that existed and what it did and did not cover). Every path is
+    // checked now, not just WireGuard.
+    const otherPath = await this.activePathReader.activePath();
+    if (otherPath !== "none" && otherPath !== "direct") {
+      throw conflict(`The ${otherPath} path is already active — disable it before enabling the Direct path.`, instance, "remote-path-active");
     }
 
     const currentState = await getRemoteDirectInternalState(db);

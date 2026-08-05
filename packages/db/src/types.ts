@@ -154,6 +154,12 @@ export interface LibraryPermissionsTable {
 // devices (P1.14 — login registers/refreshes a device row)
 // ============================================================================
 
+/** migrations/0030_wg_peers.sql (STATE.md "Loombre Remote", RG3, lane WG2):
+ *  'app' (default — every login-created device) or 'remote' (admin-
+ *  initiated WireGuard enrollment ONLY, packages/db/src/query/wg-peers.ts —
+ *  never the login-driven createDevice path). */
+export type DeviceKind = 'app' | 'remote';
+
 export interface DevicesTable {
   id: Generated<string>;
   user_id: string;
@@ -167,6 +173,7 @@ export interface DevicesTable {
   profile: Generated<Record<string, unknown>>;
   last_seen_ms: number | null;
   created_at_ms: number;
+  kind: Generated<DeviceKind>;
 }
 
 // ============================================================================
@@ -873,6 +880,20 @@ export interface RemoteWireguardStateTable {
 }
 
 // ============================================================================
+// wg_peers (migrations/0030_wg_peers.sql — STATE.md "Loombre Remote",
+// R2/R9/RG3/RG9, lane WG2). device_id IS the primary key (1:1 with
+// devices(kind='remote')) -- see the migration's own COMMENT ON TABLE.
+// NO PRIVATE KEY COLUMN, EVER (R9).
+// ============================================================================
+
+export interface WgPeersTable {
+  device_id: string;
+  public_key: string;
+  tunnel_ip: string;
+  created_at_ms: number;
+}
+
+// ============================================================================
 // DB
 // ============================================================================
 
@@ -930,4 +951,5 @@ export interface DB {
   remote_tunnel_state: RemoteTunnelStateTable;
   probe_tokens: ProbeTokensTable;
   remote_wireguard_state: RemoteWireguardStateTable;
+  wg_peers: WgPeersTable;
 }
