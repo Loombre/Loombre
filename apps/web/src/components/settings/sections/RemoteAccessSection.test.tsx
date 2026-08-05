@@ -71,7 +71,11 @@ const SETTINGS = {
 const NONE_STATE = {
   activePath: "none",
   wireguard: { enabled: false, listening: false, listenPort: 51820, subnet: "10.82.146.0/24", endpointHost: null, peerCount: 0 },
-  tunnel: { enabled: false, connectorState: "stopped", hostname: null, backoffMs: null, lastErrorMessage: null },
+  // T2 fixup (RG7): RemoteTunnelStatus gained three additive REQUIRED
+  // fields (tokenConfigured/tokenSetAtMs/tokenScopesOk — T1's own drift
+  // decision, remote-tunnel.service.ts's header) after this fixture was
+  // first written.
+  tunnel: { enabled: false, connectorState: "stopped", hostname: null, backoffMs: null, lastErrorMessage: null, tokenConfigured: false, tokenSetAtMs: null, tokenScopesOk: null },
   direct: { enabled: false, mode: null, domain: null, certValid: null, certExpiresAtMs: null },
 };
 
