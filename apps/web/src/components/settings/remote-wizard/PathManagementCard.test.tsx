@@ -3,7 +3,17 @@
 // flows). Mirrors ServerPowerCard.test.tsx's harness (vi.mock of
 // api-client BEFORE a top-level-await import; renderIntoBody; act) — the
 // same house convention every Settings card test in this repo uses.
-
+//
+// U3 extension: this card now mounts PostureCardSlot -> PostureCard,
+// ConnectorHealthPanel (tunnel), and RemoteDevicesPanel (remote) — all
+// three fetch live data on mount, so apiGet + the events socket are mocked
+// here too with generic default fixtures. Per-component behavior (grades,
+// connector states, revoke flow, live refresh, 501 fallbacks) is covered
+// in each one's own dedicated test file (PostureCard.test.tsx,
+// ConnectorHealthPanel.test.tsx, RemoteDevicesPanel.test.tsx per
+// NoticesSection.test.tsx's "composition here, per-card behavior there"
+// split) — these defaults exist only so this file's own switch/disable
+// assertions aren't disturbed by the new children's own fetches.
 import React, { act } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { renderIntoBody, type TestRender } from "../../ui/test-render.js";
@@ -11,7 +21,9 @@ import type { components } from "@loombre/sdk";
 
 type RemoteState = components["schemas"]["RemoteState"];
 
+const apiGetMock = vi.fn();
 const apiPostMock = vi.fn();
+const subscribeMock = vi.fn();
 
 // Mirrors packages/sdk/src/client.ts's real LoombreApiError: `.message` is
 // the problem's `title` (falling back to a generic string) — the component
@@ -33,30 +45,83 @@ class FakeApiError extends Error {
 }
 
 vi.mock("../../../lib/api-client.js", () => ({
+  apiGet: (...args: unknown[]) => apiGetMock(...args),
   apiPost: (...args: unknown[]) => apiPostMock(...args),
   LoombreApiError: FakeApiError,
 }));
 
+vi.mock("../../../lib/events-socket.js", () => ({
+  getEventsSocket: () => ({ subscribe: subscribeMock }),
+}));
+
 const { PathManagementCard } = await import("./PathManagementCard.js");
+
+function defaultApiGetRouting(): void {
+  apiGetMock.mockImplementation((path: string) => {
+    if (path === "/admin/remote/posture") return Promise.resolve({ checks: [], overallGrade: "pass", evaluatedAtMs: Date.now() });
+    if (path === "/admin/remote/tunnel/status") {
+      return Promise.resolve({
+        enabled: true,
+        connectorState: "running",
+        hostname: "loombre.example.com",
+        backoffMs: null,
+        lastErrorMessage: null,
+        tokenConfigured: true,
+        tokenSetAtMs: Date.now(),
+        tokenScopesOk: true,
+      });
+    }
+    if (path === "/admin/remote/tunnel/logs") return Promise.resolve({ lines: [] });
+    if (path === "/admin/remote/wireguard/devices") return Promise.resolve({ items: [], nextCursor: null });
+    return Promise.reject(new Error(`unexpected path ${path}`));
+  });
+}
 
 const REMOTE_ACTIVE: RemoteState = {
   activePath: "remote",
   wireguard: { enabled: true, listening: true, listenPort: 51820, subnet: "10.82.146.0/24", endpointHost: "example.com", peerCount: 3 },
-  tunnel: { enabled: false, connectorState: "stopped", hostname: null, backoffMs: null, lastErrorMessage: null, tokenConfigured: false, tokenSetAtMs: null, tokenScopesOk: null },
+  tunnel: {
+    enabled: false,
+    connectorState: "stopped",
+    hostname: null,
+    backoffMs: null,
+    lastErrorMessage: null,
+    tokenConfigured: false,
+    tokenSetAtMs: null,
+    tokenScopesOk: null,
+  },
   direct: { enabled: false, mode: null, domain: null, certValid: null, certExpiresAtMs: null },
 };
 
 const TUNNEL_ACTIVE: RemoteState = {
   activePath: "tunnel",
   wireguard: { enabled: false, listening: false, listenPort: 51820, subnet: "10.82.146.0/24", endpointHost: null, peerCount: 0 },
-  tunnel: { enabled: true, connectorState: "running", hostname: "loombre.example.com", backoffMs: null, lastErrorMessage: null, tokenConfigured: true, tokenSetAtMs: 1_754_000_000_000, tokenScopesOk: true },
+  tunnel: {
+    enabled: true,
+    connectorState: "running",
+    hostname: "loombre.example.com",
+    backoffMs: null,
+    lastErrorMessage: null,
+    tokenConfigured: true,
+    tokenSetAtMs: 1_700_000_000_000,
+    tokenScopesOk: true,
+  },
   direct: { enabled: false, mode: null, domain: null, certValid: null, certExpiresAtMs: null },
 };
 
 const DIRECT_ACTIVE: RemoteState = {
   activePath: "direct",
   wireguard: { enabled: false, listening: false, listenPort: 51820, subnet: "10.82.146.0/24", endpointHost: null, peerCount: 0 },
-  tunnel: { enabled: false, connectorState: "stopped", hostname: null, backoffMs: null, lastErrorMessage: null, tokenConfigured: false, tokenSetAtMs: null, tokenScopesOk: null },
+  tunnel: {
+    enabled: false,
+    connectorState: "stopped",
+    hostname: null,
+    backoffMs: null,
+    lastErrorMessage: null,
+    tokenConfigured: false,
+    tokenSetAtMs: null,
+    tokenScopesOk: null,
+  },
   direct: { enabled: true, mode: "acme", domain: "loombre.example.com", certValid: true, certExpiresAtMs: 1_800_000_000_000 },
 };
 
@@ -65,7 +130,11 @@ const onSwitchPath = vi.fn();
 const onChanged = vi.fn();
 
 beforeEach(() => {
+  apiGetMock.mockReset();
   apiPostMock.mockReset();
+  subscribeMock.mockReset();
+  subscribeMock.mockReturnValue(() => {});
+  defaultApiGetRouting();
   onSwitchPath.mockReset();
   onChanged.mockReset();
 });

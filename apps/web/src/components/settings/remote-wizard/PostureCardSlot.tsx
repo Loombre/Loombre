@@ -3,28 +3,21 @@
 
 // Loombre :: apps/web/src/components/settings/remote-wizard/PostureCardSlot.tsx
 //
-// R7's exposure-aware posture card is U3's build (STATE.md Batch plan —
-// U3 lands after Batch 1). This lane's mission item 1 asks for "a clean
-// composition seam + placeholder" in TWO places: the management view
-// (PathManagementCard.tsx) and the wizard's posture-handoff stage
-// (PostureHandoffStage.tsx) — both render THIS one component so U3 has a
-// single place to swap in the real card rather than two copies to keep in
-// sync. `data-testid` exists purely so this lane's own tests (and U3's,
-// later) can assert the seam is actually mounted without depending on its
-// placeholder copy.
+// U1's seam, now filled (STATE.md "Loombre Remote ...", mission item 1,
+// lane U3): PathManagementCard.tsx and PostureHandoffStage.tsx both render
+// THIS one component, so the real posture card (PostureCard.tsx) lands in
+// exactly one place despite being visible from two surfaces. The
+// `data-testid` U1 put here for exactly this purpose is kept unchanged —
+// PathManagementCard.test.tsx's "always renders the posture-card seam for
+// U3" assertion depends on it still being present.
 
-import { PATH_LABELS } from "./path-labels.js";
+import { PostureCard } from "./PostureCard.js";
 import type { PathId } from "@loombre/shared/remote";
-import styles from "./PostureCardSlot.module.css";
 
 export function PostureCardSlot({ activePath }: { activePath: PathId }): React.JSX.Element {
   return (
-    <div className={styles.slot} data-testid="posture-card-slot">
-      <p className={styles.slotLabel}>Security posture</p>
-      <p className={styles.slotBody}>
-        The exposure-aware posture card lands in a follow-up pass — it will grade {PATH_LABELS[activePath]}'s TLS,
-        rate limiting, stale-account, and exposure checks here, with links to fix anything it flags.
-      </p>
+    <div data-testid="posture-card-slot">
+      <PostureCard activePath={activePath} />
     </div>
   );
 }
