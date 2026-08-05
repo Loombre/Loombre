@@ -40,7 +40,8 @@ import { fileURLToPath } from "node:url";
 import request from "supertest";
 import { NestFactory } from "@nestjs/core";
 import type { INestApplication } from "@nestjs/common";
-import { ensureTestDatabase, getUserByUsername } from "@loombre/db";
+import { ensureTestDatabase, getUserByUsername, readUnprocessedEvents } from "@loombre/db";
+import { buildProvisioningConfig } from "@loombre/shared";
 import { WgNativeClient } from "@loombre/wg-native";
 import { AppModule } from "../src/app.module.js";
 import { DbProvider } from "../src/common/db.provider.js";
@@ -105,6 +106,7 @@ function parseWgQuickConfig(text: string): { privateKey: string; address: string
 
 let app: INestApplication;
 let adminToken: string;
+let adminUserId: string;
 let dataDir: string;
 let databaseUrl: string;
 let targetUserId: string;
@@ -140,6 +142,10 @@ beforeAll(async () => {
   });
   expect(adminLogin.status, JSON.stringify(adminLogin.body)).toBe(200);
   adminToken = adminLogin.body.accessToken;
+
+  const adminUser = await getUserByUsername(app.get(DbProvider).db, "admin");
+  if (!adminUser) throw new Error("seed did not create the admin user");
+  adminUserId = adminUser.id;
 
   const targetUser = await getUserByUsername(app.get(DbProvider).db, "casual");
   if (!targetUser) throw new Error("seed did not create the casual user");
@@ -259,6 +265,102 @@ describe.skipIf(!available)("Loombre Remote — WireGuard enrollment (real Expre
     const listRes = await asAdmin().get("/admin/remote/wireguard/devices");
     expect(listRes.body.items.some((d: { id: string }) => d.id === deviceId)).toBe(false);
   }, 20_000);
+
+  // WG3 mission item 4 (STATE.md "Loombre Remote ...", "REAL-ENDPOINT
+  // VERIFICATION of the enrollment ceremony"): walks U2's exact client
+  // sequence against the REAL stack — WG enabled via the real native lib
+  // (this whole file is wg-gated, LOOMBRE_REQUIRE_WG=1 in CI), asserts the
+  // payload parses as a valid wg-quick config matching the frozen
+  // provisioning golden shape byte-for-byte, tunnel-IP allocation visible
+  // in the GENERAL devices list (GET /devices, R2's own literal wording)
+  // with kind='remote', and the config text/private key NEVER appear in
+  // any later response — the FULL response-surface sweep WG2's own show-
+  // once test (remote-wireguard-devices.e2e.spec.ts) only covered at
+  // list/status: this also checks state, posture, the general devices
+  // list, and the outbox event.
+  it(
+    "REAL-ENDPOINT show-once sweep: golden wg-quick config, kind='remote' in GET /devices, configText/privateKey absent from list/status/state/posture/events",
+    async () => {
+      const enrollRes = await asAdmin().post("/admin/remote/wireguard/devices").send({ userId: adminUserId, name: "Admin's watch (WG3 sweep)" });
+      expect(enrollRes.status, JSON.stringify(enrollRes.body)).toBe(201);
+      const { device, configText } = enrollRes.body as { device: { id: string; tunnelIp: string }; configText: string };
+
+      // The frozen provisioning golden shape: parse the device's own
+      // private key + the server's public key out of the RETURNED text and
+      // rebuild independently via the SAME shared builder production code
+      // uses — byte-identical output, same discipline as remote-wireguard-
+      // devices.e2e.spec.ts's own golden-format test, here against the
+      // REAL native-lib enrollment path instead of the bypass-enabled one.
+      const parsed = parseWgQuickConfig(configText);
+      const privateKey = parsed.privateKey;
+      expect(privateKey.length).toBeGreaterThan(0);
+      const statusForPort = await asAdmin().get("/admin/remote/wireguard/status");
+      const rebuilt = buildProvisioningConfig({
+        serverPublicKey: parsed.peerPublicKey,
+        serverEndpointHost: "127.0.0.1",
+        serverEndpointPort: statusForPort.body.listenPort,
+        devicePrivateKey: privateKey,
+        deviceTunnelIp: device.tunnelIp,
+        serverTunnelIp: "10.82.146.1",
+        subnetCidr: "10.82.146.0/24",
+      });
+      expect(configText).toBe(rebuilt);
+
+      // Tunnel-IP allocation visible in the GENERAL devices list (R2:
+      // "enrolled devices appear in the existing devices list (kind:
+      // remote)") — self-scoped, so enrolled for the admin's OWN userId
+      // above so `asAdmin()` can read it back via GET /devices directly.
+      // Cross-referenced against the WG-specific list's own tunnelIp for
+      // the SAME device id.
+      const generalListRes = await asAdmin().get("/devices");
+      expect(generalListRes.status).toBe(200);
+      const generalRow = (generalListRes.body.items as Array<{ id: string; kind: string }>).find((d) => d.id === device.id);
+      expect(generalRow).toBeDefined();
+      expect(generalRow!.kind).toBe("remote");
+
+      const wgListRes = await asAdmin().get("/admin/remote/wireguard/devices");
+      const wgRow = (wgListRes.body.items as Array<{ id: string; tunnelIp: string }>).find((d) => d.id === device.id);
+      expect(wgRow).toBeDefined();
+      expect(wgRow!.tunnelIp).toBe(device.tunnelIp);
+
+      // SHOW-ONCE at the API level — the FULL response-surface sweep: list,
+      // status, state, posture, general devices list. WG2 proved this at
+      // storage level and for list/status; this proves it across every
+      // documented admin read the enrolled device's data could leak into.
+      const [stateRes, postureRes] = await Promise.all([asAdmin().get("/admin/remote/state"), asAdmin().get("/admin/remote/posture")]);
+      const surfaces: Record<string, unknown> = {
+        wireguardDevicesList: wgListRes.body,
+        generalDevicesList: generalListRes.body,
+        wireguardStatus: statusForPort.body,
+        remoteState: stateRes.body,
+        remotePosture: postureRes.body,
+      };
+      for (const [name, body] of Object.entries(surfaces)) {
+        const json = JSON.stringify(body);
+        expect(json, `${name} leaked the private key`).not.toContain(privateKey);
+        expect(json, `${name} leaked the raw config text`).not.toContain(configText);
+        expect(json, `${name} leaked a "PrivateKey" field`).not.toMatch(/PrivateKey/);
+      }
+
+      // Events: remote.device.enrolled carries ids/names/timestamps ONLY —
+      // WG2 proved this shape at the db layer (packages/db/test/
+      // wg-peers.spec.ts or equivalent); this asserts it holds at the REAL
+      // end-to-end native-lib enrollment path too.
+      const events = await readUnprocessedEvents(app.get(DbProvider).db, 5000);
+      const enrolledEvent = events.find((e) => e.type === "remote.device.enrolled" && (e.payload as { deviceId?: string }).deviceId === device.id);
+      expect(enrolledEvent).toBeDefined();
+      const eventJson = JSON.stringify(enrolledEvent!.payload);
+      expect(eventJson).not.toContain(privateKey);
+      expect(eventJson).not.toContain(configText);
+      expect(eventJson).not.toMatch(/PrivateKey/);
+
+      // Cleanup — a real live-peer revoke, so this device doesn't linger
+      // into the suite's own "cleanup: disable" test below.
+      const revokeRes = await asAdmin().delete(`/admin/remote/wireguard/devices/${device.id}`);
+      expect(revokeRes.status).toBe(204);
+    },
+    20_000,
+  );
 
   it("cleanup: disable", async () => {
     const disableRes = await asAdmin().post("/admin/remote/wireguard/disable");
