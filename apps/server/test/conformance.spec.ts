@@ -501,9 +501,16 @@ const IMPLEMENTED_NON_PUBLIC_EXPECTATIONS: Record<string, number> = {
   testRemoteDirectAcme: 501,
   enableRemoteDirect: 501,
   disableRemoteDirect: 501,
-  diagnoseRemote: 501,
-  createRemoteProbe: 501,
-  getRemoteProbe: 501,
+
+  // Lane P1 (STATE.md, R6/RG6/RG11): the reachability-proof surface —
+  // replaces its three 501 shells with real behavior (RG15's "lanes
+  // replace their 501s ... and flip their conformance-map entries").
+  // Bodyless POSTs 422 on the missing required `expectedEndpoint`/`path`
+  // fields before ever touching the DB; PLACEHOLDER_UUID never resolves
+  // to a real probe_tokens row on this fresh reseeded DB.
+  diagnoseRemote: 422, // bodyless -> "expectedEndpoint is required."
+  createRemoteProbe: 422, // bodyless -> same
+  getRemoteProbe: 404, // PLACEHOLDER_UUID never resolves to a real probe
 };
 
 let app: INestApplication;
