@@ -605,8 +605,7 @@ export interface SystemNoticesTable {
 // Remote Tunnel path, STATE.md R4/R9/RG7, lane T1). Singleton row (id
 // always 1) -- see the migration's own COMMENT ON TABLE for the full
 // enabled/cleared-together discipline.
-// ============================================================================
-
+// =====================================================================
 export interface RemoteTunnelStateTable {
   id: Generated<number>;
   enabled: Generated<boolean>;
@@ -616,6 +615,28 @@ export interface RemoteTunnelStateTable {
   zone_id: string | null;
   dns_record_id: string | null;
   enabled_at_ms: number | null;
+}
+
+// ============================================================================
+// probe_tokens (migrations/0031_probe_tokens.sql — Loombre Remote's
+// one-time-token reachability proof, R6/RG6, Lane P1)
+// ============================================================================
+
+/** Deliberately narrower than the contract's RemotePathId (no 'none' — a
+ *  probe always proves ONE specific path's setup flow). See the migration
+ *  file's own header for why this mirrors packages/shared/src/remote/
+ *  wizard-state.ts's PathId rather than the contract's wider union. */
+export type RemoteProbePath = 'remote' | 'tunnel' | 'direct';
+
+export interface ProbeTokensTable {
+  id: Generated<string>;
+  token_hash: string;
+  expected_endpoint: string;
+  path: RemoteProbePath;
+  created_by: string | null;
+  created_at_ms: number;
+  expires_at_ms: number;
+  arrived_at_ms: number | null;
 }
 
 // ============================================================================
@@ -894,4 +915,5 @@ export interface DB {
   email_collision_notice_ledger: EmailCollisionNoticeLedgerTable;
   system_notices: SystemNoticesTable;
   remote_tunnel_state: RemoteTunnelStateTable;
+  probe_tokens: ProbeTokensTable;
 }
