@@ -114,7 +114,47 @@ exposed unguarded raw listener exists.** The IPC listener catches via `.catch()`
 is loopback+token-gated; the TLS and WireGuard listeners pass the Nest/Express
 instance; `remote-direct` reuses the now-fixed class.
 
-Remaining waves 2–6 queued in `reports/audit-fafa47f/fixwaves/`.
+**WAVE 2 CLOSED — commit `9ffc8c6`.** Silent data loss and integrity races. Every
+defect here lost or corrupted data *without throwing, logging, or telling the user*.
+
+- `AUD-A2d-001` [high] Stash checkpoint ran ahead of durable apply → un-applied
+  scenes silently dropped after a crash — **FIXED**; test drives a real two-attempt
+  resume with an injected mid-apply failure.
+- `AUD-V2-M1` [medium] import never validated archive-internal uniqueness →
+  duplicate ids overwrote, duplicate usernames absorbed, job reported success —
+  **FIXED**, rejected before any write. **`users.username` is CITEXT**, so the check
+  is case-folded; the first pass keyed on the raw string and `Bob`/`bob` still
+  imported "successfully" with only `Bob` created.
+- `V1-006` [medium] `consumeSeekTarget` could resurrect a closed session — **FIXED**;
+  **two further writers** (`markSessionFailed`, `finalizeSession`) were missing the
+  same guard and are fixed too. Tests are real two-connection row-lock races.
+- `V1-011` [low] `replaceLibraryPathMappings` non-transactional — **FIXED**.
+- `AUD-A2d-003` [low] `scan.completed` under-reported after resume — **FIXED** via
+  additive migration **0033** (real INTEGER columns, invariant 3); `schema.sql`
+  regenerated, verified by sha256 recomputation.
+
+Two opus rounds again. The first **reproduced the `Bob`/`bob` residual against the
+real `runImport`** and caught that FW2-E had been **dropped from dispatch entirely**
+(orchestrator error — the wave doc listed five items, only four were briefed). The
+second verified by **mutation testing**: reverting the case-fold resurrects the bug;
+forcing ~54 files back through the scan resume path produces no double-counting.
+
+New items for owner triage:
+- `AUD-W2-001` [low] — `reports/audit-fafa47f/candidates/W2-followups.md`. **Full-mode
+  Stash sync retains a narrower residual** of the same class: `runInventoryPass`
+  writes markers for every scene before apply, so a terminal mid-apply failure
+  retires them and the next incremental computes `touched = []`. Loud failure rather
+  than silent success — a real improvement, but not immunity. Recorded here because
+  STATE.md is the database, not just in a code comment.
+- **`apps/server` e2e flakiness is NOT reproducibly green.** Wave 2's reviewer hit
+  `reauth-review-findings.e2e.spec.ts` (200 vs 404) on one run and
+  `conformance.spec.ts` on the next; a third run passed clean, and both pass in
+  isolation. `apps/server` is untouched by Waves 1–2. This is order/timing dependence
+  in the server suite — the same class STATE.md already records at `8f6cf0d`. **A
+  "green gate" claim on this repo is currently not reproducible**, which matters for
+  every future wave's exit gate. Deserves its own triage.
+
+Waves 3–6 queued in `reports/audit-fafa47f/fixwaves/`.
 
 ## Loombre Remote — embedded WireGuard + three-path wizard + reachability proof + posture card (kicked off 2026-08-04, owner brief "Loombre Remote (Embedded WireGuard) + Three-Path Wizard + Reachability Proof + Posture Card")
 
