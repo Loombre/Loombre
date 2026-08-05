@@ -34,6 +34,11 @@ import type { ViewerContext } from '../src/context.js';
 import { createFirstAdminIfEmpty, createUserAdminAndEmit } from '../src/query/identity.js';
 import { upsertProgress } from '../src/query/progress-write.js';
 import { cancelNoticeAndEmit, getActiveNotice, publishNoticeAndEmit } from '../src/query/notices.js';
+import {
+  disableRemoteWireguardAndEmit,
+  enableRemoteWireguardAndEmit,
+  getRemoteWireguardState,
+} from '../src/query/remote-wireguard.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PKG_ROOT = path.resolve(__dirname, '..');
@@ -447,5 +452,109 @@ describe('notice.published / notice.cancelled (STATE.md "Admin broadcast notific
       [nowMs],
     );
     expect(active.rows).toHaveLength(1);
+  });
+});
+
+describe('remote.enabled / remote.disabled / remote.path.changed (STATE.md "Loombre Remote", lane WG1, packages/db/src/query/remote-wireguard.ts)', () => {
+  let adminId: string;
+
+  beforeAll(async () => {
+    run(path.join(PKG_ROOT, 'scripts', 'migrate.mjs'), ['reset']);
+    run(path.join(PKG_ROOT, 'seed', 'seed.mjs'), []);
+    adminId = (await rawClient.query<{ id: string }>("SELECT id FROM users WHERE username = 'admin'")).rows[0]!.id;
+  });
+
+  it('getRemoteWireguardState returns the all-disabled default when no row exists yet', async () => {
+    const state = await getRemoteWireguardState(db);
+    expect(state).toEqual({ serverPublicKey: null, enabled: false, enabledAtMs: null, updatedAtMs: null });
+  });
+
+  it('enableRemoteWireguardAndEmit upserts the singleton row and emits remote.enabled + remote.path.changed in one transaction, actor on the envelope only', async () => {
+    const before = (await eventsOfType('remote.enabled')).length;
+    const pathBefore = (await eventsOfType('remote.path.changed')).length;
+
+    const state = await enableRemoteWireguardAndEmit(db, {
+      serverPublicKey: 'ZmFrZS1wdWJsaWMta2V5LWZha2UtcHVibGljLWtleQ==',
+      actorUserId: adminId,
+      nowMs: 10_000,
+    });
+    expect(state).toEqual({
+      serverPublicKey: 'ZmFrZS1wdWJsaWMta2V5LWZha2UtcHVibGljLWtleQ==',
+      enabled: true,
+      enabledAtMs: 10_000,
+      updatedAtMs: 10_000,
+    });
+
+    const enabledRows = await eventsOfType('remote.enabled');
+    expect(enabledRows).toHaveLength(before + 1);
+    const enabledRow = enabledRows[enabledRows.length - 1]!;
+    expect(enabledRow.actor_user_id).toBe(adminId);
+    // R9 no-secrets: exactly the schema's required properties, nothing else
+    // — never the public key, port, or any keyring reference.
+    expect(enabledRow.payload).toEqual({ enabledAtMs: 10_000 });
+
+    const pathRows = await eventsOfType('remote.path.changed');
+    expect(pathRows).toHaveLength(pathBefore + 1);
+    const pathRow = pathRows[pathRows.length - 1]!;
+    expect(pathRow.actor_user_id).toBe(adminId);
+    expect(pathRow.payload).toEqual({ previousPath: 'none', newPath: 'remote', changedAtMs: 10_000 });
+
+    const persisted = await getRemoteWireguardState(db);
+    expect(persisted).toEqual(state);
+  });
+
+  it('a second enable OVERWRITES the public key (a fresh keypair each real enable) and still emits both events', async () => {
+    await enableRemoteWireguardAndEmit(db, { serverPublicKey: 'a2V5LW9uZQ==', actorUserId: adminId, nowMs: 20_000 });
+    const before = (await eventsOfType('remote.enabled')).length;
+
+    const state = await enableRemoteWireguardAndEmit(db, { serverPublicKey: 'a2V5LXR3bw==', actorUserId: adminId, nowMs: 21_000 });
+    expect(state.serverPublicKey).toBe('a2V5LXR3bw==');
+    expect(await eventsOfType('remote.enabled')).toHaveLength(before + 1);
+
+    // Still exactly ONE row (the singleton PK), not a second row.
+    const rows = await rawClient.query('SELECT count(*)::int AS n FROM remote_wireguard_state');
+    expect(rows.rows[0]!.n).toBe(1);
+  });
+
+  it('disableRemoteWireguardAndEmit emits remote.disabled + remote.path.changed only when it actually changes something; a second disable is a silent no-op', async () => {
+    await enableRemoteWireguardAndEmit(db, { serverPublicKey: 'ZGlzYWJsZS1tZQ==', actorUserId: adminId, nowMs: 30_000 });
+
+    const disabledBefore = (await eventsOfType('remote.disabled')).length;
+    const pathBefore = (await eventsOfType('remote.path.changed')).length;
+
+    const state = await disableRemoteWireguardAndEmit(db, { actorUserId: adminId, nowMs: 31_000 });
+    expect(state.enabled).toBe(false);
+    // The public key is NOT erased on disable — WG1's own state row keeps
+    // the last-known identity; only `enabled` flips.
+    expect(state.serverPublicKey).toBe('ZGlzYWJsZS1tZQ==');
+
+    const disabledRows = await eventsOfType('remote.disabled');
+    expect(disabledRows).toHaveLength(disabledBefore + 1);
+    expect(disabledRows[disabledRows.length - 1]!.payload).toEqual({ disabledAtMs: 31_000 });
+    expect(disabledRows[disabledRows.length - 1]!.actor_user_id).toBe(adminId);
+
+    const pathRows = await eventsOfType('remote.path.changed');
+    expect(pathRows).toHaveLength(pathBefore + 1);
+    expect(pathRows[pathRows.length - 1]!.payload).toEqual({ previousPath: 'remote', newPath: 'none', changedAtMs: 31_000 });
+
+    // Idempotent second disable: no new events, state unchanged (except it
+    // stays disabled).
+    const disabledAgainCount = (await eventsOfType('remote.disabled')).length;
+    const pathAgainCount = (await eventsOfType('remote.path.changed')).length;
+    const again = await disableRemoteWireguardAndEmit(db, { actorUserId: adminId, nowMs: 32_000 });
+    expect(again).toEqual(state);
+    expect(await eventsOfType('remote.disabled')).toHaveLength(disabledAgainCount);
+    expect(await eventsOfType('remote.path.changed')).toHaveLength(pathAgainCount);
+  });
+
+  it('disable on a NEVER-enabled instance is a silent no-op returning the all-disabled default', async () => {
+    run(path.join(PKG_ROOT, 'scripts', 'migrate.mjs'), ['reset']);
+    run(path.join(PKG_ROOT, 'seed', 'seed.mjs'), []);
+    const freshAdminId = (await rawClient.query<{ id: string }>("SELECT id FROM users WHERE username = 'admin'")).rows[0]!.id;
+
+    const before = (await eventsOfType('remote.disabled')).length;
+    const state = await disableRemoteWireguardAndEmit(db, { actorUserId: freshAdminId, nowMs: 1_000 });
+    expect(state).toEqual({ serverPublicKey: null, enabled: false, enabledAtMs: null, updatedAtMs: null });
+    expect(await eventsOfType('remote.disabled')).toHaveLength(before);
   });
 });
