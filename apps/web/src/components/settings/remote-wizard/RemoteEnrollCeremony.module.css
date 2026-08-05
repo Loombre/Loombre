@@ -1,5 +1,13 @@
 /* SPDX-License-Identifier: AGPL-3.0-only */
 
+/* Loombre :: apps/web/src/components/settings/remote-wizard/RemoteEnrollCeremony.module.css
+ *
+ * WG3: lifted verbatim from RemoteEnrollStepBody.module.css (U2) when the
+ * ceremony itself moved into this shared component — see
+ * RemoteEnrollCeremony.tsx's own header. Byte-identical class names/rules;
+ * only the file moved.
+ */
+
 .step {
   display: flex;
   flex-direction: column;

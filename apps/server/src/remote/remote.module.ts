@@ -73,6 +73,13 @@
 // stop-on-shutdown precedent there, not in this module (main.ts is the
 // only place that already owns "what happens on SIGTERM").
 //
+// TunnelConnectorStateEventService (WG3, R4/RG7 gap closure): subscribes
+// to the ConnectorManager token above via its new onStateChange hook at
+// boot and writes the frozen tunnel.connector.state event on every REAL
+// transition — see that file's own header. Registered here (not exported)
+// for the exact same reason RemoteTunnelBootResumerService isn't exported
+// either: nothing outside this module resolves it directly.
+//
 // Lane P1 additions: ConnectorHealthReaderService (T2, batch 2, RG7: now
 // reads through the ConnectorManager token above — see that file's own
 // header for the ConnectorState -> ConnectorHealth mapping) and
@@ -113,6 +120,7 @@ import { CloudflaredConnectorManager } from "./tunnel/cloudflared-connector-mana
 import { TunnelTokenService } from "./tunnel/tunnel-token.service.js";
 import { RemoteTunnelService } from "./tunnel/remote-tunnel.service.js";
 import { RemoteTunnelBootResumerService } from "./tunnel/remote-tunnel-boot-resumer.service.js";
+import { TunnelConnectorStateEventService } from "./tunnel/tunnel-connector-state-event.service.js";
 import { RemotePostureController } from "./remote-posture.controller.js";
 import { RemotePostureService } from "./posture/remote-posture.service.js";
 import { RemotePostureRegressionSchedulerService } from "./posture/remote-posture-regression.scheduler.js";
@@ -152,6 +160,7 @@ import { RemoteActivePathResolverService } from "./remote-active-path.service.js
     TunnelTokenService,
     RemoteTunnelService,
     RemoteTunnelBootResumerService,
+    TunnelConnectorStateEventService,
     ConnectorHealthReaderService,
     RemoteDnsResolverService,
     RemotePostureService,

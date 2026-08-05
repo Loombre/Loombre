@@ -102,6 +102,18 @@
 // available there; unit tests instead construct this class directly
 // (`new CloudflaredConnectorManager(fakeSettingsService, {spawnFn: ...})`),
 // bypassing Nest entirely, exactly like cloudflare-tunnel-provider.spec.ts.
+//
+// ── onStateChange (WG3, R4/RG7 gap closure) ─────────────────────────────
+// transitionTo() is the ONE place every state change in this class already
+// flows through — onStateChange listeners are notified from there, and
+// ONLY when `previous !== next` (a call that re-enters the SAME state,
+// e.g. stopInternal() on an already-stopped manager, never fires a
+// listener). apps/server/src/remote/tunnel/tunnel-connector-state-event.
+// service.ts is the ONE production listener: it translates via
+// remote-tunnel.service.ts's mapConnectorStateToContract and writes the
+// frozen tunnel.connector.state event through the outbox. A listener that
+// throws is caught and logged here — a bug in event-writing code must
+// never take down the connector's own state machine.
 
 import { randomUUID } from "node:crypto";
 import { spawn as nodeSpawn, type ChildProcess } from "node:child_process";
@@ -109,7 +121,7 @@ import { Injectable, Optional } from "@nestjs/common";
 import { SettingsService } from "../../settings/settings.service.js";
 import { classifyCloudflaredLogLine } from "./cloudflared-log-signals.js";
 import { computeBackoffMs } from "./compute-backoff-ms.js";
-import { ConnectorManager, type ConnectorHealth, type ConnectorStartConfig, type ConnectorState } from "./connector-manager.js";
+import { ConnectorManager, type ConnectorHealth, type ConnectorStartConfig, type ConnectorState, type ConnectorStateChange } from "./connector-manager.js";
 import { LineRingBuffer } from "./line-ring-buffer.js";
 import { resolveCloudflaredBinary } from "./resolve-cloudflared-binary.js";
 
@@ -193,6 +205,8 @@ export class CloudflaredConnectorManager implements ConnectorManager {
   private sessionId = "";
 
   private readonly ring = new LineRingBuffer();
+  /** WG3: onStateChange listeners — see this file's header. */
+  private readonly stateChangeListeners: Array<(change: ConnectorStateChange) => void> = [];
 
   constructor(
     private readonly settingsService: SettingsService,
@@ -250,11 +264,26 @@ export class CloudflaredConnectorManager implements ConnectorManager {
     return this.ring.tail(limit);
   }
 
+  /** WG3 — see this file's header, "onStateChange". */
+  onStateChange(listener: (change: ConnectorStateChange) => void): void {
+    this.stateChangeListeners.push(listener);
+  }
+
   // ── internal state machine ──────────────────────────────────────────
 
   private transitionTo(next: ConnectorState): void {
+    const previous = this.state;
     this.state = next;
     this.sinceMs = this.nowMsFn();
+    if (previous === next) return; // re-entering the same state is not a transition — no listener call
+    const change: ConnectorStateChange = { previousState: previous, newState: next, changedAtMs: this.sinceMs };
+    for (const listener of this.stateChangeListeners) {
+      try {
+        listener(change);
+      } catch (err) {
+        console.error(`CloudflaredConnectorManager: onStateChange listener threw (${previous} -> ${next}): ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
   }
 
   private effectiveCloudflaredPathSetting(): string {
