@@ -181,12 +181,20 @@ applies anything — and its exact network request is specified in
 
 ## Remote access
 
-- **Reverse proxy** (recommended if you already run one) — Loombre speaks plain
-  HTTP; Caddy/nginx/Traefik terminates TLS: [docs/ops/reverse-proxy.md](docs/ops/reverse-proxy.md).
-- **Built-in ACME** (`LOOMBRE_TLS_MODE=acme`) — Loombre obtains and renews its
-  own Let's Encrypt certificate: [docs/ops/acme.md](docs/ops/acme.md).
-- **LAN-only / VPN** — no TLS, no port-forward, no extra configuration; see the
-  final section of [docs/ops/reverse-proxy.md](docs/ops/reverse-proxy.md).
+Three first-class, mutually-exclusive ways to reach Loombre from outside
+your own network — a decision tree, an honest comparison, and one
+self-contained guide per path: [docs/ops/remote-access/](docs/ops/remote-access/index.md).
+
+- **[Loombre Remote](docs/ops/remote-access/loombre-remote.md)** — a private
+  network built into Loombre itself, no third party involved.
+- **[Tunnel](docs/ops/remote-access/tunnel.md)** — Cloudflare Tunnel, no open
+  ports on your router.
+- **[Direct](docs/ops/remote-access/direct.md)** — your server, directly on
+  the public internet, with its own certificate (built-in ACME or your own
+  reverse proxy: [docs/ops/remote-access/acme.md](docs/ops/remote-access/acme.md) /
+  [docs/ops/remote-access/reverse-proxy.md](docs/ops/remote-access/reverse-proxy.md)).
+- **LAN-only** — no TLS, no port-forward, no extra configuration; see the
+  final section of [docs/ops/remote-access/reverse-proxy.md](docs/ops/remote-access/reverse-proxy.md).
 
 Pick one, don't mix two on the same install.
 
