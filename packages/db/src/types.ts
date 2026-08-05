@@ -154,6 +154,12 @@ export interface LibraryPermissionsTable {
 // devices (P1.14 — login registers/refreshes a device row)
 // ============================================================================
 
+/** migrations/0030_wg_peers.sql (STATE.md "Loombre Remote", RG3, lane WG2):
+ *  'app' (default — every login-created device) or 'remote' (admin-
+ *  initiated WireGuard enrollment ONLY, packages/db/src/query/wg-peers.ts —
+ *  never the login-driven createDevice path). */
+export type DeviceKind = 'app' | 'remote';
+
 export interface DevicesTable {
   id: Generated<string>;
   user_id: string;
@@ -167,6 +173,7 @@ export interface DevicesTable {
   profile: Generated<Record<string, unknown>>;
   last_seen_ms: number | null;
   created_at_ms: number;
+  kind: Generated<DeviceKind>;
 }
 
 // ============================================================================
@@ -601,6 +608,45 @@ export interface SystemNoticesTable {
 }
 
 // ============================================================================
+// remote_tunnel_state (migrations/0032_remote_tunnel_state.sql — Loombre
+// Remote Tunnel path, STATE.md R4/R9/RG7, lane T1). Singleton row (id
+// always 1) -- see the migration's own COMMENT ON TABLE for the full
+// enabled/cleared-together discipline.
+// =====================================================================
+export interface RemoteTunnelStateTable {
+  id: Generated<number>;
+  enabled: Generated<boolean>;
+  hostname: string | null;
+  tunnel_id: string | null;
+  account_id: string | null;
+  zone_id: string | null;
+  dns_record_id: string | null;
+  enabled_at_ms: number | null;
+}
+
+// ============================================================================
+// probe_tokens (migrations/0031_probe_tokens.sql — Loombre Remote's
+// one-time-token reachability proof, R6/RG6, Lane P1)
+// ============================================================================
+
+/** Deliberately narrower than the contract's RemotePathId (no 'none' — a
+ *  probe always proves ONE specific path's setup flow). See the migration
+ *  file's own header for why this mirrors packages/shared/src/remote/
+ *  wizard-state.ts's PathId rather than the contract's wider union. */
+export type RemoteProbePath = 'remote' | 'tunnel' | 'direct';
+
+export interface ProbeTokensTable {
+  id: Generated<string>;
+  token_hash: string;
+  expected_endpoint: string;
+  path: RemoteProbePath;
+  created_by: string | null;
+  created_at_ms: number;
+  expires_at_ms: number;
+  arrived_at_ms: number | null;
+}
+
+// ============================================================================
 // hw_capability_snapshots / hw_capability_backends
 // (migrations/0011_hw_capability_snapshots.sql — Phase 3 §11 step 5)
 // ============================================================================
@@ -821,6 +867,33 @@ export interface StashSyncCheckpointsTable {
 }
 
 // ============================================================================
+// remote_wireguard_state (migrations/0029_remote_wireguard_state.sql —
+// STATE.md "Loombre Remote", lane WG1, R1/R2/R9)
+// ============================================================================
+
+export interface RemoteWireguardStateTable {
+  id: boolean;
+  server_public_key: string | null;
+  enabled: boolean;
+  enabled_at_ms: number | null;
+  updated_at_ms: number;
+}
+
+// ============================================================================
+// wg_peers (migrations/0030_wg_peers.sql — STATE.md "Loombre Remote",
+// R2/R9/RG3/RG9, lane WG2). device_id IS the primary key (1:1 with
+// devices(kind='remote')) -- see the migration's own COMMENT ON TABLE.
+// NO PRIVATE KEY COLUMN, EVER (R9).
+// ============================================================================
+
+export interface WgPeersTable {
+  device_id: string;
+  public_key: string;
+  tunnel_ip: string;
+  created_at_ms: number;
+}
+
+// ============================================================================
 // DB
 // ============================================================================
 
@@ -875,4 +948,8 @@ export interface DB {
   stash_sync_checkpoints: StashSyncCheckpointsTable;
   email_collision_notice_ledger: EmailCollisionNoticeLedgerTable;
   system_notices: SystemNoticesTable;
+  remote_tunnel_state: RemoteTunnelStateTable;
+  probe_tokens: ProbeTokensTable;
+  remote_wireguard_state: RemoteWireguardStateTable;
+  wg_peers: WgPeersTable;
 }

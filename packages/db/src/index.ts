@@ -414,6 +414,7 @@ export {
   listActiveSessionsAdmin,
   listUnmatchedLibraryItemsForViewer,
   getEnrichableCatalogItemForAdmin,
+  countStaleAccountsAdmin,
 } from './query/admin.js';
 
 // Invitations (E2, migrations/0023_user_invites.sql) — see src/query/
@@ -437,7 +438,14 @@ export {
   mapClaimState,
   deriveInviteStatus,
   claimInviteAndEmit,
+  hasUnclaimedInvites,
 } from './query/invites.js';
+
+// Loombre Remote — embedded WireGuard + three-path wizard + reachability
+// proof + posture card (STATE.md, R7/RG4, S1 lane) — see src/query/
+// remote-posture.ts header for why this lives in the public barrel.
+export type { RecordPostureRegressedInput, RecordPostureRecoveredInput } from './query/remote-posture.js';
+export { recordPostureRegressedEvent, recordPostureRecoveredEvent } from './query/remote-posture.js';
 
 // Admin broadcast notifications (STATE.md "Admin broadcast notifications —
 // system notices", N1-N6/NG1-NG10, migrations/0028_system_notices.sql) —
@@ -460,6 +468,40 @@ export {
   listNoticesAdmin,
 } from './query/notices.js';
 
+// Loombre Remote — Tunnel path (STATE.md R4/R9/RG7, lane T1,
+// migrations/0032_remote_tunnel_state.sql) — see src/query/remote-tunnel.ts
+// header for why this lives in the public barrel.
+export type {
+  RemoteTunnelStateRow,
+  EnableTunnelStateInput,
+  DisableTunnelStateInput,
+  RecordTunnelConnectorStateEventInput,
+} from './query/remote-tunnel.js';
+export {
+  getRemoteTunnelState,
+  enableTunnelStateAndEmit,
+  disableTunnelStateAndEmit,
+  recordTunnelConnectorStateEvent,
+} from './query/remote-tunnel.js';
+// Loombre Remote's one-time-token reachability proof (STATE.md "Loombre
+// Remote — embedded WireGuard + three-path wizard + reachability proof +
+// posture card", R6/RG6, Lane P1, migrations/0031_probe_tokens.sql) — see
+// src/query/remote-probes.ts header for why this lives in the public barrel.
+export type { RemoteProbePath } from './types.js';
+export type {
+  ProbeTokenRow,
+  MintProbeTokenInput,
+  ProbeStatus,
+  ConsumeProbeTokenResult,
+  ConsumeProbeTokenInput,
+} from './query/remote-probes.js';
+export {
+  mintProbeToken,
+  getProbeTokenById,
+  deriveProbeStatus,
+  consumeProbeTokenAndEmit,
+} from './query/remote-probes.js';
+
 // Email-collision notice ledger (G7, STATE.md "Current-password re-auth on
 // self-changes") — see src/query/email-collision-notice.ts header.
 export {
@@ -467,6 +509,56 @@ export {
   claimEmailCollisionNoticeWindow,
   releaseEmailCollisionNoticeWindow,
 } from './query/email-collision-notice.js';
+
+// Loombre Remote — embedded WireGuard (STATE.md "Loombre Remote", lane
+// WG1, R1/R2/R9, migrations/0029_remote_wireguard_state.sql) — see
+// src/query/remote-wireguard.ts header for why this lives in the public
+// barrel and never touches the private key.
+export type {
+  RemoteWireguardStateRow,
+  EnableRemoteWireguardInput,
+  DisableRemoteWireguardInput,
+} from './query/remote-wireguard.js';
+export {
+  getRemoteWireguardState,
+  enableRemoteWireguardAndEmit,
+  disableRemoteWireguardAndEmit,
+} from './query/remote-wireguard.js';
+
+// Loombre Remote — WireGuard device enrollment/revocation (STATE.md
+// "Loombre Remote", lane WG2, R2/R9/RG3/RG9, migrations/0030_wg_peers.sql)
+// — see src/query/wg-peers.ts header for why this lives in the public
+// barrel and never touches a private key.
+export type { DeviceKind } from './types.js';
+export type {
+  WgPeerRow,
+  WgPeerListRow,
+  ListWgPeersParams,
+  ListWgPeersResult,
+  EnrollRemoteWireguardDeviceInput,
+  EnrollRemoteWireguardDeviceResult,
+  RevokeRemoteWireguardDeviceInput,
+  RevokeRemoteWireguardDeviceResult,
+} from './query/wg-peers.js';
+export {
+  WgSubnetExhaustedError,
+  listAllWgPeers,
+  getWgPeerByDeviceId,
+  listWgPeers,
+  enrollRemoteWireguardDeviceAndEmit,
+  revokeRemoteWireguardDeviceAndEmit,
+} from './query/wg-peers.js';
+
+// Loombre Remote — the canonical cross-subsystem resolveActivePath()
+// (STATE.md "Loombre Remote", lane WG2, RG15) — see
+// src/query/remote-active-path.ts header for the full cross-lane
+// unification this replaces.
+export type { RemoteActivePathFlags } from './query/remote-active-path.js';
+export {
+  RemoteActivePathInvariantViolationError,
+  deriveActivePath,
+  resolveActivePath,
+} from './query/remote-active-path.js';
 
 // Addendum A/A4 (STATE.md, admin-configurable server settings) —
 // server_settings reads/writes + outbox emission, see src/query/
@@ -482,6 +574,24 @@ export {
   upsertServerSettingAndEmit,
   emitRedactedSettingsUpdated,
 } from './query/settings.js';
+
+// Loombre Remote — Direct path's own minimal state record (R5/R8/RG15, this
+// lane's mission), a housekeeping row in the SAME server_settings table
+// under a key outside the public SETTINGS_REGISTRY — see src/query/
+// remote-direct.ts header for why no migration/table was added.
+export type {
+  RemoteDirectMode,
+  RemotePathId,
+  RemoteDirectInternalState,
+  EnableRemoteDirectStateInput,
+  DisableRemoteDirectStateInput,
+} from './query/remote-direct.js';
+export {
+  REMOTE_DIRECT_DISABLED_STATE,
+  getRemoteDirectInternalState,
+  enableRemoteDirectStateAndEmit,
+  disableRemoteDirectStateAndEmit,
+} from './query/remote-direct.js';
 
 // LPP v1 (Lane W2) plugin registry — migrations/0014_plugins.sql, see
 // src/query/plugins.ts header for the outbox-transactional emit-helper

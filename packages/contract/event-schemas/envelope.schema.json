@@ -23,7 +23,16 @@
     "user.invite-revoked",
     "user.claimed",
     "user.password-reset",
-    "session.revoked-by-password-change"
+    "session.revoked-by-password-change",
+    "remote.enabled",
+    "remote.disabled",
+    "remote.device.enrolled",
+    "remote.device.revoked",
+    "remote.path.changed",
+    "tunnel.connector.state",
+    "posture.regressed",
+    "posture.recovered",
+    "probe.arrived"
   ],
   "type": "object",
   "additionalProperties": false,
@@ -73,7 +82,16 @@
         "user.password-reset",
         "session.revoked-by-password-change",
         "notice.published",
-        "notice.cancelled"
+        "notice.cancelled",
+        "remote.enabled",
+        "remote.disabled",
+        "remote.device.enrolled",
+        "remote.device.revoked",
+        "remote.path.changed",
+        "tunnel.connector.state",
+        "posture.regressed",
+        "posture.recovered",
+        "probe.arrived"
       ],
       "description": "Closed enum today; additions are additive contract PRs (new event types are always backward compatible for existing consumers)."
     },

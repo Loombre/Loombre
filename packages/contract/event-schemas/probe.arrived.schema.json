@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://loombre.com/schemas/events/probe.arrived.schema.json",
+  "title": "ProbeArrivedPayload",
+  "description": "Payload for envelope.type === 'probe.arrived'. STATE.md \"Loombre Remote — embedded WireGuard + three-path wizard + reachability proof + posture card\" (R6/R9): emitted when GET /probe/{token}'s single-use token is consumed by a real external request, lighting the wizard's reachability proof green. Distinct from the pre-existing 'probe.failed' event type (an unrelated ffprobe media-ingest failure, apps/worker/src/probe) — no naming collision, different subsystem entirely. R9's no-secrets rule: never carries the raw token, the hash, the caller's IP, or the expectedEndpoint it was bound to — `probeId` alone is enough to correlate against GET /admin/remote/probes/{id}. ADMIN-ONLY delivery, same posture as remote.enabled.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["probeId", "arrivedAtMs"],
+  "properties": {
+    "probeId": { "type": "string", "format": "uuid" },
+    "arrivedAtMs": { "type": "integer", "minimum": 0 }
+  }
+}

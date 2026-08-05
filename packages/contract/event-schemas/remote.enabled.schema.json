@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://loombre.com/schemas/events/remote.enabled.schema.json",
+  "title": "RemoteEnabledPayload",
+  "description": "Payload for envelope.type === 'remote.enabled'. STATE.md \"Loombre Remote — embedded WireGuard + three-path wizard + reachability proof + posture card\" (R1/R9): emitted when the embedded userspace WireGuard listener (packages/wg-native) is enabled — the server keypair was generated and the in-process listener opened. R9's no-secrets rule: never carries the server private key, the listen port, or any keyring reference — those are read-side facts (GET /admin/remote/wireguard/status), not audit-event payload. ADMIN-ONLY delivery (packages/shared/src/admin-only-event-types.ts) — instance-configuration/security-posture data, same posture as plugin.enabled.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["enabledAtMs"],
+  "properties": {
+    "enabledAtMs": { "type": "integer", "minimum": 0 }
+  }
+}

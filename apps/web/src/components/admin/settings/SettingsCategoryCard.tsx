@@ -62,6 +62,7 @@ export const CATEGORY_LABELS: Record<string, string> = {
   paths: "Paths",
   ffmpeg: "ffmpeg",
   mail: "Mail",
+  remote: "Remote access",
 };
 
 export interface SettingsCategoryCardProps {

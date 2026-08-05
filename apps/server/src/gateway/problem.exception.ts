@@ -109,3 +109,53 @@ export function notFound(detail: string, instance: string, code?: string): Probl
     ...(code !== undefined ? { code } : {}),
   });
 }
+
+/**
+ * RFC 9457 501, first consumer: STATE.md "Loombre Remote — embedded
+ * WireGuard + three-path wizard + reachability proof + posture card"
+ * Wave 0 (lane/remote-base, RG15) — every admin op mounted under
+ * apps/server/src/remote/ passes requireLiveAdmin FIRST (a real admin
+ * gets a real, honest "not built yet" instead of a coincidental catch-all
+ * 404), then throws this. Distinct from a bare `NotFoundException()`
+ * (which a caller cannot tell apart from "doesn't exist"): 501 means "this
+ * IS a real, documented operation — it just isn't implemented on this
+ * branch yet," so the contract-conformance walk (apps/server/test/
+ * conformance.spec.ts) can assert an EXACT expected status per op rather
+ * than a coincidental one. Each replacing lane deletes its own call sites
+ * of this factory as it lands real behavior; the factory itself stays for
+ * whichever op hasn't been replaced yet.
+ */
+export function notImplemented(detail: string, instance: string, code?: string): ProblemException {
+  return new ProblemException({
+    status: HttpStatus.NOT_IMPLEMENTED,
+    type: "urn:loombre:problem:not-implemented",
+    title: "Not Implemented",
+    detail,
+    instance,
+    ...(code !== undefined ? { code } : {}),
+  });
+}
+
+/**
+ * RFC 9457 503, first consumer: STATE.md "Loombre Remote" lane WG1 —
+ * enableRemoteWireguard when packages/wg-native's native library isn't
+ * built/loadable on this platform (a real Go build failure, or Go simply
+ * not installed on a dev machine — scripts/build.mjs's graceful-skip
+ * posture, mirroring apps/worker's ffmpeg detection). Distinct from 501
+ * (notImplemented): this operation IS implemented — the underlying
+ * platform component just isn't available RIGHT NOW, which is exactly
+ * what 503 means (a transient/environmental unavailability, not "not
+ * built"). CI always has this available (RG1/RG14: actions/setup-go +
+ * LOOMBRE_REQUIRE_WG=1 on the gate job); this path exists for the local
+ * dev without-Go case only.
+ */
+export function serviceUnavailable(detail: string, instance: string, code?: string): ProblemException {
+  return new ProblemException({
+    status: HttpStatus.SERVICE_UNAVAILABLE,
+    type: "urn:loombre:problem:service-unavailable",
+    title: "Service Unavailable",
+    detail,
+    instance,
+    ...(code !== undefined ? { code } : {}),
+  });
+}

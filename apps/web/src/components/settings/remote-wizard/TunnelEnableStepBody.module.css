@@ -1,0 +1,87 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+
+.step {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.stepTitle {
+  margin: 0;
+  font-size: var(--text-md);
+  font-weight: var(--weight-semibold);
+}
+
+.body {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--muted);
+  line-height: var(--leading-normal);
+}
+
+.errorText {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--color-danger);
+}
+
+.healthCard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  padding: var(--space-md);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border-subtle);
+  background: var(--fill-1);
+}
+
+.healthRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.connectorPill {
+  padding: 4px var(--space-sm);
+  border-radius: var(--radius-pill);
+  font-size: var(--mono-lg);
+  font-weight: var(--weight-medium);
+  letter-spacing: var(--track-mono);
+  text-transform: uppercase;
+  background: var(--fill-3);
+  color: var(--text-secondary);
+}
+
+.connectorPill[data-state="running"] {
+  background: color-mix(in srgb, var(--color-success) 16%, transparent);
+  color: var(--color-success);
+}
+
+.connectorPill[data-state="degraded"],
+.connectorPill[data-state="starting"] {
+  background: color-mix(in srgb, var(--color-warning) 16%, transparent);
+  color: var(--color-warning);
+}
+
+.connectorPill[data-state="error"] {
+  background: color-mix(in srgb, var(--color-danger) 16%, transparent);
+  color: var(--color-danger);
+}
+
+.hostname {
+  font-size: var(--text-sm);
+  color: var(--text);
+  font-family: var(--font-mono);
+}
+
+.detail {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+
+.stepActions {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-sm);
+}
