@@ -17,3 +17,4 @@ export * from "./remote/provisioning.js";
 export * from "./remote/wizard-state.js";
 export * from "./remote/posture-model.js";
 export * from "./remote/diagnosis.js";
+export * from "./remote/comparison.js";
