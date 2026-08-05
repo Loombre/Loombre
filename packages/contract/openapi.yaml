@@ -4560,14 +4560,26 @@ components:
           type: [integer, 'null']
           description: Device hard cap (e.g. TV SoC limits).
 
+    DeviceKind:
+      type: string
+      enum: [app, remote]
+      description: >-
+        STATE.md "Loombre Remote", lane WG2, R2/RG3: 'app' (default —
+        every login-created device) or 'remote' (admin-initiated WireGuard
+        enrollment ONLY, POST /admin/remote/wireguard/devices — never the
+        login path). ADDITIVE field on the devices-list Device schema
+        (R2's "enrolled devices appear in the existing devices list
+        (kind: remote)").
+
     Device:
       type: object
       additionalProperties: false
-      required: [id, userId, name, profileId, capabilityProfile, lastSeenAtMs, createdAtMs]
+      required: [id, userId, name, kind, profileId, capabilityProfile, lastSeenAtMs, createdAtMs]
       properties:
         id: { type: string, format: uuid }
         userId: { type: string, format: uuid }
         name: { type: string }
+        kind: { $ref: '#/components/schemas/DeviceKind' }
         profileId: { type: string }
         capabilityProfile:
           oneOf:

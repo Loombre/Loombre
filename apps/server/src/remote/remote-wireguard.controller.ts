@@ -11,21 +11,56 @@
 //   - POST   /admin/remote/wireguard/devices            enrollRemoteWireguardDevice
 //   - DELETE /admin/remote/wireguard/devices/{id}       revokeRemoteWireguardDevice
 //
-// Lane WG1: enable/disable/status now delegate to RemoteWireguardService
+// Lane WG1: enable/disable/status delegate to RemoteWireguardService
 // (./wireguard/remote-wireguard.service.js) — requireAdmin still runs
 // FIRST, unchanged from the Wave-0 freeze ("route paths/methods/admin-gate
 // ordering are frozen ... do not change"; see remote-wireguard.service.ts's
 // own header for why the service does NOT re-check admin a second time).
-// The three devices ops STAY 501 shells (WG2's own enrollment work) —
-// see remote-state.controller.ts's header for the general 501-shell
-// rationale, still true for exactly these three handlers below.
+//
+// Lane WG2: the three devices ops (enroll/list/revoke) now delegate to the
+// SAME service's listDevices/enrollDevice/revokeDevice methods, replacing
+// their Wave-0 501 shells. Body coercion is hand-rolled (no class-validator
+// DTOs anywhere in this codebase — remote-tunnel.controller.ts's own header
+// states the same house precedent): a bodyless/malformed enroll request
+// coerces missing fields to `""`/undefined and lets the SERVICE layer's own
+// ordered checks (unknown keys -> field validation -> 404 unknown user ->
+// 409 not-enabled -> 422 endpoint-host-unset) produce the right status.
 
-import { Controller, Delete, Get, HttpCode, HttpStatus, Post, Req } from "@nestjs/common";
-import { notImplemented } from "../gateway/problem.exception.js";
+import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Post, Query, Req } from "@nestjs/common";
+import { notFound, unprocessableEntity } from "../gateway/problem.exception.js";
+import { requireUuidParam } from "../gateway/require-uuid-param.js";
+import { parseLimitParam } from "../common/limit-param.js";
 import type { AuthenticatedRequest } from "../gateway/auth.guard.js";
 import { DbProvider } from "../common/db.provider.js";
 import { requireAdmin } from "./require-admin.js";
-import { RemoteWireguardService, type RemoteWireguardStatusDto } from "./wireguard/remote-wireguard.service.js";
+import {
+  RemoteWireguardService,
+  type RemoteWireguardStatusDto,
+  type RemoteWireguardDevicePageDto,
+  type RemoteWireguardEnrollmentDto,
+} from "./wireguard/remote-wireguard.service.js";
+
+const ENROLL_BODY_KEYS = new Set(["userId", "name"]);
+const UUID_PATTERN = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+
+interface CursorLimitQuery {
+  cursor?: string;
+  limit?: number;
+}
+
+/** Same local pattern apps/server/src/notices/notices.controller.ts's own
+ *  parseCursorLimitQuery uses — kept local rather than reused from
+ *  apps/server/src/catalog/viewer.ts's parseListQuery, since importing
+ *  from catalog/ into a different top-level module (remote/) for a single
+ *  three-line helper is not worth the cross-module coupling; both wrap the
+ *  SAME shared apps/server/src/common/limit-param.ts primitive. */
+function parseCursorLimitQuery(query: Record<string, unknown>): CursorLimitQuery {
+  const result: CursorLimitQuery = {};
+  if (typeof query["cursor"] === "string") result.cursor = query["cursor"];
+  const limit = parseLimitParam(query["limit"]);
+  if (limit !== undefined) result.limit = limit;
+  return result;
+}
 
 @Controller()
 export class RemoteWireguardController {
@@ -55,20 +90,46 @@ export class RemoteWireguardController {
   }
 
   @Get("admin/remote/wireguard/devices")
-  async listRemoteWireguardDevices(@Req() req: AuthenticatedRequest): Promise<never> {
+  async listRemoteWireguardDevices(@Query() query: Record<string, unknown>, @Req() req: AuthenticatedRequest): Promise<RemoteWireguardDevicePageDto> {
     await requireAdmin(this.dbProvider.db, req);
-    throw notImplemented("Listing Remote devices is not implemented yet.", req.originalUrl);
+    return this.wireguardService.listDevices(parseCursorLimitQuery(query));
   }
 
   @Post("admin/remote/wireguard/devices")
-  async enrollRemoteWireguardDevice(@Req() req: AuthenticatedRequest): Promise<never> {
+  @HttpCode(HttpStatus.CREATED)
+  async enrollRemoteWireguardDevice(
+    @Body() rawBody: Record<string, unknown> | undefined,
+    @Req() req: AuthenticatedRequest,
+  ): Promise<RemoteWireguardEnrollmentDto> {
     await requireAdmin(this.dbProvider.db, req);
-    throw notImplemented("Enrolling a Remote device is not implemented yet.", req.originalUrl);
+    const instance = req.originalUrl;
+    const body = rawBody ?? {};
+
+    for (const key of Object.keys(body)) {
+      if (!ENROLL_BODY_KEYS.has(key)) {
+        throw unprocessableEntity(`Unknown property "${key}".`, instance);
+      }
+    }
+    const userId = body["userId"];
+    if (typeof userId !== "string" || !UUID_PATTERN.test(userId)) {
+      throw unprocessableEntity('"userId" (uuid string) is required.', instance);
+    }
+    const name = body["name"];
+    if (typeof name !== "string" || name.trim().length === 0) {
+      throw unprocessableEntity('"name" is required.', instance);
+    }
+
+    return this.wireguardService.enrollDevice({ userId, name, actorUserId: req.user!.userId });
   }
 
   @Delete("admin/remote/wireguard/devices/:id")
-  async revokeRemoteWireguardDevice(@Req() req: AuthenticatedRequest): Promise<never> {
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async revokeRemoteWireguardDevice(@Param("id") id: string, @Req() req: AuthenticatedRequest): Promise<void> {
     await requireAdmin(this.dbProvider.db, req);
-    throw notImplemented("Revoking a Remote device is not implemented yet.", req.originalUrl);
+    requireUuidParam(id, "Device not found.", req.originalUrl);
+    const result = await this.wireguardService.revokeDevice({ deviceId: id, actorUserId: req.user!.userId });
+    if (!result) {
+      throw notFound("Device not found.", req.originalUrl);
+    }
   }
 }
