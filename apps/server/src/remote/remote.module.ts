@@ -20,6 +20,18 @@
 //     (R6/R9), separate file for its distinct auth posture (no requireAdmin
 //     at all) and its own rate-limit guard usage.
 //
+// RemotePostureController (DRIFT DECISION #1, S1 lane, added after Wave 0):
+// GET /admin/remote/posture — an EIGHTH controller, not one of the
+// frozen seven (the op didn't exist at Wave-0 freeze). Real implementation
+// from day one, no 501 interim. Backed by three providers under ./posture/
+// — RemotePostureService (the pure-grading-plus-impure-gather composition),
+// RemotePostureRegressionSchedulerService (RG4's periodic diff -> outbox-
+// event background sweep, plugin-health-scheduler.service.ts's own timer
+// shape), and three narrow cross-lane seam readers (ConnectorHealthReader/
+// WireguardStatusReader/RemoteActivePathReader — see each file's own
+// header for why they're defined locally rather than reused from T1/WG1,
+// which haven't landed on this branch).
+//
 // DI hazard (standing lesson, STATE.md): CommonModule already PROVIDES
 // DbProvider and CommonSettingsModule already provides SurfaceRateLimiterService/
 // SurfaceRateLimitGuard — this module imports BOTH (invites.module.ts's own
@@ -34,8 +46,14 @@ import { RemoteDirectController } from "./remote-direct.controller.js";
 import { RemoteDiagnosisController } from "./remote-diagnosis.controller.js";
 import { RemoteProbesController } from "./remote-probes.controller.js";
 import { ProbePageController } from "./probe-page.controller.js";
+import { RemotePostureController } from "./remote-posture.controller.js";
 import { CommonModule } from "../common/common.module.js";
 import { CommonSettingsModule } from "../common/common-settings.module.js";
+import { RemotePostureService } from "./posture/remote-posture.service.js";
+import { RemotePostureRegressionSchedulerService } from "./posture/remote-posture-regression.scheduler.js";
+import { ConnectorHealthReaderService } from "./posture/connector-health.reader.js";
+import { WireguardStatusReaderService } from "./posture/wireguard-status.reader.js";
+import { RemoteActivePathReaderService } from "./posture/active-path.reader.js";
 
 @Module({
   imports: [CommonModule, CommonSettingsModule],
@@ -47,6 +65,14 @@ import { CommonSettingsModule } from "../common/common-settings.module.js";
     RemoteDiagnosisController,
     RemoteProbesController,
     ProbePageController,
+    RemotePostureController,
+  ],
+  providers: [
+    RemotePostureService,
+    RemotePostureRegressionSchedulerService,
+    ConnectorHealthReaderService,
+    WireguardStatusReaderService,
+    RemoteActivePathReaderService,
   ],
 })
 export class RemoteModule {}

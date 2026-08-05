@@ -85,7 +85,13 @@ export function applicableChecks(path: Exclude<PostureActivePath, "none">): read
   return [...UNIVERSAL_CHECKS, PATH_SPECIFIC_CHECKS[path]];
 }
 
-const GRADE_SEVERITY: Record<PostureGrade, number> = { pass: 0, info: 1, warn: 2, fail: 3 };
+/** Exported (S1 lane, R7/RG4): the background regression scheduler
+ *  (apps/server/src/remote/posture/remote-posture-regression.scheduler.ts)
+ *  needs the SAME worst-to-best ordering `overallGrade` composes from to
+ *  classify a grade change as a regression (severity increased) vs a
+ *  recovery (severity decreased) — re-declaring the table there would risk
+ *  the two orderings silently drifting apart. */
+export const GRADE_SEVERITY: Record<PostureGrade, number> = { pass: 0, info: 1, warn: 2, fail: 3 };
 
 export interface PostureCheckResult {
   checkKey: PostureCheckKey;
