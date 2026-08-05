@@ -12,7 +12,6 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { sql } from 'kysely';
 import pg from 'pg';
 import type { Kysely } from 'kysely';
 import { createDb } from '../src/db.js';
@@ -23,7 +22,6 @@ import {
   disableRemoteDirectStateAndEmit,
   enableRemoteDirectStateAndEmit,
   getRemoteDirectInternalState,
-  isRemoteWireguardActive,
 } from '../src/query/remote-direct.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -163,42 +161,11 @@ describe('enableRemoteDirectStateAndEmit / disableRemoteDirectStateAndEmit', () 
   });
 });
 
-describe('isRemoteWireguardActive', () => {
-  it('is false when remote_wireguard_state does not exist on this branch (42P01, WG1 not landed here)', async () => {
-    // Ground truth for this lane's own branch: WG1's migration genuinely
-    // isn't present here (Batch 1 dispatches sibling worktrees off the
-    // same base commit) — this proves the function's real, unmodified
-    // behavior against the CURRENT schema, not a fake.
-    await expect(isRemoteWireguardActive(db)).resolves.toBe(false);
-  });
-
-  describe('once a remote_wireguard_state-shaped table exists (simulating WG1 having landed)', () => {
-    beforeAll(async () => {
-      await sql`CREATE TABLE remote_wireguard_state (enabled boolean NOT NULL)`.execute(db);
-    });
-
-    afterAll(async () => {
-      await sql`DROP TABLE remote_wireguard_state`.execute(db);
-    });
-
-    it('reads enabled=true for real once the table has a row', async () => {
-      await sql`INSERT INTO remote_wireguard_state (enabled) VALUES (true)`.execute(db);
-      await expect(isRemoteWireguardActive(db)).resolves.toBe(true);
-      await sql`DELETE FROM remote_wireguard_state`.execute(db);
-    });
-
-    it('reads enabled=false for real when the row says so', async () => {
-      await sql`INSERT INTO remote_wireguard_state (enabled) VALUES (false)`.execute(db);
-      await expect(isRemoteWireguardActive(db)).resolves.toBe(false);
-      await sql`DELETE FROM remote_wireguard_state`.execute(db);
-    });
-
-    it('reads enabled=false when the table exists but is empty', async () => {
-      await expect(isRemoteWireguardActive(db)).resolves.toBe(false);
-    });
-  });
-
-  it('still resolves false (not throw) after the simulated table is dropped again', async () => {
-    await expect(isRemoteWireguardActive(db)).resolves.toBe(false);
-  });
-});
+// isRemoteWireguardActive's own describe block (D1's WG-only, defensively-
+// raw-SQL "simulate WG1 having landed" tests) REMOVED by WG2: the function
+// itself is gone (see src/query/remote-direct.ts's own note at the spot it
+// used to live) — superseded by packages/db/test/remote-active-path.spec.ts,
+// which tests the REAL canonical resolveActivePath() against the REAL
+// remote_wireguard_state/remote_tunnel_state tables now that both actually
+// exist on this integrated branch (a raw `CREATE TABLE remote_wireguard_state`
+// here would now collide with the real one from migrations/0029).

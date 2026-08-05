@@ -2804,12 +2804,18 @@ export interface components {
             /** @description Device hard cap (e.g. TV SoC limits). */
             maxStreamBitrateBps: number | null;
         };
+        /**
+         * @description STATE.md "Loombre Remote", lane WG2, R2/RG3: 'app' (default — every login-created device) or 'remote' (admin-initiated WireGuard enrollment ONLY, POST /admin/remote/wireguard/devices — never the login path). ADDITIVE field on the devices-list Device schema (R2's "enrolled devices appear in the existing devices list (kind: remote)").
+         * @enum {string}
+         */
+        DeviceKind: "app" | "remote";
         Device: {
             /** Format: uuid */
             id: string;
             /** Format: uuid */
             userId: string;
             name: string;
+            kind: components["schemas"]["DeviceKind"];
             profileId: string;
             capabilityProfile: components["schemas"]["DeviceProfile"] | null;
             /** Format: int64 */
