@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://loombre.com/schemas/events/remote.path.changed.schema.json",
+  "title": "RemotePathChangedPayload",
+  "description": "Payload for envelope.type === 'remote.path.changed'. STATE.md \"Loombre Remote — embedded WireGuard + three-path wizard + reachability proof + posture card\" (R8/RG15): emitted whenever the DERIVED active path (GET /admin/remote/state's activePath, RemotePathId in openapi.yaml — never a stored setting) transitions, including to/from 'none'. Lets the admin-only event stream (and a future posture-card live update) observe path switches without polling GET /admin/remote/state. ADMIN-ONLY delivery, same posture as remote.enabled.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["previousPath", "newPath", "changedAtMs"],
+  "properties": {
+    "previousPath": { "type": "string", "enum": ["none", "remote", "tunnel", "direct"] },
+    "newPath": { "type": "string", "enum": ["none", "remote", "tunnel", "direct"] },
+    "changedAtMs": { "type": "integer", "minimum": 0 }
+  }
+}

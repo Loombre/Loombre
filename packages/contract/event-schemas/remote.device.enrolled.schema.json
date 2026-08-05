@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://loombre.com/schemas/events/remote.device.enrolled.schema.json",
+  "title": "RemoteDeviceEnrolledPayload",
+  "description": "Payload for envelope.type === 'remote.device.enrolled'. STATE.md \"Loombre Remote — embedded WireGuard + three-path wizard + reachability proof + posture card\" (R2/R9): emitted by POST /admin/remote/wireguard/devices on successful enrollment. R9's no-secrets rule: never carries the peer private key, the generated wg-quick config text, or the tunnel IP — those live only in the one-time RemoteWireguardEnrollment API response, never persisted or re-emitted anywhere, including here. `userId` is the device owner (not necessarily the acting admin — envelope.actorUserId already carries the admin who performed the enrollment). ADMIN-ONLY delivery, same posture as user.invited.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["deviceId", "userId", "name", "enrolledAtMs"],
+  "properties": {
+    "deviceId": { "type": "string", "format": "uuid", "description": "The devices.id row created for this enrollment (kind='remote')." },
+    "userId": { "type": "string", "format": "uuid", "description": "The device's owner." },
+    "name": { "type": "string", "description": "The device label supplied at enrollment." },
+    "enrolledAtMs": { "type": "integer", "minimum": 0 }
+  }
+}

@@ -23,7 +23,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ENVELOPE_SCHEMA_PATH = path.resolve(__dirname, "../../contract/event-schemas/envelope.schema.json");
 
 describe("ADMIN_ONLY_EVENT_TYPES (canonical, L3)", () => {
-  it("is exactly this 20-item inventory (the single place a human confirms the list)", () => {
+  it("is exactly this 29-item inventory (the single place a human confirms the list)", () => {
     expect([...ADMIN_ONLY_EVENT_TYPES].sort()).toEqual(
       [
         "job.updated",
@@ -53,6 +53,17 @@ describe("ADMIN_ONLY_EVENT_TYPES (canonical, L3)", () => {
         "user.password-reset",
         // G5 (Current-password re-auth on self-changes).
         "session.revoked-by-password-change",
+        // Loombre Remote — embedded WireGuard + three-path wizard +
+        // reachability proof + posture card (R9, Wave-0 freeze adjudication).
+        "remote.enabled",
+        "remote.disabled",
+        "remote.device.enrolled",
+        "remote.device.revoked",
+        "remote.path.changed",
+        "tunnel.connector.state",
+        "posture.regressed",
+        "posture.recovered",
+        "probe.arrived",
       ].sort(),
     );
   });

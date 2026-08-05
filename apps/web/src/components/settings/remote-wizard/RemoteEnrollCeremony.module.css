@@ -1,0 +1,109 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+
+/* Loombre :: apps/web/src/components/settings/remote-wizard/RemoteEnrollCeremony.module.css
+ *
+ * WG3: lifted verbatim from RemoteEnrollStepBody.module.css (U2) when the
+ * ceremony itself moved into this shared component — see
+ * RemoteEnrollCeremony.tsx's own header. Byte-identical class names/rules;
+ * only the file moved.
+ */
+
+.step {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.stepTitle {
+  margin: 0;
+  font-size: var(--text-md);
+  font-weight: var(--weight-semibold);
+}
+
+.body {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--muted);
+  line-height: var(--leading-normal);
+}
+
+.unavailable {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--muted);
+}
+
+.warningText {
+  margin: 0;
+  padding: var(--space-sm) var(--space-md);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-warning);
+  background: color-mix(in srgb, var(--color-warning) 12%, transparent);
+  color: var(--color-warning);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.fieldLabel {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  color: var(--text);
+}
+
+.select {
+  min-height: 44px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: var(--fill-1);
+  color: var(--text);
+  padding: 0 var(--space-sm);
+  font-size: var(--text-sm);
+}
+
+.errorText {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--color-danger);
+}
+
+.revealRow {
+  display: flex;
+  gap: var(--space-md);
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.revealSide {
+  flex: 1;
+  min-width: 220px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.confirmRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  font-size: var(--text-sm);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.stepActions {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-sm);
+}

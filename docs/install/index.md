@@ -79,15 +79,15 @@ The wizard saves these settings and opens the web client. From there, you can ad
 ## After install: next steps
 
 - **Local access only** — No extra configuration needed. Open `http://localhost:3000` and start streaming.
-- **Remote access (inside your own network)** — Set up a reverse proxy (nginx, Caddy, Traefik) if Loombre isn't already on port 80/443; see `docs/ops/reverse-proxy.md`.
-- **Remote access (from outside your network)** — Use built-in ACME (Let's Encrypt) for automatic TLS, or bring your own certificate behind a reverse proxy; see `docs/ops/acme.md`.
+- **Remote access (inside your own network)** — Set up a reverse proxy (nginx, Caddy, Traefik) if Loombre isn't already on port 80/443; see `docs/ops/remote-access/reverse-proxy.md`.
+- **Remote access (from outside your network)** — Three paths to choose from (a private network built into Loombre, a Cloudflare tunnel, or your own domain with built-in ACME or a reverse proxy); see `docs/ops/remote-access/index.md`.
 
 ---
 
 ## Troubleshooting
 
 - **The installer won't run** — Gatekeeper (macOS) / SmartScreen (Windows) are blocking it. See your platform's guide for the exact click-through steps.
-- **Loombre starts but I can't access it** — Check `http://127.0.0.1:3000` first (localhost only). If that works, check your firewall. `docs/ops/reverse-proxy.md` has working reverse-proxy recipes for external access.
+- **Loombre starts but I can't access it** — Check `http://127.0.0.1:3000` first (localhost only). If that works, check your firewall. `docs/ops/remote-access/reverse-proxy.md` has working reverse-proxy recipes for external access.
 - **I'm getting permission errors** — On Linux/macOS, Loombre runs as a dedicated system user (`loombre` or `_loombre`). If you're bind-mounting library paths, make sure that user can read them: `sudo chown -R loombre:loombre /path/to/library` (Linux) or check File Sharing system settings (macOS).
 - **The database won't start** — Embedded PostgreSQL needs the data directory to be writable and owned by the service user. See the platform-specific docs for exact paths and troubleshooting.
 

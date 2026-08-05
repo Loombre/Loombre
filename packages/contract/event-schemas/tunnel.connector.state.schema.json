@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://loombre.com/schemas/events/tunnel.connector.state.schema.json",
+  "title": "TunnelConnectorStatePayload",
+  "description": "Payload for envelope.type === 'tunnel.connector.state'. STATE.md \"Loombre Remote — embedded WireGuard + three-path wizard + reachability proof + posture card\" (R4/RG7): emitted by the supervised cloudflared child process's lifecycle (EmbeddedPostgres supervisor / spawnFfmpegRun shape) whenever RemoteTunnelStatus's connectorState changes — same previousState/newState/changedAtMs shape as plugin.health-changed. Never carries the stored Cloudflare token, stderr output, or any config text (R9) — GET /admin/remote/tunnel/logs is the bounded stderr tail, a separate read, not an event payload. ADMIN-ONLY delivery, same posture as plugin.health-changed.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["previousState", "newState", "changedAtMs"],
+  "properties": {
+    "previousState": { "type": "string", "enum": ["stopped", "starting", "running", "degraded", "error"] },
+    "newState": { "type": "string", "enum": ["stopped", "starting", "running", "degraded", "error"] },
+    "changedAtMs": { "type": "integer", "minimum": 0 }
+  }
+}
