@@ -18,3 +18,4 @@ export * from "./remote/wizard-state.js";
 export * from "./remote/posture-model.js";
 export * from "./remote/diagnosis.js";
 export * from "./remote/diagnosis-guidance.js";
+export * from "./remote/comparison.js";
