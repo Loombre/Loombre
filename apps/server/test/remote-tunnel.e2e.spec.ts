@@ -11,10 +11,22 @@
  * CloudflareTunnelProvider; `app.get(TunnelProvider).setTestDeps(...)`
  * redirects its outbound HTTP to a fake fetchImpl for this suite's
  * lifetime (that class's own doc comment — the only seam available once
- * Nest has already resolved a live instance). ConnectorManager/
- * RemoteActivePathReader are the registered no-op defaults, introspected
- * via `app.get(...)` the same way (mirrors server-power.e2e.spec.ts's
- * `power.arm(fakes)` convention).
+ * Nest has already resolved a live instance). RemoteActivePathReader is
+ * still the registered no-op default, introspected via `app.get(...)` the
+ * same way.
+ *
+ * T2 update (RG7): ConnectorManager is now bound to the REAL
+ * CloudflaredConnectorManager (remote.module.ts) — this suite exercises it
+ * through a REAL, unprivileged child process, never a mock. `app.get(
+ * ConnectorManager).setTestDeps({spawnFn: ...})` redirects the actual OS
+ * exec target to `node apps/server/test/support/cloudflared-stub.mjs`
+ * instead of a real `cloudflared` binary (cross-platform safe — no
+ * shebang/chmod dependency) while everything else (args, env, signal
+ * handling) stays production-real; `remote.cloudflaredPath` is pinned to
+ * `process.execPath` via LOOMBRE_CLOUDFLARED_PATH so
+ * resolveCloudflaredBinary's own real fs check passes too. `stubMode` is
+ * mutable per-test (default 'healthy') and threaded through as
+ * CLOUDFLARED_STUB_MODE on the spawned child's env.
  *
  * What this suite pins:
  *  - 401 wall unauthenticated; 403 for an authenticated non-admin, on all
@@ -31,16 +43,22 @@
  *    override) and when Tunnel itself is already enabled.
  *  - A full enable -> disable cycle: teardown REALLY calls
  *    removeDnsRoute + deprovisionTunnel (fixture call-log assertions) and
- *    ConnectorManager.stop(), matching R8 "verified teardown".
+ *    REALLY stops the connector's real child process, matching R8
+ *    "verified teardown".
  *  - Events: remote.enabled/remote.path.changed/remote.disabled all
  *    emitted with the frozen Wave-0 payload shapes (no `path` field on
  *    remote.enabled itself — remote.path.changed's `newPath`/
  *    `previousPath` carries that, see remote-tunnel.service.ts's header)
  *    and NO secrets in any payload (R9).
+ *  - T2/RG7: enable spawns the REAL stub connector and getRemoteTunnelStatus
+ *    surfaces its real health (starting -> running once the stub's
+ *    readiness line lands); getRemoteTunnelLogs surfaces its real stdout/
+ *    stderr; a crashing stub connector is auto-restarted with backoff and
+ *    the status reflects 'degraded'; disable stops the real child process.
  */
 import "reflect-metadata";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { spawnSync } from "node:child_process";
+import { spawn as nodeSpawn, spawnSync, type ChildProcess } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import request from "supertest";
@@ -51,12 +69,39 @@ import { AppModule } from "../src/app.module.js";
 import { DbProvider } from "../src/common/db.provider.js";
 import { TunnelProvider } from "../src/remote/tunnel/tunnel-provider.js";
 import { CloudflareTunnelProvider } from "../src/remote/tunnel/cloudflare-tunnel-provider.js";
-import { ConnectorManager, NoopConnectorManager } from "../src/remote/tunnel/connector-manager.js";
+import { ConnectorManager } from "../src/remote/tunnel/connector-manager.js";
+import type { CloudflaredConnectorManager, SpawnFn } from "../src/remote/tunnel/cloudflared-connector-manager.js";
+import { RemoteTunnelBootResumerService } from "../src/remote/tunnel/remote-tunnel-boot-resumer.service.js";
 import { RemoteActivePathReader, NoopRemoteActivePathReader } from "../src/remote/active-path-reader.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DB_PKG_ROOT = path.resolve(__dirname, "../../../packages/db");
 const BASE_DATABASE_URL = process.env["DATABASE_URL"] ?? "postgres://loombre:loombre@localhost:5442/loombre";
+const STUB_SCRIPT_PATH = path.join(__dirname, "support", "cloudflared-stub.mjs");
+
+/** Redirects the REAL spawn target at the Node stub script (see this
+ *  file's header) — production args/env/stdio/detached all pass through
+ *  unchanged, only the executable itself is swapped, and CLOUDFLARED_STUB_MODE
+ *  is layered onto the child's env so the stub knows which behavior to emulate. */
+function makeStubSpawnFn(getMode: () => string): SpawnFn {
+  return ((_cmd: string, args: readonly string[], opts: Record<string, unknown>) => {
+    const env = { ...(opts["env"] as Record<string, string | undefined>), CLOUDFLARED_STUB_MODE: getMode() };
+    return nodeSpawn(process.execPath, [STUB_SCRIPT_PATH, ...args], { ...opts, env }) as ChildProcess;
+  }) as unknown as SpawnFn;
+}
+
+/** Polls a condition until true or a timeout — used to wait for the real
+ *  stub child process's async stderr output to be observed by the
+ *  connector manager (readiness/crash/restart are all genuinely async
+ *  against a real OS process here, unlike the fake-child unit spec). */
+async function waitFor(predicate: () => boolean, timeoutMs = 5000, intervalMs = 20): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (predicate()) return;
+    await new Promise((r) => setTimeout(r, intervalMs));
+  }
+  if (!predicate()) throw new Error(`waitFor: condition not met within ${timeoutMs}ms`);
+}
 
 function run(script: string, args: string[], databaseUrl: string) {
   const result = spawnSync(process.execPath, [script, ...args], {
@@ -89,9 +134,13 @@ let app: INestApplication;
 let adminToken: string;
 let casualToken: string;
 let cfProvider: CloudflareTunnelProvider;
-let connectorManager: NoopConnectorManager;
+let connectorManager: CloudflaredConnectorManager;
 let activePathReader: NoopRemoteActivePathReader;
 let dbProvider: DbProvider;
+/** Mode the stub connector process boots into for the CURRENT test —
+ *  reset to 'healthy' in beforeEach; individual tests override it before
+ *  calling enable. */
+let stubMode = "healthy";
 
 /** Records every request the fake Cloudflare transport receives, and
  *  answers from a per-path/per-method fixture table — same convention as
@@ -147,22 +196,34 @@ beforeAll(async () => {
   process.env["LOOMBRE_RATE_LOGIN"] = "10000";
   process.env["LOOMBRE_SECRET_BACKEND"] = "file0600";
   process.env["LOOMBRE_DATA_DIR"] = process.env["LOOMBRE_DATA_DIR"] ?? "/tmp/loombre-remote-tunnel-e2e-data";
+  // T2/RG7: pins remote.cloudflaredPath to the real `node` executable
+  // (guaranteed present + executable on every platform, including
+  // Windows CI) — resolveCloudflaredBinary's own real fs check passes,
+  // and the stub spawnFn wrapper below redirects the ACTUAL exec target
+  // to the Node stub script regardless of this value.
+  process.env["LOOMBRE_CLOUDFLARED_PATH"] = process.execPath;
 
   app = await NestFactory.create(AppModule, { logger: false });
   await app.init();
 
   cfProvider = app.get(TunnelProvider) as CloudflareTunnelProvider;
-  connectorManager = app.get(ConnectorManager) as NoopConnectorManager;
+  connectorManager = app.get(ConnectorManager) as CloudflaredConnectorManager;
   activePathReader = app.get(RemoteActivePathReader) as NoopRemoteActivePathReader;
   dbProvider = app.get(DbProvider);
 
   cfProvider.setTestDeps({ fetchImpl: fakeCfFetch, dnsLookup: async () => [{ address: "104.16.132.229", family: 4 }] });
+  connectorManager.setTestDeps({ spawnFn: makeStubSpawnFn(() => stubMode), stopGraceTimeoutMs: 500 });
 
   adminToken = await loginAs("admin", "loombre-seed-admin");
   casualToken = await loginAs("casual", "loombre-seed-casual");
 });
 
 afterAll(async () => {
+  // T2: guarantees no real stub connector child process outlives this
+  // suite, regardless of which test ran last or whether its own body/
+  // beforeEach cleanup already covered it — stop() is idempotent-safe on
+  // an already-stopped manager.
+  await connectorManager.stop();
   await app.close();
 });
 
@@ -170,11 +231,16 @@ beforeEach(async () => {
   cfCallLog = [];
   resetCfFixturesToHappyPath();
   activePathReader.activePathOverride = "none";
-  // Clear any token/enabled state a prior test left behind — the token
-  // via clearRemoteTunnelToken (also proves clear itself works, every
-  // test), the enabled row via disableRemoteTunnel's own idempotent path.
-  await request(app.getHttpServer()).delete("/admin/remote/tunnel/token").set("Authorization", `Bearer ${adminToken}`);
+  stubMode = "healthy";
+  // Clear any token/enabled state a prior test left behind — disable FIRST
+  // (T2: while the prior test's token, if any, is still stored — disable()
+  // requires a stored token to verify teardown when currently enabled;
+  // clearing it first would make a leftover-enabled state un-disableable,
+  // 422ing forever and bleeding a real stub connector process into every
+  // later test), THEN clear the token via clearRemoteTunnelToken (also
+  // proves clear itself works, every test).
   await request(app.getHttpServer()).post("/admin/remote/tunnel/disable").set("Authorization", `Bearer ${adminToken}`);
+  await request(app.getHttpServer()).delete("/admin/remote/tunnel/token").set("Authorization", `Bearer ${adminToken}`);
 });
 
 const ROUTES: Array<{ method: "post" | "delete" | "get"; path: string }> = [
@@ -302,6 +368,26 @@ describe("enableRemoteTunnel — validation and provider-error paths", () => {
   });
 });
 
+// T2/RG7: positioned HERE deliberately — BEFORE any describe block that
+// successfully enables the Tunnel path. This suite shares ONE
+// CloudflaredConnectorManager instance (and its log ring buffer) across
+// the WHOLE file, same as every real server process would; the ring
+// buffer is never cleared by stop() (by design — logsTail is a history,
+// not a per-session view), so "empty before the connector has ever run"
+// is only a valid assertion while that is still literally true for this
+// suite's shared instance. Every describe block ABOVE this one only
+// reaches validation/409/422 failures that never call
+// connectorManager.start() (checked: empty hostname, no token, wrong
+// active path, name collision, zone-not-found+rollback) — none populate
+// the ring buffer, so this ordering is correct, not accidental.
+describe("getRemoteTunnelLogs — before the connector has ever run", () => {
+  it("is empty", async () => {
+    const res = await request(app.getHttpServer()).get("/admin/remote/tunnel/logs").set("Authorization", `Bearer ${adminToken}`);
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ lines: [] });
+  });
+});
+
 describe("full enable -> disable cycle: verified teardown (R8) and event shapes (R9)", () => {
   it("enable provisions + starts the connector + persists state; disable REALLY tears down (DNS + tunnel + connector) and clears state", async () => {
     await request(app.getHttpServer()).post("/admin/remote/tunnel/token").set("Authorization", `Bearer ${adminToken}`).send({ token: "good-token" });
@@ -324,9 +410,15 @@ describe("full enable -> disable cycle: verified teardown (R8) and event shapes 
       ]),
     );
 
-    const connectorStateAfterEnable = connectorManager.getTestState();
-    expect(connectorStateAfterEnable.startCalls).toBe(1);
-    expect(connectorStateAfterEnable.startedWith).toEqual({ tunnelId: "tunnel-e2e", hostname: "media.example.com", credential: "opaque-run-token" });
+    // T2/RG7: enable() really started the stub connector as a REAL child
+    // process — wait for its readiness line to land (async, real stdout/
+    // stderr streaming), then confirm getRemoteTunnelStatus surfaces the
+    // real health through mapConnectorStateToContract (healthy -> "running").
+    await waitFor(() => connectorManager.health().state === "healthy");
+    const statusAfterEnable = await request(app.getHttpServer()).get("/admin/remote/tunnel/status").set("Authorization", `Bearer ${adminToken}`);
+    expect(statusAfterEnable.body.connectorState).toBe("running");
+    expect(statusAfterEnable.body.backoffMs).toBeNull();
+    expect(statusAfterEnable.body.lastErrorMessage).toBeNull();
 
     // A second enable while already enabled is a self-conflict, not
     // silently accepted.
@@ -341,7 +433,11 @@ describe("full enable -> disable cycle: verified teardown (R8) and event shapes 
 
     expect(cfCallLog).toContain("DELETE /client/v4/zones/zone-1/dns_records/record-e2e");
     expect(cfCallLog).toContain("DELETE /client/v4/accounts/acct-1/cfd_tunnel/tunnel-e2e");
-    expect(connectorManager.getTestState().stopCalls).toBeGreaterThanOrEqual(1);
+    // disable() REALLY stopped the real stub connector process (R8
+    // "verified teardown") — disableRemoteTunnel awaits connectorManager.
+    // stop() before writing the disabled state, so this is already true by
+    // the time the HTTP response above returned; no waitFor needed.
+    expect(connectorManager.health().state).toBe("stopped");
 
     // Idempotent: disabling again is a true no-op, no new Cloudflare calls.
     cfCallLog = [];
@@ -376,16 +472,98 @@ describe("full enable -> disable cycle: verified teardown (R8) and event shapes 
 });
 
 describe("getRemoteTunnelLogs", () => {
-  it("delegates to ConnectorManager.logsTail, bounded 1-500 default 200", async () => {
+  it("surfaces the REAL stub connector's stderr, and honors the lines param (1-500, default 200)", async () => {
+    await request(app.getHttpServer()).post("/admin/remote/tunnel/token").set("Authorization", `Bearer ${adminToken}`).send({ token: "good-token" });
+    await request(app.getHttpServer()).post("/admin/remote/tunnel/enable").set("Authorization", `Bearer ${adminToken}`).send({ hostname: "media.example.com" });
+    await waitFor(() => connectorManager.health().state === "healthy");
+
     const res = await request(app.getHttpServer()).get("/admin/remote/tunnel/logs").set("Authorization", `Bearer ${adminToken}`);
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ lines: [] });
-    const calls = connectorManager.getTestState().logsTailCalls;
-    expect(calls[calls.length - 1]).toBe(200);
+    expect(res.body.lines.length).toBeGreaterThan(0);
+    expect(res.body.lines.some((line: string) => line.includes("Registered tunnel connection"))).toBe(true);
 
-    const clamped = await request(app.getHttpServer()).get("/admin/remote/tunnel/logs?lines=9999").set("Authorization", `Bearer ${adminToken}`);
+    const clamped = await request(app.getHttpServer()).get("/admin/remote/tunnel/logs?lines=1").set("Authorization", `Bearer ${adminToken}`);
     expect(clamped.status).toBe(200);
-    const clampedCalls = connectorManager.getTestState().logsTailCalls;
-    expect(clampedCalls[clampedCalls.length - 1]).toBe(500);
+    expect(clamped.body.lines.length).toBe(1);
+  });
+});
+
+describe("T2/RG7 — real connector crash -> backoff -> auto-restart, surfaced through the API", () => {
+  it("a crashing connector reports 'degraded' with a non-null backoffMs, then auto-recovers to 'running'", async () => {
+    stubMode = "crash"; // the stub exits 1 shortly after spawning (CLOUDFLARED_STUB_CRASH_AFTER_MS, default 20ms)
+    await request(app.getHttpServer()).post("/admin/remote/tunnel/token").set("Authorization", `Bearer ${adminToken}`).send({ token: "good-token" });
+    await request(app.getHttpServer()).post("/admin/remote/tunnel/enable").set("Authorization", `Bearer ${adminToken}`).send({ hostname: "media.example.com" });
+
+    await waitFor(() => connectorManager.health().state === "backoff");
+    const statusDuringBackoff = await request(app.getHttpServer()).get("/admin/remote/tunnel/status").set("Authorization", `Bearer ${adminToken}`);
+    expect(statusDuringBackoff.body.connectorState).toBe("degraded");
+    expect(typeof statusDuringBackoff.body.backoffMs).toBe("number");
+    expect(statusDuringBackoff.body.lastErrorMessage).toContain("exited unexpectedly");
+
+    // Switch the stub to healthy mode for the NEXT restart attempt (full
+    // jitter caps this well under a few seconds at restartCount=1) —
+    // auto-restart recovers without any admin action.
+    stubMode = "healthy";
+    await waitFor(() => connectorManager.health().state === "healthy", 10_000);
+    const statusAfterRecovery = await request(app.getHttpServer()).get("/admin/remote/tunnel/status").set("Authorization", `Bearer ${adminToken}`);
+    expect(statusAfterRecovery.body.connectorState).toBe("running");
+    expect(statusAfterRecovery.body.backoffMs).toBeNull();
+  });
+});
+
+describe("T2/RG7 — connector resumes on boot if the tunnel state row says enabled", () => {
+  it("a SECOND server boot (simulating a restart) resumes the real stub connector from remote_tunnel_state + the keyring credential", async () => {
+    await request(app.getHttpServer()).post("/admin/remote/tunnel/token").set("Authorization", `Bearer ${adminToken}`).send({ token: "good-token" });
+    await request(app.getHttpServer()).post("/admin/remote/tunnel/enable").set("Authorization", `Bearer ${adminToken}`).send({ hostname: "media.example.com" });
+    await waitFor(() => connectorManager.health().state === "healthy");
+
+    // A SECOND, independent Nest application against the SAME database +
+    // secret backend/data dir (LOOMBRE_DATA_DIR/LOOMBRE_SECRET_BACKEND set
+    // once in the outer beforeAll, shared by both processes here exactly
+    // like a real restart shares the same on-disk state) — simulates a
+    // real server restart while the Tunnel path was left enabled. Same
+    // dual-boot-within-one-file pattern as remote-probes.e2e.spec.ts's own
+    // `lowCapApp`.
+    const app2 = await NestFactory.create(AppModule, { logger: false });
+    await app2.init();
+    const connectorManager2 = app2.get(ConnectorManager) as CloudflaredConnectorManager;
+    connectorManager2.setTestDeps({ spawnFn: makeStubSpawnFn(() => stubMode) });
+    // A freshly constructed manager, nothing resumed yet.
+    expect(connectorManager2.health().state).toBe("stopped");
+
+    try {
+      // Test/ops seam (RemoteTunnelBootResumerService's own doc comment):
+      // runs the one-shot resume immediately, bypassing the real 60s
+      // REMOTE_TUNNEL_BOOT_RESUME_DELAY_MS startup delay.
+      await app2.get(RemoteTunnelBootResumerService).resumeOnce();
+      await waitFor(() => connectorManager2.health().state === "healthy");
+      expect(connectorManager2.health().lastError).toBeNull();
+      expect(connectorManager2.health().restartCount).toBe(0);
+
+      // A second resumeOnce() call is a documented no-op (one-shot contract).
+      await app2.get(RemoteTunnelBootResumerService).resumeOnce();
+      expect(connectorManager2.health().restartCount).toBe(0);
+    } finally {
+      await connectorManager2.stop();
+      await app2.close();
+    }
+  });
+
+  it("does nothing when the tunnel state row is disabled (the common case — every other server boot)", async () => {
+    // beforeEach already disabled + cleared the token — remote_tunnel_state
+    // is enabled=false for this test, the default/common state.
+    const app2 = await NestFactory.create(AppModule, { logger: false });
+    await app2.init();
+    const connectorManager2 = app2.get(ConnectorManager) as CloudflaredConnectorManager;
+    connectorManager2.setTestDeps({ spawnFn: makeStubSpawnFn(() => stubMode) });
+
+    try {
+      await app2.get(RemoteTunnelBootResumerService).resumeOnce();
+      // Give any (incorrect) resume attempt a moment to have shown up.
+      await new Promise((r) => setTimeout(r, 100));
+      expect(connectorManager2.health().state).toBe("stopped");
+    } finally {
+      await app2.close();
+    }
   });
 });
