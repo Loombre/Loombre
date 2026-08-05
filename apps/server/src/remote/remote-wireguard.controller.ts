@@ -11,38 +11,47 @@
 //   - POST   /admin/remote/wireguard/devices            enrollRemoteWireguardDevice
 //   - DELETE /admin/remote/wireguard/devices/{id}       revokeRemoteWireguardDevice
 //
-// CONFORMING 501 SHELLS: every handler runs requireLiveAdmin FIRST, then
-// throws notImplemented() — see remote-state.controller.ts's header for
-// the full rationale. The WG lane (R1/R2, embedded userspace WireGuard)
-// replaces these bodies with real behavior; route paths/methods/admin-gate
-// ordering are frozen here and do not change.
+// Lane WG1: enable/disable/status now delegate to RemoteWireguardService
+// (./wireguard/remote-wireguard.service.js) — requireAdmin still runs
+// FIRST, unchanged from the Wave-0 freeze ("route paths/methods/admin-gate
+// ordering are frozen ... do not change"; see remote-wireguard.service.ts's
+// own header for why the service does NOT re-check admin a second time).
+// The three devices ops STAY 501 shells (WG2's own enrollment work) —
+// see remote-state.controller.ts's header for the general 501-shell
+// rationale, still true for exactly these three handlers below.
 
-import { Controller, Delete, Get, Post, Req } from "@nestjs/common";
+import { Controller, Delete, Get, HttpCode, HttpStatus, Post, Req } from "@nestjs/common";
 import { notImplemented } from "../gateway/problem.exception.js";
 import type { AuthenticatedRequest } from "../gateway/auth.guard.js";
 import { DbProvider } from "../common/db.provider.js";
 import { requireAdmin } from "./require-admin.js";
+import { RemoteWireguardService, type RemoteWireguardStatusDto } from "./wireguard/remote-wireguard.service.js";
 
 @Controller()
 export class RemoteWireguardController {
-  constructor(private readonly dbProvider: DbProvider) {}
+  constructor(
+    private readonly dbProvider: DbProvider,
+    private readonly wireguardService: RemoteWireguardService,
+  ) {}
 
   @Post("admin/remote/wireguard/enable")
-  async enableRemoteWireguard(@Req() req: AuthenticatedRequest): Promise<never> {
+  @HttpCode(HttpStatus.OK)
+  async enableRemoteWireguard(@Req() req: AuthenticatedRequest): Promise<RemoteWireguardStatusDto> {
     await requireAdmin(this.dbProvider.db, req);
-    throw notImplemented("Enabling Loombre Remote is not implemented yet.", req.originalUrl);
+    return this.wireguardService.enable(req.user!.userId);
   }
 
   @Post("admin/remote/wireguard/disable")
-  async disableRemoteWireguard(@Req() req: AuthenticatedRequest): Promise<never> {
+  @HttpCode(HttpStatus.OK)
+  async disableRemoteWireguard(@Req() req: AuthenticatedRequest): Promise<RemoteWireguardStatusDto> {
     await requireAdmin(this.dbProvider.db, req);
-    throw notImplemented("Disabling Loombre Remote is not implemented yet.", req.originalUrl);
+    return this.wireguardService.disable(req.user!.userId);
   }
 
   @Get("admin/remote/wireguard/status")
-  async getRemoteWireguardStatus(@Req() req: AuthenticatedRequest): Promise<never> {
+  async getRemoteWireguardStatus(@Req() req: AuthenticatedRequest): Promise<RemoteWireguardStatusDto> {
     await requireAdmin(this.dbProvider.db, req);
-    throw notImplemented("Loombre Remote status is not implemented yet.", req.originalUrl);
+    return this.wireguardService.status();
   }
 
   @Get("admin/remote/wireguard/devices")
