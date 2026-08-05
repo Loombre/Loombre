@@ -340,6 +340,61 @@ The web address people use to reach this server from outside your own network. S
 - **Applies:** immediately — no restart needed.
 - **Can be locked:** if `LOOMBRE_PUBLIC_URL` is set by whoever installed Loombre, this setting becomes fixed to that value and shows as controlled by the environment here — ask them, or see the [Operator Guide's environment reference](/ops/env-reference).
 
+### Trust proxy
+
+<small>Setting key: `network.trustProxy`</small>
+
+Tells Loombre it is running behind a reverse proxy you control, so it can trust that proxy's forwarded address information when deciding who to rate-limit or note in the sign-in log. Accepts a hop count (e.g. "1"), a trusted address/range, or a comma-separated list of them. Leave blank unless you are running Loombre behind your own reverse proxy.
+
+- **Default:** (empty — not set)
+- **Applies:** after a restart. Saving this shows a reminder banner until the server restarts — Settings → Server → Power has the restart button.
+- **Note:** Only enable behind a reverse proxy you control — enabling this trusts client-supplied forwarded-address information for rate-limit and sign-in-log keying.
+- **Can be locked:** if `LOOMBRE_TRUST_PROXY` is set by whoever installed Loombre, this setting becomes fixed to that value and shows as controlled by the environment here — ask them, or see the [Operator Guide's environment reference](/ops/env-reference).
+
+## HTTPS / TLS
+
+How this server handles HTTPS for people connecting to it directly (not through a reverse proxy). The Direct path in the Remote-access wizard fills most of this in for you and tests it before turning it on.
+
+### TLS mode
+
+<small>Setting key: `tls.mode`</small>
+
+How Loombre handles HTTPS: 'off' serves plain HTTP (the right choice when a reverse proxy in front of Loombre handles HTTPS itself), 'manual' uses a certificate and key file you provide yourself, and 'acme' has Loombre request and automatically renew its own certificate from Let's Encrypt (or another compatible certificate authority) using the domain and verification settings below.
+
+- **Default:** `off`
+- **Applies:** after a restart. Saving this shows a reminder banner until the server restarts — Settings → Server → Power has the restart button.
+- **Can be locked:** if `LOOMBRE_TLS_MODE` is set by whoever installed Loombre, this setting becomes fixed to that value and shows as controlled by the environment here — ask them, or see the [Operator Guide's environment reference](/ops/env-reference).
+
+### Certificate domain name(s)
+
+<small>Setting key: `tls.acmeDomains`</small>
+
+The domain name(s) this server requests an HTTPS certificate for when TLS mode is 'acme' — the address people use to reach it from outside your network (for example media.example.com). The first one becomes the certificate's primary name.
+
+- **Default:** (none)
+- **Applies:** after a restart. Saving this shows a reminder banner until the server restarts — Settings → Server → Power has the restart button.
+- **Can be locked:** if `LOOMBRE_ACME_DOMAINS` is set by whoever installed Loombre, this setting becomes fixed to that value and shows as controlled by the environment here — ask them, or see the [Operator Guide's environment reference](/ops/env-reference).
+
+### Certificate verification method
+
+<small>Setting key: `tls.acmeChallengeType`</small>
+
+How Loombre proves it controls the domain above, to get a certificate for it: 'http-01' answers a request on port 80 (simplest, when that port is reachable from the internet), 'dns-01' creates a temporary DNS record instead (works even with no reachable inbound port, and is required for a wildcard certificate).
+
+- **Default:** `http-01`
+- **Applies:** after a restart. Saving this shows a reminder banner until the server restarts — Settings → Server → Power has the restart button.
+- **Can be locked:** if `LOOMBRE_ACME_CHALLENGE_TYPE` is set by whoever installed Loombre, this setting becomes fixed to that value and shows as controlled by the environment here — ask them, or see the [Operator Guide's environment reference](/ops/env-reference).
+
+### Accept certificate authority Terms of Service
+
+<small>Setting key: `tls.acmeTosAgreed`</small>
+
+Confirms you accept the certificate authority's Terms of Service on this server's behalf — required before Loombre will request a certificate automatically. Loombre never agrees on your behalf silently; this must be turned on explicitly.
+
+- **Default:** Off
+- **Applies:** after a restart. Saving this shows a reminder banner until the server restarts — Settings → Server → Power has the restart button.
+- **Can be locked:** if `LOOMBRE_ACME_TOS_AGREED` is set by whoever installed Loombre, this setting becomes fixed to that value and shows as controlled by the environment here — ask them, or see the [Operator Guide's environment reference](/ops/env-reference).
+
 ## Mail
 
 The outgoing mail server Loombre uses to send invitation and password-reset email. Entirely optional — every part of Loombre works without mail configured; see the Admin Guide's pages on inviting users and on users & permissions for the copy-link alternative.

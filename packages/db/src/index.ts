@@ -523,6 +523,25 @@ export {
   emitRedactedSettingsUpdated,
 } from './query/settings.js';
 
+// Loombre Remote — Direct path's own minimal state record (R5/R8/RG15, this
+// lane's mission), a housekeeping row in the SAME server_settings table
+// under a key outside the public SETTINGS_REGISTRY — see src/query/
+// remote-direct.ts header for why no migration/table was added.
+export type {
+  RemoteDirectMode,
+  RemotePathId,
+  RemoteDirectInternalState,
+  EnableRemoteDirectStateInput,
+  DisableRemoteDirectStateInput,
+} from './query/remote-direct.js';
+export {
+  REMOTE_DIRECT_DISABLED_STATE,
+  getRemoteDirectInternalState,
+  enableRemoteDirectStateAndEmit,
+  disableRemoteDirectStateAndEmit,
+  isRemoteWireguardActive,
+} from './query/remote-direct.js';
+
 // LPP v1 (Lane W2) plugin registry — migrations/0014_plugins.sql, see
 // src/query/plugins.ts header for the outbox-transactional emit-helper
 // pattern (replicates src/query/settings.ts's upsertServerSettingAndEmit).
