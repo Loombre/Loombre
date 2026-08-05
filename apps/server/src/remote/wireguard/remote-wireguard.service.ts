@@ -57,13 +57,17 @@
 // 0030_wg_peers.sql, packages/db/src/query/wg-peers.ts): loadPeers() below
 // now reads every persisted peer for real boot-resume re-registration;
 // listDevices/enrollDevice/revokeDevice replace remote-wireguard.
-// controller.ts's three device-management 501 shells. R9 (no private key,
-// EVER — audited end to end): the peer keypair is generated in
-// enrollDevice, the private half is embedded ONCE into the returned
-// configText (packages/shared/src/remote/provisioning.ts's frozen format)
-// and NEVER stored, logged, or included in any other response this file
-// produces — grep this file for `devicePrivateKey`/`keys.privateKey` to
-// confirm both uses are local to enrollDevice's own return statement.
+// controller.ts's three device-management 501 shells. R9 (no PEER private
+// key, EVER — audited end to end, distinct from the SERVER's OWN private
+// key, which legitimately lives in the keyring via storePrivateKey/
+// resolvePrivateKey above and always has, WG1): enrollDevice generates a
+// FRESH peer keypair local to its own scope; its `.privateKey` is read
+// exactly ONCE, at the `devicePrivateKey:` field of the buildProvisioning-
+// Config call inside enrollDevice's own body — grep this file for
+// `devicePrivateKey` to confirm that is the ONLY place a peer private key
+// value is ever read, and that it flows straight into the ONE-TIME
+// configText response, never into a variable, log line, or DB call that
+// outlives this one method invocation.
 
 import * as http from "node:http";
 import { Injectable, type OnApplicationBootstrap, type OnModuleDestroy } from "@nestjs/common";
