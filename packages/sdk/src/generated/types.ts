@@ -2609,6 +2609,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/remote/posture": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Exposure-aware security posture card (admin)
+         * @description R7: evaluates every posture check applicable to the currently active remote-access path (packages/shared/src/remote/ posture-model.ts's frozen POSTURE_CHECK_KEYS/applicableChecks — `checks` is empty when no path is enabled, since every active path always yields at least one check). Grades link to fix actions. Regressions/recoveries are separately reported via the admin-only outbox (`posture.regressed`/`posture.recovered`, RG4) by a background sweep — this endpoint itself is a stateless "evaluate now" read with no side effects.
+         */
+        get: operations["getRemotePosture"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/probe/{token}": {
         parameters: {
             query?: never;
@@ -4666,6 +4686,38 @@ export interface components {
             arrivedAtMs: number | null;
             /** @description Populated once the probe has definitively failed to arrive; null while still pending or once arrived. */
             diagnosis: components["schemas"]["RemoteDiagnosisResult"] | null;
+        };
+        /**
+         * @description packages/shared/src/remote/posture-model.ts's frozen POSTURE_CHECK_KEYS (R7).
+         * @enum {string}
+         */
+        RemotePostureCheckKey: "tlsValidity" | "rateLimitersActive" | "staleAccounts" | "inviteLinksReachable" | "wgPortSilence" | "connectorHealth" | "publicUrlCoherence";
+        /**
+         * @description packages/shared/src/remote/posture-model.ts's frozen PostureGrade. `info` is a genuine, honest grade some checks can NEVER rise above (e.g. wgPortSilence — a server can never confirm its own external silence; see apps/server/src/remote/posture/checks/ wg-port-silence.ts) — never a "pass, softened for display."
+         * @enum {string}
+         */
+        RemotePostureGrade: "pass" | "warn" | "fail" | "info";
+        RemotePostureFixAction: {
+            label: string;
+            /** @description An apps/web router path the admin UI can route to directly (posture-model.ts's frozen POSTURE_CHECK_FIX_ACTIONS). */
+            href: string;
+        };
+        RemotePostureCheck: {
+            key: components["schemas"]["RemotePostureCheckKey"];
+            grade: components["schemas"]["RemotePostureGrade"];
+            /** @description Human-readable sentence explaining this check's current grade. */
+            detail: string;
+            fixAction: components["schemas"]["RemotePostureFixAction"];
+        };
+        RemotePostureCard: {
+            /** @description Empty when no remote-access path is enabled (posture-model.ts's deriveCardState: the card itself is inactive) — every active path always yields at least one applicable check, so an empty array is unambiguous and no separate "active" flag is exposed. */
+            checks: components["schemas"]["RemotePostureCheck"][];
+            overallGrade: components["schemas"]["RemotePostureGrade"];
+            /**
+             * Format: int64
+             * @description When this evaluation ran — a stateless "evaluate now" read, not a cached value.
+             */
+            evaluatedAtMs: number;
         };
     };
     responses: {
@@ -9211,6 +9263,29 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    getRemotePosture: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current posture card */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RemotePostureCard"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             default: components["responses"]["Problem"];
         };
     };

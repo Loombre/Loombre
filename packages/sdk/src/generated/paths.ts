@@ -55,6 +55,7 @@ export const API_OPERATIONS = [
   { path: "/admin/remote/direct/acme-test", method: "post", operationId: "testRemoteDirectAcme" },
   { path: "/admin/remote/direct/disable", method: "post", operationId: "disableRemoteDirect" },
   { path: "/admin/remote/direct/enable", method: "post", operationId: "enableRemoteDirect" },
+  { path: "/admin/remote/posture", method: "get", operationId: "getRemotePosture" },
   { path: "/admin/remote/probes", method: "post", operationId: "createRemoteProbe" },
   { path: "/admin/remote/probes/{id}", method: "get", operationId: "getRemoteProbe" },
   { path: "/admin/remote/state", method: "get", operationId: "getRemoteState" },
