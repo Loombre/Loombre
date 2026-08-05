@@ -90,3 +90,51 @@ inside them (also outside `license-checker`'s npm-only scan):
 | System.ServiceProcess.ServiceController 8.0.1 | MIT (© .NET Foundation) | exact-version `PackageReference`s in `LoombreServiceHost.csproj` (ServiceBase does not ship in the `-windows` TFM reference assemblies — first Windows compile evidence, diag run 30218015372) and `Loombre.Tray.csproj` (ServiceManagerProbe — SCM query + start-a-stopped-server, the IPC_SERVER_START_SEMANTICS fallback) | Compiled into the service-host and tray exes; MIT → AGPL-3.0 compatible |
 | xunit 2.9.2, xunit.runner.visualstudio 2.8.2, Microsoft.NET.Test.Sdk 17.12.0 | Apache-2.0 / MIT | exact-version `PackageReference`s in the two test csprojs | Build/test-time only — never ships in any artifact |
 | WiX Toolset 5.0.2 + WixToolset.Firewall.wixext 5.0.2 + WixToolset.Util.wixext 5.0.2 | MS-RL | `/.config/dotnet-tools.json` pin + lockstep extension pins in `installers/windows/build-msi.mjs` (OSMF decision — STATE.md sweep ledger) | Build tool. OWNER-REVIEW NOTE: both extensions embed their native custom-action DLLs inside the produced `.msi` (MSI Binary table; Firewall rules + RemoveFolderEx uninstall cleanup) — separate binaries aggregated in the installer container, never linked with Loombre code; same mere-aggregation posture as ffmpeg above. MS-RL is GPL-incompatible for LINKING, which is why the aggregation-only posture matters and is recorded here |
+
+## Go components (STATE.md "Loombre Remote — embedded WireGuard + three-path wizard + reachability proof + posture card", lane WG1, RG1/RG14)
+
+`packages/wg-native/native` is Go — fully-owned original glue code (AGPL-3.0
+like the rest of the repo, `packages/wg-native/native/*.go`) compiled via
+`go build -buildmode=c-shared` into a per-OS shared library
+(`dist/wg-native-<platform>-<arch>.{dylib,so,dll}`) and loaded into the
+Node process with `koffi` (MIT, an ordinary npm dependency already covered
+by `license-checker`/`scripts/license-check.mjs`). The Go module graph
+itself is invisible to `license-checker` (npm-only scan) — this is the
+other half of the blind spot RG1's recon flagged, closed by
+`scripts/go-licenses-check.mjs` (pinned `google/go-licenses` v1.6.0,
+`pnpm gate`'s `go-licenses-check` step) walking the REAL compiled package
+graph (not `go.sum`'s full module list, which for `gvisor.dev/gvisor` in
+particular is much broader than what `packages/wg-native/native` actually
+imports).
+
+**Compiled-into-process posture** (unlike the ffmpeg/PostgreSQL binaries
+above, which run as SEPARATE child processes — mere aggregation — this Go
+code links directly into the shared library loaded in-process): every
+dependency below is permissively licensed (MIT/Apache-2.0/BSD-3-Clause, all
+independently AGPL-3.0-compatible for linking, not just aggregation) and
+was verified BOTH by `go-licenses report` (automated, machine-readable) AND
+direct inspection of each module's own LICENSE file in the local module
+cache during this lane's work.
+
+| Component | Version (pinned, `packages/wg-native/native/go.mod`) | License | Posture |
+|-----------|--------------------------------------------------------|---------|---------|
+| `golang.zx2c4.com/wireguard` (wireguard-go) | v0.0.0-20260522210424-ecfc5a8d5446 | MIT | The `device` + `tun/netstack` packages — the actual WireGuard protocol implementation and the in-process userspace network stack (gVisor-backed) this whole subsystem is built on (RG1). Direct dependency. |
+| `gvisor.dev/gvisor` (`pkg/tcpip` and its subpackages only — NOT the `runsc` container runtime, which this module never imports) | v0.0.0-20250503011706-39ed1f5ac29c | Apache-2.0 | wireguard-go's `tun/netstack` package's own dependency — the userspace TCP/IP stack backing the single RG2 listener. Transitive. |
+| `golang.org/x/crypto` | v0.37.0 | BSD-3-Clause | wireguard-go's Noise-protocol crypto primitives (chacha20poly1305, curve25519, blake2s). Transitive. |
+| `golang.org/x/net` | v0.39.0 | BSD-3-Clause | wireguard-go/gvisor's low-level network primitives (bpf, dns/dnsmessage, ipv4/ipv6 socket options). Transitive. |
+| `golang.org/x/sys` | v0.32.0 | BSD-3-Clause | Raw syscall access (the real OS UDP socket, RG1's "no kernel module, no root" posture — this is a normal unprivileged socket syscall, nothing more). Transitive. |
+| `golang.org/x/time` | v0.7.0 | BSD-3-Clause | gvisor's internal rate-limiting (`rate` package). Transitive. |
+| `github.com/google/btree` | v1.1.2 | Apache-2.0 | gvisor's internal ordered-map data structure (connection/route tables). Transitive. |
+| `golang.zx2c4.com/wintun` | v0.0.0-20230126152724-0fa3db229ce2 | MIT | wireguard-go's Windows TUN driver binding — build-tag-gated (`GOOS=windows` only; never compiled into the darwin/linux artifacts, confirmed by `go list -deps` on this host showing it absent from the darwin/arm64 build). Present in `go.mod` as an indirect dependency of `golang.zx2c4.com/wireguard` regardless of target OS (Go's module graph is OS-agnostic even though the BUILD is not); only the Windows CI leg's `go-licenses-check` run actually compiles it in. |
+
+Verification method: `go-licenses report ./native` (from
+`packages/wg-native/native`) lists every one of the above with its
+resolved LICENSE file URL; `scripts/go-licenses-check.mjs` enforces the
+SAME allow-list `scripts/license-check.mjs` enforces for the npm graph
+(`MIT;ISC;BSD-2-Clause;BSD-3-Clause;Apache-2.0;AGPL-3.0;GPL-3.0;LGPL-3.0;MPL-2.0;0BSD;BlueOak-1.0.0;CC0-1.0;CC-BY-4.0;Unlicense;Python-2.0;WTFPL`),
+wired as its own `pnpm gate` step (`go-licenses-check`, right after
+`license-check`). CI installs Go via `actions/setup-go` (pinned 1.26.5,
+current stable — a BUILD toolchain, not a shipped runtime, so CLAUDE.md's
+N2 Active-LTS Node policy does not govern this pin) on every matrix leg
+and sets `LOOMBRE_REQUIRE_WG=1` on the gate step, so a missing/unbuildable
+Go toolchain is a hard CI failure, never a silent skip.
