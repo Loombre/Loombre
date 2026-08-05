@@ -44,6 +44,11 @@ vi.mock("../notices/SystemNoticeProvider.js", () => ({
   useSystemNotice: () => mockValue,
 }));
 
+let mockPathname = "/home";
+vi.mock("next/navigation", () => ({
+  usePathname: () => mockPathname,
+}));
+
 const { BannerRegion } = await import("./BannerRegion.js");
 
 function setMock(overrides: Partial<MockValue>): void {
@@ -56,6 +61,7 @@ describe("BannerRegion", () => {
   beforeEach(() => {
     dismissMock.mockReset();
     mockValue = defaultMock();
+    mockPathname = "/home";
   });
 
   afterEach(() => {
@@ -72,6 +78,23 @@ describe("BannerRegion", () => {
   it("renders nothing when bannerVisible is false (info severity, or nothing active)", () => {
     render();
     expect(view!.container.firstChild).toBeNull();
+  });
+
+  it("R-F7: sets data-compact-header on back-mode routes (66px chrome) and omits it on title-mode tab roots (112px)", () => {
+    setMock({
+      notice: { id: "w1", message: "Maintenance", severity: "warning", effectiveAtMs: null, expiresAtMs: Date.now() + 60_000, createdAtMs: 0 },
+      severity: "warning",
+      bannerVisible: true,
+    });
+
+    mockPathname = "/settings/notices"; // a settings section = back mode
+    render();
+    expect(view!.container.querySelector('[data-compact-header="true"]')).toBeTruthy();
+    view!.unmount();
+
+    mockPathname = "/home"; // a tab root = title mode
+    render();
+    expect(view!.container.querySelector("[data-compact-header]")).toBeNull();
   });
 
   it("renders a warning notice: role=status, message as text, and a dismiss button", () => {

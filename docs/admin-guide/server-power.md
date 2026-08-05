@@ -5,10 +5,12 @@ asking you to confirm first.
 
 ## Restart server
 
-Stops and starts the server program. Use it when the settings screen shows
-the amber "Restart required" banner — some settings are saved right away
-but only take effect after a restart, and the banner lists which ones are
-waiting. Restarting from here applies them.
+Stops and starts the server program. Everything on the settings screens
+applies immediately when you save — no restart needed. This button is for
+what happens *outside* those screens: applying changes made where Loombre
+is installed (ports, folders, and similar — the settings screen shows
+those as controlled by the environment), finishing an update, or plain
+troubleshooting.
 
 What to expect:
 

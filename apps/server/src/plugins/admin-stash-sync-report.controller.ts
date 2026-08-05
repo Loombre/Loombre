@@ -9,6 +9,7 @@
 
 import { Controller, Get, Param, Query, Req } from "@nestjs/common";
 import type { AuthenticatedRequest } from "../gateway/auth.guard.js";
+import { parseLimitParam } from "../common/limit-param.js";
 import { AdminStashSyncReportService, type AdminStashSyncReportDto } from "./admin-stash-sync-report.service.js";
 
 @Controller("admin/libraries")
@@ -24,12 +25,12 @@ export class AdminStashSyncReportController {
     @Query("limit") limit: string | undefined,
     @Req() req: AuthenticatedRequest,
   ): Promise<AdminStashSyncReportDto> {
-    const parsedLimit = limit !== undefined ? Number.parseInt(limit, 10) : undefined;
+    const parsedLimit = parseLimitParam(limit);
     return this.service.getReport(id, req.user!.userId, {
       ...(unmatchedCursor !== undefined ? { unmatchedCursor } : {}),
       ...(staleCursor !== undefined ? { staleCursor } : {}),
       ...(unmatchedLoombreFilesCursor !== undefined ? { unmatchedLoombreFilesCursor } : {}),
-      ...(parsedLimit !== undefined && Number.isFinite(parsedLimit) ? { limit: parsedLimit } : {}),
+      ...(parsedLimit !== undefined ? { limit: parsedLimit } : {}),
     });
   }
 }

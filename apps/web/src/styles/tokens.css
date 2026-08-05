@@ -231,6 +231,7 @@
      for the 1279.98px tablet cutoff. */
   --mobile-tabbar-height: 60px; /* icon 24px + mono label + padding, > the 44px touch minimum */
   --mobile-header-height: 112px; /* sized for the taller "title" mode (top row + 31px large title + subtitle), measured ~110px in-browser; "back" mode (~66px) fits with room to spare */
+  --mobile-header-height-back: 66px; /* the "back"/"zone-back" chrome height (top row only, no large title) — consumers that clear the header on back-mode routes use THIS instead of over-clearing by the title-mode constant (review R-F7: BannerRegion sat ~46px below a back-mode header) */
 
   /* ── Phosphor texture ── */
 

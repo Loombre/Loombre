@@ -45,6 +45,18 @@ type PublishSystemNoticeRequest = components["schemas"]["PublishSystemNoticeRequ
 
 const MESSAGE_MAX = 500;
 
+/** Unicode code points, not UTF-16 units (review R-F8) — matches the
+ *  server's own check, Postgres `char_length`, and JSON Schema maxLength
+ *  semantics: an emoji counts as ONE character, not two. */
+function charCount(value: string): number {
+  return [...value].length;
+}
+
+function truncateToChars(value: string, max: number): string {
+  const chars = [...value];
+  return chars.length <= max ? value : chars.slice(0, max).join("");
+}
+
 type EffectiveChoice = "none" | "5" | "15" | "30" | "60" | "custom";
 type ExpiryChoice = "" | "30m" | "1h" | "4h" | "24h" | "custom" | "untilCancelled";
 
@@ -196,14 +208,16 @@ export function ComposeNoticeCard({
   function handleMessageChange(e: React.ChangeEvent<HTMLTextAreaElement>): void {
     // Hard-truncate the actual value — see this file's header on why
     // relying on the `maxLength` attribute alone isn't deterministic.
-    setMessage(e.target.value.slice(0, MESSAGE_MAX));
+    // Code-point aware (review R-F8): a naive .slice() can split a
+    // surrogate pair in half at the boundary.
+    setMessage(truncateToChars(e.target.value, MESSAGE_MAX));
   }
 
   function validate(): { ok: true; body: PublishSystemNoticeRequest } | { ok: false; errors: FormErrors } {
     const nextErrors: FormErrors = {};
 
     if (message.trim().length === 0) nextErrors.message = "Message is required.";
-    else if (message.length > MESSAGE_MAX) nextErrors.message = `Message must be ${MESSAGE_MAX} characters or fewer.`;
+    else if (charCount(message) > MESSAGE_MAX) nextErrors.message = `Message must be ${MESSAGE_MAX} characters or fewer.`;
 
     const effectiveResult = resolveEffectiveInMs(effectiveChoice, effectiveCustomMinutes);
     if (!effectiveResult.ok) nextErrors.effective = effectiveResult.error;
@@ -332,17 +346,14 @@ export function ComposeNoticeCard({
           <div className={sharedStyles.field}>
             <div className={styles.messageHeader}>
               <span className={sharedStyles.label}>Message</span>
-              <span className={styles.charCounter} data-over={message.length >= MESSAGE_MAX || undefined}>
-                {message.length}/{MESSAGE_MAX}
+              <span className={styles.charCounter} data-over={charCount(message) >= MESSAGE_MAX || undefined}>
+                {charCount(message)}/{MESSAGE_MAX}
               </span>
             </div>
-            <textarea
-              className={sharedStyles.textarea}
-              rows={3}
-              maxLength={MESSAGE_MAX}
-              value={message}
-              onChange={handleMessageChange}
-            />
+            {/* No native maxLength: it counts UTF-16 units, which would
+                block legitimate input at 250 astral characters (R-F8) —
+                handleMessageChange's code-point truncate governs alone. */}
+            <textarea className={sharedStyles.textarea} rows={3} value={message} onChange={handleMessageChange} />
             {errors.message && <p className={sharedStyles.errorText}>{errors.message}</p>}
           </div>
 

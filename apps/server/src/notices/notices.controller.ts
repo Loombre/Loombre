@@ -35,8 +35,17 @@ import { requireUuidParam } from "../gateway/require-uuid-param.js";
 import type { AuthenticatedRequest } from "../gateway/auth.guard.js";
 import { DbProvider, type LoombreDb } from "../common/db.provider.js";
 import { requireLiveAdmin } from "../common/require-live-admin.js";
+import { parseLimitParam } from "../common/limit-param.js";
 
 const MESSAGE_MAX_LENGTH = 500;
+
+/** Unicode code points, NOT UTF-16 units (review R-F8): the DB CHECK is
+ *  `char_length(message) <= 500` and JSON Schema's maxLength counts code
+ *  points too — `.length` over-counts astral characters (an emoji is one
+ *  character to Postgres and the contract, two to `.length`). */
+function charCount(value: string): number {
+  return [...value].length;
+}
 const SEVERITIES: readonly NoticeSeverity[] = ["info", "warning", "critical"];
 const INFO_DEFAULT_EXPIRES_IN_MS = 3_600_000; // 1h (NG4)
 
@@ -70,10 +79,8 @@ interface CursorLimitQuery {
 function parseCursorLimitQuery(query: Record<string, unknown>): CursorLimitQuery {
   const result: CursorLimitQuery = {};
   if (typeof query["cursor"] === "string") result.cursor = query["cursor"];
-  if (typeof query["limit"] === "string") {
-    const n = Number.parseInt(query["limit"], 10);
-    if (Number.isFinite(n) && n > 0) result.limit = n;
-  }
+  const limit = parseLimitParam(query["limit"]);
+  if (limit !== undefined) result.limit = limit;
   return result;
 }
 
@@ -147,7 +154,7 @@ export class NoticesController {
     if (message.length === 0) {
       throw unprocessableEntity("message must not be empty.", instance);
     }
-    if (message.length > MESSAGE_MAX_LENGTH) {
+    if (charCount(message) > MESSAGE_MAX_LENGTH) {
       throw unprocessableEntity(`message must be at most ${MESSAGE_MAX_LENGTH} characters.`, instance);
     }
 
