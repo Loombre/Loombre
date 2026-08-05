@@ -48,7 +48,8 @@ import {
 import { Button } from "../../ui/Button.js";
 import { TextInput } from "../../ui/Input.js";
 import { QrCode } from "../../ui/QrCode.js";
-import { apiGet, apiPost, LoombreApiError , apiErrorMessage } from "../../../lib/api-client.js";
+import { apiGet, apiPost, LoombreApiError } from "../../../lib/api-client.js";
+import { apiErrorMessage } from "../../../lib/api-error-message.js";
 import { RouterBrandPicker, RouterCardPanel } from "./RouterCardView.js";
 import { PATH_LABELS } from "./path-labels.js";
 import styles from "./ProofStage.module.css";

@@ -34,7 +34,8 @@ import { Button } from "../../ui/Button.js";
 import { TextInput } from "../../ui/Input.js";
 import { SecretReveal } from "../../ui/SecretReveal.js";
 import { QrCode } from "../../ui/QrCode.js";
-import { apiGet, apiPost, LoombreApiError , apiErrorMessage } from "../../../lib/api-client.js";
+import { apiGet, apiPost, LoombreApiError } from "../../../lib/api-client.js";
+import { apiErrorMessage } from "../../../lib/api-error-message.js";
 import styles from "./RemoteEnrollCeremony.module.css";
 
 type User = components["schemas"]["User"];

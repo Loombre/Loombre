@@ -141,27 +141,8 @@ export async function apiDelete<P extends PathsWithMethod<"delete">>(
   }
 }
 
-/**
- * Best user-facing text for a caught API error: the RFC 9457 problem
- * `detail` (the server's specific, actionable sentence — e.g. "set the
- * WireGuard endpoint host from Settings before enrolling a device") when
- * present, else the error's title-level `message`, else the caller's
- * fallback. Prefer this over `err.message` in every catch that shows the
- * user an error — bare `.message` surfaces only the generic status title
- * ("Unprocessable Entity", "Conflict") and drops the detail the server
- * went to the trouble of writing (V-UX F2/F3).
- */
-export function apiErrorMessage(err: unknown, fallback: string): string {
-  if (err instanceof LoombreApiError) {
-    const problem = err.problem;
-    if (typeof problem === "object" && problem !== null && "detail" in problem) {
-      const detail = (problem as { detail?: unknown }).detail;
-      if (typeof detail === "string" && detail.length > 0) return detail;
-    }
-    if (err.message.length > 0) return err.message;
-  }
-  return fallback;
-}
+// apiErrorMessage moved to ./api-error-message.ts — see that file's header
+// for why it must NOT live behind the widely-mocked api-client surface.
 
 export { LoombreApiError };
 export type { HttpMethod };

@@ -48,17 +48,6 @@ vi.mock("../../../lib/api-client.js", () => ({
   apiGet: (...args: unknown[]) => apiGetMock(...args),
   apiPost: (...args: unknown[]) => apiPostMock(...args),
   LoombreApiError: FakeApiError,
-  apiErrorMessage: (err: unknown, fallback: string): string => {
-    if (err && typeof err === "object") {
-      const problem = (err as { problem?: unknown }).problem;
-      if (problem && typeof problem === "object" && typeof (problem as { detail?: unknown }).detail === "string" && (problem as { detail?: string }).detail) {
-        return (problem as { detail: string }).detail;
-      }
-      const message = (err as { message?: unknown }).message;
-      if (typeof message === "string" && message.length > 0) return message;
-    }
-    return fallback;
-  },
 }));
 
 vi.mock("../../../lib/events-socket.js", () => ({

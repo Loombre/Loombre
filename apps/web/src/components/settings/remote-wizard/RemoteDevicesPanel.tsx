@@ -39,7 +39,8 @@ import type { components } from "@loombre/sdk";
 import { Button } from "../../ui/Button.js";
 import { EmptyState } from "../../admin/EmptyState.js";
 import { Skeleton } from "../../skeleton/Skeleton.js";
-import { apiDelete, apiGet, LoombreApiError , apiErrorMessage } from "../../../lib/api-client.js";
+import { apiDelete, apiGet, LoombreApiError } from "../../../lib/api-client.js";
+import { apiErrorMessage } from "../../../lib/api-error-message.js";
 import { EnrollDeviceSheet } from "./EnrollDeviceSheet.js";
 import styles from "./RemoteDevicesPanel.module.css";
 

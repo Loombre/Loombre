@@ -39,7 +39,8 @@ import { Button } from "../../ui/Button.js";
 import { StatusPill } from "../../admin/StatusPill.js";
 import { Skeleton } from "../../skeleton/Skeleton.js";
 import type { PillTone } from "../../../lib/admin-status.js";
-import { apiGet, apiErrorMessage } from "../../../lib/api-client.js";
+import { apiGet } from "../../../lib/api-client.js";
+import { apiErrorMessage } from "../../../lib/api-error-message.js";
 import { getEventsSocket } from "../../../lib/events-socket.js";
 import styles from "./ConnectorHealthPanel.module.css";
 
