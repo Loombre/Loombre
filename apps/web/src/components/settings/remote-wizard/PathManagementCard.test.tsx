@@ -42,21 +42,48 @@ const { PathManagementCard } = await import("./PathManagementCard.js");
 const REMOTE_ACTIVE: RemoteState = {
   activePath: "remote",
   wireguard: { enabled: true, listening: true, listenPort: 51820, subnet: "10.82.146.0/24", endpointHost: "example.com", peerCount: 3 },
-  tunnel: { enabled: false, connectorState: "stopped", hostname: null, backoffMs: null, lastErrorMessage: null },
+  tunnel: {
+    enabled: false,
+    connectorState: "stopped",
+    hostname: null,
+    backoffMs: null,
+    lastErrorMessage: null,
+    tokenConfigured: false,
+    tokenSetAtMs: null,
+    tokenScopesOk: null,
+  },
   direct: { enabled: false, mode: null, domain: null, certValid: null, certExpiresAtMs: null },
 };
 
 const TUNNEL_ACTIVE: RemoteState = {
   activePath: "tunnel",
   wireguard: { enabled: false, listening: false, listenPort: 51820, subnet: "10.82.146.0/24", endpointHost: null, peerCount: 0 },
-  tunnel: { enabled: true, connectorState: "running", hostname: "loombre.example.com", backoffMs: null, lastErrorMessage: null },
+  tunnel: {
+    enabled: true,
+    connectorState: "running",
+    hostname: "loombre.example.com",
+    backoffMs: null,
+    lastErrorMessage: null,
+    tokenConfigured: true,
+    tokenSetAtMs: 1_700_000_000_000,
+    tokenScopesOk: true,
+  },
   direct: { enabled: false, mode: null, domain: null, certValid: null, certExpiresAtMs: null },
 };
 
 const DIRECT_ACTIVE: RemoteState = {
   activePath: "direct",
   wireguard: { enabled: false, listening: false, listenPort: 51820, subnet: "10.82.146.0/24", endpointHost: null, peerCount: 0 },
-  tunnel: { enabled: false, connectorState: "stopped", hostname: null, backoffMs: null, lastErrorMessage: null },
+  tunnel: {
+    enabled: false,
+    connectorState: "stopped",
+    hostname: null,
+    backoffMs: null,
+    lastErrorMessage: null,
+    tokenConfigured: false,
+    tokenSetAtMs: null,
+    tokenScopesOk: null,
+  },
   direct: { enabled: true, mode: "acme", domain: "loombre.example.com", certValid: true, certExpiresAtMs: 1_800_000_000_000 },
 };
 

@@ -286,7 +286,7 @@ access" section has a working nginx snippet and explains exactly what
 `LOOMBRE_TRUST_PROXY` does and why it's off by default).
 
 A full reverse-proxy + ACME/TLS operations guide lives in **docs/ops**
-— see `docs/ops/reverse-proxy.md` and `docs/ops/acme.md` — pointer left
+— see `docs/ops/remote-access/reverse-proxy.md` and `docs/ops/remote-access/acme.md` — pointer left
 here rather than duplicating that content.
 
 ## Verifying the image

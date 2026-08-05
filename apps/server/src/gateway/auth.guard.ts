@@ -42,7 +42,7 @@ export interface AuthenticatedRequest extends Request {
  * need a SEPARATE matching mechanism from the literal-string Set above.
  * F1 (opus adversarial review, fix wave): mounted under /invites, NOT bare
  * /claim/{token} — that path collided with the Next.js web PAGE route at
- * apps/web/src/app/claim/[token] under docs/ops/reverse-proxy.md's
+ * apps/web/src/app/claim/[token] under docs/ops/remote-access/reverse-proxy.md's
  * routing (see invites.controller.ts's header for the full story).
  * STATE.md "Optional mail transport + invitation & reset flows" (E3b/M12,
  * Lane B) added POST /auth/forgot-password and POST /auth/reset-password —
