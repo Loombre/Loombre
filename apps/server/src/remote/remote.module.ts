@@ -26,6 +26,15 @@
 // precedent for needing both) and re-provides NEITHER, or Nest mints a
 // second module-scoped instance that silently diverges from the one every
 // other controller/test spies on.
+//
+// RemoteDirectController ALSO injects SettingsService (RG12, lane D1) —
+// reachable with NO further wiring here: CommonSettingsModule's own
+// `exports` array re-exports SettingsModule itself (see that file's
+// header), so any module that imports CommonSettingsModule (this one
+// already does, for the rate-limit providers above) gets SettingsService
+// for free. Confirmed empirically, not just by reading the export chain —
+// apps/server/test/remote-direct.e2e.spec.ts boots the real AppModule and
+// exercises this exact injection.
 import { Module } from "@nestjs/common";
 import { RemoteStateController } from "./remote-state.controller.js";
 import { RemoteWireguardController } from "./remote-wireguard.controller.js";

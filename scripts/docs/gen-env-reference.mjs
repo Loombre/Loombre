@@ -166,9 +166,13 @@ lines.push(
       "(`POSTGRES_PASSWORD`, `LOOMBRE_JWT_SECRET`), performance-tier and transcode tuning " +
       "(`LOOMBRE_TIER`, `LOOMBRE_ALLOW_TRANSCODE`, `LOOMBRE_MAX_STREAM_BITRATE`, " +
       "`LOOMBRE_TRANSCODE_WORKER_CONCURRENCY`), metadata-provider keys " +
-      "(`LOOMBRE_TMDB_API_KEY`, `LOOMBRE_TVDB_API_KEY`), TLS/ACME companions to " +
-      "`LOOMBRE_TLS_MODE` (`LOOMBRE_TLS_CERT_PATH`/`KEY_PATH`, `LOOMBRE_HTTPS_PORT`, the " +
-      "`LOOMBRE_ACME_*` family — see [docs/ops/acme.md](/ops/acme)), IPC and logging " +
+      "(`LOOMBRE_TMDB_API_KEY`, `LOOMBRE_TVDB_API_KEY`), TLS/ACME companions not already " +
+      "covered by the registry pins above (`LOOMBRE_TLS_CERT_PATH`/`KEY_PATH`, " +
+      "`LOOMBRE_HTTPS_PORT`, `LOOMBRE_ACME_EMAIL`, `LOOMBRE_ACME_DIRECTORY_URL`, " +
+      "`LOOMBRE_ACME_STAGING`, `LOOMBRE_ACME_DNS_HOOK` and its propagation-timeout companion, " +
+      "`LOOMBRE_ACME_CA_BUNDLE`, `LOOMBRE_ACME_RENEW_WINDOW_DAYS`/`RENEW_CHECK_INTERVAL_MS` " +
+      "— see [docs/ops/acme.md](/ops/acme); `LOOMBRE_ACME_DOMAINS`/`CHALLENGE_TYPE`/`TOS_AGREED` " +
+      "ARE covered above, as registry pins), IPC and logging " +
       "(`LOOMBRE_IPC_*`, `LOOMBRE_LOG_FILE`), and embedded-PG plumbing " +
       "(`LOOMBRE_EMBEDDED_PG_*`). The full, accurate, hand-maintained list of every variable " +
       "Loombre's Docker Compose distribution reads lives in " +
