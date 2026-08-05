@@ -7,7 +7,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { checkReferentialIntegrity, validateArchive, ImportValidationError, type ExportArchive } from '../../src/import/index.js';
-import { buildArtist, buildEmptyArchive, buildEpisode, buildLibrary, buildMovie, buildProgress, buildSeason, buildSeries } from './fixtures.js';
+import { buildArtist, buildEmptyArchive, buildEpisode, buildLibrary, buildMovie, buildProgress, buildSeason, buildSeries, buildUser } from './fixtures.js';
 
 /** Casts a deliberately malformed/incomplete fixture into the typed slot
  *  under test — every case in this file exists to prove validateArchive()
@@ -156,5 +156,104 @@ describe('checkReferentialIntegrity', () => {
     const artist = buildArtist(lib.id);
     const archive = validateArchive(buildEmptyArchive({ libraries: [lib], items: [artist] }));
     expect(() => checkReferentialIntegrity(archive)).not.toThrow();
+  });
+});
+
+// AUD-V2-M1 (merged from A2c-002 + A2c-003): checkReferentialIntegrity
+// validates every REFERENCE an archive makes but, before this fix, never
+// checked that the archive's own identity keys (item id, library id, user
+// id/username) were unique — a duplicate item id silently overwrote the
+// earlier row (consumer.ts's preserveIds upsert) and a duplicate username
+// was silently absorbed as an in-transaction natural-key match
+// (consumer.ts's getUserByUsername pre-insert lookup), in both cases with
+// the import reporting success. These pure in-memory cases pin the
+// fail-fast contract; consumer.spec.ts's live-DB cases prove the database
+// is actually untouched when this fires from runImport().
+describe('checkReferentialIntegrity: archive-internal uniqueness (AUD-V2-M1)', () => {
+  it('rejects a duplicate item id, naming the id and both offending indices', () => {
+    const lib = buildLibrary();
+    const movieA = buildMovie(lib.id, { id: 'shared-item-id', title: 'First' });
+    const movieB = buildMovie(lib.id, { id: 'shared-item-id', title: 'Second (duplicate id)' });
+    const archive = validateArchive(buildEmptyArchive({ libraries: [lib], items: [movieA, movieB] }));
+    try {
+      checkReferentialIntegrity(archive);
+      expect.unreachable('should have thrown');
+    } catch (err) {
+      expect(err).toBeInstanceOf(ImportValidationError);
+      expect((err as Error).message).toContain('shared-item-id');
+      expect((err as Error).message).toContain('.items[1]');
+      expect((err as Error).message).toContain('.items[0]');
+    }
+  });
+
+  it('rejects a duplicate library id, naming the id and both offending indices', () => {
+    const libA = buildLibrary({ id: 'shared-library-id', name: 'First' });
+    const libB = buildLibrary({ id: 'shared-library-id', name: 'Second (duplicate id)' });
+    const archive = validateArchive(buildEmptyArchive({ libraries: [libA, libB] }));
+    try {
+      checkReferentialIntegrity(archive);
+      expect.unreachable('should have thrown');
+    } catch (err) {
+      expect(err).toBeInstanceOf(ImportValidationError);
+      expect((err as Error).message).toContain('shared-library-id');
+      expect((err as Error).message).toContain('.libraries[1]');
+    }
+  });
+
+  it('rejects a duplicate username across two archive.users rows, naming the username', () => {
+    const userA = buildUser({ username: 'dup-name', id: 'user-a-id' });
+    const userB = buildUser({ username: 'dup-name', id: 'user-b-id' });
+    const archive = validateArchive(buildEmptyArchive({ users: [userA, userB] }));
+    try {
+      checkReferentialIntegrity(archive);
+      expect.unreachable('should have thrown');
+    } catch (err) {
+      expect(err).toBeInstanceOf(ImportValidationError);
+      expect((err as Error).message).toContain('dup-name');
+      expect((err as Error).message).toContain('.users[1]');
+    }
+  });
+
+  it('rejects a duplicate user id even when usernames differ, naming the id', () => {
+    const userA = buildUser({ username: 'user-a', id: 'shared-user-id' });
+    const userB = buildUser({ username: 'user-b', id: 'shared-user-id' });
+    const archive = validateArchive(buildEmptyArchive({ users: [userA, userB] }));
+    try {
+      checkReferentialIntegrity(archive);
+      expect.unreachable('should have thrown');
+    } catch (err) {
+      expect(err).toBeInstanceOf(ImportValidationError);
+      expect((err as Error).message).toContain('shared-user-id');
+      expect((err as Error).message).toContain('.users[1]');
+    }
+  });
+
+  // Reviewer reproduction against runImport (fix wave 2, FW2-B follow-up):
+  // users.username is CITEXT NOT NULL UNIQUE (packages/db/migrations/
+  // 0001_init.sql:132) and getUserByUsername (packages/db/src/query/
+  // identity.ts:43) compares with a plain `=`, so the DATABASE treats "Bob"
+  // and "bob" as the SAME username. Before this case, checkArchiveInternalUniqueness
+  // keyed its Map on the raw string, so "Bob" and "bob" hashed to different
+  // keys and sailed through — the archive then reached runImport(), where
+  // "Bob" inserted first and "bob" silently took the natural-key "skip"
+  // branch (consumer.ts's users loop, same silent-absorb mechanism AUD-V2-M1
+  // already named for an EXACT duplicate). This pins the case-insensitive
+  // half of that failure mode at the validator layer, matching the column's
+  // real collation.
+  it('rejects a same-archive username collision that differs only by case (CITEXT collation), naming both raw spellings', () => {
+    const userA = buildUser({ username: 'Bob', id: 'user-a-id', email: 'bob-a@example.com' });
+    const userB = buildUser({ username: 'bob', id: 'user-b-id', email: 'bob-b@example.com' });
+    const archive = validateArchive(buildEmptyArchive({ users: [userA, userB] }));
+    try {
+      checkReferentialIntegrity(archive);
+      expect.unreachable('should have thrown');
+    } catch (err) {
+      expect(err).toBeInstanceOf(ImportValidationError);
+      // Both RAW spellings must be named — an operator seeing only "bob"
+      // twice cannot tell which row is which.
+      expect((err as Error).message).toContain('Bob');
+      expect((err as Error).message).toContain('bob');
+      expect((err as Error).message).toContain('.users[1]');
+    }
   });
 });
