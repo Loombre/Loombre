@@ -37,6 +37,18 @@
 // (integration replaces this once WG1's/D1's own active-signal exist, same
 // seam shape). Swapping any of the three later is a ONE-LINE change here —
 // no call site anywhere else names a concrete class.
+//
+// Lane P1 additions: ConnectorHealthReaderService (the freeze's own
+// cross-lane-seams note — T2 wires the real cloudflared-connector read at
+// integration; at that point it should read through lane T1's
+// ConnectorManager token above rather than stay a parallel seam —
+// integration unification note, STATE.md) and RemoteDnsResolverService
+// (node:dns wiring for diagnoseRemote/getRemoteProbe's auto-diagnosis) are
+// provided HERE, module-scoped, so RemoteDiagnosisController and
+// RemoteProbesController share the SAME instances — required for
+// apps/server/test/remote-probes.e2e.spec.ts's `vi.spyOn(app.get(...), ...)`
+// seam-testing pattern (MailConfigService precedent) to actually intercept
+// what the controllers call.
 import { Module } from "@nestjs/common";
 import { RemoteStateController } from "./remote-state.controller.js";
 import { RemoteWireguardController } from "./remote-wireguard.controller.js";
@@ -45,6 +57,8 @@ import { RemoteDirectController } from "./remote-direct.controller.js";
 import { RemoteDiagnosisController } from "./remote-diagnosis.controller.js";
 import { RemoteProbesController } from "./remote-probes.controller.js";
 import { ProbePageController } from "./probe-page.controller.js";
+import { ConnectorHealthReaderService } from "./connector-health.service.js";
+import { RemoteDnsResolverService } from "./remote-dns-resolver.service.js";
 import { CommonModule } from "../common/common.module.js";
 import { CommonSettingsModule } from "../common/common-settings.module.js";
 import { RemoteActivePathReader, NoopRemoteActivePathReader } from "./active-path-reader.js";
@@ -71,7 +85,10 @@ import { RemoteTunnelService } from "./tunnel/remote-tunnel.service.js";
     { provide: RemoteActivePathReader, useClass: NoopRemoteActivePathReader },
     TunnelTokenService,
     RemoteTunnelService,
+    ConnectorHealthReaderService,
+    RemoteDnsResolverService,
   ],
+  exports: [ConnectorHealthReaderService, RemoteDnsResolverService],
   // NoopConnectorManager/NoopRemoteActivePathReader carry test-only
   // introspection (getTestState()/activePathOverride) that e2e specs read
   // via `app.get(ConnectorManager)`/`app.get(RemoteActivePathReader)` — no
