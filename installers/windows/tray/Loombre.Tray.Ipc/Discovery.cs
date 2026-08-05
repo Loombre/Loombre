@@ -40,10 +40,17 @@ public static class Discovery
             Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
             "Loombre");
 
-    public static async Task<(Uri BaseAddress, string Token)> ReadAsync(CancellationToken ct = default)
+    /// <param name="ct">Cancellation token for the two file reads.</param>
+    /// <param name="baseDirOverride">Test seam: read from this directory
+    /// instead of <see cref="AppDataDir"/> — same pattern as IpcClient's
+    /// injected HttpMessageHandler (see that class's header). Production
+    /// callers never pass this; it exists so Loombre.Tray.Tests can point
+    /// at a temp directory instead of the real %ProgramData%\Loombre.</param>
+    public static async Task<(Uri BaseAddress, string Token)> ReadAsync(CancellationToken ct = default, string? baseDirOverride = null)
     {
-        var discoveryPath = Path.Combine(AppDataDir, Transport.DiscoveryFilename);
-        var tokenPath = Path.Combine(AppDataDir, Transport.TokenFilename);
+        var baseDir = baseDirOverride ?? AppDataDir;
+        var discoveryPath = Path.Combine(baseDir, Transport.DiscoveryFilename);
+        var tokenPath = Path.Combine(baseDir, Transport.TokenFilename);
 
         IpcDiscoveryFile? file;
         await using (var stream = File.OpenRead(discoveryPath))
