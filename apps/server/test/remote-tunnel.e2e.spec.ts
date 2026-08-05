@@ -527,6 +527,66 @@ describe("T2/RG7 — real connector crash -> backoff -> auto-restart, surfaced t
     expect(statusAfterRecovery.body.connectorState).toBe("running");
     expect(statusAfterRecovery.body.backoffMs).toBeNull();
   });
+
+  // WG3 (STATE.md, R4/RG7 gap closure — T2's own report: "tunnel.connector.
+  // state event unwired by anyone"). Same crash -> backoff -> healthy
+  // sequence as the test above, this time asserting the ADMIN-ONLY outbox
+  // event TunnelConnectorStateEventService now emits on every REAL
+  // transition (subscribed via ConnectorManager.onStateChange at boot),
+  // in CONTRACT vocabulary (mapConnectorStateToContract — same translation
+  // getRemoteTunnelStatus's own connectorState field already uses).
+  it("emits tunnel.connector.state through the outbox on EVERY real transition, in order, contract-vocabulary, no secrets", async () => {
+    const startMarker = Date.now(); // beforeEach's own disable() already settled the connector to 'stopped' before this
+    stubMode = "crash";
+    await request(app.getHttpServer()).post("/admin/remote/tunnel/token").set("Authorization", `Bearer ${adminToken}`).send({ token: "good-token" });
+    await request(app.getHttpServer()).post("/admin/remote/tunnel/enable").set("Authorization", `Bearer ${adminToken}`).send({ hostname: "media.example.com" });
+
+    await waitFor(() => connectorManager.health().state === "backoff");
+    stubMode = "healthy";
+    await waitFor(() => connectorManager.health().state === "healthy", 10_000);
+
+    // TunnelConnectorStateEventService writes the event ASYNCHRONOUSLY off
+    // the onStateChange callback (`void this.emit(change)` — deliberately
+    // fire-and-forget, per that file's own header: a slow/failing outbox
+    // write must never block the connector's own state machine) — so the
+    // in-memory health() flip above can observably precede the LAST
+    // event's own commit by a beat. Poll for the DB to catch up rather
+    // than assuming it already has, same posture as every other real-
+    // async wait in this file (waitFor itself).
+    let events: Awaited<ReturnType<typeof readUnprocessedEvents>> = [];
+    let connectorEvents: Array<{ previousState: string; newState: string; changedAtMs: number }> = [];
+    const deadline = Date.now() + 5_000;
+    do {
+      events = await readUnprocessedEvents(dbProvider.db, 5000);
+      connectorEvents = events
+        .filter((e) => e.type === "tunnel.connector.state")
+        .map((e) => e.payload as { previousState: string; newState: string; changedAtMs: number })
+        .filter((p) => p.changedAtMs >= startMarker);
+      if (connectorEvents.length >= 4) break;
+      await new Promise((r) => setTimeout(r, 20));
+    } while (Date.now() < deadline);
+
+    // stopped->starting (enable spawns the child) -> starting->degraded
+    // (the stub crashes, backoff scheduled) -> degraded->starting (the
+    // scheduled restart attempt) -> starting->running (the stub's
+    // readiness line, now in 'healthy' mode).
+    expect(connectorEvents.map((e) => `${e.previousState}->${e.newState}`)).toEqual([
+      "stopped->starting",
+      "starting->degraded",
+      "degraded->starting",
+      "starting->running",
+    ]);
+    for (const e of connectorEvents) expect(typeof e.changedAtMs).toBe("number");
+
+    const rawEvents = events.filter((e) => e.type === "tunnel.connector.state" && (e.payload as { changedAtMs: number }).changedAtMs >= startMarker);
+    for (const e of rawEvents) {
+      expect(e.actor_user_id).toBeNull(); // system-generated — no admin actor (ACTOR_FIELD_MAP maps this type to [])
+      // R9: exhaustively three fields, no secrets. Key ORDER not asserted
+      // — Postgres JSONB round-tripping doesn't preserve insertion order.
+      expect(Object.keys(e.payload as object).sort()).toEqual(["changedAtMs", "newState", "previousState"]);
+      expect(JSON.stringify(e.payload)).not.toMatch(/good-token|token|secret|credential/i);
+    }
+  });
 });
 
 describe("T2/RG7 — connector resumes on boot if the tunnel state row says enabled", () => {

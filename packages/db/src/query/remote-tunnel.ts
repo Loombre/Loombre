@@ -157,3 +157,52 @@ export async function disableTunnelStateAndEmit(db: Kysely<DB>, input: DisableTu
     return row;
   });
 }
+
+// ============================================================================
+// recordTunnelConnectorStateEvent (WG3, R4/RG7 gap closure)
+// ============================================================================
+//
+// STATE.md "Loombre Remote ..." — T2's own report flagged the gap: "the
+// frozen event schema is emitted by NO ONE" (packages/contract/event-
+// schemas/tunnel.connector.state.schema.json, frozen at Wave 0). Same shape
+// as remote-posture.ts's own recordPostureRegressedEvent/
+// recordPostureRecoveredEvent (see that file's header for the full
+// reasoning this borrows): a NARROW, system-generated (no admin actor —
+// ACTOR_FIELD_MAP maps this type to `[]`, actorUserId is always null here)
+// writer with no associated row to update — the connector's own state is
+// process-lifetime-only (RG7: never persisted), so there is nothing to
+// diff against in a transaction the way setPluginHealthAndEmit diffs a
+// `plugins` row; the CALLER (apps/server/src/remote/tunnel/tunnel-
+// connector-state-event.service.ts, subscribed via ConnectorManager.
+// onStateChange) is what already knows a real transition just happened and
+// calls this exactly once per transition.
+//
+// Values arrive in the CONTRACT's own vocabulary (`stopped|starting|
+// running|degraded|error`), already translated by the caller via
+// remote-tunnel.service.ts's mapConnectorStateToContract — this function
+// never sees ConnectorManager's internal `stopped|starting|healthy|
+// unhealthy|backoff` vocabulary at all, matching exactly what the frozen
+// JSON Schema's own enum requires.
+
+export interface RecordTunnelConnectorStateEventInput {
+  previousState: 'stopped' | 'starting' | 'running' | 'degraded' | 'error';
+  newState: 'stopped' | 'starting' | 'running' | 'degraded' | 'error';
+  changedAtMs: number;
+}
+
+/** Writes ONE `tunnel.connector.state` admin-only event with no actor —
+ *  see this section's header. */
+export async function recordTunnelConnectorStateEvent(db: Kysely<DB>, input: RecordTunnelConnectorStateEventInput): Promise<void> {
+  await withTransaction(db, async (trx) => {
+    await writeEvent(trx, {
+      type: 'tunnel.connector.state',
+      tsMs: input.changedAtMs,
+      actorUserId: null,
+      payload: {
+        previousState: input.previousState,
+        newState: input.newState,
+        changedAtMs: input.changedAtMs,
+      },
+    });
+  });
+}
