@@ -202,6 +202,22 @@ describe("ComposeNoticeCard — char counter", () => {
   });
 });
 
+it("R-F8: counts CODE POINTS, not UTF-16 units — 250 astral emoji read 250/500, and the truncate never splits a surrogate pair", async () => {
+  await render();
+
+  // 250 emoji = 500 UTF-16 units but 250 characters to Postgres/the
+  // contract — the counter must say 250, not 500.
+  await typeMessage("😀".repeat(250));
+  expect(textOf()).toContain("250/500");
+
+  // 501 emoji truncates to exactly 500 WHOLE characters (1000 UTF-16
+  // units) — a naive .slice(0, 500) would cut mid-surrogate.
+  await typeMessage("😀".repeat(501));
+  expect([...textarea().value]).toHaveLength(500);
+  expect(textarea().value.endsWith("😀")).toBe(true);
+  expect(textOf()).toContain("500/500");
+});
+
 describe("ComposeNoticeCard — warning requires expiry", () => {
   it("Maintenance preset leaves expiry unset; publishing without choosing one blocks with an inline error", async () => {
     await render(null);

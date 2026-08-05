@@ -49,6 +49,16 @@ remains the operator action). New table `system_notices` (migration
 "until cancelled"); audit = the broadcast events themselves (envelope
 actor). Admin + user docs.
 
+Post-review polish: message length is counted in characters (code
+points) everywhere — 500 emoji are 500 characters, not 250; every
+cursor-list endpoint now clamps `?limit` to the contract's maximum
+(200) via one shared helper; the mobile notice banner clears the
+compact back-mode header correctly instead of leaving a 46px gap; and
+the restart copy is honest about today's reality — every setting on the
+settings screens applies immediately (the restart-pending banner
+machinery stays, tested, for the first future setting that genuinely
+needs a restart).
+
 ### Web admin: Restart / Shut down server from Settings → Server (2026-08-04)
 
 New admin-only contract operations **POST /system/restart** and
