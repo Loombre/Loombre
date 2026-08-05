@@ -129,6 +129,29 @@ let view: TestRender | undefined;
 const onSwitchPath = vi.fn();
 const onChanged = vi.fn();
 
+// WG3: RemoteDevicesPanel (mounted here for path='remote') now renders
+// EnrollDeviceSheet unconditionally (`open={false}` until "Enroll a
+// device" is clicked), which uses SheetOrModal -> useMediaQuery ->
+// window.matchMedia on EVERY render regardless of `open` — jsdom has no
+// matchMedia implementation at all (SheetOrModal.test.tsx's own header
+// note; RemoteDevicesPanel.test.tsx's own identical precedent) — every
+// test below needs this stub even the ones that never mount the
+// Remote-path section.
+function installMatchMedia(): void {
+  vi.stubGlobal(
+    "matchMedia",
+    vi.fn().mockImplementation((query: string) => ({
+      matches: false,
+      media: query,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      addListener: () => {},
+      removeListener: () => {},
+      dispatchEvent: () => true,
+    })),
+  );
+}
+
 beforeEach(() => {
   apiGetMock.mockReset();
   apiPostMock.mockReset();
@@ -137,11 +160,13 @@ beforeEach(() => {
   defaultApiGetRouting();
   onSwitchPath.mockReset();
   onChanged.mockReset();
+  installMatchMedia();
 });
 
 afterEach(() => {
   view?.unmount();
   view = undefined;
+  vi.unstubAllGlobals();
 });
 
 async function render(state: RemoteState): Promise<void> {

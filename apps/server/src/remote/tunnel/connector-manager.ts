@@ -18,6 +18,21 @@
 //
 // An ABSTRACT CLASS, not a Symbol/@Inject token — see active-path-reader.ts's
 // header for why.
+//
+// WG3 (STATE.md "Loombre Remote ...", R4/RG7 gap closure — T2's own report
+// flagged it: "tunnel.connector.state event unwired by anyone"): onStateChange
+// below is the seam production code hooks to actually emit that frozen
+// event (packages/contract/event-schemas/tunnel.connector.state.schema.json)
+// on a REAL transition. Declared ABSTRACT, like every other member here —
+// `implements ConnectorManager` (not `extends`) is this file's existing
+// convention for both NoopConnectorManager and CloudflaredConnectorManager,
+// and `implements` never inherits a concrete method's body, only its shape
+// — an abstract declaration makes that explicit rather than silently
+// requiring every implementer to redeclare a "default" that would never
+// actually apply to them anyway. This is PURELY ADDITIVE: start/stop/
+// health/logsTail are byte-for-byte unchanged, so every existing call site
+// and every existing test (T2's own cloudflared-connector-manager.spec.ts,
+// every e2e spec) that never calls onStateChange keeps working untouched.
 
 import { Injectable } from "@nestjs/common";
 
@@ -61,6 +76,18 @@ export interface ConnectorStartConfig {
   credential: string;
 }
 
+/** WG3: one real state transition, in this file's OWN `ConnectorState`
+ *  vocabulary (never the contract's `stopped|starting|running|degraded|
+ *  error` — a listener translates via remote-tunnel.service.ts's own
+ *  mapConnectorStateToContract BEFORE writing the event, same as
+ *  toStatusDto already does for the status read). `changedAtMs` is the
+ *  SAME clock as ConnectorHealth.sinceMs (nowMs(), the injected seam). */
+export interface ConnectorStateChange {
+  previousState: ConnectorState;
+  newState: ConnectorState;
+  changedAtMs: number;
+}
+
 export abstract class ConnectorManager {
   abstract start(config: ConnectorStartConfig): Promise<void>;
   abstract stop(): Promise<void>;
@@ -70,6 +97,10 @@ export abstract class ConnectorManager {
    *  (packages/contract/openapi.yaml). Newest-last, same convention a
    *  ring-buffer tail normally reads. */
   abstract logsTail(limit: number): string[];
+  /** WG3: registers a listener invoked exactly once per REAL state
+   *  transition (previous !== next — never for a call that leaves state
+   *  unchanged, never on a poll). See this file's header. */
+  abstract onStateChange(listener: (change: ConnectorStateChange) => void): void;
 }
 
 /**
@@ -104,6 +135,13 @@ export class NoopConnectorManager implements ConnectorManager {
   logsTail(limit: number): string[] {
     this.logsTailCalls.push(limit);
     return [];
+  }
+
+  /** WG3: registration is accepted (the shape must match), but never
+   *  invoked — health() always reports 'stopped', so no real transition
+   *  can ever occur through this no-op implementation. */
+  onStateChange(_listener: (change: ConnectorStateChange) => void): void {
+    // never fires — see doc comment above.
   }
 
   /** Test-only introspection — see this class's own doc comment. */
