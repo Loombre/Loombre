@@ -77,6 +77,21 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/** Polls `predicate` until it holds or `timeoutMs` elapses, then returns
+ *  (never throws) — the caller's own expect() below produces the real diff if
+ *  the condition was never met. Replaces a fixed `sleep()` delivery-margin for
+ *  POSITIVE assertions so a slow broadcaster poll (500ms tick) or socket
+ *  delivery under CI load can't flake them; the negative-window checks keep
+ *  their explicit `sleep()` (they assert nothing MORE arrives, which a poll
+ *  cannot express). */
+async function waitUntil(predicate: () => boolean, timeoutMs = 10_000, intervalMs = 50): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!predicate()) {
+    if (Date.now() >= deadline) return;
+    await sleep(intervalMs);
+  }
+}
+
 let app: INestApplication;
 let baseWsUrl: string;
 
@@ -203,8 +218,15 @@ describe("websocket broadcaster (mission-mandated two-live-sockets test)", () =>
         })
         .execute();
 
-      // Broadcaster polls every 500ms — give it two ticks' worth of margin.
-      await sleep(1500);
+      // Broadcaster polls every 500ms; poll until all three positive
+      // deliveries have landed (up to 10s) rather than a fixed margin, so a
+      // slow poll/delivery under CI load can't flake the assertions below.
+      await waitUntil(
+        () =>
+          adminMessages.some((m: any) => m.payload?.itemId === generalMovie.id) &&
+          casualMessages.some((m: any) => m.payload?.itemId === generalMovie.id) &&
+          adminMessages.some((m: any) => m.payload?.itemId === restrictedMovie.id),
+      );
 
       expect(
         adminMessages.some((m: any) => m.payload?.itemId === generalMovie.id),
