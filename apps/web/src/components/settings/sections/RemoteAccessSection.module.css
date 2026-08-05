@@ -2,49 +2,14 @@
 .page {
   display: flex;
   flex-direction: column;
-  gap: var(--space-md);
-  max-width: 640px;
+  gap: var(--space-lg);
+  max-width: 760px;
 }
 
 .heading {
   margin: 0;
   font-size: var(--text-xl);
   font-weight: var(--weight-semibold);
-}
-
-.cardTitle {
-  margin: 0 0 var(--space-sm);
-  font-size: var(--text-lg);
-  font-weight: var(--weight-semibold);
-}
-
-.statusRow {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-xs);
-}
-
-.statusPill {
-  align-self: flex-start;
-  padding: var(--space-3xs) var(--space-sm);
-  border-radius: var(--radius-pill);
-  font-family: var(--font-mono);
-  font-size: var(--mono-lg);
-  letter-spacing: var(--track-mono);
-  text-transform: uppercase;
-  background: var(--fill-3);
-  color: var(--muted);
-}
-
-.statusPill[data-enabled="true"] {
-  background: var(--color-accent-tint);
-  color: var(--color-accent);
-}
-
-.statusDetail {
-  margin: 0;
-  font-size: var(--text-sm);
-  color: var(--muted);
 }
 
 .helpText {
@@ -60,16 +25,34 @@
   color: var(--color-danger);
 }
 
-.advancedLink {
-  align-self: flex-start;
-  font-family: var(--font-mono);
-  font-size: var(--mono-lg);
-  letter-spacing: var(--track-mono);
-  text-transform: uppercase;
-  color: var(--color-accent);
-  text-decoration: none; /* UA anchor underline — H9 regression (W0's fix was .navItem-scoped only); this is nav-like mono-label chrome, not body copy */
+/* ── "Advanced network settings" disclosure (see RemoteAccessSection.tsx's
+   header, UI decision 2) — same <details>/<summary> pattern as
+   LibrariesPanel.module.css's unmatchedDisclosure, neutral-muted rather
+   than the amber caution treatment: nothing here needs review, it's
+   reference-only env-pinned configuration. ────────────────────────────── */
+.advancedDisclosure {
+  border-top: 1px solid var(--color-border-subtle);
+  padding-top: var(--space-md);
 }
 
-.advancedLink:hover {
-  color: var(--color-accent-hover);
+.advancedSummary {
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: var(--mono-lg);
+  letter-spacing: var(--track-mono-wide);
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.advancedSummary:hover {
+  color: var(--text);
+}
+
+.advancedBody {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  margin-top: var(--space-md);
 }

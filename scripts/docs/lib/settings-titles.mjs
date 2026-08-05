@@ -51,6 +51,7 @@ export const SETTING_TITLES = {
   "rateLimit.capabilities": "Capability check request limit",
   "rateLimit.export": "Data export request limit",
   "rateLimit.mediaToken": "Media playback request limit",
+  "rateLimit.probe": "Reachability-proof attempt limit",
   "stash.sync.scheduleIntervalMs": "Automatic Stash re-sync interval",
   "network.publicUrl": "Public web address",
   "mail.smtpHost": "Mail server address",
@@ -58,6 +59,11 @@ export const SETTING_TITLES = {
   "mail.smtpSecurity": "Mail connection security",
   "mail.fromAddress": "From address",
   "mail.fromName": "From name",
+  "remote.wireguardPort": "WireGuard listener port",
+  "remote.subnet": "Remote-access tunnel subnet",
+  "remote.wireguardEndpointHost": "WireGuard public endpoint",
+  "remote.cloudflaredPath": "Cloudflare tunnel binary path",
+  "remote.tunnelHostname": "Tunnel public hostname",
 
   "database.url": "Database connection",
   "http.port": "HTTP port",
@@ -69,6 +75,9 @@ export const SETTING_TITLES = {
   "network.trustProxy": "Trust proxy",
   "network.corsOrigins": "Allowed browser origins (CORS)",
   "tls.mode": "TLS mode",
+  "tls.acmeDomains": "Certificate domain name(s)",
+  "tls.acmeChallengeType": "Certificate verification method",
+  "tls.acmeTosAgreed": "Accept certificate authority Terms of Service",
 };
 
 /** Admin Guide category grouping — only categories that actually contain a
@@ -83,11 +92,13 @@ export const ADMIN_CATEGORY_TITLES = {
   security: { title: "Security & sign-in logging", blurb: "Local logging of suspicious sign-in activity." },
   rateLimit: { title: "Sign-in & request limits", blurb: "How many attempts or requests are allowed in a given time window, per person or device — protects against automated guessing without locking anyone out under normal use." },
   network: { title: "Network", blurb: "The web address people use to reach this server from outside your own network." },
+  tls: { title: "HTTPS / TLS", blurb: "How this server handles HTTPS for people connecting to it directly (not through a reverse proxy). The Direct path in the Remote-access wizard fills most of this in for you and tests it before turning it on." },
   mail: { title: "Mail", blurb: "The outgoing mail server Loombre uses to send invitation and password-reset email. Entirely optional — every part of Loombre works without mail configured; see the Admin Guide's pages on inviting users and on users & permissions for the copy-link alternative." },
   stash: { title: "Stash sync", blurb: "Automatic scheduling for re-syncing metadata from a connected Stash database. See the Restricted content chapter for connecting Stash in the first place." },
+  remote: { title: "Remote access", blurb: "Settings for Loombre Remote (embedded WireGuard), the Tunnel path, and the Direct path — the three ways to reach this server from outside your own network." },
 };
 
-export const ADMIN_CATEGORY_ORDER = ["transcode", "scanner", "images", "restricted", "sessions", "updateCheck", "security", "rateLimit", "network", "mail", "stash"];
+export const ADMIN_CATEGORY_ORDER = ["transcode", "scanner", "images", "restricted", "sessions", "updateCheck", "security", "rateLimit", "network", "tls", "mail", "stash", "remote"];
 
 /** Operator Guide category grouping — env-only entries only. */
 export const ENV_CATEGORY_TITLES = {

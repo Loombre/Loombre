@@ -205,6 +205,11 @@ const PUBLIC_OPERATION_IDS = new Set([
   // Lane B): the self-service email-tier recovery surface.
   "authForgotPassword",
   "authResetPassword",
+  // STATE.md "Loombre Remote — embedded WireGuard + three-path wizard +
+  // reachability proof + posture card" (R6/R9, Wave 0 — lane/remote-base):
+  // public by necessity, same posture as the invite-claim pair above (see
+  // gateway/auth.guard.ts's PUBLIC_ROUTE_PATTERNS).
+  "getProbePage",
 ]);
 
 /** Every non-public documented operation's exact expected status when
@@ -460,6 +465,90 @@ const IMPLEMENTED_NON_PUBLIC_EXPECTATIONS: Record<string, number> = {
   listSystemNotices: 200, // empty items[] on a fresh reseeded DB
   publishSystemNotice: 422, // bodyless -> "message is required"
   cancelSystemNotice: 404, // PLACEHOLDER_UUID never resolves to a real notice
+
+  // Loombre Remote — embedded WireGuard + three-path wizard + reachability
+  // proof + posture card (STATE.md, RG15, lane WG2 — the LAST 501, item 6
+  // of this lane's own mission, is now real): getRemoteState composes
+  // activePath (canonical resolveActivePath, 'none' on a fresh reseeded DB
+  // — nothing enabled anywhere yet at THIS point in the walk, which runs
+  // BEFORE enableRemoteWireguard below) + the three per-path statuses,
+  // every one of which is itself disabled/default-shaped on a fresh DB.
+  getRemoteState: 200,
+  // Lane WG1: enable/disable/status now do real work (RemoteWireguardService)
+  // — 200 assumes packages/wg-native's native library is built, which is
+  // ALWAYS true here (this worktree has a real Go toolchain + a built
+  // dist/wg-native-darwin-arm64.dylib) and always true in CI (RG1/RG14:
+  // actions/setup-go + LOOMBRE_REQUIRE_WG=1 on the gate job makes a missing
+  // Go a hard CI failure at the BUILD step, before conformance ever runs —
+  // it can never reach this walk without wg-native present). Flagged for
+  // integration/orchestrator: a contributor running `pnpm gate` on a
+  // machine with no Go installed will see this walk fail on these two ops
+  // (enableRemoteWireguard would 503 instead of 200) — the SAME "Local dev
+  // without Go" tradeoff RG1 already accepts for wg-gated test suites, but
+  // conformance.spec.ts itself is not wg-gated/skippable the way those are,
+  // so it is the one place that tradeoff becomes user-visible outside CI.
+  enableRemoteWireguard: 200,
+  disableRemoteWireguard: 200,
+  getRemoteWireguardStatus: 200,
+  // Lane WG2: the three devices ops replace their own 501 shells. Walk
+  // ORDER matters here (API_OPERATIONS follows openapi.yaml's own path
+  // declaration order): enableRemoteWireguard runs immediately above,
+  // THEN disableRemoteWireguard runs right after it (both already listed
+  // above) — so by the time these three run, WireGuard is disabled again.
+  // listRemoteWireguardDevices needs no enabled state to list (a DB read,
+  // empty on a fresh reseeded DB); enrollRemoteWireguardDevice's bodyless
+  // request 422s on the missing required userId/name BEFORE the
+  // service-layer 409/404 checks are ever reached (same "validate before
+  // checking business-rule conflicts" ordering enableRemoteTunnel/
+  // enableRemoteDirect already established below); revokeRemoteWireguardDevice's
+  // PLACEHOLDER_UUID never resolves to a real enrolled device.
+  listRemoteWireguardDevices: 200,
+  enrollRemoteWireguardDevice: 422, // bodyless -> '"userId" (uuid string) is required.'
+  revokeRemoteWireguardDevice: 404, // PLACEHOLDER_UUID never resolves to a real enrolled device
+  // Tunnel path (R4/R9/RG7, lane T1) — real behavior, no longer a 501
+  // shell. Every one of these six ops is network-free on this walk's
+  // bodyless/placeholder requests (R11: never the live Cloudflare API,
+  // including from THIS suite): setRemoteTunnelToken's empty-body ->
+  // empty-token short-circuit (tunnel-token.service.ts) returns 200
+  // {valid:false, detail:"token must not be empty."} per the contract's
+  // OWN frozen shape (never a 4xx for an invalid token — see that file's
+  // header) WITHOUT ever calling TunnelProvider; enableRemoteTunnel's
+  // empty-body -> empty-hostname check (remote-tunnel.service.ts) 422s
+  // before any network call; disableRemoteTunnel is the idempotent
+  // already-disabled no-op on a fresh reseeded DB (also network-free).
+  setRemoteTunnelToken: 200,
+  clearRemoteTunnelToken: 204,
+  enableRemoteTunnel: 422, // bodyless -> "hostname must not be empty."
+  disableRemoteTunnel: 200, // idempotent no-op on a fresh reseeded DB
+  getRemoteTunnelStatus: 200,
+  getRemoteTunnelLogs: 200,
+  // Direct path (R5/RG12/RG15, lane D1) — REAL implementation, no longer a
+  // 501 shell: testRemoteDirectAcme/enableRemoteDirect both require a body
+  // (domain/mode respectively) this bodyless authenticated walk never
+  // supplies, 422ing on validation before any network/DB write; disable
+  // takes no body at all and is idempotent, so a fresh reseeded DB with
+  // nothing enabled 200s (see apps/server/test/remote-direct.e2e.spec.ts
+  // for the full body-supplied behavior).
+  testRemoteDirectAcme: 422, // bodyless -> "domain" is required
+  enableRemoteDirect: 422, // bodyless -> "mode" is required
+  disableRemoteDirect: 200, // idempotent no-op, nothing enabled on a fresh DB
+
+  // Lane P1 (STATE.md, R6/RG6/RG11): the reachability-proof surface —
+  // replaces its three 501 shells with real behavior (RG15's "lanes
+  // replace their 501s ... and flip their conformance-map entries").
+  // Bodyless POSTs 422 on the missing required `expectedEndpoint`/`path`
+  // fields before ever touching the DB; PLACEHOLDER_UUID never resolves
+  // to a real probe_tokens row on this fresh reseeded DB.
+  diagnoseRemote: 422, // bodyless -> "expectedEndpoint is required."
+  createRemoteProbe: 422, // bodyless -> same
+  getRemoteProbe: 404, // PLACEHOLDER_UUID never resolves to a real probe
+  // DRIFT DECISION #1 (STATE.md, S1 lane): the ONE remote op that is NOT a
+  // 501 shell — it did not exist at Wave-0 freeze, so there is no 501
+  // interim to replace. Real implementation, real conformance entry: 200,
+  // `checks: []` on the fresh reseeded DB (no remote-access path is
+  // enabled here — RemoteActivePathReaderService's own honest default,
+  // see apps/server/src/remote/posture/active-path.reader.ts's header).
+  getRemotePosture: 200,
 };
 
 let app: INestApplication;
@@ -639,6 +728,26 @@ describe("contract conformance (STATE.md D17/D21)", () => {
       expect(res.text).toBe(unknownRoute.text);
       expect(JSON.parse(res.text)).toEqual({ type: "about:blank", title: "Not Found", status: 404 });
     });
+
+    // STATE.md "Loombre Remote — embedded WireGuard + three-path wizard +
+    // reachability proof + posture card" (R6/R9, Wave 0): the ONE new
+    // public op this lane adds. No probe token can possibly be valid on
+    // this fresh reseeded DB (the mint side is itself a 501 shell), so
+    // EVERY token — well-formed or not — resolves to the same
+    // byte-identical 404 as every other "invisible == nonexistent" surface.
+    it("GET /probe/{token} -> 404 byte-identical to the catch-all unknown-route problem body, unauthenticated, for any token shape", async () => {
+      const unknownRoute = await request(app.getHttpServer())
+        .get("/this-route-does-not-exist-conformance-probe")
+        .set("Authorization", `Bearer ${adminAccessToken}`);
+
+      for (const token of ["conformance-invalid-token", "also-not-a-real-token"]) {
+        const res = await request(app.getHttpServer()).get(`/probe/${token}`);
+        expect(res.status).toBe(404);
+        expect(res.headers["content-type"]).toBe(unknownRoute.headers["content-type"]);
+        expect(res.text).toBe(unknownRoute.text);
+        expect(JSON.parse(res.text)).toEqual({ type: "about:blank", title: "Not Found", status: 404 });
+      }
+    });
   });
 
   it("authenticated walk: every NON-PUBLIC documented operation returns a non-401 status with a valid admin Bearer token", async () => {
@@ -726,6 +835,9 @@ describe("contract conformance (STATE.md D17/D21)", () => {
       // STATE.md "Optional mail transport + invitation & reset flows" (E3b/M12).
       "authForgotPassword",
       "authResetPassword",
+      // STATE.md "Loombre Remote — embedded WireGuard + three-path wizard +
+      // reachability proof + posture card" (R6/R9, Wave 0).
+      "getProbePage",
       ...Object.keys(IMPLEMENTED_NON_PUBLIC_EXPECTATIONS),
     ];
     for (const implementedOperationId of implementedOperationIds) {

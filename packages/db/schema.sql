@@ -3421,3 +3421,410 @@ COMMENT ON COLUMN system_notices.cancelled_at_ms IS
   'through packages/db/src/query/notices.ts). NULL = never cancelled; '
   'combined with expires_at_ms this is the ACTIVE predicate this '
   'table own COMMENT documents.';
+
+-- SPDX-License-Identifier: AGPL-3.0-only
+-- Loombre :: migration 0029_remote_wireguard_state
+--
+-- Additive-only (mirrors 0001/.../0028's discipline): no column drops, no
+-- type narrowing, no rewriting of prior migrations.
+--
+-- "Loombre Remote — embedded WireGuard + three-path wizard + reachability
+-- proof + posture card" (STATE.md, kicked off 2026-08-04), lane WG1.
+-- DRIFT DECISION #2 (orchestrator, logged at the exit gate): renumbered
+-- ahead of WG2's device_kind/wg_peers migration (now 0030) because WG1
+-- needs persistent state before any peer bookkeeping exists. Scope is
+-- deliberately minimal, per the drift decision's own wording: "server
+-- public key, enabled, enabled-at; private key keyring-only" — nothing
+-- else. listen_port/subnet/endpointHost are NOT duplicated here: they are
+-- already the `remote.*` settings-registry keys (Wave-0 freeze,
+-- packages/shared/src/settings-registry.ts), and duplicating an
+-- effective-settings value into a state table is exactly the kind of drift
+-- the settings registry already exists to prevent.
+
+-- ============================================================================
+-- remote_wireguard_state — single-row table (house pattern: a BOOLEAN
+-- primary key CHECK'd to TRUE is the standard PostgreSQL idiom for "at
+-- most one row can ever exist", enforced by the primary key's own
+-- uniqueness rather than application discipline alone). No row exists
+-- until the first enable (packages/db/src/query/remote-wireguard.ts
+-- upserts it) — "no row" and "row with enabled=false" are both legal
+-- readings of "not enabled"; the query layer's getRemoteWireguardState
+-- treats an absent row as the all-false default rather than requiring a
+-- migration-time seed (no other migration in this repo seeds data, see
+-- this table's own COMMENT for the full reasoning).
+-- ============================================================================
+
+CREATE TABLE remote_wireguard_state (
+  id                 BOOLEAN PRIMARY KEY DEFAULT TRUE CHECK (id),
+  server_public_key  TEXT NULL,
+  enabled            BOOLEAN NOT NULL DEFAULT FALSE,
+  enabled_at_ms      BIGINT NULL,
+  updated_at_ms      BIGINT NOT NULL
+);
+
+COMMENT ON TABLE remote_wireguard_state IS
+  'WG1 (STATE.md "Loombre Remote", R1/R2/R9): single-row admin state for '
+  'the embedded userspace WireGuard subsystem. The PRIVATE key lives ONLY '
+  'in the keyring (packages/secrets storeSecret, {value,setAtMs} envelope '
+  'precedent) -- this table NEVER carries a private key, by construction '
+  '(R9 no-secrets rule extends past event payloads to storage here too). '
+  'id is a singleton-enforcing BOOLEAN PK (CHECK(id) forbids id=false '
+  'rows, PK uniqueness forbids a second id=true row) -- the standard '
+  'Postgres idiom for a table that must never hold more than one row. No '
+  'row exists until RemoteWireguardService.enable() first upserts one; '
+  'getRemoteWireguardState treats a missing row as the all-disabled '
+  'default (packages/db/src/query/remote-wireguard.ts), so this table is '
+  'never migration-seeded.';
+
+COMMENT ON COLUMN remote_wireguard_state.server_public_key IS
+  'Standard WireGuard base64 public key (44 chars) -- generated fresh on '
+  'every enable() (a new server keypair each time Remote is turned on, '
+  'never reused across disable/enable cycles). NULL only before the first '
+  'ever enable.';
+
+COMMENT ON COLUMN remote_wireguard_state.enabled IS
+  'Mirrors RemoteWireguardStatus.enabled (packages/contract/openapi.yaml): '
+  '"a server keypair exists and enrollment is possible" -- distinct from '
+  'whether the in-process listener is ACTUALLY live right now (that is '
+  'runtime-only fact from packages/wg-native WgStatus, never persisted, '
+  'since a process restart always starts the listener fresh from this '
+  'row on boot-resume).';
+
+COMMENT ON COLUMN remote_wireguard_state.enabled_at_ms IS
+  'Set on every successful enable(), untouched by disable() (an audit '
+  'fact: "when was this last turned on", not "is it on now" -- that is '
+  'the enabled column). NULL only before the first ever enable.';
+
+COMMENT ON COLUMN remote_wireguard_state.updated_at_ms IS
+  'Bumped on every enable()/disable() -- the generic last-write timestamp '
+  '(server_settings.updated_by-adjacent pattern), independent of '
+  'enabled_at_ms which specifically means "last enabled".';
+
+-- SPDX-License-Identifier: AGPL-3.0-only
+-- Loombre :: migration 0030_wg_peers
+--
+-- Additive-only (mirrors 0001/.../0029's discipline): no column drops, no
+-- type narrowing, no rewriting of prior migrations.
+--
+-- STATE.md "Loombre Remote — embedded WireGuard + three-path wizard +
+-- reachability proof + posture card" (R2/R9/RG3/RG9, lane WG2). Reserved
+-- as 0030 by DRIFT DECISION #2 (orchestrator freeze) once WG1 took 0029 for
+-- its own persisted state ahead of this lane's device_kind/wg_peers work.
+--
+-- Two pieces:
+--   1. `device_kind` — real PG enum (house style: notice_severity/
+--      remote_probe_path/item_type/... all use CREATE TYPE for a closed
+--      SCALAR value set) + `devices.kind`, additive NOT NULL DEFAULT 'app'
+--      column (RG3: every pre-existing device row is unambiguously an
+--      'app' device — nothing in this codebase has ever enrolled a
+--      WireGuard peer before this migration exists).
+--   2. `wg_peers` — one row per enrolled Remote (WireGuard) device, R2's
+--      "device gets a stable tunnel IP from a private /24" + R9's
+--      "enrollment configs never persisted server-side post-delivery".
+--      `device_id` IS the primary key (not a separate surrogate id): the
+--      relationship is exactly 1:1 with `devices` (kind='remote'), so
+--      making the FK itself the PK is the simplest correct way to express
+--      "device_id FK unique" — the same singleton-shaped-relationship
+--      instinct remote_wireguard_state's boolean-PK trick applies, just
+--      via a real foreign key here instead of a CHECK'd boolean.
+--      ON DELETE CASCADE: deleting the owning devices row (either
+--      self-service DELETE /devices/{id} or the admin-scoped DELETE
+--      /admin/remote/wireguard/devices/{id}, packages/db/src/query/
+--      wg-peers.ts revokeRemoteWireguardDeviceAndEmit) atomically removes
+--      this row too — there is no code path that deletes a wg_peers row
+--      without also deleting its device, or vice versa.
+--
+-- R9, stated as plainly as the table itself can state it: THERE IS NO
+-- PRIVATE-KEY COLUMN HERE, OR ANYWHERE ELSE IN THIS SCHEMA, FOR A PEER'S
+-- OWN KEY. The peer keypair is generated server-side at enrollment
+-- (packages/wg-native's generateWgKeyPair, apps/server/src/remote/
+-- wireguard/remote-wireguard.controller.ts), the private half is embedded
+-- ONCE into the one-time RemoteWireguardEnrollment API response's
+-- configText, and is then gone — never written to this table, never
+-- logged, never cached anywhere server-side. Only the PUBLIC key is
+-- persisted (needed to re-add every enrolled peer to the live wg-native
+-- instance on every boot-resume, remote-wireguard.service.ts's loadPeers).
+--
+-- last-handshake is deliberately NOT a column here (STATE.md's own mission
+-- text: "last-handshake stays runtime-only from WgStatus") — it only ever
+-- exists as a live fact inside the running wg-native instance's peer list
+-- (packages/wg-native WgStatus.peers[].lastHandshakeMs), surfaced by
+-- joining that runtime read against this table's rows
+-- (listRemoteWireguardDevices), never stored here.
+
+-- ============================================================================
+-- device_kind
+-- ============================================================================
+
+CREATE TYPE device_kind AS ENUM ('app', 'remote');
+
+ALTER TABLE devices
+  ADD COLUMN kind device_kind NOT NULL DEFAULT 'app';
+
+COMMENT ON COLUMN devices.kind IS
+  'RG3: ''app'' (default — every device row created via the login-driven '
+  'createDevice path, P1.14) or ''remote'' (created ONLY by the admin-'
+  'initiated enrollRemoteWireguardDevice flow, packages/db/src/query/'
+  'wg-peers.ts, never by login). A ''remote'' device always has exactly '
+  'one corresponding wg_peers row (device_id is that table''s own primary '
+  'key) — this column is the human/API-facing label; the wg_peers row''s '
+  'mere existence is what every WireGuard-specific query actually joins '
+  'on.';
+
+-- ============================================================================
+-- wg_peers — one row per enrolled Remote (WireGuard) device (R2/R9/RG9)
+-- ============================================================================
+
+CREATE TABLE wg_peers (
+  device_id      UUID PRIMARY KEY REFERENCES devices(id) ON DELETE CASCADE,
+  public_key     TEXT NOT NULL UNIQUE,
+  tunnel_ip      TEXT NOT NULL UNIQUE,
+  created_at_ms  BIGINT NOT NULL
+);
+
+COMMENT ON TABLE wg_peers IS
+  'WG2 (STATE.md "Loombre Remote", R2/R9/RG3/RG9): one row per enrolled '
+  'Remote (WireGuard) device -- 1:1 with devices(kind=''remote''), enforced '
+  'by device_id being this table''s own primary key (not a separate '
+  'surrogate id). NO PRIVATE KEY COLUMN, EVER (R9) -- see this migration''s '
+  'own header for the full posture. last-handshake is NOT a column here '
+  '(runtime-only fact from packages/wg-native WgStatus, joined in at read '
+  'time by listRemoteWireguardDevices, never persisted).';
+
+COMMENT ON COLUMN wg_peers.device_id IS
+  'The owning devices row (kind=''remote''). Primary key AND the unique FK '
+  'this migration''s own header describes -- one peer per device, no '
+  'separate surrogate id needed. ON DELETE CASCADE: deleting the device '
+  'deletes this row atomically, in the SAME statement, so there is no '
+  'window where one exists without the other.';
+
+COMMENT ON COLUMN wg_peers.public_key IS
+  'Standard WireGuard base64 public key (44 chars) -- generated server-side '
+  'at enrollment (packages/wg-native generateWgKeyPair) alongside a '
+  'private key that is embedded ONCE into the enrollment response''s '
+  'configText and never reaches this table (R9). Needed to re-add this '
+  'peer to the live wg-native instance on every boot-resume '
+  '(remote-wireguard.service.ts loadPeers) and to remove it live on '
+  'revocation (WgRemovePeer).';
+
+COMMENT ON COLUMN wg_peers.tunnel_ip IS
+  'This device''s stable address from the configured tunnel subnet (RG9: '
+  '"server = .1, devices allocated lowest-free from .2-.254" for the /24 '
+  'default, generalized to any REMOTE_SUBNET_SCHEMA-legal prefix by '
+  'packages/shared/src/remote/subnet-allocation.ts). UNIQUE is the actual '
+  'concurrency guard for allocation -- packages/db/src/query/wg-peers.ts '
+  'allocateWgPeer reads the currently-used set, computes the lowest free '
+  'candidate, and retries on a 23505 against THIS constraint (a race lost '
+  'to a concurrent enrollment), never trusting its own read alone to be '
+  'race-free.';
+
+COMMENT ON COLUMN wg_peers.created_at_ms IS
+  'Enrollment timestamp -- also the tiebreaker column for '
+  'listRemoteWireguardDevices'' keyset pagination (paired with devices.id, '
+  'the admin.ts listDevicesForUser convention).';
+
+-- SPDX-License-Identifier: AGPL-3.0-only
+-- Loombre :: migration 0031_probe_tokens
+--
+-- Additive-only (mirrors 0001/.../0030's discipline): no column drops, no
+-- type narrowing, no rewriting of prior migrations.
+--
+-- STATE.md "Loombre Remote — embedded WireGuard + three-path wizard +
+-- reachability proof + posture card" (R6/RG6, Lane P1). Drift decision #2
+-- (orchestrator freeze, "Orchestrator freeze ground-truth + Batch-1
+-- dispatch") reserved this number for P1 after WG1/WG2 took 0029/0030.
+--
+-- The one-time-token reachability proof (R6): the admin mints a probe
+-- token bound to a specific expected public endpoint and remote-access
+-- path; a phone ON CELLULAR (no prior credentials, RG6) visits
+-- `https://<expectedEndpoint>/probe/<token>` to prove the path is
+-- actually reachable from the outside. RG6's house pattern M3 EXACTLY:
+-- `randomBytes(32).toString("base64url")` minted once by
+-- apps/server/src/remote/remote-probes.controller.ts, SHA-256 hex hash
+-- stored here, DB equality lookup (constant-time by construction — never
+-- a string compare of a secret) — the SAME posture password_reset_tokens/
+-- user_invites/refresh_tokens all share (see 0024_password_recovery.sql's
+-- header). This module never sees a plaintext token, only its hash.
+
+-- ============================================================================
+-- remote_probe_path — real PG enum (house style: notice_severity/
+-- device_kind/item_type/... all use CREATE TYPE for a closed SCALAR value
+-- set). Deliberately narrower than the contract's RemotePathId (which adds
+-- 'none' for the DERIVED "nothing enabled yet" state, RG15/wizard-state.ts's
+-- own PathId comment) — a probe is always minted FOR one specific path's
+-- setup flow; "prove path none is reachable" is not a legal request
+-- (apps/server/src/remote/remote-probes.controller.ts 422s it before this
+-- column is ever reached).
+-- ============================================================================
+
+CREATE TYPE remote_probe_path AS ENUM ('remote', 'tunnel', 'direct');
+
+-- ============================================================================
+-- probe_tokens
+-- ============================================================================
+
+CREATE TABLE probe_tokens (
+  id                UUID PRIMARY KEY DEFAULT loombre_uuidv7(),
+  token_hash        TEXT NOT NULL UNIQUE,
+  expected_endpoint TEXT NOT NULL,
+  path              remote_probe_path NOT NULL,
+  created_by        UUID NULL REFERENCES users(id) ON DELETE SET NULL,
+  created_at_ms     BIGINT NOT NULL,
+  expires_at_ms     BIGINT NOT NULL,
+  arrived_at_ms     BIGINT NULL
+);
+
+COMMENT ON TABLE probe_tokens IS
+  'R6/RG6: one-time reachability-proof tokens. token_hash lookup is the '
+  'ONLY read path GET /probe/{token} (apps/server/src/remote/probe-page.'
+  'controller.ts) ever uses — constant-time by construction (a DB equality '
+  'lookup on a hash, never a string compare of a secret). Single-use, '
+  'enforced by the SAME atomic ''UPDATE ... WHERE arrived_at_ms IS NULL '
+  'AND expires_at_ms > $now RETURNING *'' compare-and-swap shape '
+  'password_reset_tokens/user_invites both already rely on for exactly '
+  'this race (packages/db/src/query/remote-probes.ts consumeProbeTokenAndEmit) '
+  '— Postgres''s row-level locking on that single-row UPDATE is the ''row '
+  'lock'' proving single-use under concurrent first-visits, no advisory '
+  'lock needed (unlike system_notices'' multi-row supersede-then-insert, '
+  'this is a compare-and-swap on ONE row). 15-minute expiry (R6) set by '
+  'the controller at mint time, not this table.';
+
+COMMENT ON COLUMN probe_tokens.token_hash IS
+  'sha256(randomBytes(32).toString("base64url")) hex — RG6''s house pattern '
+  'M3 EXACTLY, same posture as refresh_tokens.token_hash/'
+  'password_reset_tokens.token_hash. The raw token is minted by '
+  'apps/server/src/remote/remote-probes.controller.ts, appears ONCE in '
+  'POST /admin/remote/probes''s 201 response (embedded in probeUrl/'
+  'qrPayload), and is never persisted anywhere — this column is the only '
+  'trace of it, and it cannot be reversed back to the plaintext.';
+
+COMMENT ON COLUMN probe_tokens.expected_endpoint IS
+  'The public endpoint (bare host[:port], no scheme) the proof is bound '
+  'to — embedded verbatim into probeUrl as '
+  '`https://<expected_endpoint>/probe/<token>`. Also fed to node:dns '
+  '(apps/server/src/remote/remote-dns-resolver.service.ts) when a failed '
+  'probe needs classifying (R5/RG11).';
+
+COMMENT ON COLUMN probe_tokens.path IS
+  'Which remote-access path (Remote/Tunnel/Direct) this probe is proving '
+  '(P1 adjudication — see packages/contract/openapi.yaml''s '
+  'CreateRemoteProbeRequest description). Threaded through to '
+  'diagnoseReachability so the Tunnel-path connector-health short-circuit '
+  '(the freeze''s own diagnosis note) only ever fires for path=''tunnel'', '
+  'and so the per-path guidance mapping (packages/shared/src/remote/'
+  'diagnosis-guidance.ts) can render path-specific copy once a probe '
+  'never arrives.';
+
+COMMENT ON COLUMN probe_tokens.created_by IS
+  'The admin who minted this probe. ON DELETE SET NULL (audit-actor '
+  'column pattern — events.actor_user_id/system_notices.created_by '
+  'precedent): deleting an admin later must not erase probe history, only '
+  'sever the specific-user link. NOT NULL is enforced by the query layer '
+  'at insert time, matching every other nullable-but-app-enforced-not-null '
+  'audit-actor column in this schema.';
+
+COMMENT ON COLUMN probe_tokens.arrived_at_ms IS
+  'NULL until GET /probe/{token} consumes this token from a real external '
+  'request (probe.arrived, admin-only, no token in the payload — R9). '
+  'Set exactly once — the atomic consume UPDATE''s WHERE clause '
+  '(arrived_at_ms IS NULL) makes a second arrival for the same token '
+  'impossible by construction, so this column doubles as the single-use '
+  'flag: NULL = still live, non-NULL = spent. GET /admin/remote/probes/'
+  '{id}''s poll status is DERIVED from this column plus expires_at_ms '
+  '(packages/db/src/query/remote-probes.ts), never stored separately.';
+
+-- SPDX-License-Identifier: AGPL-3.0-only
+-- Loombre :: migration 0032_remote_tunnel_state
+--
+-- Additive-only (mirrors 0001/.../0031's discipline): no column drops, no
+-- type narrowing, no rewriting of prior migrations.
+--
+-- "Loombre Remote — embedded WireGuard + three-path wizard + reachability
+-- proof + posture card" (STATE.md R4/R9/RG7, lane T1). Reserved for T1 at
+-- the orchestrator's Batch-1 freeze ("DRIFT DECISION #2 ... 0032 = T1
+-- (optional)"): single-row runtime state for the Tunnel path — WHICH
+-- Cloudflare tunnel/DNS-route this instance currently owns, so a verified
+-- teardown (R8) or a status/logs read can find them again after a process
+-- restart. The admin's Cloudflare API token itself is NEVER stored here —
+-- packages/secrets keyring only (R9), via apps/server/src/remote/tunnel/
+-- tunnel-token.service.ts's {value, setAtMs} envelope (the A9/AD4 pattern
+-- settings/provider-keys.service.ts and settings/mail-credentials.service.ts
+-- both already carry). The per-tunnel CONNECTOR run credential Cloudflare
+-- mints at provisioning time is likewise keyring-only (a second, distinct
+-- keyring entry) — this table only ever holds NON-secret identifiers.
+--
+-- Single-row singleton table (`id SMALLINT PRIMARY KEY DEFAULT 1 CHECK (id
+-- = 1)`): there is exactly one Tunnel-path configuration per instance (RG5/
+-- RG15 — at most one remote-access path is active at a time, enforced by
+-- each path's staged enable flow, not by this table). The seed row below
+-- is inserted once, at migration time, and every subsequent write is an
+-- UPDATE (packages/db/src/query/remote-tunnel.ts) — never a second INSERT,
+-- which the CHECK constraint would reject outright if attempted.
+
+CREATE TABLE remote_tunnel_state (
+  id             SMALLINT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+  enabled        BOOLEAN NOT NULL DEFAULT FALSE,
+  hostname       TEXT NULL,
+  tunnel_id      TEXT NULL,
+  account_id     TEXT NULL,
+  zone_id        TEXT NULL,
+  dns_record_id  TEXT NULL,
+  enabled_at_ms  BIGINT NULL,
+  -- A disabled row never carries leftover provisioning identifiers — every
+  -- write clears these together (packages/db/src/query/remote-tunnel.ts),
+  -- so a stale tunnel_id can never survive past its own teardown and be
+  -- read back as if it were still live.
+  CHECK (enabled OR (hostname IS NULL AND tunnel_id IS NULL AND account_id IS NULL AND zone_id IS NULL AND dns_record_id IS NULL AND enabled_at_ms IS NULL))
+);
+
+INSERT INTO remote_tunnel_state (id) VALUES (1);
+
+COMMENT ON TABLE remote_tunnel_state IS
+  'R4/R9/RG7: singleton runtime state for the BYO-Cloudflare-token Tunnel '
+  'path. enabled=false is the disabled/never-configured state (the seed '
+  'row). Enabling populates hostname/tunnel_id/account_id/zone_id/'
+  'dns_record_id/enabled_at_ms together in one transaction '
+  '(packages/db/src/query/remote-tunnel.ts enableTunnelStateAndEmit); '
+  'disabling clears all six together ONLY after the provider''s '
+  'deprovisionTunnel/removeDnsRoute calls are independently verified to '
+  'have succeeded (R8 "verified teardown" -- apps/server/src/remote/'
+  'tunnel/remote-tunnel.service.ts orchestrates the provider calls BEFORE '
+  'ever calling disableTunnelStateAndEmit, so a failed teardown leaves '
+  'this row untouched and a retry has the same ids to work with, never '
+  'orphaning a live Cloudflare tunnel with no local record of it).';
+
+COMMENT ON COLUMN remote_tunnel_state.hostname IS
+  'The public hostname routed through this tunnel (EnableRemoteTunnelRequest'
+  '.hostname, packages/contract/openapi.yaml). NULL when disabled.';
+
+COMMENT ON COLUMN remote_tunnel_state.tunnel_id IS
+  'The Cloudflare cfd_tunnel id (TunnelProvider.provisionTunnel''s result) '
+  '-- needed to delete the tunnel and to build the '
+  '<tunnel_id>.cfargotunnel.com DNS target on teardown. Not a secret (it is '
+  'itself PART of the public DNS record), but never useful outside this '
+  'instance''s own teardown/status calls either, hence still private to '
+  'this table rather than echoed on any read-facing DTO (RemoteTunnelStatus '
+  'has no tunnelId field, RG15 frozen shape).';
+
+COMMENT ON COLUMN remote_tunnel_state.account_id IS
+  'The Cloudflare account id the stored API token resolved to '
+  '(TunnelProvider.validateToken). Required on every subsequent '
+  'account-scoped Cloudflare API call (cfd_tunnel create/delete, '
+  'configuration PUT) -- resolved once at enable time rather than '
+  're-derived from the token on every call.';
+
+COMMENT ON COLUMN remote_tunnel_state.zone_id IS
+  'The Cloudflare zone id the DNS CNAME route was created in (resolved '
+  'from hostname''s registrable root domain at enable time) -- needed to '
+  'delete the DNS record on teardown without a second zone lookup.';
+
+COMMENT ON COLUMN remote_tunnel_state.dns_record_id IS
+  'The Cloudflare DNS record id for the <hostname> CNAME -> '
+  '<tunnel_id>.cfargotunnel.com route this instance created -- needed to '
+  'remove exactly that record (and no other) on teardown.';
+
+COMMENT ON COLUMN remote_tunnel_state.enabled_at_ms IS
+  'When this Tunnel path was last enabled, ms. NULL when disabled. Mirrors '
+  'remote.enabled''s envelope tsMs/payload enabledAtMs (packages/contract/'
+  'event-schemas/remote.enabled.schema.json) -- the SAME value, not a '
+  'derived one.';

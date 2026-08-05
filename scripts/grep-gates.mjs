@@ -11,6 +11,9 @@
  *     the competition on purpose; STATE.md/reports carry review history).
  * (b) Forbids telemetry/analytics SDK import patterns anywhere in the repo's
  *     source files (D14 — no telemetry, ever).
+ * (c) Forbids UPnP/NAT-PMP/PCP library import patterns anywhere in the
+ *     repo's source files (STATE.md "Loombre Remote", RG14 — "no UPnP
+ *     anywhere" is a hard line across all three remote-access paths).
  *
  * Exits non-zero and prints `file:line: reason` for every hit.
  */
@@ -115,6 +118,39 @@ const TELEMETRY_PATTERNS = [
   "newrelic",
   "@google-analytics/",
 ].map((needle) => ({ code: `telemetry:${needle}`, pattern: new RegExp(escapeRegExp(needle)) }));
+
+// STATE.md "Loombre Remote — embedded WireGuard + three-path wizard +
+// reachability proof + posture card" (RG14, lane WG1 — first network lane,
+// assigned to wire this): "no UPnP anywhere" is a HARD LINE across all
+// three remote-access paths (R9/the mission brief's "wizard detects,
+// instructs, verifies — NEVER auto-configures the network"), stated as a
+// FEATURE in docs, not just an omission. These are specific package/
+// protocol NAME strings (import/require targets), never the bare word
+// "UPnP" itself — so this repo's own docs/code explaining WHY there is no
+// UPnP support (this file included) never trips it.
+const UPNP_PATTERNS = ["nat-upnp", "node-upnp", "natupnp", "nat-api", "ssdp"].map((needle) => ({
+  code: `no-upnp:${needle}`,
+  pattern: new RegExp(escapeRegExp(needle), "i"),
+}));
+
+// History-only allowlist (same "immutable dated project history" reasoning
+// as RENAME_GATE_ALLOWLIST's own STATE.md entry above): STATE.md's RG14
+// decision record quotes these exact strings as the pattern group being
+// added — that IS the historical record of this gate's own creation, not
+// a live import.
+//
+// GUARD-TEST allowlisting (WG2, found by this lane's own first FULL
+// `pnpm gate` run against the combined tree — RG14's own text anticipated
+// this exact gap: "flagged for whichever lane first adds real WG/network/
+// QR code; do not let it slip past that lane"): router-cards.test.ts
+// (lane D1) asserts card copy NEVER names NAT-PMP/PCP/SSDP
+// (`expect(text).not.toMatch(/NAT-PMP|natpmp|\bPCP\b|SSDP/i)`) — the
+// literal string "SSDP" inside that NEGATIVE assertion regex trips the
+// `ssdp` pattern the exact same way BRAND_HYGIENE_ALLOWLIST's own guard-
+// test entries above already document for pulse-dot/fixture-string
+// absence checks. Same posture, same fix: allowlist the GUARD file, never
+// the pattern.
+const UPNP_ALLOWLIST = new Set(["STATE.md", "packages/shared/test/remote/router-cards.test.ts"]);
 
 // ---------------------------------------------------------------------------
 // BRAND-HYGIENE gate (STATE.md D6/G9 — Blaze logo rollout Lane D purge):
@@ -299,6 +335,13 @@ for (const { full, rel } of files) {
     for (const { code, pattern } of TELEMETRY_PATTERNS) {
       if (pattern.test(line)) {
         violations.push({ rel, lineNo: idx + 1, code, line: line.trim() });
+      }
+    }
+    if (!UPNP_ALLOWLIST.has(rel)) {
+      for (const { code, pattern } of UPNP_PATTERNS) {
+        if (pattern.test(line)) {
+          violations.push({ rel, lineNo: idx + 1, code, line: line.trim() });
+        }
       }
     }
     if (inBrandHygieneScope && !isInBrandAllowlist) {
