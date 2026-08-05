@@ -490,6 +490,23 @@ export function startPluginDeliveryLoop(deps: PluginDeliveryLoopDeps): PluginDel
           }
         }),
       );
+    } catch (err) {
+      // AUD-A2e-001 fix wave: listEventSubscriberPlugins is the ONE DB call
+      // in this function outside the per-plugin Promise.allSettled map
+      // above, so it was the one gap in this loop's own documented "never
+      // rejects" contract (see PluginDeliveryLoopHandle.runOnce's doc
+      // comment below). Below, the poll timer invokes runOnce() as a bare
+      // `void runOnce()` — an uncaught rejection here would become an
+      // unhandledRejection -> apps/worker/src/crash/handlers.ts's onFatal
+      // -> process.exit(1), killing every OTHER consumer sharing this
+      // worker process over a single transient failure (pool exhaustion,
+      // connection reset, an embedded-Postgres restart). Same shape as the
+      // per-plugin catch just above: log and let this tick end early — no
+      // new backoff invented (backoff.ts's consecutive_failures pacing is
+      // keyed per-plugin and has no row to attribute this failure to); the
+      // existing poll interval below is already this failure's retry
+      // pacing, unchanged.
+      console.error(`plugin-delivery: runOnce tick failed listing event-subscriber plugins: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       ticking = false;
     }

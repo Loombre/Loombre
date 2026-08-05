@@ -85,32 +85,67 @@ export class Http01ChallengeServer {
     return address !== null && address !== undefined && typeof address !== "string" ? address.port : undefined;
   }
 
+  // This listener binds 0.0.0.0 by design (see module header) — the CA
+  // reaches it from the public internet with no auth and no prior state,
+  // so `handle()` runs with no error boundary beneath it anywhere else in
+  // the stack: it is a raw `http.createServer` callback (line 53), not
+  // Express, so any throw here becomes an `uncaughtException` on the WHOLE
+  // process (crash/handlers.ts -> exit(1); Node's own default is also
+  // exit(1), so death holds either way). The try/catch below is therefore
+  // structural — it wraps the entire method, not just the
+  // decodeURIComponent call that happened to be the first thing to throw —
+  // so a *future* addition to this handler (a header parse, a
+  // Buffer.byteLength on attacker-controlled input, ...) is caught here too
+  // instead of reintroducing the same unauthenticated remote DoS. Mirrors
+  // crash/redact.ts's stripFileUrlPrefix, which wraps the identical
+  // decodeURIComponent call with the comment "Malformed percent-encoding
+  // must never throw".
   private handle(req: IncomingMessage, res: ServerResponse): void {
-    const rawUrl = req.url ?? "/";
-    const path = rawUrl.split("?")[0] ?? "/";
+    try {
+      const rawUrl = req.url ?? "/";
+      const path = rawUrl.split("?")[0] ?? "/";
 
-    if (req.method === "GET" && path.startsWith(WELL_KNOWN_PREFIX)) {
-      const token = decodeURIComponent(path.slice(WELL_KNOWN_PREFIX.length));
-      const keyAuthorization = this.tokens.get(token);
-      if (keyAuthorization !== undefined) {
-        res.writeHead(200, { "Content-Type": "application/octet-stream", "Content-Length": Buffer.byteLength(keyAuthorization) });
-        res.end(keyAuthorization);
+      if (req.method === "GET" && path.startsWith(WELL_KNOWN_PREFIX)) {
+        // A token that fails to decode cannot match anything in `tokens`
+        // (which only ever holds values register() put there), so a decode
+        // failure and an unknown token are the same case: 404, not 400/500.
+        let token: string | undefined;
+        try {
+          token = decodeURIComponent(path.slice(WELL_KNOWN_PREFIX.length));
+        } catch {
+          token = undefined;
+        }
+        const keyAuthorization = token !== undefined ? this.tokens.get(token) : undefined;
+        if (keyAuthorization !== undefined) {
+          res.writeHead(200, { "Content-Type": "application/octet-stream", "Content-Length": Buffer.byteLength(keyAuthorization) });
+          res.end(keyAuthorization);
+          return;
+        }
+        res.writeHead(404, { "Content-Type": "text/plain" });
+        res.end("not found");
         return;
       }
+
+      if (this.opts.redirectHttpsPort !== undefined) {
+        const hostHeader = req.headers.host ?? "";
+        const hostname = hostHeader.split(":")[0];
+        res.writeHead(301, { Location: `https://${hostname}:${this.opts.redirectHttpsPort}${rawUrl}` });
+        res.end();
+        return;
+      }
+
       res.writeHead(404, { "Content-Type": "text/plain" });
       res.end("not found");
-      return;
+    } catch {
+      // Never rethrow: this is the only boundary this listener has. Best
+      // effort a 404 if headers haven't gone out yet; either way, close the
+      // connection rather than let it hang or take the process down.
+      if (!res.headersSent) {
+        res.writeHead(404, { "Content-Type": "text/plain" });
+        res.end("not found");
+      } else {
+        res.end();
+      }
     }
-
-    if (this.opts.redirectHttpsPort !== undefined) {
-      const hostHeader = req.headers.host ?? "";
-      const hostname = hostHeader.split(":")[0];
-      res.writeHead(301, { Location: `https://${hostname}:${this.opts.redirectHttpsPort}${rawUrl}` });
-      res.end();
-      return;
-    }
-
-    res.writeHead(404, { "Content-Type": "text/plain" });
-    res.end("not found");
   }
 }

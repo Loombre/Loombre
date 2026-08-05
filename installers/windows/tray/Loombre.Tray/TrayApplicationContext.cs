@@ -17,6 +17,7 @@
 // version + IPC-contract-version mismatch notice.
 
 using System.Diagnostics;
+using System.Text.Json;
 using Loombre.Tray.Ipc;
 // The poll timer must be the WinForms (UI-thread) Timer — Tick handlers
 // touch NotifyIcon/menu state directly. The alias disambiguates it from
@@ -144,7 +145,32 @@ public sealed class TrayApplicationContext : ApplicationContext
         _pollInFlight = true;
         try
         {
-            var (baseAddress, token) = await Discovery.ReadAsync().ConfigureAwait(true);
+            Uri baseAddress;
+            string token;
+            try
+            {
+                (baseAddress, token) = await Discovery.ReadAsync().ConfigureAwait(true);
+            }
+            catch (Exception ex) when (ex is JsonException or InvalidOperationException)
+            {
+                // JsonException/InvalidOperationException: a TORN read — the
+                // server's win32 discovery-file writer
+                // (apps/server/src/ipc/discovery-files.ts) truncates-then-
+                // writes each file separately, no temp+rename, so a poll can
+                // land mid-write on every server restart (Discovery.ReadAsync
+                // throws JsonException on partial/invalid JSON, and its own
+                // InvalidOperationException checks on an empty file/token).
+                // Treat it exactly like "not detected yet" — AUD-A5a-003 (this
+                // was previously uncaught and crashed the tray via the
+                // async-void Timer.Tick handler above; the 3s poll now just
+                // retries). Scoped to just this read (not the whole try
+                // below) so an unrelated InvalidOperationException from
+                // Render — e.g. WinForms' cross-thread-control-access or
+                // collection-modified-during-enumeration — isn't swallowed
+                // and misreported as "server not detected".
+                RenderUnreachable("Loombre server not detected");
+                return;
+            }
             using var client = new IpcClient(baseAddress, token);
             var status = await client.GetStatusAsync().ConfigureAwait(true);
             _lastStatus = status;
@@ -445,6 +471,12 @@ public sealed class TrayApplicationContext : ApplicationContext
                 catch (Exception ex) when (ex is IpcException or IOException or UnauthorizedAccessException or HttpRequestException)
                 {
                     // Not reachable yet — fall through to the SCM check.
+                    // (GetWebUrlAsync itself narrows a torn discovery/token-
+                    // file read — JsonException/InvalidOperationException,
+                    // AUD-A5a-003 — down to IOException before it gets here,
+                    // so this filter doesn't need those two and doesn't risk
+                    // swallowing an unrelated InvalidOperationException from
+                    // OpenBrowser below.)
                 }
 
                 var scm = ServiceManagerProbe.Query();
@@ -481,7 +513,25 @@ public sealed class TrayApplicationContext : ApplicationContext
 
     private static async Task<string> GetWebUrlAsync()
     {
-        var (baseAddress, token) = await Discovery.ReadAsync().ConfigureAwait(true);
+        Uri baseAddress;
+        string token;
+        try
+        {
+            (baseAddress, token) = await Discovery.ReadAsync().ConfigureAwait(true);
+        }
+        catch (Exception ex) when (ex is JsonException or InvalidOperationException)
+        {
+            // JsonException/InvalidOperationException: a torn discovery/
+            // token-file read during a server restart — the same "not
+            // ready yet" condition PollAsync's inner catch above handles
+            // (AUD-A5a-003). Re-thrown as IOException, which every caller
+            // of GetWebUrlAsync already treats as "not reachable yet", so
+            // callers don't need to (and shouldn't) also catch
+            // JsonException/InvalidOperationException themselves — that
+            // would risk swallowing an unrelated InvalidOperationException
+            // from whatever else runs in their try block (e.g. OpenBrowser).
+            throw new IOException("Discovery read failed (torn file).", ex);
+        }
         using var client = new IpcClient(baseAddress, token);
         var target = await client.GetOpenWebTargetAsync().ConfigureAwait(true);
         return target.Url;
