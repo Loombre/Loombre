@@ -62,6 +62,16 @@ export function RemoteWizard({ initialStage, initialPath, initialStep, onCancel,
     setStage("path-flow");
   }
 
+  // R5's CGNAT routing (ProofStage.tsx, Lane U2): a failed reachability
+  // proof classified as CGNAT offers switching to Tunnel straight from the
+  // proof stage — restarts path-flow with "tunnel" as the chosen path,
+  // same shape as handlePathChosen (a fresh flow, not a resume: Tunnel's
+  // own steps have never been visited in this wizard run).
+  function handleSwitchToTunnel(): void {
+    setChosenPath("tunnel");
+    setStage("path-flow");
+  }
+
   return (
     <div className={styles.wizard}>
       <div className={styles.header}>
@@ -87,7 +97,12 @@ export function RemoteWizard({ initialStage, initialPath, initialStep, onCancel,
         )}
 
         {stage === "proof" && chosenPath && (
-          <ProofStage path={chosenPath} onComplete={() => setStage("posture-handoff")} onBack={() => setStage("path-flow")} />
+          <ProofStage
+            path={chosenPath}
+            onComplete={() => setStage("posture-handoff")}
+            onBack={() => setStage("path-flow")}
+            onSwitchToTunnel={handleSwitchToTunnel}
+          />
         )}
 
         {stage === "posture-handoff" && chosenPath && <PostureHandoffStage path={chosenPath} onFinish={onFinished} />}
