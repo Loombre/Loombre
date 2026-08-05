@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://loombre.com/schemas/events/remote.disabled.schema.json",
+  "title": "RemoteDisabledPayload",
+  "description": "Payload for envelope.type === 'remote.disabled'. STATE.md \"Loombre Remote — embedded WireGuard + three-path wizard + reachability proof + posture card\" (R1/R8/R9): emitted when Loombre Remote is disabled — every enrolled peer revoked and the listener dropped, verified (R8). ADMIN-ONLY delivery, same posture as remote.enabled.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["disabledAtMs"],
+  "properties": {
+    "disabledAtMs": { "type": "integer", "minimum": 0 }
+  }
+}
