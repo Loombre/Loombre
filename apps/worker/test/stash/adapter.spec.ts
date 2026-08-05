@@ -253,7 +253,14 @@ describe("openStashConnection — WAL sidecar reality next to the user's file (S
     expect(statSync(p).mtimeMs).toBe(mtimeBefore);
   });
 
-  it("a WAL-mode database in a NON-WRITABLE directory fails honestly and fast, without attempting the snapshot tier", async () => {
+  // Skipped on Windows: this test manufactures the read-only-directory
+  // condition with POSIX `chmod 0o500`, which Windows does not honor for
+  // directories (files stay creatable, so the premise never holds) and which
+  // also makes the `rmSync` teardown throw EPERM — same non-portability class
+  // as the POSIX-mode-bit skips elsewhere (packages/secrets/.../file0600.spec).
+  // The behavior under test is a POSIX-deployment concern; a Windows Stash dir
+  // surfaces a different error path, not exercised here.
+  it.skipIf(process.platform === "win32")("a WAL-mode database in a NON-WRITABLE directory fails honestly and fast, without attempting the snapshot tier", async () => {
     // The direct consequence of the sidecar fact above, and a realistic
     // deployment shape (a Stash config directory owned by another user or
     // exported read-only). SQLite reports it as SQLITE_READONLY_DIRECTORY,
