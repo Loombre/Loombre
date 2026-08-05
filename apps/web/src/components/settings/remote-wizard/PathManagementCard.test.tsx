@@ -39,24 +39,32 @@ vi.mock("../../../lib/api-client.js", () => ({
 
 const { PathManagementCard } = await import("./PathManagementCard.js");
 
+// T2 fixup (RG7): RemoteTunnelStatus gained three additive REQUIRED fields
+// (tokenConfigured/tokenSetAtMs/tokenScopesOk — T1's own drift decision,
+// remote-tunnel.service.ts's header) after this file was first written;
+// every `tunnel` fixture below needs them to satisfy the (already-frozen,
+// unrelated-to-T2) SDK type.
+const TUNNEL_TOKEN_UNCONFIGURED = { tokenConfigured: false, tokenSetAtMs: null, tokenScopesOk: null } as const;
+const TUNNEL_TOKEN_CONFIGURED = { tokenConfigured: true, tokenSetAtMs: 1_700_000_000_000, tokenScopesOk: true } as const;
+
 const REMOTE_ACTIVE: RemoteState = {
   activePath: "remote",
   wireguard: { enabled: true, listening: true, listenPort: 51820, subnet: "10.82.146.0/24", endpointHost: "example.com", peerCount: 3 },
-  tunnel: { enabled: false, connectorState: "stopped", hostname: null, backoffMs: null, lastErrorMessage: null },
+  tunnel: { enabled: false, connectorState: "stopped", hostname: null, backoffMs: null, lastErrorMessage: null, ...TUNNEL_TOKEN_UNCONFIGURED },
   direct: { enabled: false, mode: null, domain: null, certValid: null, certExpiresAtMs: null },
 };
 
 const TUNNEL_ACTIVE: RemoteState = {
   activePath: "tunnel",
   wireguard: { enabled: false, listening: false, listenPort: 51820, subnet: "10.82.146.0/24", endpointHost: null, peerCount: 0 },
-  tunnel: { enabled: true, connectorState: "running", hostname: "loombre.example.com", backoffMs: null, lastErrorMessage: null },
+  tunnel: { enabled: true, connectorState: "running", hostname: "loombre.example.com", backoffMs: null, lastErrorMessage: null, ...TUNNEL_TOKEN_CONFIGURED },
   direct: { enabled: false, mode: null, domain: null, certValid: null, certExpiresAtMs: null },
 };
 
 const DIRECT_ACTIVE: RemoteState = {
   activePath: "direct",
   wireguard: { enabled: false, listening: false, listenPort: 51820, subnet: "10.82.146.0/24", endpointHost: null, peerCount: 0 },
-  tunnel: { enabled: false, connectorState: "stopped", hostname: null, backoffMs: null, lastErrorMessage: null },
+  tunnel: { enabled: false, connectorState: "stopped", hostname: null, backoffMs: null, lastErrorMessage: null, ...TUNNEL_TOKEN_UNCONFIGURED },
   direct: { enabled: true, mode: "acme", domain: "loombre.example.com", certValid: true, certExpiresAtMs: 1_800_000_000_000 },
 };
 
