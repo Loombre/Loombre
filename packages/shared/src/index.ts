@@ -13,3 +13,7 @@ export * from "./admin-only-event-types.js";
 export * from "./stash-path-mapping.js";
 export * from "./temporary-password.js";
 export * from "./email-format.js";
+export * from "./remote/provisioning.js";
+export * from "./remote/wizard-state.js";
+export * from "./remote/posture-model.js";
+export * from "./remote/diagnosis.js";
