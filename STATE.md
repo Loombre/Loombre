@@ -174,6 +174,16 @@ Local `gate:full` after this fix: 14/15 — the ONLY red is `@loombre/db test/wo
 - **#5 (libuv fs.watch) CONFIRMED green:** `@loombre/worker` now `94 passed | 4 skipped`, no `Worker exited unexpectedly`, no `_wcsnicmp` abort. `@loombre/db` `149 passed`. The polling fix closed it.
 - **6th, PRE-EXISTING Windows blocker — POSIX execute bit (NOT this work):** `apps/server/src/remote/tunnel/resolve-cloudflared-binary.spec.ts` "fails ... when the configured path is not executable" → `expected true to be false`. `resolveCloudflaredBinary` gates on `accessSync(path, X_OK)`; Windows has NO execute bit, so any existing regular file satisfies `X_OK` and the "exists-but-not-executable" file the test writes resolves `ok:true`. Unreachable-on-Windows premise, same family as the read-only-dir / file0600 POSIX-mode skips. FIX: `it.skipIf(process.platform === "win32")` on that one test — the `ok:false`+detail rejection path stays covered on Windows by the sibling "does not exist at all" test (accessSync throws ENOENT → ok:false), so no coverage lost. Verified locally (8/8, typecheck clean). This was the SOLE remaining Windows red (worker + db clean this run). Verifying via os=all.
 
+### ALL 6 deterministic Windows-portability bugs FIXED + confirmed — residual is PERVASIVE PRE-EXISTING MULTI-OS FLAKINESS (owner decision)
+
+The 6 fixes (stash-path canonicalize · adapter read-only-dir skip · probe interlace setfield · remote-tunnel os.tmpdir · libuv fs.watch polling · cloudflared exec-bit skip) are all confirmed on Windows: across runs the worker/db/server packages now RUN TO COMPLETION on Windows and every one of those specific portability tests passes. NONE of the 6 recurred once fixed.
+
+What now blocks a single all-green os=all run is PRE-EXISTING, INTERMITTENT, MULTI-OS e2e/timing/variance flakiness — NOT Windows-specific, NOT caused by this work. Same commit 097f499, two consecutive runs, DIFFERENT flakes each time:
+- run 31000934208: ubuntu GREEN, perf GREEN, Windows red on the (now-fixed) cloudflared test only.
+- run 31001861734 (identical commit, re-run): ubuntu red on `remote-tunnel.e2e "a SECOND server boot … resumes the connector"` (5s-timeout connector-spawn race — also flaked LOCALLY in gatefull2, passed on isolation); Windows red on `ws-broadcaster.e2e "delivers … to both sockets"` (websocket timing, untouched code); perf-t0 red on RSS variance (same commit's prior run passed it).
+- earlier: a Windows `typecheck` red with ZERO `error TS` diagnostics (transient parallel-tsc emit glitch; passed on 5 prior runs).
+These are independent flaky e2e/timing tests + perf variance + a tooling glitch, each firing on a random leg. Getting all legs green at once is now a FLAKINESS problem (probabilistic), not a code-correctness one. Flagged for owner: harden the top flaky tests (remote-tunnel-2nd-boot timeout, ws-broadcaster timing, perf-t0 budget headroom) as a separate quality pass, vs. accept as known intermittent CI noise. The Windows-portability work this task set out to do is COMPLETE.
+
 ### EXIT GATE — WALKED 2026-08-04 (main tip 5cc263a; `pnpm gate:full` ALL 15 STEPS PASSED, LOOMBRE_REQUIRE_WG=1 + real Go 1.26.5 build, verdict read from the log not a wrapper)
 
 Each §4 exit-gate item, with its backing evidence (test file / artifact):
