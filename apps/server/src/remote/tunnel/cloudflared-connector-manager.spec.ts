@@ -20,7 +20,7 @@ import type { ChildProcess } from "node:child_process";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SettingsService } from "../../settings/settings.service.js";
 import { CloudflaredConnectorManager, type SpawnFn } from "./cloudflared-connector-manager.js";
-import type { ConnectorStartConfig } from "./connector-manager.js";
+import type { ConnectorStartConfig, ConnectorStateChange } from "./connector-manager.js";
 
 class FakeStream extends EventEmitter {
   emitData(chunk: string): void {
@@ -315,5 +315,83 @@ describe("CloudflaredConnectorManager — logsTail", () => {
     child.stderr.emitData("stderr line 1\n");
     expect(mgr.logsTail(10)).toEqual(["stdout line 1", "stderr line 1"]);
     expect(mgr.logsTail(1)).toEqual(["stderr line 1"]);
+  });
+});
+
+// WG3 (STATE.md "Loombre Remote ...", R4/RG7 gap closure — T2's own report
+// flagged tunnel.connector.state as unwired by anyone): onStateChange is
+// the seam production code hooks to emit that event. Unit-level proof it
+// fires on REAL transitions only, in order, with the right vocabulary and
+// timestamp — the wiring THROUGH the outbox to a real DB row is proven
+// separately (packages/db/test/remote-tunnel.spec.ts for the writer
+// function; apps/server/test/remote-tunnel.e2e.spec.ts for the full
+// crash -> backoff -> healthy sequence against a real stub child).
+describe("CloudflaredConnectorManager — onStateChange (WG3)", () => {
+  it("fires once per REAL transition, in order, and never for a no-op stop() on an already-stopped manager", async () => {
+    const child = new FakeChild();
+    const mgr = new CloudflaredConnectorManager(fakeSettings(fakeBinaryPath), { spawnFn: makeSpawnFn([child]), nowMs: () => 1_700_000_000_000 });
+    const seen: ConnectorStateChange[] = [];
+    mgr.onStateChange((change) => seen.push(change));
+
+    // stop() on a never-started manager: health() is already 'stopped', so
+    // transitionTo('stopped') sees previous === next — no listener call.
+    await mgr.stop();
+    expect(seen).toEqual([]);
+
+    await mgr.start(CONFIG);
+    expect(seen).toEqual([{ previousState: "stopped", newState: "starting", changedAtMs: 1_700_000_000_000 }]);
+
+    child.stderr.emitData("Registered tunnel connection connIndex=0\n");
+    expect(seen).toEqual([
+      { previousState: "stopped", newState: "starting", changedAtMs: 1_700_000_000_000 },
+      { previousState: "starting", newState: "healthy", changedAtMs: 1_700_000_000_000 },
+    ]);
+  });
+
+  it("crash -> backoff -> healthy emits the exact ordered sequence, translated in the connector's OWN vocabulary (not the contract's)", async () => {
+    vi.useFakeTimers();
+    try {
+      const child1 = new FakeChild();
+      const child2 = new FakeChild();
+      const mgr = new CloudflaredConnectorManager(fakeSettings(fakeBinaryPath), {
+        spawnFn: makeSpawnFn([child1, child2]),
+        random: () => 1,
+      });
+      const seen: ConnectorStateChange[] = [];
+      mgr.onStateChange((change) => seen.push(change));
+
+      await mgr.start(CONFIG); // stopped -> starting
+      child1.emitExit(1, null); // starting -> backoff (crash)
+      await vi.advanceTimersByTimeAsync(1_000); // backoff -> starting (restart)
+      child2.stderr.emitData("Registered tunnel connection connIndex=0\n"); // starting -> healthy
+
+      expect(seen.map((c) => `${c.previousState}->${c.newState}`)).toEqual(["stopped->starting", "starting->backoff", "backoff->starting", "starting->healthy"]);
+      // Every change carries a real numeric changedAtMs (nowMsFn(), not the
+      // connector's OWN internal vocabulary translated — that translation
+      // is the LISTENER's job, per this file's header).
+      for (const change of seen) expect(typeof change.changedAtMs).toBe("number");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("a throwing listener is caught and logged — it never breaks the state machine or a second, well-behaved listener", async () => {
+    const child = new FakeChild();
+    const mgr = new CloudflaredConnectorManager(fakeSettings(fakeBinaryPath), { spawnFn: makeSpawnFn([child]) });
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const seenBySecond: ConnectorStateChange[] = [];
+    try {
+      mgr.onStateChange(() => {
+        throw new Error("listener boom");
+      });
+      mgr.onStateChange((change) => seenBySecond.push(change));
+
+      await mgr.start(CONFIG);
+      expect(mgr.health().state).toBe("starting"); // the manager's own state is unaffected
+      expect(seenBySecond).toHaveLength(1); // the second listener still ran
+      expect(errorSpy).toHaveBeenCalled();
+    } finally {
+      errorSpy.mockRestore();
+    }
   });
 });
