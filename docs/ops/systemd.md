@@ -28,7 +28,7 @@ full `Protect*`/`Restrict*` set). This is correct for the common case
 your own port-forwarding rule) but means the unit **cannot bind port
 80/443 as shipped**.
 
-If you're turning on built-in ACME (`docs/ops/acme.md`) or manual TLS
+If you're turning on built-in ACME (`docs/ops/remote-access/acme.md`) or manual TLS
 directly on 80/443, see that page's "The port story, honestly" section
 for the exact `AmbientCapabilities=CAP_NET_BIND_SERVICE` addition (and
 the `setcap`/`authbind` alternatives) — this is the one systemd-specific

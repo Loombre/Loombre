@@ -6,7 +6,7 @@
 // hook-script seam (P4.4) end-to-end by standing in for a real DNS
 // provider's API with pebble-challtestsrv's `/set-txt` / `/clear-txt`
 // management API instead. This is exactly the shape any operator's own
-// hook script takes (see docs/ops/acme.md's real-provider example): read
+// hook script takes (see docs/ops/remote-access/acme.md's real-provider example): read
 // argv[2]/argv[3] (or the LOOMBRE_ACME_DNS_* env vars — either works),
 // call an HTTP API, exit 0 on success / nonzero with a stderr message on
 // failure.

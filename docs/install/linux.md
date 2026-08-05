@@ -375,7 +375,7 @@ sudo systemctl stop apache2   # if httpd is running
 sudo systemctl disable apache2
 ```
 
-For systemd, add the capability as described in `docs/ops/acme.md`: edit
+For systemd, add the capability as described in `docs/ops/remote-access/acme.md`: edit
 `/etc/systemd/system/loombre-server.service` and add
 `AmbientCapabilities=CAP_NET_BIND_SERVICE` to the `[Service]` section, then
 `sudo systemctl daemon-reload && sudo systemctl restart loombre-server`.

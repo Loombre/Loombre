@@ -168,7 +168,7 @@ lines.push(
       "`LOOMBRE_TRANSCODE_WORKER_CONCURRENCY`), metadata-provider keys " +
       "(`LOOMBRE_TMDB_API_KEY`, `LOOMBRE_TVDB_API_KEY`), TLS/ACME companions to " +
       "`LOOMBRE_TLS_MODE` (`LOOMBRE_TLS_CERT_PATH`/`KEY_PATH`, `LOOMBRE_HTTPS_PORT`, the " +
-      "`LOOMBRE_ACME_*` family — see [docs/ops/acme.md](/ops/acme)), IPC and logging " +
+      "`LOOMBRE_ACME_*` family — see [docs/ops/remote-access/acme.md](/ops/remote-access/acme)), IPC and logging " +
       "(`LOOMBRE_IPC_*`, `LOOMBRE_LOG_FILE`), and embedded-PG plumbing " +
       "(`LOOMBRE_EMBEDDED_PG_*`). The full, accurate, hand-maintained list of every variable " +
       "Loombre's Docker Compose distribution reads lives in " +
