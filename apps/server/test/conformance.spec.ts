@@ -467,14 +467,13 @@ const IMPLEMENTED_NON_PUBLIC_EXPECTATIONS: Record<string, number> = {
   cancelSystemNotice: 404, // PLACEHOLDER_UUID never resolves to a real notice
 
   // Loombre Remote — embedded WireGuard + three-path wizard + reachability
-  // proof + posture card (STATE.md, RG15, Wave 0 — lane/remote-base):
-  // every admin op is a CONFORMING 501 SHELL — requireLiveAdmin passes for
-  // the seed admin (real admin, real live-admin re-verify), then the
-  // handler throws notImplemented() unconditionally. 501, not 404: this IS
-  // a real, documented operation, just not implemented on this branch yet
-  // (apps/server/src/remote/remote-state.controller.ts's header). The
-  // public getProbePage lives in PUBLIC_OPERATION_IDS above, not here.
-  getRemoteState: 501,
+  // proof + posture card (STATE.md, RG15, lane WG2 — the LAST 501, item 6
+  // of this lane's own mission, is now real): getRemoteState composes
+  // activePath (canonical resolveActivePath, 'none' on a fresh reseeded DB
+  // — nothing enabled anywhere yet at THIS point in the walk, which runs
+  // BEFORE enableRemoteWireguard below) + the three per-path statuses,
+  // every one of which is itself disabled/default-shaped on a fresh DB.
+  getRemoteState: 200,
   // Lane WG1: enable/disable/status now do real work (RemoteWireguardService)
   // — 200 assumes packages/wg-native's native library is built, which is
   // ALWAYS true here (this worktree has a real Go toolchain + a built
@@ -491,9 +490,21 @@ const IMPLEMENTED_NON_PUBLIC_EXPECTATIONS: Record<string, number> = {
   enableRemoteWireguard: 200,
   disableRemoteWireguard: 200,
   getRemoteWireguardStatus: 200,
-  listRemoteWireguardDevices: 501,
-  enrollRemoteWireguardDevice: 501,
-  revokeRemoteWireguardDevice: 501,
+  // Lane WG2: the three devices ops replace their own 501 shells. Walk
+  // ORDER matters here (API_OPERATIONS follows openapi.yaml's own path
+  // declaration order): enableRemoteWireguard runs immediately above,
+  // THEN disableRemoteWireguard runs right after it (both already listed
+  // above) — so by the time these three run, WireGuard is disabled again.
+  // listRemoteWireguardDevices needs no enabled state to list (a DB read,
+  // empty on a fresh reseeded DB); enrollRemoteWireguardDevice's bodyless
+  // request 422s on the missing required userId/name BEFORE the
+  // service-layer 409/404 checks are ever reached (same "validate before
+  // checking business-rule conflicts" ordering enableRemoteTunnel/
+  // enableRemoteDirect already established below); revokeRemoteWireguardDevice's
+  // PLACEHOLDER_UUID never resolves to a real enrolled device.
+  listRemoteWireguardDevices: 200,
+  enrollRemoteWireguardDevice: 422, // bodyless -> '"userId" (uuid string) is required.'
+  revokeRemoteWireguardDevice: 404, // PLACEHOLDER_UUID never resolves to a real enrolled device
   // Tunnel path (R4/R9/RG7, lane T1) — real behavior, no longer a 501
   // shell. Every one of these six ops is network-free on this walk's
   // bodyless/placeholder requests (R11: never the live Cloudflare API,

@@ -11,10 +11,20 @@
  * CloudflareTunnelProvider; `app.get(TunnelProvider).setTestDeps(...)`
  * redirects its outbound HTTP to a fake fetchImpl for this suite's
  * lifetime (that class's own doc comment — the only seam available once
- * Nest has already resolved a live instance). ConnectorManager/
- * RemoteActivePathReader are the registered no-op defaults, introspected
- * via `app.get(...)` the same way (mirrors server-power.e2e.spec.ts's
- * `power.arm(fakes)` convention).
+ * Nest has already resolved a live instance). ConnectorManager is still
+ * the registered no-op default, introspected via `app.get(...)` the same
+ * way (mirrors server-power.e2e.spec.ts's `power.arm(fakes)` convention).
+ *
+ * RemoteActivePathReader (WG2, RG15 integration unification): NO LONGER a
+ * no-op — this suite now runs against the REAL RemoteActivePathResolverService
+ * (apps/server/src/remote/remote-active-path.service.ts), the canonical
+ * cross-subsystem resolver. The cross-path 409 test below proves it by
+ * writing remote_wireguard_state.enabled=true DIRECTLY via @loombre/db's
+ * enableRemoteWireguardAndEmit (bypassing RemoteWireguardService/
+ * packages/wg-native entirely — no native library needed for this suite to
+ * prove the WIRING, only for WG's own loopback-handshake suite to prove
+ * the listener itself), so the resolver's live DB read genuinely observes
+ * WireGuard as active.
  *
  * What this suite pins:
  *  - 401 wall unauthenticated; 403 for an authenticated non-admin, on all
@@ -27,8 +37,9 @@
  *    token (401-equivalent invalid), zone not found, tunnel name
  *    collision — and that a DNS-route failure AFTER a successful tunnel
  *    create rolls the tunnel back (best-effort deprovision).
- *  - enable 409s when a DIFFERENT path is active (RemoteActivePathReader
- *    override) and when Tunnel itself is already enabled.
+ *  - enable 409s when a DIFFERENT path is active (a REAL
+ *    remote_wireguard_state.enabled=true row, the canonical resolver) and
+ *    when Tunnel itself is already enabled.
  *  - A full enable -> disable cycle: teardown REALLY calls
  *    removeDnsRoute + deprovisionTunnel (fixture call-log assertions) and
  *    ConnectorManager.stop(), matching R8 "verified teardown".
@@ -46,13 +57,12 @@ import { fileURLToPath } from "node:url";
 import request from "supertest";
 import { NestFactory } from "@nestjs/core";
 import type { INestApplication } from "@nestjs/common";
-import { ensureTestDatabase, readUnprocessedEvents } from "@loombre/db";
+import { ensureTestDatabase, readUnprocessedEvents, enableRemoteWireguardAndEmit, disableRemoteWireguardAndEmit, getUserByUsername } from "@loombre/db";
 import { AppModule } from "../src/app.module.js";
 import { DbProvider } from "../src/common/db.provider.js";
 import { TunnelProvider } from "../src/remote/tunnel/tunnel-provider.js";
 import { CloudflareTunnelProvider } from "../src/remote/tunnel/cloudflare-tunnel-provider.js";
 import { ConnectorManager, NoopConnectorManager } from "../src/remote/tunnel/connector-manager.js";
-import { RemoteActivePathReader, NoopRemoteActivePathReader } from "../src/remote/active-path-reader.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DB_PKG_ROOT = path.resolve(__dirname, "../../../packages/db");
@@ -87,10 +97,10 @@ function buildDeviceProfile(profileId = "web-chrome") {
 
 let app: INestApplication;
 let adminToken: string;
+let adminUserId: string;
 let casualToken: string;
 let cfProvider: CloudflareTunnelProvider;
 let connectorManager: NoopConnectorManager;
-let activePathReader: NoopRemoteActivePathReader;
 let dbProvider: DbProvider;
 
 /** Records every request the fake Cloudflare transport receives, and
@@ -153,13 +163,15 @@ beforeAll(async () => {
 
   cfProvider = app.get(TunnelProvider) as CloudflareTunnelProvider;
   connectorManager = app.get(ConnectorManager) as NoopConnectorManager;
-  activePathReader = app.get(RemoteActivePathReader) as NoopRemoteActivePathReader;
   dbProvider = app.get(DbProvider);
 
   cfProvider.setTestDeps({ fetchImpl: fakeCfFetch, dnsLookup: async () => [{ address: "104.16.132.229", family: 4 }] });
 
   adminToken = await loginAs("admin", "loombre-seed-admin");
   casualToken = await loginAs("casual", "loombre-seed-casual");
+  const admin = await getUserByUsername(dbProvider.db, "admin");
+  if (!admin) throw new Error("seed did not create the admin user");
+  adminUserId = admin.id;
 });
 
 afterAll(async () => {
@@ -169,12 +181,15 @@ afterAll(async () => {
 beforeEach(async () => {
   cfCallLog = [];
   resetCfFixturesToHappyPath();
-  activePathReader.activePathOverride = "none";
   // Clear any token/enabled state a prior test left behind — the token
   // via clearRemoteTunnelToken (also proves clear itself works, every
   // test), the enabled row via disableRemoteTunnel's own idempotent path.
   await request(app.getHttpServer()).delete("/admin/remote/tunnel/token").set("Authorization", `Bearer ${adminToken}`);
   await request(app.getHttpServer()).post("/admin/remote/tunnel/disable").set("Authorization", `Bearer ${adminToken}`);
+  // WireGuard, too (the cross-path 409 test below flips this DIRECTLY via
+  // @loombre/db, bypassing RemoteWireguardService/packages/wg-native —
+  // idempotent no-op when already disabled, safe to call unconditionally).
+  await disableRemoteWireguardAndEmit(dbProvider.db, { actorUserId: adminUserId, nowMs: Date.now() });
 });
 
 const ROUTES: Array<{ method: "post" | "delete" | "get"; path: string }> = [
@@ -272,11 +287,15 @@ describe("enableRemoteTunnel — validation and provider-error paths", () => {
     expect(res.status).toBe(409);
   });
 
-  it("409 when a DIFFERENT remote-access path is already active (RG15)", async () => {
+  it("409 when a DIFFERENT remote-access path is already active (RG15) — a REAL remote_wireguard_state.enabled=true row, read by the canonical resolver", async () => {
     await request(app.getHttpServer()).post("/admin/remote/tunnel/token").set("Authorization", `Bearer ${adminToken}`).send({ token: "good-token" });
-    activePathReader.activePathOverride = "remote";
-    const res = await request(app.getHttpServer()).post("/admin/remote/tunnel/enable").set("Authorization", `Bearer ${adminToken}`).send({ hostname: "media.example.com" });
-    expect(res.status).toBe(409);
+    await enableRemoteWireguardAndEmit(dbProvider.db, { serverPublicKey: "remote-tunnel-e2e-cross-path-key", actorUserId: adminUserId, nowMs: Date.now() });
+    try {
+      const res = await request(app.getHttpServer()).post("/admin/remote/tunnel/enable").set("Authorization", `Bearer ${adminToken}`).send({ hostname: "media.example.com" });
+      expect(res.status).toBe(409);
+    } finally {
+      await disableRemoteWireguardAndEmit(dbProvider.db, { actorUserId: adminUserId, nowMs: Date.now() });
+    }
   });
 
   it("422 on tunnel name collision (Cloudflare create returns success:false)", async () => {

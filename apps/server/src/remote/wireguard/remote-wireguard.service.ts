@@ -41,13 +41,29 @@
 // request (unlike plugin-registration.service.ts's own-module services,
 // which have no such upstream check to rely on).
 //
-// RG15's cross-path 409 (assertNoOtherRemotePathActive below) is a
-// documented SEAM, not a real check: T1 (tunnel) and D1 (direct) are
-// separate lanes off the same lane/remote-base tip whose own state this
-// worktree cannot see — same "interface with a no-op default, integration
-// wires the real thing" posture the orchestrator already established for
-// ConnectorManager/ConnectorHealthReader (STATE.md Batch-1 dispatch).
-// Flagged in WG1's own report as an adjudication beyond R/RG law.
+// RG15's cross-path 409 (assertNoOtherRemotePathActive below) was WG1's
+// documented SEAM (a no-op — T1/D1 were separate sibling lanes off the same
+// lane/remote-base tip whose own state that worktree could not see). WG2
+// (this lane, integration unification per STATE.md's own assignment) closes
+// it for real: assertNoOtherRemotePathActive now calls the injected
+// RemoteActivePathReader (apps/server/src/remote/active-path-reader.ts),
+// bound in remote.module.ts to RemoteActivePathResolverService — the SAME
+// canonical @loombre/db resolveActivePath() (packages/db/src/query/
+// remote-active-path.ts) T1's RemoteTunnelService, D1's
+// RemoteDirectController, and S1's posture reader all now delegate to, so
+// the cross-path 409 can never drift between the four call sites.
+//
+// WG2 additions (STATE.md "Loombre Remote", R2/R3/R9/RG3/RG9, migrations/
+// 0030_wg_peers.sql, packages/db/src/query/wg-peers.ts): loadPeers() below
+// now reads every persisted peer for real boot-resume re-registration;
+// listDevices/enrollDevice/revokeDevice replace remote-wireguard.
+// controller.ts's three device-management 501 shells. R9 (no private key,
+// EVER — audited end to end): the peer keypair is generated in
+// enrollDevice, the private half is embedded ONCE into the returned
+// configText (packages/shared/src/remote/provisioning.ts's frozen format)
+// and NEVER stored, logged, or included in any other response this file
+// produces — grep this file for `devicePrivateKey`/`keys.privateKey` to
+// confirm both uses are local to enrollDevice's own return statement.
 
 import * as http from "node:http";
 import { Injectable, type OnApplicationBootstrap, type OnModuleDestroy } from "@nestjs/common";
@@ -55,12 +71,26 @@ import { HttpAdapterHost } from "@nestjs/core";
 import type { RequestListener } from "node:http";
 import { detectSecretBackend, storeSecret, tryResolveSecret } from "@loombre/secrets";
 import type { SecretBackend } from "@loombre/provisioning";
-import { getRemoteWireguardState, enableRemoteWireguardAndEmit, disableRemoteWireguardAndEmit } from "@loombre/db";
+import {
+  getRemoteWireguardState,
+  enableRemoteWireguardAndEmit,
+  disableRemoteWireguardAndEmit,
+  getUserById,
+  listAllWgPeers,
+  listWgPeers,
+  getWgPeerByDeviceId,
+  enrollRemoteWireguardDeviceAndEmit,
+  revokeRemoteWireguardDeviceAndEmit,
+  type ListWgPeersParams,
+  type RevokeRemoteWireguardDeviceResult,
+} from "@loombre/db";
 import { WgNativeClient, generateWgKeyPair, type WgPeerConfig } from "@loombre/wg-native";
+import { buildProvisioningConfig } from "@loombre/shared";
 import { DbProvider } from "../../common/db.provider.js";
 import { SettingsService } from "../../settings/settings.service.js";
 import { resolveAppPaths } from "../../cli/app-paths.js";
-import { serviceUnavailable } from "../../gateway/problem.exception.js";
+import { conflict, notFound, unprocessableEntity, serviceUnavailable } from "../../gateway/problem.exception.js";
+import { RemoteActivePathReader } from "../active-path-reader.js";
 import { deriveServerTunnelIp } from "./subnet.js";
 
 export interface RemoteWireguardStatusDto {
@@ -70,6 +100,26 @@ export interface RemoteWireguardStatusDto {
   subnet: string;
   endpointHost: string | null;
   peerCount: number;
+}
+
+export interface RemoteWireguardDeviceDto {
+  id: string;
+  userId: string;
+  name: string;
+  tunnelIp: string;
+  createdAtMs: number;
+  lastHandshakeAtMs: number | null;
+}
+
+export interface RemoteWireguardDevicePageDto {
+  items: RemoteWireguardDeviceDto[];
+  nextCursor: string | null;
+}
+
+export interface RemoteWireguardEnrollmentDto {
+  device: RemoteWireguardDeviceDto;
+  /** wg-quick config text, shown ONCE — see this file's header (R9). */
+  configText: string;
 }
 
 interface RuntimeInstance {
@@ -101,6 +151,7 @@ export class RemoteWireguardService implements OnApplicationBootstrap, OnModuleD
     private readonly dbProvider: DbProvider,
     private readonly settingsService: SettingsService,
     private readonly httpAdapterHost: HttpAdapterHost,
+    private readonly activePathReader: RemoteActivePathReader,
   ) {}
 
   /** R8 boot resume: if the persisted intent is "enabled", restart the
@@ -219,23 +270,208 @@ export class RemoteWireguardService implements OnApplicationBootstrap, OnModuleD
     await client.addPeer(this.runtime.instanceId, peer);
   }
 
-  /** WG2's seam (documented per the mission brief): today always returns
-   *  no peers — a fresh enable/boot-resume never has any peer to restore
-   *  because enrollment (kind='remote' devices, migrations/
-   *  0030_*_wg_peers) does not exist yet on this branch. WG2 replaces this
-   *  method's body with a real query against its own peers table; nothing
-   *  else in this file needs to change (startRuntimeWith already threads
-   *  whatever this returns straight into WgStart's `peers` field). */
+  // ==========================================================================
+  // Device management (WG2, R2/R3/R9/RG3/RG9) — replaces remote-wireguard.
+  // controller.ts's three 501 shells.
+  // ==========================================================================
+
+  async listDevices(params: ListWgPeersParams): Promise<RemoteWireguardDevicePageDto> {
+    const page = await listWgPeers(this.dbProvider.db, params);
+    const handshakes = await this.liveHandshakeMap();
+    return {
+      items: page.rows.map((row) => ({
+        id: row.id,
+        userId: row.userId,
+        name: row.name,
+        tunnelIp: row.tunnelIp,
+        createdAtMs: row.createdAtMs,
+        lastHandshakeAtMs: handshakes.get(row.publicKey) ?? null,
+      })),
+      nextCursor: page.nextCursor,
+    };
+  }
+
+  /**
+   * Admin-initiated enrollment (R2): validate the target user exists (404)
+   * and Wireguard is enabled (409 — the contract's own documented status
+   * for "enrollment is not currently possible"), require
+   * remote.wireguardEndpointHost to be configured (422 — same posture as
+   * D1's enableRemoteDirect reverse-proxy trustProxy check: a required
+   * server-side prerequisite setting is empty), THEN generate a fresh peer
+   * keypair + allocate the lowest-free tunnel IP + persist (ONE
+   * transaction, packages/db/src/query/wg-peers.ts) — checks run BEFORE
+   * any DB write, so a rejected enrollment never leaves a half-created
+   * device behind. A live device gets WgAddPeer immediately so it can
+   * start handshaking without waiting for the next restart; an enable-less
+   * enrollment (state.enabled=true but this process's own runtime is not
+   * currently live, e.g. a fresh boot before resume completes) simply
+   * skips that step — loadPeers() re-adds it on the next successful
+   * enable()/boot-resume regardless.
+   *
+   * R9 (audit this method specifically — see this file's header): `keys`
+   * (the freshly generated keypair, including the private half) exists
+   * ONLY in this method's local scope; it is passed to
+   * buildProvisioningConfig to produce `configText`, returned to the
+   * caller ONCE, and never stored, logged, or referenced again after this
+   * method returns.
+   */
+  async enrollDevice(input: { userId: string; name: string; actorUserId: string; nowMs?: number }): Promise<RemoteWireguardEnrollmentDto> {
+    const nowMsValue = input.nowMs ?? Date.now();
+    const instance = "/admin/remote/wireguard/devices";
+
+    const targetUser = await getUserById(this.dbProvider.db, input.userId);
+    if (!targetUser) {
+      throw notFound("Unknown userId.", instance);
+    }
+
+    const state = await getRemoteWireguardState(this.dbProvider.db);
+    if (!state.enabled || state.serverPublicKey === null) {
+      throw conflict("Wireguard is not enabled.", instance, "remote-wireguard-not-enabled");
+    }
+
+    const endpointHost = String(this.settingsService.getEffective("remote.wireguardEndpointHost")?.value ?? "").trim();
+    if (endpointHost.length === 0) {
+      throw unprocessableEntity(
+        "remote.wireguardEndpointHost is not configured — set it from Settings before enrolling a device.",
+        instance,
+      );
+    }
+    const endpointPort = Number(this.settingsService.getEffective("remote.wireguardPort")?.value ?? 51820);
+    const subnet = String(this.settingsService.getEffective("remote.subnet")?.value ?? "10.82.146.0/24");
+    const serverTunnelIp = deriveServerTunnelIp(subnet);
+
+    const keys = generateWgKeyPair();
+
+    const enrolled = await enrollRemoteWireguardDeviceAndEmit(this.dbProvider.db, {
+      userId: input.userId,
+      name: input.name,
+      publicKey: keys.publicKey,
+      subnetCidr: subnet,
+      actorUserId: input.actorUserId,
+      nowMs: nowMsValue,
+    });
+
+    if (this.runtime !== null) {
+      const client = WgNativeClient.load();
+      if (client) {
+        await client.addPeer(this.runtime.instanceId, { publicKey: enrolled.publicKey, tunnelIp: enrolled.tunnelIp });
+      }
+    }
+
+    const configText = buildProvisioningConfig({
+      serverPublicKey: state.serverPublicKey,
+      serverEndpointHost: endpointHost,
+      serverEndpointPort: endpointPort,
+      devicePrivateKey: keys.privateKey,
+      deviceTunnelIp: enrolled.tunnelIp,
+      serverTunnelIp,
+      subnetCidr: subnet,
+    });
+
+    return {
+      device: {
+        id: enrolled.deviceId,
+        userId: enrolled.userId,
+        name: enrolled.name,
+        tunnelIp: enrolled.tunnelIp,
+        createdAtMs: enrolled.createdAtMs,
+        lastHandshakeAtMs: null,
+      },
+      configText,
+    };
+  }
+
+  /**
+   * RG3/R2: removes the LIVE WG peer (if this process's own runtime is
+   * currently up) BEFORE deleting any row — see this method's own ordering
+   * note. Returns undefined (idempotent no-op) when the device has no
+   * wg_peers row (already revoked, never enrolled, or a kind='app'
+   * device — the general DELETE /devices/{id} gap-closure path,
+   * apps/server/src/catalog/devices.controller.ts, calls this for EVERY
+   * kind='remote' device it revokes, so "not a remote device" must be a
+   * clean no-op here, not an error).
+   *
+   * ORDERING (crash-safety, R9/RG3): the live peer is removed from the
+   * running wg-native instance FIRST; only once that call has RETURNED
+   * (succeeded, or there was nothing live to remove from — this.runtime
+   * is null, or the native lib itself is unavailable) does the DB
+   * transaction run (packages/db/src/query/wg-peers.ts
+   * revokeRemoteWireguardDeviceAndEmit). A crash between the two leaves a
+   * peer that is already unreachable on the wire but still has DB rows —
+   * recoverable by simply re-running revoke (removePeer on an
+   * already-absent peer key is a no-op at the wireguard-go UAPI layer,
+   * server.go's removePeer doc). The REVERSE order (DB first, live
+   * removal second) would risk the opposite and strictly worse outcome: a
+   * device the DB calls "revoked" that can still complete a live
+   * WireGuard handshake until the second step eventually runs — a
+   * security hole, not merely an inconsistency, so this ordering is a
+   * hard requirement, not a style preference.
+   */
+  async revokeDevice(input: { deviceId: string; actorUserId: string; nowMs?: number }): Promise<RevokeRemoteWireguardDeviceResult | undefined> {
+    const nowMsValue = input.nowMs ?? Date.now();
+    const peer = await getWgPeerByDeviceId(this.dbProvider.db, input.deviceId);
+    if (!peer) return undefined;
+
+    await this.removeLivePeerIfRunning(peer.publicKey);
+
+    return revokeRemoteWireguardDeviceAndEmit(this.dbProvider.db, {
+      deviceId: input.deviceId,
+      actorUserId: input.actorUserId,
+      nowMs: nowMsValue,
+    });
+  }
+
+  private async removeLivePeerIfRunning(publicKey: string): Promise<void> {
+    if (this.runtime === null) return;
+    const client = WgNativeClient.load();
+    if (!client) return; // native lib unavailable — nothing more we can do live; DB cleanup still proceeds
+    await client.removePeer(this.runtime.instanceId, publicKey);
+  }
+
+  /** Live lastHandshakeMs per enrolled peer's public key — best-effort:
+   *  not live (nothing enabled/running) or a runtime status read failing
+   *  both collapse to "no live data" (an empty map, every device's
+   *  lastHandshakeAtMs falls back to null) rather than failing the whole
+   *  list read. */
+  private async liveHandshakeMap(): Promise<Map<string, number>> {
+    const map = new Map<string, number>();
+    if (this.runtime === null) return map;
+    const client = WgNativeClient.load();
+    if (!client) return map;
+    try {
+      const native = await client.status(this.runtime.instanceId);
+      for (const p of native.peers) {
+        if (p.lastHandshakeMs > 0) map.set(p.publicKey, p.lastHandshakeMs);
+      }
+    } catch {
+      // best-effort — see this method's own doc comment.
+    }
+    return map;
+  }
+
+  /** Every persisted peer, re-registered with the FRESH runtime instance on
+   *  every enable()/boot-resume — WgStart's `peers` field (WG1's own doc
+   *  comment on WgStartConfig.peers). A restart never loses an enrolled
+   *  device's access: the peer rows survive in Postgres independent of
+   *  this process's own lifetime, unlike the private key (keyring) or the
+   *  in-memory runtime handle. */
   private async loadPeers(): Promise<WgPeerConfig[]> {
-    return [];
+    const rows = await listAllWgPeers(this.dbProvider.db);
+    return rows.map((row) => ({ publicKey: row.publicKey, tunnelIp: row.tunnelIp }));
   }
 
   /** RG15: "at most one active path ... enforced by each path's staged
-   *  enable flow." SEAM — see this file's header for the full cross-lane
-   *  rationale; today this only ever returns (WG1's own worktree cannot
-   *  see T1/D1's state). */
+   *  enable flow." Now a REAL check (WG2 integration unification) — see
+   *  this file's header. */
   private async assertNoOtherRemotePathActive(): Promise<void> {
-    return;
+    const other = await this.activePathReader.activePath();
+    if (other !== "none" && other !== "remote") {
+      throw conflict(
+        `Cannot enable Loombre Remote (WireGuard) — the ${other} path is already active. Disable it first.`,
+        "/admin/remote/wireguard/enable",
+        "remote-path-active",
+      );
+    }
   }
 
   private requestListener(): RequestListener {
