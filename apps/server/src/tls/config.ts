@@ -19,7 +19,7 @@
 // binds exactly LOOMBRE_HTTP_PORT/LOOMBRE_HTTPS_PORT, defaulting to 80/443
 // only because that is what an operator turning TLS on actually wants; the
 // privilege story itself (setcap / systemd AmbientCapabilities / authbind)
-// is docs/ops/reverse-proxy.md + docs/ops/acme.md territory, and tests
+// is docs/ops/remote-access/reverse-proxy.md + docs/ops/remote-access/acme.md territory, and tests
 // always override both env vars to unprivileged 36xx ports.
 
 import { existsSync } from "node:fs";
@@ -199,7 +199,7 @@ export function loadTlsConfig(env: NodeJS.ProcessEnv): TlsConfig {
     throw new TlsConfigError(
       "LOOMBRE_TLS_MODE=acme requires LOOMBRE_ACME_TOS_AGREED=1 — built-in ACME issuance means Loombre " +
         "agrees to the CA's Terms of Service on the operator's behalf (every ACME client, e.g. certbot's " +
-        "--agree-tos, requires the same explicit opt-in); see docs/ops/acme.md",
+        "--agree-tos, requires the same explicit opt-in); see docs/ops/remote-access/acme.md",
     );
   }
 

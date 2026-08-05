@@ -288,7 +288,7 @@ failure reason.
 
 **Common cause:** Your reverse proxy is buffering HLS segments
 
-**Fix:** See `docs/ops/reverse-proxy.md` requirement #2 — add `proxy_buffering off`
+**Fix:** See `docs/ops/remote-access/reverse-proxy.md` requirement #2 — add `proxy_buffering off`
 (nginx) or ensure your proxy streams responses without buffering (Caddy/Traefik do
 this by default).
 
