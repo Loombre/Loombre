@@ -50,26 +50,36 @@
 //
 // Tunnel path providers (R4/R9/RG7, lane T1): TunnelProvider/
 // ConnectorManager/RemoteActivePathReader are all ABSTRACT-CLASS DI tokens
-// (see active-path-reader.ts's header for why) bound here to their default
-// implementations — CloudflareTunnelProvider (R4's "thin-but-real" ONE
-// implementation), NoopConnectorManager (T2, a LATER Batch-2 lane, replaces
-// this binding with the real supervised-cloudflared-child implementation —
-// STATE.md's own cross-lane seam note), NoopRemoteActivePathReader
-// (integration replaces this once WG1's/D1's own active-signal exist, same
-// seam shape). Swapping any of the three later is a ONE-LINE change here —
-// no call site anywhere else names a concrete class.
+// (see active-path-reader.ts's header for why) bound here to their real (or,
+// for RemoteActivePathReader, still-pending) implementations —
+// CloudflareTunnelProvider (R4's "thin-but-real" ONE implementation),
+// CloudflaredConnectorManager (T2, batch 2, RG7: the real supervised-
+// cloudflared-child implementation — this WAS NoopConnectorManager at Wave
+// 0/Batch 1; STATE.md's own cross-lane seam note named this exact swap as
+// "a one-line change"), NoopRemoteActivePathReader (STILL pending —
+// integration replaces this once WG1's/D1's own active-signal exist, same
+// seam shape, out of T2's mission scope). Swapping either of the remaining
+// two later is a ONE-LINE change here — no call site anywhere else names a
+// concrete class.
 //
-// Lane P1 additions: ConnectorHealthReaderService (the freeze's own
-// cross-lane-seams note — T2 wires the real cloudflared-connector read at
-// integration; at that point it should read through lane T1's
-// ConnectorManager token above rather than stay a parallel seam —
-// integration unification note, STATE.md) and RemoteDnsResolverService
-// (node:dns wiring for diagnoseRemote/getRemoteProbe's auto-diagnosis) are
-// provided HERE, module-scoped, so RemoteDiagnosisController and
-// RemoteProbesController share the SAME instances — required for
-// apps/server/test/remote-probes.e2e.spec.ts's `vi.spyOn(app.get(...), ...)`
-// seam-testing pattern (MailConfigService precedent) to actually intercept
-// what the controllers call.
+// RemoteTunnelBootResumerService (T2, RG7 "connector resumes on boot if
+// tunnel state row says enabled"): a one-shot OnApplicationBootstrap timer
+// (see that file's own header for the startup-delay reasoning) calling
+// RemoteTunnelService.resumeConnectorIfEnabled(). Server shutdown's own
+// symmetric half (ConnectorManager.stop()) lives in main.ts's
+// installGracefulShutdown hook, following the EmbeddedPostgres
+// stop-on-shutdown precedent there, not in this module (main.ts is the
+// only place that already owns "what happens on SIGTERM").
+//
+// Lane P1 additions: ConnectorHealthReaderService (T2, batch 2, RG7: now
+// reads through the ConnectorManager token above — see that file's own
+// header for the ConnectorState -> ConnectorHealth mapping) and
+// RemoteDnsResolverService (node:dns wiring for diagnoseRemote/
+// getRemoteProbe's auto-diagnosis) are provided HERE, module-scoped, so
+// RemoteDiagnosisController and RemoteProbesController share the SAME
+// instances — required for apps/server/test/remote-probes.e2e.spec.ts's
+// `vi.spyOn(app.get(...), ...)` seam-testing pattern (MailConfigService
+// precedent) to actually intercept what the controllers call.
 //
 // Lane WG1 addition: RemoteWireguardService (./wireguard/) is a provider
 // here (not its own nested module) — it needs the SAME DbProvider/
@@ -96,17 +106,19 @@ import { CommonSettingsModule } from "../common/common-settings.module.js";
 import { RemoteActivePathReader, NoopRemoteActivePathReader } from "./active-path-reader.js";
 import { TunnelProvider } from "./tunnel/tunnel-provider.js";
 import { CloudflareTunnelProvider } from "./tunnel/cloudflare-tunnel-provider.js";
-import { ConnectorManager, NoopConnectorManager } from "./tunnel/connector-manager.js";
+import { ConnectorManager } from "./tunnel/connector-manager.js";
+import { CloudflaredConnectorManager } from "./tunnel/cloudflared-connector-manager.js";
 import { TunnelTokenService } from "./tunnel/tunnel-token.service.js";
 import { RemoteTunnelService } from "./tunnel/remote-tunnel.service.js";
+import { RemoteTunnelBootResumerService } from "./tunnel/remote-tunnel-boot-resumer.service.js";
 import { RemotePostureController } from "./remote-posture.controller.js";
 import { RemotePostureService } from "./posture/remote-posture.service.js";
 import { RemotePostureRegressionSchedulerService } from "./posture/remote-posture-regression.scheduler.js";
 // S1's posture-side connector-health reader shares P1's class NAME but is a
 // distinct class in a distinct file — aliased here so both can be provided.
-// Integration unification (STATE.md ledger): when T2 lands the real
-// connector, BOTH readers should route through the ConnectorManager token
-// above instead of remaining parallel seams.
+// Integration unification (STATE.md ledger, DONE by T2): both readers now
+// route through the ConnectorManager token above instead of remaining
+// parallel seams — see each reader's own file header.
 import { ConnectorHealthReaderService as PostureConnectorHealthReaderService } from "./posture/connector-health.reader.js";
 import { WireguardStatusReaderService } from "./posture/wireguard-status.reader.js";
 import { RemoteActivePathReaderService } from "./posture/active-path.reader.js";
@@ -126,10 +138,11 @@ import { RemoteWireguardService } from "./wireguard/remote-wireguard.service.js"
   ],
   providers: [
     { provide: TunnelProvider, useClass: CloudflareTunnelProvider },
-    { provide: ConnectorManager, useClass: NoopConnectorManager },
+    { provide: ConnectorManager, useClass: CloudflaredConnectorManager },
     { provide: RemoteActivePathReader, useClass: NoopRemoteActivePathReader },
     TunnelTokenService,
     RemoteTunnelService,
+    RemoteTunnelBootResumerService,
     ConnectorHealthReaderService,
     RemoteDnsResolverService,
     RemotePostureService,
@@ -140,10 +153,13 @@ import { RemoteWireguardService } from "./wireguard/remote-wireguard.service.js"
     RemoteWireguardService,
   ],
   exports: [ConnectorHealthReaderService, RemoteDnsResolverService],
-  // NoopConnectorManager/NoopRemoteActivePathReader carry test-only
-  // introspection (getTestState()/activePathOverride) that e2e specs read
-  // via `app.get(ConnectorManager)`/`app.get(RemoteActivePathReader)` — no
-  // export needed for that (same-module `app.get` works on any provider,
-  // exported or not); nothing outside this module currently needs either.
+  // CloudflaredConnectorManager/NoopRemoteActivePathReader carry test-only
+  // introspection e2e specs read via `app.get(ConnectorManager)`/
+  // `app.get(RemoteActivePathReader)` — CloudflaredConnectorManager's own
+  // setTestDeps() (spawnFn/nowMs/random/stopGraceTimeoutMs overrides,
+  // cloudflared-connector-manager.ts's own header), NoopRemoteActivePathReader's
+  // activePathOverride field. No export needed for either (same-module
+  // `app.get` works on any provider, exported or not); nothing outside
+  // this module currently needs either.
 })
 export class RemoteModule {}
