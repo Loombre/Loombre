@@ -26,7 +26,7 @@
 
 import type { Kysely, Selectable } from 'kysely';
 import type { DB, StashSceneLinksTable } from '../types.js';
-import { rewriteStashPath, type StashPathMapping } from '@loombre/shared/stash-path-mapping';
+import { canonicalizePathForMatch, rewriteStashPath, type StashPathMapping } from '@loombre/shared/stash-path-mapping';
 import { getLibraryPathMappings } from './stash-connections.js';
 
 export type StashSceneLinkRow = Selectable<StashSceneLinksTable>;
@@ -204,14 +204,22 @@ export async function computePathMappingMatchPreview(
     mappingsOverride !== undefined
       ? [...mappingsOverride]
       : (mappingRows ?? []).map((m) => ({ stashPrefix: m.stash_prefix, loombrePrefix: m.loombre_prefix }));
-  const candidatePaths = new Set(candidateFiles.map((f) => f.path));
+  // Canonicalize the candidate side so a Windows-native '\'-separated
+  // media_files.path still matches rewriteStashPath's always-'/'-separated
+  // output (see canonicalizePathForMatch's header) — otherwise a correctly-
+  // configured mapping reports zero matches on a Windows Loombre server.
+  const candidatePaths = new Set(candidateFiles.map((f) => canonicalizePathForMatch(f.path)));
 
   let candidateMatchCount = 0;
   const unmatchedScenes: PathMappingPreviewUnmatchedScene[] = [];
 
   for (const scene of sceneLinks) {
     const rewritten = rewriteStashPath(scene.stash_path, mappings);
-    const matched = rewritten != null && candidatePaths.has(rewritten);
+    // rewritten is already '/'-normalized; canonicalize the lookup too so
+    // both sides meet by construction. The unmatched-scene report below keeps
+    // the raw rewrite (rewrittenPath) — that is admin-facing display, not a
+    // comparison key.
+    const matched = rewritten != null && candidatePaths.has(canonicalizePathForMatch(rewritten));
     if (matched) {
       candidateMatchCount += 1;
     } else if (unmatchedScenes.length < UNMATCHED_SCENES_PREVIEW_CAP) {

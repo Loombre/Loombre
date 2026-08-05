@@ -191,5 +191,28 @@ describe('stash-inventory (S4/K10)', () => {
 
       void matchedFileId; // referenced for clarity of the fixture's intent
     });
+
+    it('counts a match when the Loombre file was stored with NATIVE Windows separators', async () => {
+      // On a Windows Loombre server media_files.path is '\'-separated (the
+      // scanner stores the native absPath verbatim), while rewriteStashPath
+      // emits '/'. The preview must canonicalize the candidate side before
+      // the equality check, or a correctly-configured mapping reports zero
+      // matches on Windows — the same bug that broke the Windows CI leg.
+      const libraryId = await makeRestrictedLibrary();
+      const now = Date.now();
+
+      await makeCatalogItemWithFile(libraryId, 'D:\\Media\\Adult\\scene-w.mp4', 111);
+      await upsertStashSceneLinksFromInventory(
+        db,
+        libraryId,
+        [{ stashSceneId: 'scene-w', stashPath: '/stash-media/scene-w.mp4', stashSizeBytes: 111, stashOshash: null, stashUpdatedAtMs: now }],
+        now
+      );
+      await replaceLibraryPathMappings(db, libraryId, [{ stashPrefix: '/stash-media', loombrePrefix: 'D:\\Media\\Adult' }]);
+
+      const preview = await computePathMappingMatchPreview(db, libraryId);
+      expect(preview.candidateMatchCount).toBe(1);
+      expect(preview.unmatchedCount).toBe(0);
+    });
   });
 });

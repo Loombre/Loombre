@@ -33,7 +33,7 @@
 //     one-liner) — there's nothing this module needs to do differently to
 //     support it, so it isn't a separate exported function.
 
-import { rewriteStashPath, type StashPathMapping } from '@loombre/shared/stash-path-mapping';
+import { canonicalizePathForMatch, rewriteStashPath, type StashPathMapping } from '@loombre/shared/stash-path-mapping';
 
 export interface StashSceneMatchInput {
   stashSceneId: string;
@@ -67,7 +67,10 @@ export function matchStashScenes(
   const byPath = new Map<string, LoombreFileCandidate>();
   const bySize = new Map<number, LoombreFileCandidate[]>();
   for (const candidate of candidates) {
-    byPath.set(candidate.path, candidate);
+    // Key by the canonicalized (separator-agnostic) form so a Windows-native
+    // '\'-separated media_files.path still matches rewriteStashPath's always-
+    // '/'-separated output — see canonicalizePathForMatch's header.
+    byPath.set(canonicalizePathForMatch(candidate.path), candidate);
     if (candidate.sizeBytes != null) {
       const bucket = bySize.get(candidate.sizeBytes);
       if (bucket) bucket.push(candidate);
@@ -79,7 +82,10 @@ export function matchStashScenes(
     // Tier 1: path-mapped exact match (primary, S4).
     const rewritten = rewriteStashPath(scene.stashPath, mappings);
     if (rewritten) {
-      const match = byPath.get(rewritten);
+      // rewritten is already '/'-normalized, but canonicalize the lookup key
+      // too so the two sides meet by construction rather than by relying on
+      // rewriteStashPath's internal normalization.
+      const match = byPath.get(canonicalizePathForMatch(rewritten));
       if (match) {
         return { stashSceneId: scene.stashSceneId, itemId: match.itemId, mediaFileId: match.mediaFileId, matchedBy: 'path' as const };
       }
