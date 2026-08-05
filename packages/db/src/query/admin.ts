@@ -121,6 +121,46 @@ export async function listUsersAdmin(db: Kysely<DB>, params: ListUsersParams = {
   return { rows, nextCursor };
 }
 
+/**
+ * STATE.md "Loombre Remote — embedded WireGuard + three-path wizard +
+ * reachability proof + posture card" (R7/staleAccounts, S1 lane): counts
+ * enabled accounts that are either (a) never logged in — zero rows in
+ * `devices`, since EVERY entry point that creates a session (login,
+ * first-admin setup, invite claim — see packages/db/src/query/identity.ts's
+ * createDevice doc comment: "Login registers a fresh device row every
+ * call") also registers a device row, so a user with none has never
+ * actually authenticated — or (b) passwordless in the sense this schema can
+ * express: `must_change_password` (migrations/0024_password_recovery.sql,
+ * E3a/M14) means the account is still running on an admin/CLI-issued
+ * temporary password it never replaced with one of its own choosing.
+ * `users.password_hash` itself is NOT NULL always (no user row can exist
+ * with a genuinely absent hash), so `must_change_password` is the closest
+ * honest proxy for "lacks a password of their own" this schema has — this
+ * is a deliberate ground-truthing call, not a literal NULL check, and is
+ * flagged as such in this lane's report. There is no account-disable
+ * concept anywhere in `users` (no `is_disabled`/`is_active` column exists
+ * in this schema — deletion is the only removal mechanism), so "enabled
+ * account" here means every row in `users`, unconditionally.
+ *
+ * A plain count (countUsers's own precedent, identity.ts): the posture
+ * check only ever needs "how many", never the individual rows.
+ */
+export async function countStaleAccountsAdmin(db: Kysely<DB>): Promise<number> {
+  const row = await db
+    .selectFrom('users')
+    .select((eb) => eb.fn.countAll<string>().as('count'))
+    .where((eb) =>
+      eb.or([
+        eb('users.must_change_password', '=', true),
+        eb.not(
+          eb.exists(eb.selectFrom('devices').select('devices.id').whereRef('devices.user_id', '=', 'users.id'))
+        ),
+      ])
+    )
+    .executeTakeFirst();
+  return row ? Number(row.count) : 0;
+}
+
 export interface CreateUserAdminInput {
   username: string;
   /** M1: nullable — omitted/undefined-at-the-caller-layer becomes NULL,
