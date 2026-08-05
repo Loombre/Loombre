@@ -89,10 +89,22 @@ const MUST_CHANGE_PASSWORD_ALLOWED_ROUTES = new Set([
  * from an unknown one by the time it reaches the controller (byte-
  * identical 404, invites.controller.ts), so this guard has no reason to
  * pre-filter it.
+ *
+ * STATE.md "Loombre Remote — embedded WireGuard + three-path wizard +
+ * reachability proof + posture card" (R6/R9, Wave 0 — lane/remote-base)
+ * adds GET /probe/{token} — also `security: []`, same dynamic-path-segment
+ * shape and same "public means never gated, not always successful"
+ * posture (apps/server/src/remote/probe-page.controller.ts always 404s
+ * this wave — the shell IS the final behavior for every case reachable
+ * before real probe tokens exist, see that file's header). One of only
+ * three new unauthenticated surfaces this subsystem introduces (R9) — the
+ * other two (the WireGuard UDP listener and the tunnel connector's inbound
+ * edge) are not HTTP routes this guard governs at all.
  */
 const PUBLIC_ROUTE_PATTERNS: ReadonlyArray<{ method: string; pattern: RegExp }> = [
   { method: "GET", pattern: /^\/invites\/claim\/[^/]+$/ },
   { method: "POST", pattern: /^\/invites\/claim\/[^/]+$/ },
+  { method: "GET", pattern: /^\/probe\/[^/]+$/ },
 ];
 
 function isPublicRoute(method: string, path: string): boolean {

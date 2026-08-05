@@ -109,3 +109,29 @@ export function notFound(detail: string, instance: string, code?: string): Probl
     ...(code !== undefined ? { code } : {}),
   });
 }
+
+/**
+ * RFC 9457 501, first consumer: STATE.md "Loombre Remote — embedded
+ * WireGuard + three-path wizard + reachability proof + posture card"
+ * Wave 0 (lane/remote-base, RG15) — every admin op mounted under
+ * apps/server/src/remote/ passes requireLiveAdmin FIRST (a real admin
+ * gets a real, honest "not built yet" instead of a coincidental catch-all
+ * 404), then throws this. Distinct from a bare `NotFoundException()`
+ * (which a caller cannot tell apart from "doesn't exist"): 501 means "this
+ * IS a real, documented operation — it just isn't implemented on this
+ * branch yet," so the contract-conformance walk (apps/server/test/
+ * conformance.spec.ts) can assert an EXACT expected status per op rather
+ * than a coincidental one. Each replacing lane deletes its own call sites
+ * of this factory as it lands real behavior; the factory itself stays for
+ * whichever op hasn't been replaced yet.
+ */
+export function notImplemented(detail: string, instance: string, code?: string): ProblemException {
+  return new ProblemException({
+    status: HttpStatus.NOT_IMPLEMENTED,
+    type: "urn:loombre:problem:not-implemented",
+    title: "Not Implemented",
+    detail,
+    instance,
+    ...(code !== undefined ? { code } : {}),
+  });
+}
