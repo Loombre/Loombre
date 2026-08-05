@@ -498,9 +498,16 @@ const IMPLEMENTED_NON_PUBLIC_EXPECTATIONS: Record<string, number> = {
   disableRemoteTunnel: 200, // idempotent no-op on a fresh reseeded DB
   getRemoteTunnelStatus: 200,
   getRemoteTunnelLogs: 200,
-  testRemoteDirectAcme: 501,
-  enableRemoteDirect: 501,
-  disableRemoteDirect: 501,
+  // Direct path (R5/RG12/RG15, lane D1) — REAL implementation, no longer a
+  // 501 shell: testRemoteDirectAcme/enableRemoteDirect both require a body
+  // (domain/mode respectively) this bodyless authenticated walk never
+  // supplies, 422ing on validation before any network/DB write; disable
+  // takes no body at all and is idempotent, so a fresh reseeded DB with
+  // nothing enabled 200s (see apps/server/test/remote-direct.e2e.spec.ts
+  // for the full body-supplied behavior).
+  testRemoteDirectAcme: 422, // bodyless -> "domain" is required
+  enableRemoteDirect: 422, // bodyless -> "mode" is required
+  disableRemoteDirect: 200, // idempotent no-op, nothing enabled on a fresh DB
 
   // Lane P1 (STATE.md, R6/RG6/RG11): the reachability-proof surface —
   // replaces its three 501 shells with real behavior (RG15's "lanes

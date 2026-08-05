@@ -29,26 +29,11 @@ Assumption: variable names and defaults below are Loombre's own environment-vari
 
 - **Default when unset:** 3001
 
-#### `LOOMBRE_TRUST_PROXY`
-
-**Trust proxy.** Express 'trust proxy' setting (boolean-like flag, hop count, or CIDR/preset list). Empty/unset means disabled — req.ip is the raw socket address and X-Forwarded-For is ignored.
-
-- **Default when unset:** (empty — not set)
-- **Caution:** Only enable behind a reverse proxy you control — enabling this trusts client-supplied X-Forwarded-For for rate-limit and anomaly-log keying.
-
 #### `LOOMBRE_CORS_ORIGINS`
 
 **Allowed browser origins (CORS).** Strict CORS origin allowlist for the browser web client. An explicitly empty list disables CORS entirely (same-origin deployments). Unset falls back to the local dev pairing.
 
 - **Default when unset:** `http://localhost:3000`, `http://127.0.0.1:3000`
-
-### TLS
-
-#### `LOOMBRE_TLS_MODE`
-
-**TLS mode.** TLS termination mode: 'off' (plain HTTP, e.g. behind a reverse proxy), 'manual' (operator-supplied cert/key files), or 'acme' (built-in Let's Encrypt issuance).
-
-- **Default when unset:** `off`
 
 ### Paths
 
@@ -297,7 +282,48 @@ The public hostname the Tunnel path routes through (set automatically when you e
 
 - **Default when unset:** (empty — not set) (or whatever was last saved from the settings screen)
 
+### `LOOMBRE_TLS_MODE`
+
+Pins **[TLS mode](/admin-guide/settings-reference#tls-mode)** (`tls.mode`) to a fixed value — set this and the admin settings screen shows the setting as controlled by the environment, read-only; any value stored from the settings screen is preserved but ignored until the variable is unset again.
+
+How Loombre handles HTTPS: 'off' serves plain HTTP (the right choice when a reverse proxy in front of Loombre handles HTTPS itself), 'manual' uses a certificate and key file you provide yourself, and 'acme' has Loombre request and automatically renew its own certificate from Let's Encrypt (or another compatible certificate authority) using the domain and verification settings below.
+
+- **Default when unset:** `off` (or whatever was last saved from the settings screen)
+
+### `LOOMBRE_ACME_DOMAINS`
+
+Pins **[Certificate domain name(s)](/admin-guide/settings-reference#certificate-domain-name-s)** (`tls.acmeDomains`) to a fixed value — set this and the admin settings screen shows the setting as controlled by the environment, read-only; any value stored from the settings screen is preserved but ignored until the variable is unset again.
+
+The domain name(s) this server requests an HTTPS certificate for when TLS mode is 'acme' — the address people use to reach it from outside your network (for example media.example.com). The first one becomes the certificate's primary name.
+
+- **Default when unset:** (none) (or whatever was last saved from the settings screen)
+
+### `LOOMBRE_ACME_CHALLENGE_TYPE`
+
+Pins **[Certificate verification method](/admin-guide/settings-reference#certificate-verification-method)** (`tls.acmeChallengeType`) to a fixed value — set this and the admin settings screen shows the setting as controlled by the environment, read-only; any value stored from the settings screen is preserved but ignored until the variable is unset again.
+
+How Loombre proves it controls the domain above, to get a certificate for it: 'http-01' answers a request on port 80 (simplest, when that port is reachable from the internet), 'dns-01' creates a temporary DNS record instead (works even with no reachable inbound port, and is required for a wildcard certificate).
+
+- **Default when unset:** `http-01` (or whatever was last saved from the settings screen)
+
+### `LOOMBRE_ACME_TOS_AGREED`
+
+Pins **[Accept certificate authority Terms of Service](/admin-guide/settings-reference#accept-certificate-authority-terms-of-service)** (`tls.acmeTosAgreed`) to a fixed value — set this and the admin settings screen shows the setting as controlled by the environment, read-only; any value stored from the settings screen is preserved but ignored until the variable is unset again.
+
+Confirms you accept the certificate authority's Terms of Service on this server's behalf — required before Loombre will request a certificate automatically. Loombre never agrees on your behalf silently; this must be turned on explicitly.
+
+- **Default when unset:** Off (or whatever was last saved from the settings screen)
+
+### `LOOMBRE_TRUST_PROXY`
+
+Pins **[Trust proxy](/admin-guide/settings-reference#trust-proxy)** (`network.trustProxy`) to a fixed value — set this and the admin settings screen shows the setting as controlled by the environment, read-only; any value stored from the settings screen is preserved but ignored until the variable is unset again.
+
+Tells Loombre it is running behind a reverse proxy you control, so it can trust that proxy's forwarded address information when deciding who to rate-limit or note in the sign-in log. Accepts a hop count (e.g. "1"), a trusted address/range, or a comma-separated list of them. Leave blank unless you are running Loombre behind your own reverse proxy.
+
+- **Default when unset:** (empty — not set) (or whatever was last saved from the settings screen)
+- **Caution:** Only enable behind a reverse proxy you control — enabling this trusts client-supplied forwarded-address information for rate-limit and sign-in-log keying.
+
 ## Secrets and other bootstrap variables not in this list
 
-This page covers only registry-backed settings. A number of other operational variables live outside the registry and therefore aren't listed above: secrets (`POSTGRES_PASSWORD`, `LOOMBRE_JWT_SECRET`), performance-tier and transcode tuning (`LOOMBRE_TIER`, `LOOMBRE_ALLOW_TRANSCODE`, `LOOMBRE_MAX_STREAM_BITRATE`, `LOOMBRE_TRANSCODE_WORKER_CONCURRENCY`), metadata-provider keys (`LOOMBRE_TMDB_API_KEY`, `LOOMBRE_TVDB_API_KEY`), TLS/ACME companions to `LOOMBRE_TLS_MODE` (`LOOMBRE_TLS_CERT_PATH`/`KEY_PATH`, `LOOMBRE_HTTPS_PORT`, the `LOOMBRE_ACME_*` family — see [docs/ops/acme.md](/ops/acme)), IPC and logging (`LOOMBRE_IPC_*`, `LOOMBRE_LOG_FILE`), and embedded-PG plumbing (`LOOMBRE_EMBEDDED_PG_*`). The full, accurate, hand-maintained list of every variable Loombre's Docker Compose distribution reads lives in [`installers/docker/loombre.env.example`](https://github.com/Loombre/Loombre/blob/main/installers/docker/loombre.env.example); [docs/install/docker.md](/install/docker) walks the two you cannot skip.
+This page covers only registry-backed settings. A number of other operational variables live outside the registry and therefore aren't listed above: secrets (`POSTGRES_PASSWORD`, `LOOMBRE_JWT_SECRET`), performance-tier and transcode tuning (`LOOMBRE_TIER`, `LOOMBRE_ALLOW_TRANSCODE`, `LOOMBRE_MAX_STREAM_BITRATE`, `LOOMBRE_TRANSCODE_WORKER_CONCURRENCY`), metadata-provider keys (`LOOMBRE_TMDB_API_KEY`, `LOOMBRE_TVDB_API_KEY`), TLS/ACME companions not already covered by the registry pins above (`LOOMBRE_TLS_CERT_PATH`/`KEY_PATH`, `LOOMBRE_HTTPS_PORT`, `LOOMBRE_ACME_EMAIL`, `LOOMBRE_ACME_DIRECTORY_URL`, `LOOMBRE_ACME_STAGING`, `LOOMBRE_ACME_DNS_HOOK` and its propagation-timeout companion, `LOOMBRE_ACME_CA_BUNDLE`, `LOOMBRE_ACME_RENEW_WINDOW_DAYS`/`RENEW_CHECK_INTERVAL_MS` — see [docs/ops/acme.md](/ops/acme); `LOOMBRE_ACME_DOMAINS`/`CHALLENGE_TYPE`/`TOS_AGREED` ARE covered above, as registry pins), IPC and logging (`LOOMBRE_IPC_*`, `LOOMBRE_LOG_FILE`), and embedded-PG plumbing (`LOOMBRE_EMBEDDED_PG_*`). The full, accurate, hand-maintained list of every variable Loombre's Docker Compose distribution reads lives in [`installers/docker/loombre.env.example`](https://github.com/Loombre/Loombre/blob/main/installers/docker/loombre.env.example); [docs/install/docker.md](/install/docker) walks the two you cannot skip.
 
