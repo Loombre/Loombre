@@ -27,6 +27,17 @@
 // hits POST /auth/logout for the current device), not a DELETE against a
 // list row — orphaning the local token state would leave the tab still
 // "logged in" against a refresh token the server just invalidated.
+//
+// WG3 (STATE.md "Loombre Remote ...", R2 "enrolled devices appear in the
+// existing devices list (kind: remote)"): Device.kind is now a REQUIRED
+// SDK field ('app' | 'remote', WG2's contract addition) — a row enrolled
+// through Loombre Remote (admin-initiated WireGuard enrollment, POST
+// /admin/remote/wireguard/devices, never the login path) gets a "Remote"
+// badge with a one-line tooltip explainer. Revoke is UNCHANGED for these
+// rows: the same DELETE /devices/{id} call as every other device, which
+// WG2 wired to also tear down the live WG peer server-side for kind='remote'
+// (apps/server/src/catalog/devices.controller.ts) — this component doesn't
+// need to know that happened, it just calls the same endpoint it always has.
 
 import { useEffect, useState } from "react";
 import { Smartphone } from "lucide-react";
@@ -64,6 +75,14 @@ function DeviceRow({
         <span className={styles.rowTitle}>
           {device.name || "Unnamed device"}
           {isCurrent && <span className={styles.currentBadge}>This device</span>}
+          {device.kind === "remote" && (
+            <span
+              className={styles.remoteBadge}
+              title="Enrolled through Loombre Remote (WireGuard) — revoking it also removes its tunnel access."
+            >
+              Remote
+            </span>
+          )}
         </span>
         <span className={styles.rowSub}>
           {device.profileId || "unknown profile"} · last seen {formatTime(device.lastSeenAtMs)}
