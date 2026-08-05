@@ -17,12 +17,12 @@
 import { afterAll, afterEach, describe, expect, it } from "vitest";
 import { DatabaseSync } from "node:sqlite";
 import { createHash } from "node:crypto";
-import { chmodSync, existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { StashConnectionUnavailableError } from "../../src/stash/errors.js";
 import { openStashConnection, type StashConnection } from "../../src/stash/adapter.js";
-import { startWalLockHolder, stopAllWalLockHolders, type WalLockHolder } from "./support/wal-lock-holder.js";
+import { busyThrowingOpen } from "./support/busy-direct-open.js";
 
 let workDir: string;
 const openConnections: StashConnection[] = [];
@@ -35,10 +35,40 @@ afterEach(() => {
       // already closed by the test itself — fine.
     }
   }
-  // Kill any lock-holding child process a test forgot (or that threw before
-  // its own release()) — the OS reclaims the file lock as the child exits.
-  stopAllWalLockHolders();
 });
+
+/**
+ * The direct-open tier's contention is injected, not produced by a real OS
+ * file lock. SQLite's cross-connection locking is only GUARANTEED to
+ * conflict across separate processes, via OS file locks — and some CI
+ * filesystems (the GitHub macOS AND Windows runners, observed empirically)
+ * do not honor those locks for SQLite at all, so NO real lock (same-process
+ * or cross-process) blocks a reader there. Relying on real contention made
+ * the snapshot-fallback tests pass on Linux and fail on macOS/Windows CI.
+ * Instead we force the direct tier into a deterministic SQLITE_BUSY via the
+ * adapter's `openDirectOnce` test seam (adapter.ts) — the snapshot tier then
+ * runs its REAL backup() against the (genuinely unlocked) source, so the
+ * fallback path and its real file copy are exercised identically on every
+ * platform. See support/busy-direct-open.ts (busyThrowingOpen) for the seam.
+ */
+
+/** A plain committed WAL-mode source (one table + one row), unlocked — the
+ *  real file the snapshot tier copies once the injected direct tier reports
+ *  busy. Returns the path and a baseline captured after the committed write
+ *  and after close() settles the sidecars away. */
+function makeSource(name: string, marker = "committed-before-lock"): {
+  dbFilePath: string;
+  baselineHash: string;
+  baselineMtimeMs: number;
+} {
+  const p = dbPath(name);
+  const writer = new DatabaseSync(p);
+  writer.exec("PRAGMA journal_mode=WAL;");
+  writer.exec("CREATE TABLE t (id INTEGER PRIMARY KEY, v TEXT);");
+  writer.exec(`INSERT INTO t (v) VALUES ('${marker}');`);
+  writer.close();
+  return { dbFilePath: p, baselineHash: fileHash(p), baselineMtimeMs: statSync(p).mtimeMs };
+}
 
 afterAll(() => {
   if (workDir) rmSync(workDir, { recursive: true, force: true });
@@ -64,106 +94,6 @@ function makePlainFixture(name: string): string {
   return p;
 }
 
-/**
- * A fixture whose EXCLUSIVE WAL lock is held by a SEPARATE process
- * (support/wal-lock-holder.ts) — the faithful, cross-platform-reliable way
- * to force a concurrent reader into SQLITE_BUSY, standing in for the real
- * scenario S2 defends against: a running Stash instance (a different
- * process) holding the database locked. This REPLACED an earlier
- * same-process second connection, which blocked the reader on Linux/most
- * macOS but NOT on the GitHub macOS CI runner (SQLite's cross-connection
- * locking is only guaranteed to conflict across PROCESSES, via OS file
- * locks — within one process it is platform-dependent), so the old fixture
- * passed on Linux and failed on macOS CI.
- *
- * The holder never commits, so `baselineHash`/`baselineMtimeMs` (captured
- * before it starts) stay valid across the whole session: the source `.db`
- * is byte- and mtime-identical whether the reader falls back to a snapshot
- * or the lock is released — S2's actual constraint (Loombre's OWN adapter
- * never writes the file).
- */
-async function makeLockedFixture(name: string): Promise<{
-  dbFilePath: string;
-  baselineHash: string;
-  baselineMtimeMs: number;
-  release: () => void;
-}> {
-  const p = dbPath(name);
-  const writer = new DatabaseSync(p);
-  writer.exec("PRAGMA journal_mode=WAL;");
-  writer.exec("CREATE TABLE t (id INTEGER PRIMARY KEY, v TEXT);");
-  writer.exec("INSERT INTO t (v) VALUES ('committed-before-lock');");
-  writer.close(); // settle the file; a SEPARATE process now takes the lock
-
-  const baselineHash = fileHash(p);
-  const baselineMtimeMs = statSync(p).mtimeMs;
-
-  // The lock is held by a DIFFERENT process (see support/wal-lock-holder.ts)
-  // — cross-process file locks conflict reliably on every platform, unlike a
-  // same-process second connection (which passed on Linux but let the reader
-  // through on the macOS CI runner). The holder never commits, so releasing
-  // it leaves the source .db byte- and mtime-identical.
-  const holder: WalLockHolder = await startWalLockHolder(p);
-  let released = false;
-  return {
-    dbFilePath: p,
-    baselineHash,
-    baselineMtimeMs,
-    release: () => {
-      if (released) return;
-      released = true;
-      holder.stop();
-    },
-  };
-}
-
-/**
- * Historically distinct from makeLockedFixture: back when the lock was held
- * by a same-process connection, this variant ROLLBACK-ed instead of
- * COMMIT-ing so it could prove the source `.db` was byte-identical across a
- * SUCCESSFUL snapshot-fallback (makeLockedFixture's release() used to
- * commit). Now that BOTH hold the lock in a separate process that never
- * commits (support/wal-lock-holder.ts), neither ever changes the source, so
- * this is a thin alias kept for the byte-immutability tests' readability —
- * its name documents the intent at those call sites ("the lock writes
- * nothing"). Retained rather than merged so those tests still read clearly.
- */
-async function makeWriteFreeLockedFixture(name: string): Promise<{
-  dbFilePath: string;
-  baselineHash: string;
-  baselineMtimeMs: number;
-  release: () => void;
-}> {
-  const p = dbPath(name);
-  const writer = new DatabaseSync(p);
-  writer.exec("PRAGMA journal_mode=WAL;");
-  writer.exec("CREATE TABLE t (id INTEGER PRIMARY KEY, v TEXT);");
-  writer.exec("INSERT INTO t (v) VALUES ('committed-before-lock');");
-  writer.close(); // checkpoints + removes sidecars, so the baseline is a settled file
-
-  const baselineHash = fileHash(p);
-  const baselineMtimeMs = statSync(p).mtimeMs;
-
-  // Held by a SEPARATE process that never commits (support/wal-lock-holder.ts)
-  // — so releasing it (killing the child) leaves the .db byte- and
-  // mtime-identical, which is the whole point of this fixture: it makes the
-  // SUCCESSFUL snapshot-fallback path fs-immutability-assertable. (Both this
-  // and makeLockedFixture now use the same holder; the historical
-  // commit-vs-rollback distinction no longer exists because the holder never
-  // commits, so neither fixture ever changes the source.)
-  const holder: WalLockHolder = await startWalLockHolder(p);
-  let released = false;
-  return {
-    dbFilePath: p,
-    baselineHash,
-    baselineMtimeMs,
-    release: () => {
-      if (released) return;
-      released = true;
-      holder.stop();
-    },
-  };
-}
 
 describe("openStashConnection — uncontended open", () => {
   it("opens a plain fixture read-only and can query it", async () => {
@@ -228,25 +158,25 @@ describe("openStashConnection — S2 fs-level proof (bytes/mtime unchanged)", ()
   });
 
   it("source file bytes AND mtime are unchanged even when both retry tiers are exhausted", async () => {
-    // The writer's lock is deliberately NEVER released during this test —
-    // both the direct-open and snapshot-copy tiers exhaust their retry
-    // budgets and the call rejects. Bytes/mtime are compared against the
-    // baseline captured right after the last COMMITTED write (before the
-    // lock-taking, never-committed insert) — the correct fs-immutability
-    // assertion for what S2 actually constrains: Loombre's OWN adapter
-    // must never write to the source, regardless of the writer's own
-    // (unrelated, never-committed-in-this-test) activity.
-    const { dbFilePath, baselineHash, baselineMtimeMs } = await makeLockedFixture("fs-proof-locked.db");
+    // BOTH tiers fail: the direct tier is forced busy (injected), and the
+    // snapshot tier is forced to fail by pointing its temp base at a
+    // nonexistent directory so mkdtemp() cannot even start a copy. The call
+    // rejects, and — the point of this test — Loombre's OWN adapter never
+    // wrote to the source, so bytes/mtime match the baseline.
+    const { dbFilePath, baselineHash, baselineMtimeMs } = makeSource("fs-proof-locked.db");
 
     await expect(
-      openStashConnection({
-        path: dbFilePath,
-        busyTimeoutMs: 10,
-        maxDirectRetries: 1,
-        directRetryBackoffMs: 10,
-        maxSnapshotRetries: 2,
-        snapshotRetryBackoffMs: 10,
-      })
+      openStashConnection(
+        {
+          path: dbFilePath,
+          busyTimeoutMs: 10,
+          maxDirectRetries: 1,
+          directRetryBackoffMs: 10,
+          maxSnapshotRetries: 2,
+          snapshotRetryBackoffMs: 10,
+        },
+        { openDirectOnce: busyThrowingOpen(), tmpDir: path.join(workDir, "does-not-exist-snapshot-base") }
+      )
     ).rejects.toThrow(StashConnectionUnavailableError);
 
     expect(fileHash(dbFilePath)).toBe(baselineHash);
@@ -255,23 +185,23 @@ describe("openStashConnection — S2 fs-level proof (bytes/mtime unchanged)", ()
 
   it("source file bytes AND mtime are unchanged across a SUCCESSFUL snapshot-copy fallback", async () => {
     // The production fallback path (S2's whole point), asserted at the fs
-    // level for the first time — the test above only covers the case where
-    // the fallback FAILS. Uses the write-free lock (see its helper's doc
-    // comment) so the lock-holder itself contributes no byte changes and
-    // any difference in the source can only be Loombre's own doing.
-    const { dbFilePath, baselineHash, baselineMtimeMs, release } = await makeWriteFreeLockedFixture("fs-proof-snapshot-success.db");
-    const releaseTimer = setTimeout(() => release(), 150);
+    // level: the direct tier is forced busy (injected), the snapshot tier
+    // then runs its REAL backup() against the genuinely-unlocked source. Any
+    // difference in the source afterward could only be Loombre's own doing —
+    // and there is none (backup reads the source, never writes it).
+    const { dbFilePath, baselineHash, baselineMtimeMs } = makeSource("fs-proof-snapshot-success.db");
 
-    const conn = await openStashConnection({
-      path: dbFilePath,
-      busyTimeoutMs: 20,
-      maxDirectRetries: 1,
-      directRetryBackoffMs: 20,
-      maxSnapshotRetries: 20,
-      snapshotRetryBackoffMs: 40,
-    });
-    clearTimeout(releaseTimer);
-    release();
+    const conn = await openStashConnection(
+      {
+        path: dbFilePath,
+        busyTimeoutMs: 20,
+        maxDirectRetries: 1,
+        directRetryBackoffMs: 20,
+        maxSnapshotRetries: 20,
+        snapshotRetryBackoffMs: 40,
+      },
+      { openDirectOnce: busyThrowingOpen() }
+    );
 
     expect(conn.readingFrom).toBe("snapshot");
     // Read through the snapshot the way a real sync would, then close it
@@ -356,44 +286,47 @@ describe("openStashConnection — WAL sidecar reality next to the user's file (S
   });
 });
 
-describe("openStashConnection — WAL-locked retry -> snapshot fallback (S2)", () => {
-  it("retries the direct open, then falls back to a snapshot copy once the lock outlasts the retry budget", async () => {
-    const { dbFilePath, release } = await makeLockedFixture("wal-lock-fallback.db");
-    setTimeout(() => release(), 200);
+describe("openStashConnection — busy direct open -> snapshot fallback (S2)", () => {
+  it("retries the direct open, then falls back to a snapshot copy once the direct tier stays busy", async () => {
+    const { dbFilePath } = makeSource("wal-lock-fallback.db");
 
-    const conn = await openStashConnection({
-      path: dbFilePath,
-      busyTimeoutMs: 20,
-      maxDirectRetries: 2,
-      directRetryBackoffMs: 20,
-      maxSnapshotRetries: 20,
-      snapshotRetryBackoffMs: 40,
-    });
+    const conn = await openStashConnection(
+      {
+        path: dbFilePath,
+        busyTimeoutMs: 20,
+        maxDirectRetries: 2,
+        directRetryBackoffMs: 20,
+        maxSnapshotRetries: 20,
+        snapshotRetryBackoffMs: 40,
+      },
+      { openDirectOnce: busyThrowingOpen() }
+    );
     openConnections.push(conn);
 
     expect(conn.readingFrom).toBe("snapshot");
     expect(conn.snapshotPath).not.toBeNull();
     expect(existsSync(conn.snapshotPath!)).toBe(true);
 
-    // The snapshot must reflect at least the COMMITTED state as of
-    // whenever the backup actually completed — the pre-lock row is always
-    // present regardless of timing.
+    // The snapshot is a REAL backup() copy of the source — its committed row
+    // is present.
     const rows = conn.db.prepare("SELECT v FROM t ORDER BY id").all() as { v: string }[];
     expect(rows.map((r) => r.v)).toContain("committed-before-lock");
   });
 
   it("close() removes the snapshot temp file", async () => {
-    const { dbFilePath, release } = await makeLockedFixture("wal-lock-cleanup.db");
-    setTimeout(() => release(), 150);
+    const { dbFilePath } = makeSource("wal-lock-cleanup.db");
 
-    const conn = await openStashConnection({
-      path: dbFilePath,
-      busyTimeoutMs: 20,
-      maxDirectRetries: 2,
-      directRetryBackoffMs: 20,
-      maxSnapshotRetries: 20,
-      snapshotRetryBackoffMs: 40,
-    });
+    const conn = await openStashConnection(
+      {
+        path: dbFilePath,
+        busyTimeoutMs: 20,
+        maxDirectRetries: 2,
+        directRetryBackoffMs: 20,
+        maxSnapshotRetries: 20,
+        snapshotRetryBackoffMs: 40,
+      },
+      { openDirectOnce: busyThrowingOpen() }
+    );
 
     const snapshotPath = conn.snapshotPath;
     expect(snapshotPath).not.toBeNull();
@@ -404,32 +337,8 @@ describe("openStashConnection — WAL-locked retry -> snapshot fallback (S2)", (
     expect(existsSync(snapshotPath!)).toBe(false);
   });
 
-  it("throws StashConnectionUnavailableError when the lock outlasts BOTH retry budgets", async () => {
-    const { dbFilePath } = await makeLockedFixture("wal-lock-never-released.db");
-    // Deliberately never release() — both tiers must exhaust and fail.
-
-    await expect(
-      openStashConnection({
-        path: dbFilePath,
-        busyTimeoutMs: 10,
-        maxDirectRetries: 1,
-        directRetryBackoffMs: 10,
-        maxSnapshotRetries: 2,
-        snapshotRetryBackoffMs: 10,
-      })
-    ).rejects.toThrow(StashConnectionUnavailableError);
-  });
-
-  it("leaves no leaked snapshot temp directory behind when the snapshot tier itself exhausts its retries", async () => {
-    // Regression test: snapshotCopy's retry loop used to `throw lastError`
-    // straight out of its `mkdtemp()`-created directory with nothing ever
-    // removing it on the FAILURE path (cleanup only ran inside the
-    // success path's returned `close()`) — every fully-failed snapshot
-    // attempt leaked an empty temp directory. A dedicated `tmpDir` here
-    // (rather than the real os.tmpdir()) makes the leak directly
-    // observable.
-    const { dbFilePath } = await makeLockedFixture("wal-lock-snapshot-leak.db");
-    const snapshotTmpDir = mkdtempSync(path.join(tmpdir(), "loombre-stash-adapter-snapshot-parent-"));
+  it("throws StashConnectionUnavailableError when BOTH tiers fail (direct busy, snapshot cannot even start)", async () => {
+    const { dbFilePath } = makeSource("wal-lock-never-released.db");
 
     await expect(
       openStashConnection(
@@ -441,7 +350,38 @@ describe("openStashConnection — WAL-locked retry -> snapshot fallback (S2)", (
           maxSnapshotRetries: 2,
           snapshotRetryBackoffMs: 10,
         },
-        { tmpDir: snapshotTmpDir }
+        // Direct tier busy (injected) + a nonexistent snapshot base so
+        // mkdtemp() cannot start the copy → both tiers fail.
+        { openDirectOnce: busyThrowingOpen(), tmpDir: path.join(workDir, "no-such-snapshot-base") }
+      )
+    ).rejects.toThrow(StashConnectionUnavailableError);
+  });
+
+  it("leaves no leaked snapshot temp directory behind when the snapshot tier itself exhausts its retries", async () => {
+    // Regression test: snapshotCopy's retry loop used to `throw lastError`
+    // straight out of its `mkdtemp()`-created directory with nothing ever
+    // removing it on the FAILURE path (cleanup only ran inside the success
+    // path's returned `close()`) — every fully-failed snapshot attempt
+    // leaked an empty temp directory. Here the snapshot tier's backup()
+    // fails on EVERY retry because the source is a corrupt (non-SQLite)
+    // file (errcode 26 SQLITE_NOTADB) — mkdtemp SUCCEEDS first, so this
+    // exercises the post-mkdtemp cleanup, and a dedicated `tmpDir` (not the
+    // real os.tmpdir()) makes any leak directly observable.
+    const corruptPath = dbPath("wal-lock-snapshot-leak.db");
+    writeFileSync(corruptPath, Buffer.from("not a sqlite database — a corrupt source that backup() rejects".repeat(4)));
+    const snapshotTmpDir = mkdtempSync(path.join(tmpdir(), "loombre-stash-adapter-snapshot-parent-"));
+
+    await expect(
+      openStashConnection(
+        {
+          path: corruptPath,
+          busyTimeoutMs: 10,
+          maxDirectRetries: 1,
+          directRetryBackoffMs: 10,
+          maxSnapshotRetries: 2,
+          snapshotRetryBackoffMs: 10,
+        },
+        { openDirectOnce: busyThrowingOpen(), tmpDir: snapshotTmpDir }
       )
     ).rejects.toThrow(StashConnectionUnavailableError);
 
