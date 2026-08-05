@@ -1,0 +1,50 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+.wrap {
+  overflow-x: auto;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border-subtle);
+}
+
+.table {
+  width: 100%;
+  min-width: 560px;
+  border-collapse: collapse;
+  font-size: var(--text-xs);
+}
+
+.table th,
+.table td {
+  padding: var(--space-sm);
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid var(--color-border-subtle);
+  line-height: var(--leading-normal);
+}
+
+.table tr:last-child th,
+.table tr:last-child td {
+  border-bottom: none;
+}
+
+.axisHeader {
+  width: 140px;
+  font-weight: var(--weight-semibold);
+  color: var(--muted);
+  background: var(--fill-1);
+}
+
+.pathHeader {
+  font-family: var(--font-mono);
+  font-size: var(--mono-lg);
+  letter-spacing: var(--track-mono);
+  text-transform: uppercase;
+  color: var(--text);
+}
+
+.pathHeader[data-highlight="true"] {
+  color: var(--color-accent);
+}
+
+.table td[data-highlight="true"] {
+  background: var(--color-accent-tint);
+}
