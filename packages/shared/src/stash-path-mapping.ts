@@ -38,6 +38,25 @@ function normalizeSlashes(value: string): string {
   return value.replace(/\\/g, "/");
 }
 
+/**
+ * Canonicalizes a Loombre-side file path for comparison against a
+ * `rewriteStashPath` result. Loombre stores `media_files.path` with NATIVE
+ * separators — the scanner (apps/worker/src/scan) records the walked absolute
+ * path verbatim, so a Windows server holds `\`-separated paths — whereas
+ * `rewriteStashPath` always emits `/`-separated output (it normalizes the
+ * configured `loombrePrefix`). Comparing the two with raw string equality
+ * therefore matches NOTHING on a Windows Loombre server: every Stash scene
+ * falls through to the oshash tier or lands unmatched. Both the path-tier
+ * matcher (apps/worker/src/stash/matching.ts) and the admin match preview
+ * (packages/db/src/query/stash-inventory.ts) must run candidate paths through
+ * this before the equality check. Separator-only — it never folds case,
+ * preserving this module's deliberate CASE-SENSITIVE matching (a `/`-vs-`\`
+ * difference denotes the same file; a case difference may not).
+ */
+export function canonicalizePathForMatch(loombrePath: string): string {
+  return normalizeSlashes(loombrePath);
+}
+
 /** Strips a single trailing slash, but never reduces a bare "/" to "". */
 function stripTrailingSlash(value: string): string {
   return value.length > 1 && value.endsWith("/") ? value.slice(0, -1) : value;

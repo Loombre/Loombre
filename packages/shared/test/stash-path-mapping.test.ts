@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { describe, expect, it } from "vitest";
-import { rewriteStashPath, type StashPathMapping } from "../src/stash-path-mapping.js";
+import { canonicalizePathForMatch, rewriteStashPath, type StashPathMapping } from "../src/stash-path-mapping.js";
 
 describe("rewriteStashPath (STATE.md S4/K10 — path-mapping match primary)", () => {
   it("rewrites a path under a single configured prefix", () => {
@@ -88,5 +88,34 @@ describe("rewriteStashPath (STATE.md S4/K10 — path-mapping match primary)", ()
   it("ignores a mapping with an empty stashPrefix (never matches, never crashes)", () => {
     const mappings: StashPathMapping[] = [{ stashPrefix: "", loombrePrefix: "/media/adult" }];
     expect(rewriteStashPath("/mnt/stash/foo.mp4", mappings)).toBeNull();
+  });
+});
+
+describe("canonicalizePathForMatch (separator-agnostic equality for the Loombre candidate side)", () => {
+  it("normalizes native Windows backslashes to forward slashes so a stored path matches a rewriteStashPath result", () => {
+    // Loombre stores media_files.path with NATIVE separators (the scanner
+    // records walked.absPath verbatim), so a Windows server holds '\'-
+    // separated paths — while rewriteStashPath always emits '/'. The
+    // candidate side must be canonicalized to the same convention before the
+    // equality check, or the path tier never matches on Windows.
+    expect(canonicalizePathForMatch("D:\\Media\\Adult\\a.mp4")).toBe("D:/Media/Adult/a.mp4");
+  });
+
+  it("leaves an already-POSIX path untouched (idempotent on the common case)", () => {
+    expect(canonicalizePathForMatch("/media/adult/a.mp4")).toBe("/media/adult/a.mp4");
+  });
+
+  it("agrees with rewriteStashPath's output for the same file across separator conventions", () => {
+    // The invariant the two comparison sites rely on: a Windows-native
+    // candidate path, once canonicalized, equals the rewrite of the Stash
+    // scene that points at the same file.
+    const mappings: StashPathMapping[] = [{ stashPrefix: "/stash-media", loombrePrefix: "D:\\Media\\Adult" }];
+    const rewritten = rewriteStashPath("/stash-media/a.mp4", mappings);
+    expect(canonicalizePathForMatch("D:\\Media\\Adult\\a.mp4")).toBe(rewritten);
+  });
+
+  it("does not fold case (preserves the module's deliberate case-sensitivity)", () => {
+    expect(canonicalizePathForMatch("D:\\Media\\A.mp4")).toBe("D:/Media/A.mp4");
+    expect(canonicalizePathForMatch("D:\\Media\\A.mp4")).not.toBe("d:/media/a.mp4");
   });
 });
