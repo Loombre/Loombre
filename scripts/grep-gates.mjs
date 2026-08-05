@@ -137,8 +137,12 @@ const UPNP_PATTERNS = ["nat-upnp", "node-upnp", "natupnp", "nat-api", "ssdp"].ma
 // as RENAME_GATE_ALLOWLIST's own STATE.md entry above): STATE.md's RG14
 // decision record quotes these exact strings as the pattern group being
 // added — that IS the historical record of this gate's own creation, not
-// a live import.
-const UPNP_ALLOWLIST = new Set(["STATE.md"]);
+// a live import. router-cards.test.ts is the CONTENT-level enforcement of
+// the same ban (lane D1): its negative-assertion regexes name SSDP/NAT-PMP
+// literally in order to assert the router cards never mention them — a
+// guard tripping a guard, same shape as the brand-hygiene gate's own
+// "test files contain regexes asserting absence" allowlist entries.
+const UPNP_ALLOWLIST = new Set(["STATE.md", "packages/shared/test/remote/router-cards.test.ts"]);
 
 // ---------------------------------------------------------------------------
 // BRAND-HYGIENE gate (STATE.md D6/G9 — Blaze logo rollout Lane D purge):
