@@ -26,11 +26,27 @@
 // once each returned string has been copied into a JS string, so no call
 // site here ever manages that pointer directly.
 
-import koffi from "koffi";
+import type KoffiModule from "koffi";
+import { createRequire } from "node:module";
 import { promisify } from "node:util";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { resolveLibraryPath } from "./platform.js";
+
+// koffi is loaded LAZILY, never at module import (Tier-0 idle-RSS budget,
+// CLAUDE.md invariant 9): RemoteWireguardService is constructed at server
+// boot and imports this module, but a server whose Remote path is never
+// enabled must not pay for koffi's native addon sitting in RSS. A static
+// `import koffi from "koffi"` pulled ~2 MiB into every idle server (perf-t0
+// breach: 222.1 > 220.0 MiB). `createRequire` fetches the CJS native addon
+// on the FIRST tryLoadWgNative() call only — i.e. only once an admin enables
+// Remote (or a WG-gated test runs). The type-only default import above is
+// erased at compile time, so it costs nothing at runtime.
+let koffiCached: typeof KoffiModule | undefined;
+function koffi(): typeof KoffiModule {
+  koffiCached ??= createRequire(import.meta.url)("koffi") as typeof KoffiModule;
+  return koffiCached;
+}
 
 /** dist/ is always a SIBLING of src/, both directly under the package
  *  root — true whether this module is running compiled (dist/loader.js,
@@ -82,9 +98,9 @@ export function tryLoadWgNative(distDir?: string): WgNativeLibrary | undefined {
 
   if (cached && cached.path === libPath) return cached.lib;
 
-  let raw: ReturnType<typeof koffi.load>;
+  let raw: ReturnType<typeof KoffiModule.load>;
   try {
-    raw = koffi.load(libPath);
+    raw = koffi().load(libPath);
   } catch {
     return undefined;
   }
@@ -98,7 +114,7 @@ export function tryLoadWgNative(distDir?: string): WgNativeLibrary | undefined {
   // through THIS library's own allocator, never koffi.free/libc free
   // (native/main.go's header: a different CRT on Windows could own libc's
   // free, which would be undefined behavior against Go's C.CString memory).
-  koffi.disposable("WgHeapStr", "str", wgFreeRaw);
+  koffi().disposable("WgHeapStr", "str", wgFreeRaw);
 
   const wgStartRaw = raw.func("WgHeapStr WgStart(const char *configJson)");
   const wgStopRaw = raw.func("WgHeapStr WgStop(const char *instanceId)");
