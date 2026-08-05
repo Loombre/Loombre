@@ -26,6 +26,17 @@
 // precedent for needing both) and re-provides NEITHER, or Nest mints a
 // second module-scoped instance that silently diverges from the one every
 // other controller/test spies on.
+//
+// Lane WG1 addition: RemoteWireguardService (./wireguard/) is a provider
+// here (not its own nested module) — it needs the SAME DbProvider/
+// SettingsService instances RemoteWireguardController's requireAdmin call
+// and every other CommonModule/CommonSettingsModule consumer already
+// share; a nested module would either re-provide them (the exact DI trap
+// this file's own header warns about) or require yet another import
+// chain for zero benefit, since nothing outside this module needs to
+// resolve RemoteWireguardService directly today. HttpAdapterHost is
+// injected straight from @nestjs/core — Nest provides it globally to
+// every application, no module registration needed.
 import { Module } from "@nestjs/common";
 import { RemoteStateController } from "./remote-state.controller.js";
 import { RemoteWireguardController } from "./remote-wireguard.controller.js";
@@ -36,6 +47,7 @@ import { RemoteProbesController } from "./remote-probes.controller.js";
 import { ProbePageController } from "./probe-page.controller.js";
 import { CommonModule } from "../common/common.module.js";
 import { CommonSettingsModule } from "../common/common-settings.module.js";
+import { RemoteWireguardService } from "./wireguard/remote-wireguard.service.js";
 
 @Module({
   imports: [CommonModule, CommonSettingsModule],
@@ -48,5 +60,6 @@ import { CommonSettingsModule } from "../common/common-settings.module.js";
     RemoteProbesController,
     ProbePageController,
   ],
+  providers: [RemoteWireguardService],
 })
 export class RemoteModule {}
