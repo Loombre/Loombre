@@ -138,7 +138,19 @@ const UPNP_PATTERNS = ["nat-upnp", "node-upnp", "natupnp", "nat-api", "ssdp"].ma
 // decision record quotes these exact strings as the pattern group being
 // added — that IS the historical record of this gate's own creation, not
 // a live import.
-const UPNP_ALLOWLIST = new Set(["STATE.md"]);
+//
+// GUARD-TEST allowlisting (WG2, found by this lane's own first FULL
+// `pnpm gate` run against the combined tree — RG14's own text anticipated
+// this exact gap: "flagged for whichever lane first adds real WG/network/
+// QR code; do not let it slip past that lane"): router-cards.test.ts
+// (lane D1) asserts card copy NEVER names NAT-PMP/PCP/SSDP
+// (`expect(text).not.toMatch(/NAT-PMP|natpmp|\bPCP\b|SSDP/i)`) — the
+// literal string "SSDP" inside that NEGATIVE assertion regex trips the
+// `ssdp` pattern the exact same way BRAND_HYGIENE_ALLOWLIST's own guard-
+// test entries above already document for pulse-dot/fixture-string
+// absence checks. Same posture, same fix: allowlist the GUARD file, never
+// the pattern.
+const UPNP_ALLOWLIST = new Set(["STATE.md", "packages/shared/test/remote/router-cards.test.ts"]);
 
 // ---------------------------------------------------------------------------
 // BRAND-HYGIENE gate (STATE.md D6/G9 — Blaze logo rollout Lane D purge):
