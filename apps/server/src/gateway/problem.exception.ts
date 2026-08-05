@@ -135,3 +135,27 @@ export function notImplemented(detail: string, instance: string, code?: string):
     ...(code !== undefined ? { code } : {}),
   });
 }
+
+/**
+ * RFC 9457 503, first consumer: STATE.md "Loombre Remote" lane WG1 —
+ * enableRemoteWireguard when packages/wg-native's native library isn't
+ * built/loadable on this platform (a real Go build failure, or Go simply
+ * not installed on a dev machine — scripts/build.mjs's graceful-skip
+ * posture, mirroring apps/worker's ffmpeg detection). Distinct from 501
+ * (notImplemented): this operation IS implemented — the underlying
+ * platform component just isn't available RIGHT NOW, which is exactly
+ * what 503 means (a transient/environmental unavailability, not "not
+ * built"). CI always has this available (RG1/RG14: actions/setup-go +
+ * LOOMBRE_REQUIRE_WG=1 on the gate job); this path exists for the local
+ * dev without-Go case only.
+ */
+export function serviceUnavailable(detail: string, instance: string, code?: string): ProblemException {
+  return new ProblemException({
+    status: HttpStatus.SERVICE_UNAVAILABLE,
+    type: "urn:loombre:problem:service-unavailable",
+    title: "Service Unavailable",
+    detail,
+    instance,
+    ...(code !== undefined ? { code } : {}),
+  });
+}
