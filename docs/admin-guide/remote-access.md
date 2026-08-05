@@ -117,8 +117,8 @@ screen for as long as it's on, checking:
   an enrolled device (Loombre Remote), or that the tunnel connector is
   healthy (Tunnel).
 
-Each check shows a grade — a pass, a warning, a failure, or "not yet
-checked" — and a failing or warning grade always links straight to the
+Each check shows a grade — a pass, an informational note, a warning, or a
+failure — and a failing or warning grade always links straight to the
 screen that fixes it, rather than just naming the problem.
 
 [SCREENSHOT: Security posture card with a mix of grades]
