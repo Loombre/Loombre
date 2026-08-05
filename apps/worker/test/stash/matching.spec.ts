@@ -23,6 +23,20 @@ describe("matchStashScenes", () => {
     expect(results).toEqual([{ stashSceneId: "1", itemId: "item1", mediaFileId: "mf1", matchedBy: "path" }]);
   });
 
+  it("matches via the PATH tier when Loombre stored the candidate with NATIVE Windows separators", () => {
+    // The Windows-server case: media_files.path is stored verbatim from the
+    // scanner's native absPath, so on Windows it is '\'-separated — while
+    // rewriteStashPath always emits '/'. The path tier must still match; a
+    // file is the same file regardless of separator convention. (This is the
+    // bug that made every Stash scene fall through to oshash / land unmatched
+    // on the Windows CI leg — reproduced here deterministically on any OS.)
+    const winMappings = [{ stashPrefix: "/stash-media", loombrePrefix: "D:\\Media\\Adult" }];
+    const scenes: StashSceneMatchInput[] = [{ stashSceneId: "1", stashPath: "/stash-media/a.mp4", stashSizeBytes: 100, stashOshash: null }];
+    const files: LoombreFileCandidate[] = [{ mediaFileId: "mf1", itemId: "item1", path: "D:\\Media\\Adult\\a.mp4", sizeBytes: 100, oshash: null }];
+    const results = matchStashScenes(scenes, winMappings, files);
+    expect(results).toEqual([{ stashSceneId: "1", itemId: "item1", mediaFileId: "mf1", matchedBy: "path" }]);
+  });
+
   it("does not fall through to the oshash tier when the path tier already matched", () => {
     // Same size/oshash also matches a DIFFERENT file — the path tier's
     // result must win, proving tier precedence rather than "last match
