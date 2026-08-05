@@ -481,12 +481,23 @@ const IMPLEMENTED_NON_PUBLIC_EXPECTATIONS: Record<string, number> = {
   listRemoteWireguardDevices: 501,
   enrollRemoteWireguardDevice: 501,
   revokeRemoteWireguardDevice: 501,
-  setRemoteTunnelToken: 501,
-  clearRemoteTunnelToken: 501,
-  enableRemoteTunnel: 501,
-  disableRemoteTunnel: 501,
-  getRemoteTunnelStatus: 501,
-  getRemoteTunnelLogs: 501,
+  // Tunnel path (R4/R9/RG7, lane T1) — real behavior, no longer a 501
+  // shell. Every one of these six ops is network-free on this walk's
+  // bodyless/placeholder requests (R11: never the live Cloudflare API,
+  // including from THIS suite): setRemoteTunnelToken's empty-body ->
+  // empty-token short-circuit (tunnel-token.service.ts) returns 200
+  // {valid:false, detail:"token must not be empty."} per the contract's
+  // OWN frozen shape (never a 4xx for an invalid token — see that file's
+  // header) WITHOUT ever calling TunnelProvider; enableRemoteTunnel's
+  // empty-body -> empty-hostname check (remote-tunnel.service.ts) 422s
+  // before any network call; disableRemoteTunnel is the idempotent
+  // already-disabled no-op on a fresh reseeded DB (also network-free).
+  setRemoteTunnelToken: 200,
+  clearRemoteTunnelToken: 204,
+  enableRemoteTunnel: 422, // bodyless -> "hostname must not be empty."
+  disableRemoteTunnel: 200, // idempotent no-op on a fresh reseeded DB
+  getRemoteTunnelStatus: 200,
+  getRemoteTunnelLogs: 200,
   testRemoteDirectAcme: 501,
   enableRemoteDirect: 501,
   disableRemoteDirect: 501,
