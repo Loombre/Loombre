@@ -625,7 +625,7 @@ describe("T2/RG7 — connector resumes on boot if the tunnel state row says enab
       // runs the one-shot resume immediately, bypassing the real 60s
       // REMOTE_TUNNEL_BOOT_RESUME_DELAY_MS startup delay.
       await app2.get(RemoteTunnelBootResumerService).resumeOnce();
-      await waitFor(() => connectorManager2.health().state === "healthy");
+      await waitFor(() => connectorManager2.health().state === "healthy", 15_000);
       expect(connectorManager2.health().lastError).toBeNull();
       expect(connectorManager2.health().restartCount).toBe(0);
 
@@ -636,7 +636,11 @@ describe("T2/RG7 — connector resumes on boot if the tunnel state row says enab
       await connectorManager2.stop();
       await app2.close();
     }
-  });
+    // Explicit generous budget: this test does TWO full Nest boots + two real
+    // stub-connector spawns/health-waits, which can exceed the suite's default
+    // 5s testTimeout (TIME_SCALE=1 on the ubuntu leg) under CI load — the
+    // 2nd-boot resume race that intermittently flaked here.
+  }, 30_000);
 
   it("does nothing when the tunnel state row is disabled (the common case — every other server boot)", async () => {
     // beforeEach already disabled + cleared the token — remote_tunnel_state
