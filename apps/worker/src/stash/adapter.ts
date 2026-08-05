@@ -96,6 +96,17 @@ export interface StashAdapterDeps {
   sleep?: (ms: number) => Promise<void>;
   /** Parent directory for snapshot temp copies. Default `os.tmpdir()`. */
   tmpDir?: string;
+  /**
+   * Test seam (like `sleep`/`tmpDir` above — production callers never set
+   * it): overrides the single direct-open probe. Its only purpose is to let
+   * tests drive the direct tier into a deterministic SQLITE_BUSY so the
+   * snapshot-copy fallback is exercised WITHOUT relying on real OS
+   * file-lock contention — which some CI filesystems (notably the GitHub
+   * macOS/Windows runners) do not honor for SQLite at all, so a real lock
+   * there never blocks a reader and the fallback path could not otherwise
+   * be tested. Defaults to the real `tryOpenDirectOnce`.
+   */
+  openDirectOnce?: (sourcePath: string, busyTimeoutMs: number) => DatabaseSync;
 }
 
 const RETRYABLE_SQLITE_ERRCODES = new Set([5 /* SQLITE_BUSY */, 6 /* SQLITE_LOCKED */]);
@@ -159,12 +170,13 @@ function tryOpenDirectOnce(sourcePath: string, busyTimeoutMs: number): DatabaseS
 async function attemptDirectOpen(
   sourcePath: string,
   opts: Required<Pick<OpenStashConnectionOptions, 'busyTimeoutMs' | 'maxDirectRetries' | 'directRetryBackoffMs'>>,
-  sleep: (ms: number) => Promise<void>
+  sleep: (ms: number) => Promise<void>,
+  openDirectOnce: (sourcePath: string, busyTimeoutMs: number) => DatabaseSync
 ): Promise<DatabaseSync | { busy: true; lastError: unknown } | { busy: false; lastError: unknown }> {
   let lastError: unknown;
   for (let attempt = 0; attempt <= opts.maxDirectRetries; attempt++) {
     try {
-      return tryOpenDirectOnce(sourcePath, opts.busyTimeoutMs);
+      return openDirectOnce(sourcePath, opts.busyTimeoutMs);
     } catch (err) {
       lastError = err;
       if (!isRetryableDirectOpenError(err)) {
@@ -251,7 +263,8 @@ export async function openStashConnection(options: OpenStashConnectionOptions, d
   const direct = await attemptDirectOpen(
     options.path,
     { busyTimeoutMs: resolvedOpts.busyTimeoutMs, maxDirectRetries: resolvedOpts.maxDirectRetries, directRetryBackoffMs: resolvedOpts.directRetryBackoffMs },
-    sleep
+    sleep,
+    deps.openDirectOnce ?? tryOpenDirectOnce
   );
 
   if (direct instanceof DatabaseSync) {

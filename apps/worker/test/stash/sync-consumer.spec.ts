@@ -48,7 +48,7 @@ import { runStashSync, type StashSyncConsumerDeps } from "../../src/stash/sync-c
 import { applyStashSceneMetadata } from "../../src/stash/apply.js";
 import type { ApplyStashSceneMetadataFn } from "../../src/stash/apply-types.js";
 import { buildSyncFixtureDb, type FixtureScene } from "./sync-fixtures/build-sync-fixture.js";
-import { startWalLockHolder, stopAllWalLockHolders } from "./support/wal-lock-holder.js";
+import { busyThrowingOpen } from "./support/busy-direct-open.js";
 import { buildFixtureDb } from "./fixtures/build-fixture-db.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -81,9 +81,6 @@ afterAll(async () => {
 
 afterEach(() => {
   if (mediaDir) rmSync(mediaDir, { recursive: true, force: true });
-  // Kill any WAL-lock-holding child a test forgot / that threw before its
-  // own stop() (the OS reclaims the file lock as the child exits).
-  stopAllWalLockHolders();
 });
 
 async function makeLibrary(): Promise<string> {
@@ -674,47 +671,29 @@ describe("stash-sync — S2 snapshot-copy fallback surfaces (FX4 fix wave)", () 
     await replaceLibraryPathMappings(db, libraryId, [{ stashPrefix: "/stash-media", loombrePrefix: mediaDir }]);
     await makeCatalogItemWithFile(libraryId, path.join(mediaDir, "locked.mp4"), 100);
 
-    // Force the fixture into the WAL-locked state with the lock held by a
-    // SEPARATE process (support/wal-lock-holder.ts) — the faithful, cross-
-    // platform-reliable simulation of a running Stash instance holding the
-    // database, and the same mechanism adapter.spec.ts now uses. (An earlier
-    // version locked via this test's OWN fixture.db handle; a same-process
-    // lock blocked the reader on Linux but NOT on the macOS CI runner, since
-    // SQLite's cross-connection locking is only guaranteed to conflict across
-    // PROCESSES.) Close our own read-write handle first so the child is the
-    // sole locker.
-    fixture.db.exec("PRAGMA journal_mode=WAL;");
+    // Force the adapter through S2's snapshot-copy fallback DETERMINISTICALLY
+    // by injecting a busy direct-open (support/busy-direct-open.ts), rather
+    // than relying on a real OS file lock — SQLite locking is not honored on
+    // some CI filesystems (the macOS AND Windows runners), so a real lock
+    // there never blocks a reader and the fallback never fires. The snapshot
+    // tier then runs its REAL backup() against the genuinely-unlocked
+    // fixture. Close our own read-write handle first so nothing else holds it.
     fixture.db.close();
-    const lockHolder = await startWalLockHolder(fixture.dbPath);
-
-    // Released shortly after the sync starts — same timing shape as
-    // adapter.spec.ts's own fallback test. The small direct-open retry budget
-    // below exhausts well before this fires, so the direct tier reliably
-    // observes the lock; the snapshot tier's own retry budget then succeeds
-    // once the holder is killed (the OS drops the file lock as it exits).
-    let released = false;
-    const releaseTimer = setTimeout(() => {
-      released = true;
-      lockHolder.stop();
-    }, 150);
 
     const { fn } = fakeApply();
     const jobId = randomUUID();
     const result = await runStashSync(
       baseDeps(fn, {
-        // FX4's own test seam (StashSyncConsumerDeps.stashOpenOptions,
-        // forwarded verbatim to connectToStashLibrary/openStashConnection)
-        // — small, fast retry/backoff budgets so this test proves the
-        // fallback deterministically in well under a second rather than
-        // waiting out adapter.ts's real multi-second production defaults.
+        // FX4 test seams (StashSyncConsumerDeps, forwarded verbatim to
+        // connectToStashLibrary → openStashConnection): the injected
+        // openDirectOnce drives the direct tier busy; the fast retry/backoff
+        // budgets keep this to well under a second.
+        stashAdapterDeps: { openDirectOnce: busyThrowingOpen() },
         stashOpenOptions: { busyTimeoutMs: 20, maxDirectRetries: 1, directRetryBackoffMs: 20, maxSnapshotRetries: 20, snapshotRetryBackoffMs: 40 },
       }),
       { libraryId, mode: "full" },
       { jobId },
     );
-
-    clearTimeout(releaseTimer);
-    if (!released) lockHolder.stop();
 
     expect(result.touchedCount).toBe(1);
 
