@@ -860,6 +860,19 @@ export interface StashSyncCheckpointsTable {
 }
 
 // ============================================================================
+// remote_wireguard_state (migrations/0029_remote_wireguard_state.sql —
+// STATE.md "Loombre Remote", lane WG1, R1/R2/R9)
+// ============================================================================
+
+export interface RemoteWireguardStateTable {
+  id: boolean;
+  server_public_key: string | null;
+  enabled: boolean;
+  enabled_at_ms: number | null;
+  updated_at_ms: number;
+}
+
+// ============================================================================
 // DB
 // ============================================================================
 
@@ -916,4 +929,5 @@ export interface DB {
   system_notices: SystemNoticesTable;
   remote_tunnel_state: RemoteTunnelStateTable;
   probe_tokens: ProbeTokensTable;
+  remote_wireguard_state: RemoteWireguardStateTable;
 }

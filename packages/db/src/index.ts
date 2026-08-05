@@ -508,6 +508,21 @@ export {
   releaseEmailCollisionNoticeWindow,
 } from './query/email-collision-notice.js';
 
+// Loombre Remote — embedded WireGuard (STATE.md "Loombre Remote", lane
+// WG1, R1/R2/R9, migrations/0029_remote_wireguard_state.sql) — see
+// src/query/remote-wireguard.ts header for why this lives in the public
+// barrel and never touches the private key.
+export type {
+  RemoteWireguardStateRow,
+  EnableRemoteWireguardInput,
+  DisableRemoteWireguardInput,
+} from './query/remote-wireguard.js';
+export {
+  getRemoteWireguardState,
+  enableRemoteWireguardAndEmit,
+  disableRemoteWireguardAndEmit,
+} from './query/remote-wireguard.js';
+
 // Addendum A/A4 (STATE.md, admin-configurable server settings) —
 // server_settings reads/writes + outbox emission, see src/query/
 // settings.ts header for why this is public-barrel and registry-unaware.

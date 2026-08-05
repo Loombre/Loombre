@@ -475,9 +475,22 @@ const IMPLEMENTED_NON_PUBLIC_EXPECTATIONS: Record<string, number> = {
   // (apps/server/src/remote/remote-state.controller.ts's header). The
   // public getProbePage lives in PUBLIC_OPERATION_IDS above, not here.
   getRemoteState: 501,
-  enableRemoteWireguard: 501,
-  disableRemoteWireguard: 501,
-  getRemoteWireguardStatus: 501,
+  // Lane WG1: enable/disable/status now do real work (RemoteWireguardService)
+  // — 200 assumes packages/wg-native's native library is built, which is
+  // ALWAYS true here (this worktree has a real Go toolchain + a built
+  // dist/wg-native-darwin-arm64.dylib) and always true in CI (RG1/RG14:
+  // actions/setup-go + LOOMBRE_REQUIRE_WG=1 on the gate job makes a missing
+  // Go a hard CI failure at the BUILD step, before conformance ever runs —
+  // it can never reach this walk without wg-native present). Flagged for
+  // integration/orchestrator: a contributor running `pnpm gate` on a
+  // machine with no Go installed will see this walk fail on these two ops
+  // (enableRemoteWireguard would 503 instead of 200) — the SAME "Local dev
+  // without Go" tradeoff RG1 already accepts for wg-gated test suites, but
+  // conformance.spec.ts itself is not wg-gated/skippable the way those are,
+  // so it is the one place that tradeoff becomes user-visible outside CI.
+  enableRemoteWireguard: 200,
+  disableRemoteWireguard: 200,
+  getRemoteWireguardStatus: 200,
   listRemoteWireguardDevices: 501,
   enrollRemoteWireguardDevice: 501,
   revokeRemoteWireguardDevice: 501,
