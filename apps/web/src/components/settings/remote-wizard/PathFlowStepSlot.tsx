@@ -3,56 +3,45 @@
 
 // Loombre :: apps/web/src/components/settings/remote-wizard/PathFlowStepSlot.tsx
 //
-// THE SEAM U2 BUILDS AGAINST (STATE.md "Batch plan": "U2 lands the real
-// per-path screens" — this lane's mission item 2 explicitly scopes
-// PathFlowStage to a SHELL, "make the step-slot API clean for U2"). Every
-// PathFlowStepId (packages/shared's wizard-state.ts PATH_FLOW_STEPS,
-// FROZEN/law) maps to exactly one React component in PATH_FLOW_STEP_BODIES
-// below; PathFlowStage.tsx never switches on the step id itself — it always
-// renders PATH_FLOW_STEP_BODIES[step]. Landing a path's real screen is
-// therefore a ONE-LINE change per step: replace that step's map entry with
-// the real component. TypeScript's `Record<PathFlowStepId, ...>` makes the
-// map exhaustive by construction — a future step id added to the frozen
-// module is a compile error here until this file is updated, so a step can
-// never silently fall through to nothing.
+// THE SEAM U1 BUILT, U2 LANDS ON (STATE.md "Batch plan": "U2 lands the real
+// per-path screens"). Every PathFlowStepId (packages/shared's wizard-
+// state.ts PATH_FLOW_STEPS, FROZEN/law) maps to exactly one React
+// component in PATH_FLOW_STEP_BODIES below; PathFlowStage.tsx never
+// switches on the step id itself — it always renders
+// PATH_FLOW_STEP_BODIES[step]. TypeScript's `Record<PathFlowStepId, ...>`
+// makes the map exhaustive by construction — a future step id added to the
+// frozen module is a compile error here until this file is updated, so a
+// step can never silently fall through to nothing.
 //
-// The one exception: "direct-mode" (R5's one real branch point — acme vs.
-// reverse-proxy) gets a light real chooser, DirectModeChoiceBody, rather
-// than the generic placeholder — see its own comment below for why this
-// stays within "shell, no API calls" while still exercising
-// nextPathFlowStep's branch for real (a step is a placeholder because it
-// doesn't call the real API yet, not because every UI decision it makes has
-// to be fake too).
+// U2 (this lane, mission items 2-4): every entry below is now a real
+// screen — own file per step body (RemoteEnableStepBody.tsx,
+// RemoteEnrollStepBody.tsx, TunnelTokenStepBody.tsx,
+// TunnelEnableStepBody.tsx, DirectAcmeTestStepBody.tsx,
+// DirectEnableStepBody.tsx, DirectRouterInstructionsStepBody.tsx — each
+// with its own tests). "direct-mode" keeps U1's own DirectModeChoiceBody
+// unchanged (R5's one real branch point — acme vs. reverse-proxy — already
+// landed real, no network call needed there).
+//
+// PathFlowStepBodyProps/PathFlowStepBody moved OUT to
+// path-flow-step-types.ts (U2): depcruise's no-circular rule caught the
+// cycle the moment this file started importing real step-body components
+// that themselves needed those types FROM here — see that file's own
+// header for the full reasoning. Re-exported below so every existing
+// import site (`from "./PathFlowStepSlot.js"`) keeps working unchanged.
 
-import type { PathFlowContext, PathFlowStepId, PathId } from "@loombre/shared/remote";
+import type { PathFlowStepId } from "@loombre/shared/remote";
 import { Button } from "../../ui/Button.js";
+import type { PathFlowStepBody, PathFlowStepBodyProps } from "./path-flow-step-types.js";
+import { RemoteEnableStepBody } from "./RemoteEnableStepBody.js";
+import { RemoteEnrollStepBody } from "./RemoteEnrollStepBody.js";
+import { TunnelTokenStepBody } from "./TunnelTokenStepBody.js";
+import { TunnelEnableStepBody } from "./TunnelEnableStepBody.js";
+import { DirectAcmeTestStepBody } from "./DirectAcmeTestStepBody.js";
+import { DirectEnableStepBody } from "./DirectEnableStepBody.js";
+import { DirectRouterInstructionsStepBody } from "./DirectRouterInstructionsStepBody.js";
 import styles from "./PathFlowStepSlot.module.css";
 
-/** Props every step-body component receives — the same shape for today's
- *  placeholders and for whatever U2 substitutes. A step body that needs
- *  data beyond `path`/`step`/`context` (e.g. Direct's real acme-test call)
- *  owns that fetch itself, the same way every other Settings card in this
- *  codebase does — this slot only carries wizard-navigation plumbing. */
-export interface PathFlowStepBodyProps {
-  path: PathId;
-  step: PathFlowStepId;
-  /** Accumulated answers from earlier steps in THIS path-flow run (today
-   *  only `directMode`, Direct's one branch point). */
-  context: PathFlowContext;
-  /** Advances to the next step (or leaves path-flow entirely once the
-   *  path's last step completes — PathFlowStage owns that transition via
-   *  the frozen nextPathFlowStep). Pass a context patch when the step
-   *  collected something later steps (or nextPathFlowStep's own branch,
-   *  e.g. Direct's mode choice) need to see. */
-  onStepComplete: (contextPatch?: Partial<PathFlowContext>) => void;
-  /** Always supplied by PathFlowStage today — even on a path's first step,
-   *  where calling it exits path-flow entirely (back to recommendation, or
-   *  interview if there was no interview run). Declared optional so a
-   *  future embedding with no "leave path-flow" affordance can omit it. */
-  onBack?: () => void;
-}
-
-export type PathFlowStepBody = (props: PathFlowStepBodyProps) => React.JSX.Element;
+export type { PathFlowStepBody, PathFlowStepBodyProps } from "./path-flow-step-types.js";
 
 export const PATH_FLOW_STEP_LABELS: Record<PathFlowStepId, string> = {
   "remote-enable": "Enable Loombre Remote",
@@ -96,20 +85,6 @@ function StepFrame({
   );
 }
 
-/** The default: every step except "direct-mode" (see header) renders this —
- *  honest placeholder copy, no fabricated progress or fake data, real
- *  Back/Continue navigation through the frozen step sequence. */
-function PlaceholderStepBody({ step, onStepComplete, onBack }: PathFlowStepBodyProps): React.JSX.Element {
-  return (
-    <StepFrame title={PATH_FLOW_STEP_LABELS[step]} onBack={onBack} onNext={() => onStepComplete()}>
-      <p className={styles.placeholderBody}>
-        This step's real screen isn't built in this preview yet — it lands in a follow-up pass. The controls below
-        keep the wizard's step sequence real so you can see how the rest of the flow fits together.
-      </p>
-    </StepFrame>
-  );
-}
-
 /** R5's one real branch point: acme (Loombre issues the certificate) vs.
  *  reverse-proxy (an existing proxy already terminates TLS). No network
  *  call here (still a shell) — but the CHOICE itself is real, because it's
@@ -135,12 +110,12 @@ function DirectModeChoiceBody({ onStepComplete, onBack }: PathFlowStepBodyProps)
 
 /** THE SEAM. Every PathFlowStepId must have an entry (see header). */
 export const PATH_FLOW_STEP_BODIES: Record<PathFlowStepId, PathFlowStepBody> = {
-  "remote-enable": PlaceholderStepBody,
-  "remote-enroll-first-device": PlaceholderStepBody,
-  "tunnel-token": PlaceholderStepBody,
-  "tunnel-enable": PlaceholderStepBody,
+  "remote-enable": RemoteEnableStepBody,
+  "remote-enroll-first-device": RemoteEnrollStepBody,
+  "tunnel-token": TunnelTokenStepBody,
+  "tunnel-enable": TunnelEnableStepBody,
   "direct-mode": DirectModeChoiceBody,
-  "direct-acme-test": PlaceholderStepBody,
-  "direct-enable": PlaceholderStepBody,
-  "direct-router-instructions": PlaceholderStepBody,
+  "direct-acme-test": DirectAcmeTestStepBody,
+  "direct-enable": DirectEnableStepBody,
+  "direct-router-instructions": DirectRouterInstructionsStepBody,
 };
