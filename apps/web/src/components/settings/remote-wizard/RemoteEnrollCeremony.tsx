@@ -34,7 +34,7 @@ import { Button } from "../../ui/Button.js";
 import { TextInput } from "../../ui/Input.js";
 import { SecretReveal } from "../../ui/SecretReveal.js";
 import { QrCode } from "../../ui/QrCode.js";
-import { apiGet, apiPost, LoombreApiError } from "../../../lib/api-client.js";
+import { apiGet, apiPost, LoombreApiError , apiErrorMessage } from "../../../lib/api-client.js";
 import styles from "./RemoteEnrollCeremony.module.css";
 
 type User = components["schemas"]["User"];
@@ -94,7 +94,7 @@ export function RemoteEnrollCeremony({ onDone, onCancel, cancelLabel = "Back" }:
         setPhase("form");
       } catch (err) {
         if (cancelled) return;
-        setError(err instanceof LoombreApiError ? err.message : "Failed to load users.");
+        setError(apiErrorMessage(err, "Failed to load users."));
         setPhase("form");
       }
     }
@@ -121,7 +121,7 @@ export function RemoteEnrollCeremony({ onDone, onCancel, cancelLabel = "Back" }:
         setPhase("unavailable");
         return;
       }
-      setError(err instanceof LoombreApiError ? err.message : "Failed to enroll this device.");
+      setError(apiErrorMessage(err, "Failed to enroll this device."));
       setPhase("form");
     }
   }

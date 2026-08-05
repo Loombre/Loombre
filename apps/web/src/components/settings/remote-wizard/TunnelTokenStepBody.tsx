@@ -25,7 +25,7 @@ import { useEffect, useState } from "react";
 import type { components } from "@loombre/sdk";
 import { Button } from "../../ui/Button.js";
 import { TextInput } from "../../ui/Input.js";
-import { apiGet, apiPost, LoombreApiError } from "../../../lib/api-client.js";
+import { apiGet, apiPost, LoombreApiError , apiErrorMessage } from "../../../lib/api-client.js";
 import type { PathFlowStepBodyProps } from "./path-flow-step-types.js";
 import styles from "./TunnelTokenStepBody.module.css";
 
@@ -51,7 +51,7 @@ export function TunnelTokenStepBody({ onStepComplete, onBack }: PathFlowStepBody
         setMode(res.tokenConfigured ? "idle" : "replacing");
       } catch (err) {
         if (cancelled) return;
-        setError(err instanceof LoombreApiError ? err.message : "Failed to load tunnel status.");
+        setError(apiErrorMessage(err, "Failed to load tunnel status."));
         setMode("replacing");
       }
     }
@@ -83,7 +83,7 @@ export function TunnelTokenStepBody({ onStepComplete, onBack }: PathFlowStepBody
         setMode("replacing");
       }
     } catch (err) {
-      setError(err instanceof LoombreApiError ? err.message : "Failed to validate this token.");
+      setError(apiErrorMessage(err, "Failed to validate this token."));
       setMode("replacing");
     }
   }
