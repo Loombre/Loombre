@@ -475,11 +475,13 @@ export type {
   RemoteTunnelStateRow,
   EnableTunnelStateInput,
   DisableTunnelStateInput,
+  RecordTunnelConnectorStateEventInput,
 } from './query/remote-tunnel.js';
 export {
   getRemoteTunnelState,
   enableTunnelStateAndEmit,
   disableTunnelStateAndEmit,
+  recordTunnelConnectorStateEvent,
 } from './query/remote-tunnel.js';
 // Loombre Remote's one-time-token reachability proof (STATE.md "Loombre
 // Remote — embedded WireGuard + three-path wizard + reachability proof +

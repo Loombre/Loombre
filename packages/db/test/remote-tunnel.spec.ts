@@ -17,7 +17,7 @@ import { fileURLToPath } from 'node:url';
 import type { Kysely } from 'kysely';
 import { createDb } from '../src/db.js';
 import type { DB } from '../src/types.js';
-import { disableTunnelStateAndEmit, enableTunnelStateAndEmit, getRemoteTunnelState } from '../src/query/remote-tunnel.js';
+import { disableTunnelStateAndEmit, enableTunnelStateAndEmit, getRemoteTunnelState, recordTunnelConnectorStateEvent } from '../src/query/remote-tunnel.js';
 import { getUserByUsername } from '../src/query/identity.js';
 import { readUnprocessedEvents } from '../src/query/events.js';
 
@@ -138,6 +138,36 @@ describe('disableTunnelStateAndEmit', () => {
     expect(row.enabled).toBe(false);
     const after = await readUnprocessedEvents(db, 1000);
     expect(after.length).toBe(before.length);
+  });
+});
+
+describe('recordTunnelConnectorStateEvent (WG3, R4/RG7 gap closure)', () => {
+  it('writes a tunnel.connector.state event with no actor and the exact frozen payload shape', async () => {
+    const nowMs = 1_700_000_500_000;
+    await recordTunnelConnectorStateEvent(db, { previousState: 'starting', newState: 'running', changedAtMs: nowMs });
+
+    const events = await readUnprocessedEvents(db, 1000);
+    const event = events.find((e) => e.type === 'tunnel.connector.state' && (e.payload as { changedAtMs?: number }).changedAtMs === nowMs);
+    expect(event).toBeDefined();
+    expect(event!.actor_user_id).toBeNull();
+    expect(event!.payload).toEqual({ previousState: 'starting', newState: 'running', changedAtMs: nowMs });
+    // R9: no secrets — this payload is exhaustively three fields, verified
+    // structurally too (additionalProperties:false at the schema level).
+    // Key ORDER is not asserted here — Postgres JSONB round-tripping does
+    // not guarantee insertion order is preserved (the `.toEqual` object
+    // match above already pins the exact three keys and values).
+    expect(Object.keys(event!.payload as object).sort()).toEqual(['changedAtMs', 'newState', 'previousState']);
+  });
+
+  it('every frozen contract state value round-trips (stopped|starting|running|degraded|error)', async () => {
+    const states = ['stopped', 'starting', 'running', 'degraded', 'error'] as const;
+    for (let i = 0; i < states.length - 1; i++) {
+      const nowMs = 1_700_000_600_000 + i;
+      await recordTunnelConnectorStateEvent(db, { previousState: states[i]!, newState: states[i + 1]!, changedAtMs: nowMs });
+      const events = await readUnprocessedEvents(db, 2000);
+      const event = events.find((e) => e.type === 'tunnel.connector.state' && (e.payload as { changedAtMs?: number }).changedAtMs === nowMs);
+      expect(event!.payload).toEqual({ previousState: states[i], newState: states[i + 1], changedAtMs: nowMs });
+    }
   });
 });
 
