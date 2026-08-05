@@ -22,6 +22,10 @@
     "./stash-path-mapping": {
       "types": "./dist/stash-path-mapping.d.ts",
       "default": "./dist/stash-path-mapping.js"
+    },
+    "./remote": {
+      "types": "./dist/remote/index.d.ts",
+      "default": "./dist/remote/index.js"
     }
   },
   "scripts": {
