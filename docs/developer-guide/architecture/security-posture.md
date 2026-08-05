@@ -244,3 +244,51 @@ deliberately NOT claimed as closed here. Cite this page's E8 claims at
 the STATUS/SHAPE granularity they were actually tested at; do not extend
 them to "no enumeration channel exists anywhere on these endpoints"
 without reading the known-limitation callout above first.
+
+## Appendix: the unauthenticated surface, enumerated (R9)
+
+<!-- Sourcing: apps/server/src/gateway/auth.guard.ts (PUBLIC_ROUTES +
+     PUBLIC_ROUTE_PATTERNS), apps/server/src/remote/probe-page.controller.ts,
+     apps/server/src/remote/wireguard/ + packages/wg-native (listener),
+     apps/server/src/remote/tunnel/cloudflared-connector-manager.ts.
+     STATE.md "Loombre Remote" R9: the probe endpoint, the WireGuard UDP
+     listener, and the cloudflared connector are the ONLY unauthenticated
+     surfaces that remote-access work added — this appendix is the standing
+     enumeration R9 requires, and any future addition to PUBLIC_ROUTES or
+     any new listener/child process MUST add a row here in the same PR
+     (review-blocking otherwise). -->
+
+Every surface reachable without a valid access token, and why each one is
+allowed to exist. Anything not listed here that answers unauthenticated
+traffic is a bug.
+
+**HTTP routes (`PUBLIC_ROUTES` / `PUBLIC_ROUTE_PATTERNS` in
+`apps/server/src/gateway/auth.guard.ts` — the M12 quartet applies to every
+entry: contract `security: []`, guard entry, conformance
+`PUBLIC_OPERATION_IDS`, named rate-limit policy):**
+
+| Surface | Why it must be public | Containment |
+| --- | --- | --- |
+| `GET /healthz` | Liveness for supervisors/proxies; also the restart poller's probe. | Static body, no version/config data. |
+| `POST /auth/login`, `POST /auth/refresh` | The door itself. | Dedicated auth rate limiters; anomaly log; byte-uniform failures. |
+| `GET /system/capabilities` | Pre-login client feature negotiation. | Feature flags only; `rateLimit.capabilities`; no instance identity. |
+| `GET /setup/state`, `POST /setup/first-admin` | First-run bootstrap has no users yet. | Permanently 404s (byte-identical to catch-all) once any user exists; `rateLimit.setup`; advisory-lock race safety. |
+| `POST /auth/forgot-password`, `POST /auth/reset-password` | Recovery is for people who cannot authenticate. | Anti-enumeration empty responses; shared `rateLimit.passwordReset` (per-IP); tokens SHA-256-hashed at rest, single-use. |
+| `GET|POST /invites/claim/{token}` | Invitees have no account yet. | High-entropy token, hashed at rest; `rateLimit.claim`; unknown/expired byte-identical 404. |
+| `GET /probe/{token}` (remote-access run) | The reachability proof MUST be reachable before auth works from outside — the phone on cellular is the external vantage (R6). | 256-bit single-use token, SHA-256 at rest, 15-min expiry, DB-equality lookup (constant-time by construction); `rateLimit.probe` per-IP; success page is fixed static HTML with zero server info (no name, no version, `res.end()` so no ETag); every failure is the byte-identical catch-all 404. |
+| `?token=` query-param transport on `@AllowQueryToken()` media routes | `<img>`/`<video>` elements cannot send headers. | Still a fully-validated signed JWT — alternate transport, not an auth bypass. |
+
+**Non-HTTP listeners and processes:**
+
+| Surface | Why it exists | Containment |
+| --- | --- | --- |
+| WireGuard UDP listener (`remote.wireguardPort`, default 51820 — only when the Remote path is enabled) | The Private Ring's front door; WireGuard by design authenticates with the first packet. | Cryptographic silence: packets that do not complete a Noise handshake against an enrolled peer key get NO bytes back (property-tested in `packages/wg-native` + server e2e — garbage and wrong-key initiations both). Scanners see a closed port. Tunnel egress is a raw pipe to the loopback backend listener ONLY — netstack registers no forwarder, so the tunnel cannot reach the LAN or any other address (containment-tested). |
+| Loopback backend HTTP listener (ephemeral port, 127.0.0.1, only while Remote is enabled) | Hands tunnel TCP streams to the same Express handler the main listener uses (RG2). | Bound and verified loopback-only; unreachable from the network; carries the same auth stack as the main listener (tunnel transport ≠ authentication — every request still needs a valid token). |
+| `cloudflared` connector child process (Tunnel path only) | Cloudflare's outbound-only tunnel daemon (R4, BYO token). | Outbound connections only — no listening socket of ours; connector token delivered via `TUNNEL_TOKEN` env (never argv, never logged); supervised with bounded restarts; its stdout/stderr ring buffer is admin-only via `getRemoteTunnelLogs`. |
+| IPC loopback listener (`apps/server/src/ipc/`) | Pre-existing (not from the remote run): tray/menubar controller channel. | Loopback-bound + bearer token + `timingSafeEqual`; enumerated here for completeness. |
+
+The remote-access run added exactly three rows (probe route, WG UDP
+listener + its loopback backend, connector child) — matching R9's
+"ONLY new unauth surfaces" claim. UPnP/NAT-PMP/PCP appear nowhere in this
+codebase, enforced by a grep-gate and stated in the ops docs as a feature:
+Loombre never reconfigures your network.
