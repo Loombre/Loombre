@@ -314,14 +314,107 @@ export function validateArchive(rawArchive: unknown): ExportArchive {
 }
 
 /**
+ * AUD-V2-M1 (merged from A2c-002 + A2c-003): every writer this consumer
+ * calls for these four sections either upserts (a duplicate item id
+ * silently OVERWRITES the earlier row — consumer.ts's preserveIds branch
+ * calls upsertCatalogItem, whose ON CONFLICT DO UPDATE never errors) or
+ * resolves collisions by an in-transaction lookup that a same-archive
+ * duplicate defeats against itself (a duplicate username never reaches
+ * insertUserWithId's own unique-violation catch, because
+ * getUserByUsername's pre-insert SELECT already sees the FIRST duplicate's
+ * write within the same transaction and silently takes the "already
+ * exists, skip" branch instead — consumer.ts's users loop). Both failures
+ * are SILENT: no error, no warning, the import reports success having lost
+ * or absorbed a row. This is therefore the place every one of THESE FOUR
+ * identity keys (.items[].id, .libraries[].id, .users[].id/.username) is
+ * caught before the transaction opens (this function runs before runImport
+ * ever calls withTransaction), naming the duplicate value and both
+ * offending indices. A partial-import-then-fail is worse than a
+ * refuse-to-start.
+ *
+ * Collation trap (reviewer reproduction, fix wave 2 follow-up to AUD-V2-M1):
+ * `keyOf`'s return value is compared for uniqueness with a plain Map, i.e.
+ * ORDINAL/case-sensitive equality — correct for the three UUID `id` keys
+ * (Postgres's `uuid` type has no case-insensitive collation concern the way
+ * a text type does), but WRONG for `.users[].username`, which is
+ * `CITEXT NOT NULL UNIQUE` (packages/db/migrations/0001_init.sql:132) and
+ * whose reader, getUserByUsername (packages/db/src/query/identity.ts:43),
+ * compares with a plain `=` — so the DATABASE (and consumer.ts's
+ * pre-insert lookup) treats "Bob" and "bob" as the SAME username, while a
+ * bare `Map<string, number>` here did not, letting that exact pair sail
+ * through and reach the silent-absorb path this function exists to close.
+ * The optional `foldKey` param lets a caller normalize the COMPARISON key
+ * to match the column's real collation while the diagnostic message still
+ * names the RAW value from each offending row — an operator needs to see
+ * "Bob" and "bob", not "bob" and "bob" twice.
+ *
+ * `.users[].email` is also CITEXT (nullable since migrations/0023) but is
+ * deliberately NOT one of the four checks below — see checkReferentialIntegrity's
+ * own doc comment for why that is a reasoned scope decision, not an
+ * oversight.
+ */
+function checkArchiveInternalUniqueness<T>(
+  rows: readonly T[],
+  keyOf: (row: T) => string,
+  section: string,
+  fieldName: string,
+  foldKey: (raw: string) => string = (raw) => raw
+): void {
+  const firstByFoldedKey = new Map<string, { index: number; raw: string }>();
+  rows.forEach((row, i) => {
+    const raw = keyOf(row);
+    const folded = foldKey(raw);
+    const first = firstByFoldedKey.get(folded);
+    if (first !== undefined) {
+      fail(
+        `${section}[${i}]`,
+        `duplicates ${fieldName} "${raw}" already used by archive${section}[${first.index}] (there as "${first.raw}") ` +
+          `— every archive${section} row must have a unique ${fieldName}`
+      );
+    }
+    firstByFoldedKey.set(folded, { index: i, raw });
+  });
+}
+
+/**
  * Archive-internal referential integrity: every parent/library reference an
  * item or progress row makes must resolve to something ELSE present in this
  * SAME archive. Run after validateArchive() (types are already trustworthy
  * here); throws ImportValidationError with the same section+index message
  * style rather than letting a dangling reference surface later as an opaque
  * Postgres foreign-key violation deep inside the import transaction.
+ *
+ * Uniqueness of each section's own identity key is checked FIRST (see
+ * checkArchiveInternalUniqueness's doc comment, AUD-V2-M1) — every Map/Set
+ * this function builds below keys off .id, so running the uniqueness pass
+ * first means a duplicate is always reported as itself, never masked by
+ * "last write wins" in one of these lookup structures. `.users[].username`
+ * is folded to lowercase before comparison (below) to match its CITEXT
+ * collation; the other three keys are UUIDs, compared as-is.
+ *
+ * Scope note on `.users[].email` (also CITEXT, nullable): deliberately NOT
+ * checked here. Unlike username, nothing in consumer.ts's users loop does a
+ * pre-insert lookup keyed on email that a same-archive duplicate could
+ * defeat — a same-archive email collision (case-exact OR case-varying,
+ * since the column is CITEXT) reaches insertUserWithId for BOTH rows and
+ * the second one hits a real Postgres UNIQUE violation, which is caught and
+ * rethrown as ImportConflictError, rolling back the whole transaction. That
+ * is slower than a pre-transaction refusal (one row is attempted before the
+ * failure surfaces) but never silent and never a partial commit — already
+ * proven for the case-exact case by consumer.spec.ts's "two archive users
+ * sharing an email" test (whole-archive transaction rollback describe
+ * block), whose own comment explains this is deliberate, not an oversight.
+ * If a future change adds an email pre-insert lookup to consumer.ts (mirroring
+ * getUserByUsername), that lookup would reopen the exact silent-absorb hole
+ * this function closes for username, and an archive-internal email
+ * uniqueness check (folded the same way) should land here at the same time.
  */
 export function checkReferentialIntegrity(archive: ExportArchive): void {
+  checkArchiveInternalUniqueness(archive.libraries, (l) => l.id, '.libraries', 'id');
+  checkArchiveInternalUniqueness(archive.items, (i) => i.id, '.items', 'id');
+  checkArchiveInternalUniqueness(archive.users, (u) => u.id, '.users', 'id');
+  checkArchiveInternalUniqueness(archive.users, (u) => u.username, '.users', 'username', (raw) => raw.toLowerCase());
+
   const libraryIds = new Set(archive.libraries.map((l) => l.id));
   const seriesIds = new Set<string>();
   const seasonById = new Map<string, ArchiveSeason>();

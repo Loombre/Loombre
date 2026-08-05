@@ -434,6 +434,95 @@ describe('import consumer: whole-archive transaction rollback', () => {
   });
 });
 
+describe('import consumer: archive-internal uniqueness (AUD-V2-M1)', () => {
+  // Before this fix, neither half of this defect threw at all: a duplicate
+  // item id silently overwrote the earlier row via upsertCatalogItem's
+  // ON CONFLICT DO UPDATE (preserveIds branch, consumer.ts), and a
+  // duplicate username was silently absorbed as an in-transaction
+  // natural-key "skip" by getUserByUsername's pre-insert lookup — in both
+  // cases the whole transaction committed and the job reported success.
+  // These cases prove checkReferentialIntegrity now catches BOTH before
+  // runImport ever calls withTransaction — the database must be as untouched
+  // as if the job had never run at all, which is the actual point of these
+  // two tests (not just "it throws").
+  it('rejects duplicate item ids in the archive before any write — database untouched', async () => {
+    const { requesterId: requester, archiveSelfUser } = await insertRequesterWithSelfMatch();
+    const lib = buildLibrary();
+    const dupId = 'dddddddd-0000-4000-8000-000000000001';
+    // mediaFiles: [] on both — otherwise the placeholder path formula
+    // (`loombre-import-placeholder://<itemId>/<index>`, consumer.ts's
+    // writeRelations) would ALSO collide on media_files' own path UNIQUE
+    // constraint (same itemId, same index 0) and mask the real defect
+    // behind an unrelated Postgres error. This case must isolate the
+    // catalog_items-level silent ON CONFLICT DO UPDATE overwrite the
+    // finding actually names (consumer.ts's preserveIds branch calling
+    // upsertCatalogItem), not an incidental FK/unique collision elsewhere.
+    const movieA = buildMovie(lib.id, { id: dupId, title: 'Original', mediaFiles: [] });
+    const movieB = buildMovie(lib.id, { id: dupId, title: 'Overwriter (duplicate id)', mediaFiles: [] });
+    const archive = buildEmptyArchive({ libraries: [lib], items: [movieA, movieB], users: [archiveSelfUser] });
+
+    await expect(runImport({ db }, { archive, requestedByUserId: requester }, { jobId: 'job-13' })).rejects.toThrow(
+      new RegExp(dupId)
+    );
+
+    const libs = await db.selectFrom('libraries').select('id').execute();
+    expect(libs).toHaveLength(0); // not even the library the duplicate items belonged to.
+    const items = await db.selectFrom('catalog_items').select('id').execute();
+    expect(items).toHaveLength(0);
+    const users = await db.selectFrom('users').select('id').execute();
+    expect(users).toHaveLength(1); // only the pre-existing requester row — archiveSelfUser was never inserted either.
+  });
+
+  it('rejects duplicate usernames within the archive before any write — database untouched', async () => {
+    const { requesterId: requester, archiveSelfUser } = await insertRequesterWithSelfMatch();
+    const userA = buildUser({ username: 'duplicate-in-archive', id: 'dddddddd-0000-4000-8000-000000000002' });
+    const userB = buildUser({ username: 'duplicate-in-archive', id: 'dddddddd-0000-4000-8000-000000000003' });
+    const lib = buildLibrary();
+    const archive = buildEmptyArchive({ libraries: [lib], users: [archiveSelfUser, userA, userB] });
+
+    await expect(runImport({ db }, { archive, requestedByUserId: requester }, { jobId: 'job-14' })).rejects.toThrow(
+      /duplicate-in-archive/
+    );
+
+    const libs = await db.selectFrom('libraries').select('id').execute();
+    expect(libs).toHaveLength(0);
+    const users = await db.selectFrom('users').select('id').execute();
+    expect(users).toHaveLength(1); // only the pre-existing requester row.
+  });
+
+  // Reviewer reproduction (fix wave 2, FW2-B follow-up): users.username is
+  // CITEXT NOT NULL UNIQUE and getUserByUsername compares with a plain `=`,
+  // so the database — and now checkReferentialIntegrity — treat "Bob" and
+  // "bob" as the same username. Before this fix, runImport() genuinely
+  // returned SUCCESS for this exact archive (users: { created: 1, skipped:
+  // 1, selfMatched: 1 }, only "Bob" in the table) because the raw-string Map
+  // in checkArchiveInternalUniqueness let the two rows through, and
+  // consumer.ts's getUserByUsername pre-insert lookup then silently matched
+  // "bob" against the already-inserted "Bob" row and took the "skip" branch.
+  it('rejects a same-archive username collision that differs only by case (CITEXT) before any write — database untouched', async () => {
+    const { requesterId: requester, archiveSelfUser } = await insertRequesterWithSelfMatch();
+    const userA = buildUser({ username: 'Bob', id: 'dddddddd-0000-4000-8000-000000000004', email: 'bob-a@example.com' });
+    const userB = buildUser({ username: 'bob', id: 'dddddddd-0000-4000-8000-000000000005', email: 'bob-b@example.com' });
+    const lib = buildLibrary();
+    const archive = buildEmptyArchive({ libraries: [lib], users: [archiveSelfUser, userA, userB] });
+
+    let caught: Error | undefined;
+    try {
+      await runImport({ db }, { archive, requestedByUserId: requester }, { jobId: 'job-15' });
+    } catch (err) {
+      caught = err as Error;
+    }
+    expect(caught).toBeDefined();
+    expect(caught!.message).toContain('Bob');
+    expect(caught!.message).toContain('bob');
+
+    const libs = await db.selectFrom('libraries').select('id').execute();
+    expect(libs).toHaveLength(0);
+    const users = await db.selectFrom('users').select('id').execute();
+    expect(users).toHaveLength(1); // only the pre-existing requester row — neither "Bob" nor "bob" was ever inserted.
+  });
+});
+
 describe('import consumer: malformed archive fails before any write', () => {
   it('an archive that fails validation throws before touching the database', async () => {
     const requester = await insertRawUser('importing-admin');

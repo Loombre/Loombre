@@ -370,6 +370,13 @@ export async function heartbeatPlaybackSession(
       (current.last_progress_event_at_ms === null ||
         nowMs - current.last_progress_event_at_ms >= PLAYBACK_PROGRESS_EVENT_INTERVAL_MS);
 
+    // Re-check status on the UPDATE itself, not just the leading SELECT
+    // above: under READ COMMITTED a second actor (the sweeper, the DELETE
+    // endpoint) can close this session out in the gap between that SELECT
+    // and this UPDATE, and only this WHERE clause is re-evaluated against
+    // the row as it stands at write time. Without it, this UPDATE still
+    // matches on `id` alone and a heartbeat resurrects a session someone
+    // else already closed (V1-006's exact defect class).
     const updated = await trx
       .updateTable('playback_sessions')
       .set({
@@ -379,8 +386,12 @@ export async function heartbeatPlaybackSession(
         ...(shouldEmitProgress ? { last_progress_event_at_ms: nowMs } : {}),
       })
       .where('id', '=', id)
+      .where('status', 'in', ['created', 'active'] satisfies PlaybackSessionStatus[])
       .returningAll()
-      .executeTakeFirstOrThrow();
+      .executeTakeFirst();
+    // Lost the race: someone else closed the session first. "A heartbeat
+    // cannot revive a dead session" (docstring) — undefined, no event.
+    if (!updated) return undefined;
 
     if (shouldEmitProgress) {
       // current.item_id !== null already checked above; TypeScript can't
@@ -415,6 +426,14 @@ async function finalizeSession(
 ): Promise<PlaybackSessionRow> {
   const nextStatus: PlaybackSessionStatus = options.errorCode !== null ? 'failed' : 'ended';
 
+  // The caller's own "already terminal?" check (endPlaybackSession /
+  // endStalePlaybackSession, above/below) was evaluated against ITS SELECT
+  // and is stale by the time this UPDATE runs: under READ COMMITTED a
+  // second actor (the sweeper, a racing second end call, the worker's
+  // markSessionFailed) can commit its own terminal transition in that gap.
+  // Repeating the guard here, on the UPDATE itself, is what actually closes
+  // it — matching the idiom every other writer in this package applies on
+  // its own UPDATE rather than trusting an earlier read.
   const updated = await trx
     .updateTable('playback_sessions')
     .set({
@@ -424,8 +443,18 @@ async function finalizeSession(
       updated_at_ms: nowMs,
     })
     .where('id', '=', current.id)
+    .where('status', 'not in', ['ended', 'failed'] satisfies PlaybackSessionStatus[])
     .returningAll()
-    .executeTakeFirstOrThrow();
+    .executeTakeFirst();
+
+  if (!updated) {
+    // Lost the race: someone else closed this session out first. Do NOT
+    // emit a second playback.ended — re-read and return whatever the
+    // winner actually wrote, the same idempotent contract the caller's
+    // sequential already-terminal check already promises.
+    const row = await baseSelect(trx).where('playback_sessions.id', '=', current.id).executeTakeFirstOrThrow();
+    return mapRow(row);
+  }
 
   await writeEvent(trx, {
     type: 'playback.ended',

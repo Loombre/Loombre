@@ -510,6 +510,12 @@ export interface ScanCheckpointsTable {
   last_processed_path: string | null;
   files_seen: Generated<number>;
   files_processed: Generated<number>;
+  /** FW2-E/AUD-A2d-003 (migrations/0033_scan_checkpoint_item_counters.sql)
+   *  — running totals across every attempt of this job, carried the same
+   *  way files_processed already is. */
+  items_added: Generated<number>;
+  items_updated: Generated<number>;
+  items_removed: Generated<number>;
   updated_at_ms: number;
 }
 

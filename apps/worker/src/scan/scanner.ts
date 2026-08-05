@@ -340,6 +340,7 @@ async function maybeCheckpoint(
   lastProcessedPath: string,
   filesSeen: number,
   filesProcessed: number,
+  counters: ScanCounters,
   now: number
 ): Promise<void> {
   if (filesSeen % CHECKPOINT_INTERVAL_FILES !== 0) return;
@@ -351,6 +352,12 @@ async function maybeCheckpoint(
       lastProcessedPath,
       filesSeen,
       filesProcessed,
+      // FW2-E/AUD-A2d-003: persist the running item-counter totals
+      // alongside filesProcessed so a resumed attempt (getCheckpoint below)
+      // can seed `counters` from here instead of restarting them at zero.
+      itemsAdded: counters.itemsAdded,
+      itemsUpdated: counters.itemsUpdated,
+      itemsRemoved: counters.itemsRemoved,
       updatedAtMs: now,
     });
     await writeEvent(trx, {
@@ -400,6 +407,23 @@ export async function runScan(deps: ScanDeps, params: RunScanParams, meta: RunSc
   try {
     const checkpoint = await getCheckpoint(deps.db, meta.jobId);
     let resuming = checkpoint?.last_processed_path != null;
+    // FW2-E/AUD-A2d-003: itemsAdded/itemsUpdated/itemsRemoved get the SAME
+    // carry-over treatment as filesProcessed below, and for the same
+    // reason — a resumed attempt (same job.id, pg-boss retry) must not
+    // report only its own slice of the work in scan.completed. Seeding
+    // them here (rather than at `counters`' own declaration above, which
+    // runs before the checkpoint is known) cannot double-count: the resume
+    // skip-logic below never re-runs processOneFile for a file already
+    // reflected in a prior attempt's persisted counters (every walked
+    // path is claimed by exactly ONE attempt's fresh processing — see this
+    // module's header / resume.spec.ts), and the full-mode missing-file
+    // sweep re-derives itemsRemoved's fresh contribution from the WHOLE
+    // current catalog on every attempt rather than resuming a partial
+    // pass, so it never re-flags a file this checkpoint already counted
+    // missing (guarded by `missing_since_ms === null` below).
+    counters.itemsAdded = checkpoint?.items_added ?? 0;
+    counters.itemsUpdated = checkpoint?.items_updated ?? 0;
+    counters.itemsRemoved = checkpoint?.items_removed ?? 0;
     // filesSeen is THIS run's own walk-position counter, always starting
     // fresh at 0 — the walk itself always covers the whole tree on every
     // run (only per-file WORK is skipped while resuming), so re-seeding it
@@ -421,7 +445,7 @@ export async function runScan(deps: ScanDeps, params: RunScanParams, meta: RunSc
         if (walked.absPath === checkpoint!.last_processed_path) {
           resuming = false;
         }
-        await maybeCheckpoint(deps, meta, params.libraryId, walked.absPath, filesSeen, filesProcessed, clock());
+        await maybeCheckpoint(deps, meta, params.libraryId, walked.absPath, filesSeen, filesProcessed, counters, clock());
         continue;
       }
 
@@ -435,7 +459,7 @@ export async function runScan(deps: ScanDeps, params: RunScanParams, meta: RunSc
         firstError ??= err instanceof Error ? err.message : String(err);
       }
 
-      await maybeCheckpoint(deps, meta, params.libraryId, walked.absPath, filesSeen, filesProcessed, clock());
+      await maybeCheckpoint(deps, meta, params.libraryId, walked.absPath, filesSeen, filesProcessed, counters, clock());
     }
 
     // Final checkpoint at walk completion, independent of the every-50
@@ -444,7 +468,12 @@ export async function runScan(deps: ScanDeps, params: RunScanParams, meta: RunSc
     // and the end would leave scan_checkpoints stale, understating real
     // progress for anything (an admin UI, a resumed retry) that reads it
     // back afterwards. Idempotent/harmless if a periodic checkpoint already
-    // covered the exact same last file.
+    // covered the exact same last file. itemsAdded/itemsUpdated are final
+    // by this point; itemsRemoved is not yet (full mode's sweep below
+    // hasn't run) — written here anyway (as whatever this attempt
+    // inherited) so walk-position durability never waits on full-mode work
+    // that could itself fail partway; the full-mode branch below
+    // re-persists itemsRemoved once its own sweep completes.
     await writeCheckpoint(deps.db, {
       jobId: meta.jobId,
       libraryId: params.libraryId,
@@ -452,6 +481,9 @@ export async function runScan(deps: ScanDeps, params: RunScanParams, meta: RunSc
       lastProcessedPath: lastAbsPath,
       filesSeen,
       filesProcessed,
+      itemsAdded: counters.itemsAdded,
+      itemsUpdated: counters.itemsUpdated,
+      itemsRemoved: counters.itemsRemoved,
       updatedAtMs: clock(),
     });
 
@@ -463,6 +495,25 @@ export async function runScan(deps: ScanDeps, params: RunScanParams, meta: RunSc
           counters.itemsRemoved++;
         }
       }
+
+      // Re-persist now that itemsRemoved reflects THIS attempt's own
+      // full-mode findings (the walk-completion checkpoint above was
+      // written before this sweep ran, deliberately — see its comment).
+      // Closes the one window the walk-completion write above cannot: a
+      // resume after a crash HERE (this sweep finished, scan.completed not
+      // yet emitted) must still seed the true total, not the pre-sweep one.
+      await writeCheckpoint(deps.db, {
+        jobId: meta.jobId,
+        libraryId: params.libraryId,
+        phase: "completed",
+        lastProcessedPath: lastAbsPath,
+        filesSeen,
+        filesProcessed,
+        itemsAdded: counters.itemsAdded,
+        itemsUpdated: counters.itemsUpdated,
+        itemsRemoved: counters.itemsRemoved,
+        updatedAtMs: clock(),
+      });
 
       const graceMs = (deps.missingFileGraceHours ?? DEFAULT_MISSING_FILE_GRACE_HOURS) * 60 * 60 * 1000;
       const cutoff = clock() - graceMs;
