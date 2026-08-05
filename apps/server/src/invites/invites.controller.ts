@@ -64,6 +64,7 @@ import { TokenService } from "../session/token.service.js";
 import { RefreshTokenService } from "../session/refresh-token.service.js";
 import { MailDispatchService } from "../mail/mail-dispatch.service.js";
 import { MailConfigService } from "../mail/mail-config.service.js";
+import { parseLimitParam } from "../common/limit-param.js";
 
 const EXPIRES_IN_MS_DEFAULT = 259_200_000; // 72h
 const EXPIRES_IN_MS_MIN = 3_600_000; // 1h
@@ -121,10 +122,8 @@ interface CursorLimitQuery {
 function parseCursorLimitQuery(query: Record<string, unknown>): CursorLimitQuery {
   const result: CursorLimitQuery = {};
   if (typeof query["cursor"] === "string") result.cursor = query["cursor"];
-  if (typeof query["limit"] === "string") {
-    const n = Number.parseInt(query["limit"], 10);
-    if (Number.isFinite(n) && n > 0) result.limit = n;
-  }
+  const limit = parseLimitParam(query["limit"]);
+  if (limit !== undefined) result.limit = limit;
   return result;
 }
 

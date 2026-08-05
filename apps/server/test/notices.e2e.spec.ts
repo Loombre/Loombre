@@ -175,6 +175,11 @@ describe("POST /system/notices — validation (admin)", () => {
     expect(res.status).toBe(422);
   });
 
+  it("R-F8: counts CODE POINTS — 500 astral emoji (1000 UTF-16 units) is legal, 501 is not (matches the DB's char_length CHECK)", async () => {
+    expect((await publish(adminToken, { message: "😀".repeat(500), severity: "info" })).status).toBe(201);
+    expect((await publish(adminToken, { message: "😀".repeat(501), severity: "info" })).status).toBe(422);
+  });
+
   it("422s an empty (post-trim) message", async () => {
     const res = await publish(adminToken, { message: "   ", severity: "info" });
     expect(res.status).toBe(422);

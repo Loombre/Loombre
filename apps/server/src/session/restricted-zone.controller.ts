@@ -59,6 +59,7 @@ import { nowMs as clockNowMs } from "@loombre/shared";
 import { notFound, unprocessableEntity } from "../gateway/problem.exception.js";
 import { requireUuidParam } from "../gateway/require-uuid-param.js";
 import type { AuthenticatedRequest } from "../gateway/auth.guard.js";
+import { parseLimitParam } from "../common/limit-param.js";
 import { DbProvider } from "../common/db.provider.js";
 import { ViewerContextProvider } from "../common/viewer-context.provider.js";
 
@@ -88,11 +89,6 @@ function parseNumberParam(raw: unknown): number | undefined {
   return Number.isFinite(n) ? n : undefined;
 }
 
-function parseIntParam(raw: unknown): number | undefined {
-  if (typeof raw !== "string") return undefined;
-  const n = Number.parseInt(raw, 10);
-  return Number.isFinite(n) && n > 0 ? n : undefined;
-}
 
 const VALID_RESOLUTION_BANDS: ReadonlySet<string> = new Set<RestrictedResolutionBand>(["SD", "HD", "FHD", "UHD"]);
 
@@ -118,7 +114,7 @@ interface ParsedBrowseQuery extends RestrictedBrowseFilterParams {
 function parseBrowseQuery(query: Record<string, unknown>): ParsedBrowseQuery {
   const result: ParsedBrowseQuery = {};
   if (typeof query["cursor"] === "string") result.cursor = query["cursor"];
-  const limit = parseIntParam(query["limit"]);
+  const limit = parseLimitParam(query["limit"]);
   if (limit !== undefined) result.limit = limit;
   if (typeof query["sort"] === "string" && VALID_SORTS.has(query["sort"])) {
     result.sort = query["sort"] as RestrictedBrowseSort;
@@ -156,7 +152,7 @@ function parseBrowseQuery(query: Record<string, unknown>): ParsedBrowseQuery {
 function parseCursorLimit(query: Record<string, unknown>): { cursor?: string; limit?: number } {
   const result: { cursor?: string; limit?: number } = {};
   if (typeof query["cursor"] === "string") result.cursor = query["cursor"];
-  const limit = parseIntParam(query["limit"]);
+  const limit = parseLimitParam(query["limit"]);
   if (limit !== undefined) result.limit = limit;
   return result;
 }
