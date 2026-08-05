@@ -205,6 +205,11 @@ const PUBLIC_OPERATION_IDS = new Set([
   // Lane B): the self-service email-tier recovery surface.
   "authForgotPassword",
   "authResetPassword",
+  // STATE.md "Loombre Remote — embedded WireGuard + three-path wizard +
+  // reachability proof + posture card" (R6/R9, Wave 0 — lane/remote-base):
+  // public by necessity, same posture as the invite-claim pair above (see
+  // gateway/auth.guard.ts's PUBLIC_ROUTE_PATTERNS).
+  "getProbePage",
 ]);
 
 /** Every non-public documented operation's exact expected status when
@@ -460,6 +465,34 @@ const IMPLEMENTED_NON_PUBLIC_EXPECTATIONS: Record<string, number> = {
   listSystemNotices: 200, // empty items[] on a fresh reseeded DB
   publishSystemNotice: 422, // bodyless -> "message is required"
   cancelSystemNotice: 404, // PLACEHOLDER_UUID never resolves to a real notice
+
+  // Loombre Remote — embedded WireGuard + three-path wizard + reachability
+  // proof + posture card (STATE.md, RG15, Wave 0 — lane/remote-base):
+  // every admin op is a CONFORMING 501 SHELL — requireLiveAdmin passes for
+  // the seed admin (real admin, real live-admin re-verify), then the
+  // handler throws notImplemented() unconditionally. 501, not 404: this IS
+  // a real, documented operation, just not implemented on this branch yet
+  // (apps/server/src/remote/remote-state.controller.ts's header). The
+  // public getProbePage lives in PUBLIC_OPERATION_IDS above, not here.
+  getRemoteState: 501,
+  enableRemoteWireguard: 501,
+  disableRemoteWireguard: 501,
+  getRemoteWireguardStatus: 501,
+  listRemoteWireguardDevices: 501,
+  enrollRemoteWireguardDevice: 501,
+  revokeRemoteWireguardDevice: 501,
+  setRemoteTunnelToken: 501,
+  clearRemoteTunnelToken: 501,
+  enableRemoteTunnel: 501,
+  disableRemoteTunnel: 501,
+  getRemoteTunnelStatus: 501,
+  getRemoteTunnelLogs: 501,
+  testRemoteDirectAcme: 501,
+  enableRemoteDirect: 501,
+  disableRemoteDirect: 501,
+  diagnoseRemote: 501,
+  createRemoteProbe: 501,
+  getRemoteProbe: 501,
 };
 
 let app: INestApplication;
@@ -639,6 +672,26 @@ describe("contract conformance (STATE.md D17/D21)", () => {
       expect(res.text).toBe(unknownRoute.text);
       expect(JSON.parse(res.text)).toEqual({ type: "about:blank", title: "Not Found", status: 404 });
     });
+
+    // STATE.md "Loombre Remote — embedded WireGuard + three-path wizard +
+    // reachability proof + posture card" (R6/R9, Wave 0): the ONE new
+    // public op this lane adds. No probe token can possibly be valid on
+    // this fresh reseeded DB (the mint side is itself a 501 shell), so
+    // EVERY token — well-formed or not — resolves to the same
+    // byte-identical 404 as every other "invisible == nonexistent" surface.
+    it("GET /probe/{token} -> 404 byte-identical to the catch-all unknown-route problem body, unauthenticated, for any token shape", async () => {
+      const unknownRoute = await request(app.getHttpServer())
+        .get("/this-route-does-not-exist-conformance-probe")
+        .set("Authorization", `Bearer ${adminAccessToken}`);
+
+      for (const token of ["conformance-invalid-token", "also-not-a-real-token"]) {
+        const res = await request(app.getHttpServer()).get(`/probe/${token}`);
+        expect(res.status).toBe(404);
+        expect(res.headers["content-type"]).toBe(unknownRoute.headers["content-type"]);
+        expect(res.text).toBe(unknownRoute.text);
+        expect(JSON.parse(res.text)).toEqual({ type: "about:blank", title: "Not Found", status: 404 });
+      }
+    });
   });
 
   it("authenticated walk: every NON-PUBLIC documented operation returns a non-401 status with a valid admin Bearer token", async () => {
@@ -726,6 +779,9 @@ describe("contract conformance (STATE.md D17/D21)", () => {
       // STATE.md "Optional mail transport + invitation & reset flows" (E3b/M12).
       "authForgotPassword",
       "authResetPassword",
+      // STATE.md "Loombre Remote — embedded WireGuard + three-path wizard +
+      // reachability proof + posture card" (R6/R9, Wave 0).
+      "getProbePage",
       ...Object.keys(IMPLEMENTED_NON_PUBLIC_EXPECTATIONS),
     ];
     for (const implementedOperationId of implementedOperationIds) {
