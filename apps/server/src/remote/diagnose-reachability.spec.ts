@@ -5,15 +5,24 @@
 // Tunnel-path short-circuit ordering, DNS-failure handling, and the
 // classifyReachability hand-off. Real node:dns wiring is proven separately
 // (remote-dns-resolver.service.spec.ts); real ConnectorHealthReaderService
-// wiring is proven by its own default-value test below.
+// wiring (T2, RG7: now reads through ConnectorManager — see that file's
+// own header) is proven by its own default-value test below.
+//
+// T2 update: ConnectorHealthReaderService's constructor now takes a
+// ConnectorManager — `stubDeps` passes a NoopConnectorManager (harmless,
+// always 'stopped'; connector-manager.ts) since every test here overrides
+// `.read()` directly via vi.spyOn anyway, so the manager itself is never
+// actually consulted except by the one test below that deliberately
+// exercises the REAL (unstubbed) read() path.
 
 import { describe, expect, it, vi } from "vitest";
 import { diagnoseReachability, extractHostname } from "./diagnose-reachability.js";
 import { ConnectorHealthReaderService, type ConnectorHealth } from "./connector-health.service.js";
+import { NoopConnectorManager } from "./tunnel/connector-manager.js";
 import { RemoteDnsResolverService } from "./remote-dns-resolver.service.js";
 
 function stubDeps(opts: { connectorHealth?: ConnectorHealth; resolvedAddress?: string | null }) {
-  const connectorHealthReader = new ConnectorHealthReaderService();
+  const connectorHealthReader = new ConnectorHealthReaderService(new NoopConnectorManager());
   vi.spyOn(connectorHealthReader, "read").mockResolvedValue(opts.connectorHealth ?? "unknown");
   const dnsResolver = new RemoteDnsResolverService();
   // `resolvedAddress` may be legitimately `null` (simulating a DNS-lookup
@@ -139,9 +148,9 @@ describe("diagnoseReachability", () => {
   });
 });
 
-describe("ConnectorHealthReaderService (the real, unstubbed default)", () => {
-  it("returns 'unknown' — the deliberate no-op default (T2's future seam)", async () => {
-    const service = new ConnectorHealthReaderService();
-    await expect(service.read()).resolves.toBe("unknown");
+describe("ConnectorHealthReaderService (the real, unstubbed read() path)", () => {
+  it("an unstarted (NoopConnectorManager 'stopped') connector reads as 'down'", async () => {
+    const service = new ConnectorHealthReaderService(new NoopConnectorManager());
+    await expect(service.read()).resolves.toBe("down");
   });
 });
