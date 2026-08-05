@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://loombre.com/schemas/events/posture.regressed.schema.json",
+  "title": "PostureRegressedPayload",
+  "description": "Payload for envelope.type === 'posture.regressed'. STATE.md \"Loombre Remote — embedded WireGuard + three-path wizard + reachability proof + posture card\" (R7/RG4): RG4's adjudication — system_notices is HUMAN-composed only (one-active-slot), so a posture-check regression (cert expiring, connector down, a rate limiter silently disabled, ...) emits this admin-only event instead of auto-composing a notice; the posture card itself stays the persistent surface (S1 implements the real checkers server-side; packages/shared/src/remote/posture-model.ts is the pure grading/applicability module this event's shape mirrors). `checkKey` is the closed union from posture-model.ts's PostureCheckKey. Never carries any secret or config value — grades and a check identifier only. ADMIN-ONLY delivery, same posture as probe.failed/mail.failed.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["checkKey", "previousGrade", "newGrade", "regressedAtMs"],
+  "properties": {
+    "checkKey": {
+      "type": "string",
+      "enum": ["tlsValidity", "rateLimitersActive", "staleAccounts", "inviteLinksReachable", "wgPortSilence", "connectorHealth", "publicUrlCoherence"]
+    },
+    "previousGrade": { "type": "string", "enum": ["pass", "warn", "fail", "info"] },
+    "newGrade": { "type": "string", "enum": ["pass", "warn", "fail", "info"] },
+    "regressedAtMs": { "type": "integer", "minimum": 0 }
+  }
+}

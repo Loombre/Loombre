@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://loombre.com/schemas/events/remote.device.revoked.schema.json",
+  "title": "RemoteDeviceRevokedPayload",
+  "description": "Payload for envelope.type === 'remote.device.revoked'. STATE.md \"Loombre Remote — embedded WireGuard + three-path wizard + reachability proof + posture card\" (R2/RG3/R9): emitted by DELETE /admin/remote/wireguard/devices/{id} — the live WG peer was removed (handshake fails immediately after) and the underlying device's refresh tokens were revoked (RG3's pre-existing-gap closure). ADMIN-ONLY delivery, same posture as remote.device.enrolled.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["deviceId", "userId", "revokedAtMs"],
+  "properties": {
+    "deviceId": { "type": "string", "format": "uuid" },
+    "userId": { "type": "string", "format": "uuid", "description": "The device's owner." },
+    "revokedAtMs": { "type": "integer", "minimum": 0 }
+  }
+}

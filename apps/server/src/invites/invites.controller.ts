@@ -8,7 +8,7 @@
 //
 // F1 (opus adversarial review, fix wave): mounted at /invites/claim/{token},
 // NOT bare /claim/{token} — that path belongs to the Next.js web PAGE
-// (apps/web/src/app/claim/[token]), and docs/ops/reverse-proxy.md routed
+// (apps/web/src/app/claim/[token]), and docs/ops/remote-access/reverse-proxy.md routed
 // /claim/* to this API, so the two collided and a real invite link opened
 // JSON instead of the claim page. The human-facing invite link
 // (composeClaimUrl below) is UNCHANGED — still `${publicUrl}/claim/${token}`,
@@ -340,7 +340,7 @@ export class InvitesController {
 
   // F1: mounted under /invites/claim/{token} — NOT bare /claim/{token},
   // which apps/web/src/app/claim/[token] owns as the human-facing PAGE
-  // route (docs/ops/reverse-proxy.md routed /claim/* to the API, so the
+  // route (docs/ops/remote-access/reverse-proxy.md routed /claim/* to the API, so the
   // page and this JSON endpoint collided on the same path). The invite
   // link itself (composeClaimUrl below) is unaffected — it still points
   // at the web page, `${publicUrl}/claim/${token}`.

@@ -31,6 +31,18 @@ describe("SurfaceRateLimiterService", () => {
 
   });
 
+  // STATE.md "Loombre Remote — embedded WireGuard + three-path wizard +
+  // reachability proof + posture card" (R6/RG6): GET /probe/{token},
+  // modeled directly on rateLimit.claim above.
+  it("rateLimit.probe: defaults to 10/min and honors an env override", () => {
+    const defaults = new SurfaceRateLimiterService(createFakeSettingsService({ env: {} }).service);
+    expect(defaults.probe.attempt("k").allowed).toBe(true);
+
+    const service = new SurfaceRateLimiterService(createFakeSettingsService({ env: { LOOMBRE_RATE_PROBE: "1" } }).service);
+    expect(service.probe.attempt("only-key").allowed).toBe(true);
+    expect(service.probe.attempt("only-key").allowed).toBe(false);
+  });
+
   // STATE.md "Optional mail transport + invitation & reset flows" (E3b/M12,
   // Lane B): shared by both POST /auth/forgot-password and
   // POST /auth/reset-password (same key, since both are attempted-recovery

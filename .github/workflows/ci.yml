@@ -66,8 +66,29 @@ jobs:
           node-version: "24"
           cache: pnpm
 
+      # Lane WG1 (STATE.md "Loombre Remote", RG1/RG14): a Go BUILD toolchain
+      # for packages/wg-native/native (compiled into a per-OS c-shared
+      # library, loaded via koffi — never shipped as a Go RUNTIME, so the
+      # N2 Active-LTS Node policy does not govern this pin). Pinned to
+      # current stable (matches go.dev/dl's `stable: true` entry at the
+      # time this was wired) — same "pin, don't float" posture as OASDIFF_VERSION.
+      - name: Set up Go (packages/wg-native build toolchain)
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.26.5"
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      # Explicit, clearly-labeled step (rather than relying solely on
+      # turbo's implicit ^build dependency during the gate's typecheck/test
+      # steps) — a Go/wg-native build failure gets its own red X instead of
+      # surfacing confusingly inside "typecheck" or "test". LOOMBRE_REQUIRE_WG
+      # is NOT set here: a build failure with Go present is already a hard
+      # `pnpm --filter` non-zero exit regardless: only "Go not found at all"
+      # is soft, and setup-go above guarantees Go IS found on every leg.
+      - name: Build wg-native (Go c-shared library)
+        run: pnpm --filter @loombre/wg-native run build
 
       - name: Install oasdiff (ubuntu)
         if: runner.os == 'Linux'
@@ -206,6 +227,12 @@ jobs:
         # this change.
         env:
           LOOMBRE_REQUIRE_FFMPEG: "1"
+          # RG1/RG14: a missing/unbuildable wg-native library must be a hard
+          # CI failure, never a silent skip of the wg-gated loopback/
+          # silence/containment/lifecycle suites (packages/wg-native/test,
+          # apps/server/test/remote-wireguard-loopback.e2e.spec.ts) — same
+          # posture LOOMBRE_REQUIRE_FFMPEG already established.
+          LOOMBRE_REQUIRE_WG: "1"
           # 3-core virtualized runners miss the integration suites'
           # real-hardware-calibrated deadlines; scale patience, not
           # assertions (session.integration.spec.ts). macos-latest is the
@@ -295,10 +322,18 @@ jobs:
           node-version: "26"
           cache: pnpm
 
+      - name: Set up Go (packages/wg-native build toolchain)
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.26.5"
+
       - name: Install dependencies
         # --engine-strict=false: root engines pins the SHIPPING floor
         # (>=24); this evidence lane deliberately runs ahead of it.
         run: pnpm install --frozen-lockfile --config.engine-strict=false
+
+      - name: Build wg-native (Go c-shared library)
+        run: pnpm --filter @loombre/wg-native run build
 
       - name: Install oasdiff
         shell: bash
@@ -337,6 +372,7 @@ jobs:
       - name: pnpm gate:full
         env:
           LOOMBRE_REQUIRE_FFMPEG: "1"
+          LOOMBRE_REQUIRE_WG: "1"
           LOOMBRE_TEST_TIME_SCALE: "3"
         run: pnpm gate:full
 

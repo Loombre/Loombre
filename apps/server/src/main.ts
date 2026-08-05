@@ -12,11 +12,14 @@ import { AppModule } from "./app.module.js";
 import { applyHsts } from "./tls/hsts.js";
 import { loadTlsConfig } from "./tls/config.js";
 import { createTlsRuntime } from "./tls/runtime.js";
+import { hydrateTlsEnvFromSettings } from "./tls/settings-boot-bridge.js";
 import { bootstrapProvisioning, getProvisioningController } from "./bootstrap/provisioning.js";
 import { wireServerIpc } from "./ipc/index.js";
 import { resolveAppPaths } from "./cli/app-paths.js";
 import { installCrashHandlers, installGracefulShutdown, type ShutdownSignal } from "./crash/index.js";
 import { RESTART_REQUESTED_EXIT_CODE, ServerPowerService } from "./common/server-power.service.js";
+import { SettingsService } from "./settings/settings.service.js";
+import { ConnectorManager } from "./remote/tunnel/connector-manager.js";
 
 /**
  * LOOMBRE_TRUST_PROXY (STATE.md P2.2, docs/PLAN.md §10: "plain HTTP behind
@@ -229,6 +232,31 @@ async function bootstrap(): Promise<BootstrapResult> {
     logger: ["log", "warn", "error"],
   });
 
+  // RG12 (STATE.md "Loombre Remote..."): tls.mode/tls.acmeDomains/
+  // tls.acmeChallengeType/tls.acmeTosAgreed/network.trustProxy are now
+  // ui-scope (settings-registry.ts) — hydrate process.env from whatever
+  // SettingsService resolves BEFORE the raw-env readers below run, so a
+  // DB-only-committed Direct-path config (apps/server/src/remote/
+  // remote-direct.controller.ts's enableRemoteDirect) actually takes
+  // effect on the next restart instead of only ever living in the
+  // database (see settings-boot-bridge.ts's header for the full story).
+  // Best-effort and NEVER fatal: bootstrapProvisioning() above already
+  // makes the database a hard boot precondition in practice, but TLS/
+  // trust-proxy selection itself was NEVER DB-dependent before this call
+  // existed, so a hiccup here falls back to exactly that prior behavior
+  // (raw env only) rather than turning a one-time convenience read into a
+  // new way to fail boot — same posture as resolveAndSeedJwtSecret above.
+  try {
+    const settingsService = app.get(SettingsService);
+    await settingsService.bootstrap();
+    hydrateTlsEnvFromSettings(settingsService, process.env);
+  } catch (err) {
+    console.warn(
+      `@loombre/server: settings-boot-bridge failed (${String(err)}) — TLS mode and trust-proxy resolve from ` +
+        "environment variables only for this boot, same as before RG12's settings promotion.",
+    );
+  }
+
   applyTrustProxy(app, process.env["LOOMBRE_TRUST_PROXY"]);
   applyCors(app, process.env["LOOMBRE_CORS_ORIGINS"]);
   applySecurityHeaders(app);
@@ -356,6 +384,15 @@ if (isDirectEntrypoint) {
       // (immediate, non-graceful termination) or, on Windows via the
       // service host, the timeout-then-kill fallback
       // (installers/windows/service-host's own header names this exact gap).
+      // T2/RG7: the connector's own supervised child (cloudflared, when the
+      // Tunnel path is enabled) needs the SAME graceful-stop treatment the
+      // embedded-PG child gets below — captured here, before closeServer()
+      // tears down the Nest container, exactly like `ServerPowerService`
+      // is grabbed via `app.get()` further down; CloudflaredConnectorManager.
+      // stop() is safe to call unconditionally (a no-op when nothing was
+      // ever started — mirrors ConnectorManager.stop()'s own idempotent
+      // contract, connector-manager.ts's abstract method doc comment).
+      const connectorManager = app.get(ConnectorManager);
       installGracefulShutdown({
         onShutdown: async (_signal: ShutdownSignal) => {
           await closeServer();
@@ -375,6 +412,11 @@ if (isDirectEntrypoint) {
           if (provisioning && provisioning.getCurrentProvisioningStatus().state !== "external") {
             await provisioning.stop("fast");
           }
+          // T2/RG7: SIGTERM the connector child (grace timeout -> SIGKILL,
+          // same escalation ladder as the embedded-PG stop above) so a
+          // server restart/shutdown never leaves an orphaned cloudflared
+          // process behind.
+          await connectorManager.stop();
         },
         exit: (code) => process.exit(code === 0 ? gracefulExitCode : code),
       });

@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://loombre.com/schemas/events/posture.recovered.schema.json",
+  "title": "PostureRecoveredPayload",
+  "description": "Payload for envelope.type === 'posture.recovered'. STATE.md \"Loombre Remote — embedded WireGuard + three-path wizard + reachability proof + posture card\" (R7/RG4): the recovery-direction twin of posture.regressed, same checkKey/grade closed unions (packages/shared/src/remote/posture-model.ts) — emitted when a previously-regressed check returns to a better grade. ADMIN-ONLY delivery, same posture as posture.regressed.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["checkKey", "previousGrade", "newGrade", "recoveredAtMs"],
+  "properties": {
+    "checkKey": {
+      "type": "string",
+      "enum": ["tlsValidity", "rateLimitersActive", "staleAccounts", "inviteLinksReachable", "wgPortSilence", "connectorHealth", "publicUrlCoherence"]
+    },
+    "previousGrade": { "type": "string", "enum": ["pass", "warn", "fail", "info"] },
+    "newGrade": { "type": "string", "enum": ["pass", "warn", "fail", "info"] },
+    "recoveredAtMs": { "type": "integer", "minimum": 0 }
+  }
+}

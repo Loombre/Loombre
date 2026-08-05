@@ -11,6 +11,7 @@ import { SettingsModule } from "./settings/settings.module.js";
 import { AdminSettingsControllersModule } from "./settings/admin-settings.module.js";
 import { AdminPluginsControllersModule } from "./plugins/admin-plugins.module.js";
 import { MailModule } from "./mail/mail.module.js";
+import { RemoteModule } from "./remote/remote.module.js";
 
 /**
  * Root module. Catalog / Playback / Session are enforced boundaries
@@ -71,6 +72,18 @@ import { MailModule } from "./mail/mail.module.js";
  * -user GET /notices/active (NG2's catch-up read — see notices/
  * notices.controller.ts's header). Listed before GatewayModule for the
  * same catch-all-must-be-last reason as everything else here.
+ *
+ * RemoteModule (STATE.md "Loombre Remote — embedded WireGuard + three-path
+ * wizard + reachability proof + posture card", RG15, Wave 0 —
+ * lane/remote-base): /admin/remote/* (admin — state/wireguard/tunnel/
+ * direct/diagnosis/probes) plus the public GET /probe/{token} (R6/R9 — see
+ * gateway/auth.guard.ts's PUBLIC_ROUTE_PATTERNS for its public-but-dynamic
+ * -path matching, same mechanism as /invites/claim/{token}). Every
+ * operation ships as a conforming 501 shell this wave (requireLiveAdmin
+ * FIRST, then not-implemented — see remote/remote-state.controller.ts's
+ * header); downstream lanes replace bodies without touching this wiring.
+ * Listed before GatewayModule for the same catch-all-must-be-last reason
+ * as everything else here.
  */
 @Module({
   imports: [
@@ -84,6 +97,7 @@ import { MailModule } from "./mail/mail.module.js";
     AdminSettingsControllersModule,
     AdminPluginsControllersModule,
     MailModule,
+    RemoteModule,
     GatewayModule,
   ],
 })

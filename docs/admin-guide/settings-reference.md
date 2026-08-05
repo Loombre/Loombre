@@ -12,6 +12,7 @@ Every setting Loombre's settings screen lets you change, grouped the way the scr
 ## How to read this page
 
 - **Applies immediately** means the change takes effect right away.
+- **Applies after a restart** means Loombre saves your change now but keeps using the old value until the server restarts — you'll see a reminder banner in the meantime, and **Settings → Server → Power** has a [restart button](server-power.md) that applies it. Nothing currently playing is ever interrupted just by saving.
 - **Can be locked** means whoever installed Loombre can fix a setting to one value from outside the settings screen. When that's done, this screen shows the setting as controlled by the environment and you can't change it here — ask them if you need it changed.
 
 ## Video conversion & playback quality
@@ -315,6 +316,16 @@ How many password-recovery requests (forgot-password or reset-password) one devi
 - **Applies:** immediately — no restart needed.
 - **Can be locked:** if `LOOMBRE_RATE_PASSWORD_RESET` is set by whoever installed Loombre, this setting becomes fixed to that value and shows as controlled by the environment here — ask them, or see the [Operator Guide's environment reference](/ops/env-reference).
 
+### Reachability-proof attempt limit
+
+<small>Setting key: `rateLimit.probe`</small>
+
+How many reachability-proof probe attempts one device may make per minute, before any account exists for it. Guards the probe link against brute-force guessing.
+
+- **Default:** 10
+- **Applies:** immediately — no restart needed.
+- **Can be locked:** if `LOOMBRE_RATE_PROBE` is set by whoever installed Loombre, this setting becomes fixed to that value and shows as controlled by the environment here — ask them, or see the [Operator Guide's environment reference](/ops/env-reference).
+
 ## Network
 
 The web address people use to reach this server from outside your own network.
@@ -328,6 +339,61 @@ The web address people use to reach this server from outside your own network. S
 - **Default:** (empty — not set)
 - **Applies:** immediately — no restart needed.
 - **Can be locked:** if `LOOMBRE_PUBLIC_URL` is set by whoever installed Loombre, this setting becomes fixed to that value and shows as controlled by the environment here — ask them, or see the [Operator Guide's environment reference](/ops/env-reference).
+
+### Trust proxy
+
+<small>Setting key: `network.trustProxy`</small>
+
+Tells Loombre it is running behind a reverse proxy you control, so it can trust that proxy's forwarded address information when deciding who to rate-limit or note in the sign-in log. Accepts a hop count (e.g. "1"), a trusted address/range, or a comma-separated list of them. Leave blank unless you are running Loombre behind your own reverse proxy.
+
+- **Default:** (empty — not set)
+- **Applies:** after a restart. Saving this shows a reminder banner until the server restarts — Settings → Server → Power has the restart button.
+- **Note:** Only enable behind a reverse proxy you control — enabling this trusts client-supplied forwarded-address information for rate-limit and sign-in-log keying.
+- **Can be locked:** if `LOOMBRE_TRUST_PROXY` is set by whoever installed Loombre, this setting becomes fixed to that value and shows as controlled by the environment here — ask them, or see the [Operator Guide's environment reference](/ops/env-reference).
+
+## HTTPS / TLS
+
+How this server handles HTTPS for people connecting to it directly (not through a reverse proxy). The Direct path in the Remote-access wizard fills most of this in for you and tests it before turning it on.
+
+### TLS mode
+
+<small>Setting key: `tls.mode`</small>
+
+How Loombre handles HTTPS: 'off' serves plain HTTP (the right choice when a reverse proxy in front of Loombre handles HTTPS itself), 'manual' uses a certificate and key file you provide yourself, and 'acme' has Loombre request and automatically renew its own certificate from Let's Encrypt (or another compatible certificate authority) using the domain and verification settings below.
+
+- **Default:** `off`
+- **Applies:** after a restart. Saving this shows a reminder banner until the server restarts — Settings → Server → Power has the restart button.
+- **Can be locked:** if `LOOMBRE_TLS_MODE` is set by whoever installed Loombre, this setting becomes fixed to that value and shows as controlled by the environment here — ask them, or see the [Operator Guide's environment reference](/ops/env-reference).
+
+### Certificate domain name(s)
+
+<small>Setting key: `tls.acmeDomains`</small>
+
+The domain name(s) this server requests an HTTPS certificate for when TLS mode is 'acme' — the address people use to reach it from outside your network (for example media.example.com). The first one becomes the certificate's primary name.
+
+- **Default:** (none)
+- **Applies:** after a restart. Saving this shows a reminder banner until the server restarts — Settings → Server → Power has the restart button.
+- **Can be locked:** if `LOOMBRE_ACME_DOMAINS` is set by whoever installed Loombre, this setting becomes fixed to that value and shows as controlled by the environment here — ask them, or see the [Operator Guide's environment reference](/ops/env-reference).
+
+### Certificate verification method
+
+<small>Setting key: `tls.acmeChallengeType`</small>
+
+How Loombre proves it controls the domain above, to get a certificate for it: 'http-01' answers a request on port 80 (simplest, when that port is reachable from the internet), 'dns-01' creates a temporary DNS record instead (works even with no reachable inbound port, and is required for a wildcard certificate).
+
+- **Default:** `http-01`
+- **Applies:** after a restart. Saving this shows a reminder banner until the server restarts — Settings → Server → Power has the restart button.
+- **Can be locked:** if `LOOMBRE_ACME_CHALLENGE_TYPE` is set by whoever installed Loombre, this setting becomes fixed to that value and shows as controlled by the environment here — ask them, or see the [Operator Guide's environment reference](/ops/env-reference).
+
+### Accept certificate authority Terms of Service
+
+<small>Setting key: `tls.acmeTosAgreed`</small>
+
+Confirms you accept the certificate authority's Terms of Service on this server's behalf — required before Loombre will request a certificate automatically. Loombre never agrees on your behalf silently; this must be turned on explicitly.
+
+- **Default:** Off
+- **Applies:** after a restart. Saving this shows a reminder banner until the server restarts — Settings → Server → Power has the restart button.
+- **Can be locked:** if `LOOMBRE_ACME_TOS_AGREED` is set by whoever installed Loombre, this setting becomes fixed to that value and shows as controlled by the environment here — ask them, or see the [Operator Guide's environment reference](/ops/env-reference).
 
 ## Mail
 
@@ -396,4 +462,59 @@ How often Loombre automatically re-syncs metadata from a connected Stash databas
 
 - **Default:** 0 ms
 - **Applies:** immediately — no restart needed.
+
+## Remote access
+
+Settings for Loombre Remote (embedded WireGuard), the Tunnel path, and the Direct path — the three ways to reach this server from outside your own network.
+
+### WireGuard listener port
+
+<small>Setting key: `remote.wireguardPort`</small>
+
+The UDP port Loombre Remote's WireGuard listener binds to. Changing this requires a server restart — the listener cannot rebind to a different port while running.
+
+- **Default:** 51820
+- **Applies:** after a restart. Saving this shows a reminder banner until the server restarts — Settings → Server → Power has the restart button.
+- **Can be locked:** if `LOOMBRE_WG_PORT` is set by whoever installed Loombre, this setting becomes fixed to that value and shows as controlled by the environment here — ask them, or see the [Operator Guide's environment reference](/ops/env-reference).
+
+### Remote-access tunnel subnet
+
+<small>Setting key: `remote.subnet`</small>
+
+The private IPv4 subnet Loombre Remote allocates tunnel addresses from (server = the first usable address, enrolled devices get the next free ones). Changing this requires a server restart — already-enrolled devices' addresses come from the OLD subnet and would be orphaned by a live change.
+
+- **Default:** `10.82.146.0/24`
+- **Applies:** after a restart. Saving this shows a reminder banner until the server restarts — Settings → Server → Power has the restart button.
+- **Note:** Avoid 100.64.0.0/10 (CGNAT space) — other VPN tools commonly use it, and a device running both could collide.
+- **Can be locked:** if `LOOMBRE_WG_SUBNET` is set by whoever installed Loombre, this setting becomes fixed to that value and shows as controlled by the environment here — ask them, or see the [Operator Guide's environment reference](/ops/env-reference).
+
+### WireGuard public endpoint
+
+<small>Setting key: `remote.wireguardEndpointHost`</small>
+
+The publicly reachable host devices connect to for Loombre Remote (written into each newly enrolled device's config, alongside remote.wireguardPort). Leave blank until you know this server's public host/IP.
+
+- **Default:** (empty — not set)
+- **Applies:** immediately — no restart needed.
+- **Can be locked:** if `LOOMBRE_WG_ENDPOINT_HOST` is set by whoever installed Loombre, this setting becomes fixed to that value and shows as controlled by the environment here — ask them, or see the [Operator Guide's environment reference](/ops/env-reference).
+
+### Cloudflare tunnel binary path
+
+<small>Setting key: `remote.cloudflaredPath`</small>
+
+Explicit path to the cloudflared binary, if it is not on the server's PATH. Leave blank to auto-detect — Loombre does not download this binary itself, so install it yourself and point this setting at it if auto-detect fails.
+
+- **Default:** (empty — not set)
+- **Applies:** immediately — no restart needed.
+- **Can be locked:** if `LOOMBRE_CLOUDFLARED_PATH` is set by whoever installed Loombre, this setting becomes fixed to that value and shows as controlled by the environment here — ask them, or see the [Operator Guide's environment reference](/ops/env-reference).
+
+### Tunnel public hostname
+
+<small>Setting key: `remote.tunnelHostname`</small>
+
+The public hostname the Tunnel path routes through (set automatically when you enable the Tunnel path from the wizard; editable here afterward).
+
+- **Default:** (empty — not set)
+- **Applies:** immediately — no restart needed.
+- **Can be locked:** if `LOOMBRE_TUNNEL_HOSTNAME` is set by whoever installed Loombre, this setting becomes fixed to that value and shows as controlled by the environment here — ask them, or see the [Operator Guide's environment reference](/ops/env-reference).
 

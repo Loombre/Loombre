@@ -3,6 +3,11 @@ name: loombre-dev
 services:
   postgres:
     image: postgres:18
+    # Docker's default /dev/shm is 64M; Postgres parallel workers allocate
+    # POSIX shared memory there and a full-monorepo test fan-out (or several
+    # concurrent ones) exhausts it: "could not resize shared memory segment
+    # ... No space left on device" (dsm_impl_posix). 1g gives real headroom.
+    shm_size: 1g
     environment:
       POSTGRES_DB: loombre
       POSTGRES_USER: loombre

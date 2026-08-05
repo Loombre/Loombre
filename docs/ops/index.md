@@ -15,22 +15,25 @@ Installation itself lives in its own top-level section:
 hardware tier, and the unsigned-install trust story (checksums, minisign,
 GitHub attestation, cosign).
 
-## Remote access & TLS
+## Remote access
 
-Three first-class, mutually-exclusive paths — pick the one matching your
-situation:
-
-- **[Reverse proxy](reverse-proxy.md)** (recommended if you already run
-  one) — Caddy/nginx/Traefik recipes, the real requirements (WebSocket
-  upgrade, no buffering on the streaming endpoints, `?token=` log
-  redaction, upload body-size limits), and `LOOMBRE_TRUST_PROXY` /
-  `LOOMBRE_CORS_ORIGINS`.
-- **[Built-in ACME](acme.md)** (`LOOMBRE_TLS_MODE=acme`) — for
-  direct-exposure installs with no reverse proxy: automatic Let's Encrypt
-  certificates via HTTP-01 or DNS-01, the port 80/443 privilege story, and
-  renewal mechanics.
-- **LAN-only, no TLS** — no extra configuration beyond the defaults; see
-  the final section of [Reverse proxy](reverse-proxy.md).
+**[Remote access](remote-access/)** — three first-class, mutually-exclusive
+ways to reach your Loombre from outside your own network: a private
+network built into Loombre itself ([Loombre Remote](remote-access/loombre-remote.md)),
+a Cloudflare-connected tunnel needing no open ports
+([Tunnel](remote-access/tunnel.md)), or your server directly on the public
+internet with its own certificate ([Direct](remote-access/direct.md)). The
+landing page's decision tree and comparison table help you pick; each path
+then has its own complete, self-contained setup guide. Direct's own two
+reference appendices — Caddy/nginx/Traefik recipes and the real
+requirements a proxy in front of Loombre has to meet
+([Reverse proxy](remote-access/reverse-proxy.md)), and automatic Let's
+Encrypt certificates via HTTP-01 or DNS-01, the port 80/443 privilege
+story, and renewal mechanics
+([Built-in ACME](remote-access/acme.md)) — are also the right pages if
+you're running Loombre on your own network behind a proxy you already
+operate, with no remote-access path enabled at all (the reverse-proxy
+appendix's final section covers plain LAN-only, no-TLS operation too).
 
 ## Mail
 
