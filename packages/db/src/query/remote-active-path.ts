@@ -65,6 +65,17 @@ export function deriveActivePath(flags: RemoteActivePathFlags): RemotePathId {
   if (flags.direct) enabledPaths.push('direct');
 
   if (enabledPaths.length > 1) {
+    // KNOWN LIMITATION (V-SEC F2, LOW — logged in STATE.md's ledger, owner-
+    // decision follow-up): the per-path staged enable does a non-transactional
+    // check-then-commit, so two concurrent enables of DIFFERENT paths (e.g. a
+    // Tunnel enable's multi-second Cloudflare provisioning racing a WG enable)
+    // can both land, reaching this state and 500-ing subsequent remote READS.
+    // It is admin-only, low-probability, and RECOVERABLE by a normal disable
+    // of either path (the disable flows do NOT consult this resolver), never
+    // DB surgery. Fully closing the race means serializing enables under an
+    // advisory lock held across their external side effects — deferred because
+    // a lock not released on a thrown side-effect would be a WORSE permanent
+    // lockout than the race it prevents.
     console.error(
       JSON.stringify({
         level: 'error',
