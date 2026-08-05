@@ -20,6 +20,18 @@
 //     (R6/R9), separate file for its distinct auth posture (no requireAdmin
 //     at all) and its own rate-limit guard usage.
 //
+// RemotePostureController (DRIFT DECISION #1, S1 lane, added after Wave 0):
+// GET /admin/remote/posture — an EIGHTH controller, not one of the
+// frozen seven (the op didn't exist at Wave-0 freeze). Real implementation
+// from day one, no 501 interim. Backed by three providers under ./posture/
+// — RemotePostureService (the pure-grading-plus-impure-gather composition),
+// RemotePostureRegressionSchedulerService (RG4's periodic diff -> outbox-
+// event background sweep, plugin-health-scheduler.service.ts's own timer
+// shape), and three narrow cross-lane seam readers (ConnectorHealthReader/
+// WireguardStatusReader/RemoteActivePathReader — see each file's own
+// header for why they're defined locally rather than reused from T1/WG1,
+// which haven't landed on this branch).
+//
 // DI hazard (standing lesson, STATE.md): CommonModule already PROVIDES
 // DbProvider and CommonSettingsModule already provides SurfaceRateLimiterService/
 // SurfaceRateLimitGuard — this module imports BOTH (invites.module.ts's own
@@ -67,6 +79,17 @@ import { CloudflareTunnelProvider } from "./tunnel/cloudflare-tunnel-provider.js
 import { ConnectorManager, NoopConnectorManager } from "./tunnel/connector-manager.js";
 import { TunnelTokenService } from "./tunnel/tunnel-token.service.js";
 import { RemoteTunnelService } from "./tunnel/remote-tunnel.service.js";
+import { RemotePostureController } from "./remote-posture.controller.js";
+import { RemotePostureService } from "./posture/remote-posture.service.js";
+import { RemotePostureRegressionSchedulerService } from "./posture/remote-posture-regression.scheduler.js";
+// S1's posture-side connector-health reader shares P1's class NAME but is a
+// distinct class in a distinct file — aliased here so both can be provided.
+// Integration unification (STATE.md ledger): when T2 lands the real
+// connector, BOTH readers should route through the ConnectorManager token
+// above instead of remaining parallel seams.
+import { ConnectorHealthReaderService as PostureConnectorHealthReaderService } from "./posture/connector-health.reader.js";
+import { WireguardStatusReaderService } from "./posture/wireguard-status.reader.js";
+import { RemoteActivePathReaderService } from "./posture/active-path.reader.js";
 
 @Module({
   imports: [CommonModule, CommonSettingsModule],
@@ -78,6 +101,7 @@ import { RemoteTunnelService } from "./tunnel/remote-tunnel.service.js";
     RemoteDiagnosisController,
     RemoteProbesController,
     ProbePageController,
+    RemotePostureController,
   ],
   providers: [
     { provide: TunnelProvider, useClass: CloudflareTunnelProvider },
@@ -87,6 +111,11 @@ import { RemoteTunnelService } from "./tunnel/remote-tunnel.service.js";
     RemoteTunnelService,
     ConnectorHealthReaderService,
     RemoteDnsResolverService,
+    RemotePostureService,
+    RemotePostureRegressionSchedulerService,
+    PostureConnectorHealthReaderService,
+    WireguardStatusReaderService,
+    RemoteActivePathReaderService,
   ],
   exports: [ConnectorHealthReaderService, RemoteDnsResolverService],
   // NoopConnectorManager/NoopRemoteActivePathReader carry test-only
