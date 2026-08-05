@@ -313,6 +313,14 @@ export class SettingsService implements OnApplicationBootstrap {
    *      OTHER key's CURRENT effective value (this call never touches the
    *      other key). Runs after per-key schema validation so its error
    *      message can safely quote a schema-valid submitted number.
+   *      RG12 (STATE.md "Loombre Remote..."): a THIRD relationship, same
+   *      shape — tls.mode may only BE (or become) "acme" while
+   *      tls.acmeDomains is non-empty AND tls.acmeTosAgreed is true (the
+   *      exact preconditions apps/server/src/tls/config.ts's loadTlsConfig
+   *      throws a TlsConfigError over at boot if unmet); the two ACME keys
+   *      may not be written into a state that breaks an ALREADY-acme
+   *      tls.mode either — a settings-screen edit must never be able to
+   *      produce a boot-time lockout the way a raw env-var typo could.
    *   6. Transactional write + outbox emission, cache reload, hot-reload
    *      notification.
    */
@@ -421,6 +429,34 @@ export class SettingsService implements OnApplicationBootstrap {
           `"sessions.staleCutoffMs" (${staleValue}) must be greater than "sessions.heartbeatSuspendCutoffMs" (${heartbeatValue}).`,
           instancePath,
         );
+      }
+    }
+
+    // RG12: tls.mode="acme" requires tls.acmeDomains non-empty AND
+    // tls.acmeTosAgreed=true (see this method's doc comment) — checked
+    // whichever of the three keys is being written, against the OTHER
+    // two's CURRENT effective values, same three-way shape as the pairs
+    // above extended to three participants instead of two.
+    if (writtenKey === "tls.mode" || writtenKey === "tls.acmeDomains" || writtenKey === "tls.acmeTosAgreed") {
+      const modeValue = writtenKey === "tls.mode" ? (writtenValue as string) : (this.getEffective("tls.mode")?.value as string);
+      const domainsValue =
+        writtenKey === "tls.acmeDomains" ? (writtenValue as string[]) : (this.getEffective("tls.acmeDomains")?.value as string[]);
+      const tosAgreedValue =
+        writtenKey === "tls.acmeTosAgreed" ? (writtenValue as boolean) : (this.getEffective("tls.acmeTosAgreed")?.value as boolean);
+
+      if (modeValue === "acme") {
+        if (!domainsValue || domainsValue.length === 0) {
+          throw unprocessableEntity(
+            '"tls.mode" cannot be "acme" while "tls.acmeDomains" is empty — set at least one domain first.',
+            instancePath,
+          );
+        }
+        if (!tosAgreedValue) {
+          throw unprocessableEntity(
+            '"tls.mode" cannot be "acme" while "tls.acmeTosAgreed" is not true — the certificate authority\'s Terms of Service must be accepted first.',
+            instancePath,
+          );
+        }
       }
     }
   }
