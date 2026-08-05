@@ -81,6 +81,15 @@ tags:
     description: Open-format export/import (docs/PLAN.md §8.4)
   - name: admin
     description: Admin-only job ledger introspection, settings, and plugin management (LPP v1)
+  - name: remote
+    description: >-
+      Loombre Remote (embedded userspace WireGuard), BYO-token Cloudflare
+      tunnel, and Direct (ACME/reverse-proxy) — the three remote-access
+      paths, their wizard re-entry state, the cellular-QR reachability
+      proof, and the public probe-arrival page. Every mutation is admin
+      + live-isAdmin (A10 pattern); GET /probe/{token} is this run's only
+      public operation in this tag (`security: []`) — see its own
+      description for the enumeration-resistant posture.
   - name: setup
     description: >-
       First-boot onboarding: usable ONLY while the
@@ -3650,6 +3659,511 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '422': { $ref: '#/components/responses/UnprocessableEntity' }
+        default: { $ref: '#/components/responses/Problem' }
+
+  # ──────── Remote access — Loombre Remote / Tunnel / Direct (STATE.md
+  # "Loombre Remote — embedded WireGuard + three-path wizard + reachability
+  # proof + posture card", R1-R11/RG1-RG15) ────────────────────────────────
+  # Wave 0 (lane/remote-base): this whole section lands as conforming 501
+  # shells (RG15) — every op here is mounted, admin ops require
+  # requireLiveAdmin (A10) THEN 501 (apps/server/src/remote/), the public
+  # probe page returns the byte-identical enumeration-resistant 404 from
+  # day one. Later lanes replace each 501 with real behavior against this
+  # SAME frozen contract; nothing here is expected to change shape once a
+  # lane lands, only its response body's actual content.
+  /admin/remote/state:
+    get:
+      operationId: getRemoteState
+      tags: [remote]
+      summary: Wizard re-entry read — derived active path + per-path status (admin)
+      description: >-
+        `activePath` is DERIVED, never stored (RG15/RG5 refinement — there
+        is no `remote.activePath` setting): computed from the three
+        subsystems' own enabled state, at most one of which can be enabled
+        at a time (the staged enable flows below 409 rather than allowing
+        two paths live together). Lets the wizard re-enter mid-flow or land
+        on the posture handoff without the client tracking step state
+        itself (RG10 — the server persists only outcomes).
+      responses:
+        '200':
+          description: Derived remote-access state
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RemoteState' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        default: { $ref: '#/components/responses/Problem' }
+
+  /admin/remote/wireguard/enable:
+    post:
+      operationId: enableRemoteWireguard
+      tags: [remote]
+      summary: Enable Loombre Remote — embedded userspace WireGuard (admin)
+      description: >-
+        R1: generates the server WG keypair (private key in the KEYRING,
+        never server_settings) and opens the in-process userspace listener
+        (wireguard-go + netstack, RG1/RG2) — no kernel module, no root, no
+        routing-table changes, LAN never exposed. Staged validate→stage→
+        commit (RG10, plugin-registration shape); 409 when a DIFFERENT path
+        is already active (at most one active path, RG5/RG15).
+      responses:
+        '200':
+          description: Wireguard enabled
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RemoteWireguardStatus' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409':
+          description: A different remote-access path is already active.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        default: { $ref: '#/components/responses/Problem' }
+
+  /admin/remote/wireguard/disable:
+    post:
+      operationId: disableRemoteWireguard
+      tags: [remote]
+      summary: Disable Loombre Remote — verified teardown (admin)
+      description: >-
+        R8: revokes every enrolled peer and drops the listener, verified —
+        not merely a flag flip. Idempotent: disabling an already-disabled
+        listener still returns 200 with the (already-disabled) status.
+      responses:
+        '200':
+          description: Wireguard disabled
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RemoteWireguardStatus' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        default: { $ref: '#/components/responses/Problem' }
+
+  /admin/remote/wireguard/status:
+    get:
+      operationId: getRemoteWireguardStatus
+      tags: [remote]
+      summary: Listener state, port, subnet, endpoint host, peer count (admin)
+      responses:
+        '200':
+          description: Wireguard status
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RemoteWireguardStatus' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        default: { $ref: '#/components/responses/Problem' }
+
+  /admin/remote/wireguard/devices:
+    get:
+      operationId: listRemoteWireguardDevices
+      tags: [remote]
+      summary: List enrolled Remote (WireGuard) devices (admin)
+      description: >-
+        R2: these ARE rows in the existing devices list (kind: remote) —
+        this is the WireGuard-scoped view of that same population (tunnel
+        IP, enrollment/handshake timestamps) rather than a separate entity.
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Page of enrolled devices
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RemoteWireguardDevicePage' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        default: { $ref: '#/components/responses/Problem' }
+    post:
+      operationId: enrollRemoteWireguardDevice
+      tags: [remote]
+      summary: Enroll a device — one-time provisioning payload (admin)
+      description: >-
+        R2/R3: generates a fresh peer keypair server-side, allocates the
+        next free tunnel IP (RG9, subnet default 10.82.146.0/24, server
+        =.1, devices from .2), and returns the FULL wg-quick config text
+        ONCE — the private key is not retained after this response (same
+        posture as invite links). The config is split-tunnel ONLY
+        (AllowedIPs scoped to the Loombre tunnel address, R3) and
+        APP-AGNOSTIC standard WireGuard semantics (packages/shared/src/
+        remote/provisioning.ts — today's official WireGuard app and
+        tomorrow's native Loombre clients enroll through this identical
+        shape). 409 when Wireguard is not enabled.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EnrollRemoteWireguardDeviceRequest' }
+      responses:
+        '201':
+          description: Enrolled — the one-time provisioning payload
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RemoteWireguardEnrollment' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404':
+          description: Unknown userId.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '409':
+          description: Wireguard is not enabled.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+        default: { $ref: '#/components/responses/Problem' }
+
+  /admin/remote/wireguard/devices/{id}:
+    parameters:
+      - $ref: '#/components/parameters/IdPathParam'
+    delete:
+      operationId: revokeRemoteWireguardDevice
+      tags: [remote]
+      summary: Revoke an enrolled Remote device — removes the peer live (admin)
+      description: >-
+        R2/RG3: removes the live WG peer (handshake fails immediately after)
+        AND revokes the underlying device row's refresh tokens (RG3's
+        pre-existing-gap closure — WG2 wires this; this Wave-0 shell only
+        reserves the operation's shape). Distinct from the self-service
+        DELETE /devices/{id}: this is an ADMIN-scoped revoke of ANY user's
+        enrolled device, not only the caller's own.
+      responses:
+        '204': { description: Revoked }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        default: { $ref: '#/components/responses/Problem' }
+
+  /admin/remote/tunnel/token:
+    post:
+      operationId: setRemoteTunnelToken
+      tags: [remote]
+      summary: Set the BYO Cloudflare API token — write-only (admin)
+      description: >-
+        R4/R9: write-only, same posture as setAdminProviderKey/
+        setAdminMailCredentials — the submitted token is never echoed back,
+        logged, or otherwise readable again through this API; stored in the
+        platform KEYRING (packages/secrets), never server_settings. Returns
+        a VALIDATION RESULT (a real, bounded Cloudflare API call proving the
+        token's scope is usable), not the token itself.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SetRemoteTunnelTokenRequest' }
+      responses:
+        '200':
+          description: Validation result
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RemoteTunnelTokenValidation' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+        default: { $ref: '#/components/responses/Problem' }
+    delete:
+      operationId: clearRemoteTunnelToken
+      tags: [remote]
+      summary: Clear the stored Cloudflare API token (admin)
+      description: Removes the keyring entry. Idempotent — clearing when nothing is stored still returns 204.
+      responses:
+        '204': { description: Token cleared }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        default: { $ref: '#/components/responses/Problem' }
+
+  /admin/remote/tunnel/enable:
+    post:
+      operationId: enableRemoteTunnel
+      tags: [remote]
+      summary: Enable the Tunnel path — creates the tunnel + DNS route, starts the connector (admin)
+      description: >-
+        R4: creates a Cloudflare tunnel + DNS route via the stored token,
+        then runs cloudflared as a managed, supervised child process (RG7 —
+        EmbeddedPostgres supervisor / spawnFfmpegRun shape: SIGTERM→timeout→
+        SIGKILL, stderr ring buffer, full-jitter backoff). Staged
+        validate→stage→commit (RG10); 409 when a different path is already
+        active, or when no valid token is stored.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EnableRemoteTunnelRequest' }
+      responses:
+        '200':
+          description: Tunnel enabled
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RemoteTunnelStatus' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409':
+          description: A different remote-access path is already active, or no valid tunnel token is stored.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+        default: { $ref: '#/components/responses/Problem' }
+
+  /admin/remote/tunnel/disable:
+    post:
+      operationId: disableRemoteTunnel
+      tags: [remote]
+      summary: Disable the Tunnel path — verified connector teardown (admin)
+      description: R8 — tears down the tunnel + DNS route and stops the connector process, verified. Idempotent.
+      responses:
+        '200':
+          description: Tunnel disabled
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RemoteTunnelStatus' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        default: { $ref: '#/components/responses/Problem' }
+
+  /admin/remote/tunnel/status:
+    get:
+      operationId: getRemoteTunnelStatus
+      tags: [remote]
+      summary: Connector health, backoff, last error (admin)
+      responses:
+        '200':
+          description: Tunnel status
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RemoteTunnelStatus' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        default: { $ref: '#/components/responses/Problem' }
+
+  /admin/remote/tunnel/logs:
+    get:
+      operationId: getRemoteTunnelLogs
+      tags: [remote]
+      summary: Bounded tail of the connector's stderr ring buffer (admin)
+      description: RG7 — the supervised cloudflared child's in-memory stderr ring buffer, not a file (no LOOMBRE_LOG_FILE dependency).
+      parameters:
+        - name: lines
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 500, default: 200 }
+      responses:
+        '200':
+          description: Connector log tail
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RemoteTunnelLogs' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        default: { $ref: '#/components/responses/Problem' }
+
+  /admin/remote/direct/acme-test:
+    post:
+      operationId: testRemoteDirectAcme
+      tags: [remote]
+      summary: Staged test certificate issuance before committing Direct/ACME (admin)
+      description: >-
+        RG12: runs a real STAGED test issuance through the existing
+        issue-certificate.ts module BEFORE tls.mode is ever flipped
+        (lockout-risk mitigation) — proves issuance is feasible for the
+        given domain without touching live TLS config.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TestRemoteDirectAcmeRequest' }
+      responses:
+        '200':
+          description: Test issuance result
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RemoteDirectAcmeTestResult' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+        default: { $ref: '#/components/responses/Problem' }
+
+  /admin/remote/direct/enable:
+    post:
+      operationId: enableRemoteDirect
+      tags: [remote]
+      summary: Enable the Direct path — ACME issuance or reverse-proxy mode (admin)
+      description: >-
+        R5: `mode: acme` commits tls.mode via the existing restart
+        machinery (server-power UI) after a passing acme-test; `mode:
+        reverse-proxy` records the trust-proxy configuration instead — the
+        wizard never touches the router itself (HARD LINE: detect,
+        instruct, verify, never auto-configure the network — no UPnP,
+        ever). Staged validate→stage→commit (RG10); 409 when a different
+        path is already active.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EnableRemoteDirectRequest' }
+      responses:
+        '200':
+          description: Direct path enabled
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RemoteDirectStatus' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409':
+          description: A different remote-access path is already active.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+        default: { $ref: '#/components/responses/Problem' }
+
+  /admin/remote/direct/disable:
+    post:
+      operationId: disableRemoteDirect
+      tags: [remote]
+      summary: Disable the Direct path (admin)
+      description: R8 — verified disable. Idempotent.
+      responses:
+        '200':
+          description: Direct path disabled
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RemoteDirectStatus' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        default: { $ref: '#/components/responses/Problem' }
+
+  /admin/remote/diagnosis:
+    post:
+      operationId: diagnoseRemote
+      tags: [remote]
+      summary: Classify a failed reachability proof (admin)
+      description: >-
+        R5/R6/RG11 — pure WAN-classification decision function
+        (packages/shared/src/remote/diagnosis.ts): RFC 6598 (100.64/10) WAN
+        -> definite CGNAT; RFC1918 WAN -> double-NAT; WAN matches the
+        DNS-resolved public endpoint but the probe never arrived -> a
+        port/firewall block; WAN differs from the resolved endpoint ->
+        CGNAT/dynamic-IP mismatch, routes the wizard to Tunnel. No
+        third-party echo service and no router APIs — `wanAddress` is
+        admin-supplied via a guided router-status-page instruction card.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DiagnoseRemoteRequest' }
+      responses:
+        '200':
+          description: Diagnosis
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RemoteDiagnosisResult' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+        default: { $ref: '#/components/responses/Problem' }
+
+  /admin/remote/probes:
+    post:
+      operationId: createRemoteProbe
+      tags: [remote]
+      summary: Mint a one-time reachability-proof probe token (admin)
+      description: >-
+        R6: hashed at rest (SHA-256, house pattern M3/RG6 — constant-time by
+        construction, argon2id deliberately NOT used on this unauth-reached
+        token), 15-minute expiry, single-use, bound to `expectedEndpoint`.
+        The raw token appears ONLY in THIS response, embedded in `probeUrl`
+        (https://&lt;endpoint&gt;/probe/&lt;token&gt;) and `qrPayload` — never
+        retrievable again. Scan `qrPayload` with a phone ON CELLULAR (the
+        phone IS the external vantage; no third-party check service).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateRemoteProbeRequest' }
+      responses:
+        '201':
+          description: Probe minted — the one-time token, embedded in probeUrl/qrPayload
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RemoteProbeToken' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+        default: { $ref: '#/components/responses/Problem' }
+
+  /admin/remote/probes/{id}:
+    parameters:
+      - $ref: '#/components/parameters/IdPathParam'
+    get:
+      operationId: getRemoteProbe
+      tags: [remote]
+      summary: Poll a probe's arrival state (admin)
+      description: >-
+        The wizard watches this to light the reachability proof green
+        end-to-end. `diagnosis` is populated once the probe has definitively
+        failed to arrive (RG11's decision function) — never speculative
+        while still `pending`.
+      responses:
+        '200':
+          description: Probe status
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RemoteProbeStatus' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        default: { $ref: '#/components/responses/Problem' }
+
+  # ─────────────── Public probe-arrival page (R6/R9, M12 quartet) ───────────
+  /probe/{token}:
+    parameters:
+      - name: token
+        in: path
+        required: true
+        schema: { type: string }
+        description: The raw one-time probe token (never the hash).
+    get:
+      operationId: getProbePage
+      tags: [remote]
+      summary: Reachability-proof arrival page — PUBLIC by necessity (R6/R9)
+      description: >-
+        R6/R9: one of only THREE new unauthenticated surfaces this
+        subsystem introduces (alongside the WireGuard UDP listener itself
+        and the tunnel connector's own inbound edge) — necessarily public
+        because the whole point is an external phone-on-cellular request
+        with no prior credentials. Rate-limited (`rateLimit.probe`,
+        per-IP), token-gated, constant-time lookup (RG6's SHA-256 hash
+        equality — same posture as invite-claim), and returns a STATIC
+        success page with ZERO server info (no version, no instance name,
+        nothing an unauthenticated prober could use for reconnaissance).
+        Invalid, expired, already-consumed, or well-formed-but-unknown
+        tokens ALL resolve to the SAME byte-identical 404 this operation
+        shares with an unknown route (bare, no `detail`/`instance` — the
+        same "invisible == nonexistent" posture as POST /setup/first-admin
+        once configured and GET/POST /invites/claim/{token}) — the four
+        cases are deliberately indistinguishable from the outside
+        (enumeration-resistant). Wave 0: this shell IS the final behavior
+        for every case except a genuinely-arrived probe (no probe tokens
+        exist yet, so every request legitimately 404s); a later lane adds
+        the real single-use lookup + arrival-marking without changing this
+        response shape.
+      security: []
+      responses:
+        '200':
+          description: Static success page — no server info, nothing an unauthenticated caller can use for reconnaissance.
+          content:
+            text/html:
+              schema: { type: string }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429':
+          description: Rate limited (unauthenticated surface)
+          headers:
+            Retry-After: { schema: { type: integer }, description: Seconds until the next attempt is allowed. }
         default: { $ref: '#/components/responses/Problem' }
 
 components:
@@ -7379,3 +7893,233 @@ components:
         unmatchedScenes: { $ref: '#/components/schemas/StashSyncSceneRefPage' }
         staleScenes: { $ref: '#/components/schemas/StashSyncSceneRefPage' }
         unmatchedLoombreFiles: { $ref: '#/components/schemas/StashSyncLoombreFileRefPage' }
+
+    # ═══════════ Remote access — Loombre Remote / Tunnel / Direct ═══════════
+    # STATE.md "Loombre Remote — embedded WireGuard + three-path wizard +
+    # reachability proof + posture card", Wave 0 (lane/remote-base).
+    RemotePathId:
+      type: string
+      enum: [none, remote, tunnel, direct]
+      description: >-
+        DERIVED, never a stored setting (RG15 — RG5's activePath wording
+        refined at Wave-0 freeze): `none` when no path is enabled; at most
+        one of `remote`/`tunnel`/`direct` can be enabled at a time, enforced
+        by each path's staged enable flow returning 409 against another
+        active path.
+
+    RemoteState:
+      type: object
+      additionalProperties: false
+      required: [activePath, wireguard, tunnel, direct]
+      properties:
+        activePath: { $ref: '#/components/schemas/RemotePathId' }
+        wireguard: { $ref: '#/components/schemas/RemoteWireguardStatus' }
+        tunnel: { $ref: '#/components/schemas/RemoteTunnelStatus' }
+        direct: { $ref: '#/components/schemas/RemoteDirectStatus' }
+
+    RemoteWireguardStatus:
+      type: object
+      additionalProperties: false
+      required: [enabled, listening, listenPort, subnet, endpointHost, peerCount]
+      properties:
+        enabled: { type: boolean, description: 'Configured on (a server keypair exists and enrollment is possible).' }
+        listening: { type: boolean, description: 'The in-process userspace UDP listener is actually live right now (RG1/RG2).' }
+        listenPort: { type: integer, minimum: 1, maximum: 65535, description: 'remote.wireguardPort effective value.' }
+        subnet: { type: string, description: 'remote.subnet effective value, CIDR (RG9).' }
+        endpointHost:
+          type: [string, 'null']
+          description: remote.wireguardEndpointHost effective value; null when unset.
+        peerCount: { type: integer, minimum: 0 }
+
+    RemoteWireguardDevice:
+      type: object
+      additionalProperties: false
+      required: [id, userId, name, tunnelIp, createdAtMs, lastHandshakeAtMs]
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Same id as the underlying devices row (kind='remote', R2) — this IS that row, not a separate entity.
+        userId: { type: string, format: uuid }
+        name: { type: string }
+        tunnelIp: { type: string, description: 'Stable address from the tunnel subnet (RG9), e.g. 10.82.146.2.' }
+        createdAtMs: { type: integer, format: int64 }
+        lastHandshakeAtMs: { type: [integer, 'null'], format: int64, description: 'Null until the peer has ever completed a WireGuard handshake.' }
+
+    RemoteWireguardDevicePage:
+      type: object
+      additionalProperties: false
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/RemoteWireguardDevice' }
+        nextCursor: { type: [string, 'null'] }
+
+    EnrollRemoteWireguardDeviceRequest:
+      type: object
+      additionalProperties: false
+      required: [userId, name]
+      properties:
+        userId: { type: string, format: uuid }
+        name: { type: string, minLength: 1, description: 'Device label, e.g. "Alex''s iPhone".' }
+
+    RemoteWireguardEnrollment:
+      type: object
+      additionalProperties: false
+      description: >-
+        The one-time provisioning payload (R2/R3) — configText is shown
+        exactly once and never retrievable again through this API (same
+        posture as invite links); the server does not retain the private
+        key after this response.
+      required: [device, configText]
+      properties:
+        device: { $ref: '#/components/schemas/RemoteWireguardDevice' }
+        configText:
+          type: string
+          description: >-
+            Standard wg-quick config text (packages/shared/src/remote/
+            provisioning.ts, PROVISIONING_FORMAT_VERSION), split-tunnel
+            only (AllowedIPs = the server tunnel IP/32, R3). Render this as
+            a QR for mobile import or offer it as a downloadable .conf for
+            desktop WireGuard clients.
+
+    SetRemoteTunnelTokenRequest:
+      type: object
+      additionalProperties: false
+      required: [token]
+      properties:
+        token:
+          type: string
+          minLength: 1
+          description: The scoped Cloudflare API token. Write-only — never returned by any endpoint.
+
+    RemoteTunnelTokenValidation:
+      type: object
+      additionalProperties: false
+      required: [valid, detail]
+      properties:
+        valid: { type: boolean }
+        detail: { type: [string, 'null'], description: 'Human-readable validation detail (e.g. why an invalid token failed). Never echoes the token itself.' }
+
+    EnableRemoteTunnelRequest:
+      type: object
+      additionalProperties: false
+      required: [hostname]
+      properties:
+        hostname:
+          type: string
+          minLength: 1
+          description: The public hostname to route through the tunnel (a DNS route is created for it, R4).
+
+    RemoteTunnelStatus:
+      type: object
+      additionalProperties: false
+      required: [enabled, connectorState, hostname, backoffMs, lastErrorMessage]
+      properties:
+        enabled: { type: boolean }
+        connectorState:
+          type: string
+          enum: [stopped, starting, running, degraded, error]
+          description: The supervised cloudflared child process's current lifecycle state (RG7).
+        hostname: { type: [string, 'null'] }
+        backoffMs: { type: [integer, 'null'], format: int64, description: 'Current restart backoff (full jitter, RG7); null when not backing off.' }
+        lastErrorMessage: { type: [string, 'null'] }
+
+    RemoteTunnelLogs:
+      type: object
+      additionalProperties: false
+      required: [lines]
+      properties:
+        lines:
+          type: array
+          items: { type: string }
+
+    TestRemoteDirectAcmeRequest:
+      type: object
+      additionalProperties: false
+      required: [domain]
+      properties:
+        domain: { type: string, minLength: 1 }
+
+    RemoteDirectAcmeTestResult:
+      type: object
+      additionalProperties: false
+      required: [success, detail]
+      properties:
+        success: { type: boolean }
+        detail: { type: [string, 'null'] }
+
+    EnableRemoteDirectRequest:
+      type: object
+      additionalProperties: false
+      required: [mode]
+      properties:
+        mode: { type: string, enum: [acme, reverse-proxy] }
+        domain: { type: [string, 'null'], description: 'Required in effect for mode=acme (422 when absent); ignored for mode=reverse-proxy.' }
+
+    RemoteDirectStatus:
+      type: object
+      additionalProperties: false
+      required: [enabled, mode, domain, certValid, certExpiresAtMs]
+      properties:
+        enabled: { type: boolean }
+        mode: { type: [string, 'null'], enum: [acme, 'reverse-proxy', null] }
+        domain: { type: [string, 'null'] }
+        certValid: { type: [boolean, 'null'], description: 'Null when mode is not acme, or no issuance has completed yet.' }
+        certExpiresAtMs: { type: [integer, 'null'], format: int64 }
+
+    DiagnosisCode:
+      type: string
+      enum: [portBlocked, cgnat, doubleNat, dnsMismatch, tunnelDown, connectorUnhealthy, unknown]
+      description: packages/shared/src/remote/diagnosis.ts's closed classification union (R5/R6/RG11).
+
+    DiagnoseRemoteRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedEndpoint]
+      properties:
+        expectedEndpoint: { type: string, minLength: 1, description: 'The public endpoint the reachability proof was bound to.' }
+        wanAddress:
+          type: [string, 'null']
+          description: Admin-supplied WAN address from a guided router-status-page instruction card (RG11 — no third-party echo service, no router APIs).
+
+    RemoteDiagnosisResult:
+      type: object
+      additionalProperties: false
+      required: [code, detail]
+      properties:
+        code: { $ref: '#/components/schemas/DiagnosisCode' }
+        detail: { type: string }
+
+    CreateRemoteProbeRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedEndpoint]
+      properties:
+        expectedEndpoint: { type: string, minLength: 1 }
+
+    RemoteProbeToken:
+      type: object
+      additionalProperties: false
+      description: The raw token appears ONLY here (R6) — embedded in probeUrl/qrPayload, never retrievable again.
+      required: [id, probeUrl, qrPayload, expiresAtMs]
+      properties:
+        id: { type: string, format: uuid }
+        probeUrl: { type: string, description: 'https://<endpoint>/probe/<token> — the exact URL GET /probe/{token} serves.' }
+        qrPayload: { type: string, description: 'The payload to render as a QR code (probeUrl, R6/RG8).' }
+        expiresAtMs: { type: integer, format: int64, description: '15-minute expiry from mint time (R6).' }
+
+    RemoteProbeStatus:
+      type: object
+      additionalProperties: false
+      required: [id, status, arrivedAtMs, diagnosis]
+      properties:
+        id: { type: string, format: uuid }
+        status: { type: string, enum: [pending, arrived, expired] }
+        arrivedAtMs: { type: [integer, 'null'], format: int64 }
+        diagnosis:
+          oneOf:
+            - { $ref: '#/components/schemas/RemoteDiagnosisResult' }
+            - { type: 'null' }
+          description: Populated once the probe has definitively failed to arrive; null while still pending or once arrived.
