@@ -3,6 +3,7 @@ import { Module } from "@nestjs/common";
 import { CommonModule } from "../common/common.module.js";
 import { CommonSettingsModule } from "../common/common-settings.module.js";
 import { MailModule } from "../mail/mail.module.js";
+import { RemoteModule } from "../remote/remote.module.js";
 import { VideoController } from "./video.controller.js";
 import { MusicController } from "./music.controller.js";
 import { CrossTypeController } from "./cross-type.controller.js";
@@ -43,9 +44,20 @@ import { ChaptersController } from "./chapters.controller.js";
  * mail) — see mail/mail.module.ts's header for why this D2-neutral module
  * is imported directly here rather than reached via SessionModule (D2:
  * catalog may not import session).
+ *
+ * STATE.md "Loombre Remote..." (lane WG2, RG3 gap closure): also imports
+ * RemoteModule for DevicesController's DELETE /devices/{id} — a
+ * kind='remote' device's revoke now needs RemoteWireguardService's own
+ * revokeDevice orchestration (live WG peer removal ordered before DB rows
+ * — see that method's own doc comment). Same "import a sibling feature
+ * module for one cross-cutting need" shape as the MailModule import above;
+ * RemoteModule's own controllers are NOT re-mounted by this import (Nest
+ * only re-registers a module's EXPORTED providers, never its controllers,
+ * when it is imported elsewhere) — remote/remote.module.ts is still the
+ * only place those routes are mounted.
  */
 @Module({
-  imports: [CommonModule, CommonSettingsModule, MailModule],
+  imports: [CommonModule, CommonSettingsModule, MailModule, RemoteModule],
   controllers: [
     VideoController,
     MusicController,

@@ -173,41 +173,18 @@ export async function enableRemoteDirectStateAndEmit(db: Kysely<DB>, input: Enab
   });
 }
 
-/**
- * RG15's "409 if another path is active" — best-effort ground truth for the
- * OTHER two subsystems' state, since neither is on this branch yet (Batch 1
- * dispatches WG1/T1/P1/S1/D1/U1 as SIBLING worktrees off the SAME
- * lane/remote-base commit — this lane never sees their code, only what
- * Wave-0 froze). WG1's own migration reservation (STATE.md DRIFT DECISION
- * #2) names its table exactly: `remote_wireguard_state` (single-row:
- * server public key, enabled, enabled-at) — queried defensively via raw
- * SQL (not Kysely's typed query builder, which would require the table in
- * this package's own `DB` interface) so a 42P01 "relation does not exist"
- * on THIS branch (WG1 hasn't landed here) resolves as "not active" rather
- * than throwing, the exact same convention apps/server/src/settings/
- * settings.service.ts's own reload() uses for an unmigrated
- * server_settings table. Once WG1 lands (this branch merges past it at
- * integration), the SAME query starts reading real data with no code
- * change needed here.
- *
- * FLAGGED, not solved: the Tunnel path (T1) has NO frozen table name (its
- * own migration, 0031, is explicitly "optional" per the freeze) and no
- * documented storage convention exists to check defensively the same way —
- * this function does NOT check Tunnel's active state at all. A concurrent
- * Direct-enable and Tunnel-enable could both succeed today; closing that
- * gap is an integration-time reconciliation with T1's actual
- * implementation, not something this lane can safely guess at (see this
- * lane's final report).
- */
-export async function isRemoteWireguardActive(db: Kysely<DB>): Promise<boolean> {
-  try {
-    const result = await sql<{ enabled: boolean }>`SELECT enabled FROM remote_wireguard_state LIMIT 1`.execute(db);
-    return result.rows[0]?.enabled === true;
-  } catch (error) {
-    if ((error as { code?: unknown })?.code === '42P01') return false;
-    throw error;
-  }
-}
+// isRemoteWireguardActive used to live here (D1's own best-effort, WG-only,
+// defensively-raw-SQL 409 ground truth — see this lane's original report:
+// "409-check covers WG only (integration extends via canonical
+// resolveActivePath, assigned to WG2)"). REMOVED by WG2 (STATE.md RG15
+// integration unification): superseded by the canonical
+// packages/db/src/query/remote-active-path.ts resolveActivePath(), which
+// checks ALL THREE subsystems (not WG only) via the REAL typed DB
+// interface (not raw defensive SQL — every table it reads now genuinely
+// exists in this package's own `DB` type, unlike at D1's isolated-worktree
+// dispatch time). apps/server/src/remote/remote-direct.controller.ts's own
+// 409 check now goes through the injected RemoteActivePathReader token
+// instead of calling this function.
 
 export interface DisableRemoteDirectStateInput {
   actorUserId: string;
