@@ -12,6 +12,7 @@ packages:
 allowBuilds:
   core-js: true
   esbuild: true
+  koffi: true
   protobufjs: true
   sharp: true
 minimumReleaseAgeExclude:

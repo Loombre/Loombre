@@ -3,8 +3,8 @@
 /**
  * Ordered CI gate runner (CLAUDE.md: `pnpm gate` / `pnpm gate:full`):
  *   codegen -> sdk-drift -> oasdiff -> depcruise -> runtime-imports
- *   -> license-check -> dep-audit -> lint -> typecheck -> test
- *   -> db:migrate-check -> grep-gates -> docs-build
+ *   -> license-check -> go-licenses-check -> dep-audit -> lint -> typecheck
+ *   -> test -> db:migrate-check -> grep-gates -> docs-build
  *   -> [gate:full only] web-build-budget
  *
  * Modes (L4, STATE.md ledger item "consider adding the web production
@@ -48,12 +48,20 @@
  * steps — and both would otherwise stay silently green in dev (tsx/vitest
  * tolerate raw TS; only a real `node` boot doesn't).
  *
+ * go-licenses-check (STATE.md "Loombre Remote", lane WG1, RG1/RG14):
+ * scripts/go-licenses-check.mjs — the SAME license allow-list license-
+ * check.mjs enforces over the npm graph, walked over packages/wg-native/
+ * native's Go dependency graph instead (license-checker never sees Go
+ * modules at all). Placed immediately after license-check: both are the
+ * SAME class of dependency-supply-chain gate, just over two different
+ * package graphs.
+ *
  * dep-audit (Phase 4 lane G1, STATE.md P4.15): `pnpm audit --prod --json`
  * gated against audit-allowlist.json — see scripts/dep-audit.mjs's own
- * header. Placed right after license-check: both are dependency-supply-
- * chain gates over the same resolved dependency graph, so a failure in
- * either reads as "the dependency tree itself has a problem" before any
- * source-code gate (lint/typecheck/test) even runs.
+ * header. Placed right after the two license gates: all three are
+ * dependency-supply-chain checks over the resolved dependency graph, so a
+ * failure in any of them reads as "the dependency tree itself has a
+ * problem" before any source-code gate (lint/typecheck/test) even runs.
  *
  * docs-build (Addendum A, lane D1, STATE.md "## Addendum A" deliverable
  * 10): `node scripts/docs/build.mjs` — VitePress site build + the
@@ -104,6 +112,7 @@ const steps = [
   { name: "depcruise", run: runDepcruise },
   { name: "runtime-imports", run: () => runCommand("node", ["scripts/check-runtime-imports.mjs"]) },
   { name: "license-check", run: runLicenseCheck },
+  { name: "go-licenses-check", run: runGoLicensesCheck },
   { name: "dep-audit", run: () => runCommand("node", ["scripts/dep-audit.mjs"]) },
   { name: "lint", run: () => runCommand("pnpm", ["run", "lint"]) },
   { name: "typecheck", run: () => runCommand("pnpm", ["run", "typecheck"]) },
@@ -202,6 +211,14 @@ function runLicenseCheck() {
   // root (Wave-3 AGPL finding: pnpm's isolated linker hides most prod deps
   // from a root-only scan). Replaces the old `pnpm run license-check`.
   return runCommand("node", ["scripts/license-check.mjs"]);
+}
+
+function runGoLicensesCheck() {
+  // RG1/RG14 (STATE.md "Loombre Remote", lane WG1): license-checker only
+  // ever sees the npm graph — packages/wg-native/native's Go module graph
+  // is entirely invisible to it. go-licenses-check.mjs closes that gap
+  // (same allow-list, walked over the real Go dependency graph).
+  return runCommand("node", ["scripts/go-licenses-check.mjs"]);
 }
 
 let failed = false;
