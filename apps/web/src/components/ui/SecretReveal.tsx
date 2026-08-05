@@ -36,9 +36,20 @@ export interface SecretRevealProps {
   value: string;
   /** Defaults to the RegisterPluginWizard precedent's own wording. */
   warning?: string;
+  /** Loombre Remote's enrollment ceremony (R2/R3, Lane U2) needs this for
+   *  a multi-line wg-quick config: the default single-line `<code>` (see
+   *  SecretReveal.module.css) has no `white-space` rule, so a browser's
+   *  default inline/normal handling COLLAPSES newlines — fine for a link
+   *  or a password, silently wrong for a config format where blank lines
+   *  and line breaks between [Interface]/[Peer] stanzas are semantically
+   *  load-bearing. `multiline: true` swaps the value into a `<pre>` with
+   *  `white-space: pre-wrap` instead — every other caller (CreateInviteSheet,
+   *  the temp-password reveal) is unaffected (defaults to false, unchanged
+   *  `<code>` rendering). */
+  multiline?: boolean;
 }
 
-export function SecretReveal({ label, value, warning }: SecretRevealProps): React.JSX.Element {
+export function SecretReveal({ label, value, warning, multiline = false }: SecretRevealProps): React.JSX.Element {
   const [copied, setCopied] = useState(false);
 
   async function handleCopy(): Promise<void> {
@@ -55,8 +66,8 @@ export function SecretReveal({ label, value, warning }: SecretRevealProps): Reac
   return (
     <div className={styles.secretBox}>
       <span className={styles.fieldLabel}>{label}</span>
-      <div className={styles.secretValue}>
-        <code>{value}</code>
+      <div className={multiline ? `${styles.secretValue} ${styles.secretValueMultiline}` : styles.secretValue}>
+        {multiline ? <pre className={styles.secretValuePre}>{value}</pre> : <code>{value}</code>}
         <Button type="button" variant="ghost" iconOnly onClick={() => void handleCopy()} title="Copy">
           <Icon icon={copied ? Check : Copy} size="dense" aria-label="Copy" />
         </Button>

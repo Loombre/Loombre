@@ -1,0 +1,29 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+
+/* Loombre :: apps/web/src/components/ui/QrCode.module.css
+ *
+ * The QR itself is drawn on a white background (real-world scanners need
+ * real contrast, independent of the app's dark theme) inside a light
+ * padded frame so it never sits flush against the surrounding dark card.
+ */
+
+.qr {
+  display: block;
+  border-radius: var(--radius-sm);
+  background: #fff;
+  padding: var(--space-sm);
+  box-sizing: content-box;
+}
+
+.empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  border-radius: var(--radius-sm);
+  border: 1px dashed var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+  padding: var(--space-sm);
+}
