@@ -54,10 +54,14 @@
 // implementations — CloudflareTunnelProvider (R4's "thin-but-real" ONE
 // implementation), NoopConnectorManager (T2, a LATER Batch-2 lane, replaces
 // this binding with the real supervised-cloudflared-child implementation —
-// STATE.md's own cross-lane seam note), NoopRemoteActivePathReader
-// (integration replaces this once WG1's/D1's own active-signal exist, same
-// seam shape). Swapping any of the three later is a ONE-LINE change here —
-// no call site anywhere else names a concrete class.
+// STATE.md's own cross-lane seam note), RemoteActivePathResolverService
+// (WG2, RG15 integration unification: the REAL cross-subsystem resolver —
+// replaces WG1/T1's own NoopRemoteActivePathReader placeholder now that
+// remote_wireguard_state/remote_tunnel_state/Direct's internal state all
+// exist on the assembled tree, see remote-active-path.service.ts and
+// packages/db/src/query/remote-active-path.ts). Swapping any of the three
+// later is a ONE-LINE change here — no call site anywhere else names a
+// concrete class.
 //
 // Lane P1 additions: ConnectorHealthReaderService (the freeze's own
 // cross-lane-seams note — T2 wires the real cloudflared-connector read at
@@ -93,7 +97,7 @@ import { ConnectorHealthReaderService } from "./connector-health.service.js";
 import { RemoteDnsResolverService } from "./remote-dns-resolver.service.js";
 import { CommonModule } from "../common/common.module.js";
 import { CommonSettingsModule } from "../common/common-settings.module.js";
-import { RemoteActivePathReader, NoopRemoteActivePathReader } from "./active-path-reader.js";
+import { RemoteActivePathReader } from "./active-path-reader.js";
 import { TunnelProvider } from "./tunnel/tunnel-provider.js";
 import { CloudflareTunnelProvider } from "./tunnel/cloudflare-tunnel-provider.js";
 import { ConnectorManager, NoopConnectorManager } from "./tunnel/connector-manager.js";
@@ -111,6 +115,7 @@ import { ConnectorHealthReaderService as PostureConnectorHealthReaderService } f
 import { WireguardStatusReaderService } from "./posture/wireguard-status.reader.js";
 import { RemoteActivePathReaderService } from "./posture/active-path.reader.js";
 import { RemoteWireguardService } from "./wireguard/remote-wireguard.service.js";
+import { RemoteActivePathResolverService } from "./remote-active-path.service.js";
 
 @Module({
   imports: [CommonModule, CommonSettingsModule],
@@ -127,7 +132,13 @@ import { RemoteWireguardService } from "./wireguard/remote-wireguard.service.js"
   providers: [
     { provide: TunnelProvider, useClass: CloudflareTunnelProvider },
     { provide: ConnectorManager, useClass: NoopConnectorManager },
-    { provide: RemoteActivePathReader, useClass: NoopRemoteActivePathReader },
+    // WG2 (STATE.md, RG15 integration unification): bound to the REAL
+    // cross-subsystem resolver — replaces WG1/T1's NoopRemoteActivePathReader
+    // default. NoopRemoteActivePathReader itself stays defined (active-path-
+    // reader.ts) and importable for any future isolated unit test that wants
+    // a controllable fake without hitting a real DB; nothing in this
+    // assembled module binds it anymore.
+    { provide: RemoteActivePathReader, useClass: RemoteActivePathResolverService },
     TunnelTokenService,
     RemoteTunnelService,
     ConnectorHealthReaderService,
@@ -139,11 +150,17 @@ import { RemoteWireguardService } from "./wireguard/remote-wireguard.service.js"
     RemoteActivePathReaderService,
     RemoteWireguardService,
   ],
-  exports: [ConnectorHealthReaderService, RemoteDnsResolverService],
-  // NoopConnectorManager/NoopRemoteActivePathReader carry test-only
-  // introspection (getTestState()/activePathOverride) that e2e specs read
-  // via `app.get(ConnectorManager)`/`app.get(RemoteActivePathReader)` — no
-  // export needed for that (same-module `app.get` works on any provider,
-  // exported or not); nothing outside this module currently needs either.
+  // RemoteWireguardService exported (WG2): apps/server/src/catalog/
+  // devices.controller.ts (a DIFFERENT top-level module, CatalogModule)
+  // needs it for DELETE /devices/{id}'s RG3 gap-closure — the general
+  // devices endpoint's WG teardown side effect for kind='remote' devices.
+  // CatalogModule imports RemoteModule directly for this (same "import a
+  // sibling feature module for one cross-cutting need" precedent as
+  // CatalogModule already importing MailModule for UsersController's
+  // reset-password mail action) — see catalog.module.ts's own header.
+  exports: [ConnectorHealthReaderService, RemoteDnsResolverService, RemoteWireguardService],
+  // NoopConnectorManager carries test-only introspection (getTestState())
+  // e2e specs read via `app.get(ConnectorManager)` — no export needed for
+  // that (same-module `app.get` works on any provider, exported or not).
 })
 export class RemoteModule {}
