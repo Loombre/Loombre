@@ -171,7 +171,7 @@ lines.push(
       "`LOOMBRE_HTTPS_PORT`, `LOOMBRE_ACME_EMAIL`, `LOOMBRE_ACME_DIRECTORY_URL`, " +
       "`LOOMBRE_ACME_STAGING`, `LOOMBRE_ACME_DNS_HOOK` and its propagation-timeout companion, " +
       "`LOOMBRE_ACME_CA_BUNDLE`, `LOOMBRE_ACME_RENEW_WINDOW_DAYS`/`RENEW_CHECK_INTERVAL_MS` " +
-      "— see [docs/ops/acme.md](/ops/acme); `LOOMBRE_ACME_DOMAINS`/`CHALLENGE_TYPE`/`TOS_AGREED` " +
+      "— see [docs/ops/remote-access/acme.md](/ops/remote-access/acme); `LOOMBRE_ACME_DOMAINS`/`CHALLENGE_TYPE`/`TOS_AGREED` " +
       "ARE covered above, as registry pins), IPC and logging " +
       "(`LOOMBRE_IPC_*`, `LOOMBRE_LOG_FILE`), and embedded-PG plumbing " +
       "(`LOOMBRE_EMBEDDED_PG_*`). The full, accurate, hand-maintained list of every variable " +

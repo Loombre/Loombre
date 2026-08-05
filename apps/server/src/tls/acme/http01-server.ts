@@ -7,7 +7,7 @@
 // public internet (or, in the pebble integration test, from the pebble
 // container across the docker network), so loopback-only would make the
 // challenge unreachable by construction. This is inherent to the HTTP-01
-// challenge type, not a Loombre choice to relax — docs/ops/acme.md says so.
+// challenge type, not a Loombre choice to relax — docs/ops/remote-access/acme.md says so.
 //
 // Serves exactly two things:
 //   - GET /.well-known/acme-challenge/<token> -> the registered key
