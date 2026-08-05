@@ -147,11 +147,20 @@ describe("SettingsService.restartPendingKeys", () => {
 
   it("lists a key whose requiresRestart:true effective value changed since boot, and it disappears once reverted", async () => {
     // After lane S3's hot-reload migration, ZERO real registry entries
-    // carry requiresRestart:true — the snapshot/pending machinery is only
-    // exercisable with a synthetic registry (the service's documented test
-    // seam). Marking rateLimit.login restart-required HERE keeps the
-    // mechanism proven for the first future key that genuinely cannot
-    // hot-apply; the real entry stays hot (rate-limiter.updatePolicy test).
+    // carried requiresRestart:true for a long stretch — the snapshot/
+    // pending machinery was only exercisable with a synthetic registry
+    // (the service's documented test seam), which is exactly what this
+    // test still does via rateLimit.login below, kept as the isolated
+    // proof independent of any one real key's story. The "first future key
+    // that genuinely cannot hot-apply" this comment used to anticipate has
+    // since arrived for real: remote.wireguardPort/remote.subnet (STATE.md
+    // "Loombre Remote — embedded WireGuard + three-path wizard +
+    // reachability proof + posture card") are ui-scope AND
+    // requiresRestart:true — the WireGuard listener binds one UDP port for
+    // its whole lifetime and every enrolled peer's address comes from the
+    // configured subnet, so neither can hot-apply safely. This synthetic
+    // rateLimit.login case is left in place regardless, since it proves
+    // the mechanism in isolation from any one real key's own behavior.
     const service = freshService();
     service.registry = service.registry.map((entry) =>
       entry.key === "rateLimit.login" ? { ...entry, requiresRestart: true } : entry,

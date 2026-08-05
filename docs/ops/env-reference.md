@@ -199,6 +199,14 @@ How many password-recovery requests (forgot-password or reset-password) one devi
 
 - **Default when unset:** 5 (or whatever was last saved from the settings screen)
 
+### `LOOMBRE_RATE_PROBE`
+
+Pins **[Reachability-proof attempt limit](/admin-guide/settings-reference#reachability-proof-attempt-limit)** (`rateLimit.probe`) to a fixed value — set this and the admin settings screen shows the setting as controlled by the environment, read-only; any value stored from the settings screen is preserved but ignored until the variable is unset again.
+
+How many reachability-proof probe attempts one device may make per minute, before any account exists for it. Guards the probe link against brute-force guessing.
+
+- **Default when unset:** 10 (or whatever was last saved from the settings screen)
+
 ### `LOOMBRE_PUBLIC_URL`
 
 Pins **[Public web address](/admin-guide/settings-reference#public-web-address)** (`network.publicUrl`) to a fixed value — set this and the admin settings screen shows the setting as controlled by the environment, read-only; any value stored from the settings screen is preserved but ignored until the variable is unset again.
@@ -247,6 +255,47 @@ Pins **[From name](/admin-guide/settings-reference#from-name)** (`mail.fromName`
 The display name shown alongside the from-address on outgoing mail.
 
 - **Default when unset:** `Loombre` (or whatever was last saved from the settings screen)
+
+### `LOOMBRE_WG_PORT`
+
+Pins **[WireGuard listener port](/admin-guide/settings-reference#wireguard-listener-port)** (`remote.wireguardPort`) to a fixed value — set this and the admin settings screen shows the setting as controlled by the environment, read-only; any value stored from the settings screen is preserved but ignored until the variable is unset again.
+
+The UDP port Loombre Remote's WireGuard listener binds to. Changing this requires a server restart — the listener cannot rebind to a different port while running.
+
+- **Default when unset:** 51820 (or whatever was last saved from the settings screen)
+
+### `LOOMBRE_WG_SUBNET`
+
+Pins **[Remote-access tunnel subnet](/admin-guide/settings-reference#remote-access-tunnel-subnet)** (`remote.subnet`) to a fixed value — set this and the admin settings screen shows the setting as controlled by the environment, read-only; any value stored from the settings screen is preserved but ignored until the variable is unset again.
+
+The private IPv4 subnet Loombre Remote allocates tunnel addresses from (server = the first usable address, enrolled devices get the next free ones). Changing this requires a server restart — already-enrolled devices' addresses come from the OLD subnet and would be orphaned by a live change.
+
+- **Default when unset:** `10.82.146.0/24` (or whatever was last saved from the settings screen)
+- **Caution:** Avoid 100.64.0.0/10 (CGNAT space) — other VPN tools commonly use it, and a device running both could collide.
+
+### `LOOMBRE_WG_ENDPOINT_HOST`
+
+Pins **[WireGuard public endpoint](/admin-guide/settings-reference#wireguard-public-endpoint)** (`remote.wireguardEndpointHost`) to a fixed value — set this and the admin settings screen shows the setting as controlled by the environment, read-only; any value stored from the settings screen is preserved but ignored until the variable is unset again.
+
+The publicly reachable host devices connect to for Loombre Remote (written into each newly enrolled device's config, alongside remote.wireguardPort). Leave blank until you know this server's public host/IP.
+
+- **Default when unset:** (empty — not set) (or whatever was last saved from the settings screen)
+
+### `LOOMBRE_CLOUDFLARED_PATH`
+
+Pins **[Cloudflare tunnel binary path](/admin-guide/settings-reference#cloudflare-tunnel-binary-path)** (`remote.cloudflaredPath`) to a fixed value — set this and the admin settings screen shows the setting as controlled by the environment, read-only; any value stored from the settings screen is preserved but ignored until the variable is unset again.
+
+Explicit path to the cloudflared binary, if it is not on the server's PATH. Leave blank to auto-detect — Loombre does not download this binary itself, so install it yourself and point this setting at it if auto-detect fails.
+
+- **Default when unset:** (empty — not set) (or whatever was last saved from the settings screen)
+
+### `LOOMBRE_TUNNEL_HOSTNAME`
+
+Pins **[Tunnel public hostname](/admin-guide/settings-reference#tunnel-public-hostname)** (`remote.tunnelHostname`) to a fixed value — set this and the admin settings screen shows the setting as controlled by the environment, read-only; any value stored from the settings screen is preserved but ignored until the variable is unset again.
+
+The public hostname the Tunnel path routes through (set automatically when you enable the Tunnel path from the wizard; editable here afterward).
+
+- **Default when unset:** (empty — not set) (or whatever was last saved from the settings screen)
 
 ## Secrets and other bootstrap variables not in this list
 
