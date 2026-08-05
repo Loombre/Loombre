@@ -21,3 +21,13 @@ export * from "./posture-model.js";
 export * from "./diagnosis.js";
 export * from "./comparison.js";
 export * from "./diagnosis-guidance.js";
+// U2 fix: router-cards.ts (D1) was exported from the ROOT barrel
+// (src/index.ts) but missing here — the one subpath browser code is
+// actually allowed to import from (this file's own header, and every
+// mission brief for this run: "ALL imported via the @loombre/shared/remote
+// subpath ONLY — root barrel breaks browser builds"). Found because
+// RouterCardView.tsx (U2, this lane) is the FIRST browser consumer of
+// router-cards.ts's exports — nothing before this lane imported it from
+// apps/web at all. Framework- and Node-free (same as every other module
+// re-exported here), so additive and safe.
+export * from "./router-cards.js";
