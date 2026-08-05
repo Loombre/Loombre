@@ -460,6 +460,25 @@ export {
   listNoticesAdmin,
 } from './query/notices.js';
 
+// Loombre Remote's one-time-token reachability proof (STATE.md "Loombre
+// Remote — embedded WireGuard + three-path wizard + reachability proof +
+// posture card", R6/RG6, Lane P1, migrations/0031_probe_tokens.sql) — see
+// src/query/remote-probes.ts header for why this lives in the public barrel.
+export type { RemoteProbePath } from './types.js';
+export type {
+  ProbeTokenRow,
+  MintProbeTokenInput,
+  ProbeStatus,
+  ConsumeProbeTokenResult,
+  ConsumeProbeTokenInput,
+} from './query/remote-probes.js';
+export {
+  mintProbeToken,
+  getProbeTokenById,
+  deriveProbeStatus,
+  consumeProbeTokenAndEmit,
+} from './query/remote-probes.js';
+
 // Email-collision notice ledger (G7, STATE.md "Current-password re-auth on
 // self-changes") — see src/query/email-collision-notice.ts header.
 export {

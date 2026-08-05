@@ -26,6 +26,16 @@
 // precedent for needing both) and re-provides NEITHER, or Nest mints a
 // second module-scoped instance that silently diverges from the one every
 // other controller/test spies on.
+//
+// Lane P1 additions: ConnectorHealthReaderService (the freeze's own
+// cross-lane-seams note — T2 wires the real cloudflared-connector read at
+// integration, connector-health.service.ts's header documents the seam)
+// and RemoteDnsResolverService (node:dns wiring for diagnoseRemote/
+// getRemoteProbe's auto-diagnosis) are provided HERE, module-scoped, so
+// RemoteDiagnosisController and RemoteProbesController share the SAME
+// instances — required for apps/server/test/remote-probes.e2e.spec.ts's
+// `vi.spyOn(app.get(...), ...)` seam-testing pattern (MailConfigService
+// precedent) to actually intercept what the controllers call.
 import { Module } from "@nestjs/common";
 import { RemoteStateController } from "./remote-state.controller.js";
 import { RemoteWireguardController } from "./remote-wireguard.controller.js";
@@ -34,6 +44,8 @@ import { RemoteDirectController } from "./remote-direct.controller.js";
 import { RemoteDiagnosisController } from "./remote-diagnosis.controller.js";
 import { RemoteProbesController } from "./remote-probes.controller.js";
 import { ProbePageController } from "./probe-page.controller.js";
+import { ConnectorHealthReaderService } from "./connector-health.service.js";
+import { RemoteDnsResolverService } from "./remote-dns-resolver.service.js";
 import { CommonModule } from "../common/common.module.js";
 import { CommonSettingsModule } from "../common/common-settings.module.js";
 
@@ -48,5 +60,7 @@ import { CommonSettingsModule } from "../common/common-settings.module.js";
     RemoteProbesController,
     ProbePageController,
   ],
+  providers: [ConnectorHealthReaderService, RemoteDnsResolverService],
+  exports: [ConnectorHealthReaderService, RemoteDnsResolverService],
 })
 export class RemoteModule {}
