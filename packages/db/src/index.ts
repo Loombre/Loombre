@@ -414,6 +414,7 @@ export {
   listActiveSessionsAdmin,
   listUnmatchedLibraryItemsForViewer,
   getEnrichableCatalogItemForAdmin,
+  countStaleAccountsAdmin,
 } from './query/admin.js';
 
 // Invitations (E2, migrations/0023_user_invites.sql) — see src/query/
@@ -437,7 +438,14 @@ export {
   mapClaimState,
   deriveInviteStatus,
   claimInviteAndEmit,
+  hasUnclaimedInvites,
 } from './query/invites.js';
+
+// Loombre Remote — embedded WireGuard + three-path wizard + reachability
+// proof + posture card (STATE.md, R7/RG4, S1 lane) — see src/query/
+// remote-posture.ts header for why this lives in the public barrel.
+export type { RecordPostureRegressedInput, RecordPostureRecoveredInput } from './query/remote-posture.js';
+export { recordPostureRegressedEvent, recordPostureRecoveredEvent } from './query/remote-posture.js';
 
 // Admin broadcast notifications (STATE.md "Admin broadcast notifications —
 // system notices", N1-N6/NG1-NG10, migrations/0028_system_notices.sql) —
