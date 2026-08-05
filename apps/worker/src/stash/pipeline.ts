@@ -69,6 +69,42 @@ export async function upsertInventorySubset(db: DbOrTx, libraryId: string, scene
   );
 }
 
+/**
+ * AUD-A2d-001 fix (Fix Wave 2): ensures a stash_scene_links row exists for
+ * a genuinely NEW scene (no row at all yet) — needed only because
+ * runMatchingPass's applyStashSceneMatchResults issues an UPDATE, which is
+ * a silent no-op against a row that has never been inserted. Deliberately
+ * writes `stashUpdatedAtMs: null`, NEVER the scene's real fresh Stash
+ * value: that column is the SAME one runIncrementalSync's own touched-diff
+ * reads on a FUTURE attempt to decide what still needs applying (it is
+ * that diff's de facto checkpoint). Retiring it here — before a single
+ * scene has been through applyOneScene — is exactly the bug this function
+ * exists to avoid: a crash between this call and the apply phase would
+ * leave the scene's marker already at "seen", so a resumed attempt's
+ * touched-diff would silently exclude it instead of re-selecting it.
+ * sync-consumer.ts's runIncrementalSync is the only caller — it retires
+ * the REAL value, for every touched scene (new and pre-existing alike),
+ * only once runApplyPhase has returned. Pre-existing (changed, not new)
+ * scenes need no call here at all: their row already exists, and its
+ * stash_updated_at_ms already holds the OLD, not-yet-retired value —
+ * exactly the state a resume needs.
+ */
+export async function ensureInventoryRowsExist(db: DbOrTx, libraryId: string, scenes: readonly StashInventoryScene[], nowMs: number): Promise<void> {
+  if (scenes.length === 0) return;
+  await upsertStashSceneLinksFromInventory(
+    db,
+    libraryId,
+    scenes.map((s) => ({
+      stashSceneId: s.stashSceneId,
+      stashPath: s.path ?? '',
+      stashSizeBytes: s.sizeBytes,
+      stashOshash: s.oshash,
+      stashUpdatedAtMs: null,
+    })),
+    nowMs
+  );
+}
+
 export interface RunMatchingPassResult {
   results: StashSceneMatchResult[];
 }

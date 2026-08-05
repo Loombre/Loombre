@@ -29,17 +29,64 @@
 // be wrong: ids are numeric-ordered at the SQL layer but converted to
 // strings by read-model.ts, so "10" < "2" lexically; an equality check
 // sidesteps that entirely, same as scanner.ts's absolute-path equality
-// check does for filesystem walks): inventory + matching ALWAYS re-run in
-// full on every attempt (idempotent, bulk, fast even at 33k scenes — a
-// resumed attempt gets the FRESHEST facts rather than trusting a stale
-// partial pass); only the per-scene APPLY phase is checkpointed and
-// skipped-by-equality on resume, because that is the expensive,
-// per-scene work whose partial progress is worth preserving. A new scene
-// appearing (numerically) BEFORE the checkpoint marker between attempts
-// would be skipped by this same skip-by-equality algorithm — an accepted,
-// already-precedented limitation (scanner.ts's own walk has the identical
-// gap for new files appearing before a resumed walk's last path), not a
-// new one introduced here.
+// check does for filesystem walks): matching ALWAYS re-runs in full on
+// every attempt (idempotent, bulk, fast even at 33k scenes — a resumed
+// attempt gets the FRESHEST facts rather than trusting a stale partial
+// pass); only the per-scene APPLY phase is checkpointed and skipped-by-
+// equality on resume, because that is the expensive, per-scene work whose
+// partial progress is worth preserving. A new scene appearing (numerically)
+// BEFORE the checkpoint marker between attempts would be skipped by this
+// same skip-by-equality algorithm — an accepted, already-precedented
+// limitation (scanner.ts's own walk has the identical gap for new files
+// appearing before a resumed walk's last path), not a new one introduced
+// here.
+//
+// INCREMENTAL MODE'S CHECKPOINT ORDERING (AUD-A2d-001 fix, Fix Wave 2):
+// runIncrementalSync's own "touched" set (new-or-changed scenes, diffed
+// against stash_scene_links.stash_updated_at_ms) is a de facto checkpoint
+// in its own right — it decides, on the NEXT attempt under the same
+// job.id, which scenes still need matching + applying. Writing that
+// marker's retirement (the bulk upsertInventorySubset call) BEFORE the
+// apply phase ran meant a crash between the two could retire scenes that
+// were never actually applied: the resumed attempt's own touched-diff
+// would then silently exclude them forever (nothing re-bumps updated_at
+// for a Stash scene nobody edits — the report would say "succeeded" with
+// no error, warning, or retry). The fix: runIncrementalSync now retires
+// the marker for the WHOLE touched set exactly once, strictly AFTER
+// runApplyPhase returns. runApplyPhase's OWN contract on any single call is
+// narrower than "every touched scene got applyOneScene": its skip-by-
+// equality resume walks past everything at-or-before
+// checkpoint.last_processed_stash_scene_id WITHOUT calling applyOneScene
+// again, trusting — not re-verifying — that a PRIOR attempt under the same
+// job.id already applied it (true only because that marker is itself
+// written strictly after a prior applyOneScene call completed, never
+// before). The guarantee this fix actually relies on lives one level up,
+// at the retire-the-marker call site: by the time a job.id's attempts
+// produce a phase:'completed' checkpoint, every touched scene has had
+// applyOneScene run for it exactly once across the full attempt sequence —
+// this attempt, or (via skip-by-equality, transitively trusted) an earlier
+// one. A genuinely new scene still needs a row to exist before matching's
+// UPDATE can attach an item_id to it, so ensureInventoryRowsExist
+// pre-creates just that row, deliberately WITHOUT touching
+// stash_updated_at_ms (see its own header).
+//
+// FULL MODE'S NARROWER RESIDUAL (same audit; not closed by this fix —
+// AUD-W2-001, owner triage): runFullSync's inventory pass also writes the
+// real, unconditional stash_updated_at_ms for every scene — through the
+// SAME upsertStashSceneLinksFromInventory writer incremental mode uses —
+// and does so BEFORE runApplyPhase, every attempt. WITHIN one job.id's own
+// pg-boss retries this is fine: full mode's scene set is re-read from the
+// live Stash connection every attempt, never diffed against that marker,
+// so a same-job.id retry resumes correctly via the checkpoint's skip-by-
+// equality exactly as always. The gap is narrower and cross-job: if this
+// job.id terminally fails (pg-boss exhausts retryLimit) before
+// runApplyPhase reaches 'completed', the marker has already been bumped to
+// its real, fresh value for scenes applyOneScene never ran on. A LATER,
+// SEPARATE incremental sync's touched-diff then reads that already-current
+// marker and silently excludes those scenes too — the same end state
+// AUD-A2d-001 fixed for the single-job case, just reached across two jobs
+// and preceded by a loud 'failed' report on the first one instead of a
+// silent 'succeeded' one.
 //
 // EVENTS (K12): stash.sync.started is written the FIRST time a report row
 // is created for this job.id (never re-written on a resume — one job.id,
@@ -74,7 +121,7 @@ import {
 import { connectToStashLibrary, type ConnectToStashLibraryDeps } from './connect.js';
 import { getBlob, getScene, getSceneFiles, getScenePerformers, getSceneTags, getSceneMarkers, getStudio, listScenesForInventory, type SqliteReadable, type StashInventoryScene, type StashStudio } from './read-model.js';
 import { makeBlobResolver } from './blob-store.js';
-import { runInventoryPass, runMatchingPass, upsertInventorySubset, toMatchInput } from './pipeline.js';
+import { runInventoryPass, runMatchingPass, upsertInventorySubset, ensureInventoryRowsExist, toMatchInput } from './pipeline.js';
 import type { StashSceneMatchResult } from './matching.js';
 import type { ApplyStashSceneMetadataFn } from './apply-types.js';
 
@@ -320,11 +367,28 @@ async function runIncrementalSync(
   });
   const vanished = [...existingUpdatedAtMs.keys()].filter((id) => !currentIds.has(id));
 
-  await upsertInventorySubset(deps.db, libraryId, touched, clock());
+  // AUD-A2d-001: a genuinely NEW scene needs a stash_scene_links row to
+  // exist before runMatchingPass's UPDATE below can attach item_id to it —
+  // but that pre-write must not touch stash_updated_at_ms (see
+  // ensureInventoryRowsExist's own header). A scene already in
+  // existingUpdatedAtMs (changed, not new) needs no pre-write at all: its
+  // row already exists, and its stash_updated_at_ms already holds the OLD,
+  // not-yet-retired value — exactly the state that lets THIS SAME diff
+  // re-select it on a resumed attempt.
+  const newScenes = touched.filter((s) => !existingUpdatedAtMs.has(s.stashSceneId));
+  await ensureInventoryRowsExist(deps.db, libraryId, newScenes, clock());
   await markStashScenesStale(deps.db, { libraryId, stashSceneIds: vanished, nowMs: clock() });
 
   const { results } = await runMatchingPass(deps.db, libraryId, touched.map(toMatchInput), clock());
   await runApplyPhase(deps, stashDb, libraryId, jobId, results, checkpoint, clock, genreTagNames, blobsPath, counts);
+
+  // AUD-A2d-001 fix: retire the touched set's stash_updated_at_ms marker
+  // ONLY here, after runApplyPhase has returned — see this module's header
+  // ("INCREMENTAL MODE'S CHECKPOINT ORDERING") for the full rationale. A
+  // crash anywhere above this line leaves every not-yet-applied scene's
+  // marker at its pre-attempt value, so the SAME touched-diff on the SAME
+  // job.id's next attempt re-selects it instead of silently dropping it.
+  await upsertInventorySubset(deps.db, libraryId, touched, clock());
 
   return { touchedCount: touched.length };
 }

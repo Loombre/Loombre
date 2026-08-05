@@ -26,7 +26,7 @@
 
 import type { Kysely, Selectable } from 'kysely';
 import type { DB, LibraryPathMappingsTable, LibraryStashConnectionsTable, StashConnectionStatus } from '../types.js';
-import { getLibraryById } from '../internal/index.js';
+import { getLibraryById, withTransaction } from '../internal/index.js';
 
 export type LibraryStashConnectionRow = Selectable<LibraryStashConnectionsTable>;
 export type LibraryPathMappingRow = Selectable<LibraryPathMappingsTable>;
@@ -189,7 +189,10 @@ export interface LibraryPathMappingInput {
 /**
  * Replaces a library's ENTIRE path-mapping set wholesale (delete +
  * re-insert with `position` = array index) — same convention
- * replaceLibraryProviderChain uses for library_provider_entries. An empty
+ * replaceLibraryProviderChain uses for library_provider_entries, INCLUDING
+ * that function's transactional wrap (V1-011: a bare delete+insert loop
+ * left a failure partway through with neither the old nor the new set —
+ * this must be all-or-nothing, exactly like the sibling). An empty
  * `mappings` array is legal (clears all mappings; every Stash path then
  * simply fails to path-match, falling through to S4's oshash tier).
  */
@@ -198,29 +201,31 @@ export async function replaceLibraryPathMappings(
   libraryId: string,
   mappings: LibraryPathMappingInput[]
 ): Promise<LibraryPathMappingRow[]> {
-  const library = await getLibraryById(db, libraryId);
-  if (!library) {
-    throw new LibraryNotFoundForStashError(libraryId);
-  }
+  return withTransaction(db, async (trx) => {
+    const library = await getLibraryById(trx, libraryId);
+    if (!library) {
+      throw new LibraryNotFoundForStashError(libraryId);
+    }
 
-  await db.deleteFrom('library_path_mappings').where('library_id', '=', libraryId).execute();
+    await trx.deleteFrom('library_path_mappings').where('library_id', '=', libraryId).execute();
 
-  const inserted: LibraryPathMappingRow[] = [];
-  for (let position = 0; position < mappings.length; position += 1) {
-    const mapping = mappings[position]!;
-    inserted.push(
-      await db
-        .insertInto('library_path_mappings')
-        .values({
-          library_id: libraryId,
-          stash_prefix: mapping.stashPrefix,
-          loombre_prefix: mapping.loombrePrefix,
-          position,
-        })
-        .returningAll()
-        .executeTakeFirstOrThrow()
-    );
-  }
+    const inserted: LibraryPathMappingRow[] = [];
+    for (let position = 0; position < mappings.length; position += 1) {
+      const mapping = mappings[position]!;
+      inserted.push(
+        await trx
+          .insertInto('library_path_mappings')
+          .values({
+            library_id: libraryId,
+            stash_prefix: mapping.stashPrefix,
+            loombre_prefix: mapping.loombrePrefix,
+            position,
+          })
+          .returningAll()
+          .executeTakeFirstOrThrow()
+      );
+    }
 
-  return inserted;
+    return inserted;
+  });
 }
