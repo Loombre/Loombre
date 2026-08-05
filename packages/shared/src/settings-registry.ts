@@ -65,7 +65,8 @@ export type SettingsCategory =
   | "paths"
   | "ffmpeg"
   | "stash"
-  | "mail";
+  | "mail"
+  | "remote";
 
 /**
  * Converts a raw environment-variable string into the pre-validation value
@@ -232,6 +233,25 @@ export const PUBLIC_URL_SCHEMA = z.string().refine((value) => value === "" || is
  *  field, not an SMTP handshake) — the worker's real send attempt is the
  *  only genuine test of whether the address works. */
 export const OPTIONAL_EMAIL_SCHEMA = z.union([z.literal(""), z.email()]);
+
+/** STATE.md "Loombre Remote — embedded WireGuard + three-path wizard +
+ *  reachability proof + posture card" (RG9): `remote.subnet` — an IPv4
+ *  CIDR block, octets individually bounded to 0-255 (not merely `\d{1,3}`,
+ *  which would accept e.g. "999.999.999.999/24") and a prefix length
+ *  sanity-bounded to /8-/30 (below /8 is not a sane tunnel subnet size;
+ *  above /30 leaves no room for the server plus at least one device). */
+function isValidIpv4Cidr(value: string): boolean {
+  const match = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})\/(\d{1,2})$/.exec(value);
+  if (!match) return false;
+  const octets = [match[1]!, match[2]!, match[3]!, match[4]!].map((part) => Number.parseInt(part, 10));
+  if (octets.some((octet) => octet > 255)) return false;
+  const prefixLength = Number.parseInt(match[5]!, 10);
+  return prefixLength >= 8 && prefixLength <= 30;
+}
+
+export const REMOTE_SUBNET_SCHEMA = z.string().refine(isValidIpv4Cidr, {
+  message: "Must be an IPv4 CIDR block (e.g. 10.82.146.0/24), prefix length between /8 and /30.",
+});
 
 const ENV_ONLY_ENTRIES: SettingsRegistryEntry[] = [
   defineSetting({
@@ -709,6 +729,24 @@ const UI_ENTRIES: SettingsRegistryEntry[] = [
     envVar: "LOOMBRE_RATE_PASSWORD_RESET",
     parseEnv: parseEnvPositiveInt,
   }),
+  // STATE.md "Loombre Remote — embedded WireGuard + three-path wizard +
+  // reachability proof + posture card" (R6/RG6, Wave 0 freeze): GET
+  // /probe/{token} — unauthenticated, per-IP, same floor-of-1 posture as
+  // every other entry in this group, modeled directly on rateLimit.claim
+  // (RG6: "the /invites/claim/{token} precedent"). A probe token is
+  // single-use and 15-minute-lived (R6), so this is a low ceiling — the
+  // legitimate case is one real phone-on-cellular request per mint.
+  defineSetting({
+    key: "rateLimit.probe",
+    schema: z.number().int().min(1),
+    default: 10,
+    category: "rateLimit",
+    description: "How many reachability-proof probe attempts one device may make per minute, before any account exists for it. Guards the probe link against brute-force guessing.",
+    requiresRestart: false,
+    scope: "ui",
+    envVar: "LOOMBRE_RATE_PROBE",
+    parseEnv: parseEnvPositiveInt,
+  }),
 
   // ---- stash (STATE.md "Stash SQLite metadata sync", S8, trigger (b)) ----
   // Deliverable 7(b)'s schedule trigger: no cron machinery exists anywhere
@@ -812,6 +850,87 @@ const UI_ENTRIES: SettingsRegistryEntry[] = [
     requiresRestart: false,
     scope: "ui",
     envVar: "LOOMBRE_SMTP_FROM_NAME",
+  }),
+
+  // ---- remote (STATE.md "Loombre Remote — embedded WireGuard + three-path
+  // wizard + reachability proof + posture card", R1/RG5/RG9, Wave 0
+  // freeze): NO `remote.activePath` key here — RG15's refinement of RG5's
+  // original wording holds: the active path is DERIVED from the three
+  // subsystems' own enabled state (at most one enabled, enforced 409 by
+  // each path's staged enable flow), never stored, so it cannot drift from
+  // reality (GET /admin/remote/state, RemotePathId in openapi.yaml).
+  //
+  // requiresRestart, decided honestly per key rather than defaulted:
+  // wireguardPort/subnet are true because the in-process userspace
+  // listener (RG1/RG2) binds ONE UDP port for its whole lifetime and every
+  // enrolled peer's tunnel IP is allocated from the configured subnet at
+  // enrollment time — changing either while the listener is live would
+  // either fail to rebind or orphan already-enrolled peers rather than
+  // hot-apply cleanly (A5's "no setting change may drop active playback
+  // sessions" law's own spirit: a WireGuard peer mid-handshake is exactly
+  // this kind of active session). wireguardEndpointHost/cloudflaredPath/
+  // tunnelHostname are false — none of them affect anything already
+  // running; they only shape what a FUTURE action reads (a new
+  // enrollment's generated config, the next connector spawn, the next
+  // tunnel-enable call), the same "applies on next use, not immediately
+  // to a live process" posture other hot-reload entries already have.
+  defineSetting({
+    key: "remote.wireguardPort",
+    schema: z.number().int().min(1).max(65535),
+    default: 51820,
+    category: "remote",
+    description: "The UDP port Loombre Remote's WireGuard listener binds to. Changing this requires a server restart — the listener cannot rebind to a different port while running.",
+    requiresRestart: true,
+    scope: "ui",
+    envVar: "LOOMBRE_WG_PORT",
+    parseEnv: (raw) => Number.parseInt(raw.trim(), 10),
+  }),
+  defineSetting({
+    key: "remote.subnet",
+    // RG9: default 10.82.146.0/24 (RFC1918, deliberately NOT 100.64/10 —
+    // Tailscale squats CGNAT space and a phone running both would
+    // collide), registry-configurable. Server = .1, devices allocated
+    // lowest-free from .2-.254 (a /24's usable range) — the /8-/30 bound
+    // below is a sanity ceiling/floor, not a recommendation to use
+    // anything but a /24 in practice.
+    schema: REMOTE_SUBNET_SCHEMA,
+    default: "10.82.146.0/24",
+    category: "remote",
+    description: "The private IPv4 subnet Loombre Remote allocates tunnel addresses from (server = the first usable address, enrolled devices get the next free ones). Changing this requires a server restart — already-enrolled devices' addresses come from the OLD subnet and would be orphaned by a live change.",
+    caution: "Avoid 100.64.0.0/10 (CGNAT space) — other VPN tools commonly use it, and a device running both could collide.",
+    requiresRestart: true,
+    scope: "ui",
+    envVar: "LOOMBRE_WG_SUBNET",
+  }),
+  defineSetting({
+    key: "remote.wireguardEndpointHost",
+    schema: z.string(),
+    default: "",
+    category: "remote",
+    description: "The publicly reachable host devices connect to for Loombre Remote (written into each newly enrolled device's config, alongside remote.wireguardPort). Leave blank until you know this server's public host/IP.",
+    requiresRestart: false,
+    scope: "ui",
+    envVar: "LOOMBRE_WG_ENDPOINT_HOST",
+  }),
+  defineSetting({
+    key: "remote.cloudflaredPath",
+    schema: z.string(),
+    default: "",
+    category: "remote",
+    description: "Explicit path to the cloudflared binary, if it is not on the server's PATH. Leave blank to auto-detect — Loombre does not download this binary itself, so install it yourself and point this setting at it if auto-detect fails.",
+    requiresRestart: false,
+    scope: "ui",
+    envVar: "LOOMBRE_CLOUDFLARED_PATH",
+  }),
+  defineSetting({
+    key: "remote.tunnelHostname",
+    schema: z.string(),
+    default: "",
+    category: "remote",
+    description: "The public hostname the Tunnel path routes through (set automatically when you enable the Tunnel path from the wizard; editable here afterward).",
+    requiresRestart: false,
+    scope: "ui",
+    envVar: "LOOMBRE_TUNNEL_HOSTNAME",
   }),
 ];
 
