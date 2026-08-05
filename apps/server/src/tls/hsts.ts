@@ -15,7 +15,7 @@
 // of Loombre and that Loombre should trust *that proxy's* X-Forwarded-* — the
 // same signal doubles as "there's a proxy in this request's path". In that
 // topology the proxy is the actual HTTPS terminator the browser talks to
-// (Caddy/nginx/Traefik per docs/ops/reverse-proxy.md); it owns the
+// (Caddy/nginx/Traefik per docs/ops/remote-access/reverse-proxy.md); it owns the
 // Strict-Transport-Security header for two concrete reasons: (a) the proxy
 // may reasonably run Loombre itself over plain HTTP on the loopback/LAN hop
 // behind it, so a header written here describing "the connection to ME is
@@ -24,7 +24,7 @@
 // same-origin conflict an operator did not ask for. Concretely: Loombre
 // itself is NEVER the one deciding HSTS policy for a reverse-proxied
 // install — that setup's HSTS story is entirely the proxy config's job
-// (each docs/ops/reverse-proxy.md recipe says so explicitly).
+// (each docs/ops/remote-access/reverse-proxy.md recipe says so explicitly).
 //
 // It would in principle be possible for BOTH `tlsInternal` and
 // `trustProxyEnabled` to be true at once (TLS mode=manual/acme AND
@@ -44,7 +44,7 @@ import type { Express, NextFunction, Request, Response } from "express";
  *  and preload submission is an irreversible-by-Loombre act against a
  *  domain we don't own) — an operator who wants preload eligibility sets
  *  their own `includeSubDomains; preload` via the env override plus their
- *  own submission, documented in docs/ops/acme.md. */
+ *  own submission, documented in docs/ops/remote-access/acme.md. */
 export const DEFAULT_HSTS_MAX_AGE_SECONDS = 15_552_000;
 
 export interface HstsOptions {
