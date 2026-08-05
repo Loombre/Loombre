@@ -17,6 +17,7 @@ import { wireServerIpc } from "./ipc/index.js";
 import { resolveAppPaths } from "./cli/app-paths.js";
 import { installCrashHandlers, installGracefulShutdown, type ShutdownSignal } from "./crash/index.js";
 import { RESTART_REQUESTED_EXIT_CODE, ServerPowerService } from "./common/server-power.service.js";
+import { ConnectorManager } from "./remote/tunnel/connector-manager.js";
 
 /**
  * LOOMBRE_TRUST_PROXY (STATE.md P2.2, docs/PLAN.md §10: "plain HTTP behind
@@ -356,6 +357,15 @@ if (isDirectEntrypoint) {
       // (immediate, non-graceful termination) or, on Windows via the
       // service host, the timeout-then-kill fallback
       // (installers/windows/service-host's own header names this exact gap).
+      // T2/RG7: the connector's own supervised child (cloudflared, when the
+      // Tunnel path is enabled) needs the SAME graceful-stop treatment the
+      // embedded-PG child gets below — captured here, before closeServer()
+      // tears down the Nest container, exactly like `ServerPowerService`
+      // is grabbed via `app.get()` further down; CloudflaredConnectorManager.
+      // stop() is safe to call unconditionally (a no-op when nothing was
+      // ever started — mirrors ConnectorManager.stop()'s own idempotent
+      // contract, connector-manager.ts's abstract method doc comment).
+      const connectorManager = app.get(ConnectorManager);
       installGracefulShutdown({
         onShutdown: async (_signal: ShutdownSignal) => {
           await closeServer();
@@ -375,6 +385,11 @@ if (isDirectEntrypoint) {
           if (provisioning && provisioning.getCurrentProvisioningStatus().state !== "external") {
             await provisioning.stop("fast");
           }
+          // T2/RG7: SIGTERM the connector child (grace timeout -> SIGKILL,
+          // same escalation ladder as the embedded-PG stop above) so a
+          // server restart/shutdown never leaves an orphaned cloudflared
+          // process behind.
+          await connectorManager.stop();
         },
         exit: (code) => process.exit(code === 0 ? gracefulExitCode : code),
       });
