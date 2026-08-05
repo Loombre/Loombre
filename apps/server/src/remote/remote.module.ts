@@ -70,6 +70,17 @@
 // apps/server/test/remote-probes.e2e.spec.ts's `vi.spyOn(app.get(...), ...)`
 // seam-testing pattern (MailConfigService precedent) to actually intercept
 // what the controllers call.
+//
+// Lane WG1 addition: RemoteWireguardService (./wireguard/) is a provider
+// here (not its own nested module) — it needs the SAME DbProvider/
+// SettingsService instances RemoteWireguardController's requireAdmin call
+// and every other CommonModule/CommonSettingsModule consumer already
+// share; a nested module would either re-provide them (the exact DI trap
+// this file's own header warns about) or require yet another import
+// chain for zero benefit, since nothing outside this module needs to
+// resolve RemoteWireguardService directly today. HttpAdapterHost is
+// injected straight from @nestjs/core — Nest provides it globally to
+// every application, no module registration needed.
 import { Module } from "@nestjs/common";
 import { RemoteStateController } from "./remote-state.controller.js";
 import { RemoteWireguardController } from "./remote-wireguard.controller.js";
@@ -99,6 +110,7 @@ import { RemotePostureRegressionSchedulerService } from "./posture/remote-postur
 import { ConnectorHealthReaderService as PostureConnectorHealthReaderService } from "./posture/connector-health.reader.js";
 import { WireguardStatusReaderService } from "./posture/wireguard-status.reader.js";
 import { RemoteActivePathReaderService } from "./posture/active-path.reader.js";
+import { RemoteWireguardService } from "./wireguard/remote-wireguard.service.js";
 
 @Module({
   imports: [CommonModule, CommonSettingsModule],
@@ -125,6 +137,7 @@ import { RemoteActivePathReaderService } from "./posture/active-path.reader.js";
     PostureConnectorHealthReaderService,
     WireguardStatusReaderService,
     RemoteActivePathReaderService,
+    RemoteWireguardService,
   ],
   exports: [ConnectorHealthReaderService, RemoteDnsResolverService],
   // NoopConnectorManager/NoopRemoteActivePathReader carry test-only
