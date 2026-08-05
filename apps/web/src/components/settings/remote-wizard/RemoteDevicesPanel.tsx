@@ -25,6 +25,13 @@
 // pattern — U1's own PathManagementCard.tsx disable/switch flows use the
 // identical shape) rather than DevicesSection.tsx's window.confirm, per
 // the mission brief's explicit preference to match U1's choices here.
+//
+// WG3 (STATE.md mission item 2, "POST-WIZARD ENROLLMENT ENTRY POINT"): an
+// "Enroll a device" header action opens EnrollDeviceSheet.tsx — U2's own
+// ceremony (RemoteEnrollCeremony.tsx), lifted out of RemoteEnrollStepBody.tsx
+// so the wizard and this admin panel render the identical flow rather than
+// two copies. onEnrolled refetches page 1 (`load(true, null)`) so the newly
+// enrolled device appears immediately, same as any other list mutation here.
 
 import { useEffect, useState } from "react";
 import { Smartphone } from "lucide-react";
@@ -33,6 +40,7 @@ import { Button } from "../../ui/Button.js";
 import { EmptyState } from "../../admin/EmptyState.js";
 import { Skeleton } from "../../skeleton/Skeleton.js";
 import { apiDelete, apiGet, LoombreApiError } from "../../../lib/api-client.js";
+import { EnrollDeviceSheet } from "./EnrollDeviceSheet.js";
 import styles from "./RemoteDevicesPanel.module.css";
 
 type RemoteWireguardDevice = components["schemas"]["RemoteWireguardDevice"];
@@ -114,6 +122,7 @@ export function RemoteDevicesPanel(): React.JSX.Element {
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
   const [revokingId, setRevokingId] = useState<string | null>(null);
   const [revokeUnavailableId, setRevokeUnavailableId] = useState<string | null>(null);
+  const [enrollOpen, setEnrollOpen] = useState(false);
 
   function load(reset: boolean, nextCursor: string | null): void {
     if (!reset) setLoadingMore(true);
@@ -170,7 +179,14 @@ export function RemoteDevicesPanel(): React.JSX.Element {
 
   return (
     <div className={styles.panel} data-testid="remote-devices-panel">
-      <p className={styles.label}>Enrolled devices (all users)</p>
+      <div className={styles.headerRow}>
+        <p className={styles.label}>Enrolled devices (all users)</p>
+        <Button type="button" variant="secondary" onClick={() => setEnrollOpen(true)}>
+          Enroll a device
+        </Button>
+      </div>
+
+      <EnrollDeviceSheet open={enrollOpen} onClose={() => setEnrollOpen(false)} onEnrolled={() => load(true, null)} />
 
       {error && <p className={styles.errorText}>{error}</p>}
 

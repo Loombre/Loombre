@@ -28,6 +28,15 @@
   color: var(--muted);
 }
 
+/* WG3: "Enroll a device" header action alongside the existing label. */
+.headerRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  flex-wrap: wrap;
+}
+
 .errorText {
   margin: 0;
   font-size: var(--text-xs);
