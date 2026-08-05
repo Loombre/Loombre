@@ -114,6 +114,11 @@ export class SurfaceRateLimiterService implements OnApplicationBootstrap {
    *  both routes on purpose — a forgot-password flood and a reset-token
    *  guessing spree are the same abuse shape from the same caller. */
   readonly passwordReset: KeyedRateLimiter;
+  /** GET /probe/{token} — per-IP (default 10/min, rateLimit.probe).
+   *  STATE.md "Loombre Remote — embedded WireGuard + three-path wizard +
+   *  reachability proof + posture card" (R6/RG6): unauthenticated
+   *  reachability-proof surface, modeled directly on `claim` above. */
+  readonly probe: KeyedRateLimiter;
 
   constructor(private readonly settingsService: SettingsService) {
     this.capabilities = new KeyedRateLimiter(perMinutePolicy(settingsService, "rateLimit.capabilities", 120));
@@ -122,6 +127,7 @@ export class SurfaceRateLimiterService implements OnApplicationBootstrap {
     this.setup = new KeyedRateLimiter(perMinutePolicy(settingsService, "rateLimit.setup", 20));
     this.claim = new KeyedRateLimiter(perMinutePolicy(settingsService, "rateLimit.claim", 10));
     this.passwordReset = new KeyedRateLimiter(perMinutePolicy(settingsService, "rateLimit.passwordReset", 5));
+    this.probe = new KeyedRateLimiter(perMinutePolicy(settingsService, "rateLimit.probe", 10));
 
     settingsService.onChange((event) => {
       switch (event.key) {
@@ -143,6 +149,9 @@ export class SurfaceRateLimiterService implements OnApplicationBootstrap {
         case "rateLimit.passwordReset":
           this.passwordReset.updatePolicy(perMinutePolicy(this.settingsService, "rateLimit.passwordReset", 5));
           break;
+        case "rateLimit.probe":
+          this.probe.updatePolicy(perMinutePolicy(this.settingsService, "rateLimit.probe", 10));
+          break;
         default:
           break;
       }
@@ -159,5 +168,6 @@ export class SurfaceRateLimiterService implements OnApplicationBootstrap {
     this.setup.updatePolicy(perMinutePolicy(this.settingsService, "rateLimit.setup", 20));
     this.claim.updatePolicy(perMinutePolicy(this.settingsService, "rateLimit.claim", 10));
     this.passwordReset.updatePolicy(perMinutePolicy(this.settingsService, "rateLimit.passwordReset", 5));
+    this.probe.updatePolicy(perMinutePolicy(this.settingsService, "rateLimit.probe", 10));
   }
 }
