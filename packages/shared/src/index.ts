@@ -20,3 +20,4 @@ export * from "./remote/diagnosis.js";
 export * from "./remote/diagnosis-guidance.js";
 export * from "./remote/comparison.js";
 export * from "./remote/router-cards.js";
+export * from "./remote/subnet-allocation.js";

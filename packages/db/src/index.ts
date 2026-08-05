@@ -523,6 +523,41 @@ export {
   disableRemoteWireguardAndEmit,
 } from './query/remote-wireguard.js';
 
+// Loombre Remote — WireGuard device enrollment/revocation (STATE.md
+// "Loombre Remote", lane WG2, R2/R9/RG3/RG9, migrations/0030_wg_peers.sql)
+// — see src/query/wg-peers.ts header for why this lives in the public
+// barrel and never touches a private key.
+export type { DeviceKind } from './types.js';
+export type {
+  WgPeerRow,
+  WgPeerListRow,
+  ListWgPeersParams,
+  ListWgPeersResult,
+  EnrollRemoteWireguardDeviceInput,
+  EnrollRemoteWireguardDeviceResult,
+  RevokeRemoteWireguardDeviceInput,
+  RevokeRemoteWireguardDeviceResult,
+} from './query/wg-peers.js';
+export {
+  WgSubnetExhaustedError,
+  listAllWgPeers,
+  getWgPeerByDeviceId,
+  listWgPeers,
+  enrollRemoteWireguardDeviceAndEmit,
+  revokeRemoteWireguardDeviceAndEmit,
+} from './query/wg-peers.js';
+
+// Loombre Remote — the canonical cross-subsystem resolveActivePath()
+// (STATE.md "Loombre Remote", lane WG2, RG15) — see
+// src/query/remote-active-path.ts header for the full cross-lane
+// unification this replaces.
+export type { RemoteActivePathFlags } from './query/remote-active-path.js';
+export {
+  RemoteActivePathInvariantViolationError,
+  deriveActivePath,
+  resolveActivePath,
+} from './query/remote-active-path.js';
+
 // Addendum A/A4 (STATE.md, admin-configurable server settings) —
 // server_settings reads/writes + outbox emission, see src/query/
 // settings.ts header for why this is public-barrel and registry-unaware.
@@ -554,7 +589,6 @@ export {
   getRemoteDirectInternalState,
   enableRemoteDirectStateAndEmit,
   disableRemoteDirectStateAndEmit,
-  isRemoteWireguardActive,
 } from './query/remote-direct.js';
 
 // LPP v1 (Lane W2) plugin registry — migrations/0014_plugins.sql, see
