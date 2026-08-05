@@ -26,6 +26,12 @@ import type { Request } from "express";
 
 const TOKEN_PATH_TEMPLATES: ReadonlyArray<{ pattern: RegExp; template: string }> = [
   { pattern: /^\/invites\/claim\/[^/]+$/, template: "/invites/claim/{token}" },
+  // STATE.md "Loombre Remote — embedded WireGuard + three-path wizard +
+  // reachability proof + posture card" (R6/R9, Wave 0): GET /probe/{token}
+  // carries the raw one-time reachability-proof token as a path segment,
+  // same posture as the invite-claim route above — its 429 (rate-limited)
+  // response must never echo the token back via `instance`.
+  { pattern: /^\/probe\/[^/]+$/, template: "/probe/{token}" },
 ];
 
 export function sanitizeInstancePath(req: Request): string {
