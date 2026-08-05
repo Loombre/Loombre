@@ -5,7 +5,8 @@
     "LOOMBRE_TEST_TIME_SCALE",
     "LOOMBRE_REQUIRE_FFMPEG",
     "LOOMBRE_FFMPEG",
-    "LOOMBRE_FFPROBE"
+    "LOOMBRE_FFPROBE",
+    "LOOMBRE_REQUIRE_WG"
   ],
   "tasks": {
     "build": {
