@@ -39,7 +39,13 @@ describe("resolveCloudflaredBinary — setting override", () => {
     expect(result).toEqual({ ok: true, binary: { path: bin, source: "setting" } });
   });
 
-  it("fails with a helpful detail when the configured path is not executable", () => {
+  // Skipped on Windows: there is no POSIX execute bit, so accessSync(_, X_OK)
+  // succeeds for any existing regular file — an "exists but not executable"
+  // path cannot be manufactured there. The ok:false + detail rejection is
+  // still exercised on Windows by the "does not exist at all" test below
+  // (accessSync throws ENOENT → not executable → ok:false), so no coverage
+  // of resolveCloudflaredBinary's failure path is lost.
+  it.skipIf(process.platform === "win32")("fails with a helpful detail when the configured path is not executable", () => {
     const bin = join(scratch, "not-executable");
     writeFileSync(bin, "not a binary");
     const result = resolveCloudflaredBinary(bin);
