@@ -24,12 +24,14 @@
      RFC1918 WAN = double-NAT; WAN-vs-resolved-address mismatch = stale
      DNS) — packages/shared/src/remote/diagnosis.ts's classifyReachability
      and diagnosis-guidance.ts's "direct" branch, both real and landed.
-     Per-brand router instruction cards are STATE.md D1's planned
-     deliverable (packages/shared/src/remote/router-cards.ts) and had not
-     landed on this base either — the router section below is written
-     independently, using general port-forwarding knowledge rather than
-     any specific card content, and should be reconciled against that
-     module once it lands (flagged for V-DOC). Reachability proof — same
+     Per-brand router instruction cards: RECONCILED post-merge by the
+     orchestrator against the landed packages/shared/src/remote/
+     router-cards.ts (D1) — the generic steps below match its generic
+     card's step sequence; per-brand specifics (TP-Link/Netgear/ASUS/
+     Linksys/FRITZ!Box/UniFi) deliberately live only in the wizard's
+     cards, which parameterize protocol/ports per path — the doc stays
+     brand-agnostic and points at the wizard, so the two sources can't
+     drift per-brand. Reachability proof — same
      sourcing as loombre-remote.md's own proof section. Appendices —
      acme.md and reverse-proxy.md, both moved into this directory,
      linked below. -->
@@ -75,7 +77,10 @@ step names the exact port(s) to forward for your setup; general
 port-forwarding is exactly the same three-field form on every router
 regardless of brand: the port people reach from outside, the port Loombre
 actually listens on (usually the same number), and the LAN address of the
-machine running Loombre.
+machine running Loombre. For the most common router brands (TP-Link,
+Netgear, ASUS, Linksys, AVM FRITZ!Box, Ubiquiti UniFi) the wizard shows a
+brand-specific walkthrough with that brand's own menu names, so you don't
+have to translate the generic steps yourself.
 
 [SCREENSHOT: Direct path wizard's router-instructions step]
 
