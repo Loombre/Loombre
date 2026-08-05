@@ -39,7 +39,7 @@ import { Button } from "../../ui/Button.js";
 import { StatusPill } from "../../admin/StatusPill.js";
 import { Skeleton } from "../../skeleton/Skeleton.js";
 import type { PillTone } from "../../../lib/admin-status.js";
-import { apiGet, LoombreApiError } from "../../../lib/api-client.js";
+import { apiGet, apiErrorMessage } from "../../../lib/api-client.js";
 import { getEventsSocket } from "../../../lib/events-socket.js";
 import styles from "./ConnectorHealthPanel.module.css";
 
@@ -78,7 +78,7 @@ export function ConnectorHealthPanel(): React.JSX.Element {
         setStatusError(null);
       })
       .catch((err: unknown) => {
-        setStatusError(err instanceof LoombreApiError ? err.message : "Failed to load connector status.");
+        setStatusError(apiErrorMessage(err, "Failed to load connector status."));
       });
   }, []);
 
@@ -90,7 +90,7 @@ export function ConnectorHealthPanel(): React.JSX.Element {
         setLogsError(null);
       })
       .catch((err: unknown) => {
-        setLogsError(err instanceof LoombreApiError ? err.message : "Failed to load connector logs.");
+        setLogsError(apiErrorMessage(err, "Failed to load connector logs."));
       })
       .finally(() => setLogsLoading(false));
   }, []);

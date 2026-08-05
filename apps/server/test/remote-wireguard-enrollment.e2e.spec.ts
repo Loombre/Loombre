@@ -362,9 +362,38 @@ describe.skipIf(!available)("Loombre Remote — WireGuard enrollment (real Expre
     20_000,
   );
 
-  it("cleanup: disable", async () => {
+  it("(F1) disable REVOKES every enrolled device — 'peers gone' per R8 + the exit gate, not a pause that leaves dead rows showing as active", async () => {
+    // By now this suite has enrolled several devices. Confirm they exist,
+    // then disable and confirm the peer + device rows are actually gone
+    // (the pre-fix behavior left them, so they reappeared as "enrolled"
+    // after a re-enable while the rotated server key made them dead — V-UX
+    // F1). This is the exit gate's literal "disable ... tears down
+    // verifiably (... peers gone ...)".
+    // Enroll a fresh device here so this test does not depend on which
+    // prior tests happened to leave enrollments behind (WG is still enabled
+    // from earlier in this suite). The list is cursor-paginated (`items`).
+    const enrollRes = await asAdmin()
+      .post("/admin/remote/wireguard/devices")
+      .send({ userId: targetUserId, name: "Casual's tablet (disable-revokes e2e)" });
+    expect(enrollRes.status).toBe(201);
+
+    const beforeList = await asAdmin().get("/admin/remote/wireguard/devices");
+    expect(beforeList.status).toBe(200);
+    expect(beforeList.body.items.length).toBeGreaterThan(0);
+
     const disableRes = await asAdmin().post("/admin/remote/wireguard/disable");
     expect(disableRes.status).toBe(200);
+    expect(disableRes.body.enabled).toBe(false);
+
+    // The admin list is built by joining wg_peers → devices, so an empty
+    // list proves the peer rows are gone (not merely hidden).
+    const afterList = await asAdmin().get("/admin/remote/wireguard/devices");
+    expect(afterList.status).toBe(200);
+    expect(afterList.body.items).toEqual([]);
+
+    // A remote.device.revoked event was emitted for the teardown (audit).
+    const events = await readUnprocessedEvents(app.get(DbProvider).db, 5000);
+    expect(events.some((e) => e.type === "remote.device.revoked")).toBe(true);
   });
 });
 

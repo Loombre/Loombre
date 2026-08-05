@@ -36,7 +36,7 @@ import { useState } from "react";
 import type { components } from "@loombre/sdk";
 import { Button } from "../../ui/Button.js";
 import { TextInput } from "../../ui/Input.js";
-import { apiPost, LoombreApiError } from "../../../lib/api-client.js";
+import { apiPost, apiErrorMessage } from "../../../lib/api-client.js";
 import { ACME_FAILURE_STAGE_GUIDANCE, classifyAcmeFailureStage } from "./acme-failure-stage.js";
 import type { PathFlowStepBodyProps } from "./path-flow-step-types.js";
 import styles from "./DirectAcmeTestStepBody.module.css";
@@ -75,7 +75,7 @@ export function DirectAcmeTestStepBody({ onStepComplete, onBack }: PathFlowStepB
       setResult(res);
       setPhase("tested");
     } catch (err) {
-      setError(err instanceof LoombreApiError ? err.message : "Failed to run the staged test issuance.");
+      setError(apiErrorMessage(err, "Failed to run the staged test issuance."));
       setPhase("form");
     }
   }
@@ -87,7 +87,7 @@ export function DirectAcmeTestStepBody({ onStepComplete, onBack }: PathFlowStepB
       await apiPost("/admin/remote/direct/enable", { body: { mode: "acme", domain: domain.trim() } });
       setPhase("enabled");
     } catch (err) {
-      setError(err instanceof LoombreApiError ? err.message : "Failed to enable Direct access.");
+      setError(apiErrorMessage(err, "Failed to enable Direct access."));
       setPhase("tested");
     }
   }
