@@ -129,8 +129,13 @@ describe.skipIf(!toolsAvailable)("probe consumer integration (real ffmpeg/ffprob
   }, 30_000);
 
   it("detects the interlaced mpeg2 transport-stream fixture via the 0002 `interlaced` column", async () => {
-    const tsEntry = manifestFiles.find((f) => f.container === "ts");
-    expect(tsEntry, "expected a .ts fixture in the manifest").toBeDefined();
+    // Select the INTERLACED ts fixture explicitly, not merely the first ts:
+    // the manifest also holds a progressive h264 .ts, so a bare
+    // container==="ts" find would silently probe THAT when the interlaced
+    // fixture is absent and fail with a cryptic "expected false to be true"
+    // instead of naming the real cause (the fixture failing to generate).
+    const tsEntry = manifestFiles.find((f) => f.container === "ts" && f.interlaced === true);
+    expect(tsEntry, "expected an interlaced .ts fixture (mpeg2_interlaced_ac3.ts) in the manifest").toBeDefined();
     const fileId = await seedMediaFile(tsEntry!);
 
     await runProbe({ db: dbHandle }, { mediaFileId: fileId });

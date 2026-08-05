@@ -216,7 +216,16 @@ function main() {
     [
       "-f", "lavfi", "-i", "testsrc2=size=320x240:rate=25:duration=1",
       "-f", "lavfi", "-i", "sine=frequency=1000:duration=1",
-      "-c:v", "mpeg2video", "-flags", "+ilme+ildct", "-top", "1",
+      // Top-field-first via the `setfield` FILTER, not the per-codec `-top 1`
+      // option: newer ffmpeg builds (the Windows CI runner's among them) removed
+      // `-top` as an encoding AVOption ("Codec AVOption top (top field first) is
+      // not a encoding option"), so `-top 1` made ffmpeg exit nonzero and this
+      // fixture got SKIPPED there — the interlace-detection tests then silently
+      // fell through to the progressive h264 .ts and failed. setfield stamps
+      // field_order=tt on every build; +ilme+ildct keeps mpeg2 in interlaced-
+      // coding mode. (ffprobe reports field_order=tt identically under both.)
+      "-vf", "setfield=mode=tff",
+      "-c:v", "mpeg2video", "-flags", "+ilme+ildct",
       "-c:a", "ac3", "-b:a", "192k", "-ac", "2",
       "-f", "mpegts",
     ],

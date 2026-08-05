@@ -129,9 +129,13 @@ describe.skipIf(!toolsAvailable)("probe pipeline integration (real ffmpeg/ffprob
   }, 30_000);
 
   it("the mpeg2 transport-stream fixture is genuinely detected as interlaced", () => {
-    const tsEntry = manifest.files.find((f) => f.container === "ts");
-    expect(tsEntry, "expected a .ts fixture in the manifest").toBeDefined();
-    expect(tsEntry?.interlaced).toBe(true);
+    // The interlaced ts fixture must be PRESENT (generated), not silently
+    // skipped: a bare container==="ts" find would match the progressive h264
+    // .ts and read interlaced=false. Selecting on interlaced===true and
+    // asserting existence proves mpeg2_interlaced_ac3.ts actually generated on
+    // this ffmpeg build (the regression that broke the Windows CI leg).
+    const tsEntry = manifest.files.find((f) => f.container === "ts" && f.interlaced === true);
+    expect(tsEntry, "expected an interlaced .ts fixture (mpeg2_interlaced_ac3.ts) in the manifest").toBeDefined();
   });
 });
 
