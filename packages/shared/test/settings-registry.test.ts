@@ -337,8 +337,8 @@ describe("SETTINGS_REGISTRY", () => {
   describe("F5/F6/F11d: scope:'ui' description register", () => {
     const uiEntries = SETTINGS_REGISTRY.filter((e) => e.scope === "ui");
 
-    it("covers all 41 scope:'ui' entries (sanity — keeps this suite honest if the registry grows)", () => {
-      expect(uiEntries.length).toBe(41);
+    it("covers all 46 scope:'ui' entries (sanity — keeps this suite honest if the registry grows)", () => {
+      expect(uiEntries.length).toBe(46);
     });
 
     it("no scope:'ui' description references a repo path (apps/, packages/, scripts/, docs/)", () => {
@@ -369,6 +369,78 @@ describe("SETTINGS_REGISTRY", () => {
       const entry = getSettingsRegistryEntry("restricted.defaultUnlockDurationMs")!;
       expect(entry.description).not.toMatch(/client/i);
       expect(entry.description).not.toMatch(/request/i);
+    });
+  });
+
+  // ==========================================================================
+  // RG12 (STATE.md "Loombre Remote..."): tls.mode/network.trustProxy
+  // promoted from env-only to ui-scope, and three new ACME keys added — all
+  // five preserve their pre-existing env var name and stay requiresRestart:true.
+  // ==========================================================================
+
+  describe("RG12: tls.* / network.trustProxy promotion + new ACME keys", () => {
+    it("tls.mode is now scope:'ui', requiresRestart:true, envVar unchanged", () => {
+      const entry = getSettingsRegistryEntry("tls.mode")!;
+      expect(entry.scope).toBe("ui");
+      expect(entry.requiresRestart).toBe(true);
+      expect(entry.envVar).toBe("LOOMBRE_TLS_MODE");
+      expect(entry.schema.safeParse("off").success).toBe(true);
+      expect(entry.schema.safeParse("manual").success).toBe(true);
+      expect(entry.schema.safeParse("acme").success).toBe(true);
+      expect(entry.schema.safeParse("bogus").success).toBe(false);
+    });
+
+    it("network.trustProxy is now scope:'ui', requiresRestart:true, envVar unchanged, caution preserved", () => {
+      const entry = getSettingsRegistryEntry("network.trustProxy")!;
+      expect(entry.scope).toBe("ui");
+      expect(entry.requiresRestart).toBe(true);
+      expect(entry.envVar).toBe("LOOMBRE_TRUST_PROXY");
+      expect(entry.caution).toBeDefined();
+    });
+
+    it("tls.acmeDomains: envVar LOOMBRE_ACME_DOMAINS, empty default, rejects a bare IP/no-dot value, accepts a real domain", () => {
+      const entry = getSettingsRegistryEntry("tls.acmeDomains")!;
+      expect(entry.scope).toBe("ui");
+      expect(entry.requiresRestart).toBe(true);
+      expect(entry.envVar).toBe("LOOMBRE_ACME_DOMAINS");
+      expect(entry.default).toEqual([]);
+      expect(entry.schema.safeParse(["media.example.com"]).success).toBe(true);
+      expect(entry.schema.safeParse(["media.example.com", "alt.example.com"]).success).toBe(true);
+      expect(entry.schema.safeParse(["not-a-domain"]).success).toBe(false);
+      expect(entry.schema.safeParse(["203.0.113.10"]).success).toBe(false);
+      expect(entry.schema.safeParse([""]).success).toBe(false);
+    });
+
+    it("tls.acmeDomains' parseEnv lowercases and comma-splits, mirroring apps/server/src/tls/config.ts's own LOOMBRE_ACME_DOMAINS parsing", () => {
+      const entry = getSettingsRegistryEntry("tls.acmeDomains")!;
+      expect(entry.parseEnv?.("Media.Example.com, Alt.Example.com")).toEqual(["media.example.com", "alt.example.com"]);
+    });
+
+    it("tls.acmeChallengeType: envVar LOOMBRE_ACME_CHALLENGE_TYPE, default http-01, closed enum", () => {
+      const entry = getSettingsRegistryEntry("tls.acmeChallengeType")!;
+      expect(entry.scope).toBe("ui");
+      expect(entry.requiresRestart).toBe(true);
+      expect(entry.envVar).toBe("LOOMBRE_ACME_CHALLENGE_TYPE");
+      expect(entry.default).toBe("http-01");
+      expect(entry.schema.safeParse("http-01").success).toBe(true);
+      expect(entry.schema.safeParse("dns-01").success).toBe(true);
+      expect(entry.schema.safeParse("tls-alpn-01").success).toBe(false);
+    });
+
+    it("tls.acmeTosAgreed: envVar LOOMBRE_ACME_TOS_AGREED, default false, boolean", () => {
+      const entry = getSettingsRegistryEntry("tls.acmeTosAgreed")!;
+      expect(entry.scope).toBe("ui");
+      expect(entry.requiresRestart).toBe(true);
+      expect(entry.envVar).toBe("LOOMBRE_ACME_TOS_AGREED");
+      expect(entry.default).toBe(false);
+      expect(entry.schema.safeParse(true).success).toBe(true);
+      expect(entry.schema.safeParse("1").success).toBe(false);
+    });
+
+    it("none of the five promoted/new keys is flagged secret:true", () => {
+      for (const key of ["tls.mode", "network.trustProxy", "tls.acmeDomains", "tls.acmeChallengeType", "tls.acmeTosAgreed"]) {
+        expect(getSettingsRegistryEntry(key)?.secret, key).toBeFalsy();
+      }
     });
   });
 });
