@@ -137,11 +137,19 @@ const UPNP_PATTERNS = ["nat-upnp", "node-upnp", "natupnp", "nat-api", "ssdp"].ma
 // as RENAME_GATE_ALLOWLIST's own STATE.md entry above): STATE.md's RG14
 // decision record quotes these exact strings as the pattern group being
 // added — that IS the historical record of this gate's own creation, not
-// a live import. router-cards.test.ts is the CONTENT-level enforcement of
-// the same ban (lane D1): its negative-assertion regexes name SSDP/NAT-PMP
-// literally in order to assert the router cards never mention them — a
-// guard tripping a guard, same shape as the brand-hygiene gate's own
-// "test files contain regexes asserting absence" allowlist entries.
+// a live import.
+//
+// GUARD-TEST allowlisting (WG2, found by this lane's own first FULL
+// `pnpm gate` run against the combined tree — RG14's own text anticipated
+// this exact gap: "flagged for whichever lane first adds real WG/network/
+// QR code; do not let it slip past that lane"): router-cards.test.ts
+// (lane D1) asserts card copy NEVER names NAT-PMP/PCP/SSDP
+// (`expect(text).not.toMatch(/NAT-PMP|natpmp|\bPCP\b|SSDP/i)`) — the
+// literal string "SSDP" inside that NEGATIVE assertion regex trips the
+// `ssdp` pattern the exact same way BRAND_HYGIENE_ALLOWLIST's own guard-
+// test entries above already document for pulse-dot/fixture-string
+// absence checks. Same posture, same fix: allowlist the GUARD file, never
+// the pattern.
 const UPNP_ALLOWLIST = new Set(["STATE.md", "packages/shared/test/remote/router-cards.test.ts"]);
 
 // ---------------------------------------------------------------------------
