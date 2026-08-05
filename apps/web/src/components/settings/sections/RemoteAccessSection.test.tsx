@@ -96,16 +96,39 @@ function mockState(handler: (path: string) => unknown): void {
   });
 }
 
+// WG3: an active 'remote' path renders PathManagementCard -> RemoteDevicesPanel,
+// which now mounts EnrollDeviceSheet unconditionally (`open={false}` until
+// clicked) — SheetOrModal's useMediaQuery hook calls window.matchMedia on
+// EVERY render regardless of `open`, and jsdom has no matchMedia
+// implementation at all (SheetOrModal.test.tsx's own header note;
+// RemoteDevicesPanel.test.tsx's own identical precedent).
+function installMatchMedia(): void {
+  vi.stubGlobal(
+    "matchMedia",
+    vi.fn().mockImplementation((query: string) => ({
+      matches: false,
+      media: query,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      addListener: () => {},
+      removeListener: () => {},
+      dispatchEvent: () => true,
+    })),
+  );
+}
+
 beforeEach(() => {
   apiGetMock.mockReset();
   subscribeMock.mockReset();
   subscribeMock.mockReturnValue(() => {});
   searchParams = new URLSearchParams();
+  installMatchMedia();
 });
 
 afterEach(() => {
   view?.unmount();
   view = undefined;
+  vi.unstubAllGlobals();
 });
 
 async function render(): Promise<void> {
