@@ -37,7 +37,7 @@ import { StatusPill } from "../../admin/StatusPill.js";
 import { EmptyState } from "../../admin/EmptyState.js";
 import { Skeleton } from "../../skeleton/Skeleton.js";
 import type { PillTone } from "../../../lib/admin-status.js";
-import { apiGet, LoombreApiError } from "../../../lib/api-client.js";
+import { apiGet, apiErrorMessage } from "../../../lib/api-client.js";
 import { getEventsSocket } from "../../../lib/events-socket.js";
 import { PATH_LABELS } from "./path-labels.js";
 import styles from "./PostureCard.module.css";
@@ -111,7 +111,7 @@ export function PostureCard({ activePath }: PostureCardProps): React.JSX.Element
         setError(null);
       })
       .catch((err: unknown) => {
-        setError(err instanceof LoombreApiError ? err.message : "Failed to load security posture.");
+        setError(apiErrorMessage(err, "Failed to load security posture."));
       });
   }, []);
 

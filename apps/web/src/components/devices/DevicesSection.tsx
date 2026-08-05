@@ -55,6 +55,11 @@ type Device = components["schemas"]["Device"];
 const PAGE_LIMIT = 50;
 
 function formatTime(ms: number): string {
+  // The server coalesces a never-seen device's null last_seen_ms to 0
+  // (devices.controller.ts mapDevice) — a real last-seen is always a
+  // billions-of-ms epoch timestamp, so a non-positive value means "never
+  // connected," not "connected on 1969-12-31" (V-UX F4).
+  if (ms <= 0) return "never";
   return new Date(ms).toLocaleString();
 }
 
