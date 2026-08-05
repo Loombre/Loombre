@@ -511,6 +511,13 @@ const IMPLEMENTED_NON_PUBLIC_EXPECTATIONS: Record<string, number> = {
   diagnoseRemote: 422, // bodyless -> "expectedEndpoint is required."
   createRemoteProbe: 422, // bodyless -> same
   getRemoteProbe: 404, // PLACEHOLDER_UUID never resolves to a real probe
+  // DRIFT DECISION #1 (STATE.md, S1 lane): the ONE remote op that is NOT a
+  // 501 shell — it did not exist at Wave-0 freeze, so there is no 501
+  // interim to replace. Real implementation, real conformance entry: 200,
+  // `checks: []` on the fresh reseeded DB (no remote-access path is
+  // enabled here — RemoteActivePathReaderService's own honest default,
+  // see apps/server/src/remote/posture/active-path.reader.ts's header).
+  getRemotePosture: 200,
 };
 
 let app: INestApplication;
