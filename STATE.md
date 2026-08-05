@@ -80,6 +80,42 @@ real cause, refused to create an account via the setup wizard (correctly reading
 a forbidden mutation under LAW 0 even though it would have unblocked their charter),
 and reported the coverage gap rather than fabricating findings.
 
+### Fix waves — dispatched 2026-08-05 on branch `fix/audit-fafa47f-waves` (from `2747398`)
+
+**WAVE 1 CLOSED — commit `a7cd072`.** Crash boundaries: the blocker + 3 siblings of
+the same defect class (code that can throw with no error boundary beneath it).
+
+- `AUD-A1h-001` [blocker] ACME HTTP-01 unauthenticated remote crash — **FIXED**.
+  Structural try/catch around all of `handle()`; malformed token → 404. Regression
+  test spawns a **real child process** with real crash handlers and drives it over
+  loopback; verified to fail (socket hang up) when the fix is reverted.
+- `AUD-A2e-001` [high] plugin-delivery tick killed the worker — **FIXED** + test.
+- `AUD-A2d-002` [medium] hash-pool slot never replaced — **FIXED** + test.
+- `AUD-A5a-003` [medium] tray crash on torn discovery read — **FIXED**; C# test
+  written but **not compiled** (no dotnet toolchain on this host).
+
+`pnpm gate:full` green. **Two opus review rounds**; the first returned
+changes-required and caught a **regression Wave 1 itself introduced**: the hash-pool
+heal respawned with no cap — measured **74 spawns in 2 seconds**, unbounded, for
+process lifetime (an OOM crash loop would have respawned into the same pressure
+~37×/sec forever). Pre-fix that case hung; post-fix it spun. Fixed with backoff +
+terminal cap + logging, plus graceful degradation (dispatch skips dead slots instead
+of failing 1-in-N hashes forever). **The gate was green through the entire storm** —
+adversarial review caught it, tests did not.
+
+New findings raised by the wave (owner triage, in `reports/audit-fafa47f/candidates/W1-followups.md`):
+- `AUD-W1-001` [medium] the tray test project runs in `windows-installer-diag.yml`
+  and `release.yml` but **not in `gate:full`**, so tray regressions are invisible to
+  the inner loop.
+
+Raw-listener sweep (Wave 1 exit-gate item 3) performed **three times** independently
+— result recorded in the wave doc and ORCHESTRATOR-NOTES ON-01: **no other equally
+exposed unguarded raw listener exists.** The IPC listener catches via `.catch()` and
+is loopback+token-gated; the TLS and WireGuard listeners pass the Nest/Express
+instance; `remote-direct` reuses the now-fixed class.
+
+Remaining waves 2–6 queued in `reports/audit-fafa47f/fixwaves/`.
+
 ## Loombre Remote — embedded WireGuard + three-path wizard + reachability proof + posture card (kicked off 2026-08-04, owner brief "Loombre Remote (Embedded WireGuard) + Three-Path Wizard + Reachability Proof + Posture Card")
 
 ### Mission (verbatim)
