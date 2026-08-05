@@ -288,6 +288,66 @@ describe('consumeSeekTarget', () => {
     const second = await consumeSeekTarget(db, id, Date.now());
     expect(second).toEqual({ seekTargetMs: 20000, discontinuityCount: 2 });
   });
+
+  // V1-006: the SELECT half of consumeSeekTarget's own transaction already
+  // guards on NON_TERMINAL_STATUSES, so calling it AFTER a session is
+  // already terminal is a no-op even on the buggy code — that sequential
+  // shape does not exercise the defect. The real hole is the gap BETWEEN
+  // that SELECT and the UPDATE: under READ COMMITTED (tx.ts's default), a
+  // second actor's terminal transition can commit in that gap, and the
+  // UPDATE re-evaluates its own WHERE against the row as it stands THEN —
+  // so the UPDATE, not the SELECT, is what has to carry the guard. This
+  // test forces that exact interleaving with a real row lock on a second
+  // connection: it holds the row past consumeSeekTarget's SELECT (which
+  // sees the still-open session), closes the session out and commits
+  // (releasing the lock) only once consumeSeekTarget's UPDATE is already
+  // parked waiting on it, and only then lets that UPDATE proceed — so the
+  // UPDATE runs, in real time, strictly after the row went terminal.
+  it('does not resurrect a session closed by a concurrent actor mid-consume (real Postgres row-lock race)', async () => {
+    const id = await newSession();
+    await markSessionStarting(db, id, { stagingDir: '/tmp/x', nowMs: Date.now() });
+    await markSessionActive(db, id, { producedSegment: 3, nowMs: Date.now() });
+    await rawClient.query('UPDATE playback_sessions SET seek_target_ms = 65000 WHERE id = $1', [id]);
+
+    const locker = new pg.Client({ connectionString: DATABASE_URL });
+    await locker.connect();
+    let consumePromise: ReturnType<typeof consumeSeekTarget>;
+    try {
+      await locker.query('BEGIN');
+      // Row lock taken FIRST: consumeSeekTarget's SELECT (a plain read)
+      // is unaffected and will still observe the open, non-terminal row;
+      // its UPDATE needs the same row and will block behind this lock.
+      await locker.query('SELECT * FROM playback_sessions WHERE id = $1 FOR UPDATE', [id]);
+
+      consumePromise = consumeSeekTarget(db, id, Date.now());
+      // Let consumeSeekTarget's SELECT complete and its UPDATE reach the
+      // lock wait (a local Postgres round trip is single-digit ms; this
+      // margin is generous, not a tight race).
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Close the session out from under it, still holding the lock, then
+      // commit — this is the terminal transition landing in the window
+      // consumeSeekTarget's own transaction already opened.
+      await locker.query(
+        "UPDATE playback_sessions SET status = 'failed', error_code = 'transcode-failed', ended_at_ms = $2, updated_at_ms = $2 WHERE id = $1",
+        [id, Date.now()],
+      );
+      await locker.query('COMMIT'); // releases the lock; consumeSeekTarget's UPDATE can now run
+    } finally {
+      await locker.end();
+    }
+
+    const consumed = await consumePromise;
+
+    // The UPDATE must re-check status itself (the SELECT's guard is stale
+    // by the time the UPDATE runs) — so it now matches zero rows, exactly
+    // like the existing "nothing pending" case above.
+    expect(consumed).toBeUndefined();
+
+    const row = await getTranscodeSessionRow(db, id);
+    expect(row?.status).toBe('failed'); // NOT resurrected to 'seeking'
+    expect(row?.seek_target_ms).toBe(65000); // left untouched for whoever closed it out
+  });
 });
 
 describe('markSessionFailed', () => {
@@ -311,6 +371,47 @@ describe('markSessionFailed', () => {
 
     const event = await eventForSession('playback.ended', id);
     expect(event).toBeUndefined();
+  });
+
+  // V1-006, third writer: markSessionFailed's own leading SELECT already
+  // guards on NON_TERMINAL_STATUSES (the sequential test above), but its
+  // UPDATE — like consumeSeekTarget's before its fix — only ever filtered
+  // on `id`, trusting that stale SELECT. Same real-lock technique as
+  // consumeSeekTarget's race test: a second connection holds the row past
+  // markSessionFailed's SELECT, closes the session out first, commits
+  // (releasing the lock), and only then does markSessionFailed's UPDATE
+  // proceed — proving the UPDATE itself must re-check status or this
+  // function breaks its own documented "no-op, emits NOTHING" promise.
+  it('does not double-emit playback.ended when a concurrent actor closes the session mid-call (real Postgres row-lock race)', async () => {
+    const id = await newSession();
+
+    const locker = new pg.Client({ connectionString: DATABASE_URL });
+    await locker.connect();
+    let failPromise: ReturnType<typeof markSessionFailed>;
+    try {
+      await locker.query('BEGIN');
+      await locker.query('SELECT * FROM playback_sessions WHERE id = $1 FOR UPDATE', [id]);
+
+      failPromise = markSessionFailed(db, id, { errorCode: 'transcode-failed', stderrTail: 'racing', nowMs: Date.now() });
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Close the session out from a different cause first (e.g. Lane B's
+      // DELETE endpoint / the sweeper), still holding the lock, then commit.
+      await locker.query("UPDATE playback_sessions SET status = 'ended', ended_at_ms = $2, updated_at_ms = $2 WHERE id = $1", [id, Date.now()]);
+      await locker.query('COMMIT'); // releases the lock; markSessionFailed's UPDATE can now run
+    } finally {
+      await locker.end();
+    }
+
+    const result = await failPromise;
+    expect(result).toBeUndefined(); // must see "already closed", not overwrite 'ended' -> 'failed'
+
+    const row = await getTranscodeSessionRow(db, id);
+    expect(row?.status).toBe('ended'); // NOT overwritten to 'failed'
+    expect(row?.error_code).toBeNull();
+
+    const event = await eventForSession('playback.ended', id);
+    expect(event).toBeUndefined(); // no double-emit for this session
   });
 });
 

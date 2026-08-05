@@ -155,4 +155,28 @@ describe('library_path_mappings', () => {
     await deleteLibraryStashConnection(db, libraryId);
     expect(await getLibraryPathMappings(db, libraryId)).toHaveLength(1);
   });
+
+  // V1-011: replaceLibraryPathMappings must be all-or-nothing, matching
+  // replaceLibraryProviderChain's transactional convention. A failure
+  // partway through the delete+insert loop must leave the PRIOR mapping
+  // set intact, not a mix of neither-old-nor-new. The second entry's
+  // null stash_prefix (cast past the type system — this function accepts
+  // caller input no differently at runtime) trips the column's real
+  // NOT NULL constraint only after the first entry's insert has already
+  // gone through, forcing a genuine mid-loop failure.
+  it('a failure partway through the replace rolls back to the PRIOR mapping set — no partial write', async () => {
+    const libraryId = await makeLibrary();
+    await replaceLibraryPathMappings(db, libraryId, [{ stashPrefix: '/mnt/stash', loombrePrefix: '/media/general' }]);
+
+    await expect(
+      replaceLibraryPathMappings(db, libraryId, [
+        { stashPrefix: '/new/one', loombrePrefix: '/media/new-one' },
+        { stashPrefix: null as unknown as string, loombrePrefix: '/media/new-two' },
+      ])
+    ).rejects.toThrow();
+
+    const rows = await getLibraryPathMappings(db, libraryId);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ stash_prefix: '/mnt/stash', loombre_prefix: '/media/general', position: 0 });
+  });
 });

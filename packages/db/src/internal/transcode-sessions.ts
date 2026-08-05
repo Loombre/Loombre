@@ -162,7 +162,13 @@ export interface ConsumedSeekTarget {
  * timed (a second call before the restart completes finds `seek_target_ms
  * IS NULL` and is a no-op). Returns `undefined` when there is nothing to
  * consume (no pending target, or the session is already terminal) — the
- * caller's normal steady-state path.
+ * caller's normal steady-state path. The terminal-state guard is repeated
+ * on the UPDATE itself, not just the leading SELECT: under READ COMMITTED
+ * a second actor's close can commit between them, and only the UPDATE's
+ * own WHERE clause is re-evaluated against the row as it stands at write
+ * time — omitting it there would let this UPDATE still match on `id +
+ * seek_target_ms IS NOT NULL` alone and resurrect a session someone else
+ * just closed out (module header).
  */
 export async function consumeSeekTarget(db: DbOrTx, sessionId: string, nowMs: number): Promise<ConsumedSeekTarget | undefined> {
   return withTransaction(db, async (trx: Transaction<DB>) => {
@@ -181,6 +187,7 @@ export async function consumeSeekTarget(db: DbOrTx, sessionId: string, nowMs: nu
       .set({ seek_target_ms: null, discontinuity_count: nextCount, status: 'seeking', updated_at_ms: nowMs })
       .where('id', '=', sessionId)
       .where('seek_target_ms', 'is not', null)
+      .where('status', 'in', NON_TERMINAL_STATUSES)
       .executeTakeFirst();
     if (updated.numUpdatedRows === 0n) return undefined;
 
@@ -263,8 +270,16 @@ export async function markSessionFailed(db: DbOrTx, sessionId: string, input: Ma
         updated_at_ms: input.nowMs,
       })
       .where('id', '=', sessionId)
+      .where('status', 'in', NON_TERMINAL_STATUSES)
       .returningAll()
-      .executeTakeFirstOrThrow();
+      .executeTakeFirst();
+    // The leading SELECT's guard is already stale by the time this UPDATE
+    // runs (a concurrent close — Lane B's DELETE endpoint or the sweeper —
+    // can commit in between under READ COMMITTED), so the guard has to be
+    // repeated here too: zero rows matched means someone else closed the
+    // session first, in which case this is the documented no-op — same
+    // idiom as consumeSeekTarget above.
+    if (!updated) return undefined;
 
     await writeEvent(trx, {
       type: 'playback.ended',

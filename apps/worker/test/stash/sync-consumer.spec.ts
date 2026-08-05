@@ -658,6 +658,71 @@ describe("stash-sync — incremental mode touches only new/changed scenes", () =
   });
 });
 
+describe("stash-sync — incremental resume must never silently drop an un-applied touched scene (AUD-A2d-001)", () => {
+  it("a crash between the incremental inventory write and the apply does not let a resumed attempt's own touched-diff exclude the un-applied scenes", async () => {
+    const TOTAL = 5;
+    const CHANGED = 3;
+    const baseTime = "2023-01-01 00:00:00";
+    const scenes: FixtureScene[] = Array.from({ length: TOTAL }, (_, i) => ({
+      id: i + 1,
+      title: `Scene ${i + 1}`,
+      folderPath: "/stash-media",
+      basename: `scene-${i + 1}.mp4`,
+      sizeBytes: 100 + i,
+      updatedAt: baseTime,
+    }));
+    const { libraryId } = await setupLibraryWithMappedFixture(scenes);
+
+    // Baseline full sync establishes stash_scene_links.stash_updated_at_ms
+    // for every scene — the realistic precondition for an incremental run
+    // (S8's own "12 changed of 33k" framing presumes a library already
+    // synced once).
+    await runStashSync(baseDeps(fakeApply().fn), { libraryId, mode: "full" }, { jobId: randomUUID() });
+
+    // Scenes 1-3 get a newer updated_at in Stash — the incremental diff's
+    // "touched" set (S8). Scenes 4-5 stay byte-identical (never touched).
+    const changedScenes = scenes.map((s, i) => (i < CHANGED ? { ...s, updatedAt: "2023-06-01 00:00:00" } : s));
+    const updatedFixture = buildSyncFixtureDb(changedScenes);
+    updatedFixture.db.close();
+    await upsertLibraryStashConnectionConfig(db, { libraryId, sqlitePath: updatedFixture.dbPath, nowMs: Date.now() });
+
+    const jobId = randomUUID();
+
+    // Attempt 1 (INCREMENTAL, not full): fails applying the SECOND touched
+    // scene (read-model's own id-ascending walk order: 1, 2, 3). This
+    // simulates a crash landing AFTER runIncrementalSync's own inventory
+    // write for the touched set — in the pre-fix code that write retires
+    // ALL THREE scenes' stash_updated_at_ms marker BEFORE any of them is
+    // applied — but before scenes 2 and 3 are durably applied.
+    const failing = fakeApply({ throwOnCallNumber: 2 });
+    await expect(runStashSync(baseDeps(failing.fn), { libraryId, mode: "incremental" }, { jobId })).rejects.toThrow(/simulated failure/);
+    expect(failing.calls).toEqual(["1"]); // scene 1 committed before the throw on scene 2
+
+    // Attempt 2: SAME job.id (pg-boss's own same-job-id retry), a fully
+    // working apply, Stash's own updated_at values UNCHANGED since attempt
+    // 1 — the realistic case the validated finding calls out: "the gap
+    // only closes if that scene's updated_at changes again inside Stash
+    // itself... for a scene nobody edits, never."
+    const succeeding = fakeApply();
+    const result = await runStashSync(baseDeps(succeeding.fn), { libraryId, mode: "incremental" }, { jobId });
+
+    // The defect this guards: attempt 1's own inventory write must NOT
+    // have already bumped stash_updated_at_ms for scenes 2 and 3 before
+    // either was applied — if it had, this attempt's touched-diff would
+    // see them as "already at the current Stash value" and silently
+    // exclude them, the report would say "succeeded", and nothing would
+    // ever reveal that they were dropped. Zero scenes may be dropped:
+    // every touched scene must eventually get applyOneScene called for it,
+    // in this attempt or the crashed one.
+    expect(new Set([...failing.calls, ...succeeding.calls])).toEqual(new Set(["1", "2", "3"]));
+    expect(succeeding.calls).toEqual(["2", "3"]); // scene 1 correctly skipped on resume, never re-applied
+    expect(result.touchedCount).toBe(CHANGED);
+    expect(result.counts.updated).toBe(2); // scenes 2 and 3, genuinely applied THIS attempt
+
+    rmSync(updatedFixture.dir, { recursive: true, force: true });
+  });
+});
+
 describe("stash-sync — S2 snapshot-copy fallback surfaces (FX4 fix wave)", () => {
   it("a sync forced through the snapshot path records it in the stash.sync.completed event AND the report row", async () => {
     const scenes: FixtureScene[] = [

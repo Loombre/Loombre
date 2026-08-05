@@ -298,6 +298,57 @@ describe('heartbeatPlaybackSession / endPlaybackSession', () => {
     expect(beatAfterEnd).toBeUndefined();
   });
 
+  // V1-006 class, this file: heartbeatPlaybackSession's own leading SELECT
+  // already guards on `status IN ('created','active')` (the sequential case
+  // just above), but that guard is stale by the time the UPDATE runs — the
+  // UPDATE itself only ever filtered on `id`, trusting the SELECT. Real
+  // Postgres row-lock race (same technique as
+  // transcode-sessions.spec.ts's consumeSeekTarget test): a second
+  // connection holds the row past heartbeatPlaybackSession's SELECT, ends
+  // the session first, commits (releasing the lock), and only then does
+  // heartbeatPlaybackSession's UPDATE proceed — proving the UPDATE must
+  // re-check status itself or a heartbeat can resurrect a session another
+  // actor (the sweeper, the DELETE endpoint) just closed out.
+  it('does not resurrect a session ended by a concurrent actor mid-heartbeat (real Postgres row-lock race)', async () => {
+    const nowMs = Date.now();
+    const session = await createPlaybackSession(db, adminCtx, {
+      itemId: harborLightsItemId,
+      fileId: harborLightsFileId,
+      deviceId: adminDeviceId,
+      plan: { decision: 'direct-play', reasons: [] },
+      engineVersion: 'phase2-static',
+      nowMs,
+    });
+
+    const locker = new pg.Client({ connectionString: DATABASE_URL });
+    await locker.connect();
+    let heartbeatPromise: ReturnType<typeof heartbeatPlaybackSession>;
+    try {
+      await locker.query('BEGIN');
+      await locker.query('SELECT * FROM playback_sessions WHERE id = $1 FOR UPDATE', [session!.id]);
+
+      heartbeatPromise = heartbeatPlaybackSession(db, adminCtx, session!.id, nowMs + 1000);
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Close the session out (e.g. the sweeper's idle-timeout), still
+      // holding the lock, then commit.
+      await locker.query(
+        "UPDATE playback_sessions SET status = 'failed', error_code = 'heartbeat-timeout', ended_at_ms = $2, updated_at_ms = $2 WHERE id = $1",
+        [session!.id, nowMs + 500],
+      );
+      await locker.query('COMMIT'); // releases the lock; the heartbeat's UPDATE can now run
+    } finally {
+      await locker.end();
+    }
+
+    const result = await heartbeatPromise;
+    expect(result).toBeUndefined(); // "a heartbeat cannot revive a dead session" (docstring)
+
+    const row = await getPlaybackSessionForUser(db, adminCtx, session!.id);
+    expect(row?.status).toBe('failed'); // NOT resurrected to 'active'
+    expect(row?.errorCode).toBe('heartbeat-timeout');
+  });
+
   it('end emits playback.ended, is idempotent, and rejects non-owner', async () => {
     const nowMs = Date.now();
     const session = await createPlaybackSession(db, adminCtx, {
@@ -329,6 +380,76 @@ describe('heartbeatPlaybackSession / endPlaybackSession', () => {
     const eventCountAfter = (await rawClient.query('SELECT count(*)::int AS n FROM events WHERE type = $1', ['playback.ended']))
       .rows[0].n;
     expect(eventCountAfter).toBe(eventCountBefore);
+  });
+
+  // V1-006 class, this file: the sequential idempotent-re-end case above
+  // only exercises finalizeSession's CALLER-side check (endPlaybackSession's
+  // own `if (current.status === 'ended' || ...) return mapRow(current)`,
+  // evaluated against ITS SELECT). finalizeSession's own UPDATE — shared by
+  // endPlaybackSession AND endStalePlaybackSession — filtered only on `id`,
+  // trusting that stale caller-side check. Same real-lock race technique:
+  // a second connection holds the row past the caller's SELECT, closes the
+  // session out FIRST (a different cause/reason), commits, and only then
+  // does finalizeSession's UPDATE proceed — proving it must re-check status
+  // itself or it overwrites one terminal state with another and
+  // double-emits playback.ended.
+  it('does not overwrite a session closed by a concurrent actor mid-call, and does not double-emit playback.ended (real Postgres row-lock race)', async () => {
+    const nowMs = Date.now();
+    const session = await createPlaybackSession(db, adminCtx, {
+      itemId: harborLightsItemId,
+      fileId: harborLightsFileId,
+      deviceId: adminDeviceId,
+      plan: { decision: 'direct-play', reasons: [] },
+      engineVersion: 'phase2-static',
+      nowMs,
+    });
+
+    const locker = new pg.Client({ connectionString: DATABASE_URL });
+    await locker.connect();
+    let endPromise: ReturnType<typeof endPlaybackSession>;
+    try {
+      await locker.query('BEGIN');
+      await locker.query('SELECT * FROM playback_sessions WHERE id = $1 FOR UPDATE', [session!.id]);
+
+      endPromise = endPlaybackSession(db, adminCtx, session!.id, nowMs + 2000); // client-stopped
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // The sweeper (endStalePlaybackSession) closes it out FIRST, still
+      // holding the lock — status update AND its own playback.ended event,
+      // exactly like the real function does in the same transaction — then
+      // commits.
+      await locker.query(
+        "UPDATE playback_sessions SET status = 'failed', error_code = 'heartbeat-timeout', ended_at_ms = $2, updated_at_ms = $2 WHERE id = $1",
+        [session!.id, nowMs + 1500],
+      );
+      await locker.query(
+        `INSERT INTO events (type, ts_ms, payload) VALUES ('playback.ended', $1, $2::jsonb)`,
+        [nowMs + 1500, JSON.stringify({ sessionId: session!.id, itemId: harborLightsItemId, reason: 'idle-timeout', errorCode: 'heartbeat-timeout', finalPositionMs: null, endedAtMs: nowMs + 1500 })],
+      );
+      await locker.query('COMMIT'); // releases the lock; endPlaybackSession's finalizeSession UPDATE can now run
+    } finally {
+      await locker.end();
+    }
+
+    const result = await endPromise;
+    // Idempotent contract (docstring): must see the row as the actual
+    // winner left it, not overwrite 'failed' -> 'ended'.
+    expect(result?.status).toBe('failed');
+    expect(result?.errorCode).toBe('heartbeat-timeout');
+    expect(result?.endedAtMs).toBe(nowMs + 1500);
+
+    const row = await getPlaybackSessionForUser(db, adminCtx, session!.id);
+    expect(row?.status).toBe('failed');
+    expect(row?.errorCode).toBe('heartbeat-timeout');
+
+    // Exactly one playback.ended event for this session — the sweeper's,
+    // not a second one from endPlaybackSession racing behind it.
+    const { rows } = await rawClient.query(
+      `SELECT payload FROM events WHERE type = 'playback.ended' AND payload ->> 'sessionId' = $1`,
+      [session!.id],
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0].payload).toMatchObject({ reason: 'idle-timeout', errorCode: 'heartbeat-timeout' } as never);
   });
 
   it('errorCode transitions status to failed', async () => {

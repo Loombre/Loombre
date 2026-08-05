@@ -497,8 +497,25 @@ describe.skipIf(!ffmpegAvailable)("transcode session runtime integration (real f
     }
 
     // The SERVED playlist carries the discontinuity + run-relative URIs
-    // for both runs.
-    const served = readFileSync(join(afterSeekRow.staging_dir!, "media.m3u8"), "utf8");
+    // for both runs. Same ordering caveat as scenario (a): the DB row
+    // flips (produced_segment/discontinuity_count) BEFORE the loop
+    // iteration's served-playlist rewrite, so the file is a separately-
+    // observable side effect — poll for its content rather than assuming
+    // it's already landed the instant afterSeekRow's DB condition matches
+    // (readFileSync here in a single shot was racy: it could still catch
+    // an EARLIER run0-only snapshot from before the seek-restart's fold).
+    const served = await waitFor(
+      async () => {
+        let text = "";
+        try {
+          text = readFileSync(join(afterSeekRow.staging_dir!, "media.m3u8"), "utf8");
+        } catch {
+          return undefined; // not written yet
+        }
+        return text.includes("#EXT-X-DISCONTINUITY") ? text : undefined;
+      },
+      { timeoutMs: 10_000 * TIME_SCALE, label: "served playlist reflects seek-restart discontinuity", diag: () => sessionDiag(raw, sessionId) },
+    );
     expect(served).toContain("#EXT-X-DISCONTINUITY");
     expect(served).toContain(`run1/${run1Segments[0]}`);
     expect(served).toContain(`run0/${run0SegmentsBefore[0]}`);
