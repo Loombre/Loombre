@@ -601,6 +601,24 @@ export interface SystemNoticesTable {
 }
 
 // ============================================================================
+// remote_tunnel_state (migrations/0032_remote_tunnel_state.sql — Loombre
+// Remote Tunnel path, STATE.md R4/R9/RG7, lane T1). Singleton row (id
+// always 1) -- see the migration's own COMMENT ON TABLE for the full
+// enabled/cleared-together discipline.
+// ============================================================================
+
+export interface RemoteTunnelStateTable {
+  id: Generated<number>;
+  enabled: Generated<boolean>;
+  hostname: string | null;
+  tunnel_id: string | null;
+  account_id: string | null;
+  zone_id: string | null;
+  dns_record_id: string | null;
+  enabled_at_ms: number | null;
+}
+
+// ============================================================================
 // hw_capability_snapshots / hw_capability_backends
 // (migrations/0011_hw_capability_snapshots.sql — Phase 3 §11 step 5)
 // ============================================================================
@@ -875,4 +893,5 @@ export interface DB {
   stash_sync_checkpoints: StashSyncCheckpointsTable;
   email_collision_notice_ledger: EmailCollisionNoticeLedgerTable;
   system_notices: SystemNoticesTable;
+  remote_tunnel_state: RemoteTunnelStateTable;
 }

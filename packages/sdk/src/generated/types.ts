@@ -4598,6 +4598,15 @@ export interface components {
              */
             backoffMs: number | null;
             lastErrorMessage: string | null;
+            /** @description Whether a Cloudflare API token is currently stored in the keyring (write-only, R4/R9 — this field NEVER carries the token itself, by construction). ADDITIVE T1 extension to the Wave-0 frozen shape: the 6-op Tunnel surface has no other place a standing "is a token configured" read can live (setRemoteTunnelToken's 200 is an ephemeral validation-at-write-time response, not an ongoing status). */
+            tokenConfigured: boolean;
+            /**
+             * Format: int64
+             * @description When the currently-stored token was set; null when none is configured.
+             */
+            tokenSetAtMs: number | null;
+            /** @description Whether the stored token's Cloudflare permissions were sufficient the last time they were actually checked (at set time, or at the most recent enable attempt) — null when no token is configured. NOT re-validated live on every status read (Tier-0, CLAUDE.md invariant 9); a token whose Cloudflare- side scopes are revoked after being stored keeps reporting true here until re-set or until a real provisioning call surfaces the truth. */
+            tokenScopesOk: boolean | null;
         };
         RemoteTunnelLogs: {
             lines: string[];
