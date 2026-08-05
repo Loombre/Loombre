@@ -24,17 +24,37 @@
 // RemoteModule's `providers` array — either way, RemotePostureService's own
 // constructor signature never needs to change.
 //
-// This default implementation ALWAYS reports "unknown" — honest for this
-// branch's actual state (no supervised cloudflared child process exists
-// anywhere yet; T1/T2 own that). gradeConnectorHealth("unknown") -> warn,
-// never a faked pass.
+// T2 (lane T2, batch 2, RG7): reads through T1's `ConnectorManager` token
+// (../tunnel/connector-manager.js), now that it exists on this integrated
+// tree, instead of hardcoding "unknown" — the seam-unification integration
+// note this file's header used to point at as future work. Public API
+// (class name/constructor-DI-token identity, `read()`'s signature)
+// UNCHANGED, so RemotePostureService's own constructor signature (and its
+// unit test's `fakeReader` structural-typing convention,
+// remote-posture.service.spec.ts) needed no changes.
+//
+// Reuses remote-tunnel.service.ts's OWN `mapConnectorStateToContract` —
+// that function's output type (`stopped|starting|running|degraded|error`)
+// is EXACTLY this file's `ConnectorHealthState` minus `"unknown"`, which a
+// live ConnectorManager never actually produces (T1's ConnectorState union
+// has no "unknown" member — see that file), so no cast/adaptation is
+// needed beyond TypeScript's own narrower-union-into-wider-union subtyping.
+// "unknown" remains reachable in THIS class's return type only for a
+// hypothetical future ConnectorManager implementation that can't determine
+// its own state — gradeConnectorHealth("unknown") -> warn, never a faked
+// pass, exactly as this file's default used to document for its OWN
+// unconditional "unknown".
 
 import { Injectable } from "@nestjs/common";
+import { ConnectorManager } from "../tunnel/connector-manager.js";
+import { mapConnectorStateToContract } from "../tunnel/remote-tunnel.service.js";
 import type { ConnectorHealthState } from "./checks/connector-health.js";
 
 @Injectable()
 export class ConnectorHealthReaderService {
+  constructor(private readonly connectorManager: ConnectorManager) {}
+
   async read(): Promise<ConnectorHealthState> {
-    return "unknown";
+    return mapConnectorStateToContract(this.connectorManager.health().state);
   }
 }

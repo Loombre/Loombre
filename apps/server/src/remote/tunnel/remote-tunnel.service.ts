@@ -53,7 +53,7 @@
 // pair on purpose.
 
 import { Injectable } from "@nestjs/common";
-import { detectSecretBackend, removeSecret, storeSecret } from "@loombre/secrets";
+import { detectSecretBackend, removeSecret, storeSecret, tryResolveSecret } from "@loombre/secrets";
 import type { SecretBackend } from "@loombre/provisioning";
 import {
   disableTunnelStateAndEmit,
@@ -127,6 +127,48 @@ export class RemoteTunnelService {
   private async clearConnectorCredentials(): Promise<void> {
     const backend = await this.resolveBackend();
     await removeSecret({ backend, key: this.connectorCredentialsSecretKey() });
+  }
+
+  /** Mirrors tunnel-token.service.ts's own resolveStoredToken (same "raw
+   *  keyring read, never exposed on any DTO" posture) — used ONLY by
+   *  resumeConnectorIfEnabled() below (server boot / remote-tunnel-boot-
+   *  resumer.service.ts, T2). */
+  private async resolveStoredConnectorCredentials(): Promise<string | null> {
+    const backend = await this.resolveBackend();
+    return tryResolveSecret({ backend, key: this.connectorCredentialsSecretKey() });
+  }
+
+  /**
+   * T2/RG7 "server resumes the connector on boot if the tunnel state row
+   * says enabled" — mirrors HOW this service persists state (the same
+   * singleton remote_tunnel_state row enableRemoteTunnel/disableRemoteTunnel
+   * read/write) rather than inventing a second source of truth.
+   * Best-effort and NEVER throws: a boot-time resume failure (keyring
+   * unavailable, credential missing) must not crash server startup — it is
+   * logged and the connector simply stays 'stopped'/'backoff' until an
+   * admin notices via the posture card or the tunnel status endpoint and
+   * intervenes (disable+re-enable). Called from
+   * remote-tunnel-boot-resumer.service.ts's own OnApplicationBootstrap
+   * timer, never directly from main.ts (that timer's startup-delay is what
+   * keeps this from firing real process spawns during the test suite).
+   */
+  async resumeConnectorIfEnabled(): Promise<void> {
+    try {
+      const row = await getRemoteTunnelState(this.dbProvider.db);
+      if (!row.enabled || row.tunnel_id === null || row.hostname === null) return;
+
+      const credential = await this.resolveStoredConnectorCredentials();
+      if (credential === null) {
+        console.error(
+          "remote-tunnel-boot-resumer: the Tunnel path is enabled but no connector credential is stored in the keyring — cannot resume the connector. An admin must disable and re-enable the Tunnel path.",
+        );
+        return;
+      }
+
+      await this.connectorManager.start({ tunnelId: row.tunnel_id, hostname: row.hostname, credential });
+    } catch (err) {
+      console.error(`remote-tunnel-boot-resumer: failed to resume the connector on boot: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 
   /** Never echoes the raw provider error's message assumption — TunnelProviderError's
