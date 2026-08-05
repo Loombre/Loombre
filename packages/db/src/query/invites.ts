@@ -247,6 +247,29 @@ export async function listInvitesAdmin(db: Kysely<DB>, params: ListInvitesParams
   };
 }
 
+/**
+ * STATE.md "Loombre Remote — embedded WireGuard + three-path wizard +
+ * reachability proof + posture card" (R7/inviteLinksReachable, S1 lane): a
+ * cheap existence check — reuses `deriveInviteStatus`'s exact 'pending'
+ * predicate (claimed_at_ms IS NULL AND revoked_at_ms IS NULL AND
+ * expires_at_ms > nowMs) as a `LIMIT 1` query rather than fetching rows,
+ * since the posture check only needs a boolean flag, never the invites
+ * themselves. Deliberately its own function rather than reusing
+ * listInvitesAdmin (which has no status filter and would over-fetch a full
+ * page just to test emptiness).
+ */
+export async function hasUnclaimedInvites(db: Kysely<DB>, nowMs: number): Promise<boolean> {
+  const row = await db
+    .selectFrom('user_invites')
+    .select('id')
+    .where('claimed_at_ms', 'is', null)
+    .where('revoked_at_ms', 'is', null)
+    .where('expires_at_ms', '>', nowMs)
+    .limit(1)
+    .executeTakeFirst();
+  return row !== undefined;
+}
+
 // ============================================================================
 // revokeInvite (DELETE /invites/{id})
 // ============================================================================
