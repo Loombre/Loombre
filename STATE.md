@@ -154,7 +154,97 @@ New items for owner triage:
   "green gate" claim on this repo is currently not reproducible**, which matters for
   every future wave's exit gate. Deserves its own triage.
 
-Waves 3–6 queued in `reports/audit-fafa47f/fixwaves/`.
+**WAVE 3 CLOSED — commit `484e06c`.** Trust-boundary defects: SSRF host-check
+bypass, secret leakage into crash logs, token revocation, rate-limit gaps.
+
+- The token-revocation item (`updateDeviceForLogin`) took **three attempts and a
+  two-strikes escalation to opus**: attempt 1 left a stale epoch → every re-login
+  minted already-dead tokens (reviewer reproduced 12/12); attempt 2 nulled the epoch
+  → revoked tokens resurrected on re-login; the opus lane derived
+  `loginAccessEpochMs = floor(nowMs/1000)*1000`, landing the guard threshold exactly
+  on the new token's `iat`. Migrations **0034** + **0035** (comment-only corrective —
+  0034 untouched, additive-only discipline).
+- The crash-log redaction twins (`apps/{server,worker}/src/crash/redact.ts`) also took
+  three attempts — the first two were **worse than main** on the reviewer's 18-case
+  matrix (main 14/18 → attempt-1 15/18 but leaked a second connection string →
+  final allowlist+lookahead **18/18**). Lesson recorded: a "better" redactor must be
+  proven against a matrix, not eyeballed.
+- Owner decision left open (not decided by the wave): `rateLimit.loginByIdentifier`
+  — per-identifier limiting is an account-lockout DoS trade-off either way.
+
+**WAVE 5 CLOSED — commit `42d40c3`.** Release-integrity: signed-manifest coverage
+gap, arm64 hardcode, untested default install path.
+
+- Structural catch: **`installers/` tests ran in NO runner** — not a pnpm workspace
+  (turbo never saw it), zero `ci.yml` references. Added `pnpm installers:test` and a
+  gate step (`installers-test`, after `test`) — `pnpm gate` is now **15 steps / 16
+  full**; verified to run a non-zero test count AND to fail when an assertion is
+  deliberately broken. CLAUDE.md / CONTRIBUTING.md / getting-started.md step lists
+  corrected to match (they had also drifted: `go-licenses-check` was missing).
+- Review caught the wave replacing one false comment with another
+  (`build-manifest-lib.mjs` "single source of truth" claim); fixed against the real
+  three-edit-site behavior. Clarification recorded: `dotnetTest()` DOES run in
+  `windows-installer-diag.yml` + `release.yml` — the gap is gate:full only
+  (`AUD-W1-001` stands as filed).
+- Stale SourceKit diagnostics (Fixtures.processInfoCrashed "missing") disproven by
+  `swift test`: 56/56.
+
+**WAVE 4 CLOSED — commit `beb1d23`.** Contract conformance,
+error shapes, query hygiene. **First wave with zero self-inflicted defects** — opus
+verdict approve-with-nonblocking on round 1; every prior wave shipped a regression
+past a green gate.
+
+- Sequencing was load-bearing: **FW4-E (detector) ran first and alone** — 11 enum
+  "agreement" tests were tautologies (`readonly T[]` annotation instead of
+  `as const`), so they'd have passed through the exact drift the wave fixes.
+  All 11 converted; 10 mutation-verified (remove a value → TS2344 pinned to the
+  expectTypeOf line → restore → clean). The 11th, `JOB_TYPES`, had **no agreement
+  test at all** (`satisfies` proves subset, never exhaustiveness — a JobType
+  silently dropped from the array gets no pg-boss queue at startup); closed
+  post-review by mirroring the sibling pattern into `packages/jobs`
+  (tsconfig.test.json chained into `typecheck` + expectTypeOf spec),
+  mutation-verified. **11/11 now enforced by `pnpm gate`'s typecheck step.**
+- `V1-002` cursor validators: the audit's count of **sixteen was an undercount —
+  the from-source re-enumeration found seventeen** (reconciliation: the audit's list
+  included `catalog-detail.ts`, which validated inline against `UUID_PATTERN` and
+  contributes 0; `items.ts`'s own local decoder — bare `Error` on ANY malformed
+  cursor — is the real 17th). All 17 routed through `isCursorRowId`;
+  `catalog-detail.ts` converted too post-review (same semantics, uniform idiom).
+  Live-DB spec drives all of them: forged/truncated cursors → 422
+  `application/problem+json`, never 22P02/500 (reviewer booted a real Nest app and
+  verified the RFC 9457 body on all 16 endpoints).
+- New grep-gate `cursor-validator:bare-string-row-id`; after review it was widened
+  (`!==` polarity — literally items.ts's original form — and bracket access) and its
+  stash-sync-reports.ts exemption narrowed from file-level to a **line-level
+  marker** (`grep-gates:allow-bare-cursor-row-id`), closing the hole where one
+  legitimate validator exempted its whole file. All four evasion variants the
+  reviewer probed now fire or are documented blind spots (destructured form,
+  non-id field name) with the live-DB spec as backstop.
+- `V1-004` DELETE 200→204: all 11 `@Delete` handlers swept against the contract —
+  3 drifted (devices/libraries/users), fixed controller-side (`@HttpCode(204)`;
+  none returned a body, so nothing discarded); 3 wrong e2e assertions corrected,
+  2 missing success-path tests added.
+- `V1-003`/`V1-005` contract enums: `SettingsCategory` +`remote`,
+  `CapabilityBackend` description +`amf` — contract edited, SDK **regenerated**
+  (reviewer re-ran codegen: byte-identical), oasdiff non-breaking. Two new parity
+  specs pin both against their code-side sources of truth. ~24 of 38 contract
+  enums swept clean; one deliberate narrowing (`ItemTagKind` excludes `studio`)
+  investigated and cleared as by-design.
+- `V1-009` progress validation: `Number.isSafeInteger` (post-review — `isInteger`
+  alone still 500'd on `1e20`, which overflows BIGINT), mutation-verified both ways.
+- `V1-013` export truncation: mid-stream failure now `res.destroy()` — reviewer
+  reproduced both terminal behaviors on a real server: destroy = unambiguous
+  transport error; the alternative (`res.end()`) yields an HTTP 200 that parses
+  until `JSON.parse` — exactly the "looks complete and isn't" file the finding
+  warned about. `V1-010` export N+1 batched (24 queries → 2 per page, spy-counted).
+- New candidate for owner triage: `AUD-W4-001` [low, latent] —
+  `reports/audit-fafa47f/candidates/W4-followups.md`: `readEventsForViewer` binds
+  raw `afterId` into a uuid comparison unvalidated; zero production callers today,
+  so unreachable — but it's public-barrel API and the new grep-gate cannot see
+  this shape (there is no validation idiom to catch).
+
+Wave 6 (docs accuracy, dead code, UI polish, schema indexes) queued in
+`reports/audit-fafa47f/fixwaves/` — the last of the six.
 
 ## Loombre Remote — embedded WireGuard + three-path wizard + reachability proof + posture card (kicked off 2026-08-04, owner brief "Loombre Remote (Embedded WireGuard) + Three-Path Wizard + Reachability Proof + Posture Card")
 
