@@ -318,7 +318,9 @@ lint on rerun + ubuntu + macos + local --force); standing instrument added:
 occurrence.
 
 **Open for owner (consolidated):**
-1. Merge/PR decision for `fix/audit-fafa47f-waves` (6 fix commits + docs).
+1. ~~Merge/PR decision~~ **DECIDED 2026-08-06: owner approved merge to main.**
+   Fast-forwarded (`2747398`→`6078b9b`), so main carries the exact SHAs the
+   3-OS run 31116371388 proved green — no new merge commit, nothing untested.
 2. `rateLimit.loginByIdentifier` account-lockout trade-off (W3, undecided by
    design).
 3. `apps/server` e2e flakiness triage (reauth-review-findings / conformance —
