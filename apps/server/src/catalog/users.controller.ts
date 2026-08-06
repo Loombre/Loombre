@@ -525,6 +525,7 @@ export class UsersController {
   }
 
   @Delete("users/:id")
+  @HttpCode(HttpStatus.NO_CONTENT)
   async deleteUser(@Param("id") id: string, @Req() req: AuthenticatedRequest) {
     await requireAdmin(this.dbProvider.db, req);
     requireUuidParam(id, "User not found.", req.originalUrl);

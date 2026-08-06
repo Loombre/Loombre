@@ -21,7 +21,7 @@ export type UpgradeStep =
 
 /** Canonical order the automated upgrade job executes these in. Also the
  *  runtime-iterable single source of truth for UpgradeStep's members. */
-export const UPGRADE_STEPS: readonly UpgradeStep[] = [
+export const UPGRADE_STEPS = [
   "stop",
   "backup",
   "dumpall",
@@ -30,7 +30,7 @@ export const UPGRADE_STEPS: readonly UpgradeStep[] = [
   "verify",
   "swap",
   "restart",
-];
+] as const;
 
 export interface UpgradePlan {
   /** Full PG version string being upgraded from, e.g. "17.4". */

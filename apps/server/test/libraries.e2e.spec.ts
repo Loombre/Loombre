@@ -182,6 +182,34 @@ describe("POST /libraries creator visibility (gap-closure regression)", () => {
 // explicit library_permissions grant on the seeded "Restricted" library —
 // packages/db/seed/seed.mjs) — this is the entitled-viewer counterpart to
 // conformance.spec.ts's not-entitled-on-that-suite's-DB 404 case.
+// V1-004 (audit fafa47f, Fix Wave 4 lane FW4-B): openapi.yaml declares 204
+// for DELETE /libraries/{id} ("Deleted"); the handler had no @HttpCode and
+// fell through to Nest's default 200. Only a 404-against-a-nonexistent-id
+// case existed before this (security-hardening.e2e.spec.ts /
+// conformance.spec.ts's PLACEHOLDER_UUID walk) — neither exercises the
+// real success path, so nothing caught the drift.
+describe("DELETE /libraries/{id} (V1-004 regression)", () => {
+  it("deletes a real library and answers 204 with no body; the library is gone afterward", async () => {
+    const create = await request(app.getHttpServer())
+      .post("/libraries")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ name: "Delete Me", mediaKind: "movie", paths: ["/data/delete-me"] });
+    expect(create.status, JSON.stringify(create.body)).toBe(201);
+    const libraryId: string = create.body.id;
+
+    const del = await request(app.getHttpServer())
+      .delete(`/libraries/${libraryId}`)
+      .set("Authorization", `Bearer ${adminToken}`);
+    expect(del.status, JSON.stringify(del.body)).toBe(204);
+    expect(del.text).toBe("");
+
+    const getAfter = await request(app.getHttpServer())
+      .get(`/libraries/${libraryId}`)
+      .set("Authorization", `Bearer ${adminToken}`);
+    expect(getAfter.status).toBe(404);
+  });
+});
+
 describe("GET /system/info storagePool + GET /restricted/count (Wave 1c)", () => {
   it("GET /system/info always sends storagePool (additive) — null on this host since seed library paths (/data/...) don't exist", async () => {
     const res = await request(app.getHttpServer())

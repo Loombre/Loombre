@@ -258,7 +258,7 @@ export type JobType = keyof JobPayloads;
 
 /** Runtime-iterable mirror of the JobPayloads keys — used to register a
  *  pg-boss queue for every closed job type at startup. */
-export const JOB_TYPES: readonly JobType[] = [
+export const JOB_TYPES = [
   'scan',
   'probe',
   'image',
@@ -273,7 +273,7 @@ export const JOB_TYPES: readonly JobType[] = [
   'stash-inventory',
   'stash-sync',
   'mail-send',
-];
+] as const satisfies readonly JobType[];
 
 /**
  * pg-boss provisioning options for one queue (queue.ts passes these to

@@ -52,7 +52,7 @@ import type { DB, ItemType } from '../types.js';
 import type { ViewerContext } from '../context.js';
 import { applyContentClassFilter, applyGuard } from './guard.js';
 import { getItemById, type CatalogItemRow } from './items.js';
-import { decodeCursor, encodeCursor } from './cursor.js';
+import { decodeCursor, encodeCursor, isCursorRowId } from './cursor.js';
 import { toAudioCodec, toBitDepth, toHdr, toSubtitleCodec, toVideoCodec } from './media-info.js';
 
 export interface ImageDescriptor {
@@ -710,7 +710,7 @@ function isListCursorPayload(
 ): value is ListCursorPayload {
   if (typeof value !== 'object' || value === null) return false;
   const v = value as Record<string, unknown>;
-  if (typeof v.id !== 'string' || !UUID_PATTERN.test(v.id)) return false;
+  if (!isCursorRowId(v.id)) return false;
   if (typeof v.sort !== 'string' || !VALID_SORTS.has(v.sort)) return false;
   if (typeof v.order !== 'string' || !VALID_ORDERS.has(v.order)) return false;
   if (v.sort !== activeSort || v.order !== activeOrder) return false;

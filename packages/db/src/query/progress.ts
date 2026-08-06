@@ -25,7 +25,7 @@ import type { Kysely } from 'kysely';
 import type { DB, ItemType, WatchState } from '../types.js';
 import type { ViewerContext } from '../context.js';
 import { applyGuardToJoined } from './guard.js';
-import { decodeCursor, encodeCursor } from './cursor.js';
+import { decodeCursor, encodeCursor, isCursorRowId } from './cursor.js';
 
 export interface ContinueWatchingRow {
   itemId: string;
@@ -105,7 +105,7 @@ function isProgressCursorPayload(value: unknown): value is ProgressCursorPayload
     typeof value === 'object' &&
     value !== null &&
     typeof (value as Record<string, unknown>).updatedAtMs === 'number' &&
-    typeof (value as Record<string, unknown>).itemId === 'string'
+    isCursorRowId((value as Record<string, unknown>).itemId)
   );
 }
 

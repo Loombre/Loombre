@@ -231,6 +231,7 @@ export class LibrariesController {
   }
 
   @Delete("libraries/:id")
+  @HttpCode(HttpStatus.NO_CONTENT)
   async deleteLibrary(@Param("id") id: string, @Req() req: AuthenticatedRequest) {
     await requireAdmin(this.dbProvider.db, req);
     requireUuidParam(id, "Library not found.", req.originalUrl);

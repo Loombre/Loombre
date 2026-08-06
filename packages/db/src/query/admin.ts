@@ -49,7 +49,7 @@ import type { DB, DevicesTable, ItemType, JobsTable, PlaybackSessionStatus, User
 import type { ViewerContext } from '../context.js';
 import { withTransaction, writeEvent } from '../internal/index.js';
 import { applyGuard, applyGuardToJoined } from './guard.js';
-import { decodeCursor, encodeCursor } from './cursor.js';
+import { decodeCursor, encodeCursor, isCursorRowId } from './cursor.js';
 
 export type UserRow = Selectable<UsersTable>;
 export type DeviceRow = Selectable<DevicesTable>;
@@ -95,7 +95,7 @@ function isUserCursorPayload(value: unknown): value is UserCursorPayload {
     typeof value === 'object' &&
     value !== null &&
     typeof (value as Record<string, unknown>).createdAtMs === 'number' &&
-    typeof (value as Record<string, unknown>).id === 'string'
+    isCursorRowId((value as Record<string, unknown>).id)
   );
 }
 
@@ -510,7 +510,7 @@ function isDeviceCursorPayload(value: unknown): value is DeviceCursorPayload {
     typeof value === 'object' &&
     value !== null &&
     typeof (value as Record<string, unknown>).createdAtMs === 'number' &&
-    typeof (value as Record<string, unknown>).id === 'string'
+    isCursorRowId((value as Record<string, unknown>).id)
   );
 }
 
@@ -577,7 +577,7 @@ function isJobCursorPayload(value: unknown): value is JobCursorPayload {
     typeof value === 'object' &&
     value !== null &&
     typeof (value as Record<string, unknown>).createdAtMs === 'number' &&
-    typeof (value as Record<string, unknown>).id === 'string'
+    isCursorRowId((value as Record<string, unknown>).id)
   );
 }
 
@@ -681,7 +681,7 @@ function isAdminSessionCursorPayload(value: unknown): value is AdminSessionCurso
     typeof value === 'object' &&
     value !== null &&
     typeof (value as Record<string, unknown>).startedAtMs === 'number' &&
-    typeof (value as Record<string, unknown>).id === 'string'
+    isCursorRowId((value as Record<string, unknown>).id)
   );
 }
 
@@ -840,7 +840,7 @@ function isUnmatchedItemCursorPayload(value: unknown): value is UnmatchedItemCur
     typeof value === 'object' &&
     value !== null &&
     typeof (value as Record<string, unknown>).addedAtMs === 'number' &&
-    typeof (value as Record<string, unknown>).id === 'string'
+    isCursorRowId((value as Record<string, unknown>).id)
   );
 }
 

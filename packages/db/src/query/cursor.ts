@@ -4,9 +4,10 @@
 // Shared opaque-cursor codec for the keyset-pagination pattern
 // src/query/items.ts established (base64url of a small JSON payload). Every
 // NEW guarded query in this wave (search, people, tags, progress) uses this
-// instead of re-deriving its own encode/decode pair. items.ts's original
-// local helpers are left as-is (untouched, still tested, no behavior
-// change) — this is purely for the additions in this package.
+// instead of re-deriving its own encode/decode pair. As of Fix Wave 4
+// (audit fafa47f, FW4-A) items.ts itself ALSO routes through this codec —
+// its original local helpers threw bare Errors on malformed cursors and
+// were deleted in favor of decodeCursor + isCursorRowId here.
 //
 // Security note (adversarial "cursor forgery" test, packages/db/test/
 // leak.spec.ts): a cursor is ONLY ever used as a keyset comparison bound
