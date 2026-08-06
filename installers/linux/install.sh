@@ -254,6 +254,16 @@ EOF
   echo "install.sh: wrote ${ENV_FILE} (0640, root:${LOOMBRE_USER})"
 fi
 
+# Load the env file's values into this script's own shell — a re-run over
+# an existing, untouched ${ENV_FILE} (see above) may carry an operator's
+# custom PORT/LOOMBRE_WEB_PORT, and the closing "where to browse" message
+# below must report what is actually configured, not just the defaults
+# this script would have written on a fresh install.
+set -a
+# shellcheck disable=SC1090
+. "${ENV_FILE}"
+set +a
+
 # ── embedded-PostgreSQL shared-library preflight ────────────────────────
 # Runs BEFORE anything is started. It used to run at the very end of this
 # script, printing a warning — which was survivable only while install.sh

@@ -47,12 +47,13 @@
         <Directory Id="SERVERDIR" Name="server" />
         <!-- Same shape as SERVERDIR, for @loombre/worker. -->
         <Directory Id="WORKERDIR" Name="worker" />
-        <!-- @loombre/web's `output: "standalone"` bundle in Next's
-             monorepo layout (apps\web\server.js + pruned node_modules,
-             plus the explicitly-copied apps\web\.next\static and
-             apps\web\public trees — see build-msi.mjs's stageWeb()).
-             SERVED by the LoombreWeb service (Services.wxs) running
-             node.exe against apps\web\server.js — the installer
+        <!-- @loombre/web staged as a HOISTED pnpm deploy (pruned prod
+             node_modules, flattened — no links) plus the copied `.next`
+             build output (standalone/ and cache/ excluded) and the
+             public/ tree — see build-msi.mjs's stageWeb() for why Next's
+             standalone bundle is not used on Windows. SERVED by the
+             LoombreWeb service (Services.wxs) running node.exe against
+             node_modules\next\dist\bin\next start — the installer
              completeness audit closed the old "staged but nothing serves
              it" gap this comment used to flag. -->
         <Directory Id="WEBDIR" Name="web" />

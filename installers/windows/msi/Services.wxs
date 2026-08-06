@@ -218,22 +218,24 @@
           ResetPeriodInDays="1" />
 
         <!-- ==================== LoombreWeb ==================== -->
-        <!-- The apps/web Next.js standalone bundle (installer
+        <!-- apps/web is staged as a HOISTED pnpm deploy plus a copied
+             `.next` build output, NOT Next's standalone bundle (installer
              completeness audit — closes the "installed web files nothing
-             serves" gap): build-msi.mjs stages `output: "standalone"`'s
-             monorepo layout, so the entrypoint is
-             [WEBDIR]apps\web\server.js and the working directory is its
-             containing folder (Next resolves .next/static and public/
-             relative to server.js). The cwd argument uses the same
-             trailing-dot idiom as the other two services — see this
-             file's header TRAILING-BACKSLASH TRAP note. No extract-zip
-             pair here: the server/worker registrations already carry the
-             self-heal, and one extractor owner per boot is plenty. -->
+             serves" gap; see build-msi.mjs's stageWeb() for why
+             standalone is avoided on Windows). The entrypoint is Next's
+             own CLI — [WEBDIR]node_modules\next\dist\bin\next start — run
+             with [WEBDIR]. as the working directory so Next resolves
+             .next/static and public/ relative to the deploy root. The cwd
+             argument uses the same trailing-dot idiom as the other two
+             services — see this file's header TRAILING-BACKSLASH TRAP
+             note. No extract-zip pair here: the server/worker
+             registrations already carry the self-heal, and one extractor
+             owner per boot is plenty. -->
         <ServiceInstall
           Id="svc.LoombreWeb"
           Name="LoombreWeb"
           DisplayName="Loombre Web"
-          Description="Loombre web client (Next.js standalone server for the browser UI; talks to the Loombre Server API)."
+          Description="Loombre web client (Next.js server for the browser UI; talks to the Loombre Server API)."
           Start="auto"
           Type="ownProcess"
           ErrorControl="normal"
@@ -322,12 +324,18 @@
           Name="Environment"
           Type="multiString"
           Value="NODE_ENV=production[~]LOOMBRE_DATA_DIR=[APPDATAFOLDER][~]LOOMBRE_FFMPEG=[FFMPEGDIR]ffmpeg.exe[~]LOOMBRE_FFPROBE=[FFMPEGDIR]ffprobe.exe" />
-        <!-- LoombreWeb's env is pure Next.js standalone contract: PORT +
-             HOSTNAME are what server.js binds (0.0.0.0 because the web UI
-             is LAN-facing by the same PLAN §10 rationale as the server —
-             Firewall.wxs opens the matching inbound rule);
-             LOOMBRE_SERVER_ORIGIN points API proxying at the server
-             service on its ServerPort.wxi port. -->
+        <!-- LoombreWeb's env carries PORT only — HOSTNAME is NOT one of
+             these Environment entries. The child is Next's own CLI
+             (node_modules\next\dist\bin\next start, see this ServiceInstall's
+             Arguments above and this file's header on why standalone's
+             server.js is NOT used), and `next start` binds 0.0.0.0 via the
+             literal "--hostname 0.0.0.0" CLI argument already present in
+             those Arguments (0.0.0.0 because the web UI is LAN-facing by
+             the same PLAN §10 rationale as the server — Firewall.wxs opens
+             the matching inbound rule); PORT here is what `next start`
+             falls back to reading from the environment since no --port
+             arg is passed. LOOMBRE_SERVER_ORIGIN points API proxying at
+             the server service on its ServerPort.wxi port. -->
         <RegistryValue
           Root="HKLM"
           Key="SYSTEM\CurrentControlSet\Services\LoombreWeb"

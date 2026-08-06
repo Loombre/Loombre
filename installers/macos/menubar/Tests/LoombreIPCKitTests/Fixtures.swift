@@ -40,6 +40,15 @@ enum Fixtures {
     }
     """
 
+    static let processInfoCrashed = """
+    {
+      "state": "crashed",
+      "pid": null,
+      "startedAtMs": 1732400000000,
+      "version": "0.0.1"
+    }
+    """
+
     static let provisioningStatusExternal = """
     {
       "state": "external",

@@ -7,11 +7,12 @@
 //                                  and their workspace deps, `next build`
 //                                  @loombre/web
 //   2. stage payloads           — pnpm-deploy server/worker (pruned prod
-//                                  node_modules); stage web's `output:
-//                                  "standalone"` bundle in its runnable
-//                                  monorepo layout (see stageWeb() — the
-//                                  installer completeness audit closed the
-//                                  old raw-.next gap); fetch the REAL
+//                                  node_modules); stage web as a HOISTED
+//                                  deploy + copied `.next` build output,
+//                                  NOT Next's standalone bundle (see
+//                                  stageWeb() for why — the installer
+//                                  completeness audit closed the old
+//                                  raw-.next gap); fetch the REAL
 //                                  win-x64 Node runtime via the shared,
 //                                  manifest-pinned scripts/fetch-node.mjs
 //                                  (see fetchNodeRuntime()); consume lane

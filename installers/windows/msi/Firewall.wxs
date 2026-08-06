@@ -4,9 +4,11 @@
 
   Inbound TCP exceptions for the Loombre server's listen port AND the web
   client's listen port (the latter added by the installer completeness
-  audit: the LoombreWeb service binds HOSTNAME=0.0.0.0 — see Services.wxs —
-  because the browser UI is exactly as LAN-facing as the API it fronts, by
-  the same PLAN §10 rationale below). Via the WiX v4 Firewall extension
+  audit: the LoombreWeb service binds 0.0.0.0 via `next start --hostname
+  0.0.0.0` — the CLI argument in Services.wxs's ServiceInstall, NOT an
+  Environment entry — because the browser UI is exactly as LAN-facing as
+  the API it fronts, by the same PLAN §10 rationale below). Via the WiX v4
+  Firewall extension
   (WixToolset.Firewall.wixext — passed to `wix build` with
   `-ext WixToolset.Firewall.wixext`; NuGet-restored the same way the `wix`
   dotnet tool itself is, see build-msi.mjs).
@@ -54,7 +56,7 @@
         <fw:FirewallException
           Id="fw.LoombreServer"
           Name="Loombre Server"
-          Description="Inbound TCP for the Loombre media server (LAN/remote access, docs/PLAN.md §10)."
+          Description="Allows incoming connections to the Loombre media server, for access from other devices on your network."
           Port="$(var.ServerPort)"
           Protocol="tcp"
           Scope="any"
@@ -68,7 +70,7 @@
         <fw:FirewallException
           Id="fw.LoombreWeb"
           Name="Loombre Web"
-          Description="Inbound TCP for the Loombre web client (LAN/remote access, docs/PLAN.md §10)."
+          Description="Allows incoming connections to the Loombre web client, for access from other devices on your network."
           Port="$(var.WebPort)"
           Protocol="tcp"
           Scope="any"

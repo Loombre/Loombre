@@ -10,6 +10,13 @@
 //      what's provable without sudo/loading; documents what isn't
 //   4. the bundled server binary boots for real against the external-PG
 //      loombre_i4 DB on a 34xx port (external-PG path, D1)
+//   4b. the bundled server binary ALSO boots for real via the EMBEDDED-PG
+//      path — DATABASE_URL unset, LOOMBRE_DATA_DIR pointed at a scratch
+//      dir — provisioning its own PostgreSQL from the payload's vendored
+//      runtime/pg and auto-migrating before it answers /healthz. Added for
+//      AUD-A5b-006: the out-of-the-box default (readme.txt: "No database
+//      setup is required") had NO coverage here before — check 4 above
+//      only ever proved external-PG, the path fewer real operators take.
 //   5. the bundled worker binary boots, registers consumers, and exits
 //      cleanly on SIGTERM
 //
@@ -22,7 +29,7 @@
 import { existsSync, readFileSync, mkdtempSync, rmSync } from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { spawnSync, spawn } from "node:child_process";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -224,6 +231,9 @@ async function main() {
   const serverPort = 3411;
   await smokeServerBoot(payloadDir, report.version, serverPort);
 
+  console.log(`\n=== 4b. bundled server binary boots for real (embedded-PG path, the default) ===`);
+  await smokeServerBootEmbedded(payloadDir, report.version, serverPort + 1);
+
   console.log(`\n=== 5. bundled worker binary boots + clean SIGTERM ===`);
   await smokeWorkerBoot(payloadDir, report.version);
 
@@ -291,6 +301,85 @@ function smokeServerBoot(payloadDir, version, port) {
   });
 }
 
+// AUD-A5b-006: the local smoke above only ever booted against EXTERNAL
+// Postgres — the embedded-PG path (DATABASE_URL unset) is the documented
+// out-of-the-box default (readme.txt: "No database setup is required —
+// the server provisions its bundled PostgreSQL automatically") and had no
+// coverage of its own. Same binShim entry point as smokeServerBoot (same
+// symlink-realpath reasoning applies), but with NO DATABASE_URL in the
+// child's environment and a scratch LOOMBRE_DATA_DIR the server is free to
+// initdb into — this is what makes bin/loombre-server's own unset-branch
+// (LOOMBRE_EMBEDDED_PG_VENDOR_DIR/LOOMBRE_EMBEDDED_PG_VERSION, sourced from
+// the payload's staged runtime/pg) actually run, exercising
+// apps/server/src/bootstrap/provisioning.ts's embedded branch end to end:
+// real initdb, real postmaster start, real auto-migrate, all against the
+// payload's own vendored PostgreSQL binaries — nothing external.
+export function smokeServerBootEmbedded(payloadDir, version, port) {
+  const binShim = path.join(payloadDir, "opt", "loombre", version, "bin", "loombre-server");
+  const vendorPgDir = path.join(payloadDir, "opt", "loombre", version, "runtime", "pg");
+  check("payload ships vendored embedded-PG binaries under runtime/pg (else this scenario cannot provision anything)", () => {
+    if (!existsSync(vendorPgDir)) {
+      throw new Error(
+        `missing ${vendorPgDir} — fetch-embedded-pg.mjs did not stage real binaries into this build ` +
+          "(a placeholder-only build cannot run the embedded-PG path; see installers/macos/pkg/fetch-embedded-pg.mjs)",
+      );
+    }
+  });
+
+  const dataDir = mkdtempSync(path.join(os.tmpdir(), "loombre-smoke-embedded-datadir-"));
+
+  // NO DATABASE_URL anywhere in this child's environment — safe by
+  // construction (`delete`, not merely "don't set"): a stray DATABASE_URL
+  // inherited from the ambient shell would silently steer this scenario
+  // onto EXTERNAL Postgres and it would pass for the wrong reason,
+  // proving nothing about the embedded path this check exists for.
+  const embeddedEnv = {
+    ...process.env,
+    PORT: String(port),
+    LOOMBRE_CORS_ORIGINS: "",
+    LOOMBRE_DATA_DIR: dataDir,
+  };
+  delete embeddedEnv.DATABASE_URL;
+
+  const child = spawn(binShim, [], { env: embeddedEnv, stdio: ["ignore", "pipe", "pipe"] });
+  let stdout = "";
+  let stderr = "";
+  child.stdout.on("data", (d) => (stdout += d));
+  child.stderr.on("data", (d) => (stderr += d));
+
+  // 120s, not smokeServerBoot's 15s: first boot here runs a real initdb +
+  // cluster start + full migration set before it ever answers /healthz —
+  // matching installers/linux/smoke.mjs's identical embedded-mode budget
+  // for the identical operation (its own comment: "first boot runs a real
+  // initdb + cluster start + full migration set before listening").
+  const deadline = Date.now() + 120_000;
+  const waitForHealthy = () =>
+    new Promise((resolve) => {
+      const tick = () => {
+        const res = run("curl", ["-sS", "-m", "1", "-o", "/dev/null", "-w", "%{http_code}", `http://127.0.0.1:${port}/healthz`]);
+        if (res.stdout.trim() === "200") return resolve(true);
+        if (child.exitCode !== null) return resolve(false); // crashed early — no point waiting out the deadline
+        if (Date.now() > deadline) return resolve(false);
+        setTimeout(tick, 300);
+      };
+      tick();
+    });
+
+  return waitForHealthy().then((healthy) => {
+    check("embedded-PG: server binary responds 200 on /healthz within 120s (initdb + start + auto-migrate)", () => {
+      if (!healthy) throw new Error(`no healthy response — stdout:\n${stdout}\nstderr:\n${stderr}`);
+    });
+    check("embedded-PG: server actually provisioned a PostgreSQL data directory under the scratch LOOMBRE_DATA_DIR", () => {
+      const pgDataDir = path.join(dataDir, "postgres", "data");
+      if (!existsSync(pgDataDir)) {
+        throw new Error(`${pgDataDir} does not exist — /healthz went 200 without embedded provisioning actually running`);
+      }
+    });
+    child.kill("SIGTERM");
+    rmSync(dataDir, { recursive: true, force: true });
+  });
+}
+
 function smokeWorkerBoot(payloadDir, version) {
   const nodeBin = path.join(payloadDir, "opt", "loombre", version, "runtime", "node", "bin", "node");
   const indexJs = path.join(payloadDir, "opt", "loombre", version, "worker", "dist", "index.js");
@@ -354,7 +443,15 @@ function smokeWorkerBoot(payloadDir, version) {
   });
 }
 
-main().catch((err) => {
-  console.error("[smoke] FAILED:", err);
-  process.exit(1);
-});
+// Guarded (not a bare top-level call), same isDirectEntrypoint pattern
+// installers/linux/smoke.mjs already uses: lets smokeServerBootEmbedded be
+// `import`ed and exercised on its own (e.g. when the external-PG scenario
+// above can't run because no loombre_i4 database exists on this host) —
+// without a plain import also kicking off the whole multi-minute smoke run.
+const isDirectEntrypoint = process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href;
+if (isDirectEntrypoint) {
+  main().catch((err) => {
+    console.error("[smoke] FAILED:", err);
+    process.exit(1);
+  });
+}

@@ -58,6 +58,13 @@ final class CodableRoundTripTests: XCTestCase {
         XCTAssertNil(value.startedAtMs)
     }
 
+    func test_processInfo_crashed_has_nil_pid_but_retains_startedAt() throws {
+        let value = try roundTrip(IPCProcessInfo.self, from: Fixtures.processInfoCrashed)
+        XCTAssertEqual(value.state, .crashed)
+        XCTAssertNil(value.pid)
+        XCTAssertEqual(value.startedAtMs, 1_732_400_000_000)
+    }
+
     func test_provisioningStatus_external_has_nil_pgVersion_and_dataDir() throws {
         let value = try roundTrip(ProvisioningStatus.self, from: Fixtures.provisioningStatusExternal)
         XCTAssertEqual(value.state, .external)
