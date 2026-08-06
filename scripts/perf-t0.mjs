@@ -355,7 +355,22 @@ function spawnServer() {
   const childNodeOptions = [process.env.NODE_OPTIONS, "--import tsx"].filter(Boolean).join(" ");
   return spawn(process.execPath, [SERVER_DIST_MAIN], {
     cwd: REPO_ROOT,
-    env: { ...process.env, DATABASE_URL, PORT: String(PORT), NODE_OPTIONS: childNodeOptions },
+    env: {
+      ...process.env,
+      DATABASE_URL,
+      PORT: String(PORT),
+      NODE_OPTIONS: childNodeOptions,
+      // Fix Wave 3 (AUD-A7d-002) added rateLimit.search (default 60/min per
+      // identity); this harness fires ENDPOINT_ITERATIONS+warmup (=210)
+      // /search requests as ONE identity in a few seconds, so the default
+      // trips a deterministic 429 mid-measurement (first seen: CI
+      // 31113051932). Pin the ceiling out of reach via the setting's OWN
+      // env-pin mechanism, scoped to this child only — the limiter still
+      // executes on every request (same code path production traffic pays),
+      // it just can never trip, so the p95 stays an honest end-to-end
+      // number. Not set for the worker: it serves no HTTP.
+      LOOMBRE_RATE_SEARCH: "1000000",
+    },
     stdio: ["ignore", "pipe", "pipe"],
   });
 }

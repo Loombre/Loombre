@@ -1,0 +1,65 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+#
+# Dispatch-only diagnostic: run the gate's `lint` step alone on
+# windows-latest with STREAMED, per-task output.
+#
+# Why this exists (CI run 31113051932, branch fix/audit-fafa47f-waves):
+# `pnpm gate:full`'s lint step failed on the windows-latest leg with the
+# failing task's output — and turbo's own failure summary — completely
+# absent from the job log. Eight fast lint tasks printed clean groups,
+# then pnpm's ELIFECYCLE exit-1 line 0.24s later, nothing in between:
+# the classic Windows-runner stdout-flush loss when a parallel task fails
+# and turbo (no --continue) tears the rest down. The same commit lints
+# green on ubuntu-latest, macos-latest, locally with --force — AND on the
+# windows-latest RERUN (attempt 2 passed lint and failed later on an
+# unrelated chocolatey-503 provisioning flake), so the failure was a
+# transient runner-level kill whose cause the mute log cannot name. This
+# workflow is the standing instrument for the NEXT occurrence.
+#
+# This workflow exists so that diagnosis never again requires guessing
+# from a mute log: --log-order=stream interleaves output as it happens
+# (nothing waits in a group buffer), --continue runs EVERY task so one
+# failure can't cancel-and-mask the others, --force ignores the cache,
+# and the transcript is uploaded as an artifact even when the step fails.
+#
+# METHOD NOTE (windows-tls-diag.yml precedent): steps here hard-fail; read
+# the log/artifact, not just step conclusions.
+name: windows-lint-diag
+
+on:
+  workflow_dispatch:
+
+jobs:
+  lint:
+    name: lint (windows-latest, streamed)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: turbo run lint (streamed, --continue, --force)
+        shell: pwsh
+        # Tee to a file so the artifact survives even if live stdout is
+        # lost again; exit with turbo's real exit code, not tee's.
+        run: |
+          pnpm exec turbo run lint --continue --force --log-order=stream 2>&1 | Tee-Object -FilePath lint-diag.log
+          exit $LASTEXITCODE
+
+      - name: Upload lint transcript
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: lint-diag-log
+          path: lint-diag.log
