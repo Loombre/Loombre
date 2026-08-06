@@ -194,7 +194,10 @@ describe("AUD-A7b-001: DELETE /devices/{id} must kill the revoked device's alrea
     const revoke = await request(app.getHttpServer())
       .delete(`/devices/${lost.deviceId}`)
       .set("Authorization", `Bearer ${trusted.accessToken}`);
-    expect(revoke.status, JSON.stringify(revoke.body)).toBe(200);
+    // V1-004: the contract declares 204 (Revoked) for DELETE /devices/{id};
+    // the handler used to fall through to Nest's default 200 with no
+    // @HttpCode decorator.
+    expect(revoke.status, JSON.stringify(revoke.body)).toBe(204);
 
     const afterLost = await whoAmI(lost.accessToken);
     expect(

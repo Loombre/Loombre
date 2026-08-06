@@ -19,7 +19,7 @@
 // "live peer removal before DB rows" ordering (see that method's own doc
 // comment) is never duplicated or risked drifting between the two routes.
 
-import { Controller, Delete, Get, Param, Query, Req } from "@nestjs/common";
+import { Controller, Delete, Get, HttpCode, HttpStatus, Param, Query, Req } from "@nestjs/common";
 import { deleteDeviceForUser, getDeviceForUser, listDevicesForUser, revokeRefreshTokensForDevice, type AdminDeviceRow } from "@loombre/db";
 import { nowMs as clockNowMs } from "@loombre/shared";
 import { notFound } from "../gateway/problem.exception.js";
@@ -71,6 +71,7 @@ export class DevicesController {
   }
 
   @Delete("devices/:id")
+  @HttpCode(HttpStatus.NO_CONTENT)
   async revokeDevice(@Param("id") id: string, @Req() req: AuthenticatedRequest) {
     requireUuidParam(id, "Device not found.", req.originalUrl);
     const device = await getDeviceForUser(this.dbProvider.db, req.user!.userId, id);

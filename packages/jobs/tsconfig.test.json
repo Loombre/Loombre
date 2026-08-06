@@ -1,0 +1,17 @@
+{
+  // See packages/provisioning/tsconfig.test.json for the full rationale —
+  // this makes `pnpm gate`'s typecheck step actually check the
+  // expectTypeOf/@ts-expect-error assertions in test/. Added for JOB_TYPES
+  // (Fix Wave 4 residual: `as const satisfies readonly JobType[]` proves
+  // SUBSET only — a member silently dropped from JOB_TYPES gets no
+  // pg-boss queue at startup, queue.ts, and nothing failed).
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": ".",
+    "declaration": false,
+    // The base config sets declarationMap (invalid without declaration).
+    "declarationMap": false
+  },
+  "include": ["src", "test"]
+}

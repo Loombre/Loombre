@@ -37,7 +37,7 @@ import type { DB } from '../types.js';
 import { lowestFreeDeviceIp } from '@loombre/shared';
 import { withTransaction, writeEvent } from '../internal/index.js';
 import { revokeRefreshTokensForDevice } from './identity.js';
-import { decodeCursor, encodeCursor } from './cursor.js';
+import { decodeCursor, encodeCursor, isCursorRowId } from './cursor.js';
 
 function isPgUniqueViolation(err: unknown): boolean {
   return typeof err === 'object' && err !== null && (err as { code?: unknown }).code === '23505';
@@ -126,7 +126,7 @@ function isWgPeerCursorPayload(value: unknown): value is WgPeerCursorPayload {
     typeof value === 'object' &&
     value !== null &&
     typeof (value as Record<string, unknown>).createdAtMs === 'number' &&
-    typeof (value as Record<string, unknown>).id === 'string'
+    isCursorRowId((value as Record<string, unknown>).id)
   );
 }
 

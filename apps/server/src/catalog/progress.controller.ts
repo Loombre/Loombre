@@ -71,14 +71,28 @@ export class ProgressController {
   ) {
     requireUuidParam(itemId, "Item not found.", req.originalUrl);
     const body = rawBody ?? {};
-    if (typeof body.positionMs !== "number" || body.positionMs < 0) {
+    // V1-009: contract declares positionMs/durationMs `type: integer` and
+    // both flow unmodified into a BIGINT column (upsertProgress ->
+    // progress-write.ts, no rounding anywhere in that file) — a non-integer
+    // number (e.g. 12.5) used to sail past this check and hit Postgres as
+    // an unhandled 500 instead of a 422 here. Number.isSafeInteger, not
+    // isInteger: isInteger(1e20) is true but 1e20 overflows BIGINT
+    // (Postgres: "bigint out of range" — the same 500 class), and any
+    // integer above MAX_SAFE_INTEGER was lossy the moment JSON.parse
+    // produced it anyway. MAX_SAFE_INTEGER ms ≈ 285k years, so the
+    // tighter-than-int64 bound rejects nothing legitimate.
+    if (typeof body.positionMs !== "number" || !Number.isSafeInteger(body.positionMs) || body.positionMs < 0) {
       throw unprocessableEntity("positionMs (non-negative integer) is required.", req.originalUrl);
     }
     if (typeof body.state !== "string" || !VALID_STATES.has(body.state)) {
       throw unprocessableEntity("state must be one of unplayed|in-progress|played.", req.originalUrl);
     }
-    if (body.durationMs !== undefined && body.durationMs !== null && typeof body.durationMs !== "number") {
-      throw unprocessableEntity("durationMs must be a number or null.", req.originalUrl);
+    if (
+      body.durationMs !== undefined &&
+      body.durationMs !== null &&
+      (typeof body.durationMs !== "number" || !Number.isSafeInteger(body.durationMs))
+    ) {
+      throw unprocessableEntity("durationMs must be an integer or null.", req.originalUrl);
     }
     if (body.sessionId !== undefined && typeof body.sessionId !== "string") {
       throw unprocessableEntity("sessionId must be a string.", req.originalUrl);
