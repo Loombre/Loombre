@@ -175,10 +175,88 @@ export function redactSecretShapedValues(text: string): string {
   // e.g. a postgres:// DATABASE_URL surfacing in a connection-failure
   // message. Only the password segment is replaced; user/host/port stay
   // (diagnostically useful, not secret).
-  result = result.replace(
-    /(\w+:\/\/[^\s:/@]+:)([^@\s/]+)(@)/g,
-    (_whole, prefix: string, _password: string, at: string) => `${prefix}${REDACTED}${at}`,
-  );
+  //
+  // V1-003: a literal "@" is legal in BOTH the username and the password
+  // (WHATWG URL parsing splits authority on the LAST "@", not the first —
+  // verified against pg-connection-string and the URL constructor, which
+  // both accept it as a working connection string). This first finds the
+  // scheme://...@...host-shaped TOKEN (up to the next whitespace/slash),
+  // then — for each token found — resolves the split itself with plain
+  // string ops (lastIndexOf the "@" that separates userinfo from host,
+  // then the first ":" that separates username from password) rather than
+  // trusting a single greedy capture group to land on the right "@".
+  //
+  // R5 ALLOWLIST FIX (third-wave denylist finally retired): every prior
+  // pass here tried to stop the HOST half at the separator between two
+  // DISTINCT connection strings by enumerating forbidden characters
+  // (first whitespace/"/", then +",;\"'", then +"`()[]{}") — and each
+  // time, a new separator (this wave: "&", "|", "<", ">") turned up that
+  // wasn't on the list, over-consumed past it, and swallowed the second
+  // scheme://user:pass@host whole, leaving ITS password unredacted (the
+  // /g scan resumes mid-token, past the "\w+://" the next match needs).
+  // A denylist can only ever be as complete as the set of separators
+  // someone thought to type into a connection-failure message — that set
+  // is unbounded (JSON, shell quoting, log-array brackets, arbitrary
+  // punctuation a driver chooses to glue two DSNs together with).
+  //
+  // A host, unlike "whatever comes after the first '@'", is NOT an
+  // open-ended alphabet — RFC 3986 reg-name is unreserved (ALPHA / DIGIT /
+  // "-" / "." / "_" / "~") + pct-encoded + a handful of sub-delims that no
+  // real DNS name or IPv4/IPv6 literal actually uses, plus "[" "]" for an
+  // IPv6 literal and ":" for the port. So HOST is allowlisted instead:
+  // `[A-Za-z0-9._~%:[\]-]*`. "&", "|", "<", ">", ",", ";", the quote
+  // characters, and paren/brace punctuation are NOT legal host characters,
+  // so the allowlist alone stops the match at any of THOSE boundaries —
+  // for free, without a denylist entry for each one.
+  //
+  // F1 LOOKAHEAD FIX: that guarantee does NOT extend to a boundary made of
+  // characters that ARE legal in a host — and "[", "]", ".", ":", "-",
+  // "_", "~", "%" are exactly the IPv6-literal / port / reg-name
+  // characters this allowlist exists to permit. Two credentialed URLs
+  // glued by nothing but those characters — `[postgres://u1:P1@h1]
+  // [postgres://u2:P2@h2]`, a colon-joined "h1::postgres://…", a
+  // dot-joined "h1.postgres://…", or no separator at all — over-consume
+  // straight past the real host boundary into the second URL's scheme,
+  // swallow it whole, and its password survives unredacted: the same
+  // "can't enumerate every separator" failure the denylist-to-allowlist
+  // rewrite above was meant to retire, recurring one level up. An
+  // allowlist of legal host characters can't also express "and don't
+  // cross into a following scheme," because a following scheme is built
+  // entirely out of characters the host allowlist has to accept — no
+  // character-class boundary, allow or deny, can supply that; only
+  // looking at what comes next can. So the host run is matched one
+  // character at a time with a negative lookahead,
+  // `(?:(?!\w+:\/\/)[A-Za-z0-9._~%:[\]-])*`: each candidate host
+  // character is consumed only if the position it sits at does not
+  // itself begin a new `scheme://`. That is the structural property —
+  // "stop before the next connection string starts," not "stop at an
+  // illegal character" — the allowlist alone could never provide.
+  //
+  // That in turn means the USERINFO (username:password) half no longer
+  // has to defensively exclude those same separator characters — the
+  // now-bounded host is what stops the match from crossing into a second
+  // connection string, not the userinfo class. So userinfo is relaxed
+  // back to excluding only whitespace (can't span a token boundary) and
+  // "/" (so it can never read through a second string's own "scheme://").
+  // This restores redaction for a password that legitimately contains a
+  // "," ";" '"' "'" "`" "(" ")" "[" "]" or "{" "}" — under the old
+  // denylist that password broke the match ENTIRELY (userinfo could never
+  // reach the required "@"), leaving the whole token unredacted and the
+  // password leaking IN FULL, which is a strictly worse failure than the
+  // over-consumption bug this fix also closes.
+  result = result.replace(/\w+:\/\/[^\s/]*@(?:(?!\w+:\/\/)[A-Za-z0-9._~%:[\]-])*/g, (token) => {
+    const schemeEnd = token.indexOf("://") + 3;
+    const schemePrefix = token.slice(0, schemeEnd);
+    const authority = token.slice(schemeEnd);
+    const atIdx = authority.lastIndexOf("@");
+    if (atIdx === -1) return token;
+    const userinfo = authority.slice(0, atIdx);
+    const host = authority.slice(atIdx + 1);
+    const colonIdx = userinfo.indexOf(":");
+    if (colonIdx === -1) return token;
+    const username = userinfo.slice(0, colonIdx);
+    return `${schemePrefix}${username}:${REDACTED}@${host}`;
+  });
 
   return result;
 }

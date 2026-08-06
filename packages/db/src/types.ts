@@ -174,6 +174,20 @@ export interface DevicesTable {
   last_seen_ms: number | null;
   created_at_ms: number;
   kind: Generated<DeviceKind>;
+  /** migrations/0034_device_access_revoked_epoch.sql (AUD-A7b-001): this
+   *  device's credentials-changed epoch. Stamped by TWO writers, not one —
+   *  POST /auth/logout (packages/db/src/query/identity.js's
+   *  revokeDeviceAccess, the logout's own nowMs) AND login on device-row
+   *  reuse (identity.js's updateDeviceForLogin, via its loginAccessEpochMs
+   *  helper, which floors nowMs to the second). Login must also write
+   *  this column: R4 (Fix Wave 3) found that leaving a prior logout's
+   *  epoch in place DOA'd the fresh login token, while clearing it to
+   *  NULL instead resurrected a stolen pre-logout token — see
+   *  loginAccessEpochMs's own doc comment for why floor(nowMs/1000)*1000
+   *  is the one value that avoids both. NULL = never revoked since this
+   *  column existed. apps/server/src/gateway/auth.guard.ts rejects an
+   *  access token carrying this device's id whose iat claim predates it. */
+  access_revoked_at_ms: number | null;
 }
 
 // ============================================================================

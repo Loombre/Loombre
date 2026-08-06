@@ -554,6 +554,22 @@ const IMPLEMENTED_NON_PUBLIC_EXPECTATIONS: Record<string, number> = {
 let app: INestApplication;
 let adminAccessToken: string;
 
+// Factored out of beforeAll (which used this inline) so the authenticated
+// walk can call it again mid-walk — see its own call site's comment for
+// why a second mint is necessary.
+async function loginAdmin(): Promise<string> {
+  const login = await request(app.getHttpServer()).post("/auth/login").send({
+    username: "admin",
+    password: "loombre-seed-admin",
+    deviceName: "conformance-walker",
+    deviceProfile: buildDeviceProfile(),
+  });
+  if (login.status !== 200) {
+    throw new Error(`conformance: seed-admin login failed: ${login.status} ${JSON.stringify(login.body)}`);
+  }
+  return login.body.accessToken;
+}
+
 beforeAll(async () => {
   const databaseUrl = await ensureTestDatabase(BASE_DATABASE_URL, "server_test");
   run(path.join(DB_PKG_ROOT, "scripts", "migrate.mjs"), ["reset"], databaseUrl);
@@ -571,16 +587,7 @@ beforeAll(async () => {
   app = await NestFactory.create(AppModule, { logger: false });
   await app.init();
 
-  const login = await request(app.getHttpServer()).post("/auth/login").send({
-    username: "admin",
-    password: "loombre-seed-admin",
-    deviceName: "conformance-walker",
-    deviceProfile: buildDeviceProfile(),
-  });
-  if (login.status !== 200) {
-    throw new Error(`conformance setup: seed-admin login failed: ${login.status} ${JSON.stringify(login.body)}`);
-  }
-  adminAccessToken = login.body.accessToken;
+  adminAccessToken = await loginAdmin();
 });
 
 afterAll(async () => {
@@ -776,6 +783,22 @@ describe("contract conformance (STATE.md D17/D21)", () => {
         );
       }
       expect(res.status, `${label} expected status`).toBe(expected);
+
+      // AUD-A7b-001 (Fix Wave 3): authLogout now revokes its OWN caller's
+      // device-scoped access epoch immediately (apps/server/src/gateway/
+      // auth.guard.ts) — the exact "logout kills the still-live access
+      // token" gap that fix closed. That means the token this walk has
+      // been reusing is, by design, dead the instant this 204 lands; every
+      // later iteration would 401 not because its route is broken but
+      // because the walk kept spending an intentionally-burned token. Mint
+      // a fresh one so the walk keeps proving "valid token in -> non-401
+      // out" for every operation after this one, same as before this op
+      // existed. (The revocation behavior itself — that the OLD token is
+      // now rejected — is covered by device-access-revocation.e2e.spec.ts,
+      // not this suite; this suite's job is per-op wiring, not that.)
+      if (op.operationId === "authLogout") {
+        adminAccessToken = await loginAdmin();
+      }
 
       walked += 1;
     }

@@ -68,6 +68,18 @@ describe("SurfaceRateLimiterService", () => {
     expect(service.export.attempt("user-b").allowed).toBe(true);
   });
 
+  // Fix Wave 3 (audit fafa47f, AUD-A7d-002): GET /search + GET
+  // /restricted/search previously had no limiter at all.
+  it("search: defaults to 60/min and honors an env override, independent per identity key", () => {
+    const defaults = new SurfaceRateLimiterService(createFakeSettingsService({ env: {} }).service);
+    expect(defaults.search.attempt("k").allowed).toBe(true);
+
+    const service = new SurfaceRateLimiterService(createFakeSettingsService({ env: { LOOMBRE_RATE_SEARCH: "1" } }).service);
+    expect(service.search.attempt("user-a:device-a").allowed).toBe(true);
+    expect(service.search.attempt("user-a:device-a").allowed).toBe(false);
+    expect(service.search.attempt("user-b:device-b").allowed).toBe(true);
+  });
+
   it("an invalid/non-positive env value falls back to the default rather than throwing", () => {
     expect(() => new SurfaceRateLimiterService(createFakeSettingsService({ env: { LOOMBRE_RATE_MEDIA_TOKEN: "not-a-number" } }).service)).not.toThrow();
     expect(() => new SurfaceRateLimiterService(createFakeSettingsService({ env: { LOOMBRE_RATE_MEDIA_TOKEN: "-5" } }).service)).not.toThrow();

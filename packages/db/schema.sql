@@ -3878,3 +3878,91 @@ COMMENT ON COLUMN scan_checkpoints.items_removed IS
   'its own; this column still exists because its count still needs to '
   'accumulate into the same cross-attempt scan.completed total as the '
   'other two.';
+
+-- SPDX-License-Identifier: AGPL-3.0-only
+-- Loombre :: migration 0034_device_access_revoked_epoch
+--
+-- Additive-only (mirrors 0002/.../0033's discipline): no column drops, no
+-- type narrowing, no rewriting of prior migrations.
+--
+-- AUD-A7b-001 (audit fafa47f, Fix Wave 3 / FW3-D): the SAME bug class
+-- 0026_password_changed_epoch.sql (R-F7) fixed for password changes,
+-- extended to POST /auth/logout — the other revocation trigger that
+-- leaves the DEVICE row (and therefore the session) alive: DELETE
+-- /devices/{id} already deletes the row outright (both the plain and the
+-- kind='remote' teardown paths), so an already-issued access token for a
+-- deleted device is rejected for free the moment
+-- apps/server/src/gateway/auth.guard.ts looks the device up and finds
+-- nothing — no new column needed for that half. Logout is different: it
+-- revokes the device's refresh tokens but deliberately keeps the device
+-- row (the same device logs back in later and reuses it), so there is
+-- nothing for a "row is gone" check to catch. This column is that
+-- device's own credentials-changed epoch.
+--
+-- NULL = never logged out since this column existed (every pre-migration
+-- row, and every device that has only ever been actively used) — no epoch
+-- to enforce, every still-valid access token for that device passes.
+-- Set to the logout's own `nowMs` by
+-- apps/server/src/session/refresh-token.service.ts's logout() ONLY —
+-- deliberately NOT by the login path's own revokeRefreshTokensForDevice
+-- call (auth.controller.ts's device-reuse-on-login branch): that call and
+-- the fresh access token minted moments later in the SAME request share
+-- essentially the same `nowMs`, and auth.guard.ts's tie-break (ties
+-- reject, same conservative rule 0026 uses) would make the login's own
+-- brand-new token DOA in the common case where both land in the same
+-- wall-clock second. Login revoking stale refresh tokens for a reused
+-- device was never the bug AUD-A7b-001 reported — only the user-initiated
+-- "sign out" actions were.
+
+ALTER TABLE devices
+  ADD COLUMN access_revoked_at_ms BIGINT NULL;
+
+COMMENT ON COLUMN devices.access_revoked_at_ms IS
+  'AUD-A7b-001: per-device credentials-changed epoch, the device-scoped '
+  'sibling of users.password_changed_at_ms (migration 0026). NULL = this '
+  'device has never been logged out since this column existed. Set only '
+  'by POST /auth/logout (refresh-token.service.ts''s logout()) — DELETE '
+  '/devices/{id} deletes the row instead, which apps/server/src/gateway/'
+  'auth.guard.ts''s device-existence check already rejects on its own. '
+  'auth.guard.ts rejects an access token whose iat claim is strictly '
+  'before this value for its own deviceId claim.';
+
+-- SPDX-License-Identifier: AGPL-3.0-only
+-- Loombre :: migration 0035_device_access_revoked_epoch_comment_fix
+--
+-- Comment-only (no schema change): corrects 0034's COMMENT ON COLUMN,
+-- which shipped describing devices.access_revoked_at_ms as set "only by
+-- POST /auth/logout". R4 (Fix Wave 3 second review, AUD-A7b-001 follow-up)
+-- made that false: login ALSO stamps this column on device-row reuse
+-- (packages/db/src/query/identity.ts's updateDeviceForLogin, via its
+-- loginAccessEpochMs helper — nowMs floored to the second), because the
+-- two logout-only alternatives already shipped and broke in opposite
+-- directions — leaving a prior logout epoch in place DOA'd the fresh
+-- login token (FW3-D), clearing it to NULL instead resurrected a stolen
+-- pre-logout token (R1). 0034 itself is shipped and is not touched by
+-- this migration (migration hygiene: never edit a shipped migration) —
+-- this is a new, additive, comment-only correction on top of it, the same
+-- discipline 0002/.../0034 already follow for schema changes, applied
+-- here to metadata instead. See packages/db/src/types.ts's
+-- DevicesTable.access_revoked_at_ms doc comment and
+-- packages/db/src/query/identity.ts's updateDeviceForLogin/
+-- loginAccessEpochMs doc comments for the full account; this migration
+-- only brings the DB-resident COMMENT ON COLUMN (visible to anything
+-- introspecting the live schema, e.g. `\d+ devices` in psql) back in line
+-- with them.
+
+COMMENT ON COLUMN devices.access_revoked_at_ms IS
+  'AUD-A7b-001: per-device credentials-changed epoch, the device-scoped '
+  'sibling of users.password_changed_at_ms (migration 0026). NULL = this '
+  'device has never been revoked since this column existed. Stamped by '
+  'TWO writers: POST /auth/logout (refresh-token.service.ts''s logout(), '
+  'the logout''s own nowMs) AND login on device-row reuse '
+  '(identity.ts''s updateDeviceForLogin, via loginAccessEpochMs, which '
+  'floors nowMs to the second so the login''s own fresh token is never '
+  'rejected by it — see migration 0035 and loginAccessEpochMs''s own doc '
+  'comment for why both writers are required). DELETE /devices/{id} '
+  'deletes the row instead of writing this column, which '
+  'apps/server/src/gateway/auth.guard.ts''s device-existence check '
+  'already rejects on its own. auth.guard.ts rejects an access token '
+  'whose iat claim is strictly before this value for its own deviceId '
+  'claim.';

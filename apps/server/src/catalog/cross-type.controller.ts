@@ -23,7 +23,7 @@
 // "recently added" row shows) and keeps every response Ajv-valid against
 // the closed discriminator.
 
-import { Controller, Get, Query, Req } from "@nestjs/common";
+import { Controller, Get, Query, Req, UseFilters, UseGuards } from "@nestjs/common";
 import {
   getCatalogDetail,
   getContinueWatching,
@@ -36,16 +36,27 @@ import { unprocessableEntity } from "../gateway/problem.exception.js";
 import type { AuthenticatedRequest } from "../gateway/auth.guard.js";
 import { DbProvider } from "../common/db.provider.js";
 import { ViewerContextProvider } from "../common/viewer-context.provider.js";
+import { RateLimit, SurfaceRateLimitGuard } from "../common/rate-limit.guard.js";
+import { RateLimitExceptionFilter } from "../common/rate-limit-exception.filter.js";
 import { resolveViewer, parseListQuery } from "./viewer.js";
 import { mapByType } from "./mappers.js";
 
 @Controller()
+@UseFilters(RateLimitExceptionFilter)
 export class CrossTypeController {
   constructor(
     private readonly dbProvider: DbProvider,
     private readonly viewerContextProvider: ViewerContextProvider,
   ) {}
 
+  // Fix Wave 3 (audit fafa47f, AUD-A7d-002): this endpoint carried NO
+  // rate limiter at all despite an N+1 getCatalogDetail fetch per row
+  // below — one shared "search" bucket with restricted-zone.controller.ts's
+  // own GET /restricted/search, per-identity, generous ceiling (typeahead
+  // bursts are normal use), mirroring images.controller.ts's
+  // @RateLimit precedent.
+  @UseGuards(SurfaceRateLimitGuard)
+  @RateLimit("search", "identity")
   @Get("search")
   async search(@Query() query: Record<string, unknown>, @Req() req: AuthenticatedRequest) {
     const q = typeof query["q"] === "string" ? query["q"] : "";

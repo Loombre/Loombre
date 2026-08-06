@@ -126,6 +126,15 @@ function clientIp(req: Request): string {
   return req.ip && req.ip.length > 0 ? req.ip : "unknown";
 }
 
+/** AUD-A7d-001 (Fix Wave 3): the per-account login rate-limit key —
+ *  trim + lowercase, matching users.username/email's own CITEXT
+ *  case-insensitive comparison (0001_init.sql) so "Casual"/"casual"/
+ *  "CASUAL" all land in the SAME bucket rather than three separate ones
+ *  an attacker could use to triple their effective budget. */
+function normalizeIdentifierKey(identifier: string): string {
+  return identifier.trim().toLowerCase();
+}
+
 /** F2 (fix wave): forgotPassword()'s fixed wall-clock response-time floor
  *  — see that method's doc comment for the full three-part rationale.
  *  200ms comfortably exceeds the real branch's natural cost (two small
@@ -181,6 +190,22 @@ export class AuthController {
     const email = isNonEmptyString(body.email) ? body.email : undefined;
     if (!username && !email) {
       throw unprocessableEntity("Either username or email is required.", req.originalUrl);
+    }
+
+    // AUD-A7d-001 (Fix Wave 3): a SECOND, independent rate-limit dimension
+    // keyed on the submitted identifier itself — closes the "per-IP only"
+    // gap (docs/PLAN.md §10 promises "per-IP AND per-user"), mirroring
+    // restricted.controller.ts's unlock() precedent. normalizeIdentifierKey
+    // matches users.username/email's own CITEXT case-insensitivity so a
+    // differently-cased resubmission can't dodge the bucket. Checked here —
+    // before the DB lookup and the argon2id verify below — so a tripped
+    // bucket short-circuits the actual expensive work, same placement
+    // discipline unlock() uses relative to its own PIN compare.
+    const identifierLimit = this.rateLimiter.loginByIdentifier.attempt(normalizeIdentifierKey(username ?? email!));
+    if (!identifierLimit.allowed) {
+      const identifier = username ?? email;
+      this.anomalyLog.log("RATE_LIMITED", { ip, op: "login", ...(identifier !== undefined ? { user: identifier } : {}) });
+      throw tooManyRequests("Too many login attempts. Try again later.", req.originalUrl, identifierLimit.retryAfterMs);
     }
 
     const db = this.dbProvider.db;
@@ -256,6 +281,19 @@ export class AuthController {
     const body = rawBody ?? {};
     if (!isNonEmptyString(body.refreshToken) || !isNonEmptyString(body.deviceId)) {
       throw unauthorized("Malformed refresh request.", req.originalUrl);
+    }
+
+    // AUD-A7d-001 (Fix Wave 3): a SECOND, independent rate-limit dimension
+    // keyed on the submitted deviceId — closes the "per-IP only" gap for
+    // this route too. Refresh tokens are opaque 256-bit values (not
+    // brute-forceable regardless of rate — see refreshByDevice's own doc
+    // comment); this bounds a distributed attempt hammering ONE known
+    // device's refresh chain across many source addresses. Checked before
+    // the DB lookup, same placement discipline as login()'s identifier check.
+    const deviceLimit = this.rateLimiter.refreshByDevice.attempt(body.deviceId);
+    if (!deviceLimit.allowed) {
+      this.anomalyLog.log("RATE_LIMITED", { ip, op: "refresh", device: body.deviceId });
+      throw tooManyRequests("Too many refresh attempts. Try again later.", req.originalUrl, deviceLimit.retryAfterMs);
     }
 
     const db = this.dbProvider.db;
