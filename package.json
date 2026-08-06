@@ -33,7 +33,8 @@
     "stamp-version": "node scripts/release/stamp-version.mjs",
     "embed-public-key": "node scripts/release/embed-public-key.mjs",
     "release:test": "node --test \"scripts/release/test/**/*.test.mjs\"",
-    "scripts:test": "node --test \"scripts/*.test.mjs\" \"scripts/release/test/**/*.test.mjs\""
+    "scripts:test": "node --test \"scripts/*.test.mjs\" \"scripts/release/test/**/*.test.mjs\"",
+    "installers:test": "node --test \"installers/**/*.test.mjs\""
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

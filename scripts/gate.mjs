@@ -4,21 +4,21 @@
  * Ordered CI gate runner (CLAUDE.md: `pnpm gate` / `pnpm gate:full`):
  *   codegen -> sdk-drift -> oasdiff -> depcruise -> runtime-imports
  *   -> license-check -> go-licenses-check -> dep-audit -> lint -> typecheck
- *   -> test -> db:migrate-check -> grep-gates -> docs-build
- *   -> [gate:full only] web-build-budget
+ *   -> test -> installers-test -> db:migrate-check -> grep-gates
+ *   -> docs-build -> [gate:full only] web-build-budget
  *
  * Modes (L4, STATE.md ledger item "consider adding the web production
  * build ... to `pnpm gate`" — closed by adding a mode instead of changing
  * the default):
  *   `node scripts/gate.mjs`      (no arg — FAST, the CLAUDE.md inner-loop
- *     default): the 13 steps above, unchanged behavior and unchanged speed.
+ *     default): the 15 steps above, unchanged behavior and unchanged speed.
  *     The `steps` array below is exactly what it was before this mode
  *     argument existed — full mode APPENDS to it rather than editing it in
  *     place, specifically so a reviewer can diff the array itself and see
  *     no step was silently lost or reordered.
  *   `node scripts/gate.mjs full` (FULL — what CI's `pnpm gate:full` runs,
  *     and what CLAUDE.md's working agreements call for before any
- *     push/PR): the same 13 steps, plus a 14th, `web-build-budget`
+ *     push/PR): the same 15 steps, plus a 16th, `web-build-budget`
  *     (`pnpm run perf:web-budget`) — builds apps/web's workspace
  *     dependency closure, builds apps/web itself for production, boots it,
  *     and asserts the /browse route's first-load JS gzip size against the
@@ -63,11 +63,31 @@
  * failure in any of them reads as "the dependency tree itself has a
  * problem" before any source-code gate (lint/typecheck/test) even runs.
  *
+ * installers-test (repair lane R2-wire-installer-tests, Wave 5 review
+ * follow-up): `pnpm run installers:test` — `node --test`, recursively
+ * discovering every `*.test.mjs` file under installers/. installers/ is
+ * not a pnpm workspace, so turbo's `test` step above never reaches it —
+ * the exact gap that left the AUD-A5b-001 x64 Distribution.xml
+ * `hostArchitectures` fix with zero regression protection
+ * (installers/macos/pkg/distribution-xml.test.mjs
+ * ran in no runner at all). Placed immediately after `test`: same class of
+ * check, just over a package tree outside the turbo workspace graph.
+ * Node-only, deliberately: the Windows tray/service-host C# suites
+ * (installers/windows/tray/Loombre.Tray.Tests,
+ * installers/windows/service-host/LoombreServiceHost.Tests — AUD-W1-001)
+ * stay OUT of this step. There is no dotnet toolchain on dev machines, so
+ * wiring `dotnet test` into a step that runs on every `pnpm gate` would
+ * fail the inner loop for everyone without the .NET SDK installed. Those
+ * suites keep running exactly where they already did —
+ * windows-installer-diag.yml and release.yml — see
+ * reports/audit-fafa47f/candidates/W1-followups.md for that finding's
+ * current (still-open) status.
+ *
  * docs-build (Addendum A, lane D1, STATE.md "## Addendum A" deliverable
  * 10): `node scripts/docs/build.mjs` — VitePress site build + the
- * `redocly build-docs` API reference, wired as the LAST of the 13 fixed
+ * `redocly build-docs` API reference, wired as the LAST of the 15 fixed
  * steps (full mode's web-build-budget, when present, runs after it).
- * Deliberately last among those 13: it's cheapest to reach only once
+ * Deliberately last among those 15: it's cheapest to reach only once
  * everything earlier (codegen through grep-gates) has already confirmed
  * the rest of the repo is consistent, and a docs-only PR still gets full
  * gate coverage before this step runs. A broken docs build (bad Markdown
@@ -117,6 +137,7 @@ const steps = [
   { name: "lint", run: () => runCommand("pnpm", ["run", "lint"]) },
   { name: "typecheck", run: () => runCommand("pnpm", ["run", "typecheck"]) },
   { name: "test", run: () => runCommand("pnpm", ["run", "test"]) },
+  { name: "installers-test", run: () => runCommand("pnpm", ["run", "installers:test"]) },
   { name: "db:migrate-check", run: () => runCommand("pnpm", ["run", "db:migrate-check"]) },
   { name: "grep-gates", run: () => runCommand("node", ["scripts/grep-gates.mjs"]) },
   { name: "docs-build", run: () => runCommand("node", ["scripts/docs/build.mjs"]) },

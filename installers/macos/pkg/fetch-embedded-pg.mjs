@@ -8,19 +8,16 @@
 // programmatic entry point — see that script's own header: it's used by
 // packages/provisioning-pg's own integration tests the same way).
 //
-// SCOPE NOTE (installers/macos/LAYOUT.md §8, updated): this stages the
-// vendored PostgreSQL binaries into the payload (proving the fetch +
-// packages/provisioning-pg's vendor-layout contract resolve correctly end
-// to end) but does NOT wire a running embedded-PG instance into the
-// LaunchDaemon lifecycle — constructing a real ProvisioningRequest,
-// managing initdb/postmaster as a supervised child of the server process,
-// and the associated LaunchDaemon/postinstall changes are a bigger,
-// separate integration this lane's mission scoped as a placeholder+report
-// item, not a full build-out. The shipped LaunchDaemon plists remain wired
-// to the external-PG path (D1) — see bin/loombre-server's config/loombre.env
-// — which is also exactly what this lane's mandated local smoke test
-// exercises. Flagged for Wave 3 / whichever lane owns the full embedded-PG
-// service integration across all platforms.
+// SCOPE NOTE (installers/macos/LAYOUT.md §8 — see its "SUPERSEDED" note):
+// this stages the vendored PostgreSQL binaries into the payload (proving
+// the fetch + packages/provisioning-pg's vendor-layout contract resolve
+// correctly end to end), landing them at runtime/pg/<platform>/<version> —
+// the same vendor-layout shape bin/loombre-server reads back. Embedded-PG
+// service wiring HAS LANDED: with DATABASE_URL unset, bin/loombre-server
+// points LOOMBRE_EMBEDDED_PG_VENDOR_DIR at this staged tree and
+// apps/server/src/bootstrap/provisioning.ts provisions and supervises the
+// bundled PostgreSQL as the default install path. External PG (D1) is now
+// the opt-in override, set via DATABASE_URL in config/loombre.env.
 
 import { existsSync, mkdirSync, writeFileSync, cpSync, readFileSync } from "node:fs";
 import path from "node:path";
@@ -59,7 +56,7 @@ export async function fetchEmbeddedPg({ platform, arch, destDir }) {
 
   console.log(
     `[fetch-embedded-pg] staged real vendored PostgreSQL ${provenance?.version ?? "(unknown version)"} ` +
-      `into the payload (embedded-PG SERVICE WIRING deferred — see this file's SCOPE NOTE + LAYOUT.md §8)`,
+      `into the payload (embedded-PG service wiring is live — see this file's SCOPE NOTE + LAYOUT.md §8)`,
   );
 
   return { staged: true, placeholder: false, platform, arch, version: provenance?.version };
