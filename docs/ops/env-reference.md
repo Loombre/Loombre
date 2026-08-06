@@ -192,6 +192,30 @@ How many reachability-proof probe attempts one device may make per minute, befor
 
 - **Default when unset:** 10 (or whatever was last saved from the settings screen)
 
+### `LOOMBRE_RATE_LOGIN_BY_IDENTIFIER`
+
+Pins **[Login By Identifier](/admin-guide/settings-reference#login-by-identifier)** (`rateLimit.loginByIdentifier`) to a fixed value — set this and the admin settings screen shows the setting as controlled by the environment, read-only; any value stored from the settings screen is preserved but ignored until the variable is unset again.
+
+How many sign-in attempts one ACCOUNT may receive per minute, combined across every source address — separate from the per-device limit above. Guards against a distributed attempt to guess one person's password.
+
+- **Default when unset:** 20 (or whatever was last saved from the settings screen)
+
+### `LOOMBRE_RATE_REFRESH_BY_DEVICE`
+
+Pins **[Refresh By Device](/admin-guide/settings-reference#refresh-by-device)** (`rateLimit.refreshByDevice`) to a fixed value — set this and the admin settings screen shows the setting as controlled by the environment, read-only; any value stored from the settings screen is preserved but ignored until the variable is unset again.
+
+How many session-refresh requests one signed-in device may receive per minute, combined across every source address — separate from the per-device limit above. Guards against a distributed attempt to overwhelm one device's session renewal.
+
+- **Default when unset:** 40 (or whatever was last saved from the settings screen)
+
+### `LOOMBRE_RATE_SEARCH`
+
+Pins **[Search](/admin-guide/settings-reference#search)** (`rateLimit.search`) to a fixed value — set this and the admin settings screen shows the setting as controlled by the environment, read-only; any value stored from the settings screen is preserved but ignored until the variable is unset again.
+
+How many search requests one person may make per minute — /search and the restricted-content search share this limit. Each request does extra per-result lookups, so this bounds abuse while staying generous enough for normal typing bursts.
+
+- **Default when unset:** 60 (or whatever was last saved from the settings screen)
+
 ### `LOOMBRE_PUBLIC_URL`
 
 Pins **[Public web address](/admin-guide/settings-reference#public-web-address)** (`network.publicUrl`) to a fixed value — set this and the admin settings screen shows the setting as controlled by the environment, read-only; any value stored from the settings screen is preserved but ignored until the variable is unset again.

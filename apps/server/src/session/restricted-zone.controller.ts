@@ -34,7 +34,7 @@
 // `undefined` — this controller maps every one of those to the identical
 // notFound() call, matching GET /movies/{id}'s house pattern.
 
-import { Controller, Get, Param, Query, Req } from "@nestjs/common";
+import { Controller, Get, Param, Query, Req, UseFilters, UseGuards } from "@nestjs/common";
 import {
   getRestrictedPerformerById,
   getRestrictedSceneDetail,
@@ -62,6 +62,8 @@ import type { AuthenticatedRequest } from "../gateway/auth.guard.js";
 import { parseLimitParam } from "../common/limit-param.js";
 import { DbProvider } from "../common/db.provider.js";
 import { ViewerContextProvider } from "../common/viewer-context.provider.js";
+import { RateLimit, SurfaceRateLimitGuard } from "../common/rate-limit.guard.js";
+import { RateLimitExceptionFilter } from "../common/rate-limit-exception.filter.js";
 
 // ============================================================================
 // Query-param parsing
@@ -223,6 +225,7 @@ function toStudioDto(row: RestrictedStudioRow) {
 }
 
 @Controller("restricted")
+@UseFilters(RateLimitExceptionFilter)
 export class RestrictedZoneController {
   constructor(
     private readonly dbProvider: DbProvider,
@@ -374,6 +377,14 @@ export class RestrictedZoneController {
   // missing-q 422) — see this file's header and the contract op's own
   // description for why: the zone's non-existence for an unentitled viewer
   // must never depend on whether they also happened to omit `q`.
+  //
+  // Fix Wave 3 (audit fafa47f, AUD-A7d-002): carried NO rate limiter at
+  // all — shares ONE "search" bucket with cross-type.controller.ts's
+  // GET /search (same identity key), per that policy's own doc comment.
+  // The guard runs before this handler body, so the limiter fires
+  // regardless of entitlement outcome.
+  @UseGuards(SurfaceRateLimitGuard)
+  @RateLimit("search", "identity")
   @Get("search")
   async search(@Query() query: Record<string, unknown>, @Req() req: AuthenticatedRequest) {
     const ctx = await this.resolveCtx(req);

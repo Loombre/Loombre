@@ -563,6 +563,31 @@ export interface UpdateDeviceForLoginInput {
  * time (device capabilities can legitimately change — browser update,
  * different codec support) and `last_seen_ms` advances. `id`/`user_id`/
  * `created_at_ms` are untouched.
+ *
+ * R4 (Fix Wave 3 second review, AUD-A7b-001 follow-up): also MOVES
+ * `access_revoked_at_ms` to this login's own second (see
+ * `loginAccessEpochMs` below) rather than leaving it or clearing it. Both
+ * of the obvious values are wrong, in opposite directions, and each was
+ * shipped once:
+ *
+ *   - Leaving the prior logout's epoch in place (FW3-D) DOA'd the fresh
+ *     token: auth.guard.ts rejects on `claims.iat <
+ *     Math.ceil(access_revoked_at_ms / 1000)`, and `Math.ceil` pushes a
+ *     mid-second logout epoch strictly above any `iat` minted in that same
+ *     wall-clock second — so a logout immediately followed by a re-login
+ *     minted a token that was dead for its whole 15-minute life.
+ *   - Clearing it to NULL (R1) RESURRECTED stolen tokens: NULL
+ *     unconditionally passes that same check, so an access token captured
+ *     before a logout — correctly 401'd right after it — went back to 200
+ *     the moment the same device logged in again.
+ *
+ * A successful login IS this device's new credentials epoch, so the
+ * correct value is neither "the old one" nor "none": it is the newest
+ * epoch that still admits the token this same request is about to mint.
+ * Migration 0034's header warns against stamping the login's raw `nowMs`
+ * here for exactly that reason — the ceil-rounded tie-break would reject
+ * the login's own token. Rounding DOWN to the second boundary is what
+ * makes the same write safe.
  */
 export async function updateDeviceForLogin(
   db: Kysely<DB>,
@@ -571,10 +596,52 @@ export async function updateDeviceForLogin(
 ): Promise<DeviceRow> {
   return db
     .updateTable('devices')
-    .set({ profile: input.profile, last_seen_ms: input.nowMs })
+    .set({
+      profile: input.profile,
+      last_seen_ms: input.nowMs,
+      access_revoked_at_ms: loginAccessEpochMs(input.nowMs),
+    })
     .where('id', '=', id)
     .returningAll()
     .executeTakeFirstOrThrow();
+}
+
+/**
+ * The device access epoch a login stamps: `nowMs` floored to its whole
+ * second. The arithmetic, since two attempts have already got it wrong —
+ * with `k = Math.floor(nowMs / 1000)`:
+ *
+ *   - The access token this login mints carries `iat === k`
+ *     (apps/server/src/session/token.service.ts signs with
+ *     `setIssuedAt(Math.floor(nowMs / 1000))`, from the SAME single
+ *     `nowMs` read auth.controller.ts passes here — no intra-request
+ *     clock skew to reason about).
+ *   - auth.guard.ts's threshold becomes `Math.ceil(k * 1000 / 1000) === k`
+ *     exactly, so its `claims.iat < threshold` test is `k < k` — false.
+ *     The fresh token passes, at every sub-second offset including an
+ *     exact boundary (`nowMs % 1000 === 0`), with no luck involved.
+ *   - Every token whose `iat` is `k - 1` or lower — i.e. anything minted
+ *     before this login's own second, which is every token a preceding
+ *     logout revoked — still fails it.
+ *
+ * So this is the tightest value that cannot self-DOA: one millisecond
+ * higher (any `nowMs` not already on a boundary) and `Math.ceil` lifts the
+ * threshold to `k + 1` and kills the login's own token. The reviewer's
+ * suggested `nowMs - 1000` is also self-DOA-free and identical to this for
+ * every `nowMs % 1000 !== 0`, but on an exact second boundary it lands a
+ * full second lower than it needs to and admits one extra second of
+ * already-revoked tokens; this form has no such case.
+ *
+ * Residual, and irreducible here: a token minted EARLIER IN THE SAME
+ * SECOND as the re-login survives, because `iat`'s one-second resolution
+ * makes it arithmetically identical to the login's own token. Closing that
+ * last ≤1s would take a millisecond-resolution issuance claim on the token
+ * itself, not a different value in this column. The window an access token
+ * could be resurrected for therefore drops from its full ~15-minute TTL to
+ * under a second.
+ */
+function loginAccessEpochMs(nowMs: number): number {
+  return Math.floor(nowMs / 1000) * 1000;
 }
 
 // ============================================================================
@@ -721,6 +788,38 @@ export async function revokeRefreshTokensForDevice(
     .where('revoked_at_ms', 'is', null)
     .executeTakeFirst();
   return Number(result.numUpdatedRows ?? 0);
+}
+
+/**
+ * AUD-A7b-001 / migration 0034: stamps this device's own
+ * credentials-changed epoch — the device-scoped sibling of
+ * resetUserPasswordAndEmit's `password_changed_at_ms` write, below.
+ * apps/server/src/gateway/auth.guard.ts rejects an access token carrying
+ * this deviceId whose `iat` predates it, so logout actually ends the
+ * device's ACCESS, not merely its ability to mint a new one via refresh.
+ *
+ * Called ONLY by RefreshTokenService.logout() — deliberately NOT folded
+ * into revokeRefreshTokensForDevice above, which auth.controller.ts's
+ * login handler also calls (to clear a reused device's stale refresh
+ * tokens before minting a fresh session): bumping this epoch there too
+ * would race the very access token login mints moments later in the same
+ * request, and auth.guard.ts's tie-break rejects same-second ties by
+ * design (see migration 0026's header) — that would make a routine login
+ * DOA. Scoped to (userId, deviceId) like its sibling, same idempotent
+ * no-op-if-mismatched posture.
+ */
+export async function revokeDeviceAccess(
+  db: Kysely<DB>,
+  userId: string,
+  deviceId: string,
+  revokedAtMs: number
+): Promise<void> {
+  await db
+    .updateTable('devices')
+    .set({ access_revoked_at_ms: revokedAtMs })
+    .where('id', '=', deviceId)
+    .where('user_id', '=', userId)
+    .execute();
 }
 
 /**

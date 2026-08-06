@@ -15,7 +15,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { ensureTestDatabase, getUserByUsername, updateUserAdmin } from "@loombre/db";
 import { DbProvider, type LoombreDb } from "../common/db.provider.js";
-import { SettingsService } from "./settings.service.js";
+import { SettingsService, maskSecretValue } from "./settings.service.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DB_PKG_ROOT = path.resolve(__dirname, "../../../../packages/db");
@@ -562,6 +562,45 @@ describe("SettingsService — F1 secret masking (database.url)", () => {
     const schemaResponse = service.toSchemaResponse();
     const httpPort = schemaResponse.entries.find((e) => e.key === "http.port");
     expect(httpPort?.default).toBe(3001);
+  });
+});
+
+// V1-003: maskSecretValue split scheme://user:pass@host on the FIRST "@",
+// so any password containing "@" leaked its tail past the mask (WHATWG
+// authority parsing splits on the LAST "@" — pg's own connection-string
+// parser agrees; see reports/audit-fafa47f/validated/V1.md). Pure-function
+// unit tests, no DB round-trip needed — direct regression coverage for the
+// split point itself, independent of the live-DB toAdminSettingsResponse
+// coverage above.
+describe("maskSecretValue — @ inside the credential portion (V1-003)", () => {
+  it("masks a password containing exactly one @, leaking no fragment of it", () => {
+    const masked = maskSecretValue("postgres://loombre:p@ssword@localhost:5442/loombre") as string;
+    expect(masked).not.toContain("ssword");
+    expect(masked).not.toContain("p@ssword");
+    expect(masked).toBe("postgres://loombre:***@localhost:5442/loombre");
+  });
+
+  it("masks a password containing multiple @ characters, leaking no fragment of it", () => {
+    const masked = maskSecretValue("postgres://loombre:p@ss@word@localhost:5442/loombre") as string;
+    expect(masked).not.toContain("word");
+    expect(masked).not.toContain("p@ss");
+    expect(masked).toBe("postgres://loombre:***@localhost:5442/loombre");
+  });
+
+  it("masks a password ending in a trailing @, leaking no fragment of it", () => {
+    const masked = maskSecretValue("postgres://loombre:secret@@localhost:5442/loombre") as string;
+    expect(masked).not.toContain("secret");
+    expect(masked).toBe("postgres://loombre:***@localhost:5442/loombre");
+  });
+
+  it("masks the password even when the username also contains an @", () => {
+    const masked = maskSecretValue("postgres://user@example.com:pass@localhost:5442/loombre") as string;
+    expect(masked).not.toContain("pass@localhost");
+    expect(masked).toBe("postgres://user@example.com:***@localhost:5442/loombre");
+  });
+
+  it("does not regress a URL with no credentials at all", () => {
+    expect(maskSecretValue("postgres://localhost:5442/loombre")).toBe("***");
   });
 });
 

@@ -31,7 +31,15 @@ import { sanitizeInstancePath } from "../gateway/sanitize-instance.js";
 import { SurfaceRateLimiterService } from "./surface-rate-limiter.service.js";
 import { tooManyRequests } from "./rate-limit.exception.js";
 
-export type RateLimitPolicyName = "capabilities" | "mediaToken" | "export" | "setup" | "claim" | "passwordReset" | "probe";
+export type RateLimitPolicyName =
+  | "capabilities"
+  | "mediaToken"
+  | "export"
+  | "setup"
+  | "claim"
+  | "passwordReset"
+  | "probe"
+  | "search";
 export type RateLimitKeyStrategy = "ip" | "identity" | "user";
 
 export interface RateLimitMeta {

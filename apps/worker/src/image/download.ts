@@ -2,9 +2,11 @@
 // Loombre :: apps/worker/src/image/download.ts
 //
 // Resolves an image job's `sourcePath` (P1.8) to a local file:
-//   - `url:<http(s) url>` — downloaded via `fetchImpl` (real `fetch` by
-//     default, injectable for tests) streamed straight to a temp file, no
-//     whole-body buffering (docs/PLAN.md §9.2 "streams everywhere").
+//   - `url:<http(s) url>` — downloaded through @loombre/plugin-host's SSRF
+//     guard by default (see the AUD-A7c-001 note below; `fetchImpl` is an
+//     injectable transport override for tests only), streamed straight to
+//     a temp file, no whole-body buffering (docs/PLAN.md §9.2 "streams
+//     everywhere").
 //   - `local-temp:<path>` (Stash mission, STATE.md S5/K11 addition) — a
 //     file THIS PROCESS already staged (e.g. apps/worker/src/stash/
 //     apply.ts writing Stash blob bytes it read via read-model.ts's
@@ -21,6 +23,24 @@
 // responses, not binary image bytes — CLAUDE.md invariant 3's JSONB
 // whitelist reasoning applies by extension). A re-run simply re-downloads;
 // idempotent since the pipeline overwrites the same output files either way.
+//
+// AUD-A7c-001 fix: a `url:` sourcePath's URL is untrusted input — it comes
+// verbatim from a metadata provider's response (metadata/consumer.ts
+// forwards `image.url` as-is), and LPP plugin providers are a live,
+// registered part of the production provider chain, so a malicious or
+// compromised plugin can name any URL it likes, including loopback/
+// private/link-local targets (the cloud metadata endpoint included). The
+// fetch below therefore always routes through @loombre/plugin-host's
+// `hardenedFetch` guard (LD5) — the SAME guard every other outbound
+// plugin-related call in this codebase already uses, via its
+// `hardenedFetchRaw` streaming variant (ssrf.ts: `hardenedFetch` itself
+// buffers+UTF-8-decodes the body, which is right for JSON capability
+// responses and WRONG for binary image bytes). No second SSRF mechanism
+// lives here — `fetchImpl`, when a caller supplies one (tests only; no
+// production caller does, apps/worker/src/index.ts's real wiring passes
+// none), is threaded through as `hardenedFetchRaw`'s own transport
+// override, so even an injected fake still passes through the guard's
+// scheme/host validation and redirect rejection first.
 
 import { createWriteStream } from 'node:fs';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
@@ -28,10 +48,16 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
+import { hardenedFetchRaw } from '@loombre/plugin-host';
 import { hashString } from './variant-job.js';
 
 const URL_PREFIX = 'url:';
 const LOCAL_TEMP_PREFIX = 'local-temp:';
+
+// Matches LPP_IMAGES_TIMEOUT_MS (packages/plugin-host/src/timeouts.ts) —
+// a single provider-image GET is a comparable-weight operation to the
+// images capability call that URL itself came from.
+const IMAGE_DOWNLOAD_TIMEOUT_MS = 20_000;
 
 export type FetchLike = (url: string) => Promise<Response>;
 
@@ -94,8 +120,11 @@ export class ImageDownloadError extends Error {
 
 /** Resolves `sourcePath` to a local file, downloading it first if it's a
  *  `url:`-prefixed remote source. Callers MUST call cleanupSource() when
- *  done (a no-op for local, non-temp sources). */
-export async function resolveSource(sourcePath: string, fetchImpl: FetchLike = fetch): Promise<ResolvedSource> {
+ *  done (a no-op for local, non-temp sources). `fetchImpl`, when given,
+ *  overrides only the underlying transport (tests) — the SSRF guard
+ *  (host/scheme validation, redirect rejection) always runs first
+ *  regardless, via hardenedFetchRaw (AUD-A7c-001, this file's header). */
+export async function resolveSource(sourcePath: string, fetchImpl?: FetchLike): Promise<ResolvedSource> {
   if (isLocalTempSource(sourcePath)) {
     return { path: sourcePath.slice(LOCAL_TEMP_PREFIX.length), isTemp: true };
   }
@@ -105,7 +134,17 @@ export async function resolveSource(sourcePath: string, fetchImpl: FetchLike = f
   }
 
   const url = sourcePath.slice(URL_PREFIX.length);
-  const res = await fetchImpl(url);
+  // FetchLike's (url: string) => Promise<Response> is intentionally
+  // narrower than hardenedFetchRaw's `typeof fetch` transport-override
+  // shape (this module's own tests only ever need a URL, never headers/
+  // method/body) — bridged the same way this package's own tests already
+  // bridge a fake fetch into `typeof fetch`
+  // (packages/plugin-host/test/manifest-client.spec.ts's fakeFetch).
+  const guardedFetchImpl = fetchImpl ? ((async (u: string) => fetchImpl(u)) as unknown as typeof fetch) : undefined;
+  const res = await hardenedFetchRaw(url, {
+    timeoutMs: IMAGE_DOWNLOAD_TIMEOUT_MS,
+    ...(guardedFetchImpl ? { fetchImpl: guardedFetchImpl } : {}),
+  });
   if (!res.ok || !res.body) {
     throw new ImageDownloadError(url, res.status, res.statusText);
   }

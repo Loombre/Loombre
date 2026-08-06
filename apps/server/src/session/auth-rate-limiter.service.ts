@@ -1,13 +1,18 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Loombre :: apps/server/src/session/auth-rate-limiter.service.ts
 //
-// The three auth-surface rate-limit policies (STATE.md P2.1/P2.12,
-// docs/PLAN.md §10): POST /auth/login and POST /auth/refresh are keyed
-// per-IP (the resolved client address — see main.ts's trust-proxy wiring,
-// P2.2); POST /restricted/unlock is keyed per-USER (PIN brute-force
-// protection scopes to the account being attacked, not the network origin,
-// since a single IP can legitimately host many users behind NAT/shared
-// networks).
+// The five auth-surface rate-limit policies (STATE.md P2.1/P2.12,
+// docs/PLAN.md §10): POST /auth/login and POST /auth/refresh are each
+// keyed per-IP (the resolved client address — see main.ts's trust-proxy
+// wiring, P2.2) AND, independently, per-SUBMITTED-ACCOUNT (login) / per-
+// SUBMITTED-DEVICE (refresh) — Fix Wave 3, AUD-A7d-001: the per-IP-only
+// pair left a distributed attempt against one account/device unthrottled,
+// since source-address diversity is cheap (IPv6 rotation) but a specific
+// identifier/deviceId is not. POST /restricted/unlock is keyed per-USER
+// (PIN brute-force protection scopes to the account being attacked, not
+// the network origin, since a single IP can legitimately host many users
+// behind NAT/shared networks) — the loginByIdentifier field above mirrors
+// this exact precedent for the higher-value login route.
 //
 // Addendum A, lane S3 (STATE.md, A3/AD1 read-site migration + hot-reload):
 // capacities now come from SettingsService (packages/shared/src/
@@ -79,14 +84,41 @@ function perMinutePolicy(settingsService: SettingsService, key: string, defaultC
 export class AuthRateLimiterService implements OnApplicationBootstrap {
   /** POST /auth/login — per-IP (default 10/min, rateLimit.login). */
   readonly login: KeyedRateLimiter;
+  /** POST /auth/login — per-SUBMITTED-IDENTIFIER (username/email, CITEXT-
+   *  normalized: trim+lowercase — AUD-A7d-001, Fix Wave 3). A fully
+   *  independent bucket from `login` above, closing docs/PLAN.md §10's
+   *  "per-IP AND per-user" promise: a distributed attempt against one
+   *  account from many source addresses (trivial via IPv6 rotation) faced
+   *  only the per-IP cap before this existed. Keyed on the UNVERIFIED
+   *  value the caller submitted, not a resolved user id — an unknown
+   *  identifier costs an attacker the same budget as a real one, the same
+   *  timing-parity discipline login()'s DUMMY_PASSWORD_HASH already
+   *  establishes for the argon2id step. Mirrors `unlock` below's
+   *  per-user precedent (restricted.controller.ts's own header: "an
+   *  attacker guessing one account's PIN shouldn't get a wider budget by
+   *  rotating source addresses") applied to the higher-value target.
+   *  (default 20/min, rateLimit.loginByIdentifier). */
+  readonly loginByIdentifier: KeyedRateLimiter;
   /** POST /auth/refresh — per-IP (default 30/min, rateLimit.refresh). */
   readonly refresh: KeyedRateLimiter;
+  /** POST /auth/refresh — per-SUBMITTED-DEVICE-ID (AUD-A7d-001, Fix Wave
+   *  3). Refresh tokens are opaque 256-bit values (refresh-token.service.ts)
+   *  — brute-forcing one is computationally infeasible regardless of rate,
+   *  so this is not a credential-guessing guard the way loginByIdentifier
+   *  is. It closes the literal per-IP-only gap docs/PLAN.md §10 names for
+   *  BOTH auth routes: a distributed attempt hammering one known device's
+   *  refresh chain across many source addresses now shares one budget
+   *  regardless of which address each attempt arrives from (default
+   *  40/min, rateLimit.refreshByDevice). */
+  readonly refreshByDevice: KeyedRateLimiter;
   /** POST /restricted/unlock — per-USER (default 5/min, rateLimit.unlock). */
   readonly unlock: KeyedRateLimiter;
 
   constructor(private readonly settingsService: SettingsService) {
     this.login = new KeyedRateLimiter(perMinutePolicy(settingsService, "rateLimit.login", 10));
+    this.loginByIdentifier = new KeyedRateLimiter(perMinutePolicy(settingsService, "rateLimit.loginByIdentifier", 20));
     this.refresh = new KeyedRateLimiter(perMinutePolicy(settingsService, "rateLimit.refresh", 30));
+    this.refreshByDevice = new KeyedRateLimiter(perMinutePolicy(settingsService, "rateLimit.refreshByDevice", 40));
     this.unlock = new KeyedRateLimiter(perMinutePolicy(settingsService, "rateLimit.unlock", 5));
 
     settingsService.onChange((event) => {
@@ -94,8 +126,14 @@ export class AuthRateLimiterService implements OnApplicationBootstrap {
         case "rateLimit.login":
           this.login.updatePolicy(perMinutePolicy(this.settingsService, "rateLimit.login", 10));
           break;
+        case "rateLimit.loginByIdentifier":
+          this.loginByIdentifier.updatePolicy(perMinutePolicy(this.settingsService, "rateLimit.loginByIdentifier", 20));
+          break;
         case "rateLimit.refresh":
           this.refresh.updatePolicy(perMinutePolicy(this.settingsService, "rateLimit.refresh", 30));
+          break;
+        case "rateLimit.refreshByDevice":
+          this.refreshByDevice.updatePolicy(perMinutePolicy(this.settingsService, "rateLimit.refreshByDevice", 40));
           break;
         case "rateLimit.unlock":
           this.unlock.updatePolicy(perMinutePolicy(this.settingsService, "rateLimit.unlock", 5));
@@ -112,7 +150,9 @@ export class AuthRateLimiterService implements OnApplicationBootstrap {
    *  no-op when the value hasn't actually changed. */
   onApplicationBootstrap(): void {
     this.login.updatePolicy(perMinutePolicy(this.settingsService, "rateLimit.login", 10));
+    this.loginByIdentifier.updatePolicy(perMinutePolicy(this.settingsService, "rateLimit.loginByIdentifier", 20));
     this.refresh.updatePolicy(perMinutePolicy(this.settingsService, "rateLimit.refresh", 30));
+    this.refreshByDevice.updatePolicy(perMinutePolicy(this.settingsService, "rateLimit.refreshByDevice", 40));
     this.unlock.updatePolicy(perMinutePolicy(this.settingsService, "rateLimit.unlock", 5));
   }
 }

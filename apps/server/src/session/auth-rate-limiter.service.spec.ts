@@ -27,16 +27,47 @@ function attemptsUntilBlocked(limiter: { attempt(key: string): { allowed: boolea
 }
 
 describe("AuthRateLimiterService", () => {
-  it("defaults: login 10/min, refresh 30/min, unlock 5/min", () => {
+  it("defaults: login 10/min, refresh 30/min, unlock 5/min, loginByIdentifier 20/min, refreshByDevice 40/min", () => {
     const service = new AuthRateLimiterService(createFakeSettingsService({ env: {} }).service);
     expect(attemptsUntilBlocked(service.login, "ip-a")).toBe(10);
     expect(attemptsUntilBlocked(service.refresh, "ip-b")).toBe(30);
     expect(attemptsUntilBlocked(service.unlock, "user-a")).toBe(5);
+    expect(attemptsUntilBlocked(service.loginByIdentifier, "casual")).toBe(20);
+    expect(attemptsUntilBlocked(service.refreshByDevice, "device-a")).toBe(40);
   });
 
   it("LOOMBRE_RATE_LOGIN overrides the login capacity", () => {
     const service = new AuthRateLimiterService(createFakeSettingsService({ env: { LOOMBRE_RATE_LOGIN: "3" } }).service);
     expect(attemptsUntilBlocked(service.login, "ip-c")).toBe(3);
+  });
+
+  // Fix Wave 3 (audit fafa47f, AUD-A7d-001): the per-account/per-device
+  // dimensions are FULLY INDEPENDENT KeyedRateLimiter instances from
+  // login/refresh above — overriding one setting must never move the other.
+  it("LOOMBRE_RATE_LOGIN_BY_IDENTIFIER overrides loginByIdentifier's capacity, independent of LOOMBRE_RATE_LOGIN", () => {
+    const service = new AuthRateLimiterService(
+      createFakeSettingsService({ env: { LOOMBRE_RATE_LOGIN: "999", LOOMBRE_RATE_LOGIN_BY_IDENTIFIER: "3" } }).service,
+    );
+    expect(attemptsUntilBlocked(service.loginByIdentifier, "casual")).toBe(3);
+    // The per-IP bucket is untouched by the identifier override.
+    expect(attemptsUntilBlocked(service.login, "ip-untouched")).toBe(999);
+  });
+
+  it("LOOMBRE_RATE_REFRESH_BY_DEVICE overrides refreshByDevice's capacity, independent of LOOMBRE_RATE_REFRESH", () => {
+    const service = new AuthRateLimiterService(
+      createFakeSettingsService({ env: { LOOMBRE_RATE_REFRESH: "999", LOOMBRE_RATE_REFRESH_BY_DEVICE: "3" } }).service,
+    );
+    expect(attemptsUntilBlocked(service.refreshByDevice, "device-b")).toBe(3);
+    expect(attemptsUntilBlocked(service.refresh, "ip-untouched")).toBe(999);
+  });
+
+  it("loginByIdentifier keys independently per identifier — a different identifier is a fresh bucket", () => {
+    const service = new AuthRateLimiterService(
+      createFakeSettingsService({ env: { LOOMBRE_RATE_LOGIN_BY_IDENTIFIER: "1" } }).service,
+    );
+    expect(service.loginByIdentifier.attempt("casual").allowed).toBe(true);
+    expect(service.loginByIdentifier.attempt("casual").allowed).toBe(false);
+    expect(service.loginByIdentifier.attempt("admin").allowed).toBe(true);
   });
 
   it("LOOMBRE_RATE_REFRESH overrides the refresh capacity", () => {

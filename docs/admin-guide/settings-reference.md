@@ -326,6 +326,36 @@ How many reachability-proof probe attempts one device may make per minute, befor
 - **Applies:** immediately — no restart needed.
 - **Can be locked:** if `LOOMBRE_RATE_PROBE` is set by whoever installed Loombre, this setting becomes fixed to that value and shows as controlled by the environment here — ask them, or see the [Operator Guide's environment reference](/ops/env-reference).
 
+### Login By Identifier
+
+<small>Setting key: `rateLimit.loginByIdentifier`</small>
+
+How many sign-in attempts one ACCOUNT may receive per minute, combined across every source address — separate from the per-device limit above. Guards against a distributed attempt to guess one person's password.
+
+- **Default:** 20
+- **Applies:** immediately — no restart needed.
+- **Can be locked:** if `LOOMBRE_RATE_LOGIN_BY_IDENTIFIER` is set by whoever installed Loombre, this setting becomes fixed to that value and shows as controlled by the environment here — ask them, or see the [Operator Guide's environment reference](/ops/env-reference).
+
+### Refresh By Device
+
+<small>Setting key: `rateLimit.refreshByDevice`</small>
+
+How many session-refresh requests one signed-in device may receive per minute, combined across every source address — separate from the per-device limit above. Guards against a distributed attempt to overwhelm one device's session renewal.
+
+- **Default:** 40
+- **Applies:** immediately — no restart needed.
+- **Can be locked:** if `LOOMBRE_RATE_REFRESH_BY_DEVICE` is set by whoever installed Loombre, this setting becomes fixed to that value and shows as controlled by the environment here — ask them, or see the [Operator Guide's environment reference](/ops/env-reference).
+
+### Search
+
+<small>Setting key: `rateLimit.search`</small>
+
+How many search requests one person may make per minute — /search and the restricted-content search share this limit. Each request does extra per-result lookups, so this bounds abuse while staying generous enough for normal typing bursts.
+
+- **Default:** 60
+- **Applies:** immediately — no restart needed.
+- **Can be locked:** if `LOOMBRE_RATE_SEARCH` is set by whoever installed Loombre, this setting becomes fixed to that value and shows as controlled by the environment here — ask them, or see the [Operator Guide's environment reference](/ops/env-reference).
+
 ## Network
 
 The web address people use to reach this server from outside your own network.

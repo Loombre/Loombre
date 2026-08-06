@@ -59,6 +59,7 @@ import type { ProviderRegistry } from './registry.js';
 import type { ContentClass, MediaKind, PersonCredit, ProviderDetails, ProviderImageRef, ProviderRef } from './provider.js';
 import { resolveProviderChainForLibrary } from './chain-resolution.js';
 import { createPluginBreakerRegistry, type PluginBreakerRegistry } from './plugin-breakers.js';
+import { redactSecretShapedValues } from '../crash/redact.js';
 
 // PROVIDER_CHAIN itself now lives in provider-chain-defaults.ts (LPP v1,
 // Lane W3) — re-exported here so any existing importer of
@@ -205,7 +206,18 @@ async function resolveViaProviderChain(
 
 export function metadataConsumerHandler(deps: MetadataConsumerDeps): JobHandler<'metadata'> {
   const clock = deps.clock ?? (() => Date.now());
-  const log = deps.log ?? ((message: string) => console.warn(message));
+  // AUD-A7c-002: the LOGGING BOUNDARY, not the one throw site the finding
+  // named — a provider's ProviderFetchError carries its full request URL
+  // (TMDB: `?api_key=<secret>` — cache.ts) straight into err.message, and
+  // every catch block below forwards err.message into this `log`
+  // unmodified. Redacting HERE, on every message this closure ever emits,
+  // covers that call site AND every future one that reuses `log` — instead
+  // of patching each throw/catch pair (the ad-hoc-string-surgery approach
+  // this fix deliberately avoids) — including messages a test-injected
+  // deps.log receives, which is what makes "assert on the emitted log
+  // content" (not "was the mock called") a meaningful test.
+  const sink = deps.log ?? ((message: string) => console.warn(message));
+  const log = (message: string) => sink(redactSecretShapedValues(message));
   const pluginBreakers = deps.pluginBreakers ?? createPluginBreakerRegistry();
 
   return async (payload) => {

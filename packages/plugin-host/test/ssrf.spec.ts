@@ -8,11 +8,12 @@
 // HTTP servers so the streaming/abort behavior is proven against Node's
 // actual fetch implementation, not a mock.
 
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createServer, type IncomingMessage, type RequestListener, type Server, type ServerResponse } from "node:http";
 import {
   assertHostAllowed,
   hardenedFetch,
+  hardenedFetchRaw,
   HardenedFetchError,
   isDisallowedAddress,
   resolveAndValidateHost,
@@ -335,6 +336,73 @@ describe("hardenedFetch (real ephemeral-port local servers)", () => {
     const result = await hardenedFetch(baseUrl, {}, { timeoutMs: 1000, maxResponseBytes: 1024, lanAllowlist: ["::1"] });
     expect(result.status).toBe(200);
     expect(result.bodyText).toBe("ipv6-ok");
+  });
+});
+
+describe("hardenedFetchRaw (real ephemeral-port local servers)", () => {
+  const servers: Server[] = [];
+  const publicLookup: DnsLookupFn = async () => [{ address: "127.0.0.1", family: 4 }];
+
+  afterEach(async () => {
+    await Promise.all(servers.splice(0).map((s) => new Promise<void>((res) => s.close(() => res()))));
+  });
+
+  async function listen(handler: RequestListener<typeof IncomingMessage, typeof ServerResponse>): Promise<string> {
+    const server = createServer(handler);
+    servers.push(server);
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    const port = typeof address === "object" && address ? address.port : 0;
+    return `http://127.0.0.1:${port}`;
+  }
+
+  // R6 fix wave: the whole-request timer is deliberately left running (never
+  // cleared) on the SUCCESS path — see this file's ssrf.ts header comment on
+  // `hardenedFetchRaw` — so it can still abort a body that drips slowly
+  // AFTER the caller has already received the `Response` and started
+  // reading it. But a timer Node still considers a reason to keep running
+  // is also a reason the EVENT LOOP stays open, which — multiplied across
+  // every successful image download — delays worker shutdown for up to
+  // `timeoutMs` after the last real work finished. `unref()` fixes exactly
+  // that without weakening the abort: the timer still fires and still
+  // aborts a slow-drip body; it just stops being, by itself, a reason the
+  // process stays alive. This is asserted via `Timeout#hasRef()` (a real
+  // runtime property of the timer Node scheduled), not merely "was
+  // `.unref` invoked" — spying on `setTimeout` to capture the actual
+  // `NodeJS.Timeout` and reading back its live ref-state is the closest
+  // thing to observing "would this hold the event loop open" from inside a
+  // single test process without spawning a child process and racing its
+  // exit.
+  it("R6: unrefs its timeout timer once a successful response comes back, so it cannot hold the event loop open on its own", async () => {
+    const realSetTimeout = globalThis.setTimeout;
+    let capturedTimer: NodeJS.Timeout | undefined;
+    const setTimeoutSpy = vi
+      .spyOn(globalThis, "setTimeout")
+      .mockImplementation(((...args: Parameters<typeof setTimeout>) => {
+        const t = realSetTimeout(...args);
+        capturedTimer = t as unknown as NodeJS.Timeout;
+        return t;
+      }) as typeof setTimeout);
+
+    try {
+      const baseUrl = await listen((_req, res) => {
+        res.writeHead(200, { "content-type": "text/plain" });
+        res.end("ok");
+      });
+      const host = new URL(baseUrl).hostname;
+
+      const response = await hardenedFetchRaw(baseUrl, { timeoutMs: 5000, lanAllowlist: [host], dnsLookup: publicLookup });
+      expect(response.status).toBe(200);
+
+      expect(capturedTimer).toBeDefined();
+      expect(capturedTimer!.hasRef()).toBe(false);
+    } finally {
+      setTimeoutSpy.mockRestore();
+      // Belt-and-suspenders: whatever this test found, don't let a
+      // still-ref'd leftover timer from a failing run hold up the test
+      // process's own exit.
+      capturedTimer?.unref();
+    }
   });
 });
 

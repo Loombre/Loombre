@@ -134,7 +134,11 @@ describe('imageConsumerHandler', () => {
     };
 
     const handler = imageConsumerHandler({ db, dataDir: workDir, execute: runVariantJob, fetchImpl });
-    await handler({ entityType: 'catalog_item', entityId: itemId, kind: 'backdrop', sourcePath: 'url:https://example.invalid/x.jpg' }, { jobId: 'img-job-2' });
+    // 93.184.216.34 (this codebase's own convention for "an allowed
+    // public IPv4 literal" — packages/plugin-host/test/ssrf.spec.ts), not
+    // a hostname, so this stays independent of real DNS: resolveSource now
+    // routes url: fetches through the SSRF guard (AUD-A7c-001).
+    await handler({ entityType: 'catalog_item', entityId: itemId, kind: 'backdrop', sourcePath: 'url:https://93.184.216.34/x.jpg' }, { jobId: 'img-job-2' });
 
     const rows = await db.selectFrom('images').select('source').where('entity_id', '=', itemId).execute();
     expect(rows.length).toBeGreaterThan(0);

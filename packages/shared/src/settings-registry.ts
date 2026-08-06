@@ -748,6 +748,58 @@ const UI_ENTRIES: SettingsRegistryEntry[] = [
     envVar: "LOOMBRE_RATE_PROBE",
     parseEnv: parseEnvPositiveInt,
   }),
+  // Fix Wave 3 (audit fafa47f, AUD-A7d-001): rateLimit.login/refresh above
+  // are keyed per-IP only — a distributed attempt against ONE account (or
+  // one device's refresh chain) from many source addresses was
+  // unthrottled. These two are a SECOND, independent dimension on the
+  // SAME two routes: per-SUBMITTED-identifier for login (mirrors
+  // rateLimit.unlock's per-user precedent, but keyed on the unverified
+  // value the caller submitted rather than a resolved user id — an
+  // unknown identifier must cost the same budget as a real one) and
+  // per-SUBMITTED-deviceId for refresh (refresh tokens are opaque 256-bit
+  // values, not brute-forceable regardless of rate — this closes the
+  // per-IP-only gap for a distributed attempt against one known device's
+  // refresh chain instead). See apps/server/src/session/
+  // auth-rate-limiter.service.ts for the KeyedRateLimiter wiring.
+  defineSetting({
+    key: "rateLimit.loginByIdentifier",
+    schema: z.number().int().min(1),
+    default: 20,
+    category: "rateLimit",
+    description: "How many sign-in attempts one ACCOUNT may receive per minute, combined across every source address — separate from the per-device limit above. Guards against a distributed attempt to guess one person's password.",
+    requiresRestart: false,
+    scope: "ui",
+    envVar: "LOOMBRE_RATE_LOGIN_BY_IDENTIFIER",
+    parseEnv: parseEnvPositiveInt,
+  }),
+  defineSetting({
+    key: "rateLimit.refreshByDevice",
+    schema: z.number().int().min(1),
+    default: 40,
+    category: "rateLimit",
+    description: "How many session-refresh requests one signed-in device may receive per minute, combined across every source address — separate from the per-device limit above. Guards against a distributed attempt to overwhelm one device's session renewal.",
+    requiresRestart: false,
+    scope: "ui",
+    envVar: "LOOMBRE_RATE_REFRESH_BY_DEVICE",
+    parseEnv: parseEnvPositiveInt,
+  }),
+  // Fix Wave 3 (audit fafa47f, AUD-A7d-002): GET /search and
+  // GET /restricted/search carried NO limiter at all despite an N+1
+  // detail fetch per row — closes the gap using the SurfaceRateLimiterService
+  // idiom (identity-keyed, one shared bucket across both routes, mirroring
+  // rateLimit.mediaToken's four-route-family sharing). Generous ceiling on
+  // purpose: normal typeahead-style search fires bursts on ordinary use.
+  defineSetting({
+    key: "rateLimit.search",
+    schema: z.number().int().min(1),
+    default: 60,
+    category: "rateLimit",
+    description: "How many search requests one person may make per minute — /search and the restricted-content search share this limit. Each request does extra per-result lookups, so this bounds abuse while staying generous enough for normal typing bursts.",
+    requiresRestart: false,
+    scope: "ui",
+    envVar: "LOOMBRE_RATE_SEARCH",
+    parseEnv: parseEnvPositiveInt,
+  }),
 
   // ---- stash (STATE.md "Stash SQLite metadata sync", S8, trigger (b)) ----
   // Deliverable 7(b)'s schedule trigger: no cron machinery exists anywhere
