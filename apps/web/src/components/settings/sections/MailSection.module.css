@@ -28,13 +28,21 @@
   max-width: 68ch;
 }
 
+/* AUD-A3b-001: errors render danger, not accent (JobsPanel.module.css's
+   S3 precedent — same tint recipe so a theme retune can't desync them). */
 .errorBanner {
   margin: 0;
   padding: var(--space-sm) var(--space-md);
   border-radius: var(--radius-md);
-  background: var(--color-accent-tint);
-  color: var(--color-accent);
+  background: color-mix(in srgb, var(--color-danger) 14%, transparent);
+  color: var(--color-danger);
   font-size: var(--text-sm);
+}
+
+/* AUD-A3b-002: the fetch-failure Retry row — keeps the button at its
+   intrinsic width inside .page's stretch-by-default flex column. */
+.errorActions {
+  display: flex;
 }
 
 .skeletonList {

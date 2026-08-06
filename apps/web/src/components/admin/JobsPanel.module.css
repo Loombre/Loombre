@@ -94,15 +94,28 @@
   color: var(--muted);
 }
 
+/* AUD-A4v6-002 (audit fafa47f): flex-wrap: wrap let the meta line grow to
+   two lines whenever the panel was narrow (the dashboard's ~323px embed),
+   making row content 74.2px tall inside the 68px virtualized row — every
+   row painted over the next. Height-model fix: the meta line is single-line
+   at EVERY panel width (each item shrinks + ellipsizes; full values stay
+   readable via the title attributes JobRow sets), so the fixed
+   DEFAULT_ROW_HEIGHT is finally correct by construction instead of
+   width-dependent — and VirtualList's .row now clips as backstop. */
 .rowMeta {
   display: flex;
   gap: var(--space-md);
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  min-width: 0;
 }
 
 .metaItem {
   font-size: var(--text-xs);
   color: var(--color-text-subtle);
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .error {

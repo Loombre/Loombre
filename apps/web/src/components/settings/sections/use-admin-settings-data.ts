@@ -27,17 +27,29 @@ export interface AdminSettingsData {
   settings: AdminSettingsResponse | null;
   error: string | null;
   refetch: () => void;
+  /** Full reload (schema + settings) that also clears `error` first —
+   *  the retry affordance for the tabs that can render nothing without a
+   *  schema (AUD-A3b-002). Distinct from `refetch`, which stays
+   *  settings-only for the ordinary post-write path and never needs to
+   *  re-pull the schema. */
+  retry: () => void;
 }
 
 export function useAdminSettingsData(): AdminSettingsData {
   const [schema, setSchema] = useState<AdminSettingsSchemaResponse | null>(null);
   const [settings, setSettings] = useState<AdminSettingsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [loadGeneration, setLoadGeneration] = useState(0);
 
   const refetch = useCallback(() => {
     apiGet("/admin/settings")
       .then(setSettings)
       .catch((err) => setError(err instanceof LoombreApiError ? err.message : "Failed to load settings."));
+  }, []);
+
+  const retry = useCallback(() => {
+    setError(null);
+    setLoadGeneration((g) => g + 1);
   }, []);
 
   useEffect(() => {
@@ -55,12 +67,12 @@ export function useAdminSettingsData(): AdminSettingsData {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [loadGeneration]);
 
   useEffect(() => {
     const socket = getEventsSocket();
     return socket.subscribe("settings.updated", () => refetch());
   }, [refetch]);
 
-  return { schema, settings, error, refetch };
+  return { schema, settings, error, refetch, retry };
 }

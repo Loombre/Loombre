@@ -15,6 +15,11 @@ dist/
 .env
 .env.*
 !.env.example
+# The operator-filled prod compose env (POSTGRES_PASSWORD, LOOMBRE_JWT_SECRET
+# — docs/install/docker.md tells the operator to create it from
+# loombre.env.example and has always CLAIMED it was gitignored; as of the
+# fafa47f audit's Wave 6 review, that claim is actually true).
+installers/docker/loombre.env
 
 # logs & scratch
 *.log

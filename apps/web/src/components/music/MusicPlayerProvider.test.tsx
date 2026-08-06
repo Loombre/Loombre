@@ -27,6 +27,10 @@ type PlaybackSession = components["schemas"]["PlaybackSession"];
 const SERVER_URL = "http://localhost:9000";
 const TRACK_ID = "01890000-0000-7000-8000-000000000031";
 const SESSION_ID = "01890000-0000-7000-8000-0000000000ab";
+/** The queue's SECOND track + its session, for the superseded-load leak
+ *  test below (AUD-A3g-001). */
+const TRACK_2_ID = "01890000-0000-7000-8000-000000000032";
+const SESSION_2_ID = "01890000-0000-7000-8000-0000000000ac";
 /** A NON-default media_files row for the same track — the alternate
  *  (lossless/remaster) version a user picks out of its Versions list. */
 const ALT_FILE_ID = "01890000-0000-7000-8000-0000000000d8";
@@ -107,6 +111,15 @@ function PlayOnMount({ track }: { track: PlayableTrackInput }): null {
   return null;
 }
 
+/** Captures the live context value so a test can drive playQueue()/next()
+ *  imperatively — the superseded-load test needs to race a skip against an
+ *  in-flight createDirectPlaySession, which a mount-only harness can't. */
+let capturedCtx: ReturnType<typeof useMusicPlayer> | null = null;
+function CaptureContext(): null {
+  capturedCtx = useMusicPlayer();
+  return null;
+}
+
 async function playAndSettle(track: PlayableTrackInput): Promise<TestRender> {
   let view: TestRender | null = null;
   await act(async () => {
@@ -142,5 +155,53 @@ describe("MusicPlayerProvider", () => {
   it("leaves the file unpinned when no version was picked, so the server's primary file wins", async () => {
     view = await playAndSettle({ itemId: TRACK_ID, title: "Heliotrope" });
     expect(createDirectPlaySession).toHaveBeenCalledWith(TRACK_ID, "stream", undefined);
+  });
+
+  // AUD-A3g-001 regression guard: a load superseded while its
+  // createDirectPlaySession was in flight returns BEFORE recording the
+  // session in sessionsRef — so no slot reuse and no unmount cleanup can
+  // ever reach it, and the server session stays live until the 15-minute
+  // idle sweeper. This file's own header promises the opposite ("the
+  // just-finished track's session is ended as soon as its slot is
+  // reused"): the superseded invocation must end the session it created.
+  it("ends the session created by a superseded track load instead of leaking it", async () => {
+    let resolveFirst: (r: unknown) => void = () => undefined;
+    createDirectPlaySession
+      .mockImplementationOnce(
+        () =>
+          new Promise((res) => {
+            resolveFirst = res;
+          }),
+      )
+      .mockResolvedValueOnce({ ok: true, session: { ...directPlaySession(), id: SESSION_2_ID, itemId: TRACK_2_ID } });
+
+    capturedCtx = null;
+    await act(async () => {
+      view = renderIntoBody(
+        <MusicPlayerProvider>
+          <CaptureContext />
+        </MusicPlayerProvider>,
+      );
+    });
+    await act(async () => {
+      capturedCtx!.playQueue(
+        [
+          { itemId: TRACK_ID, title: "Heliotrope" },
+          { itemId: TRACK_2_ID, title: "Second Sun" },
+        ],
+        0,
+      );
+    });
+    // Skip while track 1's create is still in flight — this supersedes it.
+    await act(async () => {
+      capturedCtx!.next();
+    });
+    // Track 1's create resolves late: its session must be ended, not dropped.
+    await act(async () => {
+      resolveFirst({ ok: true, session: directPlaySession() });
+    });
+    expect(endPlaybackSession).toHaveBeenCalledWith(SESSION_ID);
+    // The winning (track 2) session is live, not ended.
+    expect(endPlaybackSession).not.toHaveBeenCalledWith(SESSION_2_ID);
   });
 });

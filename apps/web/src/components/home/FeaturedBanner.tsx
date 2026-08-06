@@ -164,9 +164,9 @@ function BannerBody({
             Details
           </a>
           {/* L3's real watchlist toggle in L9's reserved slot (Wave-2
-              landing reconciliation). It ships its own pill styling —
-              geometry delta vs the banner's pillGhost, if any, is W3
-              fidelity-audit fodder, logged at landing. */}
+              landing reconciliation). It ships its own pill styling in its
+              own CSS module; this module styles only the Play/Details
+              pills. */}
           <WatchlistToggle itemId={candidate.id} />
         </div>
       </div>

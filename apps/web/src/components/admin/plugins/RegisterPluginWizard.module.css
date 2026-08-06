@@ -36,10 +36,11 @@
   gap: var(--space-sm);
 }
 
+/* AUD-A3b-001: errors render danger, not accent. */
 .errorText {
   margin: 0;
   font-size: var(--text-sm);
-  color: var(--color-accent);
+  color: var(--color-danger);
 }
 
 .actions {

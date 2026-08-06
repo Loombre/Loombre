@@ -341,7 +341,7 @@ sudo chmod -R o+rx /mnt/media             # if using NFO sidecars
 For network mounts, check that the mount itself is readable by the `loombre` user:
 `sudo -u loombre ls /mnt/media` should list files without errors.
 
-### Worker container is "Starting" and never becomes "Running"
+### Worker service fails to start / keeps restarting
 
 ```sh
 journalctl -u loombre-worker -f

@@ -128,6 +128,85 @@ Windows parity gap noted (tray "Exit" likewise leaves the services
 running, though `services.msc` at least exists there) — not addressed in
 this change.
 
+### Loombre Remote: embedded WireGuard, three-path wizard, reachability proof, posture card (2026-08-04)
+
+Remote access lands end-to-end. **Loombre Remote** embeds a userspace
+WireGuard endpoint (wireguard-go/netstack class) inside the Loombre
+process — no kernel module, no root, no OS network interface, no
+routing-table changes — exposing only Loombre's listener through the
+tunnel, never the LAN, with per-device keys, split-tunnel QR/`.conf`
+provisioning in an app-agnostic format, and revocation wired into the
+device list. Two alternative paths ship beside it: BYO-token tunnel
+automation with a managed connector, and a guided Direct path (ACME +
+router instruction cards). A three-path wizard routes between them by
+interview (CGNAT detection included), a one-time-token cellular-QR
+reachability proof verifies the chosen path from genuinely outside the
+LAN, and an exposure-aware security posture card summarizes where the
+install stands. Server surface in `apps/server/src/remote/`, native
+tunnel code in `packages/wg-native/`, nine new
+`remote.*`/`tunnel.connector.state`/`posture.*`/`probe.arrived` event
+types, and fully restructured remote-access operator docs
+(`docs/ops/remote-access/`). Adversarially security-reviewed across
+every new surface; green on all three OSes.
+
+### Current-password re-auth on self-changes + the email-collision signal (2026-08-02)
+
+Account-critical self-service changes — password, email (set, change, or
+remove), restricted PIN set/change, and restricted opt-in/out — now
+require the current password, verified by the same argon2id compare as
+login, constant-time on failure, and counted by a per-user rate limiter
+*before* the compare so the re-auth prompt cannot become a
+password-guessing oracle (wrong password → 403
+`urn:loombre:problem:current-password-invalid`). A successful
+self-service password change now revokes every other device's refresh
+tokens (new `session.revoked-by-password-change` event) while keeping
+the current session — the UI says so plainly. The invite-claim and
+email-change flows gain the out-of-band email-collision signal,
+enumeration-safe by construction (responses never split on whether an
+email exists). Contract: `RestrictedSettingsUpdate` requires
+`currentPassword`; `UpdateMeRequest` gains it via `dependentRequired`
+on password/email only — bare display-name saves stay re-auth-free.
+Phosphor settings forms gain the masked current-password field at both
+breakpoints. Two adversarial review passes; docs updated in all
+registers.
+
+### Optional mail transport + invitation & reset flows (2026-08-02)
+
+Loombre gains an optional SMTP mail transport plus admin-driven
+invitation and password-reset flows that work end-to-end with **zero
+mail configuration**: every invite and reset produces a copyable link
+first; email delivery is an optional extra, never a prerequisite.
+Invites are single-use (a concurrent-claim race admits exactly one
+winner), revocable, expiring, and can never grant admin or
+restricted-library access. Reset tokens are 256-bit, SHA-256 at rest,
+30-minute, single-use, and enumeration-safe — timing probes were part
+of review, and the fix wave drove the timing classifier back to chance.
+With SMTP configured (which requires a validated public URL —
+Host-header poisoning is defeated by never reading `req.headers.host`
+anywhere in the mail/link pipeline), invite/reset/notice mail is
+delivered as HTML+plaintext with zero external resources, sent through
+a real job (`mail-send` — never inline SMTP), with failures surfacing an
+admin notice plus a `mail.failed` event carrying the real SMTP error.
+The admin test-send button reports real transport results both ways.
+New admin (`mail.md`, `inviting-users.md`), user, and operator docs.
+
+### Stash SQLite metadata sync + dedicated Restricted Content surface (2026-08-01)
+
+Connect a Stash SQLite database and Loombre syncs its metadata — titles,
+dates, studios, performers, tags, chapters, and covers (from DB blobs or
+Stash's filesystem blob store) — strictly read-only: the Stash DB is
+byte-identical after a full sync. Schema versions 67-85 are supported;
+anything else disables the provider loudly with an exact status-card
+notice and a `stash.provider.disabled` event rather than guessing.
+Proven at scale on a real 43,679-scene library: 100% matched, 5.9 min,
+562.6 MiB peak. Synced content lands in a dedicated Restricted Content
+zone behind the restricted-content gates: uncleared viewers see zero
+trace of the zone (no nav entry, no palette actions, zone URLs redirect
+home), while cleared viewers PIN-unlock into zone home, browse, and
+scene detail with chapter deep-links. Two new job types
+(`stash-inventory`, `stash-sync`) and `stash.sync.*` events. Admin
+guide: "Connecting Stash"; user guide: zone browsing.
+
 ### Phosphor movie/series detail screens + mark-watched (2026-07-25)
 
 Movie and series detail pages are rebuilt to the Phosphor prototype's full

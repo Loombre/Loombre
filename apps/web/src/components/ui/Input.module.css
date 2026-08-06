@@ -6,6 +6,10 @@
   background: var(--color-surface);
   color: var(--text);
   padding: var(--space-sm) var(--space-lg);
+
+  /* AUD-A4v2-001 (audit fafa47f): Phosphor 44px touch-target floor —
+     padding alone measured 42.5px. */
+  min-height: 44px;
   font-size: var(--text-base);
   transition:
     border-color var(--motion-fast) var(--ease-out),

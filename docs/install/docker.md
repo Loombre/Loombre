@@ -344,7 +344,8 @@ version pins, and native-dependency findings from that run.
 | Application data (image variants, transcode staging) | named volume `loombre_data`, mounted at `/data` in the `server` and `worker` containers (`web` is stateless — no volumes) |
 | Your media | wherever you bind-mount it (see [Media library paths](#media-library-paths)) — never copied, never modified |
 
-`docker compose -f docker-compose.prod.yml down` (without `-v`) stops
+`docker compose -f docker-compose.prod.yml --env-file
+installers/docker/loombre.env down` (without `-v`) stops
 everything and **leaves both named volumes intact** — your catalog and
 media stay put across restarts/upgrades. `down -v` additionally destroys
 `loombre_pgdata`/`loombre_data` — only use it when you actually mean to wipe
@@ -359,9 +360,10 @@ Both `server` and `worker` write local crash files under `/data/crashes`
 inside the container — i.e. `loombre_data:/data/crashes` on the host side of
 the named volume (see "Data locations" above) — viewable from the admin
 System panel (`docs/admin-guide/capability-report.md`'s "Crash files"
-section) or directly from the volume. `docker compose logs server` /
-`docker compose logs worker` capture normal stdout/stderr regardless, and
-are the first thing to check today.
+section) or directly from the volume. `docker compose -f
+docker-compose.prod.yml --env-file installers/docker/loombre.env logs
+server` (or `logs worker`) captures normal stdout/stderr regardless, and
+is the first thing to check today.
 
 ## Troubleshooting
 
@@ -370,7 +372,8 @@ are the first thing to check today.
   installers/docker/loombre.env` on the command, or haven't copied
   `loombre.env.example` to `loombre.env` and filled it in yet.
 - **`server` never reports healthy.** `docker compose -f
-  docker-compose.prod.yml logs server` — a common cause before the first
+  docker-compose.prod.yml --env-file installers/docker/loombre.env logs
+  server` — a common cause before the first
   migration run is simply that the schema doesn't exist yet; run
   [the migration command](#migrating-upgrading). The healthcheck itself
   only probes `GET /healthz` (a liveness check, not a DB check — see
@@ -378,7 +381,8 @@ are the first thing to check today.
   healthy with an unmigrated database is expected, not a bug; catalog
   requests are what will fail until you migrate.
 - **`worker` container exits immediately.** `docker compose -f
-  docker-compose.prod.yml logs worker` — almost always `DATABASE_URL`
+  docker-compose.prod.yml --env-file installers/docker/loombre.env logs
+  worker` — almost always `DATABASE_URL`
   unreachable (Postgres not healthy yet, or an external-Postgres
   `DATABASE_URL` that's wrong). Worker's own boot log names the specific
   connection failure.

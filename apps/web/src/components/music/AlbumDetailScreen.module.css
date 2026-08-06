@@ -176,6 +176,9 @@
 }
 
 .mobileTitle {
+  /* AUD-A4v6-001: non-h* width-axis heading — same unbreakable-token
+     guard globals.css applies to the h1-h6 tier. */
+  overflow-wrap: anywhere;
   font-stretch: var(--wdth-title);
   font-weight: var(--weight-black);
   font-size: var(--text-lg);

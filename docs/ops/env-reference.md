@@ -41,13 +41,9 @@ Assumption: variable names and defaults below are Loombre's own environment-vari
 
 **Data directory.** App data directory (media cache, secrets, images, TLS state). Platform default when unset: XDG_DATA_HOME/loombre (Linux), ~/Library/Application Support/Loombre (macOS), %LOCALAPPDATA%/Loombre (Windows).
 
-- **Default when unset:** `./data`
-
 #### `LOOMBRE_CONFIG_DIR`
 
 **Config directory.** App config directory. Platform default when unset: XDG_CONFIG_HOME/loombre (Linux), Application Support/Loombre/config (macOS), %APPDATA%/Loombre (Windows).
-
-- **Default when unset:** `./config`
 
 #### `LOOMBRE_TRANSCODE_DIR`
 

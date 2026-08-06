@@ -233,6 +233,16 @@ near-identical values — which is exactly why it was not taken now.
   --wdth-title: 114%;     /* screen titles, section headings */
   --wdth-wordmark: 125%;  /* LOOMBRE wordmark */
   --wdth-poster: 62%;     /* oversized poster initial */
+  /* The prototype systematically uses five MORE width-axis values with no
+     named tier above — a faithful recreation needs all nine, not four:
+       112% — rail/section <h2>s ("Continue Watching" etc.), dashboard stat
+              numbers, dialog titles (used MORE often than 118%)
+       108% — poster-card caption titles (uppercase, over artwork)
+       116% — person-detail <h1> and the onboarding "Welcome to Loombre" <h1>
+       110% — now-playing track title, "This zone is locked" heading
+       120% — oversized low-opacity background watermark lettering
+     Name these as tokens or document them as literals when mapping into
+     apps/web's tokens.css — do not silently fold them into a named tier. */
 
   --text-display: 52px;
   --text-2xl: 31px;   /* mobile large title */
@@ -348,11 +358,14 @@ gradient as the **missing-artwork fallback** (it pairs with `--color-dominant-fa
 Phosphor uses two families:
 
 - `Archivo` — variable, axes `wdth 62..125`, `wght 100..900`. Loaded from Google Fonts.
-  Headings exploit the width axis: `font-stretch: 114%` (screen titles), `118%` (movie
-  title display), `125%` (wordmark), `62%` (the oversized poster initial). This width
-  variation is the single most distinctive thing about the direction — if you adopt
-  Phosphor, self-host the variable font and keep `font-stretch`; a static-width substitute
-  loses the effect.
+  Headings exploit the width axis. The prototype uses **nine** `font-stretch` values:
+  `114%` (screen titles, section headings), `112%` (rail `<h2>`s, dashboard stat numbers,
+  dialog titles — more frequent than 118%), `118%` (movie title display), `116%`
+  (person-detail / onboarding `<h1>`s), `110%` (now-playing title, zone-locked heading),
+  `108%` (poster-card caption titles), `120%` (background watermark lettering), `125%`
+  (wordmark), `62%` (the oversized poster initial). This width variation is the single
+  most distinctive thing about the direction — if you adopt Phosphor, self-host the
+  variable font and keep `font-stretch`; a static-width substitute loses the effect.
 - `IBM Plex Mono` — 400/500/600, used for **all** metadata, labels, counts, paths, log
   lines, and status chips, typically uppercase with `letter-spacing: .06em–.18em`.
 
@@ -367,7 +380,7 @@ with intermediate values rounded to the nearest step. Desktop page padding `26px
 (the 90px bottom clears the fixed prototype chrome — **drop it in production**). Mobile
 content padding `14px 16px 26px`.
 
-**Radii** — desktop 6, 8, 12, 14, 18, 999px; mobile 9, 11, 12, 13, 14, 16, 18, 20, 999px;
+**Radii** — desktop 6, 8, 10, 12, 14, 18, 999px; mobile 9, 10, 11, 12, 13, 14, 16, 18, 20, 999px;
 phone bezel 46px. Map: pills/chips/inputs/buttons → `--radius-pill`; cards/dialogs/sheets →
 `--radius-lg`; posters/thumbnails/tiles → `--radius-md`; nested chips and inline blocks →
 `--radius-sm`; avatars and icon buttons → `--radius-full`.

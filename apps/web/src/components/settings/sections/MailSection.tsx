@@ -26,6 +26,7 @@ import { SettingsCategoryCard } from "../../admin/settings/SettingsCategoryCard.
 import { MailCredentialsCard } from "../../admin/settings/MailCredentialsCard.js";
 import { MailTestSendCard } from "../../admin/settings/MailTestSendCard.js";
 import { Skeleton } from "../../skeleton/Skeleton.js";
+import { Button } from "../../ui/Button.js";
 import { useAdminSettingsData } from "./use-admin-settings-data.js";
 import styles from "./MailSection.module.css";
 
@@ -41,10 +42,25 @@ function isMailEntry(key: string): boolean {
 }
 
 export function MailSection({ heading }: { heading: string | null }): React.JSX.Element {
-  const { schema, settings, error, refetch } = useAdminSettingsData();
+  const { schema, settings, error, refetch, retry } = useAdminSettingsData();
 
+  // AUD-A3b-002: a fetch failure keeps the page shell (heading intact, like
+  // every sibling consumer of this hook) and offers a real retry instead of
+  // blanking the whole tab behind a bare, terminal error line.
   if (error) {
-    return <p className={styles.errorBanner}>{error}</p>;
+    return (
+      <div className={styles.page}>
+        {heading !== null && <h1 className={styles.heading}>{heading}</h1>}
+        <p className={styles.errorBanner} role="alert">
+          {error}
+        </p>
+        <div className={styles.errorActions}>
+          <Button type="button" variant="secondary" onClick={retry}>
+            Retry
+          </Button>
+        </div>
+      </div>
+    );
   }
 
   if (!schema || !settings) {

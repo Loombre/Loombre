@@ -123,7 +123,7 @@ guess. It disables the connection and shows you exactly why, right on the
 status card, with a message naming both the version it saw and the range
 it supports, for example:
 
-> Stash schema v58 unsupported; supported: 67–85
+> Stash schema v58 unsupported; supported: 67-85
 
 Nothing about your Stash database is affected by this — it's simply left
 alone until either Stash or Loombre catches up to the other.

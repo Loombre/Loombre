@@ -587,12 +587,15 @@ export async function listJobsAdmin(db: Kysely<DB>, params: ListJobsParams = {})
 
   if (params.cursor) {
     const { createdAtMs, id } = decodeCursor(params.cursor, isJobCursorPayload);
-    query = query.where((eb) =>
-      eb.or([
-        eb('created_at_ms', '<', createdAtMs),
-        eb.and([eb('created_at_ms', '=', createdAtMs), eb('id', '<', id)]),
-      ])
-    );
+    // ROW-comparison keyset, not the classic `k < v OR (k = v AND id < i)`
+    // OR-form (catalog-detail.ts's established pattern): semantically
+    // identical, but only the row comparison is pushed into an Index Cond
+    // on migration 0036's jobs_created_at_keyset_idx. Measured @ 100k jobs
+    // rows at the ~row-50k cursor: the OR-form ran as a per-row Filter
+    // even WITH the index (50,001 rows removed by filter, 5.4ms); ROW()
+    // is a direct b-tree seek (0.022ms, flat regardless of page depth).
+    // AUD-A8b-001 (audit fafa47f).
+    query = query.where(sql<boolean>`(jobs.created_at_ms, jobs.id) < (${createdAtMs}, ${id})`);
   }
 
   const rows = await query.orderBy('created_at_ms', 'desc').orderBy('id', 'desc').limit(limit).execute();
@@ -811,7 +814,14 @@ export async function listActiveSessionsAdmin(
 /** Enrichable item types (mirrors apps/worker/src/metadata/consumer.ts's
  *  SUPPORTED_ITEM_TYPES / METADATA_ENRICHABLE_TYPES verbatim — season/
  *  episode/track are never independently enriched, so they can never be
- *  "unmatched" in their own right). */
+ *  "unmatched" in their own right).
+ *
+ *  SYNC INVARIANT (migration 0036): this exact list is also the partial
+ *  predicate of catalog_items_library_added_enrichable_idx, which is what
+ *  keeps listUnmatchedLibraryItemsForViewer's keyset ORDER BY sort-free.
+ *  Widening this list without widening that index's WHERE in a new
+ *  migration silently degrades the planner back to sort-based plans
+ *  (wrong plans, never wrong rows) — see 0036's header. */
 const ENRICHABLE_ITEM_TYPES: readonly ItemType[] = ['movie', 'series', 'artist', 'album'];
 
 export interface UnmatchedLibraryItemRow {
@@ -905,11 +915,12 @@ export async function listUnmatchedLibraryItemsForViewer(
 
   if (params.cursor) {
     const { addedAtMs, id } = decodeCursor(params.cursor, isUnmatchedItemCursorPayload);
-    query = query.where((eb) =>
-      eb.or([
-        eb('catalog_items.added_at_ms', '<', addedAtMs),
-        eb.and([eb('catalog_items.added_at_ms', '=', addedAtMs), eb('catalog_items.id', '<', id)]),
-      ])
+    // ROW-comparison keyset (catalog-detail.ts's pattern, see listJobsAdmin
+    // above): pushed as an Index Cond seek into migration 0036's partial
+    // catalog_items_library_added_enrichable_idx instead of running as a
+    // per-row Filter. AUD-A8b-002 (audit fafa47f).
+    query = query.where(
+      sql<boolean>`(catalog_items.added_at_ms, catalog_items.id) < (${addedAtMs}, ${id})`
     );
   }
 
