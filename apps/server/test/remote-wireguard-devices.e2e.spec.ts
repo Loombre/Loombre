@@ -346,7 +346,8 @@ describe("RG3 gap closure — general DELETE /devices/{id} side effects (ALL kin
     expect(before!.revoked_at_ms).toBeNull();
 
     const deleteRes = await asCasual().delete(`/devices/${deviceId}`);
-    expect(deleteRes.status).toBe(200);
+    // V1-004: contract declares 204 (Revoked) for DELETE /devices/{id}.
+    expect(deleteRes.status).toBe(204);
 
     const after = await findRefreshTokenByHash(dbProvider.db, tokenHash);
     expect(after!.revoked_at_ms).not.toBeNull();
@@ -371,7 +372,8 @@ describe("RG3 gap closure — general DELETE /devices/{id} side effects (ALL kin
     });
 
     const deleteRes = await asCasual().delete(`/devices/${deviceId}`);
-    expect(deleteRes.status).toBe(200);
+    // V1-004: contract declares 204 (Revoked) for DELETE /devices/{id}.
+    expect(deleteRes.status).toBe(204);
 
     const deviceRow = await dbProvider.db.selectFrom("devices").selectAll().where("id", "=", deviceId).executeTakeFirst();
     expect(deviceRow).toBeUndefined();

@@ -76,7 +76,7 @@ import { sql, type Kysely } from 'kysely';
 import type { ContentClass, DB, ItemType } from '../types.js';
 import type { ViewerContext } from '../context.js';
 import { applyContentClassFilter, applyGuard } from './guard.js';
-import { decodeCursor, encodeCursor } from './cursor.js';
+import { decodeCursor, encodeCursor, isCursorRowId } from './cursor.js';
 
 export interface SearchCatalogParams {
   q: string;
@@ -108,7 +108,7 @@ function isSearchCursorPayload(value: unknown): value is SearchCursorPayload {
     typeof value === 'object' &&
     value !== null &&
     typeof (value as Record<string, unknown>).rank === 'number' &&
-    typeof (value as Record<string, unknown>).id === 'string'
+    isCursorRowId((value as Record<string, unknown>).id)
   );
 }
 

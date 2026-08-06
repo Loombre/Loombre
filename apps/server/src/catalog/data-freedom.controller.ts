@@ -105,87 +105,126 @@ export class DataFreedomController {
   async exportArchive(@Req() req: AuthenticatedRequest, @Res() res: Response): Promise<void> {
     const ctx = await resolveViewer(this.viewerContextProvider, req);
 
-    res.status(200);
-    res.setHeader("Content-Type", "application/json");
-    res.write(`{"exportedAtMs":${clockNowMs()}`);
+    // V1-013: the very first res.write() below commits the response
+    // headers, so ANY failure from this point on (exportData's generator
+    // or the per-item getCatalogDetail call, both live DB reads) can no
+    // longer become a normal RFC 9457 response — status 200 is already
+    // locked in, and ProblemJsonExceptionFilter's generic branch would
+    // itself throw (Node's ERR_HTTP_HEADERS_SENT) trying to res.setHeader
+    // a second time. The catch below is the deliberate failure mode
+    // chosen instead of letting that happen: abort the connection rather
+    // than call res.end() on a partial body. Chunked transfer-encoding's
+    // terminating zero-length chunk never gets written, so any spec-
+    // compliant client (fetch/curl/the SDK) surfaces this as a transport-
+    // level error — not a 200 whose JSON simply stops partway through and
+    // could be mistaken for a small-but-complete export. This is a data-
+    // export path (the user's own library + progress); a file that looks
+    // complete and isn't is the Wave 2 silent-corruption failure mode
+    // applied to HTTP framing instead of a DB write.
+    try {
+      res.status(200);
+      res.setHeader("Content-Type", "application/json");
+      res.write(`{"exportedAtMs":${clockNowMs()}`);
 
-    // exportData() yields in three STRICTLY SEQUENTIAL phases (all
-    // 'library' chunks, then all 'item' chunks, then — admin only — all
-    // 'user' chunks; see packages/db/src/query/export.ts). PHASES lists
-    // them in that order; `cursor` tracks which phase index is currently
-    // open (or -1 before the first has been opened), `phaseClosed` tracks
-    // whether PHASES[cursor]'s own `[...]` has already been closed (true
-    // right after auto-closing an empty skipped phase, so the NEXT
-    // iteration must not close it a second time). openPhase(target) closes
-    // whatever is currently open and walks forward opening (and, for any
-    // phase strictly between the previous one and `target` that produced
-    // zero chunks, immediately closing) each phase up to `target`.
-    const PHASES = ["libraries", "items", "users"] as const;
-    let cursor = -1;
-    let phaseClosed = true;
-    let wroteFirstInPhase = false;
+      // exportData() yields in three STRICTLY SEQUENTIAL phases (all
+      // 'library' chunks, then all 'item' chunks, then — admin only — all
+      // 'user' chunks; see packages/db/src/query/export.ts). PHASES lists
+      // them in that order; `cursor` tracks which phase index is currently
+      // open (or -1 before the first has been opened), `phaseClosed` tracks
+      // whether PHASES[cursor]'s own `[...]` has already been closed (true
+      // right after auto-closing an empty skipped phase, so the NEXT
+      // iteration must not close it a second time). openPhase(target) closes
+      // whatever is currently open and walks forward opening (and, for any
+      // phase strictly between the previous one and `target` that produced
+      // zero chunks, immediately closing) each phase up to `target`.
+      const PHASES = ["libraries", "items", "users"] as const;
+      let cursor = -1;
+      let phaseClosed = true;
+      let wroteFirstInPhase = false;
 
-    function openPhase(target: number): void {
-      while (cursor < target) {
-        if (cursor >= 0 && !phaseClosed) res.write("]");
-        cursor += 1;
-        wroteFirstInPhase = false;
-        res.write(`,"${PHASES[cursor]}":[`);
-        phaseClosed = false;
-        if (cursor < target) {
-          res.write("]");
-          phaseClosed = true;
+      function openPhase(target: number): void {
+        while (cursor < target) {
+          if (cursor >= 0 && !phaseClosed) res.write("]");
+          cursor += 1;
+          wroteFirstInPhase = false;
+          res.write(`,"${PHASES[cursor]}":[`);
+          phaseClosed = false;
+          if (cursor < target) {
+            res.write("]");
+            phaseClosed = true;
+          }
         }
       }
-    }
 
-    const progressEntries: unknown[] = [];
+      const progressEntries: unknown[] = [];
 
-    for await (const chunk of exportData(this.dbProvider.db, ctx)) {
-      if (chunk.kind === "library") {
-        openPhase(0);
-        res.write(`${wroteFirstInPhase ? "," : ""}${JSON.stringify(mapExportLibrary(chunk.library))}`);
-        wroteFirstInPhase = true;
-      } else if (chunk.kind === "item") {
-        openPhase(1);
-        const detail = await getCatalogDetail(this.dbProvider.db, ctx, chunk.item.id, { includeDetail: true });
-        if (detail) {
-          res.write(`${wroteFirstInPhase ? "," : ""}${JSON.stringify(mapByType(chunk.item.itemType, detail))}`);
+      for await (const chunk of exportData(this.dbProvider.db, ctx)) {
+        if (chunk.kind === "library") {
+          openPhase(0);
+          res.write(`${wroteFirstInPhase ? "," : ""}${JSON.stringify(mapExportLibrary(chunk.library))}`);
+          wroteFirstInPhase = true;
+        } else if (chunk.kind === "item") {
+          openPhase(1);
+          const detail = await getCatalogDetail(this.dbProvider.db, ctx, chunk.item.id, { includeDetail: true });
+          if (detail) {
+            res.write(`${wroteFirstInPhase ? "," : ""}${JSON.stringify(mapByType(chunk.item.itemType, detail))}`);
+            wroteFirstInPhase = true;
+          }
+          if (chunk.item.progress) {
+            progressEntries.push({
+              itemId: chunk.item.id,
+              positionMs: chunk.item.progress.positionMs,
+              state: chunk.item.progress.state,
+              playCount: chunk.item.progress.playCount,
+              updatedAtMs: chunk.item.progress.updatedAtMs,
+            });
+          }
+        } else if (chunk.kind === "user") {
+          openPhase(2);
+          res.write(
+            `${wroteFirstInPhase ? "," : ""}${JSON.stringify({
+              id: chunk.user.id,
+              username: chunk.user.username,
+              email: chunk.user.email,
+              displayName: chunk.user.displayName,
+              isAdmin: chunk.user.isAdmin,
+              createdAtMs: chunk.user.createdAtMs,
+            })}`,
+          );
           wroteFirstInPhase = true;
         }
-        if (chunk.item.progress) {
-          progressEntries.push({
-            itemId: chunk.item.id,
-            positionMs: chunk.item.progress.positionMs,
-            state: chunk.item.progress.state,
-            playCount: chunk.item.progress.playCount,
-            updatedAtMs: chunk.item.progress.updatedAtMs,
-          });
-        }
-      } else if (chunk.kind === "user") {
-        openPhase(2);
-        res.write(
-          `${wroteFirstInPhase ? "," : ""}${JSON.stringify({
-            id: chunk.user.id,
-            username: chunk.user.username,
-            email: chunk.user.email,
-            displayName: chunk.user.displayName,
-            isAdmin: chunk.user.isAdmin,
-            createdAtMs: chunk.user.createdAtMs,
-          })}`,
-        );
-        wroteFirstInPhase = true;
       }
+
+      // Close whichever phase was left open, and backfill any phase(s) that
+      // never received a single chunk (including all three, if this viewer
+      // has zero visible libraries).
+      openPhase(2);
+      if (!phaseClosed) res.write("]");
+
+      res.write(`,"progress":${JSON.stringify(progressEntries)},"playlists":[]}`);
+      res.end();
+    } catch (err) {
+      if (!res.headersSent) {
+        // Nothing reached the wire yet — the shared exception filter can
+        // still produce a normal RFC 9457 response.
+        throw err;
+      }
+      console.error(
+        JSON.stringify({
+          level: "error",
+          event: "export_stream_failed",
+          instance: req.originalUrl,
+          message: err instanceof Error ? err.message : String(err),
+          timestamp: new Date().toISOString(),
+        }),
+      );
+      // No error argument: destroy(err) schedules an 'error' event on the
+      // response stream, and an unhandled one would crash the process —
+      // exactly the kind of second failure this fix exists to avoid. The
+      // console.error above is the durable record; the client only ever
+      // needed to see the connection go away, never why.
+      res.destroy();
     }
-
-    // Close whichever phase was left open, and backfill any phase(s) that
-    // never received a single chunk (including all three, if this viewer
-    // has zero visible libraries).
-    openPhase(2);
-    if (!phaseClosed) res.write("]");
-
-    res.write(`,"progress":${JSON.stringify(progressEntries)},"playlists":[]}`);
-    res.end();
   }
 
   @Post("import")

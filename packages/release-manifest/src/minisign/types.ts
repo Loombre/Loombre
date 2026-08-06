@@ -26,14 +26,14 @@ export type ManifestVerificationFailureReason =
   /** The ed25519 signature over (signature || trusted comment) did not verify — the trusted comment was tampered with. */
   | "trusted-comment-signature-invalid";
 
-export const MANIFEST_VERIFICATION_FAILURE_REASONS: readonly ManifestVerificationFailureReason[] = [
+export const MANIFEST_VERIFICATION_FAILURE_REASONS = [
   "malformed-public-key",
   "malformed-signature-file",
   "unsupported-prehashed-variant",
   "key-id-mismatch",
   "signature-invalid",
   "trusted-comment-signature-invalid",
-];
+] as const;
 
 export type ManifestVerificationResult =
   | { valid: true; keyId: string; trustedComment: string }

@@ -8,13 +8,13 @@ export type ProcessState = "stopped" | "starting" | "running" | "stopping" | "cr
 
 /** Runtime-iterable mirror of ProcessState's members — single source of
  *  truth for both the TS union and PROCESS_INFO_SCHEMA's enum. */
-export const PROCESS_STATES: readonly ProcessState[] = [
+export const PROCESS_STATES = [
   "stopped",
   "starting",
   "running",
   "stopping",
   "crashed",
-];
+] as const;
 
 export interface ProcessInfo {
   state: ProcessState;

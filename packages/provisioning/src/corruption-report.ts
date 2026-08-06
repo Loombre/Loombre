@@ -32,7 +32,7 @@ export type CorruptionReason =
 
 /** Runtime-iterable mirror of CorruptionReason's members — single source
  *  of truth for both the TS union and CORRUPTION_REPORT_SCHEMA's enum. */
-export const CORRUPTION_REASONS: readonly CorruptionReason[] = [
+export const CORRUPTION_REASONS = [
   "missing-data-dir",
   "missing-version-file",
   "pg-version-mismatch",
@@ -42,7 +42,7 @@ export const CORRUPTION_REASONS: readonly CorruptionReason[] = [
   "disk-full",
   "checksum-failure",
   "unknown",
-];
+] as const;
 
 export interface CorruptionReport {
   reason: CorruptionReason;

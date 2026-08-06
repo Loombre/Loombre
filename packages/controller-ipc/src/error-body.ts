@@ -16,13 +16,13 @@ export type IpcErrorCode =
   | "web-url-unavailable"
   | "internal-error";
 
-export const IPC_ERROR_CODES: readonly IpcErrorCode[] = [
+export const IPC_ERROR_CODES = [
   "unauthorized",
   "server-already-running",
   "server-not-running",
   "web-url-unavailable",
   "internal-error",
-];
+] as const;
 
 export interface IpcErrorBody {
   title: string;

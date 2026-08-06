@@ -32,7 +32,7 @@
 import { sql, type ExpressionBuilder, type Kysely, type Selectable, type Transaction } from 'kysely';
 import type { DB, NoticeSeverity, SystemNoticesTable } from '../types.js';
 import { withTransaction, writeEvent } from '../internal/index.js';
-import { decodeCursor, encodeCursor } from './cursor.js';
+import { decodeCursor, encodeCursor, isCursorRowId } from './cursor.js';
 
 export type NoticeRow = Selectable<SystemNoticesTable>;
 
@@ -293,7 +293,7 @@ function isNoticeCursorPayload(value: unknown): value is NoticeCursorPayload {
     typeof value === 'object' &&
     value !== null &&
     typeof (value as Record<string, unknown>).createdAtMs === 'number' &&
-    typeof (value as Record<string, unknown>).id === 'string'
+    isCursorRowId((value as Record<string, unknown>).id)
   );
 }
 

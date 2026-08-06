@@ -153,6 +153,60 @@ const UPNP_PATTERNS = ["nat-upnp", "node-upnp", "natupnp", "nat-api", "ssdp"].ma
 const UPNP_ALLOWLIST = new Set(["STATE.md", "packages/shared/test/remote/router-cards.test.ts"]);
 
 // ---------------------------------------------------------------------------
+// CURSOR-ROW-ID gate (V1-002, audit fafa47f, Fix Wave 4 lane FW4-A):
+// SEVENTEEN cursor-payload validators across packages/db/src/query/*.ts
+// (the audit's own evidence undercounted this at sixteen — re-enumerated
+// from source; see STATE.md for the reconciliation) bound an unvalidated
+// row-id field straight into a `uuid` column keyset comparison — a
+// malformed cursor (corrupt, truncated, or hand-forged; NOT only the
+// hand-forged case — items.ts's own local decodeCursor 500'd on ANY
+// malformed cursor, the worst instance) raised Postgres's own 22P02 as an
+// uncaught 500 instead of the 422 the contract declares. The shared
+// codec's isCursorRowId() (packages/db/src/query/cursor.ts) is the ONE
+// correct idiom — four zone surfaces used it already; the other seventeen
+// re-derived a bare `typeof x.id === 'string'` check instead (or, for
+// items.ts, no check at all), which accepts ANY string, uuid-shaped or
+// not. This bans that exact bare-string idiom (and its itemId sibling) for
+// the `id`/`itemId` field of a cursor payload anywhere in
+// packages/db/src/query/ — the literal shape every one of those validators
+// shared before FW4-A fixed them. (catalog-detail.ts's own
+// isListCursorPayload, also named in the audit's evidence, turned out on
+// re-check to already validate its `id` against the same UUID_PATTERN
+// inline — not one of the seventeen, left as-is.)
+//
+// Deliberately line-based/textual (matching this whole gate file's style)
+// rather than a real type-flow check: it cannot prove a given `id` field
+// feeds a `uuid` column (that's stash-sync-reports.ts's one legitimate
+// exception below), only that the WRONG idiom for validating one was used.
+// That is exactly the property that let this bug recur silently across
+// twelve files — a check that requires zero judgment call to satisfy
+// (call isCursorRowId, or don't write a cursor validator that way) is the
+// point.
+// Matches BOTH polarities (`=== "string"` and `!== "string"` — the latter
+// is literally items.ts's original pre-fix form) and both access spellings
+// (`v.id` / `v["id"]`). Known, accepted blind spots of a line-based check
+// (the live-DB spec packages/db/test/cursor-row-id-validation.spec.ts is
+// the real backstop): a destructured `const { id } = v; typeof id === ...`
+// and a row-id field named something other than id/itemId.
+const CURSOR_ROW_ID_PATTERN =
+  /typeof\s*(?:\([^)]*\)|[A-Za-z_$][\w$]*)(?:\.(?:id|itemId)|\[\s*['"](?:id|itemId)['"]\s*\])\s*[!=]==\s*['"]string['"]/;
+const CURSOR_ROW_ID_SCOPE = "packages/db/src/query/";
+const CURSOR_ROW_ID_EXEMPT_FILES = new Set([
+  // The codec itself — isCursorRowId's OWN implementation is not a cursor
+  // payload validator calling itself.
+  "packages/db/src/query/cursor.ts",
+]);
+// Line-level (NOT file-level) escape hatch for the rare legitimate
+// bare-string row-id check — a keyset cursor keyed on a non-uuid column
+// (today: stash-sync-reports.ts's isStashSceneCursorPayload, keyed on
+// stash_scene_id TEXT). The marker must sit on the flagged line or the
+// line directly above it, so exempting one validator can never silently
+// exempt a whole file's OTHER validators (the hole a file-level allowlist
+// had). If the marker and the check ever drift apart, the gate fires —
+// it fails closed.
+const CURSOR_ROW_ID_ALLOW_MARKER = "grep-gates:allow-bare-cursor-row-id";
+
+// ---------------------------------------------------------------------------
 // BRAND-HYGIENE gate (STATE.md D6/G9 — Blaze logo rollout Lane D purge):
 // Legacy Loombre branding artifacts must not ship. Lanes A and B handle
 // dot-animation replacement in parallel; Lane C handles spinner replacement.
@@ -350,6 +404,15 @@ for (const { full, rel } of files) {
           violations.push({ rel, lineNo: idx + 1, code, line: line.trim() });
         }
       }
+    }
+    if (
+      rel.startsWith(CURSOR_ROW_ID_SCOPE) &&
+      !CURSOR_ROW_ID_EXEMPT_FILES.has(rel) &&
+      CURSOR_ROW_ID_PATTERN.test(line) &&
+      !line.includes(CURSOR_ROW_ID_ALLOW_MARKER) &&
+      !(idx > 0 && lines[idx - 1].includes(CURSOR_ROW_ID_ALLOW_MARKER))
+    ) {
+      violations.push({ rel, lineNo: idx + 1, code: "cursor-validator:bare-string-row-id", line: line.trim() });
     }
   });
 }

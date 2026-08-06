@@ -318,6 +318,32 @@ describe("GET /admin/settings and GET /admin/settings/schema — F1c: live isAdm
   });
 });
 
+// V1-004 (audit fafa47f, Fix Wave 4 lane FW4-B): openapi.yaml declares 204
+// for DELETE /users/{id} ("Deleted"); the handler had no @HttpCode and fell
+// through to Nest's default 200. Before this, only the 404-against-a-
+// nonexistent-id case existed (security-hardening.e2e.spec.ts /
+// conformance.spec.ts's PLACEHOLDER_UUID walk) — the real success path had
+// no coverage, so nothing caught the drift.
+describe("DELETE /users/{id} (V1-004 regression)", () => {
+  it("deletes a real user and answers 204 with no body; the user is gone afterward", async () => {
+    const create = await asAdmin().post("/users", {
+      username: `delete_me_${Date.now()}`,
+      email: `delete-me-${Date.now()}@example.invalid`,
+      password: "delete-me-password",
+      isAdmin: false,
+    });
+    expect(create.status, JSON.stringify(create.body)).toBe(201);
+    const userId: string = create.body.id;
+
+    const del = await asAdmin().delete(`/users/${userId}`);
+    expect(del.status, JSON.stringify(del.body)).toBe(204);
+    expect(del.text).toBe("");
+
+    const getAfter = await asAdmin().get(`/users/${userId}`);
+    expect(getAfter.status).toBe(404);
+  });
+});
+
 describe("PUT /admin/settings/{key}", () => {
   it("403s for a non-admin (casual) token", async () => {
     const res = await asCasual().put("/admin/settings/images.avifQuality", { value: 60 });

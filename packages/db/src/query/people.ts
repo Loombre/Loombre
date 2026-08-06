@@ -23,7 +23,7 @@ import type { Kysely } from 'kysely';
 import type { ContentClass, DB, ItemType } from '../types.js';
 import type { ViewerContext } from '../context.js';
 import { applyGuardToJoined, applyGuardToPeople } from './guard.js';
-import { decodeCursor, encodeCursor } from './cursor.js';
+import { decodeCursor, encodeCursor, isCursorRowId } from './cursor.js';
 
 export interface PersonRow {
   id: string;
@@ -57,7 +57,7 @@ function isPeopleCursorPayload(value: unknown): value is PeopleCursorPayload {
     typeof value === 'object' &&
     value !== null &&
     typeof (value as Record<string, unknown>).name === 'string' &&
-    typeof (value as Record<string, unknown>).id === 'string'
+    isCursorRowId((value as Record<string, unknown>).id)
   );
 }
 
@@ -183,7 +183,7 @@ function isPersonItemsCursorPayload(value: unknown): value is PersonItemsCursorP
     typeof value === 'object' &&
     value !== null &&
     typeof (value as Record<string, unknown>).addedAtMs === 'number' &&
-    typeof (value as Record<string, unknown>).itemId === 'string'
+    isCursorRowId((value as Record<string, unknown>).itemId)
   );
 }
 

@@ -134,20 +134,48 @@ export async function* exportData(
       limit: EXPORT_ITEM_PAGE_SIZE,
     });
 
-    for (const row of page.rows) {
+    // V1-010: batch both per-item lookups ONE query per page instead of
+    // one pair per row — same "batch the expensive part over the already
+    // page-bounded id list" shape as catalog-detail.ts's
+    // fetchGenresBatch/fetchPeopleBatch. Safe on the same precondition
+    // those rely on: `ids` is already guard-filtered by listItems above,
+    // so an unguarded `in (ids)` here can't widen what a row's own guard
+    // check already allowed through.
+    const ids = page.rows.map((r) => r.id);
+
+    const providerIdsByItem = new Map<string, ExportProviderId[]>();
+    if (ids.length > 0) {
       const providerIdRows = await db
         .selectFrom('provider_ids')
-        .select(['provider', 'external_id'])
-        .where('item_id', '=', row.id)
+        .select(['item_id', 'provider', 'external_id'])
+        .where('item_id', 'in', ids)
         .execute();
+      for (const p of providerIdRows) {
+        const arr = providerIdsByItem.get(p.item_id) ?? [];
+        arr.push({ provider: p.provider, externalId: p.external_id });
+        providerIdsByItem.set(p.item_id, arr);
+      }
+    }
 
-      const progressRow = await db
+    const progressByItem = new Map<string, ExportProgress>();
+    if (ids.length > 0) {
+      const progressRows = await db
         .selectFrom('progress')
-        .select(['position_ms', 'state', 'play_count', 'updated_at_ms'])
+        .select(['item_id', 'position_ms', 'state', 'play_count', 'updated_at_ms'])
         .where('user_id', '=', ctx.userId)
-        .where('item_id', '=', row.id)
-        .executeTakeFirst();
+        .where('item_id', 'in', ids)
+        .execute();
+      for (const p of progressRows) {
+        progressByItem.set(p.item_id, {
+          positionMs: p.position_ms,
+          state: p.state,
+          playCount: p.play_count,
+          updatedAtMs: p.updated_at_ms,
+        });
+      }
+    }
 
+    for (const row of page.rows) {
       yield {
         kind: 'item',
         item: {
@@ -159,15 +187,8 @@ export async function* exportData(
           year: row.year,
           contentClass: row.content_class,
           addedAtMs: row.added_at_ms,
-          providerIds: providerIdRows.map((p) => ({ provider: p.provider, externalId: p.external_id })),
-          progress: progressRow
-            ? {
-                positionMs: progressRow.position_ms,
-                state: progressRow.state,
-                playCount: progressRow.play_count,
-                updatedAtMs: progressRow.updated_at_ms,
-              }
-            : null,
+          providerIds: providerIdsByItem.get(row.id) ?? [],
+          progress: progressByItem.get(row.id) ?? null,
         },
       };
     }

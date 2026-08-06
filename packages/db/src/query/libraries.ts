@@ -55,7 +55,7 @@ import type { ContentClass, DB, ItemType, LibrariesTable, MediaKind } from '../t
 import { getLibraryById, withTransaction, writeEvent } from '../internal/index.js';
 import type { ViewerContext } from '../context.js';
 import { applyContentClassFilter, applyGuard, applyLibraryIdFilter } from './guard.js';
-import { decodeCursor, encodeCursor } from './cursor.js';
+import { decodeCursor, encodeCursor, isCursorRowId } from './cursor.js';
 
 export type LibraryRow = Selectable<LibrariesTable>;
 
@@ -170,7 +170,7 @@ function isLibraryCursorPayload(value: unknown): value is LibraryCursorPayload {
     typeof value === 'object' &&
     value !== null &&
     typeof (value as Record<string, unknown>).createdAtMs === 'number' &&
-    typeof (value as Record<string, unknown>).id === 'string'
+    isCursorRowId((value as Record<string, unknown>).id)
   );
 }
 

@@ -24,7 +24,7 @@ import type { DB, UserInvitesTable } from '../types.js';
 import { withTransaction, writeEvent } from '../internal/index.js';
 import { createUserAdminAndEmit } from './identity.js';
 import type { UserRow } from './identity.js';
-import { decodeCursor, encodeCursor } from './cursor.js';
+import { decodeCursor, encodeCursor, isCursorRowId } from './cursor.js';
 
 export type InviteRow = Selectable<UserInvitesTable>;
 
@@ -213,7 +213,7 @@ function isInviteCursorPayload(value: unknown): value is InviteCursorPayload {
     typeof value === 'object' &&
     value !== null &&
     typeof (value as Record<string, unknown>).createdAtMs === 'number' &&
-    typeof (value as Record<string, unknown>).id === 'string'
+    isCursorRowId((value as Record<string, unknown>).id)
   );
 }
 
