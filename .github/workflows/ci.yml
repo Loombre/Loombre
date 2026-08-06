@@ -212,8 +212,25 @@ jobs:
         # entire gate run to discover it buried in that step's log.
         run: node scripts/dep-audit.mjs
 
+      - name: installers test — node --test over installers/**/*.test.mjs (AUD-A5b-001 regression coverage)
+        shell: bash
+        # installers/ is not a pnpm workspace, so turbo-run `test` never
+        # reaches it (same gap the "scripts + release tooling tests" step
+        # below closes for scripts/) — that's what left the x64
+        # Distribution.xml hostArchitectures fix (AUD-A5b-001) with zero
+        # regression protection. `pnpm gate:full` (next step) ALSO runs
+        # this exact check internally (scripts/gate.mjs's own
+        # installers-test step, right after `test`) — this standalone step
+        # exists so a regressed installer test fails FAST and with its own
+        # clearly-labeled red X in the Actions UI, rather than waiting
+        # through the entire gate run to discover it buried in that step's
+        # log. Not OS-restricted (unlike dep-audit above): coverage
+        # genuinely differs by OS — only the macOS legs exercise the real
+        # pkgbuild/productbuild/pkgutil round-trip.
+        run: pnpm installers:test
+
       - name: pnpm gate:full
-        # L4: CI runs the FULL gate (13 steps + web-build-budget), not the
+        # L4: CI runs the FULL gate (15 steps + web-build-budget), not the
         # fast inner-loop default — bundle size is deterministic, not
         # hardware-sensitive like the perf-NUMBER jobs below, so there's no
         # reason to run it on fewer legs, and runner minutes are unmetered

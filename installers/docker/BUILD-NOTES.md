@@ -345,7 +345,7 @@ For scale: the two vendored ffmpeg/ffprobe executables alone are
 `-gpl` variant statically links libx264/libx265, which dominates their
 size) — meaning **the ffmpeg/ffprobe pair is the single largest
 contributor to final image size** by a wide margin; everything else
-(Node 22 bookworm-slim base, all of `node_modules`, both apps' compiled
+(Node 24 bookworm-slim base, all of `node_modules`, both apps' compiled
 `dist/`, `@loombre/db`/`@loombre/jobs` raw source) is comparatively small.
 A future size-reduction pass, if ever warranted, should start there (e.g.
 a leaner ffmpeg build without every optional codec BtbN's default `-gpl`

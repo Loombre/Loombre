@@ -28,7 +28,7 @@ import {
   unlinkSync, symlinkSync, readdirSync, statSync, renameSync,
 } from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { spawnSync } from "node:child_process";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -672,6 +672,29 @@ function assemblePayload(serverDeployDir, workerDeployDir) {
 // ---------------------------------------------------------------------
 // 6. pkgbuild + productbuild
 // ---------------------------------------------------------------------
+
+// AUD-A5b-001: Distribution.xml's hostArchitectures used to be hardcoded
+// "arm64" regardless of --arch, so an --arch=x64 build shipped Intel
+// binaries end to end while declaring the package arm64-only — Installer
+// refuses that on the exact Mac it was built for. Apple's attribute wants
+// its OWN identifiers ("arm64", "x86_64"), not this script's --arch
+// spelling ("arm64", "x64") — hence the explicit map rather than passing
+// ARCH straight through. Exported (with renderDistributionXml) so
+// pkg/distribution-xml.test.mjs can assert the substitution without
+// running the whole build.
+export function hostArchitecturesFor(arch) {
+  if (arch === "arm64") return "arm64";
+  if (arch === "x64") return "x86_64";
+  throw new Error(`hostArchitecturesFor: unknown arch "${arch}" (expected "arm64" or "x64")`);
+}
+
+export function renderDistributionXml({ template, version, pkgFilename, arch }) {
+  return template
+    .replaceAll("__VERSION__", version)
+    .replaceAll("__PKG_FILENAME__", pkgFilename)
+    .replaceAll("__HOST_ARCHITECTURES__", hostArchitecturesFor(arch));
+}
+
 function buildPkg(payloadRoot, version) {
   const outRoot = path.join(BUILD_CACHE, "pkgbuild-out");
   rmSync(outRoot, { recursive: true, force: true });
@@ -703,9 +726,12 @@ function buildPkg(payloadRoot, version) {
 
   const distributionXmlPath = path.join(outRoot, "Distribution.xml");
   const distTemplate = readFileSync(path.join(PKG_DIR, "Distribution.xml.tmpl"), "utf8");
-  const distributionXml = distTemplate
-    .replaceAll("__VERSION__", version)
-    .replaceAll("__PKG_FILENAME__", "loombre-component.pkg");
+  const distributionXml = renderDistributionXml({
+    template: distTemplate,
+    version,
+    pkgFilename: "loombre-component.pkg",
+    arch: ARCH,
+  });
   writeFileSync(distributionXmlPath, distributionXml, "utf8");
 
   const finalPkgName = `loombre-${version}-macos-${ARCH}.pkg`;
@@ -796,7 +822,15 @@ async function main() {
   log("done.");
 }
 
-main().catch((err) => {
-  console.error("\n[build-pkg] FAILED:", err);
-  process.exit(1);
-});
+// Guarded (not a bare top-level call) so pkg/distribution-xml.test.mjs can
+// `import` this module for its pure helpers above without kicking off a
+// real, multi-minute workspace build as a side effect of import — the
+// exact isDirectEntrypoint pattern installers/linux/smoke.mjs already uses
+// for the same reason.
+const isDirectEntrypoint = process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href;
+if (isDirectEntrypoint) {
+  main().catch((err) => {
+    console.error("\n[build-pkg] FAILED:", err);
+    process.exit(1);
+  });
+}
