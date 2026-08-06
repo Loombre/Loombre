@@ -16,7 +16,7 @@ import type { Kysely } from 'kysely';
 import type { ContentClass, DB, ItemTagKind } from '../types.js';
 import type { ViewerContext } from '../context.js';
 import { applyGuardToJoined, applyGuardToTags } from './guard.js';
-import { decodeCursor, encodeCursor } from './cursor.js';
+import { decodeCursor, encodeCursor, isCursorRowId } from './cursor.js';
 
 export interface TagRow {
   id: string;
@@ -48,7 +48,7 @@ function isTagsCursorPayload(value: unknown): value is TagsCursorPayload {
     typeof value === 'object' &&
     value !== null &&
     typeof (value as Record<string, unknown>).name === 'string' &&
-    typeof (value as Record<string, unknown>).id === 'string'
+    isCursorRowId((value as Record<string, unknown>).id)
   );
 }
 

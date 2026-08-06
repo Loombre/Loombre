@@ -10,6 +10,7 @@ import type { Kysely, Selectable } from 'kysely';
 import type { DB, CatalogItemsTable, ItemType } from '../types.js';
 import type { ViewerContext } from '../context.js';
 import { applyGuard } from './guard.js';
+import { decodeCursor, encodeCursor, isCursorRowId } from './cursor.js';
 
 export type CatalogItemRow = Selectable<CatalogItemsTable>;
 
@@ -53,21 +54,25 @@ interface CursorPayload {
   id: string;
 }
 
-function encodeCursor(payload: CursorPayload): string {
-  return Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url');
-}
-
-function decodeCursor(cursor: string): CursorPayload {
-  const parsed = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8'));
-  if (
-    typeof parsed !== 'object' ||
-    parsed === null ||
-    typeof parsed.addedAtMs !== 'number' ||
-    typeof parsed.id !== 'string'
-  ) {
-    throw new Error('listItems: malformed cursor');
-  }
-  return { addedAtMs: parsed.addedAtMs, id: parsed.id };
+// V1-002 (audit fafa47f, Fix Wave 4 lane FW4-A): this used to be a local
+// encode/decode pair that predated src/query/cursor.ts's shared codec (see
+// that file's header) and never adopted it — its `typeof parsed.id !==
+// 'string'` shape check accepted ANY string, so a cursor whose `id` was
+// not valid `uuid` input format (a corrupt/truncated/hand-edited cursor,
+// not only a hand-forged one — this is the mainline `listItems`/
+// `getRecentlyAdded` path) reached `eb('id', '<', id)` unvalidated and
+// raised Postgres's 22P02 as an uncaught 500 instead of the 422 the
+// contract declares. Routed through the shared decodeCursor/isCursorRowId
+// so a malformed cursor here throws the same MalformedCursorError every
+// other list surface in this package throws — never a bare Error/
+// SyntaxError the HTTP layer can only render as a 500.
+function isItemsCursorPayload(value: unknown): value is CursorPayload {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    typeof (value as Record<string, unknown>).addedAtMs === 'number' &&
+    isCursorRowId((value as Record<string, unknown>).id)
+  );
 }
 
 const DEFAULT_LIMIT = 50;
@@ -91,7 +96,7 @@ export async function listItems(
   }
 
   if (params.cursor) {
-    const { addedAtMs, id } = decodeCursor(params.cursor);
+    const { addedAtMs, id } = decodeCursor(params.cursor, isItemsCursorPayload);
     query = query.where((eb) =>
       eb.or([
         eb('added_at_ms', '<', addedAtMs),

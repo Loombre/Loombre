@@ -19,7 +19,7 @@
 
 import type { Kysely, Selectable } from 'kysely';
 import type { DB, StashSyncReportStatus } from '../types.js';
-import { decodeCursor, encodeCursor } from './cursor.js';
+import { decodeCursor, encodeCursor, isCursorRowId } from './cursor.js';
 
 export type StashSyncReportRow = Selectable<DB['stash_sync_reports']>;
 
@@ -226,6 +226,10 @@ interface StashSceneCursorPayload {
 }
 
 function isStashSceneCursorPayload(value: unknown): value is StashSceneCursorPayload {
+  // This cursor keys on Stash's OWN stash_scene_id (schema: TEXT NOT
+  // NULL, not uuid) — isCursorRowId's uuid check would be WRONG here,
+  // not a fix. The marker below must stay directly above the check.
+  // grep-gates:allow-bare-cursor-row-id
   return typeof value === 'object' && value !== null && typeof (value as Record<string, unknown>).id === 'string';
 }
 
@@ -331,7 +335,7 @@ interface LoombreFileCursorPayload {
 }
 
 function isLoombreFileCursorPayload(value: unknown): value is LoombreFileCursorPayload {
-  return typeof value === 'object' && value !== null && typeof (value as Record<string, unknown>).id === 'string';
+  return typeof value === 'object' && value !== null && isCursorRowId((value as Record<string, unknown>).id);
 }
 
 /** Live keyset list of media_files rows in `libraryId` whose owning item has

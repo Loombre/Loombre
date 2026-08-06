@@ -4756,7 +4756,7 @@ components:
       properties:
         name:
           type: string
-          description: Backend identifier as probed (videotoolbox, nvenc, qsv, vaapi, d3d11va, software — closed set enforced by the DB CHECK, mirrored not re-enumerated here so a new backend is additive).
+          description: Backend identifier as probed (videotoolbox, nvenc, qsv, vaapi, amf, d3d11va, software — closed set enforced by the DB CHECK, mirrored not re-enumerated here so a new backend is additive).
         position:
           type: integer
           minimum: 0
@@ -7185,6 +7185,13 @@ components:
         # Optional mail transport run (E5/M10): the generic SMTP transport
         # settings (mail.smtpHost/smtpPort/smtpSecurity/fromAddress/fromName).
         - mail
+        # `remote` (Loombre Remote — embedded WireGuard + three-path wizard):
+        # used by packages/shared/src/settings-registry.ts's five
+        # remote.wireguardPort/subnet/wireguardEndpointHost/cloudflaredPath/
+        # tunnelHostname entries since that run landed, but never added to
+        # this contract enum — the same drift class as `stash` above
+        # (audit fafa47f AUD-A8a-001, Fix Wave 4).
+        - remote
 
     ProviderName:
       type: string

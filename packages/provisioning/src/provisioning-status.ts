@@ -21,14 +21,14 @@ export type ProvisioningState =
 
 /** Runtime-iterable mirror of ProvisioningState's members — single source
  *  of truth for both the TS union and PROVISIONING_STATUS_SCHEMA's enum. */
-export const PROVISIONING_STATES: readonly ProvisioningState[] = [
+export const PROVISIONING_STATES = [
   "absent",
   "provisioning",
   "ready",
   "upgrading",
   "corrupt",
   "external",
-];
+] as const;
 
 export interface ProvisioningStatus {
   state: ProvisioningState;

@@ -2904,7 +2904,7 @@ export interface components {
             tokens: components["schemas"]["TokenPair"];
         };
         CapabilityBackend: {
-            /** @description Backend identifier as probed (videotoolbox, nvenc, qsv, vaapi, d3d11va, software — closed set enforced by the DB CHECK, mirrored not re-enumerated here so a new backend is additive). */
+            /** @description Backend identifier as probed (videotoolbox, nvenc, qsv, vaapi, amf, d3d11va, software — closed set enforced by the DB CHECK, mirrored not re-enumerated here so a new backend is additive). */
             name: string;
             /** @description Probe order (docs/PLAYBACK.md §8.2 — array order is load-bearing for the plan engine). */
             position: number;
@@ -4132,7 +4132,7 @@ export interface components {
          */
         SettingsScope: "ui" | "env-only";
         /** @enum {string} */
-        SettingsCategory: "transcode" | "scanner" | "images" | "restricted" | "sessions" | "updateCheck" | "security" | "rateLimit" | "database" | "network" | "tls" | "paths" | "ffmpeg" | "stash" | "mail";
+        SettingsCategory: "transcode" | "scanner" | "images" | "restricted" | "sessions" | "updateCheck" | "security" | "rateLimit" | "database" | "network" | "tls" | "paths" | "ffmpeg" | "stash" | "mail" | "remote";
         /**
          * @description Closed set of metadata providers with an admin-manageable API key (A9).
          * @enum {string}

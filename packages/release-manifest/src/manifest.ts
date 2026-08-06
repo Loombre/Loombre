@@ -12,7 +12,7 @@ export const RELEASE_MANIFEST_VERSION = 1 as const;
  *  (docs/PLAN.md §4.1) is how a future channel gets added. */
 export type ReleaseChannel = "stable";
 
-export const RELEASE_CHANNELS: readonly ReleaseChannel[] = ["stable"];
+export const RELEASE_CHANNELS = ["stable"] as const;
 
 export type ArtifactPlatform =
   | "linux-x64"
@@ -22,14 +22,14 @@ export type ArtifactPlatform =
   | "macos-x64"
   | "docker";
 
-export const ARTIFACT_PLATFORMS: readonly ArtifactPlatform[] = [
+export const ARTIFACT_PLATFORMS = [
   "linux-x64",
   "linux-arm64",
   "windows-x64",
   "macos-arm64",
   "macos-x64",
   "docker",
-];
+] as const;
 
 /** "bundle" is the Windows Burn BOOTSTRAPPER (.exe) — distinct from "msi"
  *  on purpose. They are two different installable units of the same
@@ -40,14 +40,14 @@ export const ARTIFACT_PLATFORMS: readonly ArtifactPlatform[] = [
  *  recommend the right one, which a shared kind would prevent. */
 export type ArtifactKind = "tarball" | "msi" | "bundle" | "pkg" | "docker-image" | "checksums-file";
 
-export const ARTIFACT_KINDS: readonly ArtifactKind[] = [
+export const ARTIFACT_KINDS = [
   "tarball",
   "msi",
   "bundle",
   "pkg",
   "docker-image",
   "checksums-file",
-];
+] as const;
 
 export interface ReleaseArtifact {
   platform: ArtifactPlatform;

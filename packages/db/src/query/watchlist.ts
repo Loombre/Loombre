@@ -44,7 +44,7 @@ import type { ViewerContext } from '../context.js';
 import { withTransaction, writeEvent } from '../internal/index.js';
 import { applyGuardToJoined } from './guard.js';
 import { getItemById } from './items.js';
-import { decodeCursor, encodeCursor } from './cursor.js';
+import { decodeCursor, encodeCursor, isCursorRowId } from './cursor.js';
 
 export interface WatchlistRow {
   itemId: string;
@@ -72,7 +72,7 @@ function isWatchlistCursorPayload(value: unknown): value is WatchlistCursorPaylo
     typeof value === 'object' &&
     value !== null &&
     typeof (value as Record<string, unknown>).addedAtMs === 'number' &&
-    typeof (value as Record<string, unknown>).itemId === 'string'
+    isCursorRowId((value as Record<string, unknown>).itemId)
   );
 }
 

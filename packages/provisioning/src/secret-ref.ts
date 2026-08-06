@@ -13,12 +13,12 @@ export type SecretBackend = "keychain" | "dpapi" | "libsecret" | "file0600";
 /** Runtime-iterable mirror of SecretBackend's members — single source of
  *  truth for both the TS union (via `(typeof SECRET_BACKENDS)[number]`,
  *  proven in test/type-agreement.spec.ts) and SECRET_REF_SCHEMA's enum. */
-export const SECRET_BACKENDS: readonly SecretBackend[] = [
+export const SECRET_BACKENDS = [
   "keychain",
   "dpapi",
   "libsecret",
   "file0600",
-];
+] as const;
 
 export interface SecretRef {
   backend: SecretBackend;
