@@ -37,6 +37,7 @@ import { scoreCandidate } from './match.js';
 import { createPluginBreakerRegistry, type PluginBreakerRegistry } from './plugin-breakers.js';
 import type { ProviderRegistry } from './registry.js';
 import type { MediaKind, SearchQuery } from './provider.js';
+import { redactSecretShapedValues } from '../crash/redact.js';
 
 /** Mirrors consumer.ts's METADATA_ENRICHABLE_TYPES / SUPPORTED_ITEM_TYPES
  *  verbatim — season/episode/track are never independently matched. */
@@ -100,7 +101,14 @@ async function emitMatchCandidates(
 
 export function metadataSearchConsumerHandler(deps: MetadataSearchConsumerDeps): JobHandler<'metadata-search'> {
   const clock = deps.clock ?? (() => Date.now());
-  const log = deps.log ?? ((message: string) => console.warn(message));
+  // AUD-A7c-002: same logging-boundary fix as consumer.ts's own `log` —
+  // this handler's per-provider catch block below forwards a failed
+  // provider's err.message (which, for TMDB, carries `?api_key=<secret>`
+  // in the request URL a ProviderFetchError wraps — cache.ts) straight
+  // into log(); redact every message this closure emits, not just that
+  // one branch.
+  const sink = deps.log ?? ((message: string) => console.warn(message));
+  const log = (message: string) => sink(redactSecretShapedValues(message));
   const pluginBreakers = deps.pluginBreakers ?? createPluginBreakerRegistry();
 
   return async (payload, meta) => {

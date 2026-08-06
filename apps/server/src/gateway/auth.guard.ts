@@ -2,7 +2,7 @@
 import { CanActivate, ExecutionContext, Injectable } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
 import type { Request } from "express";
-import { getUserById } from "@loombre/db";
+import { getDeviceById, getUserById } from "@loombre/db";
 import { UnauthenticatedException } from "./unauthenticated.exception.js";
 import { MustChangePasswordException } from "./must-change-password.exception.js";
 import { sanitizeInstancePath } from "./sanitize-instance.js";
@@ -178,6 +178,17 @@ const BEARER_PATTERN = /^Bearer\s+(\S+)$/;
  * same as any other password change; a client relying on `iat`-stale
  * access token from that point on needs one refresh, exactly like a
  * revoked-elsewhere device does.
+ *
+ * AUD-A7b-001 (audit fafa47f, Fix Wave 3): R-F7's epoch was per-USER only,
+ * so it did nothing for the two other revocation triggers — POST
+ * /auth/logout and DELETE /devices/{id} — which killed a device's refresh
+ * token but left its already-issued access token live until its own
+ * ≤15-minute expiry. Closed the same way: DELETE /devices/{id} already
+ * deletes the device row (both teardown paths), so the device-existence
+ * check below rejects it for free; logout keeps the row, so it stamps a
+ * device-scoped sibling epoch (`devices.access_revoked_at_ms`, migration
+ * 0034) that gets the identical iat comparison. See
+ * apps/server/test/device-access-revocation.e2e.spec.ts.
  */
 @Injectable()
 export class AuthGuard implements CanActivate {
@@ -237,7 +248,26 @@ export class AuthGuard implements CanActivate {
     // below, so the common "unflagged, epoch-clear" case still pays for
     // exactly one getUserById per request outside the three always-open
     // PUBLIC_ROUTES, same as before this fix.
-    const dbUser = await getUserById(this.dbProvider.db, claims.sub);
+    //
+    // AUD-A7b (audit fafa47f, Fix Wave 3 opus review, lane R3-guard-
+    // roundtrips): this getUserById and the getDeviceById below (AUD-A7b's
+    // own device-scoped check) are fully independent point lookups — neither
+    // reads the other's result — so they are fired CONCURRENTLY via
+    // Promise.all instead of one-after-the-other. That halves the auth
+    // path's DB latency for every device-bound token (invariant 9). The
+    // device fetch stays CONDITIONAL on claims.deviceId, exactly as before
+    // (Promise.all resolves that array slot to `undefined` synchronously
+    // for admin/CLI tokens with no deviceId claim, so they still pay for
+    // exactly one round trip). Only the I/O moved — every check below still
+    // runs in the EXACT same order as before (user epoch -> device ->
+    // must-change-password), so which check throws first, and therefore
+    // which error a caller sees when BOTH the user and the device are
+    // invalid, is unchanged. See auth.guard.spec.ts's concurrency +
+    // ordering matrix.
+    const [dbUser, device] = await Promise.all([
+      getUserById(this.dbProvider.db, claims.sub),
+      claims.deviceId !== undefined ? getDeviceById(this.dbProvider.db, claims.deviceId) : undefined,
+    ]);
 
     if (
       dbUser &&
@@ -257,6 +287,48 @@ export class AuthGuard implements CanActivate {
       // second-boundary change either (Math.ceil is a no-op when
       // password_changed_at_ms % 1000 === 0).
       throw new UnauthenticatedException(sanitizeInstancePath(req));
+    }
+
+    // AUD-A7b-001: the device-scoped sibling of the epoch check above.
+    // Unconditional whenever the token carries a deviceId — every route,
+    // including the must-change-password allow-list, same reasoning as
+    // R-F7 (a device an owner just signed out of must lose access
+    // immediately even on GET /users/me). A SECOND live read, by design:
+    // getUserById above already answers "does this user still exist / has
+    // their password changed", not "is THIS device still live" — folding
+    // both into one query would mean changing getUserById's shared
+    // signature (used by many unrelated callers) just for this guard.
+    // getDeviceById is a primary-key point lookup (indexed, same cost
+    // class as getUserById's own PK lookup), so this doubles — not
+    // multiplies — the per-request DB round trips, and only for
+    // device-bound tokens (every ordinary login; admin/CLI-issued tokens
+    // with no deviceId claim skip it entirely, same as before this fix).
+    // `device` was already fetched CONCURRENTLY with dbUser above (this
+    // lane's fix) — this block only makes the decision, it issues no I/O.
+    if (claims.deviceId !== undefined) {
+      if (
+        !device ||
+        device.user_id !== claims.sub ||
+        (device.access_revoked_at_ms !== null && claims.iat < Math.ceil(device.access_revoked_at_ms / 1000))
+      ) {
+        // Covers BOTH revocation triggers AUD-A7b-001 named:
+        //   - DELETE /devices/{id} deletes the row outright (both the
+        //     plain and the kind='remote' teardown paths) -> `!device`.
+        //   - POST /auth/logout keeps the row but stamps
+        //     access_revoked_at_ms (migration 0034, RefreshTokenService.
+        //     logout()) -> the epoch branch, same tie-break rule as the
+        //     password check above (ties reject; see its comment).
+        // NOT logout-only: login also stamps this same column on
+        // device-row reuse (packages/db/src/query/identity.js's
+        // updateDeviceForLogin, via loginAccessEpochMs — nowMs floored to
+        // the second), so the fresh login token itself always clears this
+        // check. R4 (Fix Wave 3) added that second write after finding
+        // the two single-writer alternatives each broke something: leaving
+        // the prior logout epoch in place DOA'd the new token; clearing it
+        // to NULL resurrected a stolen pre-logout one. See identity.js's
+        // doc comments on updateDeviceForLogin/loginAccessEpochMs.
+        throw new UnauthenticatedException(sanitizeInstancePath(req));
+      }
     }
 
     if (!MUST_CHANGE_PASSWORD_ALLOWED_ROUTES.has(`${req.method} ${req.path}`)) {

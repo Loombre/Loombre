@@ -21,6 +21,7 @@ import { fileURLToPath } from 'node:url';
 import { createDb } from '@loombre/db';
 import { upsertMetadataProvenance } from '@loombre/db/internal';
 import { metadataConsumerHandler } from '../../src/metadata/consumer.js';
+import { ProviderFetchError } from '../../src/metadata/cache.js';
 import { ProviderRegistry } from '../../src/metadata/registry.js';
 import { makeFakeProvider } from '../../src/metadata/test-support.js';
 import type { ProviderDetails } from '../../src/metadata/provider.js';
@@ -379,5 +380,36 @@ describe('metadataConsumerHandler', () => {
       )
     ).resolves.toBeUndefined();
     expect(enqueueImageJob).not.toHaveBeenCalled();
+  });
+
+  // AUD-A7c-002: a failed TMDB request's ProviderFetchError carries the raw
+  // request URL — including `?api_key=<secret>` — verbatim in its .message
+  // (cache.ts:59). resolveViaProviderChain forwards err.message straight
+  // into log() (consumer.ts's catch block), so the key must never survive
+  // from provider failure to the emitted log line. Asserts on the actual
+  // captured log CONTENT, not on whether log() was called — a mock-called
+  // assertion would pass even with the key still embedded in the string.
+  it('redacts a leaked TMDB api_key out of provider-failure log lines (AUD-A7c-002)', async () => {
+    const itemId = await insertItem('Redaction Probe', 2014);
+    const FAKE_KEY = 'sekrit0123456789abcdef0123456789';
+    const failingTmdb = makeFakeProvider({
+      name: 'tmdb',
+      kinds: ['movie'],
+      failSearch: new ProviderFetchError(`https://api.themoviedb.org/3/search/movie?api_key=${FAKE_KEY}&query=redaction+probe`, 401, 'Unauthorized'),
+    });
+    const registry = new ProviderRegistry();
+    registry.register(failingTmdb);
+
+    const logs: string[] = [];
+    const enqueueImageJob = vi.fn(async () => 'x');
+    const handler = metadataConsumerHandler({ db, registry, enqueueImageJob, log: (message) => logs.push(message) });
+
+    await handler({ itemId, mediaKind: 'movie', contentClass: 'general' }, { jobId: 'test-job-redact-key' });
+
+    expect(enqueueImageJob).not.toHaveBeenCalled(); // the provider failed — no-op, same as "no match found"
+    expect(logs.length).toBeGreaterThan(0); // the failure DID get logged...
+    for (const line of logs) {
+      expect(line).not.toContain(FAKE_KEY); // ...but never with the key inside it.
+    }
   });
 });

@@ -557,6 +557,95 @@ async function readCapped(response: Response, maxBytes: number, targetUrl: strin
   return Buffer.concat(chunks.map((c) => Buffer.from(c))).toString("utf8");
 }
 
+export interface HardenedFetchRawOptions {
+  fetchImpl?: typeof fetch | undefined;
+  timeoutMs: number;
+  lanAllowlist?: readonly string[] | undefined;
+  dnsLookup?: DnsLookupFn | undefined;
+}
+
+/**
+ * AUD-A7c-001: same SSRF validation + DNS-pinning + redirect rejection as
+ * `hardenedFetch` below — same scheme check, same `resolveAndValidateHost`
+ * call, same pinned-dial-or-fallback branch, same "a 3xx is a typed
+ * rejection, never followed" rule — but hands back the raw, STILL-
+ * STREAMING `Response` instead of buffering the body into a UTF-8-decoded
+ * `bodyText`. `hardenedFetch`'s capped-string body is right for the small
+ * JSON plugin-capability responses it exists for; it is WRONG for a binary
+ * body — decoding arbitrary bytes as UTF-8 and handing back only the
+ * decoded string is lossy (invalid byte sequences become U+FFFD) and would
+ * silently corrupt anything that isn't valid UTF-8 text, e.g. a JPEG/PNG.
+ * Callers that must stream a binary body straight to disk without ever
+ * buffering the whole thing in memory (apps/worker/src/image/download.ts,
+ * docs/PLAN.md §9.2 "streams everywhere") use this instead — this is a
+ * second CONSUMPTION MODE of the one guard, not a second guard: the
+ * validation/pinning logic below is called, never re-implemented.
+ *
+ * The timeout here deliberately covers the WHOLE request, not just
+ * "headers arrived" — the same `AbortController`/timer stay wired to the
+ * request/response for as long as the caller is still reading
+ * `response.body`, so a target that responds promptly but then drips the
+ * body slowly enough to stall a download is still bounded. If the body
+ * finishes first, the still-pending timer fires harmlessly afterward (an
+ * abort() on an already-completed request is a no-op) and is GC'd once it
+ * does — there is no explicit dispose() to call.
+ */
+export async function hardenedFetchRaw(url: string, opts: HardenedFetchRawOptions): Promise<Response> {
+  const parsed = safeParseUrl(url);
+  if (!parsed) throw new HardenedFetchError("invalid-url", url, `"${url}" is not a parseable URL`);
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new HardenedFetchError("unsupported-scheme", url, `scheme "${parsed.protocol}" is not http/https`);
+  }
+
+  const resolution = await resolveAndValidateHost(parsed.hostname, opts.lanAllowlist ?? [], opts.dnsLookup ?? defaultDnsLookup);
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), opts.timeoutMs);
+  let response: Response;
+  try {
+    if (opts.fetchImpl) {
+      // Test/caller-supplied transport override — same meaning as
+      // hardenedFetch's identical branch below: the caller already fully
+      // controls "the network" here, but validation above still ran.
+      response = await opts.fetchImpl(url, { redirect: "manual", signal: controller.signal });
+    } else if (resolution.pinnedAddress) {
+      response = await pinnedDialFetch(url, {}, resolution.pinnedAddress, resolution.family!, controller.signal);
+    } else {
+      // LAN-allowlist exact-hostname bypass — see resolveAndValidateHost's
+      // doc comment.
+      response = await fetch(url, { redirect: "manual", signal: controller.signal });
+    }
+  } catch (err) {
+    clearTimeout(timer);
+    if (controller.signal.aborted) {
+      throw new HardenedFetchError("timeout", url, `request timed out after ${opts.timeoutMs}ms`);
+    }
+    throw new HardenedFetchError("network-error", url, err instanceof Error ? err.message : String(err));
+  }
+
+  if (response.status >= 300 && response.status < 400) {
+    clearTimeout(timer);
+    throw new HardenedFetchError(
+      "redirect-not-followed",
+      url,
+      `received a ${response.status} redirect, which hardenedFetch never follows`,
+    );
+  }
+
+  // R6 fix wave: the timer stays running past this point on purpose (see
+  // this doc comment above) so it can still abort a body the caller reads
+  // slowly AFTER this function returns — but a running timer is also, by
+  // itself, a reason Node keeps the event loop (and so the whole worker
+  // process) alive. `unref()` removes ONLY that side effect: the timer
+  // still fires and still calls `controller.abort()` on schedule, so the
+  // whole-request bound above is unchanged; it just no longer counts as a
+  // reason to stay alive for a process that would otherwise be done. Without
+  // this, every successful image download left a pending timer that could
+  // delay worker shutdown by up to `timeoutMs`.
+  timer.unref();
+  return response;
+}
+
 /**
  * The sole network-issuing primitive in this package (see this file's
  * header). Validates scheme + resolved address(es) BEFORE issuing any

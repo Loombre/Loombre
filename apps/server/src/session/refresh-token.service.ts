@@ -15,6 +15,7 @@ import { createHash, randomBytes } from "node:crypto";
 import {
   findRefreshTokenByHash,
   insertRefreshToken,
+  revokeDeviceAccess,
   revokeRefreshTokenById,
   revokeRefreshTokenChain,
   revokeRefreshTokensForDevice,
@@ -113,8 +114,16 @@ export class RefreshTokenService {
     return { ok: true, userId: row.user_id, deviceId: row.device_id, issued };
   }
 
-  /** POST /auth/logout — revokes every still-active token for (userId, deviceId). */
+  /**
+   * POST /auth/logout — revokes every still-active refresh token for
+   * (userId, deviceId) AND (AUD-A7b-001) bumps the device's own
+   * credentials-changed epoch so the device's already-issued, still-live
+   * ACCESS token is rejected too — see revokeDeviceAccess's own doc
+   * comment for why this is a logout-only write, not folded into
+   * revokeRefreshTokensForDevice itself.
+   */
   async logout(db: LoombreDb, userId: string, deviceId: string, nowMs: number): Promise<number> {
+    await revokeDeviceAccess(db, userId, deviceId, nowMs);
     return revokeRefreshTokensForDevice(db, userId, deviceId, nowMs);
   }
 }

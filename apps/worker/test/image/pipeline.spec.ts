@@ -74,7 +74,12 @@ describe('runImagePipeline', () => {
       entityType: 'catalog_item',
       entityId: 'item-2',
       kind: 'backdrop',
-      sourcePath: 'url:https://example.invalid/backdrop.jpg',
+      // 93.184.216.34 (this codebase's own convention for "an allowed
+      // public IPv4 literal" — packages/plugin-host/test/ssrf.spec.ts):
+      // a hostname would now hit real DNS resolution via the SSRF guard
+      // resolveSource routes through (AUD-A7c-001) since this test injects
+      // only a transport override, not a fake DNS resolver.
+      sourcePath: 'url:https://93.184.216.34/backdrop.jpg',
       dataDir: workDir,
       fetchImpl,
       execute: runVariantJob,
@@ -94,7 +99,7 @@ describe('runImagePipeline', () => {
         entityType: 'catalog_item',
         entityId: 'item-3',
         kind: 'poster',
-        sourcePath: 'url:https://example.invalid/missing.jpg',
+        sourcePath: 'url:https://93.184.216.34/missing.jpg',
         dataDir: workDir,
         fetchImpl,
         execute: runVariantJob,
