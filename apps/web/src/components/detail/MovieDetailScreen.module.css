@@ -86,11 +86,28 @@
   margin-bottom: var(--space-xl);
 }
 
+/* AUD-A4v5-001 (audit fafa47f): the old split — minmax(0, 1.4fr)
+   minmax(0, 1fr) with no floor and no media query — let the METADATA
+   track collapse to 121px at 768x1024 (illegible card, overlap onto the
+   VERSIONS card, the enabled Fix Match control clipped past the viewport
+   with no scroll recovery, since AppShell's main is overflow-x hidden).
+   Root-cause fix, not a one-viewport patch:
+     1. a 240px floor on the metadata track so it can never again be
+        squeezed below its content;
+     2. below the floor's viability (the tablet band — 768 is the exact
+        worst case: the widest the mobile tree never covers), the grid
+        stacks to one column instead of forcing two unusable ones. */
 .body {
   display: grid;
-  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1.4fr) minmax(240px, 1fr);
   gap: var(--space-lg);
   align-items: start;
+}
+
+@media (width <= 1023.98px) {
+  .body {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .leftColumn {

@@ -42,6 +42,12 @@
   }
 }
 
+/* AUD-A4v3-002 (audit fafa47f): white-space: nowrap with no max-width
+   inside the position: fixed viewport clipped ordinary-length messages
+   off BOTH screen edges with no scroll recovery (52-char threshold at
+   390px; the contract's 500-char system notice — openapi.yaml maxLength —
+   rendered 3375px wide). Fixed root-cause: cap the pill to the viewport
+   and let the message wrap instead of forbidding it. */
 .toast {
   display: inline-flex;
   align-items: center;
@@ -51,7 +57,7 @@
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   box-shadow: var(--shadow-md);
-  white-space: nowrap;
+  max-width: min(560px, calc(100vw - 2 * var(--space-md)));
 }
 
 .dot {
@@ -76,4 +82,10 @@
   font-size: var(--mono-sm);
   letter-spacing: var(--track-mono);
   text-transform: uppercase;
+
+  /* AUD-A4v3-002: as the shrinkable flex item next to the fixed .dot,
+     min-width: 0 lets the pill's max-width bind; overflow-wrap covers a
+     single unbroken token longer than the capped line. */
+  min-width: 0;
+  overflow-wrap: anywhere;
 }

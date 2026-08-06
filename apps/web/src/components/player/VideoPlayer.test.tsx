@@ -29,6 +29,9 @@ type AudioStream = components["schemas"]["AudioStream"];
 const SERVER_URL = "http://localhost:9000";
 const ITEM_ID = "01890000-0000-7000-8000-000000000001";
 const SESSION_ID = "01890000-0000-7000-8000-0000000000aa";
+/** A second session id — the SUPERSEDING create in the orphaned-session
+ *  tests below (AUD-A4v4-003). */
+const SECOND_SESSION_ID = "01890000-0000-7000-8000-0000000000ab";
 /** A NON-default media_files row for the same item — the "4K" / alternate-cut
  *  version a user picks from a detail page's Versions list. */
 const ALT_FILE_ID = "01890000-0000-7000-8000-0000000000d9";
@@ -455,6 +458,69 @@ describe("VideoPlayer", () => {
     const v = (view = await renderReady(vi.fn(), undefined, 90_000));
     expect(findProgressForItem).not.toHaveBeenCalled();
     expect(v.container.textContent).not.toContain("You stopped at");
+  });
+
+  // AUD-A4v4-003 regression guards: a createPlaybackSession call that
+  // resolves AFTER its effect invocation was cancelled (unmount, or an
+  // itemId/mediaFileId/startMs change re-running the effect) creates a real
+  // server row that never reaches `session` state — so the sibling
+  // unmount-cleanup effect can never end it. With the shipped default
+  // maxSimultaneousTranscodes = 1, one such orphan blocks ALL playback
+  // until the 15-minute idle sweeper. The cancelled invocation itself must
+  // end the session it created.
+  it("ends the session created by a create that resolved after unmount — nothing else can ever reach it", async () => {
+    let resolveCreate: (r: unknown) => void = () => undefined;
+    createPlaybackSession.mockImplementationOnce(
+      () =>
+        new Promise((res) => {
+          resolveCreate = res;
+        }),
+    );
+    const v = (view = await renderReady());
+    v.unmount();
+    view = null;
+    expect(endPlaybackSession).not.toHaveBeenCalled();
+    await act(async () => {
+      resolveCreate({ ok: true, session: directPlaySession() });
+    });
+    expect(endPlaybackSession).toHaveBeenCalledWith(SESSION_ID);
+  });
+
+  it("ends the first session when a mediaFileId change supersedes an in-flight create, and keeps only the new one", async () => {
+    const onBack = vi.fn();
+    let resolveFirst: (r: unknown) => void = () => undefined;
+    createPlaybackSession
+      .mockImplementationOnce(
+        () =>
+          new Promise((res) => {
+            resolveFirst = res;
+          }),
+      )
+      .mockResolvedValueOnce({ ok: true, session: { ...directPlaySession(), id: SECOND_SESSION_ID } });
+    const v = (view = await renderReady(onBack));
+
+    // The user re-targets the player (picks a VERSION) while the first
+    // POST is still in flight.
+    await act(async () => {
+      v.rerender(
+        <ToastProvider>
+          <VideoPlayer itemId={ITEM_ID} onBack={onBack} mediaFileId={ALT_FILE_ID} />
+        </ToastProvider>,
+      );
+    });
+    expect(createPlaybackSession).toHaveBeenCalledTimes(2);
+
+    // The superseded create resolves late: its session must be ended…
+    await act(async () => {
+      resolveFirst({ ok: true, session: directPlaySession() });
+    });
+    expect(endPlaybackSession).toHaveBeenCalledTimes(1);
+    expect(endPlaybackSession).toHaveBeenCalledWith(SESSION_ID);
+
+    // …while the superseding session stays live until the real unmount.
+    v.unmount();
+    view = null;
+    expect(endPlaybackSession).toHaveBeenCalledWith(SECOND_SESSION_ID);
   });
 
   // N3's player review checkpoint (STATE.md NG9): NoticeOverlayStrip must

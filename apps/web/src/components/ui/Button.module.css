@@ -7,7 +7,12 @@
   border: 1px solid transparent;
   border-radius: var(--radius-pill);
   padding: var(--space-xs) var(--space-lg);
-  min-height: 20px;
+
+  /* AUD-A4v2-001 (audit fafa47f): Phosphor's 44px touch-target floor
+     (A4a REFERENCE APPENDIX §B — "touch targets never below 44px");
+     measured 36.84px before. align-items/justify-content: center already
+     handle the taller box. */
+  min-height: 44px;
   font-size: var(--text-sm);
   font-weight: var(--weight-semibold);
   cursor: pointer;
@@ -83,6 +88,8 @@
 .iconOnly {
   border-radius: var(--radius-full);
   padding: var(--space-xs);
-  min-height: 40px;
-  min-width: 40px;
+
+  /* AUD-A4v2-001: 40px was a 4px near-miss of the 44px floor. */
+  min-height: 44px;
+  min-width: 44px;
 }

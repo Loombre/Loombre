@@ -7,9 +7,14 @@
    can never desync them. Mobile: flex-wrap only, no dedicated breakpoint
    rules needed (same posture as the provider-keys rows). */
 
+/* AUD-A3b-003: --font-size-md/--font-size-sm were defined nowhere in the
+   repo (only --text-* exists in tokens.css); the invalid var() collapsed
+   this h2 to inherited body size. --text-lg + semibold matches every
+   sibling card title on /settings/server (ServerSection.module.css). */
 .cardTitle {
   margin: 0 0 var(--space-md);
-  font-size: var(--font-size-md);
+  font-size: var(--text-lg);
+  font-weight: var(--weight-semibold);
 }
 
 .rows {
@@ -40,7 +45,7 @@
 
 .rowCaption {
   color: var(--color-text-muted);
-  font-size: var(--font-size-sm);
+  font-size: var(--text-sm);
 }
 
 .confirmBlock {

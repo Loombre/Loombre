@@ -11,10 +11,17 @@
   width: 100%;
 }
 
+/* AUD-A4v6-002 (audit fafa47f): a fixed-height virtualized row MUST clip —
+   the translateY windowing math allocates exactly rowHeight px, so any
+   content taller than that painted over the next row (measured 6.2px of
+   bleed on the dashboard's JobsPanel embed, every row). overflow: hidden
+   enforces the invariant for every consumer; consumers are still
+   responsible for content that FITS (see JobsPanel.module.css .rowMeta). */
 .row {
   position: absolute;
   inset: 0 0 auto;
   width: 100%;
+  overflow: hidden;
   border-bottom: 1px solid var(--border-subtle, var(--border));
 }
 

@@ -28,6 +28,34 @@ a {
   color: inherit;
 }
 
+/* ── Heading tier: unbreakable-token guard (AUD-A4v6-001, audit fafa47f) ──
+   23 of the 24 CSS modules styling a width-axis heading (font-stretch:
+   var(--wdth-display|--wdth-title) — the Archivo signature) shipped with
+   the default overflow-wrap: normal, and every one of them interpolates
+   uncontrolled catalog text (titles from provider metadata, NFO sidecars,
+   or the scanner's filename parse). Measured at fafa47f: a single
+   15-character unbroken token already overflowed the movie-detail h1 at
+   1440x900, and the player's UnavailableScreen — the one such heading
+   with no clipping ancestor — took the whole document to 2.1x horizontal
+   scroll. ONE systematic guard here at the heading tier, not 23 per-file
+   patches: `anywhere` (not `break-word`) so a long token also stops
+   inflating the heading's min-content contribution inside flex/grid
+   parents — that min-content inflation is exactly how UnavailableScreen's
+   560px panel was overridden. Inert for space-separated text; only
+   unbreakable overflow-length tokens gain break points. The four
+   width-axis "headings" that are not h* elements carry the same
+   declaration in their own modules (AlbumDetailScreen .mobileTitle,
+   DetailPoster .fallbackTitle, MobileSceneCard .title,
+   SearchEmptyState .ghost). */
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  overflow-wrap: anywhere;
+}
+
 button {
   font: inherit;
   color: inherit;

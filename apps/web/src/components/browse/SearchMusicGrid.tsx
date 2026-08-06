@@ -29,6 +29,7 @@
 // draws one here). Both trees render, CSS-swapped at 767.98px (same
 // convention as SearchMovieRow.tsx).
 
+import { useState } from "react";
 import type { components } from "@loombre/sdk";
 import { buildImageUrl } from "../../lib/image-url.js";
 import { blurhashToDataUri } from "../../lib/blurhash-canvas.js";
@@ -41,6 +42,19 @@ type Track = components["schemas"]["Track"];
 
 function hrefFor(result: SearchResult): string {
   return `/items/${result.itemType}/${result.item.id}`;
+}
+
+/** AUD-A4v4-001: artwork <img> with the six-sibling onError degradation
+ *  (AlbumArt/AlbumDetailScreen/EpisodeRow/SceneBanner/DetailPoster/
+ *  MobileSceneCard's `onError -> setFailed` pattern). A failed request
+ *  removes the <img> entirely, so the `.art`/`.mobileArt` gradient
+ *  background (+ blurhash placeholder, when one exists) is what paints —
+ *  never the browser's native broken-image glyph
+ *  (design/phosphor/README.md:342-344's missing-artwork treatment). */
+function ArtImage({ className, src }: { className: string | undefined; src: string }): React.JSX.Element | null {
+  const [failed, setFailed] = useState(false);
+  if (failed) return null;
+  return <img className={className} src={src} alt="" loading="lazy" onError={() => setFailed(true)} />;
 }
 
 function subtitleFor(result: SearchResult, artistNames: ReadonlyMap<string, string>): string | undefined {
@@ -96,7 +110,7 @@ export function SearchMusicGrid({
             >
               <span className={styles.art}>
                 {placeholderUri && <img className={styles.artPlaceholder} src={placeholderUri} alt="" aria-hidden="true" />}
-                <img className={styles.artImage} src={src} alt="" loading="lazy" />
+                <ArtImage className={styles.artImage} src={src} />
               </span>
               <span className={styles.title}>{result.item.title}</span>
               {subtitle && <span className={styles.subtitle}>{subtitle}</span>}
@@ -129,7 +143,7 @@ export function SearchMusicGrid({
             >
               <span className={styles.mobileArt}>
                 {placeholderUri && <img className={styles.mobileArtPlaceholder} src={placeholderUri} alt="" aria-hidden="true" />}
-                <img className={styles.mobileArtImage} src={src} alt="" loading="lazy" />
+                <ArtImage className={styles.mobileArtImage} src={src} />
               </span>
               <span className={styles.mobileInfo}>
                 <span className={styles.mobileTitle}>{result.item.title}</span>

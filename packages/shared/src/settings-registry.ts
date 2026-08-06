@@ -108,6 +108,14 @@ export interface SettingsRegistryEntry<T = unknown> {
    *  never invented for a knob with no existing env convention. */
   envVar?: string;
   parseEnv?: EnvValueParser;
+  /** True when the REAL default is platform-derived at runtime (apps/
+   *  server/src/cli/app-paths.ts's resolveAppPaths) and the static
+   *  `default` below is only an illustrative fallback that cannot
+   *  reproduce it. Doc generators (scripts/docs/gen-env-reference.mjs)
+   *  suppress the "Default when unset" bullet for these entries so the
+   *  description's platform-default sentence — the true answer — is the
+   *  only default stated (audit fafa47f, AUD-A6b-002). */
+  platformDerivedDefault?: boolean;
   /** Security review F1: true when this entry's effective/default value
    *  itself EMBEDS a credential (e.g. a connection string with an inline
    *  username:password) rather than merely being sensitive-adjacent
@@ -312,8 +320,10 @@ const ENV_ONLY_ENTRIES: SettingsRegistryEntry[] = [
     // reproduce without a process.platform read at module-eval time. See
     // this lane's report for the divergence (apps/worker's own
     // DEFAULT_DATA_DIR literal, './data', reused here for a grounded value
-    // rather than an invented one).
+    // rather than an invented one). platformDerivedDefault keeps this
+    // illustrative value out of the generated operator docs (AUD-A6b-002).
     default: "./data",
+    platformDerivedDefault: true,
     category: "paths",
     description: "App data directory (media cache, secrets, images, TLS state). Platform default when unset: XDG_DATA_HOME/loombre (Linux), ~/Library/Application Support/Loombre (macOS), %LOCALAPPDATA%/Loombre (Windows) — see apps/server/src/cli/app-paths.ts.",
     requiresRestart: true,
@@ -323,7 +333,10 @@ const ENV_ONLY_ENTRIES: SettingsRegistryEntry[] = [
   defineSetting({
     key: "paths.configDir",
     schema: z.string().min(1),
+    // Illustrative only — same platform-derived reality as paths.dataDir
+    // above (resolveAppPaths' XDG/%APPDATA%/Application Support resolution).
     default: "./config",
+    platformDerivedDefault: true,
     category: "paths",
     description: "App config directory. Platform default when unset: XDG_CONFIG_HOME/loombre (Linux), Application Support/Loombre/config (macOS), %APPDATA%/Loombre (Windows) — see apps/server/src/cli/app-paths.ts.",
     requiresRestart: true,

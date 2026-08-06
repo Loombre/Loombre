@@ -491,7 +491,6 @@ describe('listCatalogItems sort', () => {
   // on an all-NULL column, and sort=year still resolves correctly among
   // siblings sharing an item type with a nullable-in-practice rating.
   it('sort=rating over an all-NULL-rating set is stable and does not crash; sort=year still resolves', async () => {
-    const ctx = ctxFor(adminId, { allowedLibraryIds: [libMoviesId], restrictedCleared: true });
     // albumId/artistId captured in the outer beforeAll point at "Low Water"
     // (2019) under "The Salt Layer"; fetch siblings via the artist parent.
     const libMusic = await db.selectFrom('catalog_items').select('library_id').where('id', '=', artistId).executeTakeFirstOrThrow();
@@ -505,7 +504,6 @@ describe('listCatalogItems sort', () => {
 
     const byYearAsc = await listCatalogItems(db, musicCtx, { itemType: 'album', parentId: artistId, sort: 'year', order: 'asc', limit: 200 });
     expect(byYearAsc.rows.map((r) => r.title)).toEqual(['Low Water', 'Departures']);
-    void ctx;
   });
 });
 

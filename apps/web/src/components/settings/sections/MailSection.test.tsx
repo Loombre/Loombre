@@ -112,6 +112,28 @@ describe("MailSection", () => {
     expect(view!.container.textContent).toContain("Send a test email");
   });
 
+  it("a settings-fetch failure keeps the heading and offers a Retry that reloads — never blanks the tab (AUD-A3b-002)", async () => {
+    apiGetMock.mockRejectedValue(new Error("boom"));
+    await render();
+    // The shell survives: heading still present, error rendered inside it.
+    expect(view!.container.querySelector("h1")?.textContent).toBe("Mail");
+    expect(view!.container.textContent).toContain("Failed to load settings.");
+    const retry = Array.from(view!.container.querySelectorAll("button")).find((b) => /retry/i.test(b.textContent ?? ""));
+    expect(retry).toBeTruthy();
+
+    // …and the retry actually recovers once the server comes back.
+    apiGetMock.mockImplementation((path: string) => {
+      if (path === "/admin/settings/schema") return Promise.resolve(SCHEMA);
+      if (path === "/admin/settings") return Promise.resolve(SETTINGS);
+      return Promise.reject(new Error(`unexpected path ${path}`));
+    });
+    await act(async () => {
+      retry!.click();
+    });
+    expect(view!.container.textContent).not.toContain("Failed to load settings.");
+    expect(view!.container.textContent).toMatch(/mail is optional/i);
+  });
+
   it("passes a real (non-fabricated) mailCredentials status through when the server reports one configured via env", async () => {
     apiGetMock.mockImplementation((path: string) => {
       if (path === "/admin/settings/schema") return Promise.resolve(SCHEMA);

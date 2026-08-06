@@ -65,18 +65,20 @@ Note: these belong to the Phosphor redesign; fold them into `src/styles/tokens.c
 All in `assets/` (also independently downloadable):
 - `svg/` — mark ×3, favicon, lockup-horizontal, lockup-stacked, app-icon-dark, app-icon-amber (vector masters)
 - `png/` — app icons + mark @1024, favicons 48/32/16, banner 1280×640 (GitHub social preview / OG image), lockups @2x
+- `icons/` — packaged platform icons: `loombre.icns` (macOS bundle icon), `loombre.ico` (Windows multi-res icon)
 - `loombre-splash.html` — animated boot splash reference
 - `README.md` — condensed brand sheet
 Fonts via Google Fonts: Archivo (variable width axis) + IBM Plex Mono. Lockup SVGs embed a webfont `@import`; design tools need the fonts installed locally.
 
 ## Files
 - `assets/…` — everything above
-- `screenshots/` — visual references: boot splash (entrance + settled), brand asset sheet, export banner/lockups, mark variants & lockups in UI context
-- Original design exploration: `Logo Directions.dc.html`; final asset sheet: `Brand Assets.dc.html` (project root, for reference)
+- `screenshots/` — visual references (JPEG, `.jpg`): boot splash (entrance + settled), brand asset sheet, export banner/lockups, mark variants & lockups in UI context.
+  **Known gap:** `02-boot-splash-settled.jpg` is byte-identical to `01-boot-splash-entrance.jpg` — it does not actually show the post-entrance idle/settled frame. Verify idle-loop fidelity against `assets/loombre-splash.html` (the motion reference) instead.
+- Design exploration references, both under `design/phosphor/` (not at the project root): `Loombre Directions.dc.html` (original direction exploration) and `Loombre Phosphor.dc.html` (the Phosphor UI canvas the mark was designed against). The `Brand Assets.dc.html` sheet cited by earlier revisions of this file was never committed to the repo; it survives only as `screenshots/03-brand-assets-sheet.jpg`.
 
 ## Suggested integration points in the repo
 - Sidebar header (replace pulse-dot + text with horizontal lockup)
-- Favicon + app manifest icons in `apps/web` public assets
+- Favicon + app manifest icons in `apps/web` public assets (packaged platform icons ready in `assets/icons/`: `loombre.icns` for macOS bundles, `loombre.ico` for Windows)
 - Login / first-connect boot splash (new component from `loombre-splash.html`)
 - Loading spinner + indeterminate bar components
 - GitHub repo social-preview image (`png/loombre-banner-1280x640.png`)
