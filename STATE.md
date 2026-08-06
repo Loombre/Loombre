@@ -243,8 +243,77 @@ past a green gate.
   so unreachable — but it's public-barrel API and the new grep-gate cannot see
   this shape (there is no validation idiom to catch).
 
-Wave 6 (docs accuracy, dead code, UI polish, schema indexes) queued in
-`reports/audit-fafa47f/fixwaves/` — the last of the six.
+**WAVE 6 CLOSED — commit `56cc64f`.** The final wave: docs accuracy, dead code,
+UI polish, schema indexes. Opus verdict approve-with-nonblocking, zero blocking
+issues; every actionable residual closed pre-commit.
+
+- **Operator docs held to execute-every-command:** the bare docker-compose forms
+  were *proven* to fail on `:?`-interpolation before fixing; the corrected forms
+  proven green. The env-reference contradiction was fixed at the **generator**
+  (new `platformDerivedDefault` registry flag), not by hand-editing generated
+  output. Post-review sweep: docker.md's own troubleshooting bullets had the
+  identical proven defect (out of finding scope, in class scope) — fixed the
+  same way; and docker.md's "(gitignored)" claim about
+  `installers/docker/loombre.env` (POSTGRES_PASSWORD + JWT secret) was FALSE —
+  now true via .gitignore, proven by `git check-ignore`.
+- **docs/PLAN.md no longer describes the BullMQ/Redis queue that was never
+  built** — pg-boss named at every tier (the spec wins conflicts, so this was
+  the highest-leverage doc fix in the audit). Every corrected count/claim in
+  FW6-B re-derived from source or execution; the review spot-checked **12**
+  of them and found zero still-false replacements (the Wave 5 failure class).
+- **csp-hashes.mjs DELETED** (decision recorded: two lanes judged it
+  prospective; leaving it produced duplicate investigation; git history
+  preserves it). All deletions carried zero-consumer proofs, re-verified by
+  review including CSS composes/url() paths. license-check.mjs glob fixed and
+  proven: a fake GPL-2.0-only dep in examples/* fails the gate.
+- **All 10 A4 visual re-measurements HOLD** at the audited viewports against
+  the isolated `loombre_audit_a4` env (screenshots in `evidence/wave6/`):
+  metadata column 121px→314px with zero card overlap and Fix Match reachable
+  (44px hit target); 49-char unbroken title wraps at the heading tier;
+  500-char toast renders 384px ≤ viewport (was 3375px); Job Queue rows tile
+  without painting over each other; restricted zone enterable from seed for
+  the first time; "macOS" not "Macos"; broken posters render the gradient
+  fallback organically. Behavioral fixes **mutation-tested by the reviewer**:
+  reverting the transcode-orphan guard fails both new tests; reverting the
+  restricted-count coalescing fails 5/6 hook tests.
+- **Migration 0036** (admin-list indexes): EXPLAIN-verified, schema.sql
+  regenerated, db:migrate-check green. AUD-A8b-001 — the only finding in the
+  audit that degrades on its own — closed.
+- Not acted on by policy: `AUD-A4v3-003` (the design rule is what's broken —
+  the open item is a design-doc decision, owner's call).
+- New candidates for owner triage in
+  `reports/audit-fafa47f/candidates/W6-followups.md`: **AUD-W6-001**
+  `/watch/<0-file-item>` hangs on "Preparing playback…" forever instead of
+  rendering UnavailableScreen (medium, needs realistic-library repro);
+  AUD-W6-002 seeded envs have zero image blobs (all art is fallback);
+  AUD-W6-003 restricted-count "1 request" needs a production-build re-measure
+  (dev StrictMode floor is 3, coalescing itself is mutation-proven);
+  AUD-W6-004 cron-parser 5.6.2 deprecated-by-registry, bump to 5.7.0.
+
+### AUDIT FIX WAVES COMPLETE — all six closed on `fix/audit-fafa47f-waves`
+
+`a7cd072` W1 crash boundaries · `9ffc8c6` W2 silent data loss · `484e06c` W3
+trust boundaries · `beb1d23` W4 contract conformance · `42d40c3` W5 release
+integrity · `56cc64f` W6 docs/dead-code/polish. Every wave: gate:full green +
+adversarial opus review; four of six waves' reviews caught a self-inflicted
+defect a green gate had passed (respawn storm, CITEXT, token resurrection ×2,
+worse-than-main redactor, false comment) — Waves 4 and 6 were clean on round 1.
+
+**Open for owner (consolidated):**
+1. Merge/PR decision for `fix/audit-fafa47f-waves` (6 fix commits + docs).
+2. `rateLimit.loginByIdentifier` account-lockout trade-off (W3, undecided by
+   design).
+3. `apps/server` e2e flakiness triage (reauth-review-findings / conformance —
+   pre-existing, documented at `8f6cf0d`; "green gate" is not reproducible
+   until this is fixed).
+4. Whether to `git add -f reports/audit-fafa47f/` (gitignored; holds the
+   ledger, evidence screenshots, coverage ledgers, wave docs, W1/W2/W4/W6
+   follow-up candidates).
+5. Follow-up candidate files: `candidates/W1-followups.md` (tray tests not in
+   gate:full), `W2-followups.md` (full-mode Stash marker residual),
+   `W4-followups.md` (latent readEventsForViewer afterId), `W6-followups.md`
+   (4 items above).
+6. `AUD-A4v3-003` design-rule contradiction in `design/phosphor/README.md`.
 
 ## Loombre Remote — embedded WireGuard + three-path wizard + reachability proof + posture card (kicked off 2026-08-04, owner brief "Loombre Remote (Embedded WireGuard) + Three-Path Wizard + Reachability Proof + Posture Card")
 
@@ -1428,9 +1497,9 @@ Integrate the final Loombre logo identity ("Blaze" — three-tongue flame, inner
 
 | Wave/Lane | Scope | Model | Status |
 |---|---|---|---|
-| W0 foundation | Bundle commit · production assets (D1, D7) · <BlazeMark> (variants, animated mode, size gate, single path-data module) · failing-first unit tests · fixture page 3 variants × 16/24/48/120px on #0B0C0F/#101218 · side-by-sides vs 03-brand-assets-sheet.png | sonnet | **FROZEN fe523fe** (orchestrator ground-truthed; awaiting owner checkpoint) |
+| W0 foundation | Bundle commit · production assets (D1, D7) · <BlazeMark> (variants, animated mode, size gate, single path-data module) · failing-first unit tests · fixture page 3 variants × 16/24/48/120px on #0B0C0F/#101218 · side-by-sides vs 03-brand-assets-sheet.jpg (renamed from .png in the fafa47f audit fix waves — the file was always JPEG data) | sonnet | **FROZEN fe523fe** (orchestrator ground-truthed; awaiting owner checkpoint) |
 | — OWNER CHECKPOINT — | Nothing dispatches until owner approves the mark rendering | owner | **PASSED 2026-07-25** — owner approved W0 mark rendering ("Approve — dispatch Wave 1") |
-| A sidebar lockup | D8; screenshots vs 05-variants-lockups-in-context.png (desktop + icon-collapsed tablet) | haiku | **FROZEN 60e277c** (landed on main via G15 breach; battery superseded by C's integrated run; screenshots pending orchestrator) |
+| A sidebar lockup | D8; screenshots vs 05-variants-lockups-in-context.jpg (desktop + icon-collapsed tablet) | haiku | **FROZEN 60e277c** (landed on main via G15 breach; battery superseded by C's integrated run; screenshots pending orchestrator) |
 | B boot splash | D3/D4/D6/D9/D10; rebuild loombre-splash.html as login/first-connect component; screenshots vs 01-/02- + reduced-motion | sonnet | **FROZEN 75cd933 → landed eaa0cd4** (cherry-picked; battery green in-worktree; orchestrator screenshots + adjudications below) |
 | C spinner + bar | D9/D10 swapped into existing loading states; transform-only, timings exact | haiku | **FROZEN 16c5028** (landed on main via G15 breach; battery = integrated A+C proof: 763 tests/tsc/build/depcruise/grep-gates green; player-surface adjudication pending pixel check) |
 | D purge + hygiene | delete pulse-dot + legacy favicon/logo assets; fixture grep gains D6 strings; greps: stray flame path data, token-duplicating hex, Google Fonts refs (red-to-green IS the purge proof) | haiku | **FROZEN 17d6517** (worktree branch, correctly isolated; red-first proof captured — 10 pulse-dot violations verbatim; merges LAST per G14) |
@@ -1440,7 +1509,7 @@ Integrate the final Loombre logo identity ("Blaze" — three-tongue flame, inner
 
 **Shipped.** apps/web/public/brand/loombre-mark{,-scanline,-flat}.svg + public/loombre-favicon.svg + favicon PNGs 16/32/48 + app-icon dark/amber 1024 — ALL NINE verified byte-identical to design/blaze masters by orchestrator-run sha256 (D1 anchors match) AND pinned forever by buffer-equality tests (blaze-public-assets.test.ts). components/brand/: blaze-paths.ts (the ONE geometry module — orchestrator grep confirms "M56 6" exists nowhere else in src), BlazeMark.tsx (variant/size/animated/surface/classNames={rig,blaze,core} hooks for Lanes B/C), 25 new tests incl. provenance suite byte-diffing module constants against the three mark masters and a G4 negative test (flat fill never --color-accent). layout.tsx metadata.icons (SVG primary + PNG fallbacks + apple-touch; CSP-nonce block untouched) + NEW app/manifest.ts (theme #ffb454 = --brand-amber, bg #0b0c0f = --color-bg, dark-1024 icon any+maskable — 680/1024 mark sits inside the maskable safe zone). tokens.css +6 brand tokens per D11/G3/G4 (--brand-amber/-bright/-deep, --color-bg-splash, --brand-mark-glow with not-ember-bloom comment, --scanlines-splash 35% recipe; Phosphor --scanlines untouched). /styleguide "Blaze mark" fixture: 3 variants × 16/24/48/120 on #0B0C0F + #101218 with downgrade labels, static-vs-animated parity pair.
 
-**Orchestrator ground-truth (not lane claims):** re-ran tsc clean, vitest 77 files/748 tests green, eslint --max-warnings=0 clean, stylelint clean, grep-gates PASS 1972 files; hashes verified directly; screenshots viewed against 03-brand-assets-sheet.png — silhouette/core-cutout/gradient orientation (bright base → deep tips)/scanline density/flat fill all match; D5 downgrade visibly firing at 16px on both surfaces; parity pair visually indistinguishable. Lane also ran next build --webpack (30 routes + /manifest.webmanifest) and depcruise clean (978 modules) — accepted on lane evidence, W2 re-proves. Evidence PNGs: reports/blaze/wave0/ (untracked, reports/ policy).
+**Orchestrator ground-truth (not lane claims):** re-ran tsc clean, vitest 77 files/748 tests green, eslint --max-warnings=0 clean, stylelint clean, grep-gates PASS 1972 files; hashes verified directly; screenshots viewed against 03-brand-assets-sheet.jpg — silhouette/core-cutout/gradient orientation (bright base → deep tips)/scanline density/flat fill all match; D5 downgrade visibly firing at 16px on both surfaces; parity pair visually indistinguishable. Lane also ran next build --webpack (30 routes + /manifest.webmanifest) and depcruise clean (978 modules) — accepted on lane evidence, W2 re-proves. Evidence PNGs: reports/blaze/wave0/ (untracked, reports/ policy).
 
 **Perf note (NOT a Blaze regression):** /browse = 166,802 B gz vs 204,800 budget (PASS, 18.6% headroom). The perf/baselines.json lastMeasured 156,159 is stale — stamped at the Next-16 sweep commit (8098258); Phosphor W3/fix-wave measured 164,846/164,857 without re-stamping the ledger, and FX3 + exit-gate-catch landed after. Lane proved Blaze contributes 0 B: stash-isolated re-measure with zero Blaze code = byte-identical 166,802 chunk list. → Open item below.
 
