@@ -152,6 +152,16 @@ export function RemoteEnrollCeremony({ onDone, onCancel, cancelLabel = "Back" }:
       <div className={styles.step} role="status">
         <p className={styles.stepTitle}>Enroll a device</p>
         <p className={styles.unavailable}>Enrolling a device isn't available on this build yet.</p>
+        {/* AUD-A3c-002: every other "not available on this build yet" state
+            in this directory offers a Back/OK control — this one previously
+            rendered zero buttons. */}
+        {onCancel && (
+          <div className={styles.stepActions}>
+            <Button type="button" variant="ghost" onClick={onCancel}>
+              {cancelLabel}
+            </Button>
+          </div>
+        )}
       </div>
     );
   }

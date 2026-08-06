@@ -9,6 +9,23 @@
 // RETURNING, since ids are opaque and nothing depends on their literal
 // bytes) — `db:reset && db:seed` always produces the same shaped dataset.
 //
+// RESTRICTED ZONE (AUD-A4v5-002, audit fafa47f): the restricted rows below
+// are DB-level access-control fixtures for the leak suite — they seed gates
+// 2-4 (admin opt-in + PIN, content_class isolation, library grant) but NOT
+// gate 1, the `restricted.enabled` server setting (default false; the
+// settings registry). With gate 1 off, the restricted UI, its PIN gate, and
+// /restricted/* are unreachable no matter what this script seeds. To build
+// an environment that can exercise the restricted zone end-to-end, opt in
+// at seed time:
+//
+//   LOOMBRE_RESTRICTED_ENABLED=1 pnpm db:seed
+//
+// which additionally writes the `restricted.enabled: true` server_settings
+// row (same env-var name the server itself honors — settings-registry.ts;
+// note env always outranks the DB row at runtime, so exporting it to the
+// server process works too). Deliberately NOT the default: enabling
+// adult-content handling silently in every dev seed would be wrong.
+//
 // Password/PIN hashes below are PRECOMPUTED argon2id hashes, generated
 // offline with @node-rs/argon2 (napi-rs prebuilt binary, no node-gyp). This
 // script has no argon2 dependency of its own — see the constants below.
@@ -150,6 +167,28 @@ async function main() {
       `INSERT INTO library_permissions (user_id, library_id, granted_at_ms) VALUES ($1, $2, $3)`,
       [admin.id, libRestricted.id, nextMs()]
     );
+
+    // ------------------------------------------------------------------
+    // restricted gate 1 — server_settings opt-in (see header: AUD-A4v5-002)
+    // ------------------------------------------------------------------
+    // Same truthy vocabulary as the settings registry's parseEnvBoolean
+    // (packages/shared/src/settings-registry.ts ENV_TRUE_VALUES).
+    const restrictedEnabled = ['1', 'true', 'yes', 'on'].includes(
+      (process.env.LOOMBRE_RESTRICTED_ENABLED ?? '').trim().toLowerCase()
+    );
+    if (restrictedEnabled) {
+      await client.query(
+        `INSERT INTO server_settings (key, value, updated_at_ms, updated_by)
+         VALUES ('restricted.enabled', 'true'::jsonb, $1, $2)`,
+        [nextMs(), admin.id]
+      );
+      console.log('seed: LOOMBRE_RESTRICTED_ENABLED set — wrote restricted.enabled=true (gate 1 OPEN).');
+    } else {
+      console.log(
+        'seed: restricted fixtures are DB-level only (gates 2-4); gate 1 (restricted.enabled) stays OFF. ' +
+          'Re-seed with LOOMBRE_RESTRICTED_ENABLED=1 to exercise the restricted zone in the UI.'
+      );
+    }
 
     // ------------------------------------------------------------------
     // people & tags (general + restricted, isolated by content_class)

@@ -18,7 +18,7 @@
 // invocation fails, so the union is covered without needing to merge outputs.
 
 import { execFileSync } from "node:child_process";
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -44,11 +44,49 @@ const ALLOW =
 //     license. Never bundled (build-time OpenAPI tooling only).
 const EXCLUDE = "spdx-exceptions@2.5.0;spdx-ranges@2.1.1;url-template@2.0.8";
 
-// pnpm-workspace.yaml globs are apps/* and packages/* — enumerate every
-// directory under them that has a package.json, plus the repo root.
+// pnpm-workspace.yaml's `packages:` globs are the single source of truth
+// for workspace roots. Parse them here rather than hand-maintaining a copy
+// (AUD-A5d-001: a hard-coded ["apps", "packages"] list silently omitted the
+// examples/* glob, so a disallowed license in an example package would have
+// PASSed) — and fail LOUD on anything unparseable, because a parse that
+// quietly yields fewer trees is exactly the under-reporting this fix removes.
+function workspaceGlobParents() {
+  const yamlPath = join(ROOT, "pnpm-workspace.yaml");
+  const lines = readFileSync(yamlPath, "utf8").split("\n");
+  const start = lines.findIndex((line) => /^packages:\s*$/.test(line));
+  if (start === -1) {
+    console.error(`license-check: no \`packages:\` block found in ${yamlPath} — cannot enumerate workspace roots.`);
+    process.exit(1);
+  }
+  const parents = [];
+  for (let i = start + 1; i < lines.length; i++) {
+    const line = lines[i];
+    if (/^\s*(#.*)?$/.test(line)) continue; // blank / comment inside the block
+    const item = line.match(/^\s+-\s+["']?([^"'\s]+)["']?\s*$/);
+    if (!item) break; // end of the packages: block (next top-level key)
+    const glob = item[1];
+    const parent = glob.match(/^([A-Za-z0-9._-]+)\/\*$/);
+    if (!parent) {
+      console.error(
+        `license-check: workspace glob ${JSON.stringify(glob)} in pnpm-workspace.yaml is not the <parent>/* shape ` +
+          `this script understands — teach workspaceDirs() about it; skipping it would under-report.`,
+      );
+      process.exit(1);
+    }
+    parents.push(parent[1]);
+  }
+  if (parents.length === 0) {
+    console.error(`license-check: parsed zero workspace globs from ${yamlPath} — refusing to run a root-only scan.`);
+    process.exit(1);
+  }
+  return parents;
+}
+
+// Enumerate every directory under the workspace glob parents that has a
+// package.json, plus the repo root.
 function workspaceDirs() {
   const dirs = [ROOT];
-  for (const parent of ["apps", "packages"]) {
+  for (const parent of workspaceGlobParents()) {
     const base = join(ROOT, parent);
     if (!existsSync(base)) continue;
     for (const entry of readdirSync(base)) {

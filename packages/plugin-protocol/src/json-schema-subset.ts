@@ -159,30 +159,6 @@ export const LPP_EMPTY_CONFIG_SCHEMA: LppConfig = {
   additionalProperties: false,
 };
 
-/**
- * Validates the C3 constraint that `secret: true` is only legal on a
- * `type: "string"` leaf — LppConfigStringFieldSchema is the only field
- * schema with a `secret` keyword at all, so this only needs to walk the
- * tree checking for fields the header encoding (headers.ts) could not
- * represent. Returns the dotted paths of every violation (empty = valid).
- */
-export function findSecretOnNonStringFields(schema: LppConfig, pathPrefix = ""): string[] {
-  const violations: string[] = [];
-  for (const [key, field] of Object.entries(schema.properties)) {
-    const path = pathPrefix ? `${pathPrefix}.${key}` : key;
-    if (field.type !== "string" && "secret" in field && (field as { secret?: boolean }).secret) {
-      violations.push(path);
-    }
-    if (field.type === "object") {
-      violations.push(...findSecretOnNonStringFields(field, path));
-    }
-    if (field.type === "array" && field.items.type === "object") {
-      violations.push(...findSecretOnNonStringFields(field.items, `${path}[]`));
-    }
-  }
-  return violations;
-}
-
 /** Field keys marked `secret: true` at the top level of a configSchema —
  *  these are the names a plugin's config MUST resolve via
  *  `X-LPP-Secret-<NAME>` rather than `X-LPP-Config` (headers.ts). */

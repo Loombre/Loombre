@@ -195,7 +195,18 @@ export function MusicPlayerProvider({ children }: { children: ReactNode }): Reac
       // the "music HLS transcode playback" open item. `mediaFileId` pins
       // the session to the version the user picked, when they picked one.
       const result = await createDirectPlaySession(track.itemId, "stream", track.mediaFileId ?? undefined);
-      if (myToken !== loadTokenRef.current) return; // superseded by a later load
+      if (myToken !== loadTokenRef.current) {
+        // Superseded by a later load. AUD-A3g-001: a session created here
+        // was never recorded in sessionsRef, so neither slot reuse
+        // (endSlotSession) nor the unmount cleanup can ever reach it — end
+        // it now (the same discipline as the !result.ok branch below), or
+        // it stays live server-side until the 15-minute idle sweeper
+        // (docs/PLAYBACK.md §9). The header's contract ("the just-finished
+        // track's session is ended as soon as its slot is reused") must
+        // hold for sessions that never make it INTO a slot, too.
+        if (result.ok) void endPlaybackSession(result.session.id);
+        return;
+      }
 
       if (!result.ok) {
         // Music has no dedicated unavailable-state surface (that's the

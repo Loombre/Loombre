@@ -29,12 +29,14 @@
   font-weight: var(--weight-semibold);
 }
 
+/* AUD-A3b-001: errors render danger, not accent (JobsPanel.module.css's
+   S3 precedent — same tint recipe so a theme retune can't desync them). */
 .errorBanner {
   margin: 0;
   padding: var(--space-sm) var(--space-md);
   border-radius: var(--radius-md);
-  background: var(--color-accent-tint);
-  color: var(--color-accent);
+  background: color-mix(in srgb, var(--color-danger) 14%, transparent);
+  color: var(--color-danger);
   font-size: var(--text-sm);
 }
 

@@ -219,4 +219,12 @@ describe("RemoteEnrollStepBody — honest 501 (WG2 not landed)", () => {
     expect(textOf()).toContain("isn't available on this build yet");
     expect(document.body.querySelector("svg")).toBeNull();
   });
+
+  it("the unavailable state still offers the Back control instead of stranding the admin (AUD-A3c-002)", async () => {
+    apiPostMock.mockRejectedValue(new FakeApiError(501, { title: "Not Implemented", status: 501 }));
+    await enrollDevice();
+    expect(textOf()).toContain("isn't available on this build yet");
+    await click("Back");
+    expect(onBack).toHaveBeenCalledTimes(1);
+  });
 });

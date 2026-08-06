@@ -341,6 +341,7 @@
   .navLabel,
   .navCount,
   .scanBadge,
+  .pinBadge, /* AUD-A3g-003: same trailing-badge pattern as .navCount/.scanBadge — hidden with them in the icon-only rail */
   .poolMeter,
   .userInfo {
     display: none;

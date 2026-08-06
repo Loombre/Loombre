@@ -2,10 +2,12 @@
 
 Table-driven case runner for `plan()` (docs/PLAYBACK.md §10), plus a
 property-test harness and a burn-up manifest (docs/PLAYBACK.md §11 step 1).
-502 cases today (10 Phase-0 seeds; 62 Stage-A, 67 Stage-B, 66 Stage-C, 60
+512 cases today (10 Phase-0 seeds; 62 Stage-A, 67 Stage-B, 66 Stage-C, 60
 Stage-D, 61 Stage-E, 61 Stage-F cases across §11 step 2; 59 Stage-G cases in
 step 3; 56 adversarial-audit cases — coverage findings 447–471, §10
-dimension-grid depth 472–502 — in step 7). The ≥500-case Phase 3 exit target
+dimension-grid depth 472–502 — in step 7; 4 transcode-disabled-policy pins
+503–506 in step 7b; 6 legacy-container v1.1-reinstatement cases 507–512 —
+asf/mpeg/flv/aac/aiff, STATE.md H3). The ≥500-case Phase 3 exit target
 is met; `burnup.json` remains the single source of truth for the count.
 
 ## Case-authoring rule: future-proof construction (Phase 3 Step 2a+)

@@ -16,10 +16,15 @@
 // distinction the repo's reasons-map exhaustiveness precedent
 // (apps/web/src/lib/playback-reasons.test.ts) makes.
 //
-// All 23 envelope types are covered, including the 6 plugin.* types Lane
-// W2 added (packages/contract/event-schemas/plugin.*.schema.json,
-// envelope enum 15->21) and the 2 watchlist.* types Phosphor Wave 2 lane L3
-// added (envelope enum 21->23): none of the six plugin.* types carry a
+// ALL envelope types are covered — 46 today, but don't trust this
+// sentence: the count drifts upward as features add event types, and the
+// exhaustiveness test (apps/worker/test/plugin-delivery/
+// actor-field-map.spec.ts) reads the REAL envelope enum, so it — not this
+// header — is the source of truth for the current inventory. Among them,
+// the 6 plugin.* types Lane W2 added
+// (packages/contract/event-schemas/plugin.*.schema.json) and the 2
+// watchlist.* types Phosphor Wave 2 lane L3
+// added deserve a note: none of the six plugin.* types carry a
 // user-id-bearing payload field — every plugin.* payload names only
 // pluginId/name + plugin-specific facts (LD4/LD9: "NEVER carries the
 // manifest ... or a secret"), never an acting admin's user id in the

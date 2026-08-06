@@ -37,4 +37,5 @@ Phosphor UI design language.
 ## Files
 svg/ — vector masters (mark ×3, favicon, lockups ×2, app icons ×2)
 png/ — rendered: app icons + mark @1024, favicons 48/32/16, banner 1280×640, lockups @2x
+icons/ — packaged platform icons: loombre.icns (macOS bundle), loombre.ico (Windows multi-res)
 loombre-splash.html — animated boot splash reference

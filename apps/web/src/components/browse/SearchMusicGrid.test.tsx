@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+import { act } from "react";
 import { describe, expect, it, afterEach } from "vitest";
 import type { components } from "@loombre/sdk";
 import { SearchMusicGrid } from "./SearchMusicGrid.js";
@@ -79,6 +80,24 @@ describe("SearchMusicGrid", () => {
     );
     expect(view.container.textContent).toContain("Synthwave / Ambient");
     expect(view.container.textContent).not.toContain("Artist");
+  });
+
+  it("AUD-A4v4-001 REGRESSION GUARD: on an artwork error event, removes the broken <img> so the gradient fallback shows — never the browser's broken-image glyph (the six-sibling onError pattern, e.g. EpisodeRow/DetailPoster)", () => {
+    view = renderIntoBody(
+      <SearchMusicGrid results={[ALBUM_RESULT]} artistNames={new Map()} serverUrl="https://loombre.local" accessToken="tok" />,
+    );
+    // No blurhash on the fixture, so each tree renders exactly one <img>:
+    // the real artwork (desktop cell + mobile row = 2).
+    const imgs = view.container.querySelectorAll("img");
+    expect(imgs.length).toBe(2);
+
+    act(() => {
+      for (const img of imgs) img.dispatchEvent(new Event("error"));
+    });
+
+    // Both failed artwork <img>s are gone; the .art/.mobileArt gradient
+    // background is what paints (design/phosphor/README.md:342-344).
+    expect(view.container.querySelectorAll("img").length).toBe(0);
   });
 
   it("both a desktop grid cell and a mobile row render for the same result (CSS-swapped, not JS-branched)", () => {

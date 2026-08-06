@@ -198,8 +198,11 @@ export function CreateInviteSheet({
               Restricted libraries can&apos;t be granted by invite — the server rejects them, and admin role can only
               be granted afterward, by an admin.
             </p>
+            {/* AUD-A3b-004: the ordinary loading state renders muted, not in
+                the danger/error style — .errorText is reserved for the
+                empty-state and real submission errors. */}
             {!libraries ? (
-              <p className={styles.errorText}>Loading libraries…</p>
+              <p className={styles.explainer}>Loading libraries…</p>
             ) : libraries.length === 0 ? (
               <p className={styles.errorText}>No non-restricted libraries exist yet.</p>
             ) : (

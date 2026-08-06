@@ -20,6 +20,7 @@ import type { components } from "@loombre/sdk";
 import { Card } from "../../ui/Card.js";
 import { Skeleton } from "../../skeleton/Skeleton.js";
 import { apiGet, LoombreApiError } from "../../../lib/api-client.js";
+import { formatOsLabel } from "../../../lib/os-label.js";
 import styles from "./AboutSection.module.css";
 
 type SystemInfo = components["schemas"]["SystemInfo"];
@@ -47,7 +48,9 @@ export function AboutSection({ heading }: { heading: string | null }): React.JSX
             <dt>Version</dt>
             <dd>{info.version}</dd>
             <dt>OS</dt>
-            <dd className={styles.capitalize}>{info.os}</dd>
+            {/* AUD-A4v4-005: proper-noun label map, not text-transform:
+                capitalize — that rendered "Macos". */}
+            <dd>{formatOsLabel(info.os)}</dd>
             <dt>Runtime (Node)</dt>
             <dd>{info.nodeVersion ?? "—"}</dd>
             <dt>Uptime</dt>

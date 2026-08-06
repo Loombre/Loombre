@@ -15,7 +15,7 @@
 //   - surface: the color behind the core cutout (e.g., card background,
 //     or the overlay behind the spinner if one exists)
 
-import { BlazeMark } from "../brand/BlazeMark";
+import { BlazeMark } from "../brand/BlazeMark.js";
 import styles from "./BlazeSpinner.module.css";
 
 export interface BlazeSpinnerProps {

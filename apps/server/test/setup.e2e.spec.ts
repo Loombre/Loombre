@@ -24,10 +24,13 @@
 //      contract minimums (username/email/password required, password
 //      minLength 8).
 //
-// Rate limiting (STATE.md P4.15): NOT covered here — see
-// apps/server/src/setup/setup.controller.ts's TODO(G1-limiter). G1 owns
-// the reusable limiter this wave; this suite intentionally does not stand
-// up a parallel one just to test it.
+// Rate limiting (STATE.md P4.15): covered, but NOT in this file — the
+// limiter shipped (setup.controller.ts: SurfaceRateLimitGuard +
+// @RateLimit("setup","ip") on both routes) and its 429/Retry-After proof
+// lives in the sibling setup-rate-limit.e2e.spec.ts, which boots its OWN
+// app with a low LOOMBRE_RATE_SETUP ceiling; this suite's functional/race
+// tests need an effectively-unlimited ceiling, so the two cannot share an
+// app (see that file's header for the full rationale).
 
 import "reflect-metadata";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";

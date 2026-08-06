@@ -220,7 +220,18 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
 
     async function run(): Promise<void> {
       const result = await createPlaybackSession(itemId, "stream", mediaFileId);
-      if (cancelled) return;
+      if (cancelled) {
+        // AUD-A4v4-003: this invocation was superseded (itemId/mediaFileId/
+        // startMs changed) or the player unmounted while the POST was in
+        // flight — but the server row already exists. It never reaches
+        // `session` state, so the sibling unmount cleanup below can never
+        // end it; end it HERE, or with the shipped default
+        // maxSimultaneousTranscodes = 1 a single orphan holds the
+        // household's only transcode slot until the 15-minute idle sweeper
+        // (docs/PLAYBACK.md §9).
+        if (result.ok) void endPlaybackSession(result.session.id);
+        return;
+      }
       if (!result.ok) {
         setUnavailableReasons(resolveUnavailableReasons(result.status, result.wouldBeReasons));
         setUnavailableStatus(result.status);

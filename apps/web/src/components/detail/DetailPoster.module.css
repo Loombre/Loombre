@@ -40,6 +40,9 @@
 }
 
 .fallbackTitle {
+  /* AUD-A4v6-001: non-h* width-axis heading — same unbreakable-token
+     guard globals.css applies to the h1-h6 tier. */
+  overflow-wrap: anywhere;
   position: absolute;
   left: var(--space-md);
   right: var(--space-md);

@@ -37,6 +37,7 @@ import { SegmentedControl } from "../../../components/ui/SegmentedControl.js";
 import { Skeleton } from "../../../components/skeleton/Skeleton.js";
 import { EmptyState } from "../../../components/admin/EmptyState.js";
 import { formatFfmpegHashPrefix, formatProbeAge } from "../../../lib/admin-capability-format.js";
+import { formatOsLabel } from "../../../lib/os-label.js";
 import { describeUpdateVerification } from "../../../lib/admin-update-notice.js";
 import { apiGet, LoombreApiError } from "../../../lib/api-client.js";
 import styles from "./page.module.css";
@@ -69,7 +70,9 @@ function SystemInfoCard(): React.JSX.Element {
           <dt>Version</dt>
           <dd>{info.version}</dd>
           <dt>OS</dt>
-          <dd className={styles.capitalize}>{info.os}</dd>
+          {/* AUD-A4v4-005: proper-noun label map, not text-transform:
+              capitalize — that rendered "Macos". */}
+          <dd>{formatOsLabel(info.os)}</dd>
           <dt>Tier</dt>
           <dd>T{info.tier}</dd>
           <dt>Node</dt>
@@ -108,7 +111,7 @@ function CapabilitiesCard(): React.JSX.Element {
         <>
           <dl className={styles.factGrid}>
             <dt>Platform</dt>
-            <dd className={styles.capitalize}>{report.platform}</dd>
+            <dd>{formatOsLabel(report.platform)}</dd>
             <dt>ffmpeg build</dt>
             <dd title={report.ffmpegBuildHash} className={styles.mono}>
               {formatFfmpegHashPrefix(report.ffmpegBuildHash)}

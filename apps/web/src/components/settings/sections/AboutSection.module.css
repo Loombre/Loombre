@@ -42,10 +42,6 @@
   font-family: var(--font-mono);
 }
 
-.capitalize {
-  text-transform: capitalize;
-}
-
 .tagline {
   margin: 0;
   font-family: var(--font-mono);

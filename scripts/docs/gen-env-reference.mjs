@@ -73,7 +73,14 @@ const pinnedUiEntries = SETTINGS_REGISTRY.filter((entry) => entry.scope === "ui"
 function renderEnvOnly(entry, heading) {
   const what = stripSourceCodeRefs(entry.description);
   const lines = [`${heading} \`${entry.envVar}\``, "", `**${titleFor(entry.key)}.** ${what}`, ""];
-  lines.push(`- **Default when unset:** ${formatDefaultWithTiers(entry)}`);
+  // platformDerivedDefault entries (paths.dataDir/paths.configDir): the
+  // registry's static `default` is an illustrative fallback the entry's own
+  // description sentence contradicts ("Platform default when unset: ...").
+  // Print no bullet for those — the description's platform list is the true
+  // default (audit fafa47f, AUD-A6b-002).
+  if (!entry.platformDerivedDefault) {
+    lines.push(`- **Default when unset:** ${formatDefaultWithTiers(entry)}`);
+  }
   if (entry.caution) lines.push(`- **Caution:** ${entry.caution}`);
   lines.push("");
   return lines.join("\n");

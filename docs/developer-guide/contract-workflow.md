@@ -18,8 +18,9 @@ page is the concrete workflow that invariant implies.
 
 ## The contract itself
 
-`packages/contract/openapi.yaml` is a single ≈5,300-line file describing
-85 paths under `/v1`. It's lint-checked
+`packages/contract/openapi.yaml` is a single ≈8,300-line file describing
+132 paths under `/v1` (figures as of 2026-08 — the file only grows;
+`wc -l` and a count of its `paths:` keys are the live truth). It's lint-checked
 (`redocly lint openapi.yaml`, `packages/contract`'s own `lint` script) and
 is what the [API Reference](../api-reference/index.md) is generated from — the same
 file, no separate description to keep in sync.
@@ -78,11 +79,16 @@ file, no separate description to keep in sync.
 against a seeded database and walks the contract itself as its test data —
 there's no separately maintained list of "endpoints to check." For every
 documented, non-public operation it asserts an unauthenticated request
-gets a proper RFC 9457 `401`; for the public operations
-(`POST /auth/login`, `POST /auth/refresh`, `GET /system/capabilities`) it
-validates the response against the contract's own schema (via Ajv); for
-authenticated requests it asserts they're not walled off; and it asserts
-`/healthz` stays public. Crucially, it also asserts that **every route
+gets a proper RFC 9457 `401`. The public operations — 10 today, spanning
+the auth pair, system capabilities, the setup pair, the invite-claim
+pair, the password-recovery pair, and the remote-access probe page; the
+spec's own `PUBLIC_OPERATION_IDS` set is the live list — are exempt from
+that 401 walk, and several of them (`GET /system/capabilities`,
+`POST /auth/login`'s TokenPair, `GET /setup/state`,
+`POST /auth/forgot-password`) get their responses validated against the
+contract's own schemas via Ajv, alongside Ajv checks of RFC 9457 problem
+bodies throughout. For authenticated requests it asserts they're not
+walled off; and it asserts `/healthz` stays public. Crucially, it also asserts that **every route
 Express actually has mounted maps to a documented contract path** — an
 endpoint that exists in code but not in `openapi.yaml` fails this check,
 not just the reverse.

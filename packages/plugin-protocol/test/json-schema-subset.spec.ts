@@ -8,7 +8,6 @@ import {
   checkConfigSchemaBounds,
   findInconsistentDefaults,
   findSecretBelowRoot,
-  findSecretOnNonStringFields,
   listTopLevelSecretFieldNames,
   type LppConfig,
 } from "../src/json-schema-subset.js";
@@ -64,38 +63,6 @@ describe("LppConfigSchema", () => {
       additionalProperties: false,
     };
     expect(LppConfigSchema.safeParse(schema).success).toBe(false);
-  });
-});
-
-describe("findSecretOnNonStringFields", () => {
-  it("returns [] when no field is marked secret", () => {
-    const schema: LppConfig = { type: "object", properties: { a: { type: "string" } }, additionalProperties: false };
-    expect(findSecretOnNonStringFields(schema)).toEqual([]);
-  });
-
-  it("returns [] when secret is only used on string fields", () => {
-    const schema: LppConfig = {
-      type: "object",
-      properties: { apiKey: { type: "string", secret: true } },
-      additionalProperties: false,
-    };
-    expect(findSecretOnNonStringFields(schema)).toEqual([]);
-  });
-
-  it("flags a secret marker on a nested object field's string leaf by dotted path", () => {
-    const schema: LppConfig = {
-      type: "object",
-      properties: {
-        nested: {
-          type: "object",
-          properties: { token: { type: "string", secret: true } },
-          additionalProperties: false,
-        },
-      },
-      additionalProperties: false,
-    };
-    // secret on a string leaf, even nested, is legal — expect no violation.
-    expect(findSecretOnNonStringFields(schema)).toEqual([]);
   });
 });
 

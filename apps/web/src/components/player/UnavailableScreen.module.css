@@ -12,6 +12,14 @@
   composes: glass from global;
   position: relative;
   z-index: 1;
+
+  /* AUD-A4v6-001: as a flex item, .panel's AUTOMATIC minimum size
+     (min-content of its h1) used to override max-width — a long
+     unbroken title token pushed the whole document to 2.1x horizontal
+     scroll (this is the one width-axis heading with no clipping
+     ancestor). min-width: 0 makes max-width binding again, whatever a
+     child's min-content says. */
+  min-width: 0;
   max-width: 560px;
   width: 100%;
   border-radius: var(--radius-lg);
