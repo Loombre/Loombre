@@ -299,6 +299,24 @@ adversarial opus review; four of six waves' reviews caught a self-inflicted
 defect a green gate had passed (respawn storm, CITEXT, token resurrection ×2,
 worse-than-main redactor, false comment) — Waves 4 and 6 were clean on round 1.
 
+**FULL 3-OS CI GREEN on the branch: run `31116371388` (os=all) at `4527e70`,
+2026-08-06** — gate green on ubuntu + windows + macOS, perf-t0/lighthouse/
+web-budget all enforcing-green. Getting there surfaced and fixed three CI
+defects (`4527e70`): (1) the T0 perf harness collided with Wave 3's OWN
+`rateLimit.search` (60/min vs 210 rapid searches — deterministic 429;
+harness now env-pins `LOOMBRE_RATE_SEARCH` on its spawned server, the same
+mechanism `search-rate-limit.e2e.spec.ts` uses, so the limiter still
+executes but cannot trip); (2) the Windows ffmpeg choco install could fail
+(community-feed 503) while EXITING 0 — LOOMBRE_REQUIRE_FFMPEG then
+hard-failed 7 worker suites 10 min later with a code-problem-shaped
+signature; the step now retries and hard-verifies the binary, failing fast
+at provisioning; (3) one Windows lint failure with the failing task's
+output entirely absent from the log — transient (identical commit passed
+lint on rerun + ubuntu + macos + local --force); standing instrument added:
+`.github/workflows/windows-lint-diag.yml` (dispatch-only, streamed
+--continue --force lint, transcript uploaded as artifact) for the next
+occurrence.
+
 **Open for owner (consolidated):**
 1. Merge/PR decision for `fix/audit-fafa47f-waves` (6 fix commits + docs).
 2. `rateLimit.loginByIdentifier` account-lockout trade-off (W3, undecided by
