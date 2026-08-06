@@ -129,6 +129,70 @@ export function inferPlatformAndKind(filename) {
   return { platform, kind };
 }
 
+/** The Docker image sidecar files build-docker's job in release.yml writes
+ *  (see build-manifest.mjs's header for the full envelope contract): one
+ *  per published image — "docker-image.json" for the server image and
+ *  "docker-web-image.json" for the web image (added when the Docker
+ *  channel started shipping a second image; AUD-A5c-001 was this list
+ *  never growing to cover it, so the web image silently never reached a
+ *  signed manifest.json). Both sidecars are build INPUTS, not release
+ *  artifacts in their own right (AUD-A5c-002) — build-manifest.mjs deletes
+ *  each one from --artifacts-dir once the manifest that folded it in (via
+ *  buildDockerArtifacts below) has actually been written, so neither can
+ *  leak into a GitHub Release's literal asset list.
+ *
+ *  NOT a full single source of truth, despite the name suggesting one: a
+ *  third sidecar needs edits in THREE places, not one.
+ *    1. This array (adds it to buildDockerArtifacts's shaping loop).
+ *    2. build-manifest.mjs's collectFileArtifacts, which imports and reads
+ *       this exact array for its non-artifact skip-list — genuinely
+ *       centralized with (1), so no separate edit needed there in
+ *       practice. Forgetting (1) here means collectFileArtifacts no
+ *       longer skips the new sidecar and its unrecognized-extension THROW
+ *       fires, failing the release build loudly (see that function's
+ *       comment in build-manifest.mjs) — safe, not silent.
+ *    3. scripts/release/sha256sums.mjs's OWN EXCLUDED_FILES Set
+ *       (sha256sums.mjs:26-33), which duplicates these two filenames by
+ *       hand. It cannot import this array today: that would pull
+ *       sha256sums.mjs into this module's packages/release-manifest/dist
+ *       dependency for a two-string list, and scripts/release/ has no
+ *       neutral shared module to host just the filename list without
+ *       either import direction becoming circular-ish plumbing for no
+ *       real payoff. Forgetting (3) is the dangerous one: nothing throws,
+ *       the new sidecar just gets checksummed into SHA256SUMS and
+ *       published as a literal GitHub Release download asset — the
+ *       AUD-A5c-002 class of bug, silently. */
+export const DOCKER_SIDECAR_FILES = ["docker-image.json", "docker-web-image.json"];
+
+/**
+ * Shapes whichever Docker sidecars were present in --artifacts-dir into
+ * release artifacts. Pure: takes already-parsed sidecar JSON (no fs), so
+ * this can be unit-tested with in-memory fixtures — the CLI wrapper does
+ * the actual reading/deleting.
+ *
+ * @param {Partial<Record<"docker-image.json" | "docker-web-image.json", { filename: string, sizeBytes: number, sha256: string, url: string }>>} sidecarsByFile
+ *   Keyed by DOCKER_SIDECAR_FILES entries; a missing/undefined key means
+ *   that sidecar was not present (e.g. a local dev build that only
+ *   produced the server image).
+ * @returns {Array<{ platform: string, kind: string, filename: string, sizeBytes: number, sha256: string, url: string }>}
+ */
+export function buildDockerArtifacts(sidecarsByFile) {
+  const artifacts = [];
+  for (const file of DOCKER_SIDECAR_FILES) {
+    const sidecar = sidecarsByFile[file];
+    if (!sidecar) continue;
+    artifacts.push({
+      platform: "docker",
+      kind: "docker-image",
+      filename: sidecar.filename,
+      sizeBytes: sidecar.sizeBytes,
+      sha256: sidecar.sha256,
+      url: sidecar.url,
+    });
+  }
+  return artifacts;
+}
+
 /**
  * @param {{
  *   version: string,

@@ -3,7 +3,13 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildManifest, inferPlatformAndKind, validateManifestShape } from "../lib/build-manifest-lib.mjs";
+import {
+  buildManifest,
+  buildDockerArtifacts,
+  DOCKER_SIDECAR_FILES,
+  inferPlatformAndKind,
+  validateManifestShape,
+} from "../lib/build-manifest-lib.mjs";
 
 function goodArtifact(overrides = {}) {
   return {
@@ -126,6 +132,87 @@ test("validateManifestShape: rejects a non-array releases field without throwing
   const manifest = { manifestVersion: 1, channel: "stable", releases: "nope" };
   const errors = validateManifestShape(manifest);
   assert.ok(errors.some((e) => e.includes("releases must be an array")));
+});
+
+// AUD-A5c-001: the web Docker image was never read into the manifest at
+// all — build-manifest.mjs's old collectDockerArtifact (singular) only
+// ever looked at docker-image.json. These tests exercise the shared,
+// pure shaping logic both sidecars now go through; see
+// build-manifest-cli.test.mjs for the real-fs test that proves the CLI
+// wrapper actually calls it for BOTH sidecar files (a pure-lib-only test
+// here would not catch a wrapper that forgot to wire the web sidecar in).
+
+test("DOCKER_SIDECAR_FILES: covers both the server and web image sidecars", () => {
+  assert.deepEqual(DOCKER_SIDECAR_FILES, ["docker-image.json", "docker-web-image.json"]);
+});
+
+test("buildDockerArtifacts: folds the web image in with its OWN digest, not the server's", () => {
+  const serverSidecar = {
+    filename: "ghcr.io/loombre/loombre:0.9.0",
+    sizeBytes: 0,
+    sha256: "a".repeat(64),
+    url: "https://ghcr.io/loombre/loombre:0.9.0",
+  };
+  const webSidecar = {
+    filename: "ghcr.io/loombre/loombre-web:0.9.0",
+    sizeBytes: 0,
+    sha256: "b".repeat(64),
+    url: "https://ghcr.io/loombre/loombre-web:0.9.0",
+  };
+  const artifacts = buildDockerArtifacts({
+    "docker-image.json": serverSidecar,
+    "docker-web-image.json": webSidecar,
+  });
+  assert.equal(artifacts.length, 2);
+  const webArtifact = artifacts.find((a) => a.filename === webSidecar.filename);
+  assert.ok(webArtifact, "web image artifact must be present");
+  assert.equal(webArtifact.platform, "docker");
+  assert.equal(webArtifact.kind, "docker-image");
+  assert.equal(webArtifact.sha256, webSidecar.sha256);
+  assert.notEqual(webArtifact.sha256, serverSidecar.sha256); // guards a copy/paste digest swap
+  assert.equal(webArtifact.url, webSidecar.url);
+});
+
+test("buildDockerArtifacts: omits a sidecar that was not present (e.g. a dev build with only the server image)", () => {
+  const artifacts = buildDockerArtifacts({
+    "docker-image.json": {
+      filename: "ghcr.io/loombre/loombre:0.9.0",
+      sizeBytes: 0,
+      sha256: "a".repeat(64),
+      url: "https://ghcr.io/loombre/loombre:0.9.0",
+    },
+  });
+  assert.equal(artifacts.length, 1);
+  assert.equal(artifacts[0].filename, "ghcr.io/loombre/loombre:0.9.0");
+});
+
+test("buildManifest: a manifest built with both docker sidecars lists the web image with a correct digest — not just parses", () => {
+  const manifest = buildManifest({
+    version: "0.9.0",
+    releasedAtMs: 1,
+    notesUrl: "https://example.invalid/x",
+    artifacts: [
+      goodArtifact(),
+      ...buildDockerArtifacts({
+        "docker-image.json": {
+          filename: "ghcr.io/loombre/loombre:0.9.0",
+          sizeBytes: 0,
+          sha256: "c".repeat(64),
+          url: "https://ghcr.io/loombre/loombre:0.9.0",
+        },
+        "docker-web-image.json": {
+          filename: "ghcr.io/loombre/loombre-web:0.9.0",
+          sizeBytes: 0,
+          sha256: "d".repeat(64),
+          url: "https://ghcr.io/loombre/loombre-web:0.9.0",
+        },
+      }),
+    ],
+  });
+  const webEntry = manifest.releases[0].artifacts.find((a) => a.filename === "ghcr.io/loombre/loombre-web:0.9.0");
+  assert.ok(webEntry, "manifest.json must list the web Docker image, not just the server image");
+  assert.equal(webEntry.sha256, "d".repeat(64));
+  assert.deepEqual(validateManifestShape(manifest), []);
 });
 
 test("validateManifestShape: accepts a docker-image artifact", () => {

@@ -328,6 +328,14 @@ either script is absent, but is not what a normal build exercises today.
   supervises the bundled PostgreSQL under the app-data dir's `postgres/`
   subtree, auto-migrating at boot), and external PG remains the
   one-env-var `DATABASE_URL` override in `config/loombre.env`.
+  **`smoke.mjs` updated to match (AUD-A5b-006)**: the local smoke test's
+  own server-boot check above (`loombre_i4` on 5442) covered only the
+  external-PG path even after this landed — a regression in the embedded
+  branch above would have passed that check cleanly. `smoke.mjs` now runs
+  a second server-boot scenario with `DATABASE_URL` unset and a scratch
+  `LOOMBRE_DATA_DIR`, asserting `/healthz` AND that a real `postgres/data`
+  directory got provisioned — the out-of-the-box default now has its own
+  local coverage, not just the CI release job's sudo-installer smoke.
 
 ## 9. Two build-system discoveries, worked around here, flagged for lane I
 

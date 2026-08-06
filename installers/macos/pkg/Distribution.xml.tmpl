@@ -5,10 +5,17 @@
     <domains enable_anywhere="false" enable_currentUserHome="false" enable_localSystem="true"/>
     <!-- hostArchitectures: without it Installer assumes x86_64 and runs
          the install scripts under Rosetta on Apple Silicon (observed in
-         the v0.9.0-rc.1 install log). This payload is arm64-only — say
-         so, which also makes Installer refuse cleanly on Intel Macs
-         instead of laying down binaries that cannot run. -->
-    <options customize="never" require-scripts="true" rootVolumeOnly="true" hostArchitectures="arm64"/>
+         the v0.9.0-rc.1 install log). Parameterized from the build's arch
+         flag (see build-pkg.mjs's hostArchitecturesFor and
+         renderDistributionXml) so each payload declares the ONE
+         architecture it actually contains, which also makes Installer
+         refuse cleanly on the wrong Mac instead of laying down binaries
+         that cannot run. An x64 build must NOT ship this hardcoded to
+         "arm64": that declares an Intel payload arm64-only and Installer
+         would refuse it on the exact Mac it was built for. NOTE: XML
+         comments forbid a literal double hyphen, so never spell the CLI
+         flag out in here. -->
+    <options customize="never" require-scripts="true" rootVolumeOnly="true" hostArchitectures="__HOST_ARCHITECTURES__"/>
     <welcome file="welcome.txt" mime-type="text/plain"/>
     <readme file="readme.txt" mime-type="text/plain"/>
     <!-- The final pane. Added after the rc.1 field report ("the install
