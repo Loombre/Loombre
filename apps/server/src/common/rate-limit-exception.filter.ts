@@ -9,7 +9,9 @@
 // filter applied via `@UseFilters` on every controller that can throw
 // RateLimitException (AuthController/RestrictedController, and — P4.15's
 // sweep — SystemController/DataFreedomController/ImagesController/
-// HlsFileController/SessionFileController/SubtitleFileController). Nest
+// HlsFileController/SessionFileController/SubtitleFileController; Fix
+// Wave 3's AUD-A7d-002 adds CrossTypeController/RestrictedZoneController).
+// Nest
 // resolves controller-level filters before global ones for exceptions they
 // declare via `@Catch` (RouterExceptionFilters merges [global, class,
 // method] then reverses, so class-scoped filters are tried first) — the

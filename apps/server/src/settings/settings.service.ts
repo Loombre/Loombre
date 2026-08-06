@@ -114,14 +114,31 @@ function resolveTier(env: NodeJS.ProcessEnv): SettingsTier {
  * key entirely would itself be a contract violation. A masked string
  * satisfies the frozen wire shape while never carrying the secret.
  */
+// V1-003: a `scheme://user:pass@host` authority must be split on the LAST
+// "@", not the first — WHATWG URL parsing splits there (verified against
+// pg-connection-string, which also accepts a literal "@" in a password), so
+// a password containing "@" is a fully working configuration whose tail
+// leaked past a first-"@" split. The authority is only the part BEFORE the
+// first "/" (a host can never contain "@"); credentials, once found, are
+// split on the FIRST ":" (a username is never expected to carry one).
+const SCHEME_PREFIX_RE = /^[a-zA-Z][\w+.-]*:\/\//;
+
 export function maskSecretValue(value: unknown): unknown {
   if (typeof value !== "string") return "***";
-  const match = value.match(/^([a-zA-Z][\w+.-]*:\/\/)([^@/]*)@(.*)$/);
-  if (!match) return "***";
-  const [, schemePrefix, userinfo, rest] = match as [string, string, string, string];
+  const schemeMatch = value.match(SCHEME_PREFIX_RE);
+  if (!schemeMatch) return "***";
+  const schemePrefix = schemeMatch[0];
+  const afterScheme = value.slice(schemePrefix.length);
+  const pathIdx = afterScheme.indexOf("/");
+  const authority = pathIdx === -1 ? afterScheme : afterScheme.slice(0, pathIdx);
+  const pathAndRest = pathIdx === -1 ? "" : afterScheme.slice(pathIdx);
+  const atIdx = authority.lastIndexOf("@");
+  if (atIdx === -1) return "***";
+  const userinfo = authority.slice(0, atIdx);
+  const host = authority.slice(atIdx + 1);
   const colonIdx = userinfo.indexOf(":");
   const maskedUserinfo = colonIdx === -1 ? userinfo : `${userinfo.slice(0, colonIdx)}:***`;
-  return `${schemePrefix}${maskedUserinfo}@${rest}`;
+  return `${schemePrefix}${maskedUserinfo}@${host}${pathAndRest}`;
 }
 
 @Injectable()

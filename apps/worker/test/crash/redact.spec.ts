@@ -121,6 +121,196 @@ describe("redactSecretShapedValues", () => {
     expect(redacted).not.toContain("CorrectHorseBatteryStaple");
     expect(redacted).toBe("failed to connect: postgres://loombre:<redacted>@localhost:5433/loombre");
   });
+
+  // V1-003: the connection-string pass split on the FIRST "@", so a password
+  // containing "@" leaked its tail past the mask into the crash file. WHATWG
+  // authority parsing splits on the LAST "@" (verified against pg's own
+  // connection-string parser and the URL constructor); fix must match.
+  // apps/server/test/crash/redact.spec.ts carries the identical block — this
+  // file's own header documents it as an intentional near-identical twin.
+  describe("password containing @ (V1-003)", () => {
+    it("redacts a password containing exactly one @, leaking no fragment of it", () => {
+      const text = "failed to connect: postgres://loombre:p@ssword@localhost:5442/loombre";
+      const redacted = redactSecretShapedValues(text);
+      expect(redacted).not.toContain("ssword");
+      expect(redacted).not.toContain("p@ssword");
+      expect(redacted).toBe("failed to connect: postgres://loombre:<redacted>@localhost:5442/loombre");
+    });
+
+    it("redacts a password containing multiple @ characters, leaking no fragment of it", () => {
+      const text = "failed to connect: postgres://loombre:p@ss@word@localhost:5442/loombre";
+      const redacted = redactSecretShapedValues(text);
+      expect(redacted).not.toContain("word");
+      expect(redacted).not.toContain("p@ss");
+      expect(redacted).toBe("failed to connect: postgres://loombre:<redacted>@localhost:5442/loombre");
+    });
+
+    it("redacts a password ending in a trailing @, leaking no fragment of it", () => {
+      const text = "failed to connect: postgres://loombre:secret@@localhost:5442/loombre";
+      const redacted = redactSecretShapedValues(text);
+      expect(redacted).not.toContain("secret");
+      expect(redacted).toBe("failed to connect: postgres://loombre:<redacted>@localhost:5442/loombre");
+    });
+
+    it("redacts the password even when the username also contains an @", () => {
+      const text = "failed to connect: postgres://user@example.com:pass@localhost:5442/loombre";
+      const redacted = redactSecretShapedValues(text);
+      expect(redacted).not.toContain("pass@localhost");
+      expect(redacted).toBe("failed to connect: postgres://user@example.com:<redacted>@localhost:5442/loombre");
+    });
+
+    it("does not regress a connection string with no credentials at all", () => {
+      const text = "failed to connect: postgres://localhost:5442/loombre";
+      expect(redactSecretShapedValues(text)).toBe(text);
+    });
+  });
+
+  // FW3-C REGRESSION: the connection-string token-finder used
+  // `/\w+:\/\/[^\s/]*@[^\s/]*/g`, whose greedy `[^\s/]*` "host" half only
+  // stops at whitespace or "/". A realistic connection-failure message
+  // often names TWO connection strings on one line (DATABASE_URL and
+  // REDIS_URL both surfacing in one error); when they're separated by
+  // something that is neither whitespace nor "/" (a comma, a semicolon, a
+  // JSON quote), the first match's greedy tail swallows the second
+  // scheme://user:pass@host whole, the `/g` scan resumes past it, and its
+  // password is never redacted at all.
+  // apps/server/test/crash/redact.spec.ts carries the identical block — this
+  // file's own header documents it as an intentional near-identical twin.
+  describe("two connection strings on one line (FW3-C regression)", () => {
+    it("redacts both passwords when the strings are comma-separated", () => {
+      const text = "DATABASE_URL=postgres://u:pw1@db,REDIS_URL=redis://u:pw2@rd";
+      const redacted = redactSecretShapedValues(text);
+      expect(redacted).not.toContain("pw1");
+      expect(redacted).not.toContain("pw2");
+      expect(redacted).toBe("DATABASE_URL=postgres://u:<redacted>@db,REDIS_URL=redis://u:<redacted>@rd");
+    });
+
+    it("redacts both passwords when the strings are semicolon-separated", () => {
+      const text = "postgres://u:pw1@db;redis://u:pw2@rd";
+      const redacted = redactSecretShapedValues(text);
+      expect(redacted).not.toContain("pw1");
+      expect(redacted).not.toContain("pw2");
+      expect(redacted).toBe("postgres://u:<redacted>@db;redis://u:<redacted>@rd");
+    });
+
+    it("redacts both passwords when the strings are inside a JSON object", () => {
+      const text = '{"a":"postgres://u1:p1@h1","b":"redis://u2:p2@h2"}';
+      const redacted = redactSecretShapedValues(text);
+      expect(redacted).not.toContain("p1");
+      expect(redacted).not.toContain("p2");
+      expect(redacted).toBe('{"a":"postgres://u1:<redacted>@h1","b":"redis://u2:<redacted>@h2"}');
+    });
+
+    // R5: the FW3-C fix above still enumerated forbidden separators for the
+    // HOST half of the token (a denylist), so it only stopped at the
+    // specific punctuation it happened to list. "&", "|", and "<"/">" were
+    // never added to that list, so the same over-consumption bug — verified
+    // by execution — still swallows a second connection string whole and
+    // its password never gets redacted. This is the third consecutive wave
+    // to leave this rule denylist-shaped; see the allowlist fix below.
+    // apps/server/test/crash/redact.spec.ts carries the identical block —
+    // this file's own header documents it as an intentional near-identical
+    // twin.
+    it("redacts both passwords when the strings are ampersand-separated", () => {
+      const text = "postgres://u:pw1@db&redis://u:pw2@rd";
+      const redacted = redactSecretShapedValues(text);
+      expect(redacted).not.toContain("pw1");
+      expect(redacted).not.toContain("pw2");
+      expect(redacted).toBe("postgres://u:<redacted>@db&redis://u:<redacted>@rd");
+    });
+
+    it("redacts both passwords when the strings are pipe-separated", () => {
+      const text = "postgres://u:pw1@db|redis://u:pw2@rd";
+      const redacted = redactSecretShapedValues(text);
+      expect(redacted).not.toContain("pw1");
+      expect(redacted).not.toContain("pw2");
+      expect(redacted).toBe("postgres://u:<redacted>@db|redis://u:<redacted>@rd");
+    });
+
+    it("redacts both passwords when the strings are angle-bracket-wrapped", () => {
+      const text = "<postgres://u:pw1@db><redis://u:pw2@rd>";
+      const redacted = redactSecretShapedValues(text);
+      expect(redacted).not.toContain("pw1");
+      expect(redacted).not.toContain("pw2");
+      expect(redacted).toBe("<postgres://u:<redacted>@db><redis://u:<redacted>@rd>");
+    });
+  });
+
+  // R5: the denylist above also cut the other way — a password containing
+  // one of the very characters it excluded (",", ";", '"', "'", "`", "(",
+  // ")", "[", "]", "{", "}") broke the match ENTIRELY (the userinfo half
+  // couldn't reach the required "@"), so the whole token was left
+  // untouched and the password leaked in full, unredacted. Once the HOST
+  // half is an allowlist of what's actually legal in a host (RFC 3986
+  // reg-name + IPv6-literal brackets + port colon), the host boundary
+  // itself stops the match — the userinfo/password half no longer needs to
+  // enumerate forbidden separators at all, so this coverage can be
+  // restored.
+  // apps/server/test/crash/redact.spec.ts carries the identical block —
+  // this file's own header documents it as an intentional near-identical
+  // twin.
+  describe("password content the host allowlist now safely permits", () => {
+    it("redacts a password containing comma, semicolon, quotes, backtick, parens, brackets, and braces, leaking no fragment of it", () => {
+      const text = "failed to connect: postgres://u:p,w;1\"2'3`4(5)6[7]8{9}@host/db";
+      const redacted = redactSecretShapedValues(text);
+      expect(redacted).not.toContain("p,w;1");
+      expect(redacted).not.toContain("{9}");
+      expect(redacted).toBe("failed to connect: postgres://u:<redacted>@host/db");
+    });
+
+    it("still finds the host boundary when a comma is BOTH inside a password AND the separator between two connection strings", () => {
+      const text = "postgres://u:pw,1@db,redis://u:pw,2@rd";
+      const redacted = redactSecretShapedValues(text);
+      expect(redacted).not.toContain("pw,1");
+      expect(redacted).not.toContain("pw,2");
+      expect(redacted).toBe("postgres://u:<redacted>@db,redis://u:<redacted>@rd");
+    });
+  });
+
+  // F1 LOOKAHEAD FIX: "[" and "]" are IN the host allowlist (needed for
+  // IPv6 literals), so two credentialed URLs glued by only host-legal
+  // characters — brackets, "::", ".", or nothing at all — over-consumed
+  // past the real host boundary under the plain allowlist regex, and the
+  // SECOND password survived in full. A negative lookahead
+  // (`(?!\w+:\/\/)`) interleaved into the host character class stops the
+  // run at a following scheme, which is the structural property the
+  // allowlist alone could not provide.
+  // apps/server/test/crash/redact.spec.ts carries the identical block —
+  // this file's own header documents it as an intentional near-identical
+  // twin.
+  describe("host-legal-character adjacency between two connection strings (F1 regression)", () => {
+    it("redacts both passwords when the strings are bracket-adjacent with no other separator", () => {
+      const text = "[postgres://u1:P1@h1][postgres://u2:P2@h2]";
+      const redacted = redactSecretShapedValues(text);
+      expect(redacted).not.toContain("P1");
+      expect(redacted).not.toContain("P2");
+      expect(redacted).toBe("[postgres://u1:<redacted>@h1][postgres://u2:<redacted>@h2]");
+    });
+
+    it("redacts both passwords when the strings are glued by an all-host-legal separator (a dot)", () => {
+      const text = "postgres://u1:P1@h1.postgres://u2:P2@h2";
+      const redacted = redactSecretShapedValues(text);
+      expect(redacted).not.toContain("P1");
+      expect(redacted).not.toContain("P2");
+      expect(redacted).toBe("postgres://u1:<redacted>@h1.postgres://u2:<redacted>@h2");
+    });
+
+    it("redacts both passwords when the strings are glued by an all-host-legal separator (a double colon)", () => {
+      const text = "postgres://u1:P1@h1::postgres://u2:P2@h2";
+      const redacted = redactSecretShapedValues(text);
+      expect(redacted).not.toContain("P1");
+      expect(redacted).not.toContain("P2");
+      expect(redacted).toBe("postgres://u1:<redacted>@h1::postgres://u2:<redacted>@h2");
+    });
+
+    it("redacts both passwords when the strings have no separator at all", () => {
+      const text = "postgres://u1:P1@h1postgres://u2:P2@h2";
+      const redacted = redactSecretShapedValues(text);
+      expect(redacted).not.toContain("P1");
+      expect(redacted).not.toContain("P2");
+      expect(redacted).toBe("postgres://u1:<redacted>@h1postgres://u2:<redacted>@h2");
+    });
+  });
 });
 
 describe("redactFreeText (combined pass, the one crash reports actually use)", () => {

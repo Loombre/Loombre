@@ -15,6 +15,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createDb } from '@loombre/db';
 import { metadataSearchConsumerHandler, type MatchCandidate } from '../../src/metadata/match-search-consumer.js';
+import { ProviderFetchError } from '../../src/metadata/cache.js';
 import { ProviderRegistry } from '../../src/metadata/registry.js';
 import { makeFakeProvider } from '../../src/metadata/test-support.js';
 
@@ -182,5 +183,32 @@ describe('metadataSearchConsumerHandler (Phosphor retheme Wave 2, Lane L2 — Fi
     const result = await latestMatchCandidatesEvent(seasonId);
     expect(result).toBeDefined();
     expect(result!.candidates).toEqual([]);
+  });
+
+  // AUD-A7c-002: this handler's own per-provider catch block (line
+  // ~150-153) forwards err.message straight into log(), same shape as
+  // consumer.ts's resolveViaProviderChain — a TMDB ProviderFetchError's
+  // .message carries the full request URL, `?api_key=<secret>` included
+  // (cache.ts). Asserts on the emitted log CONTENT, not on log() merely
+  // having been called.
+  it('redacts a leaked TMDB api_key out of provider-failure log lines (AUD-A7c-002)', async () => {
+    const itemId = await insertItem('Redaction Probe', 2020, 'series', null, tvLibraryId);
+    const FAKE_KEY = 'sekrit0123456789abcdef0123456789';
+    const brokenTmdb = makeFakeProvider({
+      name: 'tmdb',
+      kinds: ['tv'],
+      failSearch: new ProviderFetchError(`https://api.themoviedb.org/3/search/tv?api_key=${FAKE_KEY}&query=redaction+probe`, 401, 'Unauthorized'),
+    });
+    const registry = new ProviderRegistry();
+    registry.register(brokenTmdb);
+
+    const logs: string[] = [];
+    const handler = metadataSearchConsumerHandler({ db, registry, log: (message) => logs.push(message) });
+    await handler({ itemId }, { jobId: 'search-job-redact-key' });
+
+    expect(logs.length).toBeGreaterThan(0); // the failure DID get logged...
+    for (const line of logs) {
+      expect(line).not.toContain(FAKE_KEY); // ...but never with the key inside it.
+    }
   });
 });

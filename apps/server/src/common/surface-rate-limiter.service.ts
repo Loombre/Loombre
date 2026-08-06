@@ -42,6 +42,13 @@
 //     P4.15's own "export surface review" instruction) — per-USER, tight
 //     ceiling (a handful per hour), since nothing about normal product
 //     usage calls this endpoint repeatedly in a short window.
+//   - search: GET /search + GET /restricted/search (Fix Wave 3, audit
+//     fafa47f AUD-A7d-002) — authenticated but does an N+1 detail fetch
+//     per row, and docs/PLAN.md §10 names "search" alongside "auth" as one
+//     of exactly two surfaces requiring a rate limit. ONE shared bucket
+//     across BOTH routes, identity-keyed, mirroring mediaToken's own
+//     four-route-family sharing above — generous ceiling (typeahead
+//     bursts are normal use, not abuse).
 //
 // Addendum A, lane S3 (STATE.md, A3/AD1 read-site migration + hot-reload):
 // every capacity now comes from SettingsService (packages/shared/src/
@@ -119,6 +126,10 @@ export class SurfaceRateLimiterService implements OnApplicationBootstrap {
    *  reachability proof + posture card" (R6/RG6): unauthenticated
    *  reachability-proof surface, modeled directly on `claim` above. */
   readonly probe: KeyedRateLimiter;
+  /** GET /search + GET /restricted/search — per authenticated identity,
+   *  ONE shared bucket across both routes (default 60/min,
+   *  rateLimit.search). Fix Wave 3, AUD-A7d-002. */
+  readonly search: KeyedRateLimiter;
 
   constructor(private readonly settingsService: SettingsService) {
     this.capabilities = new KeyedRateLimiter(perMinutePolicy(settingsService, "rateLimit.capabilities", 120));
@@ -128,6 +139,7 @@ export class SurfaceRateLimiterService implements OnApplicationBootstrap {
     this.claim = new KeyedRateLimiter(perMinutePolicy(settingsService, "rateLimit.claim", 10));
     this.passwordReset = new KeyedRateLimiter(perMinutePolicy(settingsService, "rateLimit.passwordReset", 5));
     this.probe = new KeyedRateLimiter(perMinutePolicy(settingsService, "rateLimit.probe", 10));
+    this.search = new KeyedRateLimiter(perMinutePolicy(settingsService, "rateLimit.search", 60));
 
     settingsService.onChange((event) => {
       switch (event.key) {
@@ -152,6 +164,9 @@ export class SurfaceRateLimiterService implements OnApplicationBootstrap {
         case "rateLimit.probe":
           this.probe.updatePolicy(perMinutePolicy(this.settingsService, "rateLimit.probe", 10));
           break;
+        case "rateLimit.search":
+          this.search.updatePolicy(perMinutePolicy(this.settingsService, "rateLimit.search", 60));
+          break;
         default:
           break;
       }
@@ -169,5 +184,6 @@ export class SurfaceRateLimiterService implements OnApplicationBootstrap {
     this.claim.updatePolicy(perMinutePolicy(this.settingsService, "rateLimit.claim", 10));
     this.passwordReset.updatePolicy(perMinutePolicy(this.settingsService, "rateLimit.passwordReset", 5));
     this.probe.updatePolicy(perMinutePolicy(this.settingsService, "rateLimit.probe", 10));
+    this.search.updatePolicy(perMinutePolicy(this.settingsService, "rateLimit.search", 60));
   }
 }

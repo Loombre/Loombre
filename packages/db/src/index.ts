@@ -300,6 +300,16 @@ export {
   revokeRefreshTokenById,
   revokeRefreshTokenChain,
   revokeRefreshTokensForDevice,
+  // AUD-A7b-001 — device-scoped credentials-changed epoch (migration
+  // 0034), the sibling of users.password_changed_at_ms. This export is
+  // called only by RefreshTokenService.logout() — but it is NOT the only
+  // writer of devices.access_revoked_at_ms: updateDeviceForLogin (also
+  // exported below) stamps the same column on login's device-row reuse,
+  // via its own loginAccessEpochMs helper (nowMs floored to the second),
+  // so a fresh login token is neither DOA'd by a stale logout epoch nor
+  // does clearing that epoch resurrect a stolen pre-logout token (R4, Fix
+  // Wave 3). See identity.js's doc comments on both functions.
+  revokeDeviceAccess,
   // Password recovery (E3/M14/M15) — see src/query/identity.js's own doc
   // comments; revokeAllRefreshTokensForUser is also reused by
   // src/query/password-reset.js's resetPasswordViaTokenAndEmit. (F5's
