@@ -65,15 +65,14 @@ export interface UnavailableScreenProps {
    * H12 fix (Wave-3 fidelity audit): the real HTTP status the failed
    * createPlaybackSession/createDirectPlaySession call received (409
    * genuinely-unplayable, 429 transcode-slots-exhausted —
-   * lib/playback-reasons.ts's `resolveUnavailableReasons` already threads
-   * a real `status: number` through at both of VideoPlayer.tsx's call
-   * sites). Optional and left `undefined` by every caller today —
-   * VideoPlayer.tsx (a different Wave-3 lane's file) doesn't pass it yet —
-   * so the status pill renders "Session refused" alone rather than a
-   * fabricated code; ground-truthed against what this component actually
-   * receives, per the fix wave's own instruction. Wiring `result.status`
-   * through here is a one-line addition for whoever next touches
-   * VideoPlayer.tsx.
+   * lib/playback-reasons.ts's `resolveUnavailableReasons` threads a real
+   * `status: number` through at both of VideoPlayer.tsx's call sites).
+   * VideoPlayer.tsx DOES wire it: `setUnavailableStatus(result.status)`
+   * on both the session-create and fallback-accept failure paths, passed
+   * here as `statusCode={unavailableStatus}`. Kept optional because the
+   * status is genuinely unknown until a create call has failed (and for
+   * any future caller without one) — when `undefined`, the status pill
+   * renders "Session refused" alone rather than a fabricated code.
    */
   statusCode?: number | undefined;
   /** A real alternate media file the engine does NOT refuse, or `null` when

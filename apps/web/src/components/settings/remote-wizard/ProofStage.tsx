@@ -68,7 +68,7 @@ export interface ProofStageProps {
   onSwitchToTunnel?: () => void;
 }
 
-type Phase = "loading" | "unavailable" | "noEndpoint" | "minting" | "pending" | "arrived" | "expired";
+type Phase = "loading" | "unavailable" | "noEndpoint" | "minting" | "mintFailed" | "pending" | "arrived" | "expired";
 
 const POLL_INTERVAL_MS = 4_000;
 const COUNTDOWN_TICK_MS = 1_000;
@@ -149,6 +149,10 @@ export function ProofStage({ path, onComplete, onBack, onSwitchToTunnel }: Proof
         if (cancelled) return;
         setError(apiErrorMessage(err, "Failed to mint a reachability probe."));
         mintedForEndpoint.current = null;
+        // AUD-A3c-001: leaving phase at "minting" here rendered a stage with
+        // zero interactive elements and no way to re-fire this effect — a
+        // permanent trap. "mintFailed" renders Back + Try again below.
+        setPhase("mintFailed");
       }
     }
     void mint();
@@ -268,6 +272,28 @@ export function ProofStage({ path, onComplete, onBack, onSwitchToTunnel }: Proof
         <h3 className={styles.title}>Prove {PATH_LABELS[path]} actually reaches you</h3>
         <p className={styles.body}>Preparing a one-time reachability check…</p>
         {error && <p className={styles.errorText}>{error}</p>}
+      </div>
+    );
+  }
+
+  // AUD-A3c-001: the mint-failure escape — every other terminal state in
+  // this stage renders at least a Back control; this one adds a retry that
+  // re-arms the mint effect (handleRemint clears the ref + error and
+  // re-enters "minting").
+  if (phase === "mintFailed") {
+    return (
+      <div className={styles.stage} role="alert">
+        <h3 className={styles.title}>Prove {PATH_LABELS[path]} actually reaches you</h3>
+        <p className={styles.body}>The reachability check couldn't be prepared.</p>
+        {error && <p className={styles.errorText}>{error}</p>}
+        <div className={styles.actions}>
+          <Button type="button" variant="ghost" onClick={onBack}>
+            Back
+          </Button>
+          <Button type="button" variant="primary" onClick={handleRemint}>
+            Try again
+          </Button>
+        </div>
       </div>
     );
   }

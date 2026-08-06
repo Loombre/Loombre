@@ -75,15 +75,15 @@ a proprietary server (PS). This table is the project's institutional memory.
 │ metadata,     │  fn + session mgmt   │ progress, events     │
 │ images,search │  + HLS packaging     │                      │
 ├───────────────┴──────────────────────┴──────────────────────┤
-│  Job Queue (BullMQ/Redis*)   │   Domain Event Outbox        │
+│  Job Queue (pg-boss*)        │   Domain Event Outbox        │
 ├──────────────────────────────┴──────────────────────────────┤
 │  Workers (separate process): scan · probe · image · transcode│
 ├─────────────────────────────────────────────────────────────┤
 │  PostgreSQL (embedded or external)   ·   Media filesystem   │
 └─────────────────────────────────────────────────────────────┘
 ```
-\* On Tier-0 hardware, Redis is replaced by the in-process `pg-boss` driver —
-same job abstraction, one fewer daemon. See §9.2.
+\* PostgreSQL-backed via the in-process `pg-boss` driver at every tier — the
+queue rides the Postgres you already run; no separate queue daemon. See §9.2.
 
 **Process model:** one server process (API + modules), one worker process.
 Both are separately bootable; on budget installs they run as two processes on
@@ -210,8 +210,8 @@ on par with SQLite products, the native installers bundle a managed embedded
 Postgres (via `embedded-postgres` per-platform binaries) running as a child
 process on a localhost socket, data dir inside the app-data folder. Advanced
 users point the server at an external Postgres via one env var. Same schema,
-same code — the bundling is purely a packaging concern. Redis is **not**
-required on Tier 0 (§9.2).
+same code — the bundling is purely a packaging concern. No queue daemon is
+required at any tier — jobs ride Postgres via `pg-boss` (§9.2).
 
 ### 6.2 Global conventions
 UUIDv7 primary keys (time-ordered, index-friendly) · all timestamps `BIGINT`
@@ -272,7 +272,7 @@ Tables and their non-obvious design points:
   state (heartbeats) kept in memory + periodically flushed, not row-per-tick.
 - **`events`** — outbox: `id, type, ts_ms, actor_user_id, payload JSONB,
   processed_at_ms`; BRIN index on time.
-- **`jobs`** — queue-agnostic job ledger mirroring BullMQ/pg-boss state for
+- **`jobs`** — queue-agnostic job ledger mirroring `pg-boss` state for
   the admin UI.
 - **`images`** — managed image cache index: `entity_type, entity_id, kind,
   source (provider|embedded|local), width, height, blurhash, file path`.
@@ -431,7 +431,8 @@ post-v1 writer behind a setting).
 - Techniques (mandated, not optional): Kysely over an ORM (no hydration tax);
   hot-path queries are reviewed SQL with covering indexes; keyset pagination
   end-to-end; Node worker_threads for hashing/blurhash; streams everywhere
-  (no whole-file buffering); `pg-boss` on T0 to drop the Redis daemon (§3);
+  (no whole-file buffering); `pg-boss` at every tier — the queue rides
+  Postgres, no separate queue daemon (§3);
   per-tier concurrency caps (scan/probe/transcode) auto-set from detected
   CPU/RAM at first boot, overridable.
 - Native-module policy: pure-JS or prebuilt binaries only (no node-gyp at

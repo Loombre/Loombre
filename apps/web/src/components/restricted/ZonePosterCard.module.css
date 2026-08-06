@@ -103,10 +103,14 @@
     border-color var(--motion-fast) var(--ease-out);
 }
 
+/* AUD-A3f-003: warning background pairs with --color-warning-text (the
+   rule this file's own header states, and every sibling in this directory
+   follows) — identical today only because both text tokens resolve to
+   #0c0d10. */
 .playButton:hover,
 .playButton:focus-visible {
   background: var(--color-warning);
-  color: var(--color-accent-text);
+  color: var(--color-warning-text);
   border-color: var(--color-warning);
 }
 

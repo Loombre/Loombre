@@ -263,6 +263,37 @@ describe("ProofStage — pending -> expired -> per-DiagnosisCode guidance", () =
   });
 });
 
+describe("ProofStage — mint failure is not a dead end (AUD-A3c-001)", () => {
+  async function renderMintFailure(): Promise<void> {
+    apiGetMock.mockResolvedValue(DIRECT_STATE);
+    apiPostMock.mockRejectedValue(new FakeApiError(502, { title: "Bad Gateway", status: 502 }));
+    view = renderIntoBody(<ProofStage path="direct" onComplete={onComplete} onBack={onBack} />);
+    await act(async () => {});
+  }
+
+  it("a failed probe-mint shows the error with a Back control and a retry that re-mints", async () => {
+    await renderMintFailure();
+    expect(textOf()).toContain("Bad Gateway");
+    expect(buttonByText("Back")).toBeTruthy();
+
+    apiPostMock.mockResolvedValue(PROBE_TOKEN);
+    await act(async () => {
+      buttonByText("Try again").click();
+    });
+    await act(async () => {});
+    expect(apiPostMock).toHaveBeenCalledTimes(2);
+    expect(textOf()).toContain(PROBE_TOKEN.probeUrl);
+  });
+
+  it("Back from the mint-failure state calls onBack", async () => {
+    await renderMintFailure();
+    await act(async () => {
+      buttonByText("Back").click();
+    });
+    expect(onBack).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("ProofStage — honest degraded states", () => {
   it("GET /admin/remote/state 501 -> honest unavailable state, never fabricates an endpoint", async () => {
     apiGetMock.mockRejectedValue(new FakeApiError(501, { title: "Not Implemented", status: 501 }));

@@ -116,16 +116,6 @@
   font-variant-numeric: tabular-nums;
 }
 
-.thumb {
-  width: 96px;
-  height: 54px;
-  flex-shrink: 0;
-  border-radius: var(--radius-sm);
-  overflow: hidden;
-  background: var(--color-dominant-fallback);
-  object-fit: cover;
-}
-
 .info {
   display: flex;
   flex-direction: column;

@@ -60,10 +60,14 @@ function JobRow({ job, progress }: { job: Job; progress: JobProgress | undefined
           </span>
         )}
       </div>
+      {/* AUD-A4v6-002: meta items ellipsize at narrow panel widths (the
+          single-line rule that keeps content inside the fixed 68px
+          virtualized row) — title attrs keep the full values reachable,
+          same convention as .error below. */}
       <div className={styles.rowMeta}>
-        <span className={styles.metaItem}>created {formatTime(job.createdAtMs)}</span>
-        <span className={styles.metaItem}>updated {formatTime(job.updatedAtMs)}</span>
-        {job.attempts > 0 && <span className={styles.metaItem}>{job.attempts} attempt{job.attempts === 1 ? "" : "s"}</span>}
+        <span className={styles.metaItem} title={`created ${formatTime(job.createdAtMs)}`}>created {formatTime(job.createdAtMs)}</span>
+        <span className={styles.metaItem} title={`updated ${formatTime(job.updatedAtMs)}`}>updated {formatTime(job.updatedAtMs)}</span>
+        {job.attempts > 0 && <span className={styles.metaItem} title={`${job.attempts} attempt${job.attempts === 1 ? "" : "s"}`}>{job.attempts} attempt{job.attempts === 1 ? "" : "s"}</span>}
       </div>
       {job.lastError && (
         <p className={styles.error} title={job.lastError}>

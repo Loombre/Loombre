@@ -21,17 +21,33 @@ import { SettingsRestartBanner } from "../../admin/settings/SettingsRestartBanne
 import { RegistryFilterBar } from "../../admin/settings/RegistryFilterBar.js";
 import { CATEGORY_LABELS, SettingsCategoryCard } from "../../admin/settings/SettingsCategoryCard.js";
 import { Skeleton } from "../../skeleton/Skeleton.js";
+import { Button } from "../../ui/Button.js";
 import { categorySummaries, filterEntriesByQuery, groupByCategory } from "../../../lib/settings-schema-widget.js";
 import { useAdminSettingsData } from "./use-admin-settings-data.js";
 import styles from "./AdvancedSection.module.css";
 
 export function AdvancedSection({ heading }: { heading: string | null }): React.JSX.Element {
-  const { schema, settings, error, refetch } = useAdminSettingsData();
+  const { schema, settings, error, refetch, retry } = useAdminSettingsData();
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<string | null>(null);
 
+  // AUD-A3b-002: a fetch failure keeps the page shell (heading intact, like
+  // every sibling consumer of this hook) and offers a real retry instead of
+  // blanking the whole tab behind a bare, terminal error line.
   if (error) {
-    return <p className={styles.errorBanner}>{error}</p>;
+    return (
+      <div className={styles.page}>
+        {heading !== null && <h1 className={styles.heading}>{heading}</h1>}
+        <p className={styles.errorBanner} role="alert">
+          {error}
+        </p>
+        <div className={styles.errorActions}>
+          <Button type="button" variant="secondary" onClick={retry}>
+            Retry
+          </Button>
+        </div>
+      </div>
+    );
   }
 
   if (!schema || !settings) {

@@ -14,6 +14,11 @@
   color: var(--muted);
   border-radius: var(--radius-pill);
   padding: var(--space-2xs) var(--space-md);
+
+  /* AUD-A4v2-001 (audit fafa47f): the worst offender of the shared
+     primitives — measured 26.84px, 61% of the Phosphor 44px floor (A4a
+     REFERENCE APPENDIX §B) and near WCAG 2.5.8's separate 24px minimum. */
+  min-height: 44px;
   font-size: var(--text-sm);
   font-weight: var(--weight-medium);
   cursor: pointer;

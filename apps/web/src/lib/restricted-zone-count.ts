@@ -19,7 +19,7 @@
 // other failure mode (network error, unexpected status) resolves the same
 // way: `count: null`, fail closed, never a fabricated number.
 
-import { useEffect, useState } from "react";
+import { useSyncExternalStore } from "react";
 import { apiGet } from "./api-client.js";
 import { getAuthStore } from "./auth-store.js";
 
@@ -32,53 +32,91 @@ export interface UseRestrictedZoneCountResult {
   loading: boolean;
 }
 
-/** Re-fetches whenever the auth store's session changes (login/logout/
- *  token refresh settling) — same subscription pattern
- *  RestrictedProvider.tsx's own optIn loader uses, so a user switch in the
- *  same tab never leaves a stale count from the PREVIOUS session. */
-export function useRestrictedZoneCount(): UseRestrictedZoneCountResult {
-  const [count, setCount] = useState<number | null>(null);
-  const [loading, setLoading] = useState(true);
+// ── Module-level shared store (AUD-A4v6-003) ────────────────────────────
+// This hook is mounted by ~7 shell surfaces at once on every authenticated
+// page (Sidebar, UserMenu, QuickSearch, MobileTabBar, RestrictedLockControl,
+// RestrictedZoneBrowseChip, the /restricted route components). The count is
+// ONE piece of server state that cannot differ between them in the same
+// render, so all consumers share one snapshot, one in-flight GET, and one
+// auth-store subscription — N mounts must never mean N requests (the
+// audited build fired 21 identical GET /restricted/count per page load).
+// Same shared-loader discipline as RestrictedProvider.tsx's optIn loader.
 
-  useEffect(() => {
-    const store = getAuthStore();
-    let cancelled = false;
+const INITIAL: UseRestrictedZoneCountResult = { count: null, loading: true };
 
-    function load(): void {
-      if (!store.isAuthenticated()) {
-        if (!cancelled) {
-          setCount(null);
-          setLoading(false);
-        }
-        return;
-      }
-      setLoading(true);
-      apiGet("/restricted/count")
-        .then((res) => {
-          if (!cancelled) {
-            setCount(res.count);
-            setLoading(false);
-          }
-        })
-        .catch(() => {
-          // 404 (not entitled) and every other error fold to the same
-          // "no count" outcome — see this module's header.
-          if (!cancelled) {
-            setCount(null);
-            setLoading(false);
-          }
-        });
-    }
+let snapshot: UseRestrictedZoneCountResult = INITIAL;
+const listeners = new Set<() => void>();
+/** Bumped on every load AND on full teardown, so a response that lands
+ *  after it was superseded (or after every consumer unmounted) is
+ *  discarded — the shared-store equivalent of the old per-mount
+ *  `cancelled` flag. */
+let fetchSeq = 0;
+let unsubscribeAuth: (() => void) | null = null;
 
+function emit(next: UseRestrictedZoneCountResult): void {
+  snapshot = next;
+  for (const listener of listeners) listener();
+}
+
+function load(): void {
+  const store = getAuthStore();
+  const seq = ++fetchSeq;
+  if (!store.isAuthenticated()) {
+    emit({ count: null, loading: false });
+    return;
+  }
+  // Keep the previous count visible while a re-fetch (auth settling) is in
+  // flight — same behavior the per-mount version had.
+  if (!snapshot.loading) emit({ count: snapshot.count, loading: true });
+  apiGet("/restricted/count")
+    .then((res) => {
+      if (seq === fetchSeq) emit({ count: res.count, loading: false });
+    })
+    .catch(() => {
+      // 404 (not entitled) and every other error fold to the same
+      // "no count" outcome — see this module's header.
+      if (seq === fetchSeq) emit({ count: null, loading: false });
+    });
+}
+
+function subscribeShared(listener: () => void): () => void {
+  listeners.add(listener);
+  if (listeners.size === 1) {
+    // First consumer: one shared auth-store subscription drives the one
+    // shared re-fetch on session changes (login/logout/token refresh
+    // settling — same subscription pattern RestrictedProvider.tsx's own
+    // optIn loader uses, so a user switch in the same tab never leaves a
+    // stale count from the PREVIOUS session). Later consumers share the
+    // in-flight request / cached result instead of fetching again.
+    unsubscribeAuth = getAuthStore().subscribe(load);
     load();
-    const unsubscribe = store.subscribe(load);
-    return () => {
-      cancelled = true;
-      unsubscribe();
-    };
-  }, []);
+  }
+  return () => {
+    listeners.delete(listener);
+    if (listeners.size === 0) {
+      // Last consumer gone: drop the auth subscription, discard any
+      // still-in-flight response, and reset so the NEXT consumer starts
+      // with a fresh fetch rather than a cache of unknown age.
+      unsubscribeAuth?.();
+      unsubscribeAuth = null;
+      fetchSeq++;
+      snapshot = INITIAL;
+    }
+  };
+}
 
-  return { count, loading };
+function getSharedSnapshot(): UseRestrictedZoneCountResult {
+  return snapshot;
+}
+
+function getServerSnapshot(): UseRestrictedZoneCountResult {
+  return INITIAL;
+}
+
+/** All mounted consumers share one snapshot, one in-flight request, and one
+ *  auth-store subscription — see the module-level store above. */
+export function useRestrictedZoneCount(): UseRestrictedZoneCountResult {
+  return useSyncExternalStore(subscribeShared, getSharedSnapshot, getServerSnapshot);
 }
 
 /**

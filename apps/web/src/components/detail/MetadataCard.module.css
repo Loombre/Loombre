@@ -7,8 +7,12 @@
   background: var(--fill-1);
 }
 
+/* AUD-A4v5-001: flex-wrap so .actions drops to its own line before being
+   squeezed below its content — the audited 768x1024 collapse had .actions
+   overflowing its own card by 78.5px. */
 .header {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-sm);
@@ -28,10 +32,16 @@
   gap: var(--space-2xs);
 }
 
+/* AUD-A4v2-001 occurrence (folded in by validator V6): 36px was below the
+   Phosphor 44px touch-target floor (A4a REFERENCE APPENDIX §B) — raised
+   to 44px like the shared Button/Input/SegmentedControl primitives.
+   AUD-A4v5-001 attachment (V6): cursor: not-allowed + opacity: 0.65 were
+   unconditional, so the ENABLED Fix Match button rendered pixel-identical
+   to the dead EDIT stub at every viewport — they belong on :disabled. */
 .actionPill {
   display: inline-flex;
   align-items: center;
-  min-height: 36px;
+  min-height: 44px;
   font-family: var(--font-mono);
   font-size: var(--mono-xs);
   font-weight: var(--weight-medium);
@@ -41,6 +51,10 @@
   border: 1px solid var(--color-border);
   border-radius: var(--radius-pill);
   padding: 0 var(--space-sm);
+  cursor: pointer;
+}
+
+.actionPill:disabled {
   cursor: not-allowed;
   opacity: 0.65;
 }

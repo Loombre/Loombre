@@ -51,10 +51,6 @@
   font-size: var(--text-sm);
 }
 
-.capitalize {
-  text-transform: capitalize;
-}
-
 /* S2 fix (Wave-3 fidelity audit, mono-label law): never raw ui-monospace —
    var(--font-mono) is IBM Plex Mono, the app's one mono family. */
 .mono {

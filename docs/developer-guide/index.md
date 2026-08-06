@@ -24,6 +24,7 @@ One page per pillar, each with its own diagram:
 - **[Jobs, worker & outbox](architecture/jobs-worker.md)**
 - **[Packaging & release](architecture/packaging-release.md)**
 - **[Performance budgets](architecture/performance-budgets.md)**
+- **[Security posture (implemented measures)](architecture/security-posture.md)**
 
 ## Deep dives
 

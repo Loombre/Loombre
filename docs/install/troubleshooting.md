@@ -12,7 +12,7 @@ testing. All solutions have been verified against the actual codebase.
 
 **Fix:**
 - **Linux tarball:** Confirm complete extraction: `tar -tzf loombre-*.tar.gz | wc -l` should show thousands of files. Re-extract if needed.
-- **Docker:** Ensure you've built the image: `docker compose build --no-cache` then try again.
+- **Docker:** Ensure you've built the image (from the repo root): `docker compose -f docker-compose.prod.yml --env-file installers/docker/loombre.env build --no-cache` then try again.
 - **All platforms:** Check the startup logs for the exact missing module name — report it if it's from the Loombre project itself.
 
 ### Port 3001 already in use
@@ -71,10 +71,11 @@ Check `%ProgramData%\Loombre\logs\server.log` via Explorer, or PowerShell:
 Get-Content -Tail 50 "$env:ProgramData\Loombre\logs\server.log"
 ```
 
-**Docker:**
+**Docker** (from the repo root, like every Compose command in
+[docs/install/docker.md](/install/docker)):
 ```bash
-docker compose logs server -f
-docker compose logs worker -f
+docker compose -f docker-compose.prod.yml --env-file installers/docker/loombre.env logs server -f
+docker compose -f docker-compose.prod.yml --env-file installers/docker/loombre.env logs worker -f
 ```
 
 ---
@@ -206,31 +207,37 @@ sudo ./install.sh
 
 ### Docker
 
+Run every command below from the repo root, with the same
+`-f docker-compose.prod.yml --env-file installers/docker/loombre.env` pair
+used throughout [docs/install/docker.md](/install/docker) — the repo ships
+no default-named compose file, and `docker-compose.prod.yml` requires the
+variables in `loombre.env`, so bare `docker compose` invocations fail.
+
 #### `postgres` service never becomes healthy
 
 **Check logs:**
 ```bash
-docker compose logs postgres
+docker compose -f docker-compose.prod.yml --env-file installers/docker/loombre.env logs postgres
 ```
 
 **Common issues:**
 - `POSTGRES_PASSWORD` not set or empty
 - Docker volume permissions (rare): `docker volume ls` then inspect the volume
 
-#### First `docker compose up -d` hangs building the image
+#### First `docker compose ... up -d` hangs building the image
 
 **This is normal:** Building from source for the first time can take 5–10 minutes,
 depending on your Docker cache and network speed. Wait for it to finish, or check
 progress with:
 ```bash
-docker compose build --progress=plain
+docker compose -f docker-compose.prod.yml --env-file installers/docker/loombre.env build --progress=plain
 ```
 
 #### `server` container exits immediately
 
 **Check logs:**
 ```bash
-docker compose logs server
+docker compose -f docker-compose.prod.yml --env-file installers/docker/loombre.env logs server
 ```
 
 **Common issues:**
@@ -244,13 +251,13 @@ docker compose logs server
 
 **Check logs:**
 ```bash
-docker compose logs worker
+docker compose -f docker-compose.prod.yml --env-file installers/docker/loombre.env logs worker
 ```
 
 **Common issue:** `DATABASE_URL` is unreachable. If using external Postgres, verify
 the connection string and network reachability from inside the Docker container:
 ```bash
-docker compose exec server psql "$DATABASE_URL" -c "SELECT version();"
+docker compose -f docker-compose.prod.yml --env-file installers/docker/loombre.env exec server psql "$DATABASE_URL" -c "SELECT version();"
 ```
 
 #### Bind-mounted library shows zero files after scan
@@ -262,7 +269,7 @@ docker compose exec server psql "$DATABASE_URL" -c "SELECT version();"
 
 **Verify the mount inside the container:**
 ```bash
-docker compose exec server ls /media/movies
+docker compose -f docker-compose.prod.yml --env-file installers/docker/loombre.env exec server ls /media/movies
 ```
 
 ---

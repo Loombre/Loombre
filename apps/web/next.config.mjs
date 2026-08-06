@@ -10,12 +10,13 @@
 // request inline `<script>` tags (the `self.__next_f` RSC-payload
 // bootstrap) that a build-time-static CSP can never hash or nonce, and
 // headers() here only runs once at build/start, not per request. That
-// tradeoff is now CLOSED: CSP generation moved to src/middleware.ts, which
+// tradeoff is now CLOSED: CSP generation moved to src/proxy.ts (Next 16's
+// rename of the middleware.ts convention — see proxy.ts's own header), which
 // mints a fresh per-request nonce and uses `'nonce-...' 'strict-dynamic'`
 // instead of `'unsafe-inline'` — see src/lib/csp.ts's header for the full
 // design (nonce mechanism, LOOMBRE_SERVER_ORIGIN pairing, the blob:
 // regression guard). This file now owns only the headers that genuinely
-// ARE static (no per-request state needed) — CSP is middleware.ts's alone,
+// ARE static (no per-request state needed) — CSP is proxy.ts's alone,
 // never duplicated here (two different Content-Security-Policy header
 // writers racing per-response would be a straightforward, silent bug).
 //
