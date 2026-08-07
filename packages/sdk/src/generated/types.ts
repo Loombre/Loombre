@@ -1297,7 +1297,7 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * DEPRECATED — superseded by GET /restricted/browse (STATE.md Stash run, K4). Kept for CLAUDE.md's evolution policy (additive-only; removed operations are deprecated for two minor releases minimum, never hard-deleted mid-major).
+         * DEPRECATED — superseded by GET /restricted/browse (STATE.md Stash run, K4). Kept per the additive-only evolution policy (removed operations are deprecated for two minor releases minimum, never hard-deleted mid-major).
          * @deprecated
          * @description Same 404-for-not-entitled / empty-while-locked posture as GET /restricted/browse, which this now thinly delegates to (unsorted- filter, `added`-sorted, server-side) — kept working, not stubbed, for the deprecation window. New clients should call GET /restricted/browse directly; this operation carries a `Sunset` response header and will be removed after that window closes.
          */
@@ -1614,7 +1614,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Import a previously exported archive (admin). Long-running; runs through the job queue (CLAUDE.md invariant #6). */
+        /** Import a previously exported archive (admin). Long-running; runs through the job queue (long-running work is never performed inline on a request thread). */
         post: operations["importData"];
         delete?: never;
         options?: never;
@@ -1902,7 +1902,7 @@ export interface paths {
         put?: never;
         /**
          * Send a real test email through the configured transport (admin)
-         * @description Enqueues a real `mail-send` job (template "test", no retries) — never sends inline on this request thread (CLAUDE.md invariant 6). The admin observes the outcome (delivered, or the real SMTP conversation error) via the existing admin-only job-update live feed and the job ledger's error detail for the returned `jobId`, the same surface every other queued job already reports through.
+         * @description Enqueues a real `mail-send` job (template "test", no retries) — never sends inline on this request thread. The admin observes the outcome (delivered, or the real SMTP conversation error) via the existing admin-only job-update live feed and the job ledger's error detail for the returned `jobId`, the same surface every other queued job already reports through.
          */
         post: operations["testSendMail"];
         delete?: never;
@@ -2234,7 +2234,7 @@ export interface paths {
         put?: never;
         /**
          * Enqueue a bounded metadata-provider candidate search for an item (Fix Match, admin)
-         * @description CLAUDE.md invariant 6 (nothing spawns provider I/O inline in a request path): enqueues a 'metadata-search' job. The worker resolves the item's provider chain, searches every enabled provider, scores each result (apps/worker/src/metadata/match.ts's title/year scoring), and delivers the ranked candidate list as an admin-only `metadata.match-candidates` event over the existing events socket (GET /admin/jobs/{id} also reflects the job's own lifecycle).
+         * @description Nothing spawns provider I/O inline in a request path: enqueues a 'metadata-search' job. The worker resolves the item's provider chain, searches every enabled provider, scores each result (apps/worker/src/metadata/match.ts's title/year scoring), and delivers the ranked candidate list as an admin-only `metadata.match-candidates` event over the existing events socket (GET /admin/jobs/{id} also reflects the job's own lifecycle).
          */
         post: operations["searchItemMatchCandidates"];
         delete?: never;
@@ -2926,8 +2926,23 @@ export interface components {
             backends: components["schemas"]["CapabilityBackend"][];
         };
         CapabilityReportEnvelope: {
-            /** @description Null before the first hwprobe job completes. */
+            /** @description Null until a self-test snapshot exists — probe.status distinguishes never-ran / pending / failed. A non-null report whose backends verified zero capabilities is a VALID software-everything state (software decode/encode/tone-mapping), not an error. */
             report: components["schemas"]["CapabilityReport"] | null;
+            probe: components["schemas"]["CapabilityProbeStatus"];
+        };
+        CapabilityProbeStatus: {
+            /**
+             * @description Lifecycle of the worker's hardware-capability self-test. completed = the report reflects the latest self-test — including the valid zero-accelerated-backends outcome (software everything). pending = a self-test job is queued or running; a previous report may still be present alongside it (re-probe after an ffmpeg/GPU change). failed = the most recent self-test job failed (lastError carries the job error); any report shown is from an earlier successful run. never-ran = no snapshot and no self-test job on record.
+             * @enum {string}
+             */
+            status: "never-ran" | "pending" | "failed" | "completed";
+            /** @description The failed self-test job's error message; null unless status is 'failed'. */
+            lastError: string | null;
+            /**
+             * Format: int64
+             * @description When the underlying signal last changed (self-test job ledger row, or the snapshot's verifiedAtMs once completed); null when status is 'never-ran'.
+             */
+            updatedAtMs: number | null;
         };
         CrashFile: {
             /** @description Basename only — pass verbatim to getCrashFile; never a path. */
@@ -4635,7 +4650,7 @@ export interface components {
              * @description When the currently-stored token was set; null when none is configured.
              */
             tokenSetAtMs: number | null;
-            /** @description Whether the stored token's Cloudflare permissions were sufficient the last time they were actually checked (at set time, or at the most recent enable attempt) — null when no token is configured. NOT re-validated live on every status read (Tier-0, CLAUDE.md invariant 9); a token whose Cloudflare- side scopes are revoked after being stored keeps reporting true here until re-set or until a real provisioning call surfaces the truth. */
+            /** @description Whether the stored token's Cloudflare permissions were sufficient the last time they were actually checked (at set time, or at the most recent enable attempt) — null when no token is configured. NOT re-validated live on every status read (Tier-0 rule: status reads do no live network work); a token whose Cloudflare- side scopes are revoked after being stored keeps reporting true here until re-set or until a real provisioning call surfaces the truth. */
             tokenScopesOk: boolean | null;
         };
         RemoteTunnelLogs: {

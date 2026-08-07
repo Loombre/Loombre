@@ -4,15 +4,17 @@
 // Loombre :: apps/web/src/app/setup/_components/HardwareStep.tsx
 //
 // Polls GET /admin/capabilities (admin token from AdminStep) and renders
-// the CapabilityReport's backends/decode/encode/toneMap. `report` is null
-// until the worker's first 'hwprobe' job completes (contract's
-// CapabilityReportEnvelope doc comment) — an honest empty state explains
-// that rather than showing a fake spinner-forever with no context, and
-// polling continues indefinitely so the step self-updates the moment the
-// worker catches up. Progressing past this step never blocks on the probe
-// completing — a worker that hasn't started yet is not this wizard's job
-// to fix, and the admin capability report is always viewable later from
-// Admin → System anyway.
+// the CapabilityReport's backends/decode/encode/toneMap. W1/D-1
+// (2026-08-07): the envelope's `probe` status drives THREE distinct
+// no-report states — never-ran, pending (self-test queued/running), and
+// failed (the self-test errored; software is used for everything) — the
+// old copy mislabeled all of them "Worker not detected yet", a worker
+// fact this component has no source for. A completed report with zero
+// verified capabilities is rendered as the valid "software everything"
+// state, not an error. Polling continues indefinitely so the step
+// self-updates the moment the worker catches up. Progressing past this
+// step never blocks on the probe — the report is always viewable later
+// from Admin → System anyway.
 
 import { useEffect, useState } from "react";
 import { Cpu } from "lucide-react";
@@ -22,10 +24,12 @@ import { Button } from "../../../components/ui/Button.js";
 import { Chip } from "../../../components/ui/Chip.js";
 import { BlazeSpinner } from "../../../components/ui/BlazeSpinner.js";
 import { apiGet } from "../../../lib/api-client.js";
+import { NO_ACCELERATION_COPY, hasNoAcceleratedCapabilities } from "../../../lib/capability-view.js";
 import { deriveHardwareViewState } from "../wizard-state.js";
 import styles from "./steps.module.css";
 
 type CapabilityReport = components["schemas"]["CapabilityReport"];
+type CapabilityProbeStatus = components["schemas"]["CapabilityProbeStatus"];
 
 const POLL_INTERVAL_MS = 4_000;
 
@@ -35,6 +39,7 @@ export interface HardwareStepProps {
 
 export function HardwareStep({ onNext }: HardwareStepProps): React.JSX.Element {
   const [report, setReport] = useState<CapabilityReport | null>(null);
+  const [probe, setProbe] = useState<CapabilityProbeStatus | null>(null);
   const [pollError, setPollError] = useState(false);
 
   useEffect(() => {
@@ -45,6 +50,7 @@ export function HardwareStep({ onNext }: HardwareStepProps): React.JSX.Element {
         const envelope = await apiGet("/admin/capabilities");
         if (cancelled) return;
         setReport(envelope.report);
+        setProbe(envelope.probe ?? null);
         setPollError(false);
       } catch {
         if (!cancelled) setPollError(true);
@@ -59,7 +65,8 @@ export function HardwareStep({ onNext }: HardwareStepProps): React.JSX.Element {
     };
   }, []);
 
-  const view = deriveHardwareViewState(report);
+  const view = deriveHardwareViewState(report, probe);
+  const softwareOnly = report !== null && hasNoAcceleratedCapabilities(report);
 
   return (
     <div className={styles.step}>
@@ -73,19 +80,36 @@ export function HardwareStep({ onNext }: HardwareStepProps): React.JSX.Element {
         process starts — nothing to configure here.
       </p>
 
-      {view === "empty" ? (
+      {view === "never-ran" && (
         <div className={styles.info}>
-          <BlazeSpinner size={16} surface={`var(--color-surface)`} /> Worker not detected yet — the
-          probe runs automatically when the worker starts. This page keeps checking every few
-          seconds; you don&apos;t need to wait here, the report is always available later from
-          Admin → System.
+          <BlazeSpinner size={16} surface={`var(--color-surface)`} /> The hardware check hasn&apos;t
+          run yet — it starts automatically once the background worker is up. This page keeps
+          checking every few seconds; you don&apos;t need to wait here, the results are always
+          available later from Admin → System.
         </div>
-      ) : (
+      )}
+      {view === "pending" && (
+        <div className={styles.info}>
+          <BlazeSpinner size={16} surface={`var(--color-surface)`} /> The hardware check is running
+          now — results appear here the moment it finishes. You don&apos;t need to wait; you can
+          continue and review them later from Admin → System.
+        </div>
+      )}
+      {view === "failed" && (
+        <div className={styles.info}>
+          The hardware check couldn&apos;t finish, so Loombre will process video in software instead.
+          Everything still works — software processing runs on any machine, it just uses more CPU
+          during transcoding. The check runs again automatically the next time the worker starts.
+          {probe?.lastError ? <span className={styles.hint}> Details: {probe.lastError}</span> : null}
+        </div>
+      )}
+      {view === "ready" && (
         <div className={styles.reportGrid}>
           <p className={styles.body}>
             Platform: <strong>{report!.platform}</strong> — verified{" "}
             {new Date(report!.verifiedAtMs).toLocaleString()}
           </p>
+          {softwareOnly && <p className={styles.body}>{NO_ACCELERATION_COPY}</p>}
           {report!.backends.map((backend) => (
             <div className={styles.backendCard} key={backend.name}>
               <span className={styles.backendName}>{backend.name}</span>

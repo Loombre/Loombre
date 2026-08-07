@@ -1,0 +1,62 @@
+name: "transcode — caps.empty (COMPLETED probe, zero backends persisted) routes identically to caps.software-only"
+why: >
+  W1/D-1 (2026-08-07): an empty capability report is a valid first-class
+  software-only state, not an error. This case is the byte-for-byte input
+  twin of case 002 with caps.software-only swapped for caps.empty
+  (backends: []) — and the SAME expectations: Stage B rule 2 fires
+  (hevc not in constrained-tv's codec list -> transcode), and Stage G
+  rule (iii) routes full software (`software-fallback:encode`) because
+  'software' is doctrine, not a caps lookup — rules (i)/(ii) iterate zero
+  hw backends and rule (iii) never dereferences a software caps entry.
+  policies.t0-default + a 1080p source also fires the tier cap
+  (`software-fallback:tier-capped`), identical to 002. If this case and
+  002 ever diverge, empty-caps routing has silently forked from the
+  software-only doctrine.
+
+input:
+  media:
+    fileId: file-0513
+    container: mp4
+    durationMs: 6300000
+    sizeBytes: 5200000000
+    overallBitrateBps: 6600000
+    video:
+      - index: 0
+        codec: hevc
+        profile: main10
+        level: 123
+        width: 1920
+        height: 1080
+        bitDepth: 10
+        frameRate: 23.976
+        bitrateBps: 5500000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 128000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device: { fixture: devices.constrained-tv }
+  network: { fixture: networks.local }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.empty }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+
+expect:
+  decision: transcode
+  reasons:
+    - video-codec-unsupported
+    - software-fallback:encode
+    - software-fallback:tier-capped

@@ -2,7 +2,12 @@
 import { cpus } from "node:os";
 import { createJobQueue } from "@loombre/jobs";
 import { createDb, getCurrentHwCapabilitySnapshot, getLibraryStashConnection, workerApplicationName } from "@loombre/db";
-import { listLibraries, listImagesNeedingDominantColor, hasQueuedOrActiveJobOfType } from "@loombre/db/internal";
+import {
+  listLibraries,
+  listImagesNeedingDominantColor,
+  hasQueuedOrActiveJobOfType,
+  reconcileAbandonedJobLedgerRows,
+} from "@loombre/db/internal";
 import { LOOMBRE_VERSION_FULL } from "@loombre/shared";
 import { installCrashHandlers, installGracefulShutdown, type ShutdownSignal } from "./crash/index.js";
 import { resolveWorkerDatabaseUrl } from "./db-url.js";
@@ -397,6 +402,55 @@ async function enqueueImageBackfillIfNeeded(): Promise<void> {
   }
 }
 
+// W1/D-1 (2026-08-07): boot-time job-ledger reconciliation, BEFORE the
+// singleton-guard boot checks below. The ledger only transitions inside
+// this process's batch handlers; pg-boss's SQL-side sweeps (timeout-fail
+// of jobs whose worker died, 14-day retention-delete of never-fetched
+// jobs) never mirror into it, so a worker outage leaves rows stuck
+// 'queued'/'active' forever — which permanently satisfies
+// hasQueuedOrActiveJobOfType and wedges the hwprobe/image-backfill/stash
+// re-enqueues (the Windows-ARM-VM "probe never runs again, no backends
+// ever" failure). Scoped to EXACTLY the singleton-guarded job types — the
+// only rows any behavior keys on, and one-per-type by design, so the
+// sweep is bounded to a handful of rows (never a 30k-row 'probe' backlog
+// with a matching outbox-event flood).
+//
+// Two horizons (opus review W1-R1/R3): 'queued' rows go stale after 24h —
+// strictly past the longest per-attempt expiry (23h, packages/jobs/src/
+// types.ts). 'active' rows go stale the moment they predate THIS process:
+// the ledger writes 'active' at fetch time, and the shipped topology is
+// one worker per database (every installer + docker-compose.prod.yml;
+// worker-liveness.ts embeds the same assumption), so an 'active' row from
+// before this process existed was orphaned by a dead predecessor — a
+// crash minutes into a probe unwedges on the NEXT boot, not 24h later.
+// Premature reconciliation is self-healing (ordinary transitions
+// overwrite the row if pg-boss still delivers the job); like every other
+// boot step here, failure is logged, never fatal.
+//
+// Deliberately boot-only for now: a row wedged by a mid-uptime ledger
+// write failure stays wedged until the next restart (logged as a known
+// limitation in STATE.md — a periodic sweep is future work, not W1's).
+const QUEUED_STALE_HORIZON_MS = 24 * 60 * 60 * 1000;
+const SINGLETON_GUARDED_JOB_TYPES = ["hwprobe", "image-backfill", "stash-inventory", "stash-sync"] as const;
+
+async function reconcileStaleJobLedger(): Promise<void> {
+  try {
+    const nowMs = Date.now();
+    const reconciled = await reconcileAbandonedJobLedgerRows(db, {
+      types: SINGLETON_GUARDED_JOB_TYPES,
+      queuedStaleBeforeMs: nowMs - QUEUED_STALE_HORIZON_MS,
+      activeStaleBeforeMs: WORKER_STARTED_AT_MS,
+      nowMs,
+    });
+    if (reconciled.length > 0) {
+      const summary = reconciled.map((r) => `${r.type}:${r.id} (was ${r.previousStatus})`).join(", ");
+      console.log(`worker: reconciled ${reconciled.length} stale job ledger row(s) — ${summary}`);
+    }
+  } catch (err) {
+    console.error("worker: failed to reconcile stale job ledger rows:", err);
+  }
+}
+
 // Phase 3 §11 step 5, STATE.md P3.5: boot-time hardware-capability
 // invalidation check. Compares the CURRENT persisted snapshot for this
 // platform (if any) against the freshly-resolved ffmpeg build hash + GPU
@@ -504,6 +558,7 @@ async function waitForDatabaseReady(timeoutMs = 30_000, intervalMs = 1000): Prom
 
 async function main(): Promise<void> {
   await waitForDatabaseReady();
+  await reconcileStaleJobLedger();
   await startLibraryWatcher();
   await startStashLibraryWatcher();
   await enqueueImageBackfillIfNeeded();
