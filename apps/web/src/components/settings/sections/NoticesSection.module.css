@@ -10,11 +10,12 @@
  * only holds what's genuinely new to the Notices surface.
  */
 
+/* W7/D-4: no max-width here — SettingsPageLayout owns the readable-width
+   cap now, see its header. */
 .page {
   display: flex;
   flex-direction: column;
   gap: var(--space-md);
-  max-width: 640px;
 }
 
 .heading {

@@ -6,13 +6,15 @@
  * AccountSection.module.css — this route sits outside SettingsShell (see
  * page.tsx's header), so it supplies its own minimal page chrome rather
  * than importing a module from a directory this fix doesn't own.
+ *
+ * W7/D-4: no max-width here — page.tsx now wraps this in the shared
+ * SettingsPageLayout, which owns the readable-width cap (see its header).
  */
 
 .page {
   display: flex;
   flex-direction: column;
   gap: var(--space-lg);
-  max-width: 640px;
 }
 
 .heading {

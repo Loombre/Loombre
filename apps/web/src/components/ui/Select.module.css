@@ -1,0 +1,80 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+
+/* W5 — styled native <select>: same pill/border/surface treatment as
+   Input.module.css's .input (radius/border/surface/padding/focus tokens),
+   so a select sitting next to a TextInput in the same form reads as one
+   family, not two. `appearance: none` strips the OS chrome (default arrow
+   + the Windows/Firefox "box" look); the chevron is drawn by Select.tsx's
+   own <Icon> overlay, not a CSS background-image, so it's exactly the same
+   glyph/weight as every other chevron in the app. */
+
+.wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.select {
+  appearance: none;
+  width: 100%;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border);
+  background: var(--color-surface);
+  color: var(--text);
+
+  /* Room on the right for the chevron overlay so long option text never
+     runs under it. */
+  padding: var(--space-sm) calc(var(--space-lg) + var(--space-lg)) var(--space-sm) var(--space-lg);
+
+  /* AUD-A4v2-001 precedent (Input.module.css): 44px Phosphor touch-target
+     floor. */
+  min-height: 44px;
+  font: inherit;
+  font-size: var(--text-base);
+  cursor: pointer;
+  transition:
+    border-color var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-fast) var(--ease-out);
+}
+
+/* The open dropdown's OWN listbox is unstyleable cross-browser — this rule
+   only reaches <option> rendering in engines that respect it (Firefox);
+   it's a best-effort, not a guarantee, same caveat as any native-select
+   restyle. */
+.select option {
+  background: var(--color-bg-raised);
+  color: var(--text);
+}
+
+.select::-ms-expand {
+  display: none;
+}
+
+.select:hover {
+  border-color: var(--color-text-subtle);
+}
+
+.select:focus-visible {
+  border-color: var(--color-accent);
+}
+
+.select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.chevron {
+  position: absolute;
+  right: var(--space-md);
+  display: flex;
+  color: var(--muted);
+
+  /* Let clicks/taps pass through to the <select> underneath — this is a
+     purely decorative overlay, not a second hit target. */
+  pointer-events: none;
+}
+
+.select:disabled ~ .chevron {
+  opacity: 0.5;
+}

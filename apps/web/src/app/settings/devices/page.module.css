@@ -3,16 +3,15 @@
 /* Loombre :: apps/web/src/app/settings/devices/page.module.css
  *
  * Standalone route (not rendered through SettingsShell — see page.tsx's
- * header): reproduces SettingsShell.module.css's own 760px content-pane
- * max-width so this route matches the rest of /settings/* even though it
- * isn't wired into that shell's tab chrome.
+ * header). W7/D-4: no max-width here anymore — page.tsx now wraps this in
+ * the shared SettingsPageLayout, which owns the readable-width cap every
+ * other settings/admin page also uses now (see that component's header).
  */
 
 .wrap {
   display: flex;
   flex-direction: column;
   gap: var(--space-md);
-  max-width: 760px;
 }
 
 .backLink {

@@ -1,9 +1,12 @@
 /* SPDX-License-Identifier: AGPL-3.0-only */
+
+/* W7/D-4: no max-width here — see SettingsPageLayout.tsx's header; this
+   tab is one of the registry-backed pages that defect's fix specifically
+   targets. */
 .page {
   display: flex;
   flex-direction: column;
   gap: var(--space-md);
-  max-width: 640px;
 }
 
 .heading {

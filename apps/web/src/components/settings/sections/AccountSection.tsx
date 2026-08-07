@@ -26,12 +26,13 @@
 // commit 9552333's audit flagged. That write path is now real
 // (apps/server/src/catalog/users.controller.ts's putMySettings validates
 // and persists into user_settings.prefs via @loombre/db's updateUserPrefs),
-// so PlaybackPrefsSection below is restored — as two styled native <select>
-// pickers under the Phosphor design language (packages/shared's
-// LANGUAGE_CODES known-language list, NOT the old free-text maxLength=3
-// TextInput markup this section used before cleanup 3 — that shape is
-// gone for good, see `git show 9552333^` if the old form is ever needed for
-// reference). Autoplay and UserSettings.theme's own UI fate are still OUT
+// so PlaybackPrefsSection below is restored — as two components/ui/Select.tsx
+// pickers (W5: a real <select>, restyled with the kit's pill/chevron
+// treatment, replacing this file's former bare native <select> — packages/
+// shared's LANGUAGE_CODES known-language list, NOT the old free-text
+// maxLength=3 TextInput markup this section used before cleanup 3 — that
+// shape is gone for good, see `git show 9552333^` if the old form is ever
+// needed for reference). Autoplay and UserSettings.theme's own UI fate are still OUT
 // OF SCOPE here (orchestrator adjudication A-6): autoplay has no consuming
 // player feature yet (Addendum A doc-lane fix F3(c)'s original reasoning
 // still holds) and theme stays a separate owner decision (owner ledger item
@@ -52,6 +53,8 @@ import { TextInput } from "../../ui/Input.js";
 import { Button } from "../../ui/Button.js";
 import { Card } from "../../ui/Card.js";
 import { SegmentedControl } from "../../ui/SegmentedControl.js";
+import { Select } from "../../ui/Select.js";
+import { DatePicker, formatIsoDate, todayCalendarDate } from "../../ui/DatePicker.js";
 import { useRestricted } from "../../restricted/RestrictedProvider.js";
 import { apiGet, apiPatch, apiPut, LoombreApiError } from "../../../lib/api-client.js";
 import { PIN_LENGTH, isPinComplete, sanitizePinInput, stripPinDigits } from "../../../lib/pin-entry.js";
@@ -71,6 +74,16 @@ type UserSettings = components["schemas"]["UserSettings"];
 // Sorted once at module load, not per render — LANGUAGE_CODES is a fixed,
 // immutable module-level constant (packages/shared/src/language-codes.ts).
 const SORTED_LANGUAGE_OPTIONS = [...LANGUAGE_CODES].sort((a, b) => a.name.localeCompare(b.name));
+
+// W5: components/ui/Select.tsx's `options` shape (value/label pairs) — built
+// once alongside SORTED_LANGUAGE_OPTIONS above rather than re-mapped on
+// every PlaybackPrefsSection render. Shared by BOTH language pickers below;
+// "No preference" (value "") is the form's own empty-string-for-null
+// convention (see PlaybackPrefsSection's header), not a real language code.
+const LANGUAGE_SELECT_OPTIONS = [
+  { value: "", label: "No preference" },
+  ...SORTED_LANGUAGE_OPTIONS.map((l) => ({ value: l.code, label: l.name })),
+];
 
 // ── Current-password re-auth (G10, STATE.md "Current-password re-auth on
 //    self-changes") — shared by ProfileSection, ChangePasswordSection, and
@@ -141,6 +154,10 @@ function ProfileSection(): React.JSX.Element {
   // value, an edited value, and "" (the form's empty-string-for-null
   // convention) differing from a previously non-empty stored address.
   const emailDirty = email !== initial.email;
+
+  // W6: a birth date after today is never meaningful — caps both the
+  // DatePicker's typed-entry validation and its year quick-jump.
+  const maxBirthDate = formatIsoDate(todayCalendarDate());
 
   async function handleSubmit(event: FormEvent): Promise<void> {
     event.preventDefault();
@@ -213,10 +230,32 @@ function ProfileSection(): React.JSX.Element {
           {currentPasswordError && <span className={styles.fieldError}>{currentPasswordError}</span>}
         </label>
       )}
-      <label className={styles.field}>
-        <span className={styles.label}>Birth date</span>
-        <TextInput type="date" value={birthDate} onChange={(e) => setBirthDate(e.target.value)} />
-      </label>
+      {/* W6 (owner screenshot): the old `<input type="date">` showed today's
+          date as soon as it was opened with an empty value — meaningless
+          for a birth date, and the native calendar chrome had no year
+          quick-jump (~360 back-clicks to reach a real birth year).
+          components/ui/DatePicker.tsx never seeds a value from "today"
+          (only its OWN popover's navigational starting MONTH, when nothing
+          is set yet); `maxBirthDate` below just stops the calendar/typed
+          entry from accepting a future date, since a birth date after
+          today is never meaningful either. This field is the one place in
+          this form that needs an EXPLICIT `htmlFor` label rather than the
+          implicit `<label>`-wraps-the-control pattern every other field
+          here uses: DatePicker's popover renders two <select>s of its own
+          (the month/year quick-jump), and nesting more than one labelable
+          descendant inside a single <label> is invalid markup — the
+          `<label>` above would ambiguously "own" all three controls. */}
+      <div className={styles.field}>
+        <label htmlFor="account-birth-date" className={styles.label}>
+          Birth date
+        </label>
+        <DatePicker
+          id="account-birth-date"
+          value={birthDate}
+          onChange={setBirthDate}
+          maxDate={maxBirthDate}
+        />
+      </div>
       <div className={styles.actions}>
         {error && (
           <span className={styles.status} data-tone="error">
@@ -563,25 +602,15 @@ function PlaybackPrefsSection(): React.JSX.Element {
       <h2 className={styles.sectionTitle}>Playback</h2>
       <label className={styles.field}>
         <span className={styles.label}>Preferred audio language</span>
-        <select className={styles.select} value={audioLang} onChange={(e) => setAudioLang(e.target.value)}>
-          <option value="">No preference</option>
-          {SORTED_LANGUAGE_OPTIONS.map((l) => (
-            <option key={l.code} value={l.code}>
-              {l.name}
-            </option>
-          ))}
-        </select>
+        <Select value={audioLang} onChange={(e) => setAudioLang(e.target.value)} options={LANGUAGE_SELECT_OPTIONS} />
       </label>
       <label className={styles.field}>
         <span className={styles.label}>Preferred subtitle language</span>
-        <select className={styles.select} value={subtitleLang} onChange={(e) => setSubtitleLang(e.target.value)}>
-          <option value="">No preference</option>
-          {SORTED_LANGUAGE_OPTIONS.map((l) => (
-            <option key={l.code} value={l.code}>
-              {l.name}
-            </option>
-          ))}
-        </select>
+        <Select
+          value={subtitleLang}
+          onChange={(e) => setSubtitleLang(e.target.value)}
+          options={LANGUAGE_SELECT_OPTIONS}
+        />
       </label>
       <div className={styles.actions}>
         {error && (

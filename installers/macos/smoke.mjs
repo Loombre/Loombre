@@ -14,7 +14,7 @@
 //      path — DATABASE_URL unset, LOOMBRE_DATA_DIR pointed at a scratch
 //      dir — provisioning its own PostgreSQL from the payload's vendored
 //      runtime/pg and auto-migrating before it answers /healthz. Added for
-//      AUD-A5b-006: the out-of-the-box default (readme.txt: "No database
+//      AUD-A5b-006: the out-of-the-box default (readme.rtf: "No database
 //      setup is required") had NO coverage here before — check 4 above
 //      only ever proved external-PG, the path fewer real operators take.
 //   5. the bundled worker binary boots, registers consumers, and exits
@@ -303,7 +303,7 @@ function smokeServerBoot(payloadDir, version, port) {
 
 // AUD-A5b-006: the local smoke above only ever booted against EXTERNAL
 // Postgres — the embedded-PG path (DATABASE_URL unset) is the documented
-// out-of-the-box default (readme.txt: "No database setup is required —
+// out-of-the-box default (readme.rtf: "No database setup is required —
 // the server provisions its bundled PostgreSQL automatically") and had no
 // coverage of its own. Same binShim entry point as smokeServerBoot (same
 // symlink-realpath reasoning applies), but with NO DATABASE_URL in the

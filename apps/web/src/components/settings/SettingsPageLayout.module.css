@@ -1,0 +1,25 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+
+/* See SettingsPageLayout.tsx's header for the full defect/fix writeup.
+   `.layout` fills whatever horizontal space its parent hands it (a flex
+   row's remaining track, or a block parent's full content width — see
+   `flex`/`width` below) and centers `.inner` within that space; `.inner`
+   is the one place the readable max width lives. */
+.layout {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+  min-width: 0;
+
+  /* Row-flex context (SettingsShell's `.shell`): grow to fill the space
+     right of the 200px tabs column. Ignored outside a flex container
+     (block contexts fall back to `width: 100%` above), so this is safe in
+     both call sites. */
+  flex: 1 1 0%;
+}
+
+.inner {
+  width: 100%;
+  max-width: 1120px;
+  min-width: 0;
+}

@@ -158,12 +158,12 @@ describe("SettingField — Phosphor registry card fidelity", () => {
     expect(view.container.textContent).toContain("Setting this too high can overload the server");
   });
 
-  it("footer shows DEFAULT and PINNABLE <ENV_VAR> for a UI-scoped entry with an envVar", () => {
+  it("footer shows DEFAULT and PINNABLE for a UI-scoped entry with an envVar — the env var NAME itself no longer sits in this visible row (W13a/D-7: it moved into the info tooltip)", () => {
     view = renderIntoBody(<SettingField entry={MAX_TRANSCODES_ENTRY} value={2} source="database" onChanged={noop} />);
     expect(view.container.textContent).toContain("DEFAULT");
     expect(view.container.textContent).toContain("1"); // the default value itself
     expect(view.container.textContent).toContain("PINNABLE");
-    expect(view.container.textContent).toContain("LOOMBRE_MAX_TRANSCODES");
+    expect(view.container.textContent).not.toContain("LOOMBRE_MAX_TRANSCODES");
   });
 
   it("footer omits PINNABLE for an entry with no envVar at all", () => {
@@ -313,6 +313,104 @@ describe("SettingField — Phosphor registry card fidelity", () => {
       const buttons = Array.from(view.container.querySelectorAll("button"));
       const save = buttons.find((b) => b.textContent === "Save")!;
       expect(save.hasAttribute("disabled")).toBe(true);
+    });
+  });
+
+  describe("Readable typography (W8) — the shared classes still carry the expected text, unbroken by the size bump", () => {
+    it("key name, description, and the metadata fact row all still render their text content", () => {
+      view = renderIntoBody(<SettingField entry={MAX_TRANSCODES_ENTRY} value={1} source="default" onChanged={noop} />);
+      expect(view.container.textContent).toContain("transcode.maxSimultaneousTranscodes");
+      expect(view.container.textContent).toContain("How many videos this server will convert at the same time.");
+      expect(view.container.textContent).toContain("DEFAULT");
+      expect(view.container.textContent).toContain("CURRENT");
+      expect(view.container.textContent).toContain("PINNABLE");
+    });
+  });
+
+  describe("Technical-details info tooltip (W13a, decision D-7 — two-layer copy)", () => {
+    it("renders no info trigger at all when the entry has neither an env pin nor caller-supplied technicalDetails", () => {
+      view = renderIntoBody(<SettingField entry={HEVC_ENTRY} value={true} source="default" onChanged={noop} />);
+      expect(view.container.querySelector('button[aria-label^="Technical details"]')).toBeNull();
+    });
+
+    it("a pinnable entry gets an info trigger; the tooltip itself renders on demand only — absent from the DOM until opened, present with the env-pin name once it is", () => {
+      view = renderIntoBody(<SettingField entry={MAX_TRANSCODES_ENTRY} value={1} source="default" onChanged={noop} />);
+      const trigger = view.container.querySelector('button[aria-label="Technical details for transcode.maxSimultaneousTranscodes"]') as HTMLButtonElement;
+      expect(trigger).not.toBeNull();
+      expect(view.container.querySelector('[role="tooltip"]')).toBeNull();
+      expect(trigger.hasAttribute("aria-describedby")).toBe(false);
+
+      act(() => trigger.focus());
+      const tooltip = view.container.querySelector('[role="tooltip"]');
+      expect(tooltip).not.toBeNull();
+      expect(tooltip!.textContent).toContain("LOOMBRE_MAX_TRANSCODES");
+      // a11y wiring: aria-describedby only appears once the described node
+      // actually exists, and points at that exact node's id.
+      expect(trigger.getAttribute("aria-describedby")).toBe(tooltip!.id);
+
+      act(() => trigger.blur());
+      expect(view.container.querySelector('[role="tooltip"]')).toBeNull();
+      expect(trigger.hasAttribute("aria-describedby")).toBe(false);
+    });
+
+    it("click toggles the tooltip open, then closed again (the touch path, independent of hover/focus)", () => {
+      view = renderIntoBody(<SettingField entry={MAX_TRANSCODES_ENTRY} value={1} source="default" onChanged={noop} />);
+      const trigger = view.container.querySelector('button[aria-label^="Technical details"]') as HTMLButtonElement;
+
+      act(() => trigger.click());
+      expect(view.container.querySelector('[role="tooltip"]')).not.toBeNull();
+
+      act(() => trigger.click());
+      expect(view.container.querySelector('[role="tooltip"]')).toBeNull();
+    });
+
+    it("Escape dismisses an open tooltip", () => {
+      view = renderIntoBody(<SettingField entry={MAX_TRANSCODES_ENTRY} value={1} source="default" onChanged={noop} />);
+      const trigger = view.container.querySelector('button[aria-label^="Technical details"]') as HTMLButtonElement;
+
+      act(() => trigger.click());
+      expect(view.container.querySelector('[role="tooltip"]')).not.toBeNull();
+
+      act(() => {
+        document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+      });
+      expect(view.container.querySelector('[role="tooltip"]')).toBeNull();
+    });
+
+    it("a caller-supplied technicalDetails prop renders its own trigger even with no env pin at all, and both notes combine when an entry has both", () => {
+      view = renderIntoBody(
+        <SettingField
+          entry={HEVC_ENTRY}
+          value={true}
+          source="default"
+          onChanged={noop}
+          technicalDetails="Backed by ffmpeg's hevc_* encoders when the host GPU exposes one."
+        />,
+      );
+      const trigger = view.container.querySelector('button[aria-label^="Technical details"]') as HTMLButtonElement;
+      expect(trigger).not.toBeNull();
+      act(() => trigger.click());
+      expect(view.container.textContent).toContain("Backed by ffmpeg's hevc_* encoders");
+
+      view.unmount();
+      view = renderIntoBody(
+        <SettingField
+          entry={MAX_TRANSCODES_ENTRY}
+          value={1}
+          source="default"
+          onChanged={noop}
+          technicalDetails="Applies per transcode session, not per stream."
+        />,
+      );
+      const combinedTrigger = view.container.querySelector('button[aria-label^="Technical details"]') as HTMLButtonElement;
+      act(() => combinedTrigger.click());
+      expect(view.container.textContent).toContain("Applies per transcode session, not per stream.");
+      expect(view.container.textContent).toContain("LOOMBRE_MAX_TRANSCODES");
+    });
+
+    it("env-only and actively-locked entries with no envVar of their own still get no trigger by default (locked's own caption already names its pin)", () => {
+      view = renderIntoBody(<SettingField entry={DATABASE_URL_ENTRY} value={DATABASE_URL_ENTRY.default} source="environment" onChanged={noop} />);
+      expect(view.container.querySelector('button[aria-label^="Technical details"]')).toBeNull();
     });
   });
 

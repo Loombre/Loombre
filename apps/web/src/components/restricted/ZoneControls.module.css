@@ -5,41 +5,37 @@
    throughout (design/phosphor README: "Active genre/filter chips fill
    amber (#E0A548 with dark text), not accent — the zone keeps its
    warning colour"), the same --color-warning/--color-warning-text pair
-   ZonePosterCard.module.css and RestrictedZoneChip.module.css already use. */
+   ZonePosterCard.module.css and RestrictedZoneChip.module.css already use.
+   D-2 (STATE.md W2+W3): sort's track/segment shape is the shared
+   SegmentedControl recipe — composed via CSS Modules (read-only reuse,
+   same pattern browse/SortControl.module.css and browse/LibraryPills.
+   module.css already use) so sizing/padding/track-hugging fixes there
+   apply here automatically, with only the warning tone kept local.
+   densityTrack composes the same track shell; densitySegment stays its
+   own recipe (fixed 36x36 icon squares, not a label pill — a different
+   shape than the padding-around-a-label defect this consolidation
+   fixes). */
 
-.sortTrack,
+.sortTrack {
+  composes: track from "../ui/SegmentedControl.module.css";
+}
+
 .densityTrack {
-  display: inline-flex;
-  gap: var(--space-3xs);
-  padding: var(--space-3xs);
-  border-radius: var(--radius-pill);
-  background: var(--color-surface);
-  border: 1px solid var(--border);
+  composes: track from "../ui/SegmentedControl.module.css";
 }
 
 .sortSegment {
-  border: none;
-  background: transparent;
-  color: var(--muted);
-  border-radius: var(--radius-pill);
-  padding: var(--space-2xs) var(--space-md);
-  font-size: var(--text-sm);
-  font-weight: var(--weight-medium);
-  cursor: pointer;
+  composes: segment from "../ui/SegmentedControl.module.css";
   white-space: nowrap;
-  transition:
-    background-color var(--motion-fast) var(--ease-out),
-    color var(--motion-fast) var(--ease-out);
 }
 
-.sortSegment[data-active="true"] {
+/* Higher specificity than the composed base's `.segment[data-active]`
+   rule (3 class/attribute selectors vs. 2) so this wins deterministically
+   regardless of CSS bundling order — no reliance on source order between
+   composed modules. */
+.sortTrack .sortSegment[data-active="true"] {
   background: var(--color-warning);
   color: var(--color-warning-text);
-}
-
-.sortSegment:not([data-active="true"]):hover {
-  background: var(--color-surface-hover);
-  color: var(--text);
 }
 
 .densitySegment {
