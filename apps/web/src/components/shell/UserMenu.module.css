@@ -1,0 +1,144 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+
+/* Loombre :: apps/web/src/components/shell/UserMenu.module.css
+ *
+ * W11 (Wave 2, this run — IA restructure): the avatar dropdown's own
+ * Phosphor surface, replacing the generic Overlay.module.css `.menu`/
+ * `.menuItem` recipe this component used to reuse verbatim. Same elevated-
+ * surface tokens as the DatePicker popover (components/ui/DatePicker.
+ * module.css's `.popover`) and SettingField's info tooltip
+ * (components/admin/settings/SettingField.module.css's `.infoTooltip`) —
+ * --color-bg-raised / --color-border / --radius-lg / --shadow-lg, the same
+ * "floats over the app" recipe tokens.css's own --color-bg-raised comment
+ * names ("modals, popovers, command palette") — plus a LOCAL entrance
+ * keyframe (compositor-only: opacity + transform) rather than importing
+ * DatePicker's, matching that file's own "no cross-file coupling" precedent.
+ *
+ * Items get a full PILL hover/focus state (--radius-pill, Phosphor's own
+ * button/chip/badge radius — tokens.css's --radius-pill comment), not the
+ * generic menu's rectangular --radius-sm — a deliberate visual upgrade this
+ * wave's brief called for by name ("hover pills on items").
+ */
+
+.menu {
+  background: var(--color-bg-raised);
+  border: 1px solid var(--color-border);
+  display: flex;
+  flex-direction: column;
+  min-width: 220px;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  padding: var(--space-xs);
+  transform-origin: top right;
+  animation: loombre-usermenu-in var(--motion-fast) var(--ease-spring);
+}
+
+@keyframes loombre-usermenu-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(-4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .menu {
+    animation-name: loombre-usermenu-in-reduced;
+  }
+}
+
+@keyframes loombre-usermenu-in-reduced {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+.header {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-xs) var(--space-sm) var(--space-2xs);
+}
+
+.headerName {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.headerMeta {
+  font-family: var(--font-mono);
+  font-size: var(--mono-xs);
+  letter-spacing: var(--track-mono);
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.divider {
+  height: 1px;
+  margin: var(--space-2xs) var(--space-xs);
+  background: var(--color-border-subtle);
+  border: none;
+}
+
+.menuItem {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  border: none;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  border-radius: var(--radius-pill);
+  padding: var(--space-xs) var(--space-sm);
+  min-height: 40px;
+  font-size: var(--text-sm);
+  cursor: pointer;
+  transition: background-color var(--motion-fast) var(--ease-out);
+}
+
+.menuItem:hover {
+  background: var(--color-surface-hover);
+}
+
+/* Wave 1 inset-focus-ring convention (Button.module.css's own precedent) —
+   a NON-inset ring here would clip against this menu's own `overflow`-free
+   but tightly padded (--space-xs) container the same way the pre-W4 text
+   inputs clipped against SheetOrModal's body. */
+.menuItem:focus-visible {
+  outline: none;
+  background: var(--color-surface-hover);
+  box-shadow: inset 0 0 0 3px var(--color-focus);
+  animation: loombre-usermenu-item-focus-in var(--motion-fast) var(--ease-spring);
+}
+
+@keyframes loombre-usermenu-item-focus-in {
+  from {
+    box-shadow: inset 0 0 0 0 var(--color-focus);
+  }
+
+  to {
+    box-shadow: inset 0 0 0 3px var(--color-focus);
+  }
+}
+
+.menuItemDanger {
+  color: var(--color-danger);
+}
+
+@media (width <= 767.98px) {
+  .menuItem {
+    min-height: 44px;
+  }
+}

@@ -148,8 +148,9 @@ Turns the restricted-content feature on for this server. Off by default. While o
 
 <small>Setting key: `restricted.majorityAgeYears`</small>
 
-The minimum age for restricted content. Can be raised, never lowered — 18 is a hard floor the server enforces in several independent places.
+The minimum age required to view restricted content. You can raise this number, but Loombre never allows it below 18 — that floor is enforced no matter what you set here.
 
+- **Technical details:** The >=18 floor is enforced in more than one place server-side (schema validation and the settings-update path, not just this one field), so it can't be bypassed by a single validation gap.
 - **Default:** 18
 - **Applies:** immediately — no restart needed.
 
@@ -320,7 +321,7 @@ How many password-recovery requests (forgot-password or reset-password) one devi
 
 <small>Setting key: `rateLimit.probe`</small>
 
-How many reachability-proof probe attempts one device may make per minute, before any account exists for it. Guards the probe link against brute-force guessing.
+How many reachability-check attempts one device may make per minute while proving it can reach this server from outside your network (part of Remote Access setup). Guards that check against brute-force guessing.
 
 - **Default:** 10
 - **Applies:** immediately — no restart needed.
@@ -350,8 +351,9 @@ How many session-refresh requests one signed-in device may receive per minute, c
 
 <small>Setting key: `rateLimit.search`</small>
 
-How many search requests one person may make per minute — /search and the restricted-content search share this limit. Each request does extra per-result lookups, so this bounds abuse while staying generous enough for normal typing bursts.
+How many search requests one person may make per minute — this covers both regular search and restricted-content search. Each search does some extra work behind the scenes, so this keeps that from being abused while staying generous enough for normal typing.
 
+- **Technical details:** Shared by GET /search and GET /restricted/search, one bucket across both routes (the same sharing pattern rateLimit.mediaToken uses for its own route family). The generous ceiling exists because each request does an extra per-result detail lookup, so ordinary typeahead-style bursts must not trip it.
 - **Default:** 60
 - **Applies:** immediately — no restart needed.
 - **Can be locked:** if `LOOMBRE_RATE_SEARCH` is set by whoever installed Loombre, this setting becomes fixed to that value and shows as controlled by the environment here — ask them, or see the [Operator Guide's environment reference](/ops/env-reference).
@@ -364,8 +366,9 @@ The web address people use to reach this server from outside your own network.
 
 <small>Setting key: `network.publicUrl`</small>
 
-The web address people use to reach this server from outside your own network. Security-sensitive links in outgoing mail — invitation links, password-reset links — are built ONLY from this address, never guessed from wherever a request happened to come from. Leave blank and Loombre will not send mail containing a link.
+The web address people use to reach this server from outside your own network (for example, https://myserver.example.com). Any link Loombre sends by email — invitations, password resets — is built only from this address, so it's never guessed from wherever a request happened to come from. Leave this blank and Loombre will not send mail that contains a link.
 
+- **Technical details:** Must be empty, or an absolute http:// or https:// URL. This is the sole source for every security-sensitive link a piece of outgoing mail can ever contain — never derived from an incoming request's Host header.
 - **Default:** (empty — not set)
 - **Applies:** immediately — no restart needed.
 - **Can be locked:** if `LOOMBRE_PUBLIC_URL` is set by whoever installed Loombre, this setting becomes fixed to that value and shows as controlled by the environment here — ask them, or see the [Operator Guide's environment reference](/ops/env-reference).
@@ -374,8 +377,9 @@ The web address people use to reach this server from outside your own network. S
 
 <small>Setting key: `network.trustProxy`</small>
 
-Tells Loombre it is running behind a reverse proxy you control, so it can trust that proxy's forwarded address information when deciding who to rate-limit or note in the sign-in log. Accepts a hop count (e.g. "1"), a trusted address/range, or a comma-separated list of them. Leave blank unless you are running Loombre behind your own reverse proxy.
+Tells Loombre it's running behind a reverse proxy you control, so it can trust that proxy's information about which address a request really came from — used for rate-limiting and the sign-in log. Leave this blank unless you are running Loombre behind your own reverse proxy.
 
+- **Technical details:** Accepts a hop count (e.g. "1"), a trusted IP address or CIDR range, or a comma-separated list of them.
 - **Default:** (empty — not set)
 - **Applies:** after a restart. Saving this shows a reminder banner until the server restarts — Settings → Server → Power has the restart button.
 - **Note:** Only enable behind a reverse proxy you control — enabling this trusts client-supplied forwarded-address information for rate-limit and sign-in-log keying.
@@ -391,6 +395,7 @@ How this server handles HTTPS for people connecting to it directly (not through 
 
 How Loombre handles HTTPS: 'off' serves plain HTTP (the right choice when a reverse proxy in front of Loombre handles HTTPS itself), 'manual' uses a certificate and key file you provide yourself, and 'acme' has Loombre request and automatically renew its own certificate from Let's Encrypt (or another compatible certificate authority) using the domain and verification settings below.
 
+- **Technical details:** ACME issuance uses the domain(s) in tls.acmeDomains, the challenge method in tls.acmeChallengeType, and requires tls.acmeTosAgreed to be true. Resolved once at server boot, not re-read from a live process — that's why a mode change needs a restart to take effect.
 - **Default:** `off`
 - **Applies:** after a restart. Saving this shows a reminder banner until the server restarts — Settings → Server → Power has the restart button.
 - **Can be locked:** if `LOOMBRE_TLS_MODE` is set by whoever installed Loombre, this setting becomes fixed to that value and shows as controlled by the environment here — ask them, or see the [Operator Guide's environment reference](/ops/env-reference).
@@ -401,6 +406,7 @@ How Loombre handles HTTPS: 'off' serves plain HTTP (the right choice when a reve
 
 The domain name(s) this server requests an HTTPS certificate for when TLS mode is 'acme' — the address people use to reach it from outside your network (for example media.example.com). The first one becomes the certificate's primary name.
 
+- **Technical details:** Must be real domain names, not IP addresses — a bare IP address or a value with no dot is rejected before it's ever saved. Real issuance validity is ultimately decided by the certificate authority's own request at the time TLS mode 'acme' takes effect.
 - **Default:** (none)
 - **Applies:** after a restart. Saving this shows a reminder banner until the server restarts — Settings → Server → Power has the restart button.
 - **Can be locked:** if `LOOMBRE_ACME_DOMAINS` is set by whoever installed Loombre, this setting becomes fixed to that value and shows as controlled by the environment here — ask them, or see the [Operator Guide's environment reference](/ops/env-reference).
@@ -435,6 +441,7 @@ The outgoing mail server Loombre uses to send invitation and password-reset emai
 
 The address of the outgoing mail server Loombre sends email through. Leave blank to leave mail sending turned off.
 
+- **Technical details:** Your SMTP provider's hostname (e.g. smtp.mailprovider.com) — check your provider's setup page for the exact value. No username or password lives here: SMTP credentials, if the server requires them, are stored separately and encrypted; an unauthenticated relay on a private network is also a legal configuration with this field set and no credentials at all.
 - **Default:** (empty — not set)
 - **Applies:** immediately — no restart needed.
 - **Can be locked:** if `LOOMBRE_SMTP_HOST` is set by whoever installed Loombre, this setting becomes fixed to that value and shows as controlled by the environment here — ask them, or see the [Operator Guide's environment reference](/ops/env-reference).
@@ -443,8 +450,9 @@ The address of the outgoing mail server Loombre sends email through. Leave blank
 
 <small>Setting key: `mail.smtpPort`</small>
 
-The port your mail server accepts outgoing mail on. 587 is the common port for encrypted mail submission; 465 is common for connections that are encrypted from the start; 25 is the plain, unencrypted default most mail servers refuse from outside their own network.
+Which door on your mail provider's server Loombre connects to when sending email. Your provider's setup page lists it; 587 is the most common.
 
+- **Technical details:** SMTP submission port. 587 = STARTTLS submission (recommended), 465 = implicit TLS, 25 = server-to-server relay, usually blocked for clients from outside their own network.
 - **Default:** 587
 - **Applies:** immediately — no restart needed.
 - **Can be locked:** if `LOOMBRE_SMTP_PORT` is set by whoever installed Loombre, this setting becomes fixed to that value and shows as controlled by the environment here — ask them, or see the [Operator Guide's environment reference](/ops/env-reference).
@@ -453,8 +461,9 @@ The port your mail server accepts outgoing mail on. 587 is the common port for e
 
 <small>Setting key: `mail.smtpSecurity`</small>
 
-How the connection to your mail server is protected. 'starttls' starts plain and upgrades to an encrypted connection (the common choice alongside port 587); 'implicit-tls' is encrypted from the first byte (the common choice alongside port 465); 'none' is a plain, unencrypted connection.
+How the connection to your mail server is protected. 'starttls' connects in the open and switches to an encrypted connection partway through (the most common choice); 'implicit-tls' is encrypted from the very first byte; 'none' is a plain, unencrypted connection with no protection at all.
 
+- **Technical details:** 'starttls' pairs with port 587 (STARTTLS submission); 'implicit-tls' pairs with port 465 (TLS from connection open) — see mail.smtpPort's own technical notes.
 - **Default:** `starttls`
 - **Applies:** immediately — no restart needed.
 - **Note:** Choosing 'none' sends your mail server password and every email in plain, readable text over the network — only use this for a private network relay you control, never for a mail server reached over the internet.
@@ -466,6 +475,7 @@ How the connection to your mail server is protected. 'starttls' starts plain and
 
 The email address your outgoing mail appears to come from. Leave blank to leave mail sending turned off.
 
+- **Technical details:** Must be empty or a syntactically valid email address — Loombre does not verify deliverability at save time; your first real send attempt is the only genuine test of whether the address actually works.
 - **Default:** (empty — not set)
 - **Applies:** immediately — no restart needed.
 - **Can be locked:** if `LOOMBRE_SMTP_FROM_ADDRESS` is set by whoever installed Loombre, this setting becomes fixed to that value and shows as controlled by the environment here — ask them, or see the [Operator Guide's environment reference](/ops/env-reference).
@@ -488,8 +498,9 @@ Automatic scheduling for re-syncing metadata from a connected Stash database. Se
 
 <small>Setting key: `stash.sync.scheduleIntervalMs`</small>
 
-How often Loombre automatically re-syncs metadata from a connected Stash database, in milliseconds. 0 (the default) turns automatic scheduling off — Stash still syncs when you click the sync button or when its database file changes on disk.
+How often Loombre automatically re-syncs metadata from a connected Stash database. Enter the interval in milliseconds — 0 (the default) turns automatic scheduling off; Stash still syncs whenever you click the sync button or its database file changes on disk.
 
+- **Technical details:** Value is in milliseconds; ceiling is 30 days (a sanity bound, not a recommended cadence).
 - **Default:** 0 ms
 - **Applies:** immediately — no restart needed.
 
@@ -501,8 +512,9 @@ Settings for Loombre Remote (embedded WireGuard), the Tunnel path, and the Direc
 
 <small>Setting key: `remote.wireguardPort`</small>
 
-The UDP port Loombre Remote's WireGuard listener binds to. Changing this requires a server restart — the listener cannot rebind to a different port while running.
+Which network port Loombre Remote uses for its secure tunnel connections. Changing this requires a server restart — already-connected devices would be disrupted otherwise.
 
+- **Technical details:** UDP port the in-process WireGuard listener binds to for its whole lifetime. Cannot be rebound to a different port while the server is running, hence the restart requirement.
 - **Default:** 51820
 - **Applies:** after a restart. Saving this shows a reminder banner until the server restarts — Settings → Server → Power has the restart button.
 - **Can be locked:** if `LOOMBRE_WG_PORT` is set by whoever installed Loombre, this setting becomes fixed to that value and shows as controlled by the environment here — ask them, or see the [Operator Guide's environment reference](/ops/env-reference).
@@ -511,8 +523,9 @@ The UDP port Loombre Remote's WireGuard listener binds to. Changing this require
 
 <small>Setting key: `remote.subnet`</small>
 
-The private IPv4 subnet Loombre Remote allocates tunnel addresses from (server = the first usable address, enrolled devices get the next free ones). Changing this requires a server restart — already-enrolled devices' addresses come from the OLD subnet and would be orphaned by a live change.
+The private range of addresses Loombre Remote assigns to your server and its enrolled devices for their secure tunnel connections — the server takes the first address, and each device gets the next free one. Changing this requires a server restart, and orphans any already-enrolled devices, since their addresses came from the old range.
 
+- **Technical details:** An IPv4 CIDR block (e.g. 10.82.146.0/24), prefix length between /8 and /30. Server = the first usable address (.1 in a /24); devices are allocated the lowest-free address from the remaining usable range.
 - **Default:** `10.82.146.0/24`
 - **Applies:** after a restart. Saving this shows a reminder banner until the server restarts — Settings → Server → Power has the restart button.
 - **Note:** Avoid 100.64.0.0/10 (CGNAT space) — other VPN tools commonly use it, and a device running both could collide.
@@ -522,8 +535,9 @@ The private IPv4 subnet Loombre Remote allocates tunnel addresses from (server =
 
 <small>Setting key: `remote.wireguardEndpointHost`</small>
 
-The publicly reachable host devices connect to for Loombre Remote (written into each newly enrolled device's config, alongside remote.wireguardPort). Leave blank until you know this server's public host/IP.
+The public address (hostname or IP) devices should connect to in order to reach this server through Loombre Remote — written into each device's configuration when it's enrolled. Leave this blank until you know this server's public address.
 
+- **Technical details:** Combined with the WireGuard port setting above to form each newly enrolled device's endpoint address; already-enrolled devices are not updated retroactively when this changes.
 - **Default:** (empty — not set)
 - **Applies:** immediately — no restart needed.
 - **Can be locked:** if `LOOMBRE_WG_ENDPOINT_HOST` is set by whoever installed Loombre, this setting becomes fixed to that value and shows as controlled by the environment here — ask them, or see the [Operator Guide's environment reference](/ops/env-reference).
@@ -532,8 +546,9 @@ The publicly reachable host devices connect to for Loombre Remote (written into 
 
 <small>Setting key: `remote.cloudflaredPath`</small>
 
-Explicit path to the cloudflared binary, if it is not on the server's PATH. Leave blank to auto-detect — Loombre does not download this binary itself, so install it yourself and point this setting at it if auto-detect fails.
+Where to find the cloudflared program, if Loombre can't locate it automatically. Loombre does not install this program itself — install it yourself, then point this setting at it if auto-detect fails. Leave blank to let Loombre look for it automatically.
 
+- **Technical details:** Explicit path to the cloudflared binary, used when it is not resolvable via the server's PATH.
 - **Default:** (empty — not set)
 - **Applies:** immediately — no restart needed.
 - **Can be locked:** if `LOOMBRE_CLOUDFLARED_PATH` is set by whoever installed Loombre, this setting becomes fixed to that value and shows as controlled by the environment here — ask them, or see the [Operator Guide's environment reference](/ops/env-reference).
@@ -542,7 +557,7 @@ Explicit path to the cloudflared binary, if it is not on the server's PATH. Leav
 
 <small>Setting key: `remote.tunnelHostname`</small>
 
-The public hostname the Tunnel path routes through (set automatically when you enable the Tunnel path from the wizard; editable here afterward).
+The public web address the Tunnel connection method routes through. Loombre sets this automatically when you turn on the Tunnel option in the setup wizard; you can edit it here afterward.
 
 - **Default:** (empty — not set)
 - **Applies:** immediately — no restart needed.

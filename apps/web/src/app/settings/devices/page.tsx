@@ -15,17 +15,23 @@
 // navigates to /settings/devices directly; it does not yet appear as a tab
 // or hub row.
 //
-// TODO (owner/next lane, not a file this task may touch): register a
-// "devices" entry in section-registry.ts's SETTINGS_SECTIONS (label
-// "Devices", href "/settings/devices", adminOnly: false — every user, not
-// just admins, needs to see their own sessions) and add a `case "devices"`
-// to SettingsShell.tsx's renderSection so this gets the same tab chrome/
-// back-chevron treatment as every other /settings/<key> route
-// (mobile-header.ts's settingsSection branch already generalizes over
-// SETTINGS_SECTIONS, so registering the entry there is sufficient — no
-// mobile-header.ts change needed). AccountSection.tsx's
-// ChangePasswordSection now states plainly that a password change signs
-// other devices out itself (G10/F3) — this route remains the place to
+// D-6 (Wave 2, this run — IA restructure): the back link below now points
+// at /profile, not /settings/account — the user-scoped Profile/Password/
+// Playback/Restricted content this "own devices" surface is conceptually a
+// sibling of moved there (components/profile/ProfileSettings.tsx); this is
+// the one link-sweep update this file needed, its own device-management
+// content is unrelated and untouched.
+//
+// TODO (owner/next lane, not a file this task may touch): D-6 moved every
+// user-scoped settings surface OUT of section-registry.ts's
+// SETTINGS_SECTIONS (now admin-only end to end — see its header), so the
+// pre-D-6 version of this TODO ("register a 'devices' SETTINGS_SECTIONS
+// entry") no longer fits; this page's natural home now is alongside
+// /profile instead — a real nav entry point from there (and/or folding this
+// route into ProfileSettings.tsx's own card list) is still open. This route
+// keeps working standalone via direct URL either way. ProfileSettings.tsx's
+// ChangePasswordSection states plainly that a password change signs other
+// devices out itself (G10/F3) — this route remains the place to
 // review/revoke individual sessions any other time.
 
 import Link from "next/link";
@@ -42,8 +48,8 @@ export default function SettingsDevicesPage(): React.JSX.Element {
           page now uses — see SettingsPageLayout.tsx's header. */}
       <SettingsPageLayout>
         <div className={styles.wrap}>
-          <Link href="/settings/account" className={styles.backLink}>
-            ← Account
+          <Link href="/profile" className={styles.backLink}>
+            ← Profile
           </Link>
           <DevicesSection heading="Devices" />
         </div>

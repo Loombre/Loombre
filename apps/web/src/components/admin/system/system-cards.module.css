@@ -1,18 +1,24 @@
 /* SPDX-License-Identifier: AGPL-3.0-only */
 
-/* W7: a clean 2-up grid at desktop widths, equal-height rows (no orphaned
-   whitespace beside a short card next to a tall one), consistent gutters.
-   480px is deliberately wide enough that this page's ~1120px content
-   column (SettingsPageLayout) only ever fits 2 columns — 3 would need
-   3*480 + 2*gap > 1120px — so "auto-fit" collapsing to 1 column on
-   narrower viewports is the only breakpoint this needs. align-items
-   defaults to `stretch` (removed the previous explicit `start`, which was
-   the actual cause of ragged, unequal card heights per row) — a Card's
-   own height:auto content simply fills the taller sibling's row height. */
-.grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(480px, 1fr));
-  gap: var(--space-lg);
+/* Loombre :: apps/web/src/components/admin/system/system-cards.module.css
+ *
+ * D-5 (Wave 2, this run — IA restructure): shared card-body recipe for the
+ * six cards D-5 extracted out of the deleted /admin/system page
+ * (SystemInfoCard, CapabilitiesCard, UpdateNoticeCard,
+ * ProviderKeysNoticeCard, CrashFilesCard, LogsTailCard) into their own
+ * component files, now composed directly on the merged Dashboard
+ * (app/admin/page.tsx). Byte-for-byte the same rules that page's own
+ * page.module.css declared — one shared module across all six cards (same
+ * "sections/shared.module.css across Libraries/Users & Profiles" pattern
+ * already established elsewhere in this IA) rather than six near-identical
+ * copies, since every card here shares the exact same fact-grid/mono/
+ * empty-state visual language.
+ */
+
+.cardTitle {
+  margin: 0 0 var(--space-md);
+  font-size: var(--text-lg);
+  font-weight: var(--weight-semibold);
 }
 
 .header {
@@ -22,12 +28,6 @@
   gap: var(--space-md);
   margin-bottom: var(--space-sm);
   flex-wrap: wrap;
-}
-
-.cardTitle {
-  margin: 0 0 var(--space-md);
-  font-size: var(--text-lg);
-  font-weight: var(--weight-semibold);
 }
 
 .errorText {
@@ -224,4 +224,16 @@
   gap: var(--space-2xs);
   font-size: var(--text-sm);
   color: var(--muted);
+}
+
+/* W12 (Wave 2, this run): the log-tail card's "no log file" empty state
+   gained a second, visually secondary technical line — LogsTailCard.tsx's
+   own header explains why it exists separately from EmptyState's plain-
+   language body. */
+.technicalNote {
+  margin: var(--space-sm) 0 0;
+  font-family: var(--font-mono);
+  font-size: var(--mono-sm);
+  letter-spacing: var(--track-mono);
+  color: var(--color-text-hint);
 }

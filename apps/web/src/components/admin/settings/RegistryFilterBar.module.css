@@ -1,9 +1,23 @@
 /* SPDX-License-Identifier: AGPL-3.0-only */
+
+/* W15 (owner screenshot, Settings > Advanced Server — "the page reads as
+   an unstructured dump"): the filter controls used to float directly on
+   the page background with nothing framing them as a group, while the
+   category card below IS boxed (SettingsCategoryCard.module.css's
+   `.card`). Giving this its own matching bordered/translucent-fill box
+   makes "filter header" and "category keys" read as the two distinct
+   blocks they are, instead of one undifferentiated column. Spacing
+   between this block and its neighbors is AdvancedSection.module.css's
+   `.registrySection` gap now, not a margin here — see that file for why
+   (double-cap precedent, same shape as SettingsPageLayout's W7 fix). */
 .bar {
   display: flex;
   flex-direction: column;
-  gap: var(--space-xs);
-  margin-bottom: var(--space-md);
+  gap: var(--space-sm);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--fill-1);
+  padding: var(--space-md) var(--space-lg);
 }
 
 .row {
@@ -28,13 +42,22 @@
   pointer-events: none;
 }
 
+/* W15 (owner screenshot): the icon-to-text gap was negative — padding-left
+   (28px = --space-lg + --space-2xs) landed INSIDE the icon's own footprint
+   (icon left offset --space-sm/12px + its 20px "dense" box = 32px), so
+   placeholder text visibly crowded the glyph with no gap at all. Clearing
+   the icon's full 32px footprint plus a real --space-md/16px breathing gap
+   is the fix: --space-lg (24) + --space-md (16) = 40px, past 32 with room
+   to spare. (Not a shared ui/Input.tsx SearchField bug — this field is its
+   own local implementation, never routed through that component, so the
+   fix lives here rather than in the shared variant.) */
 .searchInput {
   width: 100%;
   border-radius: var(--radius-pill);
   border: 1px solid var(--color-border);
   background: var(--fill-3);
   color: var(--text);
-  padding: var(--space-xs) var(--space-sm) var(--space-xs) calc(var(--space-lg) + var(--space-2xs));
+  padding: var(--space-xs) var(--space-sm) var(--space-xs) calc(var(--space-lg) + var(--space-md));
   font-family: var(--font-mono);
   font-size: var(--text-xs);
   outline: none;
@@ -49,56 +72,14 @@
   border-color: var(--color-accent);
 }
 
+/* W15: a "tidy wrap grid with even gaps" — one gap token in both axes
+   (row wrap AND inline) instead of the previous --space-2xs/4px, which
+   read as cramped once the pills below gained a real, uniform height. */
 .pillRow {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-2xs);
+  gap: var(--space-xs);
   flex: 1 1 auto;
-}
-
-.pill {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2xs);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-pill);
-  padding: var(--space-2xs) var(--space-sm);
-  background: transparent;
-  color: var(--muted);
-  cursor: pointer;
-  transition:
-    background-color var(--motion-fast) var(--ease-out),
-    color var(--motion-fast) var(--ease-out),
-    border-color var(--motion-fast) var(--ease-out);
-}
-
-.pill:hover {
-  background: var(--fill-3);
-}
-
-.pill[data-active] {
-  background: var(--color-accent-tint);
-  border-color: var(--color-accent-border);
-  color: var(--color-accent);
-}
-
-.pillLock {
-  flex-shrink: 0;
-}
-
-.pillLabel {
-  font-size: var(--text-xs);
-  font-weight: var(--weight-semibold);
-}
-
-.pillCount {
-  font-family: var(--font-mono);
-  font-size: var(--mono-xs);
-  color: var(--color-text-hint);
-}
-
-.pill[data-active] .pillCount {
-  color: var(--color-accent);
 }
 
 .hint {
@@ -115,8 +96,17 @@
    search field goes full-width and boxed (radius-md, not a pill) per the
    prototype's mobAdvanced filter row; the pill row becomes a single
    horizontally-scrolling strip so N categories never wrap into a wall of
-   pills on a 392px viewport. */
+   pills on a 392px viewport. The outer box's own chrome recedes here too —
+   same "box recedes to just content, no double framing on a narrow
+   viewport" pattern SettingsCategoryCard.module.css's mobile block uses
+   for the category card right below this one. */
 @media (width <= 767.98px) {
+  .bar {
+    border: none;
+    background: none;
+    padding: 0;
+  }
+
   .row {
     flex-direction: column;
     align-items: stretch;
@@ -130,7 +120,7 @@
   .searchInput {
     border-radius: var(--radius-md);
     background: var(--fill-2);
-    padding: var(--space-sm) var(--space-sm) var(--space-sm) calc(var(--space-lg) + var(--space-2xs));
+    padding: var(--space-sm) var(--space-sm) var(--space-sm) calc(var(--space-lg) + var(--space-md));
     min-height: 44px;
   }
 
@@ -140,9 +130,13 @@
     padding-bottom: var(--space-3xs);
   }
 
-  .pill {
+  /* A stable universal-child selector — same reasoning as
+     SettingsCategoryCard.module.css's `.list > * + *` hairline rule — so
+     this never has to reference FilterChip's own (module-hashed) class
+     name. Chip.module.css already grows the chip to the 44px touch floor
+     at this width on its own; this only stops a chip from being squeezed
+     by its scroll-strip siblings. */
+  .pillRow > * {
     flex-shrink: 0;
-    white-space: nowrap;
-    min-height: 44px;
   }
 }

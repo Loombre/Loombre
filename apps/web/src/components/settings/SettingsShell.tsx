@@ -24,22 +24,25 @@
 //     mobile-header.ts's settingsSection branch; nothing here duplicates
 //     it).
 //
-// Non-admins (isAdmin === false) see ONLY the Account section, unchanged
-// from every non-admin's existing capability pre-Wave-2 — no tabs, no hub,
-// zero regression (this lane's brief: "map existing capability... WITHOUT
-// breaking existing routes"). Requesting any OTHER section's route as a
-// non-admin redirects to bare /settings, mirroring app/admin/layout.tsx's
-// existing UX-only admin guard (the real boundary is server-side: every
-// admin endpoint these sections call independently 403s a non-admin token).
+// D-6 (Wave 2, this run — IA restructure): every SETTINGS_SECTIONS entry is
+// now adminOnly (section-registry.ts's own header) — the former non-admin
+// "Account" section moved out to its own route, /profile
+// (components/profile/ProfileSettings.tsx), reached from the avatar menu.
+// SettingsShell therefore now gates ALL of /settings* on isAdmin: a
+// non-admin hitting bare /settings OR any /settings/<key> URL is redirected
+// straight to /profile — the direct descendant of this file's PRE-D-6
+// posture ("requesting an admin-only section as a non-admin redirects to
+// bare /settings, where their one section lives"), just pointed at the new
+// home for that content now that bare /settings has nothing of theirs left
+// to show. This mirrors app/admin/layout.tsx's existing UX-only admin guard
+// (the real boundary is server-side: every admin endpoint these sections
+// call independently 403s a non-admin token — see
+// apps/server/test/settings-authz.e2e.spec.ts).
 //
-// Duplicate-title cleanup (this lane's brief): `heading` passed to each
-// section is null in EXACTLY one case — non-admin, phone width, bare
-// /settings — because MobileHeader (mobile-header.ts's `/settings` exact
-// match) already renders a large "Settings" title there; re-rendering the
-// same text in-page would be the literal bug this lane was asked to fix.
-// Every other case (desktop panes, admin mobile drill-down routes, and the
-// non-admin desktop case where nothing else renders a title) gets a real
-// heading — see each section's own file for why it needs one.
+// Duplicate-title cleanup (pre-D-6 lane brief, still honored): `heading`
+// passed to each section is a real string in every case reached here now
+// (there is no more non-admin bare-/settings branch to special-case to
+// null) — see each section's own file for why it needs one.
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -49,7 +52,6 @@ import { sectionByKey, type SettingsSectionKey } from "./section-registry.js";
 import { SettingsTabs } from "./SettingsTabs.js";
 import { SettingsHub } from "./SettingsHub.js";
 import { SettingsPageLayout } from "./SettingsPageLayout.js";
-import { AccountSection } from "./sections/AccountSection.js";
 import { ServerSection } from "./sections/ServerSection.js";
 import { NoticesSection } from "./sections/NoticesSection.js";
 import { LibrariesSection } from "./sections/LibrariesSection.js";
@@ -71,8 +73,6 @@ export interface SettingsShellProps {
 
 function renderSection(key: SettingsSectionKey, heading: string | null): React.JSX.Element {
   switch (key) {
-    case "account":
-      return <AccountSection heading={heading} />;
     case "server":
       return <ServerSection heading={heading} />;
     case "notices":
@@ -115,19 +115,17 @@ export function SettingsShell({ initialSection }: SettingsShellProps): React.JSX
     };
   }, []);
 
-  const requestedAdminOnlySection = initialSection !== null && initialSection !== "account";
-
+  // D-6: every section is admin-only now (section-registry.ts) — a
+  // non-admin has nothing left to see anywhere under /settings*, so this
+  // redirects unconditionally rather than only for a subset of keys.
   useEffect(() => {
-    if (isAdmin === false && requestedAdminOnlySection) router.replace("/settings");
-  }, [isAdmin, requestedAdminOnlySection, router]);
+    if (isAdmin === false) router.replace("/profile");
+  }, [isAdmin, router]);
 
   if (isAdmin === null) return null; // resolving /users/me
-  if (!isAdmin) {
-    if (requestedAdminOnlySection) return null; // redirecting, see effect above
-    return <AccountSection heading={isPhone ? null : "Settings"} />;
-  }
+  if (!isAdmin) return null; // redirecting to /profile, see effect above
 
-  const activeKey: SettingsSectionKey = initialSection ?? "account";
+  const activeKey: SettingsSectionKey = initialSection ?? "server";
   const heading = sectionByKey(activeKey)?.label ?? "Settings";
 
   if (isPhone) {

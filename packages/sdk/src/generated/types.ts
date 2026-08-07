@@ -4184,6 +4184,8 @@ export interface components {
             description: string;
             /** @description Operator-facing caution for a setting whose misconfiguration degrades behavior but never locks the instance out. */
             caution?: string;
+            /** @description ADDITIVE field (W13b, decision D-7's second copy layer): precise technical detail (protocol notes, format specifics, behavioral caveats) `description` deliberately leaves out of its plain-language register. Rendered by the admin settings screen in an on-demand info tooltip beside the key name, alongside that entry's own env-pin name when it has one. Absent on an older cached client shape is never load-bearing — every field this entry needs to render or validate a setting is elsewhere. */
+            technicalDetails?: string;
             scope: components["schemas"]["SettingsScope"];
             requiresRestart: boolean;
             /** @description The real environment variable this entry is pinnable by (scope 'ui') or exclusively sourced from (scope 'env-only'). */

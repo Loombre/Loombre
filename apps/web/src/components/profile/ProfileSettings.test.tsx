@@ -1,7 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Loombre :: apps/web/src/components/settings/sections/AccountSection.test.tsx
+// Loombre :: apps/web/src/components/profile/ProfileSettings.test.tsx
 //
-// Covers the three self-service account behaviours this section is
+// D-6 (Wave 2, this run — IA restructure): moved verbatim alongside
+// ProfileSettings.tsx (formerly AccountSection.tsx/AccountSection.test.tsx —
+// see that file's header) — only the import path, the destructured export
+// name, and this comment changed; every assertion below still pins the same
+// real behavior it always did.
+//
+// Covers the three self-service account behaviours this component is
 // responsible for keeping honest:
 //   1. PATCH /users/me must be able to CLEAR a birth date (the contract's
 //      `birthDate: [string, 'null']` null-to-clear semantics) — omitting
@@ -33,8 +39,8 @@
 
 import { act } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { renderIntoBody, type TestRender } from "../../ui/test-render.js";
-import { PIN_LENGTH } from "../../../lib/pin-entry.js";
+import { renderIntoBody, type TestRender } from "../ui/test-render.js";
+import { PIN_LENGTH } from "../../lib/pin-entry.js";
 
 const apiGetMock = vi.fn();
 const apiPatchMock = vi.fn();
@@ -54,21 +60,21 @@ const RESTRICTED_DEFAULT = {
 };
 let restrictedState: typeof RESTRICTED_DEFAULT = { ...RESTRICTED_DEFAULT };
 
-vi.mock("../../../lib/api-client.js", () => ({
+vi.mock("../../lib/api-client.js", () => ({
   apiGet: (...args: unknown[]) => apiGetMock(...args),
   apiPatch: (...args: unknown[]) => apiPatchMock(...args),
   apiPut: (...args: unknown[]) => apiPutMock(...args),
   LoombreApiError: FakeApiError,
 }));
 
-vi.mock("../../restricted/RestrictedProvider.js", () => ({
+vi.mock("../restricted/RestrictedProvider.js", () => ({
   useRestricted: () => ({
     state: restrictedState,
     applyRestrictedSettings: () => {},
   }),
 }));
 
-const { AccountSection } = await import("./AccountSection.js");
+const { ProfileSettings } = await import("./ProfileSettings.js");
 
 const ME = {
   id: "11111111-1111-7111-8111-111111111111",
@@ -88,7 +94,7 @@ function setNativeValue(el: HTMLInputElement, value: string): void {
   el.dispatchEvent(new Event("input", { bubbles: true }));
 }
 
-describe("AccountSection", () => {
+describe("ProfileSettings", () => {
   let view: TestRender | null = null;
 
   const SETTINGS_DEFAULT = {
@@ -134,7 +140,7 @@ describe("AccountSection", () => {
   });
 
   async function render(): Promise<void> {
-    view = renderIntoBody(<AccountSection heading={null} />);
+    view = renderIntoBody(<ProfileSettings heading={null} />);
     await act(async () => {});
   }
 
@@ -155,7 +161,7 @@ describe("AccountSection", () => {
   // DatePicker (components/ui/DatePicker.tsx) pairs an explicit
   // `<label htmlFor="account-birth-date">` with the control rather than the
   // implicit label-wraps-input pattern every other field here uses (see
-  // AccountSection.tsx's own comment on that field: DatePicker's popover
+  // ProfileSettings.tsx's own comment on that field: DatePicker's popover
   // renders two more <select>s of its own, so nesting the whole thing
   // inside one <label> would make that label ambiguously "own" three
   // controls). The underlying text input is still a real, typeable

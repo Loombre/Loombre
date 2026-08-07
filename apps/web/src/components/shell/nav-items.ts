@@ -92,18 +92,21 @@ export function resolveShortcutHref(
 /** LIBRARY group. Watchlist/Restricted land here in Wave 2 (kickoff ground
  *  truth: their routes don't exist yet — no dead links this wave).
  *
- *  Settings-label-dedupe RESOLVED (W2 L1, settings-IA unification): the
- *  W1a-era collision — this entry's "Settings" (-> /settings) alongside the
- *  SYSTEM group's OWN "Settings" (-> /admin/settings, the admin registry)
- *  rendering side by side for every admin — dissolved naturally once
- *  /settings became the ONE unified Settings surface for both audiences
- *  (components/settings/SettingsShell.tsx: non-admins see their existing
- *  profile/restricted-PIN/playback-prefs content unchanged; admins get the
- *  full 8-tab admin surface — Server/Libraries/Users & Profiles/Playback/
- *  Remote Access/Plugins/Advanced Server/About — behind the SAME entry).
- *  The SYSTEM group's former "admin-settings" nav item is REMOVED below —
- *  see that group's own comment. This is now the only "Settings" label in
- *  the sidebar, for every user, admin or not. */
+ *  Settings-IA restructure (W2 L1 -> W2 D-6, this wave): L1's unified
+ *  "Settings" entry (below, formerly the ONE place every user reached
+ *  Settings from — see git blame for that era's comment) is REMOVED here.
+ *  D-6 splits it back into two audiences with two homes: server-scoped
+ *  admin configuration (Server/Notices/Libraries/Users & Profiles/
+ *  Playback/Remote Access/Plugins/Mail/Advanced Server/About) is
+ *  "System Settings", admin-only, in the SYSTEM group below, right after
+ *  Dashboard; user-scoped self-service (Profile, Password, per-user
+ *  Playback preferences, Restricted opt-in) moved OUT to /profile, reached
+ *  from the avatar menu (UserMenu.tsx's new "Profile settings" row), not
+ *  the sidebar at all — every user, admin or not, gets there the same way.
+ *  A non-admin therefore has no "Settings"-shaped entry anywhere in this
+ *  sidebar anymore; that's intentional, not a gap (components/settings/
+ *  SettingsShell.tsx now redirects any non-admin who lands on /settings*
+ *  by URL straight to /profile). */
 export const LIBRARY_NAV_ITEMS: NavItemConfig[] = [
   {
     key: "home",
@@ -150,46 +153,50 @@ export const LIBRARY_NAV_ITEMS: NavItemConfig[] = [
     href: "/search",
     isActive: (ctx) => ctx.pathname.startsWith("/search"),
   },
-  {
-    key: "settings",
-    label: "Settings",
-    icon: "settings",
-    href: "/settings",
-    isActive: (ctx) => ctx.pathname === "/settings",
-  },
 ];
 
 /** SYSTEM group — admin-only (matches app/admin/layout.tsx's own
  *  isAdmin-gated redirect; this is the UX mirror, not the security
  *  boundary, same posture the former NavRail's isAdmin prop already had).
- *  "Dashboard" -> /admin, which used to redirect straight to /admin/jobs
- *  (pre-Phosphor-Wave-2) — /admin now renders the real Phosphor admin
- *  dashboard itself (app/admin/page.tsx: health cards, active streams,
- *  libraries + Fix Match, job queue, event log). AdminNav's remaining
- *  sections stay reachable alongside its new "Dashboard" tab.
  *
- *  Settings-IA unification (W2 L1): the former "admin-settings" entry here
- *  (-> /admin/settings, the schema-driven registry) is REMOVED — that
- *  content, plus Libraries and Users management (formerly their own
- *  AdminNav sections), moved to /settings/advanced, /settings/libraries,
- *  and /settings/users respectively (components/settings/SettingsShell.tsx;
- *  /admin/settings, /admin/libraries, /admin/users are now thin
- *  redirect-only stubs to those new homes — the OLD URLs still work). The
- *  LIBRARY group's own "Settings" entry above is now the ONE place every
- *  user, admin or not, reaches Settings from — see that entry's comment. */
+ *  D-5 (this wave): "Dashboard" and the former "System" entry (-> the old
+ *  /admin/system page) presented overlapping information — version/OS/
+ *  tier/node/uptime facts, verified hardware capabilities, update notice,
+ *  provider-key notice, crash files, and the log tail all now live on the
+ *  merged /admin page itself (app/admin/page.tsx's own header), so
+ *  "System" is REMOVED here rather than kept as a second, now-empty
+ *  destination. /admin/system is a redirect-only stub back to /admin
+ *  (app/admin/system/page.tsx), same pattern as the legacy /admin/settings
+ *  stub below — old bookmarks still resolve, they just land on the one
+ *  merged screen. isActive no longer needs to carve out "/admin/system" as
+ *  an exception (there is nothing left under that prefix to except).
+ *
+ *  D-6 (this wave): "System Settings" is the former unified "Settings"
+ *  entry, renamed and moved here from the LIBRARY group (see that group's
+ *  own comment) — admin-only, right after Dashboard, matching D-6's
+ *  literal placement requirement. It still points at /settings (bare) +
+ *  /settings/<key> (components/settings/SettingsShell.tsx), now retaining
+ *  ONLY the server-scoped sections (Server/Notices/Libraries/Users &
+ *  Profiles/Playback/Remote Access/Plugins/Mail/Advanced Server/About) —
+ *  the user-scoped "Account" section moved out to /profile, which is why
+ *  this label is no longer plain "Settings" (that word alone, sitting
+ *  under SYSTEM, would misleadingly suggest it's the ONE settings surface
+ *  again, the exact ambiguity D-6 exists to remove). /admin/settings,
+ *  /admin/libraries, /admin/users stay as their existing redirect-only
+ *  stubs into this same surface — untouched by this wave. */
 export const SYSTEM_NAV_ITEMS: NavItemConfig[] = [
   {
     key: "dashboard",
     label: "Dashboard",
     icon: "dashboard",
     href: "/admin",
-    isActive: (ctx) => ctx.pathname.startsWith("/admin") && !ctx.pathname.startsWith("/admin/system"),
+    isActive: (ctx) => ctx.pathname.startsWith("/admin"),
   },
   {
-    key: "system",
-    label: "System",
-    icon: "cpu",
-    href: "/admin/system",
-    isActive: (ctx) => ctx.pathname.startsWith("/admin/system"),
+    key: "system-settings",
+    label: "System Settings",
+    icon: "settings",
+    href: "/settings",
+    isActive: (ctx) => ctx.pathname.startsWith("/settings"),
   },
 ];

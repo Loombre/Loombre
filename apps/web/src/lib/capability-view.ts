@@ -3,10 +3,12 @@
 //
 // W1/D-1 (2026-08-07): shared derivation for "does this machine have any
 // hardware acceleration?" — used by BOTH capability surfaces (setup
-// wizard HardwareStep and Admin → System's CapabilitiesCard) so they can
-// never disagree, and unit-testable without a component harness (the
-// wizard-state.ts posture, applied to the one derivation both sides
-// need).
+// wizard HardwareStep and the Dashboard's CapabilitiesCard —
+// components/admin/system/CapabilitiesCard.tsx, composed on
+// app/admin/page.tsx since D-5's Wave 2 merge; formerly Admin → System's
+// own inline card of the same name) so they can never disagree, and
+// unit-testable without a component harness (the wizard-state.ts posture,
+// applied to the one derivation both sides need).
 //
 // The predicate is "no NON-software backend verified any capability" —
 // NOT "every backend is empty". On the common GPU-less outcome (a

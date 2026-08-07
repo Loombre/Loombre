@@ -508,6 +508,7 @@ export class SettingsService implements OnApplicationBootstrap {
         category: entry.category,
         description: entry.description,
         ...(entry.caution !== undefined ? { caution: entry.caution } : {}),
+        ...(entry.technicalDetails !== undefined ? { technicalDetails: entry.technicalDetails } : {}),
         scope: entry.scope,
         requiresRestart: entry.requiresRestart,
         ...(entry.envVar !== undefined ? { envVar: entry.envVar } : {}),

@@ -87,6 +87,37 @@
   color: var(--color-text-subtle);
 }
 
+/* D-5 (Wave 2, this run): the merged former /admin/system content — see
+   this file's page.tsx header. A visual break (heading + top margin) from
+   the operational body above it, since the System cards below are a
+   distinct concern (host/hardware/update/log facts) from the streams/
+   libraries/jobs/events panels above. */
+.systemSection {
+  margin-top: var(--space-md);
+}
+
+.sectionHeading {
+  margin: 0 0 var(--space-md);
+  font-size: var(--text-lg);
+  font-weight: var(--weight-semibold);
+}
+
+/* W7 (carried verbatim from the deleted /admin/system page's own .grid —
+   see that page's git history for the original comment): a clean 2-up grid
+   at desktop widths, equal-height rows (no orphaned whitespace beside a
+   short card next to a tall one), consistent gutters. 480px is deliberately
+   wide enough that this page's ~1120px content column (SettingsPageLayout,
+   via admin/layout.tsx) only ever fits 2 columns — 3 would need
+   3*480 + 2*gap > 1120px — so "auto-fit" collapsing to 1 column on
+   narrower viewports is the only breakpoint this needs. align-items
+   defaults to `stretch` — a Card's own height:auto content simply fills
+   the taller sibling's row height. */
+.systemGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(480px, 1fr));
+  gap: var(--space-lg);
+}
+
 @media (width <= 767.98px) {
   .body {
     grid-template-columns: 1fr;

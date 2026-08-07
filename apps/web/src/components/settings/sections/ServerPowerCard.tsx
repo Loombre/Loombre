@@ -26,6 +26,14 @@
 // `shutdown-unsupported-under-container-supervision` (Docker's
 // unless-stopped restarts on any exit, so an in-process shutdown cannot
 // keep the container down) — rendered verbatim from the problem detail.
+//
+// W14 / D-8 (locked): the two idle-row actions are same-size, ellipsis-free
+// buttons, not the mismatched "Restart server…" / "Shut down server…" pair
+// from the owner screenshot — sizing is a shared .powerButton min-width
+// (module CSS), variants are `warning` (Restart — cautionary, reversible)
+// and `danger` (Shut down — destructive). The confirm-block buttons below
+// (Restart / Shut down inside .confirmActions) are unchanged: still
+// `danger`, still their own existing copy and flow.
 
 import { useEffect, useState } from "react";
 import { Card } from "../../ui/Card.js";
@@ -143,8 +151,8 @@ export function ServerPowerCard(): React.JSX.Element {
                 seconds.
               </span>
             </div>
-            <Button variant="secondary" onClick={() => setPhase("confirmRestart")}>
-              Restart server…
+            <Button variant="warning" className={styles.powerButton} onClick={() => setPhase("confirmRestart")}>
+              Restart server
             </Button>
           </div>
           <div className={styles.row}>
@@ -155,8 +163,8 @@ export function ServerPowerCard(): React.JSX.Element {
                 this web app stops working.
               </span>
             </div>
-            <Button variant="secondary" onClick={() => setPhase("confirmShutdown")}>
-              Shut down server…
+            <Button variant="danger" className={styles.powerButton} onClick={() => setPhase("confirmShutdown")}>
+              Shut down server
             </Button>
           </div>
         </div>
