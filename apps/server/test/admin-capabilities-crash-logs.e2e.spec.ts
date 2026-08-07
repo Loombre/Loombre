@@ -110,10 +110,144 @@ describe("GET /admin/capabilities", () => {
     expect(res.status).toBe(403);
   });
 
-  it("null envelope before any hw-capability probe has ever run (fresh reseeded instance)", async () => {
+  it("null report + probe 'never-ran' before any hw-capability probe has ever run (fresh reseeded instance)", async () => {
     const res = await request(app.getHttpServer()).get("/admin/capabilities").set("Authorization", `Bearer ${adminToken}`);
     expect(res.status, JSON.stringify(res.body)).toBe(200);
-    expect(res.body).toEqual({ report: null });
+    expect(res.body).toEqual({ report: null, probe: { status: "never-ran", lastError: null, updatedAtMs: null } });
+  });
+
+  // W1/D-1 three-state coverage: never-ran (above), failed, pending, and
+  // completed-with-zero-backends must each be distinguishable on the wire.
+  it("probe 'failed': latest hwprobe ledger row failed + no snapshot -> lastError surfaces, report stays null", async () => {
+    const db = createDb(databaseUrl);
+    try {
+      const nowMs = Date.now();
+      await db
+        .insertInto("jobs")
+        .values({
+          id: "00000000-0000-7000-8000-000000000501",
+          type: "hwprobe",
+          status: "failed",
+          last_error: "ffmpeg exited 1 during the encoder listing",
+          created_at_ms: nowMs - 60_000,
+          updated_at_ms: nowMs - 30_000,
+          finished_at_ms: nowMs - 30_000,
+        })
+        .execute();
+
+      const res = await request(app.getHttpServer()).get("/admin/capabilities").set("Authorization", `Bearer ${adminToken}`);
+      expect(res.status, JSON.stringify(res.body)).toBe(200);
+      expect(res.body).toEqual({
+        report: null,
+        probe: { status: "failed", lastError: "ffmpeg exited 1 during the encoder listing", updatedAtMs: nowMs - 30_000 },
+      });
+    } finally {
+      await db.deleteFrom("jobs").where("id", "=", "00000000-0000-7000-8000-000000000501").execute();
+      await db.destroy();
+    }
+  });
+
+  it("probe 'pending': latest hwprobe ledger row queued + no snapshot", async () => {
+    const db = createDb(databaseUrl);
+    try {
+      const nowMs = Date.now();
+      await db
+        .insertInto("jobs")
+        .values({
+          id: "00000000-0000-7000-8000-000000000502",
+          type: "hwprobe",
+          status: "queued",
+          created_at_ms: nowMs - 5_000,
+          updated_at_ms: nowMs - 5_000,
+        })
+        .execute();
+
+      const res = await request(app.getHttpServer()).get("/admin/capabilities").set("Authorization", `Bearer ${adminToken}`);
+      expect(res.status, JSON.stringify(res.body)).toBe(200);
+      expect(res.body).toEqual({
+        report: null,
+        probe: { status: "pending", lastError: null, updatedAtMs: nowMs - 5_000 },
+      });
+    } finally {
+      await db.deleteFrom("jobs").where("id", "=", "00000000-0000-7000-8000-000000000502").execute();
+      await db.destroy();
+    }
+  });
+
+  it("re-probe over an existing snapshot: NEWER failed hwprobe row -> probe 'failed' while the previous report stays visible", async () => {
+    const db = createDb(databaseUrl);
+    try {
+      const verifiedAtMs = Date.now() - 60_000;
+      const failedAtMs = verifiedAtMs + 30_000;
+      await db
+        .insertInto("hw_capability_snapshots")
+        .values({
+          ffmpeg_build_hash: "sha256-before-upgrade",
+          gpu_fingerprint: "old-gpu",
+          platform: process.platform === "darwin" ? "darwin" : process.platform === "win32" ? "win32" : "linux",
+          verified_at_ms: verifiedAtMs,
+          is_current: true,
+        })
+        .execute();
+      await db
+        .insertInto("jobs")
+        .values({
+          id: "00000000-0000-7000-8000-000000000503",
+          type: "hwprobe",
+          status: "failed",
+          last_error: "re-probe after ffmpeg upgrade crashed",
+          created_at_ms: failedAtMs - 5_000,
+          updated_at_ms: failedAtMs,
+          finished_at_ms: failedAtMs,
+        })
+        .execute();
+
+      const res = await request(app.getHttpServer()).get("/admin/capabilities").set("Authorization", `Bearer ${adminToken}`);
+      expect(res.status, JSON.stringify(res.body)).toBe(200);
+      expect(res.body.probe).toEqual({
+        status: "failed",
+        lastError: "re-probe after ffmpeg upgrade crashed",
+        updatedAtMs: failedAtMs,
+      });
+      // The stale-but-real report is still served alongside the failure.
+      expect(res.body.report).toMatchObject({ ffmpegBuildHash: "sha256-before-upgrade", verifiedAtMs });
+    } finally {
+      await db.deleteFrom("jobs").where("id", "=", "00000000-0000-7000-8000-000000000503").execute();
+      await db.deleteFrom("hw_capability_backends").execute();
+      await db.deleteFrom("hw_capability_snapshots").execute();
+      await db.destroy();
+    }
+  });
+
+  it("completed with ZERO backends: valid software-everything state — non-null report, backends [], probe 'completed'", async () => {
+    const db = createDb(databaseUrl);
+    try {
+      const nowMs = Date.now();
+      await db
+        .insertInto("hw_capability_snapshots")
+        .values({
+          ffmpeg_build_hash: "sha256-empty",
+          gpu_fingerprint: "",
+          platform: process.platform === "darwin" ? "darwin" : process.platform === "win32" ? "win32" : "linux",
+          verified_at_ms: nowMs,
+          is_current: true,
+        })
+        .execute();
+
+      const res = await request(app.getHttpServer()).get("/admin/capabilities").set("Authorization", `Bearer ${adminToken}`);
+      expect(res.status, JSON.stringify(res.body)).toBe(200);
+      expect(res.body.probe).toEqual({ status: "completed", lastError: null, updatedAtMs: nowMs });
+      expect(res.body.report).toMatchObject({
+        ffmpegBuildHash: "sha256-empty",
+        gpuFingerprint: null,
+        verifiedAtMs: nowMs,
+        backends: [],
+      });
+    } finally {
+      await db.deleteFrom("hw_capability_backends").execute();
+      await db.deleteFrom("hw_capability_snapshots").execute();
+      await db.destroy();
+    }
   });
 
   it("real snapshot: platform/ffmpegBuildHash/gpuFingerprint/verifiedAtMs + backends in probe (position) order", async () => {

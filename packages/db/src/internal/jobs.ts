@@ -11,6 +11,8 @@
 import type { Selectable } from 'kysely';
 import type { JobsTable, JobStatus } from '../types.js';
 import type { DbOrTx } from './tx.js';
+import { withTransaction } from './tx.js';
+import { writeEvent } from './events.js';
 
 export type JobLedgerRow = Selectable<JobsTable>;
 
@@ -97,4 +99,128 @@ export async function hasQueuedOrActiveJobOfType(db: DbOrTx, type: string): Prom
     .where('status', 'in', ['queued', 'active'])
     .executeTakeFirst();
   return row !== undefined;
+}
+
+export interface ReconcileAbandonedJobsInput {
+  /** ONLY these job types are swept — scope this to the singleton-guarded
+   *  types (hwprobe/image-backfill/stash-inventory/stash-sync), which are
+   *  one-per-type by design, so the sweep touches at most a handful of
+   *  rows. Sweeping every type would mean an unbounded loop (one 'probe'
+   *  row per media file after an interrupted scan) and a matching flood of
+   *  job.updated outbox events for rows nothing is guarded on. */
+  types: readonly string[];
+  /** 'queued' rows older than this are treated as orphaned. Pick a horizon
+   *  past the longest per-attempt expiry (23h for scan/hwprobe) — old
+   *  enough that a still-live queue job re-running promptly after this
+   *  worker's consumers register makes the row self-heal anyway. */
+  queuedStaleBeforeMs: number;
+  /** 'active' rows last updated before this are treated as orphaned. The
+   *  correct value is THIS WORKER PROCESS'S OWN START TIME: the ledger
+   *  writes 'active' at fetch time, so under the shipped one-worker-per-
+   *  database topology (every installer + docker-compose.prod.yml run
+   *  exactly one worker; packages/db/src/query/worker-liveness.ts embeds
+   *  the same assumption) any row still 'active' from BEFORE this process
+   *  existed was orphaned by a dead predecessor — a crash 5 minutes into
+   *  a probe must not wedge the guard until a 24h horizon passes. A row
+   *  this process itself marked active always has updated_at_ms >= the
+   *  process start and can never qualify. */
+  activeStaleBeforeMs: number;
+  nowMs: number;
+}
+
+export interface AbandonedJobLedgerRow {
+  id: string;
+  type: string;
+  previousStatus: Extract<JobStatus, 'queued' | 'active'>;
+}
+
+/** Plain language on purpose: this string lands in jobs.last_error and is
+ *  surfaced verbatim to end users (admin jobs panel, and — for hwprobe —
+ *  GET /admin/capabilities' probe.lastError on the System page and setup
+ *  wizard). No ledger/sweep/retention jargon. */
+const RECONCILED_MESSAGE =
+  'This job was interrupted — the background worker stopped before it finished. ' +
+  'It was marked failed when the worker restarted, and runs again automatically if still needed.';
+
+/**
+ * W1/D-1 (2026-08-07): boot-time ledger reconciliation. The ledger only
+ * ever transitions inside the worker's in-process batch handler
+ * (packages/jobs/src/queue.ts) — pg-boss's SQL-side sweeps (timeout-fail
+ * of fetched jobs whose worker died; retention-delete of never-fetched
+ * jobs, default 14 days) never mirror into it. A worker outage could
+ * therefore leave rows stuck 'queued'/'active' forever, which (a) lies to
+ * the admin jobs UI and (b) permanently satisfies
+ * hasQueuedOrActiveJobOfType's singleton guard — the hwprobe boot
+ * re-enqueue then never fires again, so hardware capabilities read
+ * "never probed" for the install's remaining lifetime.
+ *
+ * Flips each such stale row to 'failed' and writes a job.updated outbox
+ * event in the SAME transaction — the exact pattern packages/jobs/src/
+ * ledger.ts uses for every ordinary transition.
+ *
+ * Concurrency: the worker's queue consumers register at module scope and
+ * can be fetching jobs WHILE main() runs this, so a row this sweep read as
+ * stale may be moved to 'active' by recordActive at any moment. Two
+ * defenses, both required: the SELECT takes FOR UPDATE row locks (a
+ * concurrent recordActive blocks until this transaction commits, then
+ * overwrites 'failed' with 'active' — self-healing by design, since
+ * transitionJobLedgerRow has no status guard), and every per-row UPDATE
+ * re-asserts the full staleness predicate, so a row that changed between
+ * any interleaving (or a second worker boot racing this one) updates zero
+ * rows and emits zero events instead of clobbering live state.
+ */
+export async function reconcileAbandonedJobLedgerRows(
+  db: DbOrTx,
+  input: ReconcileAbandonedJobsInput
+): Promise<AbandonedJobLedgerRow[]> {
+  if (input.types.length === 0) return [];
+  return withTransaction(db, async (trx) => {
+    const stale = await trx
+      .selectFrom('jobs')
+      .select(['id', 'type', 'status', 'updated_at_ms'])
+      .where('type', 'in', [...input.types])
+      .where((eb) =>
+        eb.or([
+          eb.and([eb('status', '=', 'queued'), eb('updated_at_ms', '<', input.queuedStaleBeforeMs)]),
+          eb.and([eb('status', '=', 'active'), eb('updated_at_ms', '<', input.activeStaleBeforeMs)]),
+        ])
+      )
+      .forUpdate()
+      .execute();
+    if (stale.length === 0) return [];
+
+    const reconciled: AbandonedJobLedgerRow[] = [];
+    for (const row of stale) {
+      const previousStatus = row.status as AbandonedJobLedgerRow['previousStatus'];
+      const staleBeforeMs = previousStatus === 'queued' ? input.queuedStaleBeforeMs : input.activeStaleBeforeMs;
+      const updated = await trx
+        .updateTable('jobs')
+        .set({
+          status: 'failed',
+          last_error: RECONCILED_MESSAGE,
+          finished_at_ms: input.nowMs,
+          updated_at_ms: input.nowMs,
+        })
+        .where('id', '=', row.id)
+        .where('status', '=', previousStatus)
+        .where('updated_at_ms', '<', staleBeforeMs)
+        .executeTakeFirst();
+      if (Number(updated.numUpdatedRows ?? 0) === 0) continue;
+
+      await writeEvent(trx, {
+        type: 'job.updated',
+        tsMs: input.nowMs,
+        actorUserId: null,
+        payload: {
+          jobId: row.id,
+          jobType: row.type,
+          status: 'failed',
+          errorMessage: RECONCILED_MESSAGE,
+          updatedAtMs: input.nowMs,
+        },
+      });
+      reconciled.push({ id: row.id, type: row.type, previousStatus });
+    }
+    return reconciled;
+  });
 }

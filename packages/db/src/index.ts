@@ -421,6 +421,7 @@ export {
   deleteDeviceForUser,
   listJobsAdmin,
   getJobAdmin,
+  getLatestJobOfTypeAdmin,
   listActiveSessionsAdmin,
   listUnmatchedLibraryItemsForViewer,
   getEnrichableCatalogItemForAdmin,

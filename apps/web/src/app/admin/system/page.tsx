@@ -37,6 +37,7 @@ import { SegmentedControl } from "../../../components/ui/SegmentedControl.js";
 import { Skeleton } from "../../../components/skeleton/Skeleton.js";
 import { EmptyState } from "../../../components/admin/EmptyState.js";
 import { formatFfmpegHashPrefix, formatProbeAge } from "../../../lib/admin-capability-format.js";
+import { NO_ACCELERATION_COPY, hasNoAcceleratedCapabilities } from "../../../lib/capability-view.js";
 import { formatOsLabel } from "../../../lib/os-label.js";
 import { describeUpdateVerification } from "../../../lib/admin-update-notice.js";
 import { apiGet, LoombreApiError } from "../../../lib/api-client.js";
@@ -46,6 +47,7 @@ import { FolderOpen, KeyRound } from "lucide-react";
 type SystemInfo = components["schemas"]["SystemInfo"];
 type SystemUpdateInfo = components["schemas"]["SystemUpdateInfo"];
 type CapabilityReport = components["schemas"]["CapabilityReport"];
+type CapabilityProbeStatus = components["schemas"]["CapabilityProbeStatus"];
 type CrashFile = components["schemas"]["CrashFile"];
 type ProviderKeyStatus = components["schemas"]["ProviderKeyStatus"];
 
@@ -85,30 +87,67 @@ function SystemInfoCard(): React.JSX.Element {
   );
 }
 
+/** W1/D-1 (2026-08-07): the three no-report probe states render distinct,
+ *  plain-language copy (never-ran / pending / failed), and a completed
+ *  report that verified zero capabilities is presented as the valid
+ *  "software everything" state — common in VMs and GPU-less servers —
+ *  never as an unexplained empty table. */
 function CapabilitiesCard(): React.JSX.Element {
-  const [report, setReport] = useState<CapabilityReport | null | undefined>(undefined);
+  const [envelope, setEnvelope] = useState<
+    { report: CapabilityReport | null; probe?: CapabilityProbeStatus } | undefined
+  >(undefined);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     apiGet("/admin/capabilities")
-      .then((res) => setReport(res.report))
+      .then((res) => setEnvelope(res))
       .catch((err) => setError(err instanceof LoombreApiError ? err.message : "Failed to load capabilities."));
   }, []);
+
+  const report = envelope?.report ?? null;
+  const probeStatus = envelope?.probe?.status ?? "never-ran";
+  const softwareOnly = report !== null && hasNoAcceleratedCapabilities(report);
 
   return (
     <Card>
       <h2 className={styles.cardTitle}>Verified hardware capabilities</h2>
       {error && <p className={styles.errorText}>{error}</p>}
-      {report === undefined ? (
+      {envelope === undefined ? (
         <Skeleton radius="md" height={120} />
       ) : report === null ? (
-        <EmptyState
-          icon={FolderOpen}
-          title="No probe has run yet"
-          body="The worker runs a hardware capability self-test at first boot (and on driver/ffmpeg changes). Nothing has been verified yet on this instance."
-        />
+        probeStatus === "failed" ? (
+          <EmptyState
+            icon={FolderOpen}
+            title="Hardware check failed"
+            body={`The last hardware self-test couldn't finish, so this server uses software for video decoding, encoding, and HDR conversion. Everything still works — software processing runs on any machine, it just uses more CPU during transcoding. The check runs again automatically the next time the worker starts.${envelope.probe?.lastError ? ` Details: ${envelope.probe.lastError}` : ""}`}
+          />
+        ) : probeStatus === "pending" ? (
+          <EmptyState
+            icon={FolderOpen}
+            title="Hardware check in progress"
+            body="The worker is running its hardware self-test now — results appear here the moment it finishes."
+          />
+        ) : (
+          <EmptyState
+            icon={FolderOpen}
+            title="Hardware check hasn't run yet"
+            body="The worker checks this machine's video hardware automatically at first boot (and after driver or ffmpeg changes). Nothing has been checked yet on this server."
+          />
+        )
       ) : (
         <>
+          {probeStatus === "pending" && (
+            <p className={styles.helpText}>
+              A new hardware check is running now — the results below update when it finishes.
+            </p>
+          )}
+          {probeStatus === "failed" && (
+            <p className={styles.helpText}>
+              The most recent hardware re-check failed; showing the last successful results.
+              {envelope?.probe?.lastError ? ` Details: ${envelope.probe.lastError}` : ""}
+            </p>
+          )}
+          {softwareOnly && <p className={styles.helpText}>{NO_ACCELERATION_COPY}</p>}
           <dl className={styles.factGrid}>
             <dt>Platform</dt>
             <dd>{formatOsLabel(report.platform)}</dd>
@@ -121,6 +160,7 @@ function CapabilitiesCard(): React.JSX.Element {
             <dt>Probed</dt>
             <dd>{formatProbeAge(report.verifiedAtMs, Date.now())}</dd>
           </dl>
+          {report.backends.length > 0 && (
           <div className={styles.matrixWrap}>
             <table className={styles.matrix}>
               <thead>
@@ -143,6 +183,7 @@ function CapabilitiesCard(): React.JSX.Element {
               </tbody>
             </table>
           </div>
+          )}
         </>
       )}
     </Card>

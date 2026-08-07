@@ -115,12 +115,15 @@ export type {
   JobLedgerRow,
   InsertJobLedgerRowInput,
   TransitionJobLedgerRowInput,
+  ReconcileAbandonedJobsInput,
+  AbandonedJobLedgerRow,
 } from './jobs.js';
 export {
   insertJobLedgerRow,
   transitionJobLedgerRow,
   getJobLedgerRow,
   hasQueuedOrActiveJobOfType,
+  reconcileAbandonedJobLedgerRows,
 } from './jobs.js';
 
 export type {

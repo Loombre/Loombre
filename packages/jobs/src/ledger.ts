@@ -102,6 +102,11 @@ export function createLedger(connectionString: string): Ledger {
           status: 'active',
           ...(attempts !== undefined ? { attempts } : {}),
           startedAtMs: now,
+          // Cleared explicitly: a row the W1 boot reconciliation marked
+          // failed (finished_at_ms set) that pg-boss then delivers anyway
+          // must not report an 'active' job with a finish time in the
+          // past (negative durations for any consumer that subtracts).
+          finishedAtMs: null,
           updatedAtMs: now,
         });
         await emitJobUpdated(trx, { jobId: id, jobType: row.type, status: 'active', errorMessage: null, updatedAtMs: now });
