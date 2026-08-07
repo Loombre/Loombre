@@ -329,12 +329,14 @@
              (node_modules\next\dist\bin\next start, see this ServiceInstall's
              Arguments above and this file's header on why standalone's
              server.js is NOT used), and `next start` binds 0.0.0.0 via the
-             literal "--hostname 0.0.0.0" CLI argument already present in
-             those Arguments (0.0.0.0 because the web UI is LAN-facing by
+             hostname flag (with value 0.0.0.0) already present in those
+             Arguments — flags spelled out in words here because a literal
+             double-hyphen is illegal inside an XML comment, WIX0104
+             (0.0.0.0 because the web UI is LAN-facing by
              the same PLAN §10 rationale as the server — Firewall.wxs opens
              the matching inbound rule); PORT here is what `next start`
-             falls back to reading from the environment since no --port
-             arg is passed. LOOMBRE_SERVER_ORIGIN points API proxying at
+             falls back to reading from the environment since no port
+             flag is passed. LOOMBRE_SERVER_ORIGIN points API proxying at
              the server service on its ServerPort.wxi port. -->
         <RegistryValue
           Root="HKLM"

@@ -4,9 +4,11 @@
 
   Inbound TCP exceptions for the Loombre server's listen port AND the web
   client's listen port (the latter added by the installer completeness
-  audit: the LoombreWeb service binds 0.0.0.0 via `next start --hostname
-  0.0.0.0` — the CLI argument in Services.wxs's ServiceInstall, NOT an
-  Environment entry — because the browser UI is exactly as LAN-facing as
+  audit: the LoombreWeb service binds 0.0.0.0 via `next start` with its
+  hostname flag set to 0.0.0.0 (a CLI argument in Services.wxs's
+  ServiceInstall Arguments, NOT an Environment entry; spelled out in words
+  here because a literal double-hyphen flag is illegal inside an XML
+  comment, WIX0104) — because the browser UI is exactly as LAN-facing as
   the API it fronts, by the same PLAN §10 rationale below). Via the WiX v4
   Firewall extension
   (WixToolset.Firewall.wixext — passed to `wix build` with
