@@ -76,6 +76,19 @@
   text-overflow: ellipsis;
 }
 
+/* A directory the server itself cannot descend into (readable:false) —
+   dimmed but still present and clickable; see the component's comment. */
+.entryUnreadable .entryName {
+  color: var(--color-text-muted);
+}
+
+.noAccessBadge {
+  margin-left: auto;
+  flex-shrink: 0;
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+
 .empty {
   padding: var(--space-sm);
   color: var(--color-text-muted);

@@ -23,12 +23,18 @@
 // where every platform-specific installer bug this project has hit would
 // otherwise have hidden.
 
-import { readdirSync, statSync, existsSync } from "node:fs";
+import { accessSync, constants, readdirSync, statSync, existsSync } from "node:fs";
+import { userInfo } from "node:os";
 import path from "node:path";
 
 export interface DirectoryEntryDto {
   name: string;
   path: string;
+  /** False = the server itself cannot descend into it (a follow-up listing
+   *  would 403) — the normal state of personal home folders under the
+   *  macOS/Linux installers' least-privilege service accounts. Marked, not
+   *  omitted: hiding the folder would misrepresent the filesystem. */
+  readable: boolean;
 }
 
 export interface DirectoryListingDto {
@@ -55,6 +61,61 @@ function pathFor(platform: NodeJS.Platform): path.PlatformPath {
   return platform === "win32" ? path.win32 : path.posix;
 }
 
+/** Can this process list the directory's contents? R_OK reads the names,
+ *  X_OK descends — a listing needs both. accessSync follows symlinks,
+ *  which matches how the follow-up listing would actually behave. */
+function canReadDirectory(p: string): boolean {
+  try {
+    accessSync(p, constants.R_OK | constants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** The account this server actually runs as — "" if the OS cannot say
+ *  (userInfo throws on passwd-less containers), which safely falls
+ *  through to the generic message. */
+function currentServiceUser(): string {
+  try {
+    return userInfo().username;
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * The 403 detail for a permission-denied browse, tailored to the service
+ * account the server is ACTUALLY running as — detected, not assumed, so a
+ * dev server running as a normal user never claims to be an installer.
+ * The macOS field report behind this: the picker said just "Forbidden"
+ * while the real situation ("the _loombre daemon cannot read your home
+ * folder, and here is what to do instead") was fully known server-side.
+ */
+export function permissionDeniedDetail(
+  platform: NodeJS.Platform = process.platform,
+  serviceUser: string = currentServiceUser(),
+  inContainer: boolean = existsSync("/.dockerenv"),
+): string {
+  if (platform === "darwin" && serviceUser === "_loombre") {
+    return (
+      "Loombre's service account (_loombre) cannot read this folder — macOS keeps personal " +
+      "home folders private. Keep media on an external drive (under /Volumes) or in " +
+      "/Users/Shared, or grant the service account access to just your media folder — see " +
+      "the install guide's media-permissions section."
+    );
+  }
+  if (platform === "linux" && serviceUser === "loombre") {
+    return inContainer
+      ? "Loombre's service account (loombre, uid 1000) cannot read this folder — check the " +
+          "bind mount's ownership and permissions on the host."
+      : "Loombre's service account (loombre) cannot read this folder, and home folders are " +
+          "additionally hidden from the service by systemd (ProtectHome). Keep media under " +
+          "/srv, /mnt, or /media, or grant the service account access — see the install guide.";
+  }
+  return "The server does not have permission to read that directory.";
+}
+
 /**
  * Candidate roots to offer when no path is supplied.
  *
@@ -66,6 +127,7 @@ function pathFor(platform: NodeJS.Platform): path.PlatformPath {
 export function listRoots(
   platform: NodeJS.Platform = process.platform,
   exists: (p: string) => boolean = existsSync,
+  canRead: (p: string) => boolean = canReadDirectory,
 ): DirectoryListingDto {
   const candidates: string[] =
     platform === "win32"
@@ -76,7 +138,7 @@ export function listRoots(
           ["/", "/Volumes", "/Users"]
         : ["/", "/mnt", "/media", "/home", "/srv"];
 
-  const entries = candidates.filter(exists).map((p) => ({ name: p, path: p }));
+  const entries = candidates.filter(exists).map((p) => ({ name: p, path: p, readable: canRead(p) }));
   return { path: null, parent: null, entries };
 }
 
@@ -155,7 +217,7 @@ export function listDirectories(
       }
     }
     if (!isDir) continue;
-    entries.push({ name: dirent.name, path: full });
+    entries.push({ name: dirent.name, path: full, readable: canReadDirectory(full) });
   }
 
   // Case-insensitive so the order matches what the platform's own file

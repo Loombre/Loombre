@@ -3,7 +3,11 @@
 
 // Loombre :: apps/web/src/components/settings/sections/DirectoryPicker.tsx
 //
-// The "Browse" half of the Add-library dialog's path field.
+// The "Browse" half of a library-path field — used by the Add-library
+// dialog (AddLibrarySheet) and by the setup wizard's library step
+// (app/setup/_components/LibraryStep.tsx), which is a fully authenticated
+// admin by the time it renders and so reaches the same admin-only
+// endpoint unchanged.
 //
 // WHY THIS IS NOT AN <input type="file" webkitdirectory>. A library path
 // names a directory on the SERVER's filesystem. The browser can only see
@@ -23,7 +27,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 import type { components } from "@loombre/sdk";
-import { apiGet, LoombreApiError } from "../../../lib/api-client.js";
+import { apiGet } from "../../../lib/api-client.js";
+import { apiErrorMessage } from "../../../lib/api-error-message.js";
 import { Button } from "../../ui/Button.js";
 import { SheetOrModal } from "../../ui/SheetOrModal.js";
 import { Skeleton } from "../../skeleton/Skeleton.js";
@@ -59,9 +64,14 @@ export function DirectoryPicker({ open, onClose, onSelect }: DirectoryPickerProp
       })
       .catch((err: unknown) => {
         // The server distinguishes these cases deliberately (422 not
-        // absolute, 403 unreadable, 404 missing) and its messages say what
-        // to do about each, so surface them rather than a generic failure.
-        setError(err instanceof LoombreApiError ? err.message : "Could not read that directory.");
+        // absolute, 403 unreadable, 404 missing) and its `detail` says
+        // what to do about each — the macOS-installer 403 even names the
+        // service account and where media should live instead. Detail-
+        // first via apiErrorMessage (V-UX F2/F3): bare err.message is only
+        // the problem TITLE, which is how a field tester once stared at
+        // the single word "Forbidden". The last good listing deliberately
+        // stays up under the error, so a sibling folder remains pickable.
+        setError(apiErrorMessage(err, "Could not read that directory."));
         setLoading(false);
       });
   }, []);
@@ -114,8 +124,19 @@ export function DirectoryPicker({ open, onClose, onSelect }: DirectoryPickerProp
             )}
             {listing?.entries.map((entry) => (
               <li key={entry.path}>
-                <button type="button" className={styles.entry} onClick={() => load(entry.path)}>
+                {/* readable:false = the server itself cannot descend into
+                    it (the installers' least-privilege service accounts
+                    cannot read personal home folders). Marked and dimmed,
+                    NOT hidden or disabled: hiding would misrepresent the
+                    filesystem, and clicking is exactly how the server's
+                    actionable 403 guidance surfaces. */}
+                <button
+                  type="button"
+                  className={entry.readable ? styles.entry : `${styles.entry} ${styles.entryUnreadable}`}
+                  onClick={() => load(entry.path)}
+                >
                   <span className={styles.entryName}>{entry.name}</span>
+                  {!entry.readable && <span className={styles.noAccessBadge}>No access</span>}
                 </button>
               </li>
             ))}

@@ -1769,6 +1769,8 @@ export interface paths {
          *     Returns DIRECTORY NAMES ONLY. It never lists files, never returns file contents, and never reveals sizes — everything it exposes is already implied by the paths an admin is about to configure. Omit `path` to list this machine's roots (drive letters on Windows, "/" plus common mount points on POSIX), then walk down one level at a time via the returned entries.
          *
          *     Admin-only, and deliberately so: enumerating a server's directory tree is reconnaissance in the wrong hands. Free-text path entry stays supported alongside it, because headless and remote installs still need to type a path that this host cannot browse to.
+         *
+         *     A permission-denied listing fails 403 with `code: "filesystem-permission-denied"` and a `detail` sentence tailored to the service account the server is actually running as (the macOS/Linux installers run a dedicated least-privilege account that cannot read personal home folders) — clients should surface that `detail` verbatim, it says what to do about the situation.
          */
         get: operations["browseDirectories"];
         put?: never;
@@ -2940,13 +2942,15 @@ export interface components {
             name: string;
             /** @description Absolute path, ready to pass straight back as this endpoint's `path` parameter or to use as a library path. Built by the server so the client never has to join path segments itself and get the separator wrong on the other platform. */
             path: string;
+            /** @description Whether the server itself can descend into this directory. False means a follow-up listing of `path` will fail with 403 — the service account lacks read permission (the normal state of personal home folders under the macOS/Linux installers, whose services run as a dedicated least-privilege account). Clients should render such entries dimmed/marked rather than hiding them, so an operator can see the folder exists and either fix its permissions or choose another location. */
+            readable: boolean;
         };
         DirectoryListing: {
             /** @description The directory that was listed, or null for the roots listing (no `path` parameter was supplied). */
             path: string | null;
             /** @description Absolute path one level up, or null when already at a root. Supplied by the server because "the parent of this path" is a platform-specific question the client should not answer. */
             parent: string | null;
-            /** @description Immediate subdirectories, name-sorted. Entries the server cannot read are OMITTED rather than failing the whole listing — one unreadable system directory must not make a browsable parent un-browsable. */
+            /** @description Immediate subdirectories, name-sorted. Entries that cannot even be identified as directories (broken symlinks, un-statable link targets) are omitted; directories the server can see but not open are included with `readable: false` — one unreadable system directory must not make a browsable parent un-browsable, and hiding it would misrepresent the filesystem. */
             entries: components["schemas"]["DirectoryEntry"][];
         };
         CrashFileList: {

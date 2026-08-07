@@ -8,10 +8,15 @@
 // between "works on the dev host" and "works on the other OS".
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { DirectoryBrowseError, listDirectories, listRoots } from "../src/catalog/admin-directories.js";
+import {
+  DirectoryBrowseError,
+  listDirectories,
+  listRoots,
+  permissionDeniedDetail,
+} from "../src/catalog/admin-directories.js";
 
 describe("admin-directories", () => {
   let root: string;
@@ -141,5 +146,82 @@ describe("admin-directories", () => {
     // A dead-end root is worse than an absent one.
     const listing = listRoots("linux", (p) => p === "/" || p === "/mnt");
     expect(listing.entries.map((e) => e.path)).toEqual(["/", "/mnt"]);
+  });
+
+  // ── The macOS field report: /Users lists fine, but every home dir inside
+  //    it is 700/750 and the _loombre daemon dead-ends on it with a 403.
+  //    The listing must SAY so up front instead of inviting the click. ──
+  describe("readable flag", () => {
+    // chmod-based unreadability cannot be simulated on Windows, and root
+    // (some container CI) reads through 000 modes regardless.
+    const canSimulateDenial =
+      process.platform !== "win32" && typeof process.getuid === "function" && process.getuid() !== 0;
+
+    it("marks ordinary directories readable", () => {
+      const entry = listDirectories(root).entries.find((e) => e.name === "Movies");
+      expect(entry?.readable).toBe(true);
+    });
+
+    it.runIf(canSimulateDenial)(
+      "lists a directory it cannot open with readable:false instead of omitting or failing",
+      () => {
+        const sealed = path.join(root, "sealed");
+        mkdirSync(sealed);
+        chmodSync(sealed, 0o000);
+        try {
+          const entry = listDirectories(root).entries.find((e) => e.name === "sealed");
+          // Present — hiding it would misrepresent the filesystem — but
+          // honestly marked as a dead end.
+          expect(entry).toBeDefined();
+          expect(entry?.readable).toBe(false);
+        } finally {
+          chmodSync(sealed, 0o755);
+          rmSync(sealed, { recursive: true, force: true });
+        }
+      },
+    );
+
+    it("flags roots through the same probe (injected, like `exists`)", () => {
+      const listing = listRoots(
+        "linux",
+        (p) => p === "/" || p === "/mnt",
+        (p) => p !== "/mnt",
+      );
+      expect(listing.entries).toEqual([
+        { name: "/", path: "/", readable: true },
+        { name: "/mnt", path: "/mnt", readable: false },
+      ]);
+    });
+  });
+
+  // ── The other half of the field report: the 403's detail said nothing
+  //    actionable. The server knows which service account it runs as and
+  //    what the installer's posture is — the detail should say what to DO. ──
+  describe("permissionDeniedDetail (403 detail tailored to the actual service account)", () => {
+    it("names _loombre and points at /Volumes + /Users/Shared for the macOS installer", () => {
+      const detail = permissionDeniedDetail("darwin", "_loombre");
+      expect(detail).toContain("_loombre");
+      expect(detail).toContain("/Volumes");
+      expect(detail).toContain("/Users/Shared");
+    });
+
+    it("explains the systemd sandbox for the Linux installer's service account", () => {
+      const detail = permissionDeniedDetail("linux", "loombre", false);
+      expect(detail).toContain("loombre");
+      expect(detail).toContain("ProtectHome");
+    });
+
+    it("talks about mount ownership, not systemd, inside a container", () => {
+      const detail = permissionDeniedDetail("linux", "loombre", true);
+      expect(detail).toContain("mount");
+      expect(detail).not.toContain("ProtectHome");
+    });
+
+    it("stays generic when not running as an installer service account (dev, Windows)", () => {
+      const generic = "The server does not have permission to read that directory.";
+      expect(permissionDeniedDetail("darwin", "ozzy")).toBe(generic);
+      expect(permissionDeniedDetail("win32", "SYSTEM")).toBe(generic);
+      expect(permissionDeniedDetail("linux", "root", false)).toBe(generic);
+    });
   });
 });
