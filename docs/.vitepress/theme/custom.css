@@ -1,0 +1,107 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+/* Loombre :: docs/.vitepress/theme/custom.css
+ *
+ * The "Phosphor" skin for the docs — same tokens as loombre.com
+ * (site/src/styles/base.css there), so stepping from the marketing pages
+ * into the guides no longer reads as leaving the product. Three layers,
+ * nothing else:
+ *
+ *   1. Self-hosted fonts (docs/public/fonts — see its README for
+ *      provenance). URLs are public-root absolute, so Vite rewrites them
+ *      under base "/docs/". Same-origin only; font-src 'self' holds.
+ *   2. Brand variables. Dark mode carries the site's exact amber/black
+ *      palette; light mode keeps the default-theme neutrals but swaps the
+ *      indigo accent for a darkened amber that clears WCAG AA on white
+ *      (#ffb454 itself would not).
+ *   3. One nav-title rule so the wordmark matches the site (Archivo at
+ *      wdth 125, letterspaced caps). The only default-theme internal we
+ *      touch; drop it first if a VitePress upgrade ever moves the class.
+ */
+
+@font-face {
+  font-family: "Archivo";
+  font-style: normal;
+  font-weight: 100 900;
+  font-stretch: 62% 125%;
+  font-display: swap;
+  src: url(/fonts/archivo-variable.woff2) format("woff2");
+}
+
+@font-face {
+  font-family: "IBM Plex Mono";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url(/fonts/ibm-plex-mono-400.woff2) format("woff2");
+}
+
+@font-face {
+  font-family: "IBM Plex Mono";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url(/fonts/ibm-plex-mono-500.woff2) format("woff2");
+}
+
+@font-face {
+  font-family: "IBM Plex Mono";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url(/fonts/ibm-plex-mono-600.woff2) format("woff2");
+}
+
+:root {
+  --vp-font-family-base: "Archivo", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --vp-font-family-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  /* Light mode: amber darkened until it reads on white. */
+  --vp-c-brand-1: #9c6210;
+  --vp-c-brand-2: #8a560e;
+  --vp-c-brand-3: #7a4c0c;
+  --vp-c-brand-soft: rgba(255, 180, 84, 0.14);
+}
+
+.dark {
+  /* Phosphor palette, verbatim from the site's base.css tokens. */
+  --vp-c-brand-1: #ffb454;
+  --vp-c-brand-2: #ffc272;
+  --vp-c-brand-3: #e0a548;
+  --vp-c-brand-soft: rgba(255, 180, 84, 0.14);
+
+  --vp-c-bg: #0b0c0f;
+  --vp-c-bg-alt: #0d0f13;
+  --vp-c-bg-soft: #101218;
+  --vp-c-bg-elv: #101218;
+
+  --vp-c-divider: rgba(255, 255, 255, 0.1);
+  --vp-c-gutter: rgba(255, 255, 255, 0.07);
+
+  --vp-c-text-1: #e9ebee;
+  --vp-c-text-2: #9ba0a8;
+  --vp-c-text-3: #61666e;
+
+  /* Brand buttons (home hero): amber pill, near-black label — the site's
+     .btn-amber, not the default theme's white-on-brand. */
+  --vp-button-brand-bg: #ffb454;
+  --vp-button-brand-text: #0c0d10;
+  --vp-button-brand-border: transparent;
+  --vp-button-brand-hover-bg: #ffc272;
+  --vp-button-brand-hover-text: #0c0d10;
+  --vp-button-brand-hover-border: transparent;
+  --vp-button-brand-active-bg: #e0a548;
+  --vp-button-brand-active-text: #0c0d10;
+  --vp-button-brand-active-border: transparent;
+}
+
+/* The wordmark, matching the site nav: Archivo stretched to wdth 125,
+   letterspaced caps. (VP 1.6.4 renders the title text as a classless span
+   inside a.title — verified in the built DOM, there is no .text hook.) */
+.VPNavBarTitle .title > span {
+  font-family: var(--vp-font-family-base);
+  font-variation-settings: "wdth" 125;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-size: 13.5px;
+}
