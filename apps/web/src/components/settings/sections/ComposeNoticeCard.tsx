@@ -34,6 +34,7 @@ import type { components } from "@loombre/sdk";
 import { Card } from "../../ui/Card.js";
 import { Button } from "../../ui/Button.js";
 import { SegmentedControl } from "../../ui/SegmentedControl.js";
+import { Select } from "../../ui/Select.js";
 import { apiPost, LoombreApiError } from "../../../lib/api-client.js";
 import { truncateMessage } from "./notice-display.js";
 import sharedStyles from "./shared.module.css";
@@ -67,6 +68,19 @@ const SEVERITY_OPTIONS: { value: NoticeSeverity; label: string }[] = [
   { value: "info", label: "Info" },
   { value: "warning", label: "Warning" },
   { value: "critical", label: "Critical" },
+];
+
+// W5: components/ui/Select.tsx's `options` shape — the "Takes effect" choices
+// never depend on component state, so this is a fixed module-level constant
+// (unlike the "Expires" options below, which gain "Until cancelled" only
+// when severity is critical and so are built per-render instead).
+const EFFECTIVE_CHOICE_OPTIONS: { value: EffectiveChoice; label: string }[] = [
+  { value: "none", label: "None — takes effect immediately" },
+  { value: "5", label: "In 5 minutes" },
+  { value: "15", label: "In 15 minutes" },
+  { value: "30", label: "In 30 minutes" },
+  { value: "60", label: "In 60 minutes" },
+  { value: "custom", label: "Custom minutes…" },
 ];
 
 // A Record (not `.find()...label`) so this is typed as plain `string`, not
@@ -372,18 +386,11 @@ export function ComposeNoticeCard({
 
           <div className={sharedStyles.field}>
             <span className={sharedStyles.label}>Takes effect</span>
-            <select
-              className={sharedStyles.textarea}
+            <Select
               value={effectiveChoice}
               onChange={(e) => setEffectiveChoice(e.target.value as EffectiveChoice)}
-            >
-              <option value="none">None — takes effect immediately</option>
-              <option value="5">In 5 minutes</option>
-              <option value="15">In 15 minutes</option>
-              <option value="30">In 30 minutes</option>
-              <option value="60">In 60 minutes</option>
-              <option value="custom">Custom minutes…</option>
-            </select>
+              options={EFFECTIVE_CHOICE_OPTIONS}
+            />
             {effectiveChoice === "custom" && (
               <input
                 className={`${sharedStyles.textarea} ${styles.customMinutesRow}`}
@@ -401,19 +408,19 @@ export function ComposeNoticeCard({
 
           <div className={sharedStyles.field}>
             <span className={sharedStyles.label}>Expires</span>
-            <select
-              className={sharedStyles.textarea}
+            <Select
               value={expiryChoice}
               onChange={(e) => setExpiryChoice(e.target.value as ExpiryChoice)}
-            >
-              <option value="">Choose an expiry…</option>
-              <option value="30m">30 minutes</option>
-              <option value="1h">1 hour</option>
-              <option value="4h">4 hours</option>
-              <option value="24h">24 hours</option>
-              <option value="custom">Custom minutes…</option>
-              {severity === "critical" && <option value="untilCancelled">Until cancelled</option>}
-            </select>
+              options={[
+                { value: "", label: "Choose an expiry…" },
+                { value: "30m", label: "30 minutes" },
+                { value: "1h", label: "1 hour" },
+                { value: "4h", label: "4 hours" },
+                { value: "24h", label: "24 hours" },
+                { value: "custom", label: "Custom minutes…" },
+                ...(severity === "critical" ? [{ value: "untilCancelled", label: "Until cancelled" }] : []),
+              ]}
+            />
             {expiryChoice === "custom" && (
               <input
                 className={`${sharedStyles.textarea} ${styles.customMinutesRow}`}

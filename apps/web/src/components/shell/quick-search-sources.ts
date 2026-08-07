@@ -36,6 +36,11 @@
 // user, covers the user-scoped self-service surface that moved OUT of
 // Settings to /profile (components/profile/ProfileSettings.tsx).
 //
+// W3-R (opus review, LOW): "admin-settings" is ALSO removed — it pointed at
+// /admin/settings, a redirect-only stub into this same "settings" entry's
+// /settings destination, so the two rows were two palette jumps to the
+// identical screen. "settings" (System Settings) is the one entry left.
+//
 // Actions are intentionally NOT the prototype's scan-trigger/fix-match
 // set (those need per-library ids + duplicate app/admin/libraries/
 // page.tsx's own scan-enqueue logic just to populate a palette) — kept to
@@ -77,7 +82,6 @@ export const PALETTE_SCREENS: PaletteScreen[] = [
   { key: "admin-libraries", label: "Libraries", href: "/admin/libraries", adminOnly: true },
   { key: "admin-users", label: "Users", href: "/admin/users", adminOnly: true },
   { key: "admin-plugins", label: "Plugins", href: "/admin/plugins", adminOnly: true },
-  { key: "admin-settings", label: "Admin Settings", href: "/admin/settings", adminOnly: true },
 ];
 
 /** Combined cap across screens+actions (mirrors the prototype's own

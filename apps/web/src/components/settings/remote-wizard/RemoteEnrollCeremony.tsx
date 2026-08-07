@@ -33,6 +33,7 @@ import type { components } from "@loombre/sdk";
 import { Button } from "../../ui/Button.js";
 import { TextInput } from "../../ui/Input.js";
 import { SecretReveal } from "../../ui/SecretReveal.js";
+import { Select } from "../../ui/Select.js";
 import { QrCode } from "../../ui/QrCode.js";
 import { apiGet, apiPost, LoombreApiError } from "../../../lib/api-client.js";
 import { apiErrorMessage } from "../../../lib/api-error-message.js";
@@ -218,14 +219,16 @@ export function RemoteEnrollCeremony({ onDone, onCancel, cancelLabel = "Back" }:
       <form className={styles.form} onSubmit={(e) => void handleEnroll(e)}>
         <label className={styles.field}>
           <span className={styles.fieldLabel}>User</span>
-          <select className={styles.select} value={userId} onChange={(e) => setUserId(e.target.value)} disabled={phase === "enrolling"}>
-            {users.length === 0 && <option value="">No users found</option>}
-            {users.map((u) => (
-              <option key={u.id} value={u.id}>
-                {u.displayName ?? u.username}
-              </option>
-            ))}
-          </select>
+          <Select
+            value={userId}
+            onChange={(e) => setUserId(e.target.value)}
+            disabled={phase === "enrolling"}
+            options={
+              users.length === 0
+                ? [{ value: "", label: "No users found" }]
+                : users.map((u) => ({ value: u.id, label: u.displayName ?? u.username }))
+            }
+          />
         </label>
 
         <label className={styles.field}>

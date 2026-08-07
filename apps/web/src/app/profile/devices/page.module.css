@@ -1,11 +1,12 @@
 /* SPDX-License-Identifier: AGPL-3.0-only */
 
-/* Loombre :: apps/web/src/app/settings/devices/page.module.css
+/* Loombre :: apps/web/src/app/profile/devices/page.module.css
  *
- * Standalone route (not rendered through SettingsShell — see page.tsx's
- * header). W7/D-4: no max-width here anymore — page.tsx now wraps this in
+ * D-6 completion (Wave 3, this run): moved verbatim from
+ * app/settings/devices/page.module.css alongside page.tsx's own move — see
+ * that file's header. W7/D-4: no max-width here — page.tsx wraps this in
  * the shared SettingsPageLayout, which owns the readable-width cap every
- * other settings/admin page also uses now (see that component's header).
+ * other settings/admin page also uses (see that component's header).
  */
 
 .wrap {

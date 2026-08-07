@@ -14,7 +14,7 @@
 // state, not an error. Polling continues indefinitely so the step
 // self-updates the moment the worker catches up. Progressing past this
 // step never blocks on the probe — the report is always viewable later
-// from Admin → System anyway.
+// from the Dashboard anyway.
 
 import { useEffect, useState } from "react";
 import { Cpu } from "lucide-react";
@@ -85,14 +85,14 @@ export function HardwareStep({ onNext }: HardwareStepProps): React.JSX.Element {
           <BlazeSpinner size={16} surface={`var(--color-surface)`} /> The hardware check hasn&apos;t
           run yet — it starts automatically once the background worker is up. This page keeps
           checking every few seconds; you don&apos;t need to wait here, the results are always
-          available later from Admin → System.
+          available later from the Dashboard.
         </div>
       )}
       {view === "pending" && (
         <div className={styles.info}>
           <BlazeSpinner size={16} surface={`var(--color-surface)`} /> The hardware check is running
           now — results appear here the moment it finishes. You don&apos;t need to wait; you can
-          continue and review them later from Admin → System.
+          continue and review them later from the Dashboard.
         </div>
       )}
       {view === "failed" && (

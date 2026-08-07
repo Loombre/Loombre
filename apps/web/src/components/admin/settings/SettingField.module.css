@@ -79,10 +79,14 @@
   background: var(--fill-3);
 }
 
+/* W3-R (opus review): outline here COMBINED with the still-applying
+   global box-shadow ring into a ~4px composite found nowhere else. One
+   technique only: suppress the outline and keep the app-wide box-shadow
+   ring (this trigger sits in an unclipped card row, so the non-inset
+   ring is safe here — the inset variant is for clip-container edges). */
 .infoButton:focus-visible {
   color: var(--color-accent);
-  outline: 2px solid var(--color-focus);
-  outline-offset: 2px;
+  outline: none;
 }
 
 /* Phosphor popover surface (elevated, dark, rounded) — same --color-bg-raised

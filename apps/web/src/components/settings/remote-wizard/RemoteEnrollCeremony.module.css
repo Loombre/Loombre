@@ -62,16 +62,6 @@
   color: var(--text);
 }
 
-.select {
-  min-height: 44px;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--color-border);
-  background: var(--fill-1);
-  color: var(--text);
-  padding: 0 var(--space-sm);
-  font-size: var(--text-sm);
-}
-
 .errorText {
   margin: 0;
   font-size: var(--text-sm);

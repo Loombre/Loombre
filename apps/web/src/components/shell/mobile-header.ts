@@ -100,7 +100,7 @@ export function resolveMobileHeader(
   }
 
   if (pathname === "/settings") {
-    return { mode: "title", title: "Settings" };
+    return { mode: "title", title: "System Settings" };
   }
 
   // D-6: every user's own Profile/Password/Playback/Restricted settings —
@@ -118,7 +118,7 @@ export function resolveMobileHeader(
 
   const settingsSection = SETTINGS_SECTIONS.find((s) => s.href === pathname);
   if (settingsSection) {
-    return { mode: "back", title: settingsSection.label, backLabel: "Settings", backHref: "/settings" };
+    return { mode: "back", title: settingsSection.label, backLabel: "System Settings", backHref: "/settings" };
   }
 
   if (pathname === "/browse") {
@@ -143,7 +143,7 @@ export function resolveMobileHeader(
     // before their client-side redirect fires) all fall through to this
     // one generic label; /admin/system lost its dedicated "System" case in
     // D-5 (Wave 2, this run) when that page merged into the Dashboard.
-    return { mode: "back", title: "Dashboard", backLabel: "Settings", backHref: "/settings" };
+    return { mode: "back", title: "Dashboard", backLabel: "System Settings", backHref: "/settings" };
   }
 
   const itemMatch = ITEM_DETAIL_RE.exec(pathname);
