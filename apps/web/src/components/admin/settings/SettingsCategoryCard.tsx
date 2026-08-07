@@ -63,6 +63,9 @@ export const CATEGORY_LABELS: Record<string, string> = {
   ffmpeg: "ffmpeg",
   mail: "Mail",
   remote: "Remote access",
+  // W3-R (opus review): 'stash' was missing, so the Advanced Server
+  // filter chip and card header rendered the raw lowercase slug.
+  stash: "Stash",
 };
 
 export interface SettingsCategoryCardProps {

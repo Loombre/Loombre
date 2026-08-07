@@ -67,6 +67,7 @@ import { AddUserSheet } from "./AddUserSheet.js";
 import { ResetPasswordDialog } from "./ResetPasswordDialog.js";
 import { InvitesPanel } from "./InvitesPanel.js";
 import { apiDelete, apiGet, apiPatch, apiPut, LoombreApiError } from "../../../lib/api-client.js";
+import { enumLabel, MEDIA_KIND_LABEL, USER_ROLE_LABEL } from "../../../lib/enum-labels.js";
 import styles from "./shared.module.css";
 
 type User = components["schemas"]["User"];
@@ -196,7 +197,7 @@ function LibraryAccessModal({ user, onClose }: { user: User; onClose: () => void
             <label key={lib.id} className={styles.checklistRow}>
               <input type="checkbox" checked={granted.has(lib.id)} disabled={saving.has(lib.id)} onChange={() => void toggle(lib)} />
               <span>{lib.name}</span>
-              <Tag>{lib.mediaKind}</Tag>
+              <Tag>{enumLabel(MEDIA_KIND_LABEL, lib.mediaKind)}</Tag>
               {lib.contentClass === "restricted" && <Tag>restricted</Tag>}
             </label>
           ))}
@@ -239,7 +240,7 @@ function UserRow({
         </div>
       </div>
       <div className={styles.rowChips}>
-        <Tag>{user.isAdmin ? "admin" : "member"}</Tag>
+        <Tag>{enumLabel(USER_ROLE_LABEL, user.isAdmin ? "admin" : "member")}</Tag>
         {user.maxContentRating && <Tag>≤ {user.maxContentRating}</Tag>}
       </div>
       <div className={styles.rowEnd}>

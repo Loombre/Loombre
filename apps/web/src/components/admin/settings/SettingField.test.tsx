@@ -286,7 +286,15 @@ describe("SettingField — Phosphor registry card fidelity", () => {
       expect(checkbox.checked).toBe(false);
     });
 
-    it("enum widget: renders one option per schema enum value, uppercased via the shared SegmentedControl", () => {
+    // W3-R adjudicated D-3 exception (recorded in STATE.md): registry enum
+    // VALUES ("always"/"never"/"tier-gated", "starttls", "http-01", …) ARE
+    // the canonical technical config tokens that descriptions, tooltips,
+    // env pins, and docs reference verbatim — title-casing them would
+    // corrupt the vocabulary ("Http-01"). They render as-is by design;
+    // the D-3 title-case rule applies to user-domain enums (media kind,
+    // roles — see lib/enum-labels.ts). The old test title falsely claimed
+    // an "uppercased" transform that never existed anywhere.
+    it("enum widget: renders one segment per schema enum value, VERBATIM (adjudicated D-3 exception for technical config tokens)", () => {
       view = renderIntoBody(<SettingField entry={TONE_MAP_ENTRY} value="tier-gated" source="default" onChanged={noop} />);
       expect(view.container.textContent).toContain("always");
       expect(view.container.textContent).toContain("never");

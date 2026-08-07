@@ -35,7 +35,11 @@ export function SystemInfoCard(): React.JSX.Element {
 
   return (
     <Card>
-      <h2 className={styles.cardTitle}>System</h2>
+      {/* "Server info", not "System": this card sits directly under the
+          merged Dashboard's own "System" section heading (app/admin/
+          page.tsx) — keeping the old System-page card title produced a
+          stacked "System / System" (W3-R visual sweep). */}
+      <h2 className={styles.cardTitle}>Server info</h2>
       {error && <p className={styles.errorText}>{error}</p>}
       {!info ? (
         <Skeleton radius="md" height={80} />

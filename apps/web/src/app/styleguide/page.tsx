@@ -6,7 +6,7 @@ import { Bell, ChevronDown, Search, User } from "lucide-react";
 import { BlazeMark, type BlazeMarkVariant } from "../../components/brand/BlazeMark.js";
 import { Icon } from "../../components/icon/Icon.js";
 import { Button } from "../../components/ui/Button.js";
-import { Badge, Chip, Tag } from "../../components/ui/Chip.js";
+import { Badge, Chip, FilterChip, Tag } from "../../components/ui/Chip.js";
 import { SearchField, TextInput } from "../../components/ui/Input.js";
 import { Select } from "../../components/ui/Select.js";
 import { DatePicker } from "../../components/ui/DatePicker.js";
@@ -183,6 +183,14 @@ export default function StyleguidePage(): React.JSX.Element {
         <Button variant="primary">Primary</Button>
         <Button variant="secondary">Secondary</Button>
         <Button variant="ghost">Ghost</Button>
+        {/* W3-R (opus review, styleguide accuracy): danger + warning were
+            missing from this exhibit despite both being real, shipped
+            ButtonVariant values (Button.tsx) — danger for destructive
+            actions (Delete/Remove flows), warning for the same filled
+            pattern used where amber, not red, is the correct signal (W14:
+            Server "Restart" vs. "Shut down"). */}
+        <Button variant="danger">Danger</Button>
+        <Button variant="warning">Warning</Button>
         <Button variant="primary" disabled>
           Disabled
         </Button>
@@ -201,6 +209,16 @@ export default function StyleguidePage(): React.JSX.Element {
         <Chip>Chip</Chip>
         <Tag>Genre tag</Tag>
         <Badge>12</Badge>
+        {/* W3-R (opus review, styleguide accuracy): FilterChip (ui/Chip.tsx,
+            W15) was missing entirely — the one interactive chip primitive
+            for a row of selectable filter pills (RegistryFilterBar's first
+            real caller). Both states shown: unselected with a leading
+            icon, and the active/selected fill with a trailing count
+            badge. */}
+        <FilterChip icon={<Icon icon={Search} size="dense" />}>Unselected</FilterChip>
+        <FilterChip active count={12}>
+          Active
+        </FilterChip>
       </Section>
 
       <Section title="Text input — pill" radius="--radius-pill">
@@ -235,7 +253,18 @@ export default function StyleguidePage(): React.JSX.Element {
         </div>
       </Section>
 
-      <Section title="Dropdown menu (open) — lg" radius="--radius-lg">
+      {/* W3-R (opus review, styleguide accuracy): this is Overlay.tsx's
+          generic .menu recipe, unchanged. UserMenu.tsx (W11, IA restructure)
+          deliberately stopped consuming it and grew its own dedicated
+          UserMenu.module.css surface (elevated-surface + hover-pill
+          treatment, roving-focus keyboard nav) — see that component/file's
+          headers. Left as-is here on purpose (still the generic recipe any
+          FUTURE menu should reach for); noted rather than rebuilt into a
+          UserMenu-specific exhibit. */}
+      <Section
+        title="Dropdown menu (open) — lg — generic Overlay recipe (the avatar menu now uses its own UserMenu.module.css surface, not this)"
+        radius="--radius-lg"
+      >
         <MenuDemo items={["Profile", "Devices", "Sign out"]} />
       </Section>
 
@@ -360,6 +389,16 @@ export default function StyleguidePage(): React.JSX.Element {
       </Section>
 
       <Section title="Focus ring demo — tab into these">
+        {/* W3-R (opus review, styleguide accuracy): this demo had no FILLED
+            button — every prior entry here was an outline/ghost/plain
+            surface, none of which exercise Button.module.css's new
+            currentcolor inset ring (a plain amber/accent ring is invisible
+            against the primary/warning fill itself; currentcolor picks up
+            the fill's own high-contrast text color instead — see that
+            file's :focus-visible comment). Primary + warning both shown
+            since each fill uses a different currentcolor pairing. */}
+        <Button variant="primary">Filled (primary)</Button>
+        <Button variant="warning">Filled (warning)</Button>
         <Button variant="secondary">Focusable button</Button>
         <TextInput className={styles.field} placeholder="Focusable input" />
         <div className={styles.demoTile} tabIndex={0} style={{ width: 60, height: 60 }}>

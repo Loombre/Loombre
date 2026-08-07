@@ -3,44 +3,22 @@
 
 // Loombre :: apps/web/src/app/settings/data/page.tsx
 //
-// GET /export (data-freedom archive download, docs/PLAN.md §8.4, P12) had
-// zero UI anywhere in apps/web — see ../../../components/data-freedom/
-// ExportDataCard.tsx's header for the full defect writeup (77-agent
-// review). This route is the missing entry point.
-//
-// Deliberately NOT one of SettingsShell's tab/hub sections: section-
-// registry.ts's SettingsSectionKey union has no "data" member, and adding
-// one (plus a hub row / nav link pointing here) touches
-// components/settings/section-registry.ts and SettingsHub.tsx/
-// SettingsTabs.tsx — nav files outside this fix's owned paths (apps/web/
-// src/app/settings/data/** and components/data-freedom/** only). This page
-// stands alone with its own minimal AppShell chrome instead of
-// SettingsShell, and is reachable today by direct URL/bookmark until a
-// settings-IA-owning change wires a real link to it (see this fix's notes
-// for exactly where that belongs).
-//
-// GET /export is authenticated-but-not-admin (data-freedom.controller.ts's
-// own header), so — unlike every other /settings/<key> route, which is
-// admin-only apart from "account" — this page has no admin gate: every
-// signed-in user is entitled to their own data.
+// D-6 completion (Wave 3, this run — IA restructure): the ExportDataCard
+// content that used to render here MOVED to its own route, /profile/data
+// (app/profile/data/page.tsx) — user-scoped self-service content (a user's
+// own GET /export archive) no longer lives anywhere under the now
+// admin-only /settings surface (components/settings/section-registry.ts's
+// header). This route stays live as a redirect-only stub — same pattern
+// app/settings/account/page.tsx already uses for /settings/account ->
+// /profile — so any existing bookmark/link to /settings/data keeps working.
 
-import { AppShell } from "../../../components/shell/AppShell.js";
-import { SettingsPageLayout } from "../../../components/settings/SettingsPageLayout.js";
-import { ExportDataCard } from "../../../components/data-freedom/ExportDataCard.js";
-import styles from "./page.module.css";
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
 
-export default function SettingsDataPage(): React.JSX.Element {
-  return (
-    <AppShell>
-      {/* W7/D-4: this standalone route (see header above) still gets the
-          same shared width/centering primitive every other settings/admin
-          page now uses — see SettingsPageLayout.tsx's header. */}
-      <SettingsPageLayout>
-        <div className={styles.page}>
-          <h1 className={styles.heading}>Data</h1>
-          <ExportDataCard />
-        </div>
-      </SettingsPageLayout>
-    </AppShell>
-  );
+export default function SettingsDataRedirectPage(): null {
+  const router = useRouter();
+  useEffect(() => {
+    router.replace("/profile/data");
+  }, [router]);
+  return null;
 }

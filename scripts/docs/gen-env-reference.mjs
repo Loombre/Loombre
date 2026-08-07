@@ -73,11 +73,20 @@ const pinnedUiEntries = SETTINGS_REGISTRY.filter((entry) => entry.scope === "ui"
 function renderEnvOnly(entry, heading) {
   const what = stripSourceCodeRefs(entry.description);
   const lines = [`${heading} \`${entry.envVar}\``, "", `**${titleFor(entry.key)}.** ${what}`, ""];
+  // W3-R (opus review): the W13b two-layer copy split moved the precise
+  // technical facts (value formats, UDP vs TCP, platform-derived default
+  // paths) out of `description` into `technicalDetails` — this page MUST
+  // render both layers or those facts vanish from the operator docs
+  // entirely (they did, briefly: the AUD-A6b-002 platform list, WG's
+  // "UDP", trust-proxy's accepted formats). Same both-layers rule
+  // gen-settings-reference.mjs applies.
+  if (entry.technicalDetails) {
+    lines.push(`- **Technical details:** ${stripSourceCodeRefs(entry.technicalDetails)}`);
+  }
   // platformDerivedDefault entries (paths.dataDir/paths.configDir): the
   // registry's static `default` is an illustrative fallback the entry's own
-  // description sentence contradicts ("Platform default when unset: ...").
-  // Print no bullet for those — the description's platform list is the true
-  // default (audit fafa47f, AUD-A6b-002).
+  // copy contradicts — the technicalDetails platform list rendered above is
+  // the true default (audit fafa47f, AUD-A6b-002). Print no bullet.
   if (!entry.platformDerivedDefault) {
     lines.push(`- **Default when unset:** ${formatDefaultWithTiers(entry)}`);
   }
@@ -100,6 +109,10 @@ function renderPin(entry, heading) {
     what,
     "",
   ];
+  // W3-R: both copy layers — see renderEnvOnly's comment.
+  if (entry.technicalDetails) {
+    lines.push(`- **Technical details:** ${stripSourceCodeRefs(entry.technicalDetails)}`);
+  }
   lines.push(`- **Default when unset:** ${formatDefaultWithTiers(entry)} (or whatever was last saved from the settings screen)`);
   if (entry.caution) lines.push(`- **Caution:** ${entry.caution}`);
   lines.push("");

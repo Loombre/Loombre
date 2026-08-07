@@ -30,6 +30,113 @@ W15, W16, W17) → Wave 3 = opus review + exit gates. W18 verify-only behind W1.
 | W17 macOS installer text wrap | FIXED at source + verified via Quick Look renders; real-Installer screenshot pending Screen Recording permission | welcome/readme/conclusion converted .txt→.rtf (proper paragraph flow, bold path—description list that survives any pane width; conclusion had the same defect class, included). Authoring HTML sources committed at installers/macos/pkg/resources-src/ (README documents the textutil regen + the charset-meta mojibake trap found and fixed: UTF-8 read as Latin-1 shipped em dashes as "â€""). Distribution.xml.tmpl → text/rtf; distribution-xml.test.mjs fixtures updated; `pnpm installers:test` green. Panes preview pkg (real Distribution + real resources, stub payload) opened in Installer.app on this M3 Max for eyeball check; scripted screenshot of the Installer window requires Screen Recording permission for the terminal host (screencapture: "could not create image from display") — final exit screenshots deferred to Wave 3 / owner grant. |
 | W18 tray coherence | CODE-VERIFIED (no tray↔caps coupling exists); live VM re-check deferred to next Windows install | W1 RCA lane C traced the full chain: tray status text comes verbatim from GET /ipc/v1/status; the PRIMARY worker signal is a pg_stat_activity row with application_name 'loombre-worker:<pid>:<start>' scoped to current_database() (packages/db/src/query/worker-liveness.ts:79-93) — the hwprobe report plays NO part anywhere in the chain, so a worker running with zero hw backends reports "running" by construction in rc.3+. The screenshot's "Worker: stopped" was a TRUE liveness report (worker down / wrong-DB dev fallback in db-url.ts:44-51 / pre-labeling binary), not a caps symptom; the only misreport mode is the job-ledger fallback (idle==stopped) which engages solely when the liveness QUERY throws. No tray fix needed. Live confirmation (tray shows running + zero backends after W1's probe fixes) requires the owner's Parallels VM on the next rc install — flagged in the deferred list. |
 
+### Wave 3 — opus review (3 reviewers), fix pass, visual sweep, exit gates (COMPLETE)
+
+**Review verdicts drove a real fix wave.** 3 opus reviewers (design-system,
+IA/authz, copy/decisions) over the three wave commits. All substantive findings
+fixed same-session; full list + dispositions:
+
+- **[BLOCKER, fixed] Invisible keyboard focus on filled controls.** The W4
+  inset-ring consistency pass painted the amber --color-focus ring ON amber
+  fills (measured 1.11:1 on .primary — WCAG 2.2 needs 3:1). New invariant: a
+  FILLED control's inset ring uses its own TEXT color (currentcolor), whose
+  contrast against the fill is AA-proven by the pairing itself — applied to
+  Button .primary/.warning/.danger, SegmentedControl active segment, FilterChip
+  active. Also .danger:hover now DARKENS (brightness 1.1 had pushed white-on-red
+  to 4.16:1 mid-hover; 0.9 raises contrast in every state).
+- **[HIGH, fixed] SeasonPillTabs** — last un-consolidated segmented lookalike
+  (carried the exact pre-D-2 values incl. the 16px pill inset) → composes the
+  shared track/segment like ZoneControls/SortControl.
+- **[HIGH, fixed] D-3 chips** — new lib/enum-labels.ts (MEDIA_KIND/USER_ROLE/
+  PROVIDER_KIND/STASH_SYNC_MODE label maps) applied at 7 Tag call sites
+  (UsersSection's "admin" chip vs its own "Admin" picker etc.).
+- **[HIGH, adjudicated] SettingField/PluginConfigForm enum widgets keep RAW
+  values ("starttls", "http-01", "tier-gated") — D-3 EXCEPTION, recorded:
+  registry enum values are the canonical technical config tokens that
+  descriptions/tooltips/env pins/docs reference verbatim; title-casing would
+  corrupt the vocabulary. The mistitled test ("uppercased via...") now titled
+  honestly and carries the adjudication. allowToneMapCpu's description now
+  NAMES its three values so pill and prose meet.
+- **[HIGH, fixed] CATEGORY_LABELS missing 'stash'** (raw slug rendered as a
+  filter chip). Reviewer's companion claim that updateCheck/rateLimit were dead
+  entries was WRONG (grep: both live) — verified before acting, not applied.
+- **[HIGH, fixed] Mobile tab bar D-6 gap** — tab-items gained role-aware
+  resolution: non-admin's Settings slot → "Profile"//profile; mobile-header
+  says "System Settings"; ⌘K's redundant "Admin Settings" entry removed.
+- **[HIGH, fixed] authz sweep gaps** — GET /system/info + /system/update added
+  (both verified requireAdmin-guarded); POST /system/shutdown guard now runs
+  BEFORE the container-supervision 409 (a non-admin on Docker got deployment
+  details instead of 403).
+- **[HIGH, fixed] W12 copy was factually false** — NO installer sets
+  LOOMBRE_LOG_FILE (they capture console output at the service-manager level),
+  so every install shape lands on that card. Copy now states the truth + where
+  logs actually live per platform; link relabeled "Environment reference"
+  (stale admin-logs-tail.ts comment fixed too). DEFERRED owner call: give
+  LOOMBRE_LOG_FILE real docs coverage (env-only registry entry feeding the
+  generated env-reference) or have installers set it.
+- **[HIGH, fixed] gen-env-reference.mjs lost the W13b technical layer** —
+  operator docs silently dropped every fact that moved to technicalDetails
+  (UDP on the WG port, trust-proxy formats, the AUD-A6b-002 platform-default
+  lists). Both generators now render both layers; docs regenerated (23
+  technical-details lines in env-reference).
+- **[MEDIUM, fixed] registry copy corrections** — rateLimit.login/refresh no
+  longer claim per-DEVICE for per-IP buckets; http.port/avifQuality positional
+  "below/above" references replaced with named settings (the "above" resolved
+  to the WRONG key); wireguardPort's false causal restart claim fixed; ms units
+  spelled out on all three ms keys; cross-field couplings (segmentAhead pair,
+  sessions pair) + ladderRungs shape/bounds now in technicalDetails;
+  missingFileGraceHours unit + mechanism added.
+- **[MEDIUM, fixed]** DatePicker's reduced-motion claim was wrong (tokens only
+  shorten, never null the transform) → opacity-only reduced keyframe like its
+  siblings; UserMenu Tab no longer drops focus to <body> (refocuses trigger,
+  default Tab continues); SettingField ⓘ third ring technique unified; the five
+  remaining native selects converted to ui/Select; /settings/data + /settings/
+  devices moved to /profile/* with redirects + ProfileSettings entry links
+  (D-6 "no user-scoped page under /settings" now literally true); stale
+  "Admin → System"/"Settings > System" strings (incl. the PUBLIC
+  /system/capabilities description) → "the Dashboard"; styleguide gained
+  danger/warning buttons, FilterChip, filled-button focus demo; Dashboard's
+  stacked "System/System" headings dedup'd (card retitled "Server info").
+- **Deferred (recorded, owner-visible):** SegmentedControl et al. ship
+  role="tablist" without arrow-key nav/tabpanel across 7 implementations —
+  pre-existing, now load-bearing for registry enums; proper fix is the
+  radiogroup pattern + roving tabindex (follow-up ticket, not this run).
+  FilterChip 30px vs segment 44px desktop heights — deliberate two-family
+  sizing, kept. Power confirm step stays red for Restart (escalation at the
+  commit moment, documented in-file). /system/info fetched 3× per Dashboard
+  load (perf nit). W17's HTML→RTF regen has no drift check. PinModal's raw
+  input + shared .textarea-class number inputs remain outside ui/Input.
+  Installers setting LOOMBRE_LOG_FILE. hevc-in-synthesized-fallback
+  (verifiedAtMs:0 asserting hevc encode) — pre-existing Phase-3 BIND shape,
+  flagged for owner.
+
+**Visual sweep (live app, seeded DB, headless Chrome):** screenshots in
+reports/polish-2026-08-07/ (gitignored; after-*.png per work item): dashboard
+(W9/W1/W12 — hwprobe ran end-to-end live: VideoToolbox+Software backends,
+ledger Completed), server power (W14), playback+mail registry rows with a
+tooltip open (W8/W13), advanced filter chips incl. the Stash label (W15),
+profile with DatePicker open (W5/W6/W10), search empty state with uncropped
+focus ring (W16/W4), user menu (W11), add-library sheet (W2/W3/W4 — the
+annotated screenshot's three defects visibly gone), non-admin sidebar (no
+SYSTEM group) + live /settings→/profile redirect (D-6). Dev-stack note for
+future sessions: `pnpm dev` WITHOUT DATABASE_URL provisions an EMBEDDED
+postgres for the server while the worker falls back to compose 5442 — pin
+DATABASE_URL=postgres://loombre:loombre@localhost:5442/loombre when driving
+the seeded dev stack.
+
+**Exit gates:** `pnpm gate` ALL STEPS PASSED (×4 across the waves);
+`pnpm gate:full` ALL STEPS PASSED (web production build + bundle budget
+"within budget"); oasdiff non-breaking (probe field + technicalDetails both
+verified additive); W1 regression suite green incl. empty-caps scan-completes;
+settings-authz e2e (now 79 admin routes × 403 + user-scoped still-works);
+pill/segmented/chip audit grep-clean (SeasonPillTabs was the last straggler);
+no third-party requests/fonts (website build's own CSP checks green);
+docs regenerated + synced to website (build green; deploy stays manual).
+W17 final Installer-window screenshot still requires Screen Recording
+permission for the terminal host (Quick Look renders + a real preview pkg
+opened in Installer.app stand in; content parity vs old .txt verified by
+review lens 3).
+
 ### W1 root cause (RCA COMPLETE 2026-08-07 — 5-lane parallel trace, every claim file:line-verified)
 
 **The suspected probe→scanner coupling DOES NOT EXIST in code.** Exhaustive trace

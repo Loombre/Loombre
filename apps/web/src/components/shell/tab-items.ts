@@ -46,6 +46,26 @@ export interface TabItemConfig {
 // same posture as every other tab's icon today; U7's custom glyph set is
 // W2 L7's own scope and swaps this import later with no shape change
 // here). Order matches the README's literal tab order.
+/** W3-R (opus review, D-6): the settings-slot tab is role-aware. Mirrors
+ *  nav-items.ts's own D-6 split (SYSTEM_NAV_ITEMS' admin-only "System
+ *  Settings" vs. every user's avatar-menu "Profile settings" route,
+ *  landing on /profile) for the mobile tab bar's fixed 6th slot: an admin
+ *  keeps this tab's static "Settings" label pointing at /settings; a
+ *  non-admin has no admin-settings destination at all (see nav-items.ts's
+ *  SYSTEM_NAV_ITEMS comment — SettingsShell.tsx redirects any non-admin
+ *  landing on /settings* straight to /profile), so their tab reads
+ *  "Profile" and links there directly instead of silently bouncing
+ *  through that redirect. Resolved at render time off the item's static
+ *  key, same posture as resolveShortcutHref (nav-items.ts) resolving the
+ *  movies/tv shortcuts' href — TAB_ITEMS itself stays the single static
+ *  list, this is the one exception layered on top of it. */
+export function resolveTabItem(item: TabItemConfig, isAdmin: boolean): { label: string; href: string } {
+  if (item.key === "settings" && !isAdmin) {
+    return { label: "Profile", href: "/profile" };
+  }
+  return { label: item.label, href: item.href };
+}
+
 export const TAB_ITEMS: TabItemConfig[] = [
   {
     key: "home",

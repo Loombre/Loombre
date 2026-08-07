@@ -1,0 +1,27 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+
+/* Loombre :: apps/web/src/app/profile/data/page.module.css
+ *
+ * D-6 completion (Wave 3, this run): moved verbatim from
+ * app/settings/data/page.module.css alongside page.tsx's own move — see
+ * that file's header. Same .page/.heading shape as components/settings/
+ * sections/AccountSection.module.css originally used — this route sits
+ * outside SettingsShell (see page.tsx's header), so it supplies its own
+ * minimal page chrome rather than importing a module from a directory this
+ * fix doesn't own.
+ *
+ * W7/D-4: no max-width here — page.tsx wraps this in the shared
+ * SettingsPageLayout, which owns the readable-width cap (see its header).
+ */
+
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+}
+
+.heading {
+  margin: 0;
+  font-size: var(--text-xl);
+  font-weight: var(--weight-semibold);
+}

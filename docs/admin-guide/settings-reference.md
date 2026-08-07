@@ -37,6 +37,7 @@ How many videos this server will convert at the same time. Lowering it never int
 
 When converting, prefer the newer, more efficient video format (HEVC) over the older, more compatible one (H.264). Only used when your hardware supports it.
 
+- **Technical details:** Preference only takes effect when the playback device declares HEVC support AND a verified capability snapshot lists an hevc encoder (resolve-policy: setting AND hevcVerified). Ladder rungs may swap h264 -> hevc at equal heights with lower bitrates.
 - **Default:** On
 - **Applies:** immediately — no restart needed.
 
@@ -44,8 +45,9 @@ When converting, prefer the newer, more efficient video format (HEVC) over the o
 
 <small>Setting key: `transcode.allowToneMapCpu`</small>
 
-Advanced: whether Loombre may convert high-dynamic-range (HDR) video to standard range using the processor when the video hardware can't do it directly. Processor conversion is slower and uses more of the server's resources. By default this is only allowed on more capable servers; it can also be switched on everywhere or off entirely.
+Advanced: whether Loombre may convert high-dynamic-range (HDR) video to standard range using the processor when the video hardware can't do it directly. Processor conversion is slower and uses more of the server's resources. 'tier-gated' (the default) allows it only on more capable servers, 'always' allows it everywhere, 'never' turns it off entirely.
 
+- **Technical details:** CPU tone-mapping via zscale. 'tier-gated' = allowed on Tier 1/2 hardware, refused on Tier 0 for sources >= 1080p; a refused HDR conversion surfaces as media-unplayable rather than a washed-out picture.
 - **Default:** `tier-gated`
 - **Applies:** immediately — no restart needed.
 
@@ -55,6 +57,7 @@ Advanced: whether Loombre may convert high-dynamic-range (HDR) video to standard
 
 The set of quality levels Loombre can switch between while converting, best first. Loombre picks the highest one your connection can keep up with.
 
+- **Technical details:** JSON array, best rung first. Each rung: { heightPx: positive integer, videoBitrateBps and audioBitrateBps: integers between 100,000 (100 kbps) and 100,000,000 (100 Mbps), codec: 'h264' or 'hevc' }. At least one rung is required.
 - **Default:** the standard quality ladder (6 levels, highest first)
 - **Applies:** immediately — no restart needed.
 
@@ -64,6 +67,7 @@ The set of quality levels Loombre can switch between while converting, best firs
 
 Advanced: how far ahead of what's currently playing Loombre is allowed to convert before it pauses conversion to save resources, measured in a few seconds of video at a time. Applies for the rest of the current viewing session — a change takes effect the next time someone starts watching something that needs converting.
 
+- **Technical details:** Measured in HLS segments ahead of the playhead. Coupled to transcode.segmentAheadResumeThreshold: the resume value must stay BELOW this one, or saving is rejected.
 - **Default:** 10
 - **Applies:** immediately — no restart needed.
 
@@ -71,8 +75,9 @@ Advanced: how far ahead of what's currently playing Loombre is allowed to conver
 
 <small>Setting key: `transcode.segmentAheadResumeThreshold`</small>
 
-Advanced: how far the paused conversion above has to catch back down to before Loombre resumes it. Applies the same way as the setting above — the next time someone starts watching something that needs converting.
+Advanced: how far the paused conversion (see 'Segment ahead suspend threshold') has to catch back down to before Loombre resumes it. Applies the same way — the next time someone starts watching something that needs converting.
 
+- **Technical details:** Measured in HLS segments ahead of the playhead. Must stay BELOW transcode.segmentAheadSuspendThreshold, or saving is rejected.
 - **Default:** 5
 - **Applies:** immediately — no restart needed.
 
@@ -94,8 +99,9 @@ How many files Loombre examines at once while scanning. Higher is faster but wor
 
 <small>Setting key: `scanner.missingFileGraceHours`</small>
 
-How long a file can be missing before Loombre removes it from your library. The delay protects your watch history when a network drive drops out briefly.
+How long a file can be missing before Loombre removes it from your library, in hours (the default 72 = three days). The delay protects your watch history when a network drive drops out briefly.
 
+- **Technical details:** Hours. Evaluated during scans: a media_files row past the grace window since it was first marked missing is deleted on the next scan of its library.
 - **Default:** 72
 - **Applies:** immediately — no restart needed.
 
@@ -125,7 +131,7 @@ Image quality for posters and thumbnails, from 1 (smallest file, lowest quality)
 
 <small>Setting key: `images.avifQuality`</small>
 
-Image quality for the smaller AVIF copies of posters and thumbnails (see the setting above), from 1 to 100, used when that setting is turned on and this server can create them. Already-created images are untouched — this only affects new images and ones a future scan re-creates.
+Image quality for the smaller AVIF copies of posters and thumbnails, from 1 to 100 — used when 'Create AVIF copies' (images.avifEnabled) is turned on and this server can create them. Already-created images are untouched — this only affects new images and ones a future scan re-creates.
 
 - **Default:** 50
 - **Applies:** immediately — no restart needed.
@@ -158,8 +164,9 @@ The minimum age required to view restricted content. You can raise this number, 
 
 <small>Setting key: `restricted.defaultUnlockDurationMs`</small>
 
-How long restricted content stays unlocked after someone enters their PIN, before it locks itself again.
+How long restricted content stays unlocked after someone enters their PIN, before it locks itself again. Enter the time in milliseconds (60000 = one minute; the default 1800000 = 30 minutes).
 
+- **Technical details:** Milliseconds. Bounded 60,000 (1 min) to 86,400,000 (24 h).
 - **Default:** 30 minutes
 - **Applies:** immediately — no restart needed.
 - **Note:** Longer times mean the PIN is asked for less often — on a shared device that means restricted content stays available to whoever picks it up.
@@ -172,8 +179,9 @@ When an inactive playback session is treated as ended or paused.
 
 <small>Setting key: `sessions.staleCutoffMs`</small>
 
-How long Loombre waits after a device stops responding before treating that person's playback as finished and freeing up the resources.
+How long Loombre waits after a device stops responding before treating that person's playback as finished and freeing up the resources. Enter the time in milliseconds (60000 = one minute; the default 900000 = 15 minutes).
 
+- **Technical details:** Milliseconds, bounded 60,000 to 86,400,000. Coupled to sessions.heartbeatSuspendCutoffMs: this value must stay ABOVE it (a session must suspend before it can be considered stale), or saving is rejected.
 - **Default:** 15 minutes
 - **Applies:** immediately — no restart needed.
 
@@ -181,8 +189,9 @@ How long Loombre waits after a device stops responding before treating that pers
 
 <small>Setting key: `sessions.heartbeatSuspendCutoffMs`</small>
 
-How long Loombre waits after a device goes quiet before pausing its conversion. Playback isn't ended — it resumes when the device comes back.
+How long Loombre waits after a device goes quiet before pausing its conversion. Playback isn't ended — it resumes when the device comes back. Enter the time in milliseconds (the default 90000 = 90 seconds).
 
+- **Technical details:** Milliseconds, bounded 30,000 to 3,600,000. Coupled to sessions.staleCutoffMs: this value must stay BELOW it, or saving is rejected.
 - **Default:** 90 seconds
 - **Applies:** immediately — no restart needed.
 
@@ -221,8 +230,9 @@ How many attempts or requests are allowed in a given time window, per person or 
 
 <small>Setting key: `rateLimit.login`</small>
 
-How many sign-in attempts one device may make per minute before Loombre starts turning it away. Guards against password guessing.
+How many sign-in attempts may come from one network address per minute before Loombre starts turning them away. Guards against password guessing. Several devices sharing one connection (a household router) share this allowance.
 
+- **Technical details:** Keyed per source IP, not per device — the per-account companion is rateLimit.loginByIdentifier.
 - **Default:** 10
 - **Applies:** immediately — no restart needed.
 - **Can be locked:** if `LOOMBRE_RATE_LOGIN` is set by whoever installed Loombre, this setting becomes fixed to that value and shows as controlled by the environment here — ask them, or see the [Operator Guide's environment reference](/ops/env-reference).
@@ -231,8 +241,9 @@ How many sign-in attempts one device may make per minute before Loombre starts t
 
 <small>Setting key: `rateLimit.refresh`</small>
 
-How many session-refresh requests one device may make per minute. Guards against a device flooding the server with requests for new sign-in tokens.
+How many session-refresh requests may come from one network address per minute. Guards against flooding the server with requests for new sign-in tokens. Several devices sharing one connection share this allowance.
 
+- **Technical details:** Keyed per source IP, not per device — the per-device companion is rateLimit.refreshByDevice.
 - **Default:** 30
 - **Applies:** immediately — no restart needed.
 - **Can be locked:** if `LOOMBRE_RATE_REFRESH` is set by whoever installed Loombre, this setting becomes fixed to that value and shows as controlled by the environment here — ask them, or see the [Operator Guide's environment reference](/ops/env-reference).
@@ -512,7 +523,7 @@ Settings for Loombre Remote (embedded WireGuard), the Tunnel path, and the Direc
 
 <small>Setting key: `remote.wireguardPort`</small>
 
-Which network port Loombre Remote uses for its secure tunnel connections. Changing this requires a server restart — already-connected devices would be disrupted otherwise.
+Which network port Loombre Remote uses for its secure tunnel connections. A change only takes effect after a server restart (the port cannot be switched while the server is running), and the restart disconnects remote devices until they reconnect.
 
 - **Technical details:** UDP port the in-process WireGuard listener binds to for its whole lifetime. Cannot be rebound to a different port while the server is running, hence the restart requirement.
 - **Default:** 51820

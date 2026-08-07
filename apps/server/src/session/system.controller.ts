@@ -73,7 +73,7 @@ export class SystemController {
       "hw-transcode": {
         enabled: false,
         description:
-          "Hardware-accelerated transcoding. Whether this machine has usable backends is reported under Settings > System, which requires an admin session.",
+          "Hardware-accelerated transcoding. Whether this machine has usable backends is reported on the admin Dashboard, which requires an admin session.",
       },
       // IMPLEMENTED: LOOMBRE_TLS_MODE=acme is a first-class mode
       // (apps/server/src/tls/config.ts + tls/acme/, HTTP-01 and DNS-01).

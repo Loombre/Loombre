@@ -58,12 +58,15 @@
 // the literal duplicate-title bug the original lane's brief called out.
 
 import { useEffect, useState, type FormEvent } from "react";
+import Link from "next/link";
+import { ChevronRight } from "lucide-react";
 import { TextInput } from "../ui/Input.js";
 import { Button } from "../ui/Button.js";
 import { Card } from "../ui/Card.js";
 import { SegmentedControl } from "../ui/SegmentedControl.js";
 import { Select } from "../ui/Select.js";
 import { DatePicker, formatIsoDate, todayCalendarDate } from "../ui/DatePicker.js";
+import { Icon } from "../icon/Icon.js";
 import { useRestricted } from "../restricted/RestrictedProvider.js";
 import { apiGet, apiPatch, apiPut, LoombreApiError } from "../../lib/api-client.js";
 import { PIN_LENGTH, isPinComplete, sanitizePinInput, stripPinDigits } from "../../lib/pin-entry.js";
@@ -636,6 +639,33 @@ function PlaybackPrefsSection(): React.JSX.Element {
   );
 }
 
+// D-6 completion (Wave 3, this run): the entry point into the two other
+// user-scoped self-service routes that moved OUT of the admin-branded
+// /settings prefix alongside this one (app/profile/data/page.tsx,
+// app/profile/devices/page.tsx — see both headers) — before this, neither
+// route had any link pointing at it from anywhere in the product, reachable
+// only by direct URL/bookmark. Deliberately a minimal titled links card,
+// not a redesign: same row/chevron affordance components/settings/
+// SettingsHub.tsx's own link rows already use, just without that file's
+// live badges (neither destination has a single honest number to show).
+function LinksSection(): React.JSX.Element {
+  return (
+    <div className={styles.section}>
+      <h2 className={styles.sectionTitle}>More</h2>
+      <div className={styles.linkGroup}>
+        <Link href="/profile/devices" className={styles.linkRow}>
+          <span>Devices</span>
+          <Icon icon={ChevronRight} size="dense" className={styles.linkChevron ?? ""} />
+        </Link>
+        <Link href="/profile/data" className={styles.linkRow}>
+          <span>Your data</span>
+          <Icon icon={ChevronRight} size="dense" className={styles.linkChevron ?? ""} />
+        </Link>
+      </div>
+    </div>
+  );
+}
+
 export function ProfileSettings({ heading }: { heading: string | null }): React.JSX.Element {
   return (
     <div className={styles.page}>
@@ -651,6 +681,9 @@ export function ProfileSettings({ heading }: { heading: string | null }): React.
       </Card>
       <Card>
         <PlaybackPrefsSection />
+      </Card>
+      <Card>
+        <LinksSection />
       </Card>
     </div>
   );

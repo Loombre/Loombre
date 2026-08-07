@@ -81,16 +81,6 @@
   gap: var(--space-xs);
 }
 
-.select {
-  flex: 1;
-  border-radius: var(--radius-pill);
-  border: 1px solid var(--border);
-  background: var(--color-surface);
-  color: var(--text);
-  padding: var(--space-2xs) var(--space-md);
-  font-size: var(--text-sm);
-}
-
 .actions {
   display: flex;
   justify-content: flex-end;

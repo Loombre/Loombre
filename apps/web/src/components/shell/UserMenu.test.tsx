@@ -170,6 +170,24 @@ describe("UserMenu", () => {
     expect(document.activeElement).toBe(trigger());
   });
 
+  // W3-R (opus review, MEDIUM): closing the menu on Tab without refocusing
+  // first used to unmount the still-focused menuitem out from under the
+  // browser's own default Tab handling, dropping focus to <body>. The fix
+  // mirrors Escape's refocus above, but leaves Tab's own default action
+  // un-prevented so the browser continues on from the trigger.
+  it("Tab closes the menu and synchronously refocuses the trigger (so the browser's own Tab continues from there)", async () => {
+    await render();
+    await open();
+    const focused = document.activeElement as HTMLElement;
+    const event = new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true });
+    await act(async () => {
+      focused.dispatchEvent(event);
+    });
+    expect(view!.container.querySelector('[role="menu"]')).toBeNull();
+    expect(document.activeElement).toBe(trigger());
+    expect(event.defaultPrevented).toBe(false);
+  });
+
   it("ArrowDown on the trigger opens the menu and focuses the first item", async () => {
     await render();
     await keydown(trigger(), "ArrowDown");
