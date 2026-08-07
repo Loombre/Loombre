@@ -154,7 +154,26 @@ export function SettingsCategoryCard({
           {entries.map((entry) => {
             const effective = valuesByKey.get(entry.key);
             if (!effective) return null;
-            return <SettingField key={entry.key} entry={entry} value={effective.value} source={effective.source} onChanged={onChanged} />;
+            // W13b (D-7's copy sweep): the registry's own additive
+            // technicalDetails field, straight through to SettingField's
+            // info tooltip — spread conditionally (not
+            // technicalDetails={entry.technicalDetails}) because
+            // exactOptionalPropertyTypes forbids assigning an explicit
+            // `undefined` to a prop typed `string | undefined`; an entry
+            // with no technicalDetails simply omits the prop, which
+            // SettingField already treats as "no caller-supplied note" (it
+            // still shows a trigger on its own for a pinnable entry via its
+            // env-pin note).
+            return (
+              <SettingField
+                key={entry.key}
+                entry={entry}
+                value={effective.value}
+                source={effective.source}
+                onChanged={onChanged}
+                {...(entry.technicalDetails !== undefined ? { technicalDetails: entry.technicalDetails } : {})}
+              />
+            );
           })}
         </div>
       )}

@@ -1,9 +1,16 @@
 /* SPDX-License-Identifier: AGPL-3.0-only */
+
+/* W16: page.tsx now wraps this in the shared SettingsPageLayout (readable
+   max-width + centering, see that component's header) — this file must NOT
+   redeclare a competing max-width on `.page` anymore, the exact double-cap
+   bug SettingsPageLayout exists to fix. Before this fix `.page` capped
+   itself at 720px with no `margin: auto`, so the search field and results
+   card hugged the left edge of AppShell's full-width <main> instead of
+   using the available width (owner screenshot, W16). */
 .page {
   display: flex;
   flex-direction: column;
   gap: var(--space-lg);
-  max-width: 720px;
 }
 
 .field {

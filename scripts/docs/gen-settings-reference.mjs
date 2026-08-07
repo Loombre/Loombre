@@ -45,13 +45,15 @@
 // this page states from the admin side).
 //
 // REGISTER: entry.description is reproduced VERBATIM (not paraphrased) —
-// explicit instruction from the orchestrator so the eventual settings
-// screen (lane S2, reading this same registry) and this documentation page
-// can never show different wording for the same setting. This is a
-// deliberate, logged exception to the Admin Guide's usual "plain language
-// only" register: some descriptions carry technical terms undiluted. Every
-// OTHER piece of text on this page (headings, category grouping, the
-// restart/lock explanations) is written in plain admin language.
+// explicit instruction from the orchestrator so the settings screen
+// (reading this same registry) and this documentation page can never show
+// different wording for the same setting. Since the W13b copy sweep
+// (D-7, 2026-08-07) descriptions are uniformly plain task-oriented
+// language, and the precise technical facts live in the registry's
+// OPTIONAL `technicalDetails` field (rendered as an info tooltip in the
+// settings screen) — this page renders BOTH layers (description verbatim,
+// then a "Technical details" line) so the generated reference never loses
+// the facts the settings screen still carries.
 
 import { writeFileSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -89,6 +91,13 @@ function renderSetting(entry) {
 
   lines.push(entry.description, "");
 
+  // W13b (D-7 two-layer copy): the settings screen shows this in the
+  // per-key info tooltip; the reference page states it inline so the
+  // generated docs keep every technical fact the old single-layer
+  // descriptions used to carry.
+  if (entry.technicalDetails) {
+    lines.push(`- **Technical details:** ${entry.technicalDetails}`);
+  }
   lines.push(`- **Default:** ${formatDefaultWithTiers(entry)}`);
   if (entry.tierDefaults) {
     lines.push(

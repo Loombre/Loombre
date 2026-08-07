@@ -15,6 +15,19 @@
 // pill click reuses the exact same path a real keystroke takes (updates
 // the field + fires the debounced search), so recent-search selection
 // can't drift from typed-search behavior.
+//
+// W16 (owner screenshot): the field + results used to sit in their own
+// 720px-capped, uncentered `.page` column inside AppShell's full-width
+// <main> — a small search box and the "SEARCH EVERYTHING" watermark
+// stranded in a sea of dead space on wider viewports, results included
+// once a query landed. Wrapped in SettingsPageLayout here (consumed, not
+// modified — see its header) for the exact same readable-width-cap +
+// centering fix Wave 1 landed for every settings/admin page: this route
+// isn't a settings page, but SettingsPageLayout is unopinionated about its
+// parent's layout mode and imports cleanly into AppShell's plain block
+// <main>, so reusing it beats hand-duplicating the same two CSS rules in
+// page.module.css. `.page`'s own former `max-width: 720px` is gone — that
+// was the exact double-cap bug SettingsPageLayout's header documents.
 
 "use client";
 
@@ -22,6 +35,7 @@ import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { SearchField } from "../../components/ui/Input.js";
 import { AppShell } from "../../components/shell/AppShell.js";
+import { SettingsPageLayout } from "../../components/settings/SettingsPageLayout.js";
 import { SearchPanel, type SearchPanelHandle } from "../../components/browse/SearchPanel.js";
 import { debounce } from "../../lib/debounce.js";
 import { getAuthStore } from "../../lib/auth-store.js";
@@ -77,30 +91,32 @@ function SearchContent(): React.JSX.Element {
   }, []);
 
   return (
-    <div className={styles.page}>
-      <SearchField
-        className={styles.field}
-        name="search"
-        placeholder="Search movies, series, music, people…"
-        value={inputValue}
-        onChange={(e) => handleChange(e.target.value)}
-        onKeyDown={handleKeyDown}
-        autoFocus
-        aria-label="Search"
-      />
-      <div className={styles.results}>
-        {accessToken !== null && (
-          <SearchPanel
-            query={debouncedQuery}
-            serverUrl={serverUrl}
-            accessToken={accessToken}
-            registerHandle={registerHandle}
-            onSelectQuery={handleChange}
-            paginated
-          />
-        )}
+    <SettingsPageLayout>
+      <div className={styles.page}>
+        <SearchField
+          className={styles.field}
+          name="search"
+          placeholder="Search movies, series, music, people…"
+          value={inputValue}
+          onChange={(e) => handleChange(e.target.value)}
+          onKeyDown={handleKeyDown}
+          autoFocus
+          aria-label="Search"
+        />
+        <div className={styles.results}>
+          {accessToken !== null && (
+            <SearchPanel
+              query={debouncedQuery}
+              serverUrl={serverUrl}
+              accessToken={accessToken}
+              registerHandle={registerHandle}
+              onSelectQuery={handleChange}
+              paginated
+            />
+          )}
+        </div>
       </div>
-    </div>
+    </SettingsPageLayout>
   );
 }
 

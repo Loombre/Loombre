@@ -96,9 +96,13 @@
    confirms, design/phosphor/README.md "Interactions & behavior → Provider
    keys": "Remove requires a confirm step in a danger-tinted block").
    Filled, not outlined, so a destructive confirm reads as maximally
-   deliberate next to the ghost/secondary Cancel beside it. */
+   deliberate next to the ghost/secondary Cancel beside it.
+   Background is --color-danger-fill, NOT --color-danger directly — see
+   that token's comment in tokens.css: plain --color-danger under white
+   text measures 4.08:1 (fails WCAG AA's 4.5:1 text floor); the fill
+   token's color-mix(…, 90%, black) clears it at 4.89:1. */
 .danger {
-  background: var(--color-danger);
+  background: var(--color-danger-fill);
   color: #fff;
 }
 
@@ -107,6 +111,24 @@
 }
 
 .danger:active:not(:disabled) {
+  filter: brightness(0.95);
+}
+
+/* Warning — additive variant, same filled pattern as .danger (W14: Server
+   Power "Restart server" reads as a cautionary-but-not-destructive action,
+   distinct from Shut down's .danger). --color-warning-text is already
+   dark-not-white per tokens.css (mirrors --color-accent-text); measured
+   8.92:1 against --color-warning, clears AA/AAA with wide margin. */
+.warning {
+  background: var(--color-warning);
+  color: var(--color-warning-text);
+}
+
+.warning:hover:not(:disabled) {
+  filter: brightness(1.1);
+}
+
+.warning:active:not(:disabled) {
   filter: brightness(0.95);
 }
 
