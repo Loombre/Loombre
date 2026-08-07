@@ -333,7 +333,7 @@ If you hit a problem not listed here:
    - All startup logs (the first 50–100 lines when you started the service)
    - The specific error message (not a paraphrase)
    - Your OS, CPU, RAM, and Loombre version
-   - How you installed (Docker, tarball, MSI, .pkg, Homebrew)
+   - How you installed (Docker, tarball, .exe installer, .pkg, Homebrew)
 
 2. **Paste the logs** (redact database passwords and secret tokens) on the GitHub
    Issues page — include enough context that the error is reproducible.
