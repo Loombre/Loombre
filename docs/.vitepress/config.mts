@@ -50,12 +50,21 @@ export default defineConfig({
   // looks like.
   base: "/docs/",
   cleanUrls: true,
+  // Dark by default, matching the marketing pages the reader just came from
+  // (loombre.com is dark-only). The toggle stays — this only sets the
+  // initial appearance; an explicit user choice is persisted by VitePress
+  // and wins on return visits.
+  appearance: "dark",
   // Deterministic builds: "last updated" timestamps would depend on git log
   // depth/availability at build time (shallow CI checkouts, worktrees) —
   // off rather than sometimes-right.
   lastUpdated: false,
   srcDir: ".",
-  srcExclude: ["PLAN.md", "PLAYBACK.md"],
+  // public/** is the static-assets tree; with srcDir "." VitePress still
+  // globs .md files inside it for PAGES (docs/public/fonts/README.md became
+  // a published /public/fonts/README route until this exclude). The files
+  // themselves ship verbatim either way — this only stops page rendering.
+  srcExclude: ["PLAN.md", "PLAYBACK.md", "public/**"],
   ignoreDeadLinks: false,
 
   head: [["meta", { name: "referrer", content: "no-referrer" }]],
@@ -80,7 +89,11 @@ export default defineConfig({
   },
 
   themeConfig: {
-    logo: undefined,
+    // The flame mark, copied from the website workspace's brand set
+    // (site/public/brand/loombre-mark.svg) so the docs nav carries the same
+    // mark as the marketing nav. Served from docs/public — same-origin,
+    // img-src 'self' holds.
+    logo: "/brand/loombre-mark.svg",
     // The docs hub at loombre.com/docs is a hand-built page belonging to the
     // marketing site, not a VitePress route — so the router has no chunk for
     // it and a client-side navigation there would render this site's own home
