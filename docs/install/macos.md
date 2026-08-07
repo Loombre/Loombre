@@ -363,6 +363,55 @@ If this fails, you need to grant the `_loombre` user read access. For a network
 mount, check File Sharing (System Settings → General → Sharing) — confirm your
 user has read access, then Loombre can mount it in the same way.
 
+### Media in your home folder ("No access" in the folder picker / "cannot read this folder")
+
+Loombre's services run as the dedicated `_loombre` system account — never as
+you, and never as root — so the server keeps serving while you're logged out
+and holds the least privilege possible. The flip side: macOS keeps personal
+home folders private (`/Users/you` is mode 700/750), so `_loombre` cannot see
+them. The folder picker marks such folders **No access**, and browsing into
+one reports that the service account cannot read it. That's the system
+working as designed, not a broken install.
+
+**The easy fixes** — no permission surgery at all:
+
+- Keep media on an **external drive or network share** (they mount under
+  `/Volumes`, which is where the picker starts looking on a Mac), or
+- use **`/Users/Shared`**, which every account on the machine can read.
+
+**If your media must stay in your home folder**, grant `_loombre` access to
+just that subtree with a targeted ACL — nothing else in your home folder
+becomes visible:
+
+```sh
+# 1. Let the service account TRAVERSE your home folder (walk through it —
+#    this alone reveals none of its contents):
+chmod +a "user:_loombre allow search" ~
+
+# 2. Grant read on just your media folder, including everything added later
+#    (the two inherit flags):
+chmod +a "user:_loombre allow read,execute,readattr,readextattr,list,search,file_inherit,directory_inherit" ~/Media
+```
+
+Adjust `~/Media` to your actual folder. Verify with
+`sudo -u _loombre ls ~/Media`, and inspect or undo at any time:
+
+```sh
+ls -le ~/Media          # view the ACL entries
+chmod -a "user:_loombre allow search" ~   # revoke (repeat per entry added)
+```
+
+**A note on Full Disk Access**: it is *not* the fix for the above — Full Disk
+Access lifts macOS's privacy protection (TCC), never POSIX permissions. It
+only matters if your media lives inside a TCC-protected folder (`Desktop`,
+`Documents`, `Downloads`), which daemons cannot read even after an ACL grant.
+Simplest is to keep media out of those three folders (a `~/Media` folder is
+not TCC-protected, so the ACL above is all it needs). If you genuinely need
+one of them, additionally add Loombre's runtime binary
+(`/opt/loombre/current/runtime/node/bin/node`) under System Settings →
+Privacy & Security → Full Disk Access — and expect to re-check that grant
+after an upgrade, since it's tied to the binary on disk.
+
 ### Menubar app won't open (Gatekeeper blocks it again)
 
 The menubar app (`Loombre.app`) is a separate executable and may also trigger

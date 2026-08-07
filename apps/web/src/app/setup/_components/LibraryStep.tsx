@@ -10,16 +10,19 @@
 // has no enqueue() call, so the wizard triggers it explicitly as a second
 // call, full:true for a first import).
 //
-// P4.6 DEVIATION (see this lane's report): manual path entry ONLY. The
-// task spec's literal wording says "library paths (native folder picker
-// via platform controller apps; manual path entry always available)" —
-// but the controller-IPC contract (packages/controller-ipc) has no picker
-// operation in v1 (grep confirms: no "pickFolder"/"selectDirectory"-shaped
-// op anywhere in that package or openapi.yaml's admin surface). Rendering
-// a fake picker button would be dishonest UX; this step is manual-entry-
-// only with an explicit helper note saying so, which the task text itself
-// anticipates ("manual path entry ALWAYS; ... render the input with
-// helper text honestly").
+// FOLDER BROWSING (P4.6 deviation, reversed): the original deviation
+// declared this step manual-entry-only because the spec's imagined picker
+// was a NATIVE one via the controller apps, and the controller-IPC
+// contract has no picker op. That rationale went stale when the
+// server-enumeration picker landed (GET /admin/filesystem/directories +
+// components/settings/sections/DirectoryPicker.tsx, the same dialog
+// Settings > Library uses). Auth is no obstacle: the wizard's step order
+// puts this AFTER admin creation, and AdminStep applies the first-admin
+// TokenPair to the auth store, so this step is a live admin and reaches
+// the admin-only browse endpoint through the ordinary api-client
+// plumbing. Manual entry stays fully supported alongside — headless
+// installs and container-only mounts still need typing (DirectoryPicker's
+// own header: Browse is an affordance, not a gate).
 //
 // This step is skippable: a user who plans to restore from a backup
 // afterward (the RestoreStep, which requires an empty instance — see
@@ -28,12 +31,13 @@
 
 import { useState, type FormEvent } from "react";
 import { FolderOpen, Plus, Trash2 } from "lucide-react";
-import { LoombreApiError } from "@loombre/sdk";
 import { Icon } from "../../../components/icon/Icon.js";
+import { DirectoryPicker } from "../../../components/settings/sections/DirectoryPicker.js";
 import { Button } from "../../../components/ui/Button.js";
 import { TextInput } from "../../../components/ui/Input.js";
 import { SegmentedControl } from "../../../components/ui/SegmentedControl.js";
 import { apiPost } from "../../../lib/api-client.js";
+import { apiErrorMessage } from "../../../lib/api-error-message.js";
 import { validateLibraryForm, type LibraryFormErrors } from "../wizard-state.js";
 import styles from "./steps.module.css";
 
@@ -54,6 +58,7 @@ export function LibraryStep({ onNext }: LibraryStepProps): React.JSX.Element {
   const [errors, setErrors] = useState<LibraryFormErrors>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   function updatePath(index: number, value: string): void {
     setPaths((prev) => prev.map((p, i) => (i === index ? value : p)));
@@ -63,6 +68,18 @@ export function LibraryStep({ onNext }: LibraryStepProps): React.JSX.Element {
   }
   function removePath(index: number): void {
     setPaths((prev) => (prev.length <= 1 ? prev : prev.filter((_, i) => i !== index)));
+  }
+  /** A browsed pick fills the first empty field, else appends a new row —
+   *  de-duplicated, same rule as AddLibrarySheet (a library with the same
+   *  path twice would have the scanner walk it twice for nothing). */
+  function handlePicked(picked: string): void {
+    setPaths((prev) => {
+      const trimmed = prev.map((p) => p.trim());
+      if (trimmed.includes(picked)) return prev;
+      const emptyIndex = trimmed.findIndex((p) => p.length === 0);
+      if (emptyIndex >= 0) return prev.map((p, i) => (i === emptyIndex ? picked : p));
+      return [...prev, picked];
+    });
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>): Promise<void> {
@@ -91,7 +108,9 @@ export function LibraryStep({ onNext }: LibraryStepProps): React.JSX.Element {
       }
       onNext(true);
     } catch (err) {
-      setSubmitError(err instanceof LoombreApiError ? err.message : "Could not reach the server.");
+      // Detail-first (V-UX F2/F3): the RFC 9457 `detail` is the server's
+      // actionable sentence; bare err.message is only the status title.
+      setSubmitError(apiErrorMessage(err, "Could not reach the server."));
     } finally {
       setSubmitting(false);
     }
@@ -125,10 +144,18 @@ export function LibraryStep({ onNext }: LibraryStepProps): React.JSX.Element {
       </div>
 
       <div className={styles.field}>
-        <span className={styles.label}>Folder path(s)</span>
+        {/* The Browse button lives OUTSIDE any label on purpose — a button
+            nested inside a label steals the label's click (the same trap
+            AddLibrarySheet documents on its pathsHeader). */}
+        <div className={styles.pathsHeader}>
+          <span className={styles.label}>Folder path(s)</span>
+          <Button type="button" variant="ghost" onClick={() => setPickerOpen(true)}>
+            Browse…
+          </Button>
+        </div>
         <span className={styles.hint}>
-          Type the path on the server&apos;s filesystem — there is no folder-browse button yet
-          (the desktop-controller app doesn&apos;t expose one in this release).
+          Folders on the machine running Loombre — browse them, or type a path directly
+          (a headless install or a container-only mount still needs typing).
         </span>
         <div className={styles.pathList}>
           {paths.map((p, i) => (
@@ -169,6 +196,8 @@ export function LibraryStep({ onNext }: LibraryStepProps): React.JSX.Element {
           {submitting ? "Creating…" : "Create library & start scan"}
         </Button>
       </div>
+
+      <DirectoryPicker open={pickerOpen} onClose={() => setPickerOpen(false)} onSelect={handlePicked} />
     </form>
   );
 }

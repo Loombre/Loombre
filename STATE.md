@@ -1,5 +1,90 @@
 # STATE.md — Lumbre Phase 4 (Phases 0–2 complete; Phase 3 automated exit met, owner review items Open)
 
+## macOS live-test bug wave 1 — menubar wiring, wizard picker, folder-picker Forbidden (2026-08-07, all three FIXED)
+
+Owner's macOS live test surfaced three issues; 3-agent read-only sweep proved
+all root causes; fixes landed feedback-loop-first (every fix has a prior
+failing check). `pnpm gate` ALL GREEN (after one known-family e2e flake, see
+below).
+
+1. **Menubar "Reveal Crash Files" no-ops / "whole menu isn't wired" feel —
+   three real causes, all fixed.** (a) The handler had three silent returns,
+   and the empty-list one fired on EVERY healthy install: zero crashes is the
+   steady state (`crashes/` is created lazily on first crash), so the click
+   was a guaranteed no-op; Windows tray dialogs "No crash files found." in
+   the identical case (parity gap). (b) `NSMenu` DEFAULT autoenablement
+   force-enables any item with target+action — no `autoenablesItems = false`
+   anywhere — so every manual `isEnabled` was overridden at display time:
+   items designed to gray out without an IPC connection were clickable and
+   silently guard-returned. (c) The lifecycle item assigned
+   `#selector(startLoombre)` even when the plan said `.none` — combined with
+   (b), a transitional "Stop Server"-titled item could fire the admin-prompt
+   launchd start. FIX: new `MenuBuilder.swift` (all menu construction, incl.
+   the test-pinned `autoenablesItems = false`; `.none` → nil action) +
+   `MenuActions` @objc protocol; `revealCrashFiles` now alerts on empty
+   ("No crash files found" + crashes-dir path) and on IPC error, reveals via
+   new pure `IPCCrashFilesResponse.revealPlan` (IPCKit). NEW TEST TARGET
+   `LoombreMenubarTests` (SPM testable-executable) pins the AppKit wiring —
+   the exact layer this shipped through untested; `swift test` 65/65.
+   Field note: installed rc pkgs predate ALL menubar fixes (incl. b3856df6
+   Start-via-launchd + 2a408b44) — next pkg build picks everything up.
+
+2. **Setup wizard's "no folder-browse button yet" copy was FALSE — the P4.6
+   manual-entry-only deviation is REVERSED.** The deviation reasoned about a
+   NATIVE controller-app picker (controller-IPC has no picker op — still
+   true); the server-enumeration DirectoryPicker landed later for Settings >
+   Library and made the rationale stale. Auth was never a blocker: STEP_ORDER
+   puts libraries AFTER admin, and AdminStep applies the first-admin
+   TokenPair to the auth store — the library step is a live admin and calls
+   the admin-only GET /admin/filesystem/directories through ordinary
+   api-client plumbing. FIX: LibraryStep embeds the shared DirectoryPicker
+   (Browse… button; pick fills first empty field else appends, de-duped —
+   AddLibrarySheet's rule); stale copy/comments rewritten (LibraryStep
+   header, wizard-state.ts, test describe label); LibraryStep.test.tsx added.
+   No contract/guard/setup-surface changes; 404-invisibility untouched.
+
+3. **Folder picker "Forbidden" browsing /Users/<user> on macOS — two proven
+   layers.** Capability: pkg LaunchDaemons run as `_loombre` (not in
+   staff/admin; verified live `id _loombre`), home dirs are 700/750 →
+   readdir EACCES → 403. That posture is DELIBERATE and KEPT (LAYOUT.md
+   serves-while-logged-out; Linux is stricter still with ProtectHome;
+   Windows runs LocalSystem which is why it doesn't reproduce there). UX
+   (the actual bug): SDK error message carries only the problem TITLE, the
+   picker rendered raw "Forbidden" and dropped the server's actionable
+   `detail`; the codebase's own apiErrorMessage (V-UX F2/F3) existed for
+   exactly this and wasn't used. FIX (contract-first): `DirectoryEntry.readable`
+   (required) — unreadable dirs are listed AND marked ("No access", dimmed,
+   still clickable — clicking is how the guidance surfaces), never hidden;
+   errors render via apiErrorMessage (picker + LibraryStep submit); 403 now
+   carries `code: "filesystem-permission-denied"` and a detail tailored to
+   the ACTUAL runtime account (pure `permissionDeniedDetail()`: darwin+_loombre
+   → /Volumes and /Users/Shared steering + ACL-grant pointer; linux+loombre
+   split systemd-vs-container via /.dockerenv; generic otherwise — a dev
+   server never claims to be an installer). docs/install/macos.md gained
+   "Media in your home folder": targeted ACL grant (`chmod +a` search-only on
+   ~, inheriting read ACL on the media dir), revoke/verify commands, and the
+   FDA precision that matters (Full Disk Access lifts TCC only, NEVER POSIX
+   perms; only needed for Desktop/Documents/Downloads; path-based grant on
+   `/opt/loombre/current/runtime/node/bin/node`, re-check after upgrade).
+   Docs synced to website same-session (70 routes, website build green).
+
+- Tests: server 19/19 admin-directories (incl. chmod-000 `readable:false`
+  case, POSIX-non-root-gated), web 43/43 (new DirectoryPicker.test.tsx ×4 +
+  LibraryStep.test.tsx ×4), Swift 65/65 (2 new suites). Gate note: sdk-drift
+  compares `git diff` vs the INDEX — stage regenerated SDK before gating.
+- e2e flake observed (known deferred family): security-hardening F1
+  GET /episodes/{id} returned 401 under full-suite parallelism, green in
+  isolation and on gate rerun. Triage clue for later: the 401 body was
+  `{"type":"error","error":{"type":"authentication_error",...}}` — NOT
+  problem+json, so it bypassed/preceded the RFC 9457 filter.
+- New small tickets from the sweep (NOT fixed, candidates): (a) macOS
+  postinstall UID picker landed `_loombre` at uid 500 — boundary of the
+  <500 system range, 500+ can surface in login UI despite IsHidden; (b)
+  listRoots offers /home on Linux while ProtectHome hides it (accessSync
+  can't detect the ProtectHome empty-dir illusion — readable marking won't
+  catch it); (c) FDA path-grant persistence across `/opt/loombre/current`
+  symlink swaps on upgrade is unverified (docs phrased cautiously).
+
 ## v0.9.0-rc.5 draft release COMPLETE + Windows VM live test (2026-08-07)
 
 - **Draft is UP with all 7 assets** (windows .exe 434MB / macos .pkg 153MB /

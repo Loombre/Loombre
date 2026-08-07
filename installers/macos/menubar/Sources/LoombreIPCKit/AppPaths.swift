@@ -27,4 +27,12 @@ public enum LoombreAppPaths {
     public static var tokenFileURL: URL {
         URL(fileURLWithPath: appSupportDir).appendingPathComponent(IPCTransport.tokenFilename)
     }
+
+    /// Where crash reports land when one ever happens — <dataDir>/crashes,
+    /// the single shared crashDirPath (packages/shared/src/crash-dir.ts;
+    /// apps/server/src/crash/writer.ts creates it lazily on first crash).
+    /// Informational only here: the menubar mentions it in the
+    /// "no crash files found" dialog, it never reads the directory itself
+    /// (listing goes through GET /ipc/v1/crash-files).
+    public static let crashesDir = appSupportDir + "/crashes"
 }

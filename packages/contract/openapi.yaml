@@ -2811,6 +2811,14 @@ paths:
         tree is reconnaissance in the wrong hands. Free-text path entry
         stays supported alongside it, because headless and remote installs
         still need to type a path that this host cannot browse to.
+
+
+        A permission-denied listing fails 403 with `code:
+        "filesystem-permission-denied"` and a `detail` sentence tailored to
+        the service account the server is actually running as (the
+        macOS/Linux installers run a dedicated least-privilege account that
+        cannot read personal home folders) — clients should surface that
+        `detail` verbatim, it says what to do about the situation.
       parameters:
         - name: path
           in: query
@@ -4807,7 +4815,7 @@ components:
     DirectoryEntry:
       type: object
       additionalProperties: false
-      required: [name, path]
+      required: [name, path, readable]
       properties:
         name:
           type: string
@@ -4819,6 +4827,17 @@ components:
             `path` parameter or to use as a library path. Built by the
             server so the client never has to join path segments itself and
             get the separator wrong on the other platform.
+        readable:
+          type: boolean
+          description: >-
+            Whether the server itself can descend into this directory.
+            False means a follow-up listing of `path` will fail with 403 —
+            the service account lacks read permission (the normal state of
+            personal home folders under the macOS/Linux installers, whose
+            services run as a dedicated least-privilege account). Clients
+            should render such entries dimmed/marked rather than hiding
+            them, so an operator can see the folder exists and either fix
+            its permissions or choose another location.
 
     DirectoryListing:
       type: object
@@ -4840,10 +4859,12 @@ components:
           type: array
           items: { $ref: '#/components/schemas/DirectoryEntry' }
           description: >-
-            Immediate subdirectories, name-sorted. Entries the server cannot
-            read are OMITTED rather than failing the whole listing — one
-            unreadable system directory must not make a browsable parent
-            un-browsable.
+            Immediate subdirectories, name-sorted. Entries that cannot even
+            be identified as directories (broken symlinks, un-statable link
+            targets) are omitted; directories the server can see but not
+            open are included with `readable: false` — one unreadable
+            system directory must not make a browsable parent
+            un-browsable, and hiding it would misrepresent the filesystem.
 
     CrashFileList:
       type: object

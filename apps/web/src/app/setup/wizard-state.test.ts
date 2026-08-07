@@ -104,7 +104,7 @@ describe("validateAdminForm / isAdminFormValid (mirrors FirstAdminRequest)", () 
   });
 });
 
-describe("validateLibraryForm (manual path entry — P4.6 folder-picker deviation)", () => {
+describe("validateLibraryForm (manual path entry — always valid alongside the browse picker)", () => {
   it("valid with a name and at least one non-blank path", () => {
     expect(validateLibraryForm({ name: "Movies", paths: ["/mnt/media/movies"] })).toEqual({});
   });
