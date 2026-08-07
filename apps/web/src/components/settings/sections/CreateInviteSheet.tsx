@@ -34,8 +34,10 @@ import { SheetOrModal } from "../../ui/SheetOrModal.js";
 import { TextInput } from "../../ui/Input.js";
 import { Button } from "../../ui/Button.js";
 import { SecretReveal } from "../../ui/SecretReveal.js";
+import { Select } from "../../ui/Select.js";
 import { Tag } from "../../ui/Chip.js";
 import { apiGet, apiPost, LoombreApiError } from "../../../lib/api-client.js";
+import { MEDIA_KIND_LABEL, enumLabel } from "../../../lib/enum-labels.js";
 import styles from "./shared.module.css";
 
 type Invite = components["schemas"]["Invite"];
@@ -176,17 +178,11 @@ export function CreateInviteSheet({
           </label>
           <div className={styles.field}>
             <span className={styles.label}>Expires</span>
-            <select
-              className={styles.textarea}
+            <Select
               value={expiresInMs}
               onChange={(e) => setExpiresInMs(Number(e.target.value))}
-            >
-              {EXPIRY_OPTIONS.map((opt) => (
-                <option key={opt.ms} value={opt.ms}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
+              options={EXPIRY_OPTIONS.map((opt) => ({ value: String(opt.ms), label: opt.label }))}
+            />
           </div>
           <div className={styles.field}>
             <span className={styles.label}>Library access</span>
@@ -215,7 +211,7 @@ export function CreateInviteSheet({
                       onChange={() => toggleLibrary(lib.id)}
                     />
                     <span>{lib.name}</span>
-                    <Tag>{lib.mediaKind}</Tag>
+                    <Tag>{enumLabel(MEDIA_KIND_LABEL, lib.mediaKind)}</Tag>
                   </label>
                 ))}
               </div>

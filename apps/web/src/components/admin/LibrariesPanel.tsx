@@ -40,6 +40,7 @@ import { FixMatch } from "./FixMatch.js";
 import { Skeleton } from "../skeleton/Skeleton.js";
 import { getLibraryScanState, useLibraryScanState } from "../../lib/admin-dashboard-live.js";
 import { apiGet, apiPost, LoombreApiError } from "../../lib/api-client.js";
+import { enumLabel, MEDIA_KIND_LABEL } from "../../lib/enum-labels.js";
 import styles from "./LibrariesPanel.module.css";
 
 type Library = components["schemas"]["Library"];
@@ -90,7 +91,7 @@ function LibraryDashboardRow({
     <div className={styles.row}>
       <div className={styles.mainLine}>
         <span className={styles.name}>{library.name}</span>
-        <Tag>{library.mediaKind}</Tag>
+        <Tag>{enumLabel(MEDIA_KIND_LABEL, library.mediaKind)}</Tag>
         <span className={styles.count}>{library.itemCount} items</span>
         {scanState.scanning && (
           <span className={styles.scanningBadge}>

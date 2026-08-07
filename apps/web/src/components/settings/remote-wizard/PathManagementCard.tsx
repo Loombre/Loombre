@@ -183,7 +183,7 @@ export function PathManagementCard({
 
       {path === "remote" && (
         <>
-          <Link href="/settings/devices" className={styles.devicesLink}>
+          <Link href="/profile/devices" className={styles.devicesLink}>
             Manage enrolled devices →
           </Link>
           <RemoteDevicesPanel />

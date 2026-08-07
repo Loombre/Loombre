@@ -13,19 +13,21 @@ describe("filterPaletteScreens", () => {
     expect(matches.map((m) => m.key)).toEqual(["home"]);
   });
 
-  // D-6 (Wave 2, this run): "settings" (label "System Settings") and
-  // "admin-settings" are both admin-only now — a non-admin's query instead
-  // surfaces "profile" (label "Profile settings", the user-scoped
-  // destination D-6 moved to), which legitimately contains the substring
-  // "settings" too.
+  // D-6 (Wave 2, this run): "settings" (label "System Settings") is
+  // admin-only now — a non-admin's query instead surfaces "profile" (label
+  // "Profile settings", the user-scoped destination D-6 moved to), which
+  // legitimately contains the substring "settings" too.
   it("excludes admin-only screens for a non-admin viewer, surfacing Profile settings instead", () => {
     const matches = filterPaletteScreens("settings", false);
     expect(matches.map((m) => m.key)).toEqual(["profile"]);
   });
 
+  // W3-R (opus review, LOW): "admin-settings" (a redirect-stub duplicate of
+  // this same /settings destination) is REMOVED — "settings" is the one
+  // System Settings entry left in the palette.
   it("includes admin-only screens for an admin viewer, alongside Profile settings", () => {
     const matches = filterPaletteScreens("settings", true);
-    expect(matches.map((m) => m.key).sort()).toEqual(["admin-settings", "profile", "settings"].sort());
+    expect(matches.map((m) => m.key).sort()).toEqual(["profile", "settings"].sort());
   });
 
   it("every admin screen points at a real, existing /admin/* or (D-6) /settings route", () => {

@@ -33,6 +33,7 @@ import { StatusPill } from "../StatusPill.js";
 import { EmptyState } from "../EmptyState.js";
 import { Skeleton } from "../../skeleton/Skeleton.js";
 import { describeStashSyncReportStatus } from "../../../lib/admin-status.js";
+import { enumLabel, STASH_SYNC_MODE_LABEL } from "../../../lib/enum-labels.js";
 import { apiGet, apiPost, LoombreApiError } from "../../../lib/api-client.js";
 import { getEventsSocket, type EventEnvelope } from "../../../lib/events-socket.js";
 import styles from "./StashSyncPanel.module.css";
@@ -320,7 +321,7 @@ export function StashSyncPanel({ libraryId, connection }: { libraryId: string; c
           <div className={styles.reportCard}>
             <div className={styles.reportHeader}>
               <StatusPill label={describeStashSyncReportStatus(report.status).label} tone={describeStashSyncReportStatus(report.status).tone} />
-              <Tag>{report.mode}</Tag>
+              <Tag>{enumLabel(STASH_SYNC_MODE_LABEL, report.mode)}</Tag>
             </div>
             <dl className={styles.countsGrid}>
               <div>

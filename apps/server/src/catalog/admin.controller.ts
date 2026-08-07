@@ -228,6 +228,13 @@ export class AdminController {
   @Post("system/shutdown")
   @HttpCode(HttpStatus.ACCEPTED)
   async shutdownServer(@Req() req: AuthenticatedRequest, @Res({ passthrough: true }) res: Response) {
+    // W3-R (opus review): guard FIRST — the container-supervision branch
+    // used to run before requireAdmin, so on the shipped Docker image a
+    // non-admin got a 409 carrying deployment details ("runs under a
+    // container supervisor… docker compose stop") instead of a 403.
+    // handlePowerAction re-runs the same guard; requireAdmin is a cheap
+    // idempotent read and correctness-order beats one saved query.
+    await requireAdmin(this.dbProvider.db, req);
     // Under a restart-policy supervisor that ignores exit codes (the
     // shipped Docker compose's `unless-stopped`), an in-process exit
     // CANNOT keep the container down — refuse honestly instead of

@@ -85,14 +85,22 @@ export function LogsTailCard(): React.JSX.Element {
         <Skeleton radius="md" height={120} />
       ) : source === null ? (
         <>
+          {/* W3-R (opus review): the previous copy claimed installers
+              "configure a log file automatically" — FALSE: no installer
+              sets LOOMBRE_LOG_FILE; they capture the console output at
+              the service-manager level instead (macOS launchd
+              StandardOutPath -> /Library/Logs/Loombre, Windows service
+              host, systemd journal), so EVERY install shape lands on
+              this card. State that truthfully and point at where the
+              logs actually are. */}
           <EmptyState
             icon={FolderOpen}
-            title="No log file to show"
-            body="This server is currently writing its logs to console output rather than a file, so there's nothing to display here. Installed (installer-based) setups configure a log file automatically — a plain source build or container running without one is the only case that lands here."
+            title="No log file to show here"
+            body="This server writes its logs to its console output rather than to a log file this page can read. That's normal: installed setups collect the console output into the system's own log location (on macOS, /Library/Logs/Loombre; on Linux, the service journal), and Docker keeps it in the container logs. To view recent logs right here instead, point the LOOMBRE_LOG_FILE setting at a file path and restart."
           />
           <p className={styles.technicalNote}>Technical: LOOMBRE_LOG_FILE is not set on this instance.</p>
           <a href={ENV_REFERENCE_DOCS_URL} target="_blank" rel="noreferrer noopener" className={styles.notesLink}>
-            Read how to enable a log file
+            Environment reference
           </a>
         </>
       ) : (

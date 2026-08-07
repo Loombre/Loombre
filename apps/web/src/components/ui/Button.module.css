@@ -64,6 +64,21 @@
   color: var(--color-accent-text);
 }
 
+/* W3-R (opus review blocker): on FILLED variants the amber --color-focus
+   ring sits ON the amber/red fill — measured 1.11:1 on .primary, 1.37:1
+   on .warning (WCAG 2.2 needs 3:1 for focus indicators), i.e. keyboard
+   focus was invisible exactly where it matters most. Fix invariant: a
+   filled control's inset ring uses ITS OWN TEXT COLOR (currentcolor) —
+   the variant's text/fill pairing already clears AA by construction, so
+   the ring is guaranteed visible on every accent theme. Same rule
+   repeated per variant (not grouped) purely for stylelint's
+   no-descending-specificity ordering. Unfilled variants keep the amber
+   ring. */
+.primary:focus-visible {
+  box-shadow: inset 0 0 0 3px currentcolor;
+  animation: loombre-button-focus-in-filled var(--motion-fast) var(--ease-spring);
+}
+
 .primary:hover:not(:disabled) {
   background: var(--color-accent-hover);
   box-shadow: var(--shadow-md);
@@ -106,12 +121,21 @@
   color: #fff;
 }
 
+.danger:focus-visible {
+  box-shadow: inset 0 0 0 3px currentcolor;
+  animation: loombre-button-focus-in-filled var(--motion-fast) var(--ease-spring);
+}
+
+/* W3-R (opus review): hover DARKENS, never brightens — brightness(1.1)
+   pushed white-on-red back to 4.16:1 (under AA's 4.5) exactly while the
+   pointer hovers the label. Darkening the fill under white text always
+   RAISES contrast, so the AA fix holds in every state. */
 .danger:hover:not(:disabled) {
-  filter: brightness(1.1);
+  filter: brightness(0.9);
 }
 
 .danger:active:not(:disabled) {
-  filter: brightness(0.95);
+  filter: brightness(0.85);
 }
 
 /* Warning — additive variant, same filled pattern as .danger (W14: Server
@@ -124,12 +148,27 @@
   color: var(--color-warning-text);
 }
 
+.warning:focus-visible {
+  box-shadow: inset 0 0 0 3px currentcolor;
+  animation: loombre-button-focus-in-filled var(--motion-fast) var(--ease-spring);
+}
+
 .warning:hover:not(:disabled) {
   filter: brightness(1.1);
 }
 
 .warning:active:not(:disabled) {
   filter: brightness(0.95);
+}
+
+@keyframes loombre-button-focus-in-filled {
+  from {
+    box-shadow: inset 0 0 0 0 currentcolor;
+  }
+
+  to {
+    box-shadow: inset 0 0 0 3px currentcolor;
+  }
 }
 
 .iconOnly {

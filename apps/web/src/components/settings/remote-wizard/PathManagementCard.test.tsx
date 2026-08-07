@@ -198,7 +198,7 @@ describe("PathManagementCard — per-path summary", () => {
     expect(textOf()).toContain("Listening");
     expect(textOf()).toContain("51820");
     expect(textOf()).toContain("3"); // peerCount
-    const link = document.body.querySelector('a[href="/settings/devices"]');
+    const link = document.body.querySelector('a[href="/profile/devices"]');
     expect(link).not.toBeNull();
     expect(link?.textContent).toContain("Manage enrolled devices");
   });
@@ -208,7 +208,7 @@ describe("PathManagementCard — per-path summary", () => {
     expect(textOf()).toContain("Tunnel");
     expect(textOf()).toContain("running");
     expect(textOf()).toContain("loombre.example.com");
-    expect(document.body.querySelector('a[href="/settings/devices"]')).toBeNull();
+    expect(document.body.querySelector('a[href="/profile/devices"]')).toBeNull();
   });
 
   it("Direct: shows mode/domain/certificate status and NO devices-list link", async () => {
@@ -216,7 +216,7 @@ describe("PathManagementCard — per-path summary", () => {
     expect(textOf()).toContain("Direct");
     expect(textOf()).toContain("acme");
     expect(textOf()).toContain("Valid");
-    expect(document.body.querySelector('a[href="/settings/devices"]')).toBeNull();
+    expect(document.body.querySelector('a[href="/profile/devices"]')).toBeNull();
   });
 
   it("always renders the posture-card seam for U3", async () => {

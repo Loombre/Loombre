@@ -6,9 +6,13 @@
    comment: "modals, popovers, command palette") — a local keyframe rather
    than importing that file, so this component has no cross-file coupling to
    maintain. Compositor-only animation (opacity + transform), per the
-   Phosphor motion rule; --motion-fast/--ease-spring already collapse to a
-   linear no-op under prefers-reduced-motion via tokens.css's own top-level
-   media query, so no second reduced-motion override is needed here. */
+   Phosphor motion rule. Reduced motion: tokens.css only shortens
+   --motion-fast to 100ms linear — it does NOT null the transform — so
+   this file ships its own opacity-only keyframe under
+   prefers-reduced-motion, exactly like UserMenu.module.css and
+   SettingField.module.css's popovers (W3-R: the previous claim that the
+   token collapse alone sufficed was wrong — the calendar still scaled
+   and translated under reduce). */
 
 .root {
   position: relative;
@@ -87,6 +91,22 @@
   to {
     opacity: 1;
     transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .root {
+    animation-name: loombre-datepicker-in-reduced;
+  }
+}
+
+@keyframes loombre-datepicker-in-reduced {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
   }
 }
 
