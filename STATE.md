@@ -321,6 +321,19 @@ occurrence.
 1. ~~Merge/PR decision~~ **DECIDED 2026-08-06: owner approved merge to main.**
    Fast-forwarded (`2747398`→`6078b9b`), so main carries the exact SHAs the
    3-OS run 31116371388 proved green — no new merge commit, nothing untested.
+   Branch `fix/audit-fafa47f-waves` deleted (origin + local) after verifying
+   zero unique commits. **Main's own post-merge CI green: run 31134036574**
+   (gate + perf-t0 + perf-lighthouse + perf-web-budget, all enforcing).
+   The push-triggered run 31119585848 hit the 2026-08-06 GitHub "Partial
+   System Outage" (major): action-download 503s, two mass-cancellations,
+   and finally a rerun wedged in a cancel-refusing state (both cancel and
+   force-cancel APIs 409/refuse — left for GitHub's reaper); its one REAL
+   test failure across five attempts was the documented remote-tunnel
+   timing flake (1/1592, deferred-item-3 material). **N2 evidence from the
+   same run: Node 26.7.0 (runner-fresh that day) breaks the web test
+   environment — `window.localStorage` undefined, 107 errors** (yesterday's
+   26.x was green) — recorded here as Current-line adoption history per the
+   runtime policy; no workaround chased, Node 24 is the shipping line.
 2. `rateLimit.loginByIdentifier` account-lockout trade-off (W3, undecided by
    design).
 3. `apps/server` e2e flakiness triage (reauth-review-findings / conformance —
