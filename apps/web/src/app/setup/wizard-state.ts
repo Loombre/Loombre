@@ -159,15 +159,31 @@ export function isTerminalJobStatus(status: JobStatus): boolean {
 //    states" is unit-testable without a component-rendering harness — see
 //    the module header) ──
 
-export type HardwareViewState = "empty" | "ready";
+export type HardwareViewState = "never-ran" | "pending" | "failed" | "ready";
 
-/** GET /admin/capabilities returns `{report: CapabilityReport | null}` —
- *  null before the worker's first hwprobe job completes (contract's
- *  CapabilityReportEnvelope doc comment). The hardware step polls
- *  regardless of which state it's in; this just names the two render
- *  states honestly. */
-export function deriveHardwareViewState(report: unknown): HardwareViewState {
-  return report ? "ready" : "empty";
+export interface CapabilityProbeStatusLike {
+  status: "never-ran" | "pending" | "failed" | "completed";
+  lastError: string | null;
+}
+
+/** GET /admin/capabilities returns `{report, probe}` (contract's
+ *  CapabilityReportEnvelope). W1/D-1: the three no-report states are
+ *  distinct and each gets honest copy — `never-ran` (no self-test on
+ *  record), `pending` (self-test queued/running), `failed` (the last
+ *  self-test errored; report stays null). A non-null report is `ready`
+ *  even with ZERO backends — an empty capability set is the valid
+ *  "software everything" state, not an error. The hardware step polls
+ *  regardless of which state it's in. `probe` is optional so callers
+ *  (and older cached envelopes) degrade to the never-ran copy rather
+ *  than crashing. */
+export function deriveHardwareViewState(
+  report: unknown,
+  probe?: CapabilityProbeStatusLike | null,
+): HardwareViewState {
+  if (report) return "ready";
+  if (probe?.status === "failed") return "failed";
+  if (probe?.status === "pending") return "pending";
+  return "never-ran";
 }
 
 export type RestrictedViewState = "capability-off" | "opt-in-form";

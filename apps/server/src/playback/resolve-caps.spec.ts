@@ -9,7 +9,33 @@
 // VideoCodec, both software encode targets, no tone-map).
 
 import { describe, expect, it } from "vitest";
-import { softwareOnlyFallbackCapabilities } from "./resolve-caps.js";
+import { capabilitiesFromSnapshot, softwareOnlyFallbackCapabilities } from "./resolve-caps.js";
+
+describe("capabilitiesFromSnapshot (W1/D-1: empty persisted report falls back like a missing one)", () => {
+  it("null snapshot -> software-only fallback, reason 'missing-snapshot'", () => {
+    const resolved = capabilitiesFromSnapshot(null);
+    expect(resolved.fallbackReason).toBe("missing-snapshot");
+    expect(resolved.caps).toEqual(softwareOnlyFallbackCapabilities());
+  });
+
+  it("persisted snapshot with zero backends -> software-only fallback, reason 'empty-snapshot'", () => {
+    const resolved = capabilitiesFromSnapshot({ backends: [] });
+    expect(resolved.fallbackReason).toBe("empty-snapshot");
+    expect(resolved.caps).toEqual(softwareOnlyFallbackCapabilities());
+  });
+
+  it("non-empty snapshot passes through verbatim with no fallback", () => {
+    const snapshot = {
+      backends: [
+        { backend: "videotoolbox", decode: ["h264"], encode: ["h264"], toneMap: ["videotoolbox"], verifiedAtMs: 1750000000000 },
+        { backend: "software", decode: ["h264", "hevc"], encode: ["h264", "hevc"], toneMap: [], verifiedAtMs: 1750000000000 },
+      ],
+    };
+    const resolved = capabilitiesFromSnapshot(snapshot);
+    expect(resolved.fallbackReason).toBeNull();
+    expect(resolved.caps).toBe(snapshot);
+  });
+});
 
 describe("softwareOnlyFallbackCapabilities", () => {
   it("declares exactly one 'software' backend with a full decode list and h264/hevc encode", () => {

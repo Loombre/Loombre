@@ -610,6 +610,22 @@ export async function getJobAdmin(db: Kysely<DB>, id: string): Promise<JobRow | 
   return db.selectFrom('jobs').selectAll().where('id', '=', id).executeTakeFirst();
 }
 
+/** Newest ledger row of `type` (same created_at_ms/id keyset order
+ *  listJobsAdmin pages by). Powers GET /admin/capabilities' three-state
+ *  probe status (W1/D-1): with no snapshot persisted, the latest 'hwprobe'
+ *  row is what distinguishes probe-failed / probe-pending from
+ *  probe-never-ran. */
+export async function getLatestJobOfTypeAdmin(db: Kysely<DB>, type: string): Promise<JobRow | undefined> {
+  return db
+    .selectFrom('jobs')
+    .selectAll()
+    .where('type', '=', type)
+    .orderBy('created_at_ms', 'desc')
+    .orderBy('id', 'desc')
+    .limit(1)
+    .executeTakeFirst();
+}
+
 // ============================================================================
 // admin session-list feed (STATE.md P2.8/deliverable E, GET /admin/sessions)
 // ============================================================================

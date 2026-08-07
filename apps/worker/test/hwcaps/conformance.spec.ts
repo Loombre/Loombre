@@ -59,8 +59,17 @@ describe("caps.yaml parser + shared schema conformance", () => {
     }
   });
 
-  it("every fixture set's backends list is non-empty and every backend row has all four fields", () => {
+  it("the W1/D-1 'empty' fixture exists, has ZERO backends, and is itself schema-valid (empty set is first-class)", () => {
+    expect(fixtures["empty"], "expected fixture set \"empty\"").toBeDefined();
+    expect(fixtures["empty"]!.backends).toHaveLength(0);
+    const result = validateVerifiedCapabilities(fixtures["empty"]);
+    expect(result.violations).toEqual([]);
+    expect(result.valid).toBe(true);
+  });
+
+  it("every fixture set's backends list is non-empty (except the deliberate 'empty' set) and every backend row has all four fields", () => {
     for (const [name, set] of Object.entries(fixtures)) {
+      if (name === "empty") continue; // W1/D-1: the one deliberately-empty set, asserted above
       expect(set.backends.length, `${name} should have >=1 backend`).toBeGreaterThan(0);
       for (const backend of set.backends) {
         expect(typeof backend.backend, `${name}: backend name`).toBe("string");
@@ -81,6 +90,7 @@ describe("caps.yaml parser + shared schema conformance", () => {
 
   it("software-only's fixture backend list ends with 'software' (matches every other set's own convention)", () => {
     for (const [name, set] of Object.entries(fixtures)) {
+      if (name === "empty") continue; // W1/D-1: zero backends by design — no last entry to check
       expect(set.backends.at(-1)!.backend, `${name} should end with a fallback tier`).toBe("software");
     }
   });

@@ -135,13 +135,25 @@ describe("isTerminalJobStatus (restore-step job polling)", () => {
   });
 });
 
-describe("deriveHardwareViewState (hardware-probe step rendering)", () => {
-  it("null report -> empty (worker not detected yet)", () => {
-    expect(deriveHardwareViewState(null)).toBe("empty");
+describe("deriveHardwareViewState (hardware-probe step rendering, W1/D-1 three probe states)", () => {
+  it("null report + no probe signal -> never-ran", () => {
+    expect(deriveHardwareViewState(null)).toBe("never-ran");
+    expect(deriveHardwareViewState(null, { status: "never-ran", lastError: null })).toBe("never-ran");
   });
 
-  it("a report object -> ready", () => {
+  it("null report + probe pending -> pending (self-test queued or running)", () => {
+    expect(deriveHardwareViewState(null, { status: "pending", lastError: null })).toBe("pending");
+  });
+
+  it("null report + probe failed -> failed (lastError available to render)", () => {
+    expect(deriveHardwareViewState(null, { status: "failed", lastError: "boom" })).toBe("failed");
+  });
+
+  it("a report object -> ready, regardless of probe status — including zero backends (valid software-everything state)", () => {
     expect(deriveHardwareViewState({ platform: "macos", backends: [] })).toBe("ready");
+    expect(deriveHardwareViewState({ platform: "windows", backends: [] }, { status: "completed", lastError: null })).toBe(
+      "ready",
+    );
   });
 });
 

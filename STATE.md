@@ -1,5 +1,169 @@
 # STATE.md — Lumbre Phase 4 (Phases 0–2 complete; Phase 3 automated exit met, owner review items Open)
 
+## 0.9.0-rc polish pass — UI polish, IA restructure, scanner/probe fix (2026-08-07, IN PROGRESS)
+
+Driven by owner's annotated screenshots from real Windows 11 ARM VM (Parallels) +
+macOS installs. W1–W18; locked decisions D-1…D-8 (owner brief — do not re-litigate).
+Wave plan: Wave 0 = W1 solo (P0, opus-reviewed) → Wave 1 = shared components
+(W2+W3, W4, W5, W6, W7, W8, W13a) → Wave 2 = pages (W9, W10+W11, W12, W13b, W14,
+W15, W16, W17) → Wave 3 = opus review + exit gates. W18 verify-only behind W1.
+
+### Work item status
+
+| Item | Status | Evidence |
+|---|---|---|
+| W1 probe/scanner decouple (D-1) | **DONE** — opus-reviewed (2 reviewers), all substantive findings fixed, gate ALL GREEN ×2 | RCA + review section below. Fixes: type-scoped ledger reconciliation with split horizons + FOR UPDATE + predicate re-assertion (packages/db/src/internal/jobs.ts, worker boot wiring), resolve-caps empty==missing (capabilitiesFromSnapshot), contract-first three-state probe status incl. re-probe-over-snapshot visibility (CapabilityProbeStatus + admin.controller + migrations/0037 index), shared web derivation hasNoAcceleratedCapabilities (fires on the REAL GPU-less outcome: software verified, hw rows empty), recordActive clears finished_at_ms. Tests: jobs-reconcile 7/7 (incl. race-predicate + type-scoping + plain-language pins), resolve-caps 5/5, playback e2e 35/35, admin-capabilities e2e 20/20 (never-ran/pending/failed/zero-backends/re-probe-failed-over-snapshot), scan hwcaps-independence 2/2, matrix 518/518, capability-view 4/4, wizard-state 37/37. `pnpm gate` ALL STEPS PASSED. |
+| W2+W3 segmented control (D-2/D-3) | queued (Wave 1) | — |
+| W4 focus ring clipping | queued (Wave 1) | — |
+| W5 styled select | queued (Wave 1) | — |
+| W6 date picker | queued (Wave 1) | — |
+| W7 settings layout system (D-4) | queued (Wave 1) | — |
+| W8 registry-row typography | queued (Wave 1) | — |
+| W13a registry-row tooltip mechanism (D-7) | queued (Wave 1) | — |
+| W9 Dashboard+System merge (D-5) | queued (Wave 2) | — |
+| W10+W11 IA restructure + avatar menu (D-6) | queued (Wave 2) | — |
+| W12 log-tail empty-state copy | queued (Wave 2) | — |
+| W13b registry copy sweep (D-7) | queued (Wave 2) | — |
+| W14 power buttons (D-8) | queued (Wave 2) | — |
+| W15 Advanced Server rework | queued (Wave 2) | — |
+| W16 Search empty state | queued (Wave 2) | — |
+| W17 macOS installer text wrap | queued (Wave 2; exit evidence = real Installer screenshots) | — |
+| W18 tray coherence | queued (verify after W1) | — |
+
+### W1 root cause (RCA COMPLETE 2026-08-07 — 5-lane parallel trace, every claim file:line-verified)
+
+**The suspected probe→scanner coupling DOES NOT EXIST in code.** Exhaustive trace
+(worker battery/persistence, jobs queue + scan consumer, server controllers + IPC +
+tray, web flows, playback resolve): no code path gates scanning, library CRUD, or
+per-item ffprobe analysis on hardware-capability state. `runScan` has zero hwcaps
+reads (apps/worker/src/scan/scanner.ts imports verified, full file); scan enqueue is
+unconditional server-side (libraries.controller.ts:259) and client-side
+(AddLibrarySheet.tsx:86-98 auto-POSTs /libraries/{id}/scan after create; wizard
+LibraryStep.tsx:96-108 same with full:true); pg-boss gives each job type independent
+fetch loops, so a failing/hung hwprobe cannot starve scan consumption.
+
+**What actually produces the observed symptoms — four real defects + one
+environmental condition:**
+
+1. **Ledger/sweep mismatch permanently wedges the hwprobe boot re-enqueue
+   (REAL BUG, fix landing this wave).** `hasQueuedOrActiveJobOfType`
+   (packages/db/src/internal/jobs.ts:92-100) reads Loombre's own jobs LEDGER with
+   no staleness bound. Ledger transitions are written only by the in-process batch
+   handler (packages/jobs/src/queue.ts:267-295) — pg-boss's SQL-side sweeps
+   (timeout-fail of 'active' jobs; 14-day retention-delete of never-fetched jobs;
+   pg-boss defaults, Loombre configures neither) never touch the ledger. So a
+   hwprobe job that was enqueued but never consumed (worker down / rc.2-era zero
+   consumers), or fetched and orphaned by a worker death, leaves a ledger row stuck
+   'queued'/'active' FOREVER → `checkHwCapabilitiesAndEnqueueIfNeeded`
+   (apps/worker/src/index.ts:413-414) sees `alreadyPending` on every future boot →
+   the probe is never re-enqueued again, ever → System page shows "no probe" /
+   no backends permanently. Same wedge class applies to the image-backfill and
+   stash singleton guards, and the stuck rows lie to the admin jobs UI.
+2. **Probe-failed is unrepresentable (REAL GAP, D-1 requires three states).** The
+   hwprobe consumer persists only on success (index.ts:221-228); GET
+   /admin/capabilities returns `{report:null}` for BOTH never-ran and failed
+   (admin.controller.ts:253-287; CapabilityReportEnvelope, openapi.yaml:4793 has no
+   failure field). Completed-with-zero-backends IS distinguishable (non-null report,
+   backends:[]) but renders as a header-only table with no copy (admin/system/
+   page.tsx:124-145), and the wizard's "Worker not detected yet"
+   (HardwareStep.tsx:78) actually keys on report===null — it mislabels
+   "no snapshot persisted (incl. probe-failed-forever)" as a worker-status fact the
+   web has no source for.
+3. **D-1 gap in transcode-path selection (REAL BUG, fix landing this wave).**
+   `resolveVerifiedCapabilities` falls back to synthesized software-only caps ONLY
+   when the snapshot row is absent (resolve-caps.ts:67-71); a PRESENT snapshot with
+   zero backend rows passes `{backends:[]}` to the engine verbatim (:77). Engine
+   Stage G rule (iii) happens to be total anyway (hardware.ts:479-483 sets
+   encoder:'software' unconditionally; resolve-caps.ts's header claim to the
+   contrary at :15-18 is STALE), so nothing crashes — but the empty-persisted state
+   bypasses the intended fallback, degrades hevcEncodePreferred inconsistently
+   (resolve-policy.ts:101-102), and has zero test coverage.
+4. **A completed probe on a GPU-less VM can only look "empty", never be absent-of-
+   software, EXCEPT when the encoders listing fails.** The battery always emits one
+   BackendReport per candidate (win32: nvenc/qsv/amf/d3d11va/software — software is
+   ALWAYS a candidate, platforms.ts:19) and never throws per-backend (battery
+   never-throws contract, 20s per-test timeouts). But if the one `ffmpeg -encoders`
+   listing fails/times out (run.ts:69-72), EVERY test skips (no decode sources, no
+   encoders) → a completed snapshot with 5 backends all empty — "completed with
+   zero capabilities" is a real, valid probe outcome that the UI must explain as
+   software-everything, per D-1.
+5. **Environmental (verify live in W18):** "Worker: stopped" in the tray comes
+   verbatim from the server's IPC status, whose PRIMARY signal is a pg_stat_activity
+   row with application_name 'loombre-worker:%' scoped to current_database()
+   (worker-liveness.ts:79-93). A worker that is down, restart-looping, or silently
+   connected to the WRONG database (db-url.ts:44-51 falls back to the dev-compose
+   URL when neither DATABASE_URL nor LOOMBRE_DATA_DIR is set) consumes nothing —
+   which reproduces "libraries never scanned" AND "Worker: stopped" simultaneously,
+   with zero involvement of hardware capabilities. This is the only mechanism found
+   that stops scan jobs; it is a liveness/config failure, not a caps coupling.
+
+**W1 fix plan (D-1):** (a) boot-time ledger reconciliation — worker marks
+'queued'/'active' ledger rows older than a 24h horizon 'failed' (last_error names
+the reconciliation) before its singleton-guard checks, unwedging hwprobe/
+image-backfill/stash guards and un-lying the admin UI; (b) resolve-caps treats
+backends:[] same as absent → synthesized software-only fallback + stale comment
+fix; (c) contract-first three-state probe status: CapabilityReportEnvelope gains
+`probe: {status: never-ran|pending|failed|completed, lastError?, updatedAtMs?}`
+derived from snapshot presence + latest hwprobe ledger row; SDK regen; System page
++ HardwareStep render all three non-completed states with plain-language copy and
+the completed-zero-capability state as first-class "software everything"; (d)
+regression pins: scan-completes-e2e with absent AND empty snapshot, transcode
+software-fallback unit + e2e for the empty-persisted passthrough, matrix `empty`
+caps fixture, reconciliation unit tests, wizard-state three-state tests.
+
+### W1 opus review (2 adversarial reviewers) — findings + hardenings applied
+
+The review REPRODUCED a race in the first-cut reconciliation and reshaped it:
+
+- **[BLOCKER, fixed] SELECT-then-UPDATE race.** recordActive could commit between
+  the sweep's read and write, and the id-only UPDATE clobbered a genuinely
+  running job to 'failed'. Now: FOR UPDATE row locks + every per-row UPDATE
+  re-asserts the full staleness predicate (status + updated_at_ms) — a raced or
+  double-booted sweep updates zero rows and emits zero events; a concurrent
+  recordActive that loses the lock race self-heals (transitionJobLedgerRow has
+  no status guard, verified).
+- **[HIGH, fixed] Unbounded sweep + event flood.** Sweeping every type could hit
+  a 30k-row probe backlog (one event each → outbox flood). Now type-scoped to
+  the singleton-guarded types only (hwprobe/image-backfill/stash-inventory/
+  stash-sync — one-per-type by design, handful of rows max).
+- **[HIGH, fixed] 24h horizon missed the reported failure.** Crash-mid-probe
+  leaves a fresh-timestamped 'active' row → 24h wedge per restart. Now 'active'
+  rows are stale the moment they predate THIS worker process's start
+  (one-worker-per-database shipped topology, worker-liveness.ts's own
+  assumption); 'queued' keeps the 24h horizon.
+- **[HIGH, fixed] resolve-caps guarded an unreachable shape / web copy missed the
+  real GPU-less outcome.** A completed win32 probe always persists 5 backend
+  rows; the common GPU-less result is software-verified + hw-rows-empty. The
+  backends:[] fallback stays (defense-in-depth + test-seedable), and the
+  ALL-ROWS-EMPTY snapshot deliberately passes through — engine rule (iii) still
+  routes software and hevcVerified=false keeps targeting conservative h264
+  (substituting the synthesized fallback there would flip hevcEncodePreferred on
+  from a verifiedAtMs:0 sentinel — worse). The UI now keys on shared
+  `hasNoAcceleratedCapabilities` (no NON-software backend verified anything),
+  which fires on all three GPU-less shapes; one shared copy string.
+- **[MEDIUM, fixed]** probe status now derived on the snapshot-present branch too
+  (a NEWER queued/active/failed hwprobe row over an old snapshot → pending/
+  failed with the stale report still served + banner); jobs(type, created_at
+  DESC, id DESC) index added (migrations/0037 — the wizard polls this 4s);
+  reconciliation last_error rewritten in plain language (it renders verbatim to
+  end users); recordActive clears finished_at_ms; e2e cleanup scoped to seeded
+  rows; playback-e2e comment de-overclaimed (unit spec is the revert-detector);
+  512→513 prose.
+- **Deferred (recorded, deliberate):** boot-only sweep (a mid-uptime ledger-write
+  failure wedges the stash per-tick guard until next restart — periodic sweep is
+  future work); unsupported-platform (freebsd etc.) 'never-ran' copy implies a
+  probe that will never come (wire can't express 'unsupported'); the synthesized
+  fallback's `encode: [h264, hevc]` @ verifiedAtMs:0 flipping hevcEncodePreferred
+  for missing-snapshot installs is PRE-EXISTING Phase-3 BIND shape — flagged to
+  owner, not relitigated here; scan hwcaps-independence spec is a forward pin
+  (scanner never had the coupling), not a revert-detector — named as such.
+
+Also this session (owner request mid-run): removed every CLAUDE.md mention from
+the RENDERED API documentation (openapi.yaml info.description + 5 operation/
+schema descriptions reworded neutrally; YAML comments kept — they never render);
+SDK regenerated; docs rebuilt + synced to website (70 routes, build green;
+deploy remains manual).
+
 ## macOS live-test bug wave 1 — menubar wiring, wizard picker, folder-picker Forbidden (2026-08-07, all three FIXED)
 
 Owner's macOS live test surfaced three issues; 3-agent read-only sweep proved
