@@ -2,7 +2,9 @@
 // Loombre :: apps/server/src/catalog/admin-logs-tail.ts
 //
 // GET /admin/logs/tail backing implementation (Phase 4 deliverable D).
-// Reads LOOMBRE_LOG_FILE (installers point this at the service log) and
+// Reads LOOMBRE_LOG_FILE (W3-R: NO shipped installer sets it — they
+// capture console output at the service-manager level instead; this var
+// is an operator opt-in for tailing a file through the Dashboard) and
 // returns its last N lines — WITHOUT reading the whole file into memory
 // first (the task brief's explicit requirement: "do NOT read whole
 // multi-GB files"). Algorithm: open the file, seek backward from the end

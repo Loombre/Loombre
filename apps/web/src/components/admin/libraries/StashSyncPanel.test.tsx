@@ -119,7 +119,7 @@ describe("StashSyncPanel", () => {
     view = renderIntoBody(<StashSyncPanel libraryId="lib-1" connection={connection()} />);
     await act(async () => {});
     expect(view.container.textContent).toContain("Succeeded");
-    expect(view.container.textContent).toContain("full");
+    expect(view.container.textContent).toContain("Full");
     const dds = Array.from(view.container.querySelectorAll("dd")).map((d) => d.textContent);
     expect(dds).toEqual(["10", "4", "2", "1", "0"]);
   });

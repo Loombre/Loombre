@@ -10,9 +10,9 @@ describe("resolveMobileHeader", () => {
     expect(resolveMobileHeader("/home", null, null, null)).toEqual({ mode: "title", title: "Home" });
   });
 
-  it("shows Search and Settings as title-mode tabs", () => {
+  it("shows Search and System Settings as title-mode tabs", () => {
     expect(resolveMobileHeader("/search", null, null, null)).toEqual({ mode: "title", title: "Search" });
-    expect(resolveMobileHeader("/settings", null, null, null)).toEqual({ mode: "title", title: "Settings" });
+    expect(resolveMobileHeader("/settings", null, null, null)).toEqual({ mode: "title", title: "System Settings" });
   });
 
   it("D-6: shows /profile (the avatar menu's user-scoped settings destination) as a title-mode top-level screen", () => {
@@ -87,11 +87,11 @@ describe("resolveMobileHeader", () => {
     }
   });
 
-  it("D-5: maps every /admin sub-route (including the now-merged /admin/system redirect stub) back to Settings with the generic Dashboard label", () => {
+  it("D-5: maps every /admin sub-route (including the now-merged /admin/system redirect stub) back to System Settings with the generic Dashboard label", () => {
     expect(resolveMobileHeader("/admin", null, null, null)).toEqual({
       mode: "back",
       title: "Dashboard",
-      backLabel: "Settings",
+      backLabel: "System Settings",
       backHref: "/settings",
     });
     // /admin/system, /admin/settings, /admin/users, /admin/libraries are
@@ -103,13 +103,13 @@ describe("resolveMobileHeader", () => {
     expect(resolveMobileHeader("/admin/system", null, null, null)).toEqual({
       mode: "back",
       title: "Dashboard",
-      backLabel: "Settings",
+      backLabel: "System Settings",
       backHref: "/settings",
     });
     expect(resolveMobileHeader("/admin/settings", null, null, null)).toEqual({
       mode: "back",
       title: "Dashboard",
-      backLabel: "Settings",
+      backLabel: "System Settings",
       backHref: "/settings",
     });
   });
@@ -118,19 +118,19 @@ describe("resolveMobileHeader", () => {
     expect(resolveMobileHeader("/settings/libraries", null, null, null)).toEqual({
       mode: "back",
       title: "Libraries",
-      backLabel: "Settings",
+      backLabel: "System Settings",
       backHref: "/settings",
     });
     expect(resolveMobileHeader("/settings/users", null, null, null)).toEqual({
       mode: "back",
       title: "Users & Profiles",
-      backLabel: "Settings",
+      backLabel: "System Settings",
       backHref: "/settings",
     });
     expect(resolveMobileHeader("/settings/advanced", null, null, null)).toEqual({
       mode: "back",
       title: "Advanced Server",
-      backLabel: "Settings",
+      backLabel: "System Settings",
       backHref: "/settings",
     });
   });

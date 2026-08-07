@@ -36,6 +36,7 @@ import type { components } from "@loombre/sdk";
 import { Modal } from "../Modal.js";
 import { Button } from "../../ui/Button.js";
 import { Tag } from "../../ui/Chip.js";
+import { Select } from "../../ui/Select.js";
 import { Icon } from "../../icon/Icon.js";
 import { Skeleton } from "../../skeleton/Skeleton.js";
 import {
@@ -50,6 +51,7 @@ import {
   type ChainDraftEntry,
 } from "../../../lib/library-provider-chain.js";
 import { apiGet, apiPut, LoombreApiError } from "../../../lib/api-client.js";
+import { PROVIDER_KIND_LABEL, enumLabel } from "../../../lib/enum-labels.js";
 import styles from "./ProviderChainEditor.module.css";
 
 type Library = components["schemas"]["Library"];
@@ -167,7 +169,7 @@ export function ProviderChainModal({ library, onClose }: { library: Library; onC
                     </span>
                   )}
                   <span className={styles.position}>{index + 1}</span>
-                  <Tag>{entry.providerKind}</Tag>
+                  <Tag>{enumLabel(PROVIDER_KIND_LABEL, entry.providerKind)}</Tag>
                   <span className={styles.entryLabel}>{entry.label}</span>
                   {editing && (
                     <div className={styles.rowActions}>
@@ -208,39 +210,33 @@ export function ProviderChainModal({ library, onClose }: { library: Library; onC
             ) : (
               <>
                 <div className={styles.addRow}>
-                  <select
-                    className={styles.select}
+                  <Select
                     value={addBuiltinChoice}
                     onChange={(e) => setAddBuiltinChoice(e.target.value)}
                     aria-label="Add a built-in provider"
-                  >
-                    <option value="">Add a built-in provider…</option>
-                    {chain.builtinProviderNames.map((name) => (
-                      <option key={name} value={name}>
-                        {name}
-                      </option>
-                    ))}
-                  </select>
+                    options={[
+                      { value: "", label: "Add a built-in provider…" },
+                      ...chain.builtinProviderNames.map((name) => ({ value: name, label: name })),
+                    ]}
+                  />
                   <Button variant="secondary" onClick={handleAddBuiltin} disabled={!addBuiltinChoice}>
                     Add
                   </Button>
                 </div>
                 <div className={styles.addRow}>
-                  <select
-                    className={styles.select}
+                  <Select
                     value={addPluginChoice}
                     onChange={(e) => setAddPluginChoice(e.target.value)}
                     disabled={chain.eligiblePlugins.length === 0}
                     aria-label="Add a plugin"
-                  >
-                    <option value="">{chain.eligiblePlugins.length === 0 ? "No eligible plugins for this library" : "Add a plugin…"}</option>
-                    {chain.eligiblePlugins.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.name}
-                        {p.enabled ? "" : " (disabled)"}
-                      </option>
-                    ))}
-                  </select>
+                    options={[
+                      {
+                        value: "",
+                        label: chain.eligiblePlugins.length === 0 ? "No eligible plugins for this library" : "Add a plugin…",
+                      },
+                      ...chain.eligiblePlugins.map((p) => ({ value: p.id, label: `${p.name}${p.enabled ? "" : " (disabled)"}` })),
+                    ]}
+                  />
                   <Button variant="secondary" onClick={handleAddPlugin} disabled={!addPluginChoice}>
                     Add
                   </Button>

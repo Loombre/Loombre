@@ -1,37 +1,28 @@
 /* SPDX-License-Identifier: AGPL-3.0-only */
 
+/* D-2 (STATE.md W2+W3, opus review): season tabs are the shared
+   SegmentedControl recipe — composed via CSS Modules (read-only reuse,
+   same pattern as browse/SortControl.module.css, browse/LibraryPills.
+   module.css, restricted/ZoneControls.module.css) so the shared sizing/
+   padding/44px-floor fixes apply here automatically instead of being
+   hand-rolled a second time. Only the mobile horizontal-scroll-strip
+   presentation (a real visual difference — the track becomes a
+   swipeable row of mono-font pills instead of a wrapped pill group)
+   stays local, layered with higher-specificity selectors so the
+   override wins deterministically regardless of CSS bundling order
+   between composed modules (same reasoning as ZoneControls.module.css'
+   .sortTrack .sortSegment[data-active] rule). */
+
 .track {
-  display: inline-flex;
-  gap: 3px;
-  padding: 3px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-pill);
-  background: var(--fill-1);
+  composes: track from "../ui/SegmentedControl.module.css";
 }
 
 .pill {
-  min-height: 36px;
-  padding: 0 var(--space-md);
-  border: none;
-  border-radius: var(--radius-pill);
-  background: transparent;
-  color: var(--color-text-muted);
-  font-family: var(--font-sans);
-  font-size: var(--text-sm);
-  font-weight: var(--weight-semibold);
-  cursor: pointer;
-  transition:
-    background-color var(--motion-fast) var(--ease-out),
-    color var(--motion-fast) var(--ease-out);
-}
-
-.pill[data-active="true"] {
-  background: var(--color-accent);
-  color: var(--color-accent-text);
+  composes: segment from "../ui/SegmentedControl.module.css";
 }
 
 @media (width <= 767.98px) {
-  .track {
+  .track.track {
     display: flex;
     overflow-x: auto;
     padding: 0;
@@ -43,14 +34,14 @@
     padding-right: var(--space-md);
   }
 
-  .pill {
+  .track .pill {
     flex-shrink: 0;
     font-family: var(--font-mono);
     font-size: var(--mono-lg);
     border: 1px solid var(--color-border);
   }
 
-  .pill[data-active="true"] {
+  .track .pill[data-active="true"] {
     border-color: transparent;
   }
 }

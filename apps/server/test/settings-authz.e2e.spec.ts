@@ -131,6 +131,12 @@ const ADMIN_ROUTES: AdminRoute[] = [
   { method: "post", path: "/system/restart" },
   { method: "post", path: "/system/shutdown" },
 
+  // ── System info + update check (Dashboard cards, About tab) — W3-R:
+  //    the sweep's first cut missed both; they ARE admin-guarded
+  //    (admin.controller.ts requireAdmin first) and now stay proven so. ──
+  { method: "get", path: "/system/info" },
+  { method: "get", path: "/system/update" },
+
   // ── Mail (Mail tab) ──
   { method: "put", path: "/admin/mail/credentials" },
   { method: "delete", path: "/admin/mail/credentials" },

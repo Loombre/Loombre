@@ -50,11 +50,11 @@
     color var(--motion-fast) var(--ease-out);
 }
 
-/* W4 follow-through: segments rely on the app-wide NON-inset focus ring
-   (globals.css), and segmented controls sit flush inside SheetOrModal's
-   unpadded desktop `.body` clip region (AddLibrarySheet Kind,
-   AddUserSheet Role, ComposeNoticeCard severity) — the leftmost/rightmost
-   segment's ring is cropped exactly like the screenshotted Name field's.
+/* W4 follow-through: before this rule, segments fell through to the
+   app-wide NON-inset focus ring (globals.css), and segmented controls sit
+   flush inside SheetOrModal's unpadded desktop `.body` clip region
+   (AddLibrarySheet Kind, AddUserSheet Role) — the leftmost/rightmost
+   segment's ring was cropped exactly like the screenshotted Name field's.
    Same inset-ring + local keyframe treatment as Input.module.css. */
 .segment:focus-visible {
   box-shadow: inset 0 0 0 3px var(--color-focus);
@@ -74,6 +74,28 @@
 .segment[data-active="true"] {
   background: var(--color-accent);
   color: var(--color-accent-text);
+}
+
+/* W3-R (opus review blocker, same invariant as Button.module.css): the
+   amber --color-focus ring is invisible on the ACTIVE segment's amber
+   fill (1.11:1) — and keyboard focus lands on the active tab first. A
+   filled control's ring uses its own text color (currentcolor): the
+   active text/fill pairing already clears AA, so the ring is guaranteed
+   visible on every accent theme (and on ZoneControls' warning-toned
+   override, which composes this class and swaps both colors together). */
+.segment[data-active="true"]:focus-visible {
+  box-shadow: inset 0 0 0 3px currentcolor;
+  animation: loombre-segment-focus-in-filled var(--motion-fast) var(--ease-spring);
+}
+
+@keyframes loombre-segment-focus-in-filled {
+  from {
+    box-shadow: inset 0 0 0 0 currentcolor;
+  }
+
+  to {
+    box-shadow: inset 0 0 0 3px currentcolor;
+  }
 }
 
 .segment:not([data-active="true"]):hover {

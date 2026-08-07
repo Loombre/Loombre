@@ -110,6 +110,25 @@
   color: var(--color-accent-text);
 }
 
+/* W3-R (opus review blocker, same invariant as Button/SegmentedControl):
+   the amber ring is invisible on the active chip's amber fill — a filled
+   control's ring uses its own text color (currentcolor), whose contrast
+   against the fill is already AA-proven by the pairing itself. */
+.filterChip[data-active]:focus-visible {
+  box-shadow: inset 0 0 0 3px currentcolor;
+  animation: loombre-filter-chip-focus-in-filled var(--motion-fast) var(--ease-spring);
+}
+
+@keyframes loombre-filter-chip-focus-in-filled {
+  from {
+    box-shadow: inset 0 0 0 0 currentcolor;
+  }
+
+  to {
+    box-shadow: inset 0 0 0 3px currentcolor;
+  }
+}
+
 .filterChipCount {
   display: inline-flex;
   align-items: center;

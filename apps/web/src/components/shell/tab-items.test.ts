@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { describe, expect, it } from "vitest";
-import { TAB_ITEMS, type TabActiveContext } from "./tab-items.js";
+import { resolveTabItem, TAB_ITEMS, type TabActiveContext } from "./tab-items.js";
 
 const MOVIES_ID = "11111111-1111-1111-1111-111111111111";
 const TV_ID = "22222222-2222-2222-2222-222222222222";
@@ -51,5 +51,25 @@ describe("TAB_ITEMS", () => {
     const active = TAB_ITEMS.find((t) => t.key === "restricted")!;
     expect(active.isActive(ctx({ pathname: "/restricted", zoneOverlayOpen: false }))).toBe(false);
     expect(active.isActive(ctx({ pathname: "/home", zoneOverlayOpen: false }))).toBe(false);
+  });
+});
+
+describe("resolveTabItem (W3-R, D-6 role-aware settings slot)", () => {
+  const settingsItem = TAB_ITEMS.find((t) => t.key === "settings")!;
+
+  it("keeps the Settings label and /settings href for an admin", () => {
+    expect(resolveTabItem(settingsItem, true)).toEqual({ label: "Settings", href: "/settings" });
+  });
+
+  it("swaps to Profile -> /profile for a non-admin", () => {
+    expect(resolveTabItem(settingsItem, false)).toEqual({ label: "Profile", href: "/profile" });
+  });
+
+  it("leaves every other tab's label/href untouched regardless of admin status", () => {
+    for (const item of TAB_ITEMS) {
+      if (item.key === "settings") continue;
+      expect(resolveTabItem(item, true)).toEqual({ label: item.label, href: item.href });
+      expect(resolveTabItem(item, false)).toEqual({ label: item.label, href: item.href });
+    }
   });
 });

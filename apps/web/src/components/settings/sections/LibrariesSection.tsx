@@ -42,6 +42,7 @@ import { RowMenu } from "../RowMenu.js";
 import { AddLibrarySheet } from "./AddLibrarySheet.js";
 import { useLibraryScanStatus } from "./use-library-scan-status.js";
 import { diffPermissionsToSubmit } from "../../../lib/library-permissions.js";
+import { enumLabel, MEDIA_KIND_LABEL } from "../../../lib/enum-labels.js";
 import { useToast } from "../../ui/Toast.js";
 import { TextInput } from "../../ui/Input.js";
 import { apiDelete, apiGet, apiPatch, apiPost, apiPut, LoombreApiError } from "../../../lib/api-client.js";
@@ -224,7 +225,7 @@ function LibraryRow({
         </div>
       </div>
       <div className={styles.rowChips}>
-        <Tag>{library.mediaKind}</Tag>
+        <Tag>{enumLabel(MEDIA_KIND_LABEL, library.mediaKind)}</Tag>
         {library.contentClass === "restricted" && <Tag>restricted</Tag>}
         {library.itemCount != null && <span className={styles.countMono}>{library.itemCount} items</span>}
       </div>

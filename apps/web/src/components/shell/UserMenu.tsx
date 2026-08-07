@@ -105,9 +105,19 @@ export function UserMenu({ username }: { username: string | null }): React.JSX.E
         triggerRef.current?.focus();
         break;
       case "Tab":
-        // Focus is about to leave the menu via the browser's own tab
-        // order — close rather than leave a stale open menu behind.
+        // W3-R (opus review, MEDIUM): closing the menu here unmounts the
+        // currently focused menuitem — if that happens without first
+        // moving focus somewhere else, focus falls back to <body> and the
+        // browser's own default Tab action (which computes "next
+        // focusable" from whatever's currently focused) starts from
+        // scratch instead of continuing naturally past this control. Fix:
+        // synchronously refocus the trigger first (same refocus the
+        // Escape case below already does), then let Tab's default action
+        // run un-prevented — the browser now advances from the trigger to
+        // the next element in document order, exactly like a native menu
+        // closing on Tab.
         setOpen(false);
+        triggerRef.current?.focus();
         break;
       default:
         break;

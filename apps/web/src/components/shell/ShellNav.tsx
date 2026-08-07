@@ -83,7 +83,7 @@ export function ShellNav({ isAdmin, displayName, username, onSignOut }: ShellNav
         tvLibraryId={tvLibraryId}
         username={username}
       />
-      <MobileTabBar ctx={tabCtx} moviesLibraryId={moviesLibraryId} tvLibraryId={tvLibraryId} />
+      <MobileTabBar ctx={tabCtx} moviesLibraryId={moviesLibraryId} tvLibraryId={tvLibraryId} isAdmin={isAdmin} />
     </>
   );
 }
