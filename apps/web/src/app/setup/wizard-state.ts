@@ -121,9 +121,10 @@ export function isAdminFormValid(input: AdminFormInput): boolean {
   return Object.keys(validateAdminForm(input)).length === 0;
 }
 
-// ── Library-path form validation (manual entry always — see report's P4.6
-//    deviation note: no native folder picker in v1, the controller-IPC
-//    contract has no picker op) ──
+// ── Library-path form validation. Manual entry always; the step ALSO
+//    offers the server-enumeration DirectoryPicker (the P4.6 "no picker"
+//    deviation was about a NATIVE controller-app picker and is reversed —
+//    see LibraryStep.tsx's header) ──
 
 export interface LibraryFormInput {
   name: string;

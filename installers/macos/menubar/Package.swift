@@ -40,5 +40,16 @@ let package = Package(
             dependencies: ["LoombreIPCKit"],
             path: "Tests/LoombreIPCKitTests"
         ),
+
+        // AppKit-side menu wiring (MenuBuilder) — the layer whose absence
+        // of tests shipped the "menu items silently no-op" field report
+        // (NSMenu autoenablement overriding manual isEnabled). SPM has
+        // supported test targets depending on executable targets since
+        // Swift 5.5; NSMenu itself needs no running NSApplication.
+        .testTarget(
+            name: "LoombreMenubarTests",
+            dependencies: ["LoombreMenubar", "LoombreIPCKit"],
+            path: "Tests/LoombreMenubarTests"
+        ),
     ]
 )

@@ -58,7 +58,7 @@ import { JobQueueProvider } from "../common/job-queue.provider.js";
 import { UpdateCheckService } from "../common/update-check/update-check.service.js";
 import { resolveAppPaths } from "../cli/app-paths.js";
 import { isValidCrashFileName, listCrashFileMetas, readCrashFileContent } from "./admin-crash-files.js";
-import { DirectoryBrowseError, listDirectories, listRoots } from "./admin-directories.js";
+import { DirectoryBrowseError, listDirectories, listRoots, permissionDeniedDetail } from "./admin-directories.js";
 import { tailLogFile } from "./admin-logs-tail.js";
 import { computeStoragePool } from "./admin-storage-pool.js";
 import { parseListQuery, resolveViewer } from "./viewer.js";
@@ -312,8 +312,12 @@ export class AdminController {
         case "permission-denied":
           // The server genuinely cannot read it, and saying so is useful:
           // the fix is an OS permission change (or, on the installers, the
-          // service account's access), not a different path.
-          throw forbidden("The server does not have permission to read that directory.", instance);
+          // service account's access), not a different path. The detail is
+          // tailored to the account the server actually runs as (the macOS
+          // field report: a bare "Forbidden" while the real story — the
+          // _loombre daemon cannot read a home folder — was known here),
+          // and the code lets clients pattern-match without string-parsing.
+          throw forbidden(permissionDeniedDetail(), instance, "filesystem-permission-denied");
         case "not-found":
           throw notFound("No such directory on the server.", instance);
       }
