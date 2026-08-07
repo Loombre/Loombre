@@ -8,6 +8,8 @@ import { Icon } from "../../components/icon/Icon.js";
 import { Button } from "../../components/ui/Button.js";
 import { Badge, Chip, Tag } from "../../components/ui/Chip.js";
 import { SearchField, TextInput } from "../../components/ui/Input.js";
+import { Select } from "../../components/ui/Select.js";
+import { DatePicker } from "../../components/ui/DatePicker.js";
 import { SegmentedControl } from "../../components/ui/SegmentedControl.js";
 import { ProgressBar, ScrubberMock } from "../../components/ui/ProgressBar.js";
 import { DialogDemo, MenuDemo, PopoverDemo } from "../../components/ui/Overlay.js";
@@ -68,6 +70,40 @@ function ToastDemo(): React.JSX.Element {
         Show toast (warning)
       </Button>
     </>
+  );
+}
+
+// ── W5/W6 primitive demos ─────────────────────────────────────────────
+// Select.tsx and DatePicker.tsx (components/ui/) — live consumer today is
+// AccountSection.tsx (Playback preferences + Profile's birth date), kept
+// here too so the styleguide exercises both without the settings shell.
+
+const SELECT_DEMO_OPTIONS = [
+  { value: "", label: "No preference" },
+  { value: "eng", label: "English" },
+  { value: "fra", label: "French" },
+  { value: "jpn", label: "Japanese" },
+];
+
+function SelectDemo(): React.JSX.Element {
+  const [value, setValue] = useState("");
+  return (
+    <div className={styles.field}>
+      <Select value={value} onChange={(e) => setValue(e.target.value)} options={SELECT_DEMO_OPTIONS} />
+    </div>
+  );
+}
+
+function DatePickerDemo(): React.JSX.Element {
+  // Empty default — never today's date (W6's whole point). Capped at
+  // "today" the same way AccountSection caps a birth date.
+  const [value, setValue] = useState("");
+  const today = new Date();
+  const maxDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+  return (
+    <div className={styles.field}>
+      <DatePicker value={value} onChange={setValue} maxDate={maxDate} />
+    </div>
   );
 }
 
@@ -177,6 +213,14 @@ export default function StyleguidePage(): React.JSX.Element {
 
       <Section title="Segmented control — pill" radius="--radius-pill">
         <SegmentedControl options={["Movies", "Series", "Music"]} />
+      </Section>
+
+      <Section title="Styled select — pill (real <select>, restyled) — W5" radius="--radius-pill">
+        <SelectDemo />
+      </Section>
+
+      <Section title="Date picker — lg popover, month/year quick-jump, empty default — W6" radius="--radius-lg">
+        <DatePickerDemo />
       </Section>
 
       <Section title="Progress bar — pill" radius="--radius-pill">

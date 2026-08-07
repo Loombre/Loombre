@@ -28,6 +28,31 @@
   transition-duration: calc(var(--motion-fast) / 2);
 }
 
+/* W4 consistency pass (see Input.module.css's header for the full
+   clipping writeup): Button had no `:focus-visible` override at all, so
+   it fell through to the app-wide rule's NON-inset ring — same
+   clippable technique. Real instance, not theoretical: AddLibrarySheet/
+   AddUserSheet/CreateInviteSheet/DirectoryPicker all render their
+   `.actions` row (shared.module.css) with `justify-content: flex-end`
+   inside SheetOrModal's unpadded desktop `.body`, so the rightmost
+   (usually primary/submit) button sits flush against that body's own
+   clip edge exactly like the Name field did. Same inset-ring fix, same
+   reason: un-croppable by any ancestor, not a per-dialog padding patch. */
+.button:focus-visible {
+  box-shadow: inset 0 0 0 3px var(--color-focus);
+  animation: loombre-button-focus-in var(--motion-fast) var(--ease-spring);
+}
+
+@keyframes loombre-button-focus-in {
+  from {
+    box-shadow: inset 0 0 0 0 var(--color-focus);
+  }
+
+  to {
+    box-shadow: inset 0 0 0 3px var(--color-focus);
+  }
+}
+
 .button:disabled {
   opacity: 0.5;
   cursor: not-allowed;

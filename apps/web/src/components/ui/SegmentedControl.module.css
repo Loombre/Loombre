@@ -1,6 +1,16 @@
 /* SPDX-License-Identifier: AGPL-3.0-only */
 .track {
   display: inline-flex;
+
+  /* D-2 (STATE.md W2+W3, owner screenshots): the track hugs its segments —
+     `inline-flex` alone doesn't stop a flex/grid PARENT's default
+     stretch (align-items/justify-items: stretch resizes an item's own
+     cross-axis width regardless of the item's own inner display type,
+     unless the item has an explicit width). `fit-content` wins over an
+     inherited stretch in both contexts. Callers opt into filling the
+     container via the fullWidth prop (data-full-width below), never by
+     default. */
+  width: fit-content;
   gap: var(--space-3xs);
   padding: var(--space-3xs);
   border-radius: var(--radius-pill);
@@ -8,12 +18,25 @@
   border: 1px solid var(--border);
 }
 
+.track[data-full-width="true"] {
+  width: 100%;
+}
+
 .segment {
   border: none;
   background: transparent;
   color: var(--muted);
   border-radius: var(--radius-pill);
-  padding: var(--space-2xs) var(--space-md);
+
+  /* AUD-A4v2-002 (W2, owner screenshots — Log tail/Notices/Add-library
+     Kind/library toggle): the selected amber pill ballooned past its
+     label — --space-md (16px) horizontal was too generous for a compact
+     pill. Tightened to ONE consistent inset token, --space-sm (12px),
+     matching the other pill/chip primitives already at this width
+     (Chip.module.css, admin/StatusPill.module.css) — used for every
+     segment (selected and not), so the fill color doesn't reveal any
+     'extra' padding around the label. */
+  padding: var(--space-2xs) var(--space-sm);
 
   /* AUD-A4v2-001 (audit fafa47f): the worst offender of the shared
      primitives — measured 26.84px, 61% of the Phosphor 44px floor (A4a
@@ -25,6 +48,27 @@
   transition:
     background-color var(--motion-fast) var(--ease-out),
     color var(--motion-fast) var(--ease-out);
+}
+
+/* W4 follow-through: segments rely on the app-wide NON-inset focus ring
+   (globals.css), and segmented controls sit flush inside SheetOrModal's
+   unpadded desktop `.body` clip region (AddLibrarySheet Kind,
+   AddUserSheet Role, ComposeNoticeCard severity) — the leftmost/rightmost
+   segment's ring is cropped exactly like the screenshotted Name field's.
+   Same inset-ring + local keyframe treatment as Input.module.css. */
+.segment:focus-visible {
+  box-shadow: inset 0 0 0 3px var(--color-focus);
+  animation: loombre-segment-focus-in var(--motion-fast) var(--ease-spring);
+}
+
+@keyframes loombre-segment-focus-in {
+  from {
+    box-shadow: inset 0 0 0 0 var(--color-focus);
+  }
+
+  to {
+    box-shadow: inset 0 0 0 3px var(--color-focus);
+  }
 }
 
 .segment[data-active="true"] {

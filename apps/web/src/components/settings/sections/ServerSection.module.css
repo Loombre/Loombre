@@ -1,9 +1,13 @@
 /* SPDX-License-Identifier: AGPL-3.0-only */
+
+/* W7/D-4: no max-width here — SettingsPageLayout (the shared shell every
+   /settings/<key> route renders through) owns the readable-width cap now;
+   redeclaring one here reintroduces the double-cap defect that component's
+   header describes. */
 .page {
   display: flex;
   flex-direction: column;
   gap: var(--space-md);
-  max-width: 640px;
 }
 
 .heading {

@@ -19,6 +19,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { AppShell } from "../../components/shell/AppShell.js";
 import { AdminNav } from "../../components/admin/AdminNav.js";
+import { SettingsPageLayout } from "../../components/settings/SettingsPageLayout.js";
 import { apiGet } from "../../lib/api-client.js";
 import styles from "./layout.module.css";
 
@@ -54,11 +55,20 @@ export default function AdminLayout({ children }: { children: ReactNode }): Reac
   return (
     <AppShell>
       {status === "allowed" ? (
-        <div className={styles.page}>
-          <h1 className={styles.heading}>Admin</h1>
-          <AdminNav />
-          {children}
-        </div>
+        // W7/D-4: SettingsPageLayout owns the readable-max-width +
+        // centered-in-<main> contract every /admin/* page shares (heading,
+        // AdminNav, and whichever page body <main> is currently rendering
+        // all sit inside the SAME centered column) — see that file's
+        // header for the left-hugging/dead-right-margin defect this
+        // replaced (layout.module.css's `.page` used to cap width with no
+        // `margin: auto`, so it hugged <main>'s left edge instead).
+        <SettingsPageLayout>
+          <div className={styles.page}>
+            <h1 className={styles.heading}>Admin</h1>
+            <AdminNav />
+            {children}
+          </div>
+        </SettingsPageLayout>
       ) : null}
     </AppShell>
   );

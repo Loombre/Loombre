@@ -244,6 +244,29 @@
   resize: vertical;
 }
 
+/* W4 follow-through (same defect, same dialog as the screenshotted Name
+   field): AddLibrarySheet's Paths field is a `.textarea` sitting
+   full-width inside SheetOrModal's unpadded desktop `.body` clip region,
+   so the global NON-inset focus ring is cropped exactly like Input's
+   was. Same fix as components/ui/Input.module.css — inset ring + a local
+   inset-to-inset keyframe so the global `loombre-focus-in` animation
+   can't re-clobber the override at its final frame. */
+.textarea:focus-visible {
+  border-color: var(--color-accent);
+  box-shadow: inset 0 0 0 3px var(--color-focus);
+  animation: loombre-shared-textarea-focus-in var(--motion-fast) var(--ease-spring);
+}
+
+@keyframes loombre-shared-textarea-focus-in {
+  from {
+    box-shadow: inset 0 0 0 0 var(--color-focus);
+  }
+
+  to {
+    box-shadow: inset 0 0 0 3px var(--color-focus);
+  }
+}
+
 .note {
   margin: 0;
   padding: var(--space-sm) var(--space-md);
