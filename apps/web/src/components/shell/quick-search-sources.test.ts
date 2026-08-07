@@ -13,22 +13,29 @@ describe("filterPaletteScreens", () => {
     expect(matches.map((m) => m.key)).toEqual(["home"]);
   });
 
-  it("excludes admin-only screens for a non-admin viewer", () => {
+  // D-6 (Wave 2, this run): "settings" (label "System Settings") and
+  // "admin-settings" are both admin-only now — a non-admin's query instead
+  // surfaces "profile" (label "Profile settings", the user-scoped
+  // destination D-6 moved to), which legitimately contains the substring
+  // "settings" too.
+  it("excludes admin-only screens for a non-admin viewer, surfacing Profile settings instead", () => {
     const matches = filterPaletteScreens("settings", false);
-    // "Settings" (personal, /settings) matches; "Admin Settings" is admin-only.
-    expect(matches.map((m) => m.key)).toEqual(["settings"]);
+    expect(matches.map((m) => m.key)).toEqual(["profile"]);
   });
 
-  it("includes admin-only screens for an admin viewer", () => {
+  it("includes admin-only screens for an admin viewer, alongside Profile settings", () => {
     const matches = filterPaletteScreens("settings", true);
-    expect(matches.map((m) => m.key).sort()).toEqual(["admin-settings", "settings"].sort());
+    expect(matches.map((m) => m.key).sort()).toEqual(["admin-settings", "profile", "settings"].sort());
   });
 
-  it("every admin screen points at a real, existing /admin/* route", () => {
+  it("every admin screen points at a real, existing /admin/* or (D-6) /settings route", () => {
     const adminScreens = PALETTE_SCREENS.filter((s) => s.adminOnly);
     expect(adminScreens.length).toBeGreaterThan(0);
     for (const screen of adminScreens) {
-      expect(screen.href.startsWith("/admin")).toBe(true);
+      // D-6 (Wave 2, this run): "settings" (System Settings) is admin-only
+      // now but lives at /settings, not under /admin/* — every OTHER
+      // admin-only screen still does.
+      expect(screen.href.startsWith("/admin") || screen.href === "/settings").toBe(true);
     }
   });
 

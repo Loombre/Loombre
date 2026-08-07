@@ -16,8 +16,23 @@
 // app/admin/jobs/page.tsx) and a collapsible event log (EventLogPanel,
 // client-side ring buffer over the shared events socket) — reflowing the
 // EXISTING jobs/events surfaces rather than rebuilding them, per the task
-// brief. Mobile (<=767.98px): the body stacks to one column; the health
-// card grid becomes 2-up (HealthCards.module.css).
+// brief; then a "System" section (below). Mobile (<=767.98px): the body
+// stacks to one column; the health card grid becomes 2-up
+// (HealthCards.module.css).
+//
+// D-5 (Wave 2, this run — IA restructure, locked decision): the sidebar's
+// SYSTEM group used to show both "Dashboard" and "System" (the former
+// app/admin/system/page.tsx) presenting overlapping information — this
+// page's own version/uptime status line duplicated that page's fuller
+// SystemInfoCard, and neither page showed the other's content. Merged into
+// this ONE "Dashboard" entry: the "System" section below absorbs
+// everything /admin/system had that this page lacked — the full System
+// facts card (OS/tier/node, not just version/uptime), verified hardware
+// capabilities (including W1's three-state probe status), the update
+// notice, the metadata-provider-key notice, crash files, and the log tail —
+// composed from components/admin/system/*.tsx, extracted from that now-
+// deleted page's inline card functions (see each card's own header). The
+// old route (/admin/system) is a redirect-only stub back here.
 //
 // GAP logged, never fabricated (U9): "users online" (right column,
 // presence dots) has NO backing feed — the events socket delivers outbox
@@ -41,7 +56,9 @@
 // into the web client to back it (a /healthz fetch would only prove
 // "the Node process is up," not "all systems," and no component on this
 // page today calls it) — logged here rather than added as a decorative,
-// unbacked pulse.
+// unbacked pulse. (The fuller System-section fact card below doesn't
+// re-open this gap — it reports OS/tier/node/uptime, all real fields, the
+// same restraint /admin/system's own card already exercised.)
 
 import { useEffect, useState } from "react";
 import type { components } from "@loombre/sdk";
@@ -50,6 +67,12 @@ import { StreamsPanel } from "../../components/admin/StreamsPanel.js";
 import { LibrariesPanel } from "../../components/admin/LibrariesPanel.js";
 import { JobsPanel } from "../../components/admin/JobsPanel.js";
 import { EventLogPanel } from "../../components/admin/EventLogPanel.js";
+import { SystemInfoCard } from "../../components/admin/system/SystemInfoCard.js";
+import { CapabilitiesCard } from "../../components/admin/system/CapabilitiesCard.js";
+import { UpdateNoticeCard } from "../../components/admin/system/UpdateNoticeCard.js";
+import { ProviderKeysNoticeCard } from "../../components/admin/system/ProviderKeysNoticeCard.js";
+import { CrashFilesCard } from "../../components/admin/system/CrashFilesCard.js";
+import { LogsTailCard } from "../../components/admin/system/LogsTailCard.js";
 import { Card } from "../../components/ui/Card.js";
 import { apiGet } from "../../lib/api-client.js";
 import styles from "./page.module.css";
@@ -129,6 +152,21 @@ export default function AdminDashboardPage(): React.JSX.Element {
           </details>
         </div>
       </div>
+
+      {/* D-5: the merged former /admin/system content — see this file's
+          header. Same 2x2+ responsive equal-height card grid W7 fixed on
+          that page (.systemGrid, page.module.css), reused verbatim. */}
+      <section className={styles.systemSection}>
+        <h2 className={styles.sectionHeading}>System</h2>
+        <div className={styles.systemGrid}>
+          <SystemInfoCard />
+          <CapabilitiesCard />
+          <UpdateNoticeCard />
+          <ProviderKeysNoticeCard />
+          <CrashFilesCard />
+          <LogsTailCard />
+        </div>
+      </section>
     </div>
   );
 }

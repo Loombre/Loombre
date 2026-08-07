@@ -1,14 +1,23 @@
 /* SPDX-License-Identifier: AGPL-3.0-only */
 
+/* W16: this composition now sits inside a much wider results card
+   (app/search/page.tsx's SettingsPageLayout width-discipline fix) — a
+   left-hugging RECENT row above a text-align:center ghost watermark read
+   fine in the old 720px column but became a visibly mismatched, "floating
+   orphan" composition at the new width. Centering both rows here is what
+   makes the whole block read as one deliberate hero composition instead. */
 .wrap {
   display: flex;
   flex-direction: column;
+  align-items: center;
+  padding: var(--space-xl) 0;
 }
 
 .recentRow {
   margin-top: var(--space-md);
   display: flex;
   align-items: center;
+  justify-content: center;
   flex-wrap: wrap;
   gap: var(--space-sm);
 }

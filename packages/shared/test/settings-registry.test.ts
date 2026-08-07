@@ -443,4 +443,69 @@ describe("SETTINGS_REGISTRY", () => {
       }
     });
   });
+
+  // ==========================================================================
+  // W13b (decision D-7, layer 2): the `technicalDetails` additive field —
+  // the plain-language `description` sweep's carrier for the precise
+  // technical detail (protocol notes, format specifics, behavioral caveats)
+  // moved OUT of the visible description. Rendered by apps/web's SettingField
+  // in an on-demand info tooltip (W13a built the mechanism; this sweep wires
+  // per-key content into it).
+  // ==========================================================================
+
+  describe("W13b: `technicalDetails` — the second copy layer", () => {
+    it("is present (non-empty) on every entry whose description used to carry protocol/format specifics — spot check across categories", () => {
+      for (const key of [
+        "database.url",
+        "http.port",
+        "paths.dataDir",
+        "network.corsOrigins",
+        "network.publicUrl",
+        "mail.smtpPort",
+        "mail.smtpSecurity",
+        "remote.subnet",
+        "tls.mode",
+        "tls.acmeDomains",
+        "network.trustProxy",
+      ]) {
+        const entry = getSettingsRegistryEntry(key)!;
+        expect(entry.technicalDetails, key).toBeDefined();
+        expect(entry.technicalDetails!.length, key).toBeGreaterThan(0);
+      }
+    });
+
+    it("mail.smtpPort's technicalDetails carries the 587/465/25 SMTP port explanation the description no longer states inline", () => {
+      const entry = getSettingsRegistryEntry("mail.smtpPort")!;
+      expect(entry.technicalDetails).toMatch(/587/);
+      expect(entry.technicalDetails).toMatch(/465/);
+      expect(entry.technicalDetails).toMatch(/25/);
+      expect(entry.technicalDetails).toMatch(/STARTTLS/i);
+    });
+
+    it("mail.smtpPort's visible description stays plain — no bare port-number-to-protocol mapping", () => {
+      const entry = getSettingsRegistryEntry("mail.smtpPort")!;
+      expect(entry.description).not.toMatch(/STARTTLS|implicit/i);
+    });
+
+    it("technicalDetails, when present, is never just a restatement of the envVar pin (SettingField auto-folds that in on its own)", () => {
+      for (const entry of SETTINGS_REGISTRY) {
+        if (!entry.technicalDetails || !entry.envVar) continue;
+        expect(entry.technicalDetails, entry.key).not.toMatch(new RegExp(`Pinnable via.*${entry.envVar}`));
+      }
+    });
+
+    it("no entry's technicalDetails is identical to its description (the whole point is a SECOND layer, not a duplicate)", () => {
+      for (const entry of SETTINGS_REGISTRY) {
+        if (!entry.technicalDetails) continue;
+        expect(entry.technicalDetails, entry.key).not.toBe(entry.description);
+      }
+    });
+
+    it("every scope:'ui' entry's technicalDetails, like its description, stays free of internal decision-ID citations", () => {
+      for (const entry of SETTINGS_REGISTRY) {
+        if (entry.scope !== "ui" || !entry.technicalDetails) continue;
+        expect(entry.technicalDetails, entry.key).not.toMatch(/\b(A\d{1,2}|AD\d{1,2}|D\d{1,2}|P\d\.\d+)\b/);
+      }
+    });
+  });
 });

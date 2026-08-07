@@ -60,6 +60,12 @@ export interface AdminSettingSchemaEntryDto {
   category: SettingsCategory;
   description: string;
   caution?: string;
+  /** W13b/D-7's second copy layer: precise technical detail (protocol
+   *  notes, format specifics, behavioral caveats) `description` deliberately
+   *  leaves out of its plain-language register. Rendered by the admin
+   *  settings screen in an on-demand info tooltip, combined with (not
+   *  replacing) that entry's own env-pin note. */
+  technicalDetails?: string;
   scope: SettingsScope;
   requiresRestart: boolean;
   envVar?: string;

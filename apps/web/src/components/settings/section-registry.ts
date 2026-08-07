@@ -1,17 +1,24 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Loombre :: apps/web/src/components/settings/section-registry.ts
 //
-// Wave 2 lane L1 (Phosphor Settings IA): the single source of truth for
-// the unified Settings surface's section list — design/phosphor/README.md
+// Wave 2 lane L1 (Phosphor Settings IA): the single source of truth for the
+// System Settings surface's section list — design/phosphor/README.md
 // "Screens -> Desktop -> Settings" describes 8 admin tabs (Server,
 // Libraries, Users & Profiles, Playback, Remote Access, Plugins, Advanced
-// Server, About); this registry adds a 9th, "Account", which the prototype
-// never draws because its owner-only persona (Maya Reyes) has no separate
-// personal-settings concern — the real app has non-admin users too, and
-// their existing profile/restricted-opt-in/playback-preference capability
-// (apps/web/src/app/settings/page.tsx pre-Wave-2) needed a home in the new
-// IA rather than being dropped. Logged in this lane's freeze report as a
-// lane-decided addition, not a prototype tab.
+// Server, About).
+//
+// D-6 (Wave 2, this run — IA restructure): L1 originally added a 9th
+// section here, "Account", for non-admin self-service content that had no
+// other home. That section is GONE — every field it held (Profile, Password,
+// per-user Playback preferences, Restricted opt-in/PIN) moved to its own
+// route, /profile (components/profile/ProfileSettings.tsx), reached from the
+// avatar menu rather than this tab list. SETTINGS_SECTIONS is therefore now
+// ENTIRELY admin-only — see the sidebar's SYSTEM group, renamed "System
+// Settings" (components/shell/nav-items.ts) — and SettingsShell.tsx redirects
+// any non-admin who reaches a /settings* URL straight to /profile instead of
+// rendering anything here. `adminOnly` stays on every entry (rather than
+// being dropped as now-redundant) so a future non-admin-visible section can
+// still opt out of that redirect without a second schema change.
 //
 // Lane D (Optional Mail Transport run, STATE.md): a 10th section, "mail",
 // for the new mail subsystem admin UI (E5/E6/M10/M11) — task spec: "new
@@ -38,23 +45,21 @@
 //
 // Route shape: "/settings" itself is the responsive hub/tab-list host
 // (mobile: grouped list when no section is active; desktop: pill tabs +
-// pane, defaulting to "account"). Every OTHER key gets its own real
-// Next.js route under /settings/<key> — this is what lets the existing
-// mobile-header.ts "back chevron pops to the owning tab" pattern (already
-// used by /admin/system and, formerly, /admin/settings) apply uniformly:
-// drilling into a hub row is real navigation with a real back target,
-// exactly like every other admin sub-route already works, not a bespoke
-// client-side overlay invented for this one screen.
+// pane, defaulting to "server" — the first section, since D-6 removed the
+// non-admin "account" default; see SettingsShell.tsx). Every OTHER key gets
+// its own real Next.js route under /settings/<key> — this is what lets the
+// existing mobile-header.ts "back chevron pops to the owning tab" pattern
+// (formerly also used by /admin/system and /admin/settings) apply
+// uniformly: drilling into a hub row is real navigation with a real back
+// target, exactly like every other admin sub-route already works, not a
+// bespoke client-side overlay invented for this one screen.
 //
 // adminOnly gates both the hub row/tab AND the route itself (SettingsShell
-// redirects a non-admin hitting an admin-only /settings/<key> URL back to
-// bare /settings) — "account" is the only section a non-admin ever sees,
-// matching every non-admin's existing capability exactly (zero regression,
-// per this lane's brief: "map existing capability... WITHOUT breaking
-// existing routes").
+// redirects ANY non-admin hitting ANY /settings* URL to /profile now — see
+// its header) — every section here is adminOnly: true since D-6 moved the
+// one non-admin section, "account", out to /profile entirely.
 
 export type SettingsSectionKey =
-  | "account"
   | "server"
   | "notices"
   | "libraries"
@@ -69,8 +74,8 @@ export type SettingsSectionKey =
 export interface SettingsSectionConfig {
   key: SettingsSectionKey;
   /** Tab/hub-row label. Matches the README's literal tab names except
-   *  "Account" (this lane's addition, see header) and "Advanced Server" /
-   *  "Users & Profiles" (kept exactly as the README spells them). */
+   *  "Advanced Server" / "Users & Profiles" (kept exactly as the README
+   *  spells them). */
   label: string;
   /** Always a real route — bare "/settings" for the hub/default-tab host,
    *  "/settings/<key>" for every other section (see header). */
@@ -79,7 +84,6 @@ export interface SettingsSectionConfig {
 }
 
 export const SETTINGS_SECTIONS: SettingsSectionConfig[] = [
-  { key: "account", label: "Account", href: "/settings/account", adminOnly: false },
   { key: "server", label: "Server", href: "/settings/server", adminOnly: true },
   { key: "notices", label: "Notices", href: "/settings/notices", adminOnly: true },
   { key: "libraries", label: "Libraries", href: "/settings/libraries", adminOnly: true },
@@ -100,8 +104,9 @@ export function sectionByHref(href: string): SettingsSectionConfig | undefined {
   return SETTINGS_SECTIONS.find((s) => s.href === href);
 }
 
-/** Tabs/hub rows visible to the current user — "account" always, everything
- *  else only for admins (see header). Preserves SETTINGS_SECTIONS' order. */
+/** Tabs/hub rows visible to the current user — every section here is
+ *  adminOnly (see header), so this returns the full list for an admin and
+ *  an empty array otherwise. Preserves SETTINGS_SECTIONS' order. */
 export function visibleSections(isAdmin: boolean): SettingsSectionConfig[] {
   return SETTINGS_SECTIONS.filter((s) => isAdmin || !s.adminOnly);
 }

@@ -38,13 +38,29 @@
 // Wave 2 lane L1 (Settings IA): every `/settings/<key>` drill-down route
 // (section-registry.ts) maps back to the owning "Settings" tab, titled
 // with that section's own label — the exact same "back chevron pops to
-// the owning tab" shape /admin/system already used pre-IA. This REPLACES
-// the former dedicated `/admin/settings` -> "Advanced Server" special case
-// (that page is now a redirect stub to /settings/advanced; the real
-// "Advanced Server" content lives at /settings/advanced and is covered by
-// this new branch instead) — /admin/settings itself falls through to the
-// generic /admin/* default below for the brief instant before its redirect
-// fires, same as any other unmapped /admin/* route.
+// the owning tab" shape /admin/system used pre-IA. This REPLACED the former
+// dedicated `/admin/settings` -> "Advanced Server" special case (that page
+// is now a redirect stub to /settings/advanced; the real "Advanced Server"
+// content lives at /settings/advanced and is covered by this new branch
+// instead) — /admin/settings itself falls through to the generic /admin/*
+// default below for the brief instant before its redirect fires, same as
+// any other unmapped /admin/* route.
+//
+// D-5 (Wave 2, this run): /admin/system merged into the Dashboard
+// (app/admin/page.tsx now absorbs everything that page had) and became a
+// redirect-only stub — its dedicated "System" mobile-header case is REMOVED
+// below; that pathname now falls through to the same generic /admin/*
+// "Dashboard" label every other redirect stub under /admin/* already gets,
+// for the brief instant before its own redirect fires.
+//
+// D-6 (Wave 2, this run — IA restructure): a NEW `/profile` title-mode case
+// below, for the route every user's self-service settings moved to
+// (components/profile/ProfileSettings.tsx) — section-registry.ts's
+// SETTINGS_SECTIONS no longer has an "account" key, so `/settings/account`
+// (now a redirect-only stub to /profile, same posture as the /admin/*
+// stubs above) no longer matches the settingsSection branch either; it
+// falls through to the generic unmapped-route case at the bottom for the
+// brief instant before its own redirect fires.
 
 import { SETTINGS_SECTIONS } from "../settings/section-registry.js";
 
@@ -87,6 +103,15 @@ export function resolveMobileHeader(
     return { mode: "title", title: "Settings" };
   }
 
+  // D-6: every user's own Profile/Password/Playback/Restricted settings —
+  // reached from the avatar menu, not a tab, but still a top-level
+  // destination in its own right (not "one level below" anything), so it
+  // gets the same title-mode treatment as /home, /search, and /settings
+  // above rather than a back chevron to a tab it doesn't belong to.
+  if (pathname === "/profile") {
+    return { mode: "title", title: "Profile" };
+  }
+
   if (pathname.startsWith("/restricted")) {
     return { mode: "zone-back", title: "Restricted", backLabel: "Back" };
   }
@@ -112,15 +137,12 @@ export function resolveMobileHeader(
     // Admin has no owning mobile tab (the 6-tab design has no Dashboard
     // tab) — Settings is the least-wrong "owning tab" for whatever's left
     // under /admin/* once the settings hub took Libraries/Users/Plugins/
-    // Advanced (the settingsSection branch above). /admin/system is System's
-    // real home (a separate screen from Settings per the README's own
-    // Screens table) and keeps its own case; /admin itself (Dashboard) and
-    // /admin/settings, /admin/users, /admin/libraries (now redirect-only
-    // stubs to their /settings/<key> homes, briefly rendered before the
-    // client-side redirect fires) fall through to the generic label below.
-    if (pathname.startsWith("/admin/system")) {
-      return { mode: "back", title: "System", backLabel: "Settings", backHref: "/settings" };
-    }
+    // Advanced (the settingsSection branch above). /admin itself
+    // (Dashboard) and every /admin/* redirect-only stub (/admin/system,
+    // /admin/settings, /admin/users, /admin/libraries — briefly rendered
+    // before their client-side redirect fires) all fall through to this
+    // one generic label; /admin/system lost its dedicated "System" case in
+    // D-5 (Wave 2, this run) when that page merged into the Dashboard.
     return { mode: "back", title: "Dashboard", backLabel: "Settings", backHref: "/settings" };
   }
 

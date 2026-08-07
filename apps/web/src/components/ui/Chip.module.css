@@ -36,3 +36,103 @@
   background: var(--color-accent);
   color: var(--color-accent-text);
 }
+
+/* W15: one interactive chip shape for a row of selectable filter pills.
+   Horizontal inset is the SAME single token D-2 settled on for
+   SegmentedControl's segments (--space-sm, W2/AUD-A4v2-002) — not a
+   second, independently-eyeballed pill recipe. The explicit min-height is
+   the actual fix for the reported "inconsistent pill sizes": a flex-wrap
+   row's default `align-items: stretch` only equalizes height WITHIN one
+   wrapped line, so an icon-bearing chip (20px glyph) on one line and a
+   label-only chip (a ~17px text line) on another rendered at visibly
+   different heights. Pinning min-height here makes every chip identical
+   regardless of which wrapped line it lands on or whether it carries an
+   icon. */
+.filterChip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2xs);
+  min-height: 30px;
+  padding: var(--space-2xs) var(--space-sm);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--muted);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
+  cursor: pointer;
+  transition:
+    background-color var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out),
+    border-color var(--motion-fast) var(--ease-out);
+}
+
+.filterChip:hover {
+  background: var(--color-surface-hover);
+  color: var(--text);
+}
+
+/* Inset ring, not the app-wide non-inset one — same reasoning as every
+   other Phosphor control that can sit at the edge of a clipping/wrapping
+   row (Input.module.css, SegmentedControl.module.css's own headers): a
+   non-inset ring on the first/last chip in a wrapped row would overshoot
+   and get cropped with no buffer to absorb it. */
+.filterChip:focus-visible {
+  box-shadow: inset 0 0 0 3px var(--color-focus);
+  animation: loombre-filter-chip-focus-in var(--motion-fast) var(--ease-spring);
+}
+
+@keyframes loombre-filter-chip-focus-in {
+  from {
+    box-shadow: inset 0 0 0 0 var(--color-focus);
+  }
+
+  to {
+    box-shadow: inset 0 0 0 3px var(--color-focus);
+  }
+}
+
+.filterChipIcon {
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
+.filterChipLabel {
+  white-space: nowrap;
+}
+
+/* SegmentedControl's own amber-fill active treatment (D-2), reused
+   verbatim — a selected filter chip and a selected segment must read as
+   the same "this is the active choice" language. */
+.filterChip[data-active] {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: var(--color-accent-text);
+}
+
+.filterChipCount {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 var(--space-3xs);
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--color-text) 14%, transparent);
+  color: inherit;
+  font-family: var(--font-mono);
+  font-size: var(--mono-xs);
+}
+
+.filterChip[data-active] .filterChipCount {
+  background: color-mix(in srgb, var(--color-accent-text) 22%, transparent);
+  color: var(--color-accent-text);
+}
+
+/* Mobile (README §Screens → Mobile, 767.98px literal — AppShell.module.css
+   owns the canonical note on why this can't be a var()): touch floor. */
+@media (width <= 767.98px) {
+  .filterChip {
+    min-height: 44px;
+  }
+}

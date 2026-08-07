@@ -1,18 +1,29 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 "use client";
 
-// Loombre :: apps/web/src/components/settings/sections/AccountSection.tsx
+// Loombre :: apps/web/src/components/profile/ProfileSettings.tsx
 //
-// Wave 2 lane L1 (Settings IA): extracted from the pre-IA
-// apps/web/src/app/settings/page.tsx almost verbatim (Profile, Restricted
-// content — both real, both already wired to GET/PATCH /users/me and
-// GET/PUT /users/me/restricted) so it can render both as the ONE thing a
-// non-admin ever sees at /settings, and as the "Account" tab/hub-section a
-// admin reaches at /settings/account (section-registry.ts) — this is the
-// lane's one addition beyond the README's literal 8 tabs (see that file's
-// header for why).
+// D-6 (Wave 2, this run — IA restructure): MOVED here, and RENAMED from
+// AccountSection, out of the System Settings surface entirely — see
+// components/settings/section-registry.ts's header. Every field this
+// component renders (Profile, Password, Restricted opt-in/PIN, per-user
+// Playback preferences) is user-scoped, never server-scoped, so none of it
+// belongs behind the now admin-only /settings* surface; it lives at
+// /profile instead (app/profile/page.tsx), reached from the avatar menu's
+// "Profile settings" row (components/shell/UserMenu.tsx), for every user —
+// admin or not — the same way. Nothing in this file's OWN behavior changed
+// in this move: same four cards, same endpoints, same tests (renamed
+// alongside it) — only where it's mounted and what it's called moved.
 //
-// Cleanup 1 (this lane's brief): the inert theme dark/light/system
+// Wave 2 lane L1 (Settings IA, pre-D-6 history): originally extracted from
+// the pre-IA apps/web/src/app/settings/page.tsx almost verbatim (Profile,
+// Restricted content — both real, both already wired to GET/PATCH /users/me
+// and GET/PUT /users/me/restricted) so it could render both as the ONE thing
+// a non-admin ever saw at /settings, and as the "Account" tab/hub-section an
+// admin reached at /settings/account. D-6 above supersedes that placement;
+// the wiring underneath is unchanged.
+//
+// Cleanup 1 (L1's brief): the inert theme dark/light/system
 // SegmentedControl was REMOVED from the Playback-preferences form —
 // Phosphor is dark-only (design/phosphor/README.md "Light theme —
 // removed"; W0 already deleted the data-theme mechanism and ThemeToggle),
@@ -40,24 +51,22 @@
 // below UNCHANGED, exactly as fetched, so this form can never silently
 // revert either one even though it offers no control for them.
 //
-// Cleanup 2 (duplicate title): `heading` is null when the mobile shell
-// chrome already shows a large "Settings" title for this exact content
-// (bare /settings, non-admin, phone width) — rendering "Settings" again
-// here would be the literal duplicate-title bug this lane's brief calls
-// out. Every OTHER caller (admin desktop "Account" tab pane, admin mobile
-// /settings/account, or non-admin desktop bare /settings, where the shell
-// shows no page title at all) passes a real heading.
+// Cleanup 2 (duplicate title, pre-D-6): `heading` is passed a real string
+// by app/profile/page.tsx on desktop, and null on phone width — the mobile
+// shell chrome (mobile-header.ts's `/profile` case) already renders a large
+// "Profile" title there, and re-rendering the same text in-page would be
+// the literal duplicate-title bug the original lane's brief called out.
 
 import { useEffect, useState, type FormEvent } from "react";
-import { TextInput } from "../../ui/Input.js";
-import { Button } from "../../ui/Button.js";
-import { Card } from "../../ui/Card.js";
-import { SegmentedControl } from "../../ui/SegmentedControl.js";
-import { Select } from "../../ui/Select.js";
-import { DatePicker, formatIsoDate, todayCalendarDate } from "../../ui/DatePicker.js";
-import { useRestricted } from "../../restricted/RestrictedProvider.js";
-import { apiGet, apiPatch, apiPut, LoombreApiError } from "../../../lib/api-client.js";
-import { PIN_LENGTH, isPinComplete, sanitizePinInput, stripPinDigits } from "../../../lib/pin-entry.js";
+import { TextInput } from "../ui/Input.js";
+import { Button } from "../ui/Button.js";
+import { Card } from "../ui/Card.js";
+import { SegmentedControl } from "../ui/SegmentedControl.js";
+import { Select } from "../ui/Select.js";
+import { DatePicker, formatIsoDate, todayCalendarDate } from "../ui/DatePicker.js";
+import { useRestricted } from "../restricted/RestrictedProvider.js";
+import { apiGet, apiPatch, apiPut, LoombreApiError } from "../../lib/api-client.js";
+import { PIN_LENGTH, isPinComplete, sanitizePinInput, stripPinDigits } from "../../lib/pin-entry.js";
 // Subpath import, NOT the barrel: @loombre/shared's barrel also exports
 // server-side modules importing node:crypto/node:path, which the Next
 // production webpack build refuses to bundle (UnhandledSchemeError — it
@@ -66,7 +75,7 @@ import { PIN_LENGTH, isPinComplete, sanitizePinInput, stripPinDigits } from "../
 // for the client chunk; the subpath keeps the barrel out of the graph.
 import { LANGUAGE_CODES } from "@loombre/shared/language-codes";
 import type { components } from "@loombre/sdk";
-import styles from "./AccountSection.module.css";
+import styles from "./ProfileSettings.module.css";
 
 type User = components["schemas"]["User"];
 type UserSettings = components["schemas"]["UserSettings"];
@@ -627,7 +636,7 @@ function PlaybackPrefsSection(): React.JSX.Element {
   );
 }
 
-export function AccountSection({ heading }: { heading: string | null }): React.JSX.Element {
+export function ProfileSettings({ heading }: { heading: string | null }): React.JSX.Element {
   return (
     <div className={styles.page}>
       {heading !== null && <h1 className={styles.heading}>{heading}</h1>}
