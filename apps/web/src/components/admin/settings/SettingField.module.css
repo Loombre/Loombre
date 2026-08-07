@@ -33,13 +33,116 @@
   margin-bottom: var(--space-2xs);
 }
 
+/* W8: bumped from --mono-lg (11px, the mono scale's own largest rung —
+   there was no further mono-scale headroom) to --text-base, the SAME
+   token .description now floors at just below. Pulling the size from the
+   sans ramp rather than inventing a new mono token keeps the key
+   "proportionally scaled" alongside the body-text bump right below it —
+   semibold weight + mono family + tracking still read it as the row's
+   label, not a second description line, at equal font-size. */
 .key {
   font-family: var(--font-mono);
-  font-size: var(--mono-lg);
+  font-size: var(--text-base);
   font-weight: var(--weight-semibold);
   letter-spacing: 0.02em;
   color: var(--color-text);
   overflow-wrap: anywhere;
+}
+
+/* W13a info affordance (D-7): the ⓘ trigger sits inline with the key name
+   in .header; its popover is absolutely positioned off THIS wrapper so it
+   never perturbs row layout while closed. */
+.infoWrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.infoButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-full);
+  background: transparent;
+  color: var(--color-text-subtle);
+  cursor: pointer;
+  transition:
+    color var(--motion-fast) var(--ease-out),
+    background-color var(--motion-fast) var(--ease-out);
+}
+
+.infoButton:hover {
+  color: var(--color-accent);
+  background: var(--fill-3);
+}
+
+.infoButton:focus-visible {
+  color: var(--color-accent);
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+/* Phosphor popover surface (elevated, dark, rounded) — same --color-bg-raised
+   tier tokens.css reserves for "modals, popovers, command palette". Entrance
+   is opacity + transform ONLY (compositor-only animation rule) — this
+   component always mounts/unmounts the panel rather than animating an exit,
+   so no width/height/top/left is ever touched either direction.
+   pointer-events: none means the cursor never needs to travel onto the
+   panel itself to keep it open — it's a description, not an interactive
+   surface, so hover/focus staying on the trigger button is sufficient. */
+.infoTooltip {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + var(--space-2xs));
+  left: 0;
+  width: max-content;
+  max-width: 280px;
+  padding: var(--space-xs) var(--space-sm);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-raised);
+  box-shadow: var(--shadow-md);
+  color: var(--color-text-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--mono-md);
+  line-height: var(--leading-dense);
+  pointer-events: none;
+  animation: info-tooltip-in var(--motion-fast) var(--ease-out);
+}
+
+@keyframes info-tooltip-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.97);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* "no travel" — same rule BottomSheet.module.css/Toast.module.css use:
+     drop the transform component, keep the fade (its duration already
+     clamps to 100ms via tokens.css's own top-level reduced-motion block,
+     no second override needed for that half). */
+  .infoTooltip {
+    animation-name: info-tooltip-in-reduced;
+  }
+}
+
+@keyframes info-tooltip-in-reduced {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
 }
 
 .sourcePill,
@@ -87,9 +190,13 @@
   background: transparent;
 }
 
+/* W8: was --text-xs (12px) — under the 0.875rem/14px comfortable-reading
+   floor the owner locked. --text-base (14.5px) is the same token body.
+   font-size resolves to app-wide, so registry description copy now reads
+   at ordinary body size instead of a caption size. */
 .description {
   margin: 0;
-  font-size: var(--text-xs);
+  font-size: var(--text-base);
   color: var(--muted);
   line-height: var(--leading-dense);
   text-wrap: pretty;
@@ -104,6 +211,17 @@
   line-height: var(--leading-dense);
 }
 
+/* W8: was --mono-xs (8.5px) — exactly ONE rung below .description's new
+   --text-base on the SAME --text-* scale (--text-sm, 13px), not two
+   (--text-xs, 12px, the locked requirement's explicit "not two" case).
+   Pulled from the sans ramp rather than the separate --mono-* scale for
+   the same reason .key was above: one shared ladder makes "one step
+   smaller than body" a literal, checkable relationship instead of two
+   differently-calibrated scales eyeballed against each other. font-family
+   stays mono — this is still "the metadata mono line", just sized off the
+   shared ramp. Bonus fix, not itself requested: this also clears
+   tokens.css's own "never use --color-text-hint below --text-xs (12px)"
+   footnote, which the previous 8.5px size quietly violated. */
 .factRow {
   display: flex;
   align-items: center;
@@ -111,7 +229,7 @@
   flex-wrap: wrap;
   margin-top: var(--space-xs);
   font-family: var(--font-mono);
-  font-size: var(--mono-xs);
+  font-size: var(--text-sm);
   letter-spacing: var(--track-mono);
   color: var(--color-text-hint);
 }
@@ -323,6 +441,14 @@ textarea.jsonEditor {
   }
 
   .stepButton {
+    width: 44px;
+    height: 44px;
+  }
+
+  /* Touch floor for the info trigger too — same 44px rule as .stepButton
+     above; the visible icon inside stays the same 20px, just centered in
+     a bigger hit area. */
+  .infoButton {
     width: 44px;
     height: 44px;
   }

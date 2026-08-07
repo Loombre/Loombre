@@ -1,0 +1,13 @@
+<html><head><meta charset="utf-8"></head><body style="font-family: Helvetica, sans-serif; font-size: 13px">
+<p><b>Loombre is installed and running.</b></p>
+<p>Web UI: <b>http://localhost:3000</b></p>
+<p>Your browser will open to the Loombre setup screen automatically in a few seconds (as soon as the server finishes its first start). If it does not, open the address above yourself.</p>
+<p>The Loombre icon is now in your menu bar (top-right of the screen). Click it for live server status, start/stop control, "Shut Down Loombre" (stops all services completely), the version, and a shortcut straight to the web UI. It reappears automatically every time you log in.</p>
+<p>There is nothing else to set up. The server has already provisioned its own bundled PostgreSQL database, applied the schema, and started serving — the first page you see will be the account-setup wizard.</p>
+<p>Three background services are now running as the unprivileged _loombre account and will start automatically at boot:</p>
+<p style="margin-left: 18px"><b>com.loombre.server</b> — catalog + playback API (port 3001)</p>
+<p style="margin-left: 18px"><b>com.loombre.web</b> — the web UI you browse (port 3000)</p>
+<p style="margin-left: 18px"><b>com.loombre.worker</b> — scanning, probing, transcoding</p>
+<p>If the page does not load, give it a few seconds on a first install (the database is being created) and reload. Logs are in /Library/Logs/Loombre. Configuration — your own PostgreSQL, different ports, access from other devices on your network — lives in /Library/Application Support/Loombre/config/loombre.env.</p>
+<p>To uninstall, see docs/install/macos.md in the Loombre source repository.</p>
+</body></html>

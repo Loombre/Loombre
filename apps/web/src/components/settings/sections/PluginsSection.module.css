@@ -1,9 +1,11 @@
 /* SPDX-License-Identifier: AGPL-3.0-only */
+
+/* W7/D-4: no max-width here — SettingsPageLayout owns the readable-width
+   cap now, see its header. */
 .page {
   display: flex;
   flex-direction: column;
   gap: var(--space-md);
-  max-width: 640px;
 }
 
 .heading {

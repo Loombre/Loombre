@@ -10,11 +10,13 @@
 // read (useMediaQuery, the same legitimate viewport-measurement escape
 // hatch SheetOrModal.tsx already uses — not user-agent branching) picks
 // which of the two RESPONSIVE FORMS to show:
-//   - Desktop (> 767.98px): pill tabs (SettingsTabs) + a 760px content
-//     pane, matching README "Settings. 200px pill tab list + a 760px
-//     max-width pane" — literally, regardless of which /settings* URL
-//     rendered the page (a deep link to /settings/libraries still shows
-//     the full tab chrome with Libraries active).
+//   - Desktop (> 767.98px): pill tabs (SettingsTabs, README "200px pill
+//     tab list") + a content pane (SettingsPageLayout.tsx — W7/D-4: a
+//     readable ~1120px max width, CENTERED in the space right of the tab
+//     column rather than left-hugging it; see that file's header for the
+//     defect this replaced) — regardless of which /settings* URL rendered
+//     the page (a deep link to /settings/libraries still shows the full
+//     tab chrome with Libraries active).
 //   - Mobile (<= 767.98px): the grouped hub list (SettingsHub) at bare
 //     /settings, or — at a /settings/<key> route — just that section's own
 //     content, full-bleed (the shell's MobileHeader already supplies the
@@ -46,6 +48,7 @@ import { useMediaQuery } from "../ui/use-media-query.js";
 import { sectionByKey, type SettingsSectionKey } from "./section-registry.js";
 import { SettingsTabs } from "./SettingsTabs.js";
 import { SettingsHub } from "./SettingsHub.js";
+import { SettingsPageLayout } from "./SettingsPageLayout.js";
 import { AccountSection } from "./sections/AccountSection.js";
 import { ServerSection } from "./sections/ServerSection.js";
 import { NoticesSection } from "./sections/NoticesSection.js";
@@ -135,7 +138,12 @@ export function SettingsShell({ initialSection }: SettingsShellProps): React.JSX
   return (
     <div className={styles.shell}>
       <SettingsTabs active={activeKey} />
-      <div className={styles.pane}>{renderSection(activeKey, heading)}</div>
+      {/* W7/D-4: SettingsPageLayout (not a local `.pane`) owns the
+          readable-max-width + centered-in-remaining-space contract now —
+          see its header for why the old 760px `.pane` stacked with every
+          section's own `.page` max-width to produce the reported
+          left-hugging/dead-right-margin defect. */}
+      <SettingsPageLayout>{renderSection(activeKey, heading)}</SettingsPageLayout>
     </div>
   );
 }
