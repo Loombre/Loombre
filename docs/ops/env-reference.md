@@ -17,7 +17,7 @@ Assumption: variable names and defaults below are Loombre's own environment-vari
 
 #### `DATABASE_URL`
 
-**Database connection.** PostgreSQL connection string. Read before any DB-backed configuration (including this registry's own DB half) can be resolved at all.
+**Database connection.** Where Loombre's database lives. The server can't start without reading this first — every other setting stored in the database depends on it.
 
 - **Default when unset:** `postgres://loombre:loombre@localhost:5442/loombre`
 
@@ -25,13 +25,13 @@ Assumption: variable names and defaults below are Loombre's own environment-vari
 
 #### `PORT`
 
-**HTTP port.** TCP port the plain-HTTP listener binds. Ignored when tls.mode is not 'off' (TLS mode binds its own https port).
+**HTTP port.** Which network port Loombre listens on for plain (non-HTTPS) connections. Not used once HTTPS is turned on below — that mode listens on its own port instead.
 
 - **Default when unset:** 3001
 
 #### `LOOMBRE_CORS_ORIGINS`
 
-**Allowed browser origins (CORS).** Strict CORS origin allowlist for the browser web client. An explicitly empty list disables CORS entirely (same-origin deployments). Unset falls back to the local dev pairing.
+**Allowed browser origins (CORS).** Which web addresses are allowed to load Loombre's web app in a browser and talk to this server — set this to the address(es) you use to reach Loombre. An empty list turns this check off entirely, for setups where the web app and server share the same address.
 
 - **Default when unset:** `http://localhost:3000`, `http://127.0.0.1:3000`
 
@@ -39,15 +39,15 @@ Assumption: variable names and defaults below are Loombre's own environment-vari
 
 #### `LOOMBRE_DATA_DIR`
 
-**Data directory.** App data directory (media cache, secrets, images, TLS state). Platform default when unset: XDG_DATA_HOME/loombre (Linux), ~/Library/Application Support/Loombre (macOS), %LOCALAPPDATA%/Loombre (Windows).
+**Data directory.** Where Loombre stores its data: your media cache, secrets, generated poster/thumbnail images, and TLS certificates. Leave unset and Loombre picks a sensible location based on your operating system.
 
 #### `LOOMBRE_CONFIG_DIR`
 
-**Config directory.** App config directory. Platform default when unset: XDG_CONFIG_HOME/loombre (Linux), Application Support/Loombre/config (macOS), %APPDATA%/Loombre (Windows).
+**Config directory.** Where Loombre stores its configuration files. Leave unset and Loombre picks a sensible location based on your operating system.
 
 #### `LOOMBRE_TRANSCODE_DIR`
 
-**Conversion staging directory.** Root directory transcode session staging directories are created under (docs/PLAYBACK.md §9 binding constraint 3). Default: <os.tmpdir()>/loombre-transcode.
+**Conversion staging directory.** The folder Loombre uses to hold video temporarily while it's being converted. Needs enough free space for whatever is converting right now — Loombre cleans these files up automatically once it's done.
 
 - **Default when unset:** `/tmp/loombre-transcode`
 
@@ -55,13 +55,13 @@ Assumption: variable names and defaults below are Loombre's own environment-vari
 
 #### `LOOMBRE_FFMPEG`
 
-**ffmpeg binary path.** Explicit ffmpeg binary path. Empty means resolve via PATH.
+**ffmpeg binary path.** Where to find the ffmpeg program Loombre uses to convert video. Leave blank and Loombre looks for it automatically, the same way your system finds any other installed program.
 
 - **Default when unset:** (empty — not set)
 
 #### `LOOMBRE_FFPROBE`
 
-**ffprobe binary path.** Explicit ffprobe binary path. Empty means resolve via PATH.
+**ffprobe binary path.** Where to find the ffprobe program Loombre uses to inspect video and audio files before converting them. Leave blank and Loombre looks for it automatically, the same way your system finds any other installed program.
 
 - **Default when unset:** (empty — not set)
 
@@ -184,7 +184,7 @@ How many password-recovery requests (forgot-password or reset-password) one devi
 
 Pins **[Reachability-proof attempt limit](/admin-guide/settings-reference#reachability-proof-attempt-limit)** (`rateLimit.probe`) to a fixed value — set this and the admin settings screen shows the setting as controlled by the environment, read-only; any value stored from the settings screen is preserved but ignored until the variable is unset again.
 
-How many reachability-proof probe attempts one device may make per minute, before any account exists for it. Guards the probe link against brute-force guessing.
+How many reachability-check attempts one device may make per minute while proving it can reach this server from outside your network (part of Remote Access setup). Guards that check against brute-force guessing.
 
 - **Default when unset:** 10 (or whatever was last saved from the settings screen)
 
@@ -208,7 +208,7 @@ How many session-refresh requests one signed-in device may receive per minute, c
 
 Pins **[Search](/admin-guide/settings-reference#search)** (`rateLimit.search`) to a fixed value — set this and the admin settings screen shows the setting as controlled by the environment, read-only; any value stored from the settings screen is preserved but ignored until the variable is unset again.
 
-How many search requests one person may make per minute — /search and the restricted-content search share this limit. Each request does extra per-result lookups, so this bounds abuse while staying generous enough for normal typing bursts.
+How many search requests one person may make per minute — this covers both regular search and restricted-content search. Each search does some extra work behind the scenes, so this keeps that from being abused while staying generous enough for normal typing.
 
 - **Default when unset:** 60 (or whatever was last saved from the settings screen)
 
@@ -216,7 +216,7 @@ How many search requests one person may make per minute — /search and the rest
 
 Pins **[Public web address](/admin-guide/settings-reference#public-web-address)** (`network.publicUrl`) to a fixed value — set this and the admin settings screen shows the setting as controlled by the environment, read-only; any value stored from the settings screen is preserved but ignored until the variable is unset again.
 
-The web address people use to reach this server from outside your own network. Security-sensitive links in outgoing mail — invitation links, password-reset links — are built ONLY from this address, never guessed from wherever a request happened to come from. Leave blank and Loombre will not send mail containing a link.
+The web address people use to reach this server from outside your own network (for example, https://myserver.example.com). Any link Loombre sends by email — invitations, password resets — is built only from this address, so it's never guessed from wherever a request happened to come from. Leave this blank and Loombre will not send mail that contains a link.
 
 - **Default when unset:** (empty — not set) (or whatever was last saved from the settings screen)
 
@@ -232,7 +232,7 @@ The address of the outgoing mail server Loombre sends email through. Leave blank
 
 Pins **[Mail server port](/admin-guide/settings-reference#mail-server-port)** (`mail.smtpPort`) to a fixed value — set this and the admin settings screen shows the setting as controlled by the environment, read-only; any value stored from the settings screen is preserved but ignored until the variable is unset again.
 
-The port your mail server accepts outgoing mail on. 587 is the common port for encrypted mail submission; 465 is common for connections that are encrypted from the start; 25 is the plain, unencrypted default most mail servers refuse from outside their own network.
+Which door on your mail provider's server Loombre connects to when sending email. Your provider's setup page lists it; 587 is the most common.
 
 - **Default when unset:** 587 (or whatever was last saved from the settings screen)
 
@@ -240,7 +240,7 @@ The port your mail server accepts outgoing mail on. 587 is the common port for e
 
 Pins **[Mail connection security](/admin-guide/settings-reference#mail-connection-security)** (`mail.smtpSecurity`) to a fixed value — set this and the admin settings screen shows the setting as controlled by the environment, read-only; any value stored from the settings screen is preserved but ignored until the variable is unset again.
 
-How the connection to your mail server is protected. 'starttls' starts plain and upgrades to an encrypted connection (the common choice alongside port 587); 'implicit-tls' is encrypted from the first byte (the common choice alongside port 465); 'none' is a plain, unencrypted connection.
+How the connection to your mail server is protected. 'starttls' connects in the open and switches to an encrypted connection partway through (the most common choice); 'implicit-tls' is encrypted from the very first byte; 'none' is a plain, unencrypted connection with no protection at all.
 
 - **Default when unset:** `starttls` (or whatever was last saved from the settings screen)
 - **Caution:** Choosing 'none' sends your mail server password and every email in plain, readable text over the network — only use this for a private network relay you control, never for a mail server reached over the internet.
@@ -265,7 +265,7 @@ The display name shown alongside the from-address on outgoing mail.
 
 Pins **[WireGuard listener port](/admin-guide/settings-reference#wireguard-listener-port)** (`remote.wireguardPort`) to a fixed value — set this and the admin settings screen shows the setting as controlled by the environment, read-only; any value stored from the settings screen is preserved but ignored until the variable is unset again.
 
-The UDP port Loombre Remote's WireGuard listener binds to. Changing this requires a server restart — the listener cannot rebind to a different port while running.
+Which network port Loombre Remote uses for its secure tunnel connections. Changing this requires a server restart — already-connected devices would be disrupted otherwise.
 
 - **Default when unset:** 51820 (or whatever was last saved from the settings screen)
 
@@ -273,7 +273,7 @@ The UDP port Loombre Remote's WireGuard listener binds to. Changing this require
 
 Pins **[Remote-access tunnel subnet](/admin-guide/settings-reference#remote-access-tunnel-subnet)** (`remote.subnet`) to a fixed value — set this and the admin settings screen shows the setting as controlled by the environment, read-only; any value stored from the settings screen is preserved but ignored until the variable is unset again.
 
-The private IPv4 subnet Loombre Remote allocates tunnel addresses from (server = the first usable address, enrolled devices get the next free ones). Changing this requires a server restart — already-enrolled devices' addresses come from the OLD subnet and would be orphaned by a live change.
+The private range of addresses Loombre Remote assigns to your server and its enrolled devices for their secure tunnel connections — the server takes the first address, and each device gets the next free one. Changing this requires a server restart, and orphans any already-enrolled devices, since their addresses came from the old range.
 
 - **Default when unset:** `10.82.146.0/24` (or whatever was last saved from the settings screen)
 - **Caution:** Avoid 100.64.0.0/10 (CGNAT space) — other VPN tools commonly use it, and a device running both could collide.
@@ -282,7 +282,7 @@ The private IPv4 subnet Loombre Remote allocates tunnel addresses from (server =
 
 Pins **[WireGuard public endpoint](/admin-guide/settings-reference#wireguard-public-endpoint)** (`remote.wireguardEndpointHost`) to a fixed value — set this and the admin settings screen shows the setting as controlled by the environment, read-only; any value stored from the settings screen is preserved but ignored until the variable is unset again.
 
-The publicly reachable host devices connect to for Loombre Remote (written into each newly enrolled device's config, alongside remote.wireguardPort). Leave blank until you know this server's public host/IP.
+The public address (hostname or IP) devices should connect to in order to reach this server through Loombre Remote — written into each device's configuration when it's enrolled. Leave this blank until you know this server's public address.
 
 - **Default when unset:** (empty — not set) (or whatever was last saved from the settings screen)
 
@@ -290,7 +290,7 @@ The publicly reachable host devices connect to for Loombre Remote (written into 
 
 Pins **[Cloudflare tunnel binary path](/admin-guide/settings-reference#cloudflare-tunnel-binary-path)** (`remote.cloudflaredPath`) to a fixed value — set this and the admin settings screen shows the setting as controlled by the environment, read-only; any value stored from the settings screen is preserved but ignored until the variable is unset again.
 
-Explicit path to the cloudflared binary, if it is not on the server's PATH. Leave blank to auto-detect — Loombre does not download this binary itself, so install it yourself and point this setting at it if auto-detect fails.
+Where to find the cloudflared program, if Loombre can't locate it automatically. Loombre does not install this program itself — install it yourself, then point this setting at it if auto-detect fails. Leave blank to let Loombre look for it automatically.
 
 - **Default when unset:** (empty — not set) (or whatever was last saved from the settings screen)
 
@@ -298,7 +298,7 @@ Explicit path to the cloudflared binary, if it is not on the server's PATH. Leav
 
 Pins **[Tunnel public hostname](/admin-guide/settings-reference#tunnel-public-hostname)** (`remote.tunnelHostname`) to a fixed value — set this and the admin settings screen shows the setting as controlled by the environment, read-only; any value stored from the settings screen is preserved but ignored until the variable is unset again.
 
-The public hostname the Tunnel path routes through (set automatically when you enable the Tunnel path from the wizard; editable here afterward).
+The public web address the Tunnel connection method routes through. Loombre sets this automatically when you turn on the Tunnel option in the setup wizard; you can edit it here afterward.
 
 - **Default when unset:** (empty — not set) (or whatever was last saved from the settings screen)
 
@@ -338,7 +338,7 @@ Confirms you accept the certificate authority's Terms of Service on this server'
 
 Pins **[Trust proxy](/admin-guide/settings-reference#trust-proxy)** (`network.trustProxy`) to a fixed value — set this and the admin settings screen shows the setting as controlled by the environment, read-only; any value stored from the settings screen is preserved but ignored until the variable is unset again.
 
-Tells Loombre it is running behind a reverse proxy you control, so it can trust that proxy's forwarded address information when deciding who to rate-limit or note in the sign-in log. Accepts a hop count (e.g. "1"), a trusted address/range, or a comma-separated list of them. Leave blank unless you are running Loombre behind your own reverse proxy.
+Tells Loombre it's running behind a reverse proxy you control, so it can trust that proxy's information about which address a request really came from — used for rate-limiting and the sign-in log. Leave this blank unless you are running Loombre behind your own reverse proxy.
 
 - **Default when unset:** (empty — not set) (or whatever was last saved from the settings screen)
 - **Caution:** Only enable behind a reverse proxy you control — enabling this trusts client-supplied forwarded-address information for rate-limit and sign-in-log keying.

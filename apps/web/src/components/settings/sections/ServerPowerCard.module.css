@@ -48,6 +48,20 @@
   font-size: var(--text-sm);
 }
 
+/* D-8 (locked): Restart server / Shut down server must render as identical
+   size and shape — equal width, sized to the LARGER label ("Shut down
+   server"), not two intrinsic widths. A shared min-width (rather than a
+   grid) fits this layout: the two actions live in separate .row flex
+   containers, not side-by-side columns, so there is no shared track to
+   equalize against — min-width is the one-line fix that still lets
+   Restart's shorter label breathe with the same horizontal padding.
+   190px clears "Shut down server" at --text-sm/--weight-semibold plus
+   .button's --space-lg horizontal padding with room to spare; Restart's
+   shorter label then matches it via the same floor. */
+.powerButton {
+  min-width: 190px;
+}
+
 .confirmBlock {
   display: flex;
   align-items: center;

@@ -90,9 +90,10 @@ export function MailSection({ heading }: { heading: string | null }): React.JSX.
       {heading !== null && <h1 className={styles.heading}>{heading}</h1>}
 
       <p className={styles.intro}>
-        Mail is optional (E1) — invites are copyable one-time links and password recovery has an admin/CLI path
-        whether or not anything below is configured. Configuring mail simply DELIVERS those same links by email
-        instead of you having to copy and send them yourself.
+        Mail is optional — invites are copyable one-time links, and password recovery works without it too (an
+        administrator can reset it directly, including from the command line) whether or not anything below is
+        configured. Configuring mail simply DELIVERS those same links by email instead of you having to copy and
+        send them yourself.
       </p>
 
       <SettingsRestartBanner keys={settings.restartPendingKeys.filter((k) => isMailEntry(k))} />

@@ -3,7 +3,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Blocks, Briefcase, Monitor, Video } from "lucide-react";
+import { Blocks, Briefcase, Video } from "lucide-react";
 import { Icon } from "../icon/Icon.js";
 import styles from "./AdminNav.module.css";
 
@@ -18,6 +18,12 @@ import styles from "./AdminNav.module.css";
 // at /settings/plugins); the shared label is a real naming collision that
 // lane logged but did not rename (out of scope — see its freeze report).
 //
+// D-5 (Wave 2, this run — IA restructure): "System" is REMOVED from this
+// sub-nav — /admin/system merged into the Dashboard itself
+// (app/admin/page.tsx's own header) and is now a redirect-only stub back to
+// "/admin", so a link to it here would just bounce right back to the tab
+// the visitor is already looking at.
+//
 // "Dashboard" (Phosphor retheme Wave 2, Lane L2) is an EXACT-match route
 // ("/admin" itself, not a prefix) — every other tab below it lives under
 // "/admin/*" and would ALSO satisfy a naive `pathname.startsWith("/admin")`
@@ -28,7 +34,6 @@ const SECTIONS = [
   { href: "/admin/jobs", icon: Briefcase, label: "Jobs" },
   { href: "/admin/sessions", icon: Video, label: "Sessions" },
   { href: "/admin/plugins", icon: Blocks, label: "Plugins" },
-  { href: "/admin/system", icon: Monitor, label: "System" },
 ];
 
 export function AdminNav(): React.JSX.Element {

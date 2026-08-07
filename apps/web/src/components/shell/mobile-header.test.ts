@@ -15,6 +15,10 @@ describe("resolveMobileHeader", () => {
     expect(resolveMobileHeader("/settings", null, null, null)).toEqual({ mode: "title", title: "Settings" });
   });
 
+  it("D-6: shows /profile (the avatar menu's user-scoped settings destination) as a title-mode top-level screen", () => {
+    expect(resolveMobileHeader("/profile", null, null, null)).toEqual({ mode: "title", title: "Profile" });
+  });
+
   it("titles /browse generically until a library shortcut resolves", () => {
     expect(resolveMobileHeader("/browse", null, null, null)).toEqual({ mode: "title", title: "Browse" });
   });
@@ -83,22 +87,25 @@ describe("resolveMobileHeader", () => {
     }
   });
 
-  it("maps remaining admin sub-routes back to Settings (System keeps its own screen; Dashboard/legacy redirect stubs get the generic label)", () => {
+  it("D-5: maps every /admin sub-route (including the now-merged /admin/system redirect stub) back to Settings with the generic Dashboard label", () => {
     expect(resolveMobileHeader("/admin", null, null, null)).toEqual({
       mode: "back",
       title: "Dashboard",
       backLabel: "Settings",
       backHref: "/settings",
     });
+    // /admin/system, /admin/settings, /admin/users, /admin/libraries are
+    // all redirect-only stubs now (their content moved to /admin itself or
+    // /settings/<key>) — briefly rendered before the client-side redirect
+    // fires, generic label same as /admin. /admin/system LOST its own
+    // dedicated "System" case in this run (D-5 merged that page into the
+    // Dashboard) — it now falls through here exactly like the others.
     expect(resolveMobileHeader("/admin/system", null, null, null)).toEqual({
       mode: "back",
-      title: "System",
+      title: "Dashboard",
       backLabel: "Settings",
       backHref: "/settings",
     });
-    // /admin/settings, /admin/users, /admin/libraries are now redirect-only
-    // stubs (their content moved to /settings/<key>) — briefly rendered
-    // before the client-side redirect fires, generic label same as /admin.
     expect(resolveMobileHeader("/admin/settings", null, null, null)).toEqual({
       mode: "back",
       title: "Dashboard",
@@ -108,12 +115,6 @@ describe("resolveMobileHeader", () => {
   });
 
   it("titles every /settings/<key> drill-down route with that section's own label (section-registry.ts)", () => {
-    expect(resolveMobileHeader("/settings/account", null, null, null)).toEqual({
-      mode: "back",
-      title: "Account",
-      backLabel: "Settings",
-      backHref: "/settings",
-    });
     expect(resolveMobileHeader("/settings/libraries", null, null, null)).toEqual({
       mode: "back",
       title: "Libraries",
@@ -134,7 +135,7 @@ describe("resolveMobileHeader", () => {
     });
   });
 
-  it("falls back to a generic Home-back mapping for unmapped/NEW routes", () => {
+  it("falls back to a generic Home-back mapping for unmapped/NEW routes, including the legacy /settings/account redirect stub (D-6: 'account' is no longer a SETTINGS_SECTIONS key)", () => {
     expect(resolveMobileHeader("/watchlist", null, null, null)).toEqual({
       mode: "back",
       title: "",
@@ -142,6 +143,12 @@ describe("resolveMobileHeader", () => {
       backHref: "/home",
     });
     expect(resolveMobileHeader("/people/abc", null, null, null)).toEqual({
+      mode: "back",
+      title: "",
+      backLabel: "Home",
+      backHref: "/home",
+    });
+    expect(resolveMobileHeader("/settings/account", null, null, null)).toEqual({
       mode: "back",
       title: "",
       backLabel: "Home",

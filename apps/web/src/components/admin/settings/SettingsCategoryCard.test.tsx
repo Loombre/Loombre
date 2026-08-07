@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Loombre :: apps/web/src/components/admin/settings/SettingsCategoryCard.test.tsx
 
+import { act } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 import type { components } from "@loombre/sdk";
 import { CATEGORY_LABELS, SettingsCategoryCard } from "./SettingsCategoryCard.js";
@@ -88,5 +89,38 @@ describe("SettingsCategoryCard", () => {
     );
     const buttons = Array.from(view.container.querySelectorAll("button"));
     expect(buttons.some((b) => b.textContent?.includes("Reset category"))).toBe(true);
+  });
+
+  // W13b (D-7's copy sweep): the registry's additive technicalDetails field
+  // must reach SettingField's info tooltip through this card — the one real
+  // call site SettingField.tsx's own header names as the wiring point.
+  describe("technicalDetails passthrough (W13b)", () => {
+    const ENTRY_WITH_TECHNICAL_DETAILS: AdminSettingSchemaEntry = {
+      ...HEVC_ENTRY,
+      technicalDetails: "Backed by ffmpeg's hevc_* encoders when the host GPU exposes one.",
+    };
+
+    it("gives SettingField's info trigger no technical-detail note when the entry carries none", () => {
+      const valuesByKey = new Map([[HEVC_ENTRY.key, valueOf(HEVC_ENTRY, true, "default")]]);
+      view = renderIntoBody(
+        <SettingsCategoryCard category="transcode" entries={[HEVC_ENTRY]} valuesByKey={valuesByKey} onChanged={() => {}} />,
+      );
+      expect(view.container.querySelector('button[aria-label^="Technical details"]')).toBeNull();
+    });
+
+    it("surfaces the registry entry's technicalDetails in SettingField's info tooltip once opened", () => {
+      const valuesByKey = new Map([[ENTRY_WITH_TECHNICAL_DETAILS.key, valueOf(ENTRY_WITH_TECHNICAL_DETAILS, true, "default")]]);
+      view = renderIntoBody(
+        <SettingsCategoryCard category="transcode" entries={[ENTRY_WITH_TECHNICAL_DETAILS]} valuesByKey={valuesByKey} onChanged={() => {}} />,
+      );
+      const trigger = view.container.querySelector('button[aria-label^="Technical details"]') as HTMLButtonElement;
+      expect(trigger).not.toBeNull();
+      expect(view.container.querySelector('[role="tooltip"]')).toBeNull();
+
+      act(() => trigger.click());
+      const tooltip = view.container.querySelector('[role="tooltip"]');
+      expect(tooltip).not.toBeNull();
+      expect(tooltip!.textContent).toContain("Backed by ffmpeg's hevc_* encoders");
+    });
   });
 });

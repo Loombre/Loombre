@@ -38,10 +38,16 @@
   gap: var(--space-sm);
 }
 
+/* W15 (owner screenshot, "the page reads as an unstructured dump"): bumped
+   from --space-md to --space-lg — the filter header (RegistryFilterBar,
+   now its own bordered block) and the category card below it need more
+   air between them than a same-tier internal gap gives, so the page reads
+   as distinct stacked blocks (title -> filter block -> category block)
+   rather than one dense, undifferentiated column. */
 .registrySection {
   display: flex;
   flex-direction: column;
-  gap: var(--space-md);
+  gap: var(--space-lg);
 }
 
 .registryHeader {

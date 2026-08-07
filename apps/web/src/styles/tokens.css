@@ -127,6 +127,17 @@
   --color-accent-text: #0c0d10; /* text ON accent — dark, not white; holds for all four (see measurements above) */
   --color-focus: var(--color-accent-hover);
   --color-danger: #e2453a; /* errors, destructive, unmatched files */
+
+  /* W14 (Server Power buttons): white text on --color-danger alone
+     measures 4.08:1 against white — under WCAG AA's 4.5:1 text floor
+     (Button.module.css's filled `.danger` variant uses color:#fff). Same
+     color-mix(…, black) derivation as --color-accent-active above;
+     90/10 was the first step in that search to clear AA: 4.89:1.
+     --color-danger itself is untouched (its other consumers — errorText,
+     confirm-block borders/tints — read it as TEXT or a tint against
+     --color-bg, where it already clears 4.79:1; this token exists only
+     for the filled-button-with-white-text case). */
+  --color-danger-fill: color-mix(in srgb, var(--color-danger) 90%, black);
   --color-warning: #e0a548; /* restricted, restart-pending, cautions */
 
   /* Wave 2 lane L8: text ON --color-warning fills (restricted-zone active

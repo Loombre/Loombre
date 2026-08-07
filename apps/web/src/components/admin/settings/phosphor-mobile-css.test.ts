@@ -83,8 +83,27 @@ describe("RegistryFilterBar.module.css — mobile (<=767.98px)", () => {
     expect(block).toMatch(/\.searchInput\s*\{[^}]*min-height:\s*44px;/);
   });
 
-  it("the category pill row becomes a single horizontally-scrolling strip with 44px pills", () => {
+  it("the outer filter-header box recedes to just its content, matching SettingsCategoryCard's own mobile pattern", () => {
+    expect(block).toMatch(/\.bar\s*\{[^}]*border:\s*none;/);
+    expect(block).toMatch(/\.bar\s*\{[^}]*padding:\s*0;/);
+  });
+
+  it("the category pill row becomes a single horizontally-scrolling strip whose pills never get squeezed", () => {
+    // W15: the 44px touch floor itself now lives on ui/Chip.tsx's
+    // FilterChip (Chip.module.css's own mobile block, asserted below) —
+    // every chip anywhere in the app grows to it at this width, not just
+    // this one call site's pills. This file only still owns the
+    // horizontal-scroll-strip shape and stopping a chip shrinking inside
+    // it.
     expect(block).toMatch(/\.pillRow\s*\{[^}]*overflow-x:\s*auto;/);
-    expect(block).toMatch(/\.pill\s*\{[^}]*min-height:\s*44px;/);
+    expect(block).toMatch(/\.pillRow > \*\s*\{[^}]*flex-shrink:\s*0;/);
+  });
+});
+
+describe("Chip.module.css — mobile (<=767.98px)", () => {
+  const block = mobileBlock("../../ui/Chip.module.css");
+
+  it("grows FilterChip to the 44px touch floor for every caller, not just the registry's category pills", () => {
+    expect(block).toMatch(/\.filterChip\s*\{[^}]*min-height:\s*44px;/);
   });
 });

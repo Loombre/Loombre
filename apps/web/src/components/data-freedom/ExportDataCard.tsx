@@ -21,8 +21,9 @@
 // ExportArchive), so apiGet("/export") returns the already-parsed object,
 // not a stream/Blob — this re-serializes it client-side into a downloadable
 // file, the same createObjectURL + <a download> pattern
-// apps/web/src/app/admin/system/page.tsx's CrashFilesCard already uses for
-// crash-file downloads.
+// apps/web/src/components/admin/system/CrashFilesCard.tsx (D-5, Wave 2 —
+// formerly app/admin/system/page.tsx's inline card of the same name,
+// extracted+moved in this run) already uses for crash-file downloads.
 
 import { useState } from "react";
 import { Button } from "../ui/Button.js";

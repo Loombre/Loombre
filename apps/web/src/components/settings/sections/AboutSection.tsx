@@ -10,10 +10,13 @@
 // contract (ground-truthed against SystemInfo and SystemUpdateInfo, see
 // this lane's freeze report) — omitted rather than fabricated (U9).
 // GET /system/update (channel/latestVersion/updateAvailable) is
-// deliberately NOT duplicated here: apps/admin/system/page.tsx's
-// UpdateNoticeCard already covers it in full (verification banner etc.) —
-// showing a second, thinner copy of the same data on this tab would drift
-// out of sync with that one over time for no benefit.
+// deliberately NOT duplicated here: the Dashboard's own UpdateNoticeCard
+// (D-5, Wave 2 — components/admin/system/UpdateNoticeCard.tsx, composed on
+// app/admin/page.tsx; formerly apps/admin/system/page.tsx's inline card of
+// the same name, merged in this run) already covers it in full
+// (verification banner etc.) — showing a second, thinner copy of the same
+// data on this tab would drift out of sync with that one over time for no
+// benefit.
 
 import { useEffect, useState } from "react";
 import type { components } from "@loombre/sdk";

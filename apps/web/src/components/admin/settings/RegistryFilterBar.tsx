@@ -26,9 +26,20 @@
 // precedent this follows for every other derivable count in the app). The
 // padlock glyph on a pill marks a category where EVERY key is scope
 // 'env-only' (no UI-editable key exists in it at all).
+//
+// W15 (owner screenshot, Settings > Advanced Server): the category pills
+// used to be a bespoke button forked straight into this file's own
+// module.css — inconsistent heights (an icon-bearing pill grew taller than
+// a label-only one) and an unstyled bare-number count. They now render
+// through ui/Chip.tsx's FilterChip, the ONE interactive-chip primitive,
+// so every pill in the row shares one height/padding/active recipe and the
+// count reads as a real badge. The tab semantics (role, aria-selected)
+// stay HERE, forwarded through via FilterChip's ...rest passthrough —
+// FilterChip itself is agnostic to being inside a tablist.
 
 import { Lock, Search } from "lucide-react";
 import { Icon } from "../../icon/Icon.js";
+import { FilterChip } from "../../ui/Chip.js";
 import type { RegistryCategorySummary } from "../../../lib/settings-schema-widget.js";
 import styles from "./RegistryFilterBar.module.css";
 
@@ -66,19 +77,17 @@ export function RegistryFilterBar({
         </div>
         <div className={styles.pillRow} role="tablist" aria-label="Registry category">
           {categories.map((c) => (
-            <button
+            <FilterChip
               key={c.category}
-              type="button"
               role="tab"
               aria-selected={activeCategory === c.category}
-              data-active={activeCategory === c.category || undefined}
-              className={styles.pill}
+              active={activeCategory === c.category}
+              count={c.count}
               onClick={() => onSelectCategory(c.category)}
+              {...(c.allEnvOnly ? { icon: <Icon icon={Lock} size="dense" aria-hidden /> } : {})}
             >
-              {c.allEnvOnly && <Icon icon={Lock} size="dense" className={styles.pillLock ?? ""} aria-hidden />}
-              <span className={styles.pillLabel}>{categoryLabels[c.category] ?? c.category}</span>
-              <span className={styles.pillCount}>{c.count}</span>
-            </button>
+              {categoryLabels[c.category] ?? c.category}
+            </FilterChip>
           ))}
         </div>
       </div>
