@@ -1,0 +1,14 @@
+<html><head><meta charset="utf-8"></head><body style="font-family: Helvetica, sans-serif; font-size: 13px">
+<p><b>What this installer does</b></p>
+<p>Installs to:</p>
+<p style="margin-left: 18px"><b>/opt/loombre/&lt;version&gt;</b> — Node runtime, bundled ffmpeg and PostgreSQL, server + worker + web UI</p>
+<p style="margin-left: 18px"><b>/opt/loombre/current</b> — symlink to the active version (upgrade swap point)</p>
+<p style="margin-left: 18px"><b>/Applications/Loombre.app</b> — menu bar controller (status, start / stop / full shutdown, logs)</p>
+<p style="margin-left: 18px"><b>/Library/Application Support/Loombre</b> — app data (config, embedded-PG data dir, local secrets)</p>
+<p style="margin-left: 18px"><b>/Library/Logs/Loombre</b> — server / worker / web .out.log and .err.log files</p>
+<p style="margin-left: 18px"><b>/Library/LaunchDaemons/com.loombre.server.plist</b>, <b>com.loombre.worker.plist</b>, <b>com.loombre.web.plist</b> — the three background services</p>
+<p style="margin-left: 18px"><b>/Library/LaunchAgents/com.loombre.menubar.plist</b> — starts the menu bar app at login (and right after this install)</p>
+<p>Creates a dedicated, unprivileged system account (_loombre) that the server, worker, and web UI run as — never root, never your login account.</p>
+<p>After installation, the web UI is reachable at http://localhost:3000 (the API serves on port 3001). No database setup is required — the server provisions its bundled PostgreSQL automatically on first boot. To use your own PostgreSQL instead, or to reach the web UI from other devices on your network, see /Library/Application Support/Loombre/config/loombre.env and docs/install/macos.md for full configuration and first-run instructions.</p>
+<p>Full layout rationale: installers/macos/LAYOUT.md in the Loombre source repository.</p>
+</body></html>

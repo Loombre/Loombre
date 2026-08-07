@@ -79,7 +79,7 @@ test(
         mkdirSync(out, { recursive: true });
         mkdirSync(resources, { recursive: true });
         writeFileSync(path.join(root, "opt", "loombre-test", "marker.txt"), "test\n");
-        for (const f of ["welcome.txt", "readme.txt", "conclusion.txt"]) {
+        for (const f of ["welcome.rtf", "readme.rtf", "conclusion.rtf"]) {
           writeFileSync(path.join(resources, f), `${f}\n`);
         }
 

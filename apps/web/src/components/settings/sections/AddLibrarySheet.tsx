@@ -41,7 +41,16 @@ import styles from "./shared.module.css";
 type Library = components["schemas"]["Library"];
 type MediaKind = components["schemas"]["MediaKind"];
 
-const MEDIA_KINDS: MediaKind[] = ["movie", "tv", "music"];
+// D-3 (STATE.md W2+W3): the contract's media_kind enum stays lowercase —
+// these are DISPLAY labels only, title-cased, never sent to the API as-is.
+// Same label-map-at-the-call-site pattern app/setup/_components/
+// LibraryStep.tsx already uses for this same enum: SegmentedControl's
+// `options` are the display strings; onChange maps back to the real value.
+const MEDIA_KIND_LABELS: Record<string, MediaKind> = {
+  Movie: "movie",
+  TV: "tv",
+  Music: "music",
+};
 
 export function AddLibrarySheet({
   open,
@@ -122,7 +131,11 @@ export function AddLibrarySheet({
         </label>
         <label className={styles.field}>
           <span className={styles.label}>Kind</span>
-          <SegmentedControl options={MEDIA_KINDS} defaultValue="movie" onChange={(v) => setMediaKind(v as MediaKind)} />
+          <SegmentedControl
+            options={Object.keys(MEDIA_KIND_LABELS)}
+            defaultValue="Movie"
+            onChange={(v) => setMediaKind(MEDIA_KIND_LABELS[v] ?? "movie")}
+          />
         </label>
         <div className={styles.field}>
           <div className={styles.pathsHeader}>

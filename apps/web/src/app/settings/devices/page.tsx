@@ -30,18 +30,24 @@
 
 import Link from "next/link";
 import { AppShell } from "../../../components/shell/AppShell.js";
+import { SettingsPageLayout } from "../../../components/settings/SettingsPageLayout.js";
 import { DevicesSection } from "../../../components/devices/DevicesSection.js";
 import styles from "./page.module.css";
 
 export default function SettingsDevicesPage(): React.JSX.Element {
   return (
     <AppShell>
-      <div className={styles.wrap}>
-        <Link href="/settings/account" className={styles.backLink}>
-          ← Account
-        </Link>
-        <DevicesSection heading="Devices" />
-      </div>
+      {/* W7/D-4: this standalone route (see header above) still gets the
+          same shared width/centering primitive every other settings/admin
+          page now uses — see SettingsPageLayout.tsx's header. */}
+      <SettingsPageLayout>
+        <div className={styles.wrap}>
+          <Link href="/settings/account" className={styles.backLink}>
+            ← Account
+          </Link>
+          <DevicesSection heading="Devices" />
+        </div>
+      </SettingsPageLayout>
     </AppShell>
   );
 }

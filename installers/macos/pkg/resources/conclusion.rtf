@@ -1,0 +1,31 @@
+{\rtf1\ansi\ansicpg1252\cocoartf2870
+\cocoatextscaling0\cocoaplatform0{\fonttbl\f0\fswiss\fcharset0 Helvetica-Bold;\f1\fswiss\fcharset0 Helvetica;}
+{\colortbl;\red255\green255\blue255;\red0\green0\blue0;}
+{\*\expandedcolortbl;;\cssrgb\c0\c0\c0;}
+\deftab720
+\pard\pardeftab720\sa260\partightenfactor0
+
+\f0\b\fs26 \cf0 \expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Loombre is installed and running.
+\f1\b0 \
+Web UI: 
+\f0\b http://localhost:3000
+\f1\b0 \
+Your browser will open to the Loombre setup screen automatically in a few seconds (as soon as the server finishes its first start). If it does not, open the address above yourself.\
+The Loombre icon is now in your menu bar (top-right of the screen). Click it for live server status, start/stop control, "Shut Down Loombre" (stops all services completely), the version, and a shortcut straight to the web UI. It reappears automatically every time you log in.\
+There is nothing else to set up. The server has already provisioned its own bundled PostgreSQL database, applied the schema, and started serving \'97 the first page you see will be the account-setup wizard.\
+Three background services are now running as the unprivileged _loombre account and will start automatically at boot:\
+\pard\pardeftab720\li360\fi-360\sa260\partightenfactor0
+
+\f0\b \cf0 com.loombre.server
+\f1\b0  \'97 catalog + playback API (port 3001)\
+
+\f0\b com.loombre.web
+\f1\b0  \'97 the web UI you browse (port 3000)\
+
+\f0\b com.loombre.worker
+\f1\b0  \'97 scanning, probing, transcoding\
+\pard\pardeftab720\sa260\partightenfactor0
+\cf0 If the page does not load, give it a few seconds on a first install (the database is being created) and reload. Logs are in /Library/Logs/Loombre. Configuration \'97 your own PostgreSQL, different ports, access from other devices on your network \'97 lives in /Library/Application Support/Loombre/config/loombre.env.\
+To uninstall, see docs/install/macos.md in the Loombre source repository.\
+}

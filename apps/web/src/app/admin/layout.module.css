@@ -1,9 +1,12 @@
 /* SPDX-License-Identifier: AGPL-3.0-only */
+
+/* W7/D-4: width cap + centering now live in SettingsPageLayout (this
+   file's own layout.tsx wraps .page in it) — no max-width here anymore,
+   see that component's header. */
 .page {
   display: flex;
   flex-direction: column;
   gap: var(--space-md);
-  max-width: 1100px;
 }
 
 .heading {

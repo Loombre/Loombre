@@ -151,6 +151,22 @@ describe("AccountSection", () => {
     return label.querySelector("input")!;
   }
 
+  // W6: Birth date is the one field NOT looked up via `inputFor` — its
+  // DatePicker (components/ui/DatePicker.tsx) pairs an explicit
+  // `<label htmlFor="account-birth-date">` with the control rather than the
+  // implicit label-wraps-input pattern every other field here uses (see
+  // AccountSection.tsx's own comment on that field: DatePicker's popover
+  // renders two more <select>s of its own, so nesting the whole thing
+  // inside one <label> would make that label ambiguously "own" three
+  // controls). The underlying text input is still a real, typeable
+  // <input> — `setNativeValue`/dispatch("input") works on it exactly like
+  // every other text field in this file.
+  function birthDateInput(): HTMLInputElement {
+    const el = view!.container.querySelector<HTMLInputElement>("#account-birth-date");
+    if (!el) throw new Error("no birth date field");
+    return el;
+  }
+
   /** The `<form>` for the card whose `<h2>` reads exactly `title` — see
    *  `inputFor`'s header for why cards need scoping now. */
   function sectionForm(title: string): HTMLFormElement {
@@ -220,7 +236,7 @@ describe("AccountSection", () => {
 
   it("clearing the birth date PATCHes birthDate: null (the contract's null-to-clear)", async () => {
     await render();
-    setNativeValue(inputFor("Birth date"), "");
+    setNativeValue(birthDateInput(), "");
     await click(buttonFor("Save profile"));
 
     expect(apiPatchMock).toHaveBeenCalledTimes(1);
@@ -268,7 +284,7 @@ describe("AccountSection", () => {
 
     it("a birthDate-only save sends ONLY birthDate — dirty-fields-only holds for both re-auth-free members", async () => {
       await render();
-      setNativeValue(inputFor("Birth date"), "1991-02-03");
+      setNativeValue(birthDateInput(), "1991-02-03");
       await click(buttonFor("Save profile"));
 
       const [, options] = apiPatchMock.mock.calls[0] as [string, { body: Record<string, unknown> }];
@@ -349,7 +365,7 @@ describe("AccountSection", () => {
 
   it("a set birth date still round-trips as the ISO string", async () => {
     await render();
-    setNativeValue(inputFor("Birth date"), "1991-02-03");
+    setNativeValue(birthDateInput(), "1991-02-03");
     await click(buttonFor("Save profile"));
 
     const [, options] = apiPatchMock.mock.calls[0] as [string, { body: Record<string, unknown> }];

@@ -22,10 +22,12 @@
 //     Save; Save validates client-side and shows an inline mono error on
 //     failure; success shows "SAVED · APPLIED IMMEDIATELY"; Reset returns
 //     to the default and is only offered once the value has changed.
-//   - README footer: "DEFAULT" always shown, "PINNABLE <ENV_VAR>" only for
-//     scope:'ui' entries that actually carry an envVar (env-only entries
-//     name their env var inside the locked caption instead — they aren't
-//     "pinnable", they're exclusively env-sourced).
+//   - README footer: "DEFAULT" always shown, "PINNABLE" only for scope:'ui'
+//     entries that actually carry an envVar (env-only entries name their
+//     env var inside the locked caption instead — they aren't "pinnable",
+//     they're exclusively env-sourced). The env var's NAME itself lives in
+//     the W13a info tooltip below, not inline in this fact — see that
+//     section's comment.
 //
 // Layout split (see SettingsCategoryCard.tsx's header for the desktop/
 // mobile rationale): this component owns its own responsive shape —
@@ -34,16 +36,41 @@
 // prototype boxes each key individually on mobile). Both are the SAME
 // markup; only SettingField.module.css's media query changes which parts
 // paint a border/radius/background.
+//
+// W8 (readable typography) + W13a (technical-detail tooltip mechanism,
+// locked decision D-7) — both landed together because they touch the
+// same header/description/metadata block:
+//   - W8: key name, description, and the DEFAULT/CURRENT/PINNABLE metadata
+//     line were all below comfortable reading size. Fixed sizes (see
+//     SettingField.module.css's own comments at each rule): description
+//     >= --text-base (14.5px, clears the 0.875rem/14px floor); metadata
+//     line exactly one rung below that on the SAME --text-* scale
+//     (--text-sm, 13px — not two rungs down at --text-xs); key name
+//     bumped proportionally alongside body.
+//   - W13a: two-layer copy (D-7) — the visible description stays
+//     plain-language (its rewrite is Wave-2 item W13b; this lane only
+//     builds the mechanism), and a new ⓘ info affordance next to the key
+//     name reveals precise technical detail on hover/focus/click. The ONE
+//     piece of technical detail this component already had on hand — the
+//     PINNABLE line's raw env-pin name — moves into that tooltip instead
+//     of sitting in the visible metadata row as raw jargon; DEFAULT/
+//     CURRENT/PINNABLE stay visible as labels, just without the bare
+//     LOOMBRE_* value inline. Callers can supply additional technical
+//     copy (protocol notes, etc.) via the optional `technicalDetails`
+//     prop — omitted today by every real call site (SettingsCategoryCard),
+//     so this ships purely additive; wiring per-key protocol notes into it
+//     is Wave-2 scope alongside the copy sweep.
 
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { Minus, Plus } from "lucide-react";
+import { useEffect, useId, useRef, useState } from "react";
+import { Info, Minus, Plus } from "lucide-react";
 import { Icon } from "../../icon/Icon.js";
 import { TextInput } from "../../ui/Input.js";
 import { Toggle } from "../../ui/Toggle.js";
 import { SegmentedControl } from "../../ui/SegmentedControl.js";
 import { Button } from "../../ui/Button.js";
+import { useEscapeKey } from "../../ui/overlay-hooks.js";
 import {
   describeLocked,
   enumOptions,
@@ -72,15 +99,84 @@ export interface SettingFieldProps {
   value: unknown;
   source: SettingsValueSource;
   onChanged: (result: UpdateSettingResponse) => void;
+  /** W13a / D-7's second copy layer: precise technical detail (protocol
+   *  notes, format specifics, etc.) for the info tooltip beside the key
+   *  name. Optional and additive — every current call site omits it, so
+   *  existing pages keep compiling unchanged; this is where Wave-2's
+   *  per-key copy sweep (W13b) plugs in. Combined with (not a replacement
+   *  for) the env-pin note this component derives on its own below. */
+  technicalDetails?: string;
 }
 
-export function SettingField({ entry, value, source, onChanged }: SettingFieldProps): React.JSX.Element {
+/**
+ * D-7's info affordance: a small ⓘ button beside the key name that reveals
+ * `details` in a Phosphor popover surface. Opens on hover AND keyboard
+ * focus (desktop); click/tap TOGGLES it independently of hover/focus so a
+ * touch tap (which fires neither reliably — iOS Safari in particular does
+ * not focus a tapped, non-input <button>) still works as a standalone
+ * open/close. Three independent open-sources OR'd together, rather than
+ * one shared boolean, so a mouse click's own resulting focus event can't
+ * fight a same-tick click toggle: clicking a mouse-focused trigger only
+ * ever toggles the click source off, never fights the focus source still
+ * holding it open, and blurring away still unconditionally closes it.
+ * Escape dismissal reuses overlay-hooks.ts's `useEscapeKey` — the same
+ * hook every other Phosphor overlay in this app uses, per that file's own
+ * "identical behavior instead of two hand-rolled copies" header comment.
+ */
+function InfoTooltip({ label, details }: { label: string; details: string }): React.JSX.Element {
+  const tooltipId = useId();
+  const [hoverOpen, setHoverOpen] = useState(false);
+  const [focusOpen, setFocusOpen] = useState(false);
+  const [clickOpen, setClickOpen] = useState(false);
+  const open = hoverOpen || focusOpen || clickOpen;
+
+  function closeAll(): void {
+    setHoverOpen(false);
+    setFocusOpen(false);
+    setClickOpen(false);
+  }
+
+  useEscapeKey(open, closeAll);
+
+  return (
+    <span className={styles.infoWrap}>
+      <button
+        type="button"
+        className={styles.infoButton}
+        aria-label={label}
+        aria-describedby={open ? tooltipId : undefined}
+        onMouseEnter={() => setHoverOpen(true)}
+        onMouseLeave={() => setHoverOpen(false)}
+        onFocus={() => setFocusOpen(true)}
+        onBlur={() => setFocusOpen(false)}
+        onClick={() => setClickOpen((v) => !v)}
+      >
+        <Icon icon={Info} size="dense" />
+      </button>
+      {open && (
+        <span role="tooltip" id={tooltipId} className={styles.infoTooltip}>
+          {details}
+        </span>
+      )}
+    </span>
+  );
+}
+
+export function SettingField({ entry, value, source, onChanged, technicalDetails }: SettingFieldProps): React.JSX.Element {
   const schema = asJsonSchema(entry.valueSchema);
   const kind = resolveWidgetKind(schema);
   const editable = isEditable(entry);
   const lockedCaption = describeLocked(entry);
   const atDefault = isAtDefault(value, entry.default);
   const pinnable = entry.scope === "ui" && entry.envVar !== undefined;
+  // The env-pin name used to sit in the visible PINNABLE fact as raw
+  // jargon (see the PINNABLE <span> below, which now shows the label
+  // only); it lives here instead, folded into whatever technical copy the
+  // caller supplied, so the field never loses that detail even before
+  // W13b's per-key copy sweep adds richer notes of its own.
+  const envPinDetail = pinnable ? `Pinnable via environment variable ${entry.envVar}.` : null;
+  const technicalNotes = [technicalDetails?.trim(), envPinDetail].filter((note): note is string => Boolean(note)).join(" ");
+  const hasTechnicalDetails = technicalNotes.length > 0;
 
   const [rawText, setRawText] = useState<string>(() => (kind === "structured" ? JSON.stringify(value, null, 2) : String(value ?? "")));
   const [boolDraft, setBoolDraft] = useState<boolean>(Boolean(value));
@@ -213,6 +309,7 @@ export function SettingField({ entry, value, source, onChanged }: SettingFieldPr
       <div className={styles.info}>
         <div className={styles.header}>
           <span className={styles.key}>{entry.key}</span>
+          {hasTechnicalDetails && <InfoTooltip label={`Technical details for ${entry.key}`} details={technicalNotes} />}
           <span className={styles.sourcePill} data-source={source}>
             {source}
           </span>
@@ -229,11 +326,11 @@ export function SettingField({ entry, value, source, onChanged }: SettingFieldPr
           <span className={[styles.fact, styles.factCurrent].join(" ")}>
             CURRENT <span className={[styles.factValue, styles.factValueCurrent].join(" ")}>{formatSettingValue(value)}</span>
           </span>
-          {pinnable && (
-            <span className={styles.fact}>
-              PINNABLE <span className={styles.factValue}>{entry.envVar}</span>
-            </span>
-          )}
+          {/* The env-pin NAME itself no longer sits here (W13a/D-7) — it's
+              folded into the info tooltip above alongside any other
+              technical detail; this label is just the boolean "yes, an
+              env var can override this key" signal. */}
+          {pinnable && <span className={styles.fact}>PINNABLE</span>}
         </div>
       </div>
 

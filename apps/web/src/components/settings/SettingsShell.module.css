@@ -1,12 +1,10 @@
 /* SPDX-License-Identifier: AGPL-3.0-only */
+
+/* W7/D-4: the content pane itself (width cap + centering) now lives in
+   SettingsPageLayout.tsx/.module.css — this file only lays out the row
+   (SettingsTabs + that pane) and no longer declares a competing width. */
 .shell {
   display: flex;
   align-items: flex-start;
   gap: var(--space-xl);
-}
-
-.pane {
-  flex: 1;
-  min-width: 0;
-  max-width: 760px;
 }
