@@ -25,7 +25,7 @@ let pollIntervalSeconds: TimeInterval = 3.0
 /// lives in this app's own com.loombre.menubar defaults domain.
 let autoOpenWebDefaultsKey = "didAutoOpenWebOnFirstRun"
 
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, MenuActions {
     private var statusItem: NSStatusItem!
     private var pollTimer: Timer?
     private var lastStatus: IPCStatusResponse?
@@ -97,75 +97,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func rebuildMenu(for state: MenuIconState) {
-        let menu = NSMenu()
-
-        let statusMenuItem = NSMenuItem(title: MenuState.statusLabel(for: state), action: nil, keyEquivalent: "")
-        statusMenuItem.isEnabled = false
-        menu.addItem(statusMenuItem)
-        menu.addItem(.separator())
-
-        let openItem = NSMenuItem(title: "Open Loombre", action: #selector(openLoombre), keyEquivalent: "o")
-        openItem.target = self
-        openItem.isEnabled = lastStatus?.webUrl != nil
-        menu.addItem(openItem)
-
-        // Decision table in LoombreIPCKit (LifecyclePlanTests) — the old
-        // inline condition here required a live IPC connection to enable
-        // "Start Server", i.e. required the server to be running in order
-        // to offer starting it (the rc "always grayed out" field report).
-        let plan = MenuState.lifecyclePlan(isConnected: lastConnection != nil, state: state)
-        let lifecycleItem = NSMenuItem(
-            title: launchdStartInFlight && plan.action == .startViaLaunchd ? "Starting…" : plan.title,
-            action: plan.action == .stopViaIpc ? #selector(stopServer) : #selector(startLoombre),
-            keyEquivalent: ""
+        // All construction (incl. the load-bearing autoenablesItems=false)
+        // lives in MenuBuilder so Tests/LoombreMenubarTests can pin the
+        // wiring — the layer the "menu items silently no-op" field report
+        // shipped through.
+        statusItem.menu = MenuBuilder.build(
+            context: MenuBuilder.Context(
+                state: state,
+                webUrl: lastStatus?.webUrl,
+                isConnected: lastConnection != nil,
+                launchdStartInFlight: launchdStartInFlight,
+                shutdownInFlight: shutdownInFlight,
+                buildVersion: menubarBuildVersion
+            ),
+            target: self
         )
-        lifecycleItem.target = self
-        lifecycleItem.isEnabled = plan.isEnabled && !(launchdStartInFlight && plan.action == .startViaLaunchd)
-        menu.addItem(lifecycleItem)
-
-        // A kill switch must never depend on the thing it kills: this item
-        // is enabled regardless of MenuIconState or IPC reachability — the
-        // daemons may well be up while IPC is broken, which is exactly when
-        // the operator most needs a way to stop everything (the same lesson
-        // as the rc "Start Server permanently grayed out" report, applied
-        // in the opposite direction).
-        let shutdownItem = NSMenuItem(
-            title: shutdownInFlight ? "Shutting Down…" : "Shut Down Loombre…",
-            action: #selector(shutdownLoombre),
-            keyEquivalent: ""
-        )
-        shutdownItem.target = self
-        shutdownItem.isEnabled = !shutdownInFlight && !launchdStartInFlight
-        menu.addItem(shutdownItem)
-
-        menu.addItem(.separator())
-
-        let crashFilesItem = NSMenuItem(title: "Reveal Crash Files", action: #selector(revealCrashFiles), keyEquivalent: "")
-        crashFilesItem.target = self
-        crashFilesItem.isEnabled = lastConnection != nil
-        menu.addItem(crashFilesItem)
-
-        menu.addItem(.separator())
-
-        let versionTitle: String
-        if case .contractMismatch(let serverVersion, let clientVersion) = state {
-            versionTitle = "Loombre Controller v\(menubarBuildVersion) — contract v\(clientVersion) ≠ server v\(serverVersion)"
-        } else {
-            versionTitle = "Loombre Controller v\(menubarBuildVersion) — contract v\(controllerIpcContractVersion)"
-        }
-        let versionItem = NSMenuItem(title: versionTitle, action: nil, keyEquivalent: "")
-        versionItem.isEnabled = false
-        menu.addItem(versionItem)
-
-        menu.addItem(.separator())
-        menu.addItem(NSMenuItem(title: "Quit", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
-
-        statusItem.menu = menu
     }
 
     // MARK: - Actions
 
-    @objc private func openLoombre() {
+    @objc func openLoombre() {
         guard let connection = lastConnection else { return }
         Task {
             do {
@@ -180,7 +131,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    @objc private func startLoombre() {
+    @objc func startLoombre() {
         // The IPC start endpoint can never start a stopped server
         // (IPC_SERVER_START_SEMANTICS: it is hosted BY the server), so
         // Start always goes through launchd, connection or not — and it
@@ -211,7 +162,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    @objc private func stopServer() {
+    @objc func stopServer() {
         guard let connection = lastConnection else { return }
         Task {
             _ = try? await IPCClient(connection: connection).stopServer()
@@ -224,7 +175,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// nothing of Loombre is left running ("shut down completely"). The
     /// daemons return at the next boot (RunAtLoad) or via Start Loombre;
     /// the menubar returns at next login or by opening Loombre.app.
-    @objc private func shutdownLoombre() {
+    @objc func shutdownLoombre() {
         guard !shutdownInFlight, !launchdStartInFlight else { return }
         let confirm = NSAlert()
         confirm.messageText = "Shut down Loombre completely?"
@@ -278,13 +229,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSWorkspace.shared.open(url)
     }
 
-    @objc private func revealCrashFiles() {
+    /// Every branch produces visible feedback (Windows-tray parity —
+    /// OnRevealCrashClicked dialogs on both the empty list and errors).
+    /// The old version had three silent returns, and the empty-list one
+    /// fired on EVERY healthy install: zero crashes ever recorded is the
+    /// steady state, so "Reveal Crash Files" clicked as a pure no-op —
+    /// the macOS live-test "menu bar isn't wired" field report.
+    @objc func revealCrashFiles() {
+        // Backstop only: MenuBuilder disables the item when disconnected,
+        // and with autoenablesItems=false that disablement actually holds.
         guard let connection = lastConnection else { return }
-        Task {
-            guard let response = try? await IPCClient(connection: connection).crashFiles() else { return }
-            let urls = response.sortedByRecency.map { URL(fileURLWithPath: $0.path) }
-            guard !urls.isEmpty else { return }
-            await MainActor.run { NSWorkspace.shared.activateFileViewerSelecting(urls) }
+        Task { @MainActor in
+            do {
+                let response = try await IPCClient(connection: connection).crashFiles()
+                switch response.revealPlan {
+                case .reveal(let paths):
+                    NSWorkspace.shared.activateFileViewerSelecting(paths.map { URL(fileURLWithPath: $0) })
+                case .noneFound:
+                    let alert = NSAlert()
+                    alert.messageText = "No crash files found"
+                    alert.informativeText = "Loombre hasn't recorded any crashes on this Mac — that's the healthy state. If one ever happens, its report will appear in \(LoombreAppPaths.crashesDir) and this menu item will reveal it."
+                    alert.alertStyle = .informational
+                    alert.runModal()
+                }
+            } catch {
+                let alert = NSAlert()
+                alert.messageText = "Could not list crash files"
+                alert.informativeText = "The Loombre server didn't answer the crash-file query: \(error.localizedDescription)\n\nYou can look in \(LoombreAppPaths.crashesDir) directly."
+                alert.alertStyle = .warning
+                alert.runModal()
+            }
         }
     }
 }

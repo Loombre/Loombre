@@ -73,6 +73,15 @@
   color: var(--color-text-subtle);
 }
 
+/* Label + Browse… button on one line (mirrors the Add-library dialog's
+   pathsHeader in ../../../components/settings/sections/shared.module.css). */
+.pathsHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+}
+
 .fieldError {
   font-size: var(--text-xs);
   color: var(--color-danger);

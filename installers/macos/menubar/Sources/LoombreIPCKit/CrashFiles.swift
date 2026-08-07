@@ -32,4 +32,23 @@ extension IPCCrashFilesResponse {
     public var sortedByRecency: [IPCCrashFileEntry] {
         files.sorted { $0.mtimeMs > $1.mtimeMs }
     }
+
+    /// What "Reveal Crash Files" should DO with this response — pure data,
+    /// so the empty case is a decision the UI must render (Windows-tray
+    /// parity: a "No crash files found." dialog), never a silent skip.
+    /// An empty list is the HEALTHY steady state — the crashes directory
+    /// is created lazily on the first crash — which is precisely why the
+    /// old guard-return version of this logic no-opped on every healthy
+    /// install (the macOS live-test field report).
+    public var revealPlan: CrashRevealPlan {
+        let sorted = sortedByRecency
+        return sorted.isEmpty ? .noneFound : .reveal(paths: sorted.map { $0.path })
+    }
+}
+
+public enum CrashRevealPlan: Equatable {
+    /// Reveal these files in Finder, most recent first.
+    case reveal(paths: [String])
+    /// Zero crash files on the server — tell the user so.
+    case noneFound
 }
