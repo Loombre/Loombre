@@ -392,6 +392,48 @@ describe("POST /playback/plan (Phase 3 §11 step 6b — the real plan() engine, 
     expect(res.body.video.encoder).toBe("software");
   });
 
+  it("W1/D-1: a PERSISTED capability snapshot with ZERO backends still routes software (empty == missing)", async () => {
+    // A current snapshot row exists but persisted no backend rows.
+    // resolve-caps.ts used to pass {backends: []} to plan() verbatim,
+    // bypassing the software-only fallback synthesis. NOTE (honest scope,
+    // opus review W1-R4): with this h264-only device profile the plan is
+    // byte-identical either way (Stage G rule (iii) routes software
+    // unconditionally), so this is an integration SMOKE through the real
+    // HTTP surface, not the revert-detector — the branch itself is pinned
+    // at the unit level by resolve-caps.spec.ts's capabilitiesFromSnapshot
+    // cases, which DO fail on revert.
+    const db = createDb(process.env["DATABASE_URL"]!);
+    try {
+      await db
+        .insertInto("hw_capability_snapshots")
+        .values({
+          ffmpeg_build_hash: "sha256-w1-empty",
+          gpu_fingerprint: "",
+          platform: process.platform === "darwin" ? "darwin" : process.platform === "win32" ? "win32" : "linux",
+          verified_at_ms: Date.now(),
+          is_current: true,
+        })
+        .execute();
+
+      const res = await admin()
+        .post("/playback/plan")
+        .send({
+          itemId: harborLightsItemId,
+          device: incompatibleDeviceProfile(),
+          network: { maxBitrateBps: 50_000_000, isLocal: false },
+          mode: "stream",
+        });
+      expect(res.status, JSON.stringify(res.body)).toBe(200);
+      expect(res.body.decision).toBe("transcode");
+      expect(res.body.video.encoder).toBe("software");
+      expect(res.body.ffmpegArgs.length).toBeGreaterThan(0);
+    } finally {
+      await db.deleteFrom("hw_capability_backends").execute();
+      await db.deleteFrom("hw_capability_snapshots").execute();
+      await db.destroy();
+    }
+  });
+
   it("bodyless -> 422", async () => {
     const res = await admin().post("/playback/plan").send();
     expect(res.status).toBe(422);

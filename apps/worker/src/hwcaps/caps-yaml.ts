@@ -83,6 +83,11 @@ export function parseCapsYaml(text: string): CapsFixtures {
     // `  backends:` — no state to record, just a structural marker.
     if (/^\s*backends:\s*$/.test(line)) continue;
 
+    // `  backends: []` — inline empty list (W1/D-1's `empty` fixture: a
+    // COMPLETED probe that verified nothing). The set keeps the empty
+    // backends array it was initialized with.
+    if (/^\s*backends:\s*\[\s*\]\s*$/.test(line)) continue;
+
     const backendStart = /^\s*-\s*backend:\s*(\S+)\s*$/.exec(line);
     if (backendStart) {
       commitBackend();

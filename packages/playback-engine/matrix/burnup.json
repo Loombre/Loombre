@@ -510,5 +510,6 @@
   "509-mpeg-mpeg2-unknown-audio-transcode-mpeg2-generic.yaml": "green",
   "510-flv-h264-aac-direct-stream-container-only-web-chrome.yaml": "green",
   "511-aac-music-mode-direct-stream-container-only-aac-only-no-opus.yaml": "green",
-  "512-aiff-music-mode-transcode-container-and-codec-flac-stereo.yaml": "green"
+  "512-aiff-music-mode-transcode-container-and-codec-flac-stereo.yaml": "green",
+  "513-caps-empty-backends-software-route.yaml": "green"
 }

@@ -325,3 +325,15 @@ amf-tonemap-declared:
       encode: [h264, hevc]
       toneMap: []
       verifiedAtMs: 1750000000000
+
+# W1/D-1 (2026-08-07): a COMPLETED probe that verified nothing — zero
+# backends persisted. A real, valid outcome (e.g. the one `ffmpeg
+# -encoders` listing failed so every test skipped, or a direct writer call
+# with an empty battery), and the exact shape apps/server/src/playback/
+# resolve-caps.ts used to pass to plan() verbatim. Stage G rule (iii) must
+# still route full software: 'software' is doctrine, not a caps lookup
+# (stages/hardware.ts sets encoder:'software' regardless of whether this
+# array even lists a software entry). Case 513 pins that an empty set
+# routes IDENTICALLY to caps.software-only.
+empty:
+  backends: []

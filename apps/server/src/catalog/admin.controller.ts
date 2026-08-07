@@ -35,6 +35,7 @@ import {
   getCurrentHwCapabilitySnapshot,
   getEnrichableCatalogItemForAdmin,
   getJobAdmin,
+  getLatestJobOfTypeAdmin,
   getLibraryByIdAdmin,
   listActiveSessionsAdmin,
   listJobsAdmin,
@@ -257,16 +258,57 @@ export class AdminController {
     if (!isHwPlatform(currentPlatform)) {
       // Unsupported platform for hw-capability probing at all (matches
       // resolve-caps.ts's own fallback posture) — same envelope shape as
-      // "never probed yet": there is no report to show.
-      return { report: null };
+      // "never probed yet": there is no report to show and no self-test
+      // will ever be enqueued for this platform.
+      return { report: null, probe: { status: "never-ran", lastError: null, updatedAtMs: null } };
     }
 
+    // W1/D-1 three-state derivation: the latest 'hwprobe' ledger row
+    // distinguishes failed / pending from never-ran (the hwprobe consumer
+    // persists only on success, so a failed self-test leaves the report
+    // null forever — the ledger row is the only durable failure signal).
+    // Consulted on BOTH branches: with a snapshot present, a NEWER
+    // queued/active/failed row means a re-probe (ffmpeg/GPU fingerprint
+    // change) is in flight or just failed — reporting bare 'completed'
+    // there would hide exactly the state D-1 wants visible (opus review
+    // W1-R8). Indexed lookup (migrations/0037) — the setup wizard polls
+    // this endpoint every 4s.
+    const latestProbeJob = await getLatestJobOfTypeAdmin(this.dbProvider.db, "hwprobe");
     const snapshot = await getCurrentHwCapabilitySnapshot(this.dbProvider.db, currentPlatform);
     if (!snapshot) {
-      return { report: null };
+      // A 'completed' ledger row with no snapshot shouldn't happen
+      // (persist runs in the same handler); if it does, "never-ran" is
+      // the honest fallback — no usable result and nothing in flight.
+      if (latestProbeJob?.status === "failed") {
+        return {
+          report: null,
+          probe: { status: "failed", lastError: latestProbeJob.last_error, updatedAtMs: latestProbeJob.updated_at_ms },
+        };
+      }
+      if (latestProbeJob?.status === "queued" || latestProbeJob?.status === "active") {
+        return {
+          report: null,
+          probe: { status: "pending", lastError: null, updatedAtMs: latestProbeJob.updated_at_ms },
+        };
+      }
+      return { report: null, probe: { status: "never-ran", lastError: null, updatedAtMs: null } };
+    }
+
+    let probe: { status: string; lastError: string | null; updatedAtMs: number | null } = {
+      status: "completed",
+      lastError: null,
+      updatedAtMs: snapshot.verifiedAtMs,
+    };
+    if (latestProbeJob && latestProbeJob.updated_at_ms > snapshot.verifiedAtMs) {
+      if (latestProbeJob.status === "queued" || latestProbeJob.status === "active") {
+        probe = { status: "pending", lastError: null, updatedAtMs: latestProbeJob.updated_at_ms };
+      } else if (latestProbeJob.status === "failed") {
+        probe = { status: "failed", lastError: latestProbeJob.last_error, updatedAtMs: latestProbeJob.updated_at_ms };
+      }
     }
 
     return {
+      probe,
       report: {
         platform: mapOs(currentPlatform),
         ffmpegBuildHash: snapshot.ffmpegBuildHash,
