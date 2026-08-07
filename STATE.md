@@ -1,5 +1,42 @@
 # STATE.md — Lumbre Phase 4 (Phases 0–2 complete; Phase 3 automated exit met, owner review items Open)
 
+## v0.9.0-rc.5 draft release COMPLETE + Windows VM live test (2026-08-07)
+
+- **Draft is UP with all 7 assets** (windows .exe 434MB / macos .pkg 153MB /
+  linux .tar.gz 224MB / manifest.json+.minisig / SHA256SUMS+.minisig); minisign
+  signatures on both verified locally against `keys/minisign.pub`; manifest
+  carries all 4 platforms incl. the cosign-signed docker image digest.
+- Release run 31137991489 (tag at `25bf977`): **build-windows GREEN on first
+  try — the WIX0104 fix is proven in the release lane itself.** build-docker
+  died at ~58min to runner infra ("The hosted runner lost communication with
+  the server"; logs never uploaded, failing step left with no conclusion) —
+  same tree had passed docker in the rc.4 run an hour earlier. `gh run rerun
+  --failed` → all five jobs green, `release` job published the draft.
+- **Owner Windows live test (Parallels VM): "no setup wizard, straight to
+  login" = NOT A BUG.** The VM carried `C:\ProgramData\Loombre` from the
+  July-28 rc.1/rc.2 test rounds (svc-trace.log lineage back to 2026-07-28; the
+  MSI deliberately preserves the data dir across upgrade AND uninstall —
+  RemoveFolderEx sweeps only INSTALLFOLDER). needsSetup = countUsers()===0 was
+  honestly false: a July-era user exists (owner's `test@test.com` attempts →
+  auth-anomaly.log FAILED_LOGIN ×3 — server up and answering the whole time).
+  The crash-log pair ("terminating connection due to administrator command" +
+  "Connection terminated unexpectedly") = the embedded PG's graceful stop
+  during a service stop/restart at 02:21Z, benign. **Incidental upgrade-path
+  evidence: rc.5 boots CLEAN over a July-era data dir** (02:23:30Z: Nest
+  started, listening 3001, IPC up). True-first-run reset ritual: uninstall →
+  delete `C:\ProgramData\Loombre` → reinstall.
+- **NEW BUG for next RC (real, just not what bit the owner): web-client
+  first-boot race.** `AuthStore.checkNeedsSetup()`
+  (apps/web/src/lib/auth-store.ts:151) maps ANY /setup/state failure —
+  conn-refused while first boot extracts/provisions embedded PG (which runs
+  BEFORE app.listen), 429 from refresh-hammering (setup surface: 20/min/IP),
+  500 — to `needsSetup=false` → /login, then CACHES it for the tab's
+  lifetime; the login page deliberately has no "set up this server" link. A
+  genuinely fresh install on a slow disk lands on /login instead of the
+  wizard. Fix direction: never cache a failure-derived result; boot splash
+  distinguishes unreachable-vs-provisioned (retry with backoff); optionally
+  tray gates browser launch on SERVER readiness, not just web.
+
 ## Line-by-line swarm audit — READ-ONLY, whole repo (2026-08-05, owner brief "Line-by-Line Swarm Audit → Opus-Validated Findings Ledger → Systematic Fix Plan")
 
 **Ledger: `reports/audit-fafa47f/LEDGER.md`. Audited SHA `fafa47f5dcfc88cbcd7a08afa83c090eb53aa62b`.**
