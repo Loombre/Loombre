@@ -143,9 +143,38 @@ final class LifecyclePlanTests: XCTestCase {
 
     // MARK: - first-run auto-open decision
 
-    func test_auto_open_fires_once_when_web_url_becomes_available() {
-        XCTAssertTrue(MenuState.shouldAutoOpenWeb(alreadyOpened: false, webUrl: "http://localhost:3000"))
-        XCTAssertFalse(MenuState.shouldAutoOpenWeb(alreadyOpened: true, webUrl: "http://localhost:3000"))
-        XCTAssertFalse(MenuState.shouldAutoOpenWeb(alreadyOpened: false, webUrl: nil))
+    /// Fresh install: nothing stored yet for ANY install, and this install
+    /// has a stamp — fires. (The old signature's "alreadyOpened: false"
+    /// case, now expressed as lastOpenedStamp: nil.)
+    func test_auto_open_fires_on_fresh_install_with_no_stored_stamp() {
+        XCTAssertTrue(MenuState.shouldAutoOpenWeb(lastOpenedStamp: nil, currentStamp: "1000", webUrl: "http://localhost:3000"))
+    }
+
+    /// Same install (the stored stamp already matches /opt/loombre/current's
+    /// own mtime) — does not fire again.
+    func test_auto_open_does_not_fire_again_for_the_same_stamp() {
+        XCTAssertFalse(MenuState.shouldAutoOpenWeb(lastOpenedStamp: "1000", currentStamp: "1000", webUrl: "http://localhost:3000"))
+    }
+
+    /// The per-install semantics this whole change exists for: a NEW stamp
+    /// (the installer recreated /opt/loombre/current on a reinstall/upgrade,
+    /// refreshing its mtime) fires again even though SOME install was
+    /// already auto-opened for previously — unlike the old once-per-user-
+    /// forever bool, which left the conclusion pane's promise broken on
+    /// every install after the first ever one.
+    func test_auto_open_fires_again_for_a_new_stamp() {
+        XCTAssertTrue(MenuState.shouldAutoOpenWeb(lastOpenedStamp: "1000", currentStamp: "2000", webUrl: "http://localhost:3000"))
+    }
+
+    /// A nil currentStamp means this process isn't running from an
+    /// installed layout (dev runs outside the pkg) — must never auto-open,
+    /// regardless of webUrl or what's stored from a prior install.
+    func test_auto_open_never_fires_with_a_nil_current_stamp() {
+        XCTAssertFalse(MenuState.shouldAutoOpenWeb(lastOpenedStamp: nil, currentStamp: nil, webUrl: "http://localhost:3000"))
+        XCTAssertFalse(MenuState.shouldAutoOpenWeb(lastOpenedStamp: "1000", currentStamp: nil, webUrl: "http://localhost:3000"))
+    }
+
+    func test_auto_open_never_fires_without_a_web_url() {
+        XCTAssertFalse(MenuState.shouldAutoOpenWeb(lastOpenedStamp: nil, currentStamp: "1000", webUrl: nil))
     }
 }

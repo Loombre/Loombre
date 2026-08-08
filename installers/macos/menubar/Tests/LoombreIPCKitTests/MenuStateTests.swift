@@ -97,4 +97,23 @@ final class MenuStateTests: XCTestCase {
         XCTAssertFalse(MenuIconState.stopping.isActionable)
         XCTAssertFalse(MenuIconState.contractMismatch(serverVersion: 1, clientVersion: 1).isActionable)
     }
+
+    // MARK: - reopen action (applicationShouldHandleReopen)
+
+    /// With a live IPC connection, reopen resolves the operator's ACTUAL
+    /// configured web URL through the existing openLoombre() flow rather
+    /// than guessing a port.
+    func test_reopenAction_resolves_via_ipc_when_connected() {
+        XCTAssertEqual(MenuState.reopenAction(isConnected: true), .resolveViaIPC)
+    }
+
+    /// Without a connection there's no way to ask the server what its
+    /// configured web URL is, so this falls back to MenuState's single
+    /// shared installedDefaultWebUrl constant (installers/macos/LAYOUT.md
+    /// §11: bin/loombre-web serves :3000) — the SAME fallback
+    /// AppDelegate.openLoombre()'s catch uses, pinned here so the two can
+    /// never drift apart.
+    func test_reopenAction_falls_back_to_installed_default_when_disconnected() {
+        XCTAssertEqual(MenuState.reopenAction(isConnected: false), .openFallback(url: MenuState.installedDefaultWebUrl))
+    }
 }
