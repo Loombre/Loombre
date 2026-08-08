@@ -1,5 +1,5 @@
 {
-  "recordedAtMs": 1786172412526,
+  "recordedAtMs": 1786177967398,
   "route": "/browse",
   "method": "gzip(level 9) of every external .js file the served /browse HTML references (script src + preload hints, noModule polyfills excluded), summed",
   "totalGzipBytes": 173928,
@@ -18,7 +18,7 @@
       "gzipBytes": 61169
     },
     {
-      "file": "static/chunks/5609-9797e7e4b970bfa4.js",
+      "file": "static/chunks/5609-02b8352d75827046.js",
       "rawBytes": 48181,
       "gzipBytes": 14513
     },
@@ -58,7 +58,7 @@
       "gzipBytes": 3227
     },
     {
-      "file": "static/chunks/webpack-5beb64984617fac3.js",
+      "file": "static/chunks/webpack-c77dc35b8a473f1f.js",
       "rawBytes": 5039,
       "gzipBytes": 2464
     },
