@@ -59,7 +59,13 @@ import { JobQueueProvider } from "../common/job-queue.provider.js";
 import { UpdateCheckService } from "../common/update-check/update-check.service.js";
 import { resolveAppPaths } from "../cli/app-paths.js";
 import { isValidCrashFileName, listCrashFileMetas, readCrashFileContent } from "./admin-crash-files.js";
-import { DirectoryBrowseError, listDirectories, listRoots, permissionDeniedDetail } from "./admin-directories.js";
+import {
+  DirectoryBrowseError,
+  listDirectories,
+  listRoots,
+  permissionDeniedDetail,
+  permissionRemediation,
+} from "./admin-directories.js";
 import { tailLogFile } from "./admin-logs-tail.js";
 import { computeStoragePool } from "./admin-storage-pool.js";
 import { parseListQuery, resolveViewer } from "./viewer.js";
@@ -358,7 +364,7 @@ export class AdminController {
           throw unprocessableEntity("A library path must be absolute.", instance);
         case "not-a-directory":
           throw unprocessableEntity("That path is a file, not a directory.", instance);
-        case "permission-denied":
+        case "permission-denied": {
           // The server genuinely cannot read it, and saying so is useful:
           // the fix is an OS permission change (or, on the installers, the
           // service account's access), not a different path. The detail is
@@ -366,7 +372,24 @@ export class AdminController {
           // field report: a bare "Forbidden" while the real story — the
           // _loombre daemon cannot read a home folder — was known here),
           // and the code lets clients pattern-match without string-parsing.
-          throw forbidden(permissionDeniedDetail(), instance, "filesystem-permission-denied");
+          //
+          // On the one installer with a scripted grant recipe (macOS +
+          // _loombre today), a `remediation` extension member rides along
+          // so the client can render an actionable grant flow instead of
+          // the bare detail paragraph — a second rc.6 field report: the
+          // detail sentence was correct but still just a wall of text with
+          // nothing to click. `requested` (not `instance`, which is this
+          // REQUEST's own URL) is the real path templated into the
+          // commands, matching what listDirectories() was actually asked
+          // to browse.
+          const remediation = permissionRemediation(requested);
+          throw forbidden(
+            permissionDeniedDetail(),
+            instance,
+            "filesystem-permission-denied",
+            remediation !== null ? { remediation } : undefined,
+          );
+        }
         case "not-found":
           throw notFound("No such directory on the server.", instance);
       }

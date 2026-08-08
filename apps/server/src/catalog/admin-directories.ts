@@ -117,6 +117,165 @@ export function permissionDeniedDetail(
 }
 
 /**
+ * Shell-quotes a path for safe interpolation into a copy-pasteable command
+ * string. A path made up only of characters that never need quoting is left
+ * bare (matches how the install guide's own examples read, e.g. `~/Media`);
+ * anything else — spaces, an apostrophe, or other shell metacharacters — is
+ * wrapped in single quotes, with embedded single quotes escaped by closing
+ * the quote, emitting a literal escaped quote, and reopening it (the
+ * standard POSIX-shell trick: a single quote cannot be escaped from inside
+ * a single-quoted string).
+ */
+function shellQuote(value: string): string {
+  if (/^[A-Za-z0-9_./-]+$/.test(value)) {
+    return value;
+  }
+  return `'${value.replace(/'/g, "'\\''")}'`;
+}
+
+/** macOS folder names TCC (Transparency, Consent, and Control) additionally
+ *  locks down beyond standard Unix permissions/ACLs — Full Disk Access,
+ *  granted once in System Settings, is the only way past them. Checked
+ *  case-insensitively (finding 9: the default macOS volume is
+ *  case-insensitive). */
+const TCC_PROTECTED_HOME_SUBFOLDERS = new Set(["desktop", "documents", "downloads"]);
+
+/**
+ * `requestedPath`, split into non-empty `/`-separated segments, IF it names
+ * something at or under a personal macOS home folder (`/Users/<name>`, name
+ * not "Shared" — /Users/Shared is world-readable by design) — or null
+ * otherwise. Case-insensitive on both "Users" and "Shared" (finding 9:
+ * /users/ozzy and /Users/SHARED/x are real, reachable paths on the default
+ * macOS volume, not typos). Segments are sliced from `requestedPath`
+ * verbatim, so callers that emit commands from them preserve the operator's
+ * original casing rather than a hardcoded "Users".
+ */
+function personalHomeSegments(requestedPath: string): string[] | null {
+  const segments = requestedPath.split("/").filter((s) => s.length > 0);
+  if (segments[0] === undefined || segments[0].toLowerCase() !== "users") return null;
+  const name = segments[1];
+  if (name === undefined || name.toLowerCase() === "shared") return null;
+  return segments;
+}
+
+/**
+ * `/<Users>/<name>` (original casing) when `requestedPath` is somewhere
+ * INSIDE a personal macOS home folder (three or more meaningful segments) —
+ * the ancestor the traversal-only ACL (permissionRemediation command 1)
+ * needs to target — or null when it isn't: requestedPath is /Users itself,
+ * directly under it, under /Users/Shared, or IS a bare personal home itself
+ * (that case is refused entirely by permissionRemediation — see finding 1's
+ * comment there, not handled here).
+ */
+function macOsPersonalHomeAncestor(requestedPath: string): string | null {
+  const segments = personalHomeSegments(requestedPath);
+  if (segments === null || segments.length < 3) return null;
+  return `/${segments[0]}/${segments[1]}`;
+}
+
+/**
+ * True when `requestedPath` IS a bare personal home folder (`/Users/<name>`,
+ * exactly two meaningful segments — no subfolder named yet).
+ */
+function isBarePersonalHome(requestedPath: string): boolean {
+  const segments = personalHomeSegments(requestedPath);
+  return segments !== null && segments.length === 2;
+}
+
+/**
+ * True when `requestedPath` is, or is inside, one of the TCC-protected home
+ * subfolders (Desktop/Documents/Downloads under a personal home).
+ */
+function isTccProtectedHomeFolder(requestedPath: string): boolean {
+  const segments = personalHomeSegments(requestedPath);
+  if (segments === null || segments.length < 3) return false;
+  const subfolder = segments[2];
+  return subfolder !== undefined && TCC_PROTECTED_HOME_SUBFOLDERS.has(subfolder.toLowerCase());
+}
+
+/**
+ * The actionable counterpart to permissionDeniedDetail: a scripted grant
+ * recipe, templated with the REAL requested path, for the one installer
+ * this can safely be automated for today (macOS + the `_loombre` service
+ * account). Semantically identical to the blessed recipe in
+ * docs/install/macos.md's "Media in your home folder" section — command
+ * order and ACL flags match what that doc tells an operator to run by
+ * hand, with the doc's `~` and `~/Media` spelled out here as the absolute
+ * path actually being browsed (finding 17: the doc's shorthand and this
+ * function's absolute paths name the same folders, not byte-identical text).
+ *
+ * Linux and bare dev servers return null on purpose: the Linux installer's
+ * fix is chown/setfacl against a HOST-owned directory (ProtectHome,
+ * bind-mount ownership) — scripting a chown recipe blindly risks handing
+ * out (or clobbering) ownership of a directory the operator does not
+ * expect touched. The docs handle that case with guidance, not a button.
+ */
+export function permissionRemediation(
+  requestedPath: string,
+  platform: NodeJS.Platform = process.platform,
+  serviceUser: string = currentServiceUser(),
+): { summary: string; commands: string[]; verify: string } | null {
+  if (platform !== "darwin" || serviceUser !== "_loombre") {
+    return null;
+  }
+
+  // Self-defending regardless of caller (finding 8): the controller passes
+  // the RAW trimmed query param, while listDirectories() normalizes before
+  // ever touching the filesystem. Without this, a `..` segment could make
+  // the EMITTED grant target a path other than the one actually browsed —
+  // /Users/ozzy/../Shared/Media would browse /Users/Shared/Media but grant
+  // access on /Users/ozzy. Explicit posix (not the injectable pathFor():
+  // this function only ever runs when platform === "darwin", so the
+  // separator is always "/" regardless of the HOST running the test).
+  const normalized = path.posix.normalize(requestedPath);
+
+  // BLOCKER (code review): a bare personal home has no ancestor left to
+  // traverse into, so the ONLY remaining command would be the read+inherit
+  // grant on the home folder ITSELF — a one-click-copy command handing the
+  // service account recursive read over the operator's ENTIRE home
+  // (~/Library, ~/.ssh included). This is the picker's most likely path:
+  // roots -> /Users -> click your username -> 403 -> this panel. Never
+  // script a whole-home grant — fall back to the detail paragraph, whose
+  // guidance (subfolder / external drive / /Users/Shared) is the right
+  // answer for exactly this case.
+  if (isBarePersonalHome(normalized)) {
+    return null;
+  }
+
+  // MAJOR (code review): Desktop/Documents/Downloads are additionally
+  // locked down by TCC, which ACLs cannot lift — only a one-time Full Disk
+  // Access grant in System Settings can (see docs/install/macos.md's
+  // media-permissions section). Emitting a recipe here sends an operator
+  // through copy -> run -> Check again -> still 403, with the UI having
+  // asserted this was the fix — scripting a fix that provably fails erodes
+  // trust in the whole panel. Fall back to detail.
+  if (isTccProtectedHomeFolder(normalized)) {
+    return null;
+  }
+
+  const commands: string[] = [];
+  const homeAncestor = macOsPersonalHomeAncestor(normalized);
+  if (homeAncestor !== null) {
+    // Traversal only — lets _loombre walk THROUGH the home folder without
+    // revealing anything inside it (docs/install/macos.md's "Media in your
+    // home folder" section).
+    commands.push(`chmod +a "user:_loombre allow search" ${shellQuote(homeAncestor)}`);
+  }
+  // Read + list on just the requested folder, inherited by everything added
+  // to it later (docs/install/macos.md's "Media in your home folder"
+  // section).
+  commands.push(
+    `chmod +a "user:_loombre allow read,execute,readattr,readextattr,list,search,file_inherit,directory_inherit" ${shellQuote(normalized)}`,
+  );
+
+  return {
+    summary: "Loombre's service account (_loombre) can't read this folder.",
+    commands,
+    verify: `sudo -u _loombre ls ${shellQuote(normalized)}`,
+  };
+}
+
+/**
  * Candidate roots to offer when no path is supplied.
  *
  * Only paths that actually EXIST are returned — an empty /media on a
