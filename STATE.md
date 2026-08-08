@@ -298,6 +298,81 @@ schema descriptions reworded neutrally; YAML comments kept — they never render
 SDK regenerated; docs rebuilt + synced to website (70 routes, build green;
 deploy remains manual).
 
+## Post-rc.6 fix wave — folder-grant flow + menubar UX (2026-08-08, sub-agent lanes + opus review)
+
+Two owner-directed fixes, built by parallel sonnet lanes, opus-reviewed
+(18 findings: 1 BLOCKER, 3 MAJOR — all applied by fix lanes), gate:full
+green. rc.7 tags AFTER owner's manual QA pass (next).
+
+- **Folder-access grant flow (owner request, wizard screenshot)**:
+  contract-first. openapi.yaml: `FilesystemPermissionRemediation`
+  {summary, commands[], verify} wired into /admin/filesystem/directories'
+  403 (allOf over Problem — SDK 403 type carries `remediation?`; redocly
+  0 warnings; oasdiff non-breaking). Server: `permissionRemediation()`
+  (admin-directories.ts) templates the docs-blessed 2-command ACL recipe
+  with the real requested path (shell-quoted; normalized;
+  case-insensitive /Users matching), attached via `forbidden()`'s new
+  additive `extensions` param (ProblemException spreads extensions FIRST
+  — reserved members can never be overridden). Emits NULL (→ client
+  falls back to the detail paragraph) for: bare personal home (BLOCKER —
+  never script a whole-home grant exposing ~/.ssh), TCC-protected
+  Desktop/Documents/Downloads (ACLs can't lift TCC), non-macOS/dev.
+  Web: DirectoryPicker renders summary + new reusable CommandBlock
+  (copy with LAN-http selection fallback — navigator.clipboard absent on
+  insecure origins) + verify line + "Check again" re-list; defensive
+  parse falls back to detail on absent/malformed. Tests: server 34,
+  picker 7, CommandBlock 6.
+- **Menubar UX**: `applicationShouldHandleReopen` — double-clicking
+  Loombre.app while running opens the web UI (IPC-resolved; ANY failure
+  falls back to MenuState.installedDefaultWebUrl = localhost:3000 — a
+  user-initiated open must always open something). Auto-open-web is now
+  per-INSTALL, not once-per-user-forever: InstallStamp lstat-mtimes
+  /opt/loombre/current; postinstall gained `touch -h` on that symlink
+  (review catch: the BOM restores BUILD-time mtime, so without the touch
+  the stamp meant once-per-pkg-build and same-pkg reinstalls never
+  re-opened). Old didAutoOpenWebOnFirstRun key migrated away once at
+  launch. docs/install/macos.md: new troubleshooting subsection for the
+  Control Center scene-host wedge (icon missing → killall ControlCenter
+  → reboot) with the reopen escape hatch, qualified "while it's
+  running". Swift 74/74.
+- **Process note**: gate's `sdk-drift` step is `git diff --exit-code --
+  packages/sdk` — an uncommitted contract+SDK change ALWAYS fails it;
+  commit contract + regenerated SDK atomically before expecting a green
+  gate. Also flagged by a lane: gate's oasdiff invocation lacks
+  `--flatten-allof`; with inline allOf responses it can misreport — the
+  exit code stayed 0 here, but worth a look if oasdiff ever reds
+  unexpectedly.
+
+## macOS menubar-icon invisibility — OS scene-host wedge, NOT a Loombre bug (2026-08-08, RESOLVED by reboot)
+
+Follow-up field report after the relocation fix below was verified live
+(rebuilt rc.6 pkg, sha256 f9c3b12f…, installed correctly to /Applications,
+LaunchAgent bootstrapped, stack serving): the menubar icon still never
+appeared, and Loombre.app "did nothing" when opened from Launchpad.
+Full-session diagnosis exonerated the app end to end (process healthy,
+status item created + drawing, IPC polls 200, Control Center hosting its
+scene). ROOT CAUSE — systemic macOS 26 state corruption: ControlCenter
+(Tahoe's menu bar scene host) crash-restarted at 01:01:35, mid
+broken-install-storm, and came back wedged — NO newly registered menu bar
+item from ANY process displayed (a bare test item inside Apple-signed
+swift-frontend and Docker Desktop's whale were equally invisible); each
+`killall ControlCenter` adopted only a partial, inconsistent icon subset.
+Owner reboot fully cleared it — flame appears at login. No installer
+change needed for visibility. Machine-side hygiene applied: duplicate
+LaunchServices registration for com.loombre.menubar (the stale relocated
+build-cache copy) unregistered, /Applications copy re-registered.
+Follow-ups tracked in the session task list: (1) wizard folder-picker
+"Grant access" flow for _loombre media permissions (owner request,
+replaces the blocking red paragraph); (2) menubar
+applicationShouldHandleReopen → open web UI (clicking the app while
+running currently does nothing — would have made this whole incident
+self-evident) + revisit once-per-user didAutoOpenWebOnFirstRun vs the
+conclusion pane's per-install promise; (3) docs/install/macos.md
+troubleshooting note candidate: "icon missing → killall ControlCenter,
+then reboot". Draft-release consequence from the entry below still
+stands: rc.6's macos .pkg asset carries the relocation defect — re-tag
+(rc.7) so the release pipeline rebuilds and re-signs.
+
 ## macOS installer relocation bug — Loombre.app silently never installed (2026-08-08, FIXED)
 
 Owner field report on the rc.6 pkg: "install successful, but the app never
