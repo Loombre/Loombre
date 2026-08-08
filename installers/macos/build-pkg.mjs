@@ -695,6 +695,54 @@ export function renderDistributionXml({ template, version, pkgFilename, arch }) 
     .replaceAll("__HOST_ARCHITECTURES__", hostArchitecturesFor(arch));
 }
 
+// THE rc.6 FIELD BUG ("install successful, app never launches or appears
+// in Applications"): pkgbuild without --component-plist runs automatic
+// component analysis, which marks every .app bundle in the payload
+// BundleIsRelocatable=true — a <relocate> entry in the shipped
+// PackageInfo. At install time PackageKit resolves a relocatable bundle's
+// destination by asking LaunchServices/Spotlight for an EXISTING copy of
+// the bundle id anywhere on the target volume and installs over THAT
+// instead of the payload path. Observed live (/var/log/install.log,
+// 2026-08-08, four consecutive installs): "Applications/Loombre.app
+// relocated to Users/ozzy/App Development/Loombre/installers/macos/
+// .build-cache/payload/arm64/Applications/Loombre.app" — the staged
+// payload copy in this very build tree swallowed the install. The install
+// still exits 0, /Applications/Loombre.app never exists, and the
+// LaunchAgent's hardcoded ProgramArguments path spawns nothing. Any stray
+// copy (a build tree, ~/Downloads, the Trash) hijacks every later
+// install/upgrade the same way, and each hijack re-registers the stray
+// with LaunchServices, cementing it as the next target.
+//
+// This component plist pins the bundle to its payload path
+// unconditionally. BundleIsVersionChecked is OFF deliberately: with it
+// on, Installer compares CFBundleVersions before overwriting, and
+// rc-suffixed versions ("0.9.0-rc.6") do not compare reliably under its
+// numeric segment rules — the pkg payload is authoritative for this
+// bundle (preinstall already booted the running app out), so it always
+// overwrites. Exported so pkg/component-plist.test.mjs can round-trip
+// the rendered plist through the real pkgbuild without running the whole
+// build; smoke.mjs asserts the built artifact's PackageInfo has no
+// <relocate> entries.
+export function renderComponentPlist() {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<array>
+  <dict>
+    <key>RootRelativeBundlePath</key>
+    <string>Applications/Loombre.app</string>
+    <key>BundleIsRelocatable</key>
+    <false/>
+    <key>BundleIsVersionChecked</key>
+    <false/>
+    <key>BundleOverwriteAction</key>
+    <string>upgrade</string>
+  </dict>
+</array>
+</plist>
+`;
+}
+
 function buildPkg(payloadRoot, version) {
   const outRoot = path.join(BUILD_CACHE, "pkgbuild-out");
   rmSync(outRoot, { recursive: true, force: true });
@@ -713,6 +761,13 @@ function buildPkg(payloadRoot, version) {
     chmodSync(path.join(scriptsStage, script), 0o755);
   }
 
+  // Pins Applications/Loombre.app non-relocatable — see
+  // renderComponentPlist's header for the rc.6 relocation field bug this
+  // prevents. Never drop this flag: pkgbuild's no-plist analysis default
+  // is BundleIsRelocatable=true.
+  const componentPlistPath = path.join(outRoot, "component-plist.plist");
+  writeFileSync(componentPlistPath, renderComponentPlist(), "utf8");
+
   const componentPkg = path.join(outRoot, "loombre-component.pkg");
   run("pkgbuild", [
     "--root", payloadRoot,
@@ -721,6 +776,7 @@ function buildPkg(payloadRoot, version) {
     "--version", version,
     "--install-location", "/",
     "--ownership", "recommended",
+    "--component-plist", componentPlistPath,
     componentPkg,
   ]);
 
