@@ -244,11 +244,34 @@ on-disk tree (`payload/opt/...`, `payload/Library/...`,
 ```
 pkgbuild --root payload --scripts pkg/scripts --identifier com.loombre.pkg \
          --version <version> --install-location / --ownership recommended \
+         --component-plist build/component-plist.plist \
          build/loombre-component.pkg
 productbuild --distribution build/Distribution.xml \
              --package-path build/ --resources pkg/resources \
              dist/loombre-<version>-macos-<arch>.pkg
 ```
+
+**`--component-plist` is load-bearing — the rc.6 relocation field bug**
+("install successful, app never launches or appears in Applications").
+Without it, pkgbuild's automatic component analysis marks
+`Applications/Loombre.app` `BundleIsRelocatable=true` (a `<relocate>`
+entry in the shipped PackageInfo), and PackageKit then resolves the
+bundle's install destination by asking LaunchServices/Spotlight for an
+**existing** copy of `com.loombre.menubar` anywhere on the target volume
+— installing over *that* instead of `/Applications`. Observed live in
+`/var/log/install.log` (2026-08-08): the staged payload copy under this
+very lane's `.build-cache/` swallowed four consecutive installs, while
+Installer reported success and the LaunchAgent's hardcoded
+`/Applications/...` path spawned nothing. Any stray copy (a build tree,
+`~/Downloads`, the Trash) hijacks installs the same way — and each hijack
+re-registers the stray with LaunchServices, cementing it as the next
+target. `renderComponentPlist()` (build-pkg.mjs) pins the bundle
+non-relocatable, with version-checking off (rc-suffixed versions don't
+compare reliably; the payload is authoritative — preinstall boots the
+running app out first). Guarded twice: `pkg/component-plist.test.mjs`
+round-trips the plist through the real pkgbuild (gate,
+`installers:test`), and `smoke.mjs` asserts the built artifact's
+PackageInfo lists no relocatable bundles.
 
 One component today (no optional choices) — `productbuild` is still used
 (not bare `pkgbuild` output) so the installer gets Apple's standard

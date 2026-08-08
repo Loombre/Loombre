@@ -57,6 +57,20 @@ function run(cmd, cmdArgs, opts = {}) {
   return res;
 }
 
+/** Bundle ids a component pkg's PackageInfo lists under <relocate> — i.e.
+ *  bundles pkgbuild marked BundleIsRelocatable, which PackageKit installs
+ *  over any existing registered copy found ANYWHERE on the target volume
+ *  instead of the payload path (the rc.6 relocation bug — see the check in
+ *  main() below). Exported for pkg/component-plist.test.mjs, which runs
+ *  this exact parser against real pkgbuild output both with and without
+ *  the component plist, so the smoke check can never silently rot into
+ *  matching nothing. */
+export function findRelocatableBundleIds(packageInfoXml) {
+  const relocate = packageInfoXml.match(/<relocate>([\s\S]*?)<\/relocate>/);
+  if (!relocate) return [];
+  return [...relocate[1].matchAll(/<bundle\s+id="([^"]+)"/g)].map((m) => m[1]);
+}
+
 async function main() {
   const reportPath = path.join(BUILD_CACHE, "last-build-report.json");
   if (!existsSync(reportPath)) {
@@ -133,6 +147,38 @@ async function main() {
     const scriptsDir = path.join(componentPkgDir, "Scripts");
     if (!existsSync(path.join(scriptsDir, "preinstall"))) throw new Error("missing Scripts/preinstall");
     if (!existsSync(path.join(scriptsDir, "postinstall"))) throw new Error("missing Scripts/postinstall");
+  });
+
+  // THE rc.6 FIELD BUG ("install successful, app never launches or appears
+  // in Applications"): pkgbuild ran without --component-plist, so its
+  // automatic bundle analysis marked Applications/Loombre.app
+  // BundleIsRelocatable=true (<relocate> in the shipped PackageInfo). At
+  // install time PackageKit resolves a relocatable bundle's destination by
+  // asking LaunchServices/Spotlight for an EXISTING copy of the bundle id
+  // anywhere on the volume and installs over THAT instead of the payload
+  // path — observed live in /var/log/install.log (2026-08-08):
+  //   PackageKit: Applications/Loombre.app relocated to Users/ozzy/App
+  //     Development/Loombre/installers/macos/.build-cache/payload/arm64/
+  //     Applications/Loombre.app
+  // The install still exits 0, /Applications/Loombre.app never appears,
+  // and the LaunchAgent's hardcoded ProgramArguments path spawns nothing.
+  // Any stray copy (a build tree, ~/Downloads, the Trash) hijacks every
+  // later install/upgrade the same way, and each hijack re-registers the
+  // stray with LaunchServices, cementing it as the next target.
+  // build-pkg.mjs now pins the bundle via --component-plist
+  // (renderComponentPlist, BundleIsRelocatable=false); this asserts the
+  // pin actually survived into the artifact that ships.
+  check("PackageInfo marks no bundle relocatable (Loombre.app must land in /Applications, always)", () => {
+    const packageInfoPath = path.join(componentPkgDir, "PackageInfo");
+    if (!existsSync(packageInfoPath)) throw new Error("missing PackageInfo in expanded component pkg");
+    const relocatable = findRelocatableBundleIds(readFileSync(packageInfoPath, "utf8"));
+    if (relocatable.length > 0) {
+      throw new Error(
+        `<relocate> lists ${relocatable.join(", ")} — PackageKit would install the bundle over any existing ` +
+          "copy anywhere on the volume instead of /Applications (the rc.6 relocation bug); was pkgbuild " +
+          "run without --component-plist?",
+      );
+    }
   });
 
   // The install-visibility contract, asserted against the postinstall
