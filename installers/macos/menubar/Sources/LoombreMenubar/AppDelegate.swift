@@ -21,9 +21,18 @@ let menubarBuildVersion = loombreGeneratedVersion
 
 let pollIntervalSeconds: TimeInterval = 3.0
 
-/// UserDefaults key for the once-per-user post-install browser open —
-/// lives in this app's own com.loombre.menubar defaults domain.
-let autoOpenWebDefaultsKey = "didAutoOpenWebOnFirstRun"
+/// UserDefaults key for the per-install post-install browser open — lives
+/// in this app's own com.loombre.menubar defaults domain. Stores the LAST
+/// install's stamp (InstallStamp.read()'s epoch-ms string for
+/// /opt/loombre/current), not a bool: the installer recreates that symlink
+/// on EVERY install/upgrade (LAYOUT.md §1's atomic swap point), so a stamp
+/// that differs from what's stored here means "this is a different install
+/// than the one we last auto-opened for." Replaces the old
+/// once-per-USER-forever bool (`didAutoOpenWebOnFirstRun`), which left
+/// every reinstall/upgrade after the very first one contradicting the
+/// conclusion pane's "Your browser will open automatically" promise (rc.6
+/// field report).
+let autoOpenWebInstallStampKey = "lastAutoOpenedWebInstallStamp"
 
 final class AppDelegate: NSObject, NSApplicationDelegate, MenuActions {
     private var statusItem: NSStatusItem!
@@ -45,6 +54,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, MenuActions {
         // (build-pkg.mjs's bundling step sets that too, belt-and-suspenders).
         NSApp.setActivationPolicy(.accessory)
 
+        // One-line migration hygiene: the old once-per-user bool key is
+        // dead now that the gate is per-install — drop it so it doesn't
+        // linger forever in this domain. Runs once per PROCESS launch here
+        // (this used to live in autoOpenWebOnFirstRunIfNeeded, called from
+        // every successful poll — a UserDefaults mutation every
+        // pollIntervalSeconds forever for no reason after the first call).
+        UserDefaults.standard.removeObject(forKey: "didAutoOpenWebOnFirstRun")
+
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         applyState(.notRunning)
         rebuildMenu(for: .notRunning)
@@ -57,6 +74,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate, MenuActions {
 
     func applicationWillTerminate(_ notification: Notification) {
         pollTimer?.invalidate()
+    }
+
+    /// The user's escape hatch when the menu bar icon can't be found (field
+    /// report, 2026-08-08): double-clicking Loombre.app in /Applications —
+    /// or a Dock/Launchpad reopen — previously did NOTHING, because
+    /// LaunchServices just activates this already-running LSUIElement
+    /// instance, which has no window to bring forward, so no UI resulted.
+    /// That specifically stranded users during the incident where macOS
+    /// 26's Control Center scene host wedged and hid every
+    /// newly-registered menu bar item system-wide: the icon was gone, and
+    /// reopening the app was a dead end too. Now it opens the web UI
+    /// directly — via the live IPC connection's actual openWebTarget()
+    /// when one exists (reusing openLoombre()'s own flow, not duplicating
+    /// it), or the installed default (:3000) when IPC is unreachable and
+    /// the operator's configured URL can't be resolved. Returns false
+    /// unconditionally: this is an LSUIElement app with no windows for
+    /// AppKit to restore.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        switch MenuState.reopenAction(isConnected: lastConnection != nil) {
+        case .resolveViaIPC:
+            openLoombre()
+        case .openFallback(let url):
+            if let url = URL(string: url) {
+                NSWorkspace.shared.open(url)
+            }
+        }
+        return false
     }
 
     // MARK: - Polling
@@ -125,8 +169,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, MenuActions {
                     await MainActor.run { NSWorkspace.shared.open(url) }
                 }
             } catch {
-                // Best-effort UI action; nothing to escalate to beyond the
-                // status label already shown, which the next poll refreshes.
+                // lastConnection being non-nil only means the LAST poll (up
+                // to pollIntervalSeconds ago) succeeded — the server can be
+                // wedged or mid-restart by the time this actual IPC call
+                // fires, and swallowing that silently reproduces the exact
+                // "click Open Loombre, nothing happens" bug this menu item
+                // exists to fix. A user-initiated "open the UI" action must
+                // always open SOMETHING, so fall back to the same installed
+                // default reopenAction uses when there's no connection at
+                // all — one shared constant (MenuState.installedDefaultWebUrl),
+                // one fallback everywhere IPC can't answer.
+                if let url = URL(string: MenuState.installedDefaultWebUrl) {
+                    await MainActor.run { NSWorkspace.shared.open(url) }
+                }
             }
         }
     }
@@ -212,20 +267,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, MenuActions {
 
     /// Installer completion flow (see pkg/resources/conclusion.txt): the
     /// pkg's postinstall bootstraps this agent while the Installer window
-    /// is still open; the first time the server advertises a web URL we
-    /// open the browser — on a fresh install that lands on the /setup
-    /// first-run wizard (the web root auto-routes there while no account
-    /// exists). Once per user, ever — UserDefaults-guarded, so upgrades
-    /// and later logins never spawn surprise tabs.
+    /// is still open; the first time the server advertises a web URL for
+    /// THIS install, we open the browser — on a fresh install that lands on
+    /// the /setup first-run wizard (the web root auto-routes there while no
+    /// account exists). Once per INSTALL, not once per user ever: keyed to
+    /// /opt/loombre/current's own mtime (InstallStamp), which every install
+    /// AND upgrade refreshes, so the conclusion pane's promise holds on
+    /// every install, not just the first one this Mac ever saw. A nil
+    /// InstallStamp means this process isn't running from an installed
+    /// layout (e.g. a dev `swift run` outside the pkg) — never auto-open in
+    /// that case, since there's no install to key the decision off of.
     @MainActor
     private func autoOpenWebOnFirstRunIfNeeded(status: IPCStatusResponse) {
         let defaults = UserDefaults.standard
+        let currentStamp = InstallStamp.read()
         guard MenuState.shouldAutoOpenWeb(
-            alreadyOpened: defaults.bool(forKey: autoOpenWebDefaultsKey),
+            lastOpenedStamp: defaults.string(forKey: autoOpenWebInstallStampKey),
+            currentStamp: currentStamp,
             webUrl: status.webUrl
         ) else { return }
         guard let webUrl = status.webUrl, let url = URL(string: webUrl) else { return }
-        defaults.set(true, forKey: autoOpenWebDefaultsKey)
+        defaults.set(currentStamp, forKey: autoOpenWebInstallStampKey)
         NSWorkspace.shared.open(url)
     }
 

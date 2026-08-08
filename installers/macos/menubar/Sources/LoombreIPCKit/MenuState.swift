@@ -48,6 +48,22 @@ public enum LifecycleAction: Equatable {
     case none
 }
 
+/// What double-clicking Loombre.app in /Applications (or a Dock/Launchpad
+/// reopen) should do — the field report's "opening the app while the
+/// menubar agent is already running does NOTHING" gap: LaunchServices just
+/// activates the running LSUIElement instance, which has no window to
+/// show, so nothing visibly happens. With a live IPC connection we can
+/// resolve the operator's ACTUAL configured web URL through the existing
+/// open flow; without one, IPC can't be asked anything, so the fallback is
+/// the installed default rather than silence.
+public enum ReopenAction: Equatable {
+    /// Route through the existing "Open Loombre" IPC flow (openWebTarget)
+    /// rather than guessing a URL.
+    case resolveViaIPC
+    /// No IPC connection to ask — open this URL directly.
+    case openFallback(url: String)
+}
+
 /// Title + enablement + action for the Start/Stop Server menu item —
 /// pure data, derived in one place so the "Start Server is grayed out
 /// exactly when you need it" failure mode can never be reintroduced by
@@ -126,6 +142,15 @@ public enum LaunchdFallback {
 }
 
 public enum MenuState {
+    /// The installed default web UI URL — installers/macos/LAYOUT.md §11:
+    /// bin/loombre-web serves :3000. The SINGLE shared fallback for every
+    /// "IPC can't answer, open SOMETHING anyway" path: reopenAction (no
+    /// live connection at all) and AppDelegate.openLoombre()'s catch
+    /// (a connection existed but the IPC call itself failed) both resolve
+    /// here, so there is exactly one URL to update if the default port
+    /// ever changes, not two that can drift apart.
+    public static let installedDefaultWebUrl = "http://localhost:3000"
+
     public static func derive(from status: IPCStatusResponse) -> MenuIconState {
         guard status.matchesClientContractVersion else {
             return .contractMismatch(
@@ -204,13 +229,32 @@ public enum MenuState {
         }
     }
 
-    /// First-run auto-open decision (installer completion flow): open the
-    /// browser to the web UI exactly once per user, the first time a
-    /// reachable server advertises a web URL — which, right after the pkg's
-    /// postinstall bootstraps this agent, is the moment the setup wizard
-    /// becomes reachable.
-    public static func shouldAutoOpenWeb(alreadyOpened: Bool, webUrl: String?) -> Bool {
-        !alreadyOpened && webUrl != nil
+    /// Per-install auto-open decision (installer completion flow): open the
+    /// browser to the web UI once per INSTALL, not once per user forever —
+    /// the rc.6 field report found the conclusion pane's "Your browser will
+    /// open automatically" promise going unfulfilled on every
+    /// reinstall/upgrade after the very first one, because the old gate was
+    /// a UserDefaults bool that, once set, stayed set across every later
+    /// upgrade. `currentStamp` is InstallStamp.read()'s epoch-ms string for
+    /// /opt/loombre/current, which the installer recreates on every
+    /// install/upgrade — so a stamp that differs from what was last stored
+    /// fires again even though SOME earlier install already got its
+    /// auto-open. `currentStamp == nil` (dev runs outside an installed
+    /// layout) NEVER fires, regardless of webUrl or lastOpenedStamp — there
+    /// is no install to key an "already opened for this one" decision off
+    /// of.
+    public static func shouldAutoOpenWeb(lastOpenedStamp: String?, currentStamp: String?, webUrl: String?) -> Bool {
+        guard webUrl != nil, let currentStamp else { return false }
+        return currentStamp != lastOpenedStamp
+    }
+
+    /// Decision behind applicationShouldHandleReopen: with a live
+    /// connection, resolve through IPC (reusing the existing "Open Loombre"
+    /// flow); without one, fall back to installedDefaultWebUrl — with IPC
+    /// unreachable there is no way to learn the operator's actual
+    /// configured URL.
+    public static func reopenAction(isConnected: Bool) -> ReopenAction {
+        isConnected ? .resolveViaIPC : .openFallback(url: installedDefaultWebUrl)
     }
 
     /// SF Symbol name for the given state — pure lookup table, no AppKit.

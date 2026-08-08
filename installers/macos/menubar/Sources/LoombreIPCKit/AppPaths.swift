@@ -35,4 +35,18 @@ public enum LoombreAppPaths {
     /// "no crash files found" dialog, it never reads the directory itself
     /// (listing goes through GET /ipc/v1/crash-files).
     public static let crashesDir = appSupportDir + "/crashes"
+
+    /// The atomic-upgrade swap point installers/macos/LAYOUT.md §1
+    /// documents: `/opt/loombre/current -> <version>`, a symlink laid down
+    /// as PART OF THE PKG PAYLOAD at build time (build-pkg.mjs), not
+    /// created here. Its BOM-recorded mtime is therefore the BUILD
+    /// timestamp, and macOS's installer restores BOM mtimes on every run —
+    /// re-running the SAME pkg would otherwise stamp the identical mtime on
+    /// every install. postinstall's `touch -h "$OPT_DIR/current"`
+    /// (installers/macos/pkg/scripts/postinstall, step 4) is what actually
+    /// refreshes the symlink's own mtime on every real install/upgrade;
+    /// InstallStamp.swift reads that refreshed mtime as the per-install
+    /// identity behind the "auto-open the browser once per install"
+    /// decision.
+    public static let currentInstallPath = "/opt/loombre/current"
 }
