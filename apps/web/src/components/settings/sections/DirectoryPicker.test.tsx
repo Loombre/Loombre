@@ -48,10 +48,14 @@ const USERS = {
   ],
 };
 
-/** Duck-typed LoombreApiError stand-in: apiErrorMessage deliberately
- *  duck-types `problem` rather than instanceof-checking (its own header),
- *  so this is exactly the shape a real 403 produces. */
-function forbiddenError(): Error {
+/** Duck-typed LoombreApiError stand-in: apiErrorMessage (and the picker's
+ *  own parseRemediation) deliberately duck-type `problem` rather than
+ *  instanceof-checking (apiErrorMessage's own header), so this is exactly
+ *  the shape a real 403 produces. `remediation` is optional — omitted
+ *  reproduces the Linux/dev 403 (no scripted grant recipe), matching every
+ *  pre-existing test in this file; callers that want the macOS grant-flow
+ *  case pass it explicitly. */
+function forbiddenError(remediation?: { summary: string; commands: string[]; verify: string }): Error {
   return Object.assign(new Error("Forbidden"), {
     problem: {
       type: "urn:loombre:problem:forbidden",
@@ -59,9 +63,19 @@ function forbiddenError(): Error {
       status: 403,
       detail: PERMISSION_DETAIL,
       code: "filesystem-permission-denied",
+      ...(remediation !== undefined ? { remediation } : {}),
     },
   });
 }
+
+const REMEDIATION = {
+  summary: "Loombre's service account (_loombre) can't read this folder.",
+  commands: [
+    'chmod +a "user:_loombre allow search" /Users/ozzy',
+    'chmod +a "user:_loombre allow read,execute,readattr,readextattr,list,search,file_inherit,directory_inherit" /Users/ozzy',
+  ],
+  verify: "sudo -u _loombre ls /Users/ozzy",
+};
 
 describe("DirectoryPicker", () => {
   let view: TestRender | null = null;
@@ -161,5 +175,92 @@ describe("DirectoryPicker", () => {
       "/admin/filesystem/directories",
       expect.objectContaining({ params: { query: { path: "/Users/ozzy" } } }),
     );
+  });
+
+  // ── The second rc.6 field screenshot: the 403 `detail` was correct but
+  //    still a wall of text with nothing to click. When the server attaches
+  //    a `remediation` extension member (macOS + _loombre), the picker
+  //    should replace the paragraph with an actionable grant panel; when it
+  //    doesn't (Linux/dev, or a malformed shape), every test above this one
+  //    must keep passing UNCHANGED. ──
+  describe("filesystem-permission-denied remediation grant flow", () => {
+    function withDeniedResponse(rejection: Error): void {
+      apiGetMock.mockImplementation((path: string, options?: { params?: { query?: { path?: string } } }) => {
+        if (path !== "/admin/filesystem/directories") {
+          return Promise.reject(new Error(`unexpected apiGet ${path}`));
+        }
+        const requested = options?.params?.query?.path;
+        if (requested === undefined) return Promise.resolve(ROOTS);
+        if (requested === "/Users") return Promise.resolve(USERS);
+        if (requested === "/Users/ozzy") return Promise.reject(rejection);
+        return Promise.reject(new Error(`unexpected path ${requested}`));
+      });
+    }
+
+    function checkAgainButton(): HTMLButtonElement {
+      const button = Array.from(view!.container.querySelectorAll("button")).find(
+        (b) => (b.textContent ?? "").trim() === "Check again",
+      );
+      if (!button) throw new Error('no "Check again" button');
+      return button as HTMLButtonElement;
+    }
+
+    it("renders the summary and both commands, and 'Check again' re-lists the exact same denied path", async () => {
+      withDeniedResponse(forbiddenError(REMEDIATION));
+      await render();
+      await click(entryButton("/Users"));
+      await click(entryButton("ozzy"));
+
+      const text = view!.container.textContent ?? "";
+      expect(text).toContain(REMEDIATION.summary);
+      expect(text).toContain(REMEDIATION.commands[0]);
+      expect(text).toContain(REMEDIATION.commands[1]);
+      // finding 6: `verify` is required by the contract and validated, but
+      // was never rendered — the grant panel must show it too.
+      expect(text).toContain(REMEDIATION.verify);
+      // The bare detail paragraph is REPLACED, not supplemented.
+      expect(text).not.toContain(PERMISSION_DETAIL);
+
+      apiGetMock.mockClear();
+      await click(checkAgainButton());
+
+      expect(apiGetMock).toHaveBeenCalledTimes(1);
+      expect(apiGetMock).toHaveBeenCalledWith(
+        "/admin/filesystem/directories",
+        expect.objectContaining({ params: { query: { path: "/Users/ozzy" } } }),
+      );
+    });
+
+    it("falls back to the plain detail paragraph when remediation is absent (Linux/dev)", async () => {
+      withDeniedResponse(forbiddenError());
+      await render();
+      await click(entryButton("/Users"));
+      await click(entryButton("ozzy"));
+
+      const text = view!.container.textContent ?? "";
+      expect(text).toContain(PERMISSION_DETAIL);
+      expect(text).not.toContain("Check again");
+    });
+
+    it("falls back to the plain detail paragraph when remediation is malformed (commands not an array)", async () => {
+      const malformed = Object.assign(new Error("Forbidden"), {
+        problem: {
+          type: "urn:loombre:problem:forbidden",
+          title: "Forbidden",
+          status: 403,
+          detail: PERMISSION_DETAIL,
+          code: "filesystem-permission-denied",
+          remediation: { summary: "x", commands: "not-an-array", verify: "y" },
+        },
+      });
+      withDeniedResponse(malformed);
+      await render();
+      await click(entryButton("/Users"));
+      await click(entryButton("ozzy"));
+
+      const text = view!.container.textContent ?? "";
+      expect(text).toContain(PERMISSION_DETAIL);
+      expect(text).not.toContain("Check again");
+    });
   });
 });

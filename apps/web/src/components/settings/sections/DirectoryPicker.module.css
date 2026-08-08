@@ -101,6 +101,43 @@
   font-size: var(--text-sm);
 }
 
+/* The permission-denied grant flow (FilesystemPermissionRemediation) — a
+   summary line (.error, reused as-is) + CommandBlock + a "Check again"
+   caption, replacing the bare .error paragraph on macOS installs. */
+.grantPanel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.grantCaption {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}
+
+/* finding 6: the required-but-previously-unrendered `verify` command —
+   same muted/hint styling as .grantHint below it, with `code` picking up
+   the monospace treatment `.currentPath` above uses for paths. */
+.grantVerify {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+
+.grantVerify code {
+  font-family: var(--font-mono);
+}
+
+.grantHint {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+
 .actions {
   display: flex;
   justify-content: flex-end;
