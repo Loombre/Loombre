@@ -298,6 +298,32 @@ schema descriptions reworded neutrally; YAML comments kept — they never render
 SDK regenerated; docs rebuilt + synced to website (70 routes, build green;
 deploy remains manual).
 
+## v0.9.0-rc.6 draft release COMPLETE + dep-audit HIGH cleared (2026-08-08)
+
+- **CI-red root cause (runs 31229683836 + 31235322170, ~3.5min failures): NOT a
+  code change.** GHSA-2v37-7h3g-55p8 (HIGH, nanoid <3.3.17, "custom generators
+  can loop indefinitely when size is zero") landed in the GitHub advisory DB and
+  tripped the dep-audit gate; nanoid is transitive under next→postcss. Fixed at
+  `66ef94a7` via pnpm-workspace.yaml ranged overrides: postcss floor
+  8.5.12→8.5.23 (also clears moderate GHSA-fxqj-rqcc-2cmp; resolves 8.5.26) +
+  `postcss>nanoid: ^3.3.17` **deliberately scoped to the 3.x line** — a bare
+  `>=3.3.17` resolved nanoid 6.0.1, which is ESM-only and would break postcss's
+  CJS require (trap recorded for future advisory-driven overrides). gate:full
+  green locally; CI run 31245213606 green on all blocking jobs. The red
+  `gate-node-next` (Node 26, NON-BLOCKING by N2) is the standing experimental
+  localStorage class — now surfacing as `window.localStorage` undefined in
+  appearance-prefs.test.ts et al. (64 fails, same single root cause, no new
+  signal).
+- **Draft is UP with all 7 assets** (windows .exe 434MB / macos .pkg 153MB /
+  linux .tar.gz 224MB / manifest.json+.minisig / SHA256SUMS+.minisig); minisign
+  signatures on both verified locally against `keys/minisign.pub`; manifest
+  carries all 4 platforms incl. BOTH cosign-signed docker images
+  (ghcr.io/loombre/loombre + loombre-web :0.9.0-rc.6).
+- Release run 31245723929 (tag at `209bb92b`): **ALL SIX JOBS GREEN ON THE
+  FIRST ATTEMPT** — first rc to need zero reruns (rc.5's docker leg died to
+  runner infra and needed `gh run rerun --failed`). Owner install-testing;
+  publish-or-delete is the owner's call afterward.
+
 ## macOS live-test bug wave 1 — menubar wiring, wizard picker, folder-picker Forbidden (2026-08-07, all three FIXED)
 
 Owner's macOS live test surfaced three issues; 3-agent read-only sweep proved
