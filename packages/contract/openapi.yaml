@@ -2818,7 +2818,17 @@ paths:
         the service account the server is actually running as (the
         macOS/Linux installers run a dedicated least-privilege account that
         cannot read personal home folders) — clients should surface that
-        `detail` verbatim, it says what to do about the situation.
+        `detail` verbatim, it says what to do about the situation. On a
+        platform with a scripted grant recipe (macOS service-account
+        installs today), that same 403 body additionally carries a
+        `remediation` extension member shaped like
+        `FilesystemPermissionRemediation` — a short summary, the exact ACL
+        grant command(s) pre-filled with the real requested path, and a
+        verify command — which clients should render as an actionable grant
+        flow instead of the bare `detail` paragraph. `remediation` is
+        additive and absent on platforms without a scripted recipe
+        (Linux/dev/container installs today); clients MUST fall back to
+        rendering `detail` when it is absent.
       parameters:
         - name: path
           in: query
@@ -2836,7 +2846,24 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/DirectoryListing' }
         '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
+        '403':
+          description: >-
+            Authenticated but not permitted. On the filesystem-permission-
+            denied case (`code: "filesystem-permission-denied"`), the body
+            may additionally carry a `remediation` member
+            (FilesystemPermissionRemediation) — a scripted grant recipe for
+            platforms with one (macOS + `_loombre` service-account installs
+            today). `remediation` is absent on platforms without a scripted
+            recipe (Linux/dev/container installs), where clients fall back
+            to rendering `detail`.
+          content:
+            application/problem+json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Problem'
+                  - type: object
+                    properties:
+                      remediation: { $ref: '#/components/schemas/FilesystemPermissionRemediation' }
         '404': { $ref: '#/components/responses/NotFound' }
         '422': { $ref: '#/components/responses/UnprocessableEntity' }
         default: { $ref: '#/components/responses/Problem' }
@@ -4902,6 +4929,44 @@ components:
             open are included with `readable: false` — one unreadable
             system directory must not make a browsable parent
             un-browsable, and hiding it would misrepresent the filesystem.
+
+    FilesystemPermissionRemediation:
+      type: object
+      description: >-
+        Optional `remediation` extension member on the Problem body returned
+        by GET /admin/filesystem/directories when `code:
+        "filesystem-permission-denied"` AND the server has a scripted grant
+        recipe for the platform it's actually running on (macOS
+        service-account installs today; Linux/dev/container installs have
+        none yet — chown-based advice is too destructive to script blindly).
+        When present, clients should render this instead of the bare
+        `detail` paragraph: `summary` as a one-line message, `commands` as a
+        copyable, ordered command block pre-filled with the real path, and
+        `verify` as the command that proves the grant worked. Clients MUST
+        fall back to rendering `detail` verbatim when `remediation` is
+        absent — this member is an additive RFC 9457 extension (`Problem`
+        already declares `additionalProperties: true`), never a replacement
+        for `detail`.
+      additionalProperties: false
+      required: [summary, commands, verify]
+      properties:
+        summary:
+          type: string
+          description: >-
+            One short sentence naming the blocked service account (e.g.
+            "Loombre's service account (_loombre) can't read this folder.").
+        commands:
+          type: array
+          items: { type: string }
+          description: >-
+            Shell commands to run, in order, pre-filled with the real
+            requested path — paste-ready, nothing left for the operator to
+            fill in.
+        verify:
+          type: string
+          description: >-
+            A single command that proves the grant worked (re-lists the same
+            path as the service account).
 
     CrashFileList:
       type: object

@@ -1770,7 +1770,7 @@ export interface paths {
          *
          *     Admin-only, and deliberately so: enumerating a server's directory tree is reconnaissance in the wrong hands. Free-text path entry stays supported alongside it, because headless and remote installs still need to type a path that this host cannot browse to.
          *
-         *     A permission-denied listing fails 403 with `code: "filesystem-permission-denied"` and a `detail` sentence tailored to the service account the server is actually running as (the macOS/Linux installers run a dedicated least-privilege account that cannot read personal home folders) — clients should surface that `detail` verbatim, it says what to do about the situation.
+         *     A permission-denied listing fails 403 with `code: "filesystem-permission-denied"` and a `detail` sentence tailored to the service account the server is actually running as (the macOS/Linux installers run a dedicated least-privilege account that cannot read personal home folders) — clients should surface that `detail` verbatim, it says what to do about the situation. On a platform with a scripted grant recipe (macOS service-account installs today), that same 403 body additionally carries a `remediation` extension member shaped like `FilesystemPermissionRemediation` — a short summary, the exact ACL grant command(s) pre-filled with the real requested path, and a verify command — which clients should render as an actionable grant flow instead of the bare `detail` paragraph. `remediation` is additive and absent on platforms without a scripted recipe (Linux/dev/container installs today); clients MUST fall back to rendering `detail` when it is absent.
          */
         get: operations["browseDirectories"];
         put?: never;
@@ -2967,6 +2967,15 @@ export interface components {
             parent: string | null;
             /** @description Immediate subdirectories, name-sorted. Entries that cannot even be identified as directories (broken symlinks, un-statable link targets) are omitted; directories the server can see but not open are included with `readable: false` — one unreadable system directory must not make a browsable parent un-browsable, and hiding it would misrepresent the filesystem. */
             entries: components["schemas"]["DirectoryEntry"][];
+        };
+        /** @description Optional `remediation` extension member on the Problem body returned by GET /admin/filesystem/directories when `code: "filesystem-permission-denied"` AND the server has a scripted grant recipe for the platform it's actually running on (macOS service-account installs today; Linux/dev/container installs have none yet — chown-based advice is too destructive to script blindly). When present, clients should render this instead of the bare `detail` paragraph: `summary` as a one-line message, `commands` as a copyable, ordered command block pre-filled with the real path, and `verify` as the command that proves the grant worked. Clients MUST fall back to rendering `detail` verbatim when `remediation` is absent — this member is an additive RFC 9457 extension (`Problem` already declares `additionalProperties: true`), never a replacement for `detail`. */
+        FilesystemPermissionRemediation: {
+            /** @description One short sentence naming the blocked service account (e.g. "Loombre's service account (_loombre) can't read this folder."). */
+            summary: string;
+            /** @description Shell commands to run, in order, pre-filled with the real requested path — paste-ready, nothing left for the operator to fill in. */
+            commands: string[];
+            /** @description A single command that proves the grant worked (re-lists the same path as the service account). */
+            verify: string;
         };
         CrashFileList: {
             /** @description Newest first; bounded by the crash writer's retention cap. */
@@ -7963,7 +7972,17 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
-            403: components["responses"]["Forbidden"];
+            /** @description Authenticated but not permitted. On the filesystem-permission- denied case (`code: "filesystem-permission-denied"`), the body may additionally carry a `remediation` member (FilesystemPermissionRemediation) — a scripted grant recipe for platforms with one (macOS + `_loombre` service-account installs today). `remediation` is absent on platforms without a scripted recipe (Linux/dev/container installs), where clients fall back to rendering `detail`. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"] & {
+                        remediation?: components["schemas"]["FilesystemPermissionRemediation"];
+                    };
+                };
+            };
             404: components["responses"]["NotFound"];
             422: components["responses"]["UnprocessableEntity"];
             default: components["responses"]["Problem"];
