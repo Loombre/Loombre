@@ -1,0 +1,40 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+
+/* Loombre :: apps/web/src/components/ui/CommandBlock.module.css
+ *
+ * Same layout shape as SecretReveal.module.css's multiline variant (value
+ * block + top-right copy button), but a neutral bordered surface instead of
+ * SecretReveal's dashed accent box — there's no "one-time secret" framing
+ * here, just commands to run.
+ */
+
+.commandBlock {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-xs);
+  padding: var(--space-sm) var(--space-md);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+
+.commands {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2xs);
+  min-width: 0;
+  flex: 1;
+}
+
+.line {
+  display: block;
+  font-family: var(--font-mono);
+  /* finding 12: --mono-sm is 9.5px — below tokens.css's standing
+     never-below---text-xs (12px) rule. --text-sm (13px) matches
+     SecretReveal's value block, the component this one's layout mirrors. */
+  font-size: var(--text-sm);
+  color: var(--color-text);
+  white-space: pre-wrap;
+  word-break: break-all;
+}

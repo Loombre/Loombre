@@ -30,11 +30,42 @@ import type { components } from "@loombre/sdk";
 import { apiGet } from "../../../lib/api-client.js";
 import { apiErrorMessage } from "../../../lib/api-error-message.js";
 import { Button } from "../../ui/Button.js";
+import { CommandBlock } from "../../ui/CommandBlock.js";
 import { SheetOrModal } from "../../ui/SheetOrModal.js";
 import { Skeleton } from "../../skeleton/Skeleton.js";
 import styles from "./DirectoryPicker.module.css";
 
 type DirectoryListing = components["schemas"]["DirectoryListing"];
+type FilesystemPermissionRemediation = components["schemas"]["FilesystemPermissionRemediation"];
+
+/**
+ * Duck-typed, defensive parse of the `remediation` RFC 9457 extension
+ * member (packages/contract/openapi.yaml's FilesystemPermissionRemediation)
+ * off a caught error's `.problem` (LoombreApiError.problem is `unknown` —
+ * packages/sdk/src/client.ts). `remediation` is additive and only present
+ * on `code: "filesystem-permission-denied"` on a platform with a scripted
+ * grant recipe (macOS + _loombre today) — absent on Linux/dev/container
+ * installs, and ANY malformed shape (a future contract change, a proxy
+ * stripping extension members, etc.) is treated exactly like absent rather
+ * than risking a render crash or a half-filled grant panel: null here means
+ * "fall back to the plain `detail` paragraph," never "show something wrong."
+ */
+function parseRemediation(err: unknown): FilesystemPermissionRemediation | null {
+  if (err === null || typeof err !== "object") return null;
+  const problem = (err as { problem?: unknown }).problem;
+  if (problem === null || typeof problem !== "object") return null;
+  if ((problem as { code?: unknown }).code !== "filesystem-permission-denied") return null;
+
+  const remediation = (problem as { remediation?: unknown }).remediation;
+  if (remediation === null || typeof remediation !== "object") return null;
+  const { summary, commands, verify } = remediation as Record<string, unknown>;
+  if (typeof summary !== "string" || summary.length === 0) return null;
+  if (typeof verify !== "string" || verify.length === 0) return null;
+  if (!Array.isArray(commands) || commands.length === 0 || !commands.every((c) => typeof c === "string")) {
+    return null;
+  }
+  return { summary, commands, verify };
+}
 
 export interface DirectoryPickerProps {
   open: boolean;
@@ -48,10 +79,16 @@ export function DirectoryPicker({ open, onClose, onSelect }: DirectoryPickerProp
   const [listing, setListing] = useState<DirectoryListing | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The path that produced the current `error` — kept so "Check again" (the
+  // remediation panel's re-list affordance) can re-run EXACTLY the browse
+  // that failed, without the caller having to remember it.
+  const [deniedPath, setDeniedPath] = useState<string | null>(null);
+  const [remediation, setRemediation] = useState<FilesystemPermissionRemediation | null>(null);
 
   const load = useCallback((path: string | null) => {
     setLoading(true);
     setError(null);
+    setRemediation(null);
     // Typed query params, not a hand-built URL: apiGet is generic over the
     // SDK's literal path union, so a template string is not even
     // assignable — which is the generated client doing its job. It also
@@ -72,6 +109,8 @@ export function DirectoryPicker({ open, onClose, onSelect }: DirectoryPickerProp
         // the single word "Forbidden". The last good listing deliberately
         // stays up under the error, so a sibling folder remains pickable.
         setError(apiErrorMessage(err, "Could not read that directory."));
+        setDeniedPath(path);
+        setRemediation(parseRemediation(err));
         setLoading(false);
       });
   }, []);
@@ -109,7 +148,42 @@ export function DirectoryPicker({ open, onClose, onSelect }: DirectoryPickerProp
           </Button>
         </div>
 
-        {error && <p className={styles.error}>{error}</p>}
+        {error &&
+          (remediation ? (
+            // The rc.6 field screenshot this replaces: a long red paragraph
+            // and nowhere to go from there. summary is the one-line
+            // "what's wrong," the CommandBlock is the exact fix pre-filled
+            // with the REAL denied path, and "Check again" re-runs the same
+            // browse in place so the grant/verify loop stays in-app.
+            <div className={styles.grantPanel}>
+              <p className={styles.error}>{remediation.summary}</p>
+              <CommandBlock commands={remediation.commands} ariaLabel="Copy permission grant commands" />
+              <p className={styles.grantCaption}>
+                Run this in Terminal, then{" "}
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => deniedPath !== null && load(deniedPath)}
+                  disabled={loading}
+                >
+                  Check again
+                </Button>
+              </p>
+              {/* finding 6: `verify` is required by the contract, computed
+                  and validated server-side, and was never rendered — a
+                  muted one-liner so an operator can prove the grant worked
+                  without guessing the command themselves. */}
+              <p className={styles.grantVerify}>
+                Prove it worked: <code>{remediation.verify}</code>
+              </p>
+              <p className={styles.grantHint}>
+                Or keep media on an external drive (/Volumes) or /Users/Shared — see the install guide's
+                media-permissions section.
+              </p>
+            </div>
+          ) : (
+            <p className={styles.error}>{error}</p>
+          ))}
 
         {loading ? (
           <div className={styles.list}>

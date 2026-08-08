@@ -18,18 +18,37 @@ export class ProblemException extends HttpException {
     detail: string;
     instance: string;
     code?: string;
+    /** Additional RFC 9457 extension members (Problem's `additionalProperties:
+     *  true`) — spread onto the body alongside type/title/status/detail/
+     *  instance/code. First consumer: `remediation` on the filesystem-
+     *  permission-denied 403 (FilesystemPermissionRemediation, packages/
+     *  contract/openapi.yaml). Additive only — never a key already listed
+     *  above, so callers cannot silently override the fixed fields. */
+    extensions?: Record<string, unknown>;
   }) {
-    super(
-      {
-        type: params.type,
-        title: params.title,
-        status: params.status,
-        detail: params.detail,
-        instance: params.instance,
-        ...(params.code !== undefined ? { code: params.code } : {}),
-      },
-      params.status,
-    );
+    // `extensions` is spread FIRST, so every fixed RFC 9457 field below
+    // overwrites anything of the same name it might carry — reserved
+    // members always win, which is what the doc comment above promises.
+    // Before this ordering, extensions was spread LAST: `forbidden(detail,
+    // instance, code, { status: 200 })` produced an HTTP 403 whose OWN BODY
+    // claimed status 200 (code review finding). `code` is reserved the same
+    // way: assigned unconditionally after the spread, then deleted when the
+    // caller passed none, so a rogue `code` inside `extensions` cannot
+    // survive either (JSON.stringify drops an `undefined`-valued key, same
+    // wire shape as never having set it).
+    const body: Record<string, unknown> = {
+      ...params.extensions,
+      type: params.type,
+      title: params.title,
+      status: params.status,
+      detail: params.detail,
+      instance: params.instance,
+      code: params.code,
+    };
+    if (params.code === undefined) {
+      delete body["code"];
+    }
+    super(body, params.status);
   }
 }
 
@@ -44,7 +63,19 @@ export function unprocessableEntity(detail: string, instance: string, code?: str
   });
 }
 
-export function forbidden(detail: string, instance: string, code?: string): ProblemException {
+/**
+ * `extensions`, when supplied, is spread onto the problem body as-is
+ * (additive RFC 9457 extension members — Problem's `additionalProperties:
+ * true`). Optional and additive: every existing 2/3-arg call site is
+ * unaffected. First consumer: the filesystem-permission-denied 403's
+ * `remediation` member (admin.controller.ts's browseDirectories).
+ */
+export function forbidden(
+  detail: string,
+  instance: string,
+  code?: string,
+  extensions?: Record<string, unknown>,
+): ProblemException {
   return new ProblemException({
     status: HttpStatus.FORBIDDEN,
     type: "urn:loombre:problem:forbidden",
@@ -52,6 +83,7 @@ export function forbidden(detail: string, instance: string, code?: string): Prob
     detail,
     instance,
     ...(code !== undefined ? { code } : {}),
+    ...(extensions !== undefined ? { extensions } : {}),
   });
 }
 
