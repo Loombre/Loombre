@@ -298,6 +298,52 @@ schema descriptions reworded neutrally; YAML comments kept — they never render
 SDK regenerated; docs rebuilt + synced to website (70 routes, build green;
 deploy remains manual).
 
+## macOS installer relocation bug — Loombre.app silently never installed (2026-08-08, FIXED)
+
+Owner field report on the rc.6 pkg: "install successful, but the app never
+launches or appears in Applications." NOT the rc.1 no-autostart class (that
+LaunchAgent fix is intact) — /Applications/Loombre.app was never laid down
+at all.
+
+- **Root cause (proven from /var/log/install.log + the shipped
+  PackageInfo):** build-pkg.mjs ran pkgbuild WITHOUT `--component-plist`, so
+  pkgbuild's automatic component analysis marked Applications/Loombre.app
+  `BundleIsRelocatable=true` (a `<relocate>` entry in PackageInfo).
+  PackageKit resolves a relocatable bundle's destination by
+  LaunchServices/Spotlight lookup of the bundle id and installs over ANY
+  existing registered copy on the volume — four consecutive rc.6 installs
+  (2026-08-08 00:55–01:09) landed inside this repo's own
+  `installers/macos/.build-cache/payload/arm64/Applications/Loombre.app`.
+  Install exits 0; the LaunchAgent's hardcoded /Applications path spawns
+  nothing. Self-perpetuating: each hijack re-registers the stray with
+  LaunchServices. The Jul 27 / Aug 6 installs landed correctly only because
+  /Applications/Loombre.app still existed then; once it was removed, the
+  stray became the relocation target.
+- **Fix (feedback-loop-first):** `renderComponentPlist()` in build-pkg.mjs +
+  `--component-plist` on the pkgbuild call — pins Applications/Loombre.app
+  `BundleIsRelocatable=false` (version-check deliberately off: rc-suffixed
+  versions don't compare reliably under Installer's rules; preinstall boots
+  the running app out, the payload is authoritative). Regression nets:
+  `pkg/component-plist.test.mjs` (gate `installers-test` — round-trips the
+  plist through the REAL pkgbuild; a control case reproduces the defect,
+  proving the detector detects) + a smoke.mjs check
+  (`findRelocatableBundleIds`) asserting the built artifact's PackageInfo
+  lists no relocatable bundles — verified firing on the actual defective
+  rc.6 artifact before the fix. LAYOUT.md §6 documents the flag as
+  load-bearing. End-to-end proof: component pkg rebuilt from the real staged
+  rc.6 payload with the flag → `<relocate/>` empty, bundle still
+  upgrade-tracked. `pnpm gate:full` ALL STEPS PASSED.
+- **Release consequence:** the rc.6 draft's macos .pkg asset CARRIES THIS
+  DEFECT — any machine with a stray Loombre.app copy (build tree,
+  ~/Downloads, Trash) reproduces "successful install, no app". Rebuild the
+  macOS asset before publishing the draft (or fold into rc.7).
+- **Dev-machine residue (needs owner sudo):** the relocated installs wrote
+  Loombre.app into `.build-cache/payload/arm64/Applications/` AS ROOT
+  (`--ownership recommended` + root installd), so build-pkg.mjs's payload
+  `rmSync` will fail until
+  `sudo rm -rf "installers/macos/.build-cache/payload/arm64/Applications"`;
+  then rebuild + reinstall restores /Applications/Loombre.app.
+
 ## v0.9.0-rc.6 draft release COMPLETE + dep-audit HIGH cleared (2026-08-08)
 
 - **CI-red root cause (runs 31229683836 + 31235322170, ~3.5min failures): NOT a
