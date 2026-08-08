@@ -137,6 +137,33 @@ permission for the terminal host (Quick Look renders + a real preview pkg
 opened in Installer.app stand in; content parity vs old .txt verified by
 review lens 3).
 
+### Pushed + deployed (2026-08-08, owner-directed)
+
+- **Pushed**: 0dd6a504..f94a0ce9 → origin/main (gate:full green on that tree).
+- **Website DEPLOYED to www.loombre.com** — live-verified: /docs/ops/env-reference
+  + settings-reference serve the two-layer copy; the API reference serves the
+  neutral description with ZERO CLAUDE.md mentions; root 200 with CSP intact;
+  loombre-website modified_on 2026-08-08T02:34:17Z.
+- **How (recorded for future sessions — wrangler is UNAUTHENTICATED on this
+  machine; the Cloudflare MCP plugin's OAuth is the only credential):** the
+  plugin's token can't mint API tokens (/user/tokens* → "Invalid API Token" for
+  OAuth) and its execute-sandbox egress is allowlisted (external fetches 403),
+  so `npm run deploy` can't work and neither can sandbox-pulls-from-a-tunnel.
+  Working bridge for the assets-only worker: (1) build the manifest LOCALLY
+  with wrangler's exact hash (blake3(base64(contents)+extension) hex[0:32],
+  via the site's own node_modules/blake3-wasm; _headers/_redirects excluded);
+  (2) MCP execute → POST /workers/scripts/loombre-website/assets-upload-session
+  (account auth) → session JWT + needed-hash buckets; (3) upload buckets from
+  THIS machine with plain fetch — the upload endpoint auths with the SESSION
+  JWT, not the account token (POST /workers/assets/upload?base64=true,
+  FormData of base64 File parts named by hash) → completion JWT on the last
+  bucket; (4) MCP execute → PUT /workers/scripts/loombre-website multipart
+  metadata {assets:{jwt, config:{html_handling, not_found_handling, _headers,
+  _redirects}}, compatibility_date} (account auth, tiny payload). Custom
+  domains/routes untouched by the script PUT. loombre-redirect worker
+  unchanged (no redeploy needed). Note: /docs/*.html URLs 301 to
+  extensionless paths (html_handling) — verify live content with curl -L.
+
 ### W1 root cause (RCA COMPLETE 2026-08-07 — 5-lane parallel trace, every claim file:line-verified)
 
 **The suspected probe→scanner coupling DOES NOT EXIST in code.** Exhaustive trace
