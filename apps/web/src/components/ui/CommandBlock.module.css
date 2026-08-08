@@ -30,6 +30,7 @@
 .line {
   display: block;
   font-family: var(--font-mono);
+
   /* finding 12: --mono-sm is 9.5px — below tokens.css's standing
      never-below---text-xs (12px) rule. --text-sm (13px) matches
      SecretReveal's value block, the component this one's layout mirrors. */
