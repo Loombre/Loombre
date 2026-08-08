@@ -10,7 +10,11 @@
 #    operator's DATABASE_URL edits must survive a `pkg` upgrade).
 # 4. Marks the bin/ shims + fetched runtime binaries executable (pkgbuild
 #    payload permissions can be lossy across some staging tools; this is
-#    belt-and-suspenders, cheap and idempotent).
+#    belt-and-suspenders, cheap and idempotent), then touches
+#    /opt/loombre/current's own mtime — BOM restoration would otherwise
+#    replay the pkg's BUILD-time stamp on every install, which is not what
+#    the menubar's per-install auto-open gate needs (see the touch -h
+#    comment below, at the end of this step).
 # 5. Bootstraps (loads) all three LaunchDaemons (server, worker, web UI)
 #    so the service is live immediately, without requiring a reboot.
 #
@@ -149,6 +153,21 @@ fi
 chmod 0755 "$OPT_DIR/current/bin/loombre-server" "$OPT_DIR/current/bin/loombre-worker" "$OPT_DIR/current/bin/loombre-web" 2>/dev/null || true
 chmod 0755 "$OPT_DIR/current/runtime/node/bin/node" 2>/dev/null || true
 chmod 0755 "$OPT_DIR/current/runtime/ffmpeg/ffmpeg" "$OPT_DIR/current/runtime/ffmpeg/ffprobe" 2>/dev/null || true
+
+# `current` ships as PART OF THE PKG PAYLOAD (build-pkg.mjs lays the
+# symlink down at build time) — it is never created here. Its BOM entry
+# therefore carries the pkg's BUILD timestamp, and macOS's installer
+# restores BOM mtimes on every run. Left alone, re-running the SAME pkg
+# (a plain reinstall, no new build) would stamp the IDENTICAL mtime every
+# time, and the menubar's per-install auto-open gate
+# (LoombreIPCKit/InstallStamp.swift, keyed by MenuState.shouldAutoOpenWeb)
+# reads exactly that mtime as "which install is this" — so without this
+# touch, auto-open semantics would silently become once-per-pkg-BUILD
+# instead of once-per-INSTALL, and every reinstall of the same download
+# would stay stuck as "already opened." `-h` touches the symlink's own
+# timestamp (lstat semantics), not the versioned directory it resolves to —
+# matching exactly how InstallStamp.swift reads it.
+touch -h "$OPT_DIR/current" 2>/dev/null || true
 
 # --- 5. load the daemons ---------------------------------------------------
 # Order matters loosely: server first (it provisions embedded PG + writes

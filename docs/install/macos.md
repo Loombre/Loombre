@@ -418,6 +418,35 @@ The menubar app (`Loombre.app`) is a separate executable and may also trigger
 Gatekeeper on first launch. Click through the same **Open Anyway** flow as you
 did for the installer.
 
+### Menu bar icon missing (services running, nothing in the menu bar)
+
+Occasionally macOS's own menu bar host — Control Center, on macOS 26 and
+later — gets into a state where newly started menu bar apps aren't
+displayed at all, even though they're running normally. This has been
+observed in the field when Control Center crash-restarts, for example
+during heavy installer activity right after a `.pkg` install. It isn't
+specific to Loombre, and no third-party app can reliably work around it
+from the outside — the fix has to happen at the menu bar host itself.
+
+Try these in order:
+
+```sh
+killall ControlCenter   # it relaunches immediately and re-adopts every icon
+```
+
+If that doesn't bring the icon back, log out and back in; if it still
+doesn't, a reboot is the definitive fix.
+
+Loombre itself keeps working the whole time — the server, worker, and web
+UI are LaunchDaemons independent of the menu bar, so streaming is
+unaffected. You can reach the web UI directly at `http://localhost:3000`
+regardless, and while it's running, double-clicking `Loombre.app` in
+`/Applications` also opens the web UI even while its menu bar icon is
+invisible. (This is the menu bar app just relaunching, not a cold start —
+if you've quit it or fully shut Loombre down, double-clicking the app
+starts it fresh instead, without opening a browser; see "Shutting Loombre
+down completely" above for bringing everything back.)
+
 ### Getting logs from LaunchDaemon without `tail`
 
 If you prefer the Console app or `log` command:
