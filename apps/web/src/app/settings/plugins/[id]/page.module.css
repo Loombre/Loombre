@@ -1,4 +1,32 @@
 /* SPDX-License-Identifier: AGPL-3.0-only */
+
+/* LD-8: relocated verbatim from apps/web/src/app/admin/plugins/[id]/
+   page.module.css, plus .wrap/.backLink below (the "← Plugins" cross-link
+   this route needs now that it no longer renders inside AdminNav's own
+   still-highlighted "Plugins" tab — see page.tsx's header). */
+
+.wrap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+/* Same recipe as components/settings/sections/PlaybackSection.module.css's
+   .advancedLink cross-link, mirrored for the opposite (back) direction. */
+.backLink {
+  align-self: flex-start;
+  font-family: var(--font-mono);
+  font-size: var(--mono-lg);
+  letter-spacing: var(--track-mono);
+  text-transform: uppercase;
+  color: var(--color-accent);
+  text-decoration: none;
+}
+
+.backLink:hover {
+  color: var(--color-accent-hover);
+}
+
 .page {
   display: flex;
   flex-direction: column;
@@ -82,9 +110,8 @@
   background: color-mix(in srgb, var(--color-warning) 12%, transparent);
 }
 
-/* Lane W5b: same shape as .scopeChangeBanner, danger-toned — the delivery
-   failure-streak warning (a real reachability problem, not just "review
-   this"). */
+/* Same shape as .scopeChangeBanner, danger-toned — the delivery failure-
+   streak warning (a real reachability problem, not just "review this"). */
 .dangerBanner {
   display: flex;
   flex-direction: column;

@@ -61,6 +61,16 @@
 // stubs above) no longer matches the settingsSection branch either; it
 // falls through to the generic unmapped-route case at the bottom for the
 // brief instant before its own redirect fires.
+//
+// LD-8 (owner directive, Settings-Plugins consolidation): a NEW
+// `/settings/plugins/<id>` case, one level BELOW the "plugins" tab (a
+// plugin detail, not a section — same "item detail hangs off its owning
+// tab" shape the ITEM_DETAIL_RE cases below already use) — this route
+// doesn't match the settingsSection branch above (that's an exact-href
+// match, and this pathname carries a trailing id), so without its own
+// case it would fall all the way through to the generic Home-back default
+// at the bottom. Checked BEFORE the settingsSection branch's exact match
+// so a bare `/settings/plugins` still resolves there unaffected.
 
 import { SETTINGS_SECTIONS } from "../settings/section-registry.js";
 
@@ -114,6 +124,10 @@ export function resolveMobileHeader(
 
   if (pathname.startsWith("/restricted")) {
     return { mode: "zone-back", title: "Restricted", backLabel: "Back" };
+  }
+
+  if (pathname.startsWith("/settings/plugins/")) {
+    return { mode: "back", title: "Plugin", backLabel: "Plugins", backHref: "/settings/plugins" };
   }
 
   const settingsSection = SETTINGS_SECTIONS.find((s) => s.href === pathname);

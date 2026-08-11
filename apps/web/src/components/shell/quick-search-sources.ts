@@ -41,6 +41,13 @@
 // /settings destination, so the two rows were two palette jumps to the
 // identical screen. "settings" (System Settings) is the one entry left.
 //
+// LD-8 (owner directive, Settings-Plugins consolidation): "admin-plugins"
+// is removed for the SAME reason — /admin/plugins is now a redirect-only
+// stub into /settings/plugins (components/settings/sections/
+// RegisteredPluginsPanel.tsx), already reachable via the "settings" row
+// above, so a dedicated "admin-plugins" row would be a second palette jump
+// to the identical screen.
+//
 // Actions are intentionally NOT the prototype's scan-trigger/fix-match
 // set (those need per-library ids + duplicate app/admin/libraries/
 // page.tsx's own scan-enqueue logic just to populate a palette) — kept to
@@ -81,7 +88,6 @@ export const PALETTE_SCREENS: PaletteScreen[] = [
   { key: "admin-sessions", label: "Sessions", href: "/admin/sessions", adminOnly: true },
   { key: "admin-libraries", label: "Libraries", href: "/admin/libraries", adminOnly: true },
   { key: "admin-users", label: "Users", href: "/admin/users", adminOnly: true },
-  { key: "admin-plugins", label: "Plugins", href: "/admin/plugins", adminOnly: true },
 ];
 
 /** Combined cap across screens+actions (mirrors the prototype's own
