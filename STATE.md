@@ -953,6 +953,44 @@ itself from its branch — orchestrator re-syncs from merged main at Wave B
 integration (branch-state dist is transient). register-lint 27 baseline
 held (pre-existing, inherited from Wave A — not this lane's).
 
+**B3 FINAL (2026-08-11): LD-10 + LD-11 DONE — orchestrator-verified**
+(installers:test 83/83 + W12 spec 5/5 on re-run; perf/baselines.json ZERO
+diff across the branch). LD-10: perf-t0 endpoint p95s were ALREADY
+variance-resilient (pre-existing 04cc504d with its own recorded mutation
+proof — brief premise partially stale, verified not re-done); perf-web-
+budget hardened with repeat-on-breach best-of-N (default 3, smallest total
+wins, passing case measures once, attempts recorded); MUTATION PROOF: a
+deliberate lucide-react barrel import drove /browse 174.0→365.0 KB gz and
+the hardened harness failed ALL 3 attempts identically — best-of-N forgives
+only transient noise, never a deterministic regression. LD-11: all four
+shapes set LOOMBRE_LOG_FILE aligned with where each platform's logs REALLY
+land (launchd StandardOutPath; MSI service Environment matching the --log
+flag; compose tee preserving `docker compose logs` with tini signal-safety
+verified against a real container; tarball shims teeing before the
+journalctl-preserving exec); 24 new red-first tests; W12 empty-state copy
+now a from-source/dev-run signal; env-reference regenerated via generator.
+One out-of-scope comment-only fix disclosed (admin-logs-tail.ts restated
+the now-false claim). Lane self-scrubbed 12 naming-gate violations.
+
+### Wave B — CLOSED 2026-08-11 (exit gate MET)
+
+Integration: four branches merged (B2 → B4 → B1 → B3, zero manual conflict
+resolutions; the B1/B4 openapi.yaml edits auto-merged in disjoint paths);
+SDK REGENERATED on the merged contract per standing rule — byte-identical
+to the auto-merge, 158 operations, sdk-drift clean. **gate:full ALL 16
+STEPS PASSED** on the settled tree (bundle 170.7 KB gz unchanged).
+Contract summary: oasdiff NO BREAKING anywhere — additive only (TokenPair.
+emailApplied, ClaimInviteRequest.email nullable, DELETE stash-connection,
+stash.provider.disconnected event); the LD-13a narrowing pre-existed (P4.23).
+Conformance allowance ZERO throughout. LEDGER ANNOTATIONS: Remote OPEN
+V-SEC F2 → CLOSED (a16f3e50/6b27d9fe/1d5dcf8c, structural-release guard +
+isolation runtime assertion); mail OPEN item 3 (F5 currentPassword) →
+CLOSED-as-pre-existing-verified with new adversarial coverage (B1); Stash
+OPEN connection-DELETE → CLOSED 0d697a65. LD register: LD-9 LD-10 LD-11
+LD-13 all CLOSED this wave. Owner-verify additions: real-hardware log-path
+eyeball per install shape rides the existing checklist; AUD-W1-001 dotnet
+step execution proof still pending next CI run.
+
 **B4 checkpoint (2026-08-11): stash-connection DELETE DONE — orchestrator-
 verified** (90/90 on re-run: e2e 11 + conformance 13 + event-schemas 54 +
 db 12; base = current main c018b564 after its own ff fix). oasdiff purely
