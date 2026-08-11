@@ -4,8 +4,9 @@
  * §11 step 1). Part of `pnpm test:matrix` — NOT the gate (vitest.config.ts's
  * include list only names matrix-meta.spec.ts, never this file).
  *
- * All FIVE §10 properties (the fifth — AV1 tier-0 unreachability, LD-16 —
- * landed with Wave C1) run against a seeded, deterministic PRNG
+ * All SIX §10 properties (the fifth — AV1 tier-0 unreachability, LD-16 —
+ * landed with Wave C1; the sixth, its Stage-G-guard companion, with the
+ * C1 review follow-up) run against a seeded, deterministic PRNG
  * (mulberry32 — matrix/lib/prng.ts) generating random VALID PlanInputs
  * across the full §2 type space (matrix/lib/generators.ts). No unseeded
  * Math.random anywhere in this file or its generators — same seed, same
@@ -32,7 +33,12 @@ import { NotImplementedError, plan } from "../src/index.js";
 import { BLOCKING_REASON_CODES } from "../src/reasons.js";
 import type { PlanInput } from "../src/types.js";
 import { hasAnyGreen, loadBurnupManifest } from "./lib/burnup.js";
-import { genAv1Tier0Input, genDirectPlayInput, genRandomPlanInput } from "./lib/generators.js";
+import {
+  genAv1Tier0Input,
+  genAv1Tier0UnrestrictedCapsInput,
+  genDirectPlayInput,
+  genRandomPlanInput,
+} from "./lib/generators.js";
 import { mulberry32, type Rng } from "./lib/prng.js";
 import { validatePlan } from "./lib/validate-plan.js";
 
@@ -41,6 +47,12 @@ const TOTALITY_SAMPLE_SIZE = 1000;
 const REASON_COMPLETENESS_SAMPLE_SIZE = 1000;
 const DIRECT_PLAY_SAMPLE_SIZE = 500;
 const AV1_TIER0_SAMPLE_SIZE = 1000;
+/** 2000, not property 5's 1000: the leg-4 corner this property exists for
+ *  (a route that collapses to rule (iii) with av1 rungs still on the
+ *  ladder) is a narrower slice of its own space than "tier 0 with no hw
+ *  av1" is of property 5's, so the extra samples buy the guard-fired floor
+ *  below real headroom instead of a hairline pass. */
+const AV1_SOFTWARE_ROUTE_SAMPLE_SIZE = 2000;
 
 /** Every encoder name §6 interpretation M can emit for an `av1` target.
  *  Property 5's third clause scans the produced `ffmpegArgs` for ALL of
@@ -203,5 +215,82 @@ describe("playback matrix property tests (docs/PLAYBACK.md §10)", () => {
     expect(sawExplicitAv1Rung, "no explicit av1 ladder row was ever sampled").toBeGreaterThan(100);
     expect(sawSoftwareAv1Capability, "no software-av1-capable box was ever sampled").toBeGreaterThan(100);
     expect(sawTranscodeDecision, "no sampled input ever reached a transcode (ladders never built)").toBeGreaterThan(50);
+  });
+
+  // -------------------------------------------------------------------------
+  // (6) AV1 software-route exclusion — docs/PLAYBACK.md §10 property 6 /
+  // §7.2's Stage-G residual guard. C1 fable-review finding 2 (owner-adopted
+  // 2026-08-11): property 5's space DELETES av1 from every hardware encode
+  // list, so the guard's own corner — eligibility `'hw'`, route still
+  // collapsing to rule (iii) — was pinned only by named cases (unit tests +
+  // matrix 526/530), never quantified. This property closes that: caps are
+  // UNRESTRICTED (hardware av1 encoders allowed), only the tier is fixed.
+  // -------------------------------------------------------------------------
+  it("(6) AV1 software-route exclusion — tier 0, caps unrestricted ⇒ no SOFTWARE-routed plan carries an av1 rung, targetCodec or encoder token", () => {
+    const inputs = samples(0xd0000006, AV1_SOFTWARE_ROUTE_SAMPLE_SIZE, genAv1Tier0UnrestrictedCapsInput);
+
+    if (!planImplemented) {
+      for (const input of inputs) {
+        expect(() => plan(input)).toThrow(NotImplementedError);
+      }
+      return;
+    }
+
+    let sawHardwareAv1Caps = 0;
+    let sawSoftwareRoutedTranscode = 0;
+    let sawStageGDemotion = 0;
+    let sawAv1SurvivingOnHardwareRoute = 0;
+
+    for (const input of inputs) {
+      expect(input.policy.tier, "generator hypothesis: tier must be 0").toBe(0);
+
+      if (input.caps.backends.some((b) => b.backend !== "software" && b.encode.includes("av1"))) {
+        sawHardwareAv1Caps++;
+      }
+
+      const result = plan(input);
+
+      if (result.reasons.some((r) => r.detail?.includes("cause=tier0-software-route"))) sawStageGDemotion++;
+      if (result.video.encoder !== "software" && result.ladder.some((r) => r.codec === "av1")) {
+        sawAv1SurvivingOnHardwareRoute++;
+      }
+
+      if (result.video.encoder !== "software") continue;
+      if (result.video.action === "transcode") sawSoftwareRoutedTranscode++;
+
+      expect(
+        result.ladder.find((r) => r.codec === "av1"),
+        `software-routed plan emitted an av1 ladder rung: ${JSON.stringify(result.ladder)}`,
+      ).toBeUndefined();
+
+      expect(
+        result.video.targetCodec,
+        `software-routed plan emitted video.targetCodec 'av1' (ladder ${JSON.stringify(result.ladder)})`,
+      ).not.toBe("av1");
+
+      for (const name of AV1_ENCODER_NAMES) {
+        expect(
+          result.ffmpegArgs.includes(name),
+          `software-routed plan emitted av1 encoder token "${name}": ${JSON.stringify(result.ffmpegArgs)}`,
+        ).toBe(false);
+      }
+    }
+
+    // NON-VACUITY (property 5's own floors, restated for THIS hypothesis):
+    // the sampled space must really contain av1-capable hardware, really
+    // route plans to software, really fire the guard, and really let av1
+    // through on the routes where it is legal — otherwise "no av1 on a
+    // software route" would be a statement about a space where av1 never
+    // existed or software routes never happened.
+    expect(sawHardwareAv1Caps, "no hardware-av1-capable box was ever sampled").toBeGreaterThan(200);
+    expect(sawSoftwareRoutedTranscode, "no sampled input ever routed a transcode to software").toBeGreaterThan(100);
+    expect(
+      sawStageGDemotion,
+      "the Stage-G residual guard never fired — this property would pass without it",
+    ).toBeGreaterThan(50);
+    expect(
+      sawAv1SurvivingOnHardwareRoute,
+      "av1 never survived anywhere, so the property proves nothing about the software route specifically",
+    ).toBeGreaterThan(0);
   });
 });

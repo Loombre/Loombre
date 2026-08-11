@@ -670,3 +670,136 @@ export function genAv1Tier0Input(rng: Rng): PlanInput {
     },
   };
 }
+
+// ---------------------------------------------------------------------------
+// genAv1Tier0UnrestrictedCapsInput — docs/PLAYBACK.md §10 property 6
+// (§7.2's Stage-G residual guard; C1 review finding 2)
+// ---------------------------------------------------------------------------
+
+/**
+ * The hardware-encode shapes property 6 needs to sample. `genAv1Tier0Input`
+ * (property 5) DELETES av1 from every hardware `encode` list, so the whole
+ * leg-4 corner — eligibility `'hw'`, route still collapsing to rule (iii)
+ * — is outside its space by construction. This one samples that corner
+ * deliberately:
+ *   - `'none'`      — no hw av1 encoder at all (property 5's own subspace,
+ *                     kept in scope so the two properties overlap rather
+ *                     than partitioning: a regression that moved the bug
+ *                     across the boundary cannot hide in the gap).
+ *   - `'full'`      — the hw backend encodes everything INCLUDING av1, so
+ *                     §8.3 rule (i)/(ii) really can take it. This is the
+ *                     arm that proves av1 is REACHABLE in this space; a
+ *                     property that never sees an av1 rung anywhere proves
+ *                     nothing about the software route specifically.
+ *   - `'av1-only'`  — the reviewer's shape: `encode: ['av1']`. Enough for
+ *                     eligibility `'hw'` (so the §7.1 swap admits av1
+ *                     rungs even at tier 0), never enough to cover a mixed
+ *                     `{av1, hevc}`/`{av1, h264}` target set, so the route
+ *                     collapses to rule (iii) — where only the residual
+ *                     guard stands between a Tier-0 box and a software AV1
+ *                     encode.
+ *   - `'av1-h264'`  — the same collapse one notch wider (a ladder needing
+ *                     hevc still escapes coverage).
+ */
+const HW_AV1_ENCODE_SHAPES = ["none", "full", "av1-only", "av1-h264"] as const;
+
+/**
+ * A random input restricted ONLY to `policy.tier === 0` — caps are
+ * UNRESTRICTED, hardware AV1 encoders explicitly allowed (docs/PLAYBACK.md
+ * §10 property 6, the companion the C1 fable review asked for). Property 5
+ * quantifies §7.2's unreachability legs 1-3 over a space where no av1 rung
+ * could ever be admitted; this generator samples the space where av1 rungs
+ * ARE admitted by the eligibility gate, so the ONLY thing keeping av1 off a
+ * software route is the Stage-G residual guard itself. Same construction
+ * discipline as `genAv1Tier0Input`: constrain `genRandomPlanInput` rather
+ * than duplicate it.
+ */
+export function genAv1Tier0UnrestrictedCapsInput(rng: Rng): PlanInput {
+  const base = genRandomPlanInput(rng);
+
+  const hwShape = pick(rng, HW_AV1_ENCODE_SHAPES);
+  const softwareVerifiesAv1 = bool(rng, 0.5);
+  const backends = base.caps.backends.map((b) => {
+    if (b.backend === "software") {
+      return {
+        ...b,
+        encode: softwareVerifiesAv1
+          ? (Array.from(new Set([...b.encode, "av1"])) as ("h264" | "hevc" | "av1")[])
+          : b.encode.filter((c) => c !== "av1"),
+      };
+    }
+    // Two backends can NEVER carry av1 encode on any real machine, and
+    // the arg builder's interpretation-J guard says so out loud rather
+    // than emitting a nonexistent encoder name: `d3d11va` is decode-only
+    // (§8.2, no row in the encoder-name table at all) and `videotoolbox`
+    // has no `av1_videotoolbox` encoder in any ffmpeg release (§7.3 — the
+    // probe battery reports the capability absent BY CONSTRUCTION, which
+    // is what makes the Tier-0 refusal path verifiable on Apple Silicon).
+    // Manufacturing those rows would sample inputs no probe can produce
+    // and no plan is defined for, so this generator honors the same two
+    // facts the battery does.
+    if (b.backend === "d3d11va") return b;
+    if (b.backend === "videotoolbox") return { ...b, encode: b.encode.filter((c) => c !== "av1") };
+    switch (hwShape) {
+      case "none":
+        return { ...b, encode: b.encode.filter((c) => c !== "av1") };
+      case "full":
+        return { ...b, encode: Array.from(new Set([...b.encode, "av1"])) as ("h264" | "hevc" | "av1")[] };
+      case "av1-only":
+        return { ...b, encode: ["av1"] as ("h264" | "hevc" | "av1")[] };
+      default:
+        return { ...b, encode: ["av1", "h264"] as ("h264" | "hevc" | "av1")[] };
+    }
+  });
+
+  // A hardware row is INJECTED when the drawn fixture had none (several are
+  // software-only), so the av1-bearing hw shapes are genuinely sampled
+  // rather than silently collapsing back into property 5's space.
+  if (hwShape !== "none" && !backends.some((b) => b.backend !== "software")) {
+    backends.unshift({
+      backend: "nvenc",
+      decode: ["h264", "hevc", "av1", "vp9", "mpeg2"],
+      encode: hwShape === "full" ? ["h264", "hevc", "av1"] : hwShape === "av1-only" ? ["av1"] : ["av1", "h264"],
+      toneMap: ["cuda"],
+      verifiedAtMs: 1_750_000_000_000,
+    });
+  }
+
+  const device: DeviceProfile = bool(rng, 0.75)
+    ? {
+        ...base.device,
+        hls: { ...base.device.hls, supportsFmp4: true },
+        video: base.device.video.some((v) => v.codec === "av1")
+          ? base.device.video
+          : [
+              ...base.device.video,
+              {
+                codec: "av1",
+                maxProfile: null,
+                maxLevel: null,
+                maxBitDepth: 10,
+                maxWidth: 3840,
+                maxHeight: 2160,
+                maxFrameRate: 60,
+                maxBitrateBps: null,
+              },
+            ],
+      }
+    : base.device;
+
+  return {
+    ...base,
+    device,
+    caps: { backends },
+    policy: {
+      ...base.policy,
+      tier: 0,
+      // Never disabled, for the same reason property 5's generator says so:
+      // a transcode-disabled plan carries an empty ladder and would satisfy
+      // the property vacuously.
+      allowTranscode: true,
+      av1EncodePreferred: bool(rng, 0.8),
+      ladderRungs: bool(rng, 0.6) ? pick(rng, AV1_LADDER_TABLES) : LADDER_TABLE,
+    },
+  };
+}

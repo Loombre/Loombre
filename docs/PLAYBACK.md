@@ -1045,7 +1045,18 @@ ladder tables, and av1-bearing caps in all combinations) restricted to
 `policy.tier === 0` AND no non-software backend with `'av1' ∈ encode`:
 NO emitted plan contains a ladder rung with `codec === 'av1'`, a
 `video.targetCodec === 'av1'`, or any `ffmpegArgs` token naming an av1
-encoder (`libsvtav1`, `av1_nvenc`, `av1_qsv`, `av1_vaapi`, `av1_amf`).
+encoder (`libsvtav1`, `av1_nvenc`, `av1_qsv`, `av1_vaapi`, `av1_amf`);
+(6) **AV1 software-route exclusion (§7.2's Stage-G residual guard)** — the
+companion property 5 cannot state, because property 5's space deletes av1
+from every hardware `encode` list: over randomized `policy.tier === 0`
+inputs whose caps are UNRESTRICTED (hardware av1 encoders allowed, so
+eligibility really reaches `'hw'` and av1 rungs really enter the ladder),
+every emitted plan with `video.encoder === 'software'` satisfies the same
+three clauses as property 5 — no av1 rung, no av1 `targetCodec`, no av1
+encoder token. Non-vacuity floors mirror property 5's and add the two this
+hypothesis needs: the guard must actually FIRE in the sample, and av1 must
+actually SURVIVE on some hardware route (otherwise the property would hold
+over a space where av1 never existed).
 **C1 mandatory matrix case classes (numbers assigned at build; each of
 §7.2's four unreachability legs pinned individually):** T0 + hw-av1 caps +
 opted-in policy + av1/fmp4 device → av1 rungs, hw route; T0 +
