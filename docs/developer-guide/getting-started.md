@@ -103,7 +103,11 @@ this: it refuses to run against any database whose name doesn't contain
 `_test`, unless `LOOMBRE_ALLOW_RESET=1` is set — which is exactly what lets
 `pnpm db:reset` (step 2) reset your real dev database on purpose. Net
 effect: it's safe to run `pnpm test` while `pnpm dev` (step 3) is up and
-your dev database has real browsable data in it.
+your dev database has real browsable data in it. Those auto-created
+`_test` databases are never dropped automatically, so they accumulate over
+many test runs — run `pnpm db:cleanup-test-dbs` (dry run by default; pass
+`--execute` to actually drop) occasionally to sweep the disposable ones off
+your Postgres server.
 
 If you're working specifically on playback decision logic:
 
