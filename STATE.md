@@ -373,6 +373,39 @@ rc.7 tagged from this tree (owner: "push all commits and draft rc7").
   Phase-0 file:line citations predate this wave's playback commits —
   flagged to the owner for its Phase-2 pass.
 
+## Vendor-mirror hardening + rc.7 shipped (2026-08-10→11, task #16 CLOSED; new task #17 opened)
+
+v0.9.0-rc.7 DRAFT BUILT (all four legs green; macOS pkg carries the
+relocation fix; publish remains the owner's manual action). Two
+release-day incidents handled en route: (1) BtbN deleted the pinned
+ffmpeg autobuild mid-draft — repinned d3a6883d (hashes independently
+verified + cross-checked against upstream checksums); (2) the new
+uninstall stray-bundle tests shimmed pkgutil but not macOS-only plutil
+— red on the gate's ubuntu leg, hermetic shim added c5682d5e.
+
+- **#16 CLOSED (660fda48):** all 7 pinned archives mirrored on this
+  repo's `ffmpeg-mirror` release (tag deliberately outside the v*
+  release trigger; assets append-only, named <sha256[0:12]>--<basename>
+  so the pinned hash derives the name AND gates the bytes).
+  fetch-ffmpeg falls back to the mirror on primary failure (token-
+  gated; Node fetch drops Authorization on the cross-origin redirect —
+  empirically verified), docker leg via optional buildx secret
+  (absent → byte-identical build). vendor-liveness.yml probes all
+  pinned URLs + mirror presence daily. LICENSE-INTENT records the GPL
+  corresponding-source obligation that activates if the repo goes
+  public. End-to-end proof: doctored-404 manifest pulled the real
+  125MB mirror asset through the unchanged verifyChecksum path.
+- **NEW task #17 (found while closing #16, NOT fixed):** the
+  windows-installer-diag msiexec smoke failed on run 31460901255 with
+  ERR_MODULE_NOT_FOUND for kysely/dist/operation-node/cast-node.js in
+  the INSTALLED tree — while the same smoke PASSED 20 minutes earlier
+  on an effectively identical tree (only a macOS test file differed).
+  MSI file harvest appears NONDETERMINISTIC, and release.yml's
+  build-windows leg does not run the smoke, so the shipped rc.7
+  windows-x64.exe may or may not carry the defect. OWNER: smoke-test
+  the Windows asset on the VM before publishing (or dispatch the diag
+  workflow for more signal). Full evidence in task #17.
+
 ## Fix-list wave — uninstall script, ledger ordering, Safari token reload, test-DB isolation (2026-08-10, lanes + opus review)
 
 Owner directive: "continue with the fix list until completion." Tasks #4/#5/
