@@ -23,11 +23,47 @@
 // (also this codebase's established convention — no @testing-library/react
 // dependency); reused here unchanged.
 
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { act } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { components } from "@loombre/sdk";
 import type { JsonSchemaLike } from "../../../lib/settings-schema-widget.js";
 import { renderIntoBody, type TestRender } from "../../ui/test-render.js";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+// W8 tail (STATE.md's recorded leftover: "Deferred flag: .caution/
+// .lockedValue sizes unchanged (outside the three named elements)" — the
+// original W8 pass moved .description/.key/.factRow off the sub-14px mono
+// micro-scale onto the shared --text-* ladder; these two were the two
+// elements it deliberately left alone). Same CSS-text-reading technique
+// SegmentedControl.test.tsx's own header established (jsdom never
+// evaluates imported CSS — component .module.css imports are stubbed to an
+// identity proxy) rather than asserting computed styles.
+function ruleFor(css: string, selector: string): string {
+  const re = new RegExp(`${selector.replace(/[.[\]="]/g, "\\$&")}\\s*\\{([^}]*)\\}`);
+  const match = re.exec(css);
+  expect(match, `expected a ${selector} rule in SettingField.module.css`).not.toBeNull();
+  return match![1]!;
+}
+
+describe("SettingField.module.css — W8 tail (.caution/.lockedValue onto the type scale)", () => {
+  const css = readFileSync(path.join(__dirname, "SettingField.module.css"), "utf8");
+
+  it(".caution (a body-prose caution note, same role as .description) is ONE step below body on the --text-* scale, not two — matches .factRow's own W8 rule, never the old --text-xs", () => {
+    const rule = ruleFor(css, ".caution");
+    expect(rule).toMatch(/font-size:\s*var\(--text-sm\);/);
+    expect(rule).not.toMatch(/font-size:\s*var\(--text-xs\)/);
+  });
+
+  it(".lockedValue (the primary readable value in a locked-field display, same role as .key) is bumped onto --text-base like .key was, never left on the --mono-* micro-scale", () => {
+    const rule = ruleFor(css, ".lockedValue");
+    expect(rule).toMatch(/font-size:\s*var\(--text-base\);/);
+    expect(rule).not.toMatch(/font-size:\s*var\(--mono-lg\)/);
+  });
+});
 
 type AdminSettingSchemaEntry = components["schemas"]["AdminSettingSchemaEntry"];
 type UpdateSettingResponse = components["schemas"]["UpdateSettingResponse"];
