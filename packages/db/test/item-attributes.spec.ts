@@ -17,11 +17,12 @@ import type { Kysely } from 'kysely';
 import { createDb } from '../src/db.js';
 import type { DB } from '../src/types.js';
 import { getItemAttributes, upsertItemAttribute } from '../src/internal/index.js';
+import { resolveTestDatabaseUrl } from '../src/testing.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PKG_ROOT = path.resolve(__dirname, '..');
 
-const DATABASE_URL = process.env.DATABASE_URL ?? 'postgres://loombre:loombre@localhost:5442/loombre';
+const DATABASE_URL = resolveTestDatabaseUrl();
 
 function run(script: string, args: string[]) {
   const result = spawnSync(process.execPath, [script, ...args], {

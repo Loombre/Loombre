@@ -78,7 +78,7 @@ let seededLibraryId: string;
 beforeAll(async () => {
   process.env["LOOMBRE_JWT_SECRET"] = "data-freedom-authz-test-secret-not-for-production";
 
-  const databaseUrl = await ensureTestDatabase(BASE_DATABASE_URL, "data_freedom_authz");
+  const databaseUrl = await ensureTestDatabase(BASE_DATABASE_URL, "data_freedom_authz_test");
   run(path.join(DB_PKG_ROOT, "scripts", "migrate.mjs"), ["reset"], databaseUrl);
   run(path.join(DB_PKG_ROOT, "seed", "seed.mjs"), [], databaseUrl);
   process.env["DATABASE_URL"] = databaseUrl;

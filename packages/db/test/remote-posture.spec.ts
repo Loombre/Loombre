@@ -25,11 +25,12 @@ import { countStaleAccountsAdmin, createUserAdmin } from '../src/query/admin.js'
 import { createInviteAndEmit, hasUnclaimedInvites, revokeInviteAndEmit } from '../src/query/invites.js';
 import { resetUserPasswordAndEmit } from '../src/query/identity.js';
 import { recordPostureRegressedEvent, recordPostureRecoveredEvent } from '../src/query/remote-posture.js';
+import { resolveTestDatabaseUrl } from '../src/testing.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PKG_ROOT = path.resolve(__dirname, '..');
 
-const DATABASE_URL = process.env.DATABASE_URL ?? 'postgres://loombre:loombre@localhost:5442/loombre';
+const DATABASE_URL = resolveTestDatabaseUrl();
 
 function run(script: string, args: string[]) {
   const result = spawnSync(process.execPath, [script, ...args], {

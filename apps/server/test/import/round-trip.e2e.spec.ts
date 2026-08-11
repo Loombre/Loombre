@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Loombre :: apps/server/test/import/round-trip.e2e.spec.ts
 //
-// Phase 4 lane E, deliverable 2 (the exit bar): seed loombre_e (the standard
-// seed, restricted fixtures included) -> export via the REAL GET /export
-// HTTP endpoint (admin viewer, restricted-unlocked) -> create empty
-// loombre_e_roundtrip -> migrate it -> import via the REAL job path
+// Phase 4 lane E, deliverable 2 (the exit bar): seed loombre_e_test (the
+// standard seed, restricted fixtures included) -> export via the REAL
+// GET /export HTTP endpoint (admin viewer, restricted-unlocked) -> create
+// empty loombre_e_roundtrip_test -> migrate it -> import via the REAL job path
 // (@loombre/jobs' createJobQueue/enqueue/work, not a bare function call) ->
 // diff the captured archive against the target database (empty except for
 // the documented exclusions — see ./diff-archive.ts). Also: re-import under
@@ -24,11 +24,12 @@
 // choice — no production code anywhere imports across the apps/server <->
 // apps/worker boundary; only this one test file does, deliberately.
 //
-// Resource isolation (this lane's ports 3700-3799, DBs loombre_e /
-// loombre_e_roundtrip): both databases are created via ensureTestDatabase's
+// Resource isolation (this lane's ports 3700-3799, DBs loombre_e_test /
+// loombre_e_roundtrip_test): both databases are created via ensureTestDatabase's
 // suffix convention off the SAME base connection string every sibling
-// e2e spec already uses (`<base>_e` / `<base>_e_roundtrip`), never the
-// shared `loombre` dev database. No TCP port is ever bound — supertest talks
+// e2e spec already uses (`<base>_e_test` / `<base>_e_roundtrip_test` — the
+// "_test" tail is required by scripts/migrate.mjs's reset guard, see its
+// header), never the shared `loombre` dev database. No TCP port is ever bound — supertest talks
 // to `app.getHttpServer()` in-process (the same convention every other
 // apps/server e2e spec already uses), so the 3700-3799 allocation is
 // respected by there being no listener to place in it at all.
@@ -152,7 +153,7 @@ beforeAll(async () => {
   process.env["LOOMBRE_RESTRICTED_ENABLED"] = "true";
   process.env["LOOMBRE_JWT_SECRET"] = "import-round-trip-test-secret-not-for-production";
 
-  sourceDbUrl = await ensureTestDatabase(BASE_DATABASE_URL, "e");
+  sourceDbUrl = await ensureTestDatabase(BASE_DATABASE_URL, "e_test");
   run(path.join(DB_PKG_ROOT, "scripts", "migrate.mjs"), ["reset"], sourceDbUrl);
   run(path.join(DB_PKG_ROOT, "seed", "seed.mjs"), [], sourceDbUrl);
 
@@ -190,7 +191,7 @@ beforeAll(async () => {
   adminId = adminRow.id;
   await sourceDb.destroy();
 
-  targetDbUrl = await ensureTestDatabase(BASE_DATABASE_URL, "e_roundtrip");
+  targetDbUrl = await ensureTestDatabase(BASE_DATABASE_URL, "e_roundtrip_test");
   run(path.join(DB_PKG_ROOT, "scripts", "migrate.mjs"), ["reset"], targetDbUrl);
   targetDb = createDb(targetDbUrl);
 }, 60_000);
@@ -297,7 +298,7 @@ describe("import round-trip: export -> wipe -> import -> diff", () => {
 // ============================================================================
 // Scale observation (STATE.md/task-spec "50k-scale memory observation" —
 // deliverable 4's transaction-strategy recommendation was explicitly
-// contingent on measuring this, not assuming it). Reuses loombre_e_roundtrip
+// contingent on measuring this, not assuming it). Reuses loombre_e_roundtrip_test
 // (already non-empty from the suite above) rather than a third database —
 // merge-skip-existing mode naturally supports appending a large NEW library
 // on top of already-imported data, so no truncate/reset is needed. A

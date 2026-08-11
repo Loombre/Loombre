@@ -43,7 +43,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { createDb, createPlaybackSession, endPlaybackSession, requestSeek, updateRequestedSegment } from "@loombre/db";
+import { createDb, createPlaybackSession, endPlaybackSession, requestSeek, resolveTestDatabaseUrl, updateRequestedSegment } from "@loombre/db";
 import type { ViewerContext } from "@loombre/db";
 import { plan, type DeviceProfile, type MediaInfo, type NetworkConditions, type PlanInput, type ServerPolicy, type TrackSelection, type VerifiedCapabilities } from "@loombre/playback-engine";
 import { runTranscodeSession } from "../../src/transcode/runner.js";
@@ -55,7 +55,7 @@ const MEDIA_DIR = join(REPO_ROOT, "test-fixtures", "media");
 const FIXTURE_PATH = join(MEDIA_DIR, "session_long.mp4");
 const DB_PKG_ROOT = join(REPO_ROOT, "packages", "db");
 
-const DATABASE_URL = process.env.DATABASE_URL ?? "postgres://loombre:loombre@localhost:5442/loombre";
+const DATABASE_URL = resolveTestDatabaseUrl();
 
 const ffmpegAvailable = ffmpegAvailableStrict();
 

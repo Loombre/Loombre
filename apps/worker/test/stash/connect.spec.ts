@@ -19,7 +19,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
-import { createDb, getLibraryStashConnection, upsertLibraryStashConnectionConfig } from "@loombre/db";
+import { createDb, getLibraryStashConnection, resolveTestDatabaseUrl, upsertLibraryStashConnectionConfig } from "@loombre/db";
 import { ADMIN_ONLY_EVENT_TYPES } from "@loombre/shared/admin-only-event-types";
 import { buildFixtureDb } from "./fixtures/build-fixture-db.js";
 import { connectToStashLibrary } from "../../src/stash/connect.js";
@@ -28,7 +28,7 @@ import { STASH_SUPPORTED_SCHEMA_MAX, STASH_SUPPORTED_SCHEMA_MIN, formatUnsupport
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PKG_DB_ROOT = path.resolve(__dirname, "../../../../packages/db");
 const FIXTURES_DIR = path.join(__dirname, "fixtures");
-const DATABASE_URL = process.env.DATABASE_URL ?? "postgres://loombre:loombre@localhost:5442/loombre";
+const DATABASE_URL = resolveTestDatabaseUrl();
 
 function run(script: string, args: string[]) {
   const result = spawnSync(process.execPath, [script, ...args], {

@@ -18,14 +18,14 @@ import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import sharp from 'sharp';
-import { createDb } from '@loombre/db';
+import { createDb, resolveTestDatabaseUrl } from '@loombre/db';
 import { imageConsumerHandler } from '../../src/image/consumer.js';
 import { runVariantJob } from '../../src/image/variant-job.js';
 import { outputDirFor } from '../../src/image/pipeline.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DB_PKG_ROOT = path.resolve(__dirname, '../../../../packages/db');
-const DATABASE_URL = process.env.DATABASE_URL ?? 'postgres://loombre:loombre@localhost:5442/loombre';
+const DATABASE_URL = resolveTestDatabaseUrl();
 
 function run(script: string, args: string[]) {
   const result = spawnSync(process.execPath, [script, ...args], {

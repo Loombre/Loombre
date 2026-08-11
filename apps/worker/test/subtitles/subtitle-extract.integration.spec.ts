@@ -23,7 +23,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createDb, createPlaybackSession } from "@loombre/db";
+import { createDb, createPlaybackSession, resolveTestDatabaseUrl } from "@loombre/db";
 import type { ViewerContext } from "@loombre/db";
 import { getMediaInfoForFile } from "@loombre/db/internal";
 import {
@@ -45,7 +45,7 @@ const MEDIA_DIR = join(REPO_ROOT, "test-fixtures", "media");
 const FIXTURE_PATH = join(MEDIA_DIR, "h264_aac_subrip.mkv");
 const DB_PKG_ROOT = join(REPO_ROOT, "packages", "db");
 
-const DATABASE_URL = process.env.DATABASE_URL ?? "postgres://loombre:loombre@localhost:5442/loombre";
+const DATABASE_URL = resolveTestDatabaseUrl();
 const ffmpegAvailable = ffmpegAvailableStrict();
 
 function resetSchema(): void {
