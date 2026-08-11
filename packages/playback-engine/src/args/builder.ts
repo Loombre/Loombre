@@ -363,7 +363,20 @@ const HWACCEL_BY_BACKEND: Partial<Record<HardwareBackend, string>> = {
  *  instruction 6's BIND table). `d3d11va` is decode-only (§8.2) and can
  *  never be `video.encoder` (Stage G never selects it as one — this
  *  module's own defensive guard below still names it explicitly rather than
- *  silently falling through). */
+ *  silently falling through).
+ *
+ *  C8 (comparative-architecture audit, tracked not pruned): keyed only to
+ *  `"h264" | "hevc"` — deliberately, today. apps/worker/src/hwcaps/
+ *  tables.ts's mirror `VIDEO_ENCODER_NAMES` DOES verify av1 encode capability
+ *  (its own header explains why: a forward-looking capability check even
+ *  though the ladder never targets it), so hwprobe can report a box as
+ *  AV1-encode-capable with no way for a plan to ever act on that fact — a
+ *  real probe/ladder inconsistency, not a bug in either table alone. This
+ *  is intentional under LD-7/LD-16 (STATE.md, implementation run): AV1
+ *  targeting lands in Wave C1 (LadderCodec enum +
+ *  VideoAction.targetCodec contract additions, encoder tables + DB CHECK +
+ *  TS unions as one coordinated change, matrix/goldens same PR) — that PR
+ *  is where this table gains its `av1` column, not a prune here. */
 const VIDEO_ENCODER_NAMES: Partial<Record<HardwareBackend, Record<"h264" | "hevc", string>>> = {
   software: { h264: "libx264", hevc: "libx265" },
   videotoolbox: { h264: "h264_videotoolbox", hevc: "hevc_videotoolbox" },

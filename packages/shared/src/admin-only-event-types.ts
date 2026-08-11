@@ -80,6 +80,13 @@
 //     outside the pinned supported range — instance-configuration
 //     diagnostic data (which library, which schema version, the exact
 //     admin notice), same posture as probe.failed.
+//   - `stash.provider.connected` (Stash OPEN ledger item 7): emitted by the
+//     same apps/worker/src/stash/connect.ts the first time a connection
+//     succeeds after any non-'ok' status — the success-path counterpart
+//     to stash.provider.disabled, same instance-configuration-diagnostic
+//     posture (which library, which schema version), transition-gated so
+//     it fires once per real "just started working" moment rather than on
+//     every per-scene metadata-fetch connect.
 //   - `stash.sync.started` / `stash.sync.completed` (STATE.md "Stash
 //     SQLite metadata sync", S8/K12, Lane C sync engine): emitted by
 //     apps/worker/src/stash/sync-consumer.ts around a `stash-sync` job
@@ -155,6 +162,8 @@ export const ADMIN_ONLY_EVENT_TYPES: readonly string[] = [
   "probe.failed",
   // Stash SQLite metadata sync, S3/K12.
   "stash.provider.disabled",
+  // Stash OPEN ledger item 7 (success-connect counterpart to disabled).
+  "stash.provider.connected",
   // Stash SQLite metadata sync, S8/K12 (Lane C sync engine).
   "stash.sync.started",
   "stash.sync.completed",
