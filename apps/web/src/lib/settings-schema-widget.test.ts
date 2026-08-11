@@ -233,17 +233,31 @@ describe("categorySummaries — registry pill counts (derived, never stored)", (
     ];
     const summaries = categorySummaries(entries);
     expect(summaries).toEqual([
-      { category: "transcode", count: 2, allEnvOnly: false },
-      { category: "database", count: 1, allEnvOnly: true },
+      { category: "transcode", count: 2, hasEnvOnlyKey: false },
+      { category: "database", count: 1, hasEnvOnlyKey: true },
     ]);
   });
 
-  it("allEnvOnly is true only when every entry in the category is scope:'env-only'", () => {
+  // LD-9 (owner screenshot): the lock icon's condition is "at least one
+  // env-only key", not "every key is env-only" — a MIXED category (like the
+  // real registry's "network", which holds both env-only http.port/
+  // network.corsOrigins and ui-scope network.publicUrl/network.trustProxy)
+  // must still get the padlock, since it genuinely contains a key nobody
+  // can edit through this surface.
+  it("hasEnvOnlyKey is true once ANY entry in the category is scope:'env-only' — a mixed category (some env-only, some ui) still gets the lock", () => {
     const mixed = [
       { key: "a", category: "network", scope: "env-only" },
       { key: "b", category: "network", scope: "ui" },
     ];
-    expect(categorySummaries(mixed)[0]!.allEnvOnly).toBe(false);
+    expect(categorySummaries(mixed)[0]!.hasEnvOnlyKey).toBe(true);
+  });
+
+  it("hasEnvOnlyKey is false when every entry in the category is scope:'ui' (no env-only key at all)", () => {
+    const allUi = [
+      { key: "a", category: "transcode", scope: "ui" },
+      { key: "b", category: "transcode", scope: "ui" },
+    ];
+    expect(categorySummaries(allUi)[0]!.hasEnvOnlyKey).toBe(false);
   });
 
   it("an empty entry list produces no summaries", () => {
