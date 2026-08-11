@@ -9,8 +9,20 @@
 // accent-on-dark, switching is instant because SeriesDetailScreen.tsx
 // fetches every season's episodes eagerly up front (bounded — see that
 // file's header) rather than lazily per-tab.
+//
+// Item 1 (an upstream media server-study Wave A, radiogroup sweep): used to hand-roll
+// role="tablist"/role="tab" markup — consolidated onto the shared
+// ui/SegmentedControl, which owns the WAI-ARIA radiogroup + roving-
+// tabindex + arrow-key behavior once. SeasonPillTabs.module.css's own
+// `.track`/`.pill` (composed from SegmentedControl.module.css, with the
+// mobile horizontal-scroll-strip override layered on top) are threaded
+// through unchanged via className/segmentClassName — CSS Modules
+// `composes` puts every class in the same className string regardless of
+// which component rendered the element, so the `.track .pill` compound
+// selector still resolves against SegmentedControl's own DOM structure.
 
 import type { components } from "@loombre/sdk";
+import { SegmentedControl } from "../ui/SegmentedControl.js";
 import styles from "./SeasonPillTabs.module.css";
 
 type Season = components["schemas"]["Season"];
@@ -23,20 +35,13 @@ export interface SeasonPillTabsProps {
 
 export function SeasonPillTabs({ seasons, selectedSeasonId, onSelect }: SeasonPillTabsProps): React.JSX.Element {
   return (
-    <div className={styles.track} role="tablist" aria-label="Seasons">
-      {seasons.map((season) => (
-        <button
-          key={season.id}
-          type="button"
-          role="tab"
-          aria-selected={season.id === selectedSeasonId}
-          className={styles.pill}
-          data-active={season.id === selectedSeasonId}
-          onClick={() => onSelect(season.id)}
-        >
-          Season {season.seasonNumber}
-        </button>
-      ))}
-    </div>
+    <SegmentedControl
+      options={seasons.map((season) => ({ value: season.id, label: `Season ${season.seasonNumber}` }))}
+      value={selectedSeasonId}
+      onChange={onSelect}
+      className={styles.track}
+      segmentClassName={styles.pill}
+      aria-label="Seasons"
+    />
   );
 }
