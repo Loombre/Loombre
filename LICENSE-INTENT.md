@@ -78,6 +78,32 @@ these programs communicate only via process boundaries/CLI/files).
 Rule: any new vendored binary requires (a) a pinned-checksum manifest entry
 with source URLs, (b) a license row here, (c) an aggregation-posture note.
 
+**Vendor-mirror provenance note (Task #16, private-repo holding vs.
+distribution).** Upstreams garbage-collect old releases — BtbN deleted our
+pinned autobuild mid-rc.7-draft (repinned in d3a6883d) — so this repo now
+holds a deletion-proof mirror of the seven ffmpeg/ffprobe archives above,
+byte-identical copies at a GitHub Release tagged `ffmpeg-mirror`
+(`installers/ffmpeg-manifest.json`'s top-level `mirror` block records the
+repo/tag/naming scheme; `scripts/fetch-ffmpeg.mjs` falls back to it on a
+primary download failure — see that script's header). Those seven assets
+are GPL-3.0 binaries (BtbN's `-gpl` builds, evermeet.cx, osxexperts.net —
+same sources and licenses as the table above, same bytes, same sha256
+pins). While this repository stays **private**, holding them on the
+mirror release is not distribution (no GPL obligation attaches to storage
+a third party cannot access) — the same posture the rest of this file
+already applies to the repository as a whole (see "Current status" above:
+"AGPL obligations attach on conveyance/network use once distributed").
+**IF this repository goes public, the mirror assets become distributed
+GPL binaries and pick up a corresponding-source obligation the moment
+they do** (GPL-3.0 §6) — this must be resolved BEFORE flipping
+visibility, not after: either (a) mirror each build's corresponding
+source (or a source-offer per GPL-3.0 §6(b)/(c)) alongside the binary
+assets on that same release, or (b) drop the `ffmpeg-mirror` release (or
+re-privatize just that release, if GitHub ever supports per-release
+visibility independent of the repo) before or at the same moment the repo
+itself goes public. Tracked here rather than only in the manifest because
+this is exactly the kind of pre-launch gate this file exists to catch.
+
 ## .NET components (Phase 4, Windows lane I3)
 
 The Windows tray and service-host executables are C# — fully-owned

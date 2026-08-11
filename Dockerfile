@@ -149,6 +149,23 @@ RUN --mount=type=cache,id=loombre-pnpm-store,target=/root/.local/share/pnpm/stor
 # tar's `-J` on Debian shells out to a standalone `xz` binary rather than
 # linking liblzma directly, and bookworm-slim does not install it by
 # default (verified: `tar -xJf` fails with "xz: not found" otherwise).
+#
+# OPTIONAL github_token secret (Task #16 — vendor-mirror fallback): if
+# BtbN/evermeet/osxexperts 404s or errors, scripts/fetch-ffmpeg.mjs falls
+# back to this repo's own private `ffmpeg-mirror` release, which needs a
+# GitHub token (the mirror repo is private). `--mount=type=secret,
+# id=github_token` (buildx's standard secret-mount syntax — see
+# installers/docker/docker-bake.hcl's `secret = ["id=github_token,
+# env=GITHUB_TOKEN"]` on the `loombre` target for where it's sourced) makes
+# the token available ONLY inside this RUN's ephemeral mount, never as a
+# build ARG/ENV, never baked into any image layer or the build cache. The
+# secret is OPTIONAL: when it isn't supplied (a plain local `docker build`,
+# or `docker buildx bake` with no GITHUB_TOKEN in the environment), no file
+# appears at /run/secrets/github_token, GITHUB_TOKEN is simply never set,
+# and fetch-ffmpeg.mjs runs exactly as it always has (primary-only) —
+# verified empirically for Task #16 with both a plain `docker build` and a
+# `docker buildx bake` run, secret unset in both, neither one failing or
+# behaving any differently than before this stage carried the mount.
 # ─────────────────────────────────────────────────────────────────────────
 FROM base AS ffmpeg-fetch
 WORKDIR /repo
@@ -157,12 +174,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends xz-utils unzip 
 COPY scripts/fetch-ffmpeg.mjs ./scripts/fetch-ffmpeg.mjs
 COPY installers/ffmpeg-manifest.json ./installers/ffmpeg-manifest.json
 ARG TARGETARCH
-RUN set -eu; \
+RUN --mount=type=secret,id=github_token \
+    set -eu; \
     case "$TARGETARCH" in \
       amd64) ffmpeg_platform=linux-x64 ;; \
       arm64) ffmpeg_platform=linux-arm64 ;; \
       *) echo "ffmpeg-fetch: unsupported TARGETARCH '$TARGETARCH' (need amd64 or arm64)" >&2; exit 1 ;; \
     esac; \
+    if [ -s /run/secrets/github_token ]; then \
+      export GITHUB_TOKEN="$(cat /run/secrets/github_token)"; \
+    fi; \
     node scripts/fetch-ffmpeg.mjs --platform "$ffmpeg_platform" --vendor-dir /vendor
 
 # ─────────────────────────────────────────────────────────────────────────

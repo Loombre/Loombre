@@ -8,6 +8,12 @@
     "licenseIntentTodo": "ORCHESTRATOR TODO (not performed by this lane, per I1 mission scope): /LICENSE-INTENT.md's dependency allow-list already includes GPL-3.0/GPL-2.0 for npm-resolved deps, but `license-checker` never sees these vendored binaries (they are fetched by a script into a gitignored dir, not installed via pnpm) \u2014 the allow-list gate is silently blind to them. LICENSE-INTENT.md needs a new section (e.g. 'Vendored non-npm binaries') that names ffmpeg/ffprobe explicitly, points at this manifest's `provenance` block as the aggregation argument, and records that verification here is intentionally manual (checksum-pinned + human-read license text) rather than CI-scanned.",
     "verificationPosture": "Every entry's sha256 was checked in one of two ways, recorded per-entry in `verification.method`: (a) 'independently downloaded and hashed' \u2014 this lane fetched the actual bytes and computed sha256 itself; or (b) 'publisher-checksums-file' \u2014 taken from the upstream project's own signed/published checksums file without a redundant full download here (still real bytes-in-hand where noted). Any MISMATCH found against a publisher's own webpage-published checksum is called out explicitly in that entry's `verification.notes` \u2014 see macos-arm64."
   },
+  "mirror": {
+    "repo": "Loombre/Loombre",
+    "releaseTag": "ffmpeg-mirror",
+    "assetNaming": "<sha256[0:12]>--<url basename>",
+    "note": "Deletion-proofing (Task #16 \u2014 BtbN garbage-collects releases and deleted our pinned autobuild mid-rc.7-draft, repinned in d3a6883d): every archive pinned below is mirrored on this repo's own private 'ffmpeg-mirror' release, and scripts/fetch-ffmpeg.mjs falls back to the derived asset name there on a primary download failure; assets are append-only \u2014 a future repin adds new assets and never replaces or deletes old ones, so every historical pin stays fetchable."
+  },
   "platforms": {
     "linux-x64": {
       "source": "BtbN/FFmpeg-Builds",

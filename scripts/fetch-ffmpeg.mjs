@@ -28,6 +28,17 @@
 // ffprobe, this script does nothing (prints a one-line skip notice) unless
 // --force is passed.
 //
+// Vendor-mirror fallback (Task #16): upstreams garbage-collect old
+// releases (BtbN deleted our pinned autobuild mid-rc.7-draft — d3a6883d).
+// If a primary download fails (non-200 or network error) AND the manifest
+// carries a top-level `mirror` block, this script retries against this
+// repo's own private `ffmpeg-mirror` GitHub release, resolving the asset
+// by its derived name (see deriveMirrorAssetName) via the GitHub API —
+// which requires a token (GITHUB_TOKEN, else GH_TOKEN; see
+// resolveGithubToken) because the repo is private. No token means no
+// fallback: the failure surfaces both attempts and names both env vars.
+// See downloadArchiveWithFallback's own header for the full control flow.
+//
 // Design note (why this file is one script, not a script + lib pair): the
 // pure, network-free logic (checksum verification, manifest schema
 // validation, host->platform resolution, CLI arg parsing) is exported from
@@ -124,6 +135,30 @@ function validateComponentSchema(component, path, errors) {
   }
 }
 
+// Loosely "owner/repo" — no slashes inside either half, both non-empty.
+// Not a full GitHub-name-charset validator (that's the API's job); this
+// just catches the obvious "forgot to set it" / "pasted a URL" mistakes.
+const OWNER_REPO_PATTERN = /^[^/\s]+\/[^/\s]+$/;
+
+/** Validates the manifest's OPTIONAL top-level `mirror` block (Task #16 —
+ *  the vendor-mirror fallback GitHub release: repo/releaseTag/assetNaming/
+ *  note). Mutates `errors` in place, mirroring validateComponentSchema's
+ *  own style. Absence of the block entirely is NOT an error — older
+ *  manifests (or a manifest fixture in a test) without a mirror simply get
+ *  no fallback, handled by downloadArchiveWithFallback below. */
+function validateMirrorSchema(mirror, errors) {
+  if (typeof mirror !== "object" || mirror === null) {
+    errors.push("mirror: expected an object");
+    return;
+  }
+  if (!isNonEmptyString(mirror.repo) || !OWNER_REPO_PATTERN.test(mirror.repo)) {
+    errors.push(`mirror.repo: expected "<owner>/<repo>", got ${JSON.stringify(mirror.repo)}`);
+  }
+  if (!isNonEmptyString(mirror.releaseTag)) errors.push("mirror.releaseTag: expected a non-empty string");
+  if (!isNonEmptyString(mirror.assetNaming)) errors.push("mirror.assetNaming: expected a non-empty string");
+  if (!isNonEmptyString(mirror.note)) errors.push("mirror.note: expected a non-empty string");
+}
+
 /**
  * Structural validation of installers/ffmpeg-manifest.json — deliberately
  * hand-written (no ajv/schema-lib dependency: the lockfile is frozen for
@@ -145,6 +180,11 @@ export function validateManifestSchema(manifest) {
     errors.push("provenance: expected an object");
   } else if (!isNonEmptyString(manifest.provenance.note)) {
     errors.push("provenance.note: expected a non-empty string");
+  }
+  // OPTIONAL: only validated when present — see validateMirrorSchema's own
+  // header for why a missing `mirror` block is not itself an error.
+  if (manifest.mirror !== undefined) {
+    validateMirrorSchema(manifest.mirror, errors);
   }
   if (typeof manifest.platforms !== "object" || manifest.platforms === null) {
     errors.push("platforms: expected an object");
@@ -219,6 +259,124 @@ export function planDownloads(platformEntry) {
   return [...seen.values()];
 }
 
+/**
+ * Derives a vendor-mirror asset name from a manifest component's pinned
+ * sha256 + source url — `<first 12 hex of sha256>--<url basename>` (Task
+ * #16's naming contract; see installers/ffmpeg-manifest.json's `mirror`
+ * block and the ffmpeg-mirror release's own body text). Deliberately keyed
+ * on the sha256 rather than the buildTag/version: a future re-pin of the
+ * SAME url (BtbN reusing a filename across builds, or a version bump)
+ * produces a DIFFERENT name because the sha256 changed, so append-only
+ * mirror uploads never collide across repins — no lookup table, no
+ * central registry, just this pure function run against whatever the
+ * manifest pins today. installers/check-vendor-urls.mjs imports this
+ * exact function rather than reimplementing it, so the two can never
+ * silently disagree on what name to look for.
+ */
+export function deriveMirrorAssetName(sha256, url) {
+  if (typeof sha256 !== "string" || !SHA256_HEX_PATTERN.test(sha256.toLowerCase())) {
+    throw new TypeError(`deriveMirrorAssetName: sha256 must be 64 lowercase hex chars, got ${JSON.stringify(sha256)}`);
+  }
+  if (!isNonEmptyString(url)) {
+    throw new TypeError(`deriveMirrorAssetName: url must be a non-empty string, got ${JSON.stringify(url)}`);
+  }
+  const shortSha = sha256.toLowerCase().slice(0, 12);
+  const urlBasename = basename(new URL(url).pathname);
+  return `${shortSha}--${urlBasename}`;
+}
+
+/** Resolves the GitHub token used for the vendor-mirror fallback and for
+ *  installers/check-vendor-urls.mjs's mirror-asset check — GITHUB_TOKEN
+ *  first (the name Actions injects automatically), GH_TOKEN second (the
+ *  `gh` CLI's own convention, e.g. `GH_TOKEN=$(gh auth token)` for local/
+ *  manual runs). `env` is injectable (defaults to the real process.env)
+ *  so this stays testable without mutating global state. Returns
+ *  `undefined` — never an empty string — when neither is set, so callers
+ *  can use a plain `if (!token)` check. */
+export function resolveGithubToken(env = process.env) {
+  return env.GITHUB_TOKEN || env.GH_TOKEN || undefined;
+}
+
+/**
+ * Orchestrates ONE archive download with vendor-mirror fallback: try the
+ * primary URL first; on failure (non-200 or network error — whatever
+ * `downloadPrimary` throws for), fall back to the manifest's `mirror`
+ * release IF both a mirror block and a token are available. Every real
+ * network call is INJECTED (downloadPrimary/resolveMirrorAsset/
+ * downloadMirrorAsset) so fetch-ffmpeg.test.mjs can exercise every branch
+ * of this control flow — primary success, primary fail + no mirror,
+ * primary fail + no token, primary fail + mirror asset missing, primary
+ * fail + mirror download fails, full fallback success — with zero network
+ * access. fetchPlatform (below) is the only real caller, wiring the
+ * injected functions to actual downloadToBuffer/fetchMirrorReleaseAssets/
+ * downloadMirrorAssetBytes calls.
+ *
+ * Checksum verification is deliberately NOT done here: fetchPlatform
+ * calls verifyChecksum(buffer, download.sha256) on whatever buffer this
+ * function returns, from EITHER source, via the exact same code path —
+ * the one pinned sha256 both derives the mirror asset's name (see
+ * deriveMirrorAssetName) AND gates the bytes actually vendored, so a
+ * mismatched or tampered mirror asset is rejected exactly like a
+ * mismatched primary download would be.
+ */
+export async function downloadArchiveWithFallback({
+  url,
+  sha256,
+  mirror,
+  token,
+  downloadPrimary,
+  resolveMirrorAsset,
+  downloadMirrorAsset,
+  log = () => {},
+}) {
+  let primaryError;
+  try {
+    const buffer = await downloadPrimary(url);
+    return { buffer, source: "primary" };
+  } catch (err) {
+    primaryError = err instanceof Error ? err : new Error(String(err));
+  }
+
+  const primaryReason = primaryError.statusCode ? `HTTP ${primaryError.statusCode}` : primaryError.message;
+
+  if (!mirror) {
+    throw new Error(
+      `fetch-ffmpeg: primary download failed (${primaryReason}) and this manifest has no "mirror" ` +
+        `block to fall back to — see installers/ffmpeg-manifest.json's top-level "mirror" field.`,
+    );
+  }
+  if (!token) {
+    throw new Error(
+      `fetch-ffmpeg: both downloads failed.\n` +
+        `  primary: ${primaryReason}\n` +
+        `  mirror:  no GitHub token available — set GITHUB_TOKEN or GH_TOKEN to enable the ` +
+        `${mirror.repo}#${mirror.releaseTag} fallback (the mirror repo is private).`,
+    );
+  }
+
+  const assetName = deriveMirrorAssetName(sha256, url);
+  log(`primary URL failed (${primaryReason}) — falling back to mirror asset ${assetName}`);
+
+  const asset = await resolveMirrorAsset(mirror, assetName, token);
+  if (!asset) {
+    throw new Error(
+      `fetch-ffmpeg: both downloads failed.\n` +
+        `  primary: ${primaryReason}\n` +
+        `  mirror:  asset ${JSON.stringify(assetName)} not found in ${mirror.repo}#${mirror.releaseTag}`,
+    );
+  }
+
+  try {
+    const buffer = await downloadMirrorAsset(asset, token);
+    return { buffer, source: "mirror", assetName };
+  } catch (mirrorErr) {
+    const mirrorMessage = mirrorErr instanceof Error ? mirrorErr.message : String(mirrorErr);
+    throw new Error(`fetch-ffmpeg: both downloads failed.\n  primary: ${primaryReason}\n  mirror:  ${mirrorMessage}`, {
+      cause: mirrorErr,
+    });
+  }
+}
+
 // ─────────────────────────────────────────────────────────────────────────
 // I/O — everything below touches the filesystem, network, or a child
 // process. None of it is imported by the test file.
@@ -249,7 +407,14 @@ function downloadToBuffer(url, { maxRedirects = 5 } = {}) {
       }
       if (res.statusCode !== 200) {
         res.resume();
-        rejectPromise(new Error(`fetch-ffmpeg: GET ${url} -> HTTP ${res.statusCode}`));
+        // statusCode attached to the Error (not just embedded in the
+        // message) so downloadArchiveWithFallback's primary-failure log
+        // line ("primary URL failed (HTTP 404) — falling back to...") can
+        // report a clean "HTTP <code>" without string-parsing this
+        // message — see its primaryReason computation.
+        const err = new Error(`fetch-ffmpeg: GET ${url} -> HTTP ${res.statusCode}`);
+        err.statusCode = res.statusCode;
+        rejectPromise(err);
         return;
       }
       const chunks = [];
@@ -259,6 +424,74 @@ function downloadToBuffer(url, { maxRedirects = 5 } = {}) {
     });
     req.on("error", rejectPromise);
   });
+}
+
+/** Fetches the vendor-mirror release's asset list (name/id/url per asset)
+ *  from the GitHub API. The mirror repo is PRIVATE, so this always needs a
+ *  token — a failed/unauthorized API call throws (that's a real problem,
+ *  distinct from "the specific asset isn't there yet", which the caller
+ *  checks separately). Exported so installers/check-vendor-urls.mjs's own
+ *  mirror-asset liveness check reuses this exact call instead of
+ *  reimplementing the GitHub API shape. Uses the platform's global fetch()
+ *  (Node >=24, this repo's engines floor) rather than the https/http
+ *  primitives downloadToBuffer uses — plain JSON GET, no archive-sized
+ *  buffering or redirect-following concerns here. */
+export async function fetchMirrorReleaseAssets(mirror, token) {
+  const apiUrl = `https://api.github.com/repos/${mirror.repo}/releases/tags/${encodeURIComponent(mirror.releaseTag)}`;
+  const res = await fetch(apiUrl, {
+    headers: {
+      Accept: "application/vnd.github+json",
+      Authorization: `Bearer ${token}`,
+      "User-Agent": "loombre-fetch-ffmpeg",
+      "X-GitHub-Api-Version": "2022-11-28",
+    },
+  });
+  if (!res.ok) {
+    throw new Error(`fetch-ffmpeg: GitHub API GET ${apiUrl} -> HTTP ${res.status}`);
+  }
+  const body = await res.json();
+  return (body.assets ?? []).map((asset) => ({ id: asset.id, name: asset.name, url: asset.url }));
+}
+
+/** Looks up ONE mirror asset by its derived name (see deriveMirrorAssetName)
+ *  — the real (non-test-fake) implementation of downloadArchiveWithFallback's
+ *  `resolveMirrorAsset` parameter. Returns null (not a throw) when the
+ *  release itself is reachable but no asset with that name exists yet —
+ *  that is a legitimate "not mirrored (yet)" outcome the caller reports,
+ *  not an API failure. */
+export async function resolveMirrorAssetByName(mirror, assetName, token) {
+  const assets = await fetchMirrorReleaseAssets(mirror, token);
+  return assets.find((asset) => asset.name === assetName) ?? null;
+}
+
+/**
+ * Downloads one release asset's bytes via the GitHub API's asset endpoint
+ * (`.../releases/assets/<id>`, `Accept: application/octet-stream`), which
+ * 302s to the actual storage host (release-assets.githubusercontent.com at
+ * the time this was written). Uses the platform fetch() specifically
+ * because — unlike downloadToBuffer's hand-rolled https/http redirect
+ * handling above, which this function does NOT reuse — fetch() correctly
+ * drops the Authorization header when a redirect crosses origins, per the
+ * WHATWG fetch spec (https://fetch.spec.whatwg.org/#http-redirect-fetch,
+ * step 14: strip Authorization on a cross-origin redirect). That property
+ * matters here and nowhere else in this file: this is the one request
+ * carrying a bearer token toward a host whose redirect target must never
+ * see it. Empirically verified for Task #16 — see the task report for the
+ * network trace proving the token is absent on the follow-up request.
+ */
+export async function downloadMirrorAssetBytes(asset, token) {
+  const res = await fetch(asset.url, {
+    headers: {
+      Accept: "application/octet-stream",
+      Authorization: `Bearer ${token}`,
+      "User-Agent": "loombre-fetch-ffmpeg",
+    },
+  });
+  if (!res.ok) {
+    throw new Error(`fetch-ffmpeg: mirror asset download ${asset.url} -> HTTP ${res.status}`);
+  }
+  const arrayBuffer = await res.arrayBuffer();
+  return Buffer.from(arrayBuffer);
 }
 
 const WIN = process.platform === "win32";
@@ -380,10 +613,30 @@ async function fetchPlatform(platform, manifest, vendorDir, force) {
   const downloads = planDownloads(platformEntry);
   const provenanceComponents = {};
   let licenseCopied = false;
+  const githubToken = resolveGithubToken();
 
   for (const download of downloads) {
     console.log(`fetch-ffmpeg[${platform}]: downloading ${download.url} (${download.sizeBytes} bytes expected)`);
-    const buffer = await downloadToBuffer(download.url);
+    // Primary path stays byte-for-byte the same as before this fell back to
+    // anything: downloadToBuffer(url) is still the first (and, on success,
+    // ONLY) thing that runs. downloadArchiveWithFallback only reaches the
+    // manifest.mirror branch when THAT throws — see its own header for the
+    // full primary-vs-mirror control flow and why checksum verification
+    // (right below, unchanged) covers both sources identically.
+    const result = await downloadArchiveWithFallback({
+      url: download.url,
+      sha256: download.sha256,
+      mirror: manifest.mirror,
+      token: githubToken,
+      downloadPrimary: (url) => downloadToBuffer(url),
+      resolveMirrorAsset: (mirror, assetName, token) => resolveMirrorAssetByName(mirror, assetName, token),
+      downloadMirrorAsset: (asset, token) => downloadMirrorAssetBytes(asset, token),
+      log: (message) => console.log(`fetch-ffmpeg[${platform}]: ${message}`),
+    });
+    if (result.source === "mirror") {
+      console.log(`fetch-ffmpeg[${platform}]: downloaded ${result.assetName} from the vendor mirror`);
+    }
+    const buffer = result.buffer;
     const check = verifyChecksum(buffer, download.sha256);
     if (!check.ok) {
       throw new Error(

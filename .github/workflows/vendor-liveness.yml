@@ -1,0 +1,46 @@
+name: Vendor URL liveness
+
+# Task #16 — daily proof that every URL installers/ffmpeg-manifest.json
+# pins still answers, AND that this repo's private `ffmpeg-mirror` release
+# (the manifest's `mirror` block) holds the derived asset name for every
+# one of them. Upstreams garbage-collect old releases (BtbN deleted our
+# pinned autobuild mid-rc.7-draft — see d3a6883d); this catches the next
+# one on a schedule instead of at release-build time.
+#
+# Deliberately minimal: installers/check-vendor-urls.mjs is dependency-free
+# (global fetch only, Node >=24 — this repo's engines floor), so this
+# workflow needs Node itself and nothing else — no pnpm install, matching
+# scripts/fetch-ffmpeg.mjs's own "no new devDependency" posture.
+on:
+  schedule:
+    # 06:00 UTC daily — no particular significance to the hour, just off
+    # any other workflow's peak and comfortably inside GitHub's cron
+    # scheduling jitter tolerance.
+    - cron: "0 6 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  check-vendor-urls:
+    name: check-vendor-urls
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+
+      # GITHUB_TOKEN (Actions' own built-in token, `permissions: contents:
+      # read` above) is enough to read this repo's OWN release assets —
+      # the ffmpeg-mirror release lives in this repo, no PAT/secret needed.
+      # installers/check-vendor-urls.mjs resolves it via GITHUB_TOKEN (see
+      # scripts/fetch-ffmpeg.mjs's resolveGithubToken, shared by both).
+      - name: node installers/check-vendor-urls.mjs
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node installers/check-vendor-urls.mjs

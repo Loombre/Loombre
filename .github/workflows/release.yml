@@ -454,10 +454,24 @@ jobs:
       # `docker buildx bake`: --push publishes the multi-arch manifest
       # list this lane's own docker-bake.hcl marks as cosign's insertion
       # point; --metadata-file captures the resulting digest for that step.
+      # GITHUB_TOKEN (Actions' own built-in token, already scoped by this
+      # job's `permissions:` block above) is what docker-bake.hcl's
+      # `loombre` target's `secret = ["id=github_token,env=GITHUB_TOKEN"]`
+      # reads (buildx bake secret env= sources straight from the invoking
+      # process's environment — no separate --secret flag needed here).
+      # The Dockerfile's ffmpeg-fetch stage mounts it ONLY into that one
+      # RUN (never a layer/ARG/ENV, never cached) and uses it SOLELY as
+      # scripts/fetch-ffmpeg.mjs's vendor-mirror fallback token (Task #16)
+      # — if BtbN/evermeet/osxexperts 404s or errors mid-build, this lets
+      # the build fall back to this repo's private ffmpeg-mirror release
+      # instead of failing outright. Nothing about this token is new
+      # PRIVILEGE for the ffmpeg-fetch stage: it's the same default Actions
+      # token this job already carries for the GHCR login step above.
       - name: Build + push multi-arch image (installers/docker/build.sh + docker-bake.hcl, lane I2)
         id: build
         env:
           REPO_LOWER: ${{ github.repository }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           export LOOMBRE_IMAGE="ghcr.io/${REPO_LOWER,,}"

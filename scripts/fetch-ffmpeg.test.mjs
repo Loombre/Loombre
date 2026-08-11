@@ -30,6 +30,9 @@ import {
   planDownloads,
   KNOWN_PLATFORMS,
   DEFAULT_MANIFEST_PATH,
+  deriveMirrorAssetName,
+  resolveGithubToken,
+  downloadArchiveWithFallback,
 } from "./fetch-ffmpeg.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -194,6 +197,69 @@ test("THE CHECKED-IN MANIFEST (installers/ffmpeg-manifest.json) passes schema va
   }
 });
 
+test("THE CHECKED-IN MANIFEST (installers/ffmpeg-manifest.json) carries a valid mirror block (Task #16)", () => {
+  const manifestPath = join(__dirname, "..", "installers", "ffmpeg-manifest.json");
+  const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+  assert.ok(manifest.mirror, "expected a top-level mirror block");
+  assert.equal(manifest.mirror.repo, "Loombre/Loombre");
+  assert.equal(manifest.mirror.releaseTag, "ffmpeg-mirror");
+  assert.ok(manifest.mirror.assetNaming.length > 0);
+  assert.ok(manifest.mirror.note.length > 0);
+});
+
+test("validateManifestSchema: a manifest with no mirror block is still valid (mirror is optional)", () => {
+  const manifest = {
+    manifestSchemaVersion: 1,
+    pinnedAtMs: 1,
+    provenance: { note: "x" },
+    platforms: {},
+  };
+  const result = validateManifestSchema(manifest);
+  assert.deepEqual(result.errors, []);
+  assert.equal(result.ok, true);
+});
+
+test("validateManifestSchema: accepts a well-formed mirror block", () => {
+  const manifest = {
+    manifestSchemaVersion: 1,
+    pinnedAtMs: 1,
+    provenance: { note: "x" },
+    mirror: {
+      repo: "Loombre/Loombre",
+      releaseTag: "ffmpeg-mirror",
+      assetNaming: "<sha256[0:12]>--<url basename>",
+      note: "deletion-proofing, append-only",
+    },
+    platforms: {},
+  };
+  const result = validateManifestSchema(manifest);
+  assert.deepEqual(result.errors, []);
+  assert.equal(result.ok, true);
+});
+
+test("validateManifestSchema: rejects a malformed mirror block (bad repo shape, missing fields)", () => {
+  const base = {
+    manifestSchemaVersion: 1,
+    pinnedAtMs: 1,
+    provenance: { note: "x" },
+    platforms: {},
+  };
+
+  const noSlash = validateManifestSchema({ ...base, mirror: { repo: "not-owner-slash-repo", releaseTag: "t", assetNaming: "a", note: "n" } });
+  assert.equal(noSlash.ok, false);
+  assert.ok(noSlash.errors.some((e) => e.includes("mirror.repo")));
+
+  const missingFields = validateManifestSchema({ ...base, mirror: { repo: "Loombre/Loombre" } });
+  assert.equal(missingFields.ok, false);
+  assert.ok(missingFields.errors.some((e) => e.includes("mirror.releaseTag")));
+  assert.ok(missingFields.errors.some((e) => e.includes("mirror.assetNaming")));
+  assert.ok(missingFields.errors.some((e) => e.includes("mirror.note")));
+
+  const notAnObject = validateManifestSchema({ ...base, mirror: "ffmpeg-mirror" });
+  assert.equal(notAnObject.ok, false);
+  assert.ok(notAnObject.errors.some((e) => e.includes("mirror: expected an object")));
+});
+
 test("THE CHECKED-IN MANIFEST: every platform's components.*.sha256 is unique per distinct archive, consistent within one archive", () => {
   const manifestPath = join(__dirname, "..", "installers", "ffmpeg-manifest.json");
   const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
@@ -265,4 +331,216 @@ test("planDownloads: keeps two separate downloads for two distinct archives", ()
   assert.equal(plan.length, 2);
   assert.equal(plan[0].wantedBy.length, 1);
   assert.equal(plan[1].wantedBy.length, 1);
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// deriveMirrorAssetName — Task #16's naming contract:
+// <first 12 hex of sha256>--<upstream url basename>.
+// ─────────────────────────────────────────────────────────────────────────
+
+test("deriveMirrorAssetName: matches the real ffmpeg-mirror release's naming (linux-x64 fixture)", () => {
+  const name = deriveMirrorAssetName(
+    "7b0c2ad593860d8bb157e346777ac7d741b5bf25b456382051138aaa8256f92d",
+    "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-08-10-13-17/ffmpeg-n8.1.2-34-g9b6c8969e0-linux64-gpl-8.1.tar.xz",
+  );
+  assert.equal(name, "7b0c2ad59386--ffmpeg-n8.1.2-34-g9b6c8969e0-linux64-gpl-8.1.tar.xz");
+});
+
+test("deriveMirrorAssetName: matches the real ffmpeg-mirror release's naming (macos-x64 ffprobe fixture, no build-tag path segment)", () => {
+  const name = deriveMirrorAssetName(
+    "399b93f0b9862f69767afa343e90c2f48d7e7958cadbb6deb76a012d0e3b7ce3",
+    "https://evermeet.cx/ffmpeg/ffprobe-8.1.2.zip",
+  );
+  assert.equal(name, "399b93f0b986--ffprobe-8.1.2.zip");
+});
+
+test("deriveMirrorAssetName: lowercases an uppercase sha256 before truncating", () => {
+  const name = deriveMirrorAssetName("A".repeat(64), "https://example.invalid/x.zip");
+  assert.equal(name, "aaaaaaaaaaaa--x.zip");
+});
+
+test("deriveMirrorAssetName: a different sha256 for the SAME url produces a DIFFERENT name (repin collision-proofing)", () => {
+  const nameA = deriveMirrorAssetName("a".repeat(64), "https://example.invalid/x.zip");
+  const nameB = deriveMirrorAssetName("b".repeat(64), "https://example.invalid/x.zip");
+  assert.notEqual(nameA, nameB);
+});
+
+test("deriveMirrorAssetName: throws on a malformed sha256", () => {
+  assert.throws(() => deriveMirrorAssetName("not-a-sha256", "https://example.invalid/x.zip"), TypeError);
+});
+
+test("deriveMirrorAssetName: throws on an empty/missing url", () => {
+  assert.throws(() => deriveMirrorAssetName("a".repeat(64), ""), TypeError);
+  assert.throws(() => deriveMirrorAssetName("a".repeat(64), undefined), TypeError);
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// resolveGithubToken — env-injected so no real env var is ever touched.
+// ─────────────────────────────────────────────────────────────────────────
+
+test("resolveGithubToken: prefers GITHUB_TOKEN over GH_TOKEN", () => {
+  assert.equal(resolveGithubToken({ GITHUB_TOKEN: "gh-token-1", GH_TOKEN: "gh-token-2" }), "gh-token-1");
+});
+
+test("resolveGithubToken: falls back to GH_TOKEN when GITHUB_TOKEN is unset", () => {
+  assert.equal(resolveGithubToken({ GH_TOKEN: "gh-token-2" }), "gh-token-2");
+});
+
+test("resolveGithubToken: returns undefined (not empty string) when neither is set", () => {
+  assert.equal(resolveGithubToken({}), undefined);
+  assert.equal(resolveGithubToken({ GITHUB_TOKEN: "", GH_TOKEN: "" }), undefined);
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// downloadArchiveWithFallback — the fallback control-flow orchestrator,
+// exercised with fully injected fake downloaders/resolvers (zero network).
+// ─────────────────────────────────────────────────────────────────────────
+
+const FIXTURE_MIRROR = { repo: "Loombre/Loombre", releaseTag: "ffmpeg-mirror", assetNaming: "x", note: "x" };
+const FIXTURE_SHA256 = "7b0c2ad593860d8bb157e346777ac7d741b5bf25b456382051138aaa8256f92d";
+const FIXTURE_URL = "https://example.invalid/upstream/ffmpeg.tar.xz";
+const FIXTURE_ASSET_NAME = deriveMirrorAssetName(FIXTURE_SHA256, FIXTURE_URL);
+
+function neverCalled(label) {
+  return async (...args) => {
+    throw new Error(`${label} should not have been called, but was called with ${JSON.stringify(args)}`);
+  };
+}
+
+test("downloadArchiveWithFallback: primary success returns immediately, never touches the mirror", async () => {
+  const primaryBuffer = Buffer.from("primary-bytes");
+  const result = await downloadArchiveWithFallback({
+    url: FIXTURE_URL,
+    sha256: FIXTURE_SHA256,
+    mirror: FIXTURE_MIRROR,
+    token: "some-token",
+    downloadPrimary: async (url) => {
+      assert.equal(url, FIXTURE_URL);
+      return primaryBuffer;
+    },
+    resolveMirrorAsset: neverCalled("resolveMirrorAsset"),
+    downloadMirrorAsset: neverCalled("downloadMirrorAsset"),
+  });
+  assert.equal(result.buffer, primaryBuffer);
+  assert.equal(result.source, "primary");
+});
+
+test("downloadArchiveWithFallback: primary failure + no mirror block -> throws naming the primary failure, never calls a mirror fn", async () => {
+  await assert.rejects(
+    downloadArchiveWithFallback({
+      url: FIXTURE_URL,
+      sha256: FIXTURE_SHA256,
+      mirror: undefined,
+      token: "some-token",
+      downloadPrimary: async () => {
+        throw new Error("network unreachable");
+      },
+      resolveMirrorAsset: neverCalled("resolveMirrorAsset"),
+      downloadMirrorAsset: neverCalled("downloadMirrorAsset"),
+    }),
+    /primary download failed \(network unreachable\).*no "mirror" block/s,
+  );
+});
+
+test("downloadArchiveWithFallback: primary failure + mirror present + NO token -> throws naming BOTH attempts and both env vars", async () => {
+  await assert.rejects(
+    downloadArchiveWithFallback({
+      url: FIXTURE_URL,
+      sha256: FIXTURE_SHA256,
+      mirror: FIXTURE_MIRROR,
+      token: undefined,
+      downloadPrimary: async () => {
+        const err = new Error(`fetch-ffmpeg: GET ${FIXTURE_URL} -> HTTP 404`);
+        err.statusCode = 404;
+        throw err;
+      },
+      resolveMirrorAsset: neverCalled("resolveMirrorAsset"),
+      downloadMirrorAsset: neverCalled("downloadMirrorAsset"),
+    }),
+    (err) => {
+      assert.match(err.message, /primary: HTTP 404/);
+      assert.match(err.message, /GITHUB_TOKEN/);
+      assert.match(err.message, /GH_TOKEN/);
+      return true;
+    },
+  );
+});
+
+test("downloadArchiveWithFallback: primary failure + token, but mirror has no matching asset -> throws naming both attempts", async () => {
+  await assert.rejects(
+    downloadArchiveWithFallback({
+      url: FIXTURE_URL,
+      sha256: FIXTURE_SHA256,
+      mirror: FIXTURE_MIRROR,
+      token: "some-token",
+      downloadPrimary: async () => {
+        throw new Error("network unreachable");
+      },
+      resolveMirrorAsset: async (mirror, assetName) => {
+        assert.equal(mirror, FIXTURE_MIRROR);
+        assert.equal(assetName, FIXTURE_ASSET_NAME);
+        return null;
+      },
+      downloadMirrorAsset: neverCalled("downloadMirrorAsset"),
+    }),
+    (err) => {
+      assert.match(err.message, /primary: network unreachable/);
+      assert.match(err.message, new RegExp(`not found in ${FIXTURE_MIRROR.repo}#${FIXTURE_MIRROR.releaseTag}`));
+      return true;
+    },
+  );
+});
+
+test("downloadArchiveWithFallback: primary failure + token, mirror asset resolves and downloads -> returns the mirror buffer, logs the fallback", async () => {
+  const mirrorBuffer = Buffer.from("mirror-bytes");
+  const fakeAsset = { id: 1, name: FIXTURE_ASSET_NAME, url: "https://api.github.com/repos/Loombre/Loombre/releases/assets/1" };
+  const logLines = [];
+  const result = await downloadArchiveWithFallback({
+    url: FIXTURE_URL,
+    sha256: FIXTURE_SHA256,
+    mirror: FIXTURE_MIRROR,
+    token: "some-token",
+    downloadPrimary: async () => {
+      const err = new Error(`fetch-ffmpeg: GET ${FIXTURE_URL} -> HTTP 404`);
+      err.statusCode = 404;
+      throw err;
+    },
+    resolveMirrorAsset: async () => fakeAsset,
+    downloadMirrorAsset: async (asset, token) => {
+      assert.equal(asset, fakeAsset);
+      assert.equal(token, "some-token");
+      return mirrorBuffer;
+    },
+    log: (message) => logLines.push(message),
+  });
+  assert.equal(result.buffer, mirrorBuffer);
+  assert.equal(result.source, "mirror");
+  assert.equal(result.assetName, FIXTURE_ASSET_NAME);
+  assert.equal(logLines.length, 1);
+  assert.match(logLines[0], /^primary URL failed \(HTTP 404\) — falling back to mirror asset /);
+  assert.match(logLines[0], new RegExp(FIXTURE_ASSET_NAME.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+});
+
+test("downloadArchiveWithFallback: mirror asset found but its OWN download fails -> throws naming both attempts", async () => {
+  const fakeAsset = { id: 1, name: FIXTURE_ASSET_NAME, url: "https://api.github.com/repos/Loombre/Loombre/releases/assets/1" };
+  await assert.rejects(
+    downloadArchiveWithFallback({
+      url: FIXTURE_URL,
+      sha256: FIXTURE_SHA256,
+      mirror: FIXTURE_MIRROR,
+      token: "some-token",
+      downloadPrimary: async () => {
+        throw new Error("network unreachable");
+      },
+      resolveMirrorAsset: async () => fakeAsset,
+      downloadMirrorAsset: async () => {
+        throw new Error("mirror asset download -> HTTP 500");
+      },
+    }),
+    (err) => {
+      assert.match(err.message, /primary: network unreachable/);
+      assert.match(err.message, /mirror:.*HTTP 500/);
+      return true;
+    },
+  );
 });

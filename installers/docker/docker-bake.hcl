@@ -55,6 +55,30 @@ target "loombre" {
     VCS_REF        = "${VCS_REF}"
     BUILD_DATE     = "${BUILD_DATE}"
   }
+  // ── OPTIONAL vendor-mirror fallback secret (Task #16) ──────────────────
+  // The Dockerfile's ffmpeg-fetch stage RUN carries
+  // `--mount=type=secret,id=github_token`, which exports GITHUB_TOKEN into
+  // scripts/fetch-ffmpeg.mjs's env ONLY when the secret file exists (see
+  // that RUN's own comment) — fetch-ffmpeg.mjs's fallback to this repo's
+  // private ffmpeg-mirror release, on a primary download failure, needs a
+  // token because the mirror repo is private.
+  //
+  // `env=GITHUB_TOKEN` means buildx reads the GITHUB_TOKEN environment
+  // variable of the process running `docker buildx bake` — NOT a
+  // Dockerfile ARG/ENV, never baked into any image layer or the build
+  // cache. Empirically verified (Task #16 report) with a local
+  // `docker buildx bake`/`docker build` on this exact
+  // `--mount=type=secret,id=<x>` + bake `secret = ["id=<x>,env=<VAR>"]`
+  // pairing: when the env var is UNSET, the build proceeds normally with
+  // the secret simply absent (no file at /run/secrets/github_token, no
+  // error) — additive and zero-behavior-change for local `docker build`/
+  // `docker buildx bake` users who never set GITHUB_TOKEN, exactly the
+  // "absent secret = today's primary-only behavior" contract this task
+  // requires. release.yml sets GITHUB_TOKEN to the Actions-provided token
+  // before invoking installers/docker/build.sh so CI gets the fallback;
+  // nothing else needs to change there since bake already reads it from
+  // the environment.
+  secret = ["id=github_token,env=GITHUB_TOKEN"]
   // ── SIGN HOOK ──────────────────────────────────────────────────────────
   // cosign image signing is lane I's release-pipeline concern (STATE.md
   // P4.1: "cosign-signed Docker images"), not this lane's. This marker is
