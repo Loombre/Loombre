@@ -302,7 +302,8 @@ export class PluginRegistrationService {
     const plugin = await getPluginById(this.dbProvider.db, pluginId);
     if (!plugin) throw notFound("Plugin not found.", instancePath);
 
-    const breaker = this.healthService.getBreaker(pluginId);
+    // C5.1: seed from the row just fetched (closes deferred LPP L-5).
+    const breaker = this.healthService.getBreaker(pluginId, { consecutiveFailures: plugin.consecutive_failures, atMs: nowMs });
     const manifestResult = await fetchPluginManifest(plugin.base_url, {
       lanAllowlist: plugin.lan_allowlist,
       breaker,
@@ -365,7 +366,8 @@ export class PluginRegistrationService {
       throw conflict("This plugin is not currently awaiting scope-change re-approval.", instancePath);
     }
 
-    const breaker = this.healthService.getBreaker(pluginId);
+    // C5.1: seed from the row just fetched (closes deferred LPP L-5).
+    const breaker = this.healthService.getBreaker(pluginId, { consecutiveFailures: plugin.consecutive_failures, atMs: nowMs });
     const manifestResult = await fetchPluginManifest(plugin.base_url, {
       lanAllowlist: plugin.lan_allowlist,
       breaker,
