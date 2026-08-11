@@ -298,6 +298,80 @@ schema descriptions reworded neutrally; YAML comments kept — they never render
 SDK regenerated; docs rebuilt + synced to website (70 routes, build green;
 deploy remains manual).
 
+## Post-rc.6 owner-QA wave — three playback fixes + open-GOP HEVC strip (2026-08-08→10, lanes + opus review)
+
+Owner ran a manual QA session against the dev stack; every reported defect
+was reproduced, root-caused, fixed test-first, opus-reviewed, and landed as
+1c3f0cad + c0c4e32a + 41bf343f + e68b554b. `pnpm gate:full` ALL 16 STEPS
+PASSED on the final tree. Owner is drafting a broader fix list next; rc.7
+tags after that list lands.
+
+- **Heartbeat crash (1c3f0cad):** first real-browser play threw "Illegal
+  invocation" — the scheduler stored bare native setInterval/clearInterval
+  and invoked them with instance receiver; every unit test injected fakes so
+  the default branch only ever ran in a browser. Fixed with the
+  featured-rotation `.bind(globalThis)` pattern (review caught the first-cut
+  arrow-wrap diverging from that precedent AND leaving caller-supplied bare
+  natives broken).
+- **Throttle-suspend manifest deadlock (c0c4e32a):** playback froze at
+  ~20-24s on every transcode. Segment-ahead throttle SIGSTOPs ffmpeg at
+  ahead>10 and marks the session suspended → manifest GET 503'd → client
+  could never issue the segment GETs that advance requested_segment → worker
+  never resumed (live-DB verified: requested_segment frozen at 3, ffmpeg
+  `Ts`). Manifests now serve active OR suspended (both causes — throttle and
+  heartbeat-stale — argued and e2e-pinned); ended/failed still 404.
+- **Duration clobber (41bf343f):** the same QA stall's second half — element
+  loadedmetadata (event-playlist produced-so-far window) clobbered the
+  known 2h duration. Growth-only adoption on loadedmetadata+durationchange
+  for manifest-backed sessions; direct-play adopts unconditionally (element
+  authoritative both directions there — review catch, incl. the existing
+  shrink test silently relying on the direct-play default fixture).
+- **Open-GOP HEVC decode smear (e68b554b, task #7):** post-seek full-frame
+  white smears — stream-copy from a CRA carries RASL leading pictures whose
+  references predate the discontinuity. Fix `-bsf:v
+  filter_units=remove_types=8-9` on withSeek copy HLS runs, driven by new
+  probe fact `media_streams.open_gop` (migration 0038, NULL=unknown,
+  reads map NULL→false — never strip without positive detection).
+  Built by two lanes (C1 engine, C2 probe/DB) + opus review (16 findings:
+  2 BLOCKER, 5 MAJOR) + two fix lanes. Review catches that mattered:
+  (1) detector's 3s-from-start window couldn't see past the first GOP on
+  real keyint=250 content — permanent false, feature dead on arrival; now a
+  2s mid-file trace_headers window (mid-file keyframe is a CRA in open-GOP
+  encodes; ~50-70ms/scan, empirically verified); (2) the reason code and
+  VideoAction.openGop never entered the contract — closed-enum drift the
+  SDK/UI would render raw; new contract-reason-codes.spec asserts engine
+  reason lists == contract enum both directions; (3) no hevc gate at plan
+  assembly — an H.264 stream flagged open-GOP would have had its PPS (h264
+  NAL 8) stripped, destroying the stream; (4) reason and flag fired from
+  different predicates (stage B vs assembly) — both now emitted from ONE
+  predicate at assembly, evaluateVideo signature reverted, matrix 516/517
+  pin both former divergence directions; (5) signal-killed scans recorded
+  false instead of NULL. ENGINE_VERSION 0.8.5. Matrix 513→517 (corpus
+  backfilled with openGop + meta assertion), goldens 33/34 prove bsf
+  presence/absence. Backfill job opengop-backfill: batched 200,
+  cursor-resumable, skips missing files, bulk-falses non-HEVC.
+  **OWNER QA ITEM for rc.7:** the bsf is per-invocation — after a seek,
+  EVERY subsequent GOP loses its ~bframes leading pictures (accepted trade
+  vs multi-second smear; documented in interpretation (K) + PLAYBACK.md §6).
+  Verify a long post-seek playback stretch shows no objectionable judder.
+- **INCIDENT — live dev DB wiped by a lane (2026-08-10):** Lane C2 ran
+  `npx vitest run` in packages/jobs during verification;
+  `packages/jobs/test/queue.spec.ts` beforeAll unconditionally runs
+  `migrate.mjs reset` (DROP SCHEMA public CASCADE) against DATABASE_URL's
+  default — the live 5442/loombre QA database. All rows lost (owner
+  accounts, libraries, catalog, QA state); schema intact, 38/38 migrations
+  applied. The lane was briefed against live-DB suites and checked
+  apps/worker + packages/db gating but packages/jobs looked innocuous.
+  Mitigations: lane briefings now allowlist individual spec files (never
+  package-level runs); task #8 opened — destructive test setup must be
+  impossible to point at live data (dedicated test DB / loud opt-in),
+  matching the house guard philosophy. Dev DB reseeded post-gate.
+- **Process notes:** review-then-fix split across two disjoint-file fix
+  lanes (engine/contract/web vs worker/db/server) worked cleanly in the
+  shared checkout — zero conflicts, verified by marker scan before commit.
+  perf/web-budget-result.json stays a separate chore commit (repo
+  precedent c7f38321).
+
 ## Post-rc.6 fix wave — folder-grant flow + menubar UX (2026-08-08, sub-agent lanes + opus review)
 
 Two owner-directed fixes, built by parallel sonnet lanes, opus-reviewed
