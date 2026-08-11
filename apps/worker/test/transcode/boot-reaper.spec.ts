@@ -56,14 +56,24 @@ interface Harness {
   killed: number[];
 }
 
-function inspectorFor(map: Record<number, ProcessInspection>): Harness {
+/**
+ * `killGroup` really kills, by design: the reaper waits for the process to
+ * disappear before it frees the session's admission slot (reaper.ts's
+ * waitForRunExit — signal delivery is asynchronous, and the gap between
+ * "SIGKILL queued" and "process gone" is the same window the whole item
+ * exists to close). A fake whose processes survive being SIGKILLed would
+ * only ever exercise that wait's timeout path.
+ */
+function inspectorFor(map: Record<number, ProcessInspection>, options: { unkillable?: boolean } = {}): Harness {
   const killed: number[] = [];
+  const live: Record<number, ProcessInspection> = { ...map };
   return {
     killed,
     inspector: {
-      inspect: async (pid: number) => map[pid] ?? { alive: false },
+      inspect: async (pid: number) => live[pid] ?? { alive: false },
       killGroup: async (pid: number) => {
         killed.push(pid);
+        if (!options.unkillable) delete live[pid];
       },
     },
   };
@@ -183,6 +193,66 @@ describe("reapOrphanedTranscodeSessions (C2 boot crash reaper)", () => {
     expect(killed).toEqual([]);
     expect(failed).toEqual([]);
     expect(report).toEqual([]);
+  });
+
+  it("does not free the admission slot until the killed process is actually gone", async () => {
+    const target = session({ id: "s-slow-death", workerPid: 999 });
+    const { inspector, killed } = inspectorFor({
+      999: { alive: true, commandLine: `ffmpeg ${target.stagingDir}/run0/media.m3u8` },
+    });
+    const order: string[] = [];
+    const wrapped: ProcessInspector = {
+      inspect: async (pid) => {
+        order.push(`inspect:${pid}`);
+        return inspector.inspect(pid);
+      },
+      killGroup: async (pid) => {
+        order.push(`kill:${pid}`);
+        return inspector.killGroup(pid);
+      },
+    };
+
+    await reapOrphanedTranscodeSessions({
+      listReapable: async () => [target],
+      failSession: async () => {
+        order.push("fail-session");
+      },
+      inspector: wrapped,
+      workerStartedAtMs: WORKER_STARTED_AT_MS,
+    });
+
+    expect(killed).toEqual([999]);
+    // kill -> re-inspect (the exit wait) -> only then free the slot.
+    expect(order).toEqual(["inspect:999", "kill:999", "inspect:999", "fail-session"]);
+  });
+
+  it("still reclaims the session if the process refuses to die within the wait", async () => {
+    const target = session({ id: "s-undead", workerPid: 1000 });
+    const { inspector, killed } = inspectorFor(
+      { 1000: { alive: true, commandLine: `ffmpeg ${target.stagingDir}/run0/media.m3u8` } },
+      { unkillable: true },
+    );
+    const failed: string[] = [];
+    let slept = 0;
+
+    const report = await reapOrphanedTranscodeSessions({
+      listReapable: async () => [target],
+      failSession: async (id) => {
+        failed.push(id);
+      },
+      inspector,
+      workerStartedAtMs: WORKER_STARTED_AT_MS,
+      exitWaitTimeoutMs: 120,
+      sleep: async (ms) => {
+        slept += ms;
+      },
+      nowMs: () => 6_000_000 + slept,
+    });
+
+    expect(killed).toEqual([1000]);
+    expect(slept).toBeGreaterThan(0); // it really waited
+    expect(failed).toEqual(["s-undead"]); // and reclaimed anyway rather than wedging boot
+    expect(report[0]?.outcome).toBe("killed");
   });
 
   it("one session's failure never aborts the sweep", async () => {
