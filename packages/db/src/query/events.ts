@@ -135,6 +135,7 @@ import { sql, type Expression, type ExpressionBuilder, type Kysely, type Selecta
 import type { DB, EventsTable } from '../types.js';
 import type { ViewerContext } from '../context.js';
 import { applyContentClassFilter, applyGuardToJoined, applyLibraryIdFilter } from './guard.js';
+import { MalformedCursorError } from './cursor.js';
 
 export type EventRow = Selectable<EventsTable>;
 
@@ -241,6 +242,18 @@ export async function readEventsForViewer(
 
   let query = db.selectFrom('events');
   if (params.afterSeq !== undefined) {
+    // AUD-W4-001 (audit fafa47f): the ORIGINAL finding was a raw `afterId`
+    // string bound into a `uuid` column comparison (Postgres 22P02 -> an
+    // unhandled 500 for a client input mistake). Task #9's afterId->afterSeq
+    // switch moved the comparison to the `seq` bigint column, but carried
+    // NO validation of its own — a non-finite/non-integer/negative value
+    // hits the exact same defect class one type down (bigint cast error,
+    // not uuid). Same house fix as every other cursor validator in this
+    // package: malformed input is MalformedCursorError (apps/server maps
+    // it to an RFC 9457 400), never a raw 500 or a silent full scan.
+    if (!Number.isInteger(params.afterSeq) || params.afterSeq < 0) {
+      throw new MalformedCursorError('malformed cursor: afterSeq must be a non-negative integer');
+    }
     query = query.where('events.seq', '>', params.afterSeq);
   }
 
