@@ -468,10 +468,11 @@ async function enqueueOpenGopBackfillIfNeeded(): Promise<void> {
 // 'queued'/'active' forever — which permanently satisfies
 // hasQueuedOrActiveJobOfType and wedges the hwprobe/image-backfill/stash
 // re-enqueues (the Windows-ARM-VM "probe never runs again, no backends
-// ever" failure). Scoped to EXACTLY the singleton-guarded job types — the
-// only rows any behavior keys on, and one-per-type by design, so the
-// sweep is bounded to a handful of rows (never a 30k-row 'probe' backlog
-// with a matching outbox-event flood).
+// ever" failure). Scoped to EXPLICITLY ENUMERATED job types — never every
+// type — so the sweep can never become a 30k-row 'probe' backlog with a
+// matching outbox-event flood. The singleton group below is one-per-type
+// by design and therefore bounded by construction; item C7's transcode
+// group is many-concurrent-rows and carries an explicit row cap instead.
 //
 // Two horizons (opus review W1-R1/R3): 'queued' rows go stale after 24h —
 // strictly past the longest per-attempt expiry (23h, packages/jobs/src/
@@ -491,13 +492,50 @@ async function enqueueOpenGopBackfillIfNeeded(): Promise<void> {
 const QUEUED_STALE_HORIZON_MS = 24 * 60 * 60 * 1000;
 const SINGLETON_GUARDED_JOB_TYPES = ["hwprobe", "image-backfill", "opengop-backfill", "stash-inventory", "stash-sync"] as const;
 
+// Item C7 (an upstream media server-study implementation run): 'transcode' folded into the
+// same sweep, as its OWN group rather than by widening the singleton list
+// above — it is the opposite shape (one ledger row per playback session,
+// many concurrent), and the original scoping comment's warning about an
+// unbounded loop plus a matching outbox-event flood applies to it in full.
+// The machinery grew groups + a per-group row cap for exactly this
+// (packages/db/src/internal/jobs.ts's ReconcileJobLedgerGroup).
+//
+// Its horizons are a PLAYBACK SESSION's, not a background job's:
+//   * 'queued' — 15 minutes, the heartbeat sweeper's own idle-timeout
+//     (docs/PLAYBACK.md §9). A transcode job still queued past that point
+//     belongs to a session the server has already ended; nothing will ever
+//     fetch it, and leaving the row 'queued' lies to the admin jobs panel.
+//     The 24h singleton horizon would be absurd here — it is ~96 session
+//     lifetimes.
+//   * 'active' — the same previous-generation rule everything else uses.
+//     An 'active' transcode row from before this process existed IS the
+//     orphaned-ffmpeg signature (see ./transcode/reaper.ts, which handles
+//     the process half of that same event on the same boot).
+const TRANSCODE_QUEUED_STALE_HORIZON_MS = 15 * 60 * 1000;
+// Bounded because a bad night (an install that crash-looped while several
+// viewers were streaming) must not turn one boot into a multi-thousand-row
+// sweep and an equally large job.updated outbox flood on a Tier-0 box. The
+// remainder is picked up by the next boot; the reaper's own process-level
+// cleanup is independent of this cap.
+const TRANSCODE_RECONCILE_MAX_ROWS = 500;
+
 async function reconcileStaleJobLedger(): Promise<void> {
   try {
     const nowMs = Date.now();
     const reconciled = await reconcileAbandonedJobLedgerRows(db, {
-      types: SINGLETON_GUARDED_JOB_TYPES,
-      queuedStaleBeforeMs: nowMs - QUEUED_STALE_HORIZON_MS,
-      activeStaleBeforeMs: WORKER_STARTED_AT_MS,
+      groups: [
+        {
+          types: SINGLETON_GUARDED_JOB_TYPES,
+          queuedStaleBeforeMs: nowMs - QUEUED_STALE_HORIZON_MS,
+          activeStaleBeforeMs: WORKER_STARTED_AT_MS,
+        },
+        {
+          types: ["transcode"],
+          queuedStaleBeforeMs: nowMs - TRANSCODE_QUEUED_STALE_HORIZON_MS,
+          activeStaleBeforeMs: WORKER_STARTED_AT_MS,
+          maxRows: TRANSCODE_RECONCILE_MAX_ROWS,
+        },
+      ],
       nowMs,
     });
     if (reconciled.length > 0) {
