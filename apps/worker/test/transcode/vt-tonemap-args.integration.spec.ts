@@ -35,6 +35,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
+  ENGINE_VERSION,
   buildFfmpegArgs,
   plan,
   type DeviceProfile,
@@ -292,7 +293,12 @@ describe.skipIf(!vtAvailable)(
         expect(result.video.encoder).toBe("videotoolbox");
         expect(result.video.toneMap).toBe("videotoolbox");
         expect(result.container).toBe("fmp4-hls");
-        expect(result.engineVersion).toBe("0.9.0");
+        // Tracks the engine's own exported constant rather than a literal:
+        // this assertion exists to prove the plan came from THIS build of
+        // the engine, not to freeze a version number, and a hard-coded
+        // string turns every legitimate ruleset bump into a false failure
+        // here (Wave C1's 0.9.0 -> 0.10.0 is what surfaced it).
+        expect(result.engineVersion).toBe(ENGINE_VERSION);
 
         // Route (a)'s argv shape: hw-surface pin + scale_vt, zero software
         // filters, zero hw<->sw bounces.
