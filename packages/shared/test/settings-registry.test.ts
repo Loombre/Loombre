@@ -8,6 +8,7 @@
 
 import { describe, expect, it } from "vitest";
 import {
+  LADDER_RUNG_CODECS,
   SETTINGS_REGISTRY,
   SETTINGS_REGISTRY_BY_KEY,
   getSettingsRegistryEntry,
@@ -159,6 +160,59 @@ describe("SETTINGS_REGISTRY", () => {
       expect(entry.schema.safeParse([{ ...baseRung, videoBitrateBps: 100_000_000 }]).success).toBe(true);
       expect(entry.schema.safeParse([{ ...baseRung, audioBitrateBps: 99_999 }]).success).toBe(false);
       expect(entry.schema.safeParse([{ ...baseRung, audioBitrateBps: 100_000_001 }]).success).toBe(false);
+    });
+  });
+
+  // ==========================================================================
+  // Wave C1 (LD-7): AV1 became a ladder ENCODE target. Two registry
+  // consequences — the rung schema must ACCEPT `av1` (an admin who cannot
+  // save a codec the engine can emit has a broken settings UI, not a safe
+  // one), and the operator opt-in itself becomes a setting.
+  // ==========================================================================
+
+  describe("LD-7: AV1 ladder targeting", () => {
+    it("LADDER_RUNG_CODECS is exactly the engine's LadderCodec set {h264, hevc, av1}", () => {
+      expect([...LADDER_RUNG_CODECS].sort()).toEqual(["av1", "h264", "hevc"]);
+    });
+
+    it("transcode.ladderRungs ACCEPTS an av1 rung and still rejects a non-LadderCodec value", () => {
+      const entry = getSettingsRegistryEntry("transcode.ladderRungs")!;
+      const rung = { heightPx: 1080, videoBitrateBps: 4_000_000, audioBitrateBps: 160_000 };
+      expect(entry.schema.safeParse([{ ...rung, codec: "av1" }]).success).toBe(true);
+      expect(entry.schema.safeParse([{ ...rung, codec: "h264" }]).success).toBe(true);
+      expect(entry.schema.safeParse([{ ...rung, codec: "hevc" }]).success).toBe(true);
+      // vp9 is a SOURCE codec, never an encode target — the narrower set is
+      // the whole point of LadderCodec existing separately from VideoCodec.
+      expect(entry.schema.safeParse([{ ...rung, codec: "vp9" }]).success).toBe(false);
+    });
+
+    it("transcode.ladderRungs' copy names av1 among the legal codecs (the admin-facing list must not go stale)", () => {
+      const entry = getSettingsRegistryEntry("transcode.ladderRungs")!;
+      expect(entry.technicalDetails).toContain("av1");
+    });
+
+    it("transcode.av1EncodePreferred exists: boolean, DEFAULT FALSE (opt-in), scope 'ui', and NO envVar", () => {
+      const entry = getSettingsRegistryEntry("transcode.av1EncodePreferred")!;
+      expect(entry, "transcode.av1EncodePreferred is missing from the registry").toBeDefined();
+      expect(entry.default).toBe(false);
+      expect(entry.schema.safeParse(true).success).toBe(true);
+      expect(entry.schema.safeParse("yes").success).toBe(false);
+      expect(entry.category).toBe("transcode");
+      expect(entry.scope).toBe("ui");
+      expect(entry.requiresRestart).toBe(false);
+      // Owner-decision D5: flippable per-instance from the settings UI at
+      // any time, and deliberately NOT env-pinnable — unlike
+      // transcode.maxSimultaneousTranscodes, nothing about this preference
+      // needs to be fixed at deploy time.
+      expect(entry.envVar).toBeUndefined();
+    });
+
+    it("its copy explains the TIER reality without leaking an internal decision ID", () => {
+      const entry = getSettingsRegistryEntry("transcode.av1EncodePreferred")!;
+      expect(entry.description.length).toBeGreaterThan(40);
+      expect(entry.technicalDetails).toBeDefined();
+      expect(entry.description).not.toMatch(/\b(LD-\d+|D\d{1,2}|P\d\.\d+)\b/);
+      expect(entry.technicalDetails).not.toMatch(/\b(LD-\d+|D\d{1,2}|P\d\.\d+)\b/);
     });
   });
 
