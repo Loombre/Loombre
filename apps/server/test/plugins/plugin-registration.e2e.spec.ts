@@ -41,11 +41,12 @@ import type { Readable } from "node:stream";
 import { createServer, type IncomingMessage, type RequestListener, type Server, type ServerResponse } from "node:http";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { ensureTestDatabase, getPluginById, getUserByUsername, insertPluginAndEmit, listPlugins } from "@loombre/db";
 import { fetchPluginManifest } from "@loombre/plugin-host";
 import { DbProvider } from "../../src/common/db.provider.js";
+import { resolvePluginConfigSecret, storePluginConfigSecret } from "../../src/plugins/plugin-keyring.js";
 import { PluginHealthService } from "../../src/plugins/plugin-health.service.js";
 import { PluginHealthSchedulerService } from "../../src/plugins/plugin-health-scheduler.service.js";
 import { PluginLifecycleService } from "../../src/plugins/plugin-lifecycle.service.js";
@@ -529,6 +530,67 @@ describe("registerPlugin — the losing side of a concurrent same-baseUrl regist
       "018f6f1e-0000-7000-8000-0000000000e1",
     ]);
   }, 20_000);
+
+  // L-2 backfill regression coverage: this fix already landed (see
+  // registerPlugin's own "L-2 fix wave" comment) — this test locks it in
+  // with dedicated keyring-level coverage, which did not previously exist
+  // (the test above only proves the DB row is clean; this one additionally
+  // proves the LOSING side's minted HMAC + stored secret config field never
+  // survive ON DISK under the pluginId no row will ever reference).
+  // registerPlugin mints its pluginId internally (uuidv7), so — mirroring
+  // plugin-keyring.spec.ts's own "distinctive value" technique exactly —
+  // this scans every file under the keyring's secrets directory rather
+  // than trying to recover that internal id from outside the service.
+  it("L-2: the loser's minted HMAC and stored secret config field are rolled back, not orphaned anywhere in the keyring", async () => {
+    let manifestFetches = 0;
+    const stub = await startStub(async (req, res) => {
+      if (req.method === "GET" && req.url === "/lpp/manifest") {
+        manifestFetches += 1;
+        if (manifestFetches === 2) {
+          await insertPluginAndEmit(dbProvider.db, {
+            id: "018f6f1e-0000-7000-8000-0000000000e2",
+            name: "race-winner-plugin-l2",
+            baseUrl: stub.baseUrl,
+            version: "0.1.0",
+            protocolVersion: 1,
+            contentClass: "general",
+            grantedCapabilityTypes: ["metadata-provider"],
+            eventTypes: [],
+            lanAllowlist: [stub.host],
+            manifest: { ...VALID_MANIFEST_BASE, capabilities: [METADATA_CAP] },
+            config: {},
+            actorUserId: adminId,
+            nowMs: Date.now(),
+          });
+        }
+        return jsonResponse(res, 200, {
+          ...VALID_MANIFEST_BASE,
+          configSchema: { type: "object", properties: { apiKey: { type: "string", secret: true } }, additionalProperties: false },
+          capabilities: [METADATA_CAP],
+        });
+      }
+      jsonResponse(res, 404, {});
+    });
+    stubs.push(stub);
+
+    const manifestDigest = await digestFor(stub.baseUrl, [stub.host]);
+    await expect(
+      registrationService.registerPlugin({
+        baseUrl: stub.baseUrl,
+        lanAllowlist: [stub.host],
+        grantedCapabilityTypes: ["metadata-provider"],
+        eventTypeGrants: [],
+        configValues: { apiKey: "DISTINCTIVE-L2-ORPHAN-CANDIDATE" },
+        actorUserId: adminId,
+        manifestDigest,
+      }),
+    ).rejects.toMatchObject({ status: 409 });
+
+    const secretsDir = join(dataDir, "secrets");
+    const survivingFiles = existsSync(secretsDir) ? readdirSync(secretsDir) : [];
+    const anyFileContainsOrphan = survivingFiles.some((f) => readFileSync(join(secretsDir, f), "utf8").includes("DISTINCTIVE-L2-ORPHAN-CANDIDATE"));
+    expect(anyFileContainsOrphan).toBe(false);
+  }, 20_000);
 });
 
 // ===========================================================================
@@ -762,6 +824,188 @@ describe("PluginHealthService — breaker auto-disable after 5 consecutive timeo
 });
 
 // ===========================================================================
+// C5.3 fix wave: keyring hygiene — manifest-refresh secret-field-set diff
+// (orphan cleanup on refresh/reapproval)
+// ===========================================================================
+//
+// diffManifestForExpansion never inspects configSchema at all (by design —
+// see manifest-diff.ts's header), so a configSchema change is NEVER an
+// "expansion" and always takes the non-expanding snapshot-update path in
+// refreshPlugin (or the reapprovePlugin path, for a plugin that WAS mid
+// scope-change for an unrelated reason). Before this fix, a secret field
+// dropped from the live manifest between refreshes left its keyring entry
+// stranded forever — nothing references that field name anymore, but
+// nothing ever removes it either.
+
+describe("keyring hygiene — manifest-refresh secret-field-set diff (C5.3)", () => {
+  const stubs: StubServer[] = [];
+  afterEach(async () => {
+    await Promise.all(stubs.splice(0).map((s) => s.close()));
+  });
+
+  function schemaWith(fields: string[]): Record<string, unknown> {
+    const properties: Record<string, unknown> = {};
+    for (const f of fields) properties[f] = { type: "string", secret: true };
+    return { type: "object", properties, additionalProperties: false };
+  }
+
+  it("refreshPlugin: a secret field DROPPED from the live manifest has its keyring entry removed; a field that stays is left untouched", async () => {
+    let configSchema = schemaWith(["apiKey", "webhookUrl"]);
+    const stub = await startStub((req, res) => {
+      if (req.method === "GET" && req.url === "/lpp/manifest") {
+        return jsonResponse(res, 200, { ...VALID_MANIFEST_BASE, configSchema, capabilities: [METADATA_CAP] });
+      }
+      if (req.method === "POST" && req.url === "/lpp/provider/search") {
+        return jsonResponse(res, 200, { results: [] });
+      }
+      jsonResponse(res, 404, {});
+    });
+    stubs.push(stub);
+
+    const registerDigest = await digestFor(stub.baseUrl, [stub.host]);
+    const registered = await registrationService.registerPlugin({
+      baseUrl: stub.baseUrl,
+      lanAllowlist: [stub.host],
+      grantedCapabilityTypes: ["metadata-provider"],
+      eventTypeGrants: [],
+      configValues: { apiKey: "DISTINCTIVE-API-KEY-VALUE", webhookUrl: "https://hooks.example/keep-me" },
+      actorUserId: adminId,
+      manifestDigest: registerDigest,
+    });
+    const pluginId = registered.plugin.id;
+    expect(await resolvePluginConfigSecret(pluginId, "apiKey")).toBe("DISTINCTIVE-API-KEY-VALUE");
+    expect(await resolvePluginConfigSecret(pluginId, "webhookUrl")).toBe("https://hooks.example/keep-me");
+
+    // The live manifest drops "apiKey" entirely — a narrowing, never an
+    // expansion, so refreshPlugin applies it silently (LD6).
+    configSchema = schemaWith(["webhookUrl"]);
+    const refreshed = await registrationService.refreshPlugin(pluginId, adminId);
+    expect(refreshed.expanded).toBe(false);
+    expect(refreshed.plugin.enabled).toBe(true);
+
+    expect(await resolvePluginConfigSecret(pluginId, "apiKey")).toBeNull(); // orphan removed
+    expect(await resolvePluginConfigSecret(pluginId, "webhookUrl")).toBe("https://hooks.example/keep-me"); // untouched
+  }, 15_000);
+
+  it("reapprovePlugin: a secret field dropped ALONGSIDE a genuine expansion has its keyring entry removed once the new manifest is actually approved", async () => {
+    let mediaKinds = ["movie"];
+    let configSchema = schemaWith(["apiKey", "webhookUrl"]);
+    const stub = await startStub((req, res) => {
+      if (req.method === "GET" && req.url === "/lpp/manifest") {
+        return jsonResponse(res, 200, { ...VALID_MANIFEST_BASE, configSchema, capabilities: [{ ...METADATA_CAP, mediaKinds }] });
+      }
+      if (req.method === "POST" && req.url === "/lpp/provider/search") {
+        return jsonResponse(res, 200, { results: [] });
+      }
+      jsonResponse(res, 404, {});
+    });
+    stubs.push(stub);
+
+    const registerDigest = await digestFor(stub.baseUrl, [stub.host]);
+    const registered = await registrationService.registerPlugin({
+      baseUrl: stub.baseUrl,
+      lanAllowlist: [stub.host],
+      grantedCapabilityTypes: ["metadata-provider"],
+      eventTypeGrants: [],
+      configValues: { apiKey: "DISTINCTIVE-REAPPROVE-KEY", webhookUrl: "https://hooks.example/reapprove-keep" },
+      actorUserId: adminId,
+      manifestDigest: registerDigest,
+    });
+    const pluginId = registered.plugin.id;
+
+    // Widen mediaKinds (a genuine expansion, LD6) AND drop "apiKey" from
+    // configSchema at the same time.
+    mediaKinds = ["movie", "tv"];
+    configSchema = schemaWith(["webhookUrl"]);
+    const refreshed = await registrationService.refreshPlugin(pluginId, adminId);
+    expect(refreshed.expanded).toBe(true);
+    expect(refreshed.plugin.disabled_reason).toBe("scope-change");
+    // Awaiting re-approval — the STORED snapshot (and so the keyring) is
+    // deliberately untouched until the admin actually accepts the new
+    // manifest (refreshPlugin's own header comment).
+    expect(await resolvePluginConfigSecret(pluginId, "apiKey")).toBe("DISTINCTIVE-REAPPROVE-KEY");
+
+    const reapproveDigest = await digestFor(stub.baseUrl, [stub.host]);
+    const reapproved = await registrationService.reapprovePlugin(
+      pluginId,
+      { grantedCapabilityTypes: ["metadata-provider"], eventTypeGrants: [], manifestDigest: reapproveDigest },
+      adminId,
+    );
+    expect(reapproved.enabled).toBe(true);
+
+    expect(await resolvePluginConfigSecret(pluginId, "apiKey")).toBeNull(); // orphan removed on actual approval
+    expect(await resolvePluginConfigSecret(pluginId, "webhookUrl")).toBe("https://hooks.example/reapprove-keep");
+  }, 15_000);
+});
+
+// ===========================================================================
+// C5.1 fix wave: breaker boot re-seed (closes deferred LPP L-5)
+// ===========================================================================
+
+describe("PluginHealthService.getBreaker — boot re-seed (C5.1, closes deferred L-5)", () => {
+  const stubs: StubServer[] = [];
+  afterEach(async () => {
+    await Promise.all(stubs.splice(0).map((s) => s.close()));
+  });
+
+  it("a simulated restart mid-breaker-window (fresh PluginHealthService instance) does NOT clear the durable failure count", async () => {
+    const stub = await startStub(() => {
+      // Never respond — every request just hangs, exactly like the
+      // existing "5 consecutive timeouts" breaker suite above.
+    });
+    stubs.push(stub);
+
+    const nowMs = Date.now();
+    const { plugin } = await insertPluginAndEmit(dbProvider.db, {
+      id: "018f6f1e-0000-7000-8000-0000000000d2",
+      name: "reseed-stub-plugin",
+      baseUrl: stub.baseUrl,
+      version: "0.1.0",
+      protocolVersion: 1,
+      contentClass: "general",
+      grantedCapabilityTypes: ["metadata-provider"],
+      eventTypes: [],
+      lanAllowlist: [stub.host],
+      manifest: { ...VALID_MANIFEST_BASE, capabilities: [METADATA_CAP] },
+      config: {},
+      actorUserId: adminId,
+      nowMs,
+    });
+
+    // "Before restart": drive 3 failures (below the default threshold of
+    // 5) through a FIRST PluginHealthService instance.
+    const beforeRestart = new PluginHealthService(dbProvider);
+    let lastRow = plugin;
+    for (let i = 0; i < 3; i++) {
+      lastRow = await beforeRestart.runHealthCheck(plugin.id, nowMs + i, { manifestTimeoutMs: 150 });
+    }
+    expect(lastRow.consecutive_failures).toBe(3);
+    expect(lastRow.enabled).toBe(true); // not tripped yet
+
+    // "Restart": a BRAND NEW PluginHealthService — its `breakers` Map is
+    // empty, exactly what a real process restart produces. Without the
+    // C5.1 fix, getBreaker(plugin.id) would start this fresh instance's
+    // breaker at 0, and only 2 more failures would leave it at
+    // consecutiveFailures=2 (not tripped, and — worse — it would
+    // OVERWRITE the durable column back down from 3 to 2, regressing the
+    // count). With the fix, the breaker is re-seeded from
+    // plugin.consecutive_failures (3) on its first construction, so
+    // exactly 2 more failures (for a total effective progress of 5) trip
+    // it and auto-disable, identical to 5 failures against a single
+    // long-lived instance.
+    const afterRestart = new PluginHealthService(dbProvider);
+    for (let i = 3; i < 5; i++) {
+      lastRow = await afterRestart.runHealthCheck(plugin.id, nowMs + i, { manifestTimeoutMs: 150 });
+    }
+
+    expect(lastRow.consecutive_failures).toBe(5);
+    expect(lastRow.enabled).toBe(false);
+    expect(lastRow.disabled_reason).toBe("breaker");
+    expect(afterRestart.getBreaker(plugin.id).snapshot().state).toBe("open");
+  }, 20_000);
+});
+
+// ===========================================================================
 // M-8 fix wave: PluginHealthSchedulerService — periodic health re-check
 // ===========================================================================
 
@@ -918,5 +1162,49 @@ describe("PluginLifecycleService", () => {
 
     const fetched = await getPluginById(dbProvider.db, registered.plugin.id);
     expect(fetched).toBeUndefined();
+  }, 15_000);
+
+  // L-3 backfill regression coverage: this fix already landed (see
+  // plugin-lifecycle.service.ts's own "L-3 fix wave" comment /
+  // deriveSecretFieldNamesDefensively) — this test locks it in with
+  // dedicated coverage, which did not previously exist. A row is inserted
+  // DIRECTLY (bypassing registerPlugin's own parseLppManifest validation
+  // entirely — packages/db has no opinion on LPP shape) with a manifest
+  // that does not satisfy parseLppManifest's strict schema (capabilities is
+  // not an array; version/protocolVersion/description/publisher all
+  // missing), exactly the "corrupted or pre-dates a frozen-contract
+  // narrowing" scenario L-3 documents. removePlugin must still find and
+  // remove the secret field named in configSchema.properties, not leak it.
+  it("L-3: removePlugin still removes a secret's keyring entry even when the stored manifest no longer parses strictly", async () => {
+    const nowMs = Date.now();
+    const { plugin } = await insertPluginAndEmit(dbProvider.db, {
+      id: "018f6f1e-0000-7000-8000-0000000000e3",
+      name: "corrupted-manifest-plugin",
+      baseUrl: "http://127.0.0.1:1", // never dialed — removePlugin makes no network call
+      version: "0.1.0",
+      protocolVersion: 1,
+      contentClass: "general",
+      grantedCapabilityTypes: ["metadata-provider"],
+      eventTypes: [],
+      lanAllowlist: [],
+      manifest: {
+        name: "corrupted-manifest-plugin",
+        // version/protocolVersion/description/publisher deliberately
+        // OMITTED, and capabilities is deliberately the wrong SHAPE — both
+        // fail parseLppManifest's strict schema outright.
+        configSchema: { type: "object", properties: { apiKey: { type: "string", secret: true } }, additionalProperties: false },
+        capabilities: "not-an-array",
+      },
+      config: {},
+      actorUserId: adminId,
+      nowMs,
+    });
+
+    await storePluginConfigSecret(plugin.id, "apiKey", "DISTINCTIVE-L3-UNPARSEABLE-VALUE");
+    expect(await resolvePluginConfigSecret(plugin.id, "apiKey")).toBe("DISTINCTIVE-L3-UNPARSEABLE-VALUE");
+
+    await expect(lifecycleService.removePlugin(plugin.id, adminId)).resolves.toBeUndefined();
+
+    expect(await resolvePluginConfigSecret(plugin.id, "apiKey")).toBeNull();
   }, 15_000);
 });

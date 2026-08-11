@@ -37,6 +37,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';
 import { createDb, getUserByUsername, insertPluginAndEmit, replaceLibraryProviderChain, resolveTestDatabaseUrl } from '@loombre/db';
+import type { PluginBreakerSeed } from '@loombre/plugin-host';
 import { resolveProviderChainForLibrary } from '../../src/metadata/chain-resolution.js';
 import { createPluginBreakerRegistry } from '../../src/metadata/plugin-breakers.js';
 import { ProviderRegistry } from '../../src/metadata/registry.js';
@@ -244,6 +245,82 @@ describe('resolveProviderChainForLibrary', () => {
       expect(disabledEvent?.payload).toMatchObject({ reason: 'breaker' });
       const healthEvent = events.find((e) => e.type === 'plugin.health-changed');
       expect(healthEvent?.payload).toMatchObject({ newState: 'unhealthy' });
+    }, 30_000);
+  });
+
+  // C5.1 fix wave (closes deferred LPP L-5, worker-side — mirrors
+  // apps/server/src/plugins/plugin-health.service.ts's identical fix).
+  // Unlike the server's health-check path (which writes consecutive_failures
+  // to the DB on EVERY check), this adapter's maybeDisableOnBreakerTrip only
+  // persists the durable counter at the MOMENT a breaker trips — so a
+  // worker-local restart mid-window has nothing of its OWN to lose. The
+  // real risk this closes is cross-process: apps/server's periodic health
+  // check writes the SAME plugins.consecutive_failures column on its own
+  // cadence, so a worker process that has never called a given plugin yet
+  // must not construct a fresh breaker blind to failures another process
+  // already recorded there.
+  describe('C5.1: a fresh breaker registry (simulated restart) seeds from plugins.consecutive_failures', () => {
+    it('a durable count another process already recorded is not silently discarded by this process’s first breaker construction', async () => {
+      const libraryId = await makeLibrary('general', 'movie');
+      const baseUrl = await closedPortBaseUrl(); // reliably ECONNREFUSED
+      const pluginId = await makePlugin('general', baseUrl);
+      await replaceLibraryProviderChain(db, libraryId, [{ providerKind: 'plugin', pluginId }]);
+
+      // Simulate: apps/server's periodic health check already recorded 3
+      // consecutive failures for this plugin, durably — even though THIS
+      // worker process has never attempted a call to it yet (its own
+      // breaker registry is brand new, exactly like a fresh restart).
+      await db.updateTable('plugins').set({ consecutive_failures: 3 }).where('id', '=', pluginId).execute();
+
+      const registry = new ProviderRegistry();
+      const breakers = createPluginBreakerRegistry();
+      const deps = {
+        registry,
+        getBreaker: (id: string, seed?: PluginBreakerSeed) => breakers.getBreaker(id, seed),
+        log: () => {},
+      };
+
+      // Exactly 2 MORE failures — not 5 — must now trip it, proving the
+      // durable count seeded this process's fresh breaker instead of
+      // starting at 0.
+      for (let i = 0; i < 2; i += 1) {
+        const chain = await resolveProviderChainForLibrary(db, libraryId, 'movie', 'general', deps);
+        expect(chain).toHaveLength(1);
+        const provider = registry.get(chain[0]!);
+        await expect(provider!.search({ mediaKind: 'movie', title: 'x' })).rejects.toThrow();
+      }
+
+      const row = await db.selectFrom('plugins').selectAll().where('id', '=', pluginId).executeTakeFirstOrThrow();
+      expect(row.enabled).toBe(false);
+      expect(row.disabled_reason).toBe('breaker');
+      expect(row.consecutive_failures).toBe(5);
+    }, 30_000);
+
+    it('WITHOUT seeding (documents the pre-fix bug this closes): a fresh registry that never forwards the seed needs the FULL 5 failures regardless of the durable count', async () => {
+      const libraryId = await makeLibrary('general', 'movie');
+      const baseUrl = await closedPortBaseUrl();
+      const pluginId = await makePlugin('general', baseUrl);
+      await replaceLibraryProviderChain(db, libraryId, [{ providerKind: 'plugin', pluginId }]);
+
+      await db.updateTable('plugins').set({ consecutive_failures: 3 }).where('id', '=', pluginId).execute();
+
+      const registry = new ProviderRegistry();
+      const breakers = createPluginBreakerRegistry();
+      // Deliberately does NOT forward `seed` — the OLD call shape, kept
+      // working (backward-compatible) but unseeded on purpose here.
+      const deps = { registry, getBreaker: (id: string) => breakers.getBreaker(id), log: () => {} };
+
+      for (let i = 0; i < 2; i += 1) {
+        const chain = await resolveProviderChainForLibrary(db, libraryId, 'movie', 'general', deps);
+        const provider = registry.get(chain[0]!);
+        await expect(provider!.search({ mediaKind: 'movie', title: 'x' })).rejects.toThrow();
+      }
+
+      const row = await db.selectFrom('plugins').selectAll().where('id', '=', pluginId).executeTakeFirstOrThrow();
+      // Only 2 (unseeded) worker-local failures — nowhere near enough to
+      // trip a 5-threshold breaker that never saw the durable 3.
+      expect(row.enabled).toBe(true);
+      expect(row.consecutive_failures).toBe(3); // the durable value from setup, untouched (never tripped, never written)
     }, 30_000);
   });
 });

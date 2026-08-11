@@ -137,14 +137,14 @@ describe("assertHostAllowed", () => {
     await expect(assertHostAllowed("public.example", [], lookup)).resolves.toBeUndefined();
   });
 
-  it("a hostname allowlisted by name is never DNS-resolved at all", async () => {
-    let called = false;
+  it("C5.2: a hostname allowlisted by name IS DNS-resolved (once) — the allowlist only skips the disallowed-range check on the result", async () => {
+    let callCount = 0;
     const lookup: DnsLookupFn = async () => {
-      called = true;
-      return [{ address: "10.0.0.1", family: 4 }];
+      callCount += 1;
+      return [{ address: "10.0.0.1", family: 4 }]; // a private LAN address the range check would otherwise reject
     };
     await expect(assertHostAllowed("plugin.lan", ["plugin.lan"], lookup)).resolves.toBeUndefined();
-    expect(called).toBe(false);
+    expect(callCount).toBe(1);
   });
 
   it("propagates dns-resolution-failed when the lookup throws", async () => {
@@ -213,6 +213,35 @@ describe("hardenedFetch (real ephemeral-port local servers)", () => {
     );
     expect(result.status).toBe(200);
     expect(result.bodyText).toBe('{"ok":true}');
+  });
+
+  // C5.2 fix wave: end-to-end proof that the ACTUAL SOCKET DIAL for an
+  // allowlisted-by-name hostname goes to the pinned address, not a fresh
+  // resolution — real local server (not a mock transport), real
+  // resolveAndValidateHost + pinnedDialFetch code path. A resolver that
+  // would flip to an unreachable address on any second call proves, by the
+  // request SUCCEEDING at all within the timeout, that no second lookup
+  // ever happened.
+  it("C5.2 end-to-end: hardenedFetch dials the address PINNED for an allowlisted hostname — a resolver whose 2nd answer would be unreachable is never asked twice", async () => {
+    const baseUrl = await listen((_req, res) => {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end('{"ok":true}');
+    });
+    const port = new URL(baseUrl).port;
+    let callCount = 0;
+    const flipLookup: DnsLookupFn = async () => {
+      callCount += 1;
+      if (callCount === 1) return [{ address: "127.0.0.1", family: 4 }]; // the real listening server
+      return [{ address: "127.0.0.250", family: 4 }]; // never bound to anything — would time out if ever dialed
+    };
+    const result = await hardenedFetch(
+      `http://plugin.lan:${port}/`,
+      {},
+      { timeoutMs: 1000, maxResponseBytes: 1024, lanAllowlist: ["plugin.lan"], dnsLookup: flipLookup },
+    );
+    expect(result.status).toBe(200);
+    expect(result.bodyText).toBe('{"ok":true}');
+    expect(callCount).toBe(1); // resolved once at validation, dialed via the pin — never re-resolved
   });
 
   it("never follows a 3xx redirect — surfaced as a typed rejection", async () => {
@@ -415,9 +444,12 @@ describe("hardenedFetchRaw (real ephemeral-port local servers)", () => {
 // (an IP literal always resolves to `{ pinnedAddress: <that literal> }`,
 // which is exactly what those tests dial through) — see this file's own
 // `ssrf.ts` header for why a genuinely public-but-locally-reachable address
-// does not exist in this sandbox, so the DNS-NAME pinning path is proven at
-// the DECISION layer here (which address gets chosen to pin, and that it is
-// resolved EXACTLY ONCE) rather than via a second live socket.
+// does not exist in this sandbox, so the DNS-NAME pinning path (including,
+// as of C5.2, an ALLOWLISTED DNS name) is proven at the DECISION layer here
+// (which address gets chosen to pin, and that it is resolved EXACTLY ONCE)
+// — the "C5.2 end-to-end" case in the `hardenedFetch` describe block above
+// additionally proves the real-socket dial for the allowlisted-hostname
+// path specifically, since that is the path whose behavior just changed.
 describe("resolveAndValidateHost (pinning decision)", () => {
   it("an IP literal pins to itself, regardless of allowlist", async () => {
     const resolution = await resolveAndValidateHost("93.184.216.34", [], async () => {
@@ -460,15 +492,66 @@ describe("resolveAndValidateHost (pinning decision)", () => {
     expect(callCount).toBe(2); // one call per resolveAndValidateHost invocation, never more
   });
 
-  it("a hostname allowlisted by exact name is never resolved — the one documented residual (see ssrf.ts's header)", async () => {
-    let called = false;
-    const lookup: DnsLookupFn = async () => {
-      called = true;
-      return [{ address: "93.184.216.34", family: 4 }];
+  // C5.2 fix wave: an allowlisted-by-name hostname used to be the ONE case
+  // this module never resolved at all ("the admin already trusts that
+  // name") — that reasoning was backwards: trusting a NAME is exactly what
+  // a DNS-rebinding attacker exploits, by changing what the name resolves
+  // to between validation and dial. It is now resolved and pinned exactly
+  // like any other DNS name; the allowlist's only remaining effect is
+  // skipping the disallowed-RANGE check (a LAN name legitimately resolves
+  // to a private range).
+  it("C5.2: a hostname allowlisted by exact name IS NOW resolved and pinned, not left unpinned", async () => {
+    const resolution = await resolveAndValidateHost("plugin.lan", ["plugin.lan"], async () => [
+      { address: "10.0.0.1", family: 4 }, // a private LAN address — legitimately what this resolves to
+    ]);
+    expect(resolution).toEqual({ pinnedAddress: "10.0.0.1", family: 4 });
+  });
+
+  it("C5.2 flip-resolver (RED-FIRST proof): the resolver is asked EXACTLY ONCE for an allowlisted hostname — a rebinding attacker's SECOND answer (B) is never observed, the pin stays A", async () => {
+    let callCount = 0;
+    const flipLookup: DnsLookupFn = async () => {
+      callCount += 1;
+      // Call 1 (validation): the honest answer, A. Any FURTHER call would
+      // be the rebinding attacker's flip to B — proving this module makes
+      // no further call is exactly what closes the TOCTOU window.
+      if (callCount === 1) return [{ address: "10.0.0.1", family: 4 }]; // A
+      return [{ address: "10.0.0.2", family: 4 }]; // B — must never be pinned
     };
-    const resolution = await resolveAndValidateHost("plugin.lan", ["plugin.lan"], lookup);
-    expect(resolution).toEqual({ pinnedAddress: null, family: null });
-    expect(called).toBe(false);
+    const resolution = await resolveAndValidateHost("plugin.lan", ["plugin.lan"], flipLookup);
+    expect(resolution).toEqual({ pinnedAddress: "10.0.0.1", family: 4 }); // A, never B
+    expect(callCount).toBe(1);
+  });
+
+  it("C5.2: a private address resolved for an allowlisted name is NOT rejected by the disallowed-range check (that check is skipped for it, not its resolution)", async () => {
+    // Same private address the non-allowlisted path rejects outright
+    // (proven by "rejects a hostname that resolves to a private address"
+    // in the assertHostAllowed suite above) — the ONLY difference the
+    // allowlist makes is that THIS call succeeds.
+    const resolution = await resolveAndValidateHost("plugin.lan", ["plugin.lan"], async () => [{ address: "10.1.2.3", family: 4 }]);
+    expect(resolution).toEqual({ pinnedAddress: "10.1.2.3", family: 4 });
+  });
+
+  it("C5.2: multiple A-records for an allowlisted LAN host still pin the FIRST address — same rule as any other DNS name", async () => {
+    const resolution = await resolveAndValidateHost("plugin.lan", ["plugin.lan"], async () => [
+      { address: "10.0.0.9", family: 4 },
+      { address: "10.0.0.10", family: 4 },
+    ]);
+    expect(resolution).toEqual({ pinnedAddress: "10.0.0.9", family: 4 });
+  });
+
+  it("C5.2: a DNS failure for an allowlisted name now fails AT VALIDATION with dns-resolution-failed (previously this name was never resolved at all, so failure only ever surfaced later at the transport layer)", async () => {
+    await expect(
+      resolveAndValidateHost("plugin.lan", ["plugin.lan"], async () => {
+        throw new Error("boom");
+      }),
+    ).rejects.toMatchObject({ reason: "dns-resolution-failed" });
+  });
+
+  it("an IP-literal lan_allowlist entry is unaffected by C5.2 — already pinned by the literal itself, no resolution involved either way", async () => {
+    const resolution = await resolveAndValidateHost("10.5.5.5", ["10.5.5.5"], async () => {
+      throw new Error("must not be called for an IP literal, allowlisted or not");
+    });
+    expect(resolution).toEqual({ pinnedAddress: "10.5.5.5", family: 4 });
   });
 
   it("an IPv6 DNS answer pins with family 6", async () => {
