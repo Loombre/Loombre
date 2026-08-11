@@ -547,6 +547,23 @@ State machine: `created → starting → active ⇄ suspended → seeking → ac
     where `mean` is the measured mean of every listed segment. Rule 2 is
     EXACT whenever the playlist still starts at index 0 — the anchor is
     `0 × mean` and nothing is estimated.
+  - **Per-run source anchoring (EXACT for every run).** The rules above are
+    a presentation-timeline answer, and presentation only equals source for
+    run 0. With `transcode_runs` (migration 0043) the derivation resolves
+    the segment's OWNING RUN and computes
+    `run.source_origin_ms + Σ(real #EXTINF of that run's OWN segments from
+    run.start_segment up to index-1)`. Inside one run, playlist duration
+    maps 1:1 to source time — neither a copy nor a transcode changes the
+    rate — so this is exact for every run. Only that run's own segments are
+    summed; a previous run's durations describe a different region of the
+    source entirely. Segments of the run already pruned out of the playlist
+    are the single estimated term, and they extrapolate at THAT RUN's own
+    measured mean. **Run ownership follows the segment counter, never the
+    clock:** a backward seek starts a later run at an EARLIER
+    `source_origin_ms`, so the origin is not monotonic across runs and
+    `start_segment` is the only key that is. A session with no recorded runs
+    keeps the playlist-only chain above — "no anchor available" must never
+    be read as "origin 0".
   - **`EXT-X-MEDIA-SEQUENCE` is MANDATORY once retention has pruned.**
     Retention deletes segments from the FRONT of the served playlist, and
     RFC 8216 §4.3.3.2 reads an absent media-sequence tag as 0 — "the first

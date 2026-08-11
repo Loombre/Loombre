@@ -44,9 +44,19 @@
 // (packages/playback-engine/src/args/builder.ts §6) cuts at the first
 // keyframe AT OR AFTER each mark, so a real segment is 6.006s..9s+ and the
 // error COMPOUNDS with the index — tens of seconds by the middle of a
-// feature. `deriveSegmentStartMs` below is exact inside the window the
-// served playlist still lists and extrapolates at that window's MEASURED
-// mean outside it (retention-pruned head, not-yet-produced tail); the
+// feature. The derivation lives in ../common/served-playlist.ts (shared
+// with the progress-ingestion path, which needs the same timeline
+// arithmetic and cannot import this module across the D2 boundary).
+//
+// It is anchored PER RUN via migration 0043's `transcode_runs`
+// (`getTranscodeRunForSegment`): the owning run supplies the SOURCE origin
+// and the run's OWN real `#EXTINF` durations supply the offset within it,
+// which makes the answer exact for EVERY run rather than only run 0. Run
+// ownership follows the segment counter, never the clock — a backward seek
+// starts a later run at an earlier source origin, so `source_origin_ms` is
+// not monotonic and `start_segment` is the only key that is. A session with
+// no recorded runs (one predating the migration) keeps the playlist-only
+// fallback chain, and "no anchor" is never read as "origin 0"; the
 // nominal constant survives only as the last resort when no served
 // playlist is readable at all. The result is then clamped to
 // `[0, durationMs]` — `requestSeek` writes `seek_target_ms` verbatim
@@ -60,7 +70,13 @@ import { stat, readFile } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { Controller, Get, Param, Req, Res, UseFilters, UseGuards } from "@nestjs/common";
 import type { Response } from "express";
-import { getMediaInfoAssembly, getPlaybackSessionForUser, requestSeek, updateRequestedSegment } from "@loombre/db";
+import {
+  getMediaInfoAssembly,
+  getPlaybackSessionForUser,
+  getTranscodeRunForSegment,
+  requestSeek,
+  updateRequestedSegment,
+} from "@loombre/db";
 import type { ViewerContext } from "@loombre/db";
 import { nowMs as clockNowMs } from "@loombre/shared";
 import { notFound } from "../gateway/problem.exception.js";
@@ -72,6 +88,14 @@ import { DbProvider } from "../common/db.provider.js";
 import { ViewerContextProvider } from "../common/viewer-context.provider.js";
 import { RateLimit, SurfaceRateLimitGuard } from "../common/rate-limit.guard.js";
 import { RateLimitExceptionFilter } from "../common/rate-limit-exception.filter.js";
+import {
+  clampSeekTargetMs,
+  deriveSegmentStartMs,
+  parseServedSegmentDurations,
+  withMediaSequence,
+  type RunAnchor,
+  type ServedSegmentEntry,
+} from "../common/served-playlist.js";
 import { resolveViewer } from "./viewer.js";
 
 const MANIFEST_POLL_TIMEOUT_MS = 8_000;
@@ -130,154 +154,6 @@ function isStrictlyUnder(root: string, candidate: string): boolean {
 function joinFileParam(file: unknown): string {
   if (Array.isArray(file)) return file.join("/");
   return typeof file === "string" ? file : "";
-}
-
-// ---------------------------------------------------------------------------
-// Seek-target derivation (module header's SEEK-TARGET DERIVATION note)
-// ---------------------------------------------------------------------------
-
-/** One entry of the served playlist: its GLOBALLY-CONTINUOUS segment index
- *  (docs/PLAYBACK.md §9 — `{START_SEG}` continues the numbering across
- *  every seek-restart run, so an index is unique session-wide) and the
- *  duration ffmpeg really wrote for it. */
-export interface ServedSegmentEntry {
-  index: number;
-  durationMs: number;
-}
-
-/** `#EXTINF:<sec>,` immediately followed by a `runN/sNNNNNN.{m4s,ts}` URI —
- *  the exact two-line shape apps/worker/src/transcode/playlist.ts's
- *  `renderServedPlaylist()` emits. Parsed here rather than imported for the
- *  same reason `isStrictlyUnder` above is duplicated rather than imported:
- *  apps/server must not reach into apps/worker's internals across the
- *  process boundary the seam contract allows no channel across. */
-const EXTINF_RE = /^#EXTINF:([0-9.]+),/;
-const SERVED_SEGMENT_URI_RE = /^run\d+\/s(\d+)\.(?:m4s|ts)$/;
-
-/** Tolerant by design (same posture as the worker's own parser): a playlist
- *  read mid-rewrite, a dangling `#EXTINF` with no URI after it yet, or an
- *  unrecognized line all degrade to "fewer entries", never a throw. Entries
- *  come back in playlist order, which is also increasing index order. */
-export function parseServedSegmentDurations(playlistText: string): ServedSegmentEntry[] {
-  const entries: ServedSegmentEntry[] = [];
-  let pendingDurationMs: number | undefined;
-  for (const rawLine of playlistText.split(/\r?\n/)) {
-    const line = rawLine.trim();
-    if (line.startsWith("#EXTINF")) {
-      const m = EXTINF_RE.exec(line);
-      const sec = m?.[1] === undefined ? Number.NaN : Number.parseFloat(m[1]);
-      pendingDurationMs = Number.isFinite(sec) && sec > 0 ? sec * 1000 : undefined;
-      continue;
-    }
-    if (line.startsWith("#") || line === "") continue;
-    if (pendingDurationMs === undefined) continue;
-    const uri = SERVED_SEGMENT_URI_RE.exec(line);
-    if (uri?.[1] !== undefined) {
-      entries.push({ index: Number.parseInt(uri[1], 10), durationMs: pendingDurationMs });
-    }
-    pendingDurationMs = undefined;
-  }
-  return entries;
-}
-
-/**
- * Media-timeline start of `segmentIndex`, in ms, from what the session has
- * ACTUALLY produced.
- *
- * Rules (in this order — the whole point is that the nominal constant is
- * the LAST of them, not the first):
- *   1. No entries at all (playlist unreadable / not written yet): fall back
- *      to `segmentIndex * nominalSegmentDurationMs`. This is the only path
- *      on which the pre-C3 arithmetic survives, and it is reached only when
- *      there is genuinely nothing measured to reason from.
- *   2. `segmentIndex` is at or after some listed entry: exact cumulative
- *      sum of the real durations preceding it, anchored at
- *      `firstListedIndex * mean` (the pruned head is gone from the
- *      playlist, so its length can only be estimated — at the measured
- *      mean, never the nominal constant). A gap or a not-yet-produced tail
- *      extrapolates from the nearest listed entry at the same mean.
- *   3. `segmentIndex` precedes every listed entry (a backward seek into the
- *      retention-pruned head): `segmentIndex * mean`.
- *
- * `mean` is the measured mean of every listed segment. Rule 2 collapses to
- * an EXACT answer for the common case — a session whose playlist still
- * starts at index 0 — because the anchor is then `0 * mean`.
- *
- * Pure: no I/O, no clock. The caller supplies the playlist text.
- */
-export function deriveSegmentStartMs(entries: readonly ServedSegmentEntry[], segmentIndex: number, nominalSegmentDurationMs: number): number {
-  if (entries.length === 0) return segmentIndex * nominalSegmentDurationMs;
-
-  let totalMs = 0;
-  for (const entry of entries) totalMs += entry.durationMs;
-  const meanMs = totalMs / entries.length;
-
-  const firstIndex = entries[0]!.index;
-  if (segmentIndex < firstIndex) return segmentIndex * meanMs;
-
-  let cumulativeMs = firstIndex * meanMs;
-  let lastCrossedIndex = firstIndex;
-  for (const entry of entries) {
-    if (entry.index === segmentIndex) return cumulativeMs;
-    // A listed index PAST the requested one means `segmentIndex` sits in a
-    // gap — stop and extrapolate forward from the last entry crossed.
-    if (entry.index > segmentIndex) break;
-    cumulativeMs += entry.durationMs;
-    lastCrossedIndex = entry.index;
-  }
-  // Past the end of the listed window, or inside a gap: `cumulativeMs` is
-  // the end of the last entry crossed.
-  return cumulativeMs + (segmentIndex - lastCrossedIndex - 1) * meanMs;
-}
-
-/**
- * Adds `#EXT-X-MEDIA-SEQUENCE:<n>` to a served playlist whose head has been
- * retention-pruned, where `n` is the absolute index of the first surviving
- * segment.
- *
- * apps/worker/src/transcode/playlist.ts's `pruneRetention` deletes segments
- * from the FRONT of the playlist (120s behind the live edge) and
- * `renderServedPlaylist` emits no media-sequence tag. RFC 8216 §4.3.3.2:
- * an absent tag means 0 — "the first segment listed is segment number 0" —
- * so every prune silently renumbers the playlist from the client's point of
- * view. hls.js derives each fragment's `sn`, and the media-time offset it
- * maps a seek to, from that base; after a prune its already-buffered
- * fragments stop lining up with the ones the server is naming. Since this
- * session layer numbers segments ABSOLUTELY and CONTINUOUSLY across every
- * seek-restart run (docs/PLAYBACK.md §9, `{START_SEG}` continues the
- * numbering), the first surviving segment's own index IS the media sequence
- * number by definition — nothing has to be counted or remembered.
- *
- * Added ONLY when a prune has actually happened (`firstIndex > 0`): an
- * unpruned playlist is byte-identical to what the worker wrote, because
- * absent already means 0 and emitting `:0` would be pure noise.
- *
- * The tag is inserted after `#EXT-X-VERSION` when present (conventional
- * placement), else right after `#EXTM3U` — either way before the first
- * Media Segment, which is what §4.3.3 requires.
- */
-export function withMediaSequence(playlistText: string): string {
-  const entries = parseServedSegmentDurations(playlistText);
-  const firstIndex = entries[0]?.index;
-  if (firstIndex === undefined || firstIndex <= 0) return playlistText;
-  if (/^#EXT-X-MEDIA-SEQUENCE:/m.test(playlistText)) return playlistText;
-
-  const lines = playlistText.split("\n");
-  let insertAfter = lines.findIndex((l) => l.startsWith("#EXT-X-VERSION"));
-  if (insertAfter === -1) insertAfter = lines.findIndex((l) => l.startsWith("#EXTM3U"));
-  if (insertAfter === -1) return playlistText;
-
-  lines.splice(insertAfter + 1, 0, `#EXT-X-MEDIA-SEQUENCE:${firstIndex}`);
-  return lines.join("\n");
-}
-
-/** `[0, durationMs]`. `durationMs` null/non-positive (an unprobed file)
- *  leaves only the lower bound — better an un-ceilinged seek than a seek
- *  clamped to a duration nobody measured. */
-export function clampSeekTargetMs(targetMs: number, durationMs: number | null): number {
-  const lower = Number.isFinite(targetMs) ? Math.max(0, targetMs) : 0;
-  if (durationMs === null || !Number.isFinite(durationMs) || durationMs <= 0) return Math.round(lower);
-  return Math.round(Math.min(lower, durationMs));
 }
 
 @Controller()
@@ -471,7 +347,7 @@ export class PlaybackHlsFileController {
    * playlist falls back to nominal arithmetic; an unresolvable media
    * assembly drops only the upper clamp.
    */
-  private async resolveSeekTargetMs(ctx: ViewerContext, session: { stagingDir: string | null; itemId: string | null; fileId: string | null }, segmentIndex: number): Promise<number> {
+  private async resolveSeekTargetMs(ctx: ViewerContext, session: { id: string; stagingDir: string | null; itemId: string | null; fileId: string | null }, segmentIndex: number): Promise<number> {
     let entries: ServedSegmentEntry[] = [];
     if (session.stagingDir) {
       try {
@@ -481,7 +357,22 @@ export class PlaybackHlsFileController {
         // atomic rewrite) — `deriveSegmentStartMs` falls back to nominal.
       }
     }
-    const derivedMs = deriveSegmentStartMs(entries, segmentIndex, SEGMENT_DURATION_SEC * 1000);
+
+    // The owning run (migration 0043's transcode_runs, Lane A1) turns the
+    // derivation from a presentation-timeline approximation into an EXACT
+    // SOURCE-timeline answer for every run, not just run 0 — see
+    // served-playlist.ts's `deriveSegmentStartMs`. `undefined` (a session
+    // predating the migration, or one whose pipeline never recorded a run)
+    // keeps the playlist-only fallback chain: it must never be read as
+    // "origin 0".
+    let run: RunAnchor | undefined;
+    try {
+      run = await getTranscodeRunForSegment(this.dbProvider.db, session.id, segmentIndex);
+    } catch {
+      // Never fail a seek over the run map — degrade to playlist-only.
+    }
+
+    const derivedMs = deriveSegmentStartMs(entries, segmentIndex, SEGMENT_DURATION_SEC * 1000, run);
 
     let durationMs: number | null = null;
     if (session.fileId) {
