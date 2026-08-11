@@ -468,6 +468,26 @@ State machine: `created → starting → active ⇄ suspended → seeking → ac
   encoder. Boot reconciliation covers the `transcode` job ledger under
   session-lifetime horizons, and the heartbeat sweeper logs a warning when it
   ends a session that still names a live pipeline.
+- **Redundant seek requests are absorbed, not obeyed.** A client retrying a
+  503-retry-after makes the server record the same seek target repeatedly.
+  The worker restarts only for a target the in-flight run is not already
+  serving — outside `[run origin, run origin + produced]`, or with that run
+  already exited; a repeat of what is being produced is cleared without a
+  restart, without a discontinuity, and without a status change. Obeying each
+  repeat killed the run before it could produce its first segment, so the
+  client never stopped retrying: a livelock that burned the most expensive
+  part of a run indefinitely. A genuinely different target — including a
+  backward one — still restarts. Once retention has pruned the head of the
+  in-flight run, matching narrows to the run's exact origin, since the rest
+  of its window is no longer on disk.
+- **Every run records its source origin.** Segment indices are one global
+  counter across a session's runs, while each seek run's own output timeline
+  restarts at zero (`-ss`, no `-copyts`). Each spawned run therefore persists
+  its run index, the segment index it starts numbering at, and where it begins
+  in SOURCE time — so a served segment index can be mapped back to a real
+  source position. Ownership of an index follows the segment counter, never
+  the source clock: a backward seek starts a later run at an earlier origin,
+  so source origin is not monotonic across runs.
 - **Direct-play** sessions bypass all of this: range-request file serving with
   progress heartbeats only.
 
