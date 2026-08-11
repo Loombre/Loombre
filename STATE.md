@@ -1024,6 +1024,37 @@ V5 manifestUrl→master YES; V6 T1+ uncapped YES; V7 both bounded trade-offs
 accepted. Spec merged to main; C2 BUILD lane (opus) spawned. Migration
 0044 assigned to the build; ENGINE_VERSION 0.10.1→0.11.0 expected.
 
+**C2 BUILD checkpoint (2026-08-11): DONE — orchestrator-verified** (matrix
+543/543 + all five load-bearing specs green INDIVIDUALLY: seek-rung-switch
+5, codecs fence 4, master-playlist 24 at its real colocated path
+apps/server/src/common/master-playlist.spec.ts, playback-hls e2e 48,
+conformance 13; the one combined-run failure dissolved in isolation — the
+known multi-suite interference signature, per-file discipline re-affirmed).
+gate:full green IN-LANE (16 steps). Proof quality: census on OS state
+(25ms ps sampler over every spawned pid, max===1 across seek→backward-seek→
+switch→seek); cap sampled at 40ms never leaves 1 (never 0, never 2; status
+never enters seeking; discontinuity_count 0 on pure switch); coincident
+seek+switch = ONE SQL statement carrying both intentions → one restart;
+handoff origin asserted as an EXACT segment boundary of the old run's
+append-only playlist (honest statement: producedMs read at tick-top,
+ffmpeg may flush once more); CODECS fence via real encode + SourceBuffer-
+shaped concat + ffprobe for h264/hevc/av1 (also caught the vitest skipIf-
+at-collection-time trap); ENDLIST red-first (completed encodes provably
+never got it). Matrix churn disciplined: 497/530 byte-identical (dump-diff,
+0 decision/args/video/container flips), 33 changed = ladder-shrink + one
+reason ONLY, each with its own arithmetic in why:. oasdiff 0 err/3 warn/
+1 info exactly as previewed; sdk-drift/conformance-zero/migrate-check (56
+tables) all pass. Safari token-hop: URL semantics verified (query survives
+relative resolution; single-hop shape = Wave A's verified case); WebKit
+not runnable here — REAL-SAFARI CHECK ADDED TO OWNER-VERIFY; no-fallback
+decision accepted (no structural failure shown). DEVIATION accepted with
+note: lane committed its own STATE.md build record (8231a73c) — content
+verified accurate, but STATE.md authorship remains orchestrator territory;
+reviewer instructed to fact-check the entry. FABLE REVIEW spawned (central
+obligation = the run-exit-gate cap-1 two-process claim; 5 mutations incl.
+spawn-before-exit ordering; RFC 8216 cleanliness; churn arithmetic
+spot-checks; the STATE.md entry fact-check).
+
 ### Wave C1 — SPEC DELIVERED 2026-08-11, at ⛔ OWNER SIGN-OFF STOP
 
 Fable spec lane committed 86ac7e3b (worktree branch; ONE file, docs/PLAYBACK.md
