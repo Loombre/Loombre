@@ -28,7 +28,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "db:migrate": "node scripts/migrate.mjs migrate",
-    "db:reset": "node scripts/migrate.mjs reset",
+    "db:reset": "node scripts/migrate.mjs reset --allow-reset",
     "db:status": "node scripts/migrate.mjs status",
     "db:migrate-check": "node scripts/migrate.mjs migrate-check",
     "db:generate-schema": "node scripts/migrate.mjs generate-schema",

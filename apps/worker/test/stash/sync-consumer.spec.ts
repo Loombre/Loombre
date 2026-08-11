@@ -41,6 +41,7 @@ import {
   listRestrictedBrowse,
   listStashSceneLinksForLibrary,
   replaceLibraryPathMappings,
+  resolveTestDatabaseUrl,
   upsertLibraryStashConnectionConfig,
 } from "@loombre/db";
 import { getStashSyncCheckpoint } from "@loombre/db/internal";
@@ -53,7 +54,7 @@ import { buildFixtureDb } from "./fixtures/build-fixture-db.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PKG_DB_ROOT = path.resolve(__dirname, "../../../../packages/db");
-const DATABASE_URL = process.env.DATABASE_URL ?? "postgres://loombre:loombre@localhost:5442/loombre";
+const DATABASE_URL = resolveTestDatabaseUrl();
 
 function run(script: string, args: string[]) {
   const result = spawnSync(process.execPath, [script, ...args], {

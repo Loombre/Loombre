@@ -22,14 +22,13 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
-import { createDb } from "@loombre/db";
+import { createDb, resolveTestDatabaseUrl } from "@loombre/db";
 import type { QueueLike } from "../../src/scan/scanner.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DB_PKG_ROOT = path.resolve(__dirname, "../../../../packages/db");
 
-export const DATABASE_URL =
-  process.env.DATABASE_URL ?? "postgres://loombre:loombre@localhost:5442/loombre";
+export const DATABASE_URL = resolveTestDatabaseUrl();
 
 export function resetSchema(): void {
   const result = spawnSync(process.execPath, [path.join(DB_PKG_ROOT, "scripts", "migrate.mjs"), "reset"], {

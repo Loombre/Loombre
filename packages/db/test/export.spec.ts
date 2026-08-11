@@ -55,7 +55,7 @@ let harborLightsId: string;
 let quietFrontierId: string;
 
 beforeAll(async () => {
-  const databaseUrl = await ensureTestDatabase(BASE_DATABASE_URL, 'export_spec');
+  const databaseUrl = await ensureTestDatabase(BASE_DATABASE_URL, 'export_spec_test');
   run(path.join(PKG_ROOT, 'scripts', 'migrate.mjs'), ['reset'], databaseUrl);
   run(path.join(PKG_ROOT, 'seed', 'seed.mjs'), [], databaseUrl);
   db = createDb(databaseUrl);

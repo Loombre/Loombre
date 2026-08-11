@@ -109,7 +109,7 @@ export { readEventsForViewer } from './query/events.js';
 export { filterEventsForViewer, readUnprocessedEvents, markEventsProcessed } from './query/events.js';
 
 // Test-support only — see src/testing.ts header.
-export { ensureTestDatabase } from './testing.js';
+export { ensureTestDatabase, resolveTestDatabaseUrl } from './testing.js';
 
 // Hardware capability self-test snapshot (P1.14 identity-reads precedent —
 // instance facts, not viewer-scoped catalog data) — see src/query/hwcaps.ts
