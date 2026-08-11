@@ -460,6 +460,10 @@ const IMPLEMENTED_NON_PUBLIC_EXPECTATIONS: Record<string, number> = {
   endPlaybackSession: 404,
   getPlaybackSessionFile: 404, // placeholder session id never resolves
   getPlaybackHlsManifest: 404, // placeholder session id -> immediate 404, no poll wait
+  // Wave C2 / §9.1.1. NEVER 503s (it is rendered from the stored plan, so
+  // there is nothing to wait for) — a placeholder session id simply does
+  // not resolve, exactly like the media playlist's own immediate 404.
+  getPlaybackHlsMasterPlaylist: 404,
   getPlaybackHlsFile: 404, // placeholder {file} segment fails the strict filename pattern
   getPlaybackSubtitleManifest: 404, // placeholder session id -> immediate 404
   getPlaybackSubtitleFile: 404, // placeholder {file} segment isn't 'sub0.vtt'
