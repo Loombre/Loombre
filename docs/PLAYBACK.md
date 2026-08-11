@@ -584,6 +584,32 @@ State machine: `created → starting → active ⇄ suspended → seeking → ac
     lower bound only.
 - **Heartbeat:** client progress PUT doubles as heartbeat; no heartbeat for
   90 s → suspend; 15 min → end session, delete dir, emit `playback.ended`.
+  - **Reported positions are PRESENTATION time; stored positions are SOURCE
+    time.** A player reports `video.currentTime`, its position in the served
+    playlist's timeline — which runs continuously across every
+    `EXT-X-DISCONTINUITY`. Each seek run is spawned with `-ss` and no
+    `-copyts`, so its own output timestamps restart at zero, and the two
+    timelines diverge by exactly the accumulated seek offsets. Progress,
+    resume points and `positionMs` everywhere else in this system are
+    source-timeline values, so a post-seek heartbeat stored verbatim points
+    at the wrong place in the file.
+  - **The conversion is server-side, at ingestion** (`PUT /progress/{itemId}`
+    when it carries a `sessionId`). The client is left alone: it reports
+    what its media element knows, and only the server holds the run map
+    (`transcode_runs`) and the served playlist needed to reconcile them.
+    The mapping walks the playlist to find the segment containing the
+    reported position, then re-expresses it in that segment's OWN run:
+    `source = owningRun.source_origin_ms + (offset of the segment within
+    its run) + (how far into the segment the position sits)`. The
+    within-segment remainder carries through unchanged for the same reason
+    the offsets do — inside a run, presentation and source advance at the
+    same rate.
+  - **It never guesses.** No sessionId, no staging dir, no runs, an
+    unreadable playlist, or a position past the playlist's end all keep the
+    client's value exactly as sent. That value is already correct for every
+    direct-play session and every transcode session that has not seeked, so
+    declining to map is always safe; a wrong guess would silently corrupt a
+    resume point.
 - **Concurrency:** global semaphore = `maxSimultaneousTranscodes`; admission
   beyond it fails the session create with a typed 429 (`transcode-slots-
   exhausted`) — clients fall back to a lower-bitrate direct attempt or queue.
