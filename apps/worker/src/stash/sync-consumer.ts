@@ -70,7 +70,7 @@
 // pre-creates just that row, deliberately WITHOUT touching
 // stash_updated_at_ms (see its own header).
 //
-// FULL MODE'S NARROWER RESIDUAL, CLOSED (AUD-W2-001, an upstream media server-study run Lane
+// FULL MODE'S NARROWER RESIDUAL, CLOSED (AUD-W2-001, implementation run Lane
 // A5): runFullSync's inventory pass used to write the real, unconditional
 // stash_updated_at_ms for every scene — through the SAME
 // upsertStashSceneLinksFromInventory writer incremental mode uses — BEFORE
