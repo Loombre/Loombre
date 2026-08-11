@@ -41,7 +41,7 @@
 // `crossfading` true in that case, so the "previous" layer is never
 // visible at all).
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, Play } from "lucide-react";
 import { Icon } from "../icon/Icon.js";
 import { blurhashToDataUri } from "../../lib/blurhash-canvas.js";
@@ -176,12 +176,48 @@ function BannerBody({
 
 export function FeaturedBanner({ pool, serverUrl, accessToken, scanlinesEnabled = true }: FeaturedBannerProps): React.JSX.Element | null {
   const rotation = useFeaturedRotation(pool.length);
+  const dotRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
   if (pool.length === 0) return null;
 
   const activeCandidate = pool[rotation.activeIndex];
   const previousCandidate = rotation.previousIndex !== null ? pool[rotation.previousIndex] : null;
   if (!activeCandidate) return null;
+
+  // Item 1 (Wave A, radiogroup sweep): arrow keys move focus AND
+  // selection together, Home/End jump to the ends — same WAI-ARIA APG
+  // Radio Group pattern as ui/SegmentedControl.tsx, applied directly here
+  // since these are icon-only carousel indicator dots.
+  function focusAndJump(index: number): void {
+    if (index < 0 || index >= pool.length) return;
+    dotRefs.current[index]?.focus();
+    rotation.jumpTo(index);
+  }
+
+  function handleDotKeyDown(event: React.KeyboardEvent<HTMLButtonElement>, index: number): void {
+    switch (event.key) {
+      case "ArrowRight":
+      case "ArrowDown":
+        event.preventDefault();
+        focusAndJump((index + 1) % pool.length);
+        break;
+      case "ArrowLeft":
+      case "ArrowUp":
+        event.preventDefault();
+        focusAndJump((index - 1 + pool.length) % pool.length);
+        break;
+      case "Home":
+        event.preventDefault();
+        focusAndJump(0);
+        break;
+      case "End":
+        event.preventDefault();
+        focusAndJump(pool.length - 1);
+        break;
+      default:
+        break;
+    }
+  }
 
   return (
     <section
@@ -208,17 +244,22 @@ export function FeaturedBanner({ pool, serverUrl, accessToken, scanlinesEnabled 
       <div className={styles.headerRow}>
         {rotation.controlClusterVisible && (
           <>
-            <div className={styles.dots} role="tablist" aria-label="Featured titles">
+            <div className={styles.dots} role="radiogroup" aria-label="Featured titles">
               {pool.map((candidate, index) => (
                 <button
                   key={candidate.id}
+                  ref={(el) => {
+                    dotRefs.current[index] = el;
+                  }}
                   type="button"
-                  role="tab"
-                  aria-selected={index === rotation.activeIndex}
+                  role="radio"
+                  aria-checked={index === rotation.activeIndex}
                   aria-label={`Show featured title: ${candidate.title}`}
                   data-active={index === rotation.activeIndex}
+                  tabIndex={index === rotation.activeIndex ? 0 : -1}
                   className={styles.dot}
                   onClick={() => rotation.jumpTo(index)}
+                  onKeyDown={(event) => handleDotKeyDown(event, index)}
                 />
               ))}
             </div>

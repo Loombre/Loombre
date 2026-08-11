@@ -66,12 +66,12 @@ describe("AddLibrarySheet — Kind control (D-3 label-casing)", () => {
     vi.unstubAllGlobals();
   });
 
-  function tablist(): HTMLElement {
-    return view!.container.querySelector('[role="tablist"]') as HTMLElement;
+  function radiogroup(): HTMLElement {
+    return view!.container.querySelector('[role="radiogroup"]') as HTMLElement;
   }
 
   function kindSegments(): HTMLButtonElement[] {
-    return Array.from(tablist().querySelectorAll('button[role="tab"]'));
+    return Array.from(radiogroup().querySelectorAll('button[role="radio"]'));
   }
 
   function inputFor(labelText: string): HTMLInputElement {

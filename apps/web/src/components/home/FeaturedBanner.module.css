@@ -188,6 +188,19 @@
   background: var(--color-accent);
 }
 
+/* Item 1 (Wave A, radiogroup sweep — "same pass" focus-ring follow-through,
+   same law as the SegmentedControl family's inset-ring fix): an outline
+   here (rather than the inset box-shadow used elsewhere) is deliberate —
+   a 6-18px dot is too small for a legible inset ring, and unlike the
+   Row.module.css scroller/VirtualPosterGrid cases, .dots sits with a
+   generous 15-28px margin from .banner's own `overflow: hidden` edge (see
+   .headerRow/.dots rules above), so a 2px outline + 2px offset has ample
+   room and can't actually get clipped here. */
+.dot:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
 .arrows {
   display: flex;
   gap: 6px;
