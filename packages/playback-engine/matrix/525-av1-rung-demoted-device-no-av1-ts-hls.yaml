@@ -1,0 +1,73 @@
+name: transcode — explicit av1 rungs for an MPEG-TS-only client with REAL hardware av1 -> demoted to hevc, cause device-no-av1
+why: >
+  Wave C1 / LD-7, §7.1(g)'s THIRD cause and §6 interpretation M's container
+  law in one case. The server is maximally capable (caps.hw-av1-qsv: a real
+  Quick Sync AV1 encode engine) and the policy is tier 2, so BOTH capability
+  conditions pass — the demotion here is driven purely by the DEVICE.
+  devices.av1-ts-only declares an av1 `device.video` entry, so the naive
+  "does the client decode av1" check would say yes; what it cannot do is
+  take fmp4, and AV1 has no assigned MPEG-TS stream_type — muxing it into
+  the ts-hls this device requires would produce a stream nothing standard
+  can demux. §7.1's condition 2 is therefore BOTH facts, and failing either
+  yields cause `device-no-av1`. The demoted rungs land on hevc (the device
+  declares one) at the admin's verbatim bitrates, Stage G routes them on
+  qsv, and — the load-bearing negative — the plan's container is `ts-hls`
+  with not one av1 rung in it, so the builder's "av1 cannot ride ts-hls"
+  descriptive throw is provably unreachable through plan().
+input:
+  media:
+    fileId: file-525
+    container: ts
+    durationMs: 6000000
+    sizeBytes: 6000000000
+    overallBitrateBps: 20500000
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 41
+        width: 1920
+        height: 1080
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 20000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: true
+        openGop: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 160000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device:
+    fixture: devices.av1-ts-only
+  network:
+    fixture: networks.local
+  policy:
+    fixture: policies.explicit-av1-ladder-t2
+  caps:
+    fixture: caps.hw-av1-qsv
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: transcode
+  reasons:
+    - video-interlaced
+    - av1-rung-demoted
+    - av1-rung-demoted
+    - hw-encoder-selected:qsv
+  container: ts-hls
+  ladder:
+    - { heightPx: 1080, videoBitrateBps: 6000000, audioBitrateBps: 384000, codec: hevc }
+    - { heightPx: 720, videoBitrateBps: 2500000, audioBitrateBps: 160000, codec: hevc }
+    - { heightPx: 360, videoBitrateBps: 800000, audioBitrateBps: 160000, codec: h264 }

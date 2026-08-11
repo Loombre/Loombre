@@ -26,8 +26,38 @@ import type {
   NetworkConditions,
   PlanInput,
   ServerPolicy,
+  VerifiedCapabilities,
   VideoStream,
 } from "../../src/types.js";
+
+// Wave C1 (LD-7): `buildLadder` gained a `caps` parameter (the §7.2 AV1
+// eligibility gate is capability-driven) and now returns
+// `{ ladder, reasons }` — step (g)'s demotion normalization is the first
+// ladder rule that FIRES A REASON (`av1-rung-demoted`, §4). Every
+// pre-C1 assertion below is unchanged apart from threading this
+// deliberately av1-free caps set through and reading `.ladder`: the whole
+// point of the regression pin is that an av1-free input builds exactly the
+// ladder it always did.
+const CAPS_SOFTWARE_ONLY: VerifiedCapabilities = {
+  backends: [
+    { backend: "software", decode: ["h264", "hevc", "av1", "vp9"], encode: ["h264", "hevc"], toneMap: [], verifiedAtMs: 1 },
+  ],
+};
+
+/** Software ffmpeg whose libsvtav1 encode self-test passed (§7.3, D4). */
+const CAPS_SOFTWARE_AV1: VerifiedCapabilities = {
+  backends: [
+    { backend: "software", decode: ["h264", "hevc", "av1", "vp9"], encode: ["h264", "hevc", "av1"], toneMap: [], verifiedAtMs: 1 },
+  ],
+};
+
+/** A real AV1 encode ENGINE present (Arc/DG2-class, RTX 40-class, ...). */
+const CAPS_HW_AV1: VerifiedCapabilities = {
+  backends: [
+    { backend: "nvenc", decode: ["h264", "hevc", "av1"], encode: ["h264", "hevc", "av1"], toneMap: ["cuda"], verifiedAtMs: 1 },
+    { backend: "software", decode: ["h264", "hevc", "av1", "vp9"], encode: ["h264", "hevc"], toneMap: [], verifiedAtMs: 1 },
+  ],
+};
 
 const DEFAULT_LADDER: LadderRung[] = [
   { heightPx: 2160, videoBitrateBps: 16_000_000, audioBitrateBps: 384_000, codec: "hevc" },
@@ -113,6 +143,9 @@ function makePolicy(overrides: Partial<ServerPolicy> = {}): ServerPolicy {
     ladderRungs: DEFAULT_LADDER,
     segmentDurationSec: 6,
     hevcEncodePreferred: false,
+    // §2.4 (LD-7): the operator PREFERENCE, passed through verbatim — the
+    // capability/tier law lives inside the engine (§7.2), not here.
+    av1EncodePreferred: false,
     ...overrides,
   };
 }
@@ -224,7 +257,7 @@ describe("buildLadder: rule (a) — never exceed source height", () => {
     const media = makeMedia([makeVideoStream({ height: 720, width: 1280, bitrateBps: 10_000_000 })], {
       overallBitrateBps: 10_000_000,
     });
-    const ladder = buildLadder(media, makeDevice(), makeNetwork(), makePolicy(), 0);
+    const ladder = buildLadder(media, makeDevice(), makeNetwork(), makePolicy(), CAPS_SOFTWARE_ONLY, 0).ladder;
     expect(ladder).toEqual([
       { heightPx: 720, videoBitrateBps: 3_000_000, audioBitrateBps: 160_000, codec: "h264" },
       { heightPx: 480, videoBitrateBps: 1_500_000, audioBitrateBps: 160_000, codec: "h264" },
@@ -236,7 +269,7 @@ describe("buildLadder: rule (a) — never exceed source height", () => {
     const media = makeMedia([makeVideoStream({ height: 480, width: 854, bitrateBps: 10_000_000 })], {
       overallBitrateBps: 10_000_000,
     });
-    const ladder = buildLadder(media, makeDevice(), makeNetwork(), makePolicy(), 0);
+    const ladder = buildLadder(media, makeDevice(), makeNetwork(), makePolicy(), CAPS_SOFTWARE_ONLY, 0).ladder;
     expect(ladder).toEqual([
       { heightPx: 480, videoBitrateBps: 1_500_000, audioBitrateBps: 160_000, codec: "h264" },
       { heightPx: 360, videoBitrateBps: 800_000, audioBitrateBps: 160_000, codec: "h264" },
@@ -247,7 +280,7 @@ describe("buildLadder: rule (a) — never exceed source height", () => {
     const media = makeMedia([makeVideoStream({ height: 1080, width: 1920, bitrateBps: 10_000_000 })], {
       overallBitrateBps: 10_000_000,
     });
-    const ladder = buildLadder(media, makeDevice(), makeNetwork(), makePolicy(), 0);
+    const ladder = buildLadder(media, makeDevice(), makeNetwork(), makePolicy(), CAPS_SOFTWARE_ONLY, 0).ladder;
     expect(ladder.some((r) => r.heightPx === 1080)).toBe(true);
     expect(ladder.some((r) => r.heightPx === 2160)).toBe(false);
   });
@@ -258,7 +291,7 @@ describe("buildLadder: rule (b) — never exceed source bitrate", () => {
     const media = makeMedia([makeVideoStream({ height: 2160, width: 3840, bitrateBps: 5_000_000 })], {
       overallBitrateBps: 5_000_000,
     });
-    const ladder = buildLadder(media, makeDevice(), makeNetwork(), makePolicy(), 0);
+    const ladder = buildLadder(media, makeDevice(), makeNetwork(), makePolicy(), CAPS_SOFTWARE_ONLY, 0).ladder;
     expect(ladder).toEqual([
       { heightPx: 1080, videoBitrateBps: 4_000_000, audioBitrateBps: 160_000, codec: "h264" },
       { heightPx: 720, videoBitrateBps: 3_000_000, audioBitrateBps: 160_000, codec: "h264" },
@@ -271,7 +304,7 @@ describe("buildLadder: rule (b) — never exceed source bitrate", () => {
     const media = makeMedia([makeVideoStream({ height: 2160, width: 3840, bitrateBps: null })], {
       overallBitrateBps: 2_000_000,
     });
-    const ladder = buildLadder(media, makeDevice(), makeNetwork(), makePolicy(), 0);
+    const ladder = buildLadder(media, makeDevice(), makeNetwork(), makePolicy(), CAPS_SOFTWARE_ONLY, 0).ladder;
     expect(ladder).toEqual([
       { heightPx: 480, videoBitrateBps: 1_500_000, audioBitrateBps: 160_000, codec: "h264" },
       { heightPx: 360, videoBitrateBps: 800_000, audioBitrateBps: 160_000, codec: "h264" },
@@ -282,7 +315,7 @@ describe("buildLadder: rule (b) — never exceed source bitrate", () => {
     const media = makeMedia([makeVideoStream({ height: 2160, width: 3840, bitrateBps: 4_000_000 })], {
       overallBitrateBps: 4_000_000,
     });
-    const ladder = buildLadder(media, makeDevice(), makeNetwork(), makePolicy(), 0);
+    const ladder = buildLadder(media, makeDevice(), makeNetwork(), makePolicy(), CAPS_SOFTWARE_ONLY, 0).ladder;
     expect(ladder.some((r) => r.videoBitrateBps === 4_000_000)).toBe(true);
     expect(ladder.some((r) => r.videoBitrateBps === 8_000_000)).toBe(false);
   });
@@ -294,7 +327,7 @@ describe("buildLadder: rule (c) — network cap, skipped when isLocal", () => {
       overallBitrateBps: 20_000_000,
     });
     const network = makeNetwork({ maxBitrateBps: 5_000_000, isLocal: false });
-    const ladder = buildLadder(media, makeDevice(), network, makePolicy(), 0);
+    const ladder = buildLadder(media, makeDevice(), network, makePolicy(), CAPS_SOFTWARE_ONLY, 0).ladder;
     expect(ladder).toEqual([
       { heightPx: 1080, videoBitrateBps: 4_000_000, audioBitrateBps: 160_000, codec: "h264" },
       { heightPx: 720, videoBitrateBps: 3_000_000, audioBitrateBps: 160_000, codec: "h264" },
@@ -308,7 +341,7 @@ describe("buildLadder: rule (c) — network cap, skipped when isLocal", () => {
       overallBitrateBps: 20_000_000,
     });
     const network = makeNetwork({ maxBitrateBps: 5_000_000, isLocal: true });
-    const ladder = buildLadder(media, makeDevice(), network, makePolicy(), 0);
+    const ladder = buildLadder(media, makeDevice(), network, makePolicy(), CAPS_SOFTWARE_ONLY, 0).ladder;
     expect(ladder).toEqual(DEFAULT_LADDER);
   });
 });
@@ -320,7 +353,7 @@ describe("buildLadder: rule (d) — device cap, ALWAYS applied (isLocal honors i
     });
     const network = makeNetwork({ maxBitrateBps: 100_000_000, isLocal: true });
     const device = makeDevice({ maxStreamBitrateBps: 5_000_000 });
-    const ladder = buildLadder(media, device, network, makePolicy(), 0);
+    const ladder = buildLadder(media, device, network, makePolicy(), CAPS_SOFTWARE_ONLY, 0).ladder;
     expect(ladder).toEqual([
       { heightPx: 1080, videoBitrateBps: 4_000_000, audioBitrateBps: 160_000, codec: "h264" },
       { heightPx: 720, videoBitrateBps: 3_000_000, audioBitrateBps: 160_000, codec: "h264" },
@@ -334,7 +367,7 @@ describe("buildLadder: rule (d) — device cap, ALWAYS applied (isLocal honors i
       overallBitrateBps: 20_000_000,
     });
     const device = makeDevice({ maxStreamBitrateBps: null });
-    const ladder = buildLadder(media, device, makeNetwork(), makePolicy(), 0);
+    const ladder = buildLadder(media, device, makeNetwork(), makePolicy(), CAPS_SOFTWARE_ONLY, 0).ladder;
     expect(ladder).toEqual(DEFAULT_LADDER);
   });
 });
@@ -346,7 +379,7 @@ describe("buildLadder: rule (e) — keep at least the lowest rung when everythin
     });
     const network = makeNetwork({ maxBitrateBps: 100_000_000, isLocal: true });
     const device = makeDevice({ maxStreamBitrateBps: 100_000 }); // below every rung
-    const ladder = buildLadder(media, device, network, makePolicy(), 0);
+    const ladder = buildLadder(media, device, network, makePolicy(), CAPS_SOFTWARE_ONLY, 0).ladder;
     expect(ladder).toEqual([{ heightPx: 360, videoBitrateBps: 800_000, audioBitrateBps: 160_000, codec: "h264" }]);
   });
 
@@ -355,7 +388,7 @@ describe("buildLadder: rule (e) — keep at least the lowest rung when everythin
       overallBitrateBps: 20_000_000,
     });
     const network = makeNetwork({ maxBitrateBps: 100_000, isLocal: false });
-    const ladder = buildLadder(media, makeDevice(), network, makePolicy(), 0);
+    const ladder = buildLadder(media, makeDevice(), network, makePolicy(), CAPS_SOFTWARE_ONLY, 0).ladder;
     expect(ladder).toEqual([{ heightPx: 360, videoBitrateBps: 800_000, audioBitrateBps: 160_000, codec: "h264" }]);
   });
 
@@ -363,7 +396,7 @@ describe("buildLadder: rule (e) — keep at least the lowest rung when everythin
     const media = makeMedia([makeVideoStream({ height: 240, width: 426, bitrateBps: 20_000_000 })], {
       overallBitrateBps: 20_000_000,
     });
-    const ladder = buildLadder(media, makeDevice(), makeNetwork(), makePolicy(), 0);
+    const ladder = buildLadder(media, makeDevice(), makeNetwork(), makePolicy(), CAPS_SOFTWARE_ONLY, 0).ladder;
     expect(ladder).toEqual([{ heightPx: 360, videoBitrateBps: 800_000, audioBitrateBps: 160_000, codec: "h264" }]);
   });
 });
@@ -376,7 +409,7 @@ describe("buildLadder: rule (f) — hevc swap (device hevc entry + policy.hevcEn
       overallBitrateBps: 20_000_000,
     });
     const policy = makePolicy({ hevcEncodePreferred: true });
-    const ladder = buildLadder(media, HEVC_DEVICE, makeNetwork(), policy, 0);
+    const ladder = buildLadder(media, HEVC_DEVICE, makeNetwork(), policy, CAPS_SOFTWARE_ONLY, 0).ladder;
     expect(ladder).toEqual([
       { heightPx: 2160, videoBitrateBps: 16_000_000, audioBitrateBps: 384_000, codec: "hevc" },
       { heightPx: 1080, videoBitrateBps: 6_000_000, audioBitrateBps: 384_000, codec: "hevc" },
@@ -392,7 +425,7 @@ describe("buildLadder: rule (f) — hevc swap (device hevc entry + policy.hevcEn
       overallBitrateBps: 20_000_000,
     });
     const policy = makePolicy({ hevcEncodePreferred: false });
-    const ladder = buildLadder(media, HEVC_DEVICE, makeNetwork(), policy, 0);
+    const ladder = buildLadder(media, HEVC_DEVICE, makeNetwork(), policy, CAPS_SOFTWARE_ONLY, 0).ladder;
     expect(ladder).toEqual(DEFAULT_LADDER);
   });
 
@@ -401,7 +434,7 @@ describe("buildLadder: rule (f) — hevc swap (device hevc entry + policy.hevcEn
       overallBitrateBps: 20_000_000,
     });
     const policy = makePolicy({ hevcEncodePreferred: true });
-    const ladder = buildLadder(media, makeDevice(), makeNetwork(), policy, 0); // h264-only device
+    const ladder = buildLadder(media, makeDevice(), makeNetwork(), policy, CAPS_SOFTWARE_ONLY, 0).ladder; // h264-only device
     expect(ladder).toEqual(DEFAULT_LADDER);
   });
 
@@ -413,7 +446,7 @@ describe("buildLadder: rule (f) — hevc swap (device hevc entry + policy.hevcEn
 
     // WITHOUT the swap (hevcEncodePreferred false): the 1080p/8,000,000 rung
     // exceeds the 7,000,000 cap and is dropped.
-    const withoutSwap = buildLadder(media, HEVC_DEVICE, network, makePolicy({ hevcEncodePreferred: false }), 0);
+    const withoutSwap = buildLadder(media, HEVC_DEVICE, network, makePolicy({ hevcEncodePreferred: false }), CAPS_SOFTWARE_ONLY, 0).ladder;
     expect(withoutSwap.some((r) => r.heightPx === 1080 && r.videoBitrateBps === 8_000_000)).toBe(false);
     expect(withoutSwap.every((r) => r.videoBitrateBps <= 7_000_000)).toBe(true);
 
@@ -421,7 +454,7 @@ describe("buildLadder: rule (f) — hevc swap (device hevc entry + policy.hevcEn
     // 1080p rung, now 8,000,000 * 0.75 = 6,000,000, SURVIVES the identical
     // 7,000,000 cap — the swap must run BEFORE the cap check for this to
     // hold (binding interpretation constraint 3's BIND).
-    const withSwap = buildLadder(media, HEVC_DEVICE, network, makePolicy({ hevcEncodePreferred: true }), 0);
+    const withSwap = buildLadder(media, HEVC_DEVICE, network, makePolicy({ hevcEncodePreferred: true }), CAPS_SOFTWARE_ONLY, 0).ladder;
     const survivingTopRung = withSwap.find((r) => r.heightPx === 1080 && r.videoBitrateBps === 6_000_000);
     expect(survivingTopRung).toEqual({ heightPx: 1080, videoBitrateBps: 6_000_000, audioBitrateBps: 384_000, codec: "hevc" });
     // And the 2160p rung (16,000,000, unswapped) is correctly dropped by the
@@ -430,17 +463,221 @@ describe("buildLadder: rule (f) — hevc swap (device hevc entry + policy.hevcEn
   });
 });
 
+// ---------------------------------------------------------------------------
+// Wave C1 (LD-7) — step (f)'s generalized codec selection + step (g)'s
+// demotion normalization (docs/PLAYBACK.md §7.1). Both consult src/av1.ts
+// and NOTHING else; test/av1.spec.ts owns the predicate itself, these own
+// the ladder's USE of it.
+// ---------------------------------------------------------------------------
+
+const AV1_ENTRY: DeviceProfileVideoEntry = { ...GENEROUS_H264_ENTRY, codec: "av1", maxLevel: null };
+const HEVC_ENTRY: DeviceProfileVideoEntry = { ...GENEROUS_H264_ENTRY, codec: "hevc" };
+
+/** Declares av1 AND hevc AND h264, and can take fmp4 — everything §7.1's
+ *  condition 2 asks for. */
+const AV1_DEVICE = makeDevice({ video: [GENEROUS_H264_ENTRY, HEVC_ENTRY, AV1_ENTRY] });
+
+function bigSource() {
+  return makeMedia([makeVideoStream({ height: 2160, width: 3840, bitrateBps: 20_000_000 })], {
+    overallBitrateBps: 20_000_000,
+  });
+}
+
+describe("buildLadder: rule (f) — AV1 swap (§7.1, precedence av1 > hevc > h264)", () => {
+  it("claims every rung below 2160p at ×0.6 exactly, leaving the 2160p rung untouched", () => {
+    const policy = makePolicy({ av1EncodePreferred: true, tier: 0 });
+    const { ladder, reasons } = buildLadder(bigSource(), AV1_DEVICE, makeNetwork(), policy, CAPS_HW_AV1, 0);
+    expect(ladder).toEqual([
+      { heightPx: 2160, videoBitrateBps: 16_000_000, audioBitrateBps: 384_000, codec: "hevc" },
+      { heightPx: 1080, videoBitrateBps: 4_800_000, audioBitrateBps: 384_000, codec: "av1" },
+      { heightPx: 1080, videoBitrateBps: 2_400_000, audioBitrateBps: 160_000, codec: "av1" },
+      { heightPx: 720, videoBitrateBps: 1_800_000, audioBitrateBps: 160_000, codec: "av1" },
+      { heightPx: 480, videoBitrateBps: 900_000, audioBitrateBps: 160_000, codec: "av1" },
+      { heightPx: 360, videoBitrateBps: 480_000, audioBitrateBps: 160_000, codec: "av1" },
+    ]);
+    // A rung the SWAP produced already satisfies step (g)'s gates by
+    // construction, so no demotion reason can accompany it.
+    expect(reasons).toEqual([]);
+  });
+
+  it("audioBitrateBps is NEVER scaled — only the video bitrate takes the ×0.6", () => {
+    const policy = makePolicy({ av1EncodePreferred: true, tier: 0 });
+    const { ladder } = buildLadder(bigSource(), AV1_DEVICE, makeNetwork(), policy, CAPS_HW_AV1, 0);
+    expect(ladder.map((r) => r.audioBitrateBps)).toEqual(DEFAULT_LADDER.map((r) => r.audioBitrateBps));
+  });
+
+  it("PRECEDENCE — with BOTH hevcEncodePreferred and av1EncodePreferred, sub-2160 rungs go av1, not hevc", () => {
+    const policy = makePolicy({ av1EncodePreferred: true, hevcEncodePreferred: true, tier: 0 });
+    const { ladder } = buildLadder(bigSource(), AV1_DEVICE, makeNetwork(), policy, CAPS_HW_AV1, 0);
+    expect(ladder.filter((r) => r.heightPx < 2160).every((r) => r.codec === "av1")).toBe(true);
+    expect(ladder.filter((r) => r.heightPx < 2160).every((r) => r.videoBitrateBps % 100 === 0)).toBe(true);
+    expect(ladder[1]).toEqual({ heightPx: 1080, videoBitrateBps: 4_800_000, audioBitrateBps: 384_000, codec: "av1" });
+  });
+
+  it("FALL-THROUGH — rungs the AV1 swap does not claim take the hevc rule VERBATIM (×0.75)", () => {
+    // av1EncodePreferred ON but the box has no av1 encoder at all: the AV1
+    // swap claims nothing, so the hevc rule runs exactly as it always did.
+    const policy = makePolicy({ av1EncodePreferred: true, hevcEncodePreferred: true, tier: 2 });
+    const { ladder } = buildLadder(bigSource(), AV1_DEVICE, makeNetwork(), policy, CAPS_SOFTWARE_ONLY, 0);
+    expect(ladder).toEqual([
+      { heightPx: 2160, videoBitrateBps: 16_000_000, audioBitrateBps: 384_000, codec: "hevc" },
+      { heightPx: 1080, videoBitrateBps: 6_000_000, audioBitrateBps: 384_000, codec: "hevc" },
+      { heightPx: 1080, videoBitrateBps: 3_000_000, audioBitrateBps: 160_000, codec: "hevc" },
+      { heightPx: 720, videoBitrateBps: 2_250_000, audioBitrateBps: 160_000, codec: "hevc" },
+      { heightPx: 480, videoBitrateBps: 1_125_000, audioBitrateBps: 160_000, codec: "hevc" },
+      { heightPx: 360, videoBitrateBps: 600_000, audioBitrateBps: 160_000, codec: "hevc" },
+    ]);
+  });
+
+  it("TIER-0 LENS — an opted-in T0 box with SOFTWARE-only av1 builds a ladder byte-identical to pre-C1", () => {
+    const policy = makePolicy({ av1EncodePreferred: true, tier: 0 });
+    const { ladder, reasons } = buildLadder(bigSource(), AV1_DEVICE, makeNetwork(), policy, CAPS_SOFTWARE_AV1, 0);
+    expect(ladder).toEqual(DEFAULT_LADDER);
+    expect(reasons).toEqual([]);
+  });
+
+  it("TIER-0 LENS — an opted-in T0 box WITH hardware av1 does swap (the escape hatch is real hardware)", () => {
+    const policy = makePolicy({ av1EncodePreferred: true, tier: 0 });
+    const { ladder } = buildLadder(bigSource(), AV1_DEVICE, makeNetwork(), policy, CAPS_HW_AV1, 0);
+    expect(ladder.some((r) => r.codec === "av1")).toBe(true);
+  });
+
+  it("tier 1 + software av1 DOES swap (the permitted software fallback)", () => {
+    const policy = makePolicy({ av1EncodePreferred: true, tier: 1 });
+    const { ladder } = buildLadder(bigSource(), AV1_DEVICE, makeNetwork(), policy, CAPS_SOFTWARE_AV1, 0);
+    expect(ladder.filter((r) => r.heightPx < 2160).every((r) => r.codec === "av1")).toBe(true);
+  });
+
+  it("device declares no av1 entry -> no swap, even at tier 2 with hardware av1", () => {
+    const policy = makePolicy({ av1EncodePreferred: true, tier: 2 });
+    const { ladder } = buildLadder(bigSource(), makeDevice(), makeNetwork(), policy, CAPS_HW_AV1, 0);
+    expect(ladder).toEqual(DEFAULT_LADDER);
+  });
+
+  it("device cannot take fmp4 -> no swap (AV1 has no MPEG-TS stream_type, §6 interp. M)", () => {
+    const tsDevice = makeDevice({
+      video: [GENEROUS_H264_ENTRY, AV1_ENTRY],
+      hls: { container: "ts", supportsFmp4: false, lowLatency: false },
+    });
+    const policy = makePolicy({ av1EncodePreferred: true, tier: 2 });
+    const { ladder } = buildLadder(bigSource(), tsDevice, makeNetwork(), policy, CAPS_HW_AV1, 0);
+    expect(ladder).toEqual(DEFAULT_LADDER);
+  });
+
+  it("ORDERED-SWAP PROOF (av1): a rung survives a cap ONLY because ×0.6 ran BEFORE the cap check", () => {
+    const network = makeNetwork({ maxBitrateBps: 5_000_000, isLocal: false });
+    const off = buildLadder(bigSource(), AV1_DEVICE, network, makePolicy({ av1EncodePreferred: false }), CAPS_HW_AV1, 0).ladder;
+    expect(off.some((r) => r.heightPx === 1080 && r.videoBitrateBps === 8_000_000)).toBe(false);
+
+    const on = buildLadder(bigSource(), AV1_DEVICE, network, makePolicy({ av1EncodePreferred: true }), CAPS_HW_AV1, 0).ladder;
+    expect(on[0]).toEqual({ heightPx: 1080, videoBitrateBps: 4_800_000, audioBitrateBps: 384_000, codec: "av1" });
+    // The 2160p rung (16,000,000, never swapped) is still dropped by the
+    // same cap — proving the 2160p rung stays out of the AV1 swap.
+    expect(on.some((r) => r.heightPx === 2160)).toBe(false);
+  });
+});
+
+describe("buildLadder: rule (g) — AV1 demotion normalization (§7.1, demote-don't-drop)", () => {
+  const EXPLICIT_AV1_TABLE: LadderRung[] = [
+    { heightPx: 2160, videoBitrateBps: 10_000_000, audioBitrateBps: 384_000, codec: "av1" },
+    { heightPx: 1080, videoBitrateBps: 5_000_000, audioBitrateBps: 384_000, codec: "av1" },
+    { heightPx: 720, videoBitrateBps: 2_000_000, audioBitrateBps: 160_000, codec: "h264" },
+  ];
+
+  it("condition 1 does NOT apply — an EXPLICIT av1 rung survives with av1EncodePreferred FALSE", () => {
+    const policy = makePolicy({ ladderRungs: EXPLICIT_AV1_TABLE, av1EncodePreferred: false, tier: 2 });
+    const { ladder, reasons } = buildLadder(bigSource(), AV1_DEVICE, makeNetwork(), policy, CAPS_HW_AV1, 0);
+    expect(ladder).toEqual(EXPLICIT_AV1_TABLE);
+    expect(reasons).toEqual([]);
+  });
+
+  it("an explicit 2160p av1 rung is expressible — the swap never claims 2160, but (g) never demotes an admissible one either", () => {
+    const policy = makePolicy({ ladderRungs: EXPLICIT_AV1_TABLE, av1EncodePreferred: true, tier: 0 });
+    const { ladder } = buildLadder(bigSource(), AV1_DEVICE, makeNetwork(), policy, CAPS_HW_AV1, 0);
+    expect(ladder[0]).toEqual({ heightPx: 2160, videoBitrateBps: 10_000_000, audioBitrateBps: 384_000, codec: "av1" });
+  });
+
+  it("cause tier0-no-hw-av1: T0 + software-only av1 demotes every av1 rung to hevc at the VERBATIM bitrate", () => {
+    const policy = makePolicy({ ladderRungs: EXPLICIT_AV1_TABLE, tier: 0 });
+    const { ladder, reasons } = buildLadder(bigSource(), AV1_DEVICE, makeNetwork(), policy, CAPS_SOFTWARE_AV1, 0);
+    expect(ladder).toEqual([
+      { heightPx: 2160, videoBitrateBps: 10_000_000, audioBitrateBps: 384_000, codec: "hevc" },
+      { heightPx: 1080, videoBitrateBps: 5_000_000, audioBitrateBps: 384_000, codec: "hevc" },
+      { heightPx: 720, videoBitrateBps: 2_000_000, audioBitrateBps: 160_000, codec: "h264" },
+    ]);
+    expect(reasons).toEqual([
+      { code: "av1-rung-demoted", detail: "cause=tier0-no-hw-av1 demotedTo=hevc heightPx=2160" },
+      { code: "av1-rung-demoted", detail: "cause=tier0-no-hw-av1 demotedTo=hevc heightPx=1080" },
+    ]);
+  });
+
+  it("cause no-av1-encoder: tier 2 with no av1 encoder anywhere", () => {
+    const policy = makePolicy({ ladderRungs: EXPLICIT_AV1_TABLE, tier: 2 });
+    const { reasons } = buildLadder(bigSource(), AV1_DEVICE, makeNetwork(), policy, CAPS_SOFTWARE_ONLY, 0);
+    expect(reasons.map((r) => r.detail)).toEqual([
+      "cause=no-av1-encoder demotedTo=hevc heightPx=2160",
+      "cause=no-av1-encoder demotedTo=hevc heightPx=1080",
+    ]);
+  });
+
+  it("cause device-no-av1: a device with no av1 entry demotes to h264 when it has no hevc entry either", () => {
+    const policy = makePolicy({ ladderRungs: EXPLICIT_AV1_TABLE, tier: 2 });
+    const { ladder, reasons } = buildLadder(bigSource(), makeDevice(), makeNetwork(), policy, CAPS_HW_AV1, 0);
+    expect(ladder.every((r) => r.codec === "h264")).toBe(true);
+    expect(reasons.map((r) => r.detail)).toEqual([
+      "cause=device-no-av1 demotedTo=h264 heightPx=2160",
+      "cause=device-no-av1 demotedTo=h264 heightPx=1080",
+    ]);
+  });
+
+  it("DEMOTE-DON'T-DROP: the rung COUNT and every heightPx are preserved", () => {
+    const policy = makePolicy({ ladderRungs: EXPLICIT_AV1_TABLE, tier: 0 });
+    const { ladder } = buildLadder(bigSource(), AV1_DEVICE, makeNetwork(), policy, CAPS_SOFTWARE_AV1, 0);
+    expect(ladder.map((r) => r.heightPx)).toEqual([2160, 1080, 720]);
+  });
+
+  it("a demotion that duplicates an existing rung is dropped, and the caps STILL run on the demoted values", () => {
+    const table: LadderRung[] = [
+      { heightPx: 1080, videoBitrateBps: 5_000_000, audioBitrateBps: 384_000, codec: "av1" },
+      { heightPx: 1080, videoBitrateBps: 5_000_000, audioBitrateBps: 384_000, codec: "hevc" },
+    ];
+    const policy = makePolicy({ ladderRungs: table, tier: 0 });
+    const { ladder, reasons } = buildLadder(bigSource(), AV1_DEVICE, makeNetwork(), policy, CAPS_SOFTWARE_AV1, 0);
+    expect(ladder).toEqual([{ heightPx: 1080, videoBitrateBps: 5_000_000, audioBitrateBps: 384_000, codec: "hevc" }]);
+    expect(reasons).toHaveLength(1);
+  });
+
+  it("(g) runs BEFORE the cap filters: a demoted rung is judged on its VERBATIM (unscaled) bitrate", () => {
+    const table: LadderRung[] = [{ heightPx: 1080, videoBitrateBps: 9_000_000, audioBitrateBps: 384_000, codec: "av1" }];
+    const policy = makePolicy({ ladderRungs: table, tier: 0 });
+    const network = makeNetwork({ maxBitrateBps: 6_000_000, isLocal: false });
+    const { ladder } = buildLadder(bigSource(), AV1_DEVICE, network, policy, CAPS_SOFTWARE_AV1, 0);
+    // Kept only by rule (e)'s keep-lowest rescue — i.e. rule (c) really did
+    // evaluate 9,000,000 (not 9,000,000 × anything) against the 6 Mbps cap.
+    expect(ladder).toEqual([{ heightPx: 1080, videoBitrateBps: 9_000_000, audioBitrateBps: 384_000, codec: "hevc" }]);
+  });
+
+  it("an av1-free table NEVER fires a demotion reason, whatever the caps/tier", () => {
+    for (const caps of [CAPS_SOFTWARE_ONLY, CAPS_SOFTWARE_AV1, CAPS_HW_AV1]) {
+      for (const tier of [0, 1, 2] as const) {
+        const { reasons } = buildLadder(bigSource(), AV1_DEVICE, makeNetwork(), makePolicy({ tier }), caps, 0);
+        expect(reasons, `tier=${tier}`).toEqual([]);
+      }
+    }
+  });
+});
+
 describe("buildLadder: degenerate inputs stay total", () => {
   it("empty policy.ladderRungs -> [] (nothing to construct from, never throws)", () => {
     const media = makeMedia([makeVideoStream()], { overallBitrateBps: 20_000_000 });
     const policy = makePolicy({ ladderRungs: [] });
-    expect(buildLadder(media, makeDevice(), makeNetwork(), policy, 0)).toEqual([]);
+    expect(buildLadder(media, makeDevice(), makeNetwork(), policy, CAPS_SOFTWARE_ONLY, 0).ladder).toEqual([]);
   });
 
   it("videoStreamIndex that doesn't resolve to a real stream (defensive) -> permissive height (no crash), still constructs from overallBitrateBps", () => {
     const media = makeMedia([makeVideoStream({ index: 0 })], { overallBitrateBps: 5_000_000 });
-    expect(() => buildLadder(media, makeDevice(), makeNetwork(), makePolicy(), 99)).not.toThrow();
-    const ladder = buildLadder(media, makeDevice(), makeNetwork(), makePolicy(), 99);
+    expect(() => buildLadder(media, makeDevice(), makeNetwork(), makePolicy(), CAPS_SOFTWARE_ONLY, 99).ladder).not.toThrow();
+    const ladder = buildLadder(media, makeDevice(), makeNetwork(), makePolicy(), CAPS_SOFTWARE_ONLY, 99).ladder;
     // No height cap applied (rule a permissive) — only bitrate rule (b) via
     // the overallBitrateBps fallback narrows the table.
     expect(ladder).toEqual([

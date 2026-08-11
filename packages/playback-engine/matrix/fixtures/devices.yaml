@@ -660,3 +660,93 @@ mobile-placeholder:
       passthrough: false
   subtitles: { renderText: [webvtt], hlsVtt: true, renderImage: false }
   maxStreamBitrateBps: 8000000
+
+# --- Wave C1 (LD-7) AV1 additive fixtures ----------------------------------
+# §7.1's condition 2 is TWO facts about the DEVICE: it declares an `av1`
+# entry in `device.video`, AND it can take fmp4 (AV1 has no assigned
+# MPEG-TS stream_type, §6 interp. M). These two fixtures isolate them.
+# `av1-generic` above is deliberately NOT reused: it declares av1 ONLY, so
+# a demotion there can never reach hevc and the h264/hevc fall-through
+# would be untestable.
+
+# Everything §7.1 asks for: av1 + hevc + h264 entries and fmp4 HLS. The
+# hevc entry is load-bearing — it is what makes a demotion land on hevc
+# rather than h264.
+av1-fmp4-capable:
+  profileId: av1-fmp4-capable
+  directPlayContainers: [mp4]
+  hls: { container: fmp4, supportsFmp4: true, lowLatency: false }
+  video:
+    - codec: h264
+      maxProfile: high
+      maxLevel: 52
+      maxBitDepth: 8
+      maxWidth: 3840
+      maxHeight: 2160
+      maxFrameRate: 60
+      maxBitrateBps: null
+    - codec: hevc
+      maxProfile: main10
+      maxLevel: 153
+      maxBitDepth: 10
+      maxWidth: 3840
+      maxHeight: 2160
+      maxFrameRate: 60
+      maxBitrateBps: null
+    - codec: av1
+      maxProfile: null
+      # null, as every real device profile's av1 entry is today — the web
+      # client's MSE probe cannot derive an AV1 seq_level_idx (§6 interp. M).
+      maxLevel: null
+      maxBitDepth: 10
+      maxWidth: 3840
+      maxHeight: 2160
+      maxFrameRate: 60
+      maxBitrateBps: null
+  hdr: { hdr10: true, hlg: true, dolbyVision: false }
+  audio:
+    - codec: aac
+      maxChannels: 6
+      passthrough: false
+  subtitles: { renderText: [webvtt], hlsVtt: true, renderImage: false }
+  maxStreamBitrateBps: null
+
+# Same video entries, but an MPEG-TS-only HLS client: condition 2's SECOND
+# half fails, so no AV1 swap and any explicit av1 rung demotes with
+# cause=device-no-av1 — however capable the server's encoders are.
+av1-ts-only:
+  profileId: av1-ts-only
+  directPlayContainers: [ts]
+  hls: { container: ts, supportsFmp4: false, lowLatency: false }
+  video:
+    - codec: h264
+      maxProfile: high
+      maxLevel: 52
+      maxBitDepth: 8
+      maxWidth: 3840
+      maxHeight: 2160
+      maxFrameRate: 60
+      maxBitrateBps: null
+    - codec: hevc
+      maxProfile: main10
+      maxLevel: 153
+      maxBitDepth: 10
+      maxWidth: 3840
+      maxHeight: 2160
+      maxFrameRate: 60
+      maxBitrateBps: null
+    - codec: av1
+      maxProfile: null
+      maxLevel: null
+      maxBitDepth: 10
+      maxWidth: 3840
+      maxHeight: 2160
+      maxFrameRate: 60
+      maxBitrateBps: null
+  hdr: { hdr10: true, hlg: true, dolbyVision: false }
+  audio:
+    - codec: aac
+      maxChannels: 6
+      passthrough: false
+  subtitles: { renderText: [webvtt], hlsVtt: true, renderImage: false }
+  maxStreamBitrateBps: null

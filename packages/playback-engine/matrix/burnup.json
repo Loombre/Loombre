@@ -517,5 +517,15 @@
   "516-hevc-opengop-mp4-audio-forced-repackage-strip-with-reason.yaml": "green",
   "517-hevc-opengop-mkv-bitrate-forces-video-transcode-no-strip.yaml": "green",
   "518-dv7-dual-layer-plus-opengop-composition-strip.yaml": "green",
-  "519-dv81-strip-dv-capable-device-never-fires.yaml": "green"
+  "519-dv81-strip-dv-capable-device-never-fires.yaml": "green",
+  "520-av1-swap-t0-hardware-av1-opted-in.yaml": "green",
+  "521-av1-unreachable-t0-software-only-av1.yaml": "green",
+  "522-av1-swap-t1-software-fallback-libsvtav1.yaml": "green",
+  "523-av1-rung-demoted-tier0-no-hw-av1.yaml": "green",
+  "524-av1-rung-demoted-no-av1-encoder.yaml": "green",
+  "525-av1-rung-demoted-device-no-av1-ts-hls.yaml": "green",
+  "526-av1-stage-g-residual-guard-tier0-software-route.yaml": "green",
+  "527-av1-swap-refused-ts-hls-device.yaml": "green",
+  "528-av1-source-copy-unaffected-by-ladder-rules.yaml": "green",
+  "529-av1-precedence-over-hevc-swap.yaml": "green"
 }

@@ -25,10 +25,10 @@ const VALID_CONTAINERS = new Set(["source", "fmp4-hls", "ts-hls", "mp4"]);
 const VALID_VIDEO_ACTIONS = new Set(["copy", "transcode", "none"]);
 const VALID_AUDIO_ACTIONS = new Set(["copy", "transcode", "none"]);
 const VALID_SUBTITLE_STRATEGIES = new Set(["none", "embed", "hls-vtt", "burn-in"]);
-const VALID_TARGET_VIDEO_CODECS = new Set(["h264", "hevc"]);
+const VALID_TARGET_VIDEO_CODECS = new Set(["h264", "hevc", "av1"]);
 const VALID_ENCODERS = new Set(["videotoolbox", "qsv", "vaapi", "nvenc", "amf", "d3d11va", "software"]);
 const VALID_TONE_MAP_METHODS = new Set(["opencl", "vulkan", "videotoolbox", "cuda", "cpu-zscale"]);
-const VALID_LADDER_CODECS = new Set(["h264", "hevc"]);
+const VALID_LADDER_CODECS = new Set(["h264", "hevc", "av1"]);
 
 // RFC-ish semver: MAJOR.MINOR.PATCH with optional -prerelease/+build.
 const SEMVER_RE = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z-.]+)?(?:\+[0-9A-Za-z-.]+)?$/;

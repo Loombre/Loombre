@@ -101,6 +101,7 @@ function makeInput(overrides: Partial<PlanInput> = {}): PlanInput {
       ladderRungs: [],
       segmentDurationSec: 6,
       hevcEncodePreferred: false,
+      av1EncodePreferred: false,
     },
     caps: { backends: [{ backend: "software", decode: ["h264"], encode: ["h264"], toneMap: [], verifiedAtMs: 1_750_000_000_000 }] },
     selection: { videoStreamIndex: 0, audioStreamIndex: 1, subtitleStreamIndex: null },
@@ -402,6 +403,10 @@ describe("plan(): engineVersion", () => {
     expect(plan(makeInput()).engineVersion).toMatch(/^\d+\.\d+\.\d+$/);
     expect(ENGINE_VERSION).toMatch(/^\d+\.\d+\.\d+$/);
   });
+
+  it("Wave C1 (LD-7) bumps the ruleset to 0.10.0 — a new decision rule (AV1 ladder targeting), so MINOR", () => {
+    expect(ENGINE_VERSION).toBe("0.10.0");
+  });
 });
 
 describe("plan(): Stage F / ladder assembly (docs/PLAYBACK.md §3/§7, Phase 3 Step 2f)", () => {
@@ -426,6 +431,7 @@ describe("plan(): Stage F / ladder assembly (docs/PLAYBACK.md §3/§7, Phase 3 S
       ladderRungs: DEFAULT_LADDER,
       segmentDurationSec: 6 as const,
       hevcEncodePreferred: false,
+      av1EncodePreferred: false,
     };
   }
 
@@ -594,6 +600,7 @@ describe("plan(): Stage G / hardware routing assembly (docs/PLAYBACK.md §3/§8.
         ],
         segmentDurationSec: 6,
         hevcEncodePreferred: false,
+        av1EncodePreferred: false,
       },
       caps: FULL_HW_CAPS,
     });
@@ -620,6 +627,7 @@ describe("plan(): Stage G / hardware routing assembly (docs/PLAYBACK.md §3/§8.
         ladderRungs: [{ heightPx: 360, videoBitrateBps: 800_000, audioBitrateBps: 160_000, codec: "h264" }],
         segmentDurationSec: 6,
         hevcEncodePreferred: false,
+        av1EncodePreferred: false,
       },
       caps: SOFTWARE_ONLY_CAPS,
     });
@@ -648,6 +656,7 @@ describe("plan(): Stage G / hardware routing assembly (docs/PLAYBACK.md §3/§8.
         ladderRungs: [{ heightPx: 360, videoBitrateBps: 800_000, audioBitrateBps: 160_000, codec: "h264" }],
         segmentDurationSec: 6,
         hevcEncodePreferred: false,
+        av1EncodePreferred: false,
       },
       caps: SOFTWARE_ONLY_CAPS,
     });
@@ -716,6 +725,7 @@ describe("plan(): Stage G / hardware routing assembly (docs/PLAYBACK.md §3/§8.
         ],
         segmentDurationSec: 6,
         hevcEncodePreferred: false,
+        av1EncodePreferred: false,
       },
       caps: SOFTWARE_ONLY_CAPS,
     });
@@ -752,6 +762,7 @@ describe("plan(): transcode-disabled-by-policy (step 7b fix F1 — docs/PLAYBACK
       ladderRungs: REAL_LADDER,
       segmentDurationSec: 6,
       hevcEncodePreferred: false,
+      av1EncodePreferred: false,
       ...overrides,
     };
   }
@@ -820,5 +831,135 @@ describe("plan(): transcode-disabled-by-policy (step 7b fix F1 — docs/PLAYBACK
     expect(
       result.reasons.some((r) => r.code.startsWith("hw-encoder-selected") || r.code.startsWith("software-fallback")),
     ).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Wave C1 (LD-7 / LD-16) — the §7.2 unreachability argument, made at the
+// plan() level. Each numbered leg is also pinned individually in the matrix
+// (520-527) and quantified over randomized inputs by §10 property 5; these
+// are the readable, hand-constructed statements of the same four steps.
+// ---------------------------------------------------------------------------
+
+describe("plan(): AV1 ladder targeting end-to-end (docs/PLAYBACK.md §7.1/§7.2)", () => {
+  const AV1_ENCODER_NAMES = ["libsvtav1", "av1_nvenc", "av1_qsv", "av1_vaapi", "av1_amf"];
+
+  const AV1_DEVICE = makeDevice({
+    directPlayContainers: [], // force a repackage so a ladder is always built
+    video: [
+      { codec: "h264", maxProfile: "high", maxLevel: null, maxBitDepth: 8, maxWidth: 3840, maxHeight: 2160, maxFrameRate: 60, maxBitrateBps: null },
+      { codec: "hevc", maxProfile: "main10", maxLevel: null, maxBitDepth: 10, maxWidth: 3840, maxHeight: 2160, maxFrameRate: 60, maxBitrateBps: null },
+      { codec: "av1", maxProfile: null, maxLevel: null, maxBitDepth: 10, maxWidth: 3840, maxHeight: 2160, maxFrameRate: 60, maxBitrateBps: null },
+    ],
+  });
+
+  const LADDER_TABLE = [
+    { heightPx: 1080, videoBitrateBps: 8_000_000, audioBitrateBps: 384_000, codec: "h264" as const },
+    { heightPx: 720, videoBitrateBps: 3_000_000, audioBitrateBps: 160_000, codec: "h264" as const },
+  ];
+
+  function av1Policy(overrides: Partial<PlanInput["policy"]> = {}): PlanInput["policy"] {
+    return {
+      allowTranscode: true,
+      allowToneMapCpu: "always",
+      tier: 1,
+      preferredTextSubMode: "hls-vtt",
+      preserveAssStyling: false,
+      audioTranscodeCodecPriority: ["opus", "aac"],
+      maxSimultaneousTranscodes: 2,
+      ladderRungs: LADDER_TABLE,
+      segmentDurationSec: 6,
+      hevcEncodePreferred: false,
+      av1EncodePreferred: true,
+      ...overrides,
+    };
+  }
+
+  const HW_AV1 = {
+    backends: [
+      { backend: "nvenc" as const, decode: ["h264" as const, "hevc" as const, "av1" as const], encode: ["h264" as const, "hevc" as const, "av1" as const], toneMap: ["cuda" as const], verifiedAtMs: 1 },
+      { backend: "software" as const, decode: ["h264" as const, "hevc" as const], encode: ["h264" as const, "hevc" as const], toneMap: [], verifiedAtMs: 1 },
+    ],
+  };
+  const SOFTWARE_AV1 = {
+    backends: [
+      { backend: "software" as const, decode: ["h264" as const, "hevc" as const, "av1" as const], encode: ["h264" as const, "hevc" as const, "av1" as const], toneMap: [], verifiedAtMs: 1 },
+    ],
+  };
+
+  /** A transcode-forcing input: interlaced source, so Stage B escalates and
+   *  a ladder is genuinely constructed and routed. */
+  function av1Input(overrides: Partial<PlanInput> = {}): PlanInput {
+    const media = makeMedia({ container: "mkv" });
+    media.video[0]!.interlaced = true;
+    return makeInput({ media, device: AV1_DEVICE, policy: av1Policy(), caps: HW_AV1, ...overrides });
+  }
+
+  it("T0 + hardware av1 + opt-in + av1/fmp4 device -> av1 rungs, av1 targetCodec, av1_nvenc in the args", () => {
+    const result = plan(av1Input({ policy: av1Policy({ tier: 0 }) }));
+    expect(result.decision).toBe("transcode");
+    expect(result.ladder.every((r) => r.codec === "av1")).toBe(true);
+    expect(result.ladder.map((r) => r.videoBitrateBps)).toEqual([4_800_000, 1_800_000]);
+    expect(result.video.targetCodec).toBe("av1");
+    expect(result.video.encoder).toBe("nvenc");
+    expect(result.ffmpegArgs).toContain("av1_nvenc");
+  });
+
+  it("T1 + SOFTWARE av1 -> av1 rungs on the software route, libsvtav1 with -preset 10", () => {
+    const result = plan(av1Input({ caps: SOFTWARE_AV1, policy: av1Policy({ tier: 1 }) }));
+    expect(result.video.targetCodec).toBe("av1");
+    expect(result.video.encoder).toBe("software");
+    expect(result.ffmpegArgs).toContain("libsvtav1");
+    expect(result.ffmpegArgs[result.ffmpegArgs.indexOf("-preset") + 1]).toBe("10");
+    expect(result.ffmpegArgs).not.toContain("-level");
+  });
+
+  it("LEG 1+2+3 — T0 + software-only av1 emits NO av1 rung, NO av1 targetCodec, NO av1 encoder token", () => {
+    const result = plan(av1Input({ caps: SOFTWARE_AV1, policy: av1Policy({ tier: 0 }) }));
+    expect(result.ladder.some((r) => r.codec === "av1")).toBe(false);
+    expect(result.video.targetCodec).not.toBe("av1");
+    for (const name of AV1_ENCODER_NAMES) expect(result.ffmpegArgs, name).not.toContain(name);
+  });
+
+  it("LEG 1 — an EXPLICIT av1 policy rung on a T0 software-av1 box is DEMOTED, never emitted", () => {
+    const policy = av1Policy({
+      tier: 0,
+      ladderRungs: [{ heightPx: 1080, videoBitrateBps: 6_000_000, audioBitrateBps: 384_000, codec: "av1" }],
+    });
+    const result = plan(av1Input({ caps: SOFTWARE_AV1, policy }));
+    expect(result.ladder).toEqual([{ heightPx: 1080, videoBitrateBps: 6_000_000, audioBitrateBps: 384_000, codec: "hevc" }]);
+    expect(result.reasons.filter((r) => r.code === "av1-rung-demoted")).toEqual([
+      { code: "av1-rung-demoted", detail: "cause=tier0-no-hw-av1 demotedTo=hevc heightPx=1080" },
+    ]);
+    for (const name of AV1_ENCODER_NAMES) expect(result.ffmpegArgs, name).not.toContain(name);
+  });
+
+  it("a ts-hls device never gets an av1 swap — the args are byte-identical to the opt-OUT plan", () => {
+    const tsDevice = makeDevice({
+      directPlayContainers: [],
+      hls: { container: "ts", supportsFmp4: false, lowLatency: false },
+      video: AV1_DEVICE.video,
+    });
+    const optedIn = plan(av1Input({ device: tsDevice, policy: av1Policy({ tier: 2 }) }));
+    const optedOut = plan(av1Input({ device: tsDevice, policy: av1Policy({ tier: 2, av1EncodePreferred: false }) }));
+    expect(optedIn.ladder.some((r) => r.codec === "av1")).toBe(false);
+    expect(optedIn.ffmpegArgs).toEqual(optedOut.ffmpegArgs);
+    expect(optedIn.container).toBe("ts-hls");
+  });
+
+  it("COPY-PREFERENCE GUARANTEE — an AV1 SOURCE still direct-plays; no §7.1 rule ever reads it", () => {
+    const media = makeMedia({ container: "mp4" });
+    media.video[0]!.codec = "av1";
+    const device = makeDevice({
+      directPlayContainers: ["mp4"],
+      video: [{ codec: "av1", maxProfile: null, maxLevel: null, maxBitDepth: 10, maxWidth: 3840, maxHeight: 2160, maxFrameRate: 60, maxBitrateBps: null }],
+    });
+    for (const tier of [0, 1, 2] as const) {
+      const result = plan(makeInput({ media, device, policy: av1Policy({ tier }), caps: SOFTWARE_AV1 }));
+      expect(result.decision, `tier=${tier}`).toBe("direct-play");
+      expect(result.reasons).toEqual([]);
+      expect(result.ladder).toEqual([]);
+      expect(result.ffmpegArgs).toEqual([]);
+    }
   });
 });

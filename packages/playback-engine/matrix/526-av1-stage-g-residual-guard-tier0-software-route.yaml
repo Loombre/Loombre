@@ -1,0 +1,79 @@
+name: transcode — UNREACHABILITY leg 4 — T0 'hw' eligibility whose route still lands on full software -> Stage G demotes every av1 rung
+why: >
+  Wave C1 / LD-16, §7.2's residual guard and the fourth (and subtlest)
+  unreachability leg. caps.hw-av1-encode-only verifies av1 encode on nvenc
+  and NOTHING else, so §7.2's gate returns `'hw'` and the §7.1 swap legally
+  admits av1 rungs even at tier 0. But the 2160p SOURCE keeps the table's
+  untouched 2160p/hevc rung alive, so the ladder's distinct target set is
+  the MIXED {hevc, av1} — which nvenc's encode list cannot cover, so §8.3's
+  rules (i) and (ii) both skip it and the one-route model terminates at
+  rule (iii) full-software. Without the guard this is precisely the pairing
+  the LD-16 law forbids: a Tier-0 box software-encoding AV1, four cores
+  pegged at a fraction of realtime with the playhead overrunning the
+  encoder inside the first minute. The guard demotes all five av1 rungs
+  through the SAME shared primitive §7.1(g) uses (cause=tier0-software-route)
+  BEFORE the existing ≥1080p height cap runs, so the two ≤480p survivors
+  are the DEMOTED rungs at their swap bitrates. Known conservatism, stated
+  not hidden (§7.2): this box lands on software h264/hevc rather than
+  splitting encode across two backends — §8.3's one-route model is not
+  renegotiated by this feature.
+input:
+  media:
+    fileId: file-526
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 6000000000
+    overallBitrateBps: 25500000
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 41
+        width: 3840
+        height: 2160
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 25000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: true
+        openGop: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 160000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device:
+    fixture: devices.av1-fmp4-capable
+  network:
+    fixture: networks.local
+  policy:
+    fixture: policies.av1-preferred-t0
+  caps:
+    fixture: caps.hw-av1-encode-only
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: transcode
+  reasons:
+    - video-interlaced
+    - software-fallback:encode
+    - av1-rung-demoted
+    - av1-rung-demoted
+    - av1-rung-demoted
+    - av1-rung-demoted
+    - av1-rung-demoted
+    - software-fallback:tier-capped
+  container: fmp4-hls
+  ladder:
+    - { heightPx: 480, videoBitrateBps: 900000, audioBitrateBps: 160000, codec: hevc }
+    - { heightPx: 360, videoBitrateBps: 480000, audioBitrateBps: 160000, codec: hevc }

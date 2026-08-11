@@ -132,6 +132,7 @@ function makeInput(overrides: {
       ladderRungs: [],
       segmentDurationSec: 6,
       hevcEncodePreferred: false,
+      av1EncodePreferred: false,
     },
     caps: { backends: [{ backend: "software", decode: ["h264"], encode: ["h264"], toneMap: [], verifiedAtMs: 1 }] },
     selection: overrides.selection ?? { videoStreamIndex: 0, audioStreamIndex: 1, subtitleStreamIndex: null },
@@ -659,5 +660,170 @@ describe("buildFfmpegArgs: defensive/contract errors (never reachable through pl
       subtitle: { strategy: "none" },
     };
     expect(() => buildFfmpegArgs(makeInput(), planShape, { withSeek: false })).toThrow(/rung/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Wave C1 — §6 INTERPRETATION M (AV1 encode targets, LD-7). The encoder-name
+// table gains its `av1` column; the C8 probe/ladder-inconsistency comment
+// retires with it. Everything else in the encode block is codec-agnostic and
+// must stay byte-identical (goldens 39-41 snapshot the full argv; these are
+// the focused per-rule pins).
+// ---------------------------------------------------------------------------
+
+const RUNG_1080P_AV1: LadderRung = {
+  heightPx: 1080,
+  videoBitrateBps: 2_400_000,
+  audioBitrateBps: 160_000,
+  codec: "av1",
+};
+
+const AV1_DEVICE_ENTRY: DeviceProfile["video"][number] = {
+  codec: "av1",
+  maxProfile: null,
+  // NON-NULL deliberately: `-level` must be suppressed for av1 even when the
+  // device declares one, since AV1 seq_level_idx ordinals do not correspond
+  // to the H.264/HEVC decimal levels this field carries.
+  maxLevel: 40,
+  maxBitDepth: 10,
+  maxWidth: 3840,
+  maxHeight: 2160,
+  maxFrameRate: 60,
+  maxBitrateBps: null,
+};
+
+function av1Shape(encoder: FfmpegPlanShape["video"]["encoder"], container: FfmpegPlanShape["container"] = "fmp4-hls"): FfmpegPlanShape {
+  return {
+    container,
+    video: { action: "transcode", targetCodec: "av1", encoder },
+    audio: { action: "copy" },
+    subtitle: { strategy: "none" },
+    rung: RUNG_1080P_AV1,
+  };
+}
+
+function av1Args(encoder: FfmpegPlanShape["video"]["encoder"]): string[] {
+  return buildFfmpegArgs(makeInput({ device: makeDevice([AV1_DEVICE_ENTRY]) }), av1Shape(encoder), { withSeek: false });
+}
+
+describe("buildFfmpegArgs: interpretation M — the av1 encoder-name column", () => {
+  it("maps each backend to its ONE fixed av1 encoder name", () => {
+    const expected: Record<string, string> = {
+      software: "libsvtav1",
+      nvenc: "av1_nvenc",
+      qsv: "av1_qsv",
+      vaapi: "av1_vaapi",
+      amf: "av1_amf",
+    };
+    for (const [backend, encoderName] of Object.entries(expected)) {
+      const args = av1Args(backend as FfmpegPlanShape["video"]["encoder"]);
+      expect(args[args.indexOf("-c:v") + 1], backend).toBe(encoderName);
+    }
+  });
+
+  it("videotoolbox has NO av1 entry — no av1_videotoolbox encoder exists, so the shape is inconsistent and throws descriptively", () => {
+    expect(() => av1Args("videotoolbox")).toThrow(/av1/);
+    expect(() => av1Args("videotoolbox")).toThrow(/videotoolbox/);
+  });
+
+  it("h264/hevc encoder names are untouched by the new column", () => {
+    const shape: FfmpegPlanShape = {
+      container: "fmp4-hls",
+      video: { action: "transcode", targetCodec: "hevc", encoder: "software" },
+      audio: { action: "copy" },
+      subtitle: { strategy: "none" },
+      rung: { heightPx: 1080, videoBitrateBps: 4_000_000, audioBitrateBps: 160_000, codec: "hevc" },
+    };
+    const args = buildFfmpegArgs(makeInput(), shape, { withSeek: false });
+    expect(args[args.indexOf("-c:v") + 1]).toBe("libx265");
+  });
+});
+
+describe("buildFfmpegArgs: interpretation M — per-codec flag differences", () => {
+  it("software av1 takes the NUMERIC SVT-AV1 preset 10, never libx264's 'veryfast' (not a legal SVT-AV1 value)", () => {
+    const args = av1Args("software");
+    expect(args[args.indexOf("-preset") + 1]).toBe("10");
+    expect(args).not.toContain("veryfast");
+  });
+
+  it("software h264/hevc keep -preset veryfast — the per-encoder split cuts only av1", () => {
+    const shape: FfmpegPlanShape = {
+      container: "fmp4-hls",
+      video: { action: "transcode", targetCodec: "h264", encoder: "software" },
+      audio: { action: "copy" },
+      subtitle: { strategy: "none" },
+      rung: RUNG_1080P_H264,
+    };
+    const args = buildFfmpegArgs(makeInput(), shape, { withSeek: false });
+    expect(args[args.indexOf("-preset") + 1]).toBe("veryfast");
+  });
+
+  it("nvenc's -preset p4 is codec-agnostic and unchanged for av1", () => {
+    const args = av1Args("nvenc");
+    expect(args[args.indexOf("-preset") + 1]).toBe("p4");
+  });
+
+  it("qsv/vaapi/amf emit NO -preset for av1, exactly as they emit none for h264/hevc", () => {
+    for (const backend of ["qsv", "vaapi", "amf"] as const) {
+      expect(av1Args(backend), backend).not.toContain("-preset");
+    }
+  });
+
+  it("-level is NEVER emitted for an av1 target, even against a device declaring maxLevel 40", () => {
+    for (const backend of ["software", "nvenc", "qsv", "vaapi", "amf"] as const) {
+      expect(av1Args(backend), backend).not.toContain("-level");
+    }
+  });
+
+  it("CONTROL: the same non-null device maxLevel DOES produce -level for an h264 target", () => {
+    const device = makeDevice([{ ...AV1_DEVICE_ENTRY, codec: "h264", maxLevel: 40 }]);
+    const shape: FfmpegPlanShape = {
+      container: "fmp4-hls",
+      video: { action: "transcode", targetCodec: "h264", encoder: "software" },
+      audio: { action: "copy" },
+      subtitle: { strategy: "none" },
+      rung: RUNG_1080P_H264,
+    };
+    const args = buildFfmpegArgs(makeInput({ device }), shape, { withSeek: false });
+    expect(args[args.indexOf("-level") + 1]).toBe("40");
+  });
+
+  it("-tag:v stays hevc-only — an fmp4 AV1 track's av01 sample entry is correct by default", () => {
+    for (const backend of ["software", "nvenc", "qsv", "vaapi", "amf"] as const) {
+      expect(av1Args(backend), backend).not.toContain("-tag:v");
+    }
+  });
+
+  it("bitrate and GOP flags are codec-agnostic — same shape, same values as any other target", () => {
+    const args = av1Args("software");
+    expect(args[args.indexOf("-b:v") + 1]).toBe("2400000");
+    expect(args[args.indexOf("-maxrate") + 1]).toBe("2400000");
+    expect(args[args.indexOf("-bufsize") + 1]).toBe("4800000");
+    expect(args[args.indexOf("-g") + 1]).toBe("48"); // round(23.976 * 2)
+    expect(args[args.indexOf("-force_key_frames") + 1]).toBe("expr:gte(t,n_forced*{SEG_DUR})");
+  });
+});
+
+describe("buildFfmpegArgs: interpretation M — av1 can never ride MPEG-TS", () => {
+  it("an av1 target paired with ts-hls is an internally-inconsistent planShape -> descriptive throw", () => {
+    const input = makeInput({ device: makeDevice([AV1_DEVICE_ENTRY]) });
+    expect(() => buildFfmpegArgs(input, av1Shape("software", "ts-hls"), { withSeek: false })).toThrow(/av1/);
+    expect(() => buildFfmpegArgs(input, av1Shape("software", "ts-hls"), { withSeek: false })).toThrow(/ts-hls/);
+  });
+
+  it("the SAME shape on fmp4-hls builds cleanly — only the container is inconsistent", () => {
+    const input = makeInput({ device: makeDevice([AV1_DEVICE_ENTRY]) });
+    expect(() => buildFfmpegArgs(input, av1Shape("software", "fmp4-hls"), { withSeek: false })).not.toThrow();
+  });
+
+  it("h264/hevc targets on ts-hls are completely unaffected", () => {
+    const shape: FfmpegPlanShape = {
+      container: "ts-hls",
+      video: { action: "transcode", targetCodec: "h264", encoder: "software" },
+      audio: { action: "copy" },
+      subtitle: { strategy: "none" },
+      rung: RUNG_1080P_H264,
+    };
+    expect(() => buildFfmpegArgs(makeInput(), shape, { withSeek: false })).not.toThrow();
   });
 });

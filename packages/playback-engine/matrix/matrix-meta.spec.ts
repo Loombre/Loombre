@@ -48,7 +48,7 @@ const FIXTURES_DIR = join(__dirname, "fixtures");
 const VALID_DECISIONS = new Set(["direct-play", "direct-stream", "remux", "transcode"]);
 const VALID_SUBTITLE_STRATEGIES = new Set(["none", "embed", "hls-vtt", "burn-in"]);
 const VALID_CONTAINERS = new Set(["source", "fmp4-hls", "ts-hls", "mp4"]);
-const VALID_LADDER_CODECS = new Set(["h264", "hevc"]);
+const VALID_LADDER_CODECS = new Set(["h264", "hevc", "av1"]);
 
 function isValidReasonCode(code: string): code is PlanReasonCode {
   if ((BLOCKING_REASON_CODES as readonly string[]).includes(code)) return true;
