@@ -36,6 +36,34 @@
 // `status`, `migrate-check`, and `generate-schema` are all read-only or
 // additive and stay unguarded.
 //
+// LIVE-DATABASE GUARD (task #11 residual (a), CLOSED 2026-08-11): the name
+// check above is a CONVENTION, not evidence — packages/db/src/testing.ts's
+// own header spells the residual out ("naming a real database `..._test`
+// recreates the hole the naming convention was supposed to close"). `reset`
+// therefore now demands two further pieces of real evidence before it will
+// drop a schema, both bypassable by the same deliberate `--allow-reset`
+// escape hatch:
+//   1. NO LOOMBRE PROCESS IS ATTACHED. pg_stat_activity must show no other
+//      backend on the target database whose `application_name` starts with
+//      "loombre-" — the worker labels its continuously-polling pg-boss pool
+//      `loombre-worker:<pid>:<startedAtMs>` precisely so this is answerable
+//      (packages/db/src/query/worker-liveness.ts). Test suites never set an
+//      application_name, so they are invisible to this check and keep
+//      sharing a database freely.
+//   2. THE DATABASE WAS CLAIMED AS DISPOSABLE. `reset` only wipes a
+//      database the harness itself marked with a
+//      `loombre:disposable-test-database` COMMENT ON DATABASE. The comment
+//      is a database-level object, so it survives DROP SCHEMA and is
+//      stamped exactly once — when this script auto-provisions the database
+//      (below), when packages/db/src/testing.ts's ensureTestDatabase claims
+//      one, or when an operator deliberately passes `--allow-reset`. An
+//      EMPTY database (no user tables at all) is claimed on sight, so a
+//      freshly created database never needs the flag. A populated database
+//      nothing ever claimed is somebody's data whatever its name says.
+// Stamping is itself gated on isTestDatabaseName: `--allow-reset` against a
+// real database (`pnpm db:reset` on the dev database) must NEVER leave
+// behind a marker that makes it silently wipeable afterwards.
+//
 // AUTO-PROVISION: when `reset` targets a database that doesn't exist yet
 // (first run against a freshly-derived `<name>_test`), it is CREATEd via
 // a maintenance connection to the same server's `postgres` database
@@ -183,6 +211,124 @@ function isTestDatabaseName(name) {
   return /(^|_)test(_|$)/.test(name);
 }
 
+// The COMMENT ON DATABASE text that marks a database as the test harness's
+// own disposable property. Database comments are shared-catalog objects, so
+// this survives DROP SCHEMA public CASCADE — a database is claimed once and
+// stays claimed. KEEP IN SYNC with packages/db/src/testing.ts's
+// DISPOSABLE_TEST_DATABASE_MARKER (two independent modules, one a plain
+// script with no TypeScript build step — the same keep-in-sync-by-
+// inspection arrangement isTestDatabaseName already has with
+// cleanup-test-databases.mjs).
+const DISPOSABLE_TEST_DATABASE_MARKER = 'loombre:disposable-test-database';
+
+// Application-name prefix every Loombre process labels its connections
+// with. KEEP IN SYNC with WORKER_APPLICATION_NAME_PREFIX in
+// packages/db/src/query/worker-liveness.ts ("loombre-worker"); matched by
+// prefix so a future labeled server/CLI connection is covered without
+// touching this script.
+const LOOMBRE_APPLICATION_NAME_PREFIX = 'loombre-';
+
+function escapeHatchGiven() {
+  return process.env.LOOMBRE_ALLOW_RESET === '1' || process.argv.includes('--allow-reset');
+}
+
+async function readDisposableMarker(client) {
+  const { rows } = await client.query(
+    `SELECT shobj_description(oid, 'pg_database') AS comment FROM pg_database WHERE datname = current_database()`
+  );
+  return rows[0]?.comment ?? null;
+}
+
+/** Best-effort: COMMENT ON DATABASE requires ownership, and an
+ *  operator-managed Postgres may own the database with a different role.
+ *  A failure here is logged, never fatal — the reset it accompanies was
+ *  already authorized by something else (empty database, or the explicit
+ *  escape hatch). */
+async function claimDisposable(client, dbName) {
+  if (!isTestDatabaseName(dbName)) return false;
+  try {
+    await client.query(
+      `COMMENT ON DATABASE "${dbName.replace(/"/g, '""')}" IS '${DISPOSABLE_TEST_DATABASE_MARKER}'`
+    );
+    console.log(`reset: claimed database "${dbName}" as a disposable test database.`);
+    return true;
+  } catch (err) {
+    console.log(
+      `reset: could not mark database "${dbName}" as disposable (${err.message}) — ` +
+      `future resets of it will need --allow-reset.`
+    );
+    return false;
+  }
+}
+
+async function countUserTables(client) {
+  const { rows } = await client.query(
+    `SELECT count(*)::int AS n FROM information_schema.tables
+      WHERE table_type = 'BASE TABLE'
+        AND table_schema NOT IN ('pg_catalog', 'information_schema')`
+  );
+  return rows[0]?.n ?? 0;
+}
+
+async function attachedLoombreProcesses(client) {
+  const { rows } = await client.query(
+    `SELECT pid, application_name FROM pg_stat_activity
+      WHERE datname = current_database()
+        AND pid <> pg_backend_pid()
+        AND application_name LIKE $1`,
+    [`${LOOMBRE_APPLICATION_NAME_PREFIX}%`]
+  );
+  return rows;
+}
+
+/**
+ * Second half of the reset guard, run on the OPEN connection (the name
+ * check in assertResetAllowed happens before connecting). See this file's
+ * LIVE-DATABASE GUARD header for the two pieces of evidence demanded here.
+ */
+async function assertResetTargetIsDisposable(client, dbName) {
+  const override = escapeHatchGiven();
+
+  const attached = await attachedLoombreProcesses(client);
+  if (attached.length > 0 && !override) {
+    const who = attached.map((r) => `${r.application_name} (pid ${r.pid})`).join(', ');
+    throw new Error(
+      `reset: refusing to drop schema "public" on database "${dbName}" — a live Loombre ` +
+      `process is connected to it right now: ${who}.\n` +
+      `That is a RUNNING stack, not a disposable test database, whatever its name says.\n` +
+      `Stop it first, or pass --allow-reset / set LOOMBRE_ALLOW_RESET=1 if you really mean it.`
+    );
+  }
+
+  const marker = await readDisposableMarker(client);
+  if (marker === DISPOSABLE_TEST_DATABASE_MARKER) return;
+
+  if (override) {
+    await claimDisposable(client, dbName);
+    return;
+  }
+
+  // Never claimed, but also nothing to lose: an empty database is exactly
+  // what a freshly provisioned per-suite test database looks like on its
+  // very first reset. Claim it and carry on.
+  if ((await countUserTables(client)) === 0) {
+    await claimDisposable(client, dbName);
+    return;
+  }
+
+  throw new Error(
+    `reset: refusing to drop schema "public" on database "${dbName}" — it holds data and was ` +
+    `never claimed as a disposable test database by the Loombre test harness.\n` +
+    `A "_test" in the name is a convention, not evidence: a real database that happens to be ` +
+    `named this way would be destroyed by this command.\n` +
+    `If this database really is disposable, claim it once with:\n` +
+    `  node scripts/migrate.mjs reset --allow-reset\n` +
+    `(that stamps a "${DISPOSABLE_TEST_DATABASE_MARKER}" comment on the database, and every ` +
+    `later reset then needs no flag). Test databases created by the harness itself are claimed ` +
+    `automatically.`
+  );
+}
+
 function assertResetAllowed(databaseUrl) {
   const dbName = new URL(databaseUrl).pathname.replace(/^\//, '');
   // Two equivalent escape hatches: the env var (documented, works from any
@@ -192,10 +338,7 @@ function assertResetAllowed(databaseUrl) {
   // understand `VAR=1 command` shell syntax, and this repo has no
   // cross-env dependency to paper over that; a plain argv flag needs
   // neither).
-  const allowed =
-    isTestDatabaseName(dbName) ||
-    process.env.LOOMBRE_ALLOW_RESET === '1' ||
-    process.argv.includes('--allow-reset');
+  const allowed = isTestDatabaseName(dbName) || escapeHatchGiven();
   if (allowed) return;
   throw new Error(
     `reset: refusing to drop schema "public" on database "${dbName}" — its name ` +
@@ -258,6 +401,10 @@ async function ensureDatabaseExists(databaseUrl) {
       // unvalidated request input.
       await admin.query(`CREATE DATABASE "${dbName.replace(/"/g, '""')}"`);
       console.log(`reset: created database "${dbName}" (did not exist).`);
+      // A database this script just created IS the harness's own property
+      // — claim it here, from the maintenance connection that owns it, so
+      // the live-database guard below never has to ask again.
+      await claimDisposable(admin, dbName);
     } catch (err) {
       // 42P04 = duplicate_database: a sibling test suite created it
       // concurrently between our existence check and our CREATE — the
@@ -444,7 +591,12 @@ async function main() {
         await withMigrationLock(client, 'migrate', () => cmdMigrate(client));
         break;
       case 'reset':
-        await withMigrationLock(client, 'reset', () => cmdReset(client));
+        await withMigrationLock(client, 'reset', async () => {
+          // Inside the lock: the disposability evidence must be read (and
+          // the claim stamped) without a sibling reset interleaving.
+          await assertResetTargetIsDisposable(client, new URL(DATABASE_URL).pathname.replace(/^\//, ''));
+          await cmdReset(client);
+        });
         break;
       case 'status':
         await cmdStatus(client);
