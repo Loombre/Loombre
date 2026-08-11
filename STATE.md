@@ -1006,6 +1006,35 @@ re-pointed to LadderCodec — narrowing-to-truth), D3 ×0.6/sub-2160 confirmed,
 D4 libsvtav1-only confirmed, D5 default-false opt-in confirmed. Spec merged
 to main; C1 BUILD lane (opus) spawned against the signed spec.
 
+**C1 BUILD checkpoint (2026-08-11): DONE — orchestrator-verified** (matrix
+535/535 + engine 448/448 + av1 fence/contract-reasons/conformance 25/25 on
+re-run; 13 commits, 6 red→green surface pairs; 4th stale-provisioning
+occurrence self-corrected by the standing base check). ⚠️ REAL-EXECUTION
+DEFECT the fence caught that goldens never could: libsvtav1 REFUSES
+-maxrate (ffmpeg wrapper requests CBR, SVT-AV1 rejects for RANDOM_ACCESS,
+encoder never opens, zero segments) — every software-AV1 plan was unrunnable
+while goldens stayed self-consistently green. Isolated across 3 variants
+(-maxrate alone is the culprit); fix scoped to av1+software (hw wrappers
+keep -maxrate — no hardware here to verify otherwise); LANE AMENDED THE
+SIGNED SPEC post-sign-off (§6 interp M bitrate bullet, interpretation-D
+precedent) — FLAGGED to owner + under fable review. Byte-identical
+regression proof: 0 of 557 pre-existing plan/args lines changed. Property-5
+non-vacuity mutation-proved; NOTABLE: leg 4 (Stage G residual guard) is
+genuinely redundant defence — relaxing the §7.2 tier check alone does NOT
+falsify property 5 (guard catches it); reviewer verifies this is pinned.
+oasdiff: 6 warnings 0 errors exactly as previewed (targetCodec re-point =
+zero findings); sdk-drift clean; conformance zero; DB no-change
+re-verified. Web "zero changes" expectation WRONG instructively: the
+settings-widget test fixture used codec:"av1" as its deliberately-INVALID
+example — would have silently asserted av1-illegal forever; fixed (product
+code untouched, device-profile already probes av1). P3.4 backlog additions
+by name: av1_nvenc/av1_qsv/av1_vaapi/av1_amf encode + hwaccel markers +
+windows-x64 libsvtav1 presence. Settings docs regenerated; lane ran
+docs+website sync per rule. FABLE REVIEW spawned (adversarial charter:
+unreachability attack, 4 mutations incl. the leg-4-pin question, -maxrate
+amendment judgment, contract atomicity, Tier-0 arithmetic, honesty-table
+audit).
+
 ### Wave B — CLOSED 2026-08-11 (exit gate MET)
 
 Integration: four branches merged (B2 → B4 → B1 → B3, zero manual conflict
