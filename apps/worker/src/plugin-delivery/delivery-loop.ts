@@ -81,6 +81,7 @@ import {
   filterEventsForViewer,
   findOldestUnconsumedBeforeMs,
   getDeliveryCursor,
+  getPluginById,
   listCandidateEventsForDelivery,
   listEventSubscriberPlugins,
   recordDeliveryFailure,
@@ -499,7 +500,25 @@ export function startPluginDeliveryLoop(deps: PluginDeliveryLoopDeps): PluginDel
         plugins.map(async (plugin) => {
           let breaker = breakers.get(plugin.id);
           if (!breaker) {
-            breaker = new PluginCircuitBreaker();
+            // C5.1 fix wave (closes deferred LPP L-5, worker-side — mirrors
+            // apps/server/src/plugins/plugin-health.service.ts's identical
+            // fix): seed this breaker's failure count from the durable
+            // plugins.consecutive_failures counter on its FIRST
+            // construction — effectively "at boot" for this lazily-built
+            // per-loop-instance map — so a worker restart mid-window (or
+            // another process, e.g. apps/server's periodic health check,
+            // having already recorded failures for a plugin this loop
+            // instance has never delivered to yet) is not silently
+            // discarded. listEventSubscriberPlugins' own narrow projection
+            // (EventSubscriberPlugin) does not carry consecutive_failures,
+            // so this is the ONE extra read — bounded by plugin count, not
+            // by poll tick, since it only runs on a breaker's first
+            // construction per process lifetime.
+            const seedAtMs = resolved.now();
+            const durable = await getPluginById(resolved.db, plugin.id);
+            breaker = new PluginCircuitBreaker(
+              durable ? { seed: { consecutiveFailures: durable.consecutive_failures, atMs: seedAtMs } } : {},
+            );
             breakers.set(plugin.id, breaker);
           }
           try {
