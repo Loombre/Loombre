@@ -158,6 +158,17 @@ module.exports = {
       from: {},
       to: { circular: true },
     },
+    {
+      name: "no-orphans",
+      comment:
+        "A module with ZERO incoming AND ZERO outgoing edges (dependency-cruiser's `orphan` definition — a CLI entrypoint that imports real code has an outgoing edge and is never flagged, even though nothing imports it back) is either dead code or a mis-wired module that should be reachable from somewhere real — either way it deserves a human look, not silent accumulation. A full apps+packages cruise with this rule in place found exactly 3 orphans, all legitimate and excluded below by construction, not fixed away: *.d.ts ambient type declarations (never imported by an ES import — merged by the compiler; apps/web/src/types/global-css.d.ts) and the two toolchain config files a CLI loads by filename convention rather than an import edge, so genuinely have neither direction (apps/web/next.config.mjs, apps/web/lighthouserc.cjs). Per-package vitest.config.ts files are NOT excluded here because they don't need to be — each imports `vitest/config`, so it already has an outgoing edge and was never flagged in the first place.",
+      severity: "error",
+      from: {
+        orphan: true,
+        pathNot: ["\\.d\\.ts$", "(^|/)next\\.config\\.(js|cjs|mjs|ts)$", "(^|/)lighthouserc\\.(js|cjs|json)$"],
+      },
+      to: {},
+    },
   ],
   options: {
     // `dist` moved from `exclude` to `doNotFollow` (Phase 4 Wave 3, lane

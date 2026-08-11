@@ -54,7 +54,7 @@
 
 import { getLibraryProviderChain, getPluginById } from '@loombre/db';
 import type { DbOrTx } from '@loombre/db/internal';
-import type { PluginCircuitBreaker } from '@loombre/plugin-host';
+import type { PluginBreakerSeed, PluginCircuitBreaker } from '@loombre/plugin-host';
 import { createLppMetadataProvider } from './plugin-provider.js';
 import { PROVIDER_CHAIN } from './provider-chain-defaults.js';
 import type { ProviderRegistry } from './registry.js';
@@ -62,7 +62,12 @@ import type { ContentClass, MediaKind } from './provider.js';
 
 export interface ResolveProviderChainForLibraryDeps {
   registry: ProviderRegistry;
-  getBreaker: (pluginId: string) => PluginCircuitBreaker;
+  /** C5.1 (closes deferred LPP L-5): `seed`, when given, is used ONLY on
+   *  `pluginId`'s FIRST construction in the underlying registry's
+   *  lifetime — this function always passes one (this plugin row was just
+   *  read fresh, so `plugin.consecutive_failures` is current), a caller's
+   *  own `getBreaker` implementation decides whether to actually use it. */
+  getBreaker: (pluginId: string, seed?: PluginBreakerSeed) => PluginCircuitBreaker;
   fetchImpl?: typeof fetch;
   clock?: () => number;
   env?: NodeJS.ProcessEnv;
@@ -131,7 +136,8 @@ export async function resolveProviderChainForLibrary(
       },
       {
         db,
-        breaker: deps.getBreaker(plugin.id),
+        // C5.1: seed from the row just read above, fresh this call.
+        breaker: deps.getBreaker(plugin.id, { consecutiveFailures: plugin.consecutive_failures, atMs: (deps.clock ?? Date.now)() }),
         targetContentClass: contentClass,
         log: deps.log,
         // exactOptionalPropertyTypes: omit rather than pass `undefined`

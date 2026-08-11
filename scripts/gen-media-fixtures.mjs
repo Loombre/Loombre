@@ -40,8 +40,9 @@
  * apps/worker/test/probe/fixtures/raw/ instead.
  */
 
-import { accessSync, constants as fsConstants, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { accessSync, constants as fsConstants, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { delimiter, dirname, join } from "node:path";
+import { tmpdir } from "node:os";
 import { execFileSync, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
@@ -116,6 +117,282 @@ function run(ffmpegPath, args, label) {
     return false;
   }
   return true;
+}
+
+// ---------------------------------------------------------------------------
+// Dolby Vision fixture construction (LD-3 / LD-15) — see the call site's
+// comment for the two-tier fidelity design.
+// ---------------------------------------------------------------------------
+
+/** HEVC NAL unit types carrying Dolby Vision data (Rec. ITU-T H.265 Table
+ *  7-1 reserves 48-63 as unspecified; Dolby's streams spec places the RPU
+ *  at 62 and the enhancement layer at 63). */
+const DV_RPU_NAL_TYPE = 62;
+const DV_EL_NAL_TYPE = 63;
+
+function resolveDoviTool() {
+  const fromEnv = process.env["LOOMBRE_DOVI_TOOL"];
+  // `off` forces the synthetic-splice tier even on a machine that HAS
+  // dovi_tool — the only way to exercise the CI floor locally, and how the
+  // fixture generator's own two-tier behaviour stays verifiable.
+  if (fromEnv === "off") return { ok: false, reason: "disabled by LOOMBRE_DOVI_TOOL=off" };
+  if (fromEnv && isExecutableFile(fromEnv)) return { ok: true, path: fromEnv };
+  const found = findOnPath("dovi_tool");
+  return found ? { ok: true, path: found } : { ok: false, reason: "dovi_tool not found (LOOMBRE_DOVI_TOOL env / PATH)" };
+}
+
+/** Builds one Annex-B NAL unit: 4-byte start code + 2-byte HEVC NAL header
+ *  + payload. The payload deliberately avoids `00 00 0x` byte runs so no
+ *  emulation-prevention escaping is required. */
+function annexBNal(nalType, payloadLength) {
+  const payload = Buffer.alloc(payloadLength, 0x25);
+  return Buffer.concat([
+    Buffer.from([0x00, 0x00, 0x00, 0x01]),
+    Buffer.from([(nalType << 1) & 0xfe, 0x01]), // nuh_layer_id 0, temporal_id_plus1 1
+    payload,
+  ]);
+}
+
+/** Splices synthetic DV NAL units in front of every VCL slice in an HEVC
+ *  Annex-B elementary stream — the no-external-tool fidelity tier. */
+function spliceSyntheticDvNals(srcPath, destPath, { includeEnhancementLayer }) {
+  const src = readFileSync(srcPath);
+  const out = [];
+  let lastCut = 0;
+  for (let i = 0; i + 5 < src.length; i += 1) {
+    if (!(src[i] === 0 && src[i + 1] === 0 && src[i + 2] === 1)) continue;
+    const nalType = (src[i + 3] >> 1) & 0x3f;
+    // VCL slice types are 0..31; insert before each of them so every coded
+    // picture is preceded by an RPU exactly as a real DV stream is.
+    if (nalType > 31) continue;
+    const cutAt = i > 0 && src[i - 1] === 0 ? i - 1 : i; // include a 4-byte start code's leading zero
+    out.push(src.subarray(lastCut, cutAt));
+    out.push(annexBNal(DV_RPU_NAL_TYPE, 24));
+    if (includeEnhancementLayer) out.push(annexBNal(DV_EL_NAL_TYPE, 48));
+    lastCut = cutAt;
+  }
+  out.push(src.subarray(lastCut));
+  writeFileSync(destPath, Buffer.concat(out));
+}
+
+/** The 24-byte `dvvC` payload (Dolby Vision configuration record). Field
+ *  order and widths match FFmpeg's own `AVDOVIDecoderConfigurationRecord`
+ *  as printed by ffprobe's side-data writer, which is how the resulting
+ *  fixture is verified. */
+function dvvCPayload({ profile, level, rpuPresent, elPresent, blPresent, blCompatId }) {
+  const payload = Buffer.alloc(24);
+  payload[0] = 1; // dv_version_major
+  payload[1] = 0; // dv_version_minor
+  let bits = "";
+  bits += profile.toString(2).padStart(7, "0");
+  bits += level.toString(2).padStart(6, "0");
+  bits += rpuPresent ? "1" : "0";
+  bits += elPresent ? "1" : "0";
+  bits += blPresent ? "1" : "0";
+  bits += blCompatId.toString(2).padStart(4, "0");
+  bits = bits.padEnd(22 * 8, "0"); // remainder reserved
+  for (let i = 0; i < 22; i += 1) payload[2 + i] = Number.parseInt(bits.slice(i * 8, i * 8 + 8), 2);
+  return payload;
+}
+
+/**
+ * Inserts a `dvvC` box into an mp4's video sample entry, giving the file
+ * the CONTAINER-LEVEL Dolby Vision record a real rip carries. ffmpeg's
+ * muxers only ever WRITE this box from stream side data they read out of an
+ * input container, so it cannot be produced by encoding — but it is a
+ * fixed-layout box, and every ancestor's size field simply grows by the
+ * inserted length (the insert point is strictly inside all of them).
+ */
+function injectDvvCBox(srcPath, destPath, sampleEntryType, config) {
+  const src = readFileSync(srcPath);
+  const path = ["moov", "trak", "mdia", "minf", "stbl", "stsd", sampleEntryType];
+  const ancestors = [];
+
+  function walk(start, end, depth) {
+    let off = start;
+    while (off + 8 <= end) {
+      const size = src.readUInt32BE(off);
+      if (size < 8) return false;
+      const type = src.toString("ascii", off + 4, off + 8);
+      if (type === path[depth]) {
+        ancestors.push({ offset: off, size });
+        if (depth === path.length - 1) return true;
+        // `stsd` carries 8 bytes of version/flags + entry_count before its
+        // children; every other box on this path is a plain container.
+        if (walk(off + (type === "stsd" ? 16 : 8), off + size, depth + 1)) return true;
+        ancestors.pop();
+      }
+      off += size;
+    }
+    return false;
+  }
+
+  if (!walk(0, src.length, 0)) return false;
+
+  const payload = dvvCPayload(config);
+  const box = Buffer.alloc(8 + payload.length);
+  box.writeUInt32BE(box.length, 0);
+  box.write("dvvC", 4, "ascii");
+  payload.copy(box, 8);
+
+  const sampleEntry = ancestors[ancestors.length - 1];
+  const insertAt = sampleEntry.offset + sampleEntry.size;
+  const out = Buffer.concat([src.subarray(0, insertAt), box, src.subarray(insertAt)]);
+  for (const a of ancestors) out.writeUInt32BE(a.size + box.length, a.offset);
+  writeFileSync(destPath, out);
+  return true;
+}
+
+function generateDolbyVisionFixtures({ ffmpegPath, encoders, outPath, addEntry, addSkipped, force }) {
+  const targets = [
+    {
+      file: "dv81_hevc_hdr10_compat.mp4",
+      dvProfile: 8,
+      dvBlCompatId: 1,
+      dualLayer: false,
+      note: "profile 8.1, HDR10-compatible base layer — the dv-stripped-to-hdr10 case",
+    },
+    {
+      file: "dv7_dual_layer.mp4",
+      dvProfile: 7,
+      dvBlCompatId: 1,
+      dualLayer: true,
+      note: "profile 7 dual-layer (BL+EL+RPU) — the LD-15 enhancement-layer-drop case",
+    },
+  ];
+
+  if (!encoders.has("libx265")) {
+    for (const t of targets) {
+      addSkipped({ file: t.file, container: "mp4", videoCodec: "hevc", hdr: "dv", dvProfile: t.dvProfile, skipped: true, reason: "missing-encoder:libx265" });
+    }
+    return;
+  }
+
+  const doviTool = resolveDoviTool();
+  const work = mkdtempSync(join(tmpdir(), "loombre-dvgen-"));
+
+  try {
+    for (const target of targets) {
+      const dest = outPath(target.file);
+      const expect = {
+        container: "mp4",
+        videoCodec: "hevc",
+        bitDepth: 10,
+        hdr: "dv",
+        dvProfile: target.dvProfile,
+        dvBlCompatId: target.dvBlCompatId,
+        dualLayer: target.dualLayer,
+        dvSource: doviTool.ok ? "dovi_tool" : "synthetic-nal-splice",
+        note: target.note,
+      };
+      if (!force && existsSync(dest)) {
+        addEntry({ file: target.file, ...expect, skipped: false });
+        continue;
+      }
+
+      const blPath = join(work, `${target.file}.bl.hevc`);
+      const okBl = run(
+        ffmpegPath,
+        [
+          "-f", "lavfi", "-i", "testsrc2=size=320x240:rate=24:duration=2",
+          "-pix_fmt", "yuv420p10le", "-c:v", "libx265",
+          "-x265-params",
+          "keyint=24:min-keyint=24:hdr10=1:colorprim=bt2020:transfer=smpte2084:colormatrix=bt2020nc:master-display=G(8500,39850)B(6550,2300)R(35400,14600)WP(15635,16450)L(10000000,1):max-cll=1000,400",
+          "-f", "hevc", blPath,
+        ],
+        `${target.file} (base layer)`,
+      );
+      if (!okBl) {
+        addSkipped({ file: target.file, ...expect, skipped: true, reason: "ffmpeg-exit-nonzero" });
+        continue;
+      }
+
+      const dvEsPath = join(work, `${target.file}.dv.hevc`);
+      let built = false;
+      if (doviTool.ok) {
+        built = buildWithDoviTool({ doviToolPath: doviTool.path, ffmpegPath, work, target, blPath, dvEsPath });
+        if (!built) {
+          console.warn(`[gen-media-fixtures] dovi_tool path failed for ${target.file}; falling back to the synthetic splice`);
+          expect.dvSource = "synthetic-nal-splice";
+        }
+      }
+      if (!built) {
+        spliceSyntheticDvNals(blPath, dvEsPath, { includeEnhancementLayer: target.dualLayer });
+      }
+
+      // A real DV rip's sample entry is `dvh1`/`dvhe`, NOT `hvc1` — that
+      // fourcc is itself DV signalling the strip has to clear, so the
+      // fixture must carry it or the oracle would never see the case.
+      const rawMp4 = join(work, `${target.file}.raw.mp4`);
+      const okMux = run(
+        ffmpegPath,
+        ["-fflags", "+genpts", "-r", "24", "-i", dvEsPath, "-c:v", "copy", "-tag:v", "dvh1", "-f", "mp4", rawMp4],
+        `${target.file} (mux)`,
+      );
+      if (!okMux) {
+        addSkipped({ file: target.file, ...expect, skipped: true, reason: "ffmpeg-exit-nonzero" });
+        continue;
+      }
+
+      const injected = injectDvvCBox(rawMp4, dest, "dvh1", {
+        profile: target.dvProfile,
+        level: 4,
+        rpuPresent: 1,
+        elPresent: target.dualLayer ? 1 : 0,
+        blPresent: 1,
+        blCompatId: target.dvBlCompatId,
+      });
+      if (!injected) {
+        if (existsSync(dest)) rmSync(dest, { force: true });
+        addSkipped({ file: target.file, ...expect, skipped: true, reason: "dvvc-injection-failed" });
+        continue;
+      }
+      addEntry({ file: target.file, ...expect, skipped: false });
+    }
+  } finally {
+    rmSync(work, { recursive: true, force: true });
+  }
+}
+
+function buildWithDoviTool({ doviToolPath, ffmpegPath, work, target, blPath, dvEsPath }) {
+  const configPath = join(work, `${target.file}.gen.json`);
+  writeFileSync(
+    configPath,
+    JSON.stringify({
+      cm_version: "V29",
+      profile: target.dvProfile === 7 ? "8.1" : "8.1",
+      length: 48,
+      level6: {
+        max_display_mastering_luminance: 1000,
+        min_display_mastering_luminance: 1,
+        max_content_light_level: 1000,
+        max_frame_average_light_level: 400,
+      },
+    }),
+  );
+  const rpuPath = join(work, `${target.file}.rpu.bin`);
+  const gen = spawnSync(doviToolPath, ["generate", "-j", configPath, "-o", rpuPath], { stdio: ["ignore", "ignore", "pipe"], encoding: "utf8" });
+  if (gen.status !== 0) return false;
+
+  if (!target.dualLayer) {
+    const inject = spawnSync(doviToolPath, ["inject-rpu", "-i", blPath, "--rpu-in", rpuPath, "-o", dvEsPath], { stdio: ["ignore", "ignore", "pipe"], encoding: "utf8" });
+    return inject.status === 0;
+  }
+
+  // Dual layer: a second, lower-resolution encode carrying the RPU becomes
+  // the enhancement layer, interleaved into the base layer by `mux`.
+  const elPath = join(work, `${target.file}.el.hevc`);
+  const okEl = run(
+    ffmpegPath,
+    ["-f", "lavfi", "-i", "testsrc2=size=160x120:rate=24:duration=2", "-pix_fmt", "yuv420p10le", "-c:v", "libx265", "-x265-params", "keyint=24:min-keyint=24", "-f", "hevc", elPath],
+    `${target.file} (enhancement layer)`,
+  );
+  if (!okEl) return false;
+  const elRpuPath = join(work, `${target.file}.el.rpu.hevc`);
+  const injectEl = spawnSync(doviToolPath, ["inject-rpu", "-i", elPath, "--rpu-in", rpuPath, "-o", elRpuPath], { stdio: ["ignore", "ignore", "pipe"], encoding: "utf8" });
+  if (injectEl.status !== 0) return false;
+  const mux = spawnSync(doviToolPath, ["mux", "--bl", blPath, "--el", elRpuPath, "-o", dvEsPath], { stdio: ["ignore", "ignore", "pipe"], encoding: "utf8" });
+  return mux.status === 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -725,18 +1002,31 @@ function main() {
     ["libx264", "aac"],
   );
 
-  // Dolby Vision + PGS: expected-unavailable via stock ffmpeg (docs/PLAYBACK.md
-  // §10 deliverable note) — recorded as skipped, never attempted. Real
-  // coverage lives in the hand-authored probe fixtures instead (e.g.
-  // apps/worker/test/probe/fixtures/raw/03_hevc_dv8_blcompat1.json).
-  addSkipped({
-    file: "dolby_vision_profile8.mkv",
-    container: "mkv",
-    videoCodec: "hevc",
-    hdr: "dv",
-    skipped: true,
-    reason: "not-generatable-stock-ffmpeg",
-  });
+  // ── Dolby Vision (LD-3 / LD-15) ────────────────────────────────────────
+  //
+  // SUPERSEDES this script's original "not-generatable-stock-ffmpeg" skip.
+  // Stock ffmpeg genuinely cannot ENCODE Dolby Vision — but a DV bitstream
+  // is a plain HEVC Main10 base layer plus (a) in-band RPU NAL units of
+  // HEVC type UNSPEC62, (b) for dual-layer profile 7, enhancement-layer
+  // NAL units of type UNSPEC63, and (c) a container-level `dvvC`
+  // configuration box. All three are constructible here, so LD-3's
+  // "verified against a REAL DV sample" requirement no longer needs a
+  // retail rip.
+  //
+  // TWO FIDELITY TIERS, both recorded in the manifest via `dvSource`:
+  //   - `dovi_tool`  (PRIMARY) — a GENUINE RPU produced by dovi_tool
+  //     (MIT, PATH-resolved dev/test tool exactly like ffmpeg, never
+  //     vendored or shipped; see /LICENSE-INTENT.md). Real RPU payloads,
+  //     real dual-layer interleave.
+  //   - `synthetic-nal-splice` (CI FLOOR) — no external tool at all: this
+  //     script splices correctly-typed UNSPEC62/63 NAL units into the x265
+  //     elementary stream itself. The PAYLOAD is not a semantically valid
+  //     RPU, which is fine and deliberate: LD-3's oracle asks whether the
+  //     pipeline REMOVES units of these types, never what they mean. This
+  //     tier runs everywhere, so the regression fence can never go dark
+  //     just because a machine lacks dovi_tool.
+  generateDolbyVisionFixtures({ ffmpegPath: ffmpeg.path, encoders, outPath, addEntry, addSkipped, force: FORCE });
+
   addSkipped({
     file: "pgs_subtitle.mkv",
     container: "mkv",

@@ -21,6 +21,13 @@ export * from "./reasons.js";
 
 export * from "./plan.js";
 
+/** LD-3: the ONE definition of "this copy must be stripped of Dolby
+ *  Vision", shared by Stage C (the reason) and the arg builder (the flags)
+ *  so the two can never again disagree. Exported so the worker's
+ *  real-ffmpeg regression fence can assert against the same predicate the
+ *  engine decides with. */
+export * from "./dv.js";
+
 /**
  * Phase 3 §11 step 6a (worker-side transcode session runtime) BARREL
  * ADDITION — reported per this step's purity fence ("if a builder OPTION

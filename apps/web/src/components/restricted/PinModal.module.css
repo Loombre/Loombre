@@ -47,24 +47,31 @@
 }
 
 /* Desktop numeric field — real keyboard input, styled to echo the dot
-   row's spacing rather than showing raw digits. */
-.hiddenInput {
+   row's spacing rather than showing raw digits. Item 2 (Wave A):
+   consolidated onto ui/Input.tsx's TextInput, so the base pill
+   shape/border/color and the inset focus ring now come from
+   Input.module.css's `.input` — only the PIN field's own deliberate
+   overrides live here. The element+class compound selector
+   (input.hiddenInput, specificity 0,1,1) deterministically outranks the
+   shared `.input` rule (0,1,0) for those overrides regardless of CSS
+   bundling/import order — the same technique
+   admin/settings/SettingField.module.css's `input.stringInput` already
+   uses for the identical "outrank the shared base without editing it or
+   reaching for !important" problem. No local :focus-visible rule any
+   more — `.input:focus-visible` (already inset, already un-clippable)
+   applies for free. */
+input.hiddenInput {
   width: 160px;
   text-align: center;
   letter-spacing: 0.6em;
   font-family: var(--font-mono);
   font-size: var(--text-lg);
   padding: var(--space-xs) var(--space-sm);
-  border-radius: var(--radius-pill);
-  border: 1px solid var(--color-border);
-  background: var(--fill-2);
-  color: var(--color-text);
-}
 
-.hiddenInput:focus-visible {
-  outline: none;
-  border-color: var(--color-focus);
-  box-shadow: var(--shadow-focus-ring);
+  /* Deliberately kept distinct from the shared base's --color-surface —
+     a translucent fill reads better against SheetOrModal's own raised
+     background than the base's solid surface tone does here. */
+  background: var(--fill-2);
 }
 
 /* H20 (W3 fidelity audit): 74px circular keys, 3-column grid — was

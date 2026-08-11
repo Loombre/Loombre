@@ -5,7 +5,9 @@
  * + the step-7 owner-smoke VT tone-map real-execution fix's hybrid
  * scenario + the four scenarios that landed with interpretation D's
  * generalization to every §8.3 hw backend + the open-GOP HEVC seek-restart
- * strip pair (interpretation K, 2026-08-10) = exactly 34 scenario files
+ * strip pair (interpretation K, 2026-08-10) + the four Dolby Vision strip
+ * scenarios (interpretation L, LD-3/LD-15, 2026-08-11) = exactly 38
+ * scenario files
  * under test/goldens/
  * (test/goldens/scenarios.ts constructs the inputs in test
  * code; test/goldens/<id>.json are the checked-in snapshots — full deep
@@ -39,9 +41,9 @@ function loadSnapshot(id: string): GoldenSnapshot {
   return JSON.parse(raw) as GoldenSnapshot;
 }
 
-describe("ffmpeg arg builder goldens (docs/PLAYBACK.md §6, exactly 34 scenarios)", () => {
-  it("exactly 34 scenarios are defined (step 4's 25 + step 7b F4's two vaapi burn-in goldens + the VT tone-map hybrid golden + interpretation D's four backend-agnostic hw tone-map goldens + interpretation K's open-GOP seek-restart strip pair)", () => {
-    expect(GOLDEN_SCENARIOS).toHaveLength(34);
+describe("ffmpeg arg builder goldens (docs/PLAYBACK.md §6, exactly 38 scenarios)", () => {
+  it("exactly 38 scenarios are defined (step 4's 25 + step 7b F4's two vaapi burn-in goldens + the VT tone-map hybrid golden + interpretation D's four backend-agnostic hw tone-map goldens + interpretation K's open-GOP seek-restart strip pair + interpretation L's four Dolby Vision strip goldens)", () => {
+    expect(GOLDEN_SCENARIOS).toHaveLength(38);
   });
 
   it("every scenario id is unique", () => {

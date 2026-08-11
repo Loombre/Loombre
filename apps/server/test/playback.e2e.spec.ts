@@ -801,6 +801,120 @@ describe("PUT /progress/{itemId} with sessionId heartbeats the session (docs/PLA
       .send({ positionMs: 1000, state: "in-progress", sessionId: "11111111-1111-4111-8111-111111111111" });
     expect(put.status, JSON.stringify(put.body)).toBe(200);
   });
+
+  // ── Post-seek progress is PRESENTATION time, not source time ──────────
+  //
+  // A player reports `video.currentTime`, which is its position in the
+  // SERVED PLAYLIST's timeline: the playlist is one continuous run of
+  // #EXTINF durations regardless of the EXT-X-DISCONTINUITY between runs.
+  // But every seek run is spawned with `-ss` and no `-copyts`, so its own
+  // output timestamps restart at zero. Presentation and source therefore
+  // diverge by exactly the accumulated seek offsets, and a resume point
+  // stored from a post-seek heartbeat sends the viewer to the wrong place
+  // in the FILE — the further into a seek-heavy session, the wronger.
+  //
+  // The server has everything needed to fix this without touching the
+  // client: transcode_runs (migration 0043) plus the served playlist it
+  // already reads. These cases pin the conversion at the ingestion point.
+  async function createTranscodeSessionWithRuns(): Promise<{ sessionId: string; sessionDir: string }> {
+    const created = await admin()
+      .post("/playback/sessions")
+      .send({
+        itemId: harborLightsItemId,
+        device: {
+          profileId: "progress-map-e2e-h264-only",
+          directPlayContainers: ["mp4", "webm"],
+          hls: { container: "fmp4", supportsFmp4: true, lowLatency: false },
+          video: [{ codec: "h264", maxProfile: null, maxLevel: null, maxBitDepth: 8, maxWidth: 1920, maxHeight: 1080, maxFrameRate: 60, maxBitrateBps: 20_000_000 }],
+          hdr: { hdr10: false, hlg: false, dolbyVision: false },
+          audio: [{ codec: "aac", maxChannels: 2, passthrough: false }],
+          subtitles: { renderText: ["subrip"], hlsVtt: true, renderImage: false },
+          maxStreamBitrateBps: null,
+        },
+        network: { maxBitrateBps: 50_000_000, isLocal: true },
+        mode: "stream",
+      });
+    expect(created.status, JSON.stringify(created.body)).toBe(201);
+    const sessionId = created.body.id as string;
+    const sessionDir = mkdtempSync(path.join(tmpdir(), "loombre-progress-map-"));
+
+    // Two runs. Run 0 covers source 0..60s as ten 6.006s segments; run 1 is
+    // a forward seek to 10:00 producing ten 6.006s segments numbered 10..19.
+    const lines = ["#EXTM3U", "#EXT-X-VERSION:7", "#EXT-X-TARGETDURATION:7", "#EXT-X-PLAYLIST-TYPE:EVENT", '#EXT-X-MAP:URI="run0/init.mp4"'];
+    for (let i = 0; i < 10; i += 1) {
+      lines.push("#EXTINF:6.006,");
+      lines.push(`run0/s${String(i).padStart(6, "0")}.m4s`);
+    }
+    lines.push("#EXT-X-DISCONTINUITY");
+    lines.push('#EXT-X-MAP:URI="run1/init.mp4"');
+    for (let i = 10; i < 20; i += 1) {
+      lines.push("#EXTINF:6.006,");
+      lines.push(`run1/s${String(i).padStart(6, "0")}.m4s`);
+    }
+    writeFileSync(path.join(sessionDir, "media.m3u8"), lines.join("\n") + "\n", "utf8");
+
+    const db = createDb(process.env["DATABASE_URL"]!);
+    try {
+      await db
+        .updateTable("playback_sessions")
+        .set({ status: "active", staging_dir: sessionDir, produced_segment: 19, updated_at_ms: Date.now() })
+        .where("id", "=", sessionId)
+        .execute();
+      for (const run of [
+        { run_index: 0, start_segment: 0, source_origin_ms: 0 },
+        { run_index: 1, start_segment: 10, source_origin_ms: 600_000 },
+      ]) {
+        await db.insertInto("transcode_runs").values({ session_id: sessionId, ...run, created_at_ms: Date.now() }).execute();
+      }
+    } finally {
+      await db.destroy();
+    }
+    return { sessionId, sessionDir };
+  }
+
+  async function readStoredPositionMs(): Promise<number> {
+    const res = await admin().get(`/progress/${harborLightsItemId}`);
+    expect(res.status).toBe(200);
+    return Number(res.body.positionMs);
+  }
+
+  it("a post-seek heartbeat persists the SOURCE position, not the player's presentation time", async () => {
+    const { sessionId } = await createTranscodeSessionWithRuns();
+
+    // The player is 66_066 ms into the playlist: past run 0's ten segments
+    // (60_060 ms) and 6_006 ms into run 1's FIRST segment. In source terms
+    // that is run 1's origin (600_000) plus 6_006 = 606_006 ms — ten
+    // minutes and six seconds in, which is where the viewer actually is.
+    // Stored verbatim it would claim 66 seconds, off by nine and a half
+    // minutes, and the next resume prompt would offer that.
+    const put = await admin()
+      .put(`/progress/${harborLightsItemId}`)
+      .send({ positionMs: 66_066, durationMs: 6_480_000, state: "in-progress", sessionId });
+    expect(put.status, JSON.stringify(put.body)).toBe(200);
+
+    expect(await readStoredPositionMs()).toBe(606_006);
+  });
+
+  it("a position inside run 0 is unchanged — presentation IS source before the first seek", async () => {
+    const { sessionId } = await createTranscodeSessionWithRuns();
+    // 30_030 ms lands in run 0, whose origin is 0, so the mapping is the
+    // identity. This is the guard that stops the conversion from mangling
+    // the overwhelmingly common single-run case.
+    const put = await admin()
+      .put(`/progress/${harborLightsItemId}`)
+      .send({ positionMs: 30_030, durationMs: 6_480_000, state: "in-progress", sessionId });
+    expect(put.status, JSON.stringify(put.body)).toBe(200);
+    expect(await readStoredPositionMs()).toBe(30_030);
+  });
+
+  it("a direct-play session (no runs, no playlist) stores the client position verbatim", async () => {
+    const sessionId = await createDirectPlaySession();
+    const put = await admin()
+      .put(`/progress/${harborLightsItemId}`)
+      .send({ positionMs: 123_456, durationMs: 6_480_000, state: "in-progress", sessionId });
+    expect(put.status, JSON.stringify(put.body)).toBe(200);
+    expect(await readStoredPositionMs()).toBe(123_456);
+  });
 });
 
 describe("heartbeat sweeper (docs/PLAYBACK.md §9, 15-minute cutoff)", () => {

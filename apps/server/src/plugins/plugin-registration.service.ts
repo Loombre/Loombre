@@ -42,6 +42,7 @@ import {
 } from "@loombre/plugin-host";
 import {
   describeLppManifestParseFailure,
+  listTopLevelSecretFieldNames,
   parseLppManifest,
   type LppEventSubscriberCapability,
   type LppManifest,
@@ -62,10 +63,11 @@ import { conflict, notFound, unprocessableEntity } from "../gateway/problem.exce
 import { requireLiveAdmin } from "../common/require-live-admin.js";
 import { getOutboxEventTaxonomy } from "./event-taxonomy.js";
 import { validatePluginConfig } from "./plugin-config.js";
-import { mintPluginHmac, removeAllPluginSecrets, storePluginConfigSecret } from "./plugin-keyring.js";
+import { mintPluginHmac, removeAllPluginSecrets, removePluginConfigSecret, storePluginConfigSecret } from "./plugin-keyring.js";
 import { computeAggregateContentClass, diffManifestForExpansion } from "./manifest-diff.js";
 import { computeManifestDigest } from "./manifest-digest.js";
 import { PluginHealthService } from "./plugin-health.service.js";
+import { deriveSecretFieldNamesDefensively } from "./plugin-lifecycle.service.js";
 
 export interface PluginGrantInput {
   /** Subset of the manifest's declared capability `type` values to enable
@@ -216,6 +218,41 @@ export class PluginRegistrationService {
     return requestedEventTypes;
   }
 
+  /**
+   * C5.3 fix wave (keyring hygiene): removes every keyring secret field
+   * that was declared `secret: true` in the OLD manifest's configSchema but
+   * is no longer declared secret (narrowed away, or the field vanished
+   * entirely) in the NEW one — called AFTER a manifest change has actually
+   * committed (refreshPlugin's non-expanding path; reapprovePlugin, which
+   * is itself the only door a scope-changed manifest ever actually applies
+   * through), never before, so a failed write never orphans-by-omission a
+   * field this call never actually stopped declaring.
+   *
+   * This is deliberately keyed on the MANIFEST's declared secret-field set
+   * changing, NOT on which fields a given `PUT .../config` submission
+   * happens to include — see PluginLifecycleService.updateConfig's own
+   * header for why per-submission omission must stay "leave the existing
+   * value alone" (the admin config-edit form relies on that to avoid
+   * requiring every secret be retyped on every unrelated edit). Those are
+   * two independent triggers for the same underlying keyring-hygiene goal.
+   *
+   * `oldManifest` is read via the same lenient, non-throwing shape-only
+   * walk `PluginLifecycleService.removePlugin` uses (L-3 fix wave) rather
+   * than a strict parse, so a stored snapshot that happens not to parse
+   * cleanly can never block this cleanup (or, for reapprovePlugin, block
+   * re-approval itself) — worst case it simply finds no old secret field
+   * names to diff against, and cleans up nothing this time.
+   */
+  private async removeOrphanedManifestSecrets(pluginId: string, oldManifest: unknown, newManifest: LppManifest): Promise<void> {
+    const oldSecretFieldNames = new Set(deriveSecretFieldNamesDefensively(oldManifest));
+    const newSecretFieldNames = new Set(listTopLevelSecretFieldNames(newManifest.configSchema));
+    for (const fieldName of oldSecretFieldNames) {
+      if (!newSecretFieldNames.has(fieldName)) {
+        await removePluginConfigSecret(pluginId, fieldName);
+      }
+    }
+  }
+
   async registerPlugin(input: RegisterPluginRequest, nowMs = Date.now()): Promise<RegisterPluginOutcome> {
     const instancePath = "/plugins";
     await requireLiveAdmin(this.dbProvider.db, input.actorUserId, instancePath);
@@ -302,7 +339,8 @@ export class PluginRegistrationService {
     const plugin = await getPluginById(this.dbProvider.db, pluginId);
     if (!plugin) throw notFound("Plugin not found.", instancePath);
 
-    const breaker = this.healthService.getBreaker(pluginId);
+    // C5.1: seed from the row just fetched (closes deferred LPP L-5).
+    const breaker = this.healthService.getBreaker(pluginId, { consecutiveFailures: plugin.consecutive_failures, atMs: nowMs });
     const manifestResult = await fetchPluginManifest(plugin.base_url, {
       lanAllowlist: plugin.lan_allowlist,
       breaker,
@@ -352,6 +390,11 @@ export class PluginRegistrationService {
       nowMs,
     });
 
+    // C5.3: the manifest snapshot just changed — clean up any secret field
+    // the NEW configSchema no longer declares (see this class's own
+    // removeOrphanedManifestSecrets doc comment).
+    await this.removeOrphanedManifestSecrets(pluginId, plugin.manifest, newManifest);
+
     return { plugin: updated, expanded: false, reasons: [] };
   }
 
@@ -365,7 +408,8 @@ export class PluginRegistrationService {
       throw conflict("This plugin is not currently awaiting scope-change re-approval.", instancePath);
     }
 
-    const breaker = this.healthService.getBreaker(pluginId);
+    // C5.1: seed from the row just fetched (closes deferred LPP L-5).
+    const breaker = this.healthService.getBreaker(pluginId, { consecutiveFailures: plugin.consecutive_failures, atMs: nowMs });
     const manifestResult = await fetchPluginManifest(plugin.base_url, {
       lanAllowlist: plugin.lan_allowlist,
       breaker,
@@ -395,6 +439,15 @@ export class PluginRegistrationService {
       actorUserId,
       nowMs,
     });
+
+    // C5.3: the manifest snapshot just changed (this IS the one path a
+    // scope-changed manifest ever actually applies through) — clean up any
+    // secret field the NEW configSchema no longer declares, diffed against
+    // the snapshot that was in place before this approval (plugin.manifest,
+    // fetched above — the last-approved one, per refreshPlugin's own header
+    // on why it deliberately leaves the stored snapshot untouched pending
+    // approval).
+    await this.removeOrphanedManifestSecrets(pluginId, plugin.manifest, manifest);
 
     breaker.reset();
     return this.healthService.runHealthCheck(pluginId, nowMs);

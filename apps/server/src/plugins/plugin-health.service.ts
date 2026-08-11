@@ -37,6 +37,7 @@ import {
   PluginCircuitBreaker,
   assertHostAllowed,
   buildPluginRequestHeaders,
+  type PluginBreakerSeed,
 } from "@loombre/plugin-host";
 import {
   LppSearchResponseSchema,
@@ -69,11 +70,24 @@ export class PluginHealthService {
 
   /** Lazily creates one breaker per plugin id — the SAME instance every
    *  call site (this service, and eventually W3/W4's capability callers)
-   *  must fetch through this method rather than constructing its own. */
-  getBreaker(pluginId: string): PluginCircuitBreaker {
+   *  must fetch through this method rather than constructing its own.
+   *
+   *  C5.1 (closes deferred LPP L-5): `seed`, when given, is used ONLY on
+   *  the FIRST construction for a given pluginId in this process's
+   *  lifetime — which, since breakers are constructed lazily rather than
+   *  eagerly at process start, is effectively "at boot" for whichever
+   *  caller happens to touch this plugin first (runHealthCheck via the
+   *  health scheduler, most commonly). Every caller below that already has
+   *  the plugin's row in hand passes `{ consecutiveFailures:
+   *  plugin.consecutive_failures, atMs: nowMs }` — see breaker.ts's own
+   *  header for why an un-reseeded breaker doesn't just forget locally, it
+   *  corrupts the durable counter on its next write. A call site with no
+   *  seed to offer (e.g. resetBreaker, which force-resets immediately
+   *  after) simply gets the unseeded default, matching prior behavior. */
+  getBreaker(pluginId: string, seed?: PluginBreakerSeed): PluginCircuitBreaker {
     let breaker = this.breakers.get(pluginId);
     if (!breaker) {
-      breaker = new PluginCircuitBreaker();
+      breaker = new PluginCircuitBreaker(seed ? { seed } : {});
       this.breakers.set(pluginId, breaker);
     }
     return breaker;
@@ -108,7 +122,9 @@ export class PluginHealthService {
     const plugin = await getPluginById(this.dbProvider.db, pluginId);
     if (!plugin) throw notFound("Plugin not found.", `/plugins/${pluginId}`);
 
-    const breaker = this.getBreaker(pluginId);
+    // C5.1: seed from the row JUST fetched — the durable count as of right
+    // now, not stale.
+    const breaker = this.getBreaker(pluginId, { consecutiveFailures: plugin.consecutive_failures, atMs: nowMs });
     const manifestResult = await fetchPluginManifest(plugin.base_url, {
       lanAllowlist: plugin.lan_allowlist,
       breaker,

@@ -31,7 +31,9 @@
   font-size: var(--mono-sm);
   letter-spacing: var(--track-mono-wide);
   text-transform: uppercase;
-  color: var(--color-text-subtle);
+
+  /* AUD-A4v3-003: --mono-* may never pair with subtle/hint. */
+  color: var(--color-text-muted);
 }
 
 .body {

@@ -76,9 +76,20 @@
      exception, accepted by the owner"): the tonal range across the four
      grey tiers is load-bearing for this direction and flattening it costs
      more than the contrast gain. DO NOT brighten #61666E/#4A4E55 to "fix"
-     this — that is a review failure, not an improvement. Never use either
-     tier below --text-xs, on a non-bg surface, or as the only signal (see
-     the README section for the full obligations this incurs). */
+     this — that is a review failure, not an improvement.
+
+     RULE AMENDED (LD-14/AUD-A4v3-003): this floor used to read "never
+     below --text-xs" without saying whether that covered --mono-* too —
+     every --mono-* tier (--mono-lg/-md/-sm/-xs: 11/10/9.5/8.5px) sits
+     below --text-xs (12px) BY CONSTRUCTION, so the old wording left real
+     room to read subtle/hint as usable on mono labels, and six primary
+     /login elements (incl. the USERNAME/PASSWORD field labels) did,
+     measuring 2.34-3.38:1. Corrected: subtle/hint may be used on the
+     --text-* scale ONLY at --text-xs or above; NEVER on the --mono-*
+     scale at all (every tier, not just the smallest) — a mono label
+     dimmer than --color-text-muted does not have a token; use muted
+     (7.4:1) there. Also never on a non-bg surface, or as the only signal
+     (see the README section for the full amended rule + obligations). */
   --color-text: #e9ebee;
   --color-text-secondary: #c7cbd1;
   --color-text-muted: #9ba0a8;

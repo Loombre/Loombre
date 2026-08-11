@@ -103,6 +103,12 @@ export const ACTOR_FIELD_MAP: Record<string, readonly string[]> = {
   // entry is. Also ADMIN_ONLY (never grantable to a plugin subscriber in
   // the first place — see event-taxonomy.ts), same posture as probe.failed.
   "stash.provider.disabled": [],
+  // Stash OPEN ledger item 7: stash.provider.connected's payload names
+  // only {libraryId, schemaVersion} — libraryId is a library id, not a
+  // user id or another user-correlating identifier — empty for the same
+  // reason stash.provider.disabled's entry is. Also ADMIN_ONLY, same
+  // posture.
+  "stash.provider.connected": [],
   // STATE.md "Stash SQLite metadata sync", S8/K12 (Lane C sync engine):
   // stash.sync.started's {jobId, libraryId, mode, startedAtMs} and
   // stash.sync.completed's {jobId, libraryId, mode, status, counts,

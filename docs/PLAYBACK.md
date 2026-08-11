@@ -221,8 +221,23 @@ Evaluated on source `hdr`:
   tone-map REQUIRED, reason `dv-profile5-requires-tonemap`.
 - `dv` profile 7/8: device.dolbyVision → copy; else if dvBlCompatId marks an
   HDR10-compatible BL and device.hdr10 → copy base layer with reason
-  `dv-stripped-to-hdr10` (metadata strip in arg builder, no re-encode);
+  `dv-stripped-to-hdr10` (bitstream-level strip in the arg builder, no
+  re-encode — see §6 segment 7 for exactly what is emitted);
   else tone-map required, `hdr-tone-map-required`.
+  - **The strip is REAL as of ENGINE_VERSION 0.9.0 (LD-3/LD-15,
+    2026-08-11).** It previously described itself as a "metadata strip in
+    arg builder" while the builder emitted nothing at all, so a DV copy
+    carried its RPU — and, for dual-layer profile 7, its whole enhancement
+    layer — through to an HDR10-only device. One predicate
+    (`src/dv.ts`'s `dvStripApplies()`) now decides BOTH the reason and the
+    ffmpeg flags, so the two cannot drift apart again.
+  - **Profile 7 dual-layer (LD-15):** the enhancement layer is dropped by
+    the same strip — it is meaningless without the RPU that drives it.
+    Profile-7 sources are NOT gated out; they strip to single-layer HDR10
+    like profile 8.1 does. The outcome difference is reported in the
+    reason's `detail` (`elDropped=true|false`), not as a separate reason
+    code: `PlanReasonCode` is a closed enum whose additions are contract
+    PRs (§4).
 - `hdr10`/`hlg`: device supports matching flag → copy; else tone-map required,
   `hdr-tone-map-required`.
 Tone-map required → transcode. Method chosen in Stage G; if Stage G yields no
@@ -323,6 +338,13 @@ Informational-class: `dv-stripped-to-hdr10`, `subtitle-styling-lost`,
 `hw-encoder-selected:*`, `software-fallback:*`.
 Every reason carries `{ code, streamIndex?, detail? }`; matrix cases assert on
 codes, golden tests on full objects.
+`dv-stripped-to-hdr10`'s `detail` is
+`dvProfile=<n> blCompatId=<n> elDropped=<bool>` — `elDropped` states whether a
+dual-layer profile-7 enhancement layer went with the RPU (LD-15). It rides in
+`detail` deliberately: the code list above is CLOSED, additions to it are
+contract PRs against `packages/contract/openapi.yaml`'s `PlanReasonCode`, and
+`apps/server/test/contract-reason-codes.spec.ts` fails the build in both
+directions if the engine and the contract disagree.
 
 ## 5. Output contract
 
@@ -365,6 +387,7 @@ sorted keys (`stableStringify` in shared).
    GOP for the rest of that invocation loses its own HEVC RASL leading
    pictures (NAL types 8/9) each time it starts, not just the first one at
    the join — a small, PERSISTENT per-GOP frame drop (roughly `bframes`
+
    frames per keyframe interval) for the remainder of the seek-restarted
    segment run, not a one-time join cost. ACCEPTED TRADE-OFF (owner
    decision, 2026-08-10): this persistent minor frame drop is traded
@@ -376,6 +399,33 @@ sorted keys (`stableStringify` in shared).
    QA re-verification of long post-seek playback (does the persistent
    per-GOP drop stay imperceptible over minutes of playback, not just at
    the join) before rc.7 ships.
+   **Interpretation L — DOLBY VISION STRIP (LD-3/LD-15, ffmpeg-verified
+   2026-08-11 against real DV samples).** Also video-COPY-branch only, and
+   emitted whenever `src/dv.ts`'s `dvStripApplies()` holds for the selected
+   stream and device (DV profile 7 or 8, `dvBlCompatId` non-null, device
+   hdr10-capable, device NOT DV-capable):
+   `-bsf:v filter_units=remove_types=62-63` plus `-tag:v hvc1`.
+   HEVC UNSPEC62 is the Dolby Vision RPU and UNSPEC63 the dual-layer
+   enhancement layer (Rec. ITU-T H.265 Table 7-1 reserves 48-63 as
+   unspecified; Dolby's streams spec assigns these two), so removing both
+   leaves clean single-layer HDR10. The `-tag:v hvc1` is not cosmetic: a
+   real DV source's sample entry is `dvh1`/`dvhe`, a plain copy PRESERVES
+   that fourcc, and leaving it would still announce Dolby Vision over a
+   bitstream with no DV data left in it.
+   *Mechanism chosen by measurement, not preference:* ffmpeg's DV-aware
+   `dovi_rpu=strip=1` bsf removes the RPU but leaves EVERY enhancement-layer
+   NAL unit behind (all 104 of them on the profile-7 fixture), failing
+   LD-15 outright; it also needs ffmpeg ≥ 7.1, whereas `filter_units` long
+   predates it and so carries no vendored-build version risk.
+   *Composition with interpretation K:* ffmpeg honours only the LAST
+   `-bsf:v` for a stream, so when both strips apply they MUST merge into one
+   filter_units value — `remove_types=8-9|62-63`. Emitting two flags
+   silently discards the open-GOP strip (verified by doing exactly that and
+   finding RASL units 8/9 intact). Goldens 35-38 pin all four corners.
+   *Not container-gated:* the strip belongs to every repackage, mp4
+   download-remux included — and the builder is never called at all for a
+   direct-play plan, so reaching it IS Stage C's "repackaging happened"
+   condition.
 8. Audio encode/copy block
 9. Output: HLS muxer flags — `-f hls -hls_time {SEG_DUR} -hls_playlist_type
    event -hls_segment_type {fmp4|mpegts} -hls_fmp4_init_filename init.mp4
@@ -415,6 +465,17 @@ bundled ffmpeg or GPU/driver fingerprint changes. Known quirk regressions
 macOS: videotoolbox → software. Windows: nvenc → qsv → amf → d3d11va(decode-
 only) → software. Linux: nvenc → qsv → vaapi → software.
 
+**Arch pruning (LD-2).** The rows above are keyed on platform AND
+architecture. The Windows row is an x86 row: nvenc, qsv and amf are all
+x86-vendor facts, and d3d11va only LOOKS architecture-neutral — its ARM64
+Windows path runs against drivers nobody in this project has probed, and an
+unverified hwaccel fails mid-session after the plan is already committed.
+**Windows on arm64 → `software` only.** macOS and Linux on arm64 are
+unchanged (Apple Silicon videotoolbox is the primary Mac target; Linux arm64
+vaapi/nvenc are real). Re-open condition, and the only one: a real probe-
+battery PASS for d3d11va decode on real ARM64 Windows hardware, recorded in
+STATE.md.
+
 ### 8.3 Selection & pipelines
 Choose the first backend (platform order) whose VERIFIED caps cover BOTH the
 required decode codec and target encode codec; else first covering encode with
@@ -436,21 +497,161 @@ State machine: `created → starting → active ⇄ suspended → seeking → ac
   (NVMe path from config); first playlist request blocks ≤ 8 s for init +
   first segment, else 503-retry-after (client shows buffering).
 - **Segment-ahead throttle:** monitor produced-vs-requested segment index;
-  when ahead > 10 segments (60 s), suspend encode (SIGSTOP on POSIX; on
-  Windows, NtSuspendProcess via job object helper); resume at ahead ≤ 5.
-  Throttling is mandatory — a T0 box must never spend CPU racing ahead of a
-  paused viewer.
+  when ahead > 10 segments (60 s), suspend encode (SIGSTOP on the ffmpeg
+  process group; resume with SIGCONT at ahead ≤ 5). Throttling is mandatory
+  — a T0 box must never spend CPU racing ahead of a paused viewer.
+  - **POSIX (darwin/linux):** the above, literally — real SIGSTOP/SIGCONT
+    (`apps/worker/src/transcode/process.ts`), the session row carrying
+    `suspended_by_throttle = true` while stopped.
+  - **Windows:** NOT process suspension. Job-object suspension
+    (`NtSuspendProcess`) needs a native addon, and this project ships no
+    new native dependency for it (P3.8). The shipped mechanism is
+    **`-readrate` pacing**: every win32 ffmpeg run is spawned with
+    `-readrate 1.2` injected into its global-options segment
+    (`apps/worker/src/transcode/args.ts` `injectReadrate`,
+    `WIN32_READRATE_MULTIPLIER` in `throttle.ts`), pacing the encode at
+    ~1.2× realtime so it structurally never races far enough ahead to need
+    suspending. Behavioral consequence, stated rather than hidden: a win32
+    worker never SIGSTOPs anything and never writes
+    `suspended_by_throttle = true` — `reconcileThrottle` returns
+    `{ action: 'none' }` whenever the mechanism is `readrate`. Swapping a
+    real suspension helper in later changes only
+    `throttleMechanismForPlatform`'s win32 branch; the reconciliation table
+    is mechanism-agnostic and does not move.
 - **Seek:** target inside produced range → serve. Outside → kill pipeline,
   restart with `{SEEK_SECONDS}=target` and `{START_SEG}` continuing the
   numbering, playlist gains `EXT-X-DISCONTINUITY`. Old segments beyond a
   retention window (120 s behind live edge) are deleted.
+  - **"Outside" is decided per segment GET** (apps/server's
+    `hls-file.controller.ts`): the requested index is more than 3 ahead of
+    `produced_segment`, OR the file is simply not on disk (a run that has
+    not reached that number yet, or a retention-pruned one). Either way the
+    response is 503 + `Retry-After`, never 404 — a 404 makes hls.js treat
+    the segment as permanently gone instead of "coming after a restart".
+  - **Seek-target derivation (MANDATORY — never nominal arithmetic).** The
+    ms value written to `seek_target_ms` is derived from the durations the
+    session ACTUALLY produced: the `#EXTINF` values in the served
+    `media.m3u8`. `segmentIndex × segmentDurationSec × 1000` is wrong by
+    construction — `-hls_time {SEG_DUR}` is a lower bound and
+    `-force_key_frames expr:gte(t,n_forced*{SEG_DUR})` (§6) cuts at the
+    first keyframe AT OR AFTER each mark, so a real segment overshoots and
+    the error compounds with the index (tens of seconds by mid-feature; a
+    seek then lands somewhere the viewer did not ask for, and a second seek
+    compounds it again). The rule, in order:
+      1. no served playlist readable → `index × segmentDurationSec × 1000`
+         (LAST resort only — there is nothing measured to reason from);
+      2. index at/after a listed entry → exact cumulative sum of the real
+         durations before it, anchored at `firstListedIndex × mean`;
+      3. index before every listed entry (backward seek into the pruned
+         head) → `index × mean`;
+    where `mean` is the measured mean of every listed segment. Rule 2 is
+    EXACT whenever the playlist still starts at index 0 — the anchor is
+    `0 × mean` and nothing is estimated.
+  - **Per-run source anchoring (EXACT for every run).** The rules above are
+    a presentation-timeline answer, and presentation only equals source for
+    run 0. With `transcode_runs` (migration 0043) the derivation resolves
+    the segment's OWNING RUN and computes
+    `run.source_origin_ms + Σ(real #EXTINF of that run's OWN segments from
+    run.start_segment up to index-1)`. Inside one run, playlist duration
+    maps 1:1 to source time — neither a copy nor a transcode changes the
+    rate — so this is exact for every run. Only that run's own segments are
+    summed; a previous run's durations describe a different region of the
+    source entirely. Segments of the run already pruned out of the playlist
+    are the single estimated term, and they extrapolate at THAT RUN's own
+    measured mean. **Run ownership follows the segment counter, never the
+    clock:** a backward seek starts a later run at an EARLIER
+    `source_origin_ms`, so the origin is not monotonic across runs and
+    `start_segment` is the only key that is. A session with no recorded runs
+    keeps the playlist-only chain above — "no anchor available" must never
+    be read as "origin 0".
+  - **`EXT-X-MEDIA-SEQUENCE` is MANDATORY once retention has pruned.**
+    Retention deletes segments from the FRONT of the served playlist, and
+    RFC 8216 §4.3.3.2 reads an absent media-sequence tag as 0 — "the first
+    segment listed is segment number 0". Without the tag every prune
+    silently renumbers the playlist from the client's point of view, and
+    hls.js derives each fragment's `sn` (and the media-time offset it maps
+    a seek to) from that base. Because this layer numbers segments
+    absolutely and continuously across every seek-restart run, the first
+    surviving segment's own index IS the media sequence number — the server
+    adds `#EXT-X-MEDIA-SEQUENCE:<firstIndex>` when, and only when,
+    `firstIndex > 0`. An unpruned playlist stays byte-identical.
+  - **Clamp:** the derived target is clamped to `[0, durationMs]` at the
+    controller before `requestSeek`. `requestSeek` itself writes
+    `seek_target_ms` verbatim by design (it never re-derives a decision its
+    caller made), so the clamp belongs to whoever decides the target. An
+    unclamped value becomes an ffmpeg `-ss` past EOF: a restart that
+    produces nothing, forever. An unprobed file (no `durationMs`) keeps the
+    lower bound only.
 - **Heartbeat:** client progress PUT doubles as heartbeat; no heartbeat for
   90 s → suspend; 15 min → end session, delete dir, emit `playback.ended`.
+  - **Reported positions are PRESENTATION time; stored positions are SOURCE
+    time.** A player reports `video.currentTime`, its position in the served
+    playlist's timeline — which runs continuously across every
+    `EXT-X-DISCONTINUITY`. Each seek run is spawned with `-ss` and no
+    `-copyts`, so its own output timestamps restart at zero, and the two
+    timelines diverge by exactly the accumulated seek offsets. Progress,
+    resume points and `positionMs` everywhere else in this system are
+    source-timeline values, so a post-seek heartbeat stored verbatim points
+    at the wrong place in the file.
+  - **The conversion is server-side, at ingestion** (`PUT /progress/{itemId}`
+    when it carries a `sessionId`). The client is left alone: it reports
+    what its media element knows, and only the server holds the run map
+    (`transcode_runs`) and the served playlist needed to reconcile them.
+    The mapping walks the playlist to find the segment containing the
+    reported position, then re-expresses it in that segment's OWN run:
+    `source = owningRun.source_origin_ms + (offset of the segment within
+    its run) + (how far into the segment the position sits)`. The
+    within-segment remainder carries through unchanged for the same reason
+    the offsets do — inside a run, presentation and source advance at the
+    same rate.
+  - **It never guesses.** No sessionId, no staging dir, no runs, an
+    unreadable playlist, or a position past the playlist's end all keep the
+    client's value exactly as sent. That value is already correct for every
+    direct-play session and every transcode session that has not seeked, so
+    declining to map is always safe; a wrong guess would silently corrupt a
+    resume point.
 - **Concurrency:** global semaphore = `maxSimultaneousTranscodes`; admission
   beyond it fails the session create with a typed 429 (`transcode-slots-
   exhausted`) — clients fall back to a lower-bitrate direct attempt or queue.
 - **Audit:** the serialized plan + engineVersion stored on the session row at
   create; ffmpeg stderr tail (last 4 KB ring) stored on failure.
+- **Process lifecycle (no orphaned encoders).** Runs are spawned detached on
+  POSIX so the whole process group can be signalled, which also means they do
+  not die with their worker. Two mechanisms close that: (a) the worker's
+  graceful shutdown terminates every in-flight run before stopping the queue
+  (SIGCONT-then-SIGTERM, so a throttle-suspended run dies promptly rather than
+  sitting on a pending signal); (b) a crash — SIGKILL/OOM/power cut, where no
+  shutdown code runs — is cleaned up at the NEXT worker boot: each run's pid
+  and its supervising worker's start time are persisted on the session row,
+  and the boot reaper kills any process still alive from a previous worker
+  generation, verified by pid **and** command line against that session's
+  staging dir (a pid alone is never enough — pids are reused). A live run
+  whose supervisor died is an orphan by definition: nothing remains to
+  throttle, seek, or end it. The admission slot is released only after the
+  process is confirmed gone, so a freed slot never sits on top of a running
+  encoder. Boot reconciliation covers the `transcode` job ledger under
+  session-lifetime horizons, and the heartbeat sweeper logs a warning when it
+  ends a session that still names a live pipeline.
+- **Redundant seek requests are absorbed, not obeyed.** A client retrying a
+  503-retry-after makes the server record the same seek target repeatedly.
+  The worker restarts only for a target the in-flight run is not already
+  serving — outside `[run origin, run origin + produced]`, or with that run
+  already exited; a repeat of what is being produced is cleared without a
+  restart, without a discontinuity, and without a status change. Obeying each
+  repeat killed the run before it could produce its first segment, so the
+  client never stopped retrying: a livelock that burned the most expensive
+  part of a run indefinitely. A genuinely different target — including a
+  backward one — still restarts. Once retention has pruned the head of the
+  in-flight run, matching narrows to the run's exact origin, since the rest
+  of its window is no longer on disk.
+- **Every run records its source origin.** Segment indices are one global
+  counter across a session's runs, while each seek run's own output timeline
+  restarts at zero (`-ss`, no `-copyts`). Each spawned run therefore persists
+  its run index, the segment index it starts numbering at, and where it begins
+  in SOURCE time — so a served segment index can be mapped back to a real
+  source position. Ownership of an index follows the segment counter, never
+  the source clock: a backward seek starts a later run at an earlier origin,
+  so source origin is not monotonic across runs.
 - **Direct-play** sessions bypass all of this: range-request file serving with
   progress heartbeats only.
 

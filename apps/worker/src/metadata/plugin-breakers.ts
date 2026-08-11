@@ -11,27 +11,39 @@
 // state in apps/worker that deliberately does NOT get reconstructed per
 // job. `metadataConsumerHandler` (consumer.ts) owns exactly one instance
 // of this registry for its own lifetime (constructed once when the
-// factory runs at worker boot), matching packages/plugin-host/src/
-// breaker.ts's own documented "a process restart resets this class to
-// closed" tradeoff.
+// factory runs at worker boot).
+//
+// C5.1 fix wave (closes deferred LPP L-5, worker-side — mirrors
+// apps/server/src/plugins/plugin-health.service.ts's identical fix):
+// `getBreaker` now accepts an optional `seed` (typically
+// `plugins.consecutive_failures`, read fresh by the caller right before
+// this call — see chain-resolution.ts), forwarded only on a given
+// pluginId's FIRST construction in this registry's lifetime — effectively
+// "at boot" for this lazily-constructed registry. Closes the cross-process
+// gap: apps/server's periodic health check writes the SAME durable column
+// on its own cadence, so a worker process that has never called a given
+// plugin yet must not construct a breaker blind to failures another
+// process already recorded there.
 
-import { PluginCircuitBreaker } from '@loombre/plugin-host';
+import { PluginCircuitBreaker, type PluginBreakerSeed } from '@loombre/plugin-host';
 
 export interface PluginBreakerRegistry {
   /** Returns the SAME PluginCircuitBreaker instance for a given pluginId
    *  across every call for the life of this registry — constructing one
    *  with default options (LPP_BREAKER_FAILURE_THRESHOLD /
-   *  LPP_BREAKER_RESET_TIMEOUT_MS) on first use. */
-  getBreaker(pluginId: string): PluginCircuitBreaker;
+   *  LPP_BREAKER_RESET_TIMEOUT_MS), seeded from `seed` if given, on first
+   *  use. `seed` is ignored on every call after the first for a given
+   *  pluginId (the existing instance is returned as-is). */
+  getBreaker(pluginId: string, seed?: PluginBreakerSeed): PluginCircuitBreaker;
 }
 
 export function createPluginBreakerRegistry(): PluginBreakerRegistry {
   const breakers = new Map<string, PluginCircuitBreaker>();
   return {
-    getBreaker(pluginId: string): PluginCircuitBreaker {
+    getBreaker(pluginId: string, seed?: PluginBreakerSeed): PluginCircuitBreaker {
       let breaker = breakers.get(pluginId);
       if (!breaker) {
-        breaker = new PluginCircuitBreaker();
+        breaker = new PluginCircuitBreaker(seed ? { seed } : {});
         breakers.set(pluginId, breaker);
       }
       return breaker;
