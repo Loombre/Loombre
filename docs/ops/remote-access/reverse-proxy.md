@@ -88,7 +88,7 @@ media.example.com {
     # invite-link PAGE — it deliberately falls through to the web UI catch-
     # all below, not this @api matcher (F1: the two used to collide on the
     # same path before the API's own claim routes moved under /invites).
-    @api path /v1/* /playback/* /healthz /setup/* /invites/claim/* /auth/forgot-password /auth/reset-password
+    @api path /v1/* /playback/* /images/* /healthz /setup/* /invites/claim/* /auth/forgot-password /auth/reset-password
     reverse_proxy @api 127.0.0.1:3001
     reverse_proxy 127.0.0.1:3000
 }
@@ -149,8 +149,12 @@ server {
     }
 
     # Remaining API paths (requirements 3-5) — everything the browser
-    # calls on the server origin rather than the web UI.
-    location ~ ^/(v1|playback|setup)/ {
+    # calls on the server origin rather than the web UI. `images` was
+    # missing here for a while despite requirement 3 naming it explicitly
+    # alongside the playback file route (both are `?token=`-authed
+    # <img>/<video> src targets) — every poster/thumbnail would silently
+    # fall through to the web UI location below without it.
+    location ~ ^/(v1|playback|images|setup)/ {
         proxy_pass http://127.0.0.1:3001;
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -206,8 +210,11 @@ labels:
   # prefix) is deliberately NOT in this rule — that's the human
   # invite-link PAGE, and falls through to the web UI router below (F1:
   # the API's own claim routes moved under /invites/claim/* specifically
-  # so the two stop colliding).
-  - "traefik.http.routers.loombre-api.rule=Host(`media.example.com`) && (PathPrefix(`/v1`) || PathPrefix(`/playback`) || PathPrefix(`/setup`) || Path(`/healthz`) || PathPrefix(`/invites/claim`) || Path(`/auth/forgot-password`) || Path(`/auth/reset-password`))"
+  # so the two stop colliding). PathPrefix(`/images`) (requirement 3) is
+  # the OTHER `?token=`-authed <img>/<video> src target alongside the
+  # playback file route — missing here would silently 404 every
+  # poster/thumbnail through this router.
+  - "traefik.http.routers.loombre-api.rule=Host(`media.example.com`) && (PathPrefix(`/v1`) || PathPrefix(`/playback`) || PathPrefix(`/images`) || PathPrefix(`/setup`) || Path(`/healthz`) || PathPrefix(`/invites/claim`) || Path(`/auth/forgot-password`) || Path(`/auth/reset-password`))"
   - "traefik.http.routers.loombre-api.tls.certresolver=letsencrypt"
   - "traefik.http.routers.loombre-api.service=loombre-api"
   - "traefik.http.services.loombre-api.loadbalancer.server.port=3001"
