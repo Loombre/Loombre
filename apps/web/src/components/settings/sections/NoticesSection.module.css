@@ -24,6 +24,16 @@
   font-weight: var(--weight-semibold);
 }
 
+/* LD-4: page-level intro, moved out of ComposeNoticeCard's own .note.
+   Deliberately no max-width (LD-7's lesson) — this should use the full
+   content column width SettingsPageLayout already provides. */
+.intro {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--muted);
+  line-height: var(--leading-normal);
+}
+
 .cardTitle {
   margin: 0 0 var(--space-sm);
   font-size: var(--text-lg);
@@ -114,9 +124,10 @@
 
 /* ── Compose card ────────────────────────────────────────────────────── */
 
-/* Symmetric vertical rhythm: the shared .note above carries margin:0 (it
-   relies on its parent for spacing), so the presets row owns BOTH sides —
-   equal air above and below, instead of pills glued to the note. */
+/* LD-4: the shared .note that used to sit directly above this row (inside
+   ComposeNoticeCard) moved to the page-level .intro above — this row now
+   sits right under the card title, so it owns its own top/bottom margin
+   rather than relying on a sibling note for spacing. */
 .presetsRow {
   display: flex;
   flex-wrap: wrap;

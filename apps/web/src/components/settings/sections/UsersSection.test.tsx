@@ -169,4 +169,10 @@ describe("UsersSection — Lane D additions", () => {
     expect(view!.container.textContent).toContain("Invites");
     expect(view!.container.textContent).toContain("No invites yet");
   });
+
+  it("LD-6 (owner QA, 2026-08-10): section heading reads 'Active Users', count intact", async () => {
+    await render();
+    const heading = view!.container.querySelector("h2");
+    expect(heading?.textContent).toBe("Active Users · 2");
+  });
 });

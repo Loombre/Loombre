@@ -344,3 +344,10 @@ describe("ComposeNoticeCard — publish gated until the parent's active-notice f
     expect(buttonByText("Publish notice").disabled).toBe(true);
   });
 });
+
+describe("ComposeNoticeCard — LD-4 (owner QA, 2026-08-10)", () => {
+  it("no longer renders the page-level notices copy — it moved to NoticesSection, under the page title", async () => {
+    await render(null);
+    expect(textOf()).not.toContain("Notices are shown to every user on this server");
+  });
+});

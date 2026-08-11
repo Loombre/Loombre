@@ -301,13 +301,16 @@ export function LibrariesSection({ heading }: { heading: string | null }): React
 
   return (
     <div className={styles.page}>
-      {heading !== null && <h1 className={styles.heading}>{heading}</h1>}
-
-      <div className={styles.header}>
-        <h2 className={styles.title}>
-          Libraries{libraries !== null && <span className={styles.countMono}> · {libraries.length}</span>}
-        </h2>
-      </div>
+      {/* LD-5 (owner QA, 2026-08-10): the in-content "Libraries · N" heading
+          duplicated this page title — removed; the count now attaches
+          directly to the page title instead of living in its own
+          redundant h2. */}
+      {heading !== null && (
+        <h1 className={styles.heading}>
+          {heading}
+          {libraries !== null && <span className={styles.countMono}> · {libraries.length}</span>}
+        </h1>
+      )}
 
       {error && <p className={styles.errorBanner}>{error}</p>}
 

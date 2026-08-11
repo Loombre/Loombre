@@ -87,6 +87,15 @@ export function NoticesSection({ heading }: { heading: string | null }): React.J
     <div className={styles.page}>
       {heading !== null && <h1 className={styles.heading}>{heading}</h1>}
 
+      {/* LD-4 (owner QA, 2026-08-10): copy moved VERBATIM out of
+          ComposeNoticeCard's own `.note` — it belongs to the whole page,
+          not just the compose form, and the page should open with it. */}
+      <p className={styles.intro}>
+        Notices are shown to every user on this server — never include restricted-zone references or personal
+        information. A notice is communication only: publishing one does not restart, shut down, or otherwise change
+        anything on the server by itself (use Settings → Server for that).
+      </p>
+
       <ActiveNoticeCard notice={activeNotice} loading={items === null} onChanged={refresh} />
 
       <ComposeNoticeCard activeNotice={activeNotice} activeNoticeLoaded={items !== null} onPublished={refresh} />
