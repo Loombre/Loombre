@@ -3,7 +3,7 @@
 
 // Loombre :: apps/web/src/components/ui/SegmentedControl.tsx
 //
-// Item 1 (an upstream media server-study Wave A, radiogroup sweep): this — and the other 6
+// Item 1 (Wave A, radiogroup sweep): this — and the other 6
 // SegmentedControl-family implementations it now consolidates
 // (browse/LibraryPills.tsx, browse/SortControl.tsx,
 // restricted/ZoneSortControl.tsx, detail/SeasonPillTabs.tsx) — used to ship

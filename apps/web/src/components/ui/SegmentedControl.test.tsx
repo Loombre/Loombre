@@ -116,7 +116,7 @@ describe("SegmentedControl — DOM structure", () => {
   });
 });
 
-// Item 1 (an upstream media server-study Wave A): replaces the pre-existing role="tablist"/
+// Item 1 (Wave A): replaces the pre-existing role="tablist"/
 // role="tab" with no keyboard support beyond plain Tab (STATE.md W2+W3's
 // recorded deferral) with the WAI-ARIA APG "Radio Group" pattern — arrow
 // keys move focus AND selection together, Home/End jump to the ends,

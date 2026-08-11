@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Loombre :: apps/web/src/components/restricted/ZonePosterCard.test.tsx
 //
-// Item 6 (an upstream media server-study Wave A, poster-card a11y sweep): same defect class
+// Item 6 (Wave A, poster-card a11y sweep): same defect class
 // as PosterCard.test.tsx's header describes — app/restricted/page.tsx
 // renders this card's own Continue-Watching-in-zone rail through the SAME
 // Row.tsx horizontal scroller Home uses, so the clipping risk applies here

@@ -13,7 +13,7 @@
 // the FULL fact set (OS/tier/node too), not a duplicate of that compact
 // readout.
 //
-// Item 7 (an upstream media server-study Wave A, /system/info triple-fetch): used to run
+// Item 7 (Wave A, /system/info triple-fetch): used to run
 // its own independent useEffect + apiGet — one of three call sites racing
 // the same request on every Dashboard load (see lib/system-info.ts's
 // header). Now subscribes to the shared useSystemInfo() data layer.

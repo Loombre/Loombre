@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Loombre :: apps/web/src/components/browse/SortControl.test.tsx
 //
-// Item 1 (an upstream media server-study Wave A, radiogroup sweep): consolidated onto the
+// Item 1 (Wave A, radiogroup sweep): consolidated onto the
 // shared ui/SegmentedControl — see that component's own test suite for the
 // exhaustive radiogroup/roving-tabindex/keyboard coverage. This pins
 // SortControl's own {value,label} wiring.

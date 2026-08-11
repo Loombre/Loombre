@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Loombre :: apps/web/src/components/browse/LibraryPills.test.tsx
 //
-// Item 1 (an upstream media server-study Wave A, radiogroup sweep): LibraryPills used to
+// Item 1 (Wave A, radiogroup sweep): LibraryPills used to
 // hand-roll role="tablist"/role="tab" markup with no keyboard support
 // beyond plain Tab — now consolidates onto the shared ui/SegmentedControl,
 // which owns the WAI-ARIA radiogroup + roving-tabindex + arrow-key

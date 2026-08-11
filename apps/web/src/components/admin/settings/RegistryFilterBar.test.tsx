@@ -66,8 +66,8 @@ describe("RegistryFilterBar", () => {
         onQueryChange={() => {}}
       />,
     );
-    const tabs = Array.from(view.container.querySelectorAll('[role="tab"]'));
-    const selected = tabs.filter((t) => t.getAttribute("aria-selected") === "true");
+    const tabs = Array.from(view.container.querySelectorAll('[role="radio"]'));
+    const selected = tabs.filter((t) => t.getAttribute("aria-checked") === "true");
     expect(selected).toHaveLength(1);
     expect(selected[0]!.textContent).toContain("Rate limits");
   });
@@ -83,7 +83,7 @@ describe("RegistryFilterBar", () => {
         onQueryChange={() => {}}
       />,
     );
-    const tabs = Array.from(view.container.querySelectorAll('[role="tab"]'));
+    const tabs = Array.from(view.container.querySelectorAll('[role="radio"]'));
     const databasePill = tabs.find((t) => t.textContent?.includes("Database"))!;
     const transcodePill = tabs.find((t) => t.textContent?.includes("Transcode"))!;
     expect(databasePill.querySelector("svg")).not.toBeNull();
@@ -106,7 +106,7 @@ describe("RegistryFilterBar", () => {
         onQueryChange={() => {}}
       />,
     );
-    const tab = view.container.querySelector('[role="tab"]')!;
+    const tab = view.container.querySelector('[role="radio"]')!;
     expect(tab.querySelector("svg")).not.toBeNull();
   });
 
@@ -122,7 +122,7 @@ describe("RegistryFilterBar", () => {
         onQueryChange={() => {}}
       />,
     );
-    const tabs = Array.from(view.container.querySelectorAll('[role="tab"]'));
+    const tabs = Array.from(view.container.querySelectorAll('[role="radio"]'));
     const databasePill = tabs.find((t) => t.textContent?.includes("Database")) as HTMLButtonElement;
     act(() => databasePill.click());
     expect(onSelectCategory).toHaveBeenCalledWith("database");
@@ -159,7 +159,7 @@ describe("RegistryFilterBar", () => {
         onQueryChange={() => {}}
       />,
     );
-    const tabs = Array.from(view.container.querySelectorAll('[role="tab"]'));
+    const tabs = Array.from(view.container.querySelectorAll('[role="radio"]'));
     expect(tabs).toHaveLength(3);
     // Each pill's own text is "<label><count>" (FilterChip renders the
     // label span before the count span) — startsWith is enough to pin DOM
@@ -185,7 +185,7 @@ describe("RegistryFilterBar", () => {
         onQueryChange={() => {}}
       />,
     );
-    const tabs = Array.from(view.container.querySelectorAll('[role="tab"]'));
+    const tabs = Array.from(view.container.querySelectorAll('[role="radio"]'));
     expect(tabs[0]!.textContent?.startsWith("Database")).toBe(true);
     expect(tabs[1]!.textContent?.startsWith("Rate limits")).toBe(true);
     expect(tabs[2]!.textContent?.startsWith("Transcode")).toBe(true);
@@ -221,5 +221,99 @@ describe("RegistryFilterBar", () => {
     );
     const input = view.container.querySelector('input[aria-label="Filter advanced keys"]') as HTMLInputElement;
     expect(input.value).toBe("rateLimit");
+  });
+});
+
+// Item 1 (Wave A, radiogroup sweep): the category pill row
+// used to be role="tablist"/role="tab" with no keyboard support beyond
+// plain Tab — rebuilt on the WAI-ARIA APG Radio Group pattern (same as
+// ui/SegmentedControl.tsx, applied directly here since FilterChip's
+// icon/count decoration is a different shape than a plain segment label).
+describe("RegistryFilterBar — radiogroup pattern + roving tabindex (item 1)", () => {
+  let view: TestRender | null = null;
+
+  afterEach(() => {
+    view?.unmount();
+    view = null;
+  });
+
+  function pressKey(el: HTMLElement, key: string): void {
+    act(() => {
+      el.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }));
+    });
+  }
+
+  it("is a radiogroup of radios, never a tablist of tabs", () => {
+    view = renderIntoBody(
+      <RegistryFilterBar
+        categories={CATEGORIES}
+        categoryLabels={CATEGORY_LABELS}
+        activeCategory="transcode"
+        onSelectCategory={() => {}}
+        query=""
+        onQueryChange={() => {}}
+      />,
+    );
+    expect(view.container.querySelector('[role="tablist"]')).toBeNull();
+    expect(view.container.querySelectorAll('[role="tab"]')).toHaveLength(0);
+    expect(view.container.querySelector('[role="radiogroup"]')).not.toBeNull();
+  });
+
+  it("exactly ONE pill is in the tab order at a time — the checked one is 0, every other is -1", () => {
+    view = renderIntoBody(
+      <RegistryFilterBar
+        categories={CATEGORIES}
+        categoryLabels={CATEGORY_LABELS}
+        activeCategory="rateLimit"
+        onSelectCategory={() => {}}
+        query=""
+        onQueryChange={() => {}}
+      />,
+    );
+    const radios = Array.from(view.container.querySelectorAll('[role="radio"]')) as HTMLButtonElement[];
+    const checked = radios.find((r) => r.getAttribute("aria-checked") === "true")!;
+    for (const radio of radios) {
+      expect(radio.tabIndex).toBe(radio === checked ? 0 : -1);
+    }
+  });
+
+  it("ArrowRight moves focus AND selection to the next pill (alphabetical DOM order: Database, Rate limits, Transcode)", () => {
+    const onSelectCategory = vi.fn();
+    view = renderIntoBody(
+      <RegistryFilterBar
+        categories={CATEGORIES}
+        categoryLabels={CATEGORY_LABELS}
+        activeCategory="database"
+        onSelectCategory={onSelectCategory}
+        query=""
+        onQueryChange={() => {}}
+      />,
+    );
+    const radios = Array.from(view.container.querySelectorAll('[role="radio"]')) as HTMLButtonElement[];
+    const database = radios.find((r) => r.textContent?.startsWith("Database"))!;
+    pressKey(database, "ArrowRight");
+    expect(onSelectCategory).toHaveBeenCalledWith("rateLimit");
+  });
+
+  it("Home/End jump to the first/last pill", () => {
+    const onSelectCategory = vi.fn();
+    view = renderIntoBody(
+      <RegistryFilterBar
+        categories={CATEGORIES}
+        categoryLabels={CATEGORY_LABELS}
+        activeCategory="rateLimit"
+        onSelectCategory={onSelectCategory}
+        query=""
+        onQueryChange={() => {}}
+      />,
+    );
+    const radios = Array.from(view.container.querySelectorAll('[role="radio"]')) as HTMLButtonElement[];
+    const rateLimit = radios.find((r) => r.textContent?.startsWith("Rate limits"))!;
+
+    pressKey(rateLimit, "End");
+    expect(onSelectCategory).toHaveBeenCalledWith("transcode");
+
+    pressKey(rateLimit, "Home");
+    expect(onSelectCategory).toHaveBeenCalledWith("database");
   });
 });

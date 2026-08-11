@@ -104,10 +104,10 @@ export function PinModal(): React.JSX.Element | null {
 
         {/* Desktop: keyboard-typable numeric field. CSS-hidden on phone,
             where the keypad below is the primary input. Consolidated onto
-            the shared ui/Input.tsx TextInput (item 2, an upstream media server-study Wave
-            A) — inherits Input.module.css's `.input:focus-visible` inset
-            ring instead of shipping its own copy; PinModal.module.css's
-            `.hiddenInput` now only carries the PIN field's own overrides. */}
+            the shared ui/Input.tsx TextInput (item 2, Wave A) — inherits
+            Input.module.css's `.input:focus-visible` inset ring instead of
+            shipping its own copy; PinModal.module.css's `.hiddenInput` now
+            only carries the PIN field's own overrides. */}
         <TextInput
           className={styles.hiddenInput}
           type="password"

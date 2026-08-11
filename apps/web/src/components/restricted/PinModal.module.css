@@ -47,8 +47,8 @@
 }
 
 /* Desktop numeric field — real keyboard input, styled to echo the dot
-   row's spacing rather than showing raw digits. Item 2 (an upstream media server-study
-   Wave A): consolidated onto ui/Input.tsx's TextInput, so the base pill
+   row's spacing rather than showing raw digits. Item 2 (Wave A):
+   consolidated onto ui/Input.tsx's TextInput, so the base pill
    shape/border/color and the inset focus ring now come from
    Input.module.css's `.input` — only the PIN field's own deliberate
    overrides live here. The element+class compound selector

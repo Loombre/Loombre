@@ -10,7 +10,7 @@
 // fetches every season's episodes eagerly up front (bounded — see that
 // file's header) rather than lazily per-tab.
 //
-// Item 1 (an upstream media server-study Wave A, radiogroup sweep): used to hand-roll
+// Item 1 (Wave A, radiogroup sweep): used to hand-roll
 // role="tablist"/role="tab" markup — consolidated onto the shared
 // ui/SegmentedControl, which owns the WAI-ARIA radiogroup + roving-
 // tabindex + arrow-key behavior once. SeasonPillTabs.module.css's own

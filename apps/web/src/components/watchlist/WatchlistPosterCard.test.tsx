@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Loombre :: apps/web/src/components/watchlist/WatchlistPosterCard.test.tsx
 //
-// Item 6 (an upstream media server-study Wave A, poster-card a11y sweep): same defect class
+// Item 6 (Wave A, poster-card a11y sweep): same defect class
 // as PosterCard.test.tsx's header describes — this card's own header
 // documents it hosts on BOTH Home's Row horizontal scroller and /watchlist's
 // CSS grid, so the Row-scroller clipping risk applies here too.

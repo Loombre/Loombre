@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Loombre :: installers/macos/pkg/resources-src/rtf-drift.test.mjs
 //
-// W17 (item 8, an upstream media server-study Wave A): the welcome/readme/conclusion
+// W17 (item 8, Wave A): the welcome/readme/conclusion
 // Installer panes are GENERATED — README.txt in this directory documents
 // the exact regen command, `textutil -convert rtf <pane>.html -output
 // ../resources/<pane>.rtf` — but nothing enforced that the committed .rtf

@@ -3,7 +3,7 @@
 
 // Loombre :: apps/web/src/lib/system-info.ts
 //
-// Shared GET /system/info data layer (item 7, an upstream media server-study Wave A). Before
+// Shared GET /system/info data layer (item 7, Wave A). Before
 // this file, three independent call sites raced the same admin-only
 // endpoint on every Dashboard load: app/admin/page.tsx's DashboardHeader
 // (version/uptime status line), components/admin/system/SystemInfoCard.tsx

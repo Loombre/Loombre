@@ -46,10 +46,22 @@
 // a label-only one) and an unstyled bare-number count. They now render
 // through ui/Chip.tsx's FilterChip, the ONE interactive-chip primitive,
 // so every pill in the row shares one height/padding/active recipe and the
-// count reads as a real badge. The tab semantics (role, aria-selected)
-// stay HERE, forwarded through via FilterChip's ...rest passthrough —
-// FilterChip itself is agnostic to being inside a tablist.
+// count reads as a real badge. The radio semantics (role, aria-checked,
+// roving tabindex, arrow-key nav) stay HERE, forwarded through via
+// FilterChip's ...rest passthrough — FilterChip itself is agnostic to
+// being inside a radiogroup.
+//
+// Item 1 (Wave A, radiogroup sweep): used to be
+// role="tablist"/role="tab" with no keyboard support beyond plain Tab —
+// rebuilt on the WAI-ARIA APG Radio Group pattern (same law as
+// ui/SegmentedControl.tsx, applied directly here rather than consolidated
+// onto it — FilterChip's icon/count decoration is a different shape than
+// a plain segment label). Keyboard movement queries the DOM by role
+// rather than tracking refs per pill: FilterChip is a plain function
+// component (not React.forwardRef), so a ref array isn't available here
+// the way it is for SegmentedControl's own native <button>s.
 
+import { useCallback } from "react";
 import { Lock, Search } from "lucide-react";
 import { Icon } from "../../icon/Icon.js";
 import { FilterChip } from "../../ui/Chip.js";
@@ -81,6 +93,49 @@ export function RegistryFilterBar({
     (categoryLabels[a.category] ?? a.category).localeCompare(categoryLabels[b.category] ?? b.category),
   );
 
+  const activeIndex = Math.max(
+    0,
+    sortedCategories.findIndex((c) => c.category === activeCategory),
+  );
+
+  const focusAndSelect = useCallback(
+    (index: number, container: HTMLElement) => {
+      const target = sortedCategories[index];
+      if (!target) return;
+      const radios = Array.from(container.querySelectorAll<HTMLButtonElement>('[role="radio"]'));
+      radios[index]?.focus();
+      onSelectCategory(target.category);
+    },
+    [sortedCategories, onSelectCategory],
+  );
+
+  function handleKeyDown(event: React.KeyboardEvent<HTMLButtonElement>, index: number): void {
+    const container = event.currentTarget.closest('[role="radiogroup"]');
+    if (!container) return;
+    switch (event.key) {
+      case "ArrowRight":
+      case "ArrowDown":
+        event.preventDefault();
+        focusAndSelect((index + 1) % sortedCategories.length, container as HTMLElement);
+        break;
+      case "ArrowLeft":
+      case "ArrowUp":
+        event.preventDefault();
+        focusAndSelect((index - 1 + sortedCategories.length) % sortedCategories.length, container as HTMLElement);
+        break;
+      case "Home":
+        event.preventDefault();
+        focusAndSelect(0, container as HTMLElement);
+        break;
+      case "End":
+        event.preventDefault();
+        focusAndSelect(sortedCategories.length - 1, container as HTMLElement);
+        break;
+      default:
+        break;
+    }
+  }
+
   return (
     <div className={styles.bar}>
       <div className={styles.row}>
@@ -96,15 +151,17 @@ export function RegistryFilterBar({
             aria-label="Filter advanced keys"
           />
         </div>
-        <div className={styles.pillRow} role="tablist" aria-label="Registry category">
-          {sortedCategories.map((c) => (
+        <div className={styles.pillRow} role="radiogroup" aria-label="Registry category">
+          {sortedCategories.map((c, index) => (
             <FilterChip
               key={c.category}
-              role="tab"
-              aria-selected={activeCategory === c.category}
+              role="radio"
+              aria-checked={activeCategory === c.category}
+              tabIndex={index === activeIndex ? 0 : -1}
               active={activeCategory === c.category}
               count={c.count}
               onClick={() => onSelectCategory(c.category)}
+              onKeyDown={(event) => handleKeyDown(event, index)}
               {...(c.hasEnvOnlyKey ? { icon: <Icon icon={Lock} size="dense" aria-hidden /> } : {})}
             >
               {categoryLabels[c.category] ?? c.category}

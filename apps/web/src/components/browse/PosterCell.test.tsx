@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Loombre :: apps/web/src/components/browse/PosterCell.test.tsx
 //
-// Item 6 (an upstream media server-study Wave A, poster-card a11y sweep): PosterCell was
+// Item 6 (Wave A, poster-card a11y sweep): PosterCell was
 // already a real <a href> (roving-tabindex cell, browse's virtualized
 // grid), but its focus indicator was the app-wide non-inset ring —
 // VirtualPosterGrid.module.css's own scroll container (`overflow: hidden

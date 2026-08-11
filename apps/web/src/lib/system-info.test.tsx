@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Loombre :: apps/web/src/lib/system-info.test.ts
 //
-// Item 7 (an upstream media server-study Wave A, /system/info triple-fetch): a single
+// Item 7 (Wave A, /system/info triple-fetch): a single
 // Dashboard load (app/admin/page.tsx) used to fire GET /system/info once
 // per mounted consumer with zero sharing — DashboardHeader's own useEffect,
 // components/admin/system/SystemInfoCard.tsx's own useEffect, and
