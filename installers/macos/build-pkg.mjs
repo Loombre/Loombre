@@ -597,6 +597,15 @@ function stageWeb(versionDir) {
 // ---------------------------------------------------------------------
 // 5. Payload assembly
 // ---------------------------------------------------------------------
+
+// Every file assemblePayload() stages into <versionDir>/bin/ (source:
+// pkg/bin/<name>, all executable shell). Exported as the single source of
+// truth for "what ships in bin/" — pkg/uninstall-script.test.mjs asserts
+// uninstall.sh is a member of this list (so dropping it from here would
+// fail that test, not just silently ship a payload without it) and that
+// pkg/bin/uninstall.sh actually exists and is well-formed.
+export const BIN_PAYLOAD_SCRIPTS = ["loombre-server", "loombre-worker", "loombre-web", "uninstall.sh"];
+
 function assemblePayload(serverDeployDir, workerDeployDir) {
   const version = readVersion();
   const payloadRoot = path.join(BUILD_CACHE, "payload", ARCH);
@@ -606,9 +615,14 @@ function assemblePayload(serverDeployDir, workerDeployDir) {
   const versionDir = path.join(payloadRoot, "opt", "loombre", version);
   mkdirSync(versionDir, { recursive: true });
 
-  // bin/ shims (loombre-web: installer completeness audit, gap 1)
+  // bin/ shims (loombre-web: installer completeness audit, gap 1;
+  // uninstall.sh: rc.6 uninstall audit, task 4 — ships at the STABLE
+  // /opt/loombre/current/bin/uninstall.sh path via the `current` symlink,
+  // same as every other shim here). BIN_PAYLOAD_SCRIPTS is exported so
+  // pkg/uninstall-script.test.mjs can assert uninstall.sh is actually one
+  // of the files staged into the payload without running a full build.
   mkdirSync(path.join(versionDir, "bin"), { recursive: true });
-  for (const shim of ["loombre-server", "loombre-worker", "loombre-web"]) {
+  for (const shim of BIN_PAYLOAD_SCRIPTS) {
     cpSync(path.join(PKG_DIR, "bin", shim), path.join(versionDir, "bin", shim));
     chmodSync(path.join(versionDir, "bin", shim), 0o755);
   }
