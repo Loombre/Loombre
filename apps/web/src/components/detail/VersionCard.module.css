@@ -45,7 +45,7 @@
   margin-left: auto;
   font-family: var(--font-mono);
   font-size: var(--mono-md);
-  color: var(--color-text-subtle);
+  color: var(--color-text-muted);
   white-space: nowrap;
 }
 
@@ -61,7 +61,7 @@
   font-family: var(--font-mono);
   font-size: var(--mono-sm);
   letter-spacing: 0.06em;
-  color: var(--color-text-hint);
+  color: var(--color-text-muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

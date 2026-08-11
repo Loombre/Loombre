@@ -102,7 +102,7 @@
   font-size: var(--mono-md);
   font-weight: var(--weight-medium);
   letter-spacing: 0.12em;
-  color: var(--color-text-subtle);
+  color: var(--color-text-muted);
 }
 
 .bootLine {

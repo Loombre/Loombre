@@ -41,5 +41,5 @@
 .roles {
   font-family: var(--font-mono);
   font-size: var(--mono-xs);
-  color: var(--color-text-subtle);
+  color: var(--color-text-muted);
 }

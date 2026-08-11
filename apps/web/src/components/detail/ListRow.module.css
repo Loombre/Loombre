@@ -39,7 +39,7 @@
   text-align: center;
   font-family: var(--font-mono);
   font-size: var(--mono-lg);
-  color: var(--color-text-subtle);
+  color: var(--color-text-muted);
   font-variant-numeric: tabular-nums;
 }
 
@@ -112,7 +112,7 @@
   flex-shrink: 0;
   font-family: var(--font-mono);
   font-size: var(--mono-lg);
-  color: var(--color-text-subtle);
+  color: var(--color-text-muted);
   font-variant-numeric: tabular-nums;
 }
 

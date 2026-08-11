@@ -179,7 +179,7 @@
 .unmatchedPath {
   font-family: var(--font-mono);
   font-size: var(--mono-sm);
-  color: var(--color-text-subtle);
+  color: var(--color-text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
