@@ -49,22 +49,30 @@
 // never promises either), so a failure here is logged and swallowed
 // rather than raised.
 //
-// RESIDUAL RACE (not fixed by this guard, unchanged by this wave): the
-// guard only decides WHETHER a reset is allowed to proceed against a
-// given database name; it does nothing about two DIFFERENT packages'
-// test suites choosing to reset the SAME database name concurrently.
+// SERIALIZATION (task #11 residual (b), CLOSED 2026-08-11 — this block
+// used to read "RESIDUAL RACE (not fixed by this guard)"): the name guard
+// only decides WHETHER a reset may proceed against a given database; it
+// says nothing about two processes resetting the SAME database at once.
 // apps/worker and packages/jobs both derive their live-DB suites from the
 // same shared `resolveTestDatabaseUrl()` default (`<base>_test`, e.g.
 // "loombre_test") rather than each having its own `ensureTestDatabase`-
-// isolated database — turbo can run their `test` tasks in parallel, and
-// two concurrent `reset` (DROP SCHEMA public CASCADE + replay) calls
-// against the SAME `loombre_test` database can race each other (lost
-// schema, a replay observing a half-dropped schema, or a Postgres
-// deadlock — the same failure mode packages/db/src/testing.ts's own
-// header documents ensureTestDatabase as solving for packages that opt
-// into it). Not addressed here: giving apps/worker and packages/jobs
-// their own per-package databases is a real fix but out of scope for this
-// wave (documentation only).
+// isolated database, turbo runs their `test` tasks in parallel, and
+// several worktree lanes can share one Postgres instance — so two
+// concurrent DROP SCHEMA public CASCADE + replay calls against ONE
+// database really do collide. Reproduced as a red check first
+// (test/concurrent-reset.spec.ts): simultaneous starts fail with
+// `schema "public" already exists`, and a start ~60ms in fails with
+// `relation "media_files" does not exist` mid-replay.
+//
+// Fixed by SERIALIZING rather than namespacing: `reset` and `migrate` both
+// hold a session-level Postgres ADVISORY LOCK (withMigrationLock below)
+// for the whole drop+replay. Advisory locks live in a per-database lock
+// space, so one fixed key serializes exactly the processes that would
+// collide (same database) and never contends across different databases —
+// which namespacing per package would not have covered anyway (two
+// worktree lanes' `loombre_test` are the same database). `lock_timeout`
+// bounds the wait so a wedged holder surfaces as a clear error instead of
+// hanging a test run forever.
 
 import { readFileSync, readdirSync, writeFileSync, existsSync } from 'node:fs';
 import { createHash } from 'node:crypto';
@@ -277,6 +285,58 @@ async function ensureDatabaseExists(databaseUrl) {
   }
 }
 
+// One fixed advisory-lock key for "this database's schema is being
+// rewritten". Advisory locks are scoped to the DATABASE the session is
+// connected to, so a constant is exactly right: two processes resetting
+// `loombre_test` serialize, while a reset of `loombre_worker_test` never
+// waits on them. Value: an arbitrary, stable 64-bit constant — chosen
+// literally rather than hashed at runtime so it is greppable and can never
+// drift between callers.
+const MIGRATION_LOCK_KEY = '7261551246031918001';
+
+// How long to wait for a sibling process's drop+replay before giving up.
+// A full replay is well under a second locally and a few seconds on the
+// slowest CI runner; a two-minute ceiling therefore only ever fires for a
+// genuinely wedged holder, where hanging forever would be the worse
+// outcome.
+const MIGRATION_LOCK_TIMEOUT_MS = 120_000;
+
+/**
+ * Runs `fn` while holding this database's migration advisory lock.
+ *
+ * Session-level (`pg_advisory_lock`, not `_xact_`) because the work it
+ * guards is deliberately NOT one transaction: cmdReset issues DROP/CREATE
+ * SCHEMA and then commits each migration file separately, and the whole
+ * sequence — not any single statement — is what must not interleave.
+ * `lock_timeout` applies to advisory-lock waits, so a wedged holder
+ * surfaces as a clear error rather than an unbounded hang. The lock is
+ * released explicitly and would be released by the backend on disconnect
+ * anyway, so a crashed holder never wedges the next run.
+ */
+async function withMigrationLock(client, label, fn) {
+  await client.query(`SET lock_timeout = ${MIGRATION_LOCK_TIMEOUT_MS}`);
+  try {
+    await client.query(`SELECT pg_advisory_lock(${MIGRATION_LOCK_KEY})`);
+  } catch (err) {
+    if (err && err.code === '55P03') {
+      throw new Error(
+        `${label}: timed out after ${MIGRATION_LOCK_TIMEOUT_MS}ms waiting for another process to finish ` +
+        `migrating this database. Another test suite or operator command is holding the migration lock; ` +
+        `re-run once it finishes.`,
+        { cause: err }
+      );
+    }
+    throw err;
+  } finally {
+    await client.query('RESET lock_timeout');
+  }
+  try {
+    return await fn();
+  } finally {
+    await client.query(`SELECT pg_advisory_unlock(${MIGRATION_LOCK_KEY})`).catch(() => undefined);
+  }
+}
+
 async function cmdReset(client) {
   console.log('reset: dropping and recreating schema "public"...');
   // IF EXISTS: a reset aborted between DROP and CREATE (task kill, turbo
@@ -376,11 +436,15 @@ async function main() {
   await client.connect();
   try {
     switch (command) {
+      // Both schema-WRITING commands run under the migration advisory lock
+      // (see withMigrationLock): concurrent replays against one database
+      // collide statement-for-statement, and a reset landing mid-way
+      // through someone else's replay drops the tables underneath it.
       case 'migrate':
-        await cmdMigrate(client);
+        await withMigrationLock(client, 'migrate', () => cmdMigrate(client));
         break;
       case 'reset':
-        await cmdReset(client);
+        await withMigrationLock(client, 'reset', () => cmdReset(client));
         break;
       case 'status':
         await cmdStatus(client);
