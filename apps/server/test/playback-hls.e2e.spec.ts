@@ -591,6 +591,121 @@ describe("GET /playback/sessions/{id}/hls/{file} — segment/init serving", () =
     expect(await readSeekTargetMs(sessionId)).toBe(17_190);
   }, 20_000);
 
+  // ── Exact per-run source anchoring (migration 0043's transcode_runs) ──
+  //
+  // Until Lane A1 recorded a durable per-run source origin, this controller
+  // could only ever produce a PRESENTATION-timeline answer for runs after
+  // the first: every seek run is spawned with `-ss` and no `-copyts`, so
+  // its own output timestamps restart at zero while the segment counter
+  // keeps climbing. The mean-extrapolation above was the best a
+  // playlist-only derivation could do. With `transcode_runs` it becomes
+  // EXACT: the owning run supplies the SOURCE anchor, and the run's own
+  // real #EXTINF durations supply the offset within it (inside one run,
+  // playlist duration maps 1:1 to source time — neither a copy nor a
+  // transcode changes the rate).
+
+  interface RunRow {
+    runIndex: number;
+    startSegment: number;
+    sourceOriginMs: number;
+  }
+
+  /** Exactly what apps/worker/src/transcode/runner.ts's `recordTranscodeRun`
+   *  writes on every spawn, run 0 included. */
+  async function recordRuns(sessionId: string, runs: RunRow[]): Promise<void> {
+    const db = createDb(process.env["DATABASE_URL"]!);
+    try {
+      for (const run of runs) {
+        await db
+          .insertInto("transcode_runs")
+          .values({
+            session_id: sessionId,
+            run_index: run.runIndex,
+            start_segment: run.startSegment,
+            source_origin_ms: run.sourceOriginMs,
+            created_at_ms: Date.now(),
+          })
+          .execute();
+      }
+    } finally {
+      await db.destroy();
+    }
+  }
+
+  it("TRIPLE SEEK across three runs: every target is the OWNING RUN's source origin plus its own real durations", async () => {
+    const { sessionId, sessionDir } = await createSimulatedTranscodeSession();
+
+    // Three runs. Run 2's source origin is EARLIER than run 1's — a
+    // backward seek — which is the whole reason ownership must follow the
+    // segment counter and never the clock. Anything that ordered runs by
+    // source_origin_ms would hand segment 25 to run 1 (600_000) instead of
+    // run 2 (120_000).
+    const runs: RunRow[] = [
+      { runIndex: 0, startSegment: 0, sourceOriginMs: 0 },
+      { runIndex: 1, startSegment: 10, sourceOriginMs: 600_000 },
+      { runIndex: 2, startSegment: 20, sourceOriginMs: 120_000 },
+    ];
+    await recordRuns(sessionId, runs);
+
+    // Retention has pruned run 0's head (indices 0..4). Each run's segments
+    // have their OWN characteristic real duration, so a cross-run mean can
+    // never accidentally produce the right answer.
+    const run0: ServedRun = { runDirName: "run0", segments: Array.from({ length: 5 }, (_, i) => ({ index: 5 + i, durationMs: 6006 })) };
+    const run1: ServedRun = { runDirName: "run1", segments: Array.from({ length: 10 }, (_, i) => ({ index: 10 + i, durationMs: 9009 })) };
+    const run2: ServedRun = { runDirName: "run2", segments: Array.from({ length: 10 }, (_, i) => ({ index: 20 + i, durationMs: 7007 })) };
+    writeRunSegmentFiles(sessionDir, run0);
+    writeRunSegmentFiles(sessionDir, run1);
+    writeRunSegmentFiles(sessionDir, run2);
+    writeServedPlaylist(sessionDir, [run0, run1, run2]);
+    await markSessionActiveWithProducedSegment(sessionId, sessionDir, 29);
+
+    // ── SEEK 1: forward, past the produced window, inside run 2 ─────────
+    const forward = await admin().get(`/playback/sessions/${sessionId}/hls/run2/s000035.m4s`);
+    expect(forward.status).toBe(503);
+    // Owner is run 2 (startSegment 20 <= 35), anchor 120_000. Its listed
+    // segments 20..29 contribute 10 x 7_007 = 70_070; the five not yet
+    // produced (30..34) extrapolate at run 2's OWN measured mean, 7_007,
+    // for 35_035 more. 120_000 + 105_105 = 225_105.
+    expect(await readSeekTargetMs(sessionId)).toBe(225_105);
+
+    // ── SEEK 2: backward across runs, into run 0's PRUNED head ──────────
+    // ahead is negative, so this is the ENOENT path, and the owning run is
+    // run 0 — reachable only by ordering on start_segment.
+    const backward = await admin().get(`/playback/sessions/${sessionId}/hls/run0/s000002.m4s`);
+    expect(backward.status).toBe(503);
+    // Anchor 0; segments 0 and 1 were pruned out of the playlist, so they
+    // extrapolate at run 0's own mean (6_006): 2 x 6_006 = 12_012.
+    expect(await readSeekTargetMs(sessionId)).toBe(12_012);
+
+    // ── SEEK 3: into run 2, the BACKWARD-seek run — the ordering pin ────
+    // Segment 25 is listed but not on disk (the worker rewrote the playlist
+    // before the segment was flushed): the ENOENT path again.
+    rmSync(path.join(sessionDir, "run2", "s000025.m4s"));
+    const midRun = await admin().get(`/playback/sessions/${sessionId}/hls/run2/s000025.m4s`);
+    expect(midRun.status).toBe(503);
+    // Owner is run 2: anchor 120_000 plus its OWN segments 20..24
+    // (5 x 7_007 = 35_035) = 155_035 — EXACT, nothing extrapolated.
+    // Ordering by source_origin_ms would pick run 1 and land at 600_000+.
+    expect(await readSeekTargetMs(sessionId)).toBe(155_035);
+  }, 25_000);
+
+  it("no transcode_runs rows (a session predating migration 0043) still derives from the playlist alone", async () => {
+    // The fallback chain must survive: a session mid-flight across the
+    // migration has no run rows, and "no source anchor available" must
+    // never be read as "origin 0" plus a run-relative offset.
+    const { sessionId, sessionDir } = await createSimulatedTranscodeSession();
+    const run0: ServedRun = { runDirName: "run0", segments: Array.from({ length: 10 }, (_, i) => ({ index: i, durationMs: 6006 })) };
+    writeRunSegmentFiles(sessionDir, run0);
+    writeServedPlaylist(sessionDir, [run0]);
+    await markSessionActiveWithProducedSegment(sessionId, sessionDir, 9);
+
+    const res = await admin().get(`/playback/sessions/${sessionId}/hls/run0/s000020.m4s`);
+    expect(res.status).toBe(503);
+    // Playlist-only derivation, unchanged: 10 listed x 6_006 = 60_060, plus
+    // ten unproduced at the measured mean 6_006 = 120_120.
+    expect(await readSeekTargetMs(sessionId)).toBe(120_120);
+  }, 20_000);
+
   it("DOUBLE SEEK back-then-forward: the derived target is clamped to [0, durationMs]", async () => {
     const { sessionId, sessionDir } = await createSimulatedTranscodeSession();
     const durationMs = await readSessionDurationMs(sessionId);
