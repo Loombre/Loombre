@@ -24,8 +24,10 @@ import type { ViewerContext } from '../src/context.js';
 import { createPlaybackSession } from '../src/query/playback-sessions.js';
 import {
   absorbSeekTarget,
+  consumePendingRungIndex,
   consumeSeekTarget,
   ensureSessionStagingDir,
+  recordActiveRungIndex,
   getMediaInfoForFile,
   getTranscodeSessionRow,
   listReapableTranscodeSessions,
@@ -681,5 +683,123 @@ describe('recordTranscodeRun / transcode run lookup', () => {
     await rawClient.query(`DELETE FROM playback_sessions WHERE id = $1`, [id]);
     const { rows } = await rawClient.query(`SELECT 1 FROM transcode_runs WHERE session_id = $1`, [id]);
     expect(rows).toHaveLength(0);
+  });
+
+  // ---- Wave C2 (migration 0044): which RUNG a run encoded ----------------
+  it('records the ladder rung index a run encoded, and leaves it NULL when the caller omits it', async () => {
+    const id = await newSession();
+    await recordTranscodeRun(db, { sessionId: id, runIndex: 0, startSegment: 0, sourceOriginMs: 0, nowMs: Date.now() });
+    await recordTranscodeRun(db, {
+      sessionId: id,
+      runIndex: 1,
+      startSegment: 12,
+      sourceOriginMs: 72_000,
+      ladderRungIndex: 2,
+      nowMs: Date.now(),
+    });
+    const { rows } = await rawClient.query<{ run_index: number; ladder_rung_index: number | null }>(
+      `SELECT run_index, ladder_rung_index FROM transcode_runs WHERE session_id = $1 ORDER BY run_index`,
+      [id],
+    );
+    // Ladder-empty sessions (direct-stream copy, audio-only) and pre-C2
+    // rows carry NULL — the column is additive and never guessed.
+    expect(rows).toEqual([
+      { run_index: 0, ladder_rung_index: null },
+      { run_index: 1, ladder_rung_index: 2 },
+    ]);
+  });
+
+  it('the idempotent upsert also updates ladder_rung_index (a redelivered job re-spawns at the CURRENT rung)', async () => {
+    const id = await newSession();
+    await recordTranscodeRun(db, { sessionId: id, runIndex: 0, startSegment: 0, sourceOriginMs: 0, ladderRungIndex: 0, nowMs: Date.now() });
+    await recordTranscodeRun(db, { sessionId: id, runIndex: 0, startSegment: 0, sourceOriginMs: 0, ladderRungIndex: 1, nowMs: Date.now() });
+    const { rows } = await rawClient.query<{ ladder_rung_index: number | null }>(
+      `SELECT ladder_rung_index FROM transcode_runs WHERE session_id = $1`,
+      [id],
+    );
+    expect(rows).toEqual([{ ladder_rung_index: 1 }]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Wave C2 / migration 0044 (docs/PLAYBACK.md §9.1.3): the slot-handoff
+// control channel. `pending_rung_index` is server-written and consumed by
+// the worker under the SAME compare-and-clear discipline `seek_target_ms`
+// uses; `active_rung_index` is worker-written at every spawn.
+// ---------------------------------------------------------------------------
+
+describe('recordActiveRungIndex (worker-written, every spawn)', () => {
+  it('records the rung the live pipeline is encoding', async () => {
+    const id = await newSession();
+    const row = await recordActiveRungIndex(db, id, 0, Date.now());
+    expect(row?.active_rung_index).toBe(0);
+  });
+
+  it('overwrites on every spawn — the row must always name the run that is actually alive', async () => {
+    const id = await newSession();
+    await recordActiveRungIndex(db, id, 0, Date.now());
+    await recordActiveRungIndex(db, id, 2, Date.now());
+    expect((await getTranscodeSessionRow(db, id))?.active_rung_index).toBe(2);
+  });
+
+  it('refuses once the session is terminal (like every other write in this module)', async () => {
+    const id = await newSession();
+    await markSessionFailed(db, id, { errorCode: 'transcode-failed', stderrTail: '', nowMs: Date.now() });
+    expect(await recordActiveRungIndex(db, id, 1, Date.now())).toBeUndefined();
+  });
+});
+
+describe('consumePendingRungIndex (compare-and-clear, §9.1.3)', () => {
+  it('claims the pending rung exactly once, clearing the column', async () => {
+    const id = await newSession();
+    await markSessionStarting(db, id, { stagingDir: '/tmp/loombre-transcode/rung-a', nowMs: Date.now() });
+    await markSessionActive(db, id, { producedSegment: 3, nowMs: Date.now() });
+    await rawClient.query(`UPDATE playback_sessions SET pending_rung_index = 2 WHERE id = $1`, [id]);
+
+    expect(await consumePendingRungIndex(db, id, Date.now())).toBe(2);
+    expect((await getTranscodeSessionRow(db, id))?.pending_rung_index).toBeNull();
+    // A second call in the same restart window finds nothing to consume.
+    expect(await consumePendingRungIndex(db, id, Date.now())).toBeUndefined();
+  });
+
+  it('a PURE switch never changes status and never bumps discontinuity_count (§9.1.4)', async () => {
+    const id = await newSession();
+    await markSessionStarting(db, id, { stagingDir: '/tmp/loombre-transcode/rung-b', nowMs: Date.now() });
+    await markSessionActive(db, id, { producedSegment: 3, nowMs: Date.now() });
+    await rawClient.query(`UPDATE playback_sessions SET pending_rung_index = 1 WHERE id = $1`, [id]);
+
+    await consumePendingRungIndex(db, id, Date.now());
+    const row = await getTranscodeSessionRow(db, id);
+    // Contrast a seek: the union playlist stays fully servable across a
+    // handoff, so `seeking` would be a lie, and the served playlist's
+    // discontinuity comes from run folding, not from this counter.
+    expect(row?.status).toBe('active');
+    expect(row?.discontinuity_count).toBe(0);
+  });
+
+  it('rung 0 is a real value, never confused with "nothing pending"', async () => {
+    const id = await newSession();
+    await rawClient.query(`UPDATE playback_sessions SET pending_rung_index = 0 WHERE id = $1`, [id]);
+    expect(await consumePendingRungIndex(db, id, Date.now())).toBe(0);
+  });
+
+  it('two racing consumers claim it EXACTLY once between them (the compare-and-clear property)', async () => {
+    const id = await newSession();
+    await rawClient.query(`UPDATE playback_sessions SET pending_rung_index = 1 WHERE id = $1`, [id]);
+
+    const [a, b] = await Promise.all([
+      consumePendingRungIndex(db, id, Date.now()),
+      consumePendingRungIndex(db, id, Date.now()),
+    ]);
+    const claimed = [a, b].filter((v) => v !== undefined);
+    expect(claimed).toEqual([1]);
+    expect((await getTranscodeSessionRow(db, id))?.pending_rung_index).toBeNull();
+  });
+
+  it('is a no-op once the session is terminal', async () => {
+    const id = await newSession();
+    await rawClient.query(`UPDATE playback_sessions SET pending_rung_index = 1 WHERE id = $1`, [id]);
+    await markSessionFailed(db, id, { errorCode: 'transcode-failed', stderrTail: '', nowMs: Date.now() });
+    expect(await consumePendingRungIndex(db, id, Date.now())).toBeUndefined();
   });
 });

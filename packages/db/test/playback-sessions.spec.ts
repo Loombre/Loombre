@@ -32,6 +32,7 @@ import {
   heartbeatPlaybackSession,
   listHeartbeatStalePlaybackSessions,
   listStalePlaybackSessions,
+  requestRungSwitch,
   requestSeek,
   suspendStalePlaybackSession,
   updateRequestedSegment,
@@ -749,6 +750,89 @@ describe('updateRequestedSegment / requestSeek (server-written control columns)'
     await endPlaybackSession(db, adminCtx, session!.id, nowMs + 300);
     const afterEnd = await requestSeek(db, adminCtx, session!.id, 80_000, nowMs + 400);
     expect(afterEnd).toBeUndefined();
+  });
+});
+
+// Wave C2 / migration 0044 (docs/PLAYBACK.md §9.1.3). The SERVER half of
+// the slot-handoff control channel: a `v{K}` playlist/segment GET naming a
+// rung other than the session's active one records a switch request, which
+// the worker consumes at its next tick.
+describe('requestRungSwitch (server-written, absorb-on-match at the WRITE side)', () => {
+  async function newTranscodeSession(nowMs: number): Promise<string> {
+    const session = await createPlaybackSession(db, adminCtx, {
+      itemId: harborLightsItemId,
+      fileId: harborLightsFileId,
+      deviceId: adminDeviceId,
+      plan: { decision: 'transcode', reasons: [] },
+      engineVersion: 'test',
+      nowMs,
+    });
+    return session!.id;
+  }
+
+  it('records a pending rung the worker can later consume', async () => {
+    const nowMs = Date.now();
+    const id = await newTranscodeSession(nowMs);
+    await rawClient.query('UPDATE playback_sessions SET active_rung_index = 0 WHERE id = $1', [id]);
+
+    const switched = await requestRungSwitch(db, adminCtx, id, 2, nowMs + 100);
+    expect(switched?.pendingRungIndex).toBe(2);
+  });
+
+  it('ABSORBS a request naming the already-active rung — nothing is recorded (§9.1.3)', async () => {
+    const nowMs = Date.now();
+    const id = await newTranscodeSession(nowMs);
+    await rawClient.query('UPDATE playback_sessions SET active_rung_index = 1 WHERE id = $1', [id]);
+
+    // A client pinned to rung 1 keeps fetching `v1/...` — every one of
+    // those GETs would otherwise write a "switch" the worker has to read
+    // and discard. This is the switch analogue of seek absorption, and it
+    // kills the storm at the door rather than at the poll tick.
+    const same = await requestRungSwitch(db, adminCtx, id, 1, nowMs + 100);
+    expect(same?.pendingRungIndex).toBeNull();
+    const { rows } = await rawClient.query<{ pending_rung_index: number | null }>(
+      'SELECT pending_rung_index FROM playback_sessions WHERE id = $1',
+      [id],
+    );
+    expect(rows[0]?.pending_rung_index).toBeNull();
+  });
+
+  it('rung 0 is a real target, never confused with "no active rung"', async () => {
+    const nowMs = Date.now();
+    const id = await newTranscodeSession(nowMs);
+    await rawClient.query('UPDATE playback_sessions SET active_rung_index = 2 WHERE id = $1', [id]);
+    expect((await requestRungSwitch(db, adminCtx, id, 0, nowMs + 100))?.pendingRungIndex).toBe(0);
+  });
+
+  it('records even when active_rung_index is still NULL (the worker has not spawned yet)', async () => {
+    const nowMs = Date.now();
+    const id = await newTranscodeSession(nowMs);
+    expect((await requestRungSwitch(db, adminCtx, id, 1, nowMs + 100))?.pendingRungIndex).toBe(1);
+  });
+
+  it('a LATER request overwrites an unconsumed earlier one (last write wins — the client changed its mind)', async () => {
+    const nowMs = Date.now();
+    const id = await newTranscodeSession(nowMs);
+    await requestRungSwitch(db, adminCtx, id, 1, nowMs + 100);
+    expect((await requestRungSwitch(db, adminCtx, id, 2, nowMs + 200))?.pendingRungIndex).toBe(2);
+  });
+
+  it('rejects a non-owner and a terminal session, exactly like requestSeek', async () => {
+    const nowMs = Date.now();
+    const id = await newTranscodeSession(nowMs);
+    expect(await requestRungSwitch(db, casualCtx, id, 1, nowMs + 100)).toBeUndefined();
+    await endPlaybackSession(db, adminCtx, id, nowMs + 200);
+    expect(await requestRungSwitch(db, adminCtx, id, 1, nowMs + 300)).toBeUndefined();
+  });
+
+  it('exposes both rung columns on the mapped row (the controller reads activeRungIndex to decide switch-vs-noop)', async () => {
+    const nowMs = Date.now();
+    const id = await newTranscodeSession(nowMs);
+    await rawClient.query('UPDATE playback_sessions SET active_rung_index = 0 WHERE id = $1', [id]);
+    await requestRungSwitch(db, adminCtx, id, 2, nowMs + 100);
+    const row = await getPlaybackSessionForUser(db, adminCtx, id);
+    expect(row?.activeRungIndex).toBe(0);
+    expect(row?.pendingRungIndex).toBe(2);
   });
 });
 
