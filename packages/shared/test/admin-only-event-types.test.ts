@@ -23,7 +23,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ENVELOPE_SCHEMA_PATH = path.resolve(__dirname, "../../contract/event-schemas/envelope.schema.json");
 
 describe("ADMIN_ONLY_EVENT_TYPES (canonical, L3)", () => {
-  it("is exactly this 29-item inventory (the single place a human confirms the list)", () => {
+  it("is exactly this 30-item inventory (the single place a human confirms the list)", () => {
     expect([...ADMIN_ONLY_EVENT_TYPES].sort()).toEqual(
       [
         "job.updated",
@@ -40,6 +40,8 @@ describe("ADMIN_ONLY_EVENT_TYPES (canonical, L3)", () => {
         "probe.failed",
         // Stash SQLite metadata sync, S3/K12.
         "stash.provider.disabled",
+        // Stash OPEN ledger item 7 (success-connect counterpart to disabled).
+        "stash.provider.connected",
         // Stash SQLite metadata sync, S8/K12 (Lane C sync engine).
         "stash.sync.started",
         "stash.sync.completed",
