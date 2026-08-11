@@ -273,7 +273,34 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
     let cancelled = false;
 
     async function run(): Promise<void> {
-      const result = await createPlaybackSession(itemId, "stream", mediaFileId);
+      let result: Awaited<ReturnType<typeof createPlaybackSession>>;
+      try {
+        result = await createPlaybackSession(itemId, "stream", mediaFileId);
+      } catch {
+        if (cancelled) return;
+        // AUD-W6-001 (server repro: a real catalog_items row with zero
+        // media_files returns a clean 404 from POST /playback/sessions in
+        // under 2s — the server does not hang). createPlaybackSession
+        // (lib/playback-session.ts) only intercepts a genuine 409/422/429
+        // refusal and folds it into `result.ok === false`; anything else —
+        // a 404, a 5xx, a network failure — is deliberately re-thrown
+        // rather than treated as a plan refusal (see that function's own
+        // header). Before this fix, that re-throw reached `void run()`
+        // below with no attached catch: an unhandled promise rejection
+        // that left `phase` stuck at "loading" forever — the reported
+        // /watch/<item> hang was always client-side, never a server hang.
+        // Route to the SAME fatal-unavailable path client-side DECODE/
+        // SRC_NOT_SUPPORTED already reaches (`goFatal()` in the attach
+        // effect below, clientPlaybackErrorReasons() from lib/playback-
+        // reasons.ts) — no server plan reasons exist for a failure this
+        // shape either, so this reuses that exact synthesized reason
+        // rather than inventing new UI or trying to interpret an arbitrary
+        // thrown error's shape.
+        setUnavailableReasons(clientPlaybackErrorReasons());
+        setUnavailableStatus(undefined);
+        setPhase("unavailable");
+        return;
+      }
       if (cancelled) {
         // AUD-A4v4-003: this invocation was superseded (itemId/mediaFileId/
         // startMs changed) or the player unmounted while the POST was in
