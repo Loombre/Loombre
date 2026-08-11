@@ -681,6 +681,52 @@ HOLDS for the sequenced consumption half of the run-origin fix (post-A1-
 continuation). PLAYBACK.md §3/§4/§6/§8.2/§9 updated by the lane; docs sync
 orchestrator-side at integration.
 
+**DV strip — INDEPENDENT ORCHESTRATOR VERIFICATION (owner-ordered, 2026-08-11),
+five layers, all PASS:** (1) implementation read — one shared predicate
+(dv.ts), one merged -bsf:v, hvc1 re-tag, contract hazard avoided; (2) wiring —
+goldens 35-38 pin the production argv (36 = merged 8-9|62-63; 38 = no-strip for
+a DV-capable device) and the fence calls production plan()/buildFfmpegArgs();
+(3) fixture genuineness — orchestrator-authored NAL scanner (written from
+H.265 §7.3.1.2, zero lane code reused) found the profile-7 fixture carries 48
+RPU(62) + 104 EL(63) NALs and the 8.1 fixture 48 RPU, both with dvvC box +
+dvh1 fourcc + DOVI config record — the strip result cannot be vacuously clean;
+(4) physical end-to-end through the real HLS-fmp4 shape — post-strip: 0×62,
+0×63, no dvvC/dvcC/dvh1 bytes in init.mp4, hvc1 present, ffprobe side_data
+empty, output decodes as plain HEVC Main 10 with HDR10 colorimetry INTACT
+(smpte2084 + bt2020, SEI prefix NALs retained), identical slice-NAL counts
+pre/post (only DV units removed); differential composition proof — merged
+filter also removed RASL 8/9, plain 62-63 left RASL alone, exactly per
+goldens 36 vs 35; (5) mutation — DV_NAL_REMOVE_RANGE neutered to 60-61 +
+engine rebuilt → fence fails 3/4 (zero-residue, LD-15, composition); source
+restored + rebuilt → 4/4 green. Verification note for honesty: mutation round
+1 falsely looked green because the fence imports the BUILT dist and the first
+mutated build failed silently in an &&-chain (orchestrator harness error,
+caught and redone properly). LD-3/LD-15 verdict: properly implemented and
+genuine.
+
+**A4 checkpoint (2026-08-11): all 8 items done — orchestrator spot-verified**
+(29/29 on SegmentedControl/system-info/PinModal/LibraryPills re-run from
+apps/web; contract diff empty; 7 commits; lane's own final combined rerun was
+166/166 across 22 spec files + installers:test 59/59 + grep-gates 0). Radiogroup
+sweep: all 7 implementations on WAI-ARIA radiogroup + roving tabindex; FOUR
+consolidated onto shared ui/SegmentedControl (LibraryPills, SortControl,
+ZoneSortControl, SeasonPillTabs); RegistryFilterBar + FeaturedBanner carry the
+pattern directly (shape doesn't fit); collateral test updates caught by broad
+rerun (StashModal, StashConnectionPanel, RestrictedStep, ComposeNoticeCard).
+PinModal + notice number inputs → ui/Input. Poster-card item REDIAGNOSED by the
+lane: all four family members were ALREADY real anchors with Enter-nav — the
+actual defect was focus-ring clipping under overflow/windowing ancestors; inset
+ring applied to all four (Input/Button precedent). /system/info triple-fetch →
+single lib/system-info.ts call site (module cache + in-flight dedup), proof =
+three simultaneous consumers, apiGet mock called exactly once. W8 tail landed
+per the established scale rules. W17 RTF drift check landed (textutil regen
+byte-diff, tamper-tested both directions, macOS-skip per house pattern).
+VERIFIED-ALREADY-RESOLVED (stale STATE.md rows, no re-implementation): W5
+native selects and mobile-tab-bar/settings-devices — both landed in the Wave 3
+pass f94a0ce9 after those deferral rows were written; rows now superseded by
+this entry. Lane self-scrubbed 25 competitor-naming violations after the
+mid-run advisory (its comments had used the run's own section title).
+
 ## an upstream media server comparative architecture study — ANALYSIS-ONLY, COMPLETE 2026-08-10 (owner brief "Comparative Architecture Study — an upstream media server Playback Engine vs. Loombre"; awaiting owner review + implementation authorization)
 
 DELIVERABLE: reports/upstream-media-server-study/upstream-media-server-comparative-study.md (908 lines) —
