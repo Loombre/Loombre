@@ -62,7 +62,56 @@ export interface HlsJsConfigLike {
   manifestLoadPolicy: LoadPolicyLike;
   playlistLoadPolicy: LoadPolicyLike;
   fragLoadPolicy: LoadPolicyLike;
+  /** Seconds. See `HlsJsConfigOptions.startPositionSec`. */
+  startPosition: number;
+  /** Index into hls.js's own level list. See `resolveStartLevel`. */
+  startLevel: number;
   xhrSetup: (xhr: XMLHttpRequest, url: string) => Promise<void>;
+}
+
+/** The shape `resolveStartLevel` needs out of a plan's ladder rung —
+ *  declared structurally so this module keeps its no-dependency posture. */
+export interface StartLevelRung {
+  videoBitrateBps: number;
+  audioBitrateBps: number;
+}
+
+/**
+ * Which hls.js LEVEL corresponds to the rung the server's pipeline is
+ * already encoding — the ladder's top rung (docs/PLAYBACK.md §9.1.9).
+ *
+ * WHY THIS IS NOT JUST AN ARRAY INDEX. The master playlist emits one
+ * `EXT-X-STREAM-INF` per `plan.ladder[K]` in ARRAY order, but hls.js does
+ * not preserve that order: it re-sorts the variants by BANDWIDTH ASCENDING
+ * and `startLevel`/`nextLevel` index into THAT list. So the correct
+ * `startLevel` is the top rung's position after the same sort, which for a
+ * normal descending policy table is the LAST index — and for an unsorted
+ * admin table is something else entirely. Pinning `K` directly would start
+ * playback on a different variant than intended, and (because every switch
+ * is a full server-side pipeline handoff) immediately pay for a handoff to
+ * correct itself.
+ *
+ * Sorted on TOTAL bandwidth — video + audio — because that is the number
+ * `BANDWIDTH`/`AVERAGE-BANDWIDTH` carry and therefore the one hls.js
+ * orders by. The "top" rung is still the highest VIDEO bitrate, matching
+ * `topRungOf` in the engine and the worker; the two coincide for every
+ * shipped table but not by definition, and this function is where the
+ * distinction is resolved rather than assumed.
+ *
+ * `-1` for an empty ladder — hls.js's own "let ABR decide". Never a
+ * fabricated index.
+ */
+export function resolveStartLevel(ladder: readonly StartLevelRung[]): number {
+  if (ladder.length === 0) return -1;
+  let top = ladder[0]!;
+  for (const rung of ladder) {
+    if (rung.videoBitrateBps > top.videoBitrateBps) top = rung;
+  }
+  const bandwidth = (r: StartLevelRung): number => r.videoBitrateBps + r.audioBitrateBps;
+  // Array.prototype.sort is stable in every engine this ships on, which
+  // mirrors hls.js's own stable ordering for equal-bandwidth variants.
+  const sorted = [...ladder].sort((a, b) => bandwidth(a) - bandwidth(b));
+  return sorted.indexOf(top);
 }
 
 /** Matches the server's constant `Retry-After: 1` (docs/PLAYBACK.md §9) —
@@ -92,6 +141,41 @@ export interface HlsJsConfigOptions {
    *  so this factory stays free of any URL-parsing duplication and easy to
    *  unit test with a trivial fake. */
   appendToken: (url: string, token: string) => string;
+  /**
+   * Wave C2 (docs/PLAYBACK.md §9.1.5 rule 6): where playback should START,
+   * in seconds — the resume point, or 0.
+   *
+   * The multi-variant playlist model drops `EXT-X-PLAYLIST-TYPE:EVENT`
+   * entirely (it contradicted the head-pruning retention already does), and
+   * a type-less playlist reads as LIVE. hls.js's default `startPosition:
+   * -1` then means "start at the live edge" — which for this server is
+   * wherever the segment-ahead throttle has let the encoder get to, up to
+   * 10 segments / 60 s past where the viewer asked to be. Pinning it is
+   * therefore not a nicety; it is what keeps a resume landing on the resume
+   * point. The existing `loadedmetadata` seek stays as belt-and-braces.
+   */
+  startPositionSec?: number;
+  /**
+   * Wave C2 (§9.1.9): which hls.js LEVEL to start on — use
+   * `resolveStartLevel(plan.ladder)`. Pinning the rung the server's
+   * pipeline is ALREADY encoding makes a clean start cost ZERO handoffs;
+   * hls.js's default first-load bandwidth guess would otherwise pick a low
+   * variant and immediately switch up, and under §9.1 every switch is a
+   * full server-side pipeline restart. Top-surviving is network-safe by
+   * construction — Stage F already dropped every rung above
+   * `network.maxBitrateBps`.
+   */
+  startLevel?: number;
+}
+
+/** A resume point must be a real, non-negative number of seconds. Anything
+ *  else (NaN from a bad parse, a negative from arithmetic, Infinity) is
+ *  clamped to 0 rather than handed to hls.js — and 0 is deliberately not
+ *  -1, which would mean "live edge", the exact thing this pin exists to
+ *  avoid. */
+function safeStartPosition(seconds: number | undefined): number {
+  if (seconds === undefined || !Number.isFinite(seconds) || seconds < 0) return 0;
+  return seconds;
 }
 
 /**
@@ -101,6 +185,13 @@ export interface HlsJsConfigOptions {
  */
 export function buildHlsJsConfig(options: HlsJsConfigOptions): HlsJsConfigLike {
   return {
+    startPosition: safeStartPosition(options.startPositionSec),
+    startLevel: options.startLevel ?? -1,
+    // Deliberately NO `liveMaxLatencyDuration`/`liveMaxLatencyDurationCount`
+    // and no `liveSyncDuration*` (§9.1.5 rule 6): hls.js's defaults do no
+    // forced live-edge chasing, and setting any of them would let the
+    // player yank a paused or seeking viewer forward on a stream that only
+    // LOOKS live.
     manifestLoadPolicy: {
       default: {
         // Generous: the manifest GET itself may legitimately block for up

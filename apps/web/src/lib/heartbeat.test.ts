@@ -138,3 +138,55 @@ describe("HeartbeatScheduler", () => {
     }
   });
 });
+
+// ───────────────────────────────────────────────────────────────────────────
+// Wave C2 (docs/PLAYBACK.md §9.1.9): "Heartbeat: UNTOUCHED in both
+// directions." This block is the PROOF of that claim rather than a change
+// to it — a zero-diff assertion, which is the only kind that can go stale
+// silently and therefore the only kind worth writing down.
+// ───────────────────────────────────────────────────────────────────────────
+
+describe("heartbeat is switch-agnostic by construction (§9.1.9)", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  it("the snapshot carries NO rung/level/variant field — there is nothing for a switch to change", () => {
+    // The client reports what its media element knows: a PRESENTATION
+    // position, a duration, and a state. Which rung produced those bytes
+    // is not a fact the element exposes and not a fact the server needs
+    // from the client: §9.1.6's presentation->source mapping is entirely
+    // server-side, driven by transcode_runs, and its within-run 1:1
+    // rate-equivalence argument is rung-INDEPENDENT (re-encoding at a
+    // different bitrate or height never changes the time rate). A client
+    // that volunteered a rung would be volunteering something the server
+    // must not trust anyway.
+    const snapshot: HeartbeatSnapshot = { positionMs: 1234, durationMs: 100_000, state: "in-progress" };
+    expect(Object.keys(snapshot).sort()).toEqual(["durationMs", "positionMs", "state"]);
+  });
+
+  it("a rung switch cannot interrupt the cadence: the scheduler is driven by time, not by media events", () => {
+    // §9.1.4: a pure switch never changes session status and never
+    // suspends the session, and the handoff window (seconds) is two orders
+    // of magnitude inside the 90 s suspend cutoff. The client half of that
+    // is that nothing about a switch is even observable here — the
+    // scheduler ticks on an interval and reads a snapshot, so a viewer
+    // whose pipeline is mid-handoff keeps heartbeating from buffered
+    // content exactly as before.
+    const sends: HeartbeatSnapshot[] = [];
+    let position = 0;
+    const scheduler = new HeartbeatScheduler({
+      getSnapshot: () => ({ positionMs: position, durationMs: 100_000, state: "in-progress" }),
+      send: (s) => sends.push(s),
+    });
+    scheduler.start();
+    // Simulate a handoff: several seconds during which the live edge is
+    // 503ing and the element plays out its buffer. Position keeps moving,
+    // heartbeats keep flowing.
+    for (let i = 0; i < 4; i += 1) {
+      position += 10_000;
+      vi.advanceTimersByTime(10_000);
+    }
+    scheduler.stop();
+    expect(sends.map((s) => s.positionMs)).toEqual([10_000, 20_000, 30_000, 40_000]);
+  });
+});

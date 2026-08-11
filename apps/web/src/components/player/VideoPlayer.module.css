@@ -33,3 +33,15 @@
   color: var(--muted);
   font-size: var(--text-sm);
 }
+
+/* Wave C2 (docs/PLAYBACK.md §9.1.9): the quality selector's dock. Sits
+   above the control bar, clear of the scrubber, and is only mounted while
+   the controls are visible. `pointer-events: auto` because the overlay
+   layers around it are click-through. */
+.qualityDock {
+  position: absolute;
+  right: var(--space-md);
+  bottom: calc(var(--space-3xl) + var(--space-lg));
+  z-index: 3;
+  pointer-events: auto;
+}
