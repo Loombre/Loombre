@@ -28,6 +28,7 @@ import {
   createDb,
   listStashSceneLinksForLibrary,
   replaceLibraryPathMappings,
+  resolveTestDatabaseUrl,
   upsertStashSceneLinksFromInventory,
 } from "@loombre/db";
 import { computeOshashForFile } from "../../src/stash/oshash.js";
@@ -52,7 +53,7 @@ vi.mock("../../src/stash/oshash.js", async (importOriginal) => {
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PKG_DB_ROOT = path.resolve(__dirname, "../../../../packages/db");
-const DATABASE_URL = process.env.DATABASE_URL ?? "postgres://loombre:loombre@localhost:5442/loombre";
+const DATABASE_URL = resolveTestDatabaseUrl();
 
 function run(script: string, args: string[]) {
   const result = spawnSync(process.execPath, [script, ...args], {

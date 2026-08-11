@@ -105,7 +105,7 @@ async function eventCount(type: string, matcher: (p: Record<string, unknown>) =>
 }
 
 beforeAll(async () => {
-  const databaseUrl = await ensureTestDatabase(BASE_DATABASE_URL, "remote_posture_e2e");
+  const databaseUrl = await ensureTestDatabase(BASE_DATABASE_URL, "remote_posture_e2e_test");
   run(path.join(DB_PKG_ROOT, "scripts", "migrate.mjs"), ["reset"], databaseUrl);
   run(path.join(DB_PKG_ROOT, "seed", "seed.mjs"), [], databaseUrl);
 
