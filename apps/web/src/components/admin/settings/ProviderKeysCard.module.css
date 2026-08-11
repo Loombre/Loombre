@@ -24,7 +24,7 @@
   font-family: var(--font-mono);
   font-size: var(--mono-sm);
   letter-spacing: var(--track-mono-wide);
-  color: var(--color-text-hint);
+  color: var(--color-text-muted);
 }
 
 /* LD-7 (owner QA, 2026-08-10): this stale `max-width: 62ch` capped the
@@ -85,7 +85,7 @@
   letter-spacing: var(--track-mono);
   background: transparent;
   border: 1px solid var(--color-border);
-  color: var(--color-text-subtle);
+  color: var(--color-text-muted);
 }
 
 .statusPill[data-set="true"] {
@@ -98,7 +98,7 @@
   font-family: var(--font-mono);
   font-size: var(--mono-xs);
   letter-spacing: var(--track-mono);
-  color: var(--color-text-hint);
+  color: var(--color-text-muted);
 }
 
 .lockedDisplay {

@@ -37,14 +37,14 @@
      section's identity is also carried by its position/order and the row
      content itself, this label is a redundant-but-load-bearing-for-style
      readout, not the sole way to know which section this is. */
-  color: var(--color-text-subtle);
+  color: var(--color-text-muted);
 }
 
 .meta {
   font-family: var(--font-mono);
   font-size: var(--mono-sm);
   letter-spacing: var(--track-mono);
-  color: var(--color-text-subtle);
+  color: var(--color-text-muted);
 }
 
 .action {

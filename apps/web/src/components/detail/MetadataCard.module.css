@@ -24,7 +24,7 @@
   font-size: var(--mono-md);
   font-weight: var(--weight-medium);
   letter-spacing: var(--track-mono-wide);
-  color: var(--color-text-subtle);
+  color: var(--color-text-muted);
 }
 
 .actions {

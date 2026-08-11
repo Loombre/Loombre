@@ -32,7 +32,7 @@
   font-family: var(--font-mono);
   font-size: var(--mono-md);
   letter-spacing: var(--track-mono);
-  color: var(--color-text-hint);
+  color: var(--color-text-muted);
 }
 
 .resetCategory {
@@ -52,7 +52,7 @@
   font-family: var(--font-mono);
   font-size: var(--mono-md);
   letter-spacing: var(--track-mono-wide);
-  color: var(--color-text-hint);
+  color: var(--color-text-muted);
   border-top: 1px solid var(--color-border-subtle);
 }
 

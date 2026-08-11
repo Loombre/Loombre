@@ -68,5 +68,5 @@
   font-weight: var(--weight-medium);
   letter-spacing: var(--track-mono);
   text-transform: uppercase;
-  color: var(--color-text-hint);
+  color: var(--color-text-muted);
 }

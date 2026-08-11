@@ -28,7 +28,7 @@
   font-family: var(--font-mono);
   font-size: var(--mono-lg);
   font-weight: var(--weight-semibold);
-  color: var(--color-text-subtle);
+  color: var(--color-text-muted);
 }
 
 .thumbWrap {
@@ -132,7 +132,7 @@
   font-family: var(--font-mono);
   font-size: var(--mono-sm);
   letter-spacing: 0.06em;
-  color: var(--color-text-subtle);
+  color: var(--color-text-muted);
 }
 
 .watchedBadge {

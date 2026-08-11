@@ -23,7 +23,7 @@
   font-size: var(--mono-md);
   font-weight: var(--weight-medium);
   letter-spacing: var(--track-mono-wide);
-  color: var(--color-text-subtle);
+  color: var(--color-text-muted);
   margin: 0;
 }
 
@@ -43,7 +43,7 @@
   font-family: var(--font-mono);
   font-size: var(--mono-md);
   letter-spacing: var(--track-mono);
-  color: var(--color-text-subtle);
+  color: var(--color-text-muted);
 }
 
 .loadMoreRow {
