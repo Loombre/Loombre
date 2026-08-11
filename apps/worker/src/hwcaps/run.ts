@@ -78,7 +78,10 @@ export async function runRealHwProbeBattery(): Promise<ProbeReport> {
 
   const workDir = await mkdtemp(join(tmpdir(), "loombre-hwprobe-"));
   try {
-    const backends = candidatesForPlatform(process.platform);
+    // Both axes handed over as DATA (platforms.ts's header) — the table
+    // never reads `process` itself, so every (platform, arch) row stays
+    // testable on a host nobody in the project owns.
+    const backends = candidatesForPlatform(process.platform, process.arch);
     const result = await runProbeBattery({
       backends,
       runCommand: runner,
