@@ -20,12 +20,14 @@
 import { Injectable } from "@nestjs/common";
 import {
   computePathMappingMatchPreview,
+  deleteLibraryStashConnectionAndEmit,
   getLibraryByIdAdmin,
   getLibraryPathMappings,
   getLibraryStashConnection,
   replaceLibraryPathMappings,
   upsertLibraryStashConnectionConfig,
   LibraryNotFoundForStashError,
+  StashConnectionNotConfiguredError,
   type LibraryPathMappingRow,
   type LibraryStashConnectionRow,
 } from "@loombre/db";
@@ -191,6 +193,43 @@ export class AdminStashService {
     await this.jobQueueProvider.queue.enqueue("stash-inventory", { libraryId }, { subjectItemId: null });
 
     return toConnectionDto(libraryId, row);
+  }
+
+  /** Stash OPEN ledger item 6: "forget this connection entirely" — DELETE,
+   *  distinct from PUT enabled:false's mere pause. 404s both when the
+   *  library itself does not exist (checked first, same ordering as
+   *  every other method here) and when the library exists but has no
+   *  Stash connection configured (StashConnectionNotConfiguredError —
+   *  "nothing to forget" is a real not-found, not a silent no-op).
+   *  deleteLibraryStashConnectionAndEmit does the actual work: deletes
+   *  ONLY the library_stash_connections row and emits
+   *  `stash.provider.disconnected` in the same transaction — path
+   *  mappings, any already-synced catalog metadata, and sync-report
+   *  history are all untouched by construction (see that function's own
+   *  header for the full data-retention rationale, S8). No keyring
+   *  secret to clear (S1: Stash has none). No zombie schedule/job to
+   *  reach into either — apps/worker/src/stash/schedule-loop.ts and
+   *  connectToStashLibrary both re-resolve the connection row fresh and
+   *  treat its absence as an ordinary miss/failure, not a crash. */
+  async deleteConnection(libraryId: string, actorUserId: string): Promise<void> {
+    const instancePath = this.instancePath(libraryId, "stash-connection");
+    await requireLiveAdmin(this.dbProvider.db, actorUserId, instancePath);
+
+    const library = await getLibraryByIdAdmin(this.dbProvider.db, libraryId);
+    if (!library) throw notFound("Library not found.", instancePath);
+
+    try {
+      await deleteLibraryStashConnectionAndEmit(this.dbProvider.db, {
+        libraryId,
+        actorUserId,
+        nowMs: clockNowMs(),
+      });
+    } catch (err) {
+      if (err instanceof StashConnectionNotConfiguredError) {
+        throw notFound("No Stash connection is configured for this library.", instancePath);
+      }
+      throw err;
+    }
   }
 
   // ==========================================================================

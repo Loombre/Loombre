@@ -70,8 +70,8 @@ describe("event-schemas (docs/PLAN.md §4.3)", () => {
     }
   });
 
-  it("envelope enum has exactly 47 types (15 through Addendum A + 6 plugin.* [LPP] + 2 watchlist.* [W2 L3] + 1 metadata.match-candidates [W2 L2] + 1 user.restricted-pin-reset [H2] + 1 probe.failed [owner ledger L1] + 1 stash.provider.disabled [Stash SQLite metadata sync, S3/K12] + 1 stash.provider.connected [Stash OPEN ledger item 7] + 2 stash.sync.* [Stash SQLite metadata sync, S8/K12, Lane C] + 1 mail.failed [optional mail transport run, E6/M6] + 3 user.invited/user.invite-revoked/user.claimed [E2, Lane A] + 1 user.password-reset [Optional mail transport + invitation & reset flows, E3/M14/M15, Lane B] + 1 session.revoked-by-password-change [Current-password re-auth on self-changes, G5] + 2 notice.published/notice.cancelled [admin broadcast notifications — system notices, N2/NG1, Lane A] + 9 remote.enabled/remote.disabled/remote.device.enrolled/remote.device.revoked/remote.path.changed/tunnel.connector.state/posture.regressed/posture.recovered/probe.arrived [Loombre Remote — embedded WireGuard + three-path wizard + reachability proof + posture card, R9, Wave 0])", () => {
-    expect(envelopeTypeEnum).toHaveLength(47);
+  it("envelope enum has exactly 48 types (15 through Addendum A + 6 plugin.* [LPP] + 2 watchlist.* [W2 L3] + 1 metadata.match-candidates [W2 L2] + 1 user.restricted-pin-reset [H2] + 1 probe.failed [owner ledger L1] + 1 stash.provider.disabled [Stash SQLite metadata sync, S3/K12] + 1 stash.provider.connected [Stash OPEN ledger item 7] + 1 stash.provider.disconnected [Stash OPEN ledger item 6] + 2 stash.sync.* [Stash SQLite metadata sync, S8/K12, Lane C] + 1 mail.failed [optional mail transport run, E6/M6] + 3 user.invited/user.invite-revoked/user.claimed [E2, Lane A] + 1 user.password-reset [Optional mail transport + invitation & reset flows, E3/M14/M15, Lane B] + 1 session.revoked-by-password-change [Current-password re-auth on self-changes, G5] + 2 notice.published/notice.cancelled [admin broadcast notifications — system notices, N2/NG1, Lane A] + 9 remote.enabled/remote.disabled/remote.device.enrolled/remote.device.revoked/remote.path.changed/tunnel.connector.state/posture.regressed/posture.recovered/probe.arrived [Loombre Remote — embedded WireGuard + three-path wizard + reachability proof + posture card, R9, Wave 0])", () => {
+    expect(envelopeTypeEnum).toHaveLength(48);
     expect(envelopeTypeEnum).toEqual(
       expect.arrayContaining([
         "item.added",
@@ -102,6 +102,7 @@ describe("event-schemas (docs/PLAN.md §4.3)", () => {
         "probe.failed",
         "stash.provider.disabled",
         "stash.provider.connected",
+        "stash.provider.disconnected",
         "stash.sync.started",
         "stash.sync.completed",
         "user.invited",
@@ -328,6 +329,10 @@ describe("event-schemas (docs/PLAN.md §4.3)", () => {
       "stash.provider.connected": {
         libraryId: "018f6f1e-0000-7000-8000-000000000002",
         schemaVersion: 85,
+      },
+      "stash.provider.disconnected": {
+        libraryId: "018f6f1e-0000-7000-8000-000000000002",
+        disconnectedAtMs: 1_700_000_050_000,
       },
       "stash.sync.started": {
         jobId: "018f6f1e-0000-7000-8000-000000000009",

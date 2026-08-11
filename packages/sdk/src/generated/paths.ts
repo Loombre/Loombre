@@ -26,6 +26,7 @@ export const API_OPERATIONS = [
   { path: "/admin/libraries/{id}/provider-chain", method: "put", operationId: "putAdminLibraryProviderChain" },
   { path: "/admin/libraries/{id}/stash-connection", method: "get", operationId: "getAdminLibraryStashConnection" },
   { path: "/admin/libraries/{id}/stash-connection", method: "put", operationId: "putAdminLibraryStashConnection" },
+  { path: "/admin/libraries/{id}/stash-connection", method: "delete", operationId: "deleteAdminLibraryStashConnection" },
   { path: "/admin/libraries/{id}/stash-path-mappings", method: "get", operationId: "getAdminLibraryStashPathMappings" },
   { path: "/admin/libraries/{id}/stash-path-mappings", method: "put", operationId: "putAdminLibraryStashPathMappings" },
   { path: "/admin/libraries/{id}/stash-path-mappings/preview", method: "post", operationId: "previewAdminLibraryStashPathMappings" },
