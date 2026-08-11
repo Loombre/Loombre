@@ -445,6 +445,23 @@ export async function recordTranscodeRun(db: DbOrTx, input: RecordTranscodeRunIn
  * signal by comparing K against this column, so a stale value would make it
  * either miss a real switch or manufacture a phantom one.
  *
+ * SELF-CLEARS AN ALREADY-SATISFIED REQUEST. A `pending_rung_index` equal to
+ * the rung being recorded is a request this very spawn fulfils, and nothing
+ * else in the system would ever clear it: the worker's restart block only
+ * reacts to a pending rung that DIFFERS from the running one (§9.1.7's
+ * `switchPending`), so an equal value is skipped on every tick from then on.
+ * It arises from a real, narrow window — the worker consumes the pending
+ * rung and only afterwards records the new active one, so a `v{K}` GET
+ * landing between those two writes still sees the OLD active rung, passes
+ * `requestRungSwitch`'s absorb-on-match, and re-writes the rung that is at
+ * that moment being spawned. Harmless to playback, but the row then claims a
+ * pending switch that will never happen, to `GET /playback/sessions/{id}`
+ * and to anyone reading it during an incident.
+ *
+ * The clear is a COMPARE-and-clear, in this same statement: a pending rung
+ * naming something ELSE is a genuine newer request that must survive to the
+ * next tick, exactly as `consumePendingRungIndex`'s own guard guarantees.
+ *
  * Guarded off the terminal states like every other write in this file.
  */
 export async function recordActiveRungIndex(
@@ -455,7 +472,16 @@ export async function recordActiveRungIndex(
 ): Promise<TranscodeSessionRow | undefined> {
   return db
     .updateTable('playback_sessions')
-    .set({ active_rung_index: ladderRungIndex, updated_at_ms: nowMs })
+    .set((eb) => ({
+      active_rung_index: ladderRungIndex,
+      pending_rung_index: eb
+        .case()
+        .when('pending_rung_index', '=', ladderRungIndex)
+        .then(null)
+        .else(eb.ref('pending_rung_index'))
+        .end(),
+      updated_at_ms: nowMs,
+    }))
     .where('id', '=', sessionId)
     .where('status', 'in', NON_TERMINAL_STATUSES)
     .returningAll()
