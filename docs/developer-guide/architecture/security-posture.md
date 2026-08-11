@@ -217,7 +217,7 @@ profile save with no email member is not floored at all.
 
 ## LD-13 addendum: currentPassword staying mandatory, null-to-clear, and the emailApplied honesty signal
 
-<!-- Sourcing: STATE.md "an upstream media server-study IMPLEMENTATION run" LD register,
+<!-- Sourcing: STATE.md's implementation-run LD register,
      LD-13(a/b/c); apps/server/src/catalog/users.controller.ts's updateMe
      (unchanged — verified still mandatory-when-applicable, see (a) below);
      apps/server/src/invites/invites.controller.ts's claimInvite (email

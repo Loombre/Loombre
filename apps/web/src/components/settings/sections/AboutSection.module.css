@@ -50,6 +50,6 @@
   font-size: var(--mono-lg);
   letter-spacing: var(--track-mono-wide);
   text-transform: uppercase;
-  color: var(--color-text-subtle);
+  color: var(--color-text-muted);
   text-align: center;
 }

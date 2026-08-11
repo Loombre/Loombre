@@ -12,50 +12,42 @@
 // selective predicate), and the stack-frame/quoted/bare-path matching
 // rules fire the same way regardless of which decision function drives
 // them.
+//
+// F1/F4: the redact-ALL shapes live in a SHARED golden-vector fixture
+// (test/fixtures/redact-path-vectors.json) consumed BOTH here and by
+// packages/jobs's redactAllPaths unit suite, so a future divergence
+// between the two package-local copies of this matcher is caught. The
+// ADVERSARIAL block below (UNC, glued-prefix, quoted/JSON file://,
+// space-containing bare, same-line frame+message) is the M-7 completeness
+// hardening: each shape leaked verbatim before the matcher was widened.
 
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { normalizeSlashes, redactPathsInText, stripFileUrlPrefix } from "../src/redact-paths.js";
 
 const REDACT_ALL = () => true;
 const REDACT_NONE = () => false;
 
-describe("redactPathsInText — unconditional redaction (packages/jobs's use case: no trusted root)", () => {
-  it("redacts a quoted absolute path to <redacted>/<basename>", () => {
-    expect(redactPathsInText(`ENOENT: no such file or directory, open '/data/library/Movies/Film (2020)/movie.mkv'`, REDACT_ALL)).toBe(
-      `ENOENT: no such file or directory, open '<redacted>/movie.mkv'`,
-    );
-  });
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-  it("redacts a bare unquoted absolute path", () => {
-    expect(redactPathsInText("scan failed: staging path /data/staging/incoming-xyz not found", REDACT_ALL)).toBe(
-      "scan failed: staging path <redacted>/incoming-xyz not found",
-    );
-  });
+interface RedactVector {
+  name: string;
+  input: string;
+  expected: string;
+}
 
-  it("redacts EVERY absolute path in a multi-path message, independently", () => {
-    expect(redactPathsInText("rename '/library/old/a.mkv' -> '/library/new/a.mkv' failed", REDACT_ALL)).toBe(
-      "rename '<redacted>/a.mkv' -> '<redacted>/a.mkv' failed",
-    );
-  });
+const { vectors } = JSON.parse(
+  readFileSync(path.join(__dirname, "fixtures", "redact-path-vectors.json"), "utf8"),
+) as { vectors: RedactVector[] };
 
-  it("redacts a Windows-style absolute path — the <redacted>/ prefix always uses a forward slash, regardless of the original separator", () => {
-    expect(redactPathsInText(`open 'C:\\Users\\alex\\Videos\\movie.mkv' failed`, REDACT_ALL)).toBe(`open '<redacted>/movie.mkv' failed`);
-  });
-
-  it("redacts a stack-frame-shaped line (parenthesized form) — same matching rule crash reports use", () => {
-    expect(redactPathsInText("    at readFile (/home/alex/app/scanner.js:42:11)", REDACT_ALL)).toBe(
-      "    at readFile (<redacted>/scanner.js:42:11)",
-    );
-  });
-
-  it("leaves relative paths / non-path text untouched", () => {
-    expect(redactPathsInText("scan failed: unexpected token at position 12", REDACT_ALL)).toBe("scan failed: unexpected token at position 12");
-  });
-
-  it("multi-line text is redacted line by line", () => {
-    const input = "first: '/data/a/x.mkv'\nsecond: '/data/b/y.mkv'";
-    expect(redactPathsInText(input, REDACT_ALL)).toBe("first: '<redacted>/x.mkv'\nsecond: '<redacted>/y.mkv'");
-  });
+describe("redactPathsInText — shared golden-vector fixture (F4: byte-for-byte identical to packages/jobs's redactAllPaths)", () => {
+  for (const vector of vectors) {
+    it(vector.name, () => {
+      expect(redactPathsInText(vector.input, REDACT_ALL)).toBe(vector.expected);
+    });
+  }
 });
 
 describe("redactPathsInText — the shouldRedact decision is honored exactly", () => {
@@ -77,6 +69,56 @@ describe("redactPathsInText — the shouldRedact decision is honored exactly", (
       return true;
     });
     expect(seen).toEqual(["/data/library/movie.mkv"]);
+  });
+
+  it("a shouldRedact that keeps a space-containing bare path leaves it FULLY intact — the widened matcher captures the whole path (no truncated-tail leak) so the predicate sees, and can keep, all of it", () => {
+    // The widened bare-path matcher spans internal spaces up to the final
+    // basename; a predicate returning false must therefore leave the ENTIRE
+    // path (directory structure included), not a truncated head, exactly as-is.
+    const input = "scan failed: /data/My Movies/film.mkv not found";
+    expect(redactPathsInText(input, REDACT_NONE)).toBe(input);
+  });
+});
+
+describe("selective-predicate parity with apps/worker's dataDir-aware redactPaths (the widened matcher must not regress the 'inside dataDir, leave intact' behavior)", () => {
+  // A stand-in for apps/worker/src/crash/redact.ts's isInsideDataDir: the
+  // exact predicate shape redactPathsInText is driven with in production.
+  // The dataDir deliberately CONTAINS A SPACE ("App Support"), the precise
+  // shape that would break under a space-TRUNCATING bare matcher: a
+  // truncated "/root/App" no longer starts-with the dataDir, so it would be
+  // wrongly redacted. The widened matcher captures the whole path, so the
+  // predicate classifies it correctly and it is left intact.
+  const dataDir = "/root/App Support/Loombre";
+  const insideDataDir = (path: string): boolean => {
+    const norm = normalizeSlashes(stripFileUrlPrefix(path));
+    const root = normalizeSlashes(dataDir).replace(/\/+$/, "");
+    return norm === root || norm.startsWith(`${root}/`);
+  };
+  const redactOutsideDataDir = (text: string) => redactPathsInText(text, (path) => !insideDataDir(path));
+
+  it("a parenthesised stack-frame path INSIDE the space-containing dataDir is left byte-for-byte intact", () => {
+    const line = "    at Object.func (/root/App Support/Loombre/postgres/superuser.secret:1:1)";
+    expect(redactOutsideDataDir(line)).toBe(line);
+  });
+
+  it("one line with an INSIDE-dataDir frame AND an OUTSIDE-dataDir trailing message path: frame kept, message path redacted", () => {
+    const line = "loaded (/root/App Support/Loombre/plugins/x.js:3:9) then failed reading /home/alex/.ssh/id_rsa";
+    expect(redactOutsideDataDir(line)).toBe("loaded (/root/App Support/Loombre/plugins/x.js:3:9) then failed reading <redacted>/id_rsa");
+  });
+
+  it("a multi-line stack mixes inside-dataDir (kept) and outside-dataDir (collapsed) frames, spaces and all", () => {
+    const stack = [
+      "Error: ENOENT",
+      "    at inside (/root/App Support/Loombre/postgres/data/base/16384/2610:1:1)",
+      "    at outside (/home/alex/My Videos/scanner.js:42:11)",
+      "    at /home/alex/My Code/index.js:7:3",
+    ].join("\n");
+    const redacted = redactOutsideDataDir(stack);
+    expect(redacted).toContain("/root/App Support/Loombre/postgres/data/base/16384/2610:1:1"); // inside dataDir, kept
+    expect(redacted).toContain("<redacted>/scanner.js:42:11"); // outside, space in dir, collapsed
+    expect(redacted).toContain("<redacted>/index.js:7:3"); // outside bare frame, space in dir, collapsed
+    expect(redacted).not.toContain("My Videos");
+    expect(redacted).not.toContain("My Code");
   });
 });
 

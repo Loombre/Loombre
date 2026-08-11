@@ -76,15 +76,17 @@
 }
 
 /* Sidebar MED fix (Wave-3 fidelity audit): the "LIBRARY"/"SYSTEM" group
-   label is the --color-text-subtle tier (#61666E, prototype-verbatim), not
-   --color-text-hint (#4A4E55) — subtle, not the faintest hint tier. */
+   label is a mono-scale uppercase eyebrow. LD-14/AUD-A4v3-003: subtle/hint
+   are banned on the --mono-* scale (every tier sits below the --text-xs 12px
+   floor), so this uses --color-text-muted (7.4:1, AA-clean) rather than the
+   prototype's #61666E subtle tier. */
 .groupLabel {
   font-family: var(--font-mono);
   font-size: var(--mono-sm);
   font-weight: var(--weight-medium);
   letter-spacing: var(--track-mono-wide);
   text-transform: uppercase;
-  color: var(--color-text-subtle);
+  color: var(--color-text-muted);
   padding: var(--space-2xs) var(--space-xs);
 }
 
@@ -135,7 +137,7 @@
   font-size: var(--mono-xs);
   font-weight: var(--weight-medium);
   letter-spacing: var(--track-mono);
-  color: var(--color-text-subtle);
+  color: var(--color-text-muted);
 }
 
 /* Sidebar MED fix (Wave-3 fidelity audit): SCAN is accent TEXT + a 5px
@@ -226,8 +228,9 @@
   gap: var(--space-2xs);
 }
 
-/* Sidebar MED fix: --color-text-subtle (prototype #61666E), matching the
-   same tier fix as .groupLabel above, and .1em tracking (prototype's POOL
+/* Sidebar MED fix: the POOL mono eyebrow. LD-14 override, same as
+   .groupLabel above — --color-text-muted, not the prototype's #61666E subtle
+   tier (banned on the --mono-* scale) — with .1em tracking (prototype's POOL
    row is `letter-spacing:.1em`, not the .16em "wide" eyebrow tracking). */
 .poolLabel {
   font-family: var(--font-mono);
@@ -235,7 +238,7 @@
   font-weight: var(--weight-medium);
   letter-spacing: var(--track-mono);
   text-transform: uppercase;
-  color: var(--color-text-subtle);
+  color: var(--color-text-muted);
 }
 
 .poolValue {
@@ -297,7 +300,7 @@
   font-size: var(--mono-sm);
   letter-spacing: var(--track-mono);
   text-transform: uppercase;
-  color: var(--color-text-subtle);
+  color: var(--color-text-muted);
 }
 
 .signOut {
@@ -309,7 +312,7 @@
   font-size: var(--mono-sm);
   letter-spacing: var(--track-mono);
   text-transform: uppercase;
-  color: var(--color-text-subtle);
+  color: var(--color-text-muted);
   cursor: pointer;
 }
 

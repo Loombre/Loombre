@@ -622,6 +622,16 @@ export async function hardenedFetchRaw(url: string, opts: HardenedFetchRawOption
       // Test/caller-supplied transport override — same meaning as
       // hardenedFetch's identical branch below: the caller already fully
       // controls "the network" here, but validation above still ran.
+      //
+      // R2-F5 WARNING: this branch fetches by URL, so the DNS-rebinding PIN
+      // (pinnedDialFetch, dialing the EXACT address resolveAndValidateHost
+      // validated) is BYPASSED — the override's own resolver decides what to
+      // dial, which can differ from the address just validated. That is
+      // acceptable ONLY because `fetchImpl` is a test seam: prod call sites
+      // never pass it (they take the pinned `else` branch below). A
+      // production caller that DID pass `fetchImpl` would keep the
+      // scheme/address validation but LOSE the rebind guarantee — do not
+      // wire one without restoring pinning in the override itself.
       response = await opts.fetchImpl(url, { redirect: "manual", signal: controller.signal });
     } else {
       // C5.2: resolution.pinnedAddress is now ALWAYS set (this file's
@@ -686,6 +696,13 @@ export async function hardenedFetch(url: string, init: RequestInit, opts: Harden
         // already fully controls "the network" here; see this function's
         // own tests, which exercise this seam extensively without any real
         // DNS/socket involved at all).
+        //
+        // R2-F5 WARNING: because this fetches by URL, the DNS-rebinding PIN
+        // in the `else` branch (dialing the exact validated address, never
+        // re-resolving) is BYPASSED — the override resolves the hostname
+        // itself. Safe ONLY as a test seam: prod default is the pinned
+        // branch, and a production caller passing `fetchImpl` would keep
+        // validation but LOSE the rebind guarantee.
         response = await opts.fetchImpl(url, { ...init, redirect: "manual", signal: controller.signal });
       } else {
         // DNS-rebinding fix (this file's header): dial the EXACT address

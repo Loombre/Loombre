@@ -1122,3 +1122,98 @@ describe("C5.1: startPluginDeliveryLoop's breaker map seeds from plugins.consecu
     expect(row.consecutive_failures).toBe(5);
   }, 20_000);
 });
+
+// ---------------------------------------------------------------------------
+// F2 fix wave: the delivery-loop breaker ALSO reseeds from THIS lane's own
+// durable counter (plugin_delivery_cursors.consecutive_failures), not only
+// plugins.consecutive_failures
+// ---------------------------------------------------------------------------
+//
+// C5.1 (the block above) reseeds the breaker map from plugins.consecutive_
+// failures — but the delivery loop writes THAT column only on a FULL trip
+// (maybeDisableOnBreakerTrip). Its own SUB-threshold (1..4) delivery failures
+// accumulate in plugin_delivery_cursors.consecutive_failures instead (see
+// delivery-loop.ts's header: "ORDINARY non-tripping failures never touch
+// plugins.consecutive_failures ... only ... this lane's own
+// plugin_delivery_cursors row"). So a worker restart PART-WAY through a
+// breaker window — the exact scenario C5.1 set out to close — still handed
+// the plugin a fresh 5-strike budget for THIS path, because plugins.
+// consecutive_failures was still 0 (no trip yet) while the cursor held the
+// real near-trip progress. The fix seeds from the MAX of the two durable
+// counters.
+describe("F2: startPluginDeliveryLoop's breaker map reseeds from plugin_delivery_cursors.consecutive_failures (this lane's own near-trip progress survives a restart)", () => {
+  it("4 sub-threshold delivery failures accrued before a restart are NOT discarded — exactly ONE more failing tick after the restart trips, not five", async () => {
+    // Nothing listens here — every attempt is a genuine ECONNREFUSED
+    // ('network-error', breaker-counted).
+    const deadProbe = createServer();
+    await new Promise<void>((resolve) => deadProbe.listen(0, "127.0.0.1", resolve));
+    const { port: deadPort } = deadProbe.address() as AddressInfo;
+    await new Promise<void>((resolve) => deadProbe.close(() => resolve()));
+    const deadUrl = `http://127.0.0.1:${deadPort}${LPP_DEFAULT_EVENT_SUBSCRIBER_ENDPOINT}`;
+
+    const secret = "f2-cursor-reseed-secret";
+    // 'file.relocated', restricted-scoped — a distinct-per-test gated type +
+    // restricted-scoping sidesteps both the H-4 admin-only filter and
+    // cross-test event-table contamination (same reasoning the batch-cap
+    // test's comment gives). Even if a sibling test inserted this type, each
+    // failing tick records exactly ONE cursor failure regardless of how many
+    // candidates matched, so the counts below stay deterministic.
+    const pluginId = await createSubscriberPlugin({ endpointUrl: deadUrl, secret, contentClass: "restricted", eventTypes: ["file.relocated"] });
+
+    const base = Date.now();
+
+    // "Instance A": 4 genuine, sub-threshold delivery failures (LPP_BREAKER_
+    // FAILURE_THRESHOLD is 5). random:()=>0 pins this lane's own backoff to a
+    // zero wait so every tick fires at the fixed clock. Each tick needs a
+    // fresh candidate or deliverOnePluginTick never dials the dead endpoint.
+    const loopA = startPluginDeliveryLoop({ db, env: testEnv(), now: () => base, random: () => 0, pollIntervalMs: 3_600_000 });
+    try {
+      for (let i = 0; i < 4; i++) {
+        await insertEvent("file.relocated", base + i, {
+          itemId: "018f6f1e-0000-7000-8000-00000000f200",
+          mediaFileId: "018f6f1e-0000-7000-8000-00000000f201",
+          previousPath: "/media/old.mkv",
+          newPath: "/media/new.mkv",
+          contentHash: `f2-hash-${i}`,
+          relocatedAtMs: base + i,
+        });
+        await loopA.runOnce();
+      }
+    } finally {
+      await loopA.stop();
+    }
+
+    // The lane's OWN durable counter reached 4; the trip-only column is still
+    // 0 and the plugin is still enabled — nothing tripped yet.
+    const cursorAfterA = await db.selectFrom("plugin_delivery_cursors").select("consecutive_failures").where("plugin_id", "=", pluginId).executeTakeFirstOrThrow();
+    expect(cursorAfterA.consecutive_failures).toBe(4);
+    const pluginAfterA = await db.selectFrom("plugins").select(["consecutive_failures", "enabled"]).where("id", "=", pluginId).executeTakeFirstOrThrow();
+    expect(pluginAfterA.consecutive_failures).toBe(0);
+    expect(pluginAfterA.enabled).toBe(true);
+
+    // "Instance B": a worker restart — a brand-new loop with a brand-new
+    // breaker map (exactly what a restart produces). Exactly ONE more failing
+    // tick must now trip it (4 durable + 1 = 5). Under the pre-fix reseed
+    // (plugins.consecutive_failures only, still 0 here) it would take FIVE
+    // more, leaving the plugin enabled after one.
+    const loopB = startPluginDeliveryLoop({ db, env: testEnv(), now: () => base, random: () => 0, pollIntervalMs: 3_600_000 });
+    try {
+      await insertEvent("file.relocated", base + 100, {
+        itemId: "018f6f1e-0000-7000-8000-00000000f2b0",
+        mediaFileId: "018f6f1e-0000-7000-8000-00000000f2b1",
+        previousPath: "/media/old.mkv",
+        newPath: "/media/new.mkv",
+        contentHash: "f2-hash-restart",
+        relocatedAtMs: base + 100,
+      });
+      await loopB.runOnce();
+    } finally {
+      await loopB.stop();
+    }
+
+    const row = await db.selectFrom("plugins").select(["enabled", "disabled_reason", "consecutive_failures"]).where("id", "=", pluginId).executeTakeFirstOrThrow();
+    expect(row.enabled).toBe(false);
+    expect(row.disabled_reason).toBe("breaker");
+    expect(row.consecutive_failures).toBe(5);
+  }, 20_000);
+});

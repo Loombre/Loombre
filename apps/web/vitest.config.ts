@@ -16,7 +16,7 @@
 // (automatic runtime, same as Next's) fixes it for every .tsx test without
 // touching tsconfig.json or the Next build.
 
-import { defineConfig } from "vitest/config";
+import { configDefaults, defineConfig } from "vitest/config";
 
 export default defineConfig({
   oxc: {
@@ -24,5 +24,8 @@ export default defineConfig({
   },
   test: {
     environment: "jsdom",
+    // Never collect a worktree's copy of these specs (see
+    // apps/server/vitest.config.ts's exclude comment).
+    exclude: [...configDefaults.exclude, "**/.claude/worktrees/**"],
   },
 });

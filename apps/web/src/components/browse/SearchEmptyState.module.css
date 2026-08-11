@@ -26,7 +26,7 @@
   font-family: var(--font-mono);
   font-size: var(--mono-sm);
   letter-spacing: var(--track-mono-wide);
-  color: var(--color-text-subtle);
+  color: var(--color-text-muted);
 }
 
 .pill {
@@ -69,7 +69,7 @@
   font-family: var(--font-mono);
   font-size: var(--mono-sm);
   letter-spacing: var(--track-mono-wide);
-  color: var(--color-text-hint);
+  color: var(--color-text-muted);
   margin-top: var(--space-xs);
 }
 

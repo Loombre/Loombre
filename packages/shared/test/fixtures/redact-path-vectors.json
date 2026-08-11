@@ -1,0 +1,117 @@
+{
+  "_comment": "Loombre :: packages/shared/test/fixtures/redact-path-vectors.json — F4 (M-7 fix wave). ONE golden-vector fixture consumed by BOTH the packages/shared canonical redactPathsInText(text, () => true) suite AND packages/jobs's redactAllPaths unit suite (packages/jobs takes no @loombre/shared dependency, so its test reads this file by relative path rather than importing it). Both functions MUST produce `expected` for `input` — a future divergence in the UNC / stack-frame / file:// / glued-prefix / space-containing rules between the two package-local copies surfaces here as a failure in one package or the other, not silently. Every `expected` is the UNCONDITIONAL redact-all outcome (shouldRedact => true), so it is the exact byte string BOTH functions produce.",
+  "vectors": [
+    {
+      "name": "quoted POSIX path with a parenthesised directory segment",
+      "input": "ENOENT: no such file or directory, open '/data/library/Movies/Film (2020)/movie.mkv'",
+      "expected": "ENOENT: no such file or directory, open '<redacted>/movie.mkv'"
+    },
+    {
+      "name": "bare (unquoted) POSIX path, no internal space",
+      "input": "scan failed: staging path /data/staging/incoming-xyz not found",
+      "expected": "scan failed: staging path <redacted>/incoming-xyz not found"
+    },
+    {
+      "name": "two independent quoted paths on one line, each redacted separately",
+      "input": "rename '/library/old/a.mkv' -> '/library/new/a.mkv' failed",
+      "expected": "rename '<redacted>/a.mkv' -> '<redacted>/a.mkv' failed"
+    },
+    {
+      "name": "quoted Windows drive path (backslashes normalise to a forward-slash prefix)",
+      "input": "open 'C:\\Users\\alex\\Videos\\movie.mkv' failed",
+      "expected": "open '<redacted>/movie.mkv' failed"
+    },
+    {
+      "name": "parenthesised stack frame keeps line:col",
+      "input": "    at readFile (/home/alex/app/scanner.js:42:11)",
+      "expected": "    at readFile (<redacted>/scanner.js:42:11)"
+    },
+    {
+      "name": "bare (no-parens) stack frame keeps line:col",
+      "input": "    at /home/alex/app/index.js:7:3",
+      "expected": "    at <redacted>/index.js:7:3"
+    },
+    {
+      "name": "message with no path at all is left untouched",
+      "input": "scan failed: unexpected token at position 12",
+      "expected": "scan failed: unexpected token at position 12"
+    },
+    {
+      "name": "bare percent-encoded file:// URL (ESM import-error shape), space after a preceding word",
+      "input": "Cannot find package 'foo' imported from file:///Users/alex/App%20Development/x.js",
+      "expected": "Cannot find package 'foo' imported from <redacted>/x.js"
+    },
+
+    {
+      "name": "ADVERSARIAL — UNC path (bare): \\\\server\\share\\... NAS/SMB media library shape leaks entirely today",
+      "input": "scan failed: \\\\nas-server\\Media\\Movies\\secret.mkv is offline",
+      "expected": "scan failed: <redacted>/secret.mkv is offline"
+    },
+    {
+      "name": "ADVERSARIAL — UNC path (quoted)",
+      "input": "open '\\\\nas-server\\Media\\Movies\\secret.mkv' failed",
+      "expected": "open '<redacted>/secret.mkv' failed"
+    },
+    {
+      "name": "ADVERSARIAL — glued-prefix bare path: key=/path (the pre-context class was too narrow for '=')",
+      "input": "libraryPath=/data/library/Movies/x.mkv",
+      "expected": "libraryPath=<redacted>/x.mkv"
+    },
+    {
+      "name": "ADVERSARIAL — glued-prefix bare path: word:/path — distinguished from scheme:// by a single-slash lookahead",
+      "input": "error:/data/library/secret.mkv",
+      "expected": "error:<redacted>/secret.mkv"
+    },
+    {
+      "name": "ADVERSARIAL — glued-prefix bare path: [/path] (bracket-wrapped)",
+      "input": "[/data/library/secret.mkv]",
+      "expected": "[<redacted>/secret.mkv]"
+    },
+    {
+      "name": "ADVERSARIAL — glued-prefix bare path: comma-joined ,/path",
+      "input": "paths: report.txt,/data/library/secret.mkv",
+      "expected": "paths: report.txt,<redacted>/secret.mkv"
+    },
+    {
+      "name": "ADVERSARIAL — file:// URI inside DOUBLE quotes (blind spot between the quoted rule and the bare rule)",
+      "input": "config \"file:///data/library/movie.mkv\" invalid",
+      "expected": "config \"<redacted>/movie.mkv\" invalid"
+    },
+    {
+      "name": "ADVERSARIAL — file:// URI embedded in a JSON object",
+      "input": "{\"path\":\"file:///data/library/movie.mkv\"}",
+      "expected": "{\"path\":\"<redacted>/movie.mkv\"}"
+    },
+    {
+      "name": "ADVERSARIAL — space-containing bare path: the tail past the basename leaked past the first space today",
+      "input": "scan failed: /data/My Movies/film.mkv not found",
+      "expected": "scan failed: <redacted>/film.mkv not found"
+    },
+    {
+      "name": "ADVERSARIAL — same line carries a stack frame AND a trailing message path (the early-return skipped the message path)",
+      "input": "handler crashed at read (/app/dist/main.js:10:5) while opening /Users/alex/.ssh/id_rsa",
+      "expected": "handler crashed at read (<redacted>/main.js:10:5) while opening <redacted>/id_rsa"
+    },
+
+    {
+      "name": "NO-OVER-REDACTION — two single-component paths separated by prose stay two separate paths",
+      "input": "compare /etc and /var directories",
+      "expected": "compare <redacted>/etc and <redacted>/var directories"
+    },
+    {
+      "name": "NO-OVER-REDACTION — an http(s) URL is not a filesystem path and is left untouched",
+      "input": "fetch failed for https://example.com/v1/users after 3 retries",
+      "expected": "fetch failed for https://example.com/v1/users after 3 retries"
+    },
+    {
+      "name": "NO-OVER-REDACTION — a connection string is left for the SECRET pass; the path pass must not mangle it",
+      "input": "failed to connect: postgres://loombre:hunter2@localhost:5442/loombre",
+      "expected": "failed to connect: postgres://loombre:hunter2@localhost:5442/loombre"
+    },
+    {
+      "name": "NO-OVER-REDACTION — a relative path is not absolute and is left untouched",
+      "input": "open ./config/local.json failed",
+      "expected": "open ./config/local.json failed"
+    }
+  ]
+}
