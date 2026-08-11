@@ -184,7 +184,14 @@ async function handleEvents(req, res, signingSecret) {
     Date.now(),
   );
   if (!verification.valid) {
-    const status = verification.reason === "stale-timestamp" ? 401 : 401;
+    // L-6 fix wave (cosmetic): every signature-verification failure is 401
+    // per spec §4.2 — `type` (below) is what differentiates the reason,
+    // never `status`. This used to be a dead `reason === "stale-timestamp"
+    // ? 401 : 401` ternary (both branches identical — almost certainly a
+    // copy/paste leftover from `type`'s own, genuinely-differentiating
+    // ternary right below it) which read as though a distinction existed
+    // here when none does; no observable behavior change.
+    const status = 401;
     const type =
       verification.reason === "stale-timestamp"
         ? "urn:loombre:lpp:problem:stale-timestamp"
