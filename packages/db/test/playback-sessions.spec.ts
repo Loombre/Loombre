@@ -523,7 +523,7 @@ describe('sweeper: listStalePlaybackSessions / endStalePlaybackSession', () => {
     expect(result).toBeUndefined();
   });
 
-  // Item C7 (an upstream media server-study implementation run): the ORPHAN SIGNATURE
+  // Item C7 (process-lifecycle hardening wave (2026-08-11)): the ORPHAN SIGNATURE
   // breadcrumb. "The heartbeat sweeper ended this session" AND "a
   // transcode job-ledger row is still active" AND "the session still names
   // a live ffmpeg pid" is precisely the combination that used to mean a

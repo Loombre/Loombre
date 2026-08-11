@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Loombre :: apps/worker/test/transcode/boot-reaper.spec.ts
 //
-// an upstream media server-study implementation run, Lane A1 item C2: pid persistence +
+// process-lifecycle hardening wave (2026-08-11, Lane A1) item C2: pid persistence +
 // a boot-time crash reaper for orphaned ffmpeg processes.
 //
 // C1 covers the GRACEFUL path (a worker that gets to run its shutdown

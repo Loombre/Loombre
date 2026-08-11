@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 /**
- * Boot-time orphaned-ffmpeg reaper (an upstream media server-study implementation run,
- * item C2). Runs once at worker start, alongside the job-ledger
- * reconciliation in apps/worker/src/index.ts.
+ * Boot-time orphaned-ffmpeg reaper (process-lifecycle hardening wave,
+ * 2026-08-11, item C2). Runs once at worker start, alongside the
+ * job-ledger reconciliation in apps/worker/src/index.ts.
  *
  * WHAT IT IS FOR. run-registry.ts (item C1) handles the graceful case: a
  * worker that gets to run its shutdown handler kills its ffmpeg children

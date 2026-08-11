@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Loombre :: apps/worker/test/transcode/run-registry.spec.ts
 //
-// an upstream media server-study implementation run, Lane A1 item C1: graceful shutdown
+// process-lifecycle hardening wave (2026-08-11, Lane A1) item C1: graceful shutdown
 // must terminate in-flight transcode runs.
 //
 // The defect this pins: apps/worker/src/index.ts's shutdown() stopped the

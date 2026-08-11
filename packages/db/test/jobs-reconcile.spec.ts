@@ -194,7 +194,7 @@ describe('reconcileAbandonedJobLedgerRows (W1: unwedge the singleton guards)', (
   });
 
   // -------------------------------------------------------------------------
-  // Item C7 (an upstream media server-study implementation run): 'transcode' folded into
+  // Item C7 (process-lifecycle hardening wave (2026-08-11)): 'transcode' folded into
   // this same machinery. It is NOT a singleton — one ledger row per
   // playback session, many concurrent — so it cannot simply be appended to
   // the singleton list: it needs its own horizons (a queued transcode job

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Loombre :: apps/worker/test/transcode/reconciliation-fold.spec.ts
 //
-// an upstream media server-study implementation run, Lane A1 item C7: fold 'transcode'
+// process-lifecycle hardening wave (2026-08-11, Lane A1) item C7: fold 'transcode'
 // into the boot job-ledger reconciliation.
 //
 // apps/worker/src/index.ts's SINGLETON_GUARDED_JOB_TYPES deliberately

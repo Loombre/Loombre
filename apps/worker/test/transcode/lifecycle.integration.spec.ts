@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Loombre :: apps/worker/test/transcode/lifecycle.integration.spec.ts
 //
-// an upstream media server-study implementation run, Lane A1 — the three END-TO-END
+// process-lifecycle hardening wave (2026-08-11, Lane A1) — the three END-TO-END
 // proofs for items C1 (graceful shutdown terminates in-flight runs) and
 // C2 (pid persistence + boot crash reaper), against a REAL ffmpeg, a REAL
 // Postgres, and the REAL platform process inspector. The unit specs

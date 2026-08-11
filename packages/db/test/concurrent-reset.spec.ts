@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Loombre :: packages/db/test/concurrent-reset.spec.ts
 //
-// Task #11 residual (b), an upstream media server-study implementation run Lane A1:
+// Task #11 residual (b), process-lifecycle hardening wave (2026-08-11, Lane A1):
 // scripts/migrate.mjs's own header documents this hole verbatim —
 //
 //   "RESIDUAL RACE (not fixed by this guard): ... two concurrent `reset`

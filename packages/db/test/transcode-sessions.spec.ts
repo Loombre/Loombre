@@ -492,7 +492,7 @@ describe('ensureSessionStagingDir', () => {
 });
 
 // ---------------------------------------------------------------------------
-// migrations/0041_playback_sessions_worker_process.sql (an upstream media server-study
+// migrations/0041_playback_sessions_worker_process.sql (comparative-study-study
 // implementation run, item C2): the two columns that make a boot-time
 // orphan reaper possible at all. Everything else about an interrupted
 // session survives a hard kill; the ffmpeg process itself does not — its

@@ -561,8 +561,8 @@ export async function endStalePlaybackSession(db: Kysely<DB>, id: string, nowMs:
 }
 
 /**
- * THE ORPHAN SIGNATURE breadcrumb (an upstream media server-study implementation run,
- * item C7).
+ * THE ORPHAN SIGNATURE breadcrumb (process-lifecycle hardening wave,
+ * 2026-08-11, item C7).
  *
  * Three facts together mean a detached ffmpeg is about to keep running
  * with nobody watching it: (1) the heartbeat sweeper just ended this
