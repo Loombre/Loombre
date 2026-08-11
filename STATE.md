@@ -875,6 +875,60 @@ second action. Lesson recorded in orchestrator memory (worktree spawns: cd to
 primary repo first). B4 note: B1+B4 edit openapi.yaml concurrently in
 disjoint paths; SDK regen conflicts resolve at integration by regenerating.
 
+SECOND PROVISIONING DEFECT (2026-08-11, caught by Lane B4): the respawned
+worktrees were cut from a STALE base — 88c5e6e5, predating ALL of Wave A —
+not current main. B4 self-corrected (ff-only to c018b564) before working; B2
+built on the stale base unaffected in practice (its remote-* files are
+disjoint from Wave A; barrel-export conflict in packages/db/src/index.ts
+resolves at its continuation-merge); B1/B3 advised mid-flight to merge main
+FIRST (B1's LD-13a builds directly on Wave A's 086643de, absent from the
+stale base). Standing lesson (matches the recorded Remote-run hazard #4):
+every lane brief must mandate a `git merge-base HEAD main` base check as a
+first action — added to the respawn briefs' sanity check going forward.
+
+**B2 checkpoint (2026-08-11): LD-9 DONE — orchestrator-verified** (12/12 on
+re-run: 8 db serialization + 4 e2e race; contract untouched; guard source
+read). DESIGN — rejected BOTH framed options (lock-spanning-side-effects and
+two-phase claim) for a third that is strictly better: pg_advisory_xact_lock
+guards ONLY the read-verify-commit transaction inside the three
+enable*AndEmit writers (compiled-in, no bypass, invariant-4 posture); the
+guarded region contains ZERO external I/O, so release is structural
+(PostgreSQL COMMIT/ROLLBACK is the whole story — no unlock to forget, no TTL;
+a hung Cloudflare call CANNOT hold the lock because no external call happens
+inside it). Race loser COMPENSATES (tunnel R8 teardown / listener stop /
+tls.mode revert from snapshot) — compensation is best-effort external I/O
+that can fail but cannot corrupt DB state (its row write rolled back). E2e
+race is HARD-synchronized (fake Cloudflare transport parks on a test-held
+promise exactly in V-SEC F2's window). Disable-takes-no-lock proven
+mechanically (independent session HOLDS the exact lock while all three
+disable writers + resolver run — any acquisition would time the suite out).
+Resolver invariant throw retained as defense-in-depth, comment now says
+believed-unreachable-and-why. Micro-hardening ordered + in flight: the
+load-bearing READ COMMITTED dependency (lane's own flag — guard unsound
+under REPEATABLE READ, currently enforced by nothing) becomes a runtime
+assertion with a red-first spec; plus the main merge.
+
+**B4 checkpoint (2026-08-11): stash-connection DELETE DONE — orchestrator-
+verified** (90/90 on re-run: e2e 11 + conformance 13 + event-schemas 54 +
+db 12; base = current main c018b564 after its own ff fix). oasdiff purely
+additive (one DELETE op; no breaking); sdk-drift clean; conformance
+allowance stays zero (158 ops). Scout-grounded semantics: no keyring
+involvement exists (S1 direct-SQLite design — the briefed "secret gone" RED
+case documented as vacuous, not fabricated); synced facts KEPT by
+construction (satellite tables key off library_id); no zombie schedule
+(loop + in-flight sync re-read the row and treat absence as ordinary miss).
+JUDGMENT CALLS ACCEPTED: GET-after-DELETE returns to the documented
+pre-configuration resting state (the briefed "GET 404s" would have broken
+GET's own tested never-404-for-unconfigured contract — house contract wins
+over brief wording); DELETE 404s for no-connection (substantial-resource
+posture vs clearAdminMailCredentials' scalar-idempotent precedent);
+stash.provider.disconnected event added via the 8-step procedure with real
+actorUserId (admin-initiated, unlike the two system-originated stash
+events); single atomic commit justified by layer interdependence + the
+3b08c891 precedent, RED verified live per stage. FOLLOW-UP recorded: no
+"Forget connection" UI entry point exists yet — admin-guide doc + web action
+whenever that UI lands.
+
 **A3 FINAL (2026-08-11): continuation done — lane COMPLETE, orchestrator-
 verified** (126/126 on re-run: ssrf + ledger-events + delivery-loop +
 chain-resolution + redact-paths; 17 commits total; contract/protocol diffs
