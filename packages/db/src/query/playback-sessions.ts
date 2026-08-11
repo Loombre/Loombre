@@ -80,6 +80,13 @@ export interface PlaybackSessionRow {
   discontinuityCount: number;
   suspendedByThrottle: boolean;
   stderrTail: string | null;
+  /** migrations/0044 (docs/PLAYBACK.md §9.1.3) — the ladder rung the live
+   *  pipeline is encoding. NULL means "no rung applies" (direct-play,
+   *  ladder-empty, pre-C2), NEVER rung 0. */
+  activeRungIndex: number | null;
+  /** migrations/0044 — a requested rung switch awaiting the worker's next
+   *  poll tick. */
+  pendingRungIndex: number | null;
 }
 
 interface RawSessionRow {
@@ -104,6 +111,8 @@ interface RawSessionRow {
   discontinuity_count: number;
   suspended_by_throttle: boolean;
   stderr_tail: string | null;
+  active_rung_index: number | null;
+  pending_rung_index: number | null;
 }
 
 function mapRow(row: RawSessionRow): PlaybackSessionRow {
@@ -129,6 +138,8 @@ function mapRow(row: RawSessionRow): PlaybackSessionRow {
     discontinuityCount: row.discontinuity_count,
     suspendedByThrottle: row.suspended_by_throttle,
     stderrTail: row.stderr_tail,
+    activeRungIndex: row.active_rung_index,
+    pendingRungIndex: row.pending_rung_index,
   };
 }
 
@@ -160,6 +171,8 @@ function baseSelect(db: Kysely<DB> | Transaction<DB>) {
       'playback_sessions.discontinuity_count as discontinuity_count',
       'playback_sessions.suspended_by_throttle as suspended_by_throttle',
       'playback_sessions.stderr_tail as stderr_tail',
+      'playback_sessions.active_rung_index as active_rung_index',
+      'playback_sessions.pending_rung_index as pending_rung_index',
     ]);
 }
 
@@ -274,6 +287,8 @@ export async function createPlaybackSession(
       discontinuity_count: inserted.discontinuity_count,
       suspended_by_throttle: inserted.suspended_by_throttle,
       stderr_tail: inserted.stderr_tail,
+      active_rung_index: inserted.active_rung_index,
+      pending_rung_index: inserted.pending_rung_index,
     });
   });
 }
@@ -691,6 +706,60 @@ export async function requestSeek(
 }
 
 /**
+ * Records a rung-switch request — the SERVER half of the §9.1 slot-handoff
+ * control channel (migrations/0044_playback_rung_switch.sql), and the exact
+ * counterpart of `requestSeek` above: same own-session scoping, same
+ * terminal-state guard, same "write what the caller already decided"
+ * posture. The caller (apps/server's hls-file.controller.ts) is what
+ * decides a `v{K}` GET names a rung other than the active one, and what
+ * validates `0 <= K < ladder.length` against the stored plan; this function
+ * re-derives neither.
+ *
+ * ABSORB-ON-MATCH, and this is the one thing it does that `requestSeek`
+ * does not. A client pinned to a rung fetches EVERY playlist and segment
+ * under that rung's `v{K}/` prefix, so without this guard a steady,
+ * switch-free stream would write a "pending switch" on every single GET —
+ * a request storm the worker would then have to read and discard once per
+ * poll tick, forever. `WHERE active_rung_index IS DISTINCT FROM $K` makes
+ * a request naming the already-active rung write nothing at all. It is the
+ * write-side analogue of the seek absorption the worker performs at the
+ * read side (`absorbSeekTarget`), placed at the door because that is where
+ * this particular storm originates.
+ *
+ * `IS DISTINCT FROM` rather than `<>` deliberately: `active_rung_index` is
+ * NULL until the worker's first spawn records one, and a NULL comparison
+ * with `<>` is NULL — i.e. not true — which would silently drop every
+ * switch request arriving in that window. A session with no recorded rung
+ * yet has nothing to match, so every request is genuinely new.
+ *
+ * Returns `undefined` for a nonexistent/foreign/terminal session. An
+ * ABSORBED request is NOT undefined — the session exists and the client's
+ * intent is already satisfied — so it returns the row, whose
+ * `pendingRungIndex` is simply unchanged.
+ */
+export async function requestRungSwitch(
+  db: Kysely<DB>,
+  ctx: ViewerContext,
+  id: string,
+  ladderRungIndex: number,
+  nowMs: number
+): Promise<PlaybackSessionRow | undefined> {
+  const existing = await getPlaybackSessionForUser(db, ctx, id);
+  if (!existing || existing.status === 'ended' || existing.status === 'failed') return undefined;
+
+  await db
+    .updateTable('playback_sessions')
+    .set({ pending_rung_index: ladderRungIndex, updated_at_ms: nowMs })
+    .where('id', '=', id)
+    .where('user_id', '=', ctx.userId)
+    .where('status', 'not in', ['ended', 'failed'])
+    .where(sql<boolean>`active_rung_index IS DISTINCT FROM ${ladderRungIndex}`)
+    .execute();
+
+  return getPlaybackSessionForUser(db, ctx, id);
+}
+
+/**
  * Heartbeat-staleness suspend candidates (docs/PLAYBACK.md §9: "no
  * heartbeat for 90s -> suspend"): sessions in `active` whose last heartbeat
  * (or, absent one, start time) is older than `cutoffMs`. NOT
@@ -786,6 +855,29 @@ export interface TranscodeRunRow {
  * session, a session whose pipeline never started, or one predating
  * migration 0043) — callers should treat that as "no source anchor
  * available", never as "origin 0".
+ *
+ * ---------------------------------------------------------------------------
+ * THE EXTENT RULE (docs/PLAYBACK.md §9.1.3, normative — stated HERE, at the
+ * call site, rather than only in the spec, because this is where the trap
+ * is walked into).
+ *
+ * A `transcode_runs` row records where a run STARTS. It records NOTHING
+ * about where it ends. Deriving a run's extent from one row alone — e.g.
+ * "the run's segments are the ones with `index >= start_segment`" — is
+ * FORBIDDEN: that predicate sweeps in every LATER run's segments too, and
+ * under ABR (Wave C2) later runs are routinely a DIFFERENT rung and a
+ * different region of the source.
+ *
+ * A consumer needing a run's extent MUST use one of exactly two derivations:
+ *   (a) the served playlist's own `runN/` URI prefix — the on-disk truth,
+ *       which is what apps/server/src/common/served-playlist.ts's
+ *       `deriveSegmentStartMs`/`presentationToSourceMs` already do; or
+ *   (b) the NEXT run's `start_segment − 1` as the closed upper bound, taken
+ *       from the session's full ordered run set (`listTranscodeRuns` below).
+ *       Valid because `{START_SEG} = producedSegment + 1` makes consecutive
+ *       runs' segment ranges partition the counter with no gaps and no
+ *       overlaps; the CURRENT run is unbounded above.
+ * ---------------------------------------------------------------------------
  */
 export async function getTranscodeRunForSegment(
   db: Kysely<DB>,

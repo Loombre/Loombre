@@ -363,6 +363,9 @@ export {
   endStalePlaybackSession,
   updateRequestedSegment,
   requestSeek,
+  // migrations/0044 (Wave C2, docs/PLAYBACK.md §9.1) — the server half of
+  // the slot-handoff control channel; `requestSeek`'s exact counterpart.
+  requestRungSwitch,
   listHeartbeatStalePlaybackSessions,
   suspendStalePlaybackSession,
   countActiveTranscodeSessions,
