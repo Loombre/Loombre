@@ -50,10 +50,25 @@
 //
 // Cursor: `afterId` is a raw events.id (UUIDv7) — `WHERE id > afterId`,
 // ordered by id ascending. UUIDv7's layout (48-bit big-endian unix_ts_ms in
-// the leading bytes, migrations/0001_init.sql's loombre_uuidv7()) makes
-// Postgres's byte-wise UUID ordering equivalent to insertion-time order, so
-// this is a valid keyset cursor without needing a separate tie-break
-// column — ids are already globally, monotonically orderable.
+// the leading bytes, migrations/0001_init.sql's loombre_uuidv7()) gives a
+// STABLE, UNIQUE total order, but NOT insertion order: only the leading
+// 48 timestamp bits are ordered by clock; every remaining bit is plain
+// `random()` with no monotonic-counter fallback, so two ids stamped in the
+// same Postgres clock millisecond sort by those random tail bits, not by
+// which INSERT actually ran first (migrations/0039_events_seq.sql's header
+// has the full analysis — this exact claim, stated here as fact in an
+// earlier version of this file, is what that migration disproves). The
+// practical effect on this keyset cursor: a same-millisecond sibling can
+// sort BEFORE `afterId` despite being inserted after it, so a client
+// polling with this cursor can skip that sibling forever. That hazard is
+// real, but fixing it here is deliberately deferred (STATE.md open item,
+// task #9) — migration 0039 added `events.seq` as the column that carries
+// the actual guaranteed insertion order, and switching readEventsForViewer
+// / readUnprocessedEvents to cursor on `seq` instead of `id` is the fix,
+// but it changes the cursor token's semantics for every already-connected
+// client (a `seq`-based cursor is not interchangeable with an `id`-based
+// one), so it is being done as its own reviewed change rather than folded
+// in here. The queries below still `ORDER BY id` unchanged.
 
 import { sql, type Expression, type ExpressionBuilder, type Kysely, type Selectable, type SqlBool } from 'kysely';
 import type { DB, EventsTable } from '../types.js';

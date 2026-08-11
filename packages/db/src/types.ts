@@ -474,6 +474,10 @@ export interface EventsTable {
   actor_user_id: string | null;
   payload: Generated<Record<string, unknown>>;
   processed_at_ms: number | null;
+  /** Identity-sequence tie-break for ordering reads — see migrations/
+   *  0039_events_seq.sql's header for why `id` (UUIDv7) alone cannot be
+   *  relied on as a same-millisecond tie-break. */
+  seq: Generated<number>;
 }
 
 // ============================================================================
