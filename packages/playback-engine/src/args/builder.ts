@@ -325,9 +325,18 @@
  *         carries, so a numerically "mapped" value would be wrong.
  *       - `-tag:v hvc1` stays hevc-only; an fmp4 AV1 track's `av01` sample
  *         entry is correct by default.
- *       - Bitrate flags (`-b:v`/`-maxrate`/`-bufsize`), GOP flags (`-g`,
- *         `-force_key_frames`) and every surrounding segment are
- *         codec-agnostic and unchanged.
+ *       - Bitrate flags: `-b:v` and `-bufsize` are codec-agnostic, but
+ *         `-maxrate` is OMITTED for the SOFTWARE av1 target. REAL-EXECUTION
+ *         CORRECTION (2026-08-11, SVT-AV1 v4.1.0 — the original spec text
+ *         said all three were codec-agnostic, and executing it disproved
+ *         that): ffmpeg's `libsvtav1` wrapper reads bitrate == maxrate as
+ *         CBR, which SVT-AV1 refuses for its RANDOM_ACCESS GOP structure,
+ *         so the encoder never opens and NOTHING is written. See the
+ *         emission site below for the exact error text and the three-variant
+ *         isolation. Hardware av1 wrappers keep `-maxrate` — same generic
+ *         rate-control fields their h264/hevc siblings already use.
+ *       - GOP flags (`-g`, `-force_key_frames`) and every surrounding
+ *         segment are codec-agnostic and unchanged.
  *     CONTAINER: an `av1` target paired with `ts-hls` is an
  *     internally-inconsistent planShape → interpretation-J descriptive
  *     throw, never reachable through `plan()` (§7.1's device gate refuses
@@ -746,7 +755,37 @@ export function buildFfmpegArgs(input: PlanInput, planShape: FfmpegPlanShape, op
       if (video.encoder === "software") args.push("-preset", SOFTWARE_PRESET_BY_TARGET[video.targetCodec]);
       if (video.encoder === "nvenc") args.push("-preset", "p4");
       args.push("-b:v", String(rung.videoBitrateBps));
-      args.push("-maxrate", String(rung.videoBitrateBps));
+      // REAL-EXECUTION CORRECTION to interpretation M (2026-08-11, found by
+      // apps/worker/test/transcode/av1-encode-args.integration.spec.ts on
+      // this box, SVT-AV1 v4.1.0): `libsvtav1` REFUSES `-maxrate`. ffmpeg's
+      // wrapper reads bitrate == maxrate as CBR, and SVT-AV1 rejects both
+      // the max-bitrate setting and CBR outright for its RANDOM_ACCESS GOP
+      // structure:
+      //     Svt[error]: Max Bitrate only supported with CRF mode
+      //     Svt[error]: CBR Rate control is currently not supported for
+      //                 RANDOM_ACCESS/ALL_INTRA, use VBR mode
+      //     [libsvtav1] Error setting encoder parameters: bad parameter
+      //     [out#0/hls] Nothing was written into output file
+      // The encoder never opens and zero segments are written — i.e. every
+      // software-AV1 plan is unrunnable with the flag present. ISOLATED by
+      // running all three variants: `-b:v` alone and `-b:v` + `-bufsize`
+      // both succeed ("BRC mode: VBR", segments written); adding `-maxrate`
+      // is what fails. So the fix is exactly this one omission, and
+      // `-bufsize` stays.
+      //
+      // SCOPED to the software encoder deliberately: the hardware av1
+      // wrappers (av1_nvenc/av1_qsv/av1_vaapi/av1_amf) take `-maxrate`
+      // through the same generic AVCodecContext rate-control fields their
+      // h264/hevc siblings already use here, and no hardware on this
+      // machine can execute them — narrowing the deviation to the ONE
+      // encoder with evidence keeps the hw paths identical to their proven
+      // h264/hevc form for P3.4's hardware checklist to verify.
+      //
+      // This supersedes §6 interpretation M's "bitrate flags are
+      // codec-agnostic and unchanged" sentence, on the same
+      // real-execution-wins basis as interpretation D's own VT correction.
+      const rejectsMaxrate = video.targetCodec === "av1" && video.encoder === "software";
+      if (!rejectsMaxrate) args.push("-maxrate", String(rung.videoBitrateBps));
       args.push("-bufsize", String(rung.videoBitrateBps * 2));
       // `-level` is NEVER emitted for an av1 target in v1 (interpretation
       // M): AV1 levels are `seq_level_idx` ordinals whose numbering does not
