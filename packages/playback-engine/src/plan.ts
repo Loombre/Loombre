@@ -198,7 +198,21 @@ import { buildFfmpegArgs } from "./args/builder.js";
  * property 5. Copy-preference is untouched by construction — nothing in
  * §7.1/§7.2 is reachable unless the final `video.action === 'transcode'`.
  */
-export const ENGINE_VERSION = "0.10.0";
+/**
+ * 0.10.1 (C1 fable-review finding 1, owner-adopted 2026-08-11): §7.2's
+ * Stage-G residual guard NARROWS to what design law 4 always meant. Its
+ * tier-0 arm is unchanged; a second arm now demotes av1 rungs on ANY
+ * rule-(iii) route whose SOFTWARE row lacks probe-verified av1 encode
+ * (cause `software-route-no-av1`) — `'hw'` eligibility is a fact about a
+ * HARDWARE backend, and rule (iii) does not use that backend, so a
+ * tier-1+ route-collapse could previously hand the builder `libsvtav1` on
+ * a box that never proved it has it. PATCH, not minor: no new decision
+ * rule, no new emittable ladder codec, no new reason code — only a class
+ * of plans that used to name an unverified encoder now naming the one the
+ * box actually verified. Matrix 529 → 530 cases; §10 gains the companion
+ * randomized property (leg 4 over the unrestricted tier-0 space).
+ */
+export const ENGINE_VERSION = "0.10.1";
 
 /**
  * Stage D assembly (docs/PLAYBACK.md §3 Stage D.4, binding interpretation
