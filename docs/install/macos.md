@@ -249,6 +249,13 @@ tail -f "/Library/Logs/Loombre/server.out.log"
 Or just use the menubar app's status indicator — same information, no
 terminal required.
 
+The server's log path above (`/Library/Logs/Loombre/server.out.log`) is
+also set as `LOOMBRE_LOG_FILE` automatically, so the admin Dashboard's
+log-tail card shows the same content in the browser — no terminal needed
+there either. `/Library/Logs/Loombre/worker.out.log` and `web.out.log`
+cover the other two services. See [Environment variable
+reference](/ops/env-reference) if you want to point it somewhere else.
+
 ## Shutting Loombre down completely
 
 The menubar's **Shut Down Loombre…** item stops all three services — the
