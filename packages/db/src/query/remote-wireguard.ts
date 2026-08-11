@@ -18,6 +18,7 @@
 import type { Kysely, Transaction } from 'kysely';
 import type { DB } from '../types.js';
 import { withTransaction, writeEvent } from '../internal/index.js';
+import { withRemotePathEnableGuard } from './remote-path-guard.js';
 
 export interface RemoteWireguardStateRow {
   serverPublicKey: string | null;
@@ -75,9 +76,16 @@ export interface EnableRemoteWireguardInput {
  * as the envelope actorUserId, never in the payload (ACTOR_FIELD_MAP maps
  * both types to `[]` — ids/timestamps only, matching remote.enabled's own
  * additionalProperties:false).
+ *
+ * LD-9: the write runs inside withRemotePathEnableGuard, so this function
+ * THROWS RemotePathConflictError (nothing written, nothing emitted) when
+ * another remote-access path is already enabled — including one that
+ * committed after the caller's own 409 pre-check passed. That is the
+ * mechanism enforcing RG15's one-active-path invariant; the caller's
+ * pre-check is only a fail-fast. See src/query/remote-path-guard.ts.
  */
 export async function enableRemoteWireguardAndEmit(db: Kysely<DB>, input: EnableRemoteWireguardInput): Promise<RemoteWireguardStateRow> {
-  return withTransaction(db, async (trx: Transaction<DB>) => {
+  return withRemotePathEnableGuard(db, 'remote', async (trx: Transaction<DB>) => {
     const row = await trx
       .insertInto('remote_wireguard_state')
       .values({

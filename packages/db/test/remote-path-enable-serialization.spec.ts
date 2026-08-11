@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Loombre :: packages/db/test/remote-path-enable-serialization.spec.ts
 //
-// LD-9 (STATE.md "an upstream media server-study IMPLEMENTATION run" LD register; closes
-// the Loombre Remote OPEN-ledger item V-SEC F2). The MECHANISM-level
+// LD-9 (STATE.md's LD register; closes the Loombre Remote OPEN-ledger
+// item V-SEC F2). The MECHANISM-level
 // checks for src/query/remote-path-guard.ts — the HTTP-level behaviour
 // this produces is pinned separately by apps/server/test/
 // remote-enable-race.e2e.spec.ts.

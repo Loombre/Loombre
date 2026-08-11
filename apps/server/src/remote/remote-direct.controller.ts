@@ -75,6 +75,7 @@ import {
   disableRemoteDirectStateAndEmit,
   enableRemoteDirectStateAndEmit,
   getRemoteDirectInternalState,
+  RemotePathConflictError,
   type RemoteDirectMode,
   type RemotePathId,
 } from "@loombre/db";
@@ -270,12 +271,19 @@ export class RemoteDirectController {
     }
     const mode = body["mode"] as "acme" | "reverse-proxy";
 
-    // RG15: 409 against another ACTIVE path — now the REAL canonical
-    // resolver (WG2 integration unification), replacing this lane's own
+    // RG15: 409 against another ACTIVE path — the REAL canonical resolver
+    // (WG2 integration unification), replacing this lane's own
     // isolated-worktree WG-only defensive raw-SQL check (see packages/db/
     // src/query/remote-direct.ts's isRemoteWireguardActive doc comment for
     // why that existed and what it did and did not cover). Every path is
     // checked now, not just WireGuard.
+    //
+    // LD-9 (V-SEC F2): this is a FAIL-FAST, not the enforcement. It cannot
+    // see a path that becomes active between here and the commit below;
+    // enableRemoteDirectStateAndEmit's own transaction re-reads all three
+    // paths under a shared advisory lock and throws RemotePathConflictError
+    // rather than committing a second active path (packages/db/src/query/
+    // remote-path-guard.ts). commitDirectEnable below handles that loss.
     const otherPath = await this.activePathReader.activePath();
     if (otherPath !== "none" && otherPath !== "direct") {
       throw conflict(`The ${otherPath} path is already active — disable it before enabling the Direct path.`, instance, "remote-path-active");
@@ -309,14 +317,18 @@ export class RemoteDirectController {
       await this.settingsService.updateSetting({ key: "tls.acmeTosAgreed", value: true, actorUserId, nowMs: nowMsValue, instancePath: instance });
       await this.settingsService.updateSetting({ key: "tls.mode", value: "acme", actorUserId, nowMs: nowMsValue, instancePath: instance });
 
-      await enableRemoteDirectStateAndEmit(db, {
-        mode: "acme",
-        preEnableTlsMode,
-        preEnableTrustProxy,
-        previousActivePath,
-        actorUserId,
-        nowMs: nowMsValue,
-      });
+      await this.commitDirectEnable(
+        db,
+        {
+          mode: "acme",
+          preEnableTlsMode,
+          preEnableTrustProxy,
+          previousActivePath,
+          actorUserId,
+          nowMs: nowMsValue,
+        },
+        instance,
+      );
 
       return { enabled: true, mode: "acme", domain, certValid: true, certExpiresAtMs: persisted.notAfterMs };
     }
@@ -334,16 +346,69 @@ export class RemoteDirectController {
       );
     }
 
-    await enableRemoteDirectStateAndEmit(db, {
-      mode: "reverse-proxy",
-      preEnableTlsMode,
-      preEnableTrustProxy,
-      previousActivePath,
-      actorUserId,
-      nowMs: nowMsValue,
-    });
+    await this.commitDirectEnable(
+      db,
+      {
+        mode: "reverse-proxy",
+        preEnableTlsMode,
+        preEnableTrustProxy,
+        previousActivePath,
+        actorUserId,
+        nowMs: nowMsValue,
+      },
+      instance,
+    );
 
     return { enabled: true, mode: "reverse-proxy", domain: null, certValid: null, certExpiresAtMs: null };
+  }
+
+  /**
+   * LD-9: the guarded commit, plus the compensation a loser owes.
+   *
+   * enableRemoteDirectStateAndEmit throws RemotePathConflictError when
+   * another path won the race after this request's own fail-fast check
+   * passed. Nothing of Direct's own state was written (that transaction
+   * rolled back), but in `acme` mode the four tls.* settings writes above
+   * ALREADY landed — they are separate, already-committed per-key writes,
+   * not part of the guarded transaction. So tls.mode is put back exactly the
+   * way disableRemoteDirect puts it back: toward the pre-enable snapshot,
+   * never toward "acme", so RG12's cross-field invariant can never reject
+   * the revert. tls.acmeDomains/tls.acmeTosAgreed are deliberately left, the
+   * same as on disable (see this file's header).
+   */
+  private async commitDirectEnable(
+    db: LoombreDb,
+    input: {
+      mode: RemoteDirectMode;
+      preEnableTlsMode: string;
+      preEnableTrustProxy: string;
+      previousActivePath: RemotePathId;
+      actorUserId: string;
+      nowMs: number;
+    },
+    instance: string,
+  ): Promise<void> {
+    try {
+      await enableRemoteDirectStateAndEmit(db, input);
+    } catch (err) {
+      if (err instanceof RemotePathConflictError) {
+        if (input.mode === "acme") {
+          await this.settingsService.updateSetting({
+            key: "tls.mode",
+            value: input.preEnableTlsMode,
+            actorUserId: input.actorUserId,
+            nowMs: input.nowMs,
+            instancePath: instance,
+          });
+        }
+        throw conflict(
+          `The ${err.activePath} path is already active — disable it before enabling the Direct path.`,
+          instance,
+          "remote-path-active",
+        );
+      }
+      throw err;
+    }
   }
 
   @Post("admin/remote/direct/disable")

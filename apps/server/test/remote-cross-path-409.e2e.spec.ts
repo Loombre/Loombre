@@ -148,18 +148,17 @@ async function activateDirect(): Promise<void> {
 }
 
 describe("cross-path 409s — all three pairs, both orderings (RG15, canonical resolveActivePath)", () => {
-  // Tunnel is the ONE target whose own cross-path 409 (remote-tunnel.
-  // service.ts) does not set a problem `code` (a pre-existing T1 posture,
-  // unlike D1's/WG2's own — every OTHER check in this file's target list
-  // does) — proven correct here by CALL ORDER instead (hostname validation
-  // -> cross-path 409 -> "already enabled" -> "no token stored", see that
-  // file's own enableRemoteTunnel): with no token ever set, a 409 this
-  // early can only be the cross-path check, since "no token" is checked
-  // strictly LATER in the same function.
+  // Tunnel USED to be the one target whose cross-path 409 carried no problem
+  // `code` (a pre-existing T1 posture, unlike D1's/WG2's own). LD-9 closed
+  // that gap: a caller must not have to tell "lost at the fail-fast check"
+  // from "lost at the guarded commit", so both now return the identical
+  // shape, and all three paths agree on `remote-path-active`. The
+  // enumeration below is therefore uniform.
   it("remote active -> enabling tunnel = 409", async () => {
     await activateWireguard();
     const res = await asAdmin().post("/admin/remote/tunnel/enable").send({ hostname: "media.example.com" });
     expect(res.status).toBe(409);
+    expect(res.body.code).toBe("remote-path-active");
   });
 
   it("remote active -> enabling direct = 409", async () => {
@@ -194,6 +193,7 @@ describe("cross-path 409s — all three pairs, both orderings (RG15, canonical r
     await activateDirect();
     const res = await asAdmin().post("/admin/remote/tunnel/enable").send({ hostname: "media.example.com" });
     expect(res.status).toBe(409);
+    expect(res.body.code).toBe("remote-path-active");
   });
 
   it("SANITY: with NOTHING active, none of the three enable attempts 409 with the cross-path conflict code (they may still fail for their OWN unrelated reasons — Tunnel's own 'no token stored' is ALSO a 409, distinguished here by its problem `code`, or lack thereof, vs. the cross-path check's 'remote-path-active')", async () => {

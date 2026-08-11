@@ -571,6 +571,14 @@ export {
   resolveActivePath,
 } from './query/remote-active-path.js';
 
+// LD-9 (STATE.md's LD register; closes V-SEC F2) —
+// the mechanism that makes RG15's one-active-path invariant true rather
+// than merely checked. RemotePathConflictError is the ONLY piece
+// apps/server needs: its three staged enable flows catch it, compensate
+// for whatever external side effects they had already performed, and
+// re-throw the house 409. See src/query/remote-path-guard.ts's design note.
+export { RemotePathConflictError } from './query/remote-path-guard.js';
+
 // Addendum A/A4 (STATE.md, admin-configurable server settings) —
 // server_settings reads/writes + outbox emission, see src/query/
 // settings.ts header for why this is public-barrel and registry-unaware.

@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Loombre :: apps/server/test/remote-enable-race.e2e.spec.ts
 //
-// LD-9 (STATE.md "an upstream media server-study IMPLEMENTATION run" LD register; closes
-// the Loombre Remote OPEN-ledger item V-SEC F2 — "cross-path enable is
-// TOCTOU-racy"). The HTTP-level half of the proof; the mechanism itself is
+// LD-9 (STATE.md's LD register; closes the Loombre Remote OPEN-ledger
+// item V-SEC F2 — "cross-path enable is TOCTOU-racy"). The HTTP-level
+// half of the proof; the mechanism itself is
 // pinned by packages/db/test/remote-path-enable-serialization.spec.ts, and
 // argued in packages/db/src/query/remote-path-guard.ts's design note.
 //
