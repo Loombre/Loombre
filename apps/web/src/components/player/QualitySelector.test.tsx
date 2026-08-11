@@ -10,9 +10,14 @@
 // That sentence is the whole contract, and it is why these tests assert on
 // what the component CALLS rather than on anything it fetches: there is no
 // endpoint here to test. The selector's only job is to move `nextLevel`.
+//
+// Rendered through the repo's own `renderIntoBody` harness — this workspace
+// deliberately carries no @testing-library (components/ui/test-render.tsx's
+// header: HARD LINE, no new npm deps for the player/UI lanes).
 
-import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { act } from "react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { renderIntoBody, type TestRender } from "../ui/test-render.js";
 import { QualitySelector, describeLevel } from "./QualitySelector.js";
 
 const LEVELS = [
@@ -20,6 +25,22 @@ const LEVELS = [
   { height: 720, bitrate: 3_160_000 },
   { height: 1080, bitrate: 8_384_000 },
 ];
+
+let view: TestRender | undefined;
+afterEach(() => {
+  view?.unmount();
+  view = undefined;
+});
+
+function radios(container: HTMLElement): HTMLButtonElement[] {
+  return [...container.querySelectorAll<HTMLButtonElement>('[role="radio"]')];
+}
+
+function radioNamed(container: HTMLElement, label: string): HTMLButtonElement {
+  const found = radios(container).find((el) => el.textContent === label);
+  expect(found, `expected a radio labelled "${label}"`).toBeDefined();
+  return found!;
+}
 
 describe("describeLevel", () => {
   it("names a level by its height, which is what a viewer actually recognises", () => {
@@ -35,58 +56,69 @@ describe("describeLevel", () => {
 
 describe("QualitySelector", () => {
   it("renders Auto plus one option per level, HIGHEST first (how a viewer reads a quality menu)", () => {
-    render(<QualitySelector levels={LEVELS} currentLevel={2} autoMode onSelect={() => undefined} />);
-    const options = screen.getAllByRole("radio").map((el) => el.textContent);
-    expect(options).toEqual(["Auto", "1080p", "720p", "360p"]);
+    view = renderIntoBody(<QualitySelector levels={LEVELS} currentLevel={2} autoMode onSelect={() => undefined} />);
+    expect(radios(view.container).map((el) => el.textContent)).toEqual(["Auto", "1080p", "720p", "360p"]);
   });
 
   it("is a RADIOGROUP, not a tablist — mutually exclusive options, per the Wave A sweep", () => {
-    render(<QualitySelector levels={LEVELS} currentLevel={2} autoMode onSelect={() => undefined} />);
-    expect(screen.getByRole("radiogroup", { name: /quality/i })).toBeTruthy();
+    view = renderIntoBody(<QualitySelector levels={LEVELS} currentLevel={2} autoMode onSelect={() => undefined} />);
+    const group = view.container.querySelector('[role="radiogroup"]');
+    expect(group).not.toBeNull();
+    expect(group!.getAttribute("aria-label")).toBe("Quality");
+    // Exactly one segment in the tab order at a time (roving tabindex).
+    expect(radios(view.container).filter((el) => el.tabIndex === 0)).toHaveLength(1);
   });
 
   it("marks Auto checked in auto mode, and the PINNED level when pinned", () => {
-    const { rerender } = render(<QualitySelector levels={LEVELS} currentLevel={2} autoMode onSelect={() => undefined} />);
-    expect(screen.getByRole("radio", { name: "Auto" }).getAttribute("aria-checked")).toBe("true");
+    view = renderIntoBody(<QualitySelector levels={LEVELS} currentLevel={2} autoMode onSelect={() => undefined} />);
+    expect(radioNamed(view.container, "Auto").getAttribute("aria-checked")).toBe("true");
 
-    rerender(<QualitySelector levels={LEVELS} currentLevel={1} autoMode={false} onSelect={() => undefined} />);
-    expect(screen.getByRole("radio", { name: "720p" }).getAttribute("aria-checked")).toBe("true");
-    expect(screen.getByRole("radio", { name: "Auto" }).getAttribute("aria-checked")).toBe("false");
+    view.rerender(<QualitySelector levels={LEVELS} currentLevel={1} autoMode={false} onSelect={() => undefined} />);
+    expect(radioNamed(view.container, "720p").getAttribute("aria-checked")).toBe("true");
+    expect(radioNamed(view.container, "Auto").getAttribute("aria-checked")).toBe("false");
   });
 
   it("selecting a level reports that level's hls.js INDEX (what nextLevel takes)", () => {
     const onSelect = vi.fn();
-    render(<QualitySelector levels={LEVELS} currentLevel={2} autoMode onSelect={onSelect} />);
-    fireEvent.click(screen.getByRole("radio", { name: "720p" }));
+    view = renderIntoBody(<QualitySelector levels={LEVELS} currentLevel={2} autoMode onSelect={onSelect} />);
     // Displayed highest-first, but hls.js indexes ascending by bandwidth —
-    // 720p is index 1, and reporting the DISPLAY position (1 by luck here,
-    // 2 for 360p) would pin the wrong variant.
+    // 720p is index 1 and 360p is index 0. Reporting the DISPLAY position
+    // would pin the wrong variant, and (a switch being a full server-side
+    // pipeline handoff) pay real CPU to do it.
+    act(() => radioNamed(view!.container, "720p").click());
     expect(onSelect).toHaveBeenCalledWith(1);
-    fireEvent.click(screen.getByRole("radio", { name: "360p" }));
+    act(() => radioNamed(view!.container, "360p").click());
     expect(onSelect).toHaveBeenLastCalledWith(0);
+    act(() => radioNamed(view!.container, "1080p").click());
+    expect(onSelect).toHaveBeenLastCalledWith(2);
   });
 
   it("selecting Auto reports -1, hls.js's own 'let ABR decide'", () => {
     const onSelect = vi.fn();
-    render(<QualitySelector levels={LEVELS} currentLevel={1} autoMode={false} onSelect={onSelect} />);
-    fireEvent.click(screen.getByRole("radio", { name: "Auto" }));
+    view = renderIntoBody(<QualitySelector levels={LEVELS} currentLevel={1} autoMode={false} onSelect={onSelect} />);
+    act(() => radioNamed(view!.container, "Auto").click());
     expect(onSelect).toHaveBeenCalledWith(-1);
   });
 
   it("in auto mode the CURRENTLY-PLAYING level is still shown, so 'Auto' is not a black box", () => {
-    render(<QualitySelector levels={LEVELS} currentLevel={1} autoMode onSelect={() => undefined} />);
-    expect(screen.getByRole("radio", { name: "Auto" }).getAttribute("data-current-level")).toBe("720p");
+    view = renderIntoBody(<QualitySelector levels={LEVELS} currentLevel={1} autoMode onSelect={() => undefined} />);
+    expect(view.container.textContent).toContain("Currently 720p");
+  });
+
+  it("that note is absent when a level is PINNED — the chosen segment already says it", () => {
+    view = renderIntoBody(<QualitySelector levels={LEVELS} currentLevel={1} autoMode={false} onSelect={() => undefined} />);
+    expect(view.container.textContent).not.toContain("Currently");
   });
 
   it("renders NOTHING for a single-variant master — there is nothing to choose between", () => {
-    const { container } = render(
+    view = renderIntoBody(
       <QualitySelector levels={[{ height: 1080, bitrate: 8_000_000 }]} currentLevel={0} autoMode onSelect={() => undefined} />,
     );
-    expect(container.firstChild).toBeNull();
+    expect(view.container.firstChild).toBeNull();
   });
 
   it("renders NOTHING when there are no levels at all (direct-play, or hls.js not attached)", () => {
-    const { container } = render(<QualitySelector levels={[]} currentLevel={-1} autoMode onSelect={() => undefined} />);
-    expect(container.firstChild).toBeNull();
+    view = renderIntoBody(<QualitySelector levels={[]} currentLevel={-1} autoMode onSelect={() => undefined} />);
+    expect(view.container.firstChild).toBeNull();
   });
 });
