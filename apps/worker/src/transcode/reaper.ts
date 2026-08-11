@@ -164,7 +164,7 @@ async function waitForRunExit(
 ): Promise<boolean> {
   const deadline = nowMs() + timeoutMs;
   for (;;) {
-    let gone = true;
+    let gone: boolean;
     try {
       const inspection = await inspector.inspect(pid);
       gone = !inspection.alive || !(inspection.commandLine ?? "").includes(stagingDir);
