@@ -142,7 +142,7 @@ describe("ComposeNoticeCard — restart presets", () => {
     );
     // Severity segmented control shows Critical active.
     const criticalTab = buttonByText("Critical");
-    expect(criticalTab.getAttribute("aria-selected")).toBe("true");
+    expect(criticalTab.getAttribute("aria-checked")).toBe("true");
     // Effective select shows "In 5 minutes"; expiry select shows the custom
     // minutes input pre-filled at 15 (5 + 10, N4's self-clear window).
     expect(selectContainingOption("In 5 minutes").value).toBe("5");
@@ -227,7 +227,7 @@ describe("ComposeNoticeCard — warning requires expiry", () => {
   it("Maintenance preset leaves expiry unset; publishing without choosing one blocks with an inline error", async () => {
     await render(null);
     await click("Maintenance");
-    expect(buttonByText("Warning").getAttribute("aria-selected")).toBe("true");
+    expect(buttonByText("Warning").getAttribute("aria-checked")).toBe("true");
 
     await click("Publish notice");
     expect(textOf()).toContain("Warning notices require an expiry.");
@@ -357,7 +357,7 @@ describe("ComposeNoticeCard — LD-4 (owner QA, 2026-08-10)", () => {
   });
 });
 
-// Item 2 (an upstream media server-study Wave A): the two "custom minutes" number fields
+// Item 2 (Wave A): the two "custom minutes" number fields
 // used to borrow shared.module.css's `.textarea` class (a rectangular
 // <textarea>-shaped recipe applied to an <input type="number">, not the
 // canonical ui/Input primitive) — consolidated onto TextInput so there's

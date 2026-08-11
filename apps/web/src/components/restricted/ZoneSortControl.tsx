@@ -12,7 +12,7 @@
 // module rather than composing SortControl.module.css directly (that file
 // is Browse's own, accent-toned).
 //
-// Item 1 (an upstream media server-study Wave A, radiogroup sweep): used to hand-roll
+// Item 1 (Wave A, radiogroup sweep): used to hand-roll
 // role="tablist"/role="tab" markup — consolidated onto the shared
 // ui/SegmentedControl, which owns the WAI-ARIA radiogroup + roving-
 // tabindex + arrow-key behavior once. ZoneControls.module.css's

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Loombre :: apps/web/src/components/home/PosterCard.test.tsx
 //
-// Item 6 (an upstream media server-study Wave A, poster-card a11y sweep): PosterCard was
+// Item 6 (Wave A, poster-card a11y sweep): PosterCard was
 // already a real <a href> (anchor semantics + native Enter-to-navigate come
 // for free from that alone), but its focus indicator was the app-wide
 // `:focus-visible` rule's NON-inset box-shadow — invisible or clipped for

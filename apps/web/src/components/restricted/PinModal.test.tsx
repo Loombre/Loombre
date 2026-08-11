@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Loombre :: apps/web/src/components/restricted/PinModal.test.tsx
 //
-// Item 2 (an upstream media server-study Wave A): PinModal's desktop numeric field used to
+// Item 2 (Wave A): PinModal's desktop numeric field used to
 // be a raw <input> outside components/ui/Input.tsx — its own from-scratch
 // border/background/focus-ring CSS, duplicating (and needing its own
 // separate fix for) the inset-ring anti-clipping recipe Input.module.css

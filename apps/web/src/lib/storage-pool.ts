@@ -12,7 +12,7 @@
 // rendering a fabricated number, on ANY of {non-admin, network error,
 // 403/404, storagePool itself being null}.
 //
-// Item 7 (an upstream media server-study Wave A, /system/info triple-fetch): this used to
+// Item 7 (Wave A, /system/info triple-fetch): this used to
 // run its own independent useEffect + apiGet("/system/info") — one of
 // three call sites racing the same request on every Dashboard load (see
 // lib/system-info.ts's header for the full writeup). It now delegates to

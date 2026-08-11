@@ -87,7 +87,7 @@ function formatUptime(uptimeMs: number | null | undefined): string | null {
 }
 
 function DashboardHeader(): React.JSX.Element {
-  // Item 7 (an upstream media server-study Wave A, /system/info triple-fetch): shares the
+  // Item 7 (Wave A, /system/info triple-fetch): shares the
   // same request as SystemInfoCard/Sidebar via lib/system-info.ts instead
   // of running its own independent fetch — see that module's header. A
   // fetch failure resolves `info` to null (the hook's own error is unused
