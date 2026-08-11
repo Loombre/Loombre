@@ -451,6 +451,23 @@ State machine: `created → starting → active ⇄ suspended → seeking → ac
   exhausted`) — clients fall back to a lower-bitrate direct attempt or queue.
 - **Audit:** the serialized plan + engineVersion stored on the session row at
   create; ffmpeg stderr tail (last 4 KB ring) stored on failure.
+- **Process lifecycle (no orphaned encoders).** Runs are spawned detached on
+  POSIX so the whole process group can be signalled, which also means they do
+  not die with their worker. Two mechanisms close that: (a) the worker's
+  graceful shutdown terminates every in-flight run before stopping the queue
+  (SIGCONT-then-SIGTERM, so a throttle-suspended run dies promptly rather than
+  sitting on a pending signal); (b) a crash — SIGKILL/OOM/power cut, where no
+  shutdown code runs — is cleaned up at the NEXT worker boot: each run's pid
+  and its supervising worker's start time are persisted on the session row,
+  and the boot reaper kills any process still alive from a previous worker
+  generation, verified by pid **and** command line against that session's
+  staging dir (a pid alone is never enough — pids are reused). A live run
+  whose supervisor died is an orphan by definition: nothing remains to
+  throttle, seek, or end it. The admission slot is released only after the
+  process is confirmed gone, so a freed slot never sits on top of a running
+  encoder. Boot reconciliation covers the `transcode` job ledger under
+  session-lifetime horizons, and the heartbeat sweeper logs a warning when it
+  ends a session that still names a live pipeline.
 - **Direct-play** sessions bypass all of this: range-request file serving with
   progress heartbeats only.
 
