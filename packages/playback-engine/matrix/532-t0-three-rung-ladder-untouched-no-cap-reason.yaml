@@ -1,0 +1,69 @@
+name: "transcode — T0 whose instance table is ALREADY 3 rungs: step (h) is a no-op and fires NO reason"
+why: >
+  Wave C2 / §7.5, the no-op arm of step (h) (§10's C2 class 2: "T0 ladder
+  <=3 -> untouched, no reason"). Identical in every respect to case 531
+  except the policy fixture's table (`policies.t0-three-rung`, three rungs
+  at 8M/3M/0.8M). The trim's guard is `ladder.length >
+  TIER0_MAX_ADVERTISED_VARIANTS`, so the ladder comes back with the same
+  rungs in the same order and `ladder-variant-capped` is ABSENT — which is
+  precisely the property that makes every <=-3-rung instance's plans
+  byte-identical to their pre-C2 selves (§7.5's regression paragraph).
+
+  Note what this case proves that a 1-rung degenerate case could not: the
+  three rungs here are a REAL, non-degenerate ladder that the trim would
+  have had every opportunity to touch (it is exactly at the boundary, and
+  its geometric mid — sqrt(8e6 x 0.8e6) ~= 2,529,822, nearest 3M — is a
+  DIFFERENT rung from the one a naive "always keep index 1" rule would
+  pick). The absence of a reason is therefore a real observation about the
+  guard, not an artifact of there being nothing to drop.
+input:
+  media:
+    fileId: file-532
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 15000000000
+    overallBitrateBps: 20000000
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 52
+        width: 3840
+        height: 2160
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 18000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: true
+        openGop: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 160000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device: { fixture: devices.web-chrome }
+  network: { fixture: networks.local }
+  policy: { fixture: policies.t0-three-rung }
+  caps: { fixture: caps.full-hw }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: transcode
+  reasons:
+    - video-interlaced
+    - hw-encoder-selected:nvenc
+  container: fmp4-hls
+  ladder:
+    - { heightPx: 1080, videoBitrateBps: 8000000, audioBitrateBps: 384000, codec: h264 }
+    - { heightPx: 720, videoBitrateBps: 3000000, audioBitrateBps: 160000, codec: h264 }
+    - { heightPx: 360, videoBitrateBps: 800000, audioBitrateBps: 160000, codec: h264 }

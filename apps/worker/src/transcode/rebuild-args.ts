@@ -22,8 +22,8 @@ import type { DbOrTx } from "@loombre/db/internal";
 import { getMediaInfoForFile } from "@loombre/db/internal";
 import { getDeviceById } from "@loombre/db";
 import { buildFfmpegArgs } from "@loombre/playback-engine";
-import type { DeviceProfile, MediaInfo, PlanInput } from "@loombre/playback-engine";
-import { topRungOf, type StoredPlan } from "./plan-shape.js";
+import type { DeviceProfile, FfmpegPlanShape, MediaInfo, PlanInput } from "@loombre/playback-engine";
+import { rungAtIndex, topRungOf, type StoredPlan } from "./plan-shape.js";
 
 export class SeekRebuildError extends Error {}
 
@@ -53,14 +53,67 @@ function placeholderPlanInputTail(): Pick<PlanInput, "network" | "policy" | "cap
 }
 
 /**
- * Regenerates token-form ffmpeg args for a seek-restart. `fileId`/
- * `deviceId` come from the session row; `plan` is the parsed stored plan
- * (plan-shape.ts). Throws `SeekRebuildError` if the file or device can no
- * longer be resolved (both should be impossible in practice — the session
- * already ran once against this exact file/device — but this runtime
- * never silently fabricates a MediaInfo/DeviceProfile).
+ * The `FfmpegPlanShape` a restart hands the builder — PURE, so the one
+ * decision in this module that is not I/O can be tested on its own.
+ *
+ * `ladderRungIndex` is the §9.1.4 slot-handoff target (`pending_rung_index`,
+ * the rung the client's `v{K}` path named). Omitted for an ordinary
+ * seek-restart, which stays on whatever rung the session was already
+ * serving — the top rung by the `topRungOf` convention `plan()` itself uses
+ * for the initial spawn.
+ *
+ * THE LOAD-BEARING LINE is `targetCodec: rung.codec`. `buildFfmpegArgs`
+ * resolves its encoder name from `video.targetCodec`, NOT from the rung it
+ * is handed (see that module's `VIDEO_ENCODER_NAMES` lookup), because for
+ * `plan()`'s own call the two are the same thing by construction — the
+ * ladder's top rung IS what `targetCodec` was derived from. A rung SWITCH
+ * is the first time they can differ: on a mixed-codec ladder (§7.1's av1
+ * swap leaves an hevc 2160p rung above av1 sub-rungs) a switch to the av1
+ * mid rung under an unchanged `targetCodec: 'hevc'` would spawn `hevc_qsv`
+ * at the av1 rung's bitrate and height — a valid-looking argv encoding the
+ * wrong bitstream, which nothing downstream would flag. Golden 42 pins the
+ * corrected argv.
+ *
+ * Non-mutating: the stored plan is re-read from the row on every restart
+ * and stays the authority.
  */
-export async function rebuildSeekArgs(db: DbOrTx, input: { fileId: string; deviceId: string; plan: StoredPlan }): Promise<string[]> {
+export function planShapeForRung(plan: StoredPlan, ladderRungIndex: number | undefined): FfmpegPlanShape {
+  const base = {
+    container: plan.container,
+    audio: plan.audio,
+    subtitle: plan.subtitle,
+  };
+  if (plan.video.action !== "transcode") {
+    return { ...base, video: plan.video };
+  }
+
+  // An out-of-range index cannot arrive in practice (the controller
+  // validates 0 <= K < ladder.length before recording one), but falling
+  // back to the top rung keeps a restart POSSIBLE either way: a respawn
+  // with no rung would hand the builder an encode with no bitrate and no
+  // height, and a session that cannot restart is strictly worse than one
+  // that restarts at the quality it was already serving.
+  const rung = rungAtIndex(plan.ladder, ladderRungIndex) ?? topRungOf(plan.ladder);
+  if (rung === undefined) return { ...base, video: plan.video };
+
+  return { ...base, video: { ...plan.video, targetCodec: rung.codec }, rung };
+}
+
+/**
+ * Regenerates token-form ffmpeg args for a restart — a seek, a §9.1.4 rung
+ * handoff, or both at once (§9.1.7's single-restart rule spawns ONE run for
+ * a coincident pair). `fileId`/`deviceId` come from the session row; `plan`
+ * is the parsed stored plan (plan-shape.ts); `ladderRungIndex` is the rung
+ * a handoff is switching to, omitted for a plain seek. Throws
+ * `SeekRebuildError` if the file or device can no longer be resolved (both
+ * should be impossible in practice — the session already ran once against
+ * this exact file/device — but this runtime never silently fabricates a
+ * MediaInfo/DeviceProfile).
+ */
+export async function rebuildSeekArgs(
+  db: DbOrTx,
+  input: { fileId: string; deviceId: string; plan: StoredPlan; ladderRungIndex?: number },
+): Promise<string[]> {
   const media = await getMediaInfoForFile(db, input.fileId);
   if (!media) {
     throw new SeekRebuildError(`media info for file ${input.fileId} could not be re-assembled (probe data missing?)`);
@@ -72,8 +125,6 @@ export async function rebuildSeekArgs(db: DbOrTx, input: { fileId: string; devic
   }
   const deviceProfile = device.profile as unknown as DeviceProfile;
 
-  const rung = input.plan.video.action === "transcode" ? topRungOf(input.plan.ladder) : undefined;
-
   const planInput: PlanInput = {
     media: media as unknown as MediaInfo,
     device: deviceProfile,
@@ -81,11 +132,5 @@ export async function rebuildSeekArgs(db: DbOrTx, input: { fileId: string; devic
     ...placeholderPlanInputTail(),
   };
 
-  return buildFfmpegArgs(
-    planInput,
-    rung !== undefined
-      ? { container: input.plan.container, video: input.plan.video, audio: input.plan.audio, subtitle: input.plan.subtitle, rung }
-      : { container: input.plan.container, video: input.plan.video, audio: input.plan.audio, subtitle: input.plan.subtitle },
-    { withSeek: true },
-  );
+  return buildFfmpegArgs(planInput, planShapeForRung(input.plan, input.ladderRungIndex), { withSeek: true });
 }

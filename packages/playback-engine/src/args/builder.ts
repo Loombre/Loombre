@@ -426,6 +426,37 @@ const HWACCEL_BY_BACKEND: Partial<Record<HardwareBackend, string>> = {
  *  verifying one encoder and running another, which is the exact failure
  *  class §7.3's probe-proves-the-shipped-plumbing rule exists to prevent.
  *  Read-only by contract: the worker only ever compares against it. */
+/**
+ * The width `scale=-2:{H}` (and `scale_cuda`/`scale_qsv`/`scale_vaapi`/
+ * `scale_vt`'s `w=-2:h={H}`) actually resolves to — ffmpeg's `-2` means
+ * "derive from the other dimension at the source aspect, rounded to a
+ * multiple of 2".
+ *
+ * WHY THIS EXISTS AS AN EXPORT rather than living wherever it is needed:
+ * §9.1.1's master playlist must state `RESOLUTION=WxH` for each advertised
+ * rung, and "the master must state what the ENCODER will actually emit" —
+ * so the renderer and this builder are required to share ONE helper. The
+ * builder never spells the number out (it hands ffmpeg the `-2` and lets
+ * ffmpeg do the arithmetic), which is exactly why the arithmetic has to be
+ * written down somewhere both can read; a second, independent copy in
+ * apps/server is the drift this export exists to prevent, the same
+ * structural argument `dv.ts`/`av1.ts` already make for their predicates.
+ *
+ * A rung at or above the source height is NOT scaled at all (`needsScale`
+ * below requires `rung.heightPx < videoStream.height`), so the source width
+ * passes through untouched — this function reproduces that branch too, so
+ * a caller can hand it any rung without re-deriving the condition.
+ *
+ * Total by construction: a zero/negative/non-finite source height (a
+ * degenerate probe row) returns the source width rather than dividing by
+ * zero — the master-playlist route must never be able to fail.
+ */
+export function scaledWidthForHeight(sourceWidthPx: number, sourceHeightPx: number, targetHeightPx: number): number {
+  if (!Number.isFinite(sourceHeightPx) || sourceHeightPx <= 0) return sourceWidthPx;
+  if (targetHeightPx >= sourceHeightPx) return sourceWidthPx;
+  return Math.round((targetHeightPx * sourceWidthPx) / sourceHeightPx / 2) * 2;
+}
+
 export const VIDEO_ENCODER_NAMES: Partial<Record<HardwareBackend, Partial<Record<LadderCodec, string>>>> = {
   software: { h264: "libx264", hevc: "libx265", av1: "libsvtav1" },
   videotoolbox: { h264: "h264_videotoolbox", hevc: "hevc_videotoolbox" },

@@ -2,6 +2,20 @@ name: transcode — full-hw + web-safari + hevc 2160p, network-driven (device/co
 why: >
   hevc 2160p source, web-safari device (hevc-capable up to 2160p), network-driven transcode. full-hw's nvenc covers hevc decode + the ladder's targets -> hw-encoder-selected:nvenc. Diversifies device/codec coverage beyond the earlier full-hw cases (388-395 mostly use web-chrome/hevc-sdr).
 
+  Wave C2 / §7.5 step (h) CHURN (regression law, §10). This case's own
+  arithmetic: the FINAL Tier-0 ladder had 6 rungs, more than
+  TIER0_MAX_ADVERTISED_VARIANTS (3), so the ADVERTISED set — which §9.1's
+  master playlist enumerates verbatim — is trimmed to top 2160p@16000000 +
+  geometric-mid 1080p@4000000 + floor 360p@800000. The geometric mean of
+  16000000 and 800000 is ~3577709 bps, and 4000000 is the surviving
+  candidate nearest it in log space. Dropped: 1080p@8000000, 720p@3000000,
+  480p@1500000. One informational `ladder-variant-capped` fires
+  (single-firing, owner-decision V2) with every dropped rung in its
+  detail, LAST in the reason list because step (h) runs after Stage G.
+  decision, container, video.* and ffmpegArgs are UNCHANGED — the keep
+  rule's first clause is "keep the top rung", which is the only rung
+  `video.targetCodec` and the initially-encoded pipeline ever read.
+
 input:
   media:
     fileId: gen-file
@@ -49,3 +63,4 @@ expect:
   reasons:
     - bitrate-exceeds-network
     - hw-encoder-selected:nvenc
+    - ladder-variant-capped

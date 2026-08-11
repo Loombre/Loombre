@@ -2,6 +2,20 @@ name: transcode — subtitle burn-in (Stage E) forces video transcode; macos-vt 
 why: >
   Identical scenario to 429 (pgs burn-in forcing video.action='transcode' on an otherwise-copy h264 1080p stream) with macos-vt caps instead of full-hw: videotoolbox covers h264 decode+encode -> hw-encoder-selected:videotoolbox.
 
+  Wave C2 / §7.5 step (h) CHURN (regression law, §10). This case's own
+  arithmetic: the FINAL Tier-0 ladder had 4 rungs, more than
+  TIER0_MAX_ADVERTISED_VARIANTS (3), so the ADVERTISED set — which §9.1's
+  master playlist enumerates verbatim — is trimmed to top 1080p@4000000 +
+  geometric-mid 480p@1500000 + floor 360p@800000. The geometric mean of
+  4000000 and 800000 is ~1788854 bps, and 1500000 is the surviving
+  candidate nearest it in log space. Dropped: 720p@3000000. One
+  informational `ladder-variant-capped` fires (single-firing,
+  owner-decision V2) with every dropped rung in its detail, LAST in the
+  reason list because step (h) runs after Stage G. decision, container,
+  video.* and ffmpegArgs are UNCHANGED — the keep rule's first clause is
+  "keep the top rung", which is the only rung `video.targetCodec` and the
+  initially-encoded pipeline ever read.
+
 input:
   media:
     fileId: gen-file
@@ -57,3 +71,4 @@ expect:
     - subtitle-format-requires-burn-in
     - video-transcode-for-subtitle-burn-in
     - hw-encoder-selected:videotoolbox
+    - ladder-variant-capped

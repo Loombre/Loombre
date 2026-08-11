@@ -77,6 +77,26 @@ export function buildHlsManifestUrl(serverUrl: string, sessionId: string, token:
   return url.toString();
 }
 
+/**
+ * `GET /playback/sessions/{id}/hls/master.m3u8?token=` (docs/PLAYBACK.md
+ * §9.1.1, Wave C2) — the MULTI-VARIANT master playlist, and as of
+ * owner-decision V5 the attach point for EVERY HLS session, ladder-empty
+ * ones included (they render a single-variant master, so the client has one
+ * path and no branch).
+ *
+ * Its variant URIs are relative `v{K}/media.m3u8`, which both engines
+ * resolve against THIS url — so the `?token=` here is also what the
+ * variant-playlist request inherits on the native path (Safari's documented
+ * query-string propagation, see this file's header), while the hls.js path
+ * re-appends per request through `xhrSetup` regardless.
+ */
+export function buildHlsMasterUrl(serverUrl: string, sessionId: string, token: string): string {
+  const base = serverUrl.replace(/\/$/, "");
+  const url = new URL(`${base}/playback/sessions/${encodeURIComponent(sessionId)}/hls/master.m3u8`);
+  url.searchParams.set("token", token);
+  return url.toString();
+}
+
 /** `GET /playback/sessions/{id}/subtitles/sub0.vtt?token=` (STATE.md
  *  P3.9(e)) — the single-segment extracted WebVTT file a `subtitle.strategy
  *  === 'hls-vtt'` plan side-track serves. The filename is always literally
@@ -188,7 +208,15 @@ export function useSessionFileUrl(serverUrl: string, sessionId: string | null): 
 /** Same token-freshness contract as `useSessionFileUrl`, for the Safari-
  *  native HLS `video.src` (VideoPlayer.tsx) — `sessionId` should be `null`
  *  whenever the session isn't an HLS one (mirrors `useSessionFileUrl`'s own
- *  null-means-inactive convention). */
+ *  null-means-inactive convention).
+ *
+ *  Wave C2 re-pointed it at the MASTER playlist (owner-decision V5): the
+ *  native engine follows the master's relative `v{K}/media.m3u8` URIs by
+ *  itself, and a fresh token on THIS url is what its documented
+ *  query-string propagation carries onto that hop. The paused-boundary src
+ *  refresh this hook already drives is therefore also the mechanism that
+ *  re-reads the master with a rotated token — no new auth surface, exactly
+ *  as §9.1.9 requires. */
 export function useHlsManifestUrl(serverUrl: string, sessionId: string | null): string | null {
-  return useTokenUrl(serverUrl, sessionId, buildHlsManifestUrl);
+  return useTokenUrl(serverUrl, sessionId, buildHlsMasterUrl);
 }

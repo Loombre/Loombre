@@ -1,6 +1,20 @@
 name: transcode — h264 resolution exceeds vs web-chrome, macos-vt caps — Stage B ignores caps
 why: |
   A rule-3 axis reason fires identically regardless of which VerifiedCapabilities fixture set is supplied. why (Phase 3 §11 step 3, Stage G arrival, STATE.md P3.2 regression law): this case's caps fixture verifies a real hardware backend for the selected stream's codec + surviving ladder targets, so Stage G now selects it (`hw-encoder-selected:videotoolbox`).
+
+  Wave C2 / §7.5 step (h) CHURN (regression law, §10). This case's own
+  arithmetic: the FINAL Tier-0 ladder had 6 rungs, more than
+  TIER0_MAX_ADVERTISED_VARIANTS (3), so the ADVERTISED set — which §9.1's
+  master playlist enumerates verbatim — is trimmed to top 2160p@16000000 +
+  geometric-mid 1080p@4000000 + floor 360p@800000. The geometric mean of
+  16000000 and 800000 is ~3577709 bps, and 4000000 is the surviving
+  candidate nearest it in log space. Dropped: 1080p@8000000, 720p@3000000,
+  480p@1500000. One informational `ladder-variant-capped` fires
+  (single-firing, owner-decision V2) with every dropped rung in its
+  detail, LAST in the reason list because step (h) runs after Stage G.
+  decision, container, video.* and ffmpegArgs are UNCHANGED — the keep
+  rule's first clause is "keep the top rung", which is the only rung
+  `video.targetCodec` and the initially-encoded pipeline ever read.
 input:
   media:
     fileId: file-130
@@ -51,3 +65,4 @@ expect:
   reasons:
     - video-resolution-exceeds-device
     - hw-encoder-selected:videotoolbox
+    - ladder-variant-capped

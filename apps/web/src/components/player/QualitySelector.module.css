@@ -1,0 +1,21 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2xs);
+  min-width: 200px;
+}
+
+.groupLabel {
+  font-size: var(--text-xs);
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0 var(--space-xs);
+}
+
+.note {
+  font-size: var(--text-xs);
+  color: var(--muted);
+  padding: 0 var(--space-xs);
+}

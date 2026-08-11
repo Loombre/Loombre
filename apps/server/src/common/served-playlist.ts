@@ -233,37 +233,65 @@ export function presentationToSourceMs(
 }
 
 /**
- * Adds `#EXT-X-MEDIA-SEQUENCE:<n>` to a served playlist whose head has been
- * retention-pruned, where `n` is the absolute index of the first surviving
- * segment.
+ * Adds the two SERVE-TIME sequence tags a retention-pruned playlist needs —
+ * `#EXT-X-MEDIA-SEQUENCE` (Wave A) and `#EXT-X-DISCONTINUITY-SEQUENCE`
+ * (Wave C2, docs/PLAYBACK.md §9.1.5 rule 3) — to whatever the worker wrote.
  *
- * `pruneRetention` deletes segments from the FRONT of the playlist (120s
- * behind the live edge) and `renderServedPlaylist` emits no media-sequence
- * tag. RFC 8216 §4.3.3.2: an absent tag means 0 — "the first segment listed
- * is segment number 0" — so every prune silently renumbers the playlist
- * from the client's point of view. hls.js derives each fragment's `sn`, and
- * the media-time offset it maps a seek to, from that base; after a prune
- * its already-buffered fragments stop lining up with the ones the server is
- * naming. Since this session layer numbers segments ABSOLUTELY and
- * CONTINUOUSLY across every seek-restart run, the first surviving segment's
- * own index IS the media sequence number by definition.
+ * They are two instances of ONE bug shape, which is why they are computed
+ * in one pass here. Retention deletes segments from the FRONT of the served
+ * playlist, and RFC 8216 reads BOTH tags, when absent, as 0:
  *
- * Added ONLY when a prune has actually happened (`firstIndex > 0`): an
- * unpruned playlist is byte-identical to what the worker wrote, because
- * absent already means 0 and emitting `:0` would be pure noise.
+ *   - §4.3.3.2, media sequence: an absent tag means "the first segment
+ *     listed is segment number 0", so every prune silently renumbers the
+ *     playlist from the client's point of view. hls.js derives each
+ *     fragment's `sn` — and the media-time offset it maps a seek to — from
+ *     that base, so after a prune its already-buffered fragments stop
+ *     lining up with the ones the server is naming.
+ *   - §4.3.3.3, discontinuity sequence: removing a discontinuity from the
+ *     head without incrementing this counter desynchronizes the client's
+ *     own discontinuity counter (hls.js's `cc`), which it uses to decide
+ *     whether a fragment belongs to the timeline it is currently
+ *     buffering. Wave C2 found this while spec'ing ABR: it is not an ABR
+ *     defect at all, it has been reachable since retention landed, and a
+ *     rung switch merely makes whole-run pruning routine rather than rare.
+ *
+ * Both values are DERIVABLE and exact, not estimates. This layer numbers
+ * segments absolutely and continuously across every run, so the first
+ * surviving segment's own index IS the media sequence number; and because
+ * retention prunes from the front while runs are sequential, wholly-pruned
+ * runs always form a PREFIX, so that same segment's own `runN` index IS the
+ * count of discontinuities the client can no longer see.
+ *
+ * Each tag is added ONLY when its value is > 0: absent already means 0, and
+ * emitting `:0` would be pure noise. An unpruned playlist therefore comes
+ * back BYTE-IDENTICAL to what the worker wrote, including its terminal
+ * `#EXT-X-ENDLIST` (§9.1.5 rule 4) — this function only ever inserts header
+ * lines, never rewrites or reorders the body.
+ *
+ * Degrades to the input, never throws: an unparseable or empty playlist
+ * simply comes back untouched. This runs on the manifest-serving path, and
+ * a playlist we cannot tag is still a playlist a client can play.
  */
-export function withMediaSequence(playlistText: string): string {
+export function withPlaylistSequenceTags(playlistText: string): string {
   const entries = parseServedSegmentDurations(playlistText);
-  const firstIndex = entries[0]?.index;
-  if (firstIndex === undefined || firstIndex <= 0) return playlistText;
-  if (/^#EXT-X-MEDIA-SEQUENCE:/m.test(playlistText)) return playlistText;
+  const first = entries[0];
+  if (first === undefined) return playlistText;
+
+  const tags: string[] = [];
+  if (first.index > 0 && !/^#EXT-X-MEDIA-SEQUENCE:/m.test(playlistText)) {
+    tags.push(`#EXT-X-MEDIA-SEQUENCE:${first.index}`);
+  }
+  if (first.runIndex > 0 && !/^#EXT-X-DISCONTINUITY-SEQUENCE:/m.test(playlistText)) {
+    tags.push(`#EXT-X-DISCONTINUITY-SEQUENCE:${first.runIndex}`);
+  }
+  if (tags.length === 0) return playlistText;
 
   const lines = playlistText.split("\n");
   let insertAfter = lines.findIndex((l) => l.startsWith("#EXT-X-VERSION"));
   if (insertAfter === -1) insertAfter = lines.findIndex((l) => l.startsWith("#EXTM3U"));
   if (insertAfter === -1) return playlistText;
 
-  lines.splice(insertAfter + 1, 0, `#EXT-X-MEDIA-SEQUENCE:${firstIndex}`);
+  lines.splice(insertAfter + 1, 0, ...tags);
   return lines.join("\n");
 }
 

@@ -120,6 +120,7 @@ export const API_OPERATIONS = [
   { path: "/playback/sessions/{id}", method: "get", operationId: "getPlaybackSession" },
   { path: "/playback/sessions/{id}", method: "delete", operationId: "endPlaybackSession" },
   { path: "/playback/sessions/{id}/file", method: "get", operationId: "getPlaybackSessionFile" },
+  { path: "/playback/sessions/{id}/hls/master.m3u8", method: "get", operationId: "getPlaybackHlsMasterPlaylist" },
   { path: "/playback/sessions/{id}/hls/media.m3u8", method: "get", operationId: "getPlaybackHlsManifest" },
   { path: "/playback/sessions/{id}/hls/{file}", method: "get", operationId: "getPlaybackHlsFile" },
   { path: "/playback/sessions/{id}/subtitles/media.m3u8", method: "get", operationId: "getPlaybackSubtitleManifest" },

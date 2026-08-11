@@ -528,5 +528,11 @@
   "527-av1-swap-refused-ts-hls-device.yaml": "green",
   "528-av1-source-copy-unaffected-by-ladder-rules.yaml": "green",
   "529-av1-precedence-over-hevc-swap.yaml": "green",
-  "530-av1-stage-g-guard-t1-software-route-unverified-av1.yaml": "green"
+  "530-av1-stage-g-guard-t1-software-route-unverified-av1.yaml": "green",
+  "531-t0-six-rung-ladder-variant-capped-to-three.yaml": "green",
+  "532-t0-three-rung-ladder-untouched-no-cap-reason.yaml": "green",
+  "533-t1-six-rung-ladder-never-capped.yaml": "green",
+  "534-t2-six-rung-ladder-never-capped.yaml": "green",
+  "535-t0-software-route-tier-capped-then-variant-cap-noop.yaml": "green",
+  "536-t0-mixed-codec-ladder-capped-targetcodec-preserved.yaml": "green"
 }

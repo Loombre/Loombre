@@ -16,7 +16,12 @@
  * its own focused copy per this step's instructions).
  */
 import { describe, expect, it } from "vitest";
-import { evaluateBitrate, buildLadder } from "../../src/stages/ladder.js";
+import {
+  buildLadder,
+  capAdvertisedVariants,
+  evaluateBitrate,
+  TIER0_MAX_ADVERTISED_VARIANTS,
+} from "../../src/stages/ladder.js";
 import { plan } from "../../src/plan.js";
 import type {
   DeviceProfile,
@@ -739,5 +744,215 @@ describe("plan(): refused ⇒ ladder [] (STATE.md P3.9(b), full plan() call agai
     ]);
     expect(result.video.action).toBe("transcode");
     expect(result.ladder.length).toBeGreaterThan(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Wave C2 (LD-6 under LD-16) — step (h)'s Tier-0 advertised-variant cap
+// (docs/PLAYBACK.md §7.5). A FINAL-ASSEMBLY trim, so it is tested here as a
+// pure function AND through plan() (where it really runs, after Stage G).
+// ---------------------------------------------------------------------------
+
+describe("capAdvertisedVariants: step (h) — Tier-0 advertised-variant cap (§7.5)", () => {
+  const SIX: LadderRung[] = DEFAULT_LADDER;
+
+  it("TIER0_MAX_ADVERTISED_VARIANTS is the law constant 3 (owner-decision V1 — NOT a ServerPolicy knob)", () => {
+    expect(TIER0_MAX_ADVERTISED_VARIANTS).toBe(3);
+  });
+
+  it("T0 + 6 rungs -> exactly 3, by the keep rule top/geometric-mid/floor, array order preserved", () => {
+    const { ladder, reasons } = capAdvertisedVariants(SIX, 0);
+    // geometric mid of (16M, 0.8M) is sqrt(16e6*0.8e6) ≈ 3.578M; the
+    // candidate minimizing |ln(v) − ln(3.578M)| is the 1080p/4M rung.
+    expect(ladder).toEqual([
+      { heightPx: 2160, videoBitrateBps: 16_000_000, audioBitrateBps: 384_000, codec: "hevc" },
+      { heightPx: 1080, videoBitrateBps: 4_000_000, audioBitrateBps: 160_000, codec: "h264" },
+      { heightPx: 360, videoBitrateBps: 800_000, audioBitrateBps: 160_000, codec: "h264" },
+    ]);
+    expect(reasons.map((r) => r.code)).toEqual(["ladder-variant-capped"]);
+  });
+
+  it("the spec's own worked example (§7.5): a 1080p source's 5 surviving rungs keep 8M / 3M / 0.8M", () => {
+    const fiveRung = SIX.filter((r) => r.heightPx <= 1080);
+    const { ladder } = capAdvertisedVariants(fiveRung, 0);
+    expect(ladder.map((r) => r.videoBitrateBps)).toEqual([8_000_000, 3_000_000, 800_000]);
+  });
+
+  it("fires the reason exactly ONCE (single-firing, owner-decision V2) with EVERY dropped rung in the detail", () => {
+    const { reasons } = capAdvertisedVariants(SIX, 0);
+    expect(reasons).toHaveLength(1);
+    expect(reasons[0]!.code).toBe("ladder-variant-capped");
+    // The three dropped rungs, in table order — 1080p/8M, 720p/3M, 480p/1.5M.
+    expect(reasons[0]!.detail).toBe("cap=3 dropped=1080p@8000000,720p@3000000,480p@1500000");
+  });
+
+  it("T0 + exactly 3 rungs -> UNTOUCHED, and no reason fires (byte-identical plans, §7.5)", () => {
+    const three = [SIX[1]!, SIX[3]!, SIX[5]!];
+    const { ladder, reasons } = capAdvertisedVariants(three, 0);
+    expect(ladder).toEqual(three);
+    expect(reasons).toEqual([]);
+  });
+
+  it("T0 + 1 or 2 rungs (the software-route tier-capped shape) -> untouched, no reason", () => {
+    for (const n of [1, 2]) {
+      const shortLadder = SIX.slice(0, n);
+      const { ladder, reasons } = capAdvertisedVariants(shortLadder, 0);
+      expect(ladder, `n=${n}`).toEqual(shortLadder);
+      expect(reasons, `n=${n}`).toEqual([]);
+    }
+  });
+
+  it("Tier 1 and Tier 2 are NEVER trimmed (owner-decision V6 — the law constrains Tier-0 only)", () => {
+    for (const tier of [1, 2] as const) {
+      const { ladder, reasons } = capAdvertisedVariants(SIX, tier);
+      expect(ladder, `tier=${tier}`).toEqual(SIX);
+      expect(reasons, `tier=${tier}`).toEqual([]);
+    }
+  });
+
+  it("keeps the top rung, so topRungOf (and therefore video.targetCodec) is unchanged by the trim", () => {
+    const topOf = (l: readonly LadderRung[]): LadderRung =>
+      l.reduce((max, r) => (r.videoBitrateBps > max.videoBitrateBps ? r : max));
+    expect(capAdvertisedVariants(SIX, 0).ladder[0]).toEqual(topOf(SIX));
+  });
+
+  it("keeps the FLOOR rung — the rescue rung the network-cap filter also refuses to drop", () => {
+    const { ladder } = capAdvertisedVariants(SIX, 0);
+    expect(ladder[ladder.length - 1]).toEqual(SIX[SIX.length - 1]);
+  });
+
+  it("mid-rung tie breaks toward the LOWER-bitrate candidate (§7.5's stated tiebreak)", () => {
+    // top 1,000,000 / floor 10,000 -> geometric mid = 100,000 exactly.
+    // 50,000 and 200,000 are equidistant in log space (factor 2 either way).
+    const tied: LadderRung[] = [
+      { heightPx: 1080, videoBitrateBps: 1_000_000, audioBitrateBps: 160_000, codec: "h264" },
+      { heightPx: 720, videoBitrateBps: 200_000, audioBitrateBps: 160_000, codec: "h264" },
+      { heightPx: 480, videoBitrateBps: 50_000, audioBitrateBps: 160_000, codec: "h264" },
+      { heightPx: 360, videoBitrateBps: 10_000, audioBitrateBps: 160_000, codec: "h264" },
+    ];
+    expect(capAdvertisedVariants(tied, 0).ladder.map((r) => r.videoBitrateBps)).toEqual([1_000_000, 50_000, 10_000]);
+  });
+
+  it("array order is PRESERVED — trimming removes elements, never reorders (§7.5)", () => {
+    // A deliberately unsorted policy table: the kept subset must come back
+    // in the SAME relative order it appeared in, not sorted by bitrate.
+    const unsorted: LadderRung[] = [
+      { heightPx: 360, videoBitrateBps: 800_000, audioBitrateBps: 160_000, codec: "h264" },
+      { heightPx: 2160, videoBitrateBps: 16_000_000, audioBitrateBps: 384_000, codec: "hevc" },
+      { heightPx: 480, videoBitrateBps: 1_500_000, audioBitrateBps: 160_000, codec: "h264" },
+      { heightPx: 1080, videoBitrateBps: 4_000_000, audioBitrateBps: 160_000, codec: "h264" },
+    ];
+    const { ladder } = capAdvertisedVariants(unsorted, 0);
+    expect(ladder.map((r) => r.heightPx)).toEqual([360, 2160, 1080]);
+  });
+
+  it("stays TOTAL on degenerate bitrates (a 0-bps rung never produces NaN/-Infinity)", () => {
+    const degenerate: LadderRung[] = [
+      { heightPx: 1080, videoBitrateBps: 8_000_000, audioBitrateBps: 160_000, codec: "h264" },
+      { heightPx: 720, videoBitrateBps: 3_000_000, audioBitrateBps: 160_000, codec: "h264" },
+      { heightPx: 480, videoBitrateBps: 1_500_000, audioBitrateBps: 160_000, codec: "h264" },
+      { heightPx: 360, videoBitrateBps: 0, audioBitrateBps: 160_000, codec: "h264" },
+    ];
+    const { ladder } = capAdvertisedVariants(degenerate, 0);
+    expect(ladder).toHaveLength(3);
+    expect(ladder.every((r) => Number.isFinite(r.videoBitrateBps))).toBe(true);
+  });
+
+  it("is PURE — the input array and its rungs are never mutated", () => {
+    const input = structuredClone(SIX);
+    const snapshot = structuredClone(SIX);
+    capAdvertisedVariants(input, 0);
+    expect(input).toEqual(snapshot);
+  });
+});
+
+describe("plan(): step (h) runs at final assembly, AFTER Stage G (§7.5)", () => {
+  function makeCapPlanInput(overrides: Partial<PlanInput> = {}): PlanInput {
+    return {
+      media: makeMedia([makeVideoStream({ codec: "vp9", height: 2160, width: 3840, bitrateBps: 20_000_000 })], {
+        overallBitrateBps: 20_000_000,
+        audio: [
+          {
+            index: 1,
+            codec: "aac",
+            channels: 2,
+            sampleRate: 48000,
+            bitrateBps: 160_000,
+            language: "eng",
+            isDefault: true,
+            hasAtmos: false,
+          },
+        ],
+      }),
+      device: makeDevice(),
+      network: makeNetwork(),
+      policy: makePolicy({ tier: 0 }),
+      caps: {
+        backends: [
+          {
+            backend: "nvenc",
+            decode: ["h264", "hevc", "vp9"],
+            encode: ["h264", "hevc"],
+            toneMap: ["cuda"],
+            verifiedAtMs: 1,
+          },
+        ],
+      },
+      selection: { videoStreamIndex: 0, audioStreamIndex: 1, subtitleStreamIndex: null },
+      mode: "stream",
+      ...overrides,
+    };
+  }
+
+  it("a T0 transcode whose FINAL ladder exceeds 3 rungs is trimmed to exactly 3 and reports the reason LAST", () => {
+    const result = plan(makeCapPlanInput());
+    expect(result.decision).toBe("transcode");
+    expect(result.ladder).toHaveLength(3);
+    // The cap runs after Stage G, so its reason lands after the routing
+    // reason (docs/PLAYBACK.md §4 "ordered by stage").
+    expect(result.reasons[result.reasons.length - 1]!.code).toBe("ladder-variant-capped");
+  });
+
+  it("targetCodec is IDENTICAL with and without the trim (the keep rule preserves topRungOf)", () => {
+    const t0 = plan(makeCapPlanInput());
+    const t1 = plan(makeCapPlanInput({ policy: makePolicy({ tier: 1 }) }));
+    expect(t1.ladder.length).toBeGreaterThan(3); // T1 is never trimmed (V6)
+    expect(t0.video.targetCodec).toBe(t1.video.targetCodec);
+    expect(t0.ffmpegArgs).toEqual(t1.ffmpegArgs); // args target the top rung, which survived
+  });
+
+  it("the trimmed ladder is a SUBSEQUENCE of the untrimmed one (nothing invented, nothing reordered)", () => {
+    const t0 = plan(makeCapPlanInput()).ladder;
+    const t1 = plan(makeCapPlanInput({ policy: makePolicy({ tier: 1 }) })).ladder;
+    let cursor = 0;
+    for (const rung of t0) {
+      cursor = t1.findIndex((r, i) => i >= cursor && r.videoBitrateBps === rung.videoBitrateBps) + 1;
+      expect(cursor, `rung ${rung.videoBitrateBps} not found in order`).toBeGreaterThan(0);
+    }
+  });
+
+  it("a REFUSED plan never reports the cap reason (its ladder is discarded entirely)", () => {
+    const refused = plan(
+      makeCapPlanInput({
+        media: makeMedia([makeVideoStream({ hdr: "hdr10", height: 2160, width: 3840, bitrateBps: 20_000_000 })], {
+          overallBitrateBps: 20_000_000,
+          audio: [
+            {
+              index: 1,
+              codec: "aac",
+              channels: 2,
+              sampleRate: 48000,
+              bitrateBps: 160_000,
+              language: "eng",
+              isDefault: true,
+              hasAtmos: false,
+            },
+          ],
+        }),
+        caps: { backends: [{ backend: "software", decode: ["h264"], encode: ["h264"], toneMap: [], verifiedAtMs: 1 }] },
+      }),
+    );
+    expect(refused.ladder).toEqual([]);
+    expect(refused.reasons.map((r) => r.code)).not.toContain("ladder-variant-capped");
   });
 });

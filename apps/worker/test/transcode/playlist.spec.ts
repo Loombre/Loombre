@@ -14,6 +14,7 @@ import {
   pruneRetention,
   renderServedPlaylist,
   segmentIndexFromUri,
+  servedPlaylistHasEnded,
 } from "../../src/transcode/playlist.js";
 
 const FMP4_PLAYLIST = `#EXTM3U
@@ -179,5 +180,111 @@ describe("pruneRetention", () => {
     // run1 is current — even if some of its own early segments also aged
     // out, its directory is never in runDirsToDelete.
     expect(result.runDirsToDelete).not.toContain("run1");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Wave C2 / owner-decision V3 (docs/PLAYBACK.md §9.1.5): the SERVED
+// playlist's tag model. It closes a real RFC 8216 contradiction — the served
+// wrapper declared `EXT-X-PLAYLIST-TYPE:EVENT` (append-only per §4.3.3.5)
+// while retention pruned its head — and a real defect: a completed encode
+// never got `EXT-X-ENDLIST` at all, so a finished stream played out and then
+// polled forever with no duration and no `ended` event.
+//
+// SCOPE GUARD, restated here because it is the one thing a build lane could
+// plausibly "fix" by analogy and must not: this governs the SERVED playlist
+// only. ffmpeg's own PER-RUN playlist keeps §6's `-hls_playlist_type event`
+// — within one run it genuinely IS append-only, and that completeness is
+// exactly what makes `producedMs` (and §9.1.4's handoff origin) exact.
+// ---------------------------------------------------------------------------
+
+describe("renderServedPlaylist: the §9.1.5 tag model", () => {
+  function stateWith(hasEndlist: boolean): ReturnType<typeof emptyServedPlaylistState> {
+    let state = emptyServedPlaylistState(6, true);
+    state = applyRunUpdate(state, 0, "run0", { ...parseFfmpegPlaylist(FMP4_PLAYLIST), hasEndlist });
+    return state;
+  }
+
+  it("NEVER emits EXT-X-PLAYLIST-TYPE — neither EVENT nor VOD (rule 1)", () => {
+    // A type-less playlist is the RFC's sliding-window live shape: clients
+    // may not assume append-only, and head removal is legal when signalled
+    // (which EXT-X-MEDIA-SEQUENCE / EXT-X-DISCONTINUITY-SEQUENCE do).
+    expect(renderServedPlaylist(stateWith(false))).not.toContain("#EXT-X-PLAYLIST-TYPE");
+    expect(renderServedPlaylist(stateWith(true))).not.toContain("#EXT-X-PLAYLIST-TYPE");
+  });
+
+  it("appends EXT-X-ENDLIST once the CURRENT run's own ffmpeg playlist carries it (rule 4)", () => {
+    const rendered = renderServedPlaylist(stateWith(true));
+    expect(rendered.trimEnd().endsWith("#EXT-X-ENDLIST")).toBe(true);
+  });
+
+  it("does NOT append ENDLIST while the current run is still producing", () => {
+    expect(renderServedPlaylist(stateWith(false))).not.toContain("#EXT-X-ENDLIST");
+  });
+
+  it("reads ENDLIST from the CURRENT run only — a finished PAST run must not end a live playlist", () => {
+    let state = emptyServedPlaylistState(6, true);
+    // run0 ended (the seek killed it after ffmpeg wrote its ENDLIST);
+    // run1 is the live one and is still producing.
+    state = applyRunUpdate(state, 0, "run0", { ...parseFfmpegPlaylist(FMP4_PLAYLIST), hasEndlist: true });
+    state = applyRunUpdate(state, 1, "run1", {
+      targetDurationSec: 6,
+      initUri: "init.mp4",
+      segments: [{ uri: "s000043.m4s", durationSec: 6 }],
+      hasEndlist: false,
+    });
+    expect(renderServedPlaylist(state)).not.toContain("#EXT-X-ENDLIST");
+  });
+
+  it("a post-ENDLIST seek/switch UN-ends the playlist (rule 5 — the new run is live again)", () => {
+    let state = emptyServedPlaylistState(6, true);
+    state = applyRunUpdate(state, 0, "run0", { ...parseFfmpegPlaylist(FMP4_PLAYLIST), hasEndlist: true });
+    expect(renderServedPlaylist(state)).toContain("#EXT-X-ENDLIST");
+    state = applyRunUpdate(state, 1, "run1", {
+      targetDurationSec: 6,
+      initUri: "init.mp4",
+      segments: [{ uri: "s000043.m4s", durationSec: 6 }],
+      hasEndlist: false,
+    });
+    expect(renderServedPlaylist(state)).not.toContain("#EXT-X-ENDLIST");
+  });
+
+  it("an empty state renders a valid, ENDLIST-free playlist", () => {
+    expect(renderServedPlaylist(emptyServedPlaylistState(6, true))).toContain("#EXTM3U");
+    expect(renderServedPlaylist(emptyServedPlaylistState(6, true))).not.toContain("#EXT-X-ENDLIST");
+  });
+});
+
+describe("servedPlaylistHasEnded (the §9.1.5 rule-4 PRUNE-FREEZE predicate)", () => {
+  it("is true exactly when the current run has ended", () => {
+    let live = emptyServedPlaylistState(6, true);
+    live = applyRunUpdate(live, 0, "run0", parseFfmpegPlaylist(FMP4_PLAYLIST));
+    expect(servedPlaylistHasEnded(live)).toBe(false);
+
+    let ended = emptyServedPlaylistState(6, true);
+    ended = applyRunUpdate(ended, 0, "run0", { ...parseFfmpegPlaylist(FMP4_PLAYLIST), hasEndlist: true });
+    expect(servedPlaylistHasEnded(ended)).toBe(true);
+  });
+
+  it("an empty state has not ended (nothing has been produced to end)", () => {
+    expect(servedPlaylistHasEnded(emptyServedPlaylistState(6, true))).toBe(false);
+  });
+
+  it("PRUNE-FREEZE: the runtime must stop pruning once ended — RFC: an ended playlist must not change", () => {
+    // Disk stays bounded without pruning because at ENDLIST no new segments
+    // are produced either: the residual is at most one retention window,
+    // reclaimed at session teardown as always (§9.1.8).
+    let state = emptyServedPlaylistState(6, true);
+    state = applyRunUpdate(state, 0, "run0", {
+      targetDurationSec: 6,
+      initUri: "init.mp4",
+      segments: Array.from({ length: 30 }, (_, i) => ({ uri: `s${String(i).padStart(6, "0")}.m4s`, durationSec: 6 })),
+      hasEndlist: true,
+    });
+    // The predicate is what the runtime gates pruneRetention on; pruning
+    // this state WOULD drop 10 segments, which is exactly what must not
+    // happen after the playlist has ended.
+    expect(servedPlaylistHasEnded(state)).toBe(true);
+    expect(pruneRetention(state, 120, 0).segmentsToDelete).toHaveLength(10);
   });
 });
