@@ -197,6 +197,21 @@
 export { createTranscodeConsumerHandler } from "./consumer.js";
 export { runTranscodeSession, type RunSessionDeps } from "./runner.js";
 export {
+  activeTranscodeRunCount,
+  registerTranscodeRun,
+  terminateAllTranscodeRuns,
+  type TerminableRun,
+} from "./run-registry.js";
+export {
+  createProcessInspector,
+  reapOrphanedTranscodeSessions,
+  type ProcessInspection,
+  type ProcessInspector,
+  type ReapableSession,
+  type ReapedSession,
+  type ReapOutcome,
+} from "./reaper.js";
+export {
   resolveTranscodeStagingRoot,
   resolveTranscodeWorkerConcurrency,
   resolveTranscodePollIntervalMs,

@@ -4358,3 +4358,156 @@ COMMENT ON COLUMN plugin_delivery_cursors.cursor_event_seq IS
   '(same convention as cursor_event_id) — a fresh cursor or one whose '
   'cursor_event_id backfilled to NULL because it had never recorded a '
   'success at migration time.';
+
+-- SPDX-License-Identifier: AGPL-3.0-only
+-- Loombre :: migration 0041_playback_sessions_worker_process
+--
+-- Additive-only (mirrors 0002/0003/0004/0006/0007/0010/0038's discipline):
+-- two nullable columns and one partial index. No column drops, no type
+-- narrowing, no rewriting of prior migrations, no contract surface — these
+-- columns are worker-internal bookkeeping and are never serialized into an
+-- API response (packages/db/src/query/playback-sessions.ts's
+-- PlaybackSessionRow deliberately does not carry them).
+--
+-- WHY. Every transcode run's ffmpeg is spawned `detached: true` on POSIX
+-- (apps/worker/src/transcode/process.ts) so suspend/resume/terminate can
+-- signal the whole process group. The price of that is that the child does
+-- NOT die with its worker. A GRACEFUL shutdown now kills its children
+-- explicitly (apps/worker/src/transcode/run-registry.ts), but a hard kill
+-- — SIGKILL, an OOM kill, a power cut — runs no code at all, and the
+-- surviving ffmpeg then encodes at full rate forever: nothing is left to
+-- throttle it (docs/PLAYBACK.md §9's ahead>10 SIGSTOP needs a supervisor),
+-- to seek it, or to end it. Its admission slot, meanwhile, is freed the
+-- moment the server's heartbeat sweeper ends the session
+-- (countActiveTranscodeSessions counts only non-terminal rows), so the
+-- next viewer is admitted on top of it. On Tier-0 hardware (N100/4GB,
+-- docs/PLAN.md §9) two of those is the whole machine.
+--
+-- The next worker boot is the only remaining place to clean that up, and
+-- the database row is the only thing that survived the crash — so the pid
+-- has to be ON the row. apps/worker/src/transcode/reaper.ts reads these
+-- two columns at boot, verifies the pid is BOTH alive AND actually this
+-- session's ffmpeg (pid + cmdline against staging_dir — pids are reused,
+-- and SIGKILLing an unrelated process would be a worse bug than the one
+-- being fixed), SIGKILLs the process group if so, and fails the session.
+
+ALTER TABLE playback_sessions
+  ADD COLUMN worker_pid            INTEGER NULL,
+  ADD COLUMN worker_started_at_ms  BIGINT NULL;
+
+COMMENT ON COLUMN playback_sessions.worker_pid IS
+  'OS process id of the ffmpeg run currently supervising this session, '
+  'written by apps/worker/src/transcode/runner.ts at every spawn (initial '
+  'run and every seek-restart, so it always names the LIVE process). '
+  'NULL for a direct-play session, for a session whose pipeline never '
+  'started, and for every row predating this migration. Read only by the '
+  'boot-time orphan reaper (apps/worker/src/transcode/reaper.ts) — never '
+  'by a request path, never serialized into an API response. A pid alone '
+  'is not proof of identity (pids are reused): the reaper additionally '
+  'verifies the process''s command line contains this row''s staging_dir '
+  'before it is willing to signal anything.';
+
+COMMENT ON COLUMN playback_sessions.worker_started_at_ms IS
+  'Start time (epoch ms) of the WORKER PROCESS that spawned worker_pid — '
+  'the generation marker, not the ffmpeg''s own start time. The shipped '
+  'topology is one worker per database (every installer + '
+  'docker-compose.prod.yml; packages/db/src/query/worker-liveness.ts '
+  'embeds the same assumption), so any non-terminal session whose '
+  'worker_started_at_ms predates the CURRENTLY booting worker was '
+  'orphaned by a dead predecessor — even if its ffmpeg is still running '
+  'happily, because the supervisor that could throttle, seek, or end it '
+  'is gone. Same generation-horizon reasoning as jobs-ledger '
+  'reconciliation''s activeStaleBeforeMs (packages/db/src/internal/'
+  'jobs.ts).';
+
+-- The reaper''s boot query, and nothing else, reads these columns. It is a
+-- narrow slice of a table that grows without bound (one row per playback
+-- session, ever), so it gets a partial index rather than a sequential scan
+-- on a Tier-0 box''s boot path. `status` is enumerated inline instead of
+-- using NOT IN so the predicate stays trivially matchable by the planner.
+CREATE INDEX playback_sessions_reapable_idx
+  ON playback_sessions (worker_started_at_ms)
+  WHERE worker_pid IS NOT NULL
+    AND status IN ('created', 'starting', 'active', 'suspended', 'seeking');
+
+-- SPDX-License-Identifier: AGPL-3.0-only
+-- Loombre :: migration 0043_transcode_runs
+--
+-- Additive-only (mirrors 0002/.../0041's discipline): one new table, no
+-- column drops, no type narrowing, no rewriting of prior migrations, no
+-- contract surface.
+--
+-- WHY. A transcode session is served as ONE playlist whose segment indices
+-- are a single global counter (docs/PLAYBACK.md §9: a seek-restart's run
+-- continues the previous run's numbering, `{START_SEG}` =
+-- producedSegment+1). But each seek run is spawned with `-ss` and no
+-- `-copyts`, so its OWN output timeline restarts at zero. The two facts
+-- were never connected by anything durable, which made a whole class of
+-- questions unanswerable for any run after the first:
+--   "segment 57 is playing — what SOURCE position is that?"
+-- Presentation time (what the player reports) and source time (what
+-- progress, resume points and seek targets are expressed in) diverge by
+-- exactly the run's source origin, and nothing recorded that origin.
+--
+-- Each row is one spawned run: the run index, the segment index it began
+-- numbering at, and where it starts in SOURCE time (0 for run 0; the
+-- consumed seek target for every restart). A server-side consumer maps a
+-- served segment index to its owning run — the row with the greatest
+-- start_segment <= that index — and reads the origin from it.
+--
+-- REAL COLUMNS, REAL FK, deliberately NOT JSONB: CLAUDE.md invariant 3
+-- whitelists JSONB for ffprobe output, event payloads, serialized plans,
+-- item_attributes values, device capability profiles, user settings prefs,
+-- server_settings.value and plugin manifest/config. This is none of those
+-- — it is queryable relational state with an owner, and it is read by an
+-- index lookup on a hot path.
+--
+-- BACKWARD SEEKS ARE WHY OWNERSHIP FOLLOWS THE SEGMENT COUNTER, NOT THE
+-- CLOCK: run 2 can have a source origin EARLIER than run 1's while its
+-- segment numbering still moves forward. `start_segment` is therefore the
+-- only monotonic key across a session's runs, and the lookup orders by it.
+
+CREATE TABLE transcode_runs (
+  id                UUID PRIMARY KEY DEFAULT loombre_uuidv7(),
+  session_id        UUID NOT NULL REFERENCES playback_sessions(id) ON DELETE CASCADE,
+  run_index         INTEGER NOT NULL,
+  start_segment     INTEGER NOT NULL,
+  source_origin_ms  BIGINT NOT NULL,
+  created_at_ms     BIGINT NOT NULL,
+  UNIQUE (session_id, run_index)
+);
+
+COMMENT ON TABLE transcode_runs IS
+  'One row per ffmpeg run spawned for a transcode session (apps/worker/src/'
+  'transcode/runner.ts), including run 0. Exists so a served segment index '
+  'can be mapped back to a SOURCE-time position: segment numbering is '
+  'global across a session''s runs while each seek run''s own output '
+  'timeline restarts at zero. Worker-written, server-read; rows die with '
+  'their session.';
+
+COMMENT ON COLUMN transcode_runs.run_index IS
+  'Zero-based, monotonic per session; matches the run''s staging '
+  'subdirectory name (`run0`, `run1`, ...) and the run-relative URI prefix '
+  'in the served playlist.';
+
+COMMENT ON COLUMN transcode_runs.start_segment IS
+  'The absolute segment index this run begins numbering at ({START_SEG}, '
+  'docs/PLAYBACK.md §6): 0 for run 0, previous producedSegment+1 for each '
+  'seek restart. The ONLY monotonic ordering key across a session''s runs — '
+  'source_origin_ms is not monotonic, because a backward seek starts a '
+  'later run at an earlier source position.';
+
+COMMENT ON COLUMN transcode_runs.source_origin_ms IS
+  'Where this run starts in the SOURCE timeline, milliseconds (CLAUDE.md '
+  'invariant 5). 0 for run 0; the seek target the worker actually consumed '
+  '(post-clamp) for a seek restart. Segment N''s source position is this '
+  'value plus N''s offset within the owning run — the run''s own output '
+  'timestamps start at zero, since runs are spawned with `-ss` and without '
+  '`-copyts`.';
+
+-- The one read this table exists for: "which run owns segment N for this
+-- session?" — greatest start_segment <= N, scoped to one session. DESC
+-- matches the ORDER BY ... LIMIT 1 the query uses, so it is a single index
+-- step rather than a scan of the session's runs.
+CREATE INDEX transcode_runs_session_start_segment_idx
+  ON transcode_runs (session_id, start_segment DESC);

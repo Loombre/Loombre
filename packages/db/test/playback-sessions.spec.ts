@@ -11,8 +11,9 @@
 // Connection: DATABASE_URL env var, default
 //   postgres://loombre:loombre@localhost:5442/loombre
 
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { spawnSync } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';
@@ -520,6 +521,65 @@ describe('sweeper: listStalePlaybackSessions / endStalePlaybackSession', () => {
   it('endStalePlaybackSession returns undefined for a nonexistent session id', async () => {
     const result = await endStalePlaybackSession(db, '11111111-1111-4111-8111-111111111111', Date.now());
     expect(result).toBeUndefined();
+  });
+
+  // Item C7 (process-lifecycle hardening wave (2026-08-11)): the ORPHAN SIGNATURE
+  // breadcrumb. "The heartbeat sweeper ended this session" AND "a
+  // transcode job-ledger row is still active" AND "the session still names
+  // a live ffmpeg pid" is precisely the combination that used to mean a
+  // detached encoder was about to keep running with its admission slot
+  // handed to the next viewer. The boot reaper (C2) cleans it up on the
+  // next restart; this WARN is what makes it visible BEFORE the restart,
+  // in the logs of the process that caused it.
+  it('WARNs when it ends a session that still names a live pipeline while a transcode job is active', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    try {
+      const session = await createPlaybackSession(db, adminCtx, {
+        itemId: harborLightsItemId,
+        fileId: harborLightsFileId,
+        deviceId: adminDeviceId,
+        plan: { decision: 'transcode', reasons: [] },
+        engineVersion: 'test',
+        nowMs: Date.now(),
+      });
+      await rawClient.query(
+        `UPDATE playback_sessions SET worker_pid = 31337, worker_started_at_ms = $2, staging_dir = '/tmp/x' WHERE id = $1`,
+        [session!.id, Date.now()],
+      );
+      const jobId = randomUUID();
+      await rawClient.query(
+        `INSERT INTO jobs (id, type, status, created_at_ms, updated_at_ms) VALUES ($1, 'transcode', 'active', $2, $2)`,
+        [jobId, Date.now()],
+      );
+
+      await endStalePlaybackSession(db, session!.id, Date.now());
+
+      const messages = warn.mock.calls.map((c) => c.join(' '));
+      expect(messages.some((m) => m.includes(session!.id))).toBe(true);
+      expect(messages.some((m) => m.includes('31337'))).toBe(true);
+
+      await rawClient.query(`DELETE FROM jobs WHERE id = $1`, [jobId]);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('stays quiet for an ordinary swept session (no pipeline recorded)', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    try {
+      const session = await createPlaybackSession(db, adminCtx, {
+        itemId: harborLightsItemId,
+        fileId: harborLightsFileId,
+        deviceId: adminDeviceId,
+        plan: { decision: 'direct-play', reasons: [] },
+        engineVersion: 'phase2-static',
+        nowMs: Date.now(),
+      });
+      await endStalePlaybackSession(db, session!.id, Date.now());
+      expect(warn).not.toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+    }
   });
 });
 

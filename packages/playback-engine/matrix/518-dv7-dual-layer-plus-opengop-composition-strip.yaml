@@ -1,0 +1,77 @@
+name: direct-stream — mkv DV profile 7 dual-layer that is ALSO open-GOP hevc — BOTH informational strip reasons fire together (LD-3 + LD-15 composition)
+why: >
+  2026-08-11 (LD-3 + LD-15): the DV strip became real — args/builder.ts's
+  interpretation L now emits `-bsf:v filter_units=remove_types=62-63` plus
+  `-tag:v hvc1` on the video-COPY branch, so `dv-stripped-to-hdr10` finally
+  describes something that happens. This case pins the COMPOSITION that
+  makes the emission non-trivial: a stream that is BOTH open-GOP hevc
+  (Stage B's open-gop-leading-pictures-stripped, interpretation K) and DV
+  profile 7 dual-layer (Stage C's dv-stripped-to-hdr10, interpretation L).
+  ffmpeg honours only the LAST `-bsf:v` for a stream, so the two strips must
+  merge into ONE filter_units value (`remove_types=8-9|62-63`) — emitting
+  them as two flags silently discards the open-GOP strip, verified
+  empirically. Golden 36 pins the merged arg form; this case pins the
+  DECISION surface both strips ride on. Reason ORDER (asserted, and not the
+  order a reader might guess): Stage A's container reason, then Stage C's
+  dv-stripped-to-hdr10, then open-gop-leading-pictures-stripped LAST —
+  because the open-GOP reason is not a stage reason at all. Finding D
+  (2026-08-10) moved it out of Stage B into plan()'s FINAL assembly, gated
+  on the resolved `container` field, precisely so the reason and the flag
+  could never diverge. devices.hevc-hdr10-only
+  declares directPlayContainers [mp4] and hdr10-yes/DV-no, so mkv forces the
+  repackage both reasons are gated on, and nothing is re-encoded — decision
+  stays direct-stream. LD-15: the profile-7 enhancement layer is DROPPED by
+  the same strip (reported in the reason's `detail` as elDropped=true, not
+  as a new reason code — PlanReasonCode is a closed contract enum).
+input:
+  media:
+    fileId: file-518
+    container: mkv
+    durationMs: 6000000
+    sizeBytes: 5000000000
+    overallBitrateBps: 15384000
+    video:
+      - index: 0
+        codec: hevc
+        profile: main10
+        level: 123
+        width: 3840
+        height: 2160
+        bitDepth: 10
+        frameRate: 23.976
+        bitrateBps: 15000000
+        hdr: dv
+        dvProfile: 7
+        dvBlCompatId: 1
+        interlaced: false
+        openGop: true
+    audio:
+      - index: 1
+        codec: aac
+        channels: 6
+        sampleRate: 48000
+        bitrateBps: 384000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device:
+    fixture: devices.hevc-hdr10-only
+  network:
+    fixture: networks.local
+  policy:
+    fixture: policies.t0-default
+  caps:
+    fixture: caps.software-only
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: direct-stream
+  reasons:
+    - container-not-direct-playable
+    - dv-stripped-to-hdr10
+    - open-gop-leading-pictures-stripped
+  container: fmp4-hls

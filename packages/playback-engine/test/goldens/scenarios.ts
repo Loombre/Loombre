@@ -713,4 +713,76 @@ export const GOLDEN_SCENARIOS: GoldenScenario[] = [
     },
     options: { withSeek: false },
   },
+  // ── Interpretation L: the Dolby Vision strip (LD-3 / LD-15) ───────────
+  // The default `device()` above is already the exact strip device —
+  // hdr10 true, dolbyVision FALSE — so these differ from their neighbours
+  // only in the SOURCE stream.
+  {
+    id: "35-dv81-strip-copy-fmp4",
+    scenario:
+      "video-COPY repackage of a DV profile-8.1 stream (compatible HDR10 base layer) for an hdr10-capable, DV-INCAPABLE device — interpretation L: -bsf:v filter_units=remove_types=62-63 removes the DOVI RPU (UNSPEC62) and -tag:v hvc1 clears the dvh1/dvhe sample entry that would otherwise still announce Dolby Vision",
+    input: input({
+      media: media({ video: [videoStream({ codec: "hevc", hdr: "dv", dvProfile: 8, dvBlCompatId: 1, bitDepth: 10 })] }),
+      device: device([HEVC_DEVICE_ENTRY]),
+      selection: SEL_V0_A1,
+    }),
+    planShape: {
+      container: "fmp4-hls",
+      video: { action: "copy" },
+      audio: { action: "copy" },
+      subtitle: { strategy: "none" },
+    },
+    options: { withSeek: false },
+  },
+  {
+    id: "36-dv7-dual-layer-strip-opengop-seek-merged-bsf",
+    scenario:
+      "DV profile-7 DUAL-LAYER source that is ALSO open-GOP hevc, on a seek-restart — interpretations K and L compose into ONE -bsf:v (filter_units=remove_types=8-9|62-63), never two: ffmpeg honours only the LAST -bsf:v for a stream, so emitting them separately silently discards the open-GOP strip",
+    input: input({
+      media: media({ video: [videoStream({ codec: "hevc", hdr: "dv", dvProfile: 7, dvBlCompatId: 1, bitDepth: 10, openGop: true })] }),
+      device: device([HEVC_DEVICE_ENTRY]),
+      selection: SEL_V0_A1,
+    }),
+    planShape: {
+      container: "fmp4-hls",
+      video: { action: "copy", openGop: true },
+      audio: { action: "copy" },
+      subtitle: { strategy: "none" },
+    },
+    options: { withSeek: true },
+  },
+  {
+    id: "37-dv81-strip-copy-ts-hls",
+    scenario:
+      "sibling of scenario 35 over the mpegts HLS path — the DV strip is container-independent (it belongs to every repackage, not just fmp4); -tag:v hvc1 is harmless on mpegts, which has no sample entry at all",
+    input: input({
+      media: media({ video: [videoStream({ codec: "hevc", hdr: "dv", dvProfile: 8, dvBlCompatId: 1, bitDepth: 10 })] }),
+      device: device([HEVC_DEVICE_ENTRY]),
+      selection: SEL_V0_A1,
+    }),
+    planShape: {
+      container: "ts-hls",
+      video: { action: "copy" },
+      audio: { action: "copy" },
+      subtitle: { strategy: "none" },
+    },
+    options: { withSeek: false },
+  },
+  {
+    id: "38-dv81-no-strip-dv-capable-device",
+    scenario:
+      "counterpart of scenario 35: SAME DV profile-8.1 source, but a device that plays Dolby Vision natively — no strip, no re-tag, byte-identical to a plain copy. The DV layer is exactly what this device wants; stripping it would destroy the point",
+    input: input({
+      media: media({ video: [videoStream({ codec: "hevc", hdr: "dv", dvProfile: 8, dvBlCompatId: 1, bitDepth: 10 })] }),
+      device: device([HEVC_DEVICE_ENTRY], { hdr: { hdr10: true, hlg: true, dolbyVision: true } }),
+      selection: SEL_V0_A1,
+    }),
+    planShape: {
+      container: "fmp4-hls",
+      video: { action: "copy" },
+      audio: { action: "copy" },
+      subtitle: { strategy: "none" },
+    },
+    options: { withSeek: false },
+  },
 ];

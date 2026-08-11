@@ -515,5 +515,7 @@
   "514-hevc-opengop-mkv-repackage-strip-direct-stream.yaml": "green",
   "515-hevc-opengop-mp4-direct-play-counterpart.yaml": "green",
   "516-hevc-opengop-mp4-audio-forced-repackage-strip-with-reason.yaml": "green",
-  "517-hevc-opengop-mkv-bitrate-forces-video-transcode-no-strip.yaml": "green"
+  "517-hevc-opengop-mkv-bitrate-forces-video-transcode-no-strip.yaml": "green",
+  "518-dv7-dual-layer-plus-opengop-composition-strip.yaml": "green",
+  "519-dv81-strip-dv-capable-device-never-fires.yaml": "green"
 }

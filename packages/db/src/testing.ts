@@ -38,19 +38,16 @@ import pg from 'pg';
  *   2. `DATABASE_URL` with its database name rewritten to `<name>_test`.
  *   3. The hardcoded default `postgres://loombre:loombre@localhost:5442/loombre_test`.
  *
- * Residual footgun (case 2, the "does not double-suffix" branch): if
- * `DATABASE_URL` is ALREADY pointed at a database whose name ends in
- * `_test`, this function returns it verbatim — it never asks whether that
- * database is actually disposable, only whether its name looks like a
- * test database. The guarantee this function (and the migrate.mjs reset
- * guard it's designed to satisfy) actually provides is "the name says
- * test", not "this database's contents don't matter". A dev stack whose
- * `DATABASE_URL` was pointed at `.../loombre_test` for some other reason
- * (e.g. manually, or by a stale env file) would sail straight through the
- * guard and get DROP SCHEMA'd by a test run — this is the exact shape of
- * the 2026-08-10 incident this function exists to prevent, just one layer
- * further out: naming a real database `..._test` recreates the hole the
- * naming convention was supposed to close.
+ * This function still only decides what a test database is NAMED — it
+ * never asks whether a given database is actually disposable, because it
+ * does not connect. That used to be a live footgun (a dev stack pinned at
+ * `.../loombre_test` sailed through the name guard and got DROP SCHEMA'd
+ * by a test run — the 2026-08-10 incident one layer further out). It no
+ * longer is: `scripts/migrate.mjs reset` additionally refuses any database
+ * with a live Loombre process attached, and any populated database that
+ * was never CLAIMED as disposable — see that script's LIVE-DATABASE GUARD
+ * header, and `claimDisposableTestDatabase` below, which is how databases
+ * this module provisions get claimed.
  *
  * Pure string manipulation — does not connect, does not create anything.
  * Pair with `ensureTestDatabase` (below) when a suite additionally needs
@@ -70,10 +67,53 @@ export function resolveTestDatabaseUrl(): string {
 }
 
 /**
+ * The COMMENT ON DATABASE text marking a database as the test harness's
+ * own disposable property — the "provenance" half of
+ * `scripts/migrate.mjs reset`'s live-database guard (task #11 residual a).
+ * A database comment is a shared-catalog object, so it survives
+ * `DROP SCHEMA public CASCADE`: a database is claimed once and stays
+ * claimed for every later reset.
+ *
+ * KEEP IN SYNC with DISPOSABLE_TEST_DATABASE_MARKER in
+ * scripts/migrate.mjs (a plain script with no TypeScript build step, so it
+ * cannot import this — the same keep-in-sync-by-inspection arrangement
+ * isTestDatabaseName already has between migrate.mjs and
+ * cleanup-test-databases.mjs).
+ */
+export const DISPOSABLE_TEST_DATABASE_MARKER = 'loombre:disposable-test-database';
+
+/**
+ * Marks `databaseName` as a disposable test database, so
+ * `scripts/migrate.mjs reset` will wipe it without the `--allow-reset`
+ * escape hatch. Best-effort: COMMENT ON DATABASE requires ownership, and
+ * an operator-managed Postgres may own the database with a different role
+ * — a failure is swallowed, exactly like migrate.mjs's own auto-provision
+ * step, leaving the (louder, safer) "needs --allow-reset once" path.
+ *
+ * `client` must already be connected to ANY database on the same server;
+ * database comments are cluster-wide.
+ */
+async function claimDisposableTestDatabase(client: pg.Client, databaseName: string): Promise<void> {
+  try {
+    await client.query(
+      `COMMENT ON DATABASE "${databaseName.replace(/"/g, '""')}" IS '${DISPOSABLE_TEST_DATABASE_MARKER}'`
+    );
+  } catch {
+    /* not the owner — reset will ask for --allow-reset once instead */
+  }
+}
+
+/**
  * Ensures `<base database>_<suffix>` exists on the same Postgres server as
  * `baseConnectionString`, creating it if necessary, and returns its
  * connection string. Idempotent — safe to call from every test file's
  * `beforeAll` (only the first caller actually issues `CREATE DATABASE`).
+ *
+ * Also (re)stamps the disposable-database marker on every call, not only
+ * on creation: this function IS the harness declaring "this database is
+ * mine to destroy", and stamping unconditionally means the several hundred
+ * per-suite databases that predate the marker are adopted the next time
+ * their own suite runs, with no migration step for anyone.
  */
 export async function ensureTestDatabase(
   baseConnectionString: string,
@@ -102,6 +142,7 @@ export async function ensureTestDatabase(
       // fixture strings only (never request input), quoted defensively.
       await admin.query(`CREATE DATABASE "${isolatedDbName.replace(/"/g, '""')}"`);
     }
+    await claimDisposableTestDatabase(admin, isolatedDbName);
   } finally {
     await admin.end();
   }
