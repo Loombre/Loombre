@@ -527,8 +527,33 @@ Lane briefs: reports/upstream-media-server-study/briefs/ (gitignored evidence tr
 allowlists, spec-file allowlists, exit-evidence lists per lane; briefs are the
 verbatim spawn prompts for Waves A/B; C briefs are the spec-lane charters.
 
-STATUS: ⛔ awaiting owner approval of LD-1 evidence + re-pinned citations + lane
-briefs before Wave A spawns.
+STOP RESOLVED (2026-08-11): owner approved Wave A; owner directed task #10 →
+Wave B. AFTER the stop presentation the orchestrator discovered the LD wave had
+ALREADY adjudicated the three fix-list tasks: #9 CLOSED (b7825f4a — full Class
+A/B sweep + review-caught plugin-delivery second id-keyset, migration 0040;
+commit verified), #11 cleanup CLOSED (4a771dc1 — 1062 DBs dropped; the TWO
+residuals remain open and are Lane A1's), and #10 CLOSED considered-and-rejected
+(cookie auth for media routes architecturally unavailable: serverUrl is runtime
+user-entered/cross-site, plain-HTTP LAN is first-class → kills SameSite=None;
+Secure, CORS deliberately credentials:false, hls.js credentialed-XHR reversal,
+native clients have no cookie jar; recorded reopen conditions: web app becomes a
+streaming proxy OR HTTPS mandated). The #10→Wave B direction was given against
+the orchestrator's stale "unassigned" flag — discrepancy surfaced to owner;
+recommendation: honor the recorded closure. Wave B holds a conditional slot
+pending the owner's word; nothing is built for #10 unless the owner genuinely
+reopens it against the recorded reasons.
+
+### Wave A — SPAWNED 2026-08-11 (5 parallel worktree lanes; A1/A2 opus, A3/A4/A5 sonnet)
+
+Lane adjustments vs the briefs as presented at the stop (all recorded in the
+brief files too): A1's mission = C1 + C2 + C7 + task-#11 RESIDUALS only (#9
+dropped as closed; cleanup half done); migration numbers pre-assigned to avoid
+parallel collision — A1 gets 0041 (worker_pid/worker_started_at_ms), A5 gets
+0042 (LD-12 rating indexes); A2 runs a mandatory work order (C3 → C6 → C9, then
+LD-3 SCOUT ONLY — fixture proposal returns for orchestrator checkpoint before
+any DV implementation); A5 reads audit candidates read-only from the MAIN
+checkout's reports/ (gitignored → absent from worktrees). Orchestrator holds:
+gate runs, docs sync, integration merges, per-claim verification.
 
 ## an upstream media server comparative architecture study — ANALYSIS-ONLY, COMPLETE 2026-08-10 (owner brief "Comparative Architecture Study — an upstream media server Playback Engine vs. Loombre"; awaiting owner review + implementation authorization)
 
