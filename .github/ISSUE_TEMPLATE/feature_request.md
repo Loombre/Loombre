@@ -25,14 +25,16 @@ statement is more useful than a fully-specified design.
 ## Does this fit Loombre's stated design goals?
 
 <!-- Worth a glance at docs/PLAN.md §1's product principles and pain-point
-     ledger before filing — Loombre is a peer competitor to an upstream media server/a proprietary server
-     with specific, deliberate architecture choices (contract-first,
-     Postgres-only, no telemetry, restricted-content support, budget-
-     hardware as a first-class target). A feature that cuts against one of
-     those is still worth discussing, but it helps to say so up front. -->
+     ledger before filing — Loombre is a peer competitor in the self-hosted
+     media-server space with specific, deliberate architecture choices
+     (contract-first, Postgres-only, no telemetry, restricted-content
+     support, budget-hardware as a first-class target). A feature that cuts
+     against one of those is still worth discussing, but it helps to say so
+     up front. -->
 
 ## Anything else
 
 <!-- Screenshots, mockups, links to how another project does something
-     similar (context is useful; Loombre won't copy an upstream media server/an upstream media server API
-     surface, schema, or naming either way — see CLAUDE.md). -->
+     similar (context is useful; Loombre won't copy any third-party
+     media-server API surface, schema, or naming either way — see
+     CLAUDE.md). -->
