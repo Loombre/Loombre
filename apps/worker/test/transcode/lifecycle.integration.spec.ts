@@ -39,6 +39,7 @@ import {
   countActiveTranscodeSessions,
   createPlaybackSession,
   endPlaybackSession,
+  ensureTestDatabase,
   getTranscodeRunForSegment,
   listTranscodeRuns,
   requestSeek,
@@ -58,7 +59,16 @@ const GEN_SCRIPT = join(REPO_ROOT, "scripts", "gen-media-fixtures.mjs");
 const FIXTURE_PATH = join(REPO_ROOT, "test-fixtures", "media", "session_long.mp4");
 const DB_PKG_ROOT = join(REPO_ROOT, "packages", "db");
 
-const DATABASE_URL = resolveTestDatabaseUrl();
+// An ISOLATED per-suite database, not the shared `<base>_test`
+// (packages/db/src/testing.ts's ensureTestDatabase). This suite resets the
+// schema and then runs real ffmpeg for tens of seconds while asserting
+// against rows the whole time — on a machine where several suites (or
+// several worktree lanes) share one Postgres, a sibling's `reset` landing
+// mid-run wipes the schema out from under it, which presents as
+// `column "produced_segment" does not exist` and looks like a product bug.
+// migrate.mjs's advisory lock serializes reset-against-reset; only a
+// database of its own removes reset-against-a-running-suite.
+let DATABASE_URL: string;
 const ffmpegAvailable = ffmpegAvailableStrict();
 const TIME_SCALE = Math.max(1, Number(process.env["LOOMBRE_TEST_TIME_SCALE"] ?? "1") || 1);
 
@@ -122,6 +132,7 @@ describe.skipIf(!ffmpegAvailable || process.platform === "win32")(
       if (!resolved.ok) throw new Error("ffmpeg unresolvable after the availability gate said otherwise");
       ffmpegPath = resolved.binary.path;
 
+      DATABASE_URL = await ensureTestDatabase(resolveTestDatabaseUrl(), "worker_lifecycle_test");
       resetSchema();
       db = createDb(DATABASE_URL);
       raw = new pg.Client({ connectionString: DATABASE_URL });

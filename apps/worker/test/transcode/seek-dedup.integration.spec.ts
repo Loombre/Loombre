@@ -37,7 +37,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { createDb, createPlaybackSession, endPlaybackSession, requestSeek, resolveTestDatabaseUrl } from "@loombre/db";
+import { createDb, createPlaybackSession, endPlaybackSession, ensureTestDatabase, requestSeek, resolveTestDatabaseUrl } from "@loombre/db";
 import type { ViewerContext } from "@loombre/db";
 import { plan, type DeviceProfile, type MediaInfo, type NetworkConditions, type PlanInput, type ServerPolicy, type TrackSelection, type VerifiedCapabilities } from "@loombre/playback-engine";
 import { runTranscodeSession } from "../../src/transcode/runner.js";
@@ -46,7 +46,14 @@ import { terminateAllTranscodeRuns } from "../../src/transcode/run-registry.js";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = join(__dirname, "..", "..", "..", "..");
 const DB_PKG_ROOT = join(REPO_ROOT, "packages", "db");
-const DATABASE_URL = resolveTestDatabaseUrl();
+// An ISOLATED per-suite database (packages/db/src/testing.ts's
+// ensureTestDatabase), not the shared `<base>_test`: this suite asserts
+// spawn counts over several seconds of storm, and a sibling suite's
+// `reset` landing mid-run would wipe the schema out from under it and
+// present as a product bug. migrate.mjs's advisory lock serializes
+// reset-against-reset; only a database of its own removes
+// reset-against-a-running-suite.
+let DATABASE_URL: string;
 const TIME_SCALE = Math.max(1, Number(process.env["LOOMBRE_TEST_TIME_SCALE"] ?? "1") || 1);
 
 function resetSchema(): void {
@@ -134,6 +141,7 @@ describe("seek-restart de-duplication (continuation item 1: livelock)", () => {
   }
 
   beforeAll(async () => {
+    DATABASE_URL = await ensureTestDatabase(resolveTestDatabaseUrl(), "worker_seek_dedup_test");
     resetSchema();
     db = createDb(DATABASE_URL);
     raw = new pg.Client({ connectionString: DATABASE_URL });
