@@ -19,7 +19,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
-import { createDb, getLibraryStashConnection, resolveTestDatabaseUrl, upsertLibraryStashConnectionConfig } from "@loombre/db";
+import { createDb, ensureTestDatabase, getLibraryStashConnection, resolveTestDatabaseUrl, upsertLibraryStashConnectionConfig } from "@loombre/db";
 import { ADMIN_ONLY_EVENT_TYPES } from "@loombre/shared/admin-only-event-types";
 import { buildFixtureDb } from "./fixtures/build-fixture-db.js";
 import { connectToStashLibrary } from "../../src/stash/connect.js";
@@ -28,7 +28,14 @@ import { STASH_SUPPORTED_SCHEMA_MAX, STASH_SUPPORTED_SCHEMA_MIN, formatUnsupport
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PKG_DB_ROOT = path.resolve(__dirname, "../../../../packages/db");
 const FIXTURES_DIR = path.join(__dirname, "fixtures");
-const DATABASE_URL = resolveTestDatabaseUrl();
+// PER-SUITE DATABASE (Wave A / A1's recommendation, swept at pre-D
+// consolidation). This suite RESETS the schema in its own hook; on the
+// shared `<base>_test` database a sibling package's reset landing mid-run
+// wipes it out from under whatever is executing and presents as a product
+// bug. `ensureTestDatabase` gives it one of its own — resolved at module
+// load (top-level await) so every describe-scope handle below is built
+// against the right connection string.
+const DATABASE_URL = await ensureTestDatabase(resolveTestDatabaseUrl(), "worker_stash_connect_test");
 
 function run(script: string, args: string[]) {
   const result = spawnSync(process.execPath, [script, ...args], {
