@@ -26,12 +26,15 @@
   font-weight: var(--weight-semibold);
 }
 
+/* LD-7 (owner QA, 2026-08-10): this stale `max-width: 56ch` capped the
+   entry-state copy to roughly half the readable content column
+   SettingsPageLayout already provides (W7/D-4), leaving the right half of
+   the page dead — removed to match the rest of the settings surface. */
 .body {
   margin: 0;
   font-size: var(--text-sm);
   color: var(--muted);
   line-height: var(--leading-normal);
-  max-width: 56ch;
 }
 
 .degradedNote {

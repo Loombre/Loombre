@@ -20,12 +20,16 @@
   font-size: var(--text-lg);
 }
 
+/* LD-7 (owner QA, 2026-08-10): this stale `max-width: 62ch` (copied from
+   ProviderKeysCard.module.css, same pattern as MailCredentialsCard's own
+   helpText) capped the copy to roughly half the readable content column
+   SettingsPageLayout already provides (W7/D-4), leaving the right half of
+   the Mail page dead — removed to match the rest of the settings surface. */
 .helpText {
   margin: 0 0 var(--space-md);
   font-size: var(--text-xs);
   color: var(--muted);
   line-height: var(--leading-dense);
-  max-width: 62ch;
 }
 
 .form {
