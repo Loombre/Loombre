@@ -108,6 +108,7 @@
  */
 import type { DeviceProfile, MediaInfo } from "../types.js";
 import type { PlanReason, PlanReasonCode } from "../reasons.js";
+import { dvHasEnhancementLayer, dvStripApplies } from "../dv.js";
 import type { StageResult } from "./types.js";
 
 function reason(code: PlanReasonCode, streamIndex: number, detail?: string): PlanReason {
@@ -164,7 +165,12 @@ export function evaluateHdr(
         return { verdict: "direct-play", reasons: [] };
       }
 
-      const hasCompatibleBaseLayer = stream.dvBlCompatId !== null && device.hdr.hdr10;
+      // dvStripApplies() is the SINGLE definition of this condition,
+      // shared verbatim with args/builder.ts (src/dv.ts) — the reason and
+      // the ffmpeg flags that make it true can no longer drift apart,
+      // which is exactly how `dv-stripped-to-hdr10` came to describe a
+      // strip nothing performed (LD-3).
+      const hasCompatibleBaseLayer = dvStripApplies(stream, device);
       if (hasCompatibleBaseLayer) {
         // Binding interpretation constraint 3: the strip only actually
         // HAPPENS (and is only truthfully reported) when Stage A required
@@ -173,11 +179,20 @@ export function evaluateHdr(
         // compatible base layer fine without any arg-builder intervention,
         // so reporting a strip there would be false.
         if (!containerDirectPlayable) {
+          // LD-15: a dual-layer profile-7 source loses its ENHANCEMENT
+          // LAYER as well as its RPU (the EL is meaningless without the
+          // RPU that drives it). That is a materially different outcome
+          // for the viewer than a single-layer profile-8.1 strip, so it is
+          // reported — in `detail`, not as a new reason code: the
+          // contract's PlanReasonCode is a closed enum whose additions are
+          // contract PRs (docs/PLAYBACK.md §4), and `detail` is already
+          // free-form and already carries the profile.
+          const elDropped = dvHasEnhancementLayer(stream);
           reasons.push(
             reason(
               "dv-stripped-to-hdr10",
               stream.index,
-              `dvProfile=${stream.dvProfile} blCompatId=${stream.dvBlCompatId}`,
+              `dvProfile=${stream.dvProfile} blCompatId=${stream.dvBlCompatId} elDropped=${elDropped}`,
             ),
           );
         }

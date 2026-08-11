@@ -1,0 +1,64 @@
+name: direct-stream — mkv DV profile 8.1 WITH compat BL on a DV-CAPABLE device — repackage happens but NO strip reason (the negative pin for LD-3)
+why: >
+  2026-08-11 (LD-3): the counterpart that stops the now-REAL strip from
+  over-firing. Everything here matches case 165's shape — mkv is not in the
+  device's directPlayContainers, so Stage A forces a repackage and the
+  container reason fires — EXCEPT that the device plays Dolby Vision
+  natively (devices.web-safari declares hdr.dolbyVision true). The DV layer
+  is exactly what such a device wants, so `dvStripApplies()` is false, Stage
+  C takes its silent-copy branch, and the arg builder emits NO `-bsf:v` and
+  NO `-tag:v` at all (golden 38 pins that the args are byte-identical to a
+  plain copy). Without this case, a future widening of the strip condition
+  could start destroying DV for the devices that can actually play it and
+  every other DV case would stay green. reasons: [container-not-direct-playable]
+  ONLY — no dv-stripped-to-hdr10.
+input:
+  media:
+    fileId: file-519
+    container: mkv
+    durationMs: 6000000
+    sizeBytes: 5000000000
+    overallBitrateBps: 15384000
+    video:
+      - index: 0
+        codec: hevc
+        profile: main10
+        level: 123
+        width: 3840
+        height: 2160
+        bitDepth: 10
+        frameRate: 23.976
+        bitrateBps: 15000000
+        hdr: dv
+        dvProfile: 8
+        dvBlCompatId: 1
+        interlaced: false
+        openGop: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 6
+        sampleRate: 48000
+        bitrateBps: 384000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device:
+    fixture: devices.web-safari
+  network:
+    fixture: networks.local
+  policy:
+    fixture: policies.t0-default
+  caps:
+    fixture: caps.software-only
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: direct-stream
+  reasons:
+    - container-not-direct-playable
+  container: fmp4-hls

@@ -54,6 +54,18 @@ entries.
 | `spdx-ranges@2.1.1` | CC-BY-4.0 | Same category as spdx-exceptions — transitive devDep of the spdx toolchain the license checker uses; dev-tooling only, never shipped. CC-BY-4.0 IS on the allow-list, but the checker flags the version constraint; excluded for parity with spdx-exceptions. | 2026-07-24 (Wave 3 AGPL readiness) |
 | `url-template@2.0.8` | BSD-3-Clause (declared as bare `"BSD"`) | Transitive devDep of `@redocly/cli` (the OpenAPI lint/codegen toolchain in @loombre/contract); dev-tooling only, never bundled. Its LICENSE file is BSD-3-Clause (three conditions incl. the non-endorsement clause, NO 4-clause advertising clause — allow-list compatible); excluded ONLY because the bare `"BSD"` string can't be SPDX-matched to `BSD-3-Clause`, not because the license is incompatible. | 2026-07-24 (Wave 3 — LICENSE read in full, clause-by-clause) |
 
+### External test-fixture tools (PATH-resolved, never vendored, never shipped)
+
+Not `--excludePackages` entries: these are not npm packages at all, so
+`license-check.mjs` never sees them (the same structural blind spot the
+vendored-binaries section below records for ffmpeg). They are resolved from
+`PATH` at fixture-generation time, exactly like ffmpeg is, and nothing in
+any Loombre artifact links to, bundles, or invokes them at runtime.
+
+| Tool | License | How it is used | Why it is not a distribution concern |
+|------|---------|----------------|--------------------------------------|
+| `dovi_tool` 2.3.3 (quietvoid/dovi_tool) | MIT | `scripts/gen-media-fixtures.mjs` calls it as a child process to build the two Dolby Vision test fixtures LD-3/LD-15 verify against (`generate`/`inject-rpu`/`mux`). Resolved via `LOOMBRE_DOVI_TOOL` or `PATH`; `LOOMBRE_DOVI_TOOL=off` forces the no-tool path. | MIT is AGPL-compatible. Dev/test only: never vendored, never fetched by an installer, never referenced by server/worker/web code, and absent from every shipped artifact. Its OUTPUT is synthetic media generated from `lavfi testsrc2` — no third-party content, no Dolby-licensed material. The fixtures themselves are gitignored (`test-fixtures/media/`) and regenerated on demand, so nothing it produces is distributed either. **Its absence is not a build or test failure:** the generator falls back to a repo-owned synthetic NAL splice, so the regression fence runs with no external tool at all. |
+
 ## Provenance ledger
 
 | Date | Source | License | What was taken | Where it lives |
