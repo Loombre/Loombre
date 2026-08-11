@@ -1024,6 +1024,39 @@ V5 manifestUrl→master YES; V6 T1+ uncapped YES; V7 both bounded trade-offs
 accepted. Spec merged to main; C2 BUILD lane (opus) spawned. Migration
 0044 assigned to the build; ENGINE_VERSION 0.10.1→0.11.0 expected.
 
+### Pre-D consolidation — LANDED + MERGED 2026-08-11 (0e0086d5) — orchestrator-verified
+
+(seek-dedup 7, transcode-sessions 50, playback-hls 50, crash-redact 34,
+sync-consumer 14 — all individually green on re-run; contract/SDK diff
+empty; grep-gates 0.) C2-f3 CLOSED: three in-window seek tests (12000ms
+strictly inside a fabricated produced window; both conjuncts now mutation-
+fail with recorded outputs; lane de-flaked its OWN new tests — race between
+waitForSpawnCount and the awaited record calls, 12 consecutive greens
+after). C2-f4 CLOSED: the exact-value guard pinned via a third-connection
+row-lock forcing the read-park-newer-commit interleaving (no sequential
+shape can reach the guard); mutation recorded. C2-f5a CLOSED: single
+control-channel write per GET via requestSeekWithRungSwitch — LOAD-BEARING
+DETAIL: absorb-on-match kept as a CASE expression NOT a WHERE clause
+(hoisting IS DISTINCT FROM into WHERE would silently drop a same-rung
+seek, the common pinned-client case). C2-f5c CLOSED: recordActiveRungIndex
+compare-and-clears a pending equal to the recorded rung, same statement.
+C2-f5b NOT FIXED — correctly evaluated as a §9.1.3 SEMANTIC decision
+(phantom switch-back guard trades against suppressing a legitimate
+switch-back inside any guard window; needs owner/spec adjudication +
+migration 0045) → RUN-EXIT OPEN TAIL. DB-ISOLATION SWEEP: 21 suites
+converted (module-load top-level-await ensureTestDatabase — beforeAll
+would miss describe-scope handles; scan/helpers covers all 12 scan specs);
+packages/db is now the ONLY shared-loombre_test user and turbo orders it
+first; session.integration converted (A1's hold expired). REDACT
+CONSOLIDATION: server twin now consumes the shared canonical; 34/34
+unchanged spec + a 200k-input randomized DIFFERENTIAL (byte-identical;
+harness proven non-vacuous by predicate inversion). LD-5 RECORDED in the
+plugin roadmap (docs sync orchestrator-side). NEW OBSERVED PRE-EXISTING
+FLAKE characterized for Wave D: conformance listPeople 401 under heavy
+cross-package concurrency ONLY (~2/8 full-repo runs; never alone, never
+in-gate; lead = main-jwt-secret.spec's process-wide env mutation +
+matching ephemeral-secret warning in logs) → Wave D R2 + open tail.
+
 ### Wave C2 — CLOSED 2026-08-11 (exit gate MET; fable review ACCEPT-WITH-FIXES)
 
 Review verdict + both review fixes merged (c2c137ce, two-parent, full branch
