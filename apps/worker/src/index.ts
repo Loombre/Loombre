@@ -6,6 +6,8 @@ import {
   listLibraries,
   listImagesNeedingDominantColor,
   hasQueuedOrActiveJobOfType,
+  listReapableTranscodeSessions,
+  markSessionFailed,
   reconcileAbandonedJobLedgerRows,
   hasVideoStreamsNeedingOpenGopBackfill,
 } from "@loombre/db/internal";
@@ -13,7 +15,13 @@ import { LOOMBRE_VERSION_FULL } from "@loombre/shared";
 import { installCrashHandlers, installGracefulShutdown, type ShutdownSignal } from "./crash/index.js";
 import { resolveWorkerDatabaseUrl } from "./db-url.js";
 import { resolveWorkerDataDir } from "./crash/data-dir.js";
-import { createTranscodeConsumerHandler, resolveTranscodeWorkerConcurrency, terminateAllTranscodeRuns } from "./transcode/index.js";
+import {
+  createProcessInspector,
+  createTranscodeConsumerHandler,
+  reapOrphanedTranscodeSessions,
+  resolveTranscodeWorkerConcurrency,
+  terminateAllTranscodeRuns,
+} from "./transcode/index.js";
 import { createSubtitleExtractConsumerHandler } from "./subtitles/index.js";
 import { runScan } from "./scan/scanner.js";
 import { createHashPool, type HashPool } from "./scan/identity/pool.js";
@@ -252,7 +260,7 @@ queue.work(
 // children ONE worker process will run.
 queue.work(
   "transcode",
-  createTranscodeConsumerHandler(db),
+  createTranscodeConsumerHandler(db, { workerStartedAtMs: WORKER_STARTED_AT_MS }),
   { concurrency: resolveTranscodeWorkerConcurrency() },
 );
 
@@ -501,6 +509,47 @@ async function reconcileStaleJobLedger(): Promise<void> {
   }
 }
 
+// Item C2 (an upstream media server-study implementation run): boot-time orphaned-ffmpeg
+// reaper, the crash-path companion to shutdown()'s graceful
+// terminateAllTranscodeRuns(). A hard kill (SIGKILL, OOM, power cut, a
+// container stop that skips to SIGKILL) runs no shutdown code at all, and
+// every ffmpeg run is spawned detached (transcode/process.ts), so the
+// encoder survives its supervisor — burning a core at full rate with
+// nothing left to throttle it, while its admission slot is freed the
+// moment the server's heartbeat sweeper ends the session. Runs alongside
+// reconcileStaleJobLedger for the same reason and with the same posture:
+// same generation horizon (WORKER_STARTED_AT_MS), failure logged and
+// swallowed, never fatal to boot. See ./transcode/reaper.ts's header for
+// the pid+cmdline verification rule (a pid alone is never enough to
+// justify a kill).
+async function reapOrphanedTranscodes(): Promise<void> {
+  try {
+    const inspector = createProcessInspector({ platform: process.platform });
+    const reaped = await reapOrphanedTranscodeSessions({
+      listReapable: async () => {
+        const rows = await listReapableTranscodeSessions(db, { workerStartedBeforeMs: WORKER_STARTED_AT_MS });
+        return rows.map((row) => ({
+          id: row.id,
+          workerPid: row.worker_pid,
+          workerStartedAtMs: row.worker_started_at_ms,
+          stagingDir: row.staging_dir,
+        }));
+      },
+      failSession: async (sessionId, stderrTail) => {
+        await markSessionFailed(db, sessionId, { errorCode: "transcode-failed", stderrTail, nowMs: Date.now() });
+      },
+      inspector,
+      workerStartedAtMs: WORKER_STARTED_AT_MS,
+    });
+    if (reaped.length > 0) {
+      const summary = reaped.map((r) => `${r.sessionId} (pid ${r.workerPid}: ${r.outcome})`).join(", ");
+      console.warn(`worker: reclaimed ${reaped.length} orphaned transcode session(s) from a previous worker — ${summary}`);
+    }
+  } catch (err) {
+    console.error("worker: failed to reap orphaned transcode sessions:", err);
+  }
+}
+
 // Phase 3 §11 step 5, STATE.md P3.5: boot-time hardware-capability
 // invalidation check. Compares the CURRENT persisted snapshot for this
 // platform (if any) against the freshly-resolved ffmpeg build hash + GPU
@@ -631,6 +680,7 @@ async function waitForDatabaseReady(timeoutMs = 30_000, intervalMs = 1000): Prom
 async function main(): Promise<void> {
   await waitForDatabaseReady();
   await reconcileStaleJobLedger();
+  await reapOrphanedTranscodes();
   await startLibraryWatcher();
   await startStashLibraryWatcher();
   await enqueueImageBackfillIfNeeded();

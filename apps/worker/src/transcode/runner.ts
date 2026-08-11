@@ -21,6 +21,7 @@ import {
   markSessionActive,
   markSessionFailed,
   markSessionStarting,
+  recordSessionWorkerProcess,
   updateProducedSegment,
   setThrottleSuspended,
   type TranscodeSessionRow,
@@ -85,6 +86,12 @@ export interface RunSessionDeps {
    *  production wiring. */
   onRunSpawned?: (pid: number | undefined, runIndex: number) => void;
   now?: () => number;
+  /** This worker PROCESS's start time (epoch ms), persisted alongside each
+   *  spawned run's pid so the NEXT boot's reaper can tell a session
+   *  supervised by a dead predecessor from one this generation owns
+   *  (migrations/0041, reaper.ts). Defaults to this module's own
+   *  process-start estimate; consumer.ts passes the real one. */
+  workerStartedAtMs?: number;
   /** TEST-ONLY overrides for transcode.segmentAheadSuspendThreshold/
    *  segmentAheadResumeThreshold (Addendum A registry) — production wiring
    *  (consumer.ts) never sets these; the real values are resolved from
@@ -148,6 +155,10 @@ export async function runTranscodeSession(deps: RunSessionDeps, sessionId: strin
   const stagingRoot = deps.stagingRoot ?? resolveTranscodeStagingRoot();
   const pollIntervalMs = deps.pollIntervalMs ?? resolveTranscodePollIntervalMs();
   const mechanism = deps.mechanismOverride ?? throttleMechanismForPlatform(process.platform);
+  // Node's uptime is the only in-process source for "when did THIS process
+  // start" that needs no plumbing; consumer.ts passes index.ts's own
+  // WORKER_STARTED_AT_MS, which is the authoritative value.
+  const workerStartedAtMs = deps.workerStartedAtMs ?? Math.round(Date.now() - process.uptime() * 1000);
 
   let suspendAheadThreshold = deps.suspendAheadThresholdOverride ?? THROTTLE_SUSPEND_AHEAD;
   let resumeAheadThreshold = deps.resumeAheadThresholdOverride ?? THROTTLE_RESUME_AHEAD;
@@ -224,6 +235,21 @@ export async function runTranscodeSession(deps: RunSessionDeps, sessionId: strin
     // POSIX (process.ts) and therefore outlives this worker unless
     // something explicitly kills it.
     const unregister = registerTranscodeRun(handle);
+    // Item C2: persist the pid + THIS worker generation on the row, so a
+    // hard kill (SIGKILL/OOM/power cut — no shutdown code runs at all)
+    // still leaves the next boot's reaper a handle on this process. Every
+    // spawn overwrites it, including a seek-restart's: the row must always
+    // name the run that is actually alive. Best-effort — a failure here
+    // must never take down a session that is otherwise fine (the reaper
+    // simply has nothing to go on for it, exactly as before this column
+    // existed).
+    if (handle.pid !== undefined) {
+      await recordSessionWorkerProcess(db, sessionId, {
+        workerPid: handle.pid,
+        workerStartedAtMs,
+        nowMs: now(),
+      }).catch(() => undefined);
+    }
     const run: CurrentRun = { index: runIndex, dir: runDir, handle, exited: false, processStopped: false, unregister };
     void handle.result.then((r) => {
       run.exited = true;
