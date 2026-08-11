@@ -831,6 +831,50 @@ single 0.9.0 bump; contract untouched. PLAYBACK.md §9: per-run anchoring rule
 + heartbeat mapping formula added. WAVE A CODE WORK NOW COMPLETE except A4's
 .sourcePill micro-fix; integration begins when it lands.
 
+### Wave A — CLOSED 2026-08-11 (exit gate MET)
+
+Integration: all five lane branches merged to main (92bd624c A1+A2 → 76ce3ec2
+A3 → 685e9219 A5 → 64992f44 A4); schema.sql REGENERATED on the merged tree
+(only conflict, per standing rule); pnpm install no-op; migrate-check 56
+tables. **gate:full ALL 16 STEPS PASSED** on the settled tree (web bundle
+170.7 KB gz / 200 budget; perf refresh c018b564). Docs/website sync run
+(website build green; deploy remains manual). Exit-gate items: lifecycle
+integration proofs green (no-orphan restart, hard-kill reap, slot-never-freed-
+early); triple-seek green; DV both profiles → clean single-layer HDR10 with
+zero residue (goldens both directions; spec==code; independent 5-layer
+orchestrator verification incl. mutation, owner-ordered); annotation sweep
+landed 7334ce90 — every closed deferral CLOSED-with-commit at its originating
+entry, every deliberate-keep RE-AFFIRMED, zero unanchored. Residual follow-ups
+carried forward: per-suite DB isolation for remaining worker/jobs live-DB
+suites (A1's recommendation — Wave D); apps/server crash-redact twin onto the
+shared canonical (Wave D cleanup candidate); K12 event-schema touch
+re-adjudication (Wave D reviewer 2); AUD-W1-001 dotnet CI step execution proof
+(next CI run).
+
+**OWNER DECISION (2026-08-11): release gating deferred to run exit.** The
+"do Waves B–D gate 1.0?" question is not decided at the Wave A stop; nothing
+tags until the full run (B, C1, C2, D) completes and the owner decides with
+everything in. Wave A's exit-gate evidence stands as recorded.
+
+### Wave B — SPAWNED 2026-08-11 (B1 mail trio sonnet, B2 TOCTOU opus, B3
+harness+installers sonnet, B4 stash-connection DELETE sonnet)
+
+PROVISIONING INCIDENT, caught + fixed before any damage: the first Wave B
+spawn happened while the orchestrator's persistent shell cwd was the WEBSITE
+repo (left there by the docs sync) — worktree isolation resolves against the
+shell cwd, so all four lanes were provisioned as worktrees of the website
+repo. Both lanes that reached the check stopped-and-reported cleanly (B2 even
+delivered a useful read-only scout: the pg_advisory_xact_lock house
+precedents in identity.ts/notices.ts, the argue-at-site convention, and the
+central single-lock-vs-two-phase-claim tension across the Cloudflare
+provisioning call — folded into B2's respawn brief); the other two were
+stopped mid-scout with zero writes. Website repo verified pristine (worktrees
+auto-cleaned, no stray branches, clean status). All four lanes respawned from
+the platform repo with a mandatory repo-identity sanity check as every lane's
+second action. Lesson recorded in orchestrator memory (worktree spawns: cd to
+primary repo first). B4 note: B1+B4 edit openapi.yaml concurrently in
+disjoint paths; SDK regen conflicts resolve at integration by regenerating.
+
 **A3 FINAL (2026-08-11): continuation done — lane COMPLETE, orchestrator-
 verified** (126/126 on re-run: ssrf + ledger-events + delivery-loop +
 chain-resolution + redact-paths; 17 commits total; contract/protocol diffs
