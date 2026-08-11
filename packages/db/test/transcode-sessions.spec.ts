@@ -23,6 +23,7 @@ import type { DB } from '../src/types.js';
 import type { ViewerContext } from '../src/context.js';
 import { createPlaybackSession } from '../src/query/playback-sessions.js';
 import {
+  absorbSeekTarget,
   consumeSeekTarget,
   ensureSessionStagingDir,
   getMediaInfoForFile,
@@ -491,9 +492,49 @@ describe('ensureSessionStagingDir', () => {
   });
 });
 
+// The "absorb" counterpart to consumeSeekTarget: clears a REDUNDANT seek
+// request (one the in-flight run is already serving) without bumping
+// discontinuity_count or moving status, and — the property that actually
+// matters — without ever being able to swallow a DIFFERENT target written
+// in the meantime.
+describe('absorbSeekTarget', () => {
+  it('clears the pending target without a discontinuity or a status change', async () => {
+    const id = await newSession();
+    await markSessionStarting(db, id, { stagingDir: '/tmp/loombre-transcode/absorb', nowMs: Date.now() });
+    await markSessionActive(db, id, { producedSegment: 3, nowMs: Date.now() });
+    await rawClient.query(`UPDATE playback_sessions SET seek_target_ms = 60000 WHERE id = $1`, [id]);
+
+    const absorbed = await absorbSeekTarget(db, id, 60000, Date.now());
+    expect(absorbed).toBe(true);
+
+    const row = await getTranscodeSessionRow(db, id);
+    expect(row?.seek_target_ms).toBeNull();
+    expect(row?.discontinuity_count).toBe(0); // nothing restarted
+    expect(row?.status).toBe('active'); // never moved to 'seeking'
+  });
+
+  it('never swallows a DIFFERENT target written between the read and the write', async () => {
+    const id = await newSession();
+    await rawClient.query(`UPDATE playback_sessions SET seek_target_ms = 90000 WHERE id = $1`, [id]);
+
+    // The caller read 60000 and judged it redundant; by the time it writes,
+    // the client has asked for a real seek to 90000 instead.
+    const absorbed = await absorbSeekTarget(db, id, 60000, Date.now());
+    expect(absorbed).toBe(false);
+    expect((await getTranscodeSessionRow(db, id))?.seek_target_ms).toBe(90000);
+  });
+
+  it('is a no-op once the session is terminal', async () => {
+    const id = await newSession();
+    await rawClient.query(`UPDATE playback_sessions SET seek_target_ms = 60000 WHERE id = $1`, [id]);
+    await markSessionFailed(db, id, { errorCode: 'transcode-failed', stderrTail: '', nowMs: Date.now() });
+    expect(await absorbSeekTarget(db, id, 60000, Date.now())).toBe(false);
+  });
+});
+
 // ---------------------------------------------------------------------------
-// migrations/0041_playback_sessions_worker_process.sql (comparative-study-study
-// implementation run, item C2): the two columns that make a boot-time
+// migrations/0041_playback_sessions_worker_process.sql (process-lifecycle
+// hardening wave, item C2): the two columns that make a boot-time
 // orphan reaper possible at all. Everything else about an interrupted
 // session survives a hard kill; the ffmpeg process itself does not — its
 // pid is the only handle on it, and it has to be on the row because the

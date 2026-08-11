@@ -192,6 +192,7 @@ export {
   ensureSessionStagingDir,
   recordSessionWorkerProcess,
   listReapableTranscodeSessions,
+  absorbSeekTarget,
 } from './transcode-sessions.js';
 
 export { getMediaInfoForFile } from './media-assembly.js';

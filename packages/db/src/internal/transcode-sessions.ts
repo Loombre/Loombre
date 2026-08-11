@@ -196,6 +196,49 @@ export async function consumeSeekTarget(db: DbOrTx, sessionId: string, nowMs: nu
 }
 
 /**
+ * Clears a pending seek target WITHOUT restarting anything — the
+ * "absorb" counterpart to consumeSeekTarget above (process-lifecycle
+ * hardening wave, 2026-08-11, continuation item 1).
+ *
+ * WHY A SECOND FUNCTION rather than a flag on consumeSeekTarget: the two
+ * do genuinely different things to the row. consumeSeekTarget CLAIMS a
+ * target — it bumps `discontinuity_count` and moves `status` to
+ * `seeking`, because a real restart is about to produce a discontinuity in
+ * the served playlist. Absorbing does neither: nothing restarts, the
+ * playlist gains no discontinuity, and the session's status is whatever it
+ * already was. Folding both into one function would mean a boolean that
+ * changes what the row means.
+ *
+ * The redundant-request case it exists for: a client retrying a
+ * 503-retry-after for one too-far-ahead segment makes the server record
+ * the SAME seek target on every retry. The worker is already producing
+ * exactly that position; consuming each repeat killed and respawned the
+ * run before it could ever produce its first segment (a livelock — see
+ * apps/worker/src/transcode/runner.ts's seek block).
+ *
+ * `WHERE seek_target_ms = $expected` is the whole safety property: if a
+ * DIFFERENT target was written between the caller's read and this write,
+ * zero rows match, nothing is cleared, and the caller sees the new target
+ * on its next poll and restarts for it properly. A redundant request is
+ * never able to swallow a real one.
+ */
+export async function absorbSeekTarget(
+  db: DbOrTx,
+  sessionId: string,
+  expectedSeekTargetMs: number,
+  nowMs: number
+): Promise<boolean> {
+  const result = await db
+    .updateTable('playback_sessions')
+    .set({ seek_target_ms: null, updated_at_ms: nowMs })
+    .where('id', '=', sessionId)
+    .where('seek_target_ms', '=', expectedSeekTargetMs)
+    .where('status', 'in', NON_TERMINAL_STATUSES)
+    .executeTakeFirst();
+  return Number(result.numUpdatedRows ?? 0) > 0;
+}
+
+/**
  * Sets `staging_dir` iff it is currently NULL (Phase 3 §11 step 6b,
  * P3.9(e)). Two consumers can independently need this session's staging
  * directory recorded: the transcode runtime's own `markSessionStarting`
