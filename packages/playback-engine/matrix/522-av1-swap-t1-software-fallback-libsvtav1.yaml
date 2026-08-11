@@ -1,0 +1,72 @@
+name: transcode — T1 + SOFTWARE-only av1 -> av1 rungs on the software route (the permitted §7.2 software fallback)
+why: >
+  Wave C1 / LD-16's OTHER half, and the direct counterpart of case 521: the
+  same caps set (caps.software-av1) and the same device/source, with the
+  ONLY difference being `policy.tier` (policies.av1-preferred-t1). At tier 1
+  §7.2's `'software'` arm applies — and it is capability-VERIFIED, not
+  assumed: the software row's own probe-verified encode list carries av1,
+  which §7.3's D4 narrowing makes mean libsvtav1 specifically. So the swap
+  fires with exactly the same ×0.6 arithmetic as case 520, §8.3 lands on
+  rule (iii) full-software (no hardware backend exists here at all), and
+  tier 1 means the ≥1080p software cap never engages — the client keeps all
+  five rungs. The builder encodes them with `libsvtav1 -preset 10`
+  (§6 interp. M; golden 40 pins the argv, and
+  apps/worker/test/transcode/av1-encode-args.integration.spec.ts executes
+  it against real ffmpeg). Together 521/522 are the tier boundary itself.
+input:
+  media:
+    fileId: file-522
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 6000000000
+    overallBitrateBps: 20500000
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 41
+        width: 1920
+        height: 1080
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 20000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: true
+        openGop: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 160000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device:
+    fixture: devices.av1-fmp4-capable
+  network:
+    fixture: networks.local
+  policy:
+    fixture: policies.av1-preferred-t1
+  caps:
+    fixture: caps.software-av1
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: transcode
+  reasons:
+    - video-interlaced
+    - software-fallback:encode
+  container: fmp4-hls
+  ladder:
+    - { heightPx: 1080, videoBitrateBps: 4800000, audioBitrateBps: 384000, codec: av1 }
+    - { heightPx: 1080, videoBitrateBps: 2400000, audioBitrateBps: 160000, codec: av1 }
+    - { heightPx: 720, videoBitrateBps: 1800000, audioBitrateBps: 160000, codec: av1 }
+    - { heightPx: 480, videoBitrateBps: 900000, audioBitrateBps: 160000, codec: av1 }
+    - { heightPx: 360, videoBitrateBps: 480000, audioBitrateBps: 160000, codec: av1 }

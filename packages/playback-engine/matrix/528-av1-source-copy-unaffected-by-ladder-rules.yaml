@@ -1,0 +1,65 @@
+name: direct-stream — an AV1 SOURCE still copies under a fully opted-in av1 policy (the §7.1 copy-preference guarantee)
+why: >
+  Wave C1 / LD-7's HARD requirement, stated as a case rather than left to
+  the regression pin: everything in §7.1/§7.2 lives exclusively in ladder
+  construction and Stage G, both reachable ONLY when the final
+  `video.action === 'transcode'`. No Stage A-F verdict reads a ladder
+  codec, so an AV1 SOURCE continues to direct-play/copy exactly as §3
+  already decides. Here the maximally av1-flavoured configuration is
+  applied — policies.av1-preferred-t0 (opt-in ON), caps.hw-av1-qsv (a real
+  encode engine), devices.av1-fmp4-capable (declares av1) — to an mkv the
+  device cannot direct-play. Stage A forces the repackage and NOTHING else
+  fires: video is a plain copy, the ladder is empty, and no av1-rung-demoted
+  reason can appear because no ladder was ever built. If a future edit let
+  a §7.1 rule leak into a copy verdict, this case is what fails.
+input:
+  media:
+    fileId: file-528
+    container: mkv
+    durationMs: 6000000
+    sizeBytes: 6000000000
+    overallBitrateBps: 8160000
+    video:
+      - index: 0
+        codec: av1
+        profile: null
+        level: null
+        width: 1920
+        height: 1080
+        bitDepth: 10
+        frameRate: 23.976
+        bitrateBps: 8000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+        openGop: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 160000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device:
+    fixture: devices.av1-fmp4-capable
+  network:
+    fixture: networks.local
+  policy:
+    fixture: policies.av1-preferred-t0
+  caps:
+    fixture: caps.hw-av1-qsv
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: direct-stream
+  reasons:
+    - container-not-direct-playable
+  container: fmp4-hls
+  ladder: []

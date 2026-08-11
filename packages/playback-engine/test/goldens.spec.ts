@@ -6,7 +6,9 @@
  * scenario + the four scenarios that landed with interpretation D's
  * generalization to every §8.3 hw backend + the open-GOP HEVC seek-restart
  * strip pair (interpretation K, 2026-08-10) + the four Dolby Vision strip
- * scenarios (interpretation L, LD-3/LD-15, 2026-08-11) = exactly 38
+ * scenarios (interpretation L, LD-3/LD-15, 2026-08-11) + the three AV1
+ * encode-target scenarios (interpretation M, LD-7, Wave C1: hw av1_nvenc,
+ * software libsvtav1, and a demoted rung landing on libx265) = exactly 41
  * scenario files
  * under test/goldens/
  * (test/goldens/scenarios.ts constructs the inputs in test
@@ -41,9 +43,9 @@ function loadSnapshot(id: string): GoldenSnapshot {
   return JSON.parse(raw) as GoldenSnapshot;
 }
 
-describe("ffmpeg arg builder goldens (docs/PLAYBACK.md §6, exactly 38 scenarios)", () => {
-  it("exactly 38 scenarios are defined (step 4's 25 + step 7b F4's two vaapi burn-in goldens + the VT tone-map hybrid golden + interpretation D's four backend-agnostic hw tone-map goldens + interpretation K's open-GOP seek-restart strip pair + interpretation L's four Dolby Vision strip goldens)", () => {
-    expect(GOLDEN_SCENARIOS).toHaveLength(38);
+describe("ffmpeg arg builder goldens (docs/PLAYBACK.md §6, exactly 41 scenarios)", () => {
+  it("exactly 41 scenarios are defined (step 4's 25 + step 7b F4's two vaapi burn-in goldens + the VT tone-map hybrid golden + interpretation D's four backend-agnostic hw tone-map goldens + interpretation K's open-GOP seek-restart strip pair + interpretation L's four Dolby Vision strip goldens + interpretation M's three AV1 encode-target goldens)", () => {
+    expect(GOLDEN_SCENARIOS).toHaveLength(41);
   });
 
   it("every scenario id is unique", () => {

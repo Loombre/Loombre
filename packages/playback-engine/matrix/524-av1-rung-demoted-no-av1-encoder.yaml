@@ -1,0 +1,70 @@
+name: transcode — explicit av1 policy rungs at TIER 2 with no av1 encoder anywhere -> demoted to hevc, cause no-av1-encoder
+why: >
+  Wave C1 / LD-7, §7.1(g)'s SECOND cause, isolated from the first by tier
+  alone: policies.explicit-av1-ladder-t2 carries the identical table at
+  tier 2, where §7.2's `'software'` arm IS available — but caps.software-only
+  never verified av1 encode at all, so eligibility is still 'none' and the
+  cause is `no-av1-encoder`, not `tier0-no-hw-av1`. Design law 4 in one
+  case: "the software backend can probably do AV1" is not a capability;
+  only the probe's own verified encode list is. Tier 2 also means the
+  ≥1080p software cap never runs, so the FULL demoted ladder survives —
+  the clearest possible view of demote-don't-drop: three rungs in, three
+  rungs out, same heights, same bitrates, only the codec column changed
+  on the two rows that had to change.
+input:
+  media:
+    fileId: file-524
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 6000000000
+    overallBitrateBps: 20500000
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 41
+        width: 1920
+        height: 1080
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 20000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: true
+        openGop: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 160000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device:
+    fixture: devices.av1-fmp4-capable
+  network:
+    fixture: networks.local
+  policy:
+    fixture: policies.explicit-av1-ladder-t2
+  caps:
+    fixture: caps.software-only
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: transcode
+  reasons:
+    - video-interlaced
+    - av1-rung-demoted
+    - av1-rung-demoted
+    - software-fallback:encode
+  container: fmp4-hls
+  ladder:
+    - { heightPx: 1080, videoBitrateBps: 6000000, audioBitrateBps: 384000, codec: hevc }
+    - { heightPx: 720, videoBitrateBps: 2500000, audioBitrateBps: 160000, codec: hevc }
+    - { heightPx: 360, videoBitrateBps: 800000, audioBitrateBps: 160000, codec: h264 }

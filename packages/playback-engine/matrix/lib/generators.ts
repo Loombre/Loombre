@@ -133,6 +133,35 @@ const LADDER_TABLE: LadderRung[] = [
   { heightPx: 360, videoBitrateBps: 800_000, audioBitrateBps: 160_000, codec: "h264" },
 ];
 
+/**
+ * Wave C1 (LD-7 / §10 property 5): ADMIN-CONFIGURED ladder tables carrying
+ * explicit `av1` rows. §7.1(g)'s demotion normalization is the ONLY thing
+ * standing between these and an av1 rung on a box that cannot encode one,
+ * so the property generators must actually produce them — an unreachability
+ * proof over inputs that never ask for AV1 proves nothing. Three shapes:
+ * an all-av1 table, a mixed table, and a 2160p av1 rung (which the swap can
+ * never produce, so only an explicit row can express it).
+ */
+const AV1_LADDER_TABLES: LadderRung[][] = [
+  [
+    { heightPx: 1080, videoBitrateBps: 6_000_000, audioBitrateBps: 384_000, codec: "av1" },
+    { heightPx: 720, videoBitrateBps: 2_500_000, audioBitrateBps: 160_000, codec: "av1" },
+    { heightPx: 480, videoBitrateBps: 1_200_000, audioBitrateBps: 160_000, codec: "av1" },
+  ],
+  [
+    { heightPx: 2160, videoBitrateBps: 12_000_000, audioBitrateBps: 384_000, codec: "av1" },
+    { heightPx: 1080, videoBitrateBps: 5_000_000, audioBitrateBps: 384_000, codec: "hevc" },
+    { heightPx: 720, videoBitrateBps: 2_000_000, audioBitrateBps: 160_000, codec: "h264" },
+  ],
+  [
+    { heightPx: 1080, videoBitrateBps: 4_000_000, audioBitrateBps: 160_000, codec: "av1" },
+    { heightPx: 1080, videoBitrateBps: 4_000_000, audioBitrateBps: 160_000, codec: "hevc" },
+    { heightPx: 360, videoBitrateBps: 800_000, audioBitrateBps: 160_000, codec: "h264" },
+  ],
+];
+
+const ALL_LADDER_TABLES: LadderRung[][] = [LADDER_TABLE, ...AV1_LADDER_TABLES];
+
 /** Degenerate-empty-array probability shared across device-profile fields
  *  (docs/PLAYBACK.md §2.2 — "device profiles incl. degenerate empty
  *  arrays" is an explicit §10/step-1 coverage requirement). */
@@ -278,9 +307,16 @@ function genRandomPolicy(rng: Rng): ServerPolicy {
     preserveAssStyling: bool(rng, 0.3),
     audioTranscodeCodecPriority: pick(rng, AUDIO_PRIORITY_OPTIONS),
     maxSimultaneousTranscodes: int(rng, 1, 4),
-    ladderRungs: LADDER_TABLE,
+    // Wave C1: av1-bearing tables enter the FULL random space so
+    // properties (1)/(3)/(4) exercise §7.1(g)'s normalization too, and so
+    // property (5)'s restricted generator below is not the only place an
+    // explicit av1 rung is ever seen.
+    ladderRungs: pick(rng, ALL_LADDER_TABLES),
     segmentDurationSec: 6,
     hevcEncodePreferred: bool(rng, 0.3),
+    // The operator opt-in (§2.4), sampled at both settings — the engine's
+    // own §7.2 gate is what decides whether it can mean anything.
+    av1EncodePreferred: bool(rng, 0.4),
   };
 }
 
@@ -368,6 +404,11 @@ function genPermissivePolicy(rng: Rng): ServerPolicy {
     ladderRungs: LADDER_TABLE,
     segmentDurationSec: 6,
     hevcEncodePreferred: false,
+    // Randomized deliberately: property (2) asserts a DIRECT-PLAY outcome,
+    // and §7.1's copy-preference guarantee says no ladder rule may ever
+    // influence that — flipping this flag under a passing direct-play input
+    // must change nothing at all.
+    av1EncodePreferred: bool(rng, 0.5),
   };
 }
 
@@ -543,4 +584,89 @@ function genDirectPlayVideoInput(rng: Rng): PlanInput {
  */
 export function genDirectPlayInput(rng: Rng): PlanInput {
   return bool(rng, 0.25) ? genDirectPlayMusicInput(rng) : genDirectPlayVideoInput(rng);
+}
+
+// ---------------------------------------------------------------------------
+// genAv1Tier0Input — docs/PLAYBACK.md §10 property 5 (LD-16 unreachability)
+// ---------------------------------------------------------------------------
+
+/**
+ * A random input RESTRICTED to property 5's hypothesis: `policy.tier === 0`
+ * AND no non-software backend with `'av1' ∈ encode`. Everything else is
+ * sampled as adversarially as the type space allows — the operator opt-in
+ * is biased ON, ladder tables are biased toward explicit av1 rows, the
+ * software backend often DOES verify av1 encode (the exact trap: a box that
+ * genuinely could software-encode AV1 and is being asked to), and devices
+ * frequently declare an av1 entry with fmp4 support. Under those conditions
+ * §7.2 says `plan()` cannot emit av1 BY CONSTRUCTION; properties.spec.ts
+ * quantifies exactly that.
+ *
+ * Built by CONSTRAINING `genRandomPlanInput`'s output rather than
+ * duplicating it, so every future widening of the base generator is
+ * inherited here automatically instead of silently bypassing the property.
+ */
+export function genAv1Tier0Input(rng: Rng): PlanInput {
+  const base = genRandomPlanInput(rng);
+
+  // The software row may or may not verify av1 (both are in scope); NO
+  // hardware backend ever may — that is the hypothesis, not an assumption
+  // about the machine.
+  const softwareVerifiesAv1 = bool(rng, 0.6);
+  const backends = base.caps.backends.map((b) => ({
+    ...b,
+    encode:
+      b.backend === "software"
+        ? softwareVerifiesAv1
+          ? (Array.from(new Set([...b.encode, "av1"])) as ("h264" | "hevc" | "av1")[])
+          : b.encode.filter((c) => c !== "av1")
+        : b.encode.filter((c) => c !== "av1"),
+  }));
+  // A software row is added when the fixture had none, so the 'software'
+  // arm is genuinely exercised rather than vacuously absent.
+  if (softwareVerifiesAv1 && !backends.some((b) => b.backend === "software")) {
+    backends.push({
+      backend: "software",
+      decode: ["h264", "hevc", "av1", "vp9", "mpeg2"],
+      encode: ["h264", "hevc", "av1"],
+      toneMap: [],
+      verifiedAtMs: 1_750_000_000_000,
+    });
+  }
+
+  const device: DeviceProfile = bool(rng, 0.7)
+    ? {
+        ...base.device,
+        hls: { ...base.device.hls, supportsFmp4: true },
+        video: base.device.video.some((v) => v.codec === "av1")
+          ? base.device.video
+          : [
+              ...base.device.video,
+              {
+                codec: "av1",
+                maxProfile: null,
+                maxLevel: null,
+                maxBitDepth: 10,
+                maxWidth: 3840,
+                maxHeight: 2160,
+                maxFrameRate: 60,
+                maxBitrateBps: null,
+              },
+            ],
+      }
+    : base.device;
+
+  return {
+    ...base,
+    device,
+    caps: { backends },
+    policy: {
+      ...base.policy,
+      tier: 0,
+      // Never disabled: a transcode-disabled plan carries an empty ladder
+      // and would satisfy the property vacuously.
+      allowTranscode: true,
+      av1EncodePreferred: bool(rng, 0.8),
+      ladderRungs: bool(rng, 0.6) ? pick(rng, AV1_LADDER_TABLES) : LADDER_TABLE,
+    },
+  };
 }
