@@ -220,4 +220,99 @@ describe("ClaimScreen — E2/M12/M16", () => {
 
     expect(view.container.textContent).toMatch(/this invite link isn't valid/i);
   });
+
+  // ==========================================================================
+  // LD-13b (STATE.md "Mail posture trio"): a preset-prefilled email field
+  // the claimant CLEARS submits an explicit `null`, not an omitted member —
+  // an omitted member means "keep the preset" server-side, which would
+  // silently defeat the whole point of clearing it.
+  // ==========================================================================
+  it("LD-13b: a preset-filled email field, when the claimant CLEARS it, submits an explicit email:null (not omitted)", async () => {
+    getSpy.mockResolvedValue(CLAIM_STATE_WITH_USERNAME_PRESET);
+    postSpy.mockResolvedValue(TOKEN_PAIR);
+    view = renderIntoBody(<ClaimScreen token="tok-9" />);
+    await act(async () => {});
+
+    expect(inputFor("Email").value).toBe("june@example.com"); // prefilled from the preset
+    expect(view.container.textContent).toMatch(/pre-filled from your invite/i); // LD-13b hint present
+
+    setNativeValue(inputFor("Email"), "");
+    setNativeValue(inputFor("Password"), "correct horse battery");
+    setNativeValue(inputFor("Confirm password"), "correct horse battery");
+    await click(buttonFor("Create account"));
+
+    const [, options] = postSpy.mock.calls[0] as [string, { body: Record<string, unknown> }];
+    expect(options.body).toHaveProperty("email", null);
+  });
+
+  it("LD-13b: a preset-filled email field left UNCHANGED still submits the (trimmed) string value, not null", async () => {
+    getSpy.mockResolvedValue(CLAIM_STATE_WITH_USERNAME_PRESET);
+    postSpy.mockResolvedValue(TOKEN_PAIR);
+    view = renderIntoBody(<ClaimScreen token="tok-10" />);
+    await act(async () => {});
+
+    setNativeValue(inputFor("Password"), "correct horse battery");
+    setNativeValue(inputFor("Confirm password"), "correct horse battery");
+    await click(buttonFor("Create account"));
+
+    const [, options] = postSpy.mock.calls[0] as [string, { body: Record<string, unknown> }];
+    expect(options.body["email"]).toBe("june@example.com");
+  });
+
+  it("LD-13b: with NO preset, an empty email field is simply OMITTED (unchanged posture) — no hint shown either", async () => {
+    getSpy.mockResolvedValue(CLAIM_STATE_NO_PRESETS);
+    postSpy.mockResolvedValue(TOKEN_PAIR);
+    view = renderIntoBody(<ClaimScreen token="tok-11" />);
+    await act(async () => {});
+
+    expect(view.container.textContent).not.toMatch(/pre-filled from your invite/i);
+
+    setNativeValue(inputFor("Username"), "newperson");
+    setNativeValue(inputFor("Password"), "correct horse battery");
+    setNativeValue(inputFor("Confirm password"), "correct horse battery");
+    await click(buttonFor("Create account"));
+
+    const [, options] = postSpy.mock.calls[0] as [string, { body: Record<string, unknown> }];
+    expect(options.body).not.toHaveProperty("email");
+  });
+
+  // ==========================================================================
+  // LD-13c (STATE.md "Mail posture trio"): emailApplied:false gates the
+  // redirect on an honest interstitial instead of vanishing straight to
+  // /home; emailApplied:true (or absent, the old-server shape) redirects
+  // immediately exactly as before (the "submit success" test above already
+  // pins the absent case).
+  // ==========================================================================
+  it("LD-13c: emailApplied:false shows the honest interstitial and defers the /home redirect until Continue", async () => {
+    getSpy.mockResolvedValue(CLAIM_STATE_NO_PRESETS);
+    postSpy.mockResolvedValue({ ...TOKEN_PAIR, emailApplied: false });
+    view = renderIntoBody(<ClaimScreen token="tok-12" />);
+    await act(async () => {});
+
+    setNativeValue(inputFor("Username"), "newperson");
+    setNativeValue(inputFor("Password"), "correct horse battery");
+    setNativeValue(inputFor("Confirm password"), "correct horse battery");
+    await click(buttonFor("Create account"));
+
+    expect(view.container.textContent).toMatch(/account created/i);
+    expect(view.container.textContent).toMatch(/already in use/i);
+    expect(routerReplace).not.toHaveBeenCalled();
+
+    await click(buttonFor("Continue"));
+    expect(routerReplace).toHaveBeenCalledWith("/home");
+  });
+
+  it("LD-13c: emailApplied:true redirects immediately, same as the absent-field case", async () => {
+    getSpy.mockResolvedValue(CLAIM_STATE_NO_PRESETS);
+    postSpy.mockResolvedValue({ ...TOKEN_PAIR, emailApplied: true });
+    view = renderIntoBody(<ClaimScreen token="tok-13" />);
+    await act(async () => {});
+
+    setNativeValue(inputFor("Username"), "newperson");
+    setNativeValue(inputFor("Password"), "correct horse battery");
+    setNativeValue(inputFor("Confirm password"), "correct horse battery");
+    await click(buttonFor("Create account"));
+
+    expect(routerReplace).toHaveBeenCalledWith("/home");
+  });
 });

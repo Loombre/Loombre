@@ -468,3 +468,218 @@ describe("E8: wrong-currentPassword 403 and missing-currentPassword 422 never re
     expect(stripInstance(updateMeAttempt.body)).toEqual(stripInstance(restrictedAttempt.body));
   });
 });
+
+// ============================================================================
+// LD-13a (STATE.md "Mail posture trio"): wrong currentPassword must be
+// indistinguishable — shape AND timing — from the house auth-failure
+// pattern (login's wrong-password 401). Both this endpoint's compare
+// (common/require-current-password.ts) and login's own
+// (session/auth.controller.ts) run through the SAME HashService.verify()
+// against a REAL, stored argon2id hash — login additionally substitutes a
+// DUMMY_PASSWORD_HASH when the identifier itself doesn't resolve, so an
+// unknown-identifier login and a wrong-password-for-a-real-account login
+// cost the same; currentPassword's own doc comment explains why it does
+// NOT need that substitution (the target user is already resolved by
+// AuthGuard, never looked up by an attacker-controlled identifier) — this
+// suite proves that difference is still timing-safe: neither path is a
+// cheaper/faster reject than the other by an order of magnitude, which is
+// what a missing/short-circuited compare would look like.
+// ============================================================================
+describe("LD-13a: wrong currentPassword is indistinguishable from the house auth-failure pattern (login)", () => {
+  it("shape: both are RFC 9457 problem+json with the SAME field set (type/title/status/detail/instance[/code]) — only the reserved values differ", async () => {
+    const user = await createAndLoginFreshUser("houseshape-user");
+
+    const wrongLogin = await login(user.username, "definitely-the-wrong-password", "houseshape-login-device");
+    const wrongCurrentPassword = await request(app.getHttpServer())
+      .patch("/users/me")
+      .set("Authorization", `Bearer ${user.accessToken}`)
+      .send({ password: "irrelevant-new-password", currentPassword: "definitely-the-wrong-password" });
+
+    expect(wrongLogin.status).toBe(401);
+    expect(wrongCurrentPassword.status).toBe(403);
+    expect(wrongLogin.headers["content-type"]).toBe(wrongCurrentPassword.headers["content-type"]);
+    expect(wrongLogin.headers["content-type"]).toMatch(/application\/problem\+json/);
+
+    // Structural (key-set) equality, not value equality — status/type/code
+    // are DELIBERATELY distinct (F2's own reasoning: a client must be able
+    // to route "re-enter your current password" differently from a plain
+    // "you're not signed in"), but both bodies are built from the exact
+    // same house Problem shape: type/title/status/detail/instance, plus an
+    // optional `code`. Neither leaks an extra field the other lacks.
+    const loginKeys = Object.keys(wrongLogin.body).sort();
+    const currentPasswordKeys = Object.keys(wrongCurrentPassword.body).sort();
+    const REQUIRED_PROBLEM_KEYS = ["detail", "instance", "status", "title", "type"];
+    for (const key of REQUIRED_PROBLEM_KEYS) {
+      expect(loginKeys).toContain(key);
+      expect(currentPasswordKeys).toContain(key);
+    }
+    // login's `unauthorized()` call site passes no `code`; currentPassword's
+    // ALWAYS does (F2's fixed `current-password-invalid`) — that asymmetry
+    // is the one and only allowed key-set difference, named explicitly so
+    // a future edit that adds/removes any OTHER key on either side fails
+    // this assertion instead of silently drifting.
+    expect(loginKeys).toEqual(REQUIRED_PROBLEM_KEYS);
+    expect(currentPasswordKeys).toEqual([...REQUIRED_PROBLEM_KEYS, "code"].sort());
+    expect(typeof wrongLogin.body.detail).toBe("string");
+    expect(typeof wrongCurrentPassword.body.detail).toBe("string");
+  });
+
+  it("timing: a wrong login and a wrong currentPassword pay comparable real argon2id cost — neither is a cheap/short-circuited reject", async () => {
+    const SAMPLES = 8;
+    const loginSamples: number[] = [];
+    const currentPasswordSamples: number[] = [];
+
+    for (let i = 0; i < SAMPLES; i++) {
+      const user = await createAndLoginFreshUser(`houseTiming-${i}`);
+
+      const loginStartedAtMs = Date.now();
+      const wrongLogin = await login(user.username, "definitely-the-wrong-password", `houseTiming-login-${i}`);
+      loginSamples.push(Date.now() - loginStartedAtMs);
+      expect(wrongLogin.status).toBe(401);
+
+      const cpStartedAtMs = Date.now();
+      const wrongCurrentPassword = await request(app.getHttpServer())
+        .patch("/users/me")
+        .set("Authorization", `Bearer ${user.accessToken}`)
+        .send({ password: "irrelevant-new-password", currentPassword: "definitely-the-wrong-password" });
+      currentPasswordSamples.push(Date.now() - cpStartedAtMs);
+      expect(wrongCurrentPassword.status).toBe(403);
+    }
+
+    function median(samples: number[]): number {
+      const sorted = [...samples].sort((a, b) => a - b);
+      return sorted[Math.floor(sorted.length / 2)]!;
+    }
+
+    const loginMedian = median(loginSamples);
+    const currentPasswordMedian = median(currentPasswordSamples);
+
+    // Both medians must be REAL (non-trivial) argon2id-compare cost, not a
+    // near-zero short-circuit — a missing compare would collapse toward
+    // 0ms while a real one on this house's cost params (19456 KiB, 2
+    // iterations) takes single-digit-to-tens of ms even on fast hardware.
+    expect(loginMedian).toBeGreaterThan(0);
+    expect(currentPasswordMedian).toBeGreaterThan(0);
+
+    // Neither path is an order of magnitude cheaper than the other — a
+    // generous (flake-resistant) 5x band in EITHER direction, which a
+    // genuinely missing/short-circuited compare (near-0ms vs a real ~tens
+    // of ms) would blow through by a wide margin, while ordinary
+    // scheduler/GC jitter between two structurally similar argon2id calls
+    // will not.
+    const ratio = currentPasswordMedian / loginMedian;
+    expect(ratio).toBeGreaterThan(0.2);
+    expect(ratio).toBeLessThan(5);
+  });
+});
+
+// ============================================================================
+// LD-13a (STATE.md "Mail posture trio"): race a self-change against a
+// concurrent session revocation of the SAME account — the mission's own
+// adversarial obligation, verbatim. The admin's POST /users/{id}/reset-
+// password on ANOTHER account never needs currentPassword (R-F3 scopes
+// that requirement to id===self only) and unconditionally revokes EVERY
+// device (M14) — racing it against that same user's own self-service
+// PATCH /users/me password change is the sharpest version of "does a
+// self-change survive a concurrent revocation of its own session" this
+// house's existing machinery can produce. Two real, non-simulated
+// concurrent HTTP requests (Promise.all, not a fake clock) — the actual
+// commit order between the two `users` row UPDATEs is genuinely
+// non-deterministic (Postgres row-locking serializes the WRITES, but
+// which of the two independently-scheduled requests reaches its own
+// currentPassword compare / UPDATE statement first is a real race), so
+// this test asserts COHERENCE under either possible interleaving rather
+// than pinning one.
+// ============================================================================
+describe("LD-13a race: a self password-change vs a concurrent admin-driven revocation of the SAME account", () => {
+  it("neither request ever 500s (no torn transaction), and the account settles into exactly ONE coherent post-race state", async () => {
+    const tag = uniqueTag("race-selfchange-vs-revoke");
+    const username = tag;
+    const originalPassword = `${tag}-password-1`;
+    const newSelfPassword = `${tag}-password-2`;
+
+    const created = await request(app.getHttpServer())
+      .post("/users")
+      .set("Authorization", `Bearer ${adminAccessToken}`)
+      .send({ username, password: originalPassword, isAdmin: false });
+    expect(created.status, JSON.stringify(created.body)).toBe(201);
+    const userId = created.body.id as string;
+
+    const selfLogin = await login(username, originalPassword, "race-self-device");
+    expect(selfLogin.status, JSON.stringify(selfLogin.body)).toBe(200);
+    const selfAccessToken = selfLogin.body.accessToken as string;
+    const selfRefreshToken = selfLogin.body.refreshToken as string;
+    const selfDeviceId = selfLogin.body.deviceId as string;
+
+    const [selfChange, adminReset] = await Promise.all([
+      request(app.getHttpServer())
+        .patch("/users/me")
+        .set("Authorization", `Bearer ${selfAccessToken}`)
+        .send({ password: newSelfPassword, currentPassword: originalPassword }),
+      request(app.getHttpServer())
+        .post(`/users/${userId}/reset-password`)
+        .set("Authorization", `Bearer ${adminAccessToken}`),
+    ]);
+
+    // The admin path never depends on the account's CURRENT password (no
+    // currentPassword required for an admin acting on ANOTHER user) — it
+    // always succeeds regardless of how the race falls.
+    expect(adminReset.status, JSON.stringify(adminReset.body)).toBe(200);
+    const temporaryPassword = adminReset.body.temporaryPassword as string;
+
+    // The self-change's own OUTCOME is allowed to depend on the race: if
+    // the admin reset's password write committed before this request's own
+    // currentPassword compare ran, the ORIGINAL password (what this
+    // request was still holding) is correctly no longer valid — an honest
+    // 403, never a silent apply under a stale credential and never a 500.
+    expect([200, 403]).toContain(selfChange.status);
+
+    if (selfChange.status === 403) {
+      expect(selfChange.body.type).toBe(CURRENT_PASSWORD_INVALID_PROBLEM_TYPE);
+      // The account is unambiguously in the admin-reset's state — the
+      // temporary password works, must_change_password is true, and the
+      // self-change device's own (never-revoked-by-itself) refresh token
+      // is dead, same as every other device (M14: no current-device
+      // survivor on the admin/CLI tier).
+      const asAdminReset = await login(username, temporaryPassword, "race-verify-adminreset-a");
+      expect(asAdminReset.status, JSON.stringify(asAdminReset.body)).toBe(200);
+      expect(asAdminReset.body.mustChangePassword).toBe(true);
+      const refreshed = await request(app.getHttpServer())
+        .post("/auth/refresh")
+        .send({ refreshToken: selfRefreshToken, deviceId: selfDeviceId });
+      expect(refreshed.status).toBe(401);
+      return;
+    }
+
+    // selfChange.status === 200: the ORIGINAL password was still valid
+    // when this request's own compare ran. From here, exactly ONE of the
+    // two writes is the FINAL committed state — never both (a corrupted
+    // row accepting two different hashes) and never neither (a torn write
+    // matching neither committed value).
+    const asSelfChange = await login(username, newSelfPassword, "race-verify-selfchange");
+    const asAdminReset = await login(username, temporaryPassword, "race-verify-adminreset-b");
+    const outcomes = [asSelfChange.status, asAdminReset.status].sort((a, b) => a - b);
+    expect(outcomes).toEqual([200, 401]);
+
+    if (asSelfChange.status === 200) {
+      // The self-change committed LAST. F3's "the caller survives its own
+      // password change" guarantee must still hold even though an admin
+      // reset raced it: the caller's OWN refresh token (minted before
+      // either write) must still be redeemable.
+      expect(asSelfChange.body.mustChangePassword).toBe(false);
+      const refreshed = await request(app.getHttpServer())
+        .post("/auth/refresh")
+        .send({ refreshToken: selfRefreshToken, deviceId: selfDeviceId });
+      expect(refreshed.status, JSON.stringify(refreshed.body)).toBe(200);
+    } else {
+      // The admin reset committed LAST — M14's "revokes ALL devices, no
+      // current-device survivor" must still hold even for the device that
+      // just successfully changed its OWN password moments earlier.
+      expect(asAdminReset.body.mustChangePassword).toBe(true);
+      const refreshed = await request(app.getHttpServer())
+        .post("/auth/refresh")
+        .send({ refreshToken: selfRefreshToken, deviceId: selfDeviceId });
+      expect(refreshed.status).toBe(401);
+    }
+  });
+});
