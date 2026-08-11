@@ -149,7 +149,16 @@ export async function getLatestStashSyncReport(db: Kysely<DB>, libraryId: string
     .selectFrom('stash_sync_reports')
     .selectAll()
     .where('library_id', '=', libraryId)
+    // `id` tiebreak: two sync runs opened within the same started_at_ms
+    // millisecond (application-supplied Date.now(), not a database clock —
+    // trivially reachable by two quick back-to-back manual "sync now"
+    // triggers) would otherwise leave "which report is latest" to whatever
+    // order Postgres happens to return on a tie. `id` breaks the tie
+    // deterministically (highest id wins, same direction as started_at_ms
+    // desc) rather than causally — see packages/db/src/query/cursor.ts's
+    // header for why a UUIDv7 secondary key is stable but not causal order.
     .orderBy('started_at_ms', 'desc')
+    .orderBy('id', 'desc')
     .limit(1)
     .executeTakeFirst();
 }
@@ -176,7 +185,13 @@ export async function findRunningStashSyncReport(db: Kysely<DB>, libraryId: stri
     .selectAll()
     .where('library_id', '=', libraryId)
     .where('status', '=', 'running')
+    // `id` tiebreak — same rationale as getLatestStashSyncReport above (this
+    // function's own doc comment already notes orderBy+limit(1) is
+    // defense-in-depth, not a correctness requirement under the current
+    // concurrency:1 queue registration; the tiebreak just makes that
+    // defense-in-depth deterministic instead of DB-tie-order-dependent).
     .orderBy('started_at_ms', 'desc')
+    .orderBy('id', 'desc')
     .limit(1)
     .executeTakeFirst();
 }

@@ -254,6 +254,7 @@ describe("GET /admin/plugins/{id} deliveryStatus (Lane W5b)", () => {
     await recordDeliverySuccess(db, {
       pluginId,
       cursorEventId: "01960000-0000-7000-8000-000000000000",
+      cursorEventSeq: 1,
       deliveredEventCount: 3,
       nowMs,
     });
@@ -283,7 +284,7 @@ describe("GET /admin/plugins/{id} deliveryStatus (Lane W5b)", () => {
   it("listAdminPlugins also carries deliveryStatus for the same plugin", async () => {
     const pluginId = await registerEventSubscriber("https://distinctive-webhook-w5b-list.example.invalid/hook", ["item.added"]);
     registeredPluginIds.push(pluginId);
-    await recordDeliverySuccess(db, { pluginId, cursorEventId: "01960000-0000-7000-8000-000000000001", deliveredEventCount: 1, nowMs: Date.now() });
+    await recordDeliverySuccess(db, { pluginId, cursorEventId: "01960000-0000-7000-8000-000000000001", cursorEventSeq: 1, deliveredEventCount: 1, nowMs: Date.now() });
 
     const list = await asAdmin().get("/admin/plugins");
     const item = list.body.items.find((p: { id: string }) => p.id === pluginId);
