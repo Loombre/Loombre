@@ -34,6 +34,7 @@ import {
   listStalePlaybackSessions,
   requestRungSwitch,
   requestSeek,
+  requestSeekWithRungSwitch,
   suspendStalePlaybackSession,
   updateRequestedSegment,
 } from '../src/query/playback-sessions.js';
@@ -833,6 +834,93 @@ describe('requestRungSwitch (server-written, absorb-on-match at the WRITE side)'
     const row = await getPlaybackSessionForUser(db, adminCtx, id);
     expect(row?.activeRungIndex).toBe(0);
     expect(row?.pendingRungIndex).toBe(2);
+  });
+});
+
+// THE COINCIDENT WRITE (pre-D consolidation item 3a, C2 review finding
+// f5). ONE segment GET can carry BOTH intentions — a far-ahead index (a
+// seek) under a `v{K}` naming a different rung (a switch) — and hls.js
+// produces exactly that whenever an ABR level change coincides with a
+// user scrub, or when a level switch's first fragment request lands past
+// the produced edge.
+//
+// The WORKER side of §9.1.7 already reads both columns in one tick and
+// spawns ONE run for the pair. The WRITE side did not: two independent
+// statements, and a poll tick landing between them consumes the switch
+// alone (a handoff restart at the live-edge continuation origin) and then
+// the seek on the next tick (a second restart, at the requested origin) —
+// two of the most expensive operations this runtime performs, for one
+// client intention, and the intermediate run produces bytes nobody wanted.
+//
+// A single statement makes that interleaving inexpressible rather than
+// unlikely.
+describe('requestSeekWithRungSwitch (§9.1.7 — one statement, both intentions)', () => {
+  async function newTranscodeSession(nowMs: number): Promise<string> {
+    const session = await createPlaybackSession(db, adminCtx, {
+      itemId: harborLightsItemId,
+      fileId: harborLightsFileId,
+      deviceId: adminDeviceId,
+      plan: { decision: 'transcode', reasons: [] },
+      engineVersion: 'test',
+      nowMs,
+    });
+    return session!.id;
+  }
+
+  it('writes both columns, so the worker can never observe one without the other', async () => {
+    const nowMs = Date.now();
+    const id = await newTranscodeSession(nowMs);
+    await rawClient.query('UPDATE playback_sessions SET active_rung_index = 0 WHERE id = $1', [id]);
+
+    const row = await requestSeekWithRungSwitch(db, adminCtx, id, 65_000, 2, nowMs + 100);
+    expect(row?.seekTargetMs).toBe(65_000);
+    expect(row?.pendingRungIndex).toBe(2);
+  });
+
+  it('keeps requestRungSwitch\'s absorb-on-match for the RUNG half while still recording the seek', async () => {
+    const nowMs = Date.now();
+    const id = await newTranscodeSession(nowMs);
+    await rawClient.query('UPDATE playback_sessions SET active_rung_index = 1 WHERE id = $1', [id]);
+
+    // A client pinned to rung 1 seeking within that rung: the seek is
+    // real, the "switch" is not. Absorbing the pair wholesale would drop
+    // the seek — the failure mode a naive single-statement merge with
+    // requestRungSwitch's own WHERE clause would introduce.
+    const row = await requestSeekWithRungSwitch(db, adminCtx, id, 65_000, 1, nowMs + 100);
+    expect(row?.seekTargetMs).toBe(65_000);
+    expect(row?.pendingRungIndex).toBeNull();
+  });
+
+  it('leaves an unconsumed pending rung for a DIFFERENT rung intact when absorbing the matching half', async () => {
+    const nowMs = Date.now();
+    const id = await newTranscodeSession(nowMs);
+    await rawClient.query('UPDATE playback_sessions SET active_rung_index = 1, pending_rung_index = 2 WHERE id = $1', [id]);
+
+    // The absorbed rung half must be a NO-OP on the column, not a clear:
+    // rung 2 is a request the worker still owes a handoff.
+    const row = await requestSeekWithRungSwitch(db, adminCtx, id, 20_000, 1, nowMs + 100);
+    expect(row?.seekTargetMs).toBe(20_000);
+    expect(row?.pendingRungIndex).toBe(2);
+  });
+
+  it('records the rung while active_rung_index is still NULL (the worker has not spawned yet)', async () => {
+    const nowMs = Date.now();
+    const id = await newTranscodeSession(nowMs);
+    const row = await requestSeekWithRungSwitch(db, adminCtx, id, 12_000, 1, nowMs + 100);
+    expect(row?.seekTargetMs).toBe(12_000);
+    expect(row?.pendingRungIndex).toBe(1);
+  });
+
+  it('rejects a non-owner and a terminal session, exactly like its two halves', async () => {
+    const nowMs = Date.now();
+    const id = await newTranscodeSession(nowMs);
+    expect(await requestSeekWithRungSwitch(db, casualCtx, id, 1_000, 1, nowMs + 100)).toBeUndefined();
+    // Nothing was written by the rejected call.
+    const { rows } = await rawClient.query<{ seek_target_ms: string | null }>('SELECT seek_target_ms FROM playback_sessions WHERE id = $1', [id]);
+    expect(rows[0]?.seek_target_ms).toBeNull();
+
+    await endPlaybackSession(db, adminCtx, id, nowMs + 200);
+    expect(await requestSeekWithRungSwitch(db, adminCtx, id, 1_000, 1, nowMs + 300)).toBeUndefined();
   });
 });
 
