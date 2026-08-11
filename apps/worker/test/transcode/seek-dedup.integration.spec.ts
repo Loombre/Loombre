@@ -31,7 +31,7 @@
 
 import { EventEmitter } from "node:events";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync, statSync } from "node:fs";
+import { mkdtempSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -99,9 +99,15 @@ describe("seek-restart de-duplication (continuation item 1: livelock)", () => {
   let stagingRoot: string;
   let ctx: ViewerContext;
   let deviceId: string;
+  let ladderDeviceId: string;
   let itemId: string;
   let fileId: string;
   let storedPlan: Record<string, unknown>;
+  /** The same session, planned against a THREE-RUNG ladder — the only
+   *  shape in which a rung switch (and therefore §9.1.7's absorption
+   *  conjunct) means anything at all. Built alongside `storedPlan` so the
+   *  ladder-empty tests above keep the plan they were written against. */
+  let storedLadderPlan: Record<string, unknown>;
 
   let children: FakeChild[] = [];
   let killSpy: ReturnType<typeof vi.spyOn> | undefined;
@@ -170,6 +176,24 @@ describe("seek-restart de-duplication (continuation item 1: livelock)", () => {
       [userId, JSON.stringify(deviceProfile), now],
     );
     deviceId = deviceRow.rows[0]!.id;
+
+    // A SECOND device whose only difference is a 20 fps ceiling against
+    // this 25 fps source — enough to force `video.action = 'transcode'`,
+    // which is the precondition for a ladder existing at all (the primary
+    // device above direct-streams the video and therefore plans an EMPTY
+    // ladder, which is exactly right for the de-dup tests and useless for
+    // a rung switch). `rebuildSeekArgs` re-reads the device by id on every
+    // restart, so the laddered session needs a real row of its own.
+    const ladderDeviceProfile: DeviceProfile = {
+      ...deviceProfile,
+      profileId: "seek-dedup-ladder-device",
+      video: [{ codec: "h264", maxProfile: "high", maxLevel: null, maxBitDepth: 8, maxWidth: 1920, maxHeight: 1080, maxFrameRate: 20, maxBitrateBps: null }],
+    };
+    const ladderDeviceRow = await raw.query<{ id: string }>(
+      `INSERT INTO devices (user_id, name, profile, created_at_ms) VALUES ($1, 'seek-dedup-ladder-device', $2, $3) RETURNING id`,
+      [userId, JSON.stringify(ladderDeviceProfile), now],
+    );
+    ladderDeviceId = ladderDeviceRow.rows[0]!.id;
 
     const libRow = await raw.query<{ id: string }>(
       `INSERT INTO libraries (name, media_kind, paths, created_at_ms, updated_at_ms)
@@ -246,6 +270,20 @@ describe("seek-restart de-duplication (continuation item 1: livelock)", () => {
     expect(planResult.decision).toBe("transcode");
     storedPlan = { ...planResult, selection };
 
+    const ladderPolicy: ServerPolicy = {
+      ...policy,
+      ladderRungs: [
+        { heightPx: 240, videoBitrateBps: 600_000, audioBitrateBps: 128_000, codec: "h264" },
+        { heightPx: 180, videoBitrateBps: 300_000, audioBitrateBps: 128_000, codec: "h264" },
+        { heightPx: 120, videoBitrateBps: 150_000, audioBitrateBps: 128_000, codec: "h264" },
+      ],
+    };
+    const ladderPlanResult = plan({ ...input, device: ladderDeviceProfile, policy: ladderPolicy });
+    expect(ladderPlanResult.decision).toBe("transcode");
+    expect(ladderPlanResult.video.action).toBe("transcode");
+    expect(ladderPlanResult.ladder).toHaveLength(3);
+    storedLadderPlan = { ...ladderPlanResult, selection };
+
     stagingRoot = mkdtempSync(join(tmpdir(), "loombre-seek-dedup-"));
   }, 60_000 * TIME_SCALE);
 
@@ -262,12 +300,12 @@ describe("seek-restart de-duplication (continuation item 1: livelock)", () => {
     rmSync(stagingRoot, { recursive: true, force: true });
   });
 
-  async function createSession(): Promise<string> {
+  async function createSession(sessionPlan: Record<string, unknown> = storedPlan, sessionDeviceId: string = deviceId): Promise<string> {
     const session = await createPlaybackSession(db, ctx, {
       itemId,
       fileId,
-      deviceId,
-      plan: storedPlan,
+      deviceId: sessionDeviceId,
+      plan: sessionPlan,
       engineVersion: "test",
       nowMs: Date.now(),
     });
@@ -288,6 +326,72 @@ describe("seek-restart de-duplication (continuation item 1: livelock)", () => {
       [sessionId],
     );
     return rows[0]!;
+  }
+
+  // -------------------------------------------------------------------------
+  // ABSORPTION-WINDOW SUPPORT (pre-D consolidation item 1, C2 review f3).
+  //
+  // The absorption rule's INTERESTING half needs a run that has already
+  // PRODUCED something: `[origin, origin + producedMs]`. `producedMs` is
+  // summed from ffmpeg's OWN per-run playlist, and a faked child process
+  // writes no such file — which is exactly why nothing in this suite (or
+  // any other) had ever exercised a seek strictly INSIDE the live window,
+  // only the exact-origin floor. So the playlist is FABRICATED here: it is
+  // a plain text file with a documented format that the runtime reads with
+  // `readFile` and parses with `parseFfmpegPlaylist`, and writing it by
+  // hand makes `producedMs` — and, at 21 segments, retention's first prune
+  // of this run's own head — deterministic instead of dependent on real
+  // encoder timing.
+  // -------------------------------------------------------------------------
+
+  /** Writes a run's own append-only playlist the way ffmpeg would, with
+   *  `segmentCount` six-second segments numbered from `firstSegmentIndex`.
+   *  ATOMIC (temp + rename) because the poll loop may read it at any
+   *  instant — the runtime's own served-playlist writes take the same care
+   *  for the same reason. */
+  function fabricateRunPlaylist(sessionId: string, runIndex: number, segmentCount: number, firstSegmentIndex = 0): void {
+    const lines = ["#EXTM3U", "#EXT-X-VERSION:7", "#EXT-X-TARGETDURATION:6", "#EXT-X-MEDIA-SEQUENCE:0", "#EXT-X-PLAYLIST-TYPE:EVENT", '#EXT-X-MAP:URI="init.mp4"'];
+    for (let i = 0; i < segmentCount; i += 1) {
+      lines.push("#EXTINF:6.000000,");
+      lines.push(`s${String(firstSegmentIndex + i).padStart(6, "0")}.m4s`);
+    }
+    // No #EXT-X-ENDLIST: this run is still live, which is the only state in
+    // which absorption is even considered.
+    const runDir = join(stagingRoot, sessionId, `run${runIndex}`);
+    const target = join(runDir, "media.m3u8");
+    const tmp = `${target}.fabricate.tmp`;
+    writeFileSync(tmp, `${lines.join("\n")}\n`, "utf8");
+    renameSync(tmp, target);
+  }
+
+  /** Blocks until the runtime has FOLDED the fabricated playlist — the
+   *  `produced_segment` column is the observable that says so, and (since
+   *  the fold, the prune and the head-pruned flag all happen on one tick)
+   *  it also says the retention decision for that playlist has been made. */
+  async function waitForProducedSegment(sessionId: string, expected: number, timeoutMs: number): Promise<void> {
+    const deadline = Date.now() + timeoutMs;
+    for (;;) {
+      const { rows } = await raw.query<{ produced_segment: number | null }>(`SELECT produced_segment FROM playback_sessions WHERE id = $1`, [sessionId]);
+      if (rows[0]?.produced_segment === expected) return;
+      if (Date.now() > deadline) throw new Error(`timed out waiting for produced_segment=${expected}; saw ${String(rows[0]?.produced_segment)}`);
+      await new Promise((r) => setTimeout(r, 10));
+    }
+  }
+
+  async function readRungRow(sessionId: string): Promise<{ active_rung_index: number | null; pending_rung_index: number | null }> {
+    const { rows } = await raw.query<{ active_rung_index: number | null; pending_rung_index: number | null }>(
+      `SELECT active_rung_index, pending_rung_index FROM playback_sessions WHERE id = $1`,
+      [sessionId],
+    );
+    return rows[0]!;
+  }
+
+  async function readRuns(sessionId: string): Promise<{ run_index: number; source_origin_ms: number; ladder_rung_index: number | null }[]> {
+    const { rows } = await raw.query<{ run_index: number; source_origin_ms: string | number; ladder_rung_index: number | null }>(
+      `SELECT run_index, source_origin_ms, ladder_rung_index FROM transcode_runs WHERE session_id = $1 ORDER BY run_index`,
+      [sessionId],
+    );
+    return rows.map((r) => ({ run_index: r.run_index, source_origin_ms: Number(r.source_origin_ms), ladder_rung_index: r.ladder_rung_index }));
   }
 
   it(
@@ -469,6 +573,188 @@ describe("seek-restart de-duplication (continuation item 1: livelock)", () => {
         holdingClose = false;
         for (const fire of withheldCloses.splice(0)) fire();
       }
+
+      await endPlaybackSession(db, ctx, sessionId, Date.now());
+      await runPromise;
+    },
+  );
+
+  // ===========================================================================
+  // ABSORPTION NARROWING (pre-D consolidation item 1 — C2 review finding f3).
+  //
+  // The absorption rule has TWO conjuncts beyond "the target is in the live
+  // run's window", and until this block neither was pinned by anything:
+  //
+  //   (a) docs/PLAYBACK.md §9 — absorb only while NOTHING of this run has
+  //       been pruned. Past that the window's lower end is no longer on
+  //       disk, so a target there is a real backward seek into bytes that
+  //       do not exist and must restart.
+  //   (b) docs/PLAYBACK.md §9.1.7 — absorb only when no switch to a
+  //       DIFFERENT rung is pending. The shortcut is sound because "we are
+  //       already serving that position"; under a pending switch the client
+  //       is asking for different BYTES at that position, not the same ones.
+  //
+  // Both were invisible to mutation because every pre-existing absorption
+  // test lands on the exact ORIGIN (0 ms, or the position the run was just
+  // restarted at), where `target >= origin && target <= origin` decides the
+  // outcome and the window's upper end never participates. These three
+  // tests all seek to 12 000 ms — strictly INSIDE a fabricated 24 s/126 s
+  // produced window, never equal to the origin — so the window arithmetic
+  // and both conjuncts are the only things that can decide them.
+  // ===========================================================================
+
+  it(
+    "ABSORBS a seek strictly INSIDE the live run's produced window while its head is unpruned (§9)",
+    { timeout: 60_000 * TIME_SCALE },
+    async () => {
+      installFakeProcessTable();
+      const sessionId = await createSession();
+      const runPromise = runTranscodeSession(
+        {
+          db,
+          stagingRoot,
+          pollIntervalMs: 25,
+          ffmpegPath: "/nonexistent/ffmpeg-never-executed",
+          spawnFn: fakeSpawnFn(),
+          // The throttle is not under test here and a 21-segment fabricated
+          // playlist would trip its suspend threshold; hold it out of the
+          // way so the only thing deciding these tests is the seek block.
+          suspendAheadThresholdOverride: 10_000,
+          resumeAheadThresholdOverride: 5_000,
+        },
+        sessionId,
+      );
+
+      await waitForSpawnCount(1, 10_000 * TIME_SCALE);
+
+      // 4 x 6 s = a produced window of [0, 24 000] ms, comfortably inside
+      // the 120 s retention horizon, so nothing of run 0 is ever pruned.
+      fabricateRunPlaylist(sessionId, 0, 4);
+      await waitForProducedSegment(sessionId, 3, 10_000 * TIME_SCALE);
+
+      // 12 000 ms: past the origin, well short of the live edge — output
+      // this run has ALREADY written. Restarting would rebuild bytes that
+      // exist.
+      await requestSeek(db, ctx, sessionId, 12_000, Date.now());
+      await new Promise((r) => setTimeout(r, 500 * TIME_SCALE));
+
+      expect(children.length, "restarted for a position the live run had already produced").toBe(1);
+      const row = await readRow(sessionId);
+      expect(row.discontinuity_count, "an absorbed seek produces no discontinuity").toBe(0);
+      expect(row.seek_target_ms, "an absorbed target is cleared, never left to re-fire").toBeNull();
+      expect(row.status, "absorption never moves the session to 'seeking'").toBe("active");
+
+      await endPlaybackSession(db, ctx, sessionId, Date.now());
+      await runPromise;
+    },
+  );
+
+  it(
+    "RESTARTS for the very same in-window seek once retention has pruned the run's head (§9)",
+    { timeout: 60_000 * TIME_SCALE },
+    async () => {
+      installFakeProcessTable();
+      const sessionId = await createSession();
+      const runPromise = runTranscodeSession(
+        {
+          db,
+          stagingRoot,
+          pollIntervalMs: 25,
+          ffmpegPath: "/nonexistent/ffmpeg-never-executed",
+          spawnFn: fakeSpawnFn(),
+          suspendAheadThresholdOverride: 10_000,
+          resumeAheadThresholdOverride: 5_000,
+        },
+        sessionId,
+      );
+
+      await waitForSpawnCount(1, 10_000 * TIME_SCALE);
+
+      // 21 x 6 s = 126 s produced, which is 6 s PAST the 120 s retention
+      // horizon: the prune drops s000000 (and only it), so run 0's window
+      // no longer starts at its origin — its head is gone from disk.
+      fabricateRunPlaylist(sessionId, 0, 21);
+      await waitForProducedSegment(sessionId, 20, 15_000 * TIME_SCALE);
+
+      // The SAME 12 000 ms as the absorbing test above, and still inside
+      // [origin, origin + producedMs] = [0, 126 000]. The only thing that
+      // differs is that the head has been pruned — so this is a real
+      // backward seek into bytes that are no longer there.
+      await requestSeek(db, ctx, sessionId, 12_000, Date.now());
+      await waitForSpawnCount(2, 10_000 * TIME_SCALE);
+
+      const row = await readRow(sessionId);
+      expect(row.discontinuity_count, "a real restart produces exactly one discontinuity").toBe(1);
+      const runs = await readRuns(sessionId);
+      expect(runs.map((r) => [r.run_index, r.source_origin_ms])).toEqual([
+        [0, 0],
+        [1, 12_000],
+      ]);
+
+      await endPlaybackSession(db, ctx, sessionId, Date.now());
+      await runPromise;
+    },
+  );
+
+  it(
+    "RESTARTS an in-window seek when a switch to a DIFFERENT rung is pending, spawning ONE run at (requested rung, requested origin) (§9.1.7)",
+    { timeout: 60_000 * TIME_SCALE },
+    async () => {
+      installFakeProcessTable();
+      const sessionId = await createSession(storedLadderPlan, ladderDeviceId);
+      const runPromise = runTranscodeSession(
+        {
+          db,
+          stagingRoot,
+          pollIntervalMs: 25,
+          ffmpegPath: "/nonexistent/ffmpeg-never-executed",
+          spawnFn: fakeSpawnFn(),
+          suspendAheadThresholdOverride: 10_000,
+          resumeAheadThresholdOverride: 5_000,
+        },
+        sessionId,
+      );
+
+      await waitForSpawnCount(1, 10_000 * TIME_SCALE);
+      // Run 0 encodes the ladder's TOP rung (index 0) — §9.1.3's convention,
+      // recorded on the row at spawn.
+      expect((await readRungRow(sessionId)).active_rung_index).toBe(0);
+
+      // Same unpruned [0, 24 000] window as the absorbing test.
+      fabricateRunPlaylist(sessionId, 0, 4);
+      await waitForProducedSegment(sessionId, 3, 10_000 * TIME_SCALE);
+
+      // The COINCIDENT pair, written in ONE statement so the tick under
+      // test provably observes both columns together — §9.1.7's "one
+      // restart serves both". Written directly rather than through
+      // requestSeek + requestRungSwitch because two statements admit a
+      // poll tick landing between them, and this test is about what the
+      // absorption rule does when both are already set.
+      await raw.query(`UPDATE playback_sessions SET seek_target_ms = 12000, pending_rung_index = 2, updated_at_ms = $2 WHERE id = $1`, [sessionId, Date.now()]);
+
+      await waitForSpawnCount(2, 10_000 * TIME_SCALE);
+      await new Promise((r) => setTimeout(r, 400 * TIME_SCALE));
+
+      // EXACTLY ONE restart — not an absorb followed by a handoff, and not
+      // two restarts.
+      expect(children.length, "a coincident seek+switch must spawn exactly one run").toBe(2);
+
+      const row = await readRow(sessionId);
+      expect(row.discontinuity_count, "the seek was CONSUMED (a restart), not absorbed").toBe(1);
+      expect(row.seek_target_ms).toBeNull();
+      const rungRow = await readRungRow(sessionId);
+      expect(rungRow.pending_rung_index).toBeNull();
+      expect(rungRow.active_rung_index, "the spawned run encodes the REQUESTED rung").toBe(2);
+
+      // The origin is the whole point: absorbing the seek and letting the
+      // handoff restart instead would also produce exactly one extra run —
+      // but at the live-edge continuation origin (0 + 24 000), not at the
+      // position the client asked for.
+      const runs = await readRuns(sessionId);
+      expect(runs).toEqual([
+        { run_index: 0, source_origin_ms: 0, ladder_rung_index: 0 },
+        { run_index: 1, source_origin_ms: 12_000, ladder_rung_index: 2 },
+      ]);
 
       await endPlaybackSession(db, ctx, sessionId, Date.now());
       await runPromise;
