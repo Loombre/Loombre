@@ -794,13 +794,40 @@ describe("buildFfmpegArgs: interpretation M — per-codec flag differences", () 
     }
   });
 
-  it("bitrate and GOP flags are codec-agnostic — same shape, same values as any other target", () => {
-    const args = av1Args("software");
+  it("bitrate and GOP flags keep their shape and values for a HARDWARE av1 target", () => {
+    const args = av1Args("nvenc");
     expect(args[args.indexOf("-b:v") + 1]).toBe("2400000");
     expect(args[args.indexOf("-maxrate") + 1]).toBe("2400000");
     expect(args[args.indexOf("-bufsize") + 1]).toBe("4800000");
     expect(args[args.indexOf("-g") + 1]).toBe("48"); // round(23.976 * 2)
     expect(args[args.indexOf("-force_key_frames") + 1]).toBe("expr:gte(t,n_forced*{SEG_DUR})");
+  });
+
+  // REAL-EXECUTION CORRECTION (2026-08-11, SVT-AV1 v4.1.0) — see the
+  // emission site in src/args/builder.ts. ffmpeg's libsvtav1 wrapper reads
+  // bitrate == maxrate as CBR, SVT-AV1 refuses CBR for RANDOM_ACCESS, the
+  // encoder never opens, and NOTHING is written. Isolated by running all
+  // three variants: `-b:v` alone and `-b:v` + `-bufsize` both succeed;
+  // adding `-maxrate` is what fails.
+  it("SOFTWARE av1 omits -maxrate — libsvtav1 refuses it, and the whole encode fails when it is present", () => {
+    const args = av1Args("software");
+    expect(args).not.toContain("-maxrate");
+    expect(args[args.indexOf("-b:v") + 1]).toBe("2400000");
+    expect(args[args.indexOf("-bufsize") + 1]).toBe("4800000");
+  });
+
+  it("the omission is scoped to libsvtav1 alone — every hw av1 backend keeps -maxrate, as do software h264/hevc", () => {
+    for (const backend of ["nvenc", "qsv", "vaapi", "amf"] as const) {
+      expect(av1Args(backend), backend).toContain("-maxrate");
+    }
+    const softwareH264: FfmpegPlanShape = {
+      container: "fmp4-hls",
+      video: { action: "transcode", targetCodec: "h264", encoder: "software" },
+      audio: { action: "copy" },
+      subtitle: { strategy: "none" },
+      rung: RUNG_1080P_H264,
+    };
+    expect(buildFfmpegArgs(makeInput(), softwareH264, { withSeek: false })).toContain("-maxrate");
   });
 });
 

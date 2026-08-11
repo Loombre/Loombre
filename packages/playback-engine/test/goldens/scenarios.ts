@@ -821,7 +821,7 @@ export const GOLDEN_SCENARIOS: GoldenScenario[] = [
   {
     id: "40-software-av1-libsvtav1-preset10",
     scenario:
-      "SOFTWARE av1 encode on a Tier-1+ box (the permitted §7.2 software fallback): libsvtav1 with the NUMERIC SVT-AV1 -preset 10 (libx264's 'veryfast' is not a legal SVT-AV1 value), same negatives as scenario 39 — no -level, no -tag:v. This is the exact argv apps/worker/test/transcode/av1-encode-args.integration.spec.ts executes against real ffmpeg on this machine",
+      "SOFTWARE av1 encode on a Tier-1+ box (the permitted §7.2 software fallback): libsvtav1 with the NUMERIC SVT-AV1 -preset 10 (libx264's 'veryfast' is not a legal SVT-AV1 value), same negatives as scenario 39 — no -level, no -tag:v — PLUS the real-execution one: NO -maxrate. libsvtav1 reads bitrate == maxrate as CBR and refuses to open at all, writing zero segments; -b:v and -bufsize alone give it VBR. This is the exact argv apps/worker/test/transcode/av1-encode-args.integration.spec.ts executes against real ffmpeg on this machine",
     input: input({
       media: media({ video: [videoStream({ codec: "hevc", bitDepth: 10 })] }),
       device: device([AV1_DEVICE_ENTRY_WITH_LEVEL, HEVC_DEVICE_ENTRY]),

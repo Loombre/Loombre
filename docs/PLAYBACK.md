@@ -484,9 +484,33 @@ LD-7-authorized `VideoAction` touch).
      client's MSE probe cannot derive one).
    - `-tag:v hvc1` stays hevc-only; an fmp4 AV1 track's `av01` sample entry
      is correct by default and needs no re-tag.
-   - Bitrate flags (`-b:v`/`-maxrate`/`-bufsize`), GOP flags (`-g`,
-     `-force_key_frames`) and every surrounding segment are codec-agnostic
-     and unchanged.
+   - `-b:v` and `-bufsize` are codec-agnostic, but **`-maxrate` is OMITTED
+     for the SOFTWARE av1 target**. CORRECTED BY EXECUTION (2026-08-11,
+     build lane, SVT-AV1 v4.1.0 — this bullet originally read "bitrate
+     flags (`-b:v`/`-maxrate`/`-bufsize`) … are codec-agnostic and
+     unchanged", and running it disproved that): ffmpeg's `libsvtav1`
+     wrapper reads `bitrate == maxrate` as CBR, and SVT-AV1 refuses both
+     the max-bitrate setting and CBR outright for its RANDOM_ACCESS GOP
+     structure — `Max Bitrate only supported with CRF mode` /
+     `CBR Rate control is currently not supported for RANDOM_ACCESS/
+     ALL_INTRA, use VBR mode` → `Error setting encoder parameters` → the
+     encoder never opens and ZERO segments are written. Every
+     software-AV1 plan was unrunnable with the flag present, and only
+     execution could show it (the goldens were self-consistent and green).
+     Isolated across three variants: `-b:v` alone and `-b:v` + `-bufsize`
+     both succeed (`BRC mode: VBR`, segments written); adding `-maxrate`
+     is what fails — so the correction is exactly that one omission, and
+     `-bufsize` stays. SCOPED to the software encoder: the hardware av1
+     wrappers take `-maxrate` through the same generic rate-control fields
+     their h264/hevc siblings already use here, and no hardware on the
+     project's own machine can execute them — narrowing the deviation to
+     the ONE encoder with evidence keeps the hw paths identical to their
+     proven h264/hevc form for P3.4's hardware checklist to verify. Same
+     real-execution-wins basis as interpretation D's own VT correction.
+     Pinned by `apps/worker/test/transcode/av1-encode-args.integration.spec.ts`
+     (real ffmpeg, ffprobe-verified `codec_name == av1`) and golden 40.
+   - GOP flags (`-g`, `-force_key_frames`) and every surrounding segment
+     are codec-agnostic and unchanged.
    *Container:* an `av1` rung only ever reaches this builder inside
    `fmp4-hls` (or an `mp4` remux shape, unreachable today) — §7.1's device
    gate refuses AV1 targeting for `ts-hls` devices (AV1 has no assigned
