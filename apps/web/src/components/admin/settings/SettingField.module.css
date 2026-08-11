@@ -243,10 +243,25 @@
   align-items: center;
   gap: var(--space-3xs);
   white-space: nowrap;
+  max-width: 100%;
 }
 
+/* LD-11: `.fact`'s own `white-space: nowrap` (above) keeps the "DEFAULT"/
+   "CURRENT" label glued on one line, which inherits onto this value span
+   too by default — fine for a short scalar ("1", "tier-gated"), but a
+   structured (JSON-typed) key's DEFAULT/CURRENT is `formatSettingValue`'s
+   COMPACT JSON.stringify (no spaces at all — e.g. transcode.ladderRungs'
+   6-rung array), which as one unbroken nowrap token overflowed clean out of
+   `.info`'s column and visually collided with the editor column beside it.
+   overflow-wrap: anywhere (not word-break: break-word — anywhere is the one
+   that also shrinks the flex item's min-content size, letting it actually
+   wrap instead of forcing the row wider) lets ONLY the value itself break,
+   never the label. */
 .factValue {
   color: var(--color-text-muted);
+  white-space: normal;
+  overflow-wrap: anywhere;
+  min-width: 0;
 }
 
 .factValueCurrent {
@@ -296,14 +311,19 @@
   align-items: center;
   justify-content: flex-end;
   gap: var(--space-sm);
-  cursor: pointer;
 }
 
+/* LD-13: cursor:pointer now lives on the two ACTUALLY-clickable targets
+   only (this label — see SettingField.tsx's own onClick on it — and
+   Toggle.module.css's .wrap for the switch itself), not the whole row —
+   the row itself no longer carries a click handler (hardening fix: one
+   handler per interactive target, not a redundant row-level duplicate). */
 .boolLabel {
   font-family: var(--font-mono);
   font-size: var(--mono-md);
   letter-spacing: var(--track-mono);
   color: var(--muted);
+  cursor: pointer;
 }
 
 .numberRow {
@@ -374,8 +394,24 @@ textarea.jsonEditor[data-state="error"] {
   border-color: color-mix(in srgb, var(--color-danger) 55%, transparent);
 }
 
+/* LD-11 (owner screenshot, transcode.ladderRungs): the JSON (structured-kind)
+   editor had no `width` of its own (a bare <textarea>, unlike every other
+   control here which routes through ui/Input.module.css's `.input` and
+   picks up `width: 100%` for free) and no `max-height` — a long pretty-
+   printed value (e.g. the 6-rung ladder default) could push the box wider
+   or taller than `.editorCol`'s grid slot, overlapping the DEFAULT/CURRENT
+   fact row in `.info` and shoving `.actions`'s Save button out of its
+   normal position. This is the SHARED widget every structured (array/
+   object) registry key renders through — resolveWidgetKind's "structured"
+   fallback (lib/settings-schema-widget.ts) — so fixing it here fixes it
+   for every JSON-typed key generally, not just this one. `overflow-y: auto`
+   makes long content scroll INSIDE the fixed box instead of growing it. */
 textarea.jsonEditor {
+  width: 100%;
+  box-sizing: border-box;
   min-height: 104px;
+  max-height: 260px;
+  overflow-y: auto;
   border-radius: var(--radius-sm);
   border: 1px solid var(--color-border);
   background: var(--color-bg);
@@ -387,6 +423,34 @@ textarea.jsonEditor {
   resize: vertical;
   outline: none;
   transition: border-color var(--motion-fast) var(--ease-out);
+}
+
+/* W4 inset-ring convention (STATE.md): `overflow-y: auto` above makes this
+   textarea a clip container — a browser clips an element's OWN non-inset
+   box-shadow at that same element's overflow edge, exactly the mechanism
+   that clipped the app-wide `:focus-visible` ring (globals.css, a NON-inset
+   `--shadow-focus-ring`) inside SheetOrModal's overflow-auto body (see
+   ui/Input.module.css's `.input:focus-visible` for the original fix and its
+   full root-cause writeup). Same fix here: an inset ring can never be
+   clipped by ITS OWN (or any ancestor's) overflow, so this textarea gets
+   one too, with a local keyframe overriding `animation` — the global rule's
+   own `loombre-focus-in` keyframe hard-codes the non-inset shadow as its
+   "to" state and would otherwise re-clobber this override once the
+   browser's own entrance animation finished. */
+textarea.jsonEditor:focus-visible {
+  border-color: var(--color-accent);
+  box-shadow: inset 0 0 0 3px var(--color-focus);
+  animation: loombre-json-editor-focus-in var(--motion-fast) var(--ease-spring);
+}
+
+@keyframes loombre-json-editor-focus-in {
+  from {
+    box-shadow: inset 0 0 0 0 var(--color-focus);
+  }
+
+  to {
+    box-shadow: inset 0 0 0 3px var(--color-focus);
+  }
 }
 
 .errorText {
