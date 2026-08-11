@@ -32,6 +32,7 @@
     "db:status": "node scripts/migrate.mjs status",
     "db:migrate-check": "node scripts/migrate.mjs migrate-check",
     "db:generate-schema": "node scripts/migrate.mjs generate-schema",
+    "db:cleanup-test-dbs": "node scripts/cleanup-test-databases.mjs",
     "db:seed": "node seed/seed.mjs",
     "db:seed-large": "node seed/seed-large.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
