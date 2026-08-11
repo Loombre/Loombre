@@ -369,7 +369,7 @@ rc.7 tagged from this tree (owner: "push all commits and draft rc7").
   touches loombre/postgres/template*/active-connection targets or
   DATABASE_URL's own database; dry-run default. 238 remaining
   disposables predate the _test naming contract — left for a human.
-- **Process:** parallel owner session running the an upstream media server comparative
+- **Process:** parallel owner session running the comparative-architecture
   study shares this checkout (STATE.md section + docs/analysis/ are
   ITS files — deliberately excluded from this wave's commits). Its
   Phase-0 file:line citations predate this wave's playback commits —
@@ -408,7 +408,7 @@ uninstall stray-bundle tests shimmed pkgutil but not macOS-only plutil
   the Windows asset on the VM before publishing (or dispatch the diag
   workflow for more signal). Full evidence in task #17.
 
-## an upstream media server-study IMPLEMENTATION run — close every verified defect + recorded deferral, then AV1 + ABR (kicked off 2026-08-10, owner brief "Close every verified defect and recorded deferral surfaced by the an upstream media server comparative study…"; Wave A is part of the 1.0 ship gate)
+## Comparative-study IMPLEMENTATION run — close every verified defect + recorded deferral, then AV1 + ABR (kicked off 2026-08-10, owner brief "Close every verified defect and recorded deferral surfaced by the comparative architecture study…"; Wave A is part of the 1.0 ship gate)
 
 AUTHORITY: the owner's implementation brief supersedes the study's "no implementation"
 lock — this run IS the authorized implementation orchestration. Waves: 0 foundations
@@ -424,7 +424,7 @@ promotion+reason here), fable for ALL review passes + Wave C specs + adjudicatio
 a lane never reviews its own work. STATE.md ground truth before each next wave;
 agent-reported completion never accepted without orchestrator verification. License
 firewall: study is concept-level reference ONLY — no lane clones/consults/cites
-an upstream media server source this run; LICENSE-SENSITIVE areas derived from first principles.
+reference-server source this run; LICENSE-SENSITIVE areas derived from first principles.
 Publication ban LD-1. Lane safety: spec-file allowlists only (never package-level
 test runs); resumed worktree lanes pin absolute worktree path first; orchestrator
 checks git status + worktree list on main after any resume; settings-registry lanes
@@ -481,16 +481,16 @@ scout before writes in every lane; Wave 0 + both C specs end in confirmation sto
 
 ### Wave 0 — foundations (solo, orchestrator, 2026-08-10) — COMPLETE, at ⛔ STOP
 
-LD-1 EXECUTED + VERIFIED: study moved docs/analysis/upstream-media-server-comparative-study.md →
-reports/upstream-media-server-study/ (git check-ignore confirms .gitignore:47 reports/ covers it);
+LD-1 EXECUTED + VERIFIED: study moved docs/analysis/comparative-study.md →
+reports/comparative-study/ (git check-ignore confirms .gitignore:47 reports/ covers it);
 `git log --all -- docs/analysis/` EMPTY (never committed — no history purge needed;
 index clean, no stash); docs/.vitepress/config.mts srcExclude now ["PLAN.md",
 "PLAYBACK.md", "public/**", "analysis/**"] with a firewall comment; pnpm docs:build
-ALL STEPS PASSED and `grep -ril upstream-media-server docs/.vitepress/dist/` → ZERO hits, no
+ALL STEPS PASSED and `grep -ril <competitor-name> docs/.vitepress/dist/` → ZERO hits, no
 analysis/ route in dist. Documentation Sync standing rule honored for the config
 edit: dist → website site/docs-dist (verbatim replace) + website `npm run build`
 green (70 docs routes merged, CSP/invariant checks pass). Deploy NOT run (manual
-owner action, per the rule). Run-law-3 structural enforcement: the an upstream media server clone
+owner action, per the rule). Run-law-3 structural enforcement: the reference-server clone
 was DELETED from the session scratchpad. Stale worktree lane/remote-t2 pruned;
 `git worktree list` = main checkout only.
 
@@ -525,7 +525,7 @@ listed in the brief's ground-truth inputs but NO wave lane owns it — owner ass
 or explicitly re-defers; (2) the fix-list "LD wave" section above uses its own
 LD-1..13 numbering — unrelated to this register.
 
-Lane briefs: reports/upstream-media-server-study/briefs/ (gitignored evidence tree) — file-scope
+Lane briefs: reports/comparative-study/briefs/ (gitignored evidence tree) — file-scope
 allowlists, spec-file allowlists, exit-evidence lists per lane; briefs are the
 verbatim spawn prompts for Waves A/B; C briefs are the spec-lane charters.
 
@@ -1079,7 +1079,7 @@ radiogroup sweep APG-correct + test-pinned (116 tests / 12 files green);
 docs truthfulness PASS with ONE contradicted sentence; DV spec-lie
 genuinely closed (doc==code==goldens re-verified); firewall clean in
 shipped code AND built dist (grep-gates 0; study gitignored+srcExcluded+
-never-committed+absent-from-dist); docs:build ALL STEPS PASSED, 0 upstream-media-server
+never-committed+absent-from-dist); docs:build ALL STEPS PASSED, 0 competitor-name
 in dist. 14 register SHA spot-checks all exist and match. REQUIRED FIXES:
 (D-3, MODERATE) LD-14 residual — the amended rule (subtle/hint NEVER on
 --mono-*) is violated by ~53 shipped components/** declarations incl.
@@ -1098,7 +1098,7 @@ set; closures ARE recorded with SHAs in the Wave B section, but the
 originating ledgers lie. RECOMMENDED (LOW): F4 system-info comment vs 2
 straggler callers; F5 reasons.ts:66 stale 4-of-5 cause comment; F6
 PLAYBACK §7.4 honesty-register xref + P3.4 durable-row AV1 amend; F7
-security-posture.md HTML comment contains "an upstream media server-study" (doc source,
+security-posture.md HTML comment contains "the competitor-reference study" (doc source,
 outside grep-gates' apps/packages scope — reword + optionally extend gate
 to docs/); F8 PinModal stale arrow-key comment.
 
@@ -1172,7 +1172,7 @@ happy-path pass: F1 STAYS a fix-lane item (defense-in-depth redaction that
 misses realistic NAS/UNC paths is a real gap even to an admin-plugin
 audience; severity MED).
 
-### RUN EXIT — an upstream media server-study IMPLEMENTATION run COMPLETE 2026-08-11 (all four wave gates green)
+### RUN EXIT — Comparative-study IMPLEMENTATION run COMPLETE 2026-08-11 (all four wave gates green)
 
 199 commits over 88c5e6e5..HEAD. Four wave gates all met: Wave A (1.0
 ship-gate work) → Wave B → Wave C1+C2 → Wave D. FINAL gate:full GREEN, all
@@ -1577,9 +1577,9 @@ reviewer 2: (a) optionally relax the jobs-package constraint instead;
 (b) apps/server/src/crash/redact.ts is a third, untouched twin that could
 consume the shared canonical (integration-time cleanup candidate).
 
-## an upstream media server comparative architecture study — ANALYSIS-ONLY, COMPLETE 2026-08-10 (owner brief "Comparative Architecture Study — an upstream media server Playback Engine vs. Loombre"; awaiting owner review + implementation authorization)
+## Comparative architecture study — ANALYSIS-ONLY, COMPLETE 2026-08-10 (owner brief "Comparative Architecture Study — Reference Playback Engine vs. Loombre"; awaiting owner review + implementation authorization)
 
-DELIVERABLE: reports/upstream-media-server-study/upstream-media-server-comparative-study.md (908 lines) —
+DELIVERABLE: reports/comparative-study/comparative-architecture-study.md (908 lines) —
 authoritative; this section is the ground-truth ledger. (RELOCATED 2026-08-10 per
 implementation-run LD-1 from its original docs/analysis/ path: the study is internal,
 local-only material and now lives in the gitignored reports/ evidence tree; git
@@ -1588,18 +1588,18 @@ NOTE: an earlier copy of this section was reverted when a parallel session commi
 STATE.md mid-run; re-applied here. The report file itself was never affected.)
 
 Locked decisions (owner brief): read-only vs Loombre except this STATE.md section +
-the report; license firewall (an upstream media server GPL-2.0 vs Loombre AGPL-3.0 — concept-level
+the report; license firewall (the reference server's GPL-2.0 vs Loombre's AGPL-3.0 — concept-level
 only, no verbatim code/args); study source not docs; sonnet lanes / opus synthesis;
 Tier-0 (N100/4GB) statement on every recommendation; NO implementation this run.
-an upstream media server master shallow-cloned OUTSIDE the repo (session scratchpad), pinned
-6d501ba4188a5f6cea424302daab23313e748d4f — all an upstream media server citations reference that SHA.
+the reference server's default branch shallow-cloned OUTSIDE the repo (session scratchpad), pinned
+6d501ba4188a5f6cea424302daab23313e748d4f — all reference-server citations reference that SHA.
 
 Phases (all complete): 0 Loombre discovery (solo sonnet, owner-CONFIRMED) → 1
-an upstream media server study (6 sonnet lanes) → 2 comparison (6 sonnet lanes) → 3 opus synthesis.
+reference-server study (6 sonnet lanes) → 2 comparison (6 sonnet lanes) → 3 opus synthesis.
 Orchestrator spot-checked ~35 citations across BOTH codebases during phases 1–2,
 100% match; opus re-verified load-bearing claims at the Phase-3 gate. License
 firewall clean at every phase (0 code fences / 0 verbatim command lines; LICENSE-
-SENSITIVE flags used where a an upstream media server formula would tempt close consultation).
+SENSITIVE flags used where a reference-server formula would tempt close consultation).
 
 **Run exit gate — all 4 criteria PASS:** every claim file:line-cited both sides;
 license firewall held (report: 0 fences, 3 LICENSE-SENSITIVE flags at per-encoder
@@ -1612,7 +1612,7 @@ correctness fixes C1–C11 above features F1–F15.
 downstream of its two core bets (pure/total/test-pinned decision engine; process-
 isolated worker): machine-readable reasons as a contract field, verify-by-test-
 transcode HWA probing, a real Tier-0 admission cap + working throttle, out-of-process
-capability-scoped LPP. AN UPSTREAM MEDIA SERVER leads on field-earned breadth: ~27-property device-
+capability-scoped LPP. THE REFERENCE SERVER leads on field-earned breadth: ~27-property device-
 profile condition DSL, rkmpp/v4l2m2m HWA families, per-encoder rate-control
 sophistication, ~15 plugin extension families incl. UI/config pages. Highest-value
 output = six VERIFIED Loombre-internal gaps.
@@ -1651,7 +1651,7 @@ output = six VERIFIED Loombre-internal gaps.
 probe architecture-blindness — candidatesForPlatform keys only on NodeJS.Platform
 (hwcaps/platforms.ts:17-34), win32 always nvenc/qsv/amf/d3d11va/software regardless
 of os.arch(); Windows-on-ARM runs ~27 doomed x86-vendor probe spawns before software.
-an upstream media server is ALSO arch-blind there (not a LS win). → rec C6, owner-gated.
+the reference server is ALSO arch-blind there (not a reference-server win). → rec C6, owner-gated.
 
 **Top 5 recs:** C1 graceful-shutdown run termination (H×H/L); C2 boot crash reaper +
 worker_pid (H×M/M); C3 seek-target fix (M×H/M); C4 DV-strip decision (M×H/M); C5
@@ -4138,7 +4138,7 @@ Frozen-contract narrowings are SANCTIONED here (D23 pre-release policy: LPP v1 c
 - **Frozen-contract narrowings (D23-sanctioned, regen byte-idempotent + drift green)**: dup-type reject, nested-secret reject, endpoint regex tighten (only this one changes the JSON schema), configSchema bounds.
 - **Deferred with reason**: L-1 (restricted→general narrowing not an expansion) **[RE-AFFIRMED 2026-08-11]**, L-5 (breaker not re-seeded at boot — pre-existing) **[WAVE-A CLOSED 02da6dc0 2026-08-11]** (server; + 5d467e29 / a4ba3e36, both worker-side registries incl. one previously unflagged), L-6 (notifier header-error cosmetic) **[WAVE-A CLOSED b92ad2a8 2026-08-11]**, L-8 (odd-hex already safe) **[RE-AFFIRMED 2026-08-11]**, L-9 (gap-vs-skip = deliberate) **[RE-AFFIRMED 2026-08-11]**, M-7 ledger-path-redaction half (actual leak closed by H-4; redaction would touch repo-wide debug output — separate cleanup) **[WAVE-A CLOSED f260540f 2026-08-11]** (canonical redactPathsInText in packages/shared; packages/jobs keeps a documented local duplicate per its ids.ts no-shared-dep precedent).
 - **OWNER-FLAG (semantic changes toward conformance)**: H-2 now enforces C5 per capability (a plugin with a restricted metadata-provider + general event-subscriber no longer has its subscriber feed treated as restricted-scoped — the subscriber is filtered; matches C5's "through ANY capability" wording and the wizard's per-capability copy). H-4 removes admin-only event types (job.updated/settings.updated/plugin.*) from what any plugin can be granted in v1 (a future admin-tier grant could reintroduce them additively).
-- **Orchestrator catch (NOT in the fix-wave scope)**: unknown-capability test fixture used the name "upstream-media-server-plugin-loader" (a W1 miss, on main since d5cb79c) — renamed to "future-capability-x"; ROOT CAUSE the naming grep-gate scanned only apps/ + packages/contract/, narrower than the CLAUDE.md repo-wide rule → widened NAMING_SCOPE_PREFIXES to apps/ + packages/ + examples/ (full sweep first confirmed that fixture was the only offender). edition-brace scanner fixtures are legitimate (a real filename edition-tag convention the parser must handle, not competitor-API naming).
+- **Orchestrator catch (NOT in the fix-wave scope)**: unknown-capability test fixture used a competitor product name (a W1 miss, on main since d5cb79c) — renamed to "future-capability-x"; ROOT CAUSE the naming grep-gate scanned only apps/ + packages/contract/, narrower than the CLAUDE.md repo-wide rule → widened NAMING_SCOPE_PREFIXES to apps/ + packages/ + examples/ (full sweep first confirmed that fixture was the only offender). edition-brace scanner fixtures are legitimate (a real filename edition-tag convention the parser must handle, not competitor-API naming).
 
 ### LPP exit gate (brief §6) — WALKED 2026-07-25
 
@@ -4414,7 +4414,7 @@ Implement the Lumbre catalog pipeline end-to-end for movies, TV, and music: idem
 
 ## Phase 0 Goal (verbatim)
 
-Build the Phase 0 foundation for Lumbre: (A) CLAUDE.md, (B) OpenAPI v1 contract skeleton + generated TypeScript SDK pipeline, (C) PostgreSQL schema + migrations including restricted-content structures and the mandatory query-guard skeleton, (D) verification harness including the failing PlaybackPlan matrix scaffold, license gate, and telemetry ban, (E) cross-platform monorepo scaffolding that boots. No an upstream media server/an upstream media server API surface, schema, or naming anywhere. Private repository now with AGPL-3.0 relicense readiness from commit one.
+Build the Phase 0 foundation for Lumbre: (A) CLAUDE.md, (B) OpenAPI v1 contract skeleton + generated TypeScript SDK pipeline, (C) PostgreSQL schema + migrations including restricted-content structures and the mandatory query-guard skeleton, (D) verification harness including the failing PlaybackPlan matrix scaffold, license gate, and telemetry ban, (E) cross-platform monorepo scaffolding that boots. No third-party media-server API surface, schema, or naming anywhere. Private repository now with AGPL-3.0 relicense readiness from commit one.
 
 ## Decisions (append-only)
 
@@ -4490,7 +4490,7 @@ Build the Phase 0 foundation for Lumbre: (A) CLAUDE.md, (B) OpenAPI v1 contract 
 | P3.1 | Implementation order = PLAYBACK.md §11, exactly. Stages land one at a time, each with its matrix cases (~60–80/stage) in the same PR; direct-play-bias property green from Stage A onward |
 | P3.2 | Matrix regression law active: flipping any existing case's decision/reasons requires editing that case file in the same PR with why: |
 | P3.3 | VerifiedCapabilities: engine work runs against FIXTURE capability sets (full-hw, encode-only, software-only, macos-vt) until step 5; the probe implementation must reproduce the fixture schema exactly |
-| P3.4 | Real-hardware verification: macOS/M3 Max (videotoolbox) is REQUIRED for exit; Linux (nvenc, qsv, vaapi on the T2 box) and Windows are recorded as owner-run checklists (reports/hw-verify-<platform>.md) and may complete post-exit — logged Open, not blocking, per current dev environment. **[AMENDED 2026-08-11, an upstream media server-study impl run — AV1 ENCODE additions to this backlog: av1_nvenc (NVIDIA Ada+), av1_qsv (Intel Arc/DG2+ — the reference N100's QSV is av1-DECODE-only), av1_vaapi (Intel Arc iHD / AMD RDNA3+ Mesa), av1_amf (AMD RDNA3+ Windows) — each ENCODE path + its hwaccel-engagement markers is FIXTURE-ONLY on the M3 Max (no AV1 encode hardware exists here; no av1_videotoolbox encoder exists at all), plus windows-x64 bundled-ffmpeg libsvtav1 presence (manifest not executable on this host). GENUINELY PROVEN on the M3 Max: the Tier-0 AV1 REFUSAL path against the real probe battery (asserts no backend reports av1 encode → fails loudly on capable hardware), Tier-1 SOFTWARE av1 end-to-end (bundled libsvtav1, ffprobe codec_name==av1), and av1 hw DECODE (videotoolbox). C2 ABR adds one owner-verify item: eyeball a rung switch on the N100 + confirm the tray/System page reflects single-slot occupancy.]**
+| P3.4 | Real-hardware verification: macOS/M3 Max (videotoolbox) is REQUIRED for exit; Linux (nvenc, qsv, vaapi on the T2 box) and Windows are recorded as owner-run checklists (reports/hw-verify-<platform>.md) and may complete post-exit — logged Open, not blocking, per current dev environment. **[AMENDED 2026-08-11, comparative-study impl run — AV1 ENCODE additions to this backlog: av1_nvenc (NVIDIA Ada+), av1_qsv (Intel Arc/DG2+ — the reference N100's QSV is av1-DECODE-only), av1_vaapi (Intel Arc iHD / AMD RDNA3+ Mesa), av1_amf (AMD RDNA3+ Windows) — each ENCODE path + its hwaccel-engagement markers is FIXTURE-ONLY on the M3 Max (no AV1 encode hardware exists here; no av1_videotoolbox encoder exists at all), plus windows-x64 bundled-ffmpeg libsvtav1 presence (manifest not executable on this host). GENUINELY PROVEN on the M3 Max: the Tier-0 AV1 REFUSAL path against the real probe battery (asserts no backend reports av1 encode → fails loudly on capable hardware), Tier-1 SOFTWARE av1 end-to-end (bundled libsvtav1, ffprobe codec_name==av1), and av1 hw DECODE (videotoolbox). C2 ABR adds one owner-verify item: eyeball a rung switch on the N100 + confirm the tray/System page reflects single-slot occupancy.]**
 | P3.5 | ffmpeg resolution per P1.18 as-built: LUMBRE_FFMPEG/LUMBRE_FFPROBE env → PATH fallback, CI installs the pinned build; per-platform vendored bundling remains Phase 4 packaging (no download-script here). VerifiedCapabilities invalidation keys on the RESOLVED binary's build hash (ffmpeg -version fingerprint), so it is correct under both resolution modes; arg builder targets the pinned CI version and any owner-local version skew surfaces as probe self-test differences, not silent arg breakage |
 | P3.6 | Fixture media: generated by the checked-in generator script (lavfi testsrc2 + sine, muxed to the §10 dimension combinations); no third-party media in the repo, ever (license posture D12) |
 | P3.7 | Phase 2's static compatibility preview is DELETED when plan() wires in; /playback/plan drops x-phase2-preview (additive-policy exception pre-approved: the preview was marked experimental in-contract) |

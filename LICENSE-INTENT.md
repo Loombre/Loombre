@@ -32,9 +32,10 @@ readiness checklist is in `reports/agpl-readiness.md`.
    file, or algorithm implementation from another project requires an entry
    in the Provenance ledger below (source, license, date, what was taken).
    Absent an entry, copied code is a review-blocking violation.
-3. **No an upstream media server/an upstream media server-derived material of any kind** — code, schema, API
-   shapes, naming. This is both a licensing rule (GPL-2.0 incompatibility
-   risk) and a product rule (docs/PLAN.md §1). CI grep-gates enforce naming.
+3. **No material of any kind derived from third-party media servers** —
+   code, schema, API shapes, naming. This is both a licensing rule (GPL-2.0
+   incompatibility risk) and a product rule (docs/PLAN.md §1). CI grep-gates
+   enforce naming.
 4. **Contributor provenance.** Until a CLA/DCO process exists, the sole
    contributor is the repository owner; all commits are original work or
    AI-generated work-for-hire owned by the repository owner.

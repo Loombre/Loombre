@@ -2,13 +2,16 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 /**
  * CI naming + telemetry ban gate (CLAUDE.md invariants 7, plus product rule
- * "no an upstream media server/an upstream media server API surface, schema, or naming anywhere").
+ * "no third-party media-server API surface, schema, or naming anywhere").
  *
- * (a) Forbids "upstream-media-server"/"upstream-media-server" (case-insensitive) and the whole word "Ticks"
- *     (case-sensitive — an upstream media server/an upstream media server's tick-based timestamp naming) inside
- *     apps/, packages/, and examples/ (the whole shipped product + dev kit —
- *     the design docs docs/PLAN.md/PLAYBACK.md are excluded because they name
- *     the competition on purpose; STATE.md/reports carry review history).
+ * (a) Forbids the two denylisted competitor product names (case-insensitive)
+ *     and the whole word "Ticks" (case-sensitive — the tick-based timestamp
+ *     naming of certain incumbent servers) inside apps/, packages/, and
+ *     examples/ (the whole shipped product + dev kit — the design docs
+ *     docs/PLAN.md/PLAYBACK.md are excluded because they discuss prior art;
+ *     STATE.md/reports carry review history). The denylisted names are
+ *     assembled from fragments below so the words themselves never appear as
+ *     literal tracked text anywhere in this repo.
  * (b) Forbids telemetry/analytics SDK import patterns anywhere in the repo's
  *     source files (D14 — no telemetry, ever).
  * (c) Forbids UPnP/NAT-PMP/PCP library import patterns anywhere in the
@@ -94,12 +97,22 @@ const FORMER_NAME_PATTERN = new RegExp(["lu", "mb", "re"].join(""), "i");
 const RENAME_GATE_ALLOWLIST = new Set(["CHANGELOG.md", "STATE.md"]);
 
 /** @type {{code: string, pattern: RegExp}[]} */
+// Denylisted competitor product names, assembled from fragments so the
+// literal words are not present as tracked text anywhere in this repo. The
+// two names are the AGPL-forked C#/.NET media server and the proprietary
+// server it forked from; runtime string concatenation reconstitutes them
+// for matching only.
+const DENY_1 = "je" + "lly" + "fin";
+const DENY_2 = "em" + "by";
+
 const NAMING_PATTERNS = [
-  // "upstream-media-server" is bounded on both sides so ordinary identifiers that merely
-  // contain the letter run (getItemById → "...temBy..." case-insensitively)
-  // don't false-positive; real product naming ("upstream-media-server", "upstream-media-server-api", "an upstream media server.X")
-  // still hits.
-  { code: "upstream-media-server-or-upstream-media-server", pattern: /upstream-media-server|(?<![a-z0-9])upstream-media-server(?![a-z0-9])/i },
+  // The second name is bounded on both sides so ordinary identifiers that
+  // merely contain the letter run (getItemById → "...temBy..." case-
+  // insensitively) don't false-positive; real product naming ("<name>",
+  // "<name>-api", "<Name>.X") still hits. Both names are built from string
+  // fragments (DENY_1/DENY_2) so this enforcement file does not itself
+  // contain the literal words it forbids.
+  { code: "competitor-product-naming", pattern: new RegExp(`${DENY_1}|(?<![a-z0-9])${DENY_2}(?![a-z0-9])`, "i") },
   { code: "ticks-naming", pattern: /\bTicks\b/ },
 ];
 

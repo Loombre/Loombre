@@ -448,6 +448,6 @@ scaffold that Phase 3 later turned fully green.
   commit, with two real cross-platform bugs found and fixed in the same
   pass (a macOS `oasdiff` release-asset name mismatch; a Windows
   `pnpm`-shim spawn issue).
-- Zero an upstream media server/an upstream media server API surface, schema, or naming anywhere — enforced by
-  a CI grep gate from commit one, alongside the telemetry-import ban
-  (D14: no telemetry, ever).
+- Zero third-party media-server API surface, schema, or naming anywhere —
+  enforced by a CI grep gate from commit one, alongside the telemetry-import
+  ban (D14: no telemetry, ever).

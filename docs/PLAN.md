@@ -1,5 +1,5 @@
 # Loombre — Technical Development Plan
-### A ground-up media streaming platform competing with an upstream media server and a proprietary server
+### A ground-up media streaming platform competing in the self-hosted media-server space
 
 > **Status:** v1.1 — APPROVED. Name locked: **Loombre** (Spanish: hearth-fire).
 > This document is the authoritative spec. The Phase 0 Claude Code orchestration
@@ -14,9 +14,10 @@
 A self-hosted media streaming platform — server, web client, and later native
 mobile/TV clients — that a user installs on their own hardware (Windows, macOS,
 Linux) to organize and stream movies, TV, and music to any device, locally and
-remotely. It is a **peer competitor** to an upstream media server and a proprietary server, not a fork,
-derivative, client, or compatible implementation of either. No an upstream media server or
-an upstream media server API surface, schema, naming, or code exists anywhere in the project.
+remotely. It is a **peer competitor** to the established self-hosted and
+proprietary media servers, not a fork, derivative, client, or compatible
+implementation of any of them. No third-party media-server API surface,
+schema, naming, or code exists anywhere in the project.
 
 **Product principles (ranked, used to break design ties):**
 1. **Correct playback everywhere** — the plan engine's decision is right, or the
@@ -38,16 +39,17 @@ photos, live TV/DVR, plugin system, federation/sharing.
 
 ## 2. Pain-point ledger — what we are fixing and how
 
-Every architectural decision traces to an observed failure in an upstream media server (LS) or
-a proprietary server (PS). This table is the project's institutional memory.
+Every architectural decision traces to an observed failure in the established
+self-hosted media servers (LS, the legacy self-hosted lineage) or a proprietary server (PS).
+This table is the project's institutional memory.
 
 | # | Pain point (source) | Root cause | Our design response |
 |---|---------------------|-----------|---------------------|
-| P1 | God-object item model; metadata/playback/filesystem entangled (LS `BaseItem`) | Inheritance-tree domain model grown from 2013 | Thin polymorphic `catalog_items` core + typed satellite tables; Catalog/Playback/Session modules share only IDs (§5, §7) |
+| P1 | God-object item model; metadata/playback/filesystem entangled (LS inheritance-rooted base-item type) | Inheritance-tree domain model grown from 2013 | Thin polymorphic `catalog_items` core + typed satellite tables; Catalog/Playback/Session modules share only IDs (§5, §7) |
 | P2 | SQLite bottleneck: no concurrent writes, no horizontal scale, decade-long DB consolidation (LS) | DB chosen for zero-config, never escaped | PostgreSQL from commit one; embedded-Postgres bundling for zero-config installs (§6.1) |
 | P3 | Transcoding decisions smeared across session code; bugs found only in production (LS, PS) | No pure decision layer | `PlaybackPlan` pure function with typed reasons + offline test matrix (§7) |
-| P4 | API grown by accretion: ticks timestamps, inconsistent pagination, 3 image endpoints, undocumented behavior (LS/an upstream media server) | No contract; server code was the spec | OpenAPI contract-first, generated SDK, conformance tests, additive-only evolution policy (§4) |
-| P5 | Legacy web client sediment (LS jQuery-era `upstream-media-server-web`) | UI never rebuilt | One modern Next.js client, performance-budgeted (§9) |
+| P4 | API grown by accretion: ticks timestamps, inconsistent pagination, 3 image endpoints, undocumented behavior (LS) | No contract; server code was the spec | OpenAPI contract-first, generated SDK, conformance tests, additive-only evolution policy (§4) |
+| P5 | Legacy web client sediment (LS jQuery-era single-page front end) | UI never rebuilt | One modern Next.js client, performance-budgeted (§9) |
 | P6 | Client-side content filtering: hidden libraries leak via search, collections, "recently added" (PS managed users; LS parental controls) | Filtering applied in UI/queries ad hoc | Content-class gating compiled into every query path via a single mandatory query-guard layer; unfiltered queries are impossible by construction (§6.4) |
 | P7 | Breaking plugin/API churn every major release (LS in-process plugin DLLs) | Plugins compiled against server internals | Extension points are versioned data contracts (events, providers, webhooks); plugins live out-of-process, post-v1 (§4.4) |
 | P8 | Scanner fragility: renames re-import, watch-state loss, metadata clobbering (LS, PS) | File path used as identity | Content-hash + path identity model; scanner is idempotent and rename-aware (§8.2) |
@@ -476,7 +478,7 @@ post-v1 writer behind a setting).
 |----------|-----------------|-------|
 | Linux | Docker/Compose (canonical) + tarball w/ systemd unit | Your openSUSE box is the reference T2 |
 | Windows | MSI installer (WiX): service registration, firewall rule, tray controller | Embedded PG + bundled ffmpeg |
-| macOS | Signed/notarized .pkg + menubar controller; Homebrew cask | VideoToolbox path is the differentiator vs LS on Macs |
+| macOS | Signed/notarized .pkg + menubar controller; Homebrew cask | VideoToolbox path is the differentiator vs the .NET incumbents on Macs |
 
 Single Node runtime bundled per platform (no user-installed Node); app-data in
 platform-correct locations (XDG / `%ProgramData%` / `~/Library/Application

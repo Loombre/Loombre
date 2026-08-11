@@ -31,7 +31,7 @@ cask "loombre" do
 
   url "https://github.com/Loombre/Loombre/releases/download/v#{version}/loombre-#{version}-macos-#{arch}.pkg"
   name "Loombre"
-  desc "Self-hosted, ground-up media streaming server (movies, TV, music) — not a an upstream media server/a proprietary server fork"
+  desc "Self-hosted, ground-up media streaming server (movies, TV, music) — an independent, non-derivative platform"
   homepage "https://github.com/Loombre/Loombre"
 
   # Unsigned, undocumented in Homebrew's own auto-detected livecheck —

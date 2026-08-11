@@ -114,8 +114,8 @@ out because they're easy to trip without realizing it:
 - **Milliseconds everywhere, cursor pagination, UUIDv7, RFC 9457 errors.**
   Consistency here is what keeps the generated SDK and every client
   simple.
-- **Zero an upstream media server/an upstream media server API surface, schema, or naming, anywhere** — this
-  is both a product rule and a licensing-compatibility rule (see
+- **Zero third-party media-server API surface, schema, or naming, anywhere**
+  — this is both a product rule and a licensing-compatibility rule (see
   `LICENSE-INTENT.md`). `grep-gates` checks for this too.
 - **Performance budgets are enforced in CI, and changing one requires a
   stated reason in the same diff.** See
