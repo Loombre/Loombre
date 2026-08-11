@@ -56,17 +56,17 @@ describe("Icon — Phosphor custom glyphs (U7)", () => {
     view.unmount();
   });
 
-  it("seek glyphs bake the 15/30 numerals in as <text>, always filled regardless of glyph variant", () => {
-    const backView = renderIntoBody(<Icon icon="seekBack15" />);
+  it("seek glyphs bake the 10s numeral in as <text> both directions, always filled regardless of glyph variant", () => {
+    const backView = renderIntoBody(<Icon icon="seekBack10" />);
     const backText = backView.container.querySelector("text")!;
-    expect(backText.textContent).toBe("15");
+    expect(backText.textContent).toBe("10");
     expect(backText.getAttribute("fill")).toBe("currentColor");
     expect(backText.getAttribute("stroke")).toBe("none");
     backView.unmount();
 
-    const forwardView = renderIntoBody(<Icon icon="seekForward30" />);
+    const forwardView = renderIntoBody(<Icon icon="seekForward10" />);
     const forwardText = forwardView.container.querySelector("text")!;
-    expect(forwardText.textContent).toBe("30");
+    expect(forwardText.textContent).toBe("10");
     forwardView.unmount();
   });
 

@@ -396,17 +396,17 @@ describe("VideoPlayer", () => {
     const v = (view = await renderReady());
     const video = videoEl(v);
 
-    await act(async () => button(v, "Forward 30 seconds").click());
-    expect(video.currentTime).toBe(30);
+    await act(async () => button(v, "Forward 10 seconds").click());
+    expect(video.currentTime).toBe(10);
     expect(apiPut).toHaveBeenCalledTimes(1);
     expect(apiPut.mock.calls[0]?.[1]).toMatchObject({
-      body: { positionMs: 30_000, durationMs: 600_000, state: "in-progress", sessionId: SESSION_ID },
+      body: { positionMs: 10_000, durationMs: 600_000, state: "in-progress", sessionId: SESSION_ID },
     });
 
-    await act(async () => button(v, "Back 15 seconds").click());
-    expect(video.currentTime).toBe(15);
+    await act(async () => button(v, "Back 10 seconds").click());
+    expect(video.currentTime).toBe(0);
     expect(apiPut).toHaveBeenCalledTimes(2);
-    expect(apiPut.mock.calls[1]?.[1]).toMatchObject({ body: { positionMs: 15_000 } });
+    expect(apiPut.mock.calls[1]?.[1]).toMatchObject({ body: { positionMs: 0 } });
   });
 
   it("flushes progress when the element pauses", async () => {
