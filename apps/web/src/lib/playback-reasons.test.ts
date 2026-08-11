@@ -2,7 +2,13 @@
 // Loombre :: apps/web/src/lib/playback-reasons.test.ts
 
 import { describe, expect, it } from "vitest";
-import { describeReasonCode, resolveUnavailableReasons, TRANSCODE_SLOTS_EXHAUSTED_CODE } from "./playback-reasons.js";
+import {
+  CLIENT_PLAYBACK_ERROR_CODE,
+  clientPlaybackErrorReasons,
+  describeReasonCode,
+  resolveUnavailableReasons,
+  TRANSCODE_SLOTS_EXHAUSTED_CODE,
+} from "./playback-reasons.js";
 
 describe("resolveUnavailableReasons", () => {
   it("passes through real reasons for a 409 unchanged", () => {
@@ -33,6 +39,21 @@ describe("describeReasonCode(TRANSCODE_SLOTS_EXHAUSTED_CODE)", () => {
   it("has its own dedicated copy, distinct from the generic 'unrecognized code' fallback", () => {
     const copy = describeReasonCode(TRANSCODE_SLOTS_EXHAUSTED_CODE);
     expect(copy.title).not.toBe(TRANSCODE_SLOTS_EXHAUSTED_CODE);
+    expect(copy.severity).toBe("blocking");
+  });
+});
+
+// Task #6 (2026-08-10 opus review findings 1c/1-exhausted-budget):
+// VideoPlayer.tsx's attach effect routes an unrecoverable client-side media
+// failure (a decode/src-not-supported error, or a bounded recovery stretch
+// that exhausted all its retries) to UnavailableScreen via this synthesized
+// reason — same shape/precedent as TRANSCODE_SLOTS_EXHAUSTED_CODE above,
+// but with no server HTTP status behind it at all.
+describe("clientPlaybackErrorReasons", () => {
+  it("synthesizes exactly one dedicated blocking reason, with its own copy distinct from the generic fallback", () => {
+    expect(clientPlaybackErrorReasons()).toEqual([{ code: CLIENT_PLAYBACK_ERROR_CODE, streamIndex: null, detail: null }]);
+    const copy = describeReasonCode(CLIENT_PLAYBACK_ERROR_CODE);
+    expect(copy.title).not.toBe(CLIENT_PLAYBACK_ERROR_CODE);
     expect(copy.severity).toBe("blocking");
   });
 });
