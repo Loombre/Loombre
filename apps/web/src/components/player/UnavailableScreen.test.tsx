@@ -97,6 +97,7 @@ const policy: ServerPolicy = {
   ],
   segmentDurationSec: 6,
   hevcEncodePreferred: false,
+  av1EncodePreferred: false,
 };
 
 // packages/playback-engine/matrix/fixtures/caps.yaml's `software-only`,
