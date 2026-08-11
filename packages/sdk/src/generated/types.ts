@@ -59,7 +59,7 @@ export interface paths {
         put?: never;
         /**
          * Claim an invite, creating an account and signing in
-         * @description Public (M12). Same byte-identical-404 posture as getClaimState for an invalid/expired/claimed/revoked token — a username collision against an OTHERWISE valid token is a distinct 422 (the token itself was fine). Auto-logs in on success (M13): the response is a real TokenPair, same composition as POST /setup/first-admin's own token minting.
+         * @description Public (M12). Same byte-identical-404 posture as getClaimState for an invalid/expired/claimed/revoked token — a username collision against an OTHERWISE valid token is a distinct 422 (the token itself was fine). Auto-logs in on success (M13): the response is a real TokenPair, same composition as POST /setup/first-admin's own token minting, additively carrying `emailApplied` (LD-13c — see TokenPair's own property description).
          */
         post: operations["claimInvite"];
         delete?: never;
@@ -2741,6 +2741,8 @@ export interface components {
             deviceId: string;
             /** @description E3a/M14 — true iff an admin/CLI temporary-password reset is still pending a real password change. Additive; always sent by authLogin and authRefresh (never omitted, even when false) so older clients that ignore it are unaffected. While true, the server restricts this account to auth login/refresh/logout, GET /users/me, and PATCH /users/me (403 on everything else) — enforced server-side, not merely advisory. */
             mustChangePassword?: boolean;
+            /** @description LD-13c (STATE.md "Mail posture trio"): additive; sent ONLY by claimInvite (never authLogin/authRefresh/first-admin — a fresh claim is the only TokenPair-returning op where an email can silently fail to apply). `false` iff the claim's intended email (submitted or preset-inherited) collided with another account's and was therefore silently dropped (F3/G6's existing E8-safe silent-no-op — this field is the honest signal that behavior already existed without). `true` whenever the email ended up applied as intended, INCLUDING when no email was ever submitted/preset (nothing to drop) and when the claimant explicitly opted out via ClaimInviteRequest's `email: null` (LD-13b — intent achieved, not a drop). Deliberately POST-AUTH ONLY (never surfaced pre-account-creation, e.g. GET /invites/claim/{token} or any pre-creation error path): a caller can only read this field by completing a real, rate- limited account creation, not by a free repeatable probe — see docs/PLAN.md/STATE.md for the enumeration-safety reasoning. */
+            emailApplied?: boolean;
         };
         ForgotPasswordRequest: {
             /** @description Username or email — resolved the same way authLogin resolves either. */
@@ -3141,9 +3143,9 @@ export interface components {
             password: string;
             /**
              * Format: email
-             * @description Defaults to the invite's own email preset when omitted.
+             * @description Defaults to the invite's own emailPreset when this member is ABSENT. LD-13b (STATE.md "Mail posture trio"): an explicit `null` opts OUT of the preset outright — the new account gets no email at all, even when the invite carries a preset — distinct from omitting the member. A submitted string is used verbatim (trimmed, then format-validated).
              */
-            email?: string;
+            email?: string | null;
             /** @description Defaults to the invite's own displayNamePreset when omitted. */
             displayName?: string;
             deviceName?: string;

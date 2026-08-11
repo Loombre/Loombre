@@ -429,20 +429,44 @@ export class InvitesController {
       throw unprocessableEntity(`password must be at least ${CLAIM_PASSWORD_MIN_LENGTH} characters.`, instance);
     }
 
-    // R-F4: trim first (a whitespace-padded copy of an existing address
-    // must normalize into the identical string the collision check sees,
-    // not become a second, visually-distinct one) — an all-whitespace
-    // value trims to empty and falls back to the invite's own preset,
-    // same as an omitted member always has.
-    const trimmedSubmittedEmail = typeof body["email"] === "string" ? body["email"].trim() : null;
-    // F7: ClaimInviteRequest.email declares format:email — only the
-    // SUBMITTED value is checked (invite.email, the admin-set preset, was
-    // already validated at creation time by F7's createInvite check).
-    if (trimmedSubmittedEmail !== null && trimmedSubmittedEmail.length > 0 && !isValidEmailFormat(trimmedSubmittedEmail)) {
-      throw unprocessableEntity("email must be a valid email address.", instance);
+    // LD-13b (STATE.md "Mail posture trio"): distinguishes ABSENT (the
+    // `email` member is never sent — the invite's own emailPreset wins,
+    // the long-standing behavior) from an EXPLICIT `null` (the claimant
+    // opts OUT of the preset outright — the new account gets no email at
+    // all, even when the invite carries one) from a submitted STRING
+    // (trimmed then format-validated, same F7/R-F4 posture as before). A
+    // present-but-neither-string-nor-null value 422s, same target-agnostic
+    // shape-check posture as every other field in this file.
+    let submittedEmail: string | null | undefined;
+    if (body["email"] === undefined) {
+      submittedEmail = undefined;
+    } else if (body["email"] === null) {
+      submittedEmail = null;
+    } else if (typeof body["email"] === "string") {
+      // R-F4: trim first (a whitespace-padded copy of an existing address
+      // must normalize into the identical string the collision check
+      // sees, not become a second, visually-distinct one).
+      const trimmed = body["email"].trim();
+      if (trimmed.length === 0) {
+        // An all-whitespace value has never carried opt-out intent — that
+        // is what an explicit `null` is for, above — so it falls back to
+        // the invite's own preset exactly like an omitted member always
+        // has (unchanged F7/R-F4 posture).
+        submittedEmail = undefined;
+      } else {
+        // F7: ClaimInviteRequest.email declares format:email — only the
+        // SUBMITTED value is checked (invite.email, the admin-set preset,
+        // was already validated at creation time by F7's createInvite
+        // check).
+        if (!isValidEmailFormat(trimmed)) {
+          throw unprocessableEntity("email must be a valid email address.", instance);
+        }
+        submittedEmail = trimmed;
+      }
+    } else {
+      throw unprocessableEntity("email must be a string or null.", instance);
     }
-    const email =
-      trimmedSubmittedEmail !== null && trimmedSubmittedEmail.length > 0 ? trimmedSubmittedEmail : invite.email;
+    const email = submittedEmail !== undefined ? submittedEmail : invite.email;
     const displayName =
       typeof body["displayName"] === "string" && body["displayName"].length > 0
         ? body["displayName"]
@@ -548,6 +572,27 @@ export class InvitesController {
     // G8: unconditional wall-clock floor — see this file's header.
     await waitOutClaimInviteFloor(startedAtMs);
 
-    return { accessToken, refreshToken, accessTokenExpiresAtMs: expiresAtMs, deviceId: device.id };
+    // LD-13c (STATE.md "Mail posture trio"): `emailApplied` is the honest,
+    // POST-AUTH-ONLY signal that G6/F3's existing silent-drop happened —
+    // `false` iff a non-null intended email (submitted or preset-
+    // inherited) collided with another account's and was dropped; `true`
+    // whenever the email ended up applied as intended, INCLUDING when no
+    // email was ever submitted/preset (nothing to drop) and when the
+    // claimant explicitly opted out via LD-13b's `email: null` (intent
+    // achieved, not a drop). Safe by construction, not merely by
+    // convention: this field only exists on a response the caller can
+    // only obtain by actually completing a real account creation (unlike
+    // GET /invites/claim/{token} or any pre-account-creation error path,
+    // which never consult collision state at all — see
+    // email-collision-matrix.e2e.spec.ts's pre-auth byte-identity grid),
+    // so it costs a real, rate-limited claim per probe rather than being a
+    // free pre-auth oracle.
+    return {
+      accessToken,
+      refreshToken,
+      accessTokenExpiresAtMs: expiresAtMs,
+      deviceId: device.id,
+      emailApplied: result.collidedEmail === null,
+    };
   }
 }
