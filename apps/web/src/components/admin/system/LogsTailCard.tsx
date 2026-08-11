@@ -10,16 +10,27 @@
 // original task brief) — UNCHANGED except for W12's empty-state copy
 // rewrite below.
 //
-// W12 (this run): the "no log file" empty state used to read
+// EMPTY-STATE COPY HISTORY (W12 -> W3-R -> LD-11): originally read
 // "LOOMBRE_LOG_FILE isn't set on this instance — stdout-only dev setups
-// have nothing to tail here" — developer-speak (an env var name as the
-// SUBJECT of the sentence, "dev setups" jargon) aimed at a Loombre engineer
-// debugging their own dev box, not at the actual audience: an operator
-// running a real, installed Loombre server who has no idea what
-// LOOMBRE_LOG_FILE is. Rewritten so the PLAIN-LANGUAGE explanation
-// (EmptyState's body) leads — what's happening and why installed setups
-// don't normally hit this — with the env var name demoted to a small,
-// secondary "Technical:" line (.technicalNote) rather than removed
+// have nothing to tail here" (developer-speak aimed at a Loombre engineer,
+// not the actual audience). W3-R (opus review) caught that the REPLACEMENT
+// copy claimed installers "configure a log file automatically" while at
+// the time NONE did — installers only captured console output at the
+// service-manager level (macOS launchd StandardOutPath, Windows service
+// host, systemd journal), so every install shape hit this card. LD-11
+// (this implementation run's lane B3) makes that claim TRUE:
+// every shipped install shape (macOS pkg, Windows MSI, Docker, Linux
+// tarball) now sets LOOMBRE_LOG_FILE to a real, already-populated log path
+// (see installers/macos/pkg/bin/loombre-server, installers/windows/msi/
+// Services.wxs, docker-compose.prod.yml, installers/linux/
+// build-tarball.mjs's writeWrapperScripts). `source === null` (this
+// card's empty state) is now primarily a DEV/SOURCE-RUN signal — `pnpm
+// dev` and other from-source invocations still have nothing set, by
+// design, and this state must keep handling that gracefully rather than
+// implying something is broken. Copy below states BOTH facts plainly:
+// installed builds handle this automatically; a source run is expected to
+// land here and can opt in locally. Env var name stays demoted to a
+// small, secondary "Technical:" line (.technicalNote) rather than removed
 // entirely, plus one sentence linking to the docs page that covers it
 // (docs/ops/env-reference.md, the only page in the docs site that names
 // LOOMBRE_LOG_FILE at all — ground-truthed by grepping docs/ before
@@ -85,18 +96,16 @@ export function LogsTailCard(): React.JSX.Element {
         <Skeleton radius="md" height={120} />
       ) : source === null ? (
         <>
-          {/* W3-R (opus review): the previous copy claimed installers
-              "configure a log file automatically" — FALSE: no installer
-              sets LOOMBRE_LOG_FILE; they capture the console output at
-              the service-manager level instead (macOS launchd
-              StandardOutPath -> /Library/Logs/Loombre, Windows service
-              host, systemd journal), so EVERY install shape lands on
-              this card. State that truthfully and point at where the
-              logs actually are. */}
+          {/* LD-11: installed builds (macOS/Windows/Docker/Linux tarball)
+              set LOOMBRE_LOG_FILE automatically now, so this state mainly
+              means "running from source" — see this file's header for the
+              full copy history. Still needs to degrade gracefully for that
+              case: never implies something is broken, and gives a real
+              next step for a developer who wants it locally. */}
           <EmptyState
             icon={FolderOpen}
             title="No log file to show here"
-            body="This server writes its logs to its console output rather than to a log file this page can read. That's normal: installed setups collect the console output into the system's own log location (on macOS, /Library/Logs/Loombre; on Linux, the service journal), and Docker keeps it in the container logs. To view recent logs right here instead, point the LOOMBRE_LOG_FILE setting at a file path and restart."
+            body="This server isn't writing its logs to a file right now. Installed builds (macOS, Windows, Docker, and the Linux tarball) set this up automatically — if you're seeing this on one of those, check that the service is actually running as installed. Running from source (for example, a plain development server) doesn't set this by default, which is expected. Either way, set the LOOMBRE_LOG_FILE setting to a file path and restart to see logs here."
           />
           <p className={styles.technicalNote}>Technical: LOOMBRE_LOG_FILE is not set on this instance.</p>
           <a href={ENV_REFERENCE_DOCS_URL} target="_blank" rel="noreferrer noopener" className={styles.notesLink}>
