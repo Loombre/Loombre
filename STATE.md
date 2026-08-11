@@ -1024,6 +1024,46 @@ V5 manifestUrl→master YES; V6 T1+ uncapped YES; V7 both bounded trade-offs
 accepted. Spec merged to main; C2 BUILD lane (opus) spawned. Migration
 0044 assigned to the build; ENGINE_VERSION 0.10.1→0.11.0 expected.
 
+**BUILD DELIVERED 2026-08-11 (branch `worktree-agent-a1c44b05fc0a86eeb`,
+11 commits, red-first per surface; `pnpm gate:full` ALL 16 STEPS PASSED,
+matrix 536/536).** ENGINE_VERSION 0.11.0. Everything the spec asked for
+landed as spec'd; nothing was re-litigated.
+- ENGINE: `capAdvertisedVariants` + `TIER0_MAX_ADVERTISED_VARIANTS = 3`
+  (law constant, not a knob) called at FINAL assembly AFTER Stage G;
+  `ladder-variant-capped` single-firing. CHURN, dump-diff proven over all
+  530 pre-existing cases: 497 byte-identical (engineVersion aside), 33
+  changed, ZERO decision flips / ZERO ffmpegArgs changes / ZERO video.*
+  changes; each of the 33 edited with its OWN arithmetic in `why:`. New
+  cases 531–536, golden 42 (the mixed-codec rung-switch argv → av1_qsv).
+- CONTRACT: oasdiff EXACTLY as previewed — 4 changes, 0 error, 3 warning,
+  1 info. SDK regen atomic, conformance allowance still ZERO.
+- DB 0044: active/pending_rung_index + ladder_rung_index;
+  `requestRungSwitch` absorbs at the WRITE side via
+  `active_rung_index IS DISTINCT FROM $K` (NOT `<>` — NULL until first
+  spawn); `consumePendingRungIndex` guards on the EXACT value read and
+  deliberately does NOT move status or bump discontinuity_count.
+  `getTranscodeRunForSegment` carries the normative EXTENT RULE.
+- PROOFS (real ffmpeg + real Postgres + real `ps`): the §9.1.7 named
+  scenario runs 0–4 with the handoff origin landing on an EXACT segment
+  boundary of run 2's own append-only playlist; process census max = 1
+  across the whole scenario; coincident seek+switch ⇒ ONE run carrying
+  both intentions; slot census never leaves 1 across a handoff; the
+  CODECS table execution-fenced against ffprobe for h264/hevc(hvc1
+  tag)/av1 with a non-vacuity case.
+- HONESTY FLAG 1 CLOSED AS "PARTIAL, BY NATURE": Safari's master→variant
+  token hop cannot be executed in jsdom. What IS verified is that both
+  hops are the SAME URL operation (standard resolution drops the query on
+  each, so propagation is engine behaviour) and that a query-bearing
+  variant URL resolves segments against a query-bearing base — i.e. the
+  single-hop shape Wave A already verified empirically. The conditional
+  rendered-token-URI fallback is therefore NOT implemented (verification
+  did not show structural failure). ⛔ OWNER-VERIFY: play a transcode
+  session in real Safari and confirm variant + segment GETs carry the
+  token.
+- Known bounded behaviours accepted at V7 remain as spec'd; §9.1.10 item 2
+  (post-ENDLIST seek pays the ≤8s fatal-recovery path) is now reachable
+  because ENDLIST exists at all — pre-C2 it never did.
+
 ### Wave C1 — SPEC DELIVERED 2026-08-11, at ⛔ OWNER SIGN-OFF STOP
 
 Fable spec lane committed 86ac7e3b (worktree branch; ONE file, docs/PLAYBACK.md
