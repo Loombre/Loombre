@@ -46,6 +46,7 @@ import { tmpdir } from "node:os";
 import { ensureTestDatabase, getPluginById, getUserByUsername, insertPluginAndEmit, listPlugins } from "@loombre/db";
 import { fetchPluginManifest } from "@loombre/plugin-host";
 import { DbProvider } from "../../src/common/db.provider.js";
+import { resolvePluginConfigSecret } from "../../src/plugins/plugin-keyring.js";
 import { PluginHealthService } from "../../src/plugins/plugin-health.service.js";
 import { PluginHealthSchedulerService } from "../../src/plugins/plugin-health-scheduler.service.js";
 import { PluginLifecycleService } from "../../src/plugins/plugin-lifecycle.service.js";
@@ -759,6 +760,121 @@ describe("PluginHealthService — breaker auto-disable after 5 consecutive timeo
     expect(reenabled.enabled).toBe(true);
     expect(healthService.getBreaker(plugin.id).snapshot()).toEqual({ state: "closed", consecutiveFailures: 0, openedAtMs: null });
   }, 20_000);
+});
+
+// ===========================================================================
+// C5.3 fix wave: keyring hygiene — manifest-refresh secret-field-set diff
+// (orphan cleanup on refresh/reapproval)
+// ===========================================================================
+//
+// diffManifestForExpansion never inspects configSchema at all (by design —
+// see manifest-diff.ts's header), so a configSchema change is NEVER an
+// "expansion" and always takes the non-expanding snapshot-update path in
+// refreshPlugin (or the reapprovePlugin path, for a plugin that WAS mid
+// scope-change for an unrelated reason). Before this fix, a secret field
+// dropped from the live manifest between refreshes left its keyring entry
+// stranded forever — nothing references that field name anymore, but
+// nothing ever removes it either.
+
+describe("keyring hygiene — manifest-refresh secret-field-set diff (C5.3)", () => {
+  const stubs: StubServer[] = [];
+  afterEach(async () => {
+    await Promise.all(stubs.splice(0).map((s) => s.close()));
+  });
+
+  function schemaWith(fields: string[]): Record<string, unknown> {
+    const properties: Record<string, unknown> = {};
+    for (const f of fields) properties[f] = { type: "string", secret: true };
+    return { type: "object", properties, additionalProperties: false };
+  }
+
+  it("refreshPlugin: a secret field DROPPED from the live manifest has its keyring entry removed; a field that stays is left untouched", async () => {
+    let configSchema = schemaWith(["apiKey", "webhookUrl"]);
+    const stub = await startStub((req, res) => {
+      if (req.method === "GET" && req.url === "/lpp/manifest") {
+        return jsonResponse(res, 200, { ...VALID_MANIFEST_BASE, configSchema, capabilities: [METADATA_CAP] });
+      }
+      if (req.method === "POST" && req.url === "/lpp/provider/search") {
+        return jsonResponse(res, 200, { results: [] });
+      }
+      jsonResponse(res, 404, {});
+    });
+    stubs.push(stub);
+
+    const registerDigest = await digestFor(stub.baseUrl, [stub.host]);
+    const registered = await registrationService.registerPlugin({
+      baseUrl: stub.baseUrl,
+      lanAllowlist: [stub.host],
+      grantedCapabilityTypes: ["metadata-provider"],
+      eventTypeGrants: [],
+      configValues: { apiKey: "DISTINCTIVE-API-KEY-VALUE", webhookUrl: "https://hooks.example/keep-me" },
+      actorUserId: adminId,
+      manifestDigest: registerDigest,
+    });
+    const pluginId = registered.plugin.id;
+    expect(await resolvePluginConfigSecret(pluginId, "apiKey")).toBe("DISTINCTIVE-API-KEY-VALUE");
+    expect(await resolvePluginConfigSecret(pluginId, "webhookUrl")).toBe("https://hooks.example/keep-me");
+
+    // The live manifest drops "apiKey" entirely — a narrowing, never an
+    // expansion, so refreshPlugin applies it silently (LD6).
+    configSchema = schemaWith(["webhookUrl"]);
+    const refreshed = await registrationService.refreshPlugin(pluginId, adminId);
+    expect(refreshed.expanded).toBe(false);
+    expect(refreshed.plugin.enabled).toBe(true);
+
+    expect(await resolvePluginConfigSecret(pluginId, "apiKey")).toBeNull(); // orphan removed
+    expect(await resolvePluginConfigSecret(pluginId, "webhookUrl")).toBe("https://hooks.example/keep-me"); // untouched
+  }, 15_000);
+
+  it("reapprovePlugin: a secret field dropped ALONGSIDE a genuine expansion has its keyring entry removed once the new manifest is actually approved", async () => {
+    let mediaKinds = ["movie"];
+    let configSchema = schemaWith(["apiKey", "webhookUrl"]);
+    const stub = await startStub((req, res) => {
+      if (req.method === "GET" && req.url === "/lpp/manifest") {
+        return jsonResponse(res, 200, { ...VALID_MANIFEST_BASE, configSchema, capabilities: [{ ...METADATA_CAP, mediaKinds }] });
+      }
+      if (req.method === "POST" && req.url === "/lpp/provider/search") {
+        return jsonResponse(res, 200, { results: [] });
+      }
+      jsonResponse(res, 404, {});
+    });
+    stubs.push(stub);
+
+    const registerDigest = await digestFor(stub.baseUrl, [stub.host]);
+    const registered = await registrationService.registerPlugin({
+      baseUrl: stub.baseUrl,
+      lanAllowlist: [stub.host],
+      grantedCapabilityTypes: ["metadata-provider"],
+      eventTypeGrants: [],
+      configValues: { apiKey: "DISTINCTIVE-REAPPROVE-KEY", webhookUrl: "https://hooks.example/reapprove-keep" },
+      actorUserId: adminId,
+      manifestDigest: registerDigest,
+    });
+    const pluginId = registered.plugin.id;
+
+    // Widen mediaKinds (a genuine expansion, LD6) AND drop "apiKey" from
+    // configSchema at the same time.
+    mediaKinds = ["movie", "tv"];
+    configSchema = schemaWith(["webhookUrl"]);
+    const refreshed = await registrationService.refreshPlugin(pluginId, adminId);
+    expect(refreshed.expanded).toBe(true);
+    expect(refreshed.plugin.disabled_reason).toBe("scope-change");
+    // Awaiting re-approval — the STORED snapshot (and so the keyring) is
+    // deliberately untouched until the admin actually accepts the new
+    // manifest (refreshPlugin's own header comment).
+    expect(await resolvePluginConfigSecret(pluginId, "apiKey")).toBe("DISTINCTIVE-REAPPROVE-KEY");
+
+    const reapproveDigest = await digestFor(stub.baseUrl, [stub.host]);
+    const reapproved = await registrationService.reapprovePlugin(
+      pluginId,
+      { grantedCapabilityTypes: ["metadata-provider"], eventTypeGrants: [], manifestDigest: reapproveDigest },
+      adminId,
+    );
+    expect(reapproved.enabled).toBe(true);
+
+    expect(await resolvePluginConfigSecret(pluginId, "apiKey")).toBeNull(); // orphan removed on actual approval
+    expect(await resolvePluginConfigSecret(pluginId, "webhookUrl")).toBe("https://hooks.example/reapprove-keep");
+  }, 15_000);
 });
 
 // ===========================================================================
