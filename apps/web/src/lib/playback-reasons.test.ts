@@ -41,14 +41,14 @@ describe("describeReasonCode(TRANSCODE_SLOTS_EXHAUSTED_CODE)", () => {
 // panel): the closed docs/PLAYBACK.md §4 reason-code enum, hand-mirrored
 // from packages/contract/openapi.yaml's PlanReasonCode `oneOf` (verified
 // against that schema at the time of writing — 20 fixed blocking-class +
-// 4 fixed informational-class + the two pattern-typed families' fully
+// 5 fixed informational-class + the two pattern-typed families' fully
 // enumerated concrete members: hw-encoder-selected:<7 backends per
 // docs/PLAYBACK.md §8.2's candidate list> and
 // software-fallback:<3 causes per that schema's own regex>). This is the
 // admin reasons panel's ENTIRE reason-copy source (it reuses
 // describeReasonCode — no separate admin-only copy map) — this test is
 // the "import the closed enum and assert exhaustiveness" deliverable:
-// every one of these 34 codes must resolve to its OWN dedicated copy, not
+// every one of these 35 codes must resolve to its OWN dedicated copy, not
 // silently fall through to the generic "Unrecognized reason code" fallback
 // (which would be a copy-map coverage gap, not a real unrecognized code).
 const BLOCKING_REASON_CODES = [
@@ -79,6 +79,7 @@ const FIXED_INFORMATIONAL_REASON_CODES = [
   "subtitle-styling-lost",
   "audio-atmos-lost",
   "gapless-degraded",
+  "open-gop-leading-pictures-stripped",
 ] as const;
 
 // docs/PLAYBACK.md §8.2's closed backend candidate list, matching
@@ -99,10 +100,10 @@ const CLOSED_REASON_ENUM = [
 ];
 
 describe("describeReasonCode exhaustiveness over the closed docs/PLAYBACK.md §4 enum", () => {
-  it("the mirrored enum has exactly 34 members (20 blocking + 4 fixed-informational + 7 hw-encoder-selected + 3 software-fallback)", () => {
+  it("the mirrored enum has exactly 35 members (20 blocking + 5 fixed-informational + 7 hw-encoder-selected + 3 software-fallback)", () => {
     expect(BLOCKING_REASON_CODES).toHaveLength(20);
-    expect(CLOSED_REASON_ENUM).toHaveLength(34);
-    expect(new Set(CLOSED_REASON_ENUM).size).toBe(34); // no accidental duplicates
+    expect(CLOSED_REASON_ENUM).toHaveLength(35);
+    expect(new Set(CLOSED_REASON_ENUM).size).toBe(35); // no accidental duplicates
   });
 
   for (const code of CLOSED_REASON_ENUM) {

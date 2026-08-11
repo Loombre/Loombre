@@ -180,6 +180,12 @@ function genRandomVideoStream(rng: Rng, index: number): VideoStream {
     dvProfile,
     dvBlCompatId,
     interlaced: bool(rng, 0.15),
+    // §2.1 fact (added 2026-08-10) — randomized here so the full-space
+    // property suites (determinism/totality/reason-completeness) exercise
+    // the open-gop-leading-pictures-stripped assembly in src/plan.ts across
+    // every codec, not just hevc (plan.ts's own hevc codec gate, opus-review
+    // Finding C, makes the flag/reason a no-op for every other codec).
+    openGop: bool(rng, 0.2),
   };
 }
 
@@ -460,6 +466,12 @@ function genDirectPlayVideoInput(rng: Rng): PlanInput {
     dvProfile: null,
     dvBlCompatId: null,
     interlaced: false,
+    // Deliberately false, not randomized — every device this generator
+    // builds declares the SAME container as `directPlayContainers` below,
+    // so no repackage ever occurs regardless of this value; false keeps
+    // that "every stage passes by construction" property (this file's own
+    // header) legible on its face.
+    openGop: false,
   };
 
   const audioCodec = pick(rng, DIRECT_PLAY_AUDIO_CODECS);

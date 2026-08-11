@@ -88,6 +88,12 @@ export interface AssembledVideoStream {
   dvProfile: number | null;
   dvBlCompatId: number | null;
   interlaced: boolean;
+  /** docs/PLAYBACK.md §2.1 (added 2026-08-10) — mirrors
+   *  @loombre/playback-engine's VideoStream.openGop field-for-field (this
+   *  module's own header). Sourced from media_streams.open_gop
+   *  (migrations/0038_media_streams_open_gop.sql); see toOpenGop below for
+   *  the NULL -> false mapping rule. */
+  openGop: boolean;
 }
 
 export interface AssembledAudioStream {
@@ -193,6 +199,14 @@ export function toHdr(v: string | null): AssembledHdr {
 export function toBitDepth(v: number | null): 8 | 10 | 12 {
   return v === 10 ? 10 : v === 12 ? 12 : 8;
 }
+/** migrations/0038_media_streams_open_gop.sql: NULL ("not yet probed for
+ *  this fact") maps to `false` — conservative by construction, never strip
+ *  GOP-boundary NAL units (playback-engine's seek-restart bitstream filter)
+ *  unless the probe pipeline POSITIVELY detected an open-GOP HEVC stream.
+ *  A real `true`/`false` verdict passes straight through. */
+export function toOpenGop(v: boolean | null): boolean {
+  return v === true;
+}
 
 /**
  * Deterministically picks the item's "primary" media file among possibly
@@ -279,6 +293,7 @@ export async function getMediaInfoAssembly(
       dvProfile: s.dv_profile,
       dvBlCompatId: s.dv_bl_compat_id,
       interlaced: s.interlaced ?? false,
+      openGop: toOpenGop(s.open_gop),
     }));
 
   const audio: AssembledAudioStream[] = streams

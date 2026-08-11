@@ -4,7 +4,9 @@
  * the media_files row named by the job payload, runs ffprobe, stores the
  * RAW json + probed_at_ms, extracts typed MediaInfo and replaces the
  * file's media_streams rows (including the 0002 hdr/dv_profile/
- * dv_bl_compat_id/has_atmos/interlaced columns), and derives
+ * dv_bl_compat_id/has_atmos/interlaced columns, and — migrations/0038_
+ * media_streams_open_gop.sql — a bounded ffmpeg trace_headers scan per
+ * HEVC video stream, see resolveOpenGopByIndex/./opengop.ts), and derives
  * media_files.duration_ms + container.
  *
  * Runtime-derived fields, NOT stored here (see module-level decision
@@ -39,8 +41,8 @@ import {
   type DbOrTx,
   type ReplaceStreamInput,
 } from "@loombre/db/internal";
-import { runFfprobe, extractMediaInfo } from "./index.js";
-import type { RawProbeResult, MediaInfo, VideoStream, AudioStream, SubtitleStream } from "./index.js";
+import { runFfprobe, extractMediaInfo, detectOpenGop } from "./index.js";
+import type { RawProbeResult, MediaInfo, VideoStream, AudioStream, SubtitleStream, OpenGopVerdict } from "./index.js";
 
 export interface ProbeDeps {
   db: DbOrTx;
@@ -50,6 +52,17 @@ export interface ProbeDeps {
    *  test/probe/probe.integration.spec.ts's own convention). Defaults to
    *  the real runFfprobe. */
   runFfprobe?: (filePath: string) => Promise<RawProbeResult>;
+  /** Test seam — bypasses the real bounded ffmpeg trace_headers scan (see
+   *  test/probe/opengop.spec.ts's fake-detector convention). Defaults to
+   *  the real detectOpenGop (./opengop.ts). Signature matches
+   *  detectOpenGop's own (filePath, videoTypeIndex, codec, durationMs) ->
+   *  OpenGopVerdict. */
+  detectOpenGop?: (
+    filePath: string,
+    videoTypeIndex: number,
+    codec: string,
+    durationMs: number | null,
+  ) => Promise<OpenGopVerdict>;
 }
 
 export interface RunProbeParams {
@@ -75,7 +88,51 @@ function rawColorTransferByIndex(raw: RawProbeResult): Map<number, string | null
   return byIndex;
 }
 
-function toStreamInputs(info: MediaInfo, raw: RawProbeResult): ReplaceStreamInput[] {
+/**
+ * Runs detectOpenGop for every HEVC video stream, sequentially (one ffmpeg
+ * child at a time — a single probe job never fans out N concurrent
+ * trace_headers scans, mirroring the single-ffprobe-at-a-time shape the
+ * rest of this consumer already has). Non-HEVC video streams get `false`
+ * with no scan at all (docs/PLAYBACK.md §2.1/migrations/0038's HEVC-only-
+ * in-v1 rule — the engine never consults this field for other codecs; this
+ * short-circuit is a performance optimization only — detectOpenGop's own
+ * codec parameter would resolve the same `false` without spawning either
+ * way, see opengop.ts's "Codec guard" doc section).
+ * Keyed by the stream's ABSOLUTE ffprobe index (VideoStream.index), which
+ * toStreamInputs below looks up per video entry; `videoTypeIndex` (the
+ * detector's own `-map 0:v:N` argument) is simply the stream's 0-based
+ * POSITION within `video` — MediaInfo.video is already sorted by absolute
+ * index (extract.ts's byIndex), so array position IS ffmpeg's per-type
+ * demux order. `durationMs` is the file's overall duration from this same
+ * probe run (extractMediaInfo's MediaInfo.durationMs, §2.1's "format.
+ * duration s->ms" conversion) — 0 (ffprobe reported no format.duration at
+ * all) is normalized to `null` ("unknown") here, since opengop.ts's
+ * detectOpenGop treats `null` as "fall back to the raised from-start
+ * bound", never as a genuine zero-length file.
+ */
+async function resolveOpenGopByIndex(
+  detect: (filePath: string, videoTypeIndex: number, codec: string, durationMs: number | null) => Promise<OpenGopVerdict>,
+  filePath: string,
+  video: VideoStream[],
+  durationMs: number,
+): Promise<Map<number, OpenGopVerdict>> {
+  const result = new Map<number, OpenGopVerdict>();
+  const knownDurationMs = durationMs > 0 ? durationMs : null;
+  for (const [videoTypeIndex, stream] of video.entries()) {
+    if (stream.codec !== "hevc") {
+      result.set(stream.index, false);
+      continue;
+    }
+    result.set(stream.index, await detect(filePath, videoTypeIndex, stream.codec, knownDurationMs));
+  }
+  return result;
+}
+
+function toStreamInputs(
+  info: MediaInfo,
+  raw: RawProbeResult,
+  openGopByIndex: Map<number, OpenGopVerdict>,
+): ReplaceStreamInput[] {
   const colorTransferByIndex = rawColorTransferByIndex(raw);
   const video: ReplaceStreamInput[] = info.video.map((s: VideoStream) => ({
     streamIndex: s.index,
@@ -93,6 +150,7 @@ function toStreamInputs(info: MediaInfo, raw: RawProbeResult): ReplaceStreamInpu
     dvProfile: s.dvProfile,
     dvBlCompatId: s.dvBlCompatId,
     interlaced: s.interlaced,
+    openGop: openGopByIndex.get(s.index) ?? null,
   }));
   const audio: ReplaceStreamInput[] = info.audio.map((s: AudioStream) => ({
     streamIndex: s.index,
@@ -119,6 +177,7 @@ function toStreamInputs(info: MediaInfo, raw: RawProbeResult): ReplaceStreamInpu
 export async function runProbe(deps: ProbeDeps, params: RunProbeParams): Promise<void> {
   const clock = deps.clock ?? Date.now;
   const probeFn = deps.runFfprobe ?? ((filePath: string) => runFfprobe(filePath));
+  const detectOpenGopFn = deps.detectOpenGop ?? detectOpenGop;
 
   const file = await getMediaFileById(deps.db, params.mediaFileId);
   if (!file) {
@@ -142,7 +201,8 @@ export async function runProbe(deps: ProbeDeps, params: RunProbeParams): Promise
     container: info.container,
   });
 
-  await replaceFileStreams(deps.db, file.id, toStreamInputs(info, raw));
+  const openGopByIndex = await resolveOpenGopByIndex(detectOpenGopFn, file.path, info.video, info.durationMs);
+  await replaceFileStreams(deps.db, file.id, toStreamInputs(info, raw, openGopByIndex));
 
   const item = await getCatalogItemById(deps.db, file.item_id);
   if (item?.item_type === "track") {

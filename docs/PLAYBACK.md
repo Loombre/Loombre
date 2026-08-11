@@ -87,6 +87,7 @@ interface VideoStream {
   dvProfile: number | null;          // 5|7|8 when hdr==='dv'
   dvBlCompatId: number | null;       // 8.1 HDR10-compatible base layer detection
   interlaced: boolean;
+  openGop: boolean;                  // ffmpeg-verified 2026-08-10; DB NULL -> false (conservative)
 }
 interface AudioStream {
   index: number;
@@ -282,6 +283,29 @@ Plan always includes: every fired reason (ordered by stage, then axis),
 per-track actions, subtitle strategy, ladder (may be empty for copy/audio-only
 decisions), and ffmpegArgs per §6 (empty array for `direct-play`).
 
+**Open-GOP HEVC leading-pictures strip (2026-08-10; predicate corrected by
+opus review Finding D, same day).** Decided HERE, at final assembly, not
+inside Stage B — the flag and its reason need facts (the FINAL `container`
+and `video.action`) that aren't settled until every stage (including D/E/F)
+has run. When the final `video.action === 'copy'` AND the final `container`
+is `fmp4-hls`|`ts-hls` (a repackaged copy — never `'source'`/`'mp4'`) AND the
+selected stream is `hevc` with `openGop === true`: `video.openGop` is set
+true (§5), and an additional INFORMATIONAL reason
+`open-gop-leading-pictures-stripped` is appended after every Stage A-F
+reason already collected (the same position any other assembly-level
+addition lands in, since nothing about this predicate can be known earlier).
+The strip itself happens in the arg builder (§6) on a seek-restart, never a
+re-encode, so this can never change any stage's verdict. An EARLIER version
+of this rule lived inside Stage B, gated on Stage A's OWN verdict
+(container-not-direct-playable) rather than the plan's FINAL container —
+that predicate could diverge from the flag's in both directions (a
+container that Stage A itself found direct-playable but that ends up
+repackaged anyway for an unrelated reason, e.g. Stage D forcing an audio
+transcode, stripped with no reason reported; a later stage, e.g. C or F,
+escalating video to a full transcode reported the reason despite no strip
+ever happening). Matrix cases 516/517 pin both former divergence
+directions.
+
 ## 4. Reason taxonomy (closed enum; additions are contract PRs)
 
 Blocking-class: `container-not-direct-playable`, `video-codec-unsupported`,
@@ -295,8 +319,8 @@ Blocking-class: `container-not-direct-playable`, `video-codec-unsupported`,
 `video-transcode-for-subtitle-burn-in`, `bitrate-exceeds-network`,
 `subtitle-codec-unknown`, `transcode-disabled-by-policy`.
 Informational-class: `dv-stripped-to-hdr10`, `subtitle-styling-lost`,
-`audio-atmos-lost`, `gapless-degraded`, `hw-encoder-selected:*`,
-`software-fallback:*`.
+`audio-atmos-lost`, `gapless-degraded`, `open-gop-leading-pictures-stripped`,
+`hw-encoder-selected:*`, `software-fallback:*`.
 Every reason carries `{ code, streamIndex?, detail? }`; matrix cases assert on
 codes, golden tests on full objects.
 
@@ -307,7 +331,7 @@ interface PlaybackPlan {
   decision: 'direct-play'|'direct-stream'|'remux'|'transcode';
   reasons: PlanReason[];             // REQUIRED, may be [] only for direct-play
   container: 'source'|'fmp4-hls'|'ts-hls'|'mp4';
-  video:    { action:'copy'|'transcode'|'none'; targetCodec?; encoder?; toneMap?: ToneMapMethod };
+  video:    { action:'copy'|'transcode'|'none'; targetCodec?; encoder?; toneMap?: ToneMapMethod; openGop?: boolean };
   audio:    { action:'copy'|'transcode'|'none'; targetCodec?; targetChannels?; targetBitrateBps? };
   subtitle: { strategy:'none'|'embed'|'hls-vtt'|'burn-in'; streamIndex? };
   ladder: LadderRung[];
@@ -329,7 +353,29 @@ sorted keys (`stableStringify` in shared).
 6. Filtergraph (single `-filter_complex` when any of: deinterlace → scale →
    tonemap → subtitle overlay; fixed filter order exactly as listed)
 7. Video encode block (codec, preset/quality per backend table, level, GOP:
-   `-g {2×fps}` keyframe-aligned to `-force_key_frames expr:gte(t,n_forced*{SEG_DUR})`)
+   `-g {2×fps}` keyframe-aligned to `-force_key_frames expr:gte(t,n_forced*{SEG_DUR})`).
+   Video-COPY branch only, added 2026-08-10 (ffmpeg-verified): when
+   `video.openGop` is true AND this is a seek-restart (`withSeek: true`) AND
+   the container is `fmp4-hls`|`ts-hls`, append `-bsf:v
+   filter_units=remove_types=8-9`. CORRECTED SCOPE (opus review Finding E,
+   2026-08-10 — the original text above understated this): a `-bsf:v` is a
+   PER-INVOCATION filter, not a per-join one — it applies to every packet
+   ffmpeg processes for the ENTIRE seek-restarted run, not only the ~20
+   leading-picture frames at the seek join. In practice this means every
+   GOP for the rest of that invocation loses its own HEVC RASL leading
+   pictures (NAL types 8/9) each time it starts, not just the first one at
+   the join — a small, PERSISTENT per-GOP frame drop (roughly `bframes`
+   frames per keyframe interval) for the remainder of the seek-restarted
+   segment run, not a one-time join cost. ACCEPTED TRADE-OFF (owner
+   decision, 2026-08-10): this persistent minor frame drop is traded
+   against the alternative — a multi-second full-frame decode smear at the
+   seek join from undecodable referenceless RASL pictures — and judged the
+   better failure mode. A fresh (non-seek) run is unaffected (`withSeek:
+   false` never appends the bsf; it starts at the file's true IDR, which
+   carries no RASL pictures referencing anything absent). FLAGGED for owner
+   QA re-verification of long post-seek playback (does the persistent
+   per-GOP drop stay imperceptible over minutes of playback, not just at
+   the join) before rc.7 ships.
 8. Audio encode/copy block
 9. Output: HLS muxer flags — `-f hls -hls_time {SEG_DUR} -hls_playlist_type
    event -hls_segment_type {fmp4|mpegts} -hls_fmp4_init_filename init.mp4

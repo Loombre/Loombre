@@ -1,0 +1,81 @@
+name: transcode — mkv hevc openGop:true vs hevc-sdr over a 1Mbps remote network, bitrate-exceeds-network forces a real video transcode — open-gop-leading-pictures-stripped does NOT fire (Finding D pin, direction 2 of 2)
+why: >
+  Opus review Finding D (2026-08-10), the mirror-image divergence direction
+  from case 516: same stream as case 514 (hevc main10, openGop:true, mkv —
+  NOT in devices.hevc-sdr's directPlayContainers, so Stage A fires
+  container-not-direct-playable exactly like 514) and the SAME devices.
+  hevc-sdr/policies.t0-default/caps.software-only fixtures, but over
+  networks.wan-1mbps (1Mbps, not local) instead of networks.local — the
+  8.16Mbps source overflows that cap, so Stage F fires
+  bitrate-exceeds-network and escalates VIDEO ITSELF to a real transcode
+  (`video.action` becomes 'transcode', not 'copy'; caps.software-only has
+  no hardware backend at all, so Stage G's rule (iii) routes full software,
+  adding software-fallback:encode — the pre-tier-cap ladder here is already
+  just the 360p/800kbps rung, at/under the network cap, so the tier-0 cap
+  has nothing further to trim and software-fallback:tier-capped does NOT
+  additionally fire). Under the OLD Stage-B predicate (fired on Stage A's
+  own `!containerDirectPlayable` alone, with rules 1-3 passing before
+  Stage C/F ever ran) this reason WOULD have fired — audit finding
+  "reason-without-strip": nothing is actually stripped, because the video
+  track gets a full re-encode, not an args/builder.ts video-COPY with a
+  seek-restart bsf (`video.openGop` is never even a meaningful field on a
+  'transcode' action). Under the FIXED assembly-time predicate (gated on
+  the FINAL `video.action==='copy'`, decided only after Stage F has run),
+  the reason correctly stays absent. Case 516 is the opposite divergence
+  direction (reason absent, strip real, under the old code).
+
+input:
+  media:
+    fileId: file-0517
+    container: mkv
+    durationMs: 6000000
+    sizeBytes: 5000000000
+    overallBitrateBps: 8160000
+    video:
+      - index: 0
+        codec: hevc
+        profile: main10
+        level: 123
+        width: 1920
+        height: 1080
+        bitDepth: 10
+        frameRate: 24
+        bitrateBps: 8000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+        openGop: true
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 160000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device:
+    fixture: devices.hevc-sdr
+  network:
+    fixture: networks.wan-1mbps
+  policy:
+    fixture: policies.t0-default
+  caps:
+    fixture: caps.software-only
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+
+expect:
+  decision: transcode
+  reasons:
+    - container-not-direct-playable
+    - bitrate-exceeds-network
+    - software-fallback:encode
+  container: fmp4-hls
+  ladder:
+    - { heightPx: 360, videoBitrateBps: 800000, audioBitrateBps: 160000, codec: h264 }

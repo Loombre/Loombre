@@ -111,6 +111,7 @@ describe.skipIf(!toolsAvailable)("probe consumer integration (real ffmpeg/ffprob
       dv_bl_compat_id: number | null;
       has_atmos: boolean | null;
       interlaced: boolean | null;
+      open_gop: boolean | null;
     }>("SELECT * FROM media_streams WHERE file_id = $1 ORDER BY stream_index", [fileId]);
 
     expect(streams.rows.length).toBeGreaterThanOrEqual(2); // at least video + audio
@@ -121,11 +122,47 @@ describe.skipIf(!toolsAvailable)("probe consumer integration (real ffmpeg/ffprob
     expect(video?.dv_profile).toBeNull();
     expect(video?.dv_bl_compat_id).toBeNull();
     expect(video?.interlaced).toBe(false);
+    // migrations/0038_media_streams_open_gop.sql: HEVC-only in v1 — a
+    // non-hevc video stream is written `false` (never scanned, never NULL).
+    expect(video?.open_gop).toBe(false);
 
     const audio = streams.rows.find((s) => s.stream_type === "audio");
     expect(audio?.codec).toBe("aac");
     expect(audio?.channels).toBe(2);
     expect(audio?.has_atmos).toBe(false);
+  }, 30_000);
+
+  // migrations/0038_media_streams_open_gop.sql: the real bounded ffmpeg
+  // trace_headers scan (apps/worker/src/probe/opengop.ts), driven end to
+  // end through runProbe against the real x265 open-gop=1/open-gop=0
+  // fixture pair (scripts/gen-media-fixtures.mjs).
+  it("detects and stores open_gop for a real HEVC open-gop stream, and false for its closed-gop control", async () => {
+    const openEntry = manifestFiles.find((f) => f.file === "hevc_opengop.mkv");
+    const closedEntry = manifestFiles.find((f) => f.file === "hevc_closedgop.mkv");
+    expect(openEntry, "expected hevc_opengop.mkv in the manifest").toBeDefined();
+    expect(closedEntry, "expected hevc_closedgop.mkv in the manifest").toBeDefined();
+
+    const openFileId = await seedMediaFile(openEntry!);
+    const closedFileId = await seedMediaFile(closedEntry!);
+
+    await runProbe({ db: dbHandle }, { mediaFileId: openFileId });
+    await runProbe({ db: dbHandle }, { mediaFileId: closedFileId });
+
+    const openVideo = await raw.query<{ codec: string; open_gop: boolean | null }>(
+      "SELECT codec, open_gop FROM media_streams WHERE file_id = $1 AND stream_type = 'video'",
+      [openFileId],
+    );
+    expect(openVideo.rows).toHaveLength(1);
+    expect(openVideo.rows[0]!.codec).toBe("hevc");
+    expect(openVideo.rows[0]!.open_gop).toBe(true);
+
+    const closedVideo = await raw.query<{ codec: string; open_gop: boolean | null }>(
+      "SELECT codec, open_gop FROM media_streams WHERE file_id = $1 AND stream_type = 'video'",
+      [closedFileId],
+    );
+    expect(closedVideo.rows).toHaveLength(1);
+    expect(closedVideo.rows[0]!.codec).toBe("hevc");
+    expect(closedVideo.rows[0]!.open_gop).toBe(false);
   }, 30_000);
 
   it("detects the interlaced mpeg2 transport-stream fixture via the 0002 `interlaced` column", async () => {

@@ -69,6 +69,20 @@
  * B.3's axis list excludes it, and §4's reason enum has no matching code —
  * bitrate-vs-network/device-cap is Stage F's dimension, `bitrate-exceeds-
  * network`).
+ *
+ * Open-GOP HEVC leading-pictures strip (design decided 2026-08-10, ffmpeg-
+ * verified — see args/builder.ts's seek-restart bsf comment for the full
+ * evidence): briefly lived HERE as a rules-1-3-passed branch gated on a
+ * `containerDirectPlayable` parameter threaded in from Stage A's own
+ * verdict. REMOVED by the opus-review Finding D fix (src/plan.ts's
+ * ENGINE_VERSION 0.8.5 header note): that predicate diverged from the one
+ * the `video.openGop` flag actually used (the FINAL `container`/
+ * `video.action` fields, decided only after every stage — including D/E/F —
+ * has run), so a reason could fire with no strip ever happening, or a strip
+ * could happen with no reason ever fired. The reason is now emitted at
+ * assembly time in `plan()`, from the exact same predicate as the flag —
+ * this stage evaluates ONLY rules 1-4 above and takes no `openGop`/
+ * container-repackage input at all, exactly as it did before 2026-08-10.
  */
 import type { DeviceProfile, DeviceProfileVideoEntry, MediaInfo, VideoCodec, VideoStream } from "../types.js";
 import type { PlanReason, PlanReasonCode } from "../reasons.js";
@@ -227,7 +241,10 @@ function mostPermissiveEntry(codec: VideoCodec, entries: readonly DeviceProfileV
 /**
  * Stage B (docs/PLAYBACK.md §3). Evaluates only the SELECTED video stream
  * (`videoStreamIndex`); see this module's header for the full rule
- * interaction, null-vacuous-pass, and multi-entry semantics.
+ * interaction, null-vacuous-pass, and multi-entry semantics (the open-GOP
+ * strip reason no longer lives here — see the module header's Finding D
+ * note; it's assembled in src/plan.ts from a different, later-known
+ * predicate).
  */
 export function evaluateVideo(media: MediaInfo, device: DeviceProfile, videoStreamIndex: number | null): StageResult {
   if (videoStreamIndex === null || media.video.length === 0) {
@@ -279,5 +296,7 @@ export function evaluateVideo(media: MediaInfo, device: DeviceProfile, videoStre
   }
   // else: some entry accommodates every axis — rule 3 contributes nothing.
 
-  return { verdict: reasons.length > 0 ? "transcode" : "direct-play", reasons };
+  const verdict = reasons.length > 0 ? "transcode" : "direct-play";
+
+  return { verdict, reasons };
 }

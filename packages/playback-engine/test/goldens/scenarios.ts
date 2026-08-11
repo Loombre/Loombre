@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 /**
- * The 32 canonical golden scenarios for src/args/builder.ts (docs/PLAYBACK.md
+ * The 34 canonical golden scenarios for src/args/builder.ts (docs/PLAYBACK.md
  * §6, Phase 3 §11 step 4's 25 + step 7b fix F4's two vaapi burn-in
  * scenarios, 26/27, + the step-7 owner-smoke VT tone-map real-execution
  * fix's hybrid-deinterlace scenario, 28, + the four scenarios that landed
- * with interpretation D's generalization to every §8.3 hw backend, 29-32).
- * Inputs are constructed HERE, in
+ * with interpretation D's generalization to every §8.3 hw backend, 29-32, +
+ * the open-GOP HEVC seek-restart strip pair (interpretation K, 2026-08-10),
+ * 33/34). Inputs are constructed HERE, in
  * test code — never read
  * from disk — per the step-4 mandate ("inputs constructed in test code,
  * snapshots as .json arrays checked in"). `goldens.spec.ts` (sibling) loads
@@ -32,8 +33,13 @@
  * interpretation D to every §8.3 hw backend changes 11/12/13 (each gains its
  * own -hwaccel_output_format) and adds 29-31 (route (a) with a rung
  * downscale on cuda/qsv/vaapi — the backend's own hw scaler, never software
- * `scale`) plus 32 (route (b) on a non-VT backend) — 32 files total (golden
- * discipline: each graph change landed with its goldens in the same PR).
+ * `scale`) plus 32 (route (b) on a non-VT backend). Interpretation K
+ * (2026-08-10, ffmpeg-verified) adds 33 (video-COPY, hevc openGop:true,
+ * withSeek:true -> the `-bsf:v filter_units=remove_types=8-9` strip is
+ * present) and its sibling 34 (same shape, withSeek:false -> the bsf is
+ * ABSENT — a fresh run starts at the file's true IDR) — 34 files total
+ * (golden discipline: each graph change landed with its goldens in the same
+ * PR).
  */
 import type {
   AudioStream,
@@ -74,6 +80,7 @@ function videoStream(overrides: Partial<VideoStream> = {}): VideoStream {
     dvProfile: null,
     dvBlCompatId: null,
     interlaced: false,
+    openGop: false,
     ...overrides,
   };
 }
@@ -669,6 +676,40 @@ export const GOLDEN_SCENARIOS: GoldenScenario[] = [
       audio: { action: "copy" },
       subtitle: { strategy: "none" },
       rung: RUNG_1080P_H264,
+    },
+    options: { withSeek: false },
+  },
+  {
+    id: "33-seek-copy-opengop-strip",
+    scenario:
+      "session-layer seek-restart regeneration of a video-COPY plan carrying an open-GOP hevc stream (video.openGop true, withSeek:true) — interpretation K: -bsf:v filter_units=remove_types=8-9 strips the RASL leading pictures the seek-restart join can't reference",
+    input: input({
+      media: media({ video: [videoStream({ codec: "hevc", openGop: true })] }),
+      device: device([HEVC_DEVICE_ENTRY]),
+      selection: SEL_V0_A1,
+    }),
+    planShape: {
+      container: "fmp4-hls",
+      video: { action: "copy", openGop: true },
+      audio: { action: "copy" },
+      subtitle: { strategy: "none" },
+    },
+    options: { withSeek: true },
+  },
+  {
+    id: "34-seek-off-copy-opengop-no-strip",
+    scenario:
+      "sibling of scenario 33, same video-COPY openGop:true plan but NOT a seek-restart (withSeek:false, plan()'s own default-args call) — the -bsf:v strip is ABSENT: a fresh run starts at the file's true IDR, nothing to fix",
+    input: input({
+      media: media({ video: [videoStream({ codec: "hevc", openGop: true })] }),
+      device: device([HEVC_DEVICE_ENTRY]),
+      selection: SEL_V0_A1,
+    }),
+    planShape: {
+      container: "fmp4-hls",
+      video: { action: "copy", openGop: true },
+      audio: { action: "copy" },
+      subtitle: { strategy: "none" },
     },
     options: { withSeek: false },
   },
