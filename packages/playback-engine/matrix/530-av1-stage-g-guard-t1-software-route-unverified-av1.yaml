@@ -1,0 +1,89 @@
+name: transcode — C1 finding 1 — T1 rule-(iii) route whose SOFTWARE row never verified av1 -> Stage G demotes every av1 rung
+why: >
+  C1 fable-review finding 1 (MODERATE, owner-adopted 2026-08-11), the
+  reviewer's exact repro. Same caps set as case 526 (nvenc verifies av1
+  encode and NOTHING else; the software row verifies h264/hevc and NOT
+  av1) — but at TIER 1, where §7.2 as originally written let the
+  rule-(iii) collapse keep its av1 rungs because "Tier 1 and above may
+  fall back to software AV1 encoding". The 2160p hevc SOURCE keeps the
+  table's untouched 2160p/hevc rung alive beside the five ×0.6 av1 rungs
+  the §7.1 swap produced, so the distinct target set is the MIXED
+  {hevc, av1}; nvenc's encode list cannot cover it, so §8.3's rules (i)
+  and (ii) both skip it and the one-route model terminates at rule (iii)
+  full software. The software encoder on THIS box never proved it can
+  encode av1 (its probe row says h264/hevc only — §7.3's D4 narrowing
+  means no `libsvtav1` passed the encode self-test here), so keeping the
+  rungs hands the arg builder an encoder name nothing on the machine has:
+  design law 4's "verified capabilities only" violated by the one corner
+  the eligibility gate cannot see, since `'hw'` eligibility is a fact
+  about a HARDWARE backend and rule (iii) does not use it. The refined
+  §7.2 clause demotes every av1 rung on ANY rule-(iii) route whose
+  software row lacks probe-verified av1 encode
+  (cause=software-route-no-av1), through the SAME shared primitive
+  §7.1(g) and the tier-0 arm already use. Tier 1+ software AV1 is NOT
+  withdrawn — case 522 keeps its `libsvtav1` route because THERE the
+  software row verifies av1. Tier cap does not run (tier 1), so all six
+  demoted/untouched rungs survive at their VERBATIM bitrates.
+input:
+  media:
+    fileId: file-530
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 6000000000
+    overallBitrateBps: 25500000
+    video:
+      - index: 0
+        codec: hevc
+        profile: main
+        level: 153
+        width: 3840
+        height: 2160
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 25000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: true
+        openGop: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 160000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device:
+    fixture: devices.av1-fmp4-capable
+  network:
+    fixture: networks.local
+  policy:
+    fixture: policies.av1-preferred-t1
+  caps:
+    fixture: caps.hw-av1-encode-only
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: transcode
+  reasons:
+    - video-interlaced
+    - software-fallback:encode
+    - av1-rung-demoted
+    - av1-rung-demoted
+    - av1-rung-demoted
+    - av1-rung-demoted
+    - av1-rung-demoted
+  container: fmp4-hls
+  ladder:
+    - { heightPx: 2160, videoBitrateBps: 16000000, audioBitrateBps: 384000, codec: hevc }
+    - { heightPx: 1080, videoBitrateBps: 4800000, audioBitrateBps: 384000, codec: hevc }
+    - { heightPx: 1080, videoBitrateBps: 2400000, audioBitrateBps: 160000, codec: hevc }
+    - { heightPx: 720, videoBitrateBps: 1800000, audioBitrateBps: 160000, codec: hevc }
+    - { heightPx: 480, videoBitrateBps: 900000, audioBitrateBps: 160000, codec: hevc }
+    - { heightPx: 360, videoBitrateBps: 480000, audioBitrateBps: 160000, codec: hevc }
