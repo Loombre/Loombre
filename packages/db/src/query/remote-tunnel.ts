@@ -25,6 +25,7 @@
 import type { Kysely, Selectable } from 'kysely';
 import type { DB, RemoteTunnelStateTable } from '../types.js';
 import { withTransaction, writeEvent } from '../internal/index.js';
+import { withRemotePathEnableGuard } from './remote-path-guard.js';
 
 export type RemoteTunnelStateRow = Selectable<RemoteTunnelStateTable>;
 
@@ -66,9 +67,19 @@ export interface EnableTunnelStateInput {
  * prior `enabled` value) that no path, including tunnel itself, was active,
  * so 'none' is the only value that can ever be correct here, not an
  * assumption this function makes independently.
+ *
+ * LD-9: that verification is no longer taken on trust. The write runs
+ * inside withRemotePathEnableGuard, which re-reads all three subsystems'
+ * `enabled` bits under a shared advisory lock IN THIS TRANSACTION and
+ * throws RemotePathConflictError (nothing written, nothing emitted) if any
+ * other path is enabled — closing the window between the service's own
+ * pre-check and this commit, which for the Tunnel path spans a
+ * multi-second Cloudflare provisioning call. previousPath:'none' below is
+ * therefore now GUARANTEED correct, not merely expected. See
+ * src/query/remote-path-guard.ts's design note.
  */
 export async function enableTunnelStateAndEmit(db: Kysely<DB>, input: EnableTunnelStateInput): Promise<RemoteTunnelStateRow> {
-  return withTransaction(db, async (trx) => {
+  return withRemotePathEnableGuard(db, 'tunnel', async (trx) => {
     const row = await trx
       .updateTable('remote_tunnel_state')
       .set({

@@ -5,9 +5,9 @@
 // ║  LD-9 DESIGN NOTE — serializing remote-path enables (V-SEC F2)        ║
 // ╚══════════════════════════════════════════════════════════════════════╝
 //
-// STATE.md "an upstream media server-study IMPLEMENTATION run" LD register, LD-9; closes
-// the "Loombre Remote" OPEN-ledger item `[OPEN — owner decision, V-SEC F2
-// LOW]`. This module is the whole mechanism; everything below is the
+// STATE.md's LD register, LD-9; closes the "Loombre Remote" OPEN-ledger
+// item `[OPEN — owner decision, V-SEC F2 LOW]`. This module is the whole
+// mechanism; everything below is the
 // argument for why it is shaped exactly this way. The Wave-D reviewer's
 // charter is to attack this note, so it states its own failure modes.
 //

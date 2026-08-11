@@ -19,7 +19,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { Kysely } from 'kysely';
+import { sql, type Kysely } from 'kysely';
 import { createDb } from '../src/db.js';
 import type { DB } from '../src/types.js';
 import {
@@ -28,6 +28,7 @@ import {
   RemoteActivePathInvariantViolationError,
   type RemoteActivePathFlags,
 } from '../src/query/remote-active-path.js';
+import { RemotePathConflictError } from '../src/query/remote-path-guard.js';
 import { enableRemoteWireguardAndEmit, disableRemoteWireguardAndEmit } from '../src/query/remote-wireguard.js';
 import { enableTunnelStateAndEmit, disableTunnelStateAndEmit } from '../src/query/remote-tunnel.js';
 import { enableRemoteDirectStateAndEmit, disableRemoteDirectStateAndEmit } from '../src/query/remote-direct.js';
@@ -128,22 +129,44 @@ describe('resolveActivePath — live composition across remote_wireguard_state/r
     expect(await resolveActivePath(db)).toBe('none');
   });
 
-  it('INVARIANT VIOLATION: two subsystems observed enabled simultaneously throws loudly rather than picking one (proves the safety net — the real staged enable flows are what should make this unreachable in production)', async () => {
+  // LD-9 rewrote this test's SETUP, not its assertion. It used to reach the
+  // two-paths-enabled state by calling two enable functions in a row —
+  // which is exactly the state V-SEC F2's race produced, and exactly what
+  // withRemotePathEnableGuard now makes impossible (that second call throws
+  // RemotePathConflictError; see test/remote-path-enable-serialization.spec.ts).
+  // The invariant throw itself is still the right response to the state, so
+  // the state is now constructed the only way that remains: a raw UPDATE that
+  // bypasses this package's enable writers entirely — standing in for direct
+  // SQL, a restored inconsistent backup, or a future fourth remote path whose
+  // author forgot the guard.
+  it('INVARIANT VIOLATION: two subsystems observed enabled simultaneously throws loudly rather than picking one (defense-in-depth — only reachable now by a writer that bypasses this package)', async () => {
     await enableRemoteWireguardAndEmit(db, { serverPublicKey: 'test-active-path-key-2', actorUserId: adminId, nowMs });
-    await enableTunnelStateAndEmit(db, {
-      hostname: 'media.example.com',
-      tunnelId: 'active-path-tunnel-2',
-      accountId: 'acct-2',
-      zoneId: 'zone-2',
-      dnsRecordId: 'record-2',
-      actorUserId: adminId,
-      nowMs,
-    });
+    await sql`UPDATE remote_tunnel_state SET enabled = true WHERE id = 1`.execute(db);
 
     await expect(resolveActivePath(db)).rejects.toThrow(RemoteActivePathInvariantViolationError);
 
+    await sql`UPDATE remote_tunnel_state SET enabled = false WHERE id = 1`.execute(db);
     await disableRemoteWireguardAndEmit(db, { actorUserId: adminId, nowMs });
     await disableTunnelStateAndEmit(db, { actorUserId: adminId, nowMs });
+    expect(await resolveActivePath(db)).toBe('none');
+  });
+
+  it('LD-9: the enable writers themselves refuse to create that state — a second, different-path enable throws instead of committing', async () => {
+    await enableRemoteWireguardAndEmit(db, { serverPublicKey: 'test-active-path-key-3', actorUserId: adminId, nowMs });
+    await expect(
+      enableTunnelStateAndEmit(db, {
+        hostname: 'media.example.com',
+        tunnelId: 'active-path-tunnel-3',
+        accountId: 'acct-3',
+        zoneId: 'zone-3',
+        dnsRecordId: 'record-3',
+        actorUserId: adminId,
+        nowMs,
+      }),
+    ).rejects.toBeInstanceOf(RemotePathConflictError);
+
+    expect(await resolveActivePath(db)).toBe('remote');
+    await disableRemoteWireguardAndEmit(db, { actorUserId: adminId, nowMs });
     expect(await resolveActivePath(db)).toBe('none');
   });
 });

@@ -16,25 +16,30 @@
 // All four now delegate to resolveActivePath below (apps/server's own
 // binding lives at apps/server/src/remote/remote-active-path.service.ts).
 //
-// RG15: "at most one of remote/tunnel/direct can be enabled at a time,
-// enforced by each path's staged enable flow returning 409 against another
-// active path." This function is the LAST line of defense proving that
-// invariant, not the mechanism that enforces it (the 409 checks at each
-// staged enable flow are) — if it ever observes MORE than one subsystem
-// reporting enabled=true simultaneously, that is a correctness bug
-// elsewhere (a 409 check that should have prevented this got bypassed, or
-// raced), and this function refuses to silently pick one and move on: it
-// logs loudly (console.error, matching apps/server/src/gateway/
+// RG15: "at most one of remote/tunnel/direct can be enabled at a time."
+// This function is the LAST line of defense proving that invariant, not
+// the mechanism that enforces it — if it ever observes MORE than one
+// subsystem reporting enabled=true simultaneously, that is a correctness
+// bug elsewhere, and this function refuses to silently pick one and move
+// on: it logs loudly (console.error, matching apps/server/src/gateway/
 // problem-json.filter.ts's own "structured, single-line, server-side-only"
 // convention for an unanticipated condition) and throws
 // RemoteActivePathInvariantViolationError, which the exception filter turns
 // into a real 500 problem+json response — visibly broken, never masked.
+//
+// LD-9 UPDATE: the mechanism that enforces the invariant is now
+// src/query/remote-path-guard.ts's withRemotePathEnableGuard, applied
+// inside all three enable writers. The per-flow 409 pre-checks in
+// apps/server remain as a fail-fast optimization, no longer as the
+// enforcement. This resolver and that guard read the three `enabled` bits
+// through the SAME function (readRemotePathFlags) so the thing that
+// enforces the invariant and the thing that reports its violation can
+// never disagree about what "enabled" means.
 
 import type { Kysely } from 'kysely';
 import type { DB } from '../types.js';
-import { getRemoteWireguardState } from './remote-wireguard.js';
-import { getRemoteTunnelState } from './remote-tunnel.js';
-import { getRemoteDirectInternalState, type RemotePathId } from './remote-direct.js';
+import { readRemotePathFlags, type RemoteActivePathFlags } from './remote-path-guard.js';
+import { type RemotePathId } from './remote-direct.js';
 
 /** Thrown by deriveActivePath (and therefore resolveActivePath) when more
  *  than one of the three remote-access subsystems reports enabled=true at
@@ -49,11 +54,10 @@ export class RemoteActivePathInvariantViolationError extends Error {
   }
 }
 
-export interface RemoteActivePathFlags {
-  remote: boolean;
-  tunnel: boolean;
-  direct: boolean;
-}
+/** Defined in src/query/remote-path-guard.ts (which owns readRemotePathFlags,
+ *  the one reader both this resolver and the enable guard use) and re-exported
+ *  here so the public barrel's existing export path is unchanged. */
+export type { RemoteActivePathFlags };
 
 /** Pure — the actual derivation table (8 combinations of the three
  *  subsystems' own `enabled` booleans), no I/O. resolveActivePath below is
@@ -65,17 +69,30 @@ export function deriveActivePath(flags: RemoteActivePathFlags): RemotePathId {
   if (flags.direct) enabledPaths.push('direct');
 
   if (enabledPaths.length > 1) {
-    // KNOWN LIMITATION (V-SEC F2, LOW — logged in STATE.md's ledger, owner-
-    // decision follow-up): the per-path staged enable does a non-transactional
-    // check-then-commit, so two concurrent enables of DIFFERENT paths (e.g. a
-    // Tunnel enable's multi-second Cloudflare provisioning racing a WG enable)
-    // can both land, reaching this state and 500-ing subsequent remote READS.
-    // It is admin-only, low-probability, and RECOVERABLE by a normal disable
-    // of either path (the disable flows do NOT consult this resolver), never
-    // DB surgery. Fully closing the race means serializing enables under an
-    // advisory lock held across their external side effects — deferred because
-    // a lock not released on a thrown side-effect would be a WORSE permanent
-    // lockout than the race it prevents.
+    // BELIEVED UNREACHABLE (LD-9 closed V-SEC F2 — this comment used to read
+    // "KNOWN LIMITATION" and describe the live race that produced this state).
+    //
+    // WHY it is now believed unreachable: every write that sets one of these
+    // three `enabled` bits to true goes through enableRemoteWireguardAndEmit /
+    // enableTunnelStateAndEmit / enableRemoteDirectStateAndEmit, and all three
+    // run their row write inside withRemotePathEnableGuard (src/query/
+    // remote-path-guard.ts) — ONE transaction that first takes a shared
+    // transaction-scoped advisory lock and then re-reads all three bits under
+    // it. Two concurrent enables of different paths therefore serialize, and
+    // the second one sees the first's committed row and rejects with
+    // RemotePathConflictError instead of committing. The old race window (a
+    // non-transactional check-then-commit spanning a multi-second Cloudflare
+    // provisioning call) no longer exists: the check and the commit are the
+    // same transaction. See that module's design note for the full argument,
+    // including why the lock cannot be left held.
+    //
+    // WHY the throw stays anyway: "believed", not "proven". Reaching this
+    // branch now requires a writer that bypasses this package's three enable
+    // functions entirely — direct SQL against the state rows, a restored
+    // backup that was already inconsistent, or a future FOURTH remote path
+    // whose author forgot the guard. Each of those is exactly the case where
+    // silently picking one path would be worse than a loud 500, so the
+    // defense-in-depth response is unchanged.
     console.error(
       JSON.stringify({
         level: 'error',
@@ -92,18 +109,11 @@ export function deriveActivePath(flags: RemoteActivePathFlags): RemotePathId {
 }
 
 /** THE canonical resolver (RG15/WG2): reads remote_wireguard_state,
- *  remote_tunnel_state, and the Direct path's internal state row (all
- *  three already have their own getter in this package — see each
- *  module's own header) and derives the single active path. */
+ *  remote_tunnel_state, and the Direct path's internal state row and
+ *  derives the single active path. Takes NO lock and is never called from
+ *  inside the enable guard's critical section — reads and the disable
+ *  flows must never be blocked by an enable in flight (LD-9 design note
+ *  §7). */
 export async function resolveActivePath(db: Kysely<DB>): Promise<RemotePathId> {
-  const [wireguard, tunnel, direct] = await Promise.all([
-    getRemoteWireguardState(db),
-    getRemoteTunnelState(db),
-    getRemoteDirectInternalState(db),
-  ]);
-  return deriveActivePath({
-    remote: wireguard.enabled,
-    tunnel: tunnel.enabled,
-    direct: direct.enabled,
-  });
+  return deriveActivePath(await readRemotePathFlags(db));
 }
