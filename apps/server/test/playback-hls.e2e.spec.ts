@@ -183,6 +183,41 @@ async function markSessionActiveWithProducedSegment(sessionId: string, sessionDi
   }
 }
 
+/** Exactly what the worker's segment-ahead throttle writes when it
+ *  SIGSTOPs a too-far-ahead encode (apps/worker/src/transcode/throttle.ts
+ *  'suspend-for-throttle'). */
+async function markSessionSuspendedByThrottle(sessionId: string): Promise<void> {
+  const db = createDb(process.env["DATABASE_URL"]!);
+  try {
+    await db
+      .updateTable("playback_sessions")
+      .set({ status: "suspended", suspended_by_throttle: true, updated_at_ms: Date.now() })
+      .where("id", "=", sessionId)
+      .execute();
+  } finally {
+    await db.destroy();
+  }
+}
+
+/** The OTHER cause of `status = 'suspended'` (migrations/0012's
+ *  `suspended_by_throttle` column comment / opus review finding 9):
+ *  server-authored heartbeat-staleness, disambiguated from the worker's
+ *  own throttle-suspend by `suspended_by_throttle = false`. Exactly what a
+ *  stale-heartbeat sweeper would leave behind — everything the throttle
+ *  test above sets EXCEPT suspended_by_throttle. */
+async function markSessionSuspendedByHeartbeatStale(sessionId: string): Promise<void> {
+  const db = createDb(process.env["DATABASE_URL"]!);
+  try {
+    await db
+      .updateTable("playback_sessions")
+      .set({ status: "suspended", suspended_by_throttle: false, updated_at_ms: Date.now() })
+      .where("id", "=", sessionId)
+      .execute();
+  } finally {
+    await db.destroy();
+  }
+}
+
 describe("GET /playback/sessions/{id}/hls/media.m3u8", () => {
   it("503 + Retry-After before the worker has produced anything (status still 'created')", async () => {
     const { sessionId } = await createSimulatedTranscodeSession();
@@ -202,6 +237,52 @@ describe("GET /playback/sessions/{id}/hls/media.m3u8", () => {
     expect(res.status).toBe(200);
     expect(res.headers["content-type"]).toMatch(/application\/vnd\.apple\.mpegurl/);
     expect(res.headers["cache-control"]).toBe("private, no-store");
+    expect(res.text).toBe(playlistText);
+  }, 15_000);
+
+  it("200 while throttle-SUSPENDED — a paused-ahead encode still serves everything already produced", async () => {
+    // Field bug (2026-08-08 owner QA, live-DB verified): the segment-ahead
+    // throttle SIGSTOPs ffmpeg at ahead > 10 and writes status='suspended'
+    // — but this manifest route only served status='active', so every
+    // hls.js event-playlist re-poll got 503 once the throttle kicked in.
+    // The client then stalled on its FIRST playlist snapshot (~4 segments,
+    // the "timeline always shows 20-24s then pauses" report), never
+    // requested past segment 3, requested_segment never climbed, ahead
+    // never dropped to the resume threshold — a deadlock the throttle
+    // design cannot escape without this route serving suspended sessions.
+    // Everything already produced sits on disk; suspended is exactly the
+    // state in which serving it is the POINT.
+    const { sessionId, sessionDir } = await createSimulatedTranscodeSession();
+    mkdirSync(sessionDir, { recursive: true });
+    const playlistText = "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-TARGETDURATION:6\n#EXTINF:6,\nrun0/s000000.m4s\n";
+    writeFileSync(path.join(sessionDir, "media.m3u8"), playlistText, "utf8");
+    await markSessionActiveWithProducedSegment(sessionId, sessionDir, 14);
+    await markSessionSuspendedByThrottle(sessionId);
+
+    const res = await admin().get(`/playback/sessions/${sessionId}/hls/media.m3u8`);
+    expect(res.status).toBe(200);
+    expect(res.text).toBe(playlistText);
+  }, 15_000);
+
+  it("200 while heartbeat-stale SUSPENDED — the OTHER cause of status='suspended' (opus review finding 9) is served identically", async () => {
+    // migrations/0012's suspended_by_throttle column disambiguates TWO
+    // independent causes sharing one `status='suspended'` enum value: the
+    // worker's own segment-ahead throttle (suspended_by_throttle=true,
+    // covered above) and a server-side heartbeat-staleness sweep
+    // (suspended_by_throttle=false). Both leave everything already
+    // produced sitting on disk, and both are exactly the resume path an
+    // authed owner's manifest re-fetch needs — this route intentionally
+    // does not (and must not need to) distinguish the two to decide
+    // servability, see hls-file.controller.ts's own comment.
+    const { sessionId, sessionDir } = await createSimulatedTranscodeSession();
+    mkdirSync(sessionDir, { recursive: true });
+    const playlistText = "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-TARGETDURATION:6\n#EXTINF:6,\nrun0/s000000.m4s\n";
+    writeFileSync(path.join(sessionDir, "media.m3u8"), playlistText, "utf8");
+    await markSessionActiveWithProducedSegment(sessionId, sessionDir, 14);
+    await markSessionSuspendedByHeartbeatStale(sessionId);
+
+    const res = await admin().get(`/playback/sessions/${sessionId}/hls/media.m3u8`);
+    expect(res.status).toBe(200);
     expect(res.text).toBe(playlistText);
   }, 15_000);
 
