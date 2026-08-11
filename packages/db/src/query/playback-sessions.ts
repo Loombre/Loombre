@@ -760,6 +760,59 @@ export async function requestRungSwitch(
 }
 
 /**
+ * BOTH intentions of ONE request, in ONE statement (docs/PLAYBACK.md
+ * §9.1.7) — the write-side counterpart of the worker's single-restart rule.
+ *
+ * A single segment GET can carry a seek AND a switch: a far-ahead index
+ * under a `v{K}` naming a rung other than the active one. hls.js produces
+ * exactly that whenever an ABR level change coincides with a scrub, or when
+ * a level switch's first fragment request lands past the produced edge.
+ * The worker already reads both columns in the same tick and spawns ONE run
+ * for the pair; issuing the two writes as separate statements left a window
+ * in which a poll tick observes only the first, so the session pays a
+ * handoff restart at the live-edge continuation origin AND THEN a seek
+ * restart at the requested origin — two of the most expensive operations
+ * this runtime performs for one client intention, with an intermediate run
+ * producing bytes nobody asked for. One statement makes that interleaving
+ * inexpressible rather than merely unlikely.
+ *
+ * THE RUNG HALF KEEPS `requestRungSwitch`'s ABSORB-ON-MATCH, and the seek
+ * half must NOT inherit it — which is why the absorb lives in a CASE
+ * expression rather than the WHERE clause. Hoisting `active_rung_index IS
+ * DISTINCT FROM K` into the WHERE would make a pinned client's seek within
+ * its own rung (K == active, a very common shape) write nothing at all,
+ * silently dropping a real seek. The CASE also leaves an unconsumed pending
+ * rung for a DIFFERENT rung untouched: an absorbed rung half is a no-op on
+ * the column, never a clear.
+ *
+ * Own-session scoping, terminal guard, and the "write what the caller
+ * already decided" posture are identical to both halves it replaces.
+ */
+export async function requestSeekWithRungSwitch(
+  db: Kysely<DB>,
+  ctx: ViewerContext,
+  id: string,
+  seekTargetMs: number,
+  ladderRungIndex: number,
+  nowMs: number
+): Promise<PlaybackSessionRow | undefined> {
+  const row = await db
+    .updateTable('playback_sessions')
+    .set({
+      seek_target_ms: seekTargetMs,
+      pending_rung_index: sql<number | null>`CASE WHEN active_rung_index IS DISTINCT FROM ${ladderRungIndex} THEN ${ladderRungIndex} ELSE pending_rung_index END`,
+      updated_at_ms: nowMs,
+    })
+    .where('id', '=', id)
+    .where('user_id', '=', ctx.userId)
+    .where('status', 'not in', ['ended', 'failed'])
+    .returningAll()
+    .executeTakeFirst();
+  if (!row) return undefined;
+  return getPlaybackSessionForUser(db, ctx, id);
+}
+
+/**
  * Heartbeat-staleness suspend candidates (docs/PLAYBACK.md §9: "no
  * heartbeat for 90s -> suspend"): sessions in `active` whose last heartbeat
  * (or, absent one, start time) is older than `cutoffMs`. NOT

@@ -1101,6 +1101,51 @@ describe("GET /playback/sessions/{id}/hls/v{K}/… — the variant path family (
     expect(res.status).toBe(200);
     expect((await readRungColumns(sessionId)).pending).toBe(1);
   }, 20_000);
+
+  // §9.1.7's WRITE side (pre-D consolidation item 3a, C2 review finding
+  // f5). One GET, both intentions: a far-ahead index (seek) under a `v{K}`
+  // naming a different rung (switch). hls.js produces exactly this when a
+  // level change coincides with a scrub, or when a level switch's first
+  // fragment lands past the produced edge. Both columns must come out of
+  // ONE statement — a worker tick that observed only the switch would pay
+  // a handoff restart at the live-edge origin and then the seek's restart,
+  // two restarts for one intention.
+  it("a coincident far-ahead SEGMENT GET under a new v{K} records BOTH columns (the §9.1.7 pair)", async () => {
+    const { sessionId } = await activeSessionWithPlaylist();
+    await setActiveRung(sessionId, 0);
+
+    const res = await admin().get(`/playback/sessions/${sessionId}/hls/v1/run0/s000030.m4s`);
+    expect(res.status).toBe(503);
+    expect(res.headers["retry-after"]).toBe("1");
+
+    expect((await readRungColumns(sessionId)).pending).toBe(1);
+    const db = createDb(process.env["DATABASE_URL"]!);
+    try {
+      const row = await db.selectFrom("playback_sessions").select(["seek_target_ms"]).where("id", "=", sessionId).executeTakeFirstOrThrow();
+      expect(row.seek_target_ms).not.toBeNull();
+    } finally {
+      await db.destroy();
+    }
+  }, 20_000);
+
+  it("a far-ahead GET under the ALREADY-ACTIVE v{K} still records the seek (the rung half absorbs, the seek must not)", async () => {
+    const { sessionId } = await activeSessionWithPlaylist();
+    await setActiveRung(sessionId, 1);
+
+    const res = await admin().get(`/playback/sessions/${sessionId}/hls/v1/run0/s000030.m4s`);
+    expect(res.status).toBe(503);
+
+    // Absorb-on-match applies to the RUNG half only — folding both into one
+    // statement must never let a pinned client's seek be absorbed with it.
+    expect((await readRungColumns(sessionId)).pending).toBeNull();
+    const db = createDb(process.env["DATABASE_URL"]!);
+    try {
+      const row = await db.selectFrom("playback_sessions").select(["seek_target_ms"]).where("id", "=", sessionId).executeTakeFirstOrThrow();
+      expect(row.seek_target_ms).not.toBeNull();
+    } finally {
+      await db.destroy();
+    }
+  }, 20_000);
 });
 
 describe("served playlist tag model over HTTP (§9.1.5, owner-decision V3)", () => {
