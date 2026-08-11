@@ -77,6 +77,12 @@ async function eventsOfType(type: string): Promise<RawEventRow[]> {
 }
 
 beforeAll(async () => {
+  // Reset BEFORE the first connection: reset is also what AUTO-PROVISIONS
+  // the derived test database (migrate.mjs ensureDatabaseExists), and after
+  // a db:cleanup-test-dbs sweep this file can be the first suite to run —
+  // connecting first would die on "database does not exist" (seen live in
+  // the 2026-08-10 LD-wave gate, the run right after the first cleanup).
+  run(path.join(PKG_ROOT, 'scripts', 'migrate.mjs'), ['reset']);
   db = createDb(DATABASE_URL);
   rawClient = new pg.Client({ connectionString: DATABASE_URL });
   await rawClient.connect();
