@@ -366,6 +366,9 @@ export {
   // migrations/0044 (Wave C2, docs/PLAYBACK.md §9.1) — the server half of
   // the slot-handoff control channel; `requestSeek`'s exact counterpart.
   requestRungSwitch,
+  // §9.1.7's write side: ONE statement carrying both intentions of one
+  // request, so a poll tick can never observe half a coincident pair.
+  requestSeekWithRungSwitch,
   listHeartbeatStalePlaybackSessions,
   suspendStalePlaybackSession,
   countActiveTranscodeSessions,
