@@ -1024,6 +1024,37 @@ V5 manifestUrl→master YES; V6 T1+ uncapped YES; V7 both bounded trade-offs
 accepted. Spec merged to main; C2 BUILD lane (opus) spawned. Migration
 0044 assigned to the build; ENGINE_VERSION 0.10.1→0.11.0 expected.
 
+### Wave C2 — CLOSED 2026-08-11 (exit gate MET; fable review ACCEPT-WITH-FIXES)
+
+Review verdict + both review fixes merged (c2c137ce, two-parent, full branch
+history ancestor of main). REVIEW'S CONFIRMED CATCHES: (HIGH, fixed
+555f63ba) ENDLIST prune-freeze RESURRECTED the pruned head — frozen playlist
+listed deleted files + media-sequence collapsed to 0, firing on essentially
+every completed watch >2min; the build's own pin was a timing coin flip
+(review observed both outcomes) — made deterministic; (MODERATE, fixed
+31e9c761) spawn-after-observed-exit ordering had only sampling coverage —
+now a deterministic pin failing in 2.5s under mutation. Slot-handoff
+invariant HELD against every constructed interleaving (throttle-suspended
+switch, pid-unrecorded race, crash-between-exit-and-spawn, racing switches,
+queue retryLimit:0 closes the two-loops avenue). All build claims
+independently reproduced (497 byte-identical re-derived from a scratch
+rebuild of main's engine; 6 churn cases hand-checked; oasdiff 0/3/1
+reproduced; 159 SDK ops). REPORTED FINDINGS → pre-D consolidation lane:
+(f3 LOW-MOD) §9.1.7 absorption-narrowing conjunct unpinned; (f4 LOW)
+consumePendingRungIndex exact-value guard unpinned (self-healing bounds
+harm to one redundant handoff); (f5 LOW) two-statement seek+rung write can
+cost two sequential restarts, late old-variant GET can phantom-switch-back,
+stale pending==active never cleared. INTEGRATION INCIDENT (orchestrator
+error, recovered): the merge was run in a backgrounded PIPED chain — the
+pipe masked a STATE.md merge conflict (the build lane's uncharted ledger
+commit colliding with orchestrator checkpoints), the gate ran green on the
+97 auto-merged files, and a blind add-A commit completed the merge WITH raw
+conflict markers in STATE.md under a wrong message; recovered by resolving
+both sections + --amend (parents preserved; gate verdict stands — only
+STATE.md text differed; Wave D's final gate re-covers). Memory hazard #2
+updated with the compound rule. The lane's ledger entry commit-count
+corrected 11→15 per review finding 6.
+
 **C2 BUILD checkpoint (2026-08-11): DONE — orchestrator-verified** (matrix
 543/543 + all five load-bearing specs green INDIVIDUALLY: seek-rung-switch
 5, codecs fence 4, master-playlist 24 at its real colocated path
