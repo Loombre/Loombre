@@ -93,7 +93,7 @@ describe("runner + shutdown wiring (C1)", () => {
     expect(runner).toMatch(/registerTranscodeRun\(/);
   });
 
-  it("index.ts's shutdown() terminates in-flight transcode runs", () => {
+  it("index.ts's shutdown() AWAITS terminateAllTranscodeRuns(), before the concurrent stop group (D-2)", () => {
     const source = readFileSync(join(WORKER_SRC, "index.ts"), "utf8");
     const shutdownStart = source.indexOf("async function shutdown(");
     expect(shutdownStart, "shutdown() must exist in apps/worker/src/index.ts").toBeGreaterThan(-1);
@@ -101,7 +101,18 @@ describe("runner + shutdown wiring (C1)", () => {
     // thing before main()'s helpers, and anchoring on its start is what
     // makes this an assertion about the SHUTDOWN path specifically.
     const shutdownBody = source.slice(shutdownStart, source.indexOf("\n}\n", shutdownStart));
-    expect(shutdownBody).toMatch(/terminateAllTranscodeRuns\(/);
+
+    // D-2: the previous pin matched /terminateAllTranscodeRuns\(/, which a
+    // `void terminateAllTranscodeRuns()` mutation still satisfies — and that
+    // mutation is exactly the C1 regression, because shutdown would then race
+    // ahead to queue.stop()/db.destroy()/process exit while the detached
+    // ffmpeg children are still being killed, re-orphaning them. So the call
+    // must be AWAITED, not merely present. (This is the strict-subset check a
+    // source regex can honestly make; the end-to-end "children are actually
+    // gone after a simulated shutdown" proof is
+    // lifecycle.integration.spec.ts scenario (a).)
+    expect(shutdownBody).toMatch(/await\s+terminateAllTranscodeRuns\(/);
+
     expect(source).toMatch(/import\s*\{[^}]*terminateAllTranscodeRuns[^}]*\}\s*from\s*"\.\/transcode\/index\.js"/s);
   });
 });

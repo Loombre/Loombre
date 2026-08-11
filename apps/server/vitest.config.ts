@@ -21,7 +21,7 @@
 // down with it, which is what surfaced as the "Worker exited unexpectedly"
 // pool errors in those same runs (all 943 tests passed; the run failed
 // anyway). Locally the scale is 1, so both limits keep their stock values.
-import { defineConfig } from "vitest/config";
+import { configDefaults, defineConfig } from "vitest/config";
 
 const TIME_SCALE = Math.max(1, Number(process.env["LOOMBRE_TEST_TIME_SCALE"] ?? "1") || 1);
 
@@ -30,5 +30,12 @@ export default defineConfig({
     fileParallelism: false,
     testTimeout: 5_000 * TIME_SCALE,
     hookTimeout: 10_000 * TIME_SCALE,
+    // Never collect a worktree's copy of these specs: a stray `.claude/
+    // worktrees/**` collection would run a DUPLICATE of these live-DB suites
+    // and race a concurrent `DROP SCHEMA public CASCADE` against the same
+    // Postgres, dropping the schema out from under a live suite (the exact
+    // mid-suite-401 flake this exclude — alongside the per-suite distinct DB
+    // names — closes by construction).
+    exclude: [...configDefaults.exclude, "**/.claude/worktrees/**"],
   },
 });

@@ -14,7 +14,7 @@
 // fragment belongs to the timeline it is currently buffering.
 
 import { describe, expect, it } from "vitest";
-import { withPlaylistSequenceTags } from "./served-playlist.js";
+import { clampSeekTargetMs, withPlaylistSequenceTags } from "./served-playlist.js";
 
 /** Two runs, nothing pruned — exactly what the worker writes. */
 const UNPRUNED = [
@@ -126,5 +126,40 @@ describe("withPlaylistSequenceTags: EXT-X-DISCONTINUITY-SEQUENCE (§9.1.5 rule 3
   it("degrades to the input on an unparseable playlist rather than throwing", () => {
     expect(withPlaylistSequenceTags("")).toBe("");
     expect(withPlaylistSequenceTags("not a playlist")).toBe("not a playlist");
+  });
+});
+
+// D-1b (R1 coverage note): clampSeekTargetMs was pinned only at the e2e layer.
+// A pure unit pin for the [0, durationMs] clamp itself, so the boundary math
+// can't silently drift without an e2e round-trip catching it.
+describe("clampSeekTargetMs: [0, durationMs]", () => {
+  it("passes an in-range target through, rounded to a whole millisecond", () => {
+    expect(clampSeekTargetMs(1234.6, 60_000)).toBe(1235);
+  });
+
+  it("clamps a negative target up to the lower bound 0", () => {
+    expect(clampSeekTargetMs(-500, 60_000)).toBe(0);
+  });
+
+  it("clamps a target past the end down to durationMs (the upper bound)", () => {
+    expect(clampSeekTargetMs(75_000, 60_000)).toBe(60_000);
+    expect(clampSeekTargetMs(60_000, 60_000)).toBe(60_000); // the boundary itself is allowed
+  });
+
+  it("applies ONLY the lower bound when durationMs is null (an unprobed file) — no ceiling to a duration nobody measured", () => {
+    expect(clampSeekTargetMs(999_999_999, null)).toBe(999_999_999);
+    expect(clampSeekTargetMs(-10, null)).toBe(0);
+  });
+
+  it("treats a non-positive or non-finite durationMs the same as null (lower bound only)", () => {
+    expect(clampSeekTargetMs(5_000, 0)).toBe(5_000);
+    expect(clampSeekTargetMs(5_000, -1)).toBe(5_000);
+    expect(clampSeekTargetMs(5_000, Number.POSITIVE_INFINITY)).toBe(5_000);
+    expect(clampSeekTargetMs(5_000, Number.NaN)).toBe(5_000);
+  });
+
+  it("a non-finite target collapses to 0 rather than propagating NaN/Infinity into the clamp", () => {
+    expect(clampSeekTargetMs(Number.NaN, 60_000)).toBe(0);
+    expect(clampSeekTargetMs(Number.POSITIVE_INFINITY, 60_000)).toBe(0);
   });
 });

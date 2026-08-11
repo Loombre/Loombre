@@ -77,7 +77,7 @@
   font-family: var(--font-mono);
   font-size: var(--mono-sm);
   letter-spacing: var(--track-mono);
-  color: var(--color-text-subtle);
+  color: var(--color-text-muted);
 }
 
 .chevron {

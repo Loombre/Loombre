@@ -365,8 +365,10 @@ directions if the engine and the contract disagree.
 `ladder-variant-capped` (LD-6/LD-16, Wave C2 — owner-decision V2 in §9.1.11;
 a closed-enum addition and therefore a contract PR per the rule above) fires
 ONCE per plan when §7.5's Tier-0 advertised-variant cap trims the final
-ladder. `detail` is `tier=0 cap=<n> dropped=<heightPx@videoBitrateBps|...>`
-— one reason listing every dropped rung, not one per rung, because the cap
+ladder. `detail` is `cap=<n> dropped=<heightPx>p@<videoBitrateBps>[,…]`
+(e.g. `cap=3 dropped=1080p@8000000,720p@5000000`) — one reason listing
+every dropped rung comma-joined in table order, not one per rung, because
+the cap
 is a single decision with a single cause (contrast `av1-rung-demoted`,
 which is per-rung because each rung demotes for its own cause). It exists
 for the same design-law-3 duty: the admin asking "why does this box
@@ -753,7 +755,8 @@ column (§6 interp. M). Two battery refinements ship with C1:
   `av1_videotoolbox` encoder exists in any ffmpeg; no Apple Silicon has
   AV1 encode hardware) — already true in `tables.ts`, now load-bearing:
   it is what makes the Tier-0 refusal path REALLY verifiable on the
-  project's own Apple Silicon hardware (§7.4 honesty register).
+  project's own Apple Silicon hardware — an honestly-exercised refusal the
+  test suite can actually reach, not one that is merely asserted.
 
 ### 7.4 C1 change register (contract surface, coordination, owner decisions)
 

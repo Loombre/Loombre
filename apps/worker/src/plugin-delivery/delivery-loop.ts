@@ -500,25 +500,35 @@ export function startPluginDeliveryLoop(deps: PluginDeliveryLoopDeps): PluginDel
         plugins.map(async (plugin) => {
           let breaker = breakers.get(plugin.id);
           if (!breaker) {
-            // C5.1 fix wave (closes deferred LPP L-5, worker-side — mirrors
-            // apps/server/src/plugins/plugin-health.service.ts's identical
-            // fix): seed this breaker's failure count from the durable
-            // plugins.consecutive_failures counter on its FIRST
+            // C5.1 + F2 fix waves (closes deferred LPP L-5, worker-side —
+            // mirrors apps/server/src/plugins/plugin-health.service.ts's
+            // identical fix): seed this breaker's failure count on its FIRST
             // construction — effectively "at boot" for this lazily-built
-            // per-loop-instance map — so a worker restart mid-window (or
-            // another process, e.g. apps/server's periodic health check,
-            // having already recorded failures for a plugin this loop
-            // instance has never delivered to yet) is not silently
-            // discarded. listEventSubscriberPlugins' own narrow projection
-            // (EventSubscriberPlugin) does not carry consecutive_failures,
-            // so this is the ONE extra read — bounded by plugin count, not
-            // by poll tick, since it only runs on a breaker's first
-            // construction per process lifetime.
+            // per-loop-instance map — so a worker restart mid-window is not
+            // silently handed a fresh 5-strike budget. The seed is the MAX of
+            // the TWO durable counters this plugin can have accrued failures
+            // in:
+            //   * plugins.consecutive_failures — a CROSS-PROCESS signal
+            //     written by apps/server's periodic health check on every
+            //     check, and by THIS loop only on a full trip
+            //     (maybeDisableOnBreakerTrip); and
+            //   * plugin_delivery_cursors.consecutive_failures — THIS lane's
+            //     OWN durable counter, where its ORDINARY sub-threshold (1..4)
+            //     delivery failures accumulate (delivery-loop header: ordinary
+            //     non-tripping failures "never touch plugins.consecutive_
+            //     failures ... only ... this lane's own plugin_delivery_
+            //     cursors row").
+            // C5.1 originally seeded from plugins.consecutive_failures ALONE,
+            // which is still 0 mid-window for the delivery path (no trip yet),
+            // so a restart discarded the cursor's near-trip progress — the
+            // exact regression C5.1 meant to close, still open for THIS path.
+            // Neither projection (EventSubscriberPlugin) carries these, so this
+            // is TWO extra reads — bounded by plugin count, not poll tick,
+            // since it only runs on a breaker's first construction per process.
             const seedAtMs = resolved.now();
-            const durable = await getPluginById(resolved.db, plugin.id);
-            breaker = new PluginCircuitBreaker(
-              durable ? { seed: { consecutiveFailures: durable.consecutive_failures, atMs: seedAtMs } } : {},
-            );
+            const [durable, cursorRow] = await Promise.all([getPluginById(resolved.db, plugin.id), getDeliveryCursor(resolved.db, plugin.id)]);
+            const seedFailures = Math.max(durable?.consecutive_failures ?? 0, cursorRow?.consecutive_failures ?? 0);
+            breaker = new PluginCircuitBreaker(seedFailures > 0 ? { seed: { consecutiveFailures: seedFailures, atMs: seedAtMs } } : {});
             breakers.set(plugin.id, breaker);
           }
           try {

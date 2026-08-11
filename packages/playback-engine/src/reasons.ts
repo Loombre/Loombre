@@ -61,11 +61,14 @@ export type FixedInformationalReasonCode =
   /**
    * LD-7 / owner-decision D1 (docs/PLAYBACK.md §4/§7.4, Wave C1). Fires once
    * per ladder rung whose configured/selected `av1` codec was demoted to
-   * `hevc`/`h264` by §7.1(g)'s normalization step or §7.2's Stage-G tier-0
-   * software-route guard. `detail` is
-   * `cause=<tier0-no-hw-av1|device-no-av1|no-av1-encoder|tier0-software-route>
+   * `hevc`/`h264` by §7.1(g)'s normalization step (three causes) or §7.2's
+   * Stage-G software-route guard — BOTH its tier-0 arm (`tier0-software-route`)
+   * and its verified-capabilities arm (`software-route-no-av1`), five in all.
+   * `detail` is
+   * `cause=<tier0-no-hw-av1|device-no-av1|no-av1-encoder|tier0-software-route|software-route-no-av1>
    * demotedTo=<hevc|h264> heightPx=<n>` — formatted in exactly one place,
-   * `src/av1.ts`'s `av1DemotionReason`. It exists because a silent demotion
+   * `src/av1.ts`'s `av1DemotionReason` (whose `Av1DemotionCause` enum is the
+   * source of truth for this list). It exists because a silent demotion
    * would leave design law 3's "why is this transcoding like this?"
    * unanswerable for AV1: the admin asking "why is this rung not AV1?" must
    * get an answer from the plan itself.

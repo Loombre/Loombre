@@ -87,7 +87,7 @@
   font-family: var(--font-mono);
   font-size: var(--mono-xs);
   letter-spacing: var(--track-mono);
-  color: var(--color-text-hint);
+  color: var(--color-text-muted);
   line-height: var(--leading-normal);
 }
 

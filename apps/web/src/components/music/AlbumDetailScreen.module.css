@@ -93,7 +93,7 @@
   font-size: var(--mono-md);
   font-weight: var(--weight-medium);
   letter-spacing: var(--track-mono-wide);
-  color: var(--color-text-subtle);
+  color: var(--color-text-muted);
   margin-bottom: var(--space-sm);
 }
 
@@ -196,7 +196,7 @@
   font-family: var(--font-mono);
   font-size: var(--mono-xs);
   letter-spacing: var(--track-mono);
-  color: var(--color-text-subtle);
+  color: var(--color-text-muted);
 }
 
 .upNextRow {

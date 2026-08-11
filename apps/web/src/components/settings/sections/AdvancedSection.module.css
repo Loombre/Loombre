@@ -68,5 +68,5 @@
   font-family: var(--font-mono);
   font-size: var(--mono-sm);
   letter-spacing: var(--track-mono-wide);
-  color: var(--color-text-hint);
+  color: var(--color-text-muted);
 }

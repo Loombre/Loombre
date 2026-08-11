@@ -8,7 +8,7 @@
 // `DROP SCHEMA public CASCADE` calls against the same live database — so
 // this package forces sequential file execution.
 
-import { defineConfig } from 'vitest/config';
+import { configDefaults, defineConfig } from 'vitest/config';
 
 // CI-runner time scaling (same mechanism as apps/server + apps/worker;
 // ci.yml sets LOOMBRE_TEST_TIME_SCALE=3, macOS 10, passed through turbo's
@@ -24,5 +24,8 @@ export default defineConfig({
     fileParallelism: false,
     testTimeout: 5_000 * TIME_SCALE,
     hookTimeout: 10_000 * TIME_SCALE,
+    // Never collect a worktree's copy of these live-DB specs (see
+    // apps/server/vitest.config.ts's exclude comment).
+    exclude: [...configDefaults.exclude, '**/.claude/worktrees/**'],
   },
 });

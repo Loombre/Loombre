@@ -22,15 +22,16 @@
 }
 
 /* S2 fix (Wave-3 fidelity audit, mono-label law): cast role reads as a
-   mono caption everywhere else in the app (prototype:
-   `font:500 8.5px 'IBM Plex Mono';color:#61666E` — no tracking/uppercase
-   here, unlike the chip labels elsewhere, matching the prototype
-   verbatim). */
+   mono caption everywhere else in the app (prototype: `font:500 8.5px
+   'IBM Plex Mono'` — no tracking/uppercase here, unlike the chip labels
+   elsewhere). LD-14/AUD-A4v3-003: the prototype's #61666E subtle tier is
+   banned on the --mono-* scale, so the color is --color-text-muted
+   (7.4:1, AA-clean). */
 .role {
   font-family: var(--font-mono);
   font-size: var(--mono-xs);
   font-weight: var(--weight-medium);
-  color: var(--color-text-subtle);
+  color: var(--color-text-muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

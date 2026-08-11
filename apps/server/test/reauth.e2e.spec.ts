@@ -22,10 +22,16 @@
 // proves the happy/wrong/missing/429/event/collision/floor shape of THIS
 // lane's own work, same scope discipline as password-recovery.e2e.spec.ts.
 //
-// Runs against the SAME shared "_server_test" database every other
-// apps/server e2e suite in this package uses (vitest.config.ts forces
-// sequential file execution for exactly this reason) — self-sufficient
-// reset+seed in its own beforeAll.
+// Runs against its OWN "<base>_server_test_reauth" database — the per-suite
+// isolation convention every other apps/server e2e suite follows —
+// self-sufficient reset+seed in its own beforeAll. (Previously it shared the
+// single "<base>_server_test" name with five sibling suites; a concurrent
+// reset of that shared name — e.g. from a stray worktree collection — could
+// DROP SCHEMA public CASCADE out from under a live suite mid-run, surfacing
+// as getUserById returning undefined -> a spurious mid-suite 401.
+// vitest.config.ts still forces sequential file execution, but the distinct
+// name removes the shared-name collision by construction rather than relying
+// on scheduling alone.)
 
 import "reflect-metadata";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -103,7 +109,7 @@ async function createAndLoginFreshUser(
 }
 
 beforeAll(async () => {
-  const databaseUrl = await ensureTestDatabase(BASE_DATABASE_URL, "server_test");
+  const databaseUrl = await ensureTestDatabase(BASE_DATABASE_URL, "server_test_reauth");
   run(path.join(DB_PKG_ROOT, "scripts", "migrate.mjs"), ["reset"], databaseUrl);
   run(path.join(DB_PKG_ROOT, "seed", "seed.mjs"), [], databaseUrl);
 

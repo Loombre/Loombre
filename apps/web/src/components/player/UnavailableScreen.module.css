@@ -142,7 +142,7 @@
   font-family: var(--font-mono);
   font-size: var(--mono-xs);
   letter-spacing: var(--track-mono);
-  color: var(--color-text-subtle);
+  color: var(--color-text-muted);
 }
 
 .fallbackBlock {

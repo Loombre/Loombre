@@ -57,8 +57,40 @@ function basenameOf(path: string): string {
 
 function looksLikeAbsolutePath(candidate: string): boolean {
   const trimmed = candidate.trim();
-  return trimmed.startsWith("/") || /^[A-Za-z]:[\\/]/.test(trimmed) || /^file:\/\//i.test(trimmed);
+  return (
+    trimmed.startsWith("/") ||
+    trimmed.startsWith("\\\\") || // UNC (\\server\share\...) — common for NAS/SMB media libraries
+    /^[A-Za-z]:[\\/]/.test(trimmed) ||
+    /^file:\/\//i.test(trimmed)
+  );
 }
+
+// One absolute-path start marker: a POSIX slash, a UNC \\ prefix, a Windows
+// drive (C:\ / C:/), or a file:// scheme. Shared by the quoted (rule 3) and
+// bare (rule 4) matchers below so the two can never disagree about what an
+// absolute path may begin with.
+const ABSOLUTE_MARKER = String.raw`file:\/\/|\\\\|[A-Za-z]:[\\/]|\/`;
+
+// The BODY of a bare (unquoted) path AFTER its start marker, walked as a run
+// of: a path separator ([/\\]); OR a non-separator "word" run (which may hold
+// a filename's dots, dashes, colons — but never a quote/paren/bracket that
+// would end a log token); OR internal whitespace, consumed ONLY when a later
+// separator (before the next whitespace) proves the space is inside a
+// DIRECTORY segment rather than the boundary between the basename and the
+// surrounding message. That lookahead is the whole space-safety story: it
+// spans "/data/My Movies/film.mkv not found" up to `film.mkv` (redacting the
+// leaked "My Movies/" directory tail) yet still stops "/etc and /var" after
+// "/etc" (two separate single-component paths, not one).
+const BARE_PATH_BODY = String.raw`(?:[\/\\]|[^\/\\\s'"()\[\]]+|[ \t]+(?=[^\s'"()\[\]]*[\/\\]))*`;
+
+// A bare path anywhere in a line. Group 1 is the PRE-context that pins the
+// start to a real boundary and is re-emitted verbatim: line start, or a
+// delimiter the old class was too narrow for (whitespace/"("/"["/"="/","),
+// or a glued "key:" prefix — matched only when the colon is followed by a
+// SINGLE slash, so "error:/data/x" redacts while "postgres://user:pw@host"
+// (a `://` scheme authority) is left for the crash redactor's separate
+// secret-shaped-value pass and never mangled here. Group 2 is the path.
+const BARE_PATH_RE = new RegExp(String.raw`(^|[\s(\[=,]|:(?=\/(?!\/)))((?:${ABSOLUTE_MARKER})${BARE_PATH_BODY})`, "gi");
 
 /** A decision function: true means REDACT this matched path (collapse to
  *  `<redacted>/<basename>`); false means leave it exactly as-is. */
@@ -70,14 +102,18 @@ function redactOnePath(path: string, shouldRedact: PathRedactionDecision): strin
 
 /** Redacts every absolute filesystem path `shouldRedact` says to, keeping
  *  only the basename. Processes LINE BY LINE (never a single blanket
- *  multi-pass regex sweep over the whole text) so a line a stack-frame rule
- *  (1/2) already resolved — including the "leave it alone" outcome — is
- *  never re-scanned by the generic message-path rules (3/4) below it: those
- *  use a no-embedded-spaces fast path that would otherwise truncate an
- *  ALREADY-CORRECT parenthesized match at the first space (a dev checkout
- *  path containing a space, e.g. "App Development", is caught by exactly
- *  this bug if the rules are allowed to double-scan a line) and mis-redact
- *  the tail as if it were a second, unrelated path. */
+ *  multi-pass regex sweep over the whole text) so each line's stack-frame
+ *  rules (1/2) run first, then the generic message-path rules (3/4) run over
+ *  what those left behind. The message-path rules ARE allowed to run on a
+ *  line that also carried a stack frame (a single log line can hold both — a
+ *  frame AND a trailing "while opening <path>" clause) because the widened
+ *  bare-path matcher (BARE_PATH_BODY) is now internal-space-safe: it captures
+ *  a whole "/data/App Development/x" rather than truncating at the first
+ *  space, so re-scanning a line can neither mis-truncate an already-correct
+ *  frame path nor wrongly re-redact a dataDir-INSIDE path that rule 1 left
+ *  intact (the full path still classifies the same way under `shouldRedact`).
+ *  An already-redacted "<redacted>/basename" is never re-matched either — the
+ *  ">" it follows is not a bare-path pre-context character. */
 export function redactPathsInText(text: string, shouldRedact: PathRedactionDecision): string {
   return text
     .split("\n")
@@ -87,45 +123,46 @@ export function redactPathsInText(text: string, shouldRedact: PathRedactionDecis
 
 function redactPathsInLine(line: string, shouldRedact: PathRedactionDecision): string {
   // 1) "at fn (PATH:line:col)" — [^()]+ tolerates spaces inside the parens.
-  //    If this line contains one or more such frames, that's the ENTIRE
-  //    redaction this line gets — rules 3/4 below are skipped for it.
+  //    Redacts each frame in place; the (possibly space-containing) message
+  //    paths on the SAME line are still handled by rules 3/4 below.
   let matchedParenFrame = false;
-  const parenResult = line.replace(/\(([^()]+):(\d+):(\d+)\)/g, (whole, path: string, ln: string, col: string) => {
+  let working = line.replace(/\(([^()]+):(\d+):(\d+)\)/g, (whole, path: string, ln: string, col: string) => {
     if (!looksLikeAbsolutePath(path)) return whole;
     matchedParenFrame = true;
     return `(${redactOnePath(path, shouldRedact)}:${ln}:${col})`;
   });
-  if (matchedParenFrame) return parenResult;
 
   // 2) "at PATH:line:col" with no parens (top-level/anonymous frames) —
   //    anchored on the trailing ":digits:digits" so the captured path can
-  //    safely contain spaces. Whole-line match, so this also fully
-  //    replaces the line when it fires (no rule-3/4 fallthrough needed).
-  const bareMatch = /^(\s*at )(.+):(\d+):(\d+)(\s*)$/.exec(line);
-  if (bareMatch) {
-    const [, prefix, path, ln, col, suffix] = bareMatch as unknown as [string, string, string, string, string, string];
-    if (looksLikeAbsolutePath(path)) {
-      return `${prefix}${redactOnePath(path, shouldRedact)}:${ln}:${col}${suffix}`;
+  //    safely contain spaces. Whole-line match, so this fully replaces the
+  //    line when it fires. Only checked when the line is not a parenthesized
+  //    frame (a paren frame line is never also a bare whole-line frame).
+  if (!matchedParenFrame) {
+    const bareMatch = /^(\s*at )(.+):(\d+):(\d+)(\s*)$/.exec(working);
+    if (bareMatch) {
+      const [, prefix, path, ln, col, suffix] = bareMatch as unknown as [string, string, string, string, string, string];
+      if (looksLikeAbsolutePath(path)) {
+        return `${prefix}${redactOnePath(path, shouldRedact)}:${ln}:${col}${suffix}`;
+      }
     }
   }
 
   // 3) Quoted absolute paths anywhere in a non-stack-frame line (fs error
-  //    strings like `open '/Users/x/.secret'`).
-  let result = line;
-  result = result.replace(/'((?:\/|[A-Za-z]:[\\/])[^']*)'/g, (_whole, path: string) => `'${redactOnePath(path, shouldRedact)}'`);
-  result = result.replace(/"((?:\/|[A-Za-z]:[\\/])[^"]*)"/g, (_whole, path: string) => `"${redactOnePath(path, shouldRedact)}"`);
+  //    strings like `open '/Users/x/.secret'`). The inner start now also
+  //    admits a file:// URI and a UNC prefix, closing the blind spot where a
+  //    quoted/JSON-embedded `"file:///…"` fell between this rule (which only
+  //    recognized `/`- or drive-started inners) and the bare rule (whose
+  //    pre-context could not see a `file://` glued to an opening quote).
+  let result = working;
+  result = result.replace(/'((?:file:\/\/|\/|\\\\|[A-Za-z]:[\\/])[^']*)'/g, (_whole, path: string) => `'${redactOnePath(path, shouldRedact)}'`);
+  result = result.replace(/"((?:file:\/\/|\/|\\\\|[A-Za-z]:[\\/])[^"]*)"/g, (_whole, path: string) => `"${redactOnePath(path, shouldRedact)}"`);
 
-  // 4) Bare (unquoted) absolute paths and file:// URLs anywhere else — the
-  //    common case for most real deployments. file:// URLs never contain a
-  //    literal space (always percent-encoded), so this no-embedded-spaces
-  //    pass captures them completely regardless of the underlying path's
-  //    own contents; a space-containing bare PLAIN path OUTSIDE a stack
-  //    frame or quotes has no reliable delimiter and is a known, documented
-  //    limitation (inherited from this logic's original apps/worker home).
-  result = result.replace(
-    /(^|[\s(])((?:file:\/\/|\/|[A-Za-z]:[\\/])[^\s'")]+)/gi,
-    (whole, pre: string, path: string) => `${pre}${redactOnePath(path, shouldRedact)}`,
-  );
+  // 4) Bare (unquoted) absolute paths, file:// URLs, UNC paths and Windows
+  //    drive paths anywhere else. BARE_PATH_RE widens both the pre-context
+  //    (glued key=/error:/[.../,... prefixes) and the path body (UNC
+  //    backslash separators, internal directory spaces) — see the constant
+  //    definitions above.
+  result = result.replace(BARE_PATH_RE, (_whole, pre: string, path: string) => `${pre}${redactOnePath(path, shouldRedact)}`);
 
   return result;
 }
