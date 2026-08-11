@@ -89,14 +89,41 @@
  * LADDER CONSTRUCTION (binding interpretation constraint 3 — `buildLadder`).
  * Table order is `policy.ladderRungs` as given (policy-overridable per §7;
  * this function never re-sorts it). Steps, in this EXACT order:
- *   (f) hevc swap FIRST (see "SWAP-BEFORE-CAPS" below) — every rung with
- *       `heightPx < 2160` becomes `{ codec: 'hevc', videoBitrateBps:
- *       round(videoBitrateBps * 0.75) }` (audioBitrateBps unchanged) IFF
- *       `policy.hevcEncodePreferred` AND `device.video` has at least one
- *       entry with `codec === 'hevc'`. The 2160p rung (already hevc in the
- *       documented default table) is NEVER touched by this step regardless
- *       of the flag — the spec's own parenthetical only ever discusses
- *       rungs "below 2160".
+ *   (f) CODEC SELECTION FIRST (see "SWAP-BEFORE-CAPS" below) — ONE step
+ *       with fixed precedence av1 > hevc > h264 (docs/PLAYBACK.md §7.1,
+ *       LD-7, Wave C1; before C1 this step was "the hevc swap" alone).
+ *       A rung with `heightPx < 2160` becomes
+ *       `{ codec: 'av1', videoBitrateBps: round(videoBitrateBps * 0.6) }`
+ *       (audioBitrateBps unchanged) IFF `src/av1.ts`'s `av1SwapApplies`
+ *       holds — i.e. `policy.av1EncodePreferred` (the operator opt-in, §2.4)
+ *       AND the device declares an `av1` entry AND `device.hls.supportsFmp4`
+ *       (AV1 cannot ride `ts-hls`, §6 interp. M) AND
+ *       `av1EncodeEligibility(caps, policy.tier) !== 'none'` (§7.2's LD-16
+ *       gate — the ONLY place capability/tier is consulted). Rungs the AV1
+ *       rule does NOT claim fall through to the hevc rule VERBATIM
+ *       (`policy.hevcEncodePreferred` AND `device.video` has an entry with
+ *       `codec === 'hevc'` -> hevc at ×0.75). The 2160p rung is NEVER
+ *       touched by either rule regardless of the flags — the spec's own
+ *       parenthetical only ever discusses rungs "below 2160"; a 2160p AV1
+ *       rung is expressible as an explicit policy rung instead.
+ *       *Tier-0 lens:* on Tier-0 the AV1 swap can only ever fire via `'hw'`
+ *       eligibility, so on an N100-class box (QSV AV1 decode, no AV1 encode
+ *       engine) the produced ladder is byte-identical to pre-C1.
+ *   (g) AV1 DEMOTION NORMALIZATION (docs/PLAYBACK.md §7.1, new with Wave
+ *       C1) — runs after (f), still BEFORE the cap filters. Any rung whose
+ *       codec is `'av1'` at this point (which can ONLY mean an explicit
+ *       `policy.ladderRungs` row, since (f) already checked the same gates)
+ *       is DEMOTED when `src/av1.ts`'s `av1RungBlocker` returns a cause —
+ *       conditions 2/3 above, NEVER condition 1: an explicit av1 rung IS
+ *       the operator's preference for that rung, and the global flag governs
+ *       only the automatic swap. `codec` becomes `'hevc'` if `device.video`
+ *       declares an hevc entry, else `'h264'`; `heightPx` and BOTH bitrates
+ *       are kept VERBATIM (the admin chose those numbers). Each demotion
+ *       fires informational reason `av1-rung-demoted` (§4). Demote-don't-drop
+ *       is deliberate — see `src/av1.ts`'s own header.
+ *       *Tier-0 lens:* an admin who force-writes av1 rungs into a T0 box's
+ *       table gets the same ladder shape encoded by the machine's REAL
+ *       encoders — a serveable plan, never a melted box.
  *   (a) drop rungs with `heightPx > ` the selected video stream's `height`
  *       ("never exceed source height").
  *   (b) drop rungs with `videoBitrateBps > ` the source video bitrate, read
@@ -126,8 +153,10 @@
  *
  * SWAP-BEFORE-CAPS (binding interpretation constraint 3's own BIND, quoted):
  * "apply the swap FIRST (the rung the client actually receives is the hevc
- * one, so caps must evaluate the real bitrate)". This module therefore
- * transforms the table (step f) BEFORE running steps (a)-(e) — every
+ * one, so caps must evaluate the real bitrate)". Wave C1 extends the same
+ * sentence to demotion: the rung the client actually receives is the
+ * DEMOTED one, so every cap must evaluate that. This module therefore
+ * transforms the table (steps f then g) BEFORE running steps (a)-(e) — every
  * subsequent bitrate comparison (source-bitrate (b), network cap (c), device
  * cap (d), and the keep-lowest fallback (e)) reads the POST-swap
  * `videoBitrateBps`. A rung that would have been dropped by (c) or (d) in
@@ -149,9 +178,17 @@
  * `src/plan.ts` supplies `[]` directly for those, matching §5: "ladder (may
  * be empty for copy/audio-only decisions)".
  */
-import type { DeviceProfile, LadderRung, MediaInfo, NetworkConditions, ServerPolicy } from "../types.js";
+import type {
+  DeviceProfile,
+  LadderRung,
+  MediaInfo,
+  NetworkConditions,
+  ServerPolicy,
+  VerifiedCapabilities,
+} from "../types.js";
 import type { PlanReason } from "../reasons.js";
 import type { StageResult } from "./types.js";
+import { AV1_BITRATE_FACTOR, av1DemotionReason, av1RungBlocker, av1SwapApplies, demoteAv1Rungs } from "../av1.js";
 
 /** §3 Stage F's `withinDeviceCap` sub-condition (binding interpretation
  *  constraint 2): a null device cap is unconstrained (always "within"). */
@@ -227,17 +264,36 @@ function deviceSupportsHevc(device: DeviceProfile): boolean {
 }
 
 /**
+ * `buildLadder`'s return shape as of Wave C1 (LD-7). Step (g) is the first
+ * ladder-construction rule that FIRES A REASON, so a bare `LadderRung[]`
+ * no longer expresses everything the caller needs; `src/plan.ts` appends
+ * `reasons` to the plan's own list at Stage-F position (before Stage G's
+ * routing reasons — docs/PLAYBACK.md §4's "ordered by stage").
+ */
+export interface LadderBuildResult {
+  ladder: LadderRung[];
+  /** `av1-rung-demoted`, one per §7.1(g) demotion, in table order. */
+  reasons: PlanReason[];
+}
+
+/**
  * §7 ladder construction (docs/PLAYBACK.md §7, this module's header). Pure
  * function of its own inputs; `src/plan.ts` decides WHETHER to call this at
  * all (video.action==='transcode' AND NOT refused).
+ *
+ * `caps` arrived with Wave C1: §7.1's codec selection is capability-gated
+ * through `src/av1.ts`'s shared predicate, which reads `caps` + `policy.tier`
+ * (§2.4's deliberate asymmetry — the AV1 tier law is enforced HERE, inside
+ * the pure engine, never resolved by the caller).
  */
 export function buildLadder(
   media: MediaInfo,
   device: DeviceProfile,
   network: NetworkConditions,
   policy: ServerPolicy,
+  caps: VerifiedCapabilities,
   videoStreamIndex: number | null,
-): LadderRung[] {
+): LadderBuildResult {
   const stream = videoStreamIndex !== null ? media.video.find((v) => v.index === videoStreamIndex) : undefined;
   // Binding interpretation constraint 3(b): "stream.bitrateBps ??
   // media.overallBitrateBps" — falls back identically whether the stream's
@@ -251,22 +307,48 @@ export function buildLadder(
   // inventing a source height that doesn't exist.
   const sourceHeightPx = stream ? stream.height : null;
 
+  const applyAv1Swap = av1SwapApplies(policy, device, caps);
   const applyHevcSwap = policy.hevcEncodePreferred && deviceSupportsHevc(device);
 
-  // Step (f) — hevc swap, applied FIRST (see header's "SWAP-BEFORE-CAPS").
-  const table: LadderRung[] = policy.ladderRungs.map((rung) => {
-    if (applyHevcSwap && rung.heightPx < 2160) {
-      return {
-        heightPx: rung.heightPx,
-        videoBitrateBps: Math.round(rung.videoBitrateBps * 0.75),
-        audioBitrateBps: rung.audioBitrateBps,
-        codec: "hevc",
-      };
+  // Step (f) — ONE codec-selection step, precedence av1 > hevc > h264,
+  // applied FIRST (see header's "SWAP-BEFORE-CAPS", which now covers
+  // demotion too). A rung the AV1 rule claims never reaches the hevc rule;
+  // rungs it does NOT claim fall through to the hevc rule VERBATIM.
+  const swapped: LadderRung[] = policy.ladderRungs.map((rung) => {
+    if (rung.heightPx < 2160) {
+      if (applyAv1Swap) {
+        return {
+          heightPx: rung.heightPx,
+          videoBitrateBps: Math.round(rung.videoBitrateBps * AV1_BITRATE_FACTOR),
+          audioBitrateBps: rung.audioBitrateBps,
+          codec: "av1",
+        };
+      }
+      if (applyHevcSwap) {
+        return {
+          heightPx: rung.heightPx,
+          videoBitrateBps: Math.round(rung.videoBitrateBps * 0.75),
+          audioBitrateBps: rung.audioBitrateBps,
+          codec: "hevc",
+        };
+      }
     }
     return rung;
   });
 
-  if (table.length === 0) return [];
+  // Step (g) — AV1 demotion normalization (docs/PLAYBACK.md §7.1). Runs
+  // after (f), BEFORE the cap filters, so a demoted rung's VERBATIM bitrate
+  // is the number every cap evaluates. Any rung still carrying `av1` here
+  // can only be an explicit `policy.ladderRungs` row: the swap above
+  // checked `av1RungBlocker` itself (via `av1SwapApplies`), so a
+  // swap-produced rung is admissible by construction and this step is a
+  // structural no-op for it.
+  const blocker = av1RungBlocker(device, caps, policy.tier);
+  const normalized = blocker === null ? { rungs: swapped, demotions: [] } : demoteAv1Rungs(swapped, device, blocker);
+  const table = normalized.rungs;
+  const reasons: PlanReason[] = normalized.demotions.map(av1DemotionReason);
+
+  if (table.length === 0) return { ladder: [], reasons };
 
   // Steps (a)-(d) — independent conjunctive drop filters (binding
   // interpretation constraint 3).
@@ -278,10 +360,10 @@ export function buildLadder(
     return true;
   });
 
-  if (survivors.length > 0) return survivors;
+  if (survivors.length > 0) return { ladder: survivors, reasons };
 
-  // Step (e) — keep at least the lowest rung (from the post-swap table) when
-  // every rung was dropped by (a)-(d).
+  // Step (e) — keep at least the lowest rung (from the post-swap,
+  // post-normalization table) when every rung was dropped by (a)-(d).
   const lowest = table.reduce((min, rung) => (rung.videoBitrateBps < min.videoBitrateBps ? rung : min));
-  return [lowest];
+  return { ladder: [lowest], reasons };
 }

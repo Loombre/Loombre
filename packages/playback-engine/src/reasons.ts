@@ -57,7 +57,20 @@ export type FixedInformationalReasonCode =
   | "subtitle-styling-lost"
   | "audio-atmos-lost"
   | "gapless-degraded"
-  | "open-gop-leading-pictures-stripped";
+  | "open-gop-leading-pictures-stripped"
+  /**
+   * LD-7 / owner-decision D1 (docs/PLAYBACK.md §4/§7.4, Wave C1). Fires once
+   * per ladder rung whose configured/selected `av1` codec was demoted to
+   * `hevc`/`h264` by §7.1(g)'s normalization step or §7.2's Stage-G tier-0
+   * software-route guard. `detail` is
+   * `cause=<tier0-no-hw-av1|device-no-av1|no-av1-encoder|tier0-software-route>
+   * demotedTo=<hevc|h264> heightPx=<n>` — formatted in exactly one place,
+   * `src/av1.ts`'s `av1DemotionReason`. It exists because a silent demotion
+   * would leave design law 3's "why is this transcoding like this?"
+   * unanswerable for AV1: the admin asking "why is this rung not AV1?" must
+   * get an answer from the plan itself.
+   */
+  | "av1-rung-demoted";
 
 export const FIXED_INFORMATIONAL_REASON_CODES: readonly FixedInformationalReasonCode[] = [
   "dv-stripped-to-hdr10",
@@ -65,6 +78,7 @@ export const FIXED_INFORMATIONAL_REASON_CODES: readonly FixedInformationalReason
   "audio-atmos-lost",
   "gapless-degraded",
   "open-gop-leading-pictures-stripped",
+  "av1-rung-demoted",
 ];
 
 /** `hw-encoder-selected:<backend>` — the chosen hardware backend suffixed. */
