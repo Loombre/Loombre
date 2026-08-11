@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 /**
- * The worker process's registry of LIVE ffmpeg runs (an upstream media server-study
+ * The worker process's registry of LIVE ffmpeg runs (comparative-study-study
  * implementation run, item C1).
  *
  * WHY THIS EXISTS. process.ts spawns every ffmpeg with `detached: true` on

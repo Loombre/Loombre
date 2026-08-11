@@ -492,7 +492,7 @@ async function enqueueOpenGopBackfillIfNeeded(): Promise<void> {
 const QUEUED_STALE_HORIZON_MS = 24 * 60 * 60 * 1000;
 const SINGLETON_GUARDED_JOB_TYPES = ["hwprobe", "image-backfill", "opengop-backfill", "stash-inventory", "stash-sync"] as const;
 
-// Item C7 (an upstream media server-study implementation run): 'transcode' folded into the
+// Item C7 (process-lifecycle hardening wave (2026-08-11)): 'transcode' folded into the
 // same sweep, as its OWN group rather than by widening the singleton list
 // above — it is the opposite shape (one ledger row per playback session,
 // many concurrent), and the original scoping comment's warning about an
@@ -547,7 +547,7 @@ async function reconcileStaleJobLedger(): Promise<void> {
   }
 }
 
-// Item C2 (an upstream media server-study implementation run): boot-time orphaned-ffmpeg
+// Item C2 (process-lifecycle hardening wave (2026-08-11)): boot-time orphaned-ffmpeg
 // reaper, the crash-path companion to shutdown()'s graceful
 // terminateAllTranscodeRuns(). A hard kill (SIGKILL, OOM, power cut, a
 // container stop that skips to SIGKILL) runs no shutdown code at all, and
@@ -650,7 +650,7 @@ let keepAlive: NodeJS.Timeout | undefined;
 async function shutdown(_signal: ShutdownSignal): Promise<void> {
   if (keepAlive) clearInterval(keepAlive);
 
-  // Item C1 (an upstream media server-study implementation run), FIRST and awaited on its
+  // Item C1 (process-lifecycle hardening wave (2026-08-11)), FIRST and awaited on its
   // own rather than folded into the Promise.all below. Every ffmpeg run is
   // spawned `detached: true` on POSIX (transcode/process.ts) so the whole
   // process group can be signaled — which also means the child does NOT

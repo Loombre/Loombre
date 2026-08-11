@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Loombre :: packages/db/test/live-db-guard.spec.ts
 //
-// Task #11 residual (a), an upstream media server-study implementation run Lane A1.
+// Task #11 residual (a), process-lifecycle hardening wave (2026-08-11, Lane A1).
 //
 // The 2026-08-10 incident (a test suite's `migrate.mjs reset` DROP SCHEMA
 // CASCADE'd the live dev database) was closed by a NAME guard: `reset`
