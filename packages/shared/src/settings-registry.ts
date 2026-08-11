@@ -184,7 +184,16 @@ export function parseEnvCommaList(raw: string): string[] {
 // Value schemas for the shapes richer than a scalar
 // ============================================================================
 
-export const LADDER_RUNG_CODECS = ["h264", "hevc"] as const;
+/** Mirrors packages/playback-engine's `LADDER_CODECS` (docs/PLAYBACK.md
+ *  §7/§7.1's `LadderCodec`) — the closed set of codecs a rung may ENCODE
+ *  to, deliberately narrower than the source-fact `VideoCodec` union.
+ *  `av1` landed with LD-7 (Wave C1). This is an independent structural
+ *  echo, NOT a type import (playback-engine's purity law forbids importing
+ *  anything into it, and shared may not depend on it either);
+ *  apps/server/test/contract-reason-codes.spec.ts is the three-way drift
+ *  guard that holds this array, the engine's, and openapi.yaml's
+ *  `LadderCodec` enum to each other. */
+export const LADDER_RUNG_CODECS = ["h264", "hevc", "av1"] as const;
 
 /** Mirrors packages/playback-engine's LadderRung type field-for-field
  *  (docs/PLAYBACK.md §2.4) — playback-engine itself is never imported here
@@ -458,13 +467,31 @@ const UI_ENTRIES: SettingsRegistryEntry[] = [
     scope: "ui",
   }),
   defineSetting({
+    key: "transcode.av1EncodePreferred",
+    schema: z.boolean(),
+    // Opt-in. AV1 encoding is dramatically more expensive than H.264/HEVC,
+    // and on a small server without a real AV1 encode engine it is not a
+    // slower option — it is an unwatchable one, so the default must be off
+    // and the escape hatch must be hardware rather than a checkbox.
+    default: false,
+    category: "transcode",
+    description:
+      "When converting, prefer AV1 — the newest and most efficient video format, giving similar quality at a noticeably lower bitrate. Loombre only uses it when your server has AV1 encoding hardware, or on more capable servers where converting it in software is realistic; otherwise it quietly converts to HEVC or H.264 instead. Not every device can play AV1, and Loombre checks that too.",
+    caution:
+      "Converting to AV1 in software is very demanding. On a small or low-power server Loombre will decline to do it and fall back automatically, so turning this on there simply has no effect.",
+    technicalDetails:
+      "Passed to the playback engine as a preference only — never pre-resolved against hardware. A rung becomes AV1 when this is on AND the client declares AV1 decode support AND it can take fMP4 segments (AV1 has no MPEG-TS stream type) AND the capability snapshot verifies an AV1 encoder: any non-software backend qualifies at every tier, while the software encoder (libsvtav1) qualifies only on Tier 1 and above. AV1 rungs take 60% of the equivalent H.264 bitrate and never replace a 2160p rung. Rungs that cannot be delivered as AV1 are converted to HEVC/H.264 at their configured bitrate rather than dropped, and each one reports why.",
+    requiresRestart: false,
+    scope: "ui",
+  }),
+  defineSetting({
     key: "transcode.ladderRungs",
     schema: z.array(LADDER_RUNG_SCHEMA).min(1),
     default: DEFAULT_LADDER_RUNGS,
     category: "transcode",
     description: "The set of quality levels Loombre can switch between while converting, best first. Loombre picks the highest one your connection can keep up with.",
     technicalDetails:
-      "JSON array, best rung first. Each rung: { heightPx: positive integer, videoBitrateBps and audioBitrateBps: integers between 100,000 (100 kbps) and 100,000,000 (100 Mbps), codec: 'h264' or 'hevc' }. At least one rung is required.",
+      "JSON array, best rung first. Each rung: { heightPx: positive integer, videoBitrateBps and audioBitrateBps: integers between 100,000 (100 kbps) and 100,000,000 (100 Mbps), codec: 'h264', 'hevc' or 'av1' }. At least one rung is required. An 'av1' rung is an explicit request for that quality point and is honoured wherever the client and the server's verified encoders allow it — including at 2160p, which the automatic AV1 preference never touches; where they do not, the rung is converted to HEVC/H.264 at the bitrate you set rather than dropped.",
     requiresRestart: false,
     scope: "ui",
   }),

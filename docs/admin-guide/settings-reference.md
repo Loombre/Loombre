@@ -51,13 +51,24 @@ Advanced: whether Loombre may convert high-dynamic-range (HDR) video to standard
 - **Default:** `tier-gated`
 - **Applies:** immediately — no restart needed.
 
+### Av1 Encode Preferred
+
+<small>Setting key: `transcode.av1EncodePreferred`</small>
+
+When converting, prefer AV1 — the newest and most efficient video format, giving similar quality at a noticeably lower bitrate. Loombre only uses it when your server has AV1 encoding hardware, or on more capable servers where converting it in software is realistic; otherwise it quietly converts to HEVC or H.264 instead. Not every device can play AV1, and Loombre checks that too.
+
+- **Technical details:** Passed to the playback engine as a preference only — never pre-resolved against hardware. A rung becomes AV1 when this is on AND the client declares AV1 decode support AND it can take fMP4 segments (AV1 has no MPEG-TS stream type) AND the capability snapshot verifies an AV1 encoder: any non-software backend qualifies at every tier, while the software encoder (libsvtav1) qualifies only on Tier 1 and above. AV1 rungs take 60% of the equivalent H.264 bitrate and never replace a 2160p rung. Rungs that cannot be delivered as AV1 are converted to HEVC/H.264 at their configured bitrate rather than dropped, and each one reports why.
+- **Default:** Off
+- **Applies:** immediately — no restart needed.
+- **Note:** Converting to AV1 in software is very demanding. On a small or low-power server Loombre will decline to do it and fall back automatically, so turning this on there simply has no effect.
+
 ### Quality levels used when converting
 
 <small>Setting key: `transcode.ladderRungs`</small>
 
 The set of quality levels Loombre can switch between while converting, best first. Loombre picks the highest one your connection can keep up with.
 
-- **Technical details:** JSON array, best rung first. Each rung: { heightPx: positive integer, videoBitrateBps and audioBitrateBps: integers between 100,000 (100 kbps) and 100,000,000 (100 Mbps), codec: 'h264' or 'hevc' }. At least one rung is required.
+- **Technical details:** JSON array, best rung first. Each rung: { heightPx: positive integer, videoBitrateBps and audioBitrateBps: integers between 100,000 (100 kbps) and 100,000,000 (100 Mbps), codec: 'h264', 'hevc' or 'av1' }. At least one rung is required. An 'av1' rung is an explicit request for that quality point and is honoured wherever the client and the server's verified encoders allow it — including at 2160p, which the automatic AV1 preference never touches; where they do not, the rung is converted to HEVC/H.264 at the bitrate you set rather than dropped.
 - **Default:** the standard quality ladder (6 levels, highest first)
 - **Applies:** immediately — no restart needed.
 

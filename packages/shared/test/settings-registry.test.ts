@@ -391,8 +391,8 @@ describe("SETTINGS_REGISTRY", () => {
   describe("F5/F6/F11d: scope:'ui' description register", () => {
     const uiEntries = SETTINGS_REGISTRY.filter((e) => e.scope === "ui");
 
-    it("covers all 49 scope:'ui' entries (sanity — keeps this suite honest if the registry grows)", () => {
-      expect(uiEntries.length).toBe(49);
+    it("covers all 50 scope:'ui' entries (sanity — keeps this suite honest if the registry grows)", () => {
+      expect(uiEntries.length).toBe(50);
     });
 
     it("no scope:'ui' description references a repo path (apps/, packages/, scripts/, docs/)", () => {
