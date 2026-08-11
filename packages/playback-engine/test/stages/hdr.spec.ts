@@ -265,7 +265,12 @@ describe("Stage C: dv profile 7/8 branch (three ways)", () => {
         const result = evaluateHdr(media, device, 0, false);
         expect(result.verdict).toBe("direct-play"); // no re-encode, informational only
         expect(result.reasons).toEqual([
-          { code: "dv-stripped-to-hdr10", streamIndex: 0, detail: `dvProfile=${dvProfile} blCompatId=1` },
+          // LD-15: `elDropped` states whether a dual-layer enhancement
+          // layer went with the RPU — true for profile 7 (BL+EL), false
+          // for the single-layer profile 8. Carried in `detail` rather
+          // than as a new reason code because PlanReasonCode is a closed
+          // contract enum (docs/PLAYBACK.md §4).
+          { code: "dv-stripped-to-hdr10", streamIndex: 0, detail: `dvProfile=${dvProfile} blCompatId=1 elDropped=${dvProfile === 7}` },
         ]);
       });
 
@@ -300,7 +305,7 @@ describe("Stage C: strip-only-when-repackaging (binding interpretation constrain
     const device = makeDevice({ hdr: { hdr10: true, hlg: false, dolbyVision: false } });
     const result = evaluateHdr(media, device, 0, false);
     expect(result.reasons).toEqual([
-      { code: "dv-stripped-to-hdr10", streamIndex: 0, detail: "dvProfile=8 blCompatId=1" },
+      { code: "dv-stripped-to-hdr10", streamIndex: 0, detail: "dvProfile=8 blCompatId=1 elDropped=false" },
     ]);
   });
 

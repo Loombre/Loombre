@@ -1,5 +1,14 @@
 name: direct-stream — ts DV profile 8.1 (compat BL) vs hevc-hdr10-only (ts repackage -> strip fires)
-why: "Binding interpretation constraint 3, profile-8 variant with a different non-direct-playable container (ts, not mkv, for coverage variety): ts is NOT in hevc-hdr10-only's directPlayContainers, so the strip genuinely happens during repackage. reasons: [container-not-direct-playable, dv-stripped-to-hdr10]."
+why: >
+  Binding interpretation constraint 3, profile-8 variant with a different non-direct-playable container (ts, not mkv, for coverage variety): ts is NOT in hevc-hdr10-only's directPlayContainers, so the strip genuinely happens during repackage. reasons: [container-not-direct-playable, dv-stripped-to-hdr10].
+  LD-3 UPDATE (2026-08-11): dv-stripped-to-hdr10 is now TRUE. args/builder.ts's
+  interpretation L emits `-bsf:v filter_units=remove_types=62-63` (HEVC UNSPEC62
+  RPU + UNSPEC63 enhancement layer) plus `-tag:v hvc1` on this copy branch —
+  before that the reason described a strip the builder never performed. Decision
+  and reason codes here are UNCHANGED; only the reason's `detail` gained
+  `elDropped=<bool>` (LD-15). Verified red-first against real ffmpeg with real DV
+  samples: apps/worker/test/transcode/dv-strip-args.integration.spec.ts.
+
 input:
   media:
     fileId: file-174

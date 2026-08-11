@@ -57,9 +57,13 @@ describe('reconcileAbandonedJobLedgerRows (W1: unwedge the singleton guards)', (
   // Simulates a worker that booted 1h ago sweeping at boot time.
   const workerStartedAtMs = nowMs - 1 * HOUR_MS;
   const input = {
-    types: ['hwprobe', 'image-backfill', 'stash-inventory', 'stash-sync'] as const,
-    queuedStaleBeforeMs: nowMs - 24 * HOUR_MS,
-    activeStaleBeforeMs: workerStartedAtMs,
+    groups: [
+      {
+        types: ['hwprobe', 'image-backfill', 'stash-inventory', 'stash-sync'] as const,
+        queuedStaleBeforeMs: nowMs - 24 * HOUR_MS,
+        activeStaleBeforeMs: workerStartedAtMs,
+      },
+    ],
     nowMs,
   };
 
@@ -187,6 +191,113 @@ describe('reconcileAbandonedJobLedgerRows (W1: unwedge the singleton guards)', (
   it('is idempotent: a second run finds nothing left to reconcile', async () => {
     const again = await reconcileAbandonedJobLedgerRows(db, { ...input, nowMs: nowMs + 1 });
     expect(again).toEqual([]);
+  });
+
+  // -------------------------------------------------------------------------
+  // Item C7 (process-lifecycle hardening wave (2026-08-11)): 'transcode' folded into
+  // this same machinery. It is NOT a singleton — one ledger row per
+  // playback session, many concurrent — so it cannot simply be appended to
+  // the singleton list: it needs its own horizons (a queued transcode job
+  // is stale in MINUTES, not 24 hours, because the session it belongs to
+  // is swept at 15) and a bound on how many rows one boot may reconcile,
+  // which is exactly the "unbounded loop + matching outbox-event flood"
+  // hazard the original type-scoping existed to avoid.
+  // -------------------------------------------------------------------------
+  it('reconciles transcode rows under their OWN horizons, in the same pass as the singleton group', async () => {
+    const staleQueuedTranscodeId = randomUUID();
+    const freshQueuedTranscodeId = randomUUID();
+    const orphanedActiveTranscodeId = randomUUID();
+    const ownActiveTranscodeId = randomUUID();
+
+    await insertJobLedgerRow(db, {
+      id: staleQueuedTranscodeId,
+      type: 'transcode',
+      status: 'queued',
+      createdAtMs: nowMs - 2 * HOUR_MS,
+      updatedAtMs: nowMs - 2 * HOUR_MS, // way past a playback-session lifetime
+    });
+    await insertJobLedgerRow(db, {
+      id: freshQueuedTranscodeId,
+      type: 'transcode',
+      status: 'queued',
+      createdAtMs: nowMs - 60_000,
+      updatedAtMs: nowMs - 60_000, // a minute old — a session still starting up
+    });
+    await insertJobLedgerRow(db, {
+      id: orphanedActiveTranscodeId,
+      type: 'transcode',
+      status: 'active',
+      createdAtMs: nowMs - 3 * HOUR_MS,
+      updatedAtMs: nowMs - 2 * HOUR_MS, // predates this worker generation
+    });
+    await insertJobLedgerRow(db, {
+      id: ownActiveTranscodeId,
+      type: 'transcode',
+      status: 'active',
+      createdAtMs: nowMs - 60_000,
+      updatedAtMs: nowMs - 60_000, // this generation's own live session
+    });
+
+    const reconciled = await reconcileAbandonedJobLedgerRows(db, {
+      groups: [
+        {
+          types: ['hwprobe'] as const,
+          queuedStaleBeforeMs: nowMs - 24 * HOUR_MS,
+          activeStaleBeforeMs: workerStartedAtMs,
+        },
+        {
+          types: ['transcode'] as const,
+          queuedStaleBeforeMs: nowMs - 15 * 60 * 1000,
+          activeStaleBeforeMs: workerStartedAtMs,
+        },
+      ],
+      nowMs: nowMs + 10,
+    });
+
+    const ids = reconciled.map((r) => r.id);
+    expect(ids).toContain(staleQueuedTranscodeId);
+    expect(ids).toContain(orphanedActiveTranscodeId);
+    expect(ids).not.toContain(freshQueuedTranscodeId);
+    expect(ids).not.toContain(ownActiveTranscodeId);
+
+    expect((await getJobLedgerRow(db, staleQueuedTranscodeId))?.status).toBe('failed');
+    expect((await getJobLedgerRow(db, orphanedActiveTranscodeId))?.status).toBe('failed');
+    expect((await getJobLedgerRow(db, freshQueuedTranscodeId))?.status).toBe('queued');
+    expect((await getJobLedgerRow(db, ownActiveTranscodeId))?.status).toBe('active');
+  });
+
+  it('bounds how many rows one group may reconcile per pass (many-concurrent-rows safety)', async () => {
+    const ids: string[] = [];
+    for (let i = 0; i < 5; i += 1) {
+      const id = randomUUID();
+      ids.push(id);
+      await insertJobLedgerRow(db, {
+        id,
+        type: 'subtitle-extract',
+        status: 'queued',
+        createdAtMs: nowMs - 5 * HOUR_MS,
+        updatedAtMs: nowMs - 5 * HOUR_MS,
+      });
+    }
+
+    const firstPass = await reconcileAbandonedJobLedgerRows(db, {
+      groups: [
+        {
+          types: ['subtitle-extract'] as const,
+          queuedStaleBeforeMs: nowMs - 60 * 60 * 1000,
+          activeStaleBeforeMs: workerStartedAtMs,
+          maxRows: 2,
+        },
+      ],
+      nowMs: nowMs + 20,
+    });
+    expect(firstPass).toHaveLength(2);
+
+    const stillQueued = [];
+    for (const id of ids) {
+      if ((await getJobLedgerRow(db, id))?.status === 'queued') stillQueued.push(id);
+    }
+    expect(stillQueued).toHaveLength(3); // the rest wait for the next boot
   });
 
   it('a row whose status changed between SELECT and UPDATE is never clobbered (predicate re-asserted)', async () => {

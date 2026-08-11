@@ -14,20 +14,20 @@ W15, W16, W17) → Wave 3 = opus review + exit gates. W18 verify-only behind W1.
 |---|---|---|
 | W1 probe/scanner decouple (D-1) | **DONE** — opus-reviewed (2 reviewers), all substantive findings fixed, gate ALL GREEN ×2 | RCA + review section below. Fixes: type-scoped ledger reconciliation with split horizons + FOR UPDATE + predicate re-assertion (packages/db/src/internal/jobs.ts, worker boot wiring), resolve-caps empty==missing (capabilitiesFromSnapshot), contract-first three-state probe status incl. re-probe-over-snapshot visibility (CapabilityProbeStatus + admin.controller + migrations/0037 index), shared web derivation hasNoAcceleratedCapabilities (fires on the REAL GPU-less outcome: software verified, hw rows empty), recordActive clears finished_at_ms. Tests: jobs-reconcile 7/7 (incl. race-predicate + type-scoping + plain-language pins), resolve-caps 5/5, playback e2e 35/35, admin-capabilities e2e 20/20 (never-ran/pending/failed/zero-backends/re-probe-failed-over-snapshot), scan hwcaps-independence 2/2, matrix 518/518, capability-view 4/4, wizard-state 37/37. `pnpm gate` ALL STEPS PASSED. |
 | W2+W3 segmented control (D-2/D-3) | **DONE** (Wave 1) | ONE shared component confirmed: track `width: fit-content` + explicit `fullWidth` opt-in prop; segment padding tightened to the one `--space-sm` token (matches Chip/StatusPill); ZoneSortControl's copy-pasted track/segment consolidated via `composes:`; AddLibrarySheet Kind now displays Movie/TV/Music via label map (lowercase enum still hits the API — pinned by new AddLibrarySheet.test.tsx); severity/role pickers audited already-correct. New SegmentedControl.test.tsx pins the token + fit-content + full-width opt-in. Flagged for W3-review: wizard "Movies/TV Shows" plural idiom vs D-3 singular (deliberate, wizard cited as the good reference); CapabilityCard's third label map ("TV shows"). |
-| W4 focus ring clipping | **DONE** (Wave 1, re-run after one API-error casualty; zero stray edits from the dead attempt — verified via git) | ROOT CAUSE: app-wide `:focus-visible` ring is a NON-inset box-shadow (3px outside border-box, globals.css:75 + tokens.css:197) and SheetOrModal's desktop `.body` is an unpadded overflow clip container (overflow-y:auto forces overflow-x:auto per spec) — full-width controls get the ring cropped at the body edge. FIX at shared level: inset ring + local inset keyframe (the global keyframe's non-inset final frame would re-clobber) on Input; same for Button (rightmost action button flush against the clip edge — real, demonstrated); orchestrator follow-through for the two same-defect-same-dialog deferrals: shared `.textarea` (AddLibrarySheet Paths field) + SegmentedControl segments. admin/Modal-based dialogs verified structurally immune (padding+overflow same box). Deferred list (PinModal raw input etc.) recorded for Wave 3. |
+| W4 focus ring clipping | **DONE** (Wave 1, re-run after one API-error casualty; zero stray edits from the dead attempt — verified via git) | ROOT CAUSE: app-wide `:focus-visible` ring is a NON-inset box-shadow (3px outside border-box, globals.css:75 + tokens.css:197) and SheetOrModal's desktop `.body` is an unpadded overflow clip container (overflow-y:auto forces overflow-x:auto per spec) — full-width controls get the ring cropped at the body edge. FIX at shared level: inset ring + local inset keyframe (the global keyframe's non-inset final frame would re-clobber) on Input; same for Button (rightmost action button flush against the clip edge — real, demonstrated); orchestrator follow-through for the two same-defect-same-dialog deferrals: shared `.textarea` (AddLibrarySheet Paths field) + SegmentedControl segments. admin/Modal-based dialogs verified structurally immune (padding+overflow same box). Deferred list (PinModal raw input etc.) recorded for Wave 3. **[WAVE-A CLOSED eb421044 2026-08-11]** (PinModal consolidation) |
 | W5 styled select | **DONE** (Wave 1) | components/ui/Select.tsx: real `<select>` restyled (appearance:none, pill surface matching Input, aria-hidden chevron) — native keyboard/SR semantics kept; wired into both AccountSection language prefs; styleguide entry added. Other native selects (CreateInviteSheet, ComposeNoticeCard ×2, RemoteEnrollCeremony, ProviderChainEditor ×2) recorded as conversion candidates for Wave 3 consistency audit. |
 | W6 date picker | **DONE** (Wave 1) | components/ui/DatePicker.tsx: typeable YYYY-MM-DD field + calendar popover with month/year quick-jump Selects, WAI-ARIA grid keyboard nav (arrows/Home/End/PageUp/PageDown), opacity/transform-only animation; NEVER seeds from today — empty stays empty (the screenshotted defect), maxDate=today on birth date; pure UTC calendar-math helpers with injectable clock, 30-case DatePicker.test.ts. AccountSection birth-date uses explicit label htmlFor (three labelable descendants can't share one implicit label). |
 | W7 settings layout system (D-4) | **DONE** (Wave 1) | ROOT CAUSE: TWO stacked width caps (SettingsShell .pane 760px + every section's own 640px max-width), neither centered → left-hug + dead right margin; admin/layout.tsx same bug standalone (1100px, no margin:auto). FIX: ONE primitive, SettingsPageLayout (.layout flex-center + .inner max-width:1120px), wired at both choke points (SettingsShell for all /settings/*, admin/layout.tsx for all /admin/*) + the two deliberate standalone routes (/settings/data, /settings/devices); ALL section-level max-widths removed (grep-verified none remain); System page grid: removed `align-items:start` override (equal-height via grid default stretch) + minmax 480px → clean 2×2 at 1120px. |
-| W8 registry-row typography | **DONE** (Wave 1) | SettingField.module.css: description --text-xs(12px)→--text-base(14.5px) (clears the ~14px floor); DEFAULT/CURRENT/PINNABLE mono line --mono-xs(8.5px)→--text-sm(13px) = exactly ONE step below body on the same scale (also clears tokens.css's own hint-color floor the old size violated); key name → --text-base semibold mono. Deferred flag: .caution/.lockedValue sizes unchanged (outside the three named elements). |
+| W8 registry-row typography | **DONE** (Wave 1) | SettingField.module.css: description --text-xs(12px)→--text-base(14.5px) (clears the ~14px floor); DEFAULT/CURRENT/PINNABLE mono line --mono-xs(8.5px)→--text-sm(13px) = exactly ONE step below body on the same scale (also clears tokens.css's own hint-color floor the old size violated); key name → --text-base semibold mono. Deferred flag: .caution/.lockedValue sizes unchanged (outside the three named elements). **[WAVE-A CLOSED 753feba3 2026-08-11]** (+ 08cf9146, sourcePill default variant) |
 | W13a registry-row tooltip mechanism (D-7) | **DONE** (Wave 1) | SettingField gains optional `technicalDetails` prop + ⓘ InfoTooltip (hover+focus+click-toggle, Escape via shared useEscapeKey, aria-describedby, role=tooltip, on-demand mount, compositor-only + reduced-motion variant); env-pin name RELOCATED from visible PINNABLE fact into the tooltip layer (PINNABLE label stays); 26/26 SettingField tests incl. new tooltip suite. W13b (Wave 2) wires per-key technical copy. |
 | W9 Dashboard+System merge (D-5) | **DONE** (Wave 2) | Single "Dashboard" nav entry; /admin/system → redirect stub (libraries-stub pattern); its six cards extracted to components/admin/system/*.tsx and composed on /admin in the W7 equal-height grid (CapabilitiesCard's W1 three-state logic moved INTACT); AdminNav "System" sub-tab removed. |
-| W10+W11 IA restructure + avatar menu (D-6) | **DONE** (Wave 2) | Nav: "Settings"→"System Settings", SYSTEM group right after Dashboard, admin-only (verified nav-items.ts:197). section-registry now 10 server-scoped sections only; AccountSection → components/profile/ProfileSettings at new /profile route; SettingsShell redirects ANY non-admin on ANY /settings* URL → /profile; /settings/account → redirect stub; quick-search/mobile-header/back-links swept. API layer: ~15 admin controllers audited (all requireAdmin/requireLiveAdmin first) + NEW settings-authz.e2e.spec.ts — 66 admin routes × 403-for-casual + user-scoped surfaces still work (88/88 green, runs in gate). UserMenu: Phosphor surface (raised bg/border/shadow tokens), pill hover items, inset focus ring, roving-focus menu keys (arrows wrap/Home/End/Escape-refocus), "Profile settings" entry; 11 new tests. Deferred: mobile tab-bar Settings target (fixed 6-tab spec; non-admin gets client redirect), /settings/devices entry-point TODO. |
+| W10+W11 IA restructure + avatar menu (D-6) | **DONE** (Wave 2) | Nav: "Settings"→"System Settings", SYSTEM group right after Dashboard, admin-only (verified nav-items.ts:197). section-registry now 10 server-scoped sections only; AccountSection → components/profile/ProfileSettings at new /profile route; SettingsShell redirects ANY non-admin on ANY /settings* URL → /profile; /settings/account → redirect stub; quick-search/mobile-header/back-links swept. API layer: ~15 admin controllers audited (all requireAdmin/requireLiveAdmin first) + NEW settings-authz.e2e.spec.ts — 66 admin routes × 403-for-casual + user-scoped surfaces still work (88/88 green, runs in gate). UserMenu: Phosphor surface (raised bg/border/shadow tokens), pill hover items, inset focus ring, roving-focus menu keys (arrows wrap/Home/End/Escape-refocus), "Profile settings" entry; 11 new tests. Deferred: mobile tab-bar Settings target (fixed 6-tab spec; non-admin gets client redirect), /settings/devices entry-point TODO. **[WAVE-A: verified already-resolved by f94a0ce9 2026-08-11]** (stale row; superseded) |
 | W12 log-tail empty-state copy | **DONE** (Wave 2) | LogsTailCard empty state: plain "writing logs to console output; installed setups configure a file automatically" + one linked sentence to the env-reference docs page; LOOMBRE_LOG_FILE demoted to secondary technical line. |
 | W13b registry copy sweep (D-7) | **DONE** (Wave 2) | All 57 registry entries swept plain-language; technical facts relocated to NEW additive `technicalDetails` field (registry → contract AdminSettingSchemaEntry (oasdiff-verified non-breaking) → server DTO → SettingsCategoryCard → W13a tooltip); 587/465/25 SMTP facts pinned by test; no env-pin duplication (tooltip auto-folds it); MailSection intro decision-ID leak fixed; +7 registry tests, +2 passthrough tests. Orchestrator follow-through: gen-settings-reference.mjs now renders BOTH layers ("Technical details:" line, 15 entries) so generated docs lose nothing; regenerated settings/env references committed. |
 | W14 power buttons (D-8) | **DONE** (Wave 2) | Both buttons equal width (min-width sized to longer label), "…" dropped, Restart = new `warning` variant (amber), Shut down = `danger`; confirm dialogs untouched. BONUS real find: shared danger BUTTON FILL failed AA (white on --color-danger = 4.08:1) — new `--color-danger-fill` (color-mix 90% danger/10% black) = 4.89:1, benefits every danger button app-wide; all ratios computed and recorded. |
 | W15 Advanced Server rework | **DONE** (Wave 2, after W13b) | Search-icon crowding root-caused as RegistryFilterBar's LOCAL padding landing inside the icon footprint (shared Input variant verified fine) → 40px clears it; NEW shared FilterChip primitive in ui/Chip.tsx (explicit min-height fixes cross-line raggedness, --space-sm inset, SegmentedControl-matching amber active, real count badge, 44px touch floor) replacing the forked buttons; filter header boxed as its own block; spacing rhythm bumped; phosphor-mobile-css test updated to assert the new architecture. |
 | W16 Search empty state | **DONE** (Wave 2) | /search's own 720px uncentered cap removed; page wraps SettingsPageLayout (existing standalone-route precedent); empty-state hero recomposed centered (recent-pills row + ghost watermark as one deliberate block); zero behavior/query/keyboard changes. Visual pass queued for Wave 3. |
-| W17 macOS installer text wrap | FIXED at source + verified via Quick Look renders; real-Installer screenshot pending Screen Recording permission | welcome/readme/conclusion converted .txt→.rtf (proper paragraph flow, bold path—description list that survives any pane width; conclusion had the same defect class, included). Authoring HTML sources committed at installers/macos/pkg/resources-src/ (README documents the textutil regen + the charset-meta mojibake trap found and fixed: UTF-8 read as Latin-1 shipped em dashes as "â€""). Distribution.xml.tmpl → text/rtf; distribution-xml.test.mjs fixtures updated; `pnpm installers:test` green. Panes preview pkg (real Distribution + real resources, stub payload) opened in Installer.app on this M3 Max for eyeball check; scripted screenshot of the Installer window requires Screen Recording permission for the terminal host (screencapture: "could not create image from display") — final exit screenshots deferred to Wave 3 / owner grant. |
+| W17 macOS installer text wrap | FIXED at source + verified via Quick Look renders; real-Installer screenshot pending Screen Recording permission | welcome/readme/conclusion converted .txt→.rtf (proper paragraph flow, bold path—description list that survives any pane width; conclusion had the same defect class, included). Authoring HTML sources committed at installers/macos/pkg/resources-src/ (README documents the textutil regen + the charset-meta mojibake trap found and fixed: UTF-8 read as Latin-1 shipped em dashes as "â€""). Distribution.xml.tmpl → text/rtf; distribution-xml.test.mjs fixtures updated; `pnpm installers:test` green. Panes preview pkg (real Distribution + real resources, stub payload) opened in Installer.app on this M3 Max for eyeball check; scripted screenshot of the Installer window requires Screen Recording permission for the terminal host (screencapture: "could not create image from display") — final exit screenshots deferred to Wave 3 / owner grant. **[WAVE-A CLOSED f51a35d9 2026-08-11]** (RTF-regen drift check; real-Installer screenshot remains owner-verify) |
 | W18 tray coherence | CODE-VERIFIED (no tray↔caps coupling exists); live VM re-check deferred to next Windows install | W1 RCA lane C traced the full chain: tray status text comes verbatim from GET /ipc/v1/status; the PRIMARY worker signal is a pg_stat_activity row with application_name 'loombre-worker:<pid>:<start>' scoped to current_database() (packages/db/src/query/worker-liveness.ts:79-93) — the hwprobe report plays NO part anywhere in the chain, so a worker running with zero hw backends reports "running" by construction in rc.3+. The screenshot's "Worker: stopped" was a TRUE liveness report (worker down / wrong-DB dev fallback in db-url.ts:44-51 / pre-labeling binary), not a caps symptom; the only misreport mode is the job-ledger fallback (idle==stopped) which engages solely when the liveness QUERY throws. No tray fix needed. Live confirmation (tray shows running + zero backends after W1's probe fixes) requires the owner's Parallels VM on the next rc install — flagged in the deferred list. |
 
 ### Wave 3 — opus review (3 reviewers), fix pass, visual sweep, exit gates (COMPLETE)
@@ -101,8 +101,10 @@ fixed same-session; full list + dispositions:
   role="tablist" without arrow-key nav/tabpanel across 7 implementations —
   pre-existing, now load-bearing for registry enums; proper fix is the
   radiogroup pattern + roving tabindex (follow-up ticket, not this run).
+  **[WAVE-A CLOSED 20e30a22 2026-08-11]** (+ b198c53b, radiogroup pattern +
+  inset ring; 4 of 7 consolidated onto the shared component).
   FilterChip 30px vs segment 44px desktop heights — deliberate two-family
-  sizing, kept. Power confirm step stays red for Restart (escalation at the
+  sizing, kept. **[RE-AFFIRMED 2026-08-11]** Power confirm step stays red for Restart (escalation at the
   commit moment, documented in-file). /system/info fetched 3× per Dashboard
   load (perf nit). W17's HTML→RTF regen has no drift check. PinModal's raw
   input + shared .textarea-class number inputs remain outside ui/Input.
@@ -285,7 +287,7 @@ The review REPRODUCED a race in the first-cut reconciliation and reshaped it:
   512→513 prose.
 - **Deferred (recorded, deliberate):** boot-only sweep (a mid-uptime ledger-write
   failure wedges the stash per-tick guard until next restart — periodic sweep is
-  future work); unsupported-platform (freebsd etc.) 'never-ran' copy implies a
+  future work) **[RE-AFFIRMED 2026-08-11]**; unsupported-platform (freebsd etc.) 'never-ran' copy implies a
   probe that will never come (wire can't express 'unsupported'); the synthesized
   fallback's `encode: [h264, hevc]` @ verifiedAtMs:0 flipping hevcEncodePreferred
   for missing-snapshot installs is PRE-EXISTING Phase-3 BIND shape — flagged to
@@ -405,6 +407,661 @@ uninstall stray-bundle tests shimmed pkgutil but not macOS-only plutil
   windows-x64.exe may or may not carry the defect. OWNER: smoke-test
   the Windows asset on the VM before publishing (or dispatch the diag
   workflow for more signal). Full evidence in task #17.
+
+## an upstream media server-study IMPLEMENTATION run — close every verified defect + recorded deferral, then AV1 + ABR (kicked off 2026-08-10, owner brief "Close every verified defect and recorded deferral surfaced by the an upstream media server comparative study…"; Wave A is part of the 1.0 ship gate)
+
+AUTHORITY: the owner's implementation brief supersedes the study's "no implementation"
+lock — this run IS the authorized implementation orchestration. Waves: 0 foundations
+(solo) → ⛔ STOP → A contract-free fixes (5 lanes) → B contract-touching (3 lanes) →
+C feature builds (C1 AV1 then C2 ABR, each fable spec → ⛔ owner sign-off → build →
+fable review) → D fable review + run exit. 1.0 does not tag until Wave A's exit
+criteria hold; Waves B–D gate the release only if the owner says so at the Wave A stop.
+
+RUN LAW (compressed; the brief is authoritative): three model tiers — haiku BANNED,
+sonnet floor for standard lanes, opus pre-assigned to A1 lifecycle / A2 DV-strip /
+B2 TOCTOU / both Wave C builds (orchestrator may promote a lane to opus, recording
+promotion+reason here), fable for ALL review passes + Wave C specs + adjudications;
+a lane never reviews its own work. STATE.md ground truth before each next wave;
+agent-reported completion never accepted without orchestrator verification. License
+firewall: study is concept-level reference ONLY — no lane clones/consults/cites
+an upstream media server source this run; LICENSE-SENSITIVE areas derived from first principles.
+Publication ban LD-1. Lane safety: spec-file allowlists only (never package-level
+test runs); resumed worktree lanes pin absolute worktree path first; orchestrator
+checks git status + worktree list on main after any resume; settings-registry lanes
+run docs:build + commit regen. Contract: SDK regen+build atomic per touch (sdk-drift),
+oasdiff per change, conformance unimplemented-allowance stays zero; engine changes
+ship matrix+goldens same PR + ENGINE_VERSION bump. Feedback-loop-first. Read-only
+scout before writes in every lane; Wave 0 + both C specs end in confirmation stops.
+
+### LD register (LD-1..LD-16, owner-adjudicated 2026-08-10 — DO NOT re-litigate; distinct from the fix-list "LD wave" LD-1..13 numbering at the section above)
+
+- LD-1 Study internality: relocate study to gitignored reports/ path; purge history
+  if ever committed; srcExclude analysis/** belt-and-braces; docs-build verify.
+- LD-2 Windows-ARM authorized: candidatesForPlatform gains arch param; win32+arm64
+  → ['software'] only; d3d11va excluded until real ARM64-Windows decode evidence
+  (recorded re-open condition).
+- LD-3 DV strip real: dv-stripped-to-hdr10 copy path emits a genuine DOVI-RPU-
+  removing bitstream filter AND drops the enhancement layer on repackage for
+  profile-7 dual-layer — clean single-layer HDR10, zero DV residue. Red-first vs
+  real ffmpeg + real DV sample (open-GOP-strip precedent), goldens, matrix both
+  directions, spec + reason semantics updated to the now-true behavior.
+- LD-4 devices.profile stays (deliberate cache); C10 = fix the stale migration
+  comment to say exactly that.
+- LD-5 No theming work; themes-as-LPP-plugin formally retired (LPP excludes UI
+  extensions by design) — record in plugin roadmap doc.
+- LD-6 ABR implemented (Wave C2): master playlist route, multi-variant session
+  shape, client rung switching. Governed by LD-16.
+- LD-7 AV1 fully supported (Wave C1): LadderCodec enum + VideoAction.targetCodec
+  contract additions; encoder tables + DB CHECK + TS unions one coordinated change;
+  matrix/goldens same PR. Governed by LD-16.
+- LD-8 rateLimit.loginByIdentifier stays as-is — ACCEPTED, recorded here.
+- LD-9 Remote cross-path TOCTOU properly fixed: serialize enables; mechanism MUST
+  guarantee release on any thrown external side effect (no permanent-lockout mode);
+  design states its release guarantee explicitly; reviewer attacks it.
+- LD-10 Perf harness variance-resilient: best-of-N / repeat-on-breach targets the
+  MEASUREMENT; perf/baselines.json budgets untouched; real regression still fails.
+- LD-11 Installers set LOOMBRE_LOG_FILE on every shape (pkg/MSI/Docker/tarball
+  docs); W12 empty-state copy + env-reference regenerate.
+- LD-12 Stash sort=rating lands: migration 0023→(next free number) two measured
+  partial expression indexes (238→7ms), explicitly reversing decision 0009 with a
+  documented reason at the decision site.
+- LD-13 Mail posture trio now: (a) currentPassword on self-changes; (b)
+  ClaimInviteRequest.email null-to-clear; (c) emailApplied:false post-auth claim
+  signal (reviewer verifies no pre-auth distinguishability). R-F1 PATCH-me oracle
+  accept+document NOT reopened.
+- LD-14 AUD-A4v3-003: amend the broken design rule itself, then conform the
+  implementation; both reviewed together.
+- LD-15 DV profile-7 subsumed by LD-3 (EL dropped on repackage; no gating-out).
+- LD-16 ABR/AV1 tier posture (verbatim law): every quality rung is a separate
+  workload under the existing admission capacity limit; a quality change hands the
+  existing slot from one rung to another — never an additional unrestricted
+  transcode; Tier-0 advertises a limited variant count (C2 spec proposes exact
+  count for owner sign-off); AV1 on Tier-0 ONLY with probe-battery-verified
+  hardware encoding; Tier-1+ may fall back to software AV1.
+
+### Wave 0 — foundations (solo, orchestrator, 2026-08-10) — COMPLETE, at ⛔ STOP
+
+LD-1 EXECUTED + VERIFIED: study moved docs/analysis/upstream-media-server-comparative-study.md →
+reports/upstream-media-server-study/ (git check-ignore confirms .gitignore:47 reports/ covers it);
+`git log --all -- docs/analysis/` EMPTY (never committed — no history purge needed;
+index clean, no stash); docs/.vitepress/config.mts srcExclude now ["PLAN.md",
+"PLAYBACK.md", "public/**", "analysis/**"] with a firewall comment; pnpm docs:build
+ALL STEPS PASSED and `grep -ril upstream-media-server docs/.vitepress/dist/` → ZERO hits, no
+analysis/ route in dist. Documentation Sync standing rule honored for the config
+edit: dist → website site/docs-dist (verbatim replace) + website `npm run build`
+green (70 docs routes merged, CSP/invariant checks pass). Deploy NOT run (manual
+owner action, per the rule). Run-law-3 structural enforcement: the an upstream media server clone
+was DELETED from the session scratchpad. Stale worktree lane/remote-t2 pruned;
+`git worktree list` = main checkout only.
+
+CITATION RE-PIN vs HEAD 88c5e6e5 (tree clean; the post-rc.6 QA + fix-list + LD +
+vendor-mirror waves all landed since the study — every study SHA is stale, these
+supersede):
+- C1 CONFIRMED, mechanism intact: apps/worker/src/index.ts shutdown() (≈:563) does
+  queue.stop() + hashPool.terminate() + watcher/delivery-loop stops + db.destroy()
+  — NO live-run registry, NO terminate of in-flight transcode runs. runner.ts has
+  an internal idempotent handle.terminate() (:226, :307) ready to be registered.
+- C2 CONFIRMED, mechanism intact: process.ts:111 detached POSIX spawn; NO worker_pid
+  anywhere (grep of migrations + worker src empty); index.ts:484
+  SINGLETON_GUARDED_JOB_TYPES still excludes "transcode"; playback-sessions.ts
+  countActiveTranscodeSessions :701-709 counts non-terminal statuses (now incl.
+  'seeking') — orphan-frees-slot-while-burning-CPU conclusion unchanged.
+- C3 CONFIRMED at new line numbers, scope REFINED by the QA wave's controller
+  rewrite: hls-file.controller.ts:57 SEGMENT_DURATION_SEC=6, :58
+  SEEK_LOOKAHEAD_SEGMENTS=3; seek fires at :255 (lookahead>3 path) and :274
+  (ENOENT/pruned path), BOTH still `segmentIndex * SEGMENT_DURATION_SEC * 1000` —
+  nominal-duration arithmetic vs real variable-duration segments. requestSeek
+  (packages/db/src/query/playback-sessions.ts:611-623) writes seek_target_ms
+  VERBATIM — the missing [0,durationMs] clamp is confirmed. New context Lane A2
+  must honor: manifest now serves active OR suspended (:179 manifestServable, the
+  manifest-serves-suspended fix), requested-segment tracking at :245
+  (updateRequestedSegment), seek check runs BEFORE any filesystem touch; worker
+  consumes seeks in runner.ts (spawnRun seekTargetMs :203/:311, startSeg =
+  (producedSegment ?? -1) + 1 at :309). Goldens 33/34 (seek-copy-opengop) now
+  exist and constrain the arg-builder side.
+
+FLAGS FOR THE STOP: (1) fix-list task #10 (Safari cookie-auth structural fix) is
+listed in the brief's ground-truth inputs but NO wave lane owns it — owner assigns
+or explicitly re-defers; (2) the fix-list "LD wave" section above uses its own
+LD-1..13 numbering — unrelated to this register.
+
+Lane briefs: reports/upstream-media-server-study/briefs/ (gitignored evidence tree) — file-scope
+allowlists, spec-file allowlists, exit-evidence lists per lane; briefs are the
+verbatim spawn prompts for Waves A/B; C briefs are the spec-lane charters.
+
+STOP RESOLVED (2026-08-11): owner approved Wave A; owner directed task #10 →
+Wave B. AFTER the stop presentation the orchestrator discovered the LD wave had
+ALREADY adjudicated the three fix-list tasks: #9 CLOSED (b7825f4a — full Class
+A/B sweep + review-caught plugin-delivery second id-keyset, migration 0040;
+commit verified), #11 cleanup CLOSED (4a771dc1 — 1062 DBs dropped; the TWO
+residuals remain open and are Lane A1's), and #10 CLOSED considered-and-rejected
+(cookie auth for media routes architecturally unavailable: serverUrl is runtime
+user-entered/cross-site, plain-HTTP LAN is first-class → kills SameSite=None;
+Secure, CORS deliberately credentials:false, hls.js credentialed-XHR reversal,
+native clients have no cookie jar; recorded reopen conditions: web app becomes a
+streaming proxy OR HTTPS mandated). The #10→Wave B direction was given against
+the orchestrator's stale "unassigned" flag — discrepancy surfaced to owner;
+recommendation: honor the recorded closure. RESOLVED 2026-08-11: owner directed
+"honor the recorded closure" — task #10 stays CLOSED considered-and-rejected;
+the conditional Wave B slot is withdrawn; Wave B remains B1/B2/B3 as chartered.
+
+### Wave A — SPAWNED 2026-08-11 (5 parallel worktree lanes; A1/A2 opus, A3/A4/A5 sonnet)
+
+Lane adjustments vs the briefs as presented at the stop (all recorded in the
+brief files too): A1's mission = C1 + C2 + C7 + task-#11 RESIDUALS only (#9
+dropped as closed; cleanup half done); migration numbers pre-assigned to avoid
+parallel collision — A1 gets 0041 (worker_pid/worker_started_at_ms), A5 gets
+0042 (LD-12 rating indexes); A2 runs a mandatory work order (C3 → C6 → C9, then
+LD-3 SCOUT ONLY — fixture proposal returns for orchestrator checkpoint before
+any DV implementation); A5 reads audit candidates read-only from the MAIN
+checkout's reports/ (gitignored → absent from worktrees). Orchestrator holds:
+gate runs, docs sync, integration merges, per-claim verification.
+
+**A2 checkpoint (2026-08-11, mid-wave):** items 1–3 DONE and orchestrator-verified
+(38/38 re-run in the lane worktree; zero engine/contract diffs). C3 landed as a
+pure controller-side derivation (deriveSegmentStartMs: exact cumulative real
+#EXTINF sums inside the served window, measured-mean extrapolation outside,
+nominal only as last resort) + [0,durationMs] clamp at both call sites —
+requestSeek untouched (no A1 handoff needed). LD-2/C6: candidatesForPlatform
+arch param REQUIRED (not defaulted — a default would silently re-admit the x86
+list); win32+arm64 → ['software']; re-open condition in-file. C9 done. SCOUT
+CONFIRMED THE STUDY'S C4 FINDING IS WORSE THAN DOCUMENTED: dv-stripped-to-hdr10
+emits `-c:v copy` and NOTHING else — no DV-aware builder code exists; RPU NALs
+AND container dvcC/dvvC signalling pass through; profile-7 EL not dropped
+either; copy branch never re-tags hvc1. LD-3 implementation AUTHORIZED at the
+checkpoint with: fixtures = NAL-splice CI floor + dovi_tool primary (2.3.3
+installed via brew, PATH-resolved dev tool, MIT — LICENSE-INTENT.md entry
+required) + owner-sample env hook; mechanism decided EMPIRICALLY between
+filter_units=remove_types=62-63 and the DV-aware dovi_rpu bsf (present in PATH
+ffmpeg; vendored-build availability must be reported) against a three-fold
+zero-residue oracle (trace_headers NAL scan + no DOVI side-data record + hvc1
+tag); open-GOP composition ships as ONE -bsf:v value (golden 37); reason stays
+`dv-stripped-to-hdr10` made TRUE with EL-drop in parameterized detail (NO new
+reason code — contract enum is closed; distinct-code option deferred to owner).
+NEW A2-FOUND DEFECTS RECORDED FOR POST-A1 DISPOSITION (runner.ts is A1's file):
+(1) presentation-vs-source timeline divergence — seek runs spawn `-ss` without
+-copyts, output timeline restarts at 0 while segment indices are a global
+monotonic counter and no per-run source origin is recorded server-side → exact
+source-time anchoring impossible for runs ≥1 and post-seek progress reporting
+(video.currentTime) is wrong; (2) seek-restart livelock — client retrying a
+too-far-ahead index re-fires requestSeek per 503 and the worker restarts
+unconditionally (no de-dup against in-flight target); (3) renderServedPlaylist
+EVENT playlist prunes head without EXT-X-MEDIA-SEQUENCE (assigned to A2's
+continuation, its file).
+
+**A3 checkpoint (2026-08-11, mid-wave):** first pass done. GENUINELY-OPEN items
+closed: C5.1 breaker boot re-seed (pure seed primitive + server wiring; RED run
+exposed a WORSE bug — an un-reseeded restart REGRESSED the durable
+consecutive_failures column downward on next write); C5.3's new half (secret
+dropped from a live manifest stranded its keyring entry forever —
+removeOrphanedManifestSecrets keyed on the manifest schema diff, deliberately
+NOT on config submissions whose omission=unchanged contract is intentional);
+L-6. ALREADY-CLOSED-IN-TREE verified not re-implemented: L-4 (+ a db-layer
+lpp:-prefix reject covering ALL future callers), L-7, L-2/L-3 (regression tests
+backfilled — none existed). Orchestrator CORRECTED one lane call: the
+LAN-allowlist exact-hostname bypass (ssrf.ts:361, pinnedAddress:null) is NOT
+by-design-acceptable — it is precisely the residual the owner's C5.2 wording
+directs closing; continuation ordered (resolve-once-and-pin for allowlisted
+names, allowlist's only remaining effect = skip the disallowed-range check;
+red-first flip-resolver test). SCOPE EXTENSIONS granted to A3: (a) worker-side
+SECOND breaker registry with the same unseeded gap (apps/worker metadata/
+plugin-breakers.ts + plugin-delivery/backoff.ts — A3's find; index.ts wiring
+would hand off through A1); (b) M-7 ledger redaction landed in packages/jobs/
+src/ledger.ts recordRetrying/recordFailed (verbatim errorMessage → jobs.
+last_error + job.updated outbox payload; verified at source), redactPaths
+lifted from apps/worker/src/crash to a shared home. Final spec-run verification
+of the whole A3 branch happens once, on the settled branch, when the
+continuation returns.
+
+**A1 checkpoint (2026-08-11, mid-wave):** all four items DONE and orchestrator-
+verified (30/30 on re-run in the lane worktree incl. the 4 real-ffmpeg lifecycle
+integration proofs; contract scope empty; migration 0041 additive; requestSeek
+content untouched). C1: run-registry (register-at-spawn-before-any-await,
+allSettled terminate-all) awaited FIRST in shutdown(), SIGCONT-before-SIGTERM
+preserved and timing-asserted (<1.8s for a throttle-suspended run). C2:
+worker_pid/worker_started_at_ms + reapable partial index; reaper with real
+inspector (/proc Linux, ps darwin, tasklist+wmic+CIM win32, zero new native
+deps); PID+cmdline verified against staging_dir — reused/unverifiable pid NEVER
+signalled, session still reclaimed; kills the process GROUP. Lane FOUND+FIXED a
+worse defect while proving the cap invariant: killGroup returned once SIGKILL
+was QUEUED, freeing the admission slot while the process was still scheduled —
+waitForRunExit (bounded, zombie-proof gone-predicate) now pins kill→re-inspect→
+free-slot ordering. C7: reconciliation machinery EXTENDED with per-group
+horizons (transcode group: 15-min queued-stale horizon = the sweeper's own
+idle-timeout, maxRows 500, oldest-first) — singleton list untouched; WARN
+orphan-signature breadcrumb in the query layer (sweeper service is A5-forbidden
+territory; honest limitation documented: jobs ledger has no session id, fact 3
+is instance-level). #11 residuals: (b) advisory-lock serialization of
+migrate/reset (both race interleavings reproduced red first); (a) reset now
+demands live-process evidence (pg_stat_activity application_name loombre-%) AND
+a COMMENT ON DATABASE disposable-claim (stamped on auto-provision/ensureTest/
+--allow-reset adoption; stamping itself gated on isTestDatabaseName so the real
+DB can never be marked). Operator side effects recorded: shared loombre_test on
+5442 stamped once by the lane; dev DB `loombre` verified UNMARKED. Lane also
+tripped+scrubbed the competitor-naming grep gate in first-draft comments —
+advisory relayed to A4/A5. A1 CONTINUATION ordered (A2's two runner-side finds,
+now dispositioned): (1) seek-restart livelock de-dup in runner consumption;
+(2) per-run source-origin recording — durable runs table (runIndex, startSeg,
+sourceOriginMs), migration 0043 reserved, real columns per invariant #3, plus
+the packages/db read query; controller-side consumption (derivation upgrade +
+progress reporting) sequenced to A2 AFTER A1 lands; -copyts/arg-builder
+timestamp semantics explicitly deferred to the ABR (C2) spec.
+
+**A2 LD-3 checkpoint (2026-08-11): the DV strip is REAL — done and orchestrator-
+verified** (76/76 on re-run: dv-strip real-ffmpeg fence + goldens + contract-
+reason-codes + playback-hls; contract diff empty; ENGINE_VERSION 0.8.5→0.9.0,
+bumped once). EMPIRICAL MECHANISM DECISION (real profile-8.1 + real profile-7
+dual-layer samples, x265+dovi_tool, through the real HLS pipeline): chosen =
+`filter_units=remove_types=62-63` + `-tag:v hvc1` on the DV-strip copy branch.
+dovi_rpu=strip=1 REJECTED — strips the RPU but leaves ALL 104 EL NALs on
+profile-7 (fails LD-15); filter_units clears both to zero. Container DOVI
+config record: ffmpeg 8.x does not propagate it on stream copy at all (no
+residue leg; no STOP needed) — but the dvh1 fourcc DID survive repackage and
+-tag:v hvc1 closes it. Vendored-ffmpeg question moot by choice: filter_units
+long predates the 7.1-era dovi_rpu, so a repin can never silently lose the
+mechanism (manifest pins are 8.1.x). TWO DESIGN-CHANGING LANE FINDINGS:
+(1) trace_headers is BLIND to unspecified NAL types 62/63 — the originally-
+proposed oracle read clean over a fully intact RPU; replaced with a direct
+Annex-B byte scan (the decorative-oracle trap, caught red-first); (2) two
+-bsf:v flags silently overwrite each other (proven: RASL 8/9 survived) — the
+open-GOP + DV composition ships as ONE merged filter_units=remove_types=
+8-9|62-63 (golden 36 pins it; integration asserts exactly one -bsf:v arg).
+Reason semantics contract-free as approved: no new code; detail carries
+dvProfile/blCompatId/elDropped; contract hazard AVOIDED — VideoAction is
+additionalProperties:false so a dvStrip flag would have been a contract change;
+instead packages/playback-engine/src/dv.ts's dvStripApplies() is shared by
+Stage C and the builder, making reason/args drift structurally impossible.
+EXT-X-MEDIA-SEQUENCE fix landed (first-surviving-index = media sequence;
+unpruned playlists byte-identical). LICENSE-INTENT.md gains the external
+test-fixture-tools section (dovi_tool, MIT, PATH-resolved, never vendored).
+NEW FINDING dispositioned to the Wave C2 ABR SPEC's scope: the served playlist
+declares EXT-X-PLAYLIST-TYPE:EVENT while retention prunes segments — a genuine
+RFC 8216 §4.3.3.5 contradiction; NOT one-line-fixable (dropping EVENT makes
+hls.js treat the stream as live and jump to the live edge, breaking resume) —
+the C2 spec must define playlist-type/retention semantics and close it. A2 now
+HOLDS for the sequenced consumption half of the run-origin fix (post-A1-
+continuation). PLAYBACK.md §3/§4/§6/§8.2/§9 updated by the lane; docs sync
+orchestrator-side at integration.
+
+**DV strip — INDEPENDENT ORCHESTRATOR VERIFICATION (owner-ordered, 2026-08-11),
+five layers, all PASS:** (1) implementation read — one shared predicate
+(dv.ts), one merged -bsf:v, hvc1 re-tag, contract hazard avoided; (2) wiring —
+goldens 35-38 pin the production argv (36 = merged 8-9|62-63; 38 = no-strip for
+a DV-capable device) and the fence calls production plan()/buildFfmpegArgs();
+(3) fixture genuineness — orchestrator-authored NAL scanner (written from
+H.265 §7.3.1.2, zero lane code reused) found the profile-7 fixture carries 48
+RPU(62) + 104 EL(63) NALs and the 8.1 fixture 48 RPU, both with dvvC box +
+dvh1 fourcc + DOVI config record — the strip result cannot be vacuously clean;
+(4) physical end-to-end through the real HLS-fmp4 shape — post-strip: 0×62,
+0×63, no dvvC/dvcC/dvh1 bytes in init.mp4, hvc1 present, ffprobe side_data
+empty, output decodes as plain HEVC Main 10 with HDR10 colorimetry INTACT
+(smpte2084 + bt2020, SEI prefix NALs retained), identical slice-NAL counts
+pre/post (only DV units removed); differential composition proof — merged
+filter also removed RASL 8/9, plain 62-63 left RASL alone, exactly per
+goldens 36 vs 35; (5) mutation — DV_NAL_REMOVE_RANGE neutered to 60-61 +
+engine rebuilt → fence fails 3/4 (zero-residue, LD-15, composition); source
+restored + rebuilt → 4/4 green. Verification note for honesty: mutation round
+1 falsely looked green because the fence imports the BUILT dist and the first
+mutated build failed silently in an &&-chain (orchestrator harness error,
+caught and redone properly). LD-3/LD-15 verdict: properly implemented and
+genuine.
+
+**A4 checkpoint (2026-08-11): all 8 items done — orchestrator spot-verified**
+(29/29 on SegmentedControl/system-info/PinModal/LibraryPills re-run from
+apps/web; contract diff empty; 7 commits; lane's own final combined rerun was
+166/166 across 22 spec files + installers:test 59/59 + grep-gates 0). Radiogroup
+sweep: all 7 implementations on WAI-ARIA radiogroup + roving tabindex; FOUR
+consolidated onto shared ui/SegmentedControl (LibraryPills, SortControl,
+ZoneSortControl, SeasonPillTabs); RegistryFilterBar + FeaturedBanner carry the
+pattern directly (shape doesn't fit); collateral test updates caught by broad
+rerun (StashModal, StashConnectionPanel, RestrictedStep, ComposeNoticeCard).
+PinModal + notice number inputs → ui/Input. Poster-card item REDIAGNOSED by the
+lane: all four family members were ALREADY real anchors with Enter-nav — the
+actual defect was focus-ring clipping under overflow/windowing ancestors; inset
+ring applied to all four (Input/Button precedent). /system/info triple-fetch →
+single lib/system-info.ts call site (module cache + in-flight dedup), proof =
+three simultaneous consumers, apiGet mock called exactly once. W8 tail landed
+per the established scale rules. W17 RTF drift check landed (textutil regen
+byte-diff, tamper-tested both directions, macOS-skip per house pattern).
+VERIFIED-ALREADY-RESOLVED (stale STATE.md rows, no re-implementation): W5
+native selects and mobile-tab-bar/settings-devices — both landed in the Wave 3
+pass f94a0ce9 after those deferral rows were written; rows now superseded by
+this entry. Lane self-scrubbed 25 competitor-naming violations after the
+mid-run advisory (its comments had used the run's own section title).
+
+**A1 FINAL (2026-08-11): continuation done — lane COMPLETE, orchestrator-
+verified** (44/44 on re-run: seek-dedup + lifecycle + transcode-sessions;
+migration 0043 + the WHERE seek_target_ms = $expected compare-and-clear guard
+confirmed at source). Livelock: 17-spawns-red → absorb-don't-obey; absorption
+only when the run is ALIVE and the target lies in [sourceOriginMs,
+sourceOriginMs + producedMs] (window collapses to exact-origin once retention
+prunes the run's head); a different target can NEVER be swallowed (SQL guard —
+zero rows matched, survives to next tick). Run origins: transcode_runs table
+(0043, real columns + FK + UNIQUE(session_id, run_index)); recorded for EVERY
+spawn incl. run 0 (idempotent per (session,run) for job redelivery); reads
+keyed by start_segment (the only monotonic key — source_origin_ms is NOT
+monotonic under backward seeks, pinned by a three-run test); real-ffmpeg proof
+maps segment→run→origin across the seek boundary. Lane root-caused a
+mid-verification flake: a parallel suite reset shared loombre_test mid-run —
+the NAMESPACING half of #11 residual (b); its two new integration suites now
+provision per-suite DBs (worker_lifecycle_test, worker_seek_dedup_test);
+RECOMMENDATION recorded: move remaining worker/jobs live-DB suites per-suite
+at integration (two-line change per file). PLAYBACK.md §9 two bullets added
+in A1's own block.
+
+**A5 FINAL (2026-08-11): 16 items dispositioned — lane COMPLETE, orchestrator-
+verified per-file** (sync-consumer 14/14, connect 8/8, zero-file-e2e 2/2,
+events-ordering 5/5, password-recovery 21/21; earlier combined-invocation
+failures were the ORCHESTRATOR'S harness batching multiple stash/db suites in
+one vitest run — lanes' per-file discipline is the correct protocol, adopted
+for all future verification). LANDED: C10/LD-4 comments; C8→Wave-C1 linkage
+comment at args/builder.ts VIDEO_ENCODER_NAMES; reverse-proxy /images/** in
+all three recipes (docs sync pending); AUD-W1-001 dotnet test step on the
+gate job's Linux leg (EXECUTION PROOF = NEXT CI RUN — no local dotnet SDK);
+AUD-W4-001 afterSeq NaN→MalformedCursorError (original defect closed by #9;
+same class resurfaced one type down); AUD-W6-002 documented-not-faked;
+AUD-W6-004 cron-parser 5.7.0 via pnpm-workspace.yaml overrides (pnpm 11 moved
+overrides out of package.json — caught live); AUD-W2-001 full-mode marker
+retirement deferred past apply (mirrors the incremental fix); depcruise
+no-orphans (3 legitimate orphans excluded by pattern); temp-password-reuse
+rejected same-password self-change; stash.provider.connected event
+(transition-gated; K12: events live OUTSIDE openapi.yaml — the 8-step
+closed-list touch DOES edit packages/contract/event-schemas/, accepted as the
+established additive procedure, FLAGGED to Wave D reviewer 2 for
+re-adjudication); LD-12 migration 0042 with the decision-0009 PARTIAL-REVERSAL
+quoted at the decision site (238.7→7.4ms desc, 253.1→7.5ms asc; rating-only,
+restricted-zone-only; year + date/duration remain open); LD-14 rule amended
+(subtle/hint only on --text-* >=12px, NEVER --mono-*) + 8 declarations
+conformed with measured contrast (login labels were 2.34-3.38:1 → 7.4:1).
+REJECTED-with-evidence: limit clamp (all ~31 paginated ops already clamp,
+R-F9 spec green), node drift (BUILD-NOTES already fixed; gate-node-next 26
+deliberate), win32 DACL (closed by the 3-OS gate wave, mkdtempSync confirmed),
+sort=date sentinel (mechanism internally consistent; the LEFT-JOIN index
+limitation is A8b's recorded architectural constraint, not a bug).
+CLASSIFIED→Wave B: DELETE /admin/libraries/{id}/stash-connection (new
+contract op — added to Wave B's charter). REASSIGNED→A4: AUD-W6-001's real
+fix is client-side (server returns clean 404 <2s, proven by committed repro).
+
+DISPATCHES (2026-08-11): A2 continuation = consumption half (merge A1's
+branch; exact per-run derivation via getTranscodeRunForSegment; post-seek
+progress mapping SERVER-SIDE preferred — A4 owns web components; triple-seek
+red-first). A4 continuation = AUD-W6-001 client fix (404 → UnavailableScreen)
++ LD-14 re-verify of registry footers + SORTED-BY label against the amended
+rule. Wave A remaining: those two continuations, then integration (merge all
+branches → gate:full → docs sync → deferral annotation sweep CLOSED/
+RE-AFFIRMED → exit-gate proofs on the merged tree).
+
+**A4 continuation verified (2026-08-11):** AUD-W6-001 CLOSED client-side —
+root cause exactly as A5's repro implied: createPlaybackSession deliberately
+re-throws non-refusal errors and VideoPlayer's session-create effect ran
+`void run()` with no catch → unhandled rejection, phase stuck on "loading"
+forever; fix routes ANY thrown error into the existing client-synthesized-
+reason fatal path (UnavailableScreen), red-first with the unhandled-rejection
+failure mode captured (33/33 on orchestrator re-run). LD-14 spots both
+resolved-with-evidence, no changes: registry footer already complies (13px
+--text-sm + hint = the accepted-exception tier — a side effect of A4's own W8
+fix, anticipated in its code comment); "SORTED BY DATE ADDED" NEVER SHIPPED —
+prototype-only copy in the Phosphor .dc.html (watchlist screen), traced
+exhaustively, the violating mono+hint pattern was never built. A4 flagged one
+NEW violation outside its asked spots: .sourcePill[data-source="default"] =
+subtle color on the shared --mono-xs size — micro-continuation dispatched
+(conform per the amended rule, lane's design call on color-vs-size).
+
+**A2 FINAL (2026-08-11): consumption half done — lane COMPLETE, orchestrator-
+verified** (66/66 across playback-hls + playback e2e on re-run; A1-branch
+merge commit 2361e0e5 clean, zero conflicts). Exact per-run derivation: run 2
+origin deliberately EARLIER than run 1's in the triple-seek case (backward
+seek — clock ordering picks the wrong run), distinct per-run durations
+(6006/9009/7007) so no cross-run mean can accidentally pass; mid-run leg fully
+exact. LANE SELF-CAUGHT BUG worth institutional memory: selecting a run's
+segments by `index >= run.startSegment` sweeps in every LATER run's segments —
+a transcode_runs row records where a run STARTS, not where it ends; membership
+now decided by the runN/ prefix the playlist URIs already carry. FLAG FOR
+WAVE C2 SPEC + any future consumer: getTranscodeRunForSegment gives a run's
+START; consumers needing EXTENT will hit the same trap. Progress mapping:
+server-side at putProgress ingestion (catalog/progress.controller.ts), mapped
+BEFORE the write so resume point and playback.progress payload cannot
+disagree; NEVER-GUESS contract (no session/runs/staging/playlist, or position
+past end → client value passes through unchanged — correct for direct-play
+and un-seeked sessions, pinned by guard cases); red evidence: stored 66066
+where 606006 was correct (off by 9.5 min). D2 boundary honored: pure helpers
+lifted to apps/server/src/common/served-playlist.ts (catalog may not import
+playback/) — depcruise clean. No engine changes; ENGINE_VERSION stays at the
+single 0.9.0 bump; contract untouched. PLAYBACK.md §9: per-run anchoring rule
++ heartbeat mapping formula added. WAVE A CODE WORK NOW COMPLETE except A4's
+.sourcePill micro-fix; integration begins when it lands.
+
+### Wave A — CLOSED 2026-08-11 (exit gate MET)
+
+Integration: all five lane branches merged to main (92bd624c A1+A2 → 76ce3ec2
+A3 → 685e9219 A5 → 64992f44 A4); schema.sql REGENERATED on the merged tree
+(only conflict, per standing rule); pnpm install no-op; migrate-check 56
+tables. **gate:full ALL 16 STEPS PASSED** on the settled tree (web bundle
+170.7 KB gz / 200 budget; perf refresh c018b564). Docs/website sync run
+(website build green; deploy remains manual). Exit-gate items: lifecycle
+integration proofs green (no-orphan restart, hard-kill reap, slot-never-freed-
+early); triple-seek green; DV both profiles → clean single-layer HDR10 with
+zero residue (goldens both directions; spec==code; independent 5-layer
+orchestrator verification incl. mutation, owner-ordered); annotation sweep
+landed 7334ce90 — every closed deferral CLOSED-with-commit at its originating
+entry, every deliberate-keep RE-AFFIRMED, zero unanchored. Residual follow-ups
+carried forward: per-suite DB isolation for remaining worker/jobs live-DB
+suites (A1's recommendation — Wave D); apps/server crash-redact twin onto the
+shared canonical (Wave D cleanup candidate); K12 event-schema touch
+re-adjudication (Wave D reviewer 2); AUD-W1-001 dotnet CI step execution proof
+(next CI run).
+
+**OWNER DECISION (2026-08-11): release gating deferred to run exit.** The
+"do Waves B–D gate 1.0?" question is not decided at the Wave A stop; nothing
+tags until the full run (B, C1, C2, D) completes and the owner decides with
+everything in. Wave A's exit-gate evidence stands as recorded.
+
+### Wave B — SPAWNED 2026-08-11 (B1 mail trio sonnet, B2 TOCTOU opus, B3
+harness+installers sonnet, B4 stash-connection DELETE sonnet)
+
+PROVISIONING INCIDENT, caught + fixed before any damage: the first Wave B
+spawn happened while the orchestrator's persistent shell cwd was the WEBSITE
+repo (left there by the docs sync) — worktree isolation resolves against the
+shell cwd, so all four lanes were provisioned as worktrees of the website
+repo. Both lanes that reached the check stopped-and-reported cleanly (B2 even
+delivered a useful read-only scout: the pg_advisory_xact_lock house
+precedents in identity.ts/notices.ts, the argue-at-site convention, and the
+central single-lock-vs-two-phase-claim tension across the Cloudflare
+provisioning call — folded into B2's respawn brief); the other two were
+stopped mid-scout with zero writes. Website repo verified pristine (worktrees
+auto-cleaned, no stray branches, clean status). All four lanes respawned from
+the platform repo with a mandatory repo-identity sanity check as every lane's
+second action. Lesson recorded in orchestrator memory (worktree spawns: cd to
+primary repo first). B4 note: B1+B4 edit openapi.yaml concurrently in
+disjoint paths; SDK regen conflicts resolve at integration by regenerating.
+
+SECOND PROVISIONING DEFECT (2026-08-11, caught by Lane B4): the respawned
+worktrees were cut from a STALE base — 88c5e6e5, predating ALL of Wave A —
+not current main. B4 self-corrected (ff-only to c018b564) before working; B2
+built on the stale base unaffected in practice (its remote-* files are
+disjoint from Wave A; barrel-export conflict in packages/db/src/index.ts
+resolves at its continuation-merge); B1/B3 advised mid-flight to merge main
+FIRST (B1's LD-13a builds directly on Wave A's 086643de, absent from the
+stale base). Standing lesson (matches the recorded Remote-run hazard #4):
+every lane brief must mandate a `git merge-base HEAD main` base check as a
+first action — added to the respawn briefs' sanity check going forward.
+
+**B2 checkpoint (2026-08-11): LD-9 DONE — orchestrator-verified** (12/12 on
+re-run: 8 db serialization + 4 e2e race; contract untouched; guard source
+read). DESIGN — rejected BOTH framed options (lock-spanning-side-effects and
+two-phase claim) for a third that is strictly better: pg_advisory_xact_lock
+guards ONLY the read-verify-commit transaction inside the three
+enable*AndEmit writers (compiled-in, no bypass, invariant-4 posture); the
+guarded region contains ZERO external I/O, so release is structural
+(PostgreSQL COMMIT/ROLLBACK is the whole story — no unlock to forget, no TTL;
+a hung Cloudflare call CANNOT hold the lock because no external call happens
+inside it). Race loser COMPENSATES (tunnel R8 teardown / listener stop /
+tls.mode revert from snapshot) — compensation is best-effort external I/O
+that can fail but cannot corrupt DB state (its row write rolled back). E2e
+race is HARD-synchronized (fake Cloudflare transport parks on a test-held
+promise exactly in V-SEC F2's window). Disable-takes-no-lock proven
+mechanically (independent session HOLDS the exact lock while all three
+disable writers + resolver run — any acquisition would time the suite out).
+Resolver invariant throw retained as defense-in-depth, comment now says
+believed-unreachable-and-why. Micro-hardening ordered + in flight: the
+load-bearing READ COMMITTED dependency (lane's own flag — guard unsound
+under REPEATABLE READ, currently enforced by nothing) becomes a runtime
+assertion with a red-first spec; plus the main merge.
+
+**B4 checkpoint (2026-08-11): stash-connection DELETE DONE — orchestrator-
+verified** (90/90 on re-run: e2e 11 + conformance 13 + event-schemas 54 +
+db 12; base = current main c018b564 after its own ff fix). oasdiff purely
+additive (one DELETE op; no breaking); sdk-drift clean; conformance
+allowance stays zero (158 ops). Scout-grounded semantics: no keyring
+involvement exists (S1 direct-SQLite design — the briefed "secret gone" RED
+case documented as vacuous, not fabricated); synced facts KEPT by
+construction (satellite tables key off library_id); no zombie schedule
+(loop + in-flight sync re-read the row and treat absence as ordinary miss).
+JUDGMENT CALLS ACCEPTED: GET-after-DELETE returns to the documented
+pre-configuration resting state (the briefed "GET 404s" would have broken
+GET's own tested never-404-for-unconfigured contract — house contract wins
+over brief wording); DELETE 404s for no-connection (substantial-resource
+posture vs clearAdminMailCredentials' scalar-idempotent precedent);
+stash.provider.disconnected event added via the 8-step procedure with real
+actorUserId (admin-initiated, unlike the two system-originated stash
+events); single atomic commit justified by layer interdependence + the
+3b08c891 precedent, RED verified live per stage. FOLLOW-UP recorded: no
+"Forget connection" UI entry point exists yet — admin-guide doc + web action
+whenever that UI lands.
+
+**A3 FINAL (2026-08-11): continuation done — lane COMPLETE, orchestrator-
+verified** (126/126 on re-run: ssrf + ledger-events + delivery-loop +
+chain-resolution + redact-paths; 17 commits total; contract/protocol diffs
+empty across the whole lane). C5.2 CLOSED for real: allowlisted-by-name
+hostnames now resolve-once-and-pin like every other name; the allowlist's only
+remaining effect is skipping the disallowed-range check; HostResolution.
+pinnedAddress is no longer nullable and the unpinned fallback branches are
+GONE (flip-resolver proof: resolver called exactly once, pin survives a
+flipped answer; plus live end-to-end through hardenedFetch). Worker breakers:
+lane CORRECTED its own earlier flag — plugin-delivery/backoff.ts has no
+breaker (stateless pacing, nothing to seed); the real second registry
+(metadata/plugin-breakers.ts) AND a third previously-unflagged inline one
+(delivery-loop.ts runOnce Map) are both now seeded from durable counters
+(seed read bounded by plugin count, not poll tick; no index.ts changes —
+judgment call to fix the unflagged third accepted, within the grant's
+spirit). M-7 CLOSED: recordRetrying/recordFailed redact path components once
+before persisting last_error AND emitting job.updated. Lift decision ACCEPTED:
+canonical redactPathsInText in packages/shared (predicate-parameterized;
+apps/worker/crash consumes it, 34-case regression green) + a small documented
+LOCAL DUPLICATE in packages/jobs honoring that package's twice-documented
+"no @loombre/shared dependency" rule (ids.ts precedent) — recorded for Wave D
+reviewer 2: (a) optionally relax the jobs-package constraint instead;
+(b) apps/server/src/crash/redact.ts is a third, untouched twin that could
+consume the shared canonical (integration-time cleanup candidate).
+
+## an upstream media server comparative architecture study — ANALYSIS-ONLY, COMPLETE 2026-08-10 (owner brief "Comparative Architecture Study — an upstream media server Playback Engine vs. Loombre"; awaiting owner review + implementation authorization)
+
+DELIVERABLE: reports/upstream-media-server-study/upstream-media-server-comparative-study.md (908 lines) —
+authoritative; this section is the ground-truth ledger. (RELOCATED 2026-08-10 per
+implementation-run LD-1 from its original docs/analysis/ path: the study is internal,
+local-only material and now lives in the gitignored reports/ evidence tree; git
+history for docs/analysis/ verified empty — it was never committed, no purge needed.
+NOTE: an earlier copy of this section was reverted when a parallel session committed
+STATE.md mid-run; re-applied here. The report file itself was never affected.)
+
+Locked decisions (owner brief): read-only vs Loombre except this STATE.md section +
+the report; license firewall (an upstream media server GPL-2.0 vs Loombre AGPL-3.0 — concept-level
+only, no verbatim code/args); study source not docs; sonnet lanes / opus synthesis;
+Tier-0 (N100/4GB) statement on every recommendation; NO implementation this run.
+an upstream media server master shallow-cloned OUTSIDE the repo (session scratchpad), pinned
+6d501ba4188a5f6cea424302daab23313e748d4f — all an upstream media server citations reference that SHA.
+
+Phases (all complete): 0 Loombre discovery (solo sonnet, owner-CONFIRMED) → 1
+an upstream media server study (6 sonnet lanes) → 2 comparison (6 sonnet lanes) → 3 opus synthesis.
+Orchestrator spot-checked ~35 citations across BOTH codebases during phases 1–2,
+100% match; opus re-verified load-bearing claims at the Phase-3 gate. License
+firewall clean at every phase (0 code fences / 0 verbatim command lines; LICENSE-
+SENSITIVE flags used where a an upstream media server formula would tempt close consultation).
+
+**Run exit gate — all 4 criteria PASS:** every claim file:line-cited both sides;
+license firewall held (report: 0 fences, 3 LICENSE-SENSITIVE flags at per-encoder
+rate-control math + pan= downmix coeffs); all 26 recommendations carry a Tier-0
+impact statement (dedicated table column); report ends with §10 wave plan under
+"AWAITS OWNER AUTHORIZATION" + appendix. Recs ranked (impact×confidence)/risk,
+correctness fixes C1–C11 above features F1–F15.
+
+**Headline:** each system leads where its architecture forces it. LOOMBRE leads
+downstream of its two core bets (pure/total/test-pinned decision engine; process-
+isolated worker): machine-readable reasons as a contract field, verify-by-test-
+transcode HWA probing, a real Tier-0 admission cap + working throttle, out-of-process
+capability-scoped LPP. AN UPSTREAM MEDIA SERVER leads on field-earned breadth: ~27-property device-
+profile condition DSL, rkmpp/v4l2m2m HWA families, per-encoder rate-control
+sophistication, ~15 plugin extension families incl. UI/config pages. Highest-value
+output = six VERIFIED Loombre-internal gaps.
+
+**Six verified Loombre-internal findings (NONE fixed this run):**
+1. **No orphan-ffmpeg reaper (Tier-0-critical, confirmed).** POSIX ffmpeg detached
+   (transcode/process.ts:111); no pid persisted; reconcileStaleJobLedger covers only
+   SINGLETON_GUARDED_JOB_TYPES {hwprobe,image-backfill,opengop-backfill,stash-
+   inventory,stash-sync}, 'transcode' EXCLUDED (worker/index.ts:484-494);
+   countActiveTranscodeSessions counts only non-terminal statuses (playback-
+   sessions.ts:701-708) → a sweeper-ended orphan frees its admission slot while still
+   burning CPU/RAM, across ordinary restarts/deploys. → recs C1 (graceful-shutdown
+   terminate) + C2 (boot reaper + worker_pid col).
+2. **Seek-target arithmetic (confirmed mechanism, latent-under-current-playlist).**
+   controller uses segmentIndex×6000ms (hls-file.controller.ts:255,274); worker
+   restarts with startSeg=(producedSegment ?? -1)+1 (runner.ts:309) — continuous
+   numbering decoupled from media time. Opus scoped it: renderServedPlaylist
+   (playlist.ts:99-103,148-168,236-245) hands only produced closed segments w/ real
+   #EXTINF, so a compliant hls.js client never requests an ahead index; real defect
+   narrow (ENOENT/backward-seek to a pruned post-first-seek segment after ≥2 seeks).
+   → rec C3 (fix + [0,durationMs] clamp + double-seek test).
+3. **DV-strip spec/impl divergence (confirmed; severity calibrated down).**
+   hdr.ts:11 + docs/PLAYBACK.md:224 claim a DV metadata strip "in arg builder";
+   builder.ts emits no DOVI bsf (only open-GOP strip at :655). Profile-8.1 usually
+   benign (HDR10 decoders ignore the DV RPU SEI) → primarily doc-integrity, residual
+   risk on profile-7. → rec C4 (implement verified DOVI-RPU filter OR correct spec).
+4. **AV1 encode dead path:** probe verifies AV1 encode, ladder/arg-builder can't
+   target it (builder.ts:336-343). → rec C8.
+5. **win32 throttle doc divergence:** docs/PLAYBACK.md:438-440 says NtSuspendProcess;
+   code ships -readrate 1.2 (throttle.ts). → rec C9.
+6. **devices.profile dead persistence:** written at registration (identity.ts:528-
+   535), never read in playback (plan uses request-body profile, plan-request.ts:84).
+   → recs C10 (fix stale comment) / F4 (make PlanRequest.device optional w/ fallback).
+
+**Known bug documented AS-IS (owner said do not fix this run):** Windows-ARM HWA
+probe architecture-blindness — candidatesForPlatform keys only on NodeJS.Platform
+(hwcaps/platforms.ts:17-34), win32 always nvenc/qsv/amf/d3d11va/software regardless
+of os.arch(); Windows-on-ARM runs ~27 doomed x86-vendor probe spawns before software.
+an upstream media server is ALSO arch-blind there (not a LS win). → rec C6, owner-gated.
+
+**Top 5 recs:** C1 graceful-shutdown run termination (H×H/L); C2 boot crash reaper +
+worker_pid (H×M/M); C3 seek-target fix (M×H/M); C4 DV-strip decision (M×H/M); C5
+plugin hardening trio — breaker re-seed from durable counter / orphaned-keyring
+cleanup / pin LAN-allowlisted hostnames (M×H/L). All contract-free.
+**Contract/oasdiff-touching (all additive):** F2 rkmpp/v4l2m2m, F3 audio re-select
+reason, F4 device optional, F5 AV1 ladder target, F6 bandwidth probe, F11 subtitle-
+provider capability, F12 profile axes, F13 hw-decoder/tonemap fields, F14 plugin
+discovery route, F15 backend-exclude setting.
+
+**Wave plan (PROPOSED, not executed):** Wave A = verified correctness/Tier-0 fixes
+(contract-free, highest priority) — C1,C2,C3,C4,C5,C7,C8-prune,C9,C10 (+C6 iff owner
+un-freezes). Wave B = breadth/compat features (additive contract) — C11,F1-F6,F8,F9.
+Wave C = larger product-scope questions (owner decisions first) — F7,F10,F11,F12,
+F13,F14,F15. Implementation is a SEPARATE future run pending owner authorization.
+
+**OWNER DECISION (flagged, not acted on — brief limited repo writes to STATE.md +
+the report):** docs/analysis/ is NOT in the VitePress srcExclude (docs/.vitepress/
+config.mts:67 = only PLAN.md, PLAYBACK.md, public/**), so this INTERNAL study WOULD
+publish to loombre.com if pnpm docs:build + website sync run. Deliberately did NOT
+run the Documentation Sync flow (would publish it) and did NOT edit config (2nd
+write, out of scope). Before any future docs build: add "analysis/**" to srcExclude.
+
+**Wave A closure map (2026-08-11):** C1 shutdown-terminate → ec7a563b (+run
+registry f1cd259c red); C2 pid+reaper → 8df8eceb + c4b436fa (migration 0041);
+C3 seek arithmetic → 657df857 + exact per-run anchoring 87f63d26 (migration
+0043 f44b80ff by A1); C4 DV strip → 6ea91910 (ENGINE_VERSION 0.9.0;
+orchestrator-verified genuine, 5-layer); C5 → 02da6dc0 / 2d93c590 / 51e58732;
+C6 win-ARM arch → 60183805; C7 reconciliation fold → ef4de3f5; C9 throttle
+doc → 1788173b; C10 devices.profile comment → 0c3981d0; C8 → deferred to Wave
+C1 by design, linkage comment 8f07a2de; run-discovered closures: seek
+livelock 1dc1db8e, post-seek progress mapping afd7dd89, player zero-file
+hang 44e846e6, EXT-X-MEDIA-SEQUENCE 963d7e4d.
 
 ## Fix-list wave — uninstall script, ledger ordering, Safari token reload, test-DB isolation (2026-08-10, lanes + opus review)
 
@@ -949,7 +1606,7 @@ New items for owner triage:
   writes markers for every scene before apply, so a terminal mid-apply failure
   retires them and the next incremental computes `touched = []`. Loud failure rather
   than silent success — a real improvement, but not immunity. Recorded here because
-  STATE.md is the database, not just in a code comment.
+  STATE.md is the database, not just in a code comment. **[WAVE-A CLOSED 7659eeb4 2026-08-11]** (marker retirement deferred past apply, mirrors the incremental fix)
 - **`apps/server` e2e flakiness is NOT reproducibly green.** Wave 2's reviewer hit
   `reauth-review-findings.e2e.spec.ts` (200 vs 404) on one run and
   `conformance.spec.ts` on the next; a third run passed clean, and both pass in
@@ -1373,8 +2030,8 @@ Each §4 exit-gate item, with its backing evidence (test file / artifact):
 ### OPEN ledger — Loombre Remote (nothing silently dropped)
 
 - **[OPEN — owner home-lab, R11]** Real-network validation: actual phone on actual cellular, actual router port-forward, actual Cloudflare account/token, actual ACME issuance against a real domain. Runbook: `docs/ops/remote-access/home-lab-validation-runbook.md`. CI proves the machinery; this is the one thing CI cannot, and NO agent has marked it passed. Owner runs it and signs the table.
-- **[OPEN — owner decision, V-SEC F2 LOW]** Cross-path enable is TOCTOU-racy (non-transactional check-then-commit) → two concurrent different-path enables can 500 subsequent remote reads; admin-only, low-probability, recoverable by a normal disable. Documented at the invariant throw (`packages/db/src/query/remote-active-path.ts`). Fix = serialize enables under an advisory lock across their side effects; deferred because a lock un-released on a thrown external call is a worse permanent lockout. Owner: fix now or accept as documented.
-- **[DEFERRED polish — V-UX F5–F10]** Stale summary count self-corrects on nav (F5); expired-proof guidance sentence repeats (F6); raw userId in device rows (F7, accepted — no display-name join in frozen schema); reverse-proxy branch shows a skipped test-cert sub-step (F8); mobile stepper pills wrap (F9); dnsMismatch precedence masks CGNAT when the endpoint host is unresolvable (F10 — harmless when it resolves). None affect correctness/honesty.
+- **[OPEN — owner decision, V-SEC F2 LOW]** Cross-path enable is TOCTOU-racy (non-transactional check-then-commit) → two concurrent different-path enables can 500 subsequent remote reads; admin-only, low-probability, recoverable by a normal disable. Documented at the invariant throw (`packages/db/src/query/remote-active-path.ts`). Fix = serialize enables under an advisory lock across their side effects; deferred because a lock un-released on a thrown external call is a worse permanent lockout. Owner: fix now or accept as documented. **[SCHEDULED Wave B (LD-9, owner-adjudicated: fix now with guaranteed release-on-throw), in flight 2026-08-11]**
+- **[DEFERRED polish — V-UX F5–F10]** Stale summary count self-corrects on nav (F5); expired-proof guidance sentence repeats (F6); raw userId in device rows (F7, accepted — no display-name join in frozen schema); reverse-proxy branch shows a skipped test-cert sub-step (F8); mobile stepper pills wrap (F9); dnsMismatch precedence masks CGNAT when the endpoint host is unresolvable (F10 — harmless when it resolves). None affect correctness/honesty. **[RE-AFFIRMED 2026-08-11]** (documented keeps)
 - **[NOTE — DX, WG1]** `conformance.spec.ts`'s WG op expectations assume the native lib is built; a contributor with no Go toolchain sees red there (the dedicated WG suites skip gracefully, this one doesn't). Consider a Go-absent skip for the WG conformance rows.
 - **[NOTE — CI, T2]** The cloudflared stub-child e2e is Darwin-verified this session; Windows CI leg exercises it on the next `[full-ci]`/dispatch (design is shebang/chmod-free for portability).
 - **[LOGGED — main not pushed]** All work is on local `main` (tip 5cc263a). Push remains owner-authorized and is NOT part of this run. Recommend `[full-ci]` on the push to exercise the 3-OS matrix (macOS/Windows legs + the Go toolchain build per OS).
@@ -1628,7 +2285,7 @@ Two opus review agents ran concurrently (unintended duplicate, kept — corrobor
 - **LOW-8 — the post-commit collision-only block is unguarded.** claimEmailCollisionNoticeWindow is a live DB call in an untry-caught post-commit block; any throw there is a collision-only status (the profile update already committed). **FIX: wrap the whole notice block in try/catch that swallows (best-effort; a notice failure must never fail the user's request or leak a collision-only status).**
 - **R-F7 / MED-4 — "Other devices have been signed out." is false for ~15 min.** Only refresh tokens revoke; the other device keeps full API access until its access token expires (≤900s TTL). **FIX: credentials-changed epoch (AuthGuard rejects an access token whose iat predates the user's last password change — the guard already fetches the user row on non-allowlisted routes; add users.password_changed_at_ms, migration 0026, set in updateUserSelf's password branch + the two reset paths). Fallback if that balloons: soften the copy to the honest "within a few minutes".**
 
-### 🔶 OWNER DECISION — R-F1 email-existence oracle (E8 vs E1/E4 trilemma) — RESOLVED 2026-08-02: (C) ACCEPT + DOCUMENT
+### 🔶 OWNER DECISION — R-F1 email-existence oracle (E8 vs E1/E4 trilemma) — RESOLVED 2026-08-02: (C) ACCEPT + DOCUMENT **[RE-AFFIRMED 2026-08-11]** (owner: not reopened, LD-13)
 
 The authenticated email-change (and, weaker, the claim) collision handling cannot satisfy E8's "no enumeration" while E1 (works with zero mail) and E4 (email is a plain, immediately-settable field) both hold, because the actor can always read their own account back. Options presented: (A) confirmation-link email changes — closes the oracle but BREAKS E1; (B) honest 409 — contradicts F5's silent-no-op and makes the oracle explicit; (C) keep silent-drop, ACCEPT the oracle as a documented household-scale limitation. **OWNER CHOSE (C)** (AskUserQuestion, 2026-08-02): a self-hosted household install keeps zero-mail + immediately-settable email; the exploiter must already be an authenticated member (low real-world exposure). No code change. Landed: the docs (security-posture.md) state the accepted limitation honestly (no longer "under owner review" / no longer overclaiming enumeration-safety); reauth-review-findings.e2e.spec.ts keeps R-F1/R-F2 as permanent `it.skip` records of the accepted behaviour (comments updated from "PENDING" to "ACCEPTED"). E8's "no enumeration" claim now stands ONLY for the unauthenticated claim/reset surfaces it was originally written for, not the authenticated email-change — recorded so a future OAuth/registration change re-examines it.
 
@@ -1671,12 +2328,12 @@ Automated exit met; the one item genuinely requiring physical hardware (a real i
 
 1. **3-OS remote CI** — local gate:full is green on darwin; the 3-OS board (ubuntu/windows/macos) is the owner-billed `gh workflow run` push, not run here.
 2. **Real internet-relay deliverability** — the smtp-server e2e proves the transport/templates/failure path; a real relay (Brevo/Gmail/etc.) + SPF/DKIM/DMARC is home-lab, logged not simulated.
-3. **F5 currentPassword-on-self-change** — the fix wave revokes other sessions on self password change (closes the blast-radius half); requiring the current password is the stronger measure, a pre-existing-posture change deferred to owner.
+3. **F5 currentPassword-on-self-change** — the fix wave revokes other sessions on self password change (closes the blast-radius half); requiring the current password is the stronger measure, a pre-existing-posture change deferred to owner. **[SCHEDULED Wave B (LD-13a), in flight 2026-08-11]**
 4. **F3 silent email-drop is a deliberate E8-over-honesty tradeoff** — when a claimant's email (or an invite's emailPreset) collides with an existing account, the email is silently dropped and the claim succeeds identically to a free-email claim (any reject-vs-succeed split is itself an enumeration oracle by status code). Rare on a LAN household; recoverable via profile later. A future honesty-preserving enhancement: signal `emailApplied:false` in the (post-auth) claim response so the new user is told. Owner call.
 5. **reverse-proxy recipe general gap** (Docs-lane + review flag) — the three recipes route only a named subset of API prefixes; most bare-path REST routes aren't covered (pre-existing, Open across the app). This run fixed only the /claim line.
 6. **List-param limit clamp** — GET /invites inherits the repo-wide un-clamped limit (Open ledger 8 from the Stash run); not introduced here.
 7. **ClaimInviteRequest.email null-to-clear** (D flag) — a claimant can't explicitly opt out of an emailPreset (omit = preset wins; "" fails format). Contract design question.
-8. **Re-setting the same temporary password clears must_change_password** (review nit) — no "must differ from temp" check.
+8. **Re-setting the same temporary password clears must_change_password** (review nit) — no "must differ from temp" check. **[WAVE-A CLOSED 086643de 2026-08-11]** (self-change to an identical password rejected)
 
 ### Fix wave landed (2026-08-02, lane/fix → main, 7 commits on 341acb3; gate+gate:full ALL PASSED post-integration + 2 orchestrator comment tidies)
 
@@ -1813,10 +2470,10 @@ Automated exit met; owner-in-the-loop + home-lab items logged Open (not simulate
 1. **Subset validation (§4)** — owner stages a copy of the real Stash DB + ~500-scene media subset; runbook at reports/stash/subset-validation-runbook.md, report template reports/stash-sync-report.md. ~15 min once staged.
 2. **Home-lab full pass** — the real 33k + SMB end-to-end (real mounts, real Stash). The synthetic proof is NOT a substitute.
 3. **K3 person_attributes JSONB whitelist** — added by analogy to §6.3's item_attributes; needs owner sign-off to formalize in the plan's whitelist.
-4. **S10 sort residue** — sort=duration (needs catalog_items.primary_duration_ms denorm = a writer change across probe + apply, owner call); sort=date (COALESCE-sentinel + LEFT-JOIN satellite key); **sort=rating is CHEAPLY fixable (R2: two ~1.3MB partial expression indexes, 238→7ms measured) — deliberately not landed because it reverses a recorded 0009 decision (zone-vs-general symmetry = owner call); evidence at the site in restricted-browse.ts. A 0023 migration closes it on a yes.**
+4. **S10 sort residue** — sort=duration (needs catalog_items.primary_duration_ms denorm = a writer change across probe + apply, owner call); sort=date (COALESCE-sentinel + LEFT-JOIN satellite key) **[INVESTIGATED 2026-08-11: sentinel mechanism internally consistent; LEFT-JOIN index limitation is the recorded A8b architectural constraint — RE-AFFIRMED]**; **sort=rating is CHEAPLY fixable (R2: two ~1.3MB partial expression indexes, 238→7ms measured) — deliberately not landed because it reverses a recorded 0009 decision (zone-vs-general symmetry = owner call); evidence at the site in restricted-browse.ts. A 0023 migration closes it on a yes.** **[WAVE-A CLOSED a6a3300e 2026-08-11]** (migration 0042; PARTIAL-REVERSAL text quoted at 0009's decision site in restricted-browse.ts; 238.7→7.4ms)
 5. **Zone-home rails aggregate** — top-N-by-scene-count has an index-proof floor (~150–190ms); accept or add a clearance-digest cache (§6.4 cache-key precedent).
-6. **No DELETE for stash-connection** (FX1) — disable-only today; "forget this connection entirely" is an API gap.
-7. **No success-connect event** — the admin must reopen the Stash modal to see a status flip (only stash.provider.disabled exists; no stash.provider.connected).
+6. **No DELETE for stash-connection** (FX1) — disable-only today; "forget this connection entirely" is an API gap. **[MOVED to Wave B 2026-08-11]** (contract-touching: new DELETE operation)
+7. **No success-connect event** — the admin must reopen the Stash modal to see a status flip (only stash.provider.disabled exists; no stash.provider.connected). **[WAVE-A CLOSED 3b08c891 2026-08-11]** (transition-gated)
 8. **List-param limit clamp** (R1) — no endpoint clamps limit to the contract's maximum:200 (repo-wide, pre-existing); ?limit=100000 returns a whole list in one page. Conformance + S10-budget item.
 9. **Lock scope bounded** (R2) — chapters, stash:/person attributes, provider_ids, artwork cannot be field-locked today (only mergeFields' 10 editorial fields have provenance rows); fine for v1 (no editing UI), a named risk before one lands.
 10. **playback.e2e flake** (R1) — "transcode-slots-exhausted" got a non-Loombre 401 once, unreproducible across later runs; someone's eye.
@@ -2850,13 +3507,13 @@ Frozen-contract narrowings are SANCTIONED here (D23 pre-release policy: LPP v1 c
 | M-8 | MED | Non-2xx never counts toward breaker nor resets it; no scheduled health check | Count http-status failures; add a periodic health/re-check scheduler |
 | M-9 | MED | deviceId/sessionId stable correlators not pseudonymized | Extend minimization to device/session ids (or document as accepted) |
 | DNS-rebind | MED-HIGH | TOCTOU exploitable via unlimited 5s retry budget (not "acceptable residual") | Resolve-once-then-dial-pinned-IP via node http/https `lookup`+`servername` (zero-dep) |
-| L-1..L-9 | LOW | (see report) incl. L-4 replaceLibraryProviderChain builtinName unvalidated (2nd-caller C5 bypass), L-2/L-3 keyring orphan/leak on failed insert/unparseable manifest, L-7 reference plugins OOM before sig-verify | Batch into the fix wave where cheap; L-7 hardens the dev-kit template |
+| L-1..L-9 | LOW | (see report) incl. L-4 replaceLibraryProviderChain builtinName unvalidated (2nd-caller C5 bypass) **[WAVE-A CLOSED (verified already-fixed in tree) 2026-08-11]** (squashed public history hid the commits; no re-implementation), L-2/L-3 keyring orphan/leak on failed insert/unparseable manifest **[WAVE-A CLOSED 51e58732 2026-08-11]** (fix already in tree pre-run; regression tests backfilled 8ba1c957; plus NEW manifest-refresh orphan removal), L-7 reference plugins OOM before sig-verify **[WAVE-A CLOSED (verified already-fixed in tree) 2026-08-11]** (squashed public history hid the commits; no re-implementation) | Batch into the fix wave where cheap; L-7 hardens the dev-kit template |
 
 ### LPP fix wave — LANDED (a5fc11c + reconciliation f715f8d, full gate ALL STEPS PASSED 2026-07-25)
 
-- **ALL CRITICAL + HIGH + MEDIUM fixed, each with a regression test derived from the reviewer's probe.** C-1 (dup capability types rejected at parse; diff compares per-type SET; aggregate-class change = expansion). C-2 (preview returns canonical manifest digest; register/reapprove re-fetch + 409 on mismatch; secret-ness resolved vs approved schema — additive contract field manifestDigest, oasdiff clean, wizard round-trips it). H-1 (secret:true below root rejected at parse; plugin.updated(config) emits changed KEY NAMES, oldValue:null). H-2 (C5 enforced PER CAPABILITY — event-subscriber's own class governs clearance, provider's own governs chain eligibility; mixed-class leak test). H-3 (AbortError classified around body read; callPlugin never rethrows → counted network-error; defensive catches both call sites + the missing mid-body-timeout test). H-4 (8 ADMIN_ONLY types excluded from grantable taxonomy; ws-broadcaster shares the const; delivery defensive filter). H-5 (endpoint regex → /^\/(?![/\\])/ frozen narrowing; origin===baseUrl assert both resolvers; endpoint-path change = re-approval axis). M-1 (deliveries inject X-LPP-Config/X-LPP-Secret-* via buildPluginRequestHeaders — reference notifier now really forwards, integration-proven). M-2 (configSchema depth≤8 + enum/props/required≤200; parse never throws RangeError). M-3 (error detail no longer echoes response body). M-5/M-6 (IPv6 bracket-strip + byte-prefix classifier fixing ::ffff:127.0.0.1, NAT64/6to4; IPv4 100.64/10 + 192.0.0/24 + 198.18/15 + TEST-NET + 240/4). M-8 (http-status counts toward breaker; plugin-health-scheduler.service.ts periodic re-check). M-9 (playback deviceId/sessionId pseudonymized). DNS-rebinding (resolve-once-then-dial-pinned-IP via node:http/https lookup+servername, ZERO deps — CLOSED; residual only the admin's own allowlisted-by-name host, never DNS-resolved by contract).
+- **ALL CRITICAL + HIGH + MEDIUM fixed, each with a regression test derived from the reviewer's probe.** C-1 (dup capability types rejected at parse; diff compares per-type SET; aggregate-class change = expansion). C-2 (preview returns canonical manifest digest; register/reapprove re-fetch + 409 on mismatch; secret-ness resolved vs approved schema — additive contract field manifestDigest, oasdiff clean, wizard round-trips it). H-1 (secret:true below root rejected at parse; plugin.updated(config) emits changed KEY NAMES, oldValue:null). H-2 (C5 enforced PER CAPABILITY — event-subscriber's own class governs clearance, provider's own governs chain eligibility; mixed-class leak test). H-3 (AbortError classified around body read; callPlugin never rethrows → counted network-error; defensive catches both call sites + the missing mid-body-timeout test). H-4 (8 ADMIN_ONLY types excluded from grantable taxonomy; ws-broadcaster shares the const; delivery defensive filter). H-5 (endpoint regex → /^\/(?![/\\])/ frozen narrowing; origin===baseUrl assert both resolvers; endpoint-path change = re-approval axis). M-1 (deliveries inject X-LPP-Config/X-LPP-Secret-* via buildPluginRequestHeaders — reference notifier now really forwards, integration-proven). M-2 (configSchema depth≤8 + enum/props/required≤200; parse never throws RangeError). M-3 (error detail no longer echoes response body). M-5/M-6 (IPv6 bracket-strip + byte-prefix classifier fixing ::ffff:127.0.0.1, NAT64/6to4; IPv4 100.64/10 + 192.0.0/24 + 198.18/15 + TEST-NET + 240/4). M-8 (http-status counts toward breaker; plugin-health-scheduler.service.ts periodic re-check). M-9 (playback deviceId/sessionId pseudonymized). DNS-rebinding (resolve-once-then-dial-pinned-IP via node:http/https lookup+servername, ZERO deps — CLOSED; residual only the admin's own allowlisted-by-name host, never DNS-resolved by contract). **[WAVE-A CLOSED 2d93c590 2026-08-11]** (allowlisted-by-name hostnames now resolve-once-and-pin; pinnedAddress no longer nullable).
 - **Frozen-contract narrowings (D23-sanctioned, regen byte-idempotent + drift green)**: dup-type reject, nested-secret reject, endpoint regex tighten (only this one changes the JSON schema), configSchema bounds.
-- **Deferred with reason**: L-1 (restricted→general narrowing not an expansion), L-5 (breaker not re-seeded at boot — pre-existing), L-6 (notifier header-error cosmetic), L-8 (odd-hex already safe), L-9 (gap-vs-skip = deliberate), M-7 ledger-path-redaction half (actual leak closed by H-4; redaction would touch repo-wide debug output — separate cleanup).
+- **Deferred with reason**: L-1 (restricted→general narrowing not an expansion) **[RE-AFFIRMED 2026-08-11]**, L-5 (breaker not re-seeded at boot — pre-existing) **[WAVE-A CLOSED 02da6dc0 2026-08-11]** (server; + 5d467e29 / a4ba3e36, both worker-side registries incl. one previously unflagged), L-6 (notifier header-error cosmetic) **[WAVE-A CLOSED b92ad2a8 2026-08-11]**, L-8 (odd-hex already safe) **[RE-AFFIRMED 2026-08-11]**, L-9 (gap-vs-skip = deliberate) **[RE-AFFIRMED 2026-08-11]**, M-7 ledger-path-redaction half (actual leak closed by H-4; redaction would touch repo-wide debug output — separate cleanup) **[WAVE-A CLOSED f260540f 2026-08-11]** (canonical redactPathsInText in packages/shared; packages/jobs keeps a documented local duplicate per its ids.ts no-shared-dep precedent).
 - **OWNER-FLAG (semantic changes toward conformance)**: H-2 now enforces C5 per capability (a plugin with a restricted metadata-provider + general event-subscriber no longer has its subscriber feed treated as restricted-scoped — the subscriber is filtered; matches C5's "through ANY capability" wording and the wizard's per-capability copy). H-4 removes admin-only event types (job.updated/settings.updated/plugin.*) from what any plugin can be granted in v1 (a future admin-tier grant could reintroduce them additively).
 - **Orchestrator catch (NOT in the fix-wave scope)**: unknown-capability test fixture used the name "upstream-media-server-plugin-loader" (a W1 miss, on main since d5cb79c) — renamed to "future-capability-x"; ROOT CAUSE the naming grep-gate scanned only apps/ + packages/contract/, narrower than the CLAUDE.md repo-wide rule → widened NAMING_SCOPE_PREFIXES to apps/ + packages/ + examples/ (full sweep first confirmed that fixture was the only offender). edition-brace scanner fixtures are legitimate (a real filename edition-tag convention the parser must handle, not competitor-API naming).
 
@@ -2895,7 +3552,7 @@ Legend: [x] automated-verified · [~] agent-complete, owner hands-on remaining.
 - PluginCircuitBreaker is in-memory per-process, not re-seeded from plugins.consecutive_failures at boot (documented in breaker.ts) — a restart forgets progress toward auto-disable; acceptable, candidate hardening.
 - PluginLifecycleService.updateConfig does not clear keyring entries for secret fields the caller stops submitting (noted in-file) — fold into W5's config-edit surface or the fix wave.
 - Registration health-check failure is NON-blocking at service level (row commits enabled; health_state reflects the check) — W5's wizard MUST surface the failed check and offer enable-anyway vs cancel to honor C4's intent.
-- DNS-rebinding TOCTOU residual in plugin-host ssrf.ts (resolve-and-validate; IP-pinned dialing = candidate hardening, zero-dep constraint) — explicit opus-review probe target.
+- DNS-rebinding TOCTOU residual in plugin-host ssrf.ts (resolve-and-validate; IP-pinned dialing = candidate hardening, zero-dep constraint) — explicit opus-review probe target. **[WAVE-A CLOSED 2d93c590 2026-08-11]** (allowlisted-by-name hostnames now resolve-once-and-pin; pinnedAddress no longer nullable).
 - Outbox event taxonomy read off disk from @loombre/contract envelope.schema.json via require.resolve — fine today; if contract ever gains a build step, revisit.
 - Grants-only plugin update emits plugin.updated with change:'manifest' (oldValue===newValue) because no grants-specific db write primitive exists — W5 documented in admin-plugin-grants.service.ts; add updatePluginEventGrantsAndEmit in W5b/fix wave for an honest audit trail.
 - Landing-verification lesson ×2 (W3 transient, W5 conformance red): scoped vitest runs on freshly cherry-picked main hit STALE workspace dists (sdk/plugin-*) — turbo build the touched packages before scoped suites; the full gate's codegen/build steps mask this, scoped runs don't.
@@ -3349,7 +4006,7 @@ Build the Phase 0 foundation for Lumbre: (A) CLAUDE.md, (B) OpenAPI v1 contract 
 
 - 2026-07-24 Phase 4 Wave 1 · **ALL EIGHT LANES LANDED, per-lane orchestrator ground-truth before every freeze** (commits cd3a6dd/c0fb3e3/7520346/f00e1b1/9f71297/3807f02/c86e559 + integration 8661052; per-lane evidence in the burn-up table): installers for all four channels (Linux tarball container-smoked; Docker both-arch built+smoked; Windows MSI build-authored pending Wave-3 VM; macOS pkg built+payload-boot-smoked), embedded PG with REAL PG16→17 upgrade proof, ACME proven against live pebble (issuance + renewal + DNS-01 hook), real import with round-trip diff=[], release pipeline + lumbre CLI + D14-audited update check (P4.19). Wave integration: main.ts symlink entrypoint root-fix (repro-proven), ajv→dependencies + @lumbre/release-manifest real workspace dep (shim deleted), grep-gates build-cache exclusions, ci.yml pubkey-consistency wiring, LICENSE-INTENT vendored-binaries section, reconciling frozen-lockfile install after the shared-tree churn. Cross-lane findings that reshape Wave 2 are in Phase 4 Open (IPC listener unassigned + start-when-stopped hole + token ACL bridging; runtime-TS packaging defects structurally deferred with per-installer workarounds proven; ffmpeg arm64 checksum discrepancy → Wave 3 security review input).
 
-- 2026-07-24 Phase 4 Wave 2 · **ALL SIX LANES LANDED + ORCHESTRATOR BROWSER PASS GREEN — gate ALL STEPS PASSED (11 steps incl. new dep-audit) on the settled tree b9f4d16** (commits ec07e40/369b8f7+4fa8132/21f2018/5ce6db7/e1ae924+c63a420/b9f4d16; per-lane evidence in the burn-up table). Contract additions orchestrator-authored pre-dispatch (6 additive ops, SDK 72) so C/D never contended on openapi.yaml; D's plan/engineVersion gap promoted into AdminSession same-wave. **REAL-BROWSER FREEZE PASS (real Chrome vs the built web client + tsx-booted server/worker on a fresh lumbre_wizard DB)**: full P4.6 wizard walk — fresh instance auto-routes to /setup, admin created, library over the real fixture corpus created + scanned (~100 items in seconds), the hardware step rendered the REAL M3 Max probe report live (VT decode h264/hevc/av1/vp9, encode h264/hevc, VT tone-map), restricted env-honest card, restore self-aware-disabled, done→home with the scanned library. ZERO CSP violations end-to-end under the new nonce+strict-dynamic policy INCLUDING hls.js blob: playback (hevc10/mkv fixture → real repackage session → MSE blob src → played to clip end); admission control verified live again (second concurrent watch → typed transcode-slots-exhausted UnavailableScreen); admin surfaces live: sessions ReasonsPanel renders the stored plan (Direct-Stream, engine 0.8.2, blocking container-not-direct-playable chip with human copy), jobs dashboard updated VIA SOCKET ONLY (triggered rescan appeared + flipped to Completed with zero additional /admin/jobs fetches), system page all-real (0.9.0-dev+hash version, capability matrix, honest 'Unreachable' update state, crash/logs sections). Redirect honesty both directions: stale-credential browser → /login (never /setup); cleared storage → /setup. Minor findings logged Open: poster-card a11y click (cards are focusable divs, Enter doesn't navigate — should be links), one non-reproducing 'Illegal invocation' one-shot during first watch load (replay + fresh navigations clean; watch item), CORB console noise on 404 posters (no images for generated fixtures; cosmetic). Runtime-TS packaging defect REPRODUCED LIVE during stack boot (bare node dist fails on db/jobs raw-TS exports — booted via tsx; the structural fix stays scheduled pre-Wave-3).
+- 2026-07-24 Phase 4 Wave 2 · **ALL SIX LANES LANDED + ORCHESTRATOR BROWSER PASS GREEN — gate ALL STEPS PASSED (11 steps incl. new dep-audit) on the settled tree b9f4d16** (commits ec07e40/369b8f7+4fa8132/21f2018/5ce6db7/e1ae924+c63a420/b9f4d16; per-lane evidence in the burn-up table). Contract additions orchestrator-authored pre-dispatch (6 additive ops, SDK 72) so C/D never contended on openapi.yaml; D's plan/engineVersion gap promoted into AdminSession same-wave. **REAL-BROWSER FREEZE PASS (real Chrome vs the built web client + tsx-booted server/worker on a fresh lumbre_wizard DB)**: full P4.6 wizard walk — fresh instance auto-routes to /setup, admin created, library over the real fixture corpus created + scanned (~100 items in seconds), the hardware step rendered the REAL M3 Max probe report live (VT decode h264/hevc/av1/vp9, encode h264/hevc, VT tone-map), restricted env-honest card, restore self-aware-disabled, done→home with the scanned library. ZERO CSP violations end-to-end under the new nonce+strict-dynamic policy INCLUDING hls.js blob: playback (hevc10/mkv fixture → real repackage session → MSE blob src → played to clip end); admission control verified live again (second concurrent watch → typed transcode-slots-exhausted UnavailableScreen); admin surfaces live: sessions ReasonsPanel renders the stored plan (Direct-Stream, engine 0.8.2, blocking container-not-direct-playable chip with human copy), jobs dashboard updated VIA SOCKET ONLY (triggered rescan appeared + flipped to Completed with zero additional /admin/jobs fetches), system page all-real (0.9.0-dev+hash version, capability matrix, honest 'Unreachable' update state, crash/logs sections). Redirect honesty both directions: stale-credential browser → /login (never /setup); cleared storage → /setup. Minor findings logged Open: poster-card a11y click (cards are focusable divs, Enter doesn't navigate — should be links), one non-reproducing 'Illegal invocation' one-shot during first watch load (replay + fresh navigations clean; watch item), CORB console noise on 404 posters (no images for generated fixtures; cosmetic) **[RE-AFFIRMED 2026-08-11]**. Runtime-TS packaging defect REPRODUCED LIVE during stack boot (bare node dist fails on db/jobs raw-TS exports — booted via tsx; the structural fix stays scheduled pre-Wave-3).
 
 - 2026-07-24 Phase 3 Wave 1 · **P3.10 mtime_ms correctness lane merged** (7ba8685): migration 0010 media_files.mtime_ms (BIGINT NULL, additive; NULL doubles as the legacy not-yet-observed marker — no fake backfill); scanner incremental fast path is now path+size+mtime; size-match with NULL/differing mtime re-hashes and three-ways: hash same → updateMediaFileMtime backfill-only (narrow writer, no probe reset/no events), hash differs → existing re-encode-in-place path (probe fields reset + probe job re-enqueued, same row); updateMediaFileHash carries mtimeMs (optional, NULL default fails safe toward re-hash); all insert/refresh sites store Math.trunc(stats.mtimeMs). 3 new live-DB tests (mtime-incremental.spec.ts: fast-path-no-hash proven by spy pool, same-size in-place edit caught + re-probed, legacy NULL row re-hashes exactly once then fast-paths; utimesSync-pinned mtimes so second-resolution filesystems can't flake). migrate-check PASS (31 tables), scan suite 24/24, full worker suite 596 passed. Phase 1's "in-place edit preserving byte-size" Open item: CLOSED.
 

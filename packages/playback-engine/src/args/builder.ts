@@ -274,6 +274,36 @@
  *     is nothing to strip. Goldens 33 (withSeek:true, bsf present) / 34
  *     (withSeek:false, bsf absent) pin both sides — behaviour is UNCHANGED
  *     by this correction, only the documented understanding of its scope.
+ *
+ * (L) DOLBY VISION STRIP (LD-3 + LD-15, ffmpeg-verified 2026-08-11 against
+ *     real DV samples, docs/PLAYBACK.md §3/§6): segment 7's video-COPY
+ *     branch strips Dolby Vision whenever `src/dv.ts`'s `dvStripApplies()`
+ *     holds for the selected stream and device. Two emissions:
+ *       - `-bsf:v filter_units=remove_types=62-63` — HEVC UNSPEC62 is the
+ *         DV RPU, UNSPEC63 the dual-layer enhancement layer (Rec. ITU-T
+ *         H.265 Table 7-1 reserves 48-63 as unspecified; Dolby's streams
+ *         spec assigns these two). Removing both yields a clean
+ *         single-layer HDR10 bitstream.
+ *       - `-tag:v hvc1` — a real DV source's sample entry is `dvh1`/`dvhe`,
+ *         which a plain copy PRESERVES; leaving it would still announce
+ *         Dolby Vision over a stream with no DV data left in it.
+ *     WHY NOT the `dovi_rpu` bsf (measured, not assumed): `dovi_rpu=strip=1`
+ *     removes the RPU but leaves EVERY enhancement-layer NAL unit behind —
+ *     on the profile-7 dual-layer fixture it left all 104 of them, failing
+ *     LD-15 outright. It also requires ffmpeg >= 7.1, whereas `filter_units`
+ *     long predates it, so the chosen mechanism additionally carries no
+ *     vendored-build version risk. Both mechanisms cleared the profile-8.1
+ *     case; only `filter_units` cleared both.
+ *     COMPOSITION WITH (K): ffmpeg keeps only the LAST `-bsf:v` for a
+ *     stream, so the two strips MUST merge into ONE filter_units value
+ *     (`remove_types=8-9|62-63`) — emitting two flags silently discards the
+ *     open-GOP strip, verified by doing exactly that and finding RASL
+ *     units 8/9 intact. Goldens 35-38 pin all four corners (DV alone, DV +
+ *     open-GOP under seek, ts-hls variant, and the no-strip counterpart).
+ *     NOT gated on container: the strip belongs to every repackage,
+ *     including a `mp4` download-remux — and this builder is never called
+ *     for a direct-play plan at all, so reaching it IS the "repackaging
+ *     happened" condition Stage C gates its reason on.
  */
 import type {
   AudioCodec,
@@ -286,6 +316,7 @@ import type {
   PlanInput,
   ToneMapMethod,
 } from "../types.js";
+import { DV_NAL_REMOVE_RANGE, dvStripApplies } from "../dv.js";
 
 /**
  * The subset of §5 `PlaybackPlan` fields ffmpeg-argument construction
@@ -332,7 +363,20 @@ const HWACCEL_BY_BACKEND: Partial<Record<HardwareBackend, string>> = {
  *  instruction 6's BIND table). `d3d11va` is decode-only (§8.2) and can
  *  never be `video.encoder` (Stage G never selects it as one — this
  *  module's own defensive guard below still names it explicitly rather than
- *  silently falling through). */
+ *  silently falling through).
+ *
+ *  C8 (comparative-architecture audit, tracked not pruned): keyed only to
+ *  `"h264" | "hevc"` — deliberately, today. apps/worker/src/hwcaps/
+ *  tables.ts's mirror `VIDEO_ENCODER_NAMES` DOES verify av1 encode capability
+ *  (its own header explains why: a forward-looking capability check even
+ *  though the ladder never targets it), so hwprobe can report a box as
+ *  AV1-encode-capable with no way for a plan to ever act on that fact — a
+ *  real probe/ladder inconsistency, not a bug in either table alone. This
+ *  is intentional under LD-7/LD-16 (STATE.md, implementation run): AV1
+ *  targeting lands in Wave C1 (LadderCodec enum +
+ *  VideoAction.targetCodec contract additions, encoder tables + DB CHECK +
+ *  TS unions as one coordinated change, matrix/goldens same PR) — that PR
+ *  is where this table gains its `av1` column, not a prune here. */
 const VIDEO_ENCODER_NAMES: Partial<Record<HardwareBackend, Record<"h264" | "hevc", string>>> = {
   software: { h264: "libx264", hevc: "libx265" },
   videotoolbox: { h264: "h264_videotoolbox", hevc: "hevc_videotoolbox" },
@@ -645,15 +689,41 @@ export function buildFfmpegArgs(input: PlanInput, planShape: FfmpegPlanShape, op
       if (video.targetCodec === "hevc") args.push("-tag:v", "hvc1");
     } else if (video.action === "copy") {
       args.push("-c:v", "copy");
+
       // Interpretation K (this module's header) — seek-restart runs of an
       // open-GOP HEVC stream copy begin at a CRA whose RASL leading
       // pictures (NAL types 8/9) reference the prior, now-absent GOP;
       // stripping them keeps the run's first decodable picture the CRA
       // itself. Never applies to a fresh (non-seek) run, which starts at
       // the file's true IDR.
-      if (video.openGop && withSeek && (container === "fmp4-hls" || container === "ts-hls")) {
-        args.push("-bsf:v", "filter_units=remove_types=8-9");
+      const stripOpenGop = Boolean(video.openGop) && withSeek && (container === "fmp4-hls" || container === "ts-hls");
+
+      // Interpretation L (this module's header) — the Dolby Vision strip.
+      // Derived from `input` rather than read off the plan shape; see
+      // src/dv.ts's header for why (the contract's VideoAction schema is
+      // additionalProperties:false, so a `dvStrip` plan field would be a
+      // contract change — and the builder already has everything it needs).
+      const stripDv = videoStream !== undefined && dvStripApplies(videoStream, device);
+
+      // ONE `-bsf:v`, ALWAYS. ffmpeg keeps only the LAST -bsf:v given for a
+      // stream, so emitting these as two flags silently discards the
+      // open-GOP strip — verified empirically (2026-08-11) by doing exactly
+      // that and finding RASL units 8/9 intact in the output. The ranges
+      // merge into a single filter_units invocation instead.
+      const removeRanges: string[] = [];
+      if (stripOpenGop) removeRanges.push("8-9");
+      if (stripDv) removeRanges.push(DV_NAL_REMOVE_RANGE);
+      if (removeRanges.length > 0) {
+        args.push("-bsf:v", `filter_units=remove_types=${removeRanges.join("|")}`);
       }
+
+      // The sample-entry fourcc is DV signalling in its own right: a real
+      // profile-7/8 source is tagged `dvh1`/`dvhe`, and a plain copy
+      // PRESERVES that tag (verified empirically) — so a client would still
+      // be told "this is Dolby Vision" over a bitstream with every RPU
+      // removed. Re-tagging to `hvc1` is what makes the strip complete.
+      // Harmless on the mpegts path, which has no sample entry at all.
+      if (stripDv) args.push("-tag:v", "hvc1");
     }
   }
 

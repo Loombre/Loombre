@@ -763,6 +763,26 @@ async function main() {
 
     // ------------------------------------------------------------------
     // A couple of images + one job + one event, for completeness
+    //
+    // AUD-W6-002 (audit fafa47f): every `file_path` below (and in
+    // insertImage's callers further down) is a ROW-ONLY fixture — no
+    // backing blob is ever written to disk at that path. That is
+    // deliberate here: these rows exist to exercise getImageEntityAccess
+    // (packages/db/src/query/images.ts) and the leak suite's
+    // visible-vs-gated branches per entity_type, which only needs a real
+    // DB row + a real `blurhash` (present on every row below, so the
+    // client-side blurhash fallback still renders something) — not a real
+    // decodable file. A consequence, confirmed organic by a visual sweep
+    // of a seeded env: GET /images/** 404s/ORB-blocks for every one of
+    // these paths, so any screenshot/visual pass against a plain `pnpm
+    // db:seed` environment exercises ONLY the blurhash-fallback rendering
+    // path, never real poster/art decoding — that is expected, not a bug
+    // in the seed OR in image serving. A visual check that specifically
+    // needs real decodable art has to seed its own blob files (matching
+    // apps/worker/src/image/pipeline.ts's `<LOOMBRE_DATA_DIR ?? ./data>/
+    // images/<entityType>/<entityId>/<kind>-<width>.<ext>` layout) and
+    // point file_path at them separately — out of scope for this
+    // deterministic, DB-only fixture script.
     // ------------------------------------------------------------------
     await client.query(
       `INSERT INTO images (entity_type, entity_id, kind, source, width, height, blurhash, file_path, created_at_ms)

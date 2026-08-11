@@ -250,6 +250,35 @@ jobs:
         # pkgbuild/productbuild/pkgutil round-trip.
         run: pnpm installers:test
 
+      - name: dotnet test — Loombre.Tray.Tests + LoombreServiceHost.Tests (AUD-W1-001)
+        if: runner.os == 'Linux'
+        shell: bash
+        # AUD-W1-001: neither pnpm gate nor gate:full ever built or ran a
+        # line of the C# tray/service-host code — the only signal was
+        # windows-installer-diag.yml's path-filtered build-msi.mjs run
+        # (real MSI harvest, windows-latest-only) and release.yml's tagged
+        # build. A regression in Discovery.ReadAsync's exception contract
+        # (WAVE-1-crash-boundaries.md's Waivers section) could land with a
+        # fully green gate:full and zero signal. Both test projects are
+        # deliberately plain net8.0 (not -windows — see each .csproj's own
+        # header) specifically so they build and run on any OS without a
+        # win-x64 runtime pack; ubuntu-latest ships a .NET SDK already, so
+        # this needs no setup-dotnet action, no Windows runner, no WiX/MSI
+        # build. Linux-only (same reasoning as dep-audit above): the logic
+        # under test is OS-agnostic (argument parsing / IPC discovery), so
+        # tripling this across the 3-OS matrix would just triple runner
+        # minutes for an identical result. This is intentionally NOT wired
+        # into scripts/gate.mjs's installers-test step (see that step's own
+        # comment) — there is no dotnet toolchain on dev machines, so
+        # putting `dotnet test` in the LOCAL pnpm gate/gate:full loop would
+        # fail the inner loop for everyone without the .NET SDK installed.
+        # This CI-only step gives the fast, always-on signal without that
+        # cost.
+        run: |
+          set -euo pipefail
+          dotnet test installers/windows/tray/Loombre.Tray.Tests/Loombre.Tray.Tests.csproj -c Release
+          dotnet test installers/windows/service-host/LoombreServiceHost.Tests/LoombreServiceHost.Tests.csproj -c Release
+
       - name: pnpm gate:full
         # L4: CI runs the FULL gate (15 steps + web-build-budget), not the
         # fast inner-loop default — bundle size is deterministic, not

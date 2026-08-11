@@ -30,6 +30,7 @@ import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 
 import { Delete, Lock } from "lucide-react";
 import { Icon } from "../icon/Icon.js";
 import { SheetOrModal } from "../ui/SheetOrModal.js";
+import { TextInput } from "../ui/Input.js";
 import { PIN_LENGTH, appendPinDigit, isPinComplete, sanitizePinInput } from "../../lib/pin-entry.js";
 import { useRestricted } from "./RestrictedProvider.js";
 import styles from "./PinModal.module.css";
@@ -39,7 +40,6 @@ const KEYPAD_DIGITS = ["1", "2", "3", "4", "5", "6", "7", "8", "9"] as const;
 export function PinModal(): React.JSX.Element | null {
   const { state, closeUnlockModal, unlock } = useRestricted();
   const [pin, setPin] = useState("");
-  const inputRef = useRef<HTMLInputElement>(null);
   const submittingRef = useRef(false);
 
   // Fresh entry every time the modal opens — no residual digits from a
@@ -103,9 +103,12 @@ export function PinModal(): React.JSX.Element | null {
         </div>
 
         {/* Desktop: keyboard-typable numeric field. CSS-hidden on phone,
-            where the keypad below is the primary input. */}
-        <input
-          ref={inputRef}
+            where the keypad below is the primary input. Consolidated onto
+            the shared ui/Input.tsx TextInput (item 2, Wave A) — inherits
+            Input.module.css's `.input:focus-visible` inset ring instead of
+            shipping its own copy; PinModal.module.css's `.hiddenInput` now
+            only carries the PIN field's own overrides. */}
+        <TextInput
           className={styles.hiddenInput}
           type="password"
           inputMode="numeric"

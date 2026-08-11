@@ -177,8 +177,12 @@ CREATE TABLE devices (
 );
 
 COMMENT ON COLUMN devices.profile IS
-  'Cached device capability profile (codecs, containers, HDR support): the '
-  'input to PlaybackPlan. Refreshed on login.';
+  'Cached device capability profile (codecs, containers, HDR support), '
+  'refreshed on login. NOT read by PlaybackPlan today — plan-request.ts '
+  'parses the caller''s request-body DeviceProfile on every call instead '
+  '(apps/server/src/playback/plan-request.ts). This column stays as a '
+  'deliberate cache for future use (LD-4/C10, owner-adjudicated '
+  '2026-08-10) rather than being dropped as dead persistence.';
 
 CREATE INDEX devices_user_id_idx ON devices (user_id);
 

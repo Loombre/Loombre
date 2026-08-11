@@ -86,6 +86,11 @@ async function latestEventForLibrary(libraryId: string, type: string): Promise<R
   return payload;
 }
 
+async function countEventsForLibrary(libraryId: string, type: string): Promise<number> {
+  const rows = await db.selectFrom("events").select(["payload"]).where("type", "=", type).execute();
+  return rows.filter((r) => (r.payload as Record<string, unknown>).libraryId === libraryId).length;
+}
+
 describe("connectToStashLibrary — S3 proven both ways at the connection-lifecycle level", () => {
   it("a supported fixture connects: status 'ok', records the outcome, and hands back a working connection", async () => {
     const libraryId = await makeLibrary();
@@ -161,5 +166,69 @@ describe("connectToStashLibrary — S3 proven both ways at the connection-lifecy
     // status alone" contract stash-connections.spec.ts already proves).
     const row = await getLibraryStashConnection(db, libraryId);
     expect(row?.status).toBe("never_connected");
+  });
+
+  // Stash OPEN ledger item 7 ("No success-connect event — the admin must
+  // reopen the Stash modal to see a status flip"): the FIRST successful
+  // connect after any non-'ok' status (never_connected included) writes an
+  // admin-only stash.provider.connected event, so the admin UI can flip
+  // live instead of needing a modal reopen. Transition-gated, mirroring
+  // WHY disabled is safe to fire unconditionally but connected is not:
+  // connectToStashLibrary is called PER-SCENE during ordinary metadata
+  // fetches (apps/worker/src/metadata/providers/stash.ts's fetchDetails),
+  // so an unconditional emit here would flood the event feed with
+  // thousands of redundant "connected" events during one ordinary scan of
+  // an already-healthy library — an unconditional emit is fine for
+  // disabled because a schema mismatch is rare/already-abnormal, but wrong
+  // for the every-scene-touches-this-function happy path.
+  describe("stash.provider.connected (Stash OPEN ledger item 7)", () => {
+    it("first-ever connect (never_connected -> ok) writes the event", async () => {
+      const libraryId = await makeLibrary();
+      const sqlitePath = materializeFixture("schema-v85-supported-max.sql");
+      await upsertLibraryStashConnectionConfig(db, { libraryId, sqlitePath, nowMs: Date.now() });
+
+      const outcome = await connectToStashLibrary({ db }, libraryId);
+      expect(outcome.status).toBe("ok");
+      if (outcome.status === "ok") outcome.connection.close();
+
+      const eventPayload = await latestEventForLibrary(libraryId, "stash.provider.connected");
+      expect(eventPayload).toEqual({ libraryId, schemaVersion: 85 });
+      expect(ADMIN_ONLY_EVENT_TYPES).toContain("stash.provider.connected");
+    });
+
+    it("a repeat successful connect (already ok) does NOT write a second event", async () => {
+      const libraryId = await makeLibrary();
+      const sqlitePath = materializeFixture("schema-v85-supported-max.sql");
+      await upsertLibraryStashConnectionConfig(db, { libraryId, sqlitePath, nowMs: Date.now() });
+
+      const first = await connectToStashLibrary({ db }, libraryId);
+      if (first.status === "ok") first.connection.close();
+      const firstCount = await countEventsForLibrary(libraryId, "stash.provider.connected");
+      expect(firstCount).toBe(1);
+
+      const second = await connectToStashLibrary({ db }, libraryId);
+      expect(second.status).toBe("ok");
+      if (second.status === "ok") second.connection.close();
+      const secondCount = await countEventsForLibrary(libraryId, "stash.provider.connected");
+      expect(secondCount).toBe(1); // unchanged — no duplicate on an already-ok connection
+    });
+
+    it("a RECOVERY connect (unsupported_schema -> ok, e.g. an admin re-pointing the path) writes the event again", async () => {
+      const libraryId = await makeLibrary();
+      const badPath = materializeFixture("schema-v58-unsupported.sql");
+      await upsertLibraryStashConnectionConfig(db, { libraryId, sqlitePath: badPath, nowMs: Date.now() });
+      const broken = await connectToStashLibrary({ db }, libraryId);
+      expect(broken.status).toBe("unsupported_schema");
+      expect(await latestEventForLibrary(libraryId, "stash.provider.connected")).toBeUndefined();
+
+      const goodPath = materializeFixture("schema-v85-supported-max.sql");
+      await upsertLibraryStashConnectionConfig(db, { libraryId, sqlitePath: goodPath, nowMs: Date.now() });
+      const recovered = await connectToStashLibrary({ db }, libraryId);
+      expect(recovered.status).toBe("ok");
+      if (recovered.status === "ok") recovered.connection.close();
+
+      const eventPayload = await latestEventForLibrary(libraryId, "stash.provider.connected");
+      expect(eventPayload).toEqual({ libraryId, schemaVersion: 85 });
+    });
   });
 });

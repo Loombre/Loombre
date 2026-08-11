@@ -136,7 +136,7 @@ describe("StashConnectionPanel", () => {
     apiPutMock.mockResolvedValue({ ...unconfiguredConnection(), configured: true, sqlitePath: "/data/stash.sqlite" });
     view = renderIntoBody(<StashConnectionPanel connection={{ ...unconfiguredConnection(), sqlitePath: "/data/stash.sqlite" }} onSaved={() => {}} />);
 
-    const customTab = Array.from(view.container.querySelectorAll('[role="tab"]')).find((t) => t.textContent === "Custom list") as HTMLButtonElement;
+    const customTab = Array.from(view.container.querySelectorAll('[role="radio"]')).find((t) => t.textContent === "Custom list") as HTMLButtonElement;
     act(() => customTab.click());
 
     const textarea = view.container.querySelector("textarea") as HTMLTextAreaElement;

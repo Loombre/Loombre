@@ -98,7 +98,7 @@ describe("StashModal", () => {
     view = renderIntoBody(<StashModal library={library()} onClose={() => {}} />);
     await act(async () => {});
 
-    const tab = Array.from(view.container.querySelectorAll('[role="tab"]')).find((t) => t.textContent === "Path mappings") as HTMLButtonElement;
+    const tab = Array.from(view.container.querySelectorAll('[role="radio"]')).find((t) => t.textContent === "Path mappings") as HTMLButtonElement;
     await act(async () => tab.click());
 
     expect(view.container.textContent).toContain("No path mappings yet.");
@@ -108,7 +108,7 @@ describe("StashModal", () => {
     view = renderIntoBody(<StashModal library={library()} onClose={() => {}} />);
     await act(async () => {});
 
-    const tab = Array.from(view.container.querySelectorAll('[role="tab"]')).find((t) => t.textContent === "Sync") as HTMLButtonElement;
+    const tab = Array.from(view.container.querySelectorAll('[role="radio"]')).find((t) => t.textContent === "Sync") as HTMLButtonElement;
     await act(async () => tab.click());
 
     expect(view.container.textContent).toContain("Never synced yet");

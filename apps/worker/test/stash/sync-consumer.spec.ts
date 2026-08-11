@@ -724,6 +724,58 @@ describe("stash-sync — incremental resume must never silently drop an un-appli
   });
 });
 
+describe("stash-sync — full-mode terminal failure must never let a LATER separate incremental sync silently skip un-applied scenes (AUD-W2-001)", () => {
+  it("a full sync that throws mid-apply leaves stash_updated_at_ms un-retired, so a later incremental sync (a DIFFERENT job.id, not a resume) still re-selects and applies every un-applied scene", async () => {
+    const TOTAL = 3;
+    const baseTime = "2023-01-01 00:00:00";
+    const scenes: FixtureScene[] = Array.from({ length: TOTAL }, (_, i) => ({
+      id: i + 1,
+      title: `Scene ${i + 1}`,
+      folderPath: "/stash-media",
+      basename: `scene-${i + 1}.mp4`,
+      sizeBytes: 100 + i,
+      updatedAt: baseTime,
+    }));
+    // First-ever sync for this library — no pre-existing stash_scene_links
+    // rows at all, the realistic precondition for AUD-W2-001's scenario
+    // (a brand-new library's first full sync, terminally failing partway).
+    const { libraryId } = await setupLibraryWithMappedFixture(scenes);
+
+    // Attempt (FULL mode, job.id A): throws applying the SECOND scene
+    // (read-model's id-ascending walk order: 1, 2, 3) — never retried under
+    // this same job.id (pg-boss exhausting retryLimit and terminally
+    // failing is exactly this shape from the caller's point of view: this
+    // job.id is simply never seen again).
+    const failing = fakeApply({ throwOnCallNumber: 2 });
+    const jobIdA = randomUUID();
+    await expect(runStashSync(baseDeps(failing.fn), { libraryId, mode: "full" }, { jobId: jobIdA })).rejects.toThrow(/simulated failure/);
+    expect(failing.calls).toEqual(["1"]); // scene 1 applied before the throw on scene 2
+
+    // A LATER, SEPARATE incremental sync — a fresh job.id (B), not a retry
+    // of A. Stash's own updated_at values are UNCHANGED since attempt A
+    // (nobody edited these scenes in Stash) — the realistic case AUD-W2-001
+    // calls out: "nothing re-bumps updated_at for a Stash scene nobody
+    // edits."
+    const succeeding = fakeApply();
+    const jobIdB = randomUUID();
+    const result = await runStashSync(baseDeps(succeeding.fn), { libraryId, mode: "incremental" }, { jobId: jobIdB });
+
+    // The defect this guards: full mode's own inventory pass must not have
+    // already bumped stash_updated_at_ms for ANY scene before runApplyPhase
+    // reached 'completed' for the whole run — if it had (the pre-fix
+    // behavior), this incremental run's touched-diff would see every scene
+    // as "already at the current Stash value" and touch ZERO of them,
+    // leaving scenes 2 and 3 (never durably applied by attempt A) silently
+    // unmatched-of-facts forever, with no error/warning anywhere. Scene 1
+    // being re-selected too (even though attempt A DID apply it) is
+    // accepted, harmless, idempotent re-work — the same "at-least-once,
+    // never zero-times" posture AUD-A2d-001's own same-job.id resume
+    // already relies on.
+    expect(result.touchedCount).toBe(TOTAL);
+    expect(new Set(succeeding.calls)).toEqual(new Set(["1", "2", "3"]));
+  });
+});
+
 describe("stash-sync — S2 snapshot-copy fallback surfaces (FX4 fix wave)", () => {
   it("a sync forced through the snapshot path records it in the stash.sync.completed event AND the report row", async () => {
     const scenes: FixtureScene[] = [

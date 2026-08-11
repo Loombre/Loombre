@@ -35,6 +35,7 @@ import { Card } from "../../ui/Card.js";
 import { Button } from "../../ui/Button.js";
 import { SegmentedControl } from "../../ui/SegmentedControl.js";
 import { Select } from "../../ui/Select.js";
+import { TextInput } from "../../ui/Input.js";
 import { apiPost, LoombreApiError } from "../../../lib/api-client.js";
 import { truncateMessage } from "./notice-display.js";
 import sharedStyles from "./shared.module.css";
@@ -386,8 +387,8 @@ export function ComposeNoticeCard({
               options={EFFECTIVE_CHOICE_OPTIONS}
             />
             {effectiveChoice === "custom" && (
-              <input
-                className={`${sharedStyles.textarea} ${styles.customMinutesRow}`}
+              <TextInput
+                className={styles.customMinutesRow}
                 type="number"
                 inputMode="numeric"
                 min={1}
@@ -416,8 +417,8 @@ export function ComposeNoticeCard({
               ]}
             />
             {expiryChoice === "custom" && (
-              <input
-                className={`${sharedStyles.textarea} ${styles.customMinutesRow}`}
+              <TextInput
+                className={styles.customMinutesRow}
                 type="number"
                 inputMode="numeric"
                 min={1}

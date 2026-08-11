@@ -1,5 +1,14 @@
 name: direct-play — mp4 DV profile 8.1 (compat BL) vs hevc-hdr10-only (mp4 direct-play -> strip does NOT fire; MANDATORY constraint-3 case)
-why: "MANDATORY per binding interpretation constraint 3: 'Add a direct-play counterpart case (mp4 + dv8 compat-BL + hdr10-capable mp4-direct-play device -> direct-play, reasons: [])'. mp4 IS in hevc-hdr10-only's directPlayContainers, so the file is served untouched — no strip happens, so no dv-stripped-to-hdr10 reason. direct-play, reasons=[]."
+why: >
+  MANDATORY per binding interpretation constraint 3: 'Add a direct-play counterpart case (mp4 + dv8 compat-BL + hdr10-capable mp4-direct-play device -> direct-play, reasons: [])'. mp4 IS in hevc-hdr10-only's directPlayContainers, so the file is served untouched — no strip happens, so no dv-stripped-to-hdr10 reason. direct-play, reasons=[].
+  LD-3 UPDATE (2026-08-11): dv-stripped-to-hdr10 is now TRUE. args/builder.ts's
+  interpretation L emits `-bsf:v filter_units=remove_types=62-63` (HEVC UNSPEC62
+  RPU + UNSPEC63 enhancement layer) plus `-tag:v hvc1` on this copy branch —
+  before that the reason described a strip the builder never performed. Decision
+  and reason codes here are UNCHANGED; only the reason's `detail` gained
+  `elDropped=<bool>` (LD-15). Verified red-first against real ffmpeg with real DV
+  samples: apps/worker/test/transcode/dv-strip-args.integration.spec.ts.
+
 input:
   media:
     fileId: file-175

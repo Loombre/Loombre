@@ -52,19 +52,33 @@
 // never performs a SECOND DNS lookup at all — there is no second lookup
 // left for an attacker to answer differently.
 //
-// RESIDUAL (still open, documented precisely, not a regression from
-// before): the LAN-allowlist EXACT-HOSTNAME bypass (`lanAllowlist`
-// containing the literal hostname string) is, by existing/tested contract,
-// NEVER resolved by this module at all — the admin has already explicitly
-// named and trusted that literal name, so there is no validated address to
-// pin to, and the request dials via the platform's own (unpinned) DNS
-// resolution, exactly as before this fix. This is the one case DNS
-// rebinding remains theoretically possible after this fix, and it is
-// unchanged risk (not worsened) versus the pre-fix behavior: an admin who
-// allowlists a LAN hostname by name is already trusting that name's DNS
-// answer, request by request, the same way any other client on the network
-// would. Every OTHER path (a bare IP literal, or a DNS name NOT in the
-// allowlist) is now pinned.
+// C5.2 fix wave — closes the LAST DNS-rebinding residual: a LAN-allowlisted
+// hostname (`lanAllowlist` containing the literal hostname string) used to
+// be the ONE case this module never resolved at all, on the reasoning that
+// "the admin already trusts that literal name." That reasoning had it
+// backwards — trusting a NAME, rather than a validated address, is exactly
+// what a DNS-rebinding attacker exploits: the admin's trust is in the name
+// at approval time, but nothing stopped what that name resolves to from
+// changing between this module's validation lookup and the platform's own
+// unpinned dial. An allowlisted hostname is now resolved and pinned EXACTLY
+// like every other DNS name (`resolveAndValidateHost` calls `dnsLookup` and
+// pins the first returned address, same as the non-allowlisted path); the
+// allowlist's ONLY remaining effect is skipping the disallowed-RANGE check
+// on the resolved address(es) — a LAN name legitimately resolves to a
+// private/link-local range, which the ordinary path would otherwise always
+// reject. Multiple A/AAAA records pin the first, identical to the
+// non-allowlisted rule. One observable, deliberate, fail-CLOSED behavior
+// change: a DNS failure for an allowlisted name now surfaces as
+// `dns-resolution-failed` AT VALIDATION time, instead of only ever failing
+// later at the transport layer (a name the platform's own unpinned
+// fetch/getaddrinfo could not resolve either was never actually dialable in
+// the first place, so this only moves WHEN the same failure is reported,
+// never turns a success into a failure). There is no longer a
+// `pinnedAddress: null` case anywhere in this module: an IP literal, an
+// ordinary DNS name, and an allowlisted DNS name all resolve to a specific
+// address exactly once and dial that literal address — `HostResolution`'s
+// fields are non-nullable accordingly, and `hardenedFetch`/
+// `hardenedFetchRaw`'s old "no pin, dial unpinned" fallback branch is gone.
 //
 // M-5 fix wave (also fixed here): a bracketed IPv6 hostname
 // (`URL.hostname` for `http://[::1]/` is the literal string `"[::1]"`,
@@ -306,16 +320,13 @@ export function isDisallowedAddress(address: string): boolean {
 // ============================================================================
 
 export interface HostResolution {
-  /** Non-null exactly when this hostname has a SPECIFIC, ALREADY-VALIDATED
-   *  address to dial directly (an IP literal, or a DNS name that was
-   *  resolved+validated here) — `hardenedFetch` pins its actual socket
-   *  connection to this address, never re-resolving (DNS-rebinding fix,
-   *  this file's header). Null ONLY for the LAN-allowlist exact-hostname
-   *  bypass, where (by existing, tested contract) this module never
-   *  resolves the name at all — see this file's header for why that one
-   *  path stays unpinned. */
-  pinnedAddress: string | null;
-  family: 4 | 6 | null;
+  /** The SPECIFIC, ALREADY-VALIDATED address to dial directly — an IP
+   *  literal, or a DNS name (allowlisted or not) resolved+validated here.
+   *  `hardenedFetch` pins its actual socket connection to this address,
+   *  never re-resolving (DNS-rebinding fix, this file's header). C5.2:
+   *  ALWAYS set — there is no longer an unpinned case. */
+  pinnedAddress: string;
+  family: 4 | 6;
 }
 
 /**
@@ -357,11 +368,12 @@ export async function resolveAndValidateHost(
     return { pinnedAddress: literal, family: isIPv4(literal) ? 4 : 6 };
   }
 
-  if (allowSet.has(hostname.toLowerCase())) {
-    // LAN-allowlist exact-hostname bypass — see this file's header for why
-    // this one path is never resolved by this module and stays unpinned.
-    return { pinnedAddress: null, family: null };
-  }
+  // C5.2 fix wave: an allowlisted-by-name DNS host is resolved and pinned
+  // EXACTLY like any other DNS name below — the allowlist's only remaining
+  // effect is skipping the disallowed-RANGE check further down (this file's
+  // header explains why the old "never resolve it at all" behavior was
+  // itself the DNS-rebinding residual).
+  const isAllowlistedByName = allowSet.has(hostname.toLowerCase());
 
   let addresses: DnsAddress[];
   try {
@@ -376,20 +388,23 @@ export async function resolveAndValidateHost(
   if (addresses.length === 0) {
     throw new HardenedFetchError("dns-resolution-failed", hostname, `DNS resolution for "${hostname}" returned no addresses`);
   }
-  for (const { address } of addresses) {
-    if (isDisallowedAddress(address)) {
-      throw new HardenedFetchError(
-        "disallowed-address",
-        hostname,
-        `"${hostname}" resolves to "${address}", a non-publicly-routable address, and is not in this plugin's lan_allowlist`,
-      );
+  if (!isAllowlistedByName) {
+    for (const { address } of addresses) {
+      if (isDisallowedAddress(address)) {
+        throw new HardenedFetchError(
+          "disallowed-address",
+          hostname,
+          `"${hostname}" resolves to "${address}", a non-publicly-routable address, and is not in this plugin's lan_allowlist`,
+        );
+      }
     }
   }
   // Pin to the FIRST validated address — every returned address was
-  // checked above (a hostname resolving to even one disallowed address is
-  // rejected wholesale, this file's header), so any of them would be
-  // equally valid to dial; the first is as good as any, and is now the
-  // ONLY one this module ever actually connects to for this call.
+  // checked above UNLESS allowlisted by name (this file's header: a LAN
+  // name legitimately resolves to a private range, so that check is
+  // deliberately skipped for it) — so any of them would be equally valid
+  // to dial; the first is as good as any, and is now the ONLY one this
+  // module ever actually connects to for this call.
   const chosen = addresses[0]!;
   return { pinnedAddress: chosen.address, family: isIPv4(chosen.address) ? 4 : 6 };
 }
@@ -608,12 +623,10 @@ export async function hardenedFetchRaw(url: string, opts: HardenedFetchRawOption
       // hardenedFetch's identical branch below: the caller already fully
       // controls "the network" here, but validation above still ran.
       response = await opts.fetchImpl(url, { redirect: "manual", signal: controller.signal });
-    } else if (resolution.pinnedAddress) {
-      response = await pinnedDialFetch(url, {}, resolution.pinnedAddress, resolution.family!, controller.signal);
     } else {
-      // LAN-allowlist exact-hostname bypass — see resolveAndValidateHost's
-      // doc comment.
-      response = await fetch(url, { redirect: "manual", signal: controller.signal });
+      // C5.2: resolution.pinnedAddress is now ALWAYS set (this file's
+      // header) — there is no longer an "unpinned" fallback branch here.
+      response = await pinnedDialFetch(url, {}, resolution.pinnedAddress, resolution.family, controller.signal);
     }
   } catch (err) {
     clearTimeout(timer);
@@ -674,15 +687,12 @@ export async function hardenedFetch(url: string, init: RequestInit, opts: Harden
         // own tests, which exercise this seam extensively without any real
         // DNS/socket involved at all).
         response = await opts.fetchImpl(url, { ...init, redirect: "manual", signal: controller.signal });
-      } else if (resolution.pinnedAddress) {
+      } else {
         // DNS-rebinding fix (this file's header): dial the EXACT address
         // resolveAndValidateHost already validated, never re-resolving.
-        response = await pinnedDialFetch(url, init, resolution.pinnedAddress, resolution.family!, controller.signal);
-      } else {
-        // LAN-allowlist exact-hostname bypass — this file's header's
-        // documented residual: no validated address to pin to, dial
-        // normally (the platform's own DNS resolution).
-        response = await fetch(url, { ...init, redirect: "manual", signal: controller.signal });
+        // C5.2: resolution.pinnedAddress is now ALWAYS set — there is no
+        // longer an "unpinned" fallback branch here.
+        response = await pinnedDialFetch(url, init, resolution.pinnedAddress, resolution.family, controller.signal);
       }
     } catch (err) {
       if (controller.signal.aborted) {

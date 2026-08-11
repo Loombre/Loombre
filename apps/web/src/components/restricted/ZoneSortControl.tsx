@@ -11,7 +11,16 @@
 // not accent — the zone keeps its warning colour"), so a dedicated CSS
 // module rather than composing SortControl.module.css directly (that file
 // is Browse's own, accent-toned).
+//
+// Item 1 (Wave A, radiogroup sweep): used to hand-roll
+// role="tablist"/role="tab" markup — consolidated onto the shared
+// ui/SegmentedControl, which owns the WAI-ARIA radiogroup + roving-
+// tabindex + arrow-key behavior once. ZoneControls.module.css's
+// `.sortTrack`/`.sortSegment` (composed from SegmentedControl.module.css,
+// warning tone layered on top) are threaded through unchanged via
+// className/segmentClassName.
 
+import { SegmentedControl } from "../ui/SegmentedControl.js";
 import { ZONE_SORT_OPTIONS, type ZoneSort } from "../../lib/zone-browse-filters.js";
 import styles from "./ZoneControls.module.css";
 
@@ -23,20 +32,13 @@ export function ZoneSortControl({
   onChange: (value: ZoneSort) => void;
 }): React.JSX.Element {
   return (
-    <div className={styles.sortTrack} role="tablist" aria-label="Sort">
-      {ZONE_SORT_OPTIONS.map((option) => (
-        <button
-          key={option.value}
-          type="button"
-          role="tab"
-          aria-selected={option.value === active}
-          data-active={option.value === active}
-          className={styles.sortSegment}
-          onClick={() => onChange(option.value)}
-        >
-          {option.label}
-        </button>
-      ))}
-    </div>
+    <SegmentedControl
+      options={ZONE_SORT_OPTIONS.map((option) => ({ value: option.value as string, label: option.label }))}
+      value={active}
+      onChange={(value) => onChange(value as ZoneSort)}
+      className={styles.sortTrack}
+      segmentClassName={styles.sortSegment}
+      aria-label="Sort"
+    />
   );
 }

@@ -130,8 +130,22 @@ AA.** Measured against `#0B0C0F`:
 | `#61666E` subtle | 3.4 : 1 | ❌ |
 | `#4A4E55` faint | 2.3 : 1 | ❌ |
 
-Those two tiers carry the 9–10px uppercase mono labels — the smallest type in the app, where
-the large-text exemption does not apply and wide tracking already thins the strokes.
+**RULE AMENDED (LD-14/AUD-A4v3-003, comparative-architecture audit — the rule below was
+found self-contradictory, not the accepted exception itself):** this section originally claimed
+"those two tiers carry the 9–10px uppercase mono labels" in the same breath as a floor of
+"never below `--text-xs`" (12px) — but every `--mono-*` tier (`--mono-lg/-md/-sm/-xs`:
+11/10/9.5/8.5px) sits below that floor BY CONSTRUCTION, so the rule as written both mandated
+and forbade the exact same pairing. The audit's live contrast sweep of `/login` (unauthenticated,
+the most normal of normal paths) caught the real-world consequence: six primary elements —
+including the "USERNAME OR EMAIL" and "PASSWORD" form field labels every user reads to sign
+in — paired `subtle`/`hint` with `--mono-*` sizes at measured 2.34–3.38:1, work the mono-label
+claim had (wrongly) blessed as by-design. **Corrected rule: `subtle`/`hint` may be used on the
+`--text-*` scale ONLY at `--text-xs` (12px) or above; they may NEVER be used on the `--mono-*`
+scale AT ALL** — not "the smallest --mono-* tiers", all four, since every one sits below the
+`--text-*` floor. A `--mono-*` label that needs a dimmer-than-`muted` treatment does not have
+one; use `--color-text-muted` (7.4:1, AA-clean) there instead. The tonal-range/load-bearing
+rationale below is UNCHANGED and still governs every remaining `subtle`/`hint` use on the
+`--text-*` scale at ≥12px.
 
 **Decision: ship the values as designed.** The owner has reviewed the measurements and
 accepted the exception — the tonal range between the four grey tiers is load-bearing for this
@@ -144,14 +158,18 @@ What this obliges you to do instead:
   becomes false. Replace it with a note recording the two exceptions, their measured ratios,
   and that they are an accepted design decision — so the next person doesn't discover it as
   a bug and "fix" it.
-- **Never put these tiers on anything below `--text-xs`, or on a non-`--color-bg` surface.**
-  Contrast drops further over artwork and lighter fills. Where a mono label sits on a
-  gradient (hero eyebrows, poster captions), it needs a scrim behind it — the prototype
-  already does this with its `linear-gradient` overlays; preserve them.
+- **Never put these tiers on anything below `--text-xs`, or on the `--mono-*` scale at all
+  (every tier of which sits below `--text-xs` by construction — AUD-A4v3-003), or on a
+  non-`--color-bg` surface.** Contrast drops further over artwork and lighter fills. Where
+  `--color-text-muted` (the mono-label replacement) sits on a gradient (hero eyebrows, poster
+  captions), it still needs a scrim behind it — the prototype already does this with its
+  `linear-gradient` overlays; preserve them.
 - **Never make these tiers the only signal.** Anything encoded in faint grey must also be
   carried by position, label, or icon. Audit the places where they carry meaning — the
   registry `DEFAULT` / `PINNABLE` footers and the `SORTED BY DATE ADDED` readouts are the
-  main ones.
+  main ones. NOT re-verified against the `--mono-*` correction above by this pass (these
+  components live outside this pass's file scope) — whoever owns them should confirm neither
+  actually renders on the `--mono-*` scale before treating this bullet as still fully closed.
 - **Expect this in an accessibility audit.** Lighthouse runs in CI (`pnpm lighthouse`); its
   contrast check will flag these. Decide up front whether to annotate the exception or
   accept a lowered a11y score, and don't let the failure block the pipeline silently.

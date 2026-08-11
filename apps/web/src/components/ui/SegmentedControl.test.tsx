@@ -70,11 +70,11 @@ describe("SegmentedControl — DOM structure", () => {
   });
 
   function track(): HTMLElement {
-    return view!.container.querySelector('[role="tablist"]') as HTMLElement;
+    return view!.container.querySelector('[role="radiogroup"]') as HTMLElement;
   }
 
   function segments(): HTMLButtonElement[] {
-    return Array.from(track().querySelectorAll('button[role="tab"]'));
+    return Array.from(track().querySelectorAll('button[role="radio"]'));
   }
 
   it("does not set data-full-width when the caller never opts in", () => {
@@ -113,5 +113,159 @@ describe("SegmentedControl — DOM structure", () => {
     });
 
     expect(received).toBe("TV");
+  });
+});
+
+// Item 1 (Wave A): replaces the pre-existing role="tablist"/
+// role="tab" with no keyboard support beyond plain Tab (STATE.md W2+W3's
+// recorded deferral) with the WAI-ARIA APG "Radio Group" pattern — arrow
+// keys move focus AND selection together, Home/End jump to the ends,
+// exactly ONE segment is ever in the tab order.
+describe("SegmentedControl — radiogroup pattern + roving tabindex (item 1)", () => {
+  let view: TestRender | undefined;
+
+  afterEach(() => {
+    view?.unmount();
+    view = undefined;
+  });
+
+  function track(): HTMLElement {
+    return view!.container.querySelector('[role="radiogroup"]') as HTMLElement;
+  }
+
+  function segments(): HTMLButtonElement[] {
+    return Array.from(track().querySelectorAll('button[role="radio"]'));
+  }
+
+  function pressKey(el: HTMLElement, key: string): void {
+    act(() => {
+      el.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }));
+    });
+  }
+
+  it("is a radiogroup of radios, never a tablist of tabs", () => {
+    view = renderIntoBody(<SegmentedControl options={["Off", "On"]} defaultValue="Off" />);
+    expect(view.container.querySelector('[role="tablist"]')).toBeNull();
+    expect(view.container.querySelectorAll('[role="tab"]')).toHaveLength(0);
+    expect(track().getAttribute("role")).toBe("radiogroup");
+    expect(segments()).toHaveLength(2);
+  });
+
+  it("aria-checked (not aria-selected) marks the active segment", () => {
+    view = renderIntoBody(<SegmentedControl options={["Off", "On"]} defaultValue="On" />);
+    const [off, on] = segments();
+    expect(off!.getAttribute("aria-checked")).toBe("false");
+    expect(on!.getAttribute("aria-checked")).toBe("true");
+    expect(off!.hasAttribute("aria-selected")).toBe(false);
+  });
+
+  it("exactly ONE segment is in the tab order at a time — the checked one is 0, every other is -1", () => {
+    view = renderIntoBody(<SegmentedControl options={["Info", "Warning", "Critical"]} defaultValue="Warning" />);
+    const [info, warning, critical] = segments();
+    expect(info!.tabIndex).toBe(-1);
+    expect(warning!.tabIndex).toBe(0);
+    expect(critical!.tabIndex).toBe(-1);
+  });
+
+  it("ArrowRight moves focus AND selection to the next segment, wrapping past the end", () => {
+    view = renderIntoBody(<SegmentedControl options={["A", "B", "C"]} defaultValue="A" />);
+    const [a, b, c] = segments();
+
+    pressKey(a!, "ArrowRight");
+    expect(b!.getAttribute("aria-checked")).toBe("true");
+    expect(b!.tabIndex).toBe(0);
+    expect(a!.tabIndex).toBe(-1);
+
+    pressKey(b!, "ArrowRight");
+    expect(c!.getAttribute("aria-checked")).toBe("true");
+
+    // wraps from the last option back to the first
+    pressKey(c!, "ArrowRight");
+    expect(a!.getAttribute("aria-checked")).toBe("true");
+    expect(a!.tabIndex).toBe(0);
+  });
+
+  it("ArrowLeft moves focus AND selection to the previous segment, wrapping before the start", () => {
+    view = renderIntoBody(<SegmentedControl options={["A", "B", "C"]} defaultValue="A" />);
+    const [a, , c] = segments();
+
+    // wraps from the first option to the last
+    pressKey(a!, "ArrowLeft");
+    expect(c!.getAttribute("aria-checked")).toBe("true");
+    expect(c!.tabIndex).toBe(0);
+  });
+
+  it("ArrowDown/ArrowUp behave identically to ArrowRight/ArrowLeft", () => {
+    view = renderIntoBody(<SegmentedControl options={["A", "B", "C"]} defaultValue="A" />);
+    const [a, b] = segments();
+
+    pressKey(a!, "ArrowDown");
+    expect(b!.getAttribute("aria-checked")).toBe("true");
+
+    pressKey(b!, "ArrowUp");
+    expect(a!.getAttribute("aria-checked")).toBe("true");
+  });
+
+  it("Home jumps to the first option, End jumps to the last — both select, not just focus", () => {
+    view = renderIntoBody(<SegmentedControl options={["A", "B", "C", "D"]} defaultValue="B" />);
+    const [a, b, , d] = segments();
+
+    pressKey(b!, "End");
+    expect(d!.getAttribute("aria-checked")).toBe("true");
+    expect(d!.tabIndex).toBe(0);
+
+    pressKey(d!, "Home");
+    expect(a!.getAttribute("aria-checked")).toBe("true");
+    expect(a!.tabIndex).toBe(0);
+  });
+
+  it("onChange fires on every keyboard-driven move, same as a click", () => {
+    const received: string[] = [];
+    view = renderIntoBody(<SegmentedControl options={["A", "B", "C"]} defaultValue="A" onChange={(v) => received.push(v)} />);
+    const [a] = segments();
+
+    pressKey(a!, "ArrowRight");
+    expect(received).toEqual(["B"]);
+  });
+
+  it("supports {value,label} option pairs, not just plain strings (LibraryPills/SortControl/ZoneSortControl/SeasonPillTabs shape)", () => {
+    view = renderIntoBody(
+      <SegmentedControl
+        options={[
+          { value: "id-1", label: "Movies" },
+          { value: "id-2", label: "TV Shows" },
+        ]}
+        defaultValue="id-1"
+      />,
+    );
+    const [first] = segments();
+    expect(first!.textContent).toBe("Movies");
+    expect(first!.getAttribute("aria-checked")).toBe("true");
+  });
+
+  it("controlled mode: an explicit `value` prop wins over internal state, and onChange is the only way selection moves", async () => {
+    let controlledValue = "A";
+    const handleChange = (v: string): void => {
+      controlledValue = v;
+    };
+    view = renderIntoBody(<SegmentedControl options={["A", "B"]} value={controlledValue} onChange={handleChange} />);
+    const [a, b] = segments();
+
+    await act(async () => {
+      b!.click();
+    });
+    // onChange fired (controlledValue mutated)...
+    expect(controlledValue).toBe("B");
+    // ...but since the component was never re-rendered with the new
+    // `value` prop, its OWN displayed state does not silently drift —
+    // proving `value` (not internal state) is authoritative in controlled
+    // mode, exactly like a real <input type="radio" checked> would behave.
+    expect(a!.getAttribute("aria-checked")).toBe("true");
+    expect(b!.getAttribute("aria-checked")).toBe("false");
+
+    // Re-rendering with the caller's own updated value is what actually
+    // moves the checked segment.
+    view.rerender(<SegmentedControl options={["A", "B"]} value="B" onChange={handleChange} />);
+    expect(track().querySelector('[aria-checked="true"]')?.textContent).toBe("B");
   });
 });

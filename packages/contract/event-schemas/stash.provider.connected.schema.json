@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://loombre.com/schemas/events/stash.provider.connected.schema.json",
+  "title": "StashProviderConnectedPayload",
+  "description": "Payload for envelope.type === 'stash.provider.connected'. Stash OPEN ledger item 7 (Stash SQLite metadata sync): emitted by apps/worker/src/stash/connect.ts the first time a library's Stash connection succeeds after any non-'ok' status (never_connected, unreachable, or unsupported_schema) — the admin-visible counterpart to stash.provider.disabled, so the admin UI can flip a connection's status live instead of needing to reopen the Stash modal. TRANSITION-GATED, not written on every successful connect: connectToStashLibrary is called per-scene during ordinary metadata fetches (apps/worker/src/metadata/providers/stash.ts's fetchDetails), so an unconditional emit would flood the event feed with redundant events during a normal scan of an already-healthy library. envelope.actorUserId is always null (system-originated: a connect attempt has no human actor in the loop, same posture as stash.provider.disabled/probe.failed). ADMIN-ONLY delivery, same operational-event posture as stash.provider.disabled.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["libraryId", "schemaVersion"],
+  "properties": {
+    "libraryId": {
+      "type": "string",
+      "format": "uuid",
+      "description": "The library whose library_stash_connections row this connect attempt was for."
+    },
+    "schemaVersion": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "The Stash schema_migrations.version this connect attempt observed — mirrors library_stash_connections.last_seen_schema_version for the same connection."
+    }
+  }
+}

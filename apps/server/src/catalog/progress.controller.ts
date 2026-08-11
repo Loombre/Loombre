@@ -25,10 +25,39 @@
 // lets it throttle-emit `playback.progress` (at most once per 30s per
 // session, see packages/db/src/query/playback-sessions.ts) without this
 // controller knowing anything about the throttle itself.
+//
+// PRESENTATION -> SOURCE MAPPING (docs/PLAYBACK.md §9): a player reports
+// `video.currentTime` — its position in the SERVED PLAYLIST's timeline,
+// which runs continuously across every `EXT-X-DISCONTINUITY`. Each seek run
+// is spawned with `-ss` and no `-copyts`, so its own output timestamps
+// restart at zero, and the two timelines diverge by exactly the accumulated
+// seek offsets. Progress, resume points and `positionMs` everywhere else in
+// this system are SOURCE-timeline values, so a post-seek heartbeat stored
+// verbatim points at the wrong place in the file.
+//
+// The conversion happens HERE, at ingestion, and the client is left
+// untouched: it reports what its own media element knows, and the server —
+// which owns the run map (`transcode_runs`, migration 0043) and the served
+// playlist — is the only party that CAN reconcile the two. It is
+// best-effort in the strictest sense: any missing input (no sessionId, no
+// runs, no readable playlist, a position past the playlist's end) keeps the
+// client's value exactly as sent, and for a single-run or direct-play
+// session the mapping is the identity anyway.
 
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { Body, Controller, Get, Param, Put, Query, Req } from "@nestjs/common";
-import { getProgressForItem, heartbeatPlaybackSession, listProgress, upsertProgress } from "@loombre/db";
+import {
+  getPlaybackSessionForUser,
+  getProgressForItem,
+  heartbeatPlaybackSession,
+  listProgress,
+  listTranscodeRuns,
+  upsertProgress,
+} from "@loombre/db";
+import type { ViewerContext } from "@loombre/db";
 import { nowMs as clockNowMs } from "@loombre/shared";
+import { parseServedSegmentDurations, presentationToSourceMs } from "../common/served-playlist.js";
 import { notFound, unprocessableEntity } from "../gateway/problem.exception.js";
 import { requireUuidParam } from "../gateway/require-uuid-param.js";
 import type { AuthenticatedRequest } from "../gateway/auth.guard.js";
@@ -100,8 +129,18 @@ export class ProgressController {
 
     const ctx = await resolveViewer(this.viewerContextProvider, req);
     const nowMs = clockNowMs();
+
+    // Presentation -> source (see this file's header). Resolved BEFORE the
+    // write so the mapped value is what gets persisted AND what the
+    // heartbeat's playback.progress payload carries — the two must never
+    // disagree about where the viewer is.
+    const positionMs =
+      typeof body.sessionId === "string"
+        ? await this.toSourcePositionMs(ctx, body.sessionId, body.positionMs)
+        : body.positionMs;
+
     const result = await upsertProgress(this.dbProvider.db, ctx, itemId, {
-      positionMs: body.positionMs,
+      positionMs,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       state: body.state as any,
       nowMs,
@@ -116,13 +155,48 @@ export class ProgressController {
       // Best-effort heartbeat — see this file's header for why a stale/
       // invalid sessionId never fails the progress write itself.
       await heartbeatPlaybackSession(this.dbProvider.db, ctx, body.sessionId, nowMs, {
-        positionMs: body.positionMs,
+        positionMs,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         ...(body.durationMs !== undefined ? { durationMs: body.durationMs as any } : {}),
       });
     }
 
     return result;
+  }
+
+  /**
+   * Converts a client-reported PRESENTATION position into a SOURCE-timeline
+   * position for `sessionId` — this file's header explains why the two
+   * differ and why only the server can reconcile them.
+   *
+   * Returns `presentationMs` UNCHANGED whenever the mapping cannot be made
+   * with certainty: no such session (or not this viewer's), no staging dir,
+   * an unreadable served playlist, no recorded runs, or a position past the
+   * playlist's end. That is the safe direction — the client's own value is
+   * already correct for every direct-play session and for every transcode
+   * session that has not seeked, which is the overwhelming majority of
+   * heartbeats. A wrong guess here would corrupt a resume point silently;
+   * leaving it alone merely fails to improve one.
+   *
+   * Never throws: the progress write is the primary operation and must not
+   * fail over a mapping refinement (same posture as the heartbeat call
+   * below it, see this file's header).
+   */
+  private async toSourcePositionMs(ctx: ViewerContext, sessionId: string, presentationMs: number): Promise<number> {
+    try {
+      const session = await getPlaybackSessionForUser(this.dbProvider.db, ctx, sessionId);
+      if (!session?.stagingDir) return presentationMs;
+
+      const runs = await listTranscodeRuns(this.dbProvider.db, sessionId);
+      // A single run means origin 0 and an identity mapping — skip the file
+      // read entirely rather than doing it to compute `presentationMs`.
+      if (runs.length < 2) return presentationMs;
+
+      const entries = parseServedSegmentDurations(await readFile(join(session.stagingDir, "media.m3u8"), "utf8"));
+      return presentationToSourceMs(entries, runs, presentationMs) ?? presentationMs;
+    } catch {
+      return presentationMs;
+    }
   }
 
   @Get("progress")

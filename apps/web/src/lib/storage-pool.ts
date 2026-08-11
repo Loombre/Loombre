@@ -11,39 +11,27 @@
 // hook mirrors that honesty: it hides (returns null) rather than ever
 // rendering a fabricated number, on ANY of {non-admin, network error,
 // 403/404, storagePool itself being null}.
+//
+// Item 7 (Wave A, /system/info triple-fetch): this used to
+// run its own independent useEffect + apiGet("/system/info") — one of
+// three call sites racing the same request on every Dashboard load (see
+// lib/system-info.ts's header for the full writeup). It now delegates to
+// the shared useSystemInfo() data layer and just plucks storagePool back
+// out, so Sidebar (mounted in the app shell around every admin page)
+// shares the SAME request as DashboardHeader/SystemInfoCard instead of
+// firing its own.
 
-import { useEffect, useState } from "react";
 import type { components } from "@loombre/sdk";
-import { apiGet } from "./api-client.js";
+import { useSystemInfo } from "./system-info.js";
 
 export type StoragePoolStats = components["schemas"]["StoragePoolStats"];
 
-/** Fetches the storage pool once per `isAdmin` transition (GET /system/info
- *  is admin-only — a non-admin caller gets `null` without even attempting
- *  the request). Any fetch failure (network, 403, etc.) also resolves to
- *  `null` — the caller hides the meter on `null`, never renders zeros. */
+/** GET /system/info is admin-only — a non-admin caller gets `null` without
+ *  even attempting the request. Any fetch failure also resolves to `null`
+ *  — the caller hides the meter on `null`, never renders zeros. */
 export function useStoragePool(isAdmin: boolean): StoragePoolStats | null {
-  const [pool, setPool] = useState<StoragePoolStats | null>(null);
-
-  useEffect(() => {
-    if (!isAdmin) {
-      setPool(null);
-      return;
-    }
-    let cancelled = false;
-    apiGet("/system/info")
-      .then((info) => {
-        if (!cancelled) setPool(info.storagePool ?? null);
-      })
-      .catch(() => {
-        if (!cancelled) setPool(null);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [isAdmin]);
-
-  return pool;
+  const { info } = useSystemInfo(isAdmin);
+  return info?.storagePool ?? null;
 }
 
 const BYTES_PER_KB = 1024;

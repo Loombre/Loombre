@@ -33,13 +33,51 @@
 // (hls.js-compatible: it already retries a 503 GET), never 404 — a 404
 // would make hls.js treat the segment as permanently gone rather than
 // "coming soon after a restart".
+//
+// SEEK-TARGET DERIVATION (docs/PLAYBACK.md §9 "Seek", C3): the millisecond
+// value handed to `requestSeek` is derived from the REAL durations the
+// worker actually produced — the `#EXTINF` values in the served
+// `media.m3u8` this controller also serves — never from
+// `segmentIndex * SEGMENT_DURATION_SEC * 1000`. Nominal arithmetic is
+// wrong by construction: `-hls_time {SEG_DUR}` is a LOWER bound and
+// `-force_key_frames expr:gte(t,n_forced*{SEG_DUR})`
+// (packages/playback-engine/src/args/builder.ts §6) cuts at the first
+// keyframe AT OR AFTER each mark, so a real segment is 6.006s..9s+ and the
+// error COMPOUNDS with the index — tens of seconds by the middle of a
+// feature. The derivation lives in ../common/served-playlist.ts (shared
+// with the progress-ingestion path, which needs the same timeline
+// arithmetic and cannot import this module across the D2 boundary).
+//
+// It is anchored PER RUN via migration 0043's `transcode_runs`
+// (`getTranscodeRunForSegment`): the owning run supplies the SOURCE origin
+// and the run's OWN real `#EXTINF` durations supply the offset within it,
+// which makes the answer exact for EVERY run rather than only run 0. Run
+// ownership follows the segment counter, never the clock — a backward seek
+// starts a later run at an earlier source origin, so `source_origin_ms` is
+// not monotonic and `start_segment` is the only key that is. A session with
+// no recorded runs (one predating the migration) keeps the playlist-only
+// fallback chain, and "no anchor" is never read as "origin 0"; the
+// nominal constant survives only as the last resort when no served
+// playlist is readable at all. The result is then clamped to
+// `[0, durationMs]` — `requestSeek` writes `seek_target_ms` verbatim
+// (packages/db/src/query/playback-sessions.ts, deliberately: it never
+// re-derives a decision its caller already made), and an unclamped value
+// becomes an ffmpeg `-ss` past EOF, i.e. a restart that produces nothing,
+// forever.
 
 import { createReadStream } from "node:fs";
 import { stat, readFile } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { Controller, Get, Param, Req, Res, UseFilters, UseGuards } from "@nestjs/common";
 import type { Response } from "express";
-import { getPlaybackSessionForUser, requestSeek, updateRequestedSegment } from "@loombre/db";
+import {
+  getMediaInfoAssembly,
+  getPlaybackSessionForUser,
+  getTranscodeRunForSegment,
+  requestSeek,
+  updateRequestedSegment,
+} from "@loombre/db";
+import type { ViewerContext } from "@loombre/db";
 import { nowMs as clockNowMs } from "@loombre/shared";
 import { notFound } from "../gateway/problem.exception.js";
 import { requireUuidParam } from "../gateway/require-uuid-param.js";
@@ -50,6 +88,14 @@ import { DbProvider } from "../common/db.provider.js";
 import { ViewerContextProvider } from "../common/viewer-context.provider.js";
 import { RateLimit, SurfaceRateLimitGuard } from "../common/rate-limit.guard.js";
 import { RateLimitExceptionFilter } from "../common/rate-limit-exception.filter.js";
+import {
+  clampSeekTargetMs,
+  deriveSegmentStartMs,
+  parseServedSegmentDurations,
+  withMediaSequence,
+  type RunAnchor,
+  type ServedSegmentEntry,
+} from "../common/served-playlist.js";
 import { resolveViewer } from "./viewer.js";
 
 const MANIFEST_POLL_TIMEOUT_MS = 8_000;
@@ -184,7 +230,7 @@ export class PlaybackHlsFileController {
             res.status(200);
             res.setHeader("Content-Type", "application/vnd.apple.mpegurl");
             res.setHeader("Cache-Control", "private, no-store");
-            res.send(text);
+            res.send(withMediaSequence(text));
             return;
           }
         } catch {
@@ -252,7 +298,8 @@ export class PlaybackHlsFileController {
     if (parsed.segmentIndex !== undefined) {
       const ahead = session.producedSegment === null ? Number.POSITIVE_INFINITY : parsed.segmentIndex - session.producedSegment;
       if (ahead > SEEK_LOOKAHEAD_SEGMENTS) {
-        await requestSeek(this.dbProvider.db, ctx, id, parsed.segmentIndex * SEGMENT_DURATION_SEC * 1000, now);
+        const targetMs = await this.resolveSeekTargetMs(ctx, session, parsed.segmentIndex);
+        await requestSeek(this.dbProvider.db, ctx, id, targetMs, now);
         this.respondSeekRetry(res, sanitizeInstancePath(req));
         return;
       }
@@ -271,7 +318,8 @@ export class PlaybackHlsFileController {
       // (b): also a seek-worthy condition for a real segment index; for
       // init.mp4 (no index), just ask the client to retry shortly.
       if (parsed.segmentIndex !== undefined) {
-        await requestSeek(this.dbProvider.db, ctx, id, parsed.segmentIndex * SEGMENT_DURATION_SEC * 1000, now);
+        const targetMs = await this.resolveSeekTargetMs(ctx, session, parsed.segmentIndex);
+        await requestSeek(this.dbProvider.db, ctx, id, targetMs, now);
       }
       this.respondSeekRetry(res, sanitizeInstancePath(req));
       return;
@@ -282,6 +330,63 @@ export class PlaybackHlsFileController {
     res.setHeader("Cache-Control", "private, immutable");
     res.setHeader("Content-Length", sizeBytes);
     createReadStream(absolutePath).pipe(res);
+  }
+
+  /**
+   * The ms value handed to `requestSeek` — module header's SEEK-TARGET
+   * DERIVATION note. Runs ONLY on a seek path (both call sites are already
+   * inside a 503-and-restart branch), never on the hot segment-serving
+   * path: CLAUDE.md invariant 9 (Tier-0 — request paths do no CPU-heavy
+   * work) is satisfied by rarity plus the work itself being one small
+   * text read plus a linear scan of a playlist that retention keeps
+   * bounded, not by any caching this would otherwise need.
+   *
+   * Every failure degrades rather than throws — a seek-restart is the
+   * recovery path for a client that is ALREADY stalled, so a 500 here
+   * would turn a recoverable stall into a dead session. An unreadable
+   * playlist falls back to nominal arithmetic; an unresolvable media
+   * assembly drops only the upper clamp.
+   */
+  private async resolveSeekTargetMs(ctx: ViewerContext, session: { id: string; stagingDir: string | null; itemId: string | null; fileId: string | null }, segmentIndex: number): Promise<number> {
+    let entries: ServedSegmentEntry[] = [];
+    if (session.stagingDir) {
+      try {
+        entries = parseServedSegmentDurations(await readFile(join(session.stagingDir, "media.m3u8"), "utf8"));
+      } catch {
+        // No served playlist yet (or a read that raced the worker's
+        // atomic rewrite) — `deriveSegmentStartMs` falls back to nominal.
+      }
+    }
+
+    // The owning run (migration 0043's transcode_runs, Lane A1) turns the
+    // derivation from a presentation-timeline approximation into an EXACT
+    // SOURCE-timeline answer for every run, not just run 0 — see
+    // served-playlist.ts's `deriveSegmentStartMs`. `undefined` (a session
+    // predating the migration, or one whose pipeline never recorded a run)
+    // keeps the playlist-only fallback chain: it must never be read as
+    // "origin 0".
+    let run: RunAnchor | undefined;
+    try {
+      run = await getTranscodeRunForSegment(this.dbProvider.db, session.id, segmentIndex);
+    } catch {
+      // Never fail a seek over the run map — degrade to playlist-only.
+    }
+
+    const derivedMs = deriveSegmentStartMs(entries, segmentIndex, SEGMENT_DURATION_SEC * 1000, run);
+
+    let durationMs: number | null = null;
+    if (session.fileId) {
+      try {
+        const assembly = await getMediaInfoAssembly(this.dbProvider.db, ctx, {
+          fileId: session.fileId,
+          ...(session.itemId ? { itemId: session.itemId } : {}),
+        });
+        durationMs = assembly?.media.durationMs ?? null;
+      } catch {
+        // Unprobed/vanished file — clamp with the lower bound only.
+      }
+    }
+    return clampSeekTargetMs(derivedMs, durationMs);
   }
 
   private respondSeekRetry(res: Response, instance: string): void {

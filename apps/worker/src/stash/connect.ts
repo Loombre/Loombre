@@ -16,6 +16,12 @@
 // SAME transaction pattern apps/worker/src/probe/terminal-failure-hook.ts
 // uses (withTransaction + writeEvent) — see that file's header for the
 // precedent this mirrors.
+//
+// Stash OPEN ledger item 7's event (`stash.provider.connected`, admin-only):
+// unlike `disabled` above, gated on a genuine status TRANSITION (see its
+// own inline comment at the write site) — this function is called
+// per-scene during ordinary metadata fetches, so firing unconditionally
+// would flood the event feed on every healthy scan.
 
 import { getLibraryStashConnection, recordStashConnectionOutcome } from '@loombre/db';
 import { withTransaction, writeEvent, type DbOrTx } from '@loombre/db/internal';
@@ -108,5 +114,28 @@ export async function connectToStashLibrary(deps: ConnectToStashLibraryDeps, lib
   }
 
   await recordStashConnectionOutcome(deps.db, { libraryId, status: 'ok', lastSeenSchemaVersion: guardResult.version, nowMs });
+  // Stash OPEN ledger item 7 ("No success-connect event — the admin must
+  // reopen the Stash modal to see a status flip"): admin-only
+  // `stash.provider.connected`, TRANSITION-GATED on `connRow.status` (read
+  // above, BEFORE this attempt) — unlike `stash.provider.disabled` above,
+  // which fires unconditionally on every failed attempt, this function is
+  // called PER-SCENE during ordinary metadata fetches
+  // (apps/worker/src/metadata/providers/stash.ts's fetchDetails), so an
+  // unconditional emit here would flood the event feed with thousands of
+  // redundant "connected" events during one ordinary scan of an
+  // already-healthy library. Firing only on a genuine transition INTO 'ok'
+  // (from 'never_connected', 'unreachable', or 'unsupported_schema') keeps
+  // the event meaningful — exactly one per real "it just started working"
+  // moment, which is what a modal watching for a live status flip needs.
+  if (connRow.status !== 'ok') {
+    await withTransaction(deps.db, async (trx) => {
+      await writeEvent(trx, {
+        type: 'stash.provider.connected',
+        tsMs: nowMs,
+        actorUserId: null,
+        payload: { libraryId, schemaVersion: guardResult.version },
+      });
+    });
+  }
   return { status: 'ok', connection: stashConn, schemaVersion: guardResult.version };
 }

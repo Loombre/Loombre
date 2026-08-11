@@ -447,6 +447,51 @@ describe("POST /users/{id}/reset-password (E3a/M14, admin/CLI tier's HTTP twin)"
     expect(tempLogin.body.mustChangePassword).toBe(true);
   });
 
+  // OPEN ledger item 8 ("Re-setting the same temporary password clears
+  // must_change_password — no 'must differ from temp' check"): a user
+  // handed a temporary password could satisfy the required-change gate by
+  // re-submitting the SAME password as their "new" one — must_change_password
+  // clears, but nothing has actually changed. PATCH /users/me already
+  // requires currentPassword (re-auth) whenever password is present, so the
+  // new-vs-current comparison is a free, already-verified-plaintext check.
+  it("PATCH /users/me rejects a new password identical to currentPassword, and must_change_password stays true", async () => {
+    const { userId } = await createOrdinaryUser("reset-admin-samepw", "correct-horse-battery-samepw1");
+
+    const reset = await request(app.getHttpServer())
+      .post(`/users/${userId}/reset-password`)
+      .set("Authorization", `Bearer ${adminAccessToken}`);
+    expect(reset.status, JSON.stringify(reset.body)).toBe(200);
+    const temporaryPassword: string = reset.body.temporaryPassword;
+
+    const tempLogin = await loginAs("reset-admin-samepw", temporaryPassword);
+    expect(tempLogin.body.mustChangePassword).toBe(true);
+
+    const sameAsCurrent = await request(app.getHttpServer())
+      .patch("/users/me")
+      .set("Authorization", `Bearer ${tempLogin.accessToken}`)
+      .send({ password: temporaryPassword, currentPassword: temporaryPassword });
+    expect(sameAsCurrent.status, JSON.stringify(sameAsCurrent.body)).toBe(422);
+
+    // The flag must still be set — a rejected "change" must not have
+    // silently cleared it (the exact defect the check above closes).
+    const stillFlagged = await request(app.getHttpServer())
+      .get("/users")
+      .set("Authorization", `Bearer ${tempLogin.accessToken}`);
+    expect(stillFlagged.status).toBe(403);
+    expect(stillFlagged.body.type).toBe(MUST_CHANGE_PASSWORD_PROBLEM_TYPE);
+
+    // A genuinely DIFFERENT new password still works and clears the flag —
+    // the check above rejects "identical", not "any new password".
+    const genuinelyNew = await request(app.getHttpServer())
+      .patch("/users/me")
+      .set("Authorization", `Bearer ${tempLogin.accessToken}`)
+      .send({ password: "correct-horse-battery-samepw2", currentPassword: temporaryPassword });
+    expect(genuinelyNew.status, JSON.stringify(genuinelyNew.body)).toBe(200);
+
+    const relogin = await loginAs("reset-admin-samepw", "correct-horse-battery-samepw2");
+    expect(relogin.body.mustChangePassword).toBe(false);
+  });
+
   // NOT TESTABLE IN THIS WORKTREE — see the identical note in the
   // forgot-password describe block above (users.email is NOT NULL until
   // Lane A's 0023 migration lands at integration); resetUserPassword()'s

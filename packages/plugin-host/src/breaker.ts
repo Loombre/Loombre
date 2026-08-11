@@ -25,16 +25,28 @@
 // packages/db/migrations/0014_plugins.sql's plugins.consecutive_failures
 // column, written by apps/server/src/plugins's health/breaker service
 // alongside this class's own bookkeeping (see that service's header for how
-// the two stay in step). A process restart resets this class to `closed`
-// with zero consecutive failures regardless of what the DB column says —
-// documented, accepted behavior: the health/breaker service re-seeds a
-// fresh breaker's `onFailure` count is NOT re-hydrated from the DB, so a
-// plugin already at 4 consecutive DB-recorded failures gets a fresh
-// 5-strike budget after a Loombre restart. This is the same class of
-// tradeoff LD8's "manual re-enable resets the count" already accepts for
-// the DB counter; a future lane may choose to seed constructor state from
-// the DB row if that tradeoff turns out to matter in practice.
-
+// the two stay in step).
+//
+// C5.1 fix wave (closes deferred LPP L-5): a process restart used to reset
+// this class to `closed` with zero consecutive failures regardless of what
+// the DB column said — a plugin already at 4 consecutive DB-recorded
+// failures got a fresh 5-strike budget after a Loombre restart, so a
+// crash-looping plugin could reset its own breaker for free just by the
+// host bouncing (or, worse: the NEXT failure after a restart would
+// overwrite the durable `consecutive_failures` column back down from its
+// true value, since `PluginHealthService.runHealthCheck` persists
+// `breaker.snapshot().consecutiveFailures` verbatim — so an un-reseeded
+// breaker didn't just forget locally, it corrupted the durable counter on
+// its very next write). Fixed: the constructor accepts an optional `seed`
+// (typically `plugins.consecutive_failures` read once at first
+// construction, i.e. effectively "at boot" for a lazily-constructed
+// per-plugin breaker — see PluginHealthService.getBreaker) and continues
+// counting FROM that value rather than from zero. If the seed alone already
+// meets/exceeds `failureThreshold` (the durable count crossed the line
+// while nothing was watching, e.g. mid-restart), the breaker starts
+// pre-tripped `open` as of `seed.atMs` — the clock is still an injected
+// argument even in this edge case, never `Date.now()` internally, matching
+// this class's existing pure/no-I-O contract.
 import { LPP_BREAKER_FAILURE_THRESHOLD, LPP_BREAKER_RESET_TIMEOUT_MS } from "./timeouts.js";
 
 export type PluginBreakerState = "closed" | "open" | "half-open";
@@ -45,12 +57,29 @@ export interface PluginBreakerSnapshot {
   openedAtMs: number | null;
 }
 
+export interface PluginBreakerSeed {
+  /** A durable consecutive-failure count read from elsewhere (typically
+   *  `plugins.consecutive_failures`) to continue counting from, instead of
+   *  starting a brand-new breaker at 0 (C5.1, closes deferred LPP L-5). */
+  consecutiveFailures: number;
+  /** The clock reading the seed was taken at. Only consulted if
+   *  `consecutiveFailures` alone already meets/exceeds `failureThreshold` —
+   *  in that case it becomes `openedAtMs`, so `beforeCall`'s normal
+   *  resetTimeoutMs-elapsed half-open transition still works correctly
+   *  instead of leaving the breaker open forever. */
+  atMs: number;
+}
+
 export interface PluginBreakerOptions {
   /** Defaults to LPP_BREAKER_FAILURE_THRESHOLD (5, LD8). */
   failureThreshold?: number;
   /** Defaults to LPP_BREAKER_RESET_TIMEOUT_MS (60s — see timeouts.ts's
    *  header for why this specific number is a lane decision, not a rail). */
   resetTimeoutMs?: number;
+  /** C5.1 (closes deferred LPP L-5): seed this breaker's failure count from
+   *  a durable source at construction time. Omit for a brand-new breaker
+   *  with no prior history (the default, unchanged behavior). */
+  seed?: PluginBreakerSeed;
 }
 
 export interface PluginBreakerCallAdmission {
@@ -76,6 +105,15 @@ export class PluginCircuitBreaker {
   constructor(opts: PluginBreakerOptions = {}) {
     this.failureThreshold = opts.failureThreshold ?? LPP_BREAKER_FAILURE_THRESHOLD;
     this.resetTimeoutMs = opts.resetTimeoutMs ?? LPP_BREAKER_RESET_TIMEOUT_MS;
+
+    // C5.1 boot re-seed (closes deferred LPP L-5).
+    if (opts.seed) {
+      this.consecutiveFailures = Math.max(0, opts.seed.consecutiveFailures);
+      if (this.consecutiveFailures >= this.failureThreshold) {
+        this.state = "open";
+        this.openedAtMs = opts.seed.atMs;
+      }
+    }
   }
 
   snapshot(): PluginBreakerSnapshot {
