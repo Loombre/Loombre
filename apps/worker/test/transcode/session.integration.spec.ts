@@ -43,7 +43,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { createDb, createPlaybackSession, endPlaybackSession, requestSeek, resolveTestDatabaseUrl, updateRequestedSegment } from "@loombre/db";
+import { createDb, createPlaybackSession, endPlaybackSession, ensureTestDatabase, requestSeek, resolveTestDatabaseUrl, updateRequestedSegment } from "@loombre/db";
 import type { ViewerContext } from "@loombre/db";
 import { plan, type DeviceProfile, type MediaInfo, type NetworkConditions, type PlanInput, type ServerPolicy, type TrackSelection, type VerifiedCapabilities } from "@loombre/playback-engine";
 import { runTranscodeSession } from "../../src/transcode/runner.js";
@@ -55,7 +55,14 @@ const MEDIA_DIR = join(REPO_ROOT, "test-fixtures", "media");
 const FIXTURE_PATH = join(MEDIA_DIR, "session_long.mp4");
 const DB_PKG_ROOT = join(REPO_ROOT, "packages", "db");
 
-const DATABASE_URL = resolveTestDatabaseUrl();
+// PER-SUITE DATABASE (Wave A / A1's recommendation, swept at pre-D
+// consolidation). This suite RESETS the schema in its own hook; on the
+// shared `<base>_test` database a sibling package's reset landing mid-run
+// wipes it out from under whatever is executing and presents as a product
+// bug. `ensureTestDatabase` gives it one of its own — resolved at module
+// load (top-level await) so every describe-scope handle below is built
+// against the right connection string.
+const DATABASE_URL = await ensureTestDatabase(resolveTestDatabaseUrl(), "worker_session_test");
 
 const ffmpegAvailable = ffmpegAvailableStrict();
 

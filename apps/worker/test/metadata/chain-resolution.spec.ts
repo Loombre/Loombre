@@ -36,7 +36,7 @@ import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';
-import { createDb, getUserByUsername, insertPluginAndEmit, replaceLibraryProviderChain, resolveTestDatabaseUrl } from '@loombre/db';
+import { createDb, ensureTestDatabase, getUserByUsername, insertPluginAndEmit, replaceLibraryProviderChain, resolveTestDatabaseUrl } from '@loombre/db';
 import type { PluginBreakerSeed } from '@loombre/plugin-host';
 import { resolveProviderChainForLibrary } from '../../src/metadata/chain-resolution.js';
 import { createPluginBreakerRegistry } from '../../src/metadata/plugin-breakers.js';
@@ -46,7 +46,14 @@ import type { ContentClass, MediaKind } from '../../src/metadata/provider.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DB_PKG_ROOT = path.resolve(__dirname, '../../../../packages/db');
-const DATABASE_URL = resolveTestDatabaseUrl();
+// PER-SUITE DATABASE (Wave A / A1's recommendation, swept at pre-D
+// consolidation). This suite RESETS the schema in its own hook; on the
+// shared `<base>_test` database a sibling package's reset landing mid-run
+// wipes it out from under whatever is executing and presents as a product
+// bug. `ensureTestDatabase` gives it one of its own — resolved at module
+// load (top-level await) so every describe-scope handle below is built
+// against the right connection string.
+const DATABASE_URL = await ensureTestDatabase(resolveTestDatabaseUrl(), 'worker_chain_resolution_test');
 
 function run(script: string, args: string[]) {
   const result = spawnSync(process.execPath, [script, ...args], {
