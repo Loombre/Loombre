@@ -30,9 +30,31 @@ if ! dscl . -read /Users/_loombre >/dev/null 2>&1; then
   echo "loombre postinstall: creating _loombre service account"
   # Standard macOS "hidden system account" recipe (same shape as _postgres,
   # _www): UniqueID in the system range, no login shell, no real home dir.
-  NEXT_UID=$(dscl . -list /Users UniqueID | awk '{print $2}' | awk '$1<500 && $1>200 {print}' | sort -n | tail -1)
-  NEXT_UID=${NEXT_UID:-200}
-  NEXT_UID=$((NEXT_UID + 1))
+  #
+  # UID selection is delegated to pick-service-uid.sh (a sibling file in
+  # this same Scripts payload — see build-pkg.mjs's scripts-stage copy,
+  # which bundles every file in pkg/scripts/ verbatim). THE REAL BUG this
+  # replaces (rc.6 field audit): the old inline one-liner filtered
+  # CANDIDATES to <500 && >200 but never re-checked the +1 RESULT, so a
+  # highest-existing-candidate of 499 produced NEXT_UID=500 — macOS's
+  # first HUMAN account uid, not a service uid. pick-service-uid.sh scans
+  # for a free uid strictly inside [201, 499] by construction (no separate
+  # output bounds check to forget) and fails the install loudly if the
+  # entire range is exhausted, instead of silently wrapping past 500. See
+  # that script's own header for the full before/after and
+  # pkg/pick-service-uid.test.mjs for the regression coverage.
+  #
+  # MERGED input, not /Users alone (a second audit finding): the picked
+  # value is assigned below as BOTH UniqueID (/Users) AND PrimaryGroupID
+  # (/Groups) — a uid free in /Users but already taken as a GID in /Groups
+  # would otherwise be handed out and collide. Feed the picker the union of
+  # both namespaces; see pick-service-uid.sh's own header for why its
+  # matching logic needs no change to accept that.
+  POSTINSTALL_DIR="$(cd "$(dirname "$0")" && pwd)"
+  if ! NEXT_UID=$({ dscl . -list /Users UniqueID; dscl . -list /Groups PrimaryGroupID; } | awk '{print $2}' | "$POSTINSTALL_DIR/pick-service-uid.sh"); then
+    echo "loombre postinstall: FATAL — could not allocate a free service UID for _loombre (see error above)" >&2
+    exit 1
+  fi
 
   dscl . -create /Users/_loombre
   dscl . -create /Users/_loombre UserShell /usr/bin/false
