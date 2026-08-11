@@ -350,7 +350,8 @@ Blocking-class: `container-not-direct-playable`, `video-codec-unsupported`,
 `subtitle-codec-unknown`, `transcode-disabled-by-policy`.
 Informational-class: `dv-stripped-to-hdr10`, `subtitle-styling-lost`,
 `audio-atmos-lost`, `gapless-degraded`, `open-gop-leading-pictures-stripped`,
-`av1-rung-demoted`, `hw-encoder-selected:*`, `software-fallback:*`.
+`av1-rung-demoted`, `ladder-variant-capped`, `hw-encoder-selected:*`,
+`software-fallback:*`.
 Every reason carries `{ code, streamIndex?, detail? }`; matrix cases assert on
 codes, golden tests on full objects.
 `dv-stripped-to-hdr10`'s `detail` is
@@ -360,6 +361,17 @@ dual-layer profile-7 enhancement layer went with the RPU (LD-15). It rides in
 contract PRs against `packages/contract/openapi.yaml`'s `PlanReasonCode`, and
 `apps/server/test/contract-reason-codes.spec.ts` fails the build in both
 directions if the engine and the contract disagree.
+
+`ladder-variant-capped` (LD-6/LD-16, Wave C2 — owner-decision V2 in §9.1.11;
+a closed-enum addition and therefore a contract PR per the rule above) fires
+ONCE per plan when §7.5's Tier-0 advertised-variant cap trims the final
+ladder. `detail` is `tier=0 cap=<n> dropped=<heightPx@videoBitrateBps|...>`
+— one reason listing every dropped rung, not one per rung, because the cap
+is a single decision with a single cause (contrast `av1-rung-demoted`,
+which is per-rung because each rung demotes for its own cause). It exists
+for the same design-law-3 duty: the admin asking "why does this box
+advertise 3 qualities when the table has 6?" must get the answer from the
+plan itself.
 
 `av1-rung-demoted` (LD-7, 2026-08-11 — owner-decision D1 in §7.4; this IS a
 closed-enum addition and therefore a contract PR per the rule above) fires
@@ -540,10 +552,15 @@ Instance default table (policy-overridable):
 (h264 below 2160 unless codec selection (§7.1) upgrades a rung).
 Construction rules: never exceed source height; never exceed source bitrate;
 drop rungs above `network.maxBitrateBps` (keep at least the lowest rung);
-master playlist lists all surviving rungs; **each rung is a lazily started
-transcode pipeline** — only the initially selected rung starts; a client ABR
-switch starts the sibling rung at the requested segment. `isLocal` networks
-skip the network cap but honor device caps.
+the master playlist lists the ADVERTISED rung set (§7.5 — all surviving
+rungs on Tier 1+, the variant-capped subset on Tier 0); **each rung is a
+separate workload governed by the §9 admission slot** — only the initially
+selected rung encodes, and a client ABR switch HANDS THE SESSION'S EXISTING
+SLOT to the requested rung (§9.1, LD-16); it never starts an additional
+pipeline. (This paragraph originally described rungs as "lazily started"
+sibling pipelines; Wave C2 made the slot-handoff semantics normative — the
+lazy-start idea survives as "a rung costs nothing until the slot is handed
+to it".) `isLocal` networks skip the network cap but honor device caps.
 
 ### 7.1 Per-rung codec selection (LD-7, spec'd 2026-08-11 — lands as ENGINE_VERSION 0.10.0)
 
@@ -796,6 +813,98 @@ text edit here):**
 - **D5** — `transcode.av1EncodePreferred` defaults FALSE (opt-in;
   flippable per-instance from the settings UI at any time).
 
+### 7.5 Advertised variant set (LD-6 under LD-16, Wave C2 — lands as ENGINE_VERSION 0.11.0)
+
+The master playlist (§9.1) advertises `plan.ladder` — nothing else, and
+all of it. Which rungs a client may switch to is therefore a PLAN
+decision, made here in the pure engine where the matrix can prove it, not
+a session-layer filter that could drift from the plan the audit row
+stores.
+
+**Step (h) — Tier-0 variant cap.** A final-assembly step, running on the
+FINAL ladder — after §7.1's steps (f)/(g), after the cap filters (a)–(e),
+and after any Stage-G replacement (`software-fallback:tier-capped`
+dropping, av1 residual demotion) — for the same reason the open-GOP flag
+lives at final assembly: the facts it needs are not settled earlier. When
+`policy.tier === 0` AND the final ladder has more than
+`TIER0_MAX_ADVERTISED_VARIANTS = 3` rungs, the ladder is trimmed to
+exactly 3 by a deterministic keep rule:
+
+1. keep the TOP rung (the `topRungOf` maximum — `video.targetCodec` and
+   the initially-encoded rung are therefore untouched by the cap);
+2. keep the LOWEST rung (the same floor the network-cap filter already
+   refuses to drop — the rescue rung a collapsing connection falls to);
+3. keep the rung minimizing
+   `|ln(videoBitrateBps) − (ln(top) + ln(lowest))/2|` (the geometric
+   middle; tie → the lower-bitrate candidate).
+
+Array order is preserved (the ladder is emitted in policy-table order;
+trimming removes elements, never reorders). The trim fires informational
+reason `ladder-variant-capped` once, `detail` listing every dropped rung
+(§4). Tier 1+ ladders are NEVER trimmed by this step (owner-decision V6):
+LD-16 constrains Tier-0's advertised count only, and on bigger hardware
+switch churn is absorbed by headroom that Tier-0 does not have. A ladder
+already at ≤ 3 rungs is untouched and no reason fires — which, note, is
+every T0 full-software route today (§8.3's tier cap already leaves ≤ 2
+rungs) and every ≤-3-rung policy table: those plans stay byte-identical
+(`engineVersion` aside).
+
+The constant is a TIER LAW, not a `ServerPolicy` knob — deliberately: a
+settings checkbox that re-widens the advertised set on Tier-0 would be
+exactly the "escape hatch is a checkbox" failure §7.2 refuses for AV1.
+The escape hatch is the tier, same as it is there.
+
+**Why 3, with the N100/4GB arithmetic the owner signs (owner-decision V1;
+the reasoning is decidable, each step checkable independently):**
+
+- **Encoding cost is count-INVARIANT.** Under §9.1's delivery model
+  exactly ONE rung encodes at any instant, whatever the advertised count
+  — LD-16's handoff makes that structural. So the cap is NOT about
+  concurrent encode load; the admission semaphore (`cap = 1` T0 default)
+  already bounds that, sessions × 1 pipeline.
+- **The count's real Tier-0 cost is switch churn.** Every ABR switch is a
+  full pipeline handoff: kill + observed exit + spawn + input open + seek
+  + encoder init + first 6 s GOP (§9.1.4) — the most expensive part of a
+  run (the seek-livelock lesson: 17 uncontrolled respawns produced
+  nothing). Measured shape on the reference box: QSV h264/hevc ≈ 1–2 s
+  wall; the T0 software route (≤ 480p rungs only, §8.3) ≈ 2–4 s. Fine as
+  a rare event; hostile as a steady state on a 6 W part.
+- **Churn frequency is governed by rung SPACING, and spacing is what the
+  cap buys.** An ABR controller switches when its throughput estimate
+  crosses a variant-bitrate boundary. The default 6-rung table's adjacent
+  ratios fall as low as 1.33× (4M→3M) — inside ordinary Wi-Fi variance
+  (±30–50%), so a 6-variant master invites boundary-hovering, each hover
+  a full handoff. The 3-rung keep rule (top/geometric-mid/floor)
+  guarantees adjacent ratios of at least ~2× for every realistic table
+  (default table, 1080p source: keeps 1080p@8M, 720p@3M, 360p@0.8M —
+  ratios 2.7× and 3.75×): the estimate must HALVE or DOUBLE to cross a
+  boundary, so steady-state switches become rare events (join, genuine
+  congestion), not oscillation.
+- **Why not 2:** dropping the middle leaves an 8M→0.8M (10×) or
+  8M→1.5M (5.3×) cliff — one congestion event costs the viewer a 5–10×
+  quality drop with no intermediate recovery step.
+- **Why not 4+:** any 4th rung from the default table re-introduces a
+  sub-2× boundary (8M/4M = 2.0× is the best case; 4M/3M = 1.33× the
+  common one), and buys no capability 3 does not already have (one
+  quality step down + a floor).
+- **Memory and disk are count-invariant too** (single pipeline): ffmpeg's
+  resident set is one pipeline's (~150–400 MB at 1080p) regardless of
+  count, inside the 4 GB budget exactly as pre-C2; on-disk segments are
+  retention-bounded (§9.1.8), not per-variant.
+
+*Tier-0 lens:* the cap's entire effect on an N100 is fewer pipeline
+restarts. It removes no capability — top quality, one downshift, and a
+floor all survive — and costs zero CPU itself (a list trim inside
+`plan()`).
+
+**Matrix churn, stated for the regression law (§10):** existing T0
+transcode cases whose surviving ladder exceeds 3 rungs WILL change
+(ladder shrinks + one new informational reason; decisions never flip).
+The C2 build edits each such case file in the same PR with a `why:`
+comment per the regression law. T1+ cases, non-transcode cases, and
+≤-3-rung cases must be byte-identical (`engineVersion` aside) — that IS
+the C2 regression pin.
+
 ## 8. Hardware acceleration
 
 ### 8.1 Verification self-tests (worker, first boot + `loombre probe` + driver change)
@@ -1025,6 +1134,540 @@ State machine: `created → starting → active ⇄ suspended → seeking → ac
 - **Direct-play** sessions bypass all of this: range-request file serving with
   progress heartbeats only.
 
+### 9.1 Multi-variant delivery — ABR (LD-6, governed by LD-16; spec'd 2026-08-11, Wave C2)
+
+#### 9.1.0 The law, verbatim, and the shape it forces
+
+LD-16 (owner-adjudicated 2026-08-10, normative here): **"every quality
+rung is a separate workload governed by the existing admission capacity
+limit; a quality change hands the existing slot from one rung to another
+— it never starts an additional unrestricted transcode."**
+
+The design below makes the law STRUCTURAL rather than policed: one
+session = one admission slot = at most one live encoding pipeline, ever.
+A rung switch is a restart of that one pipeline with different rung args
+— the same kill→observed-exit→respawn machinery a seek already uses — so
+a second concurrent encode per slot is not forbidden, it is inexpressible.
+A hypothetical future concurrent-rung mode (encoding two rungs of one
+session at once) would require one admission slot per concurrently-
+encoding rung to stay inside the law; it is OUT of v1 scope and recorded
+here only as the law's forward constraint.
+
+*Tier-0 lens:* on the N100 default (`maxSimultaneousTranscodes = 1`) the
+machine-wide encode ceiling after C2 is IDENTICAL to before C2: one
+pipeline. ABR adds switch events, not concurrency.
+
+#### 9.1.1 Delivery model: one pipeline, one playlist, variant identity in the URL
+
+- The worker keeps producing exactly ONE served playlist per session (the
+  existing union of runs, global segment counter, `EXT-X-DISCONTINUITY` +
+  fresh `EXT-X-MAP` between runs — §9 unchanged).
+- The server adds a MASTER playlist enumerating the advertised variants
+  (`plan.ladder`, §7.5), one `EXT-X-STREAM-INF` per rung, whose variant
+  URIs are `v{K}/media.m3u8` with `K` = the rung's index in `plan.ladder`.
+- **Every variant URL serves the same playlist bytes**: `v{K}/media.m3u8`
+  returns the one served playlist (with §9's media-sequence treatment),
+  and its relative segment URIs resolve to `v{K}/runN/sNNNNNN.m4s`, which
+  the segment route serves from the same on-disk `runN/` files. Variant
+  identity lives ONLY in the URL path.
+- **The URL path IS the switch signal.** A playlist or segment GET whose
+  `v{K}` names a rung other than the session's active one records a
+  rung-switch request (`requestRungSwitch`, §9.1.3) as a side effect and
+  is otherwise served normally. The worker consumes the request at its
+  next poll tick and hands the slot over (§9.1.4). Segments the old rung
+  already produced keep serving from disk — they are presentation
+  history; only the live edge waits (503 + `Retry-After: 1`, the existing
+  segment-not-ready shape) until the new rung produces.
+- RFC 8216's cross-variant obligations are met trivially: media sequence
+  numbers, discontinuity structure and timelines "match across variants"
+  because the variants ARE one playlist.
+- Because rung switches restart the pipeline at a segment boundary and
+  §6's `-force_key_frames` opens every segment of an encoded run with an
+  IDR, `EXT-X-INDEPENDENT-SEGMENTS` is emitted in the master.
+
+Why server-driven single-pipeline rather than N true variant playlists:
+N playlists require N pipelines (or on-demand sibling starts — an
+unrestricted second transcode, the exact thing LD-16 forbids), N× disk,
+and cross-variant segment-boundary bookkeeping. This model reuses every
+verified mechanism Wave A landed (run map, seek derivation, media
+sequence, progress mapping) with zero semantic changes to any of them.
+The trade-off it buys that with is switch latency bounded by the
+produced-ahead window (§9.1.10).
+
+**Master playlist rendering (server-side, deterministic, pure).**
+Rendered from the stored plan + probed MediaInfo alone — no filesystem or
+worker involvement, available at 200 the moment the session row exists
+(never 503; Tier-0: a string template, no CPU-heavy work on a request
+path). One `EXT-X-STREAM-INF` per `plan.ladder[K]`, in array order:
+- `BANDWIDTH = ceil(1.1 × (videoBitrateBps + audioBitrateBps))` (peak
+  headroom over the declared targets), `AVERAGE-BANDWIDTH =
+  videoBitrateBps + audioBitrateBps`;
+- `RESOLUTION = W×heightPx` with `W` = the arg builder's own scale-width
+  arithmetic for that rung (source aspect, even-rounded) — the master
+  must state what the encoder will actually emit, so the two share one
+  helper;
+- `FRAME-RATE` = the selected video stream's `frameRate`;
+- `CODECS` = a fixed deterministic table keyed by (rung codec, bitDepth)
+  producing strings consistent with the §6 encode block's own
+  profile/level flags (h264 → `avc1.*`, hevc → `hvc1.*`, av1 → `av01.*`;
+  av1 rungs emit no `-level` (§6 M), so the av01 string's level field
+  comes from a fixed height-keyed sub-table). Exact strings are pinned by
+  server-side goldens at build and verified ONCE against ffprobe of real
+  encoder output (fence — a wrong CODECS string makes hls.js reject the
+  variant, so the table must be execution-verified, not assumed).
+Ladder-empty HLS sessions (direct-stream copy, audio-only transcode)
+render a single-variant master: `v0/media.m3u8`, `BANDWIDTH` from
+`media.overallBitrateBps` (copy) or the audio target bitrate (audio-only)
+with the same 1.1 headroom, `CODECS` from the probed source stream facts,
+no `RESOLUTION` when no video. The subtitle hls-vtt side-track stays
+OUTSIDE the master (the existing `<track>` wiring) — declaring it as
+`EXT-X-MEDIA` is an explicit non-goal of v1.
+
+#### 9.1.2 Contract surface (complete enumeration; empirical oasdiff preview)
+
+1. **New path** `GET /playback/sessions/{id}/hls/master.m3u8`
+   (operationId `getPlaybackHlsMasterPlaylist`): 200
+   `application/vnd.apple.mpegurl` (Cache-Control private, no-store), 401,
+   404 (unknown/foreign/terminal session, and direct-play sessions — they
+   have no HLS surface), default problem; `?token=` query fallback
+   exactly like the sibling media routes. Never 503.
+2. `GET /playback/sessions/{id}/hls/{file}`: the `file` pattern gains the
+   optional `v{K}/` prefix — `v{K}/media.m3u8`, `v{K}/runN/sNNNNNN.m4s`,
+   `v{K}/runN/init.mp4`; bare legacy shapes (`media.m3u8`, `runN/...`)
+   remain valid and are treated as the ACTIVE rung (no switch signal).
+   DESCRIPTION-only contract change; no structural change, no oasdiff
+   finding.
+3. `PlaybackSession.manifestUrl`: VALUE semantics change (owner-decision
+   V5) — points at `.../hls/master.m3u8` for every HLS session
+   (single-variant master included; uniform client path); stays `null`
+   for direct-play. Schema untouched; description updated. No new session
+   properties: the client needs nothing else (the plan already carries
+   the ladder), and the admin now-playing surface can read the plan.
+4. **New `PlanReasonCode` fixed informational member:**
+   `ladder-variant-capped` (§4, §7.5 — owner-decision V2;
+   `contract-reason-codes.spec.ts` enforces engine/contract agreement in
+   both directions, the D1 precedent).
+5. **No new problem codes** (`hls-not-ready` / `hls-segment-not-ready`
+   already say exactly the right things), no `PlaybackSessionStatus`
+   change (§9.1.4 — a pure switch never enters `seeking`), no
+   `PlaybackPlan` schema change (the ladder was always there), no event
+   schema changes, no settings-registry changes (§7.5's constant is a
+   tier law, not a knob).
+
+**Empirical oasdiff preview (run 2026-08-11 against these exact edits,
+LD-7 precedent): 0 errors, 3 warnings, 1 info — gate-passing.** The
+warnings are the same `response-property-enum-value-added` trio every
+closed-enum reason addition produces (`POST /playback/plan` 200,
+`POST /playback/sessions` 201, `GET /playback/sessions/{id}` 200); the
+info is `endpoint-added` for master.m3u8. The `file`-pattern and
+`manifestUrl` description updates produce no findings. SDK regenerated
+atomically with the contract edit; conformance unimplemented-allowance
+stays zero (the new operation lands WITH its controller).
+
+#### 9.1.3 Session & run bookkeeping (DB; the EXTENT-trap rule)
+
+Migration **0044 reserved for C2** (renumber by the next-free rule if a
+parallel lane claims it first), additive-only, real columns per invariant
+3 — one migration, three pieces:
+- `playback_sessions.active_rung_index INTEGER NULL` — index into the
+  stored plan's ladder of the rung the pipeline is currently encoding.
+  Written by the worker at every spawn (run 0 writes the initial rung =
+  `topRungOf(plan.ladder)`'s index, the plan's own `ffmpegArgs` rung —
+  status quo). NULL for direct-play, ladder-empty, and pre-C2 rows.
+- `playback_sessions.pending_rung_index INTEGER NULL` — the requested
+  rung, written by the server (`requestRungSwitch`, own-session-scoped
+  like `requestSeek`, validated `0 ≤ K < ladder.length` at the
+  controller), consumed by the worker under the SAME compare-and-clear
+  discipline as `seek_target_ms` (guarded UPDATE on the exact value read;
+  a different value written meanwhile survives to the next tick).
+  `requestRungSwitch` is absorb-on-match at the WRITE side too: a request
+  naming the already-active rung is not recorded (nothing to do), which
+  is the switch analogue of seek absorption and kills request storms at
+  the door.
+- `transcode_runs.ladder_rung_index INTEGER NULL` — which rung this run
+  encoded (index into the stored plan's ladder at spawn time). NULL for
+  pre-C2 rows and ladder-empty sessions. `recordTranscodeRun` gains the
+  field; everything else about the row is unchanged.
+
+**Run indices stay GLOBAL per session** — a rung switch increments the
+same `run_index` counter a seek does, `start_segment` stays the only
+monotonic key, and `getTranscodeRunForSegment` keeps its greatest-
+`start_segment`-≤-N semantics unchanged. That lookup remains CORRECT
+under ABR precisely because this model never runs rungs in parallel:
+segment ownership is still total and non-overlapping.
+
+**The EXTENT rule (normative closure of the A2 finding).** A
+`transcode_runs` row records where a run STARTS, never where it ends.
+Any consumer needing a run's EXTENT MUST use one of exactly two derivations:
+(a) the served playlist's `runN/` URI prefix — the on-disk truth,
+    what `deriveSegmentStartMs`/`presentationToSourceMs` already do; or
+(b) the NEXT run's `start_segment − 1` as the closed upper bound, from
+    the session's full ordered run set — the DB truth, valid because
+    `{START_SEG} = producedSegment + 1` makes consecutive runs' segment
+    ranges partition the counter with no gaps or overlaps (the current
+    run is unbounded above).
+Deriving extent from one row alone (e.g. `index >= start_segment`) is the
+recorded trap and is FORBIDDEN — it sweeps in every later run, rung
+switches included. The C2 build adds this sentence as a doc comment at
+`getTranscodeRunForSegment` itself so the next consumer meets the rule at
+the call site, not in this file.
+
+#### 9.1.4 Slot handoff (LD-16 mechanics)
+
+**The slot is held by the SESSION at every instant.** Admission counts
+non-terminal session rows (`countActiveTranscodeSessions`), so the slot
+can only free when the session goes terminal — never during a handoff. A
+rung switch touches no admission state whatsoever: no census change, no
+429 path, nothing for the gate to serialize.
+
+**Terminate-then-start, zero overlap — chosen over bounded overlap.** The
+worker's handoff sequence (one poll tick, composing with the existing
+seek block):
+
+1. Tick reads `pending_rung_index = B ≠ active_rung_index` (compare-and-
+   clear discipline; a concurrent different write survives to next tick).
+2. `await currentRun.handle.terminate()` — SIGCONT-before-SIGTERM(-then-
+   SIGKILL) exactly as for a seek, resolving only at OBSERVED exit (the
+   same observed-exit discipline whose reaper-side form Wave A pinned as
+   kill→re-inspect→free-slot; the build asserts the runner side too).
+3. Old process dead (observed) → compute the new run's source origin
+   `originB = currentRun.sourceOriginMs + currentRun.producedMs` (exact —
+   ffmpeg's own per-run playlist is append-only, so `producedMs` is the
+   run's true produced extent even after retention pruning of the SERVED
+   playlist) and rebuild args for rung `plan.ladder[B]`
+   (`rebuild-args.ts` gains the rung parameter; the builder's existing
+   per-rung seam). The encoder name comes from the routed backend +
+   RUNG's codec — a mixed-codec ladder (av1 top / hevc mid, §7.1) makes
+   this load-bearing, and a golden pins it.
+4. `spawnRun(runIndex+1, startSeg = producedSegment+1, argsB,
+   seekTargetMs = originB)` — records the `transcode_runs` row (with
+   `ladder_rung_index = B`), overwrites `worker_pid`/
+   `worker_started_at_ms` (every spawn already does), registers in the
+   live-run registry, updates `active_rung_index = B`.
+5. Next ticks fold the new run's playlist exactly like any run:
+   discontinuity + fresh `EXT-X-MAP`, produced counter advances.
+
+Rejected alternative, with reason: BOUNDED OVERLAP (start the new rung,
+kill the old once the new produces) would double the encode load for the
+overlap window — on Tier-0 that is 2× of a box sized for 1×, i.e. the
+precise "additional unrestricted transcode" LD-16 forbids, merely
+time-limited. Zero-overlap costs a few seconds of live-edge 503 that the
+client's retry policy (8 × 1 s linear, tuned for exactly this server
+behavior) already absorbs.
+
+**Process-census invariant (build must pin it):** at every instant a
+session has ≤ 1 live ffmpeg. The integration test samples real OS process
+state across a switch (the lifecycle-test pattern) and asserts the count
+never reaches 2.
+
+**Status/state machine:** a PURE rung switch never changes session
+status — the union playlist stays fully servable (`active`/`suspended`
+semantics untouched), heartbeats flow, and only live-edge segment GETs
+503 during the handoff. (Contrast a seek, which flows through `seeking`
+because its restart INVALIDATES the forward timeline; a switch continues
+it.) A COMBINED seek+switch follows the seek's status path (§9.1.7).
+
+**Failure table (who owns what when it goes wrong):**
+
+| Failure point | Old proc | New proc | Slot | Client sees |
+|---|---|---|---|---|
+| Rebuild/spawn throws after old exit (step 3–4) | dead | never started | session → `failed` (markSessionFailed, the seek-path precedent) → terminal → slot freed | 503s, then manifest/session 404 → the existing client-synthesized-reason fatal path → UnavailableScreen |
+| Worker crashes between kill and spawn | dead | never started | session non-terminal, slot HELD (correct: nothing encodes, nothing violates the cap) | 503-retries; next worker boot's reaper finds `worker_pid` dead/unverifiable → session reclaimed → failed; or the 15-min heartbeat sweeper ends it first |
+| New run spawns then instantly dies (bad args, ENOSPC) | dead | exited ≠ 0 | the existing unexpected-exit branch → `failed` → slot freed | as row 1 |
+| Old process refuses to die within the kill window | alive (SIGKILL pending) | NOT started — spawn is sequenced strictly after observed exit, so the census invariant holds by construction | session holds slot | 503-retries until exit-then-spawn completes |
+
+**Boot reaper composition:** unchanged and already correct — `worker_pid`
+always names the live run because every spawn overwrites it (switch
+spawns included); the reaper's pid+cmdline-vs-staging_dir verification,
+process-group kill, and slot-cannot-free-until-confirmed-dead ordering
+apply to a switch-spawned run identically. `transcode_runs.
+ladder_rung_index` is bookkeeping the reaper never reads.
+
+**Throttle/pacing composition:** `reconcileThrottle` needs no changes —
+its inputs (`produced_segment`, `requested_segment`) are global counters
+that remain monotonic across a switch. The new run starts physically
+un-suspended (fresh process, `processStopped = false`), win32 `-readrate`
+pacing is injected per spawn exactly as today, and `suspended_by_throttle`
+converges within one tick. Physical suspend state deliberately does NOT
+carry across a handoff: if the client is still >10 ahead the reconciler
+re-suspends immediately; encoding at most one extra tick's worth is
+cheaper than plumbing suspend state into spawn.
+
+#### 9.1.5 Playlist-type & retention model (closes the RFC 8216 §4.3.3.5 contradiction — A2 finding a)
+
+Current behavior, stated plainly: the served playlist declares
+`EXT-X-PLAYLIST-TYPE:EVENT` (append-only per RFC 8216 §4.3.3.5) while
+retention prunes its head — a genuine contradiction — and never emits
+`EXT-X-ENDLIST` at all (a finished encode plays out and then polls
+forever). The multi-variant model REPLACES this with a coherent,
+RFC-clean model (owner-decision V3), identical under every variant URL by
+construction (§9.1.1 — one playlist):
+
+1. **No `EXT-X-PLAYLIST-TYPE` tag, ever** (neither EVENT nor VOD). A
+   type-less playlist is the RFC's sliding-window live shape: clients may
+   not assume append-only, head removal is legal when signalled.
+2. **`EXT-X-MEDIA-SEQUENCE`** — landed (Wave A): first surviving
+   segment's absolute index, emitted when > 0.
+3. **`EXT-X-DISCONTINUITY-SEQUENCE` (new, mandatory once a whole run is
+   pruned).** RFC 8216 §4.3.3.3: removing a discontinuity from the head
+   without incrementing the discontinuity sequence desynchronizes the
+   client's discontinuity counter (hls.js's `cc` tracking). Because
+   retention prunes from the front and runs are sequential, wholly-pruned
+   runs form a prefix — so the tag's value IS the first listed segment's
+   own `runN` index, computable in the same place `withMediaSequence`
+   already computes the media sequence, emitted when > 0. An unpruned
+   playlist stays byte-identical (both tags absent).
+4. **Terminal `EXT-X-ENDLIST` + prune-freeze.** When the CURRENT run's
+   own ffmpeg playlist carries `#EXT-X-ENDLIST` (the parser already
+   records `hasEndlist`; the renderer starts consuming it), the served
+   playlist appends `ENDLIST` — and from the first serve of an
+   ENDLIST-bearing playlist, retention pruning for that session CEASES
+   (RFC: an ended playlist must not change). Disk stays bounded: at
+   ENDLIST no new segments are produced either, so the residual is at
+   most one retention window (§9.1.8), reclaimed at session teardown as
+   always. This finally gives transcode playback a real `ended` signal
+   (duration resolves, the media element fires `ended`).
+5. **A post-ENDLIST seek/switch un-ends the playlist** (new run → tag
+   gone, discontinuity, pruning resumes). RFC-wise that is "a new
+   playlist"; client-wise hls.js has stopped polling after ENDLIST, so
+   recovery rides the EXISTING fatal-network path: pruned/unproduced
+   segment GET → 503 ×8 → fatal → `startLoad()` re-reads the (now
+   live-again) playlist. Bounded-latency (≤ ~8 s), honest, pinned by a
+   test — and NOT a C2 regression, since pre-C2 behavior in this corner
+   was strictly worse (EVENT + prune + no ENDLIST).
+6. **The live-edge-jump hazard moves client-side and is closed there.**
+   Dropping EVENT makes the stream look live; hls.js's default
+   `startPosition: -1` would then start at the live edge — which for
+   this throttled server is ≤ 10 segments past the resume point, i.e. the
+   wrong place. The client config therefore PINS `startPosition` to the
+   intended start (resume point or 0) — §9.1.9 — and the existing
+   loadedmetadata seek stays as belt-and-braces. No
+   `liveMaxLatencyDuration*` is ever set (defaults = no forced live-edge
+   chasing), so nothing yanks a paused/seeking viewer forward.
+
+**Scope guard — this model governs the SERVED playlist only.** ffmpeg's
+own per-run playlist KEEPS §6's `-hls_playlist_type event`: within one
+run it genuinely IS append-only (ffmpeg never prunes it, and the event
+type forces an unbounded list), and that completeness is exactly what
+makes `producedMs` — and therefore §9.1.4's handoff-origin arithmetic —
+exact. A build lane must not "fix" the §6 flag by analogy with this
+section; the contradiction A2 found was in the served wrapper, never in
+the run playlist.
+
+*Tier-0 lens:* every rule above is string assembly at serve time; the
+prune-freeze strictly REDUCES steady-state I/O after stream end.
+
+#### 9.1.6 Timeline model (closes the deferred `-copyts` decision — A2 finding c)
+
+**Decision (owner-decision V4): `-copyts` stays OUT, permanently for v1.
+Every run — initial, seek, rung-switch — is spawned `-ss` with a
+zero-based output timeline, and `transcode_runs` remains the ONLY bridge
+between presentation and source time.** Rationale, so it is not
+re-litigated ad hoc: (i) rung switches need `EXT-X-DISCONTINUITY` anyway
+(codec/resolution change ⇒ new init segment), so `-copyts` could not
+remove discontinuities even where its timestamps cooperated; (ii)
+backward seeks make source timestamps non-monotonic across runs — a
+single continuous timestamped timeline is unrepresentable in one playlist
+regardless; (iii) every consumer built and verified in Wave A
+(`deriveSegmentStartMs`, `presentationToSourceMs`, seek de-dup, run
+recording) assumes per-run zero-based timelines; `-copyts` would fork the
+timeline semantics per restart cause and re-verify all of it for zero
+functional gain.
+
+**Rung switches preserve the presentation timeline EXACTLY.** The
+handoff origin is `originB = old.sourceOriginMs + old.producedMs`
+(§9.1.4 step 3) — the precise source instant after the old run's last
+produced segment — so presentation time remains continuous across the
+switch discontinuity and source anchoring stays exact: a switch-spawned
+run is indistinguishable from any other run to every §9 derivation. A
+seek-spawned run's origin remains the consumed (clamped) seek target,
+exactly as before. Composition of run origins across an arbitrary
+seek/switch history therefore needs no new rules: each run's row is
+self-contained, ownership follows the segment counter, and the §9
+progress mapping (`presentationToSourceMs`) is UNCHANGED and correct for
+multi-variant sessions by construction — its within-run 1:1
+rate-equivalence argument is rung-independent (re-encoding at a different
+bitrate/height never changes the time rate). The build pins this with a
+progress-across-switch test rather than new code.
+
+#### 9.1.7 Seek ⨯ switch composition
+
+- **One restart serves both.** The worker's restart block reads BOTH
+  `seek_target_ms` and `pending_rung_index` in the same tick and spawns
+  ONE run: rung = pending rung if set else active rung; origin = seek
+  target if set else the live-edge continuation origin (§9.1.4). Both
+  columns are compare-and-cleared against the exact values read. A seek
+  arriving during an in-progress handoff simply lands on the next tick
+  (the handoff is within-tick); a switch arriving during a pending seek
+  folds into the seek's restart. Never two restarts.
+- **Absorption narrows under a pending switch.** The §9 seek-absorption
+  rule (target inside the live run's `[origin, origin+produced]` window)
+  gains one conjunct: absorb ONLY when `pending_rung_index` is unset or
+  names the live run's own rung — a seek into already-produced OLD-rung
+  output must still restart when a switch is pending, because the client
+  asked for different bytes, not the same ones. Switch-request absorption
+  (§9.1.3) is handled at the write side.
+- **Ordering guarantee:** `requestSeek` and `requestRungSwitch` are
+  independent columns; the worker's single-restart rule makes their
+  interleaving commutative — whichever lands first, the spawned run is
+  (requested rung, requested origin).
+- **The named build scenario (C3 triple-seek extension —
+  `seek-rung-switch.integration.spec.ts`, real ffmpeg):**
+  `forward seek → backward seek → rung switch → forward seek` producing
+  runs 0–4 where run 2's origin is EARLIER than run 1's (the existing
+  backward pin), run 3 is a switch run whose origin equals run 2's
+  origin + produced extent EXACTLY, and run 4 seeks within the new rung.
+  Asserts: per-run derivation exact at a probe segment inside every run;
+  `presentationToSourceMs` correct for a position inside the switch run;
+  `getTranscodeRunForSegment` resolves the switch run (not its
+  predecessor) at the boundary; extent-by-prefix and extent-by-next-start
+  agree (§9.1.3); ≤ 1 live process at every sample point; exactly one
+  restart for a coincident seek+switch tick.
+
+#### 9.1.8 Retention & disk (Tier-0 arithmetic)
+
+Retention is UNCHANGED in mechanism: one global 120 s window over the
+union playlist, whatever rungs produced the segments in it; old-rung
+segments age out under the same rule as same-rung ones; `runDirsToDelete`
+retires wholly-pruned run directories (init segments included).
+Steady-state disk is therefore count-invariant and rung-independent:
+
+    disk ≈ (active-rung bitrate / 8) × (120 s retention + 60 s
+           max produced-ahead) + per-run init/playlist KBs
+
+- default T0 top rung 1080p@8M: ≈ 1 MB/s × 180 s ≈ **180 MB**
+- worst policy rung 2160p@16M(hevc): ≈ 2 MB/s × 180 s ≈ **360 MB**
+- the advertised-variant count contributes ZERO bytes (§9.1.1 — no
+  sibling pipelines, no per-variant segment sets)
+
+A switch transiently holds both the old rung's window remnant and the new
+rung's fresh segments, still inside the same global 120 s window — no
+additive term. The ENDLIST prune-freeze (§9.1.5) caps the residual at
+one final window until teardown deletes the session dir. All figures sit
+comfortably inside the NVMe staging budget an N100/4GB target already
+carries for one session, and the T0 admission cap (1) makes them
+machine totals, not per-session multipliers.
+
+#### 9.1.9 Client (zero new auth surface)
+
+- **hls.js path:** `manifestUrl` → master.m3u8; hls.js runs its own ABR
+  over the advertised variants (auto mode is the default and the
+  mechanism — level switches surface to the server as `v{K}` requests,
+  §9.1.1). Config additions to `buildHlsJsConfig`, both testable pure:
+  `startPosition` pinned to the resume point (§9.1.5 rule 6) and
+  `startLevel` pinned to the variant matching `topRungOf(plan.ladder)` —
+  the rung the server-side pipeline already starts encoding, so a clean
+  start performs ZERO handoffs (hls.js's default first-load bandwidth
+  guess would otherwise pick a low rung and immediately switch). Top
+  surviving is network-safe by construction: Stage F already dropped
+  every rung above `network.maxBitrateBps`.
+- **Manual quality selection** is a client-side affordance over the same
+  mechanism: a player-UI selector listing `hls.levels` and setting
+  `hls.nextLevel` (pin) or `-1` (auto). No server surface — a manual pin
+  is just a `v{K}` request stream like any other. Ships with C2's web
+  work; the selector is the only new player UI.
+- **Token/retry policies: UNCHANGED, verbatim.** Master, variant
+  playlists and `v{K}/`-prefixed segments all ride the existing
+  `xhrSetup` per-request token rewrite (hls.js) — same-origin
+  sub-requests of the same route family; the `?token=` query fallback
+  works identically on the new master route; the 8×1 s linear retry
+  tuning already matches the 503/`Retry-After: 1` the handoff emits (it
+  was built for the seek restart, and a handoff is one).
+- **Safari native HLS:** `video.src` = master URL with `?token=`. The
+  native path's empirically-verified token propagation must be
+  RE-VERIFIED at build across the extra indirection hop
+  (master → variant playlist → segments); if propagation does not cross
+  the hop, the server renders variant URIs with the requesting token
+  appended (the master is generated per-request, and the native path's
+  existing paused-boundary src refresh re-reads it with a rotated token)
+  — a rendering detail, not a new auth mechanism. Recorded as a
+  build-phase verification item, not assumed.
+- **Failure composition: UNCHANGED.** Handoff failures surface as
+  session `failed` → the client's existing any-thrown-error fatal path →
+  UnavailableScreen (Wave A's A4 fix); no new client error states exist
+  because no new server error shapes exist (§9.1.2 item 5).
+- **Heartbeat: UNTOUCHED in both directions.** A switch never suspends
+  the session or resets staleness (status never changes, §9.1.4); a
+  switching client keeps playing buffered content and keeps
+  heartbeating; the handoff window (seconds) is two orders of magnitude
+  inside the 90 s suspend cutoff. Progress PUTs keep flowing through the
+  §9 server-side mapping, which is switch-correct with zero changes
+  (§9.1.6).
+
+#### 9.1.10 Known limitations (stated, bounded, accepted — owner-decision V7)
+
+1. **Downswitch latency = distance to live edge.** The new rung starts at
+   `producedSegment + 1`; segments the old rung already produced ahead of
+   the playhead (throttle-capped at ≤ 10 segments / 60 s) still serve at
+   the OLD quality, and a bandwidth-collapsed client must still fetch
+   them. Bound: ≤ 10 segments, usually far fewer (the throttle holds the
+   encoder near the playhead). The alternative — restarting AT the
+   playhead and re-numbering — would break the global-counter invariant
+   (at most one run owns a segment index) that every Wave A consumer
+   relies on. A future replace-tail mode is possible but is a spec change
+   with its own review, not a build-time judgment call.
+2. **Post-ENDLIST backward seek pays the fatal-recovery path** (§9.1.5
+   rule 5): ≤ ~8 s to resume. Strictly better than pre-C2 (which had no
+   ENDLIST at all), pinned by a test so it cannot silently regress.
+3. **Advertised ≠ instantly available.** A variant is a right to REQUEST
+   the slot, not a parallel stream; two clients cannot watch two rungs of
+   one session (they are one session — one slot, one pipeline; a second
+   viewer is a second session and meets the admission gate). This is
+   LD-16's intent, stated as a property rather than apologized for.
+
+#### 9.1.11 Owner decisions requested at the C2 stop (each reversible by a text edit here)
+
+- **V1 — Tier-0 advertised variant count = 3** (top / geometric-mid /
+  floor, §7.5 arithmetic — THE number this stop signs; recommended: 3).
+- **V2** — informational reason `ladder-variant-capped`, single-firing
+  with dropped-rung detail (recommended: YES; silent trimming leaves
+  "where did my rungs go?" unanswerable — the av1-rung-demoted argument).
+- **V3** — playlist model: drop `EXT-X-PLAYLIST-TYPE` entirely +
+  `EXT-X-DISCONTINUITY-SEQUENCE` + terminal ENDLIST with prune-freeze +
+  client `startPosition` pin (recommended: YES; the only RFC-clean model
+  that keeps retention).
+- **V4** — `-copyts` permanently rejected; the run map stays the sole
+  timeline bridge (recommended: YES).
+- **V5** — `manifestUrl` → master.m3u8 for ALL HLS sessions, single-
+  variant masters included (recommended: YES; one client path).
+- **V6** — Tier 1+ advertise ALL surviving rungs, uncapped
+  (recommended: YES; the law constrains Tier-0 only).
+- **V7** — accept the two bounded latency trade-offs of §9.1.10
+  (recommended: YES; both are consequences of LD-16's single-pipeline
+  law, and both are bounded and pinned).
+
+#### 9.1.12 Build-phase file map (single coordinated change; matrix + goldens same PR per invariant 2)
+
+- `packages/playback-engine`: `src/stages/ladder.ts` (+ step (h) pure
+  trim), `src/plan.ts` (final-assembly call site, ENGINE_VERSION
+  0.11.0), `src/reasons.ts` (+ `ladder-variant-capped`), matrix cases +
+  goldens (incl. the mixed-codec rung-switch argv golden, §9.1.4), the
+  §7.5 regression pin.
+- `packages/contract/openapi.yaml`: §9.1.2 items 1–4; SDK regen atomic.
+- `packages/db`: migration 0044 (§9.1.3); `query/playback-sessions.ts`
+  (+ `requestRungSwitch`); `internal/transcode-sessions.ts` (row fields,
+  `recordTranscodeRun` rung field, pending-rung compare-and-clear
+  consume/absorb); `getTranscodeRunForSegment` extent-rule doc comment.
+- `apps/server`: master-playlist renderer (pure module beside
+  `common/served-playlist.ts` + goldens); `playback/hls-file.controller.ts`
+  (master route, `v{K}` pattern extension, switch-signal recording);
+  `common/served-playlist.ts` (`withMediaSequence` grows the
+  discontinuity-sequence emission).
+- `apps/worker`: `transcode/playlist.ts` (drop EVENT tag, ENDLIST
+  emission + prune-freeze); `transcode/runner.ts` (pending-rung
+  consumption folded into the restart block, single-restart rule,
+  `active_rung_index` writes); `transcode/rebuild-args.ts` (+ rung
+  parameter); `transcode/plan-shape.ts` (rung-at-index helper).
+- `apps/web`: `lib/hls-js-config.ts` (`startPosition`, `startLevel`);
+  `components/player/VideoPlayer.tsx` (master URL, quality selector);
+  no heartbeat changes.
+- Tests, by name: `seek-rung-switch.integration.spec.ts` (§9.1.7 — the
+  named scenario + process-census sampling); server e2e for master +
+  `v{K}` routes + switch-signal recording + playlist-model tags
+  (media-sequence / discontinuity-sequence / ENDLIST freeze); engine
+  matrix per §10's C2 classes; hls-js-config unit tests for both pins;
+  the Safari token-hop verification item (§9.1.9).
+
 ## 10. Test matrix requirements (Phase 3 exit ≥ 500 cases)
 
 Dimensions (coverage minimums): video codec {h264,hevc,av1,vp9,mpeg2} ×
@@ -1071,6 +1714,33 @@ copy/direct-play cases unchanged (the §7.1 regression pin).
 (count grows with each landed interpretation; C1 adds at minimum: hw-av1
 transcode (`av1_nvenc`), software-av1 T1 transcode (`libsvtav1 -preset
 10`, no `-level`, no `-tag:v`), and a demoted-ladder scenario).
+**C2 mandatory test classes (LD-6/LD-16, §7.5 + §9.1; numbers assigned at
+build):** ENGINE/MATRIX — T0 >3-rung ladder trimmed to exactly 3 with the
+§7.5 keep rule + single `ladder-variant-capped` reason (detail lists every
+dropped rung); T0 ladder ≤3 → untouched, no reason; T1/T2 6-rung → never
+trimmed; cap runs AFTER Stage-G replacement (T0 software route's
+tier-capped 2-rung ladder → cap no-op); trim preserves `topRungOf` ⇒
+`video.targetCodec` unchanged in every trimmed case; C2 regression pin =
+every T1+/non-transcode/≤-3-rung case byte-identical (`engineVersion`
+aside), every changed T0 case edited with `why:` per the regression law.
+WORKER INTEGRATION (real ffmpeg) — the §9.1.7 named scenario
+(`seek-rung-switch.integration.spec.ts`: seek→backward-seek→switch→seek,
+switch-run origin EXACTLY old origin+produced, per-run derivation +
+progress mapping exact across the switch boundary, extent-by-prefix ==
+extent-by-next-start); ≤1-live-process census sampled across a handoff;
+coincident seek+switch tick → exactly one restart; repeated same-rung
+switch requests absorbed at the write side (no restart); handoff
+rebuild-failure → session `failed`, slot freed only via terminal status.
+SERVER E2E — master playlist golden (STREAM-INF set, BANDWIDTH/
+RESOLUTION/CODECS deterministic, single-variant master for ladder-empty);
+`v{K}` playlist/segment routes serve union-playlist bytes; mismatched-`K`
+GET records the switch request; bare legacy paths signal nothing;
+playlist-model tags (no PLAYLIST-TYPE ever, MEDIA-SEQUENCE +
+DISCONTINUITY-SEQUENCE emitted iff pruned, ENDLIST emitted on completion
+and prunes frozen after it); CODECS-string fence vs ffprobe of real
+encoder output. CLIENT — hls-js-config `startPosition`/`startLevel` pin
+units; quality-selector pin/auto; Safari master→variant token-hop
+verification (build item, §9.1.9).
 **Regression law:** any PR flipping an existing case's decision or reasons
 must edit that case file in the same PR with a `why:` comment.
 **Session integration tests** (not pure): real ffmpeg against generated
