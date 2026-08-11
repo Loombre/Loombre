@@ -41,12 +41,12 @@ import type { Readable } from "node:stream";
 import { createServer, type IncomingMessage, type RequestListener, type Server, type ServerResponse } from "node:http";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { ensureTestDatabase, getPluginById, getUserByUsername, insertPluginAndEmit, listPlugins } from "@loombre/db";
 import { fetchPluginManifest } from "@loombre/plugin-host";
 import { DbProvider } from "../../src/common/db.provider.js";
-import { resolvePluginConfigSecret } from "../../src/plugins/plugin-keyring.js";
+import { resolvePluginConfigSecret, storePluginConfigSecret } from "../../src/plugins/plugin-keyring.js";
 import { PluginHealthService } from "../../src/plugins/plugin-health.service.js";
 import { PluginHealthSchedulerService } from "../../src/plugins/plugin-health-scheduler.service.js";
 import { PluginLifecycleService } from "../../src/plugins/plugin-lifecycle.service.js";
@@ -529,6 +529,67 @@ describe("registerPlugin — the losing side of a concurrent same-baseUrl regist
     expect(rows.filter((r) => r.base_url === stub.baseUrl).map((r) => r.id)).toEqual([
       "018f6f1e-0000-7000-8000-0000000000e1",
     ]);
+  }, 20_000);
+
+  // L-2 backfill regression coverage: this fix already landed (see
+  // registerPlugin's own "L-2 fix wave" comment) — this test locks it in
+  // with dedicated keyring-level coverage, which did not previously exist
+  // (the test above only proves the DB row is clean; this one additionally
+  // proves the LOSING side's minted HMAC + stored secret config field never
+  // survive ON DISK under the pluginId no row will ever reference).
+  // registerPlugin mints its pluginId internally (uuidv7), so — mirroring
+  // plugin-keyring.spec.ts's own "distinctive value" technique exactly —
+  // this scans every file under the keyring's secrets directory rather
+  // than trying to recover that internal id from outside the service.
+  it("L-2: the loser's minted HMAC and stored secret config field are rolled back, not orphaned anywhere in the keyring", async () => {
+    let manifestFetches = 0;
+    const stub = await startStub(async (req, res) => {
+      if (req.method === "GET" && req.url === "/lpp/manifest") {
+        manifestFetches += 1;
+        if (manifestFetches === 2) {
+          await insertPluginAndEmit(dbProvider.db, {
+            id: "018f6f1e-0000-7000-8000-0000000000e2",
+            name: "race-winner-plugin-l2",
+            baseUrl: stub.baseUrl,
+            version: "0.1.0",
+            protocolVersion: 1,
+            contentClass: "general",
+            grantedCapabilityTypes: ["metadata-provider"],
+            eventTypes: [],
+            lanAllowlist: [stub.host],
+            manifest: { ...VALID_MANIFEST_BASE, capabilities: [METADATA_CAP] },
+            config: {},
+            actorUserId: adminId,
+            nowMs: Date.now(),
+          });
+        }
+        return jsonResponse(res, 200, {
+          ...VALID_MANIFEST_BASE,
+          configSchema: { type: "object", properties: { apiKey: { type: "string", secret: true } }, additionalProperties: false },
+          capabilities: [METADATA_CAP],
+        });
+      }
+      jsonResponse(res, 404, {});
+    });
+    stubs.push(stub);
+
+    const manifestDigest = await digestFor(stub.baseUrl, [stub.host]);
+    await expect(
+      registrationService.registerPlugin({
+        baseUrl: stub.baseUrl,
+        lanAllowlist: [stub.host],
+        grantedCapabilityTypes: ["metadata-provider"],
+        eventTypeGrants: [],
+        configValues: { apiKey: "DISTINCTIVE-L2-ORPHAN-CANDIDATE" },
+        actorUserId: adminId,
+        manifestDigest,
+      }),
+    ).rejects.toMatchObject({ status: 409 });
+
+    const secretsDir = join(dataDir, "secrets");
+    const survivingFiles = existsSync(secretsDir) ? readdirSync(secretsDir) : [];
+    const anyFileContainsOrphan = survivingFiles.some((f) => readFileSync(join(secretsDir, f), "utf8").includes("DISTINCTIVE-L2-ORPHAN-CANDIDATE"));
+    expect(anyFileContainsOrphan).toBe(false);
   }, 20_000);
 });
 
@@ -1101,5 +1162,49 @@ describe("PluginLifecycleService", () => {
 
     const fetched = await getPluginById(dbProvider.db, registered.plugin.id);
     expect(fetched).toBeUndefined();
+  }, 15_000);
+
+  // L-3 backfill regression coverage: this fix already landed (see
+  // plugin-lifecycle.service.ts's own "L-3 fix wave" comment /
+  // deriveSecretFieldNamesDefensively) — this test locks it in with
+  // dedicated coverage, which did not previously exist. A row is inserted
+  // DIRECTLY (bypassing registerPlugin's own parseLppManifest validation
+  // entirely — packages/db has no opinion on LPP shape) with a manifest
+  // that does not satisfy parseLppManifest's strict schema (capabilities is
+  // not an array; version/protocolVersion/description/publisher all
+  // missing), exactly the "corrupted or pre-dates a frozen-contract
+  // narrowing" scenario L-3 documents. removePlugin must still find and
+  // remove the secret field named in configSchema.properties, not leak it.
+  it("L-3: removePlugin still removes a secret's keyring entry even when the stored manifest no longer parses strictly", async () => {
+    const nowMs = Date.now();
+    const { plugin } = await insertPluginAndEmit(dbProvider.db, {
+      id: "018f6f1e-0000-7000-8000-0000000000e3",
+      name: "corrupted-manifest-plugin",
+      baseUrl: "http://127.0.0.1:1", // never dialed — removePlugin makes no network call
+      version: "0.1.0",
+      protocolVersion: 1,
+      contentClass: "general",
+      grantedCapabilityTypes: ["metadata-provider"],
+      eventTypes: [],
+      lanAllowlist: [],
+      manifest: {
+        name: "corrupted-manifest-plugin",
+        // version/protocolVersion/description/publisher deliberately
+        // OMITTED, and capabilities is deliberately the wrong SHAPE — both
+        // fail parseLppManifest's strict schema outright.
+        configSchema: { type: "object", properties: { apiKey: { type: "string", secret: true } }, additionalProperties: false },
+        capabilities: "not-an-array",
+      },
+      config: {},
+      actorUserId: adminId,
+      nowMs,
+    });
+
+    await storePluginConfigSecret(plugin.id, "apiKey", "DISTINCTIVE-L3-UNPARSEABLE-VALUE");
+    expect(await resolvePluginConfigSecret(plugin.id, "apiKey")).toBe("DISTINCTIVE-L3-UNPARSEABLE-VALUE");
+
+    await expect(lifecycleService.removePlugin(plugin.id, adminId)).resolves.toBeUndefined();
+
+    expect(await resolvePluginConfigSecret(plugin.id, "apiKey")).toBeNull();
   }, 15_000);
 });
