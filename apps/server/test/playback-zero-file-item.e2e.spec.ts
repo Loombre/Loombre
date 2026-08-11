@@ -25,7 +25,7 @@
 // reproducible at the server boundary; it can only live in how the web
 // player (apps/web/src/components/player/VideoPlayer.tsx, Lane A4's file
 // per this run's forbidden-file boundary) reacts to a create-session 404 —
-// out of scope for this lane. See STATE.md's an upstream media server-study run, Lane A5
+// out of scope for this lane. See STATE.md's implementation run, Lane A5
 // exit report for the classification handed to the orchestrator.
 
 import "reflect-metadata";

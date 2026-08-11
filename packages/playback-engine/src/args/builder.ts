@@ -334,15 +334,15 @@ const HWACCEL_BY_BACKEND: Partial<Record<HardwareBackend, string>> = {
  *  module's own defensive guard below still names it explicitly rather than
  *  silently falling through).
  *
- *  C8 (an upstream media server-study audit, tracked not pruned): keyed only to
+ *  C8 (comparative-architecture audit, tracked not pruned): keyed only to
  *  `"h264" | "hevc"` — deliberately, today. apps/worker/src/hwcaps/
  *  tables.ts's mirror `VIDEO_ENCODER_NAMES` DOES verify av1 encode capability
  *  (its own header explains why: a forward-looking capability check even
  *  though the ladder never targets it), so hwprobe can report a box as
  *  AV1-encode-capable with no way for a plan to ever act on that fact — a
  *  real probe/ladder inconsistency, not a bug in either table alone. This
- *  is intentional under LD-7/LD-16 (STATE.md, an upstream media server-study implementation
- *  run): AV1 targeting lands in Wave C1 (LadderCodec enum +
+ *  is intentional under LD-7/LD-16 (STATE.md, implementation run): AV1
+ *  targeting lands in Wave C1 (LadderCodec enum +
  *  VideoAction.targetCodec contract additions, encoder tables + DB CHECK +
  *  TS unions as one coordinated change, matrix/goldens same PR) — that PR
  *  is where this table gains its `av1` column, not a prune here. */
