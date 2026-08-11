@@ -6,7 +6,7 @@
 // module's header) and the topRung-selection helper.
 
 import { describe, expect, it } from "vitest";
-import { InvalidStoredPlanError, parseStoredPlan, topRungOf } from "../../src/transcode/plan-shape.js";
+import { InvalidStoredPlanError, parseStoredPlan, rungAtIndex, topRungOf } from "../../src/transcode/plan-shape.js";
 
 function validRawPlan(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
@@ -74,5 +74,42 @@ describe("topRungOf", () => {
       { heightPx: 720, videoBitrateBps: 3_000_000, audioBitrateBps: 128_000, codec: "h264" as const },
     ];
     expect(topRungOf(ladder)?.heightPx).toBe(1080);
+  });
+});
+
+// Wave C2 (docs/PLAYBACK.md §9.1.4): a slot handoff spawns the SAME
+// pipeline against a DIFFERENT rung, addressed by its INDEX in the stored
+// plan's ladder — which is exactly what the client's `v{K}` path named.
+describe("rungAtIndex", () => {
+  const LADDER = [
+    { heightPx: 2160, videoBitrateBps: 16_000_000, audioBitrateBps: 384_000, codec: "hevc" as const },
+    { heightPx: 1080, videoBitrateBps: 2_400_000, audioBitrateBps: 160_000, codec: "av1" as const },
+    { heightPx: 360, videoBitrateBps: 480_000, audioBitrateBps: 160_000, codec: "av1" as const },
+  ];
+
+  it("addresses by ARRAY INDEX, not by bitrate rank — index is what v{K} names", () => {
+    // Deliberately a ladder where index order and bitrate order agree, so
+    // the distinction is only visible in the next test: this one just pins
+    // the mapping.
+    expect(rungAtIndex(LADDER, 0)).toEqual(LADDER[0]);
+    expect(rungAtIndex(LADDER, 1)).toEqual(LADDER[1]);
+    expect(rungAtIndex(LADDER, 2)).toEqual(LADDER[2]);
+  });
+
+  it("an UNSORTED policy table is still addressed positionally (the master lists array order)", () => {
+    const unsorted = [LADDER[2]!, LADDER[0]!, LADDER[1]!];
+    expect(rungAtIndex(unsorted, 0)).toEqual(LADDER[2]);
+    expect(rungAtIndex(unsorted, 1)).toEqual(LADDER[0]);
+  });
+
+  it("undefined for an out-of-range or negative index, and for an empty ladder", () => {
+    expect(rungAtIndex(LADDER, 3)).toBeUndefined();
+    expect(rungAtIndex(LADDER, -1)).toBeUndefined();
+    expect(rungAtIndex([], 0)).toBeUndefined();
+  });
+
+  it("undefined for a non-integer index (a malformed control value never picks a rung)", () => {
+    expect(rungAtIndex(LADDER, 1.5)).toBeUndefined();
+    expect(rungAtIndex(LADDER, Number.NaN)).toBeUndefined();
   });
 });
