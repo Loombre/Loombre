@@ -1,5 +1,5 @@
 {
-  "recordedAtMs": 1786474157619,
+  "recordedAtMs": 1786480164761,
   "route": "/browse",
   "method": "gzip(level 9) of every external .js file the served /browse HTML references (script src + preload hints, noModule polyfills excluded), summed",
   "totalGzipBytes": 174736,
@@ -76,7 +76,7 @@
       "gzipBytes": 233
     },
     {
-      "file": "static/chunks/webpack-bab3ae5b93591d79.js",
+      "file": "static/chunks/webpack-52afbb48aa348b01.js",
       "rawBytes": 5031,
       "gzipBytes": 2448
     }
