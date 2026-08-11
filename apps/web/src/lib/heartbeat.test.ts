@@ -94,4 +94,47 @@ describe("HeartbeatScheduler", () => {
     vi.advanceTimersByTime(10_000);
     expect(sends.map((s) => s.positionMs)).toEqual([1_000, 2_000]);
   });
+
+  it("DEFAULT timer impls survive a receiver-sensitive host (browser natives throw 'Illegal invocation' on a foreign this)", () => {
+    // Field bug (2026-08-08 owner QA): every test above injects its own
+    // impls through the seam, so the DEFAULT branch — the one the real
+    // VideoPlayer runs — only ever executed in a browser, where storing
+    // the bare native setInterval on the instance and calling
+    // `this.setIntervalImpl(...)` invokes it with the scheduler as `this`
+    // and Chrome throws "Illegal invocation" on the first play. Node's
+    // timers don't care about the receiver, so this test stubs the global
+    // with a receiver-sensitive fake to reproduce the browser's behavior.
+    //
+    // ORDERING NOTE (2026-08-10, aligned with featured-rotation.ts's
+    // identical seam): the fix is `(options.setIntervalImpl ??
+    // setInterval).bind(globalThis)`, evaluated ONCE inside the
+    // constructor — `.bind()` captures a reference to whatever function
+    // `setInterval` resolves to AT THAT INSTANT, it does not re-resolve the
+    // global lazily on every call. So stubbing the global BEFORE
+    // constructing the scheduler is genuinely REQUIRED here (not
+    // incidental): a stub installed after construction would bind too late
+    // and the scheduler would keep calling the real, unstubbed timer.
+    const registered: Array<() => void> = [];
+    function receiverSensitiveSetInterval(this: unknown, fn: () => void): number {
+      if (this !== undefined && this !== globalThis) throw new TypeError("Illegal invocation");
+      registered.push(fn);
+      return registered.length;
+    }
+    function receiverSensitiveClearInterval(this: unknown): void {
+      if (this !== undefined && this !== globalThis) throw new TypeError("Illegal invocation");
+    }
+    vi.stubGlobal("setInterval", receiverSensitiveSetInterval);
+    vi.stubGlobal("clearInterval", receiverSensitiveClearInterval);
+    try {
+      const scheduler = new HeartbeatScheduler({
+        getSnapshot: () => ({ positionMs: 0, durationMs: null, state: "in-progress" }),
+        send: () => {},
+      });
+      expect(() => scheduler.start()).not.toThrow();
+      expect(registered).toHaveLength(1);
+      expect(() => scheduler.stop()).not.toThrow();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
 });
