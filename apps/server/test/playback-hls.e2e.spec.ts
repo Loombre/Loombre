@@ -33,7 +33,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import request from "supertest";
 import { NestFactory } from "@nestjs/core";
@@ -395,6 +395,185 @@ describe("GET /playback/sessions/{id}/hls/{file} — segment/init serving", () =
       await checkDb.destroy();
     }
   });
+
+  // ── C3: seek-target derivation from REAL produced durations + clamp ──
+  //
+  // The two tests above pin the LAST-RESORT arithmetic (no served playlist
+  // on disk => nominal `index * 6s`). The two below are the real thing: a
+  // session that HAS a served `media.m3u8` (which every live session does
+  // — apps/worker/src/transcode/runner.ts rewrites it on every poll) whose
+  // `#EXTINF` durations are what ffmpeg ACTUALLY produced. Nominal 6.000s
+  // arithmetic is wrong there by construction: `-hls_time 6` +
+  // `-force_key_frames expr:gte(t,n_forced*6)` cuts at the first keyframe
+  // AT OR AFTER each 6s mark, so real segments run 6.006s..9.176s and the
+  // error COMPOUNDS with the index. Both tests seek TWICE (the confirmed
+  // defect window: today's coverage stops at a first seek), across a
+  // retention-pruned window in both directions.
+
+  interface ServedRun {
+    runDirName: string;
+    segments: { index: number; durationMs: number }[];
+  }
+
+  /** Writes the session-root served playlist byte-identically to
+   *  apps/worker/src/transcode/playlist.ts's `renderServedPlaylist()`
+   *  (fmp4 shape: per-run `#EXT-X-MAP`, `#EXT-X-DISCONTINUITY` before
+   *  every run after the first, run-relative URIs). */
+  function writeServedPlaylist(sessionDir: string, runs: ServedRun[]): void {
+    const lines = ["#EXTM3U", "#EXT-X-VERSION:7", "#EXT-X-TARGETDURATION:10", "#EXT-X-PLAYLIST-TYPE:EVENT"];
+    runs.forEach((run, i) => {
+      if (i > 0) lines.push("#EXT-X-DISCONTINUITY");
+      lines.push(`#EXT-X-MAP:URI="${run.runDirName}/init.mp4"`);
+      for (const seg of run.segments) {
+        lines.push(`#EXTINF:${(seg.durationMs / 1000).toFixed(3)},`);
+        lines.push(`${run.runDirName}/s${String(seg.index).padStart(6, "0")}.m4s`);
+      }
+    });
+    writeFileSync(path.join(sessionDir, "media.m3u8"), lines.join("\n") + "\n", "utf8");
+  }
+
+  function writeRunSegmentFiles(sessionDir: string, run: ServedRun): void {
+    mkdirSync(path.join(sessionDir, run.runDirName), { recursive: true });
+    writeFileSync(path.join(sessionDir, run.runDirName, "init.mp4"), Buffer.from("fake-init-mp4-bytes"));
+    for (const seg of run.segments) {
+      writeFileSync(path.join(sessionDir, run.runDirName, `s${String(seg.index).padStart(6, "0")}.m4s`), Buffer.from(`fake-segment-${seg.index}`));
+    }
+  }
+
+  /** Exactly what apps/worker/src/transcode/runner.ts does when it picks a
+   *  seek up: `consumeSeekTarget` nulls the column inside its own restart
+   *  transaction, then the new run advances `produced_segment`. Without
+   *  this the second seek of a double-seek test would be reading the FIRST
+   *  seek's leftover value. */
+  async function simulateWorkerConsumedSeekAndProduced(sessionId: string, producedSegment: number): Promise<void> {
+    const db = createDb(process.env["DATABASE_URL"]!);
+    try {
+      await db
+        .updateTable("playback_sessions")
+        .set({ seek_target_ms: null, produced_segment: producedSegment, status: "active", updated_at_ms: Date.now() })
+        .where("id", "=", sessionId)
+        .execute();
+    } finally {
+      await db.destroy();
+    }
+  }
+
+  async function readSeekTargetMs(sessionId: string): Promise<number | null> {
+    const db = createDb(process.env["DATABASE_URL"]!);
+    try {
+      const row = await db.selectFrom("playback_sessions").select(["seek_target_ms"]).where("id", "=", sessionId).executeTakeFirstOrThrow();
+      return row.seek_target_ms === null ? null : Number(row.seek_target_ms);
+    } finally {
+      await db.destroy();
+    }
+  }
+
+  /** The session's own source duration — the clamp ceiling. Read from the
+   *  DB rather than hardcoded so the seed can change without silently
+   *  turning the clamp assertion into a tautology. */
+  async function readSessionDurationMs(sessionId: string): Promise<number> {
+    const db = createDb(process.env["DATABASE_URL"]!);
+    try {
+      const row = await db
+        .selectFrom("playback_sessions")
+        .innerJoin("media_files", "media_files.id", "playback_sessions.file_id")
+        .select(["media_files.duration_ms as duration_ms"])
+        .where("playback_sessions.id", "=", sessionId)
+        .executeTakeFirstOrThrow();
+      return Number(row.duration_ms);
+    } finally {
+      await db.destroy();
+    }
+  }
+
+  it("DOUBLE SEEK forward-then-back across a pruned window: both targets are derived from the REAL served durations, not index x 6000ms", async () => {
+    const { sessionId, sessionDir } = await createSimulatedTranscodeSession();
+
+    // run0 as ffmpeg really produced it: ten segments, NONE of them 6.000s.
+    // sum = 67_066 ms, mean = 6_706.6 ms.
+    const run0All = [6006, 6006, 8341, 6006, 6006, 7507, 6006, 6006, 6006, 9176].map((durationMs, index) => ({ index, durationMs }));
+    const run0: ServedRun = { runDirName: "run0", segments: run0All };
+    writeRunSegmentFiles(sessionDir, run0);
+    writeServedPlaylist(sessionDir, [run0]);
+    await markSessionActiveWithProducedSegment(sessionId, sessionDir, 9);
+
+    // ── SEEK 1 (forward, past the produced window) ──────────────────────
+    const forward = await admin().get(`/playback/sessions/${sessionId}/hls/run0/s000020.m4s`);
+    expect(forward.status).toBe(503);
+    expect(forward.headers["retry-after"]).toBe("1");
+
+    // The whole listed window is exact (67_066 ms of real content for
+    // indices 0..9); indices past its end extrapolate at the MEASURED mean
+    // (6_706.6 ms), never the nominal 6_000: 67_066 + (20 - 9 - 1) *
+    // 6_706.6 = 134_132 ms. The nominal answer, 120_000 ms, is 14 seconds
+    // of content early — and that error only grows with the index.
+    expect(await readSeekTargetMs(sessionId)).toBe(134_132);
+
+    // ── the worker restarts, produces run1, retention prunes run0's head ─
+    const run1: ServedRun = {
+      runDirName: "run1",
+      segments: Array.from({ length: 20 }, (_, i) => ({ index: 10 + i, durationMs: 9009 })),
+    };
+    writeRunSegmentFiles(sessionDir, run1);
+    for (let i = 0; i <= 4; i += 1) {
+      rmSync(path.join(sessionDir, "run0", `s${String(i).padStart(6, "0")}.m4s`));
+    }
+    const run0Survivors: ServedRun = { runDirName: "run0", segments: run0All.slice(5) };
+    writeServedPlaylist(sessionDir, [run0Survivors, run1]);
+    await simulateWorkerConsumedSeekAndProduced(sessionId, 29);
+    expect(await readSeekTargetMs(sessionId)).toBeNull();
+
+    // ── SEEK 2 (backward, into the pruned window) ──────────────────────
+    // s000002 is BEHIND produced_segment, so the >3-lookahead check does
+    // not fire — this is the ENOENT/pruned path, the exact window the
+    // field defect lives in.
+    const backward = await admin().get(`/playback/sessions/${sessionId}/hls/run0/s000002.m4s`);
+    expect(backward.status).toBe(503);
+
+    // Nothing before index 5 survives in the playlist, so index 2 is
+    // extrapolated backwards at the measured mean of everything that IS
+    // listed: (34_701 ms of run0 survivors + 180_180 ms of run1) / 25
+    // segments = 8_595.24 ms; 2 * 8_595.24 = 17_190 ms (rounded). Nominal
+    // arithmetic says 12_000 ms.
+    expect(await readSeekTargetMs(sessionId)).toBe(17_190);
+  }, 20_000);
+
+  it("DOUBLE SEEK back-then-forward: the derived target is clamped to [0, durationMs]", async () => {
+    const { sessionId, sessionDir } = await createSimulatedTranscodeSession();
+    const durationMs = await readSessionDurationMs(sessionId);
+    expect(durationMs).toBeGreaterThan(0);
+
+    // A session whose run0 head has ALREADY been retention-pruned: the
+    // playlist starts at index 5, and every surviving segment is 9.009s.
+    const run0: ServedRun = { runDirName: "run0", segments: Array.from({ length: 5 }, (_, i) => ({ index: 5 + i, durationMs: 9009 })) };
+    writeRunSegmentFiles(sessionDir, run0);
+    writeServedPlaylist(sessionDir, [run0]);
+    await markSessionActiveWithProducedSegment(sessionId, sessionDir, 9);
+
+    // ── SEEK 1 (backward, into the pruned window) ──────────────────────
+    const backward = await admin().get(`/playback/sessions/${sessionId}/hls/run0/s000001.m4s`);
+    expect(backward.status).toBe(503);
+    // mean = 9_009 ms, so index 1 is 9_009 ms in — not 6_000.
+    const firstTarget = await readSeekTargetMs(sessionId);
+    expect(firstTarget).toBe(9_009);
+    expect(firstTarget).toBeGreaterThanOrEqual(0);
+
+    // ── the worker restarts and produces run1 ──────────────────────────
+    const run1: ServedRun = { runDirName: "run1", segments: Array.from({ length: 6 }, (_, i) => ({ index: 10 + i, durationMs: 6006 })) };
+    writeRunSegmentFiles(sessionDir, run1);
+    writeServedPlaylist(sessionDir, [run0, run1]);
+    await simulateWorkerConsumedSeekAndProduced(sessionId, 15);
+
+    // ── SEEK 2 (forward, absurdly far — a stale/corrupt client request) ─
+    // 999_999 is the largest index the `sNNNNNN` filename pattern can even
+    // express. Un-clamped, ANY derivation puts it hours past the end of a
+    // 108-minute file, and the worker would hand ffmpeg an `-ss` beyond
+    // EOF: the restart produces nothing, forever. The clamp is what makes
+    // that impossible.
+    const forward = await admin().get(`/playback/sessions/${sessionId}/hls/run0/s999999.m4s`);
+    expect(forward.status).toBe(503);
+    expect(await readSeekTargetMs(sessionId)).toBe(durationMs);
+  }, 20_000);
 
   it("filename pattern guard: rejects anything not matching runN/sNNNNNN.{m4s,ts}|init.mp4 -> 404", async () => {
     const { sessionId } = await setupWithSegments(0);
