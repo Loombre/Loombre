@@ -395,4 +395,83 @@ describe("seek-restart de-duplication (continuation item 1: livelock)", () => {
       await runPromise;
     },
   );
+
+  it(
+    "THE SLOT-HANDOFF ORDERING PIN (§9.1.4 steps 2-3): a restart never spawns until the old run's exit is OBSERVED",
+    { timeout: 60_000 * TIME_SCALE },
+    async () => {
+      // Deterministic companion to seek-rung-switch.integration.spec.ts's
+      // process census (C2 review). The census samples the real OS process
+      // table at ~25 ms and asserts <= 1 live ffmpeg — genuine, but
+      // SAMPLING: an overlap shorter than its interval is merely
+      // unobserved, not impossible. The reason no overlap can exist is the
+      // runner's SEQUENCING — `restartAt` spawns strictly after `await
+      // terminate()`, which resolves only on the child's observed 'close'
+      // (process.spec.ts pins that half) — and this test pins the
+      // sequencing itself: hold the old child's 'close' event hostage and
+      // prove NO second spawn happens for as long as it is withheld,
+      // however long that is. A mutation that moves the spawn ahead of the
+      // exit-wait fails here deterministically, not one census coin flip
+      // in twenty.
+      const byPid = new Map<number, FakeChild>();
+      children = [];
+      let holdingClose = true;
+      const withheldCloses: Array<() => void> = [];
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- process.kill's overloads do not narrow through a spy
+      killSpy = vi.spyOn(process, "kill").mockImplementation(((pid: number, signal?: NodeJS.Signals) => {
+        const child = byPid.get(Math.abs(Number(pid)));
+        if (!child) {
+          const err = new Error("ESRCH") as NodeJS.ErrnoException;
+          err.code = "ESRCH";
+          throw err;
+        }
+        if (signal === "SIGTERM" || signal === "SIGKILL") {
+          const fire = (): void => child.emitClose(signal);
+          if (holdingClose) withheldCloses.push(fire);
+          else setTimeout(fire, 0);
+        }
+        return true;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      }) as any);
+      (globalThis as unknown as { __fakeChildren: Map<number, FakeChild> }).__fakeChildren = byPid;
+
+      const sessionId = await createSession();
+      const runPromise = runTranscodeSession(
+        { db, stagingRoot, pollIntervalMs: 25, ffmpegPath: "/nonexistent/ffmpeg-never-executed", spawnFn: fakeSpawnFn() },
+        sessionId,
+      );
+
+      try {
+        await waitForSpawnCount(1, 10_000 * TIME_SCALE);
+
+        // A genuine seek — the runner terminates run 0 and must spawn run 1.
+        await requestSeek(db, ctx, sessionId, 60_000, Date.now());
+
+        // The old child's SIGTERM (and the 2 s SIGKILL escalation) are both
+        // swallowed while `holdingClose` — the process is, as far as the
+        // runner can observe, still alive. Many poll intervals pass; the
+        // ordering under test is what makes every one of them spawn-free.
+        await new Promise((r) => setTimeout(r, 2_500 * TIME_SCALE));
+        expect(
+          children.length,
+          "spawned a replacement run while the old process was still alive — the §9.1.4 observed-exit ordering is broken",
+        ).toBe(1);
+        expect(children[0]!.closed).toBe(false);
+
+        // Release the exit. Only NOW may the replacement spawn.
+        holdingClose = false;
+        for (const fire of withheldCloses.splice(0)) fire();
+        await waitForSpawnCount(2, 10_000 * TIME_SCALE);
+        expect(children[0]!.closed).toBe(true);
+      } finally {
+        // Never leave a close withheld: afterEach's terminateAllTranscodeRuns
+        // awaits observed exits and would hang on one.
+        holdingClose = false;
+        for (const fire of withheldCloses.splice(0)) fire();
+      }
+
+      await endPlaybackSession(db, ctx, sessionId, Date.now());
+      await runPromise;
+    },
+  );
 });
