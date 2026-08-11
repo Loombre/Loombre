@@ -297,12 +297,6 @@ export function ComposeNoticeCard({
     <Card>
       <h2 className={styles.cardTitle}>Compose notice</h2>
 
-      <p className={sharedStyles.note}>
-        Notices are shown to every user on this server — never include restricted-zone references or personal
-        information. A notice is communication only: publishing one does not restart, shut down, or otherwise change
-        anything on the server by itself (use Settings → Server for that).
-      </p>
-
       {phase !== "confirmingReplace" && (
         <div className={styles.presetsRow}>
           <Button type="button" variant="secondary" onClick={() => applyPreset(RESTART_PRESETS.restart5)}>
