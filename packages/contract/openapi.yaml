@@ -6473,6 +6473,12 @@ components:
             - audio-atmos-lost
             - gapless-degraded
             - open-gop-leading-pictures-stripped
+            # LD-7 / owner-decision D1 (docs/PLAYBACK.md §4/§7.4): fires
+            # once per ladder rung whose configured/selected av1 codec was
+            # demoted to hevc/h264. detail is
+            # `cause=<tier0-no-hw-av1|device-no-av1|no-av1-encoder|tier0-software-route>
+            # demotedTo=<hevc|h264> heightPx=<n>`.
+            - av1-rung-demoted
         - type: string
           description: 'hw-encoder-selected:<backend> informational reason.'
           pattern: '^hw-encoder-selected:(videotoolbox|qsv|vaapi|nvenc|amf|d3d11va|software)$'
@@ -6508,7 +6514,11 @@ components:
       required: [action]
       properties:
         action: { type: string, enum: [copy, transcode, none] }
-        targetCodec: { $ref: '#/components/schemas/VideoCodec' }
+        # LD-7 / owner-decision D2 (docs/PLAYBACK.md §5/§7.4): the ENCODE
+        # target ranges over LadderCodec, not VideoCodec — a NARROWING to
+        # the exactly-emittable set. VideoCodec had admitted vp9/mpeg2/vc1/
+        # mpeg4/unknown as targets no engine version has ever produced.
+        targetCodec: { $ref: '#/components/schemas/LadderCodec' }
         encoder:
           type: string
           description: Selected hardware backend or 'software' (docs/PLAYBACK.md §8.3).
@@ -6541,7 +6551,11 @@ components:
 
     LadderCodec:
       type: string
-      enum: [h264, hevc]
+      description: >-
+        The closed set of codecs a ladder rung may ENCODE to
+        (docs/PLAYBACK.md §7/§7.1) — deliberately narrower than VideoCodec,
+        which is the SOURCE-fact union. av1 landed with LD-7 (Wave C1).
+      enum: [h264, hevc, av1]
 
     LadderRung:
       type: object

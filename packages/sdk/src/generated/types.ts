@@ -3728,7 +3728,7 @@ export interface components {
             selection?: components["schemas"]["TrackSelection"];
         };
         /** @description Closed enum plus two pattern-typed families (docs/PLAYBACK.md §4). Additions to the fixed list are contract PRs. */
-        PlanReasonCode: ("container-not-direct-playable" | "video-codec-unsupported" | "video-profile-unsupported" | "video-level-exceeds-device" | "video-bitdepth-unsupported" | "video-resolution-exceeds-device" | "video-framerate-exceeds-device" | "video-interlaced" | "hdr-tone-map-required" | "dv-profile5-requires-tonemap" | "tone-map-refused-by-policy" | "audio-codec-unsupported" | "audio-channels-exceed-device" | "audio-passthrough-unsupported" | "subtitle-format-requires-burn-in" | "subtitle-burn-in-for-styling" | "video-transcode-for-subtitle-burn-in" | "bitrate-exceeds-network" | "subtitle-codec-unknown" | "transcode-disabled-by-policy" | "dv-stripped-to-hdr10" | "subtitle-styling-lost" | "audio-atmos-lost" | "gapless-degraded" | "open-gop-leading-pictures-stripped") | string;
+        PlanReasonCode: ("container-not-direct-playable" | "video-codec-unsupported" | "video-profile-unsupported" | "video-level-exceeds-device" | "video-bitdepth-unsupported" | "video-resolution-exceeds-device" | "video-framerate-exceeds-device" | "video-interlaced" | "hdr-tone-map-required" | "dv-profile5-requires-tonemap" | "tone-map-refused-by-policy" | "audio-codec-unsupported" | "audio-channels-exceed-device" | "audio-passthrough-unsupported" | "subtitle-format-requires-burn-in" | "subtitle-burn-in-for-styling" | "video-transcode-for-subtitle-burn-in" | "bitrate-exceeds-network" | "subtitle-codec-unknown" | "transcode-disabled-by-policy" | "dv-stripped-to-hdr10" | "subtitle-styling-lost" | "audio-atmos-lost" | "gapless-degraded" | "open-gop-leading-pictures-stripped" | "av1-rung-demoted") | string;
         PlanReason: {
             code: components["schemas"]["PlanReasonCode"];
             streamIndex?: number | null;
@@ -3744,7 +3744,7 @@ export interface components {
         VideoAction: {
             /** @enum {string} */
             action: "copy" | "transcode" | "none";
-            targetCodec?: components["schemas"]["VideoCodec"];
+            targetCodec?: components["schemas"]["LadderCodec"];
             /** @description Selected hardware backend or 'software' (docs/PLAYBACK.md §8.3). */
             encoder?: string;
             toneMap?: components["schemas"]["ToneMapMethod"];
@@ -3763,8 +3763,11 @@ export interface components {
             strategy: "none" | "embed" | "hls-vtt" | "burn-in";
             streamIndex?: number;
         };
-        /** @enum {string} */
-        LadderCodec: "h264" | "hevc";
+        /**
+         * @description The closed set of codecs a ladder rung may ENCODE to (docs/PLAYBACK.md §7/§7.1) — deliberately narrower than VideoCodec, which is the SOURCE-fact union. av1 landed with LD-7 (Wave C1).
+         * @enum {string}
+         */
+        LadderCodec: "h264" | "hevc" | "av1";
         LadderRung: {
             heightPx: number;
             videoBitrateBps: number;
