@@ -74,12 +74,28 @@
 // then re-read. This depends on the lock statement being FIRST in the
 // transaction and on READ COMMITTED semantics (each statement takes a
 // fresh snapshot): the waiter wakes only after the winner's COMMIT, and
-// its subsequent read therefore sees the winner's row. Under REPEATABLE
-// READ the snapshot would predate the winner and the guard would be
-// unsound — this package never sets a non-default isolation level
-// (src/internal/tx.ts's withTransaction takes Kysely's default), and this
-// is the one dependency that would silently break the guard if that ever
-// changed. Stated here so a future isolation-level change trips over it.
+// its subsequent read therefore sees the winner's row.
+//
+// Under REPEATABLE READ (or SERIALIZABLE) that reasoning collapses: the
+// whole transaction's snapshot predates the winner, so the waiter would
+// re-read "nothing else enabled" even though something is, and both would
+// commit — the guard would silently become the race it replaced. This
+// package never sets a non-default isolation level (src/internal/tx.ts's
+// withTransaction takes Kysely's default), but nothing in Kysely or
+// Postgres would STOP a future change from doing so, and a server-side
+// `default_transaction_isolation`, a pooler setting, or a caller passing
+// in its own stricter transaction would all look identical at the call
+// site: no error, just a quietly unsound guard.
+//
+// So it is ENFORCED AT RUNTIME, not merely documented. The guard reads
+// `current_setting('transaction_isolation')` immediately after taking the
+// lock and throws RemotePathGuardIsolationError — naming this section —
+// unless it is exactly 'read committed'. Cost: one cheap round-trip on an
+// admin-only operation that already makes ~8 Cloudflare API calls. That is
+// the correct trade: LD-9 exists to eliminate silent failure modes, and an
+// isolation change is exactly a silent failure mode. It fails loudly and
+// early instead — BEFORE the caller's body runs, so nothing is written,
+// and the lock is released with the aborted transaction as always.
 //
 // ── 3. THE RELEASE GUARANTEE (the LD-9 engineering requirement) ─────────
 // "The mechanism MUST guarantee release on any thrown external side
@@ -270,6 +286,28 @@ export const REMOTE_DIRECT_STATE_KEY = 'remote.direct.internalState';
 /** The one advisory-lock key every remote-path enable shares. */
 const REMOTE_PATH_ENABLE_LOCK_KEY = 'loombre:remote:active-path';
 
+/** The ONLY isolation level under which this guard's re-read-under-the-lock
+ *  reasoning is sound — see this file's design note §2. Postgres reports
+ *  `transaction_isolation` in exactly this lower-case spelling. */
+const REQUIRED_ISOLATION_LEVEL = 'read committed';
+
+/**
+ * Thrown when withRemotePathEnableGuard finds itself running under an
+ * isolation level other than READ COMMITTED, where its mutual exclusion
+ * would be unsound (design note §2). This is a programming/configuration
+ * error, not a user-facing condition: it has no mapped HTTP problem shape
+ * and correctly surfaces as a 500, the same "visibly broken, never masked"
+ * posture query/remote-active-path.ts's RG15 invariant throw takes.
+ */
+export class RemotePathGuardIsolationError extends Error {
+  constructor(public readonly observedIsolationLevel: string) {
+    super(
+      `withRemotePathEnableGuard requires the '${REQUIRED_ISOLATION_LEVEL}' transaction isolation level but observed '${observedIsolationLevel}'. Under a stricter level the whole transaction reads from ONE snapshot, so the re-read that runs after this guard's advisory lock is acquired would not observe a racing enable that committed while it waited — two remote-access paths could both be enabled, which is precisely the defect LD-9 closed. Refusing to run rather than silently reopening it. See packages/db/src/query/remote-path-guard.ts's design note §2 ("Why the lock is required even though the read+write is one transaction").`,
+    );
+    this.name = 'RemotePathGuardIsolationError';
+  }
+}
+
 /**
  * Thrown by withRemotePathEnableGuard when, under the lock, some OTHER
  * remote-access path is already enabled. apps/server's three enable flows
@@ -332,6 +370,10 @@ export async function readRemotePathFlags(db: Kysely<DB> | Transaction<DB>): Pro
  * design note §3. Every current caller is an *AndEmit writer in this same
  * package whose body is pure SQL.
  *
+ * Throws RemotePathGuardIsolationError, before `fn` runs, if the
+ * transaction is not READ COMMITTED — the one assumption the mutual
+ * exclusion rests on (design note §2).
+ *
  * Re-entrant through withTransaction: passing an existing Transaction reuses
  * it (and re-taking the same advisory lock in the same transaction is a
  * documented no-op — advisory locks are re-entrant per session).
@@ -343,6 +385,16 @@ export async function withRemotePathEnableGuard<T>(
 ): Promise<T> {
   return withTransaction(db, async (trx) => {
     await sql`SELECT pg_advisory_xact_lock(hashtext(${REMOTE_PATH_ENABLE_LOCK_KEY})::bigint)`.execute(trx);
+
+    // Design note §2: the guard is sound ONLY under READ COMMITTED, and an
+    // isolation change anywhere upstream would break it silently. Checked
+    // here, on every enable, rather than trusted — one round trip, before
+    // the caller's body runs, so a refusal writes nothing.
+    const isolation = await sql<{ level: string }>`SELECT current_setting('transaction_isolation') AS level`.execute(trx);
+    const level = isolation.rows[0]?.level ?? 'unknown';
+    if (level !== REQUIRED_ISOLATION_LEVEL) {
+      throw new RemotePathGuardIsolationError(level);
+    }
 
     const flags = await readRemotePathFlags(trx);
     const enabledOther = (['remote', 'tunnel', 'direct'] as const).find((candidate) => candidate !== path && flags[candidate]);

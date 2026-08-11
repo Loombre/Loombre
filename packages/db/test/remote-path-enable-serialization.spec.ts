@@ -43,6 +43,7 @@ import type { DB } from '../src/types.js';
 import { resolveActivePath, RemoteActivePathInvariantViolationError } from '../src/query/remote-active-path.js';
 import {
   RemotePathConflictError,
+  RemotePathGuardIsolationError,
   REMOTE_PATH_ENABLE_LOCK_KEY_FOR_TESTS,
   withRemotePathEnableGuard,
 } from '../src/query/remote-path-guard.js';
@@ -243,6 +244,85 @@ describe('LD-9 §7 — disable and recovery can never be blocked by the enable l
     }
 
     expect(await advisoryLockCount()).toBe(0);
+  });
+});
+
+describe('LD-9 §2 — the READ COMMITTED dependency is enforced at runtime, not merely documented', () => {
+  // The guard's mutual exclusion depends on the waiter re-reading the three
+  // flags AFTER the winner commits. Under READ COMMITTED each statement
+  // takes a fresh snapshot, so it does. Under REPEATABLE READ the whole
+  // transaction's snapshot predates the winner, the waiter would read
+  // "nothing else enabled" even though something is, and BOTH would commit —
+  // the guard would silently go back to being the race it replaced. Nothing
+  // in Postgres or Kysely stops a future default-isolation change from doing
+  // that, so the guard checks for itself and refuses.
+
+  it('refuses inside a REPEATABLE READ transaction, naming the design-note section', async () => {
+    await expect(
+      db
+        .transaction()
+        .setIsolationLevel('repeatable read')
+        .execute(async (trx) => withRemotePathEnableGuard(trx, 'remote', async () => undefined)),
+    ).rejects.toBeInstanceOf(RemotePathGuardIsolationError);
+
+    await expect(
+      db
+        .transaction()
+        .setIsolationLevel('repeatable read')
+        .execute(async (trx) => withRemotePathEnableGuard(trx, 'remote', async () => undefined)),
+    ).rejects.toThrow(/repeatable read/i);
+  });
+
+  it('refuses when the SESSION default is changed out from under it — the real silent-breakage vector', async () => {
+    // A server-side `default_transaction_isolation`, a pooler setting, or a
+    // future withTransaction change would look exactly like this: nothing at
+    // the call site says anything, the transaction just starts in the wrong
+    // mode. Pinned to one connection so the SET actually applies to the
+    // transaction the guard then opens on it.
+    await expect(
+      db.connection().execute(async (conn) => {
+        await sql`SET default_transaction_isolation = 'repeatable read'`.execute(conn);
+        try {
+          return await withRemotePathEnableGuard(conn, 'tunnel', async () => undefined);
+        } finally {
+          await sql`SET default_transaction_isolation = 'read committed'`.execute(conn);
+        }
+      }),
+    ).rejects.toBeInstanceOf(RemotePathGuardIsolationError);
+  });
+
+  it('SERIALIZABLE is refused too — the check is an equality against read committed, not a blocklist of one', async () => {
+    await expect(
+      db
+        .transaction()
+        .setIsolationLevel('serializable')
+        .execute(async (trx) => withRemotePathEnableGuard(trx, 'direct', async () => undefined)),
+    ).rejects.toBeInstanceOf(RemotePathGuardIsolationError);
+  });
+
+  it('the refusal happens BEFORE the body runs, and leaves no lock held', async () => {
+    let bodyRan = false;
+    await expect(
+      db
+        .transaction()
+        .setIsolationLevel('repeatable read')
+        .execute(async (trx) =>
+          withRemotePathEnableGuard(trx, 'remote', async () => {
+            bodyRan = true;
+          }),
+        ),
+    ).rejects.toBeInstanceOf(RemotePathGuardIsolationError);
+
+    expect(bodyRan).toBe(false);
+    expect(await advisoryLockCount()).toBe(0);
+    expect(await resolveActivePath(db)).toBe('none');
+  });
+
+  it('the default transaction the enable writers actually use IS read committed — the check is not vacuously passing', async () => {
+    const row = await sql<{ level: string }>`SELECT current_setting('transaction_isolation') AS level`.execute(db);
+    expect(row.rows[0]!.level).toBe('read committed');
+    await enableRemote('isolation-happy-path');
+    expect(await resolveActivePath(db)).toBe('remote');
   });
 });
 
