@@ -145,7 +145,39 @@ export class PlaybackHlsFileController {
         throw notFound("Playback session not found.", sanitizeInstancePath(req));
       }
 
-      if (session.status === "active" && session.producedSegment !== null && session.stagingDir) {
+      // "active" OR "suspended" — NOT active-only. migrations/0012's
+      // `suspended_by_throttle` column comment documents that
+      // `status = 'suspended'` has TWO independent causes sharing the one
+      // enum value, and BOTH are exactly the resume path an authed owner's
+      // manifest re-fetch needs to serve, not just the first one found:
+      //
+      //   1. The segment-ahead throttle (docs/PLAYBACK.md §9,
+      //      apps/worker/src/transcode/throttle.ts) SIGSTOPs an encode
+      //      that is >10 segments ahead and writes status='suspended',
+      //      suspended_by_throttle=true; everything already produced
+      //      stays on disk, and serving it is the entire point of pausing
+      //      ahead. Serving only 'active' here deadlocked real playback
+      //      (2026-08-08 owner QA, live-DB verified): hls.js's
+      //      event-playlist re-polls 503'd the moment the throttle kicked
+      //      in, the client stalled on its first 4-segment snapshot
+      //      ("timeline shows 20-24s then pauses"), so requested_segment
+      //      never advanced and the throttle's resume condition
+      //      (ahead <= 5) was unreachable forever.
+      //   2. Heartbeat-staleness: a client that stops sending heartbeats
+      //      (backgrounded tab, network drop, ...) gets its session marked
+      //      status='suspended', suspended_by_throttle=false by the
+      //      server-side sweeper. A client reconnecting — or simply
+      //      resuming after a brief stall — issues exactly the same
+      //      manifest GET this route handles; refusing to serve it here
+      //      would 404/503-loop a perfectly resumable session instead of
+      //      letting it pick back up, the identical "serve what's already
+      //      on disk" argument as case 1, just for a different root cause.
+      //
+      // DECISION: keep serving BOTH — this route does not need to (and
+      // does not) distinguish suspended_by_throttle at all; "suspended"
+      // itself is the servable state, regardless of which side wrote it.
+      const manifestServable = session.status === "active" || session.status === "suspended";
+      if (manifestServable && session.producedSegment !== null && session.stagingDir) {
         try {
           const text = await readFile(join(session.stagingDir, "media.m3u8"), "utf8");
           if (text.length > 0) {
