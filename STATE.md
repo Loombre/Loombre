@@ -1074,6 +1074,34 @@ wiring pin is a source regex not policing the await, which C1's own
 comment declares load-bearing; fix = strengthen the pin to require await
 or extract a testable sequencing unit.
 
+**D-R3 (UI/docs/register): ACCEPT-WITH-FIXES.** Central promises HELD:
+radiogroup sweep APG-correct + test-pinned (116 tests / 12 files green);
+docs truthfulness PASS with ONE contradicted sentence; DV spec-lie
+genuinely closed (doc==code==goldens re-verified); firewall clean in
+shipped code AND built dist (grep-gates 0; study gitignored+srcExcluded+
+never-committed+absent-from-dist); docs:build ALL STEPS PASSED, 0 upstream-media-server
+in dist. 14 register SHA spot-checks all exist and match. REQUIRED FIXES:
+(D-3, MODERATE) LD-14 residual — the amended rule (subtle/hint NEVER on
+--mono-*) is violated by ~53 shipped components/** declarations incl.
+AuthScreen .label (password-reset form labels, the measured 2.34-3.38:1
+defect class); A5's 26fb069f HONESTLY disclosed components/** was un-swept
+(forbidden-boundary) but NO lane picked it up and no open-tail item records
+it — LD-14 reads closed while rule≠CSS at scale; fix = mechanical
+subtle/hint→muted sweep (the 08cf9146 pattern) OR explicit owner decision
++ open-tail entry. (D-4, LOW) PLAYBACK.md §4:368 ladder-variant-capped
+detail format contradicts the emitted string (no tier= field; comma
+format) — a NEW doc-lie, the exact class this run existed to kill; one-line
+fix. (D-5, LOW-MOD) FIVE stale/missing Wave B origin annotations
+(Remote V-SEC F2, mail items 3/4/7, Stash DELETE) still read SCHEDULED/
+MOVED or carry nothing — violates the zero-unanchored standard 7334ce90
+set; closures ARE recorded with SHAs in the Wave B section, but the
+originating ledgers lie. RECOMMENDED (LOW): F4 system-info comment vs 2
+straggler callers; F5 reasons.ts:66 stale 4-of-5 cause comment; F6
+PLAYBACK §7.4 honesty-register xref + P3.4 durable-row AV1 amend; F7
+security-posture.md HTML comment contains "an upstream media server-study" (doc source,
+outside grep-gates' apps/packages scope — reword + optionally extend gate
+to docs/); F8 PinModal stale arrow-key comment.
+
 ### Pre-D consolidation — LANDED + MERGED 2026-08-11 (0e0086d5) — orchestrator-verified
 
 (seek-dedup 7, transcode-sessions 50, playback-hls 50, crash-redact 34,
