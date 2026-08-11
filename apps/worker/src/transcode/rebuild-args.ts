@@ -41,6 +41,11 @@ function placeholderPlanInputTail(): Pick<PlanInput, "network" | "policy" | "cap
       ladderRungs: [],
       segmentDurationSec: 6,
       hevcEncodePreferred: false,
+      // Placeholder like every field around it — `buildFfmpegArgs` reads
+      // `policy` not at all, and this path REBUILDS args for an
+      // already-decided stored plan (whose rung codec is a fact on the
+      // plan, not something re-derived here).
+      av1EncodePreferred: false,
     },
     caps: { backends: [] },
     mode: "stream",

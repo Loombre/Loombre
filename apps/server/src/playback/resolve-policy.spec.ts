@@ -32,6 +32,8 @@ const HEVC_CAPS: VerifiedCapabilities = {
 const DEFAULT_SETTINGS_INPUTS: SettingsPolicyInputs = {
   maxSimultaneousTranscodes: 1,
   hevcEncodePreferred: true,
+  // Wave C1: the registry default (owner-decision D5 — opt-in).
+  av1EncodePreferred: false,
   allowToneMapCpu: "tier-gated",
   ladderRungs: DEFAULT_LADDER_RUNGS,
 };
@@ -109,5 +111,45 @@ describe("resolveServerPolicy", () => {
     const customized = resolveServerPolicy({}, HEVC_CAPS, { ...DEFAULT_SETTINGS_INPUTS, ladderRungs: customRung, allowToneMapCpu: "never" });
     expect(customized.ladderRungs).toEqual(customRung);
     expect(customized.allowToneMapCpu).toBe("never");
+  });
+
+  // ==========================================================================
+  // Wave C1 / LD-7 — docs/PLAYBACK.md §2.4's DELIBERATE ASYMMETRY. hevc's
+  // preference is resolved HERE (its only gate is a capability fact); av1's
+  // is passed through VERBATIM, because AV1's gate is a TIER LAW that must
+  // be enforced inside the pure engine, from caps + policy.tier, where the
+  // matrix can prove its unreachability property. Resolving it here would
+  // put the law's enforcement outside the tested function — the exact
+  // failure class the shared-predicate fix exists to prevent.
+  // ==========================================================================
+
+  describe("av1EncodePreferred is passed through VERBATIM (§2.4's asymmetry)", () => {
+    const AV1_CAPS: VerifiedCapabilities = {
+      backends: [{ backend: "nvenc", decode: ["h264", "hevc", "av1"], encode: ["h264", "hevc", "av1"], toneMap: ["cuda"], verifiedAtMs: 1 }],
+    };
+
+    it("true stays true even when NO backend verifies av1 encode — never AND-ed with capability here", () => {
+      const policy = resolveServerPolicy({}, NO_CAPS, { ...DEFAULT_SETTINGS_INPUTS, av1EncodePreferred: true });
+      expect(policy.av1EncodePreferred).toBe(true);
+    });
+
+    it("false stays false even when a backend DOES verify av1 encode — never OR-ed with capability either", () => {
+      const policy = resolveServerPolicy({}, AV1_CAPS, { ...DEFAULT_SETTINGS_INPUTS, av1EncodePreferred: false });
+      expect(policy.av1EncodePreferred).toBe(false);
+    });
+
+    it("is independent of tier — a tier-0 server still forwards the raw preference (the engine, not this module, refuses)", () => {
+      for (const tier of ["0", "1", "2"]) {
+        const policy = resolveServerPolicy({ tier }, NO_CAPS, { ...DEFAULT_SETTINGS_INPUTS, av1EncodePreferred: true });
+        expect(policy.av1EncodePreferred, `tier=${tier}`).toBe(true);
+      }
+    });
+
+    it("CONTRAST: hevcEncodePreferred under the SAME caps IS resolved down to false", () => {
+      const settings = { ...DEFAULT_SETTINGS_INPUTS, hevcEncodePreferred: true, av1EncodePreferred: true };
+      const policy = resolveServerPolicy({}, NO_CAPS, settings);
+      expect(policy.hevcEncodePreferred).toBe(false);
+      expect(policy.av1EncodePreferred).toBe(true);
+    });
   });
 });

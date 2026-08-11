@@ -22,6 +22,7 @@ t1-cpu-tonemap:
     - { heightPx: 360, videoBitrateBps: 800000, audioBitrateBps: 160000, codec: h264 }
   segmentDurationSec: 6
   hevcEncodePreferred: false
+  av1EncodePreferred: false
 
 t0-default:
   allowTranscode: true
@@ -41,6 +42,7 @@ t0-default:
     - { heightPx: 360, videoBitrateBps: 800000, audioBitrateBps: 160000, codec: h264 }
   segmentDurationSec: 6
   hevcEncodePreferred: false
+  av1EncodePreferred: false
 
 # --- Phase 3 Step 2c (Stage C — HDR) additive fixture ---------------------
 # `allowToneMapCpu: never` UNCONDITIONALLY refuses a CPU tone-map — unlike
@@ -71,6 +73,7 @@ tonemap-never:
     - { heightPx: 360, videoBitrateBps: 800000, audioBitrateBps: 160000, codec: h264 }
   segmentDurationSec: 6
   hevcEncodePreferred: false
+  av1EncodePreferred: false
 
 # --- Phase 3 Step 2c (Stage C — HDR) additive fixture ---------------------
 # `allowToneMapCpu: tier-gated` at a NON-ZERO tier — proves the "tier-gated
@@ -97,6 +100,7 @@ tiergated-t1:
     - { heightPx: 360, videoBitrateBps: 800000, audioBitrateBps: 160000, codec: h264 }
   segmentDurationSec: 6
   hevcEncodePreferred: false
+  av1EncodePreferred: false
 
 # --- Phase 3 Step 2d (Stage D — Audio) additive fixture --------------------
 # Same as t0-default except `audioTranscodeCodecPriority` prefers aac FIRST
@@ -120,6 +124,7 @@ aac-first-audio:
     - { heightPx: 360, videoBitrateBps: 800000, audioBitrateBps: 160000, codec: h264 }
   segmentDurationSec: 6
   hevcEncodePreferred: false
+  av1EncodePreferred: false
 
 # --- Phase 3 Step 2e (Stage E — Subtitles) additive fixtures ----------------
 # `preferredTextSubMode: burn-in` — every existing policy fixture above
@@ -144,6 +149,7 @@ text-burn-in-preferred:
     - { heightPx: 360, videoBitrateBps: 800000, audioBitrateBps: 160000, codec: h264 }
   segmentDurationSec: 6
   hevcEncodePreferred: false
+  av1EncodePreferred: false
 
 # `preserveAssStyling: true` — every existing policy fixture above declares
 # false; isolates the ASS "burn-in-for-styling" override inside the TEXT
@@ -167,6 +173,7 @@ preserve-ass-styling:
     - { heightPx: 360, videoBitrateBps: 800000, audioBitrateBps: 160000, codec: h264 }
   segmentDurationSec: 6
   hevcEncodePreferred: false
+  av1EncodePreferred: false
 
 # --- Phase 3 Step 2f (Stage F — bitrate/ladder) additive fixture -----------
 # Identical to `t0-default` except `hevcEncodePreferred: true` — every prior
@@ -194,6 +201,7 @@ hevc-preferred:
     - { heightPx: 360, videoBitrateBps: 800000, audioBitrateBps: 160000, codec: h264 }
   segmentDurationSec: 6
   hevcEncodePreferred: true
+  av1EncodePreferred: false
 
 # --- Phase 3 §11 step 3 (Stage G — hardware routing) additive fixture -----
 # Empty ladderRungs — isolates the decode-only-backend guard (binding
@@ -214,6 +222,7 @@ empty-ladder:
   ladderRungs: []
   segmentDurationSec: 6
   hevcEncodePreferred: false
+  av1EncodePreferred: false
 
 # --- Phase 3 step 7 (adversarial spec audit) additive fixtures -------------
 # t0-default with `allowTranscode: false` (docs/PLAYBACK.md §2.4's knob,
@@ -246,6 +255,7 @@ transcode-disabled:
     - { heightPx: 360, videoBitrateBps: 800000, audioBitrateBps: 160000, codec: h264 }
   segmentDurationSec: 6
   hevcEncodePreferred: false
+  av1EncodePreferred: false
 
 # Single-rung 720p-only instance ladder at tier 0 — constructs the §8.3
 # tier-cap edge where the PRE-cap ladder is exactly ONE rung above 480p:
@@ -266,3 +276,112 @@ only-720p-ladder:
     - { heightPx: 720, videoBitrateBps: 3000000, audioBitrateBps: 160000, codec: h264 }
   segmentDurationSec: 6
   hevcEncodePreferred: false
+  av1EncodePreferred: false
+
+# --- Wave C1 (LD-7 / LD-16) AV1 additive fixtures --------------------------
+# `av1EncodePreferred` is the OPERATOR opt-in (docs/PLAYBACK.md §2.4,
+# default false, passed to plan() VERBATIM — the tier law lives inside the
+# engine, §7.2). Every fixture ABOVE declares it false, so every pre-C1
+# case is provably untouched by this wave; the three below are the only
+# opted-in policies in the matrix.
+
+# t0-default with the operator opt-in flipped on. Paired with hardware-AV1
+# caps it swaps; paired with software-only-AV1 caps it must produce a
+# BYTE-IDENTICAL ladder to t0-default (the §7.2 Tier-0 refusal).
+av1-preferred-t0:
+  allowTranscode: true
+  allowToneMapCpu: tier-gated
+  tier: 0
+  preferredTextSubMode: hls-vtt
+  preserveAssStyling: false
+  audioTranscodeCodecPriority: [opus, aac]
+  maxSimultaneousTranscodes: 1
+  ladderRungs:
+    - { heightPx: 2160, videoBitrateBps: 16000000, audioBitrateBps: 384000, codec: hevc }
+    - { heightPx: 1080, videoBitrateBps: 8000000, audioBitrateBps: 384000, codec: h264 }
+    - { heightPx: 1080, videoBitrateBps: 4000000, audioBitrateBps: 160000, codec: h264 }
+    - { heightPx: 720, videoBitrateBps: 3000000, audioBitrateBps: 160000, codec: h264 }
+    - { heightPx: 480, videoBitrateBps: 1500000, audioBitrateBps: 160000, codec: h264 }
+    - { heightPx: 360, videoBitrateBps: 800000, audioBitrateBps: 160000, codec: h264 }
+  segmentDurationSec: 6
+  hevcEncodePreferred: false
+  av1EncodePreferred: true
+
+# Tier 1 — where §7.2 permits the SOFTWARE AV1 fallback. Same table.
+av1-preferred-t1:
+  allowTranscode: true
+  allowToneMapCpu: always
+  tier: 1
+  preferredTextSubMode: hls-vtt
+  preserveAssStyling: false
+  audioTranscodeCodecPriority: [opus, aac]
+  maxSimultaneousTranscodes: 2
+  ladderRungs:
+    - { heightPx: 2160, videoBitrateBps: 16000000, audioBitrateBps: 384000, codec: hevc }
+    - { heightPx: 1080, videoBitrateBps: 8000000, audioBitrateBps: 384000, codec: h264 }
+    - { heightPx: 1080, videoBitrateBps: 4000000, audioBitrateBps: 160000, codec: h264 }
+    - { heightPx: 720, videoBitrateBps: 3000000, audioBitrateBps: 160000, codec: h264 }
+    - { heightPx: 480, videoBitrateBps: 1500000, audioBitrateBps: 160000, codec: h264 }
+    - { heightPx: 360, videoBitrateBps: 800000, audioBitrateBps: 160000, codec: h264 }
+  segmentDurationSec: 6
+  hevcEncodePreferred: false
+  av1EncodePreferred: true
+
+# BOTH preferences on — proves §7.1's fixed precedence av1 > hevc > h264
+# (sub-2160 rungs go av1 at ×0.6, NOT hevc at ×0.75).
+av1-and-hevc-preferred-t1:
+  allowTranscode: true
+  allowToneMapCpu: always
+  tier: 1
+  preferredTextSubMode: hls-vtt
+  preserveAssStyling: false
+  audioTranscodeCodecPriority: [opus, aac]
+  maxSimultaneousTranscodes: 2
+  ladderRungs:
+    - { heightPx: 2160, videoBitrateBps: 16000000, audioBitrateBps: 384000, codec: hevc }
+    - { heightPx: 1080, videoBitrateBps: 8000000, audioBitrateBps: 384000, codec: h264 }
+    - { heightPx: 1080, videoBitrateBps: 4000000, audioBitrateBps: 160000, codec: h264 }
+    - { heightPx: 720, videoBitrateBps: 3000000, audioBitrateBps: 160000, codec: h264 }
+    - { heightPx: 480, videoBitrateBps: 1500000, audioBitrateBps: 160000, codec: h264 }
+    - { heightPx: 360, videoBitrateBps: 800000, audioBitrateBps: 160000, codec: h264 }
+  segmentDurationSec: 6
+  hevcEncodePreferred: true
+  av1EncodePreferred: true
+
+# An ADMIN-CONFIGURED av1 ladder with the global opt-in deliberately OFF —
+# §7.1(g)'s "condition 1 does NOT apply" half: an explicit av1 rung IS the
+# operator's preference for that rung, so it survives (or demotes) purely
+# on the device/capability conditions. tier 0.
+explicit-av1-ladder-t0:
+  allowTranscode: true
+  allowToneMapCpu: tier-gated
+  tier: 0
+  preferredTextSubMode: hls-vtt
+  preserveAssStyling: false
+  audioTranscodeCodecPriority: [opus, aac]
+  maxSimultaneousTranscodes: 1
+  ladderRungs:
+    - { heightPx: 1080, videoBitrateBps: 6000000, audioBitrateBps: 384000, codec: av1 }
+    - { heightPx: 720, videoBitrateBps: 2500000, audioBitrateBps: 160000, codec: av1 }
+    - { heightPx: 360, videoBitrateBps: 800000, audioBitrateBps: 160000, codec: h264 }
+  segmentDurationSec: 6
+  hevcEncodePreferred: false
+  av1EncodePreferred: false
+
+# Same explicit table at tier 2 — isolates the `no-av1-encoder` cause from
+# the `tier0-no-hw-av1` one.
+explicit-av1-ladder-t2:
+  allowTranscode: true
+  allowToneMapCpu: always
+  tier: 2
+  preferredTextSubMode: hls-vtt
+  preserveAssStyling: false
+  audioTranscodeCodecPriority: [opus, aac]
+  maxSimultaneousTranscodes: 4
+  ladderRungs:
+    - { heightPx: 1080, videoBitrateBps: 6000000, audioBitrateBps: 384000, codec: av1 }
+    - { heightPx: 720, videoBitrateBps: 2500000, audioBitrateBps: 160000, codec: av1 }
+    - { heightPx: 360, videoBitrateBps: 800000, audioBitrateBps: 160000, codec: h264 }
+  segmentDurationSec: 6
+  hevcEncodePreferred: false
+  av1EncodePreferred: false

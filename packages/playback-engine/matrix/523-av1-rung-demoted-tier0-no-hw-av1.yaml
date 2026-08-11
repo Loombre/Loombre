@@ -1,0 +1,74 @@
+name: transcode — explicit av1 policy rungs on a T0 software-av1 box -> demoted to hevc, cause tier0-no-hw-av1
+why: >
+  Wave C1 / LD-7, §7.1(g)'s demotion normalization on its FIRST cause.
+  policies.explicit-av1-ladder-t0 is an admin who force-wrote av1 rungs
+  into a Tier-0 box's table — with `av1EncodePreferred` deliberately FALSE,
+  proving condition 1 does NOT gate step (g): an explicit av1 rung IS the
+  operator's preference for that rung, so only the device (2) and
+  capability (3) conditions are consulted. Condition 3 fails here exactly
+  as in case 521 (software-only av1 at tier 0 -> eligibility 'none'), so
+  both av1 rungs are DEMOTED, not dropped: codec becomes hevc (the device
+  declares an hevc entry), heightPx and BOTH bitrates are kept VERBATIM —
+  the admin chose 6,000,000 and 2,500,000 and the engine does not invent
+  scaled replacements. Rung count and heights stay 1080/720/360 through the
+  demotion; the T0 ≥1080p software cap then trims to the 360p rung exactly
+  as it would have for an all-h264 table. Two informational
+  `av1-rung-demoted` reasons answer "why is this rung not AV1?" from the
+  plan itself (owner-decision D1) — the alternative was a silent demotion
+  visible only structurally.
+input:
+  media:
+    fileId: file-523
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 6000000000
+    overallBitrateBps: 20500000
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 41
+        width: 1920
+        height: 1080
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 20000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: true
+        openGop: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 160000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device:
+    fixture: devices.av1-fmp4-capable
+  network:
+    fixture: networks.local
+  policy:
+    fixture: policies.explicit-av1-ladder-t0
+  caps:
+    fixture: caps.software-av1
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: transcode
+  reasons:
+    - video-interlaced
+    - av1-rung-demoted
+    - av1-rung-demoted
+    - software-fallback:encode
+    - software-fallback:tier-capped
+  container: fmp4-hls
+  ladder:
+    - { heightPx: 360, videoBitrateBps: 800000, audioBitrateBps: 160000, codec: h264 }
