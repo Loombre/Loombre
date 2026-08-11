@@ -36,6 +36,7 @@ function makeVideoStream(overrides: Partial<VideoStream> = {}): VideoStream {
     dvProfile: null,
     dvBlCompatId: null,
     interlaced: false,
+    openGop: false,
     ...overrides,
   };
 }

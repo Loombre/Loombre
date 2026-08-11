@@ -83,6 +83,15 @@ export interface VideoStream {
   /** 8.1 HDR10-compatible base layer detection */
   dvBlCompatId: number | null;
   interlaced: boolean;
+  /** Open-GOP structure (§2.1 fact, verified by ffmpeg experiment 2026-08-10):
+   *  REQUIRED, never optional — extraction boundaries (packages/db's
+   *  AssembledVideoStream mapping, the worker probe pipeline) collapse a
+   *  DB NULL to `false`, the CONSERVATIVE default (no stripping for a
+   *  stream this field is simply unknown for). Meaningful today only for
+   *  hevc copy-into-repackage (stages/video.ts's
+   *  open-gop-leading-pictures-stripped, args/builder.ts's seek-restart
+   *  bitstream filter) — see docs/PLAYBACK.md §3 Stage B / §6. */
+  openGop: boolean;
 }
 
 export type AudioCodec =
@@ -299,6 +308,19 @@ export interface PlaybackPlanVideo {
   targetCodec?: "h264" | "hevc";
   encoder?: HardwareBackend;
   toneMap?: ToneMapMethod;
+  /** Set (true) ONLY when meaningful — src/plan.ts's final video assembly:
+   *  `action==='copy'`, the selected stream's own `openGop` is true,
+   *  `container` is `fmp4-hls`|`ts-hls` (a repackaged copy, never
+   *  `'source'`/`'mp4'`), AND (opus-review Finding C, 2026-08-10) the
+   *  selected stream's `codec==='hevc'`. This shape (`PlaybackPlanVideo`)
+   *  carries no source-codec field of its own — unlike `media.video[]`'s
+   *  entries, a `'copy'` action here doesn't say what it's copying — so
+   *  this flag is GUARANTEED true-only-for-hevc by construction at the one
+   *  place it's ever set (plan.ts), not by any check downstream: a
+   *  consumer of this plan shape alone (e.g. args/builder.ts's
+   *  seek-restart branch, §6) may treat `openGop===true` as an hevc fact
+   *  without re-deriving it. Never set false; omitted when not applicable. */
+  openGop?: boolean;
 }
 
 export interface PlaybackPlanAudio {

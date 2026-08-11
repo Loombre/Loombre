@@ -7,7 +7,7 @@
 // that item are untouched by construction — there is nothing here that
 // touches catalog_items or progress).
 
-import type { Selectable } from 'kysely';
+import { sql, type Selectable } from 'kysely';
 import type { MediaFilesTable, MediaStreamsTable } from '../types.js';
 import type { DbOrTx } from './tx.js';
 import { withTransaction } from './tx.js';
@@ -333,6 +333,11 @@ export interface ReplaceStreamInput {
   dvBlCompatId?: number | null;
   hasAtmos?: boolean | null;
   interlaced?: boolean | null;
+  /** migrations/0038_media_streams_open_gop.sql — video-only, HEVC-only in
+   *  v1. Omitted/undefined (every non-video-stream caller, and any video
+   *  caller that hasn't run the detector) writes NULL ("not yet probed"),
+   *  never a guessed value. */
+  openGop?: boolean | null;
 }
 
 /**
@@ -379,9 +384,166 @@ export async function replaceFileStreams(
           dv_bl_compat_id: s.dvBlCompatId ?? null,
           has_atmos: s.hasAtmos ?? null,
           interlaced: s.interlaced ?? null,
+          open_gop: s.openGop ?? null,
         }))
       )
       .returningAll()
       .execute();
   });
+}
+
+// ============================================================================
+// open_gop backfill (migrations/0038_media_streams_open_gop.sql) — worker-
+// only queries backing apps/worker/src/probe/opengop-backfill-consumer.ts.
+// Existing libraries were probed before this column existed, so every
+// pre-existing media_streams row (video AND non-video) has open_gop = NULL.
+// Only HEVC video rows need the real bounded ffmpeg scan; every other
+// NULL video row can be bulk-set false in one statement (the engine never
+// consults this field for non-hevc codecs — same "false, no scan needed"
+// rule the live probe path applies at write time, see toStreamInputs in
+// apps/worker/src/probe/consumer.ts). Non-video rows (audio/subtitle) are
+// left NULL forever, same as the hdr/dv_profile/interlaced columns this
+// mirrors (migrations/0002_phase1_catalog.sql) — open_gop is video-only by
+// definition and this backfill never touches them.
+// ============================================================================
+
+export interface HevcStreamNeedingOpenGopProbeRow {
+  id: string;
+  file_id: string;
+  file_path: string;
+  /** Always 'hevc' (the query's own WHERE clause guarantees it) — selected
+   *  explicitly rather than assumed so this row is self-describing for
+   *  detectOpenGop's codec-guard parameter (opus review finding 11,
+   *  apps/worker/src/probe/opengop.ts), the same defense-in-depth reasoning
+   *  as passing the stream's own codec at the live-probe call site
+   *  (./consumer.ts's resolveOpenGopByIndex) rather than hardcoding it. */
+  codec: string;
+  /** 0-based position of this stream among ITS FILE's video streams only
+   *  (ffmpeg's own `-map 0:v:N` addressing) — NOT media_streams.stream_index,
+   *  which is the raw ffprobe absolute index across every stream. Computed
+   *  as "how many video streams in this file have stream_index <= mine,
+   *  minus one" so a file with more than one video stream still maps each
+   *  row to the ffmpeg map index the detector needs. */
+  video_type_index: number;
+  /** media_files.duration_ms for this row's file — threaded straight
+   *  through to detectOpenGop's own `durationMs` parameter (opus review
+   *  finding 1's mid-file-vs-from-start scan-window choice). NULL means
+   *  "not yet probed" or ffprobe reported no format.duration — opengop.ts
+   *  treats NULL as "unknown", never as zero. */
+  duration_ms: number | null;
+}
+
+/**
+ * Boot-time "is there anything left for the backfill to do" check
+ * (apps/worker/src/index.ts's enqueueOpenGopBackfillIfNeeded, mirroring
+ * enqueueImageBackfillIfNeeded's own listImagesNeedingDominantColor
+ * limit-1 pending check). Covers BOTH halves of the backfill in one cheap
+ * query: a HEVC row still needing the real scan, OR a non-HEVC row still
+ * needing the one-shot bulk-false UPDATE — either case means open_gop IS
+ * NULL on a video row, so a plain existence check suffices without
+ * distinguishing which half would resolve it.
+ *
+ * Excludes rows whose file is currently missing (opus review finding 10):
+ * a deleted/unmounted file's media_streams row stays open_gop NULL
+ * forever (nothing will ever scan it), which without this exclusion would
+ * make this check — and therefore the boot-time backfill enqueue — fire on
+ * EVERY worker start for as long as that row exists, not just once. A
+ * present-but-unscannable file (corrupt container, scan failure/timeout)
+ * is NOT excluded by this join and WILL still re-trigger a sweep on every
+ * boot — see opengop-backfill-consumer.ts's module header for why that
+ * residual is accepted as bounded/rare rather than also special-cased
+ * here.
+ */
+export async function hasVideoStreamsNeedingOpenGopBackfill(db: DbOrTx): Promise<boolean> {
+  const row = await db
+    .selectFrom('media_streams')
+    .innerJoin('media_files', 'media_files.id', 'media_streams.file_id')
+    .select('media_streams.id')
+    .where('media_streams.stream_type', '=', 'video')
+    .where('media_streams.open_gop', 'is', null)
+    .where('media_files.missing_since_ms', 'is', null)
+    .limit(1)
+    .executeTakeFirst();
+  return row !== undefined;
+}
+
+/**
+ * Id-ordered, cursor-paginated batch of HEVC video streams still missing an
+ * open_gop verdict (NULL — never a real boolean, which is a resolved verdict
+ * and must never be re-selected). `afterId` is the last-processed
+ * media_streams id from the previous batch (null for the first page).
+ *
+ * Excludes rows whose file is currently missing (opus review finding 10 —
+ * see hasVideoStreamsNeedingOpenGopBackfill's doc comment for the full
+ * rationale, which applies identically here: without this, a deleted/
+ * unmounted file's row would be selected — and its real detectOpenGop scan
+ * attempted against a path that no longer resolves — on every sweep
+ * forever, not just once).
+ */
+export async function listHevcStreamsNeedingOpenGopProbe(
+  db: DbOrTx,
+  opts: { afterId: string | null; limit: number }
+): Promise<HevcStreamNeedingOpenGopProbeRow[]> {
+  const result = await sql<{
+    id: string;
+    file_id: string;
+    file_path: string;
+    codec: string;
+    video_type_index: number;
+    duration_ms: number | null;
+  }>`
+    SELECT
+      ms.id AS id,
+      ms.file_id AS file_id,
+      mf.path AS file_path,
+      ms.codec AS codec,
+      (
+        SELECT count(*)::int
+        FROM media_streams ms2
+        WHERE ms2.file_id = ms.file_id
+          AND ms2.stream_type = 'video'
+          AND ms2.stream_index <= ms.stream_index
+      ) - 1 AS video_type_index,
+      mf.duration_ms AS duration_ms
+    FROM media_streams ms
+    INNER JOIN media_files mf ON mf.id = ms.file_id
+    WHERE ms.stream_type = 'video'
+      AND ms.codec = 'hevc'
+      AND ms.open_gop IS NULL
+      AND mf.missing_since_ms IS NULL
+      ${opts.afterId !== null ? sql`AND ms.id > ${opts.afterId}` : sql``}
+    ORDER BY ms.id ASC
+    LIMIT ${opts.limit}
+  `.execute(db);
+  return result.rows;
+}
+
+/** Writes the detector's resolved verdict (never NULL — a failed/timed-out
+ *  scan simply skips this call, leaving the row NULL for the next sweep to
+ *  retry, see opengop-backfill-consumer.ts's module header). */
+export async function setStreamOpenGop(db: DbOrTx, streamId: string, openGop: boolean): Promise<void> {
+  await db.updateTable('media_streams').set({ open_gop: openGop }).where('id', '=', streamId).execute();
+}
+
+/**
+ * One bulk UPDATE for every non-HEVC video stream still missing an
+ * open_gop verdict — no scan needed (the engine only ever consults this
+ * field for hevc). Returns the number of rows updated — opus review
+ * finding 15c: opengop-backfill-consumer.ts's fresh-sweep branch logs this
+ * count, so it is an actual observability signal, not a value nothing
+ * reads.
+ * The backfill consumer calls this exactly once per fresh sweep (cursor
+ * === null), not on every batch — an indexed-free WHERE over the whole
+ * media_streams table is cheap once, not worth repeating on every
+ * resumed batch.
+ */
+export async function bulkSetNonHevcVideoOpenGopFalse(db: DbOrTx): Promise<number> {
+  const result = await db
+    .updateTable('media_streams')
+    .set({ open_gop: false })
+    .where('stream_type', '=', 'video')
+    .where('open_gop', 'is', null)
+    .where((eb) => eb.or([eb('codec', '!=', 'hevc'), eb('codec', 'is', null)]))
+    .executeTakeFirst();
+  return Number(result.numUpdatedRows ?? 0);
 }

@@ -107,6 +107,28 @@ export interface ImageBackfillJobPayload {
 }
 
 /**
+ * One-time open_gop backfill (migrations/0038_media_streams_open_gop.sql —
+ * same expand -> migrate -> contract policy as ImageBackfillJobPayload
+ * above, "migrate" step for an expand-only ALTER TABLE). Existing libraries
+ * were probed before this column existed, so every pre-existing
+ * media_streams video row has open_gop = NULL. Each job invocation
+ * processes exactly one id-ordered batch of HEVC rows still NULL (the only
+ * ones that need the real bounded ffmpeg trace_headers scan,
+ * apps/worker/src/probe/opengop.ts) via cursor pagination identical to
+ * ImageBackfillJobPayload's; non-HEVC NULL video rows are bulk-set false in
+ * one SQL statement on the FIRST batch (cursor === null) — no scan needed,
+ * since @loombre/playback-engine never consults this field for a non-hevc
+ * codec. `cursor: null` starts a fresh sweep from the beginning.
+ * `batchSize` is optional (apps/worker/src/probe/opengop-backfill-
+ * consumer.ts defaults it) — present here only so a caller MAY override it
+ * (e.g. tests).
+ */
+export interface OpenGopBackfillJobPayload {
+  cursor: string | null;
+  batchSize?: number;
+}
+
+/**
  * Hardware capability self-test battery (docs/PLAYBACK.md §8.1, Phase 3
  * §11 step 5): apps/worker/src/hwcaps/** runs the full probe-runner
  * battery for the current platform's candidate backends and persists a
@@ -245,6 +267,7 @@ export interface JobPayloads {
   'metadata-search': MetadataSearchJobPayload;
   import: ImportJobPayload;
   'image-backfill': ImageBackfillJobPayload;
+  'opengop-backfill': OpenGopBackfillJobPayload;
   hwprobe: HwProbeJobPayload;
   transcode: TranscodeJobPayload;
   'subtitle-extract': SubtitleExtractJobPayload;
@@ -266,6 +289,7 @@ export const JOB_TYPES = [
   'metadata-search',
   'import',
   'image-backfill',
+  'opengop-backfill',
   'hwprobe',
   'transcode',
   'subtitle-extract',
@@ -343,6 +367,10 @@ export const JOB_QUEUE_OPTIONS: Readonly<Record<JobType, JobQueueOptions>> = {
   'metadata-search': { expireInSeconds: BOUNDED_EXPIRE_SECONDS, retryLimit: 2 },
   import: { expireInSeconds: LONG_RUNNING_EXPIRE_SECONDS, retryLimit: 2 },
   'image-backfill': { expireInSeconds: BOUNDED_EXPIRE_SECONDS, retryLimit: 2 },
+  // Each batch is a handful of bounded (~60-75ms) ffmpeg trace_headers
+  // scans plus one optional bulk SQL update — same shape/cost class as
+  // 'image-backfill's worker_thread decode batches above.
+  'opengop-backfill': { expireInSeconds: BOUNDED_EXPIRE_SECONDS, retryLimit: 2 },
   hwprobe: { expireInSeconds: LONG_RUNNING_EXPIRE_SECONDS, retryLimit: 2 },
   transcode: { expireInSeconds: LONG_RUNNING_EXPIRE_SECONDS, retryLimit: 0 },
   'subtitle-extract': { expireInSeconds: LONG_RUNNING_EXPIRE_SECONDS, retryLimit: 2 },

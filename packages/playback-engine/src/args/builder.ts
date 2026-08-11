@@ -240,6 +240,40 @@
  *     contract the CALLER (`plan.ts`, or the future session layer) is
  *     responsible for upholding, never reachable through `plan()` itself
  *     (proven by this package's totality property and matrix burn-up).
+ *
+ * (K) OPEN-GOP HEVC SEEK-RESTART STRIP (decided + ffmpeg-verified 2026-08-10
+ *     owner QA, docs/PLAYBACK.md §6): segment 7's video-COPY branch pushes
+ *     `-bsf:v filter_units=remove_types=8-9` iff `video.openGop &&
+ *     options.withSeek && (container === 'fmp4-hls' || container ===
+ *     'ts-hls')`. EVIDENCE (reproduced, not theoretical): a seek-restart
+ *     runs of an open-GOP HEVC stream COPY begin the new run at a CRA
+ *     (Clean Random Access) picture whose leading RASL pictures (HEVC NAL
+ *     unit types 8/9 — RASL_N/RASL_R) reference the PRIOR GOP, which is
+ *     absent from a seek-restarted run (the seek target lands mid-stream,
+ *     not at file start) — Chrome/MSE renders those referenceless RASL
+ *     pictures as a full-frame smear at the segment join. Stripping them via
+ *     `filter_units=remove_types=8-9` yields a run whose first decodable
+ *     picture is the CRA itself: it re-decodes cleanly. CORRECTED SCOPE
+ *     (opus review Finding E, 2026-08-10 — the text above originally
+ *     understated this): a `-bsf:v` is a PER-INVOCATION filter, not a
+ *     per-join one — once pushed, it applies to EVERY packet ffmpeg
+ *     processes for the rest of THIS invocation, not only the ~20
+ *     leading-picture frames at the seek join. So every GOP for the
+ *     remainder of the seek-restarted run loses its own RASL leading
+ *     pictures each time it starts, not just the first one — a small,
+ *     PERSISTENT per-GOP frame drop (roughly `bframes` frames per keyframe
+ *     interval) for the rest of that run, not a one-time join cost.
+ *     ACCEPTED TRADE-OFF (owner decision, 2026-08-10): this persistent
+ *     minor frame drop is traded against the alternative — a multi-second
+ *     full-frame decode smear at the seek join from undecodable
+ *     referenceless RASL pictures — and judged the better failure mode;
+ *     flagged for owner QA re-verification of long post-seek playback
+ *     before rc.7. `withSeek: false` runs are BYTE-IDENTICAL to before this
+ *     fix — a fresh (non-seek) run always starts at the file's own true IDR,
+ *     which carries no RASL pictures referencing anything absent, so there
+ *     is nothing to strip. Goldens 33 (withSeek:true, bsf present) / 34
+ *     (withSeek:false, bsf absent) pin both sides — behaviour is UNCHANGED
+ *     by this correction, only the documented understanding of its scope.
  */
 import type {
   AudioCodec,
@@ -611,6 +645,15 @@ export function buildFfmpegArgs(input: PlanInput, planShape: FfmpegPlanShape, op
       if (video.targetCodec === "hevc") args.push("-tag:v", "hvc1");
     } else if (video.action === "copy") {
       args.push("-c:v", "copy");
+      // Interpretation K (this module's header) — seek-restart runs of an
+      // open-GOP HEVC stream copy begin at a CRA whose RASL leading
+      // pictures (NAL types 8/9) reference the prior, now-absent GOP;
+      // stripping them keeps the run's first decodable picture the CRA
+      // itself. Never applies to a fresh (non-seek) run, which starts at
+      // the file's true IDR.
+      if (video.openGop && withSeek && (container === "fmp4-hls" || container === "ts-hls")) {
+        args.push("-bsf:v", "filter_units=remove_types=8-9");
+      }
     }
   }
 

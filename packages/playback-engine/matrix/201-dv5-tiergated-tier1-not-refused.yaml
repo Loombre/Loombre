@@ -21,6 +21,7 @@ input:
         dvProfile: 5
         dvBlCompatId: null
         interlaced: false
+        openGop: false
     audio:
       - index: 1
         codec: aac

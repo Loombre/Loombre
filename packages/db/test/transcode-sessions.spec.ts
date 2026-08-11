@@ -161,6 +161,36 @@ describe('getMediaInfoForFile (guard-free, internal)', () => {
     expect(media?.audio).toHaveLength(1);
     expect(media?.audio[0]?.codec).toBe('aac');
     expect(media?.durationMs).toBe(90000);
+    // migrations/0038_media_streams_open_gop.sql: this fixture's video row
+    // (seeded above) never set open_gop — NULL maps to false (toOpenGop's
+    // conservative "not yet probed for this fact" default).
+    expect(media?.video[0]?.openGop).toBe(false);
+  });
+
+  // migrations/0038_media_streams_open_gop.sql: a positively-detected
+  // open_gop = true row maps straight through (toOpenGop's real-verdict
+  // passthrough, mirrored identically by src/query/media-info.ts's guarded
+  // getMediaInfoAssembly — this module's own header notes the two are
+  // intentionally field-for-field identical mappings).
+  it('maps a real open_gop = true column value straight through', async () => {
+    const hevcFileId = (
+      await rawClient.query<{ id: string }>(
+        `INSERT INTO media_files (item_id, path, container, duration_ms, size_bytes, probed_at_ms)
+         VALUES ($1, '/media/test/opengop-check.mkv', 'mkv', 90000, 45000000, $2)
+         RETURNING id`,
+        [itemId, Date.now()],
+      )
+    ).rows[0]!.id;
+    await rawClient.query(
+      `INSERT INTO media_streams (file_id, stream_index, stream_type, codec, width, height, bit_depth, frame_rate, is_default, is_forced, open_gop)
+       VALUES ($1, 0, 'video', 'hevc', 320, 240, 8, 25, true, false, true)`,
+      [hevcFileId],
+    );
+
+    const media = await getMediaInfoForFile(db, hevcFileId);
+    expect(media?.video).toHaveLength(1);
+    expect(media?.video[0]?.codec).toBe('hevc');
+    expect(media?.video[0]?.openGop).toBe(true);
   });
 
   it('returns undefined for a nonexistent file id', async () => {

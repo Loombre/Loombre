@@ -6256,6 +6256,7 @@ components:
         - dvProfile
         - dvBlCompatId
         - interlaced
+        - openGop
       properties:
         index: { type: integer, minimum: 0 }
         codec: { $ref: '#/components/schemas/VideoCodec' }
@@ -6270,6 +6271,12 @@ components:
         dvProfile: { type: [integer, 'null'], enum: [5, 7, 8, null] }
         dvBlCompatId: { type: [integer, 'null'] }
         interlaced: { type: boolean }
+        openGop:
+          type: boolean
+          description: >-
+            docs/PLAYBACK.md §2.1 (added 2026-08-10). REQUIRED, never
+            optional — a DB NULL collapses to false at extraction
+            boundaries (the conservative default).
 
     AudioStream:
       type: object
@@ -6403,6 +6410,7 @@ components:
             - subtitle-styling-lost
             - audio-atmos-lost
             - gapless-degraded
+            - open-gop-leading-pictures-stripped
         - type: string
           description: 'hw-encoder-selected:<backend> informational reason.'
           pattern: '^hw-encoder-selected:(videotoolbox|qsv|vaapi|nvenc|amf|d3d11va|software)$'
@@ -6443,6 +6451,13 @@ components:
           type: string
           description: Selected hardware backend or 'software' (docs/PLAYBACK.md §8.3).
         toneMap: { $ref: '#/components/schemas/ToneMapMethod' }
+        openGop:
+          type: boolean
+          description: >-
+            Set (true) only when a video COPY into a repackaged HLS
+            container strips open-GOP HEVC leading pictures on a
+            seek-restart (docs/PLAYBACK.md §5/§6); omitted when not
+            applicable. Never emitted false.
 
     AudioAction:
       type: object

@@ -65,6 +65,7 @@ function makeMedia(overrides: Partial<MediaInfo> = {}): MediaInfo {
         dvProfile: null,
         dvBlCompatId: null,
         interlaced: false,
+        openGop: false,
       },
     ],
     audio: [
@@ -228,6 +229,104 @@ describe("plan(): video/audio action assembly (§5 architecture requirement 3)",
   });
 });
 
+describe("plan(): video.openGop assembly (§5, 2026-08-10)", () => {
+  const hevcOpenGopStream = {
+    index: 0,
+    codec: "hevc" as const,
+    profile: "main10",
+    level: 153,
+    width: 1920,
+    height: 1080,
+    bitDepth: 10,
+    frameRate: 23.976,
+    bitrateBps: 5_000_000,
+    hdr: "none" as const,
+    dvProfile: null,
+    dvBlCompatId: null,
+    interlaced: false,
+    openGop: true,
+  };
+  const hevcDeviceEntry = {
+    codec: "hevc" as const,
+    maxProfile: "main10",
+    maxLevel: 153,
+    maxBitDepth: 10,
+    maxWidth: 3840,
+    maxHeight: 2160,
+    maxFrameRate: 60,
+    maxBitrateBps: null,
+  };
+
+  it("action 'copy' + repackaged container (direct-stream) + hevc openGop:true -> video.openGop true, open-gop-leading-pictures-stripped fires", () => {
+    const input = makeInput({
+      media: makeMedia({ container: "mkv", video: [hevcOpenGopStream] }),
+      device: makeDevice({ video: [hevcDeviceEntry] }),
+    });
+    const result = plan(input);
+    expect(result.decision).toBe("direct-stream");
+    expect(result.video.action).toBe("copy");
+    expect(result.video.openGop).toBe(true);
+    expect(result.reasons).toEqual([
+      { code: "container-not-direct-playable", detail: "container=mkv" },
+      { code: "open-gop-leading-pictures-stripped", streamIndex: 0 },
+    ]);
+  });
+
+  it("action 'copy' + direct-play (container 'source') + hevc openGop:true -> video.openGop unset, no reason (nothing was repackaged)", () => {
+    const input = makeInput({
+      media: makeMedia({ container: "mp4", video: [hevcOpenGopStream] }),
+      device: makeDevice({ video: [hevcDeviceEntry], directPlayContainers: ["mp4", "webm"] }),
+    });
+    const result = plan(input);
+    expect(result.decision).toBe("direct-play");
+    expect(result.video.action).toBe("copy");
+    expect(result.video.openGop).toBeUndefined();
+    expect(result.reasons).toEqual([]);
+  });
+
+  it("action 'transcode' (interlaced) + hevc openGop:true -> video.openGop unset, no strip reason (action isn't 'copy')", () => {
+    const stream = { ...hevcOpenGopStream, interlaced: true };
+    const input = makeInput({
+      media: makeMedia({ container: "mkv", video: [stream] }),
+      device: makeDevice({ video: [hevcDeviceEntry] }),
+    });
+    const result = plan(input);
+    expect(result.video.action).toBe("transcode");
+    expect(result.video.openGop).toBeUndefined();
+    expect(result.reasons.some((r) => r.code === "open-gop-leading-pictures-stripped")).toBe(false);
+  });
+
+  it("action 'copy' + repackaged container + openGop:false -> video.openGop unset, no reason (the conservative default)", () => {
+    const stream = { ...hevcOpenGopStream, openGop: false };
+    const input = makeInput({
+      media: makeMedia({ container: "mkv", video: [stream] }),
+      device: makeDevice({ video: [hevcDeviceEntry] }),
+    });
+    const result = plan(input);
+    expect(result.video.action).toBe("copy");
+    expect(result.video.openGop).toBeUndefined();
+    expect(result.reasons.some((r) => r.code === "open-gop-leading-pictures-stripped")).toBe(false);
+  });
+
+  // Opus-review Finding C (2026-08-10): the assembly's hevc codec gate. A
+  // non-hevc stream with a stray `openGop:true` fact (defensive-only per
+  // types.ts's VideoStream.openGop doc — DB NULL collapses to false, so a
+  // real h264 row would never actually reach this) must never get the flag
+  // or the reason: the bsf this flag drives strips HEVC NAL types 8/9,
+  // which mean something else entirely on h264 (NAL 8 is PPS).
+  it("h264 stream + openGop:true + repackaged container -> video.openGop unset, no reason, no bsf in ffmpegArgs", () => {
+    const input = makeInput({
+      media: makeMedia({ container: "mkv", video: [{ ...makeMedia().video[0]!, openGop: true }] }),
+    });
+    const result = plan(input);
+    expect(result.decision).toBe("direct-stream");
+    expect(result.video.action).toBe("copy");
+    expect(result.video.openGop).toBeUndefined();
+    expect(result.reasons).toEqual([{ code: "container-not-direct-playable", detail: "container=mkv" }]);
+    expect(result.ffmpegArgs).not.toContain("filter_units=remove_types=8-9");
+  });
+});
+
 describe("plan(): Stage E subtitle assembly (§5 architecture requirement 3/9, Phase 3 Step 2e)", () => {
   it("no subtitle selected -> strategy 'none', no streamIndex", () => {
     const result = plan(makeInput());
@@ -358,7 +457,7 @@ describe("plan(): Stage F / ladder assembly (docs/PLAYBACK.md §3/§7, Phase 3 S
     });
 
     it("video-transcode decision driven by Stage B (codec unsupported) -> ladder still built, Stage F contributes no reason", () => {
-      const media = makeMedia({ video: [{ index: 0, codec: "hevc", profile: "main10", level: 153, width: 1920, height: 1080, bitDepth: 8, frameRate: 23.976, bitrateBps: 5_000_000, hdr: "none", dvProfile: null, dvBlCompatId: null, interlaced: false }] });
+      const media = makeMedia({ video: [{ index: 0, codec: "hevc", profile: "main10", level: 153, width: 1920, height: 1080, bitDepth: 8, frameRate: 23.976, bitrateBps: 5_000_000, hdr: "none", dvProfile: null, dvBlCompatId: null, interlaced: false, openGop: false }] });
       const input = makeInput({
         media,
         network: { maxBitrateBps: 3_000_000, isLocal: false },

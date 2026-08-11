@@ -21,6 +21,7 @@ input:
         dvProfile: null
         dvBlCompatId: null
         interlaced: false
+        openGop: false
     audio:
       - index: 5
         codec: truehd

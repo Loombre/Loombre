@@ -141,6 +141,11 @@ const FIXED_REASONS: Record<string, ReasonCopy> = {
     detail: "This audio isn't served in a way that supports seamless gapless playback.",
     severity: "informational",
   },
+  "open-gop-leading-pictures-stripped": {
+    title: "A few lead-in frames were dropped after seeking",
+    detail: "Seeking in this video required dropping a handful of leading frames right at the seek point to keep the picture clean; playback is otherwise untouched.",
+    severity: "informational",
+  },
 };
 
 /** Phase 2 direct-play never emits these (they belong to Stage G hardware

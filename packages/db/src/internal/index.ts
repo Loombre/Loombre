@@ -42,6 +42,7 @@ export type {
   ReplaceStreamInput,
   CreateMediaFileInput,
   SetProbeResultInput,
+  HevcStreamNeedingOpenGopProbeRow,
 } from './files.js';
 export {
   findFileByContentHash,
@@ -59,6 +60,10 @@ export {
   listMediaFilesForLibrary,
   listStaleMissingFiles,
   insertMediaFilePlaceholderForImport,
+  hasVideoStreamsNeedingOpenGopBackfill,
+  listHevcStreamsNeedingOpenGopProbe,
+  setStreamOpenGop,
+  bulkSetNonHevcVideoOpenGopFalse,
 } from './files.js';
 export type { InsertMediaFilePlaceholderInput } from './files.js';
 
