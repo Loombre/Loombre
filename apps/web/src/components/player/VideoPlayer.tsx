@@ -954,15 +954,15 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
           togglePlay();
           break;
         case "ArrowRight":
-          // Wave 2 L7 (U7): matches PlayerControls' forward-30 button
-          // exactly — see that file's header for why the amount changed
-          // from a symmetric ±10s to the prototype's back-15/forward-30
-          // (the seek buttons' numerals are baked into the glyph now, so
-          // keyboard and click must agree on the actual amount).
-          seekRelative(30_000);
+          // Wave 2 L7 (U7) / LD-12(b): matches PlayerControls' skip-forward
+          // button exactly — see that file's header for why the amount
+          // moved (a symmetric ±10s -> back-15/forward-30 -> back to a
+          // symmetric ±10s, now with the baked-in-numeral glyphs) —
+          // keyboard and click must always agree on the actual amount.
+          seekRelative(10_000);
           break;
         case "ArrowLeft":
-          seekRelative(-15_000);
+          seekRelative(-10_000);
           break;
         case "ArrowUp":
           e.preventDefault();

@@ -20,6 +20,22 @@
 // same amounts so keyboard and click never disagree (both were ±10s
 // before this lane, in lockstep — this preserves that 1:1 parity rather
 // than only changing the buttons).
+//
+// LD-12 owner fix (annotated screenshot, 2026-08-10):
+//   (a) the transport cluster (skip-back/play/skip-forward/volume) is now
+//       CENTERED in the bottom control bar via a three-zone layout (an
+//       empty flex:1 left spacer, the cluster at its natural width, a
+//       flex:1 right zone holding chapters/tracks/fullscreen) — the
+//       settings/fullscreen controls stay right-aligned, unchanged.
+//   (b) the seek amount moved AGAIN, back-15/forward-30 -> 10s BOTH
+//       directions — restoring the symmetric ±10s this lane's own header
+//       above says predated the 15/30 split, just with the new baked-in-
+//       numeral glyphs instead of the old RotateCcw/RotateCw. Keyboard
+//       ArrowLeft/ArrowRight (VideoPlayer.tsx) moved with it, same
+//       lockstep reasoning as above.
+//   (c) seekBack10/seekForward10 (components/icon/phosphor-paths.ts)
+//       replace seekBack15/seekForward30 — same arc+arrowhead construction,
+//       numeral swapped to "10".
 import { useState } from "react";
 import { ArrowLeft, ListVideo, Maximize, Minimize, SlidersHorizontal, Volume2, VolumeX } from "lucide-react";
 import type { components } from "@loombre/sdk";
@@ -156,94 +172,100 @@ export function PlayerControls(props: PlayerControlsProps): React.JSX.Element {
           <span className={styles.time}>{props.durationMs !== null ? defaultFormatTime(props.durationMs) : "–:–"}</span>
         </div>
         <div className={styles.controlsRow}>
-          <button type="button" className={styles.iconButton} aria-label="Back 15 seconds" onClick={() => props.onSeekRelative(-15_000)}>
-            <Icon icon="seekBack15" />
-          </button>
-          <button type="button" className={styles.playPauseButton} aria-label={props.isPlaying ? "Pause" : "Play"} onClick={props.onTogglePlay}>
-            <Icon icon={props.isPlaying ? "pause" : "play"} />
-          </button>
-          <button type="button" className={styles.iconButton} aria-label="Forward 30 seconds" onClick={() => props.onSeekRelative(30_000)}>
-            <Icon icon="seekForward30" />
-          </button>
+          {/* LD-12(a): three-zone bar — this empty flex:1 spacer balances
+              .controlsSideRight below so .transportCluster lands centered. */}
+          <span className={styles.controlsSideLeft} aria-hidden="true" />
 
-          <button type="button" className={styles.iconButton} aria-label={props.muted ? "Unmute" : "Mute"} onClick={props.onToggleMute}>
-            <Icon icon={props.muted || props.volume === 0 ? VolumeX : Volume2} />
-          </button>
-          <input
-            className={styles.volumeSlider}
-            type="range"
-            min={0}
-            max={1}
-            step={0.01}
-            value={props.muted ? 0 : props.volume}
-            aria-label="Volume"
-            onChange={(e) => props.onVolumeChange(Number(e.target.value))}
-          />
+          <div className={styles.transportCluster}>
+            <button type="button" className={styles.iconButton} aria-label="Back 10 seconds" onClick={() => props.onSeekRelative(-10_000)}>
+              <Icon icon="seekBack10" />
+            </button>
+            <button type="button" className={styles.playPauseButton} aria-label={props.isPlaying ? "Pause" : "Play"} onClick={props.onTogglePlay}>
+              <Icon icon={props.isPlaying ? "pause" : "play"} />
+            </button>
+            <button type="button" className={styles.iconButton} aria-label="Forward 10 seconds" onClick={() => props.onSeekRelative(10_000)}>
+              <Icon icon="seekForward10" />
+            </button>
 
-          <span className={styles.spacer} />
+            <button type="button" className={styles.iconButton} aria-label={props.muted ? "Unmute" : "Mute"} onClick={props.onToggleMute}>
+              <Icon icon={props.muted || props.volume === 0 ? VolumeX : Volume2} />
+            </button>
+            <input
+              className={styles.volumeSlider}
+              type="range"
+              min={0}
+              max={1}
+              step={0.01}
+              value={props.muted ? 0 : props.volume}
+              aria-label="Volume"
+              onChange={(e) => props.onVolumeChange(Number(e.target.value))}
+            />
+          </div>
 
-          {hasChapters && (
-            <div className={styles.pickerAnchor}>
-              <button
-                type="button"
-                className={styles.iconButton}
-                aria-label="Chapters"
-                aria-pressed={chaptersOpen}
-                onClick={() => setChaptersOpen((v) => !v)}
-              >
-                <Icon icon={ListVideo} />
-              </button>
-              {/* Desktop: an anchored popover from this button, same shape
-                  as the track picker above. Mobile (<=767.98px): a
-                  BottomSheet — the design's phone-only sheet convention
-                  (README "Phone-only additions"), not the SAME popover
-                  shrunk down, since an anchored popover has no sensible
-                  position against a full-width bottom control bar on a
-                  narrow viewport. */}
-              {chaptersOpen && !isPhone && (
-                <div className={styles.pickerPopover}>
-                  <ChapterList chapters={props.chapters} positionMs={props.positionMs} onSelect={handleSelectChapter} />
-                </div>
-              )}
-              {isPhone && (
-                <BottomSheet open={chaptersOpen} onClose={() => setChaptersOpen(false)} title="Chapters">
-                  <ChapterList chapters={props.chapters} positionMs={props.positionMs} onSelect={handleSelectChapter} />
-                </BottomSheet>
-              )}
-            </div>
-          )}
+          <div className={styles.controlsSideRight}>
+            {hasChapters && (
+              <div className={styles.pickerAnchor}>
+                <button
+                  type="button"
+                  className={styles.iconButton}
+                  aria-label="Chapters"
+                  aria-pressed={chaptersOpen}
+                  onClick={() => setChaptersOpen((v) => !v)}
+                >
+                  <Icon icon={ListVideo} />
+                </button>
+                {/* Desktop: an anchored popover from this button, same shape
+                    as the track picker above. Mobile (<=767.98px): a
+                    BottomSheet — the design's phone-only sheet convention
+                    (README "Phone-only additions"), not the SAME popover
+                    shrunk down, since an anchored popover has no sensible
+                    position against a full-width bottom control bar on a
+                    narrow viewport. */}
+                {chaptersOpen && !isPhone && (
+                  <div className={styles.pickerPopover}>
+                    <ChapterList chapters={props.chapters} positionMs={props.positionMs} onSelect={handleSelectChapter} />
+                  </div>
+                )}
+                {isPhone && (
+                  <BottomSheet open={chaptersOpen} onClose={() => setChaptersOpen(false)} title="Chapters">
+                    <ChapterList chapters={props.chapters} positionMs={props.positionMs} onSelect={handleSelectChapter} />
+                  </BottomSheet>
+                )}
+              </div>
+            )}
 
-          {hasTracks && (
-            <div className={styles.pickerAnchor}>
-              <button
-                type="button"
-                className={styles.iconButton}
-                aria-label="Audio and subtitle tracks"
-                aria-pressed={pickerOpen}
-                onClick={() => setPickerOpen((v) => !v)}
-              >
-                <Icon icon={SlidersHorizontal} />
-              </button>
-              {pickerOpen && (
-                <div className={styles.pickerPopover}>
-                  <TrackPickers
-                    audioStreams={props.audioStreams}
-                    subtitleStreams={props.subtitleStreams}
-                    selectedAudioIndex={props.selectedAudioIndex}
-                    selectedSubtitleIndex={props.selectedSubtitleIndex}
-                    videoElement={props.videoElement}
-                    directPlay={props.directPlay}
-                    onSelectAudio={props.onSelectAudio}
-                    onSelectSubtitle={props.onSelectSubtitle}
-                  />
-                </div>
-              )}
-            </div>
-          )}
+            {hasTracks && (
+              <div className={styles.pickerAnchor}>
+                <button
+                  type="button"
+                  className={styles.iconButton}
+                  aria-label="Audio and subtitle tracks"
+                  aria-pressed={pickerOpen}
+                  onClick={() => setPickerOpen((v) => !v)}
+                >
+                  <Icon icon={SlidersHorizontal} />
+                </button>
+                {pickerOpen && (
+                  <div className={styles.pickerPopover}>
+                    <TrackPickers
+                      audioStreams={props.audioStreams}
+                      subtitleStreams={props.subtitleStreams}
+                      selectedAudioIndex={props.selectedAudioIndex}
+                      selectedSubtitleIndex={props.selectedSubtitleIndex}
+                      videoElement={props.videoElement}
+                      directPlay={props.directPlay}
+                      onSelectAudio={props.onSelectAudio}
+                      onSelectSubtitle={props.onSelectSubtitle}
+                    />
+                  </div>
+                )}
+              </div>
+            )}
 
-          <button type="button" className={styles.iconButton} aria-label={props.isFullscreen ? "Exit fullscreen" : "Fullscreen"} onClick={props.onToggleFullscreen}>
-            <Icon icon={props.isFullscreen ? Minimize : Maximize} />
-          </button>
+            <button type="button" className={styles.iconButton} aria-label={props.isFullscreen ? "Exit fullscreen" : "Fullscreen"} onClick={props.onToggleFullscreen}>
+              <Icon icon={props.isFullscreen ? Minimize : Maximize} />
+            </button>
+          </div>
         </div>
 
         {hasCapabilityChips && (

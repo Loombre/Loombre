@@ -30,6 +30,19 @@
   gap: var(--space-md);
 }
 
+/* LD-1 fix (owner-reported, 2026-08-10): desktop-only top row — the Back
+   button (moved here from the old bottom `.footer`) sits far-left, with
+   `.statusRow` (the badge row) shifted right of it. Not part of the
+   shared `content`/`statusRow` trees the phone BottomSheet also renders —
+   phone already has its own top-of-sheet Back/Done button, so this stays
+   desktop-only to avoid a duplicate. */
+.header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  flex-wrap: wrap;
+}
+
 /* H12 fix (Wave-3 fidelity audit): the danger "session refused" pill +
    its muted "planner reasons, verbatim" note (design/phosphor's
    #isUnavailable panel header row). `statusCode` is honestly optional —
@@ -158,17 +171,10 @@
   gap: var(--space-md);
 }
 
-.footer {
-  display: flex;
-  justify-content: flex-end;
-  gap: var(--space-sm);
-}
-
 /* Mobile hard line: touch targets never below 44px (see e.g.
    shell/MobileTabBar.module.css for the same per-component pattern). */
 @media (width <= 767.98px) {
-  .fallbackBlock button,
-  .footer button {
+  .fallbackBlock button {
     min-height: 44px;
     width: 100%;
   }
