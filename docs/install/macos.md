@@ -280,7 +280,61 @@ running; it is a quick, reversible pause rather than a full shutdown.)
 ## Uninstalling
 
 macOS has no built-in `.pkg` uninstaller (Apple's own long-standing
-limitation, not a Loombre omission). Remove by hand:
+limitation, not a Loombre omission). The installer ships its own uninstall
+script for exactly this reason — use it:
+
+```sh
+sudo /opt/loombre/current/bin/uninstall.sh
+```
+
+It stops all four launchd jobs the installer created (the three
+LaunchDaemons — server, worker, web — plus the `com.loombre.menubar`
+LaunchAgent), removes the plists, removes `/Applications/Loombre.app` (and,
+per the pkgutil receipt, any copy relocated by an rc.6-and-earlier install —
+see the manual fallback below for how to check for one by hand) and
+`/Library/Logs/Loombre`, deletes the `_loombre` service
+account, removes `/opt/loombre`, and — deliberately last, so an interrupted
+run still has it available — forgets the package receipt (`pkgutil
+--forget com.loombre.pkg`). It's **idempotent** — safe to re-run, and
+tolerant of a machine already in a partially-uninstalled state (daemons
+already stopped, some files already removed by hand) — it works through
+whatever subset of the above actually exists instead of dying partway
+through on the first already-absent item.
+
+A few things worth knowing before running it:
+
+- **Your data is kept by default.** `/Library/Application Support/Loombre`
+  (database, config, secrets) is left alone unless you pass `--purge`:
+  ```sh
+  sudo /opt/loombre/current/bin/uninstall.sh --purge
+  ```
+- **Deleting the `_loombre` account opens a GUI authorization prompt.**
+  On macOS 26, the older `dscl . -delete` command — and even
+  `sysadminctl -deleteUser` run as plain root — fails outright with a
+  permission error; the only path that actually works is
+  `sysadminctl -deleteUser _loombre interactive`, which the script runs
+  for you and which asks you to authorize with an administrator account
+  (password or Touch ID) when it runs. For unattended/scripted removal,
+  pass admin credentials directly instead of hitting that prompt:
+  ```sh
+  sudo /opt/loombre/current/bin/uninstall.sh --adminUser <admin-username> --adminPassword <admin-password>
+  ```
+  **Caution:** passing `--adminPassword` puts it in argv, which is visible
+  to other users on the machine via `ps`/the process table and lands in
+  shell history — prefer the interactive prompt (omit both flags) on any
+  multi-user machine.
+- **Preview first, if you like.** `--dry-run` prints every action the
+  script would take without changing anything, and needs no `sudo`:
+  ```sh
+  /opt/loombre/current/bin/uninstall.sh --dry-run
+  ```
+
+Run `/opt/loombre/current/bin/uninstall.sh --help` for the full flag list.
+
+### Manual fallback
+
+If `/opt/loombre` is already gone (so the script above isn't reachable) or
+you'd simply rather do it by hand, here is the complete equivalent:
 
 ```sh
 sudo launchctl bootout system/com.loombre.server
@@ -291,20 +345,36 @@ sudo rm /Library/LaunchDaemons/com.loombre.server.plist
 sudo rm /Library/LaunchDaemons/com.loombre.worker.plist
 sudo rm /Library/LaunchDaemons/com.loombre.web.plist
 sudo rm /Library/LaunchAgents/com.loombre.menubar.plist
-sudo rm -rf /opt/loombre
 sudo rm -rf /Applications/Loombre.app
 sudo rm -rf "/Library/Logs/Loombre"
 # Your data (DB config, secrets) lives here — remove only if you want it gone:
 sudo rm -rf "/Library/Application Support/Loombre"
-# Remove the service account:
-sudo dscl . -delete /Users/_loombre
-sudo dscl . -delete /Groups/_loombre
+# Remove the service account — NOT `dscl . -delete`: on macOS 26 that (and
+# even a plain root `sysadminctl -deleteUser`, without `interactive`) fails
+# with a permission error (eDSPermissionError, -14120). This is the command
+# that actually works — it opens a GUI prompt asking you to authorize with
+# an administrator account:
+sudo sysadminctl -deleteUser _loombre interactive
+sudo rm -rf /opt/loombre
+# Before forgetting the receipt, check it for a STRAY copy of the app: an
+# rc.6-and-earlier install (see commit 3ce5edca) could have relocated
+# Applications/Loombre.app elsewhere on the volume instead of installing it
+# at the standard path — this lists every file the receipt actually tracks
+# so you can spot (and remove) a relocated bundle before the receipt that
+# would otherwise help you find it is gone:
+pkgutil --files com.loombre.pkg | grep Loombre.app
+sudo pkgutil --forget com.loombre.pkg
 ```
+
+`sysadminctl` will report that `_loombre`'s home (`/var/empty`) "WILL NOT BE
+DELETED" — that's expected and harmless: `/var/empty` is a shared, empty
+system path, not anywhere Loombre ever wrote real data. (`-keepHome` is not
+a valid `sysadminctl` flag on macOS 26, hence not used above.)
 
 (`brew uninstall --cask loombre` runs the same `.pkg`-uninstall gap Homebrew
 itself can't fully close for any `pkg`-based cask — it removes what it
-tracked installing, which for a `.pkg` payload is limited; the manual steps
-above are the complete removal either way.)
+tracked installing, which for a `.pkg` payload is limited; the steps above
+(script or manual) are the complete removal either way.)
 
 ## Why unsigned?
 

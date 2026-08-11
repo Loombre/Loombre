@@ -26,7 +26,7 @@
 // the Gatekeeper unsigned-open flow, a live LaunchDaemon actually staying
 // up across a real boot.
 
-import { existsSync, readFileSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, readFileSync, mkdtempSync, rmSync, statSync } from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -102,6 +102,11 @@ async function main() {
     // post-rc.1 install-visibility fix, which is how "the web daemon is
     // in the payload" stayed an owner-review item instead of a check.
     `opt/loombre/${report.version}/bin/loombre-web`,
+    // Ship-side uninstall (rc.6 uninstall audit, task 4): stable path via
+    // /opt/loombre/current/bin/uninstall.sh across upgrades. Exec bit
+    // asserted separately below (payload chmod, not the tracked git mode
+    // — see build-pkg.mjs's bin/ staging loop).
+    `opt/loombre/${report.version}/bin/uninstall.sh`,
     `opt/loombre/${report.version}/web/apps/web/server.js`,
     `opt/loombre/${report.version}/server/dist/main.js`,
     `opt/loombre/${report.version}/worker/dist/index.js`,
@@ -135,6 +140,13 @@ async function main() {
       if (!existsSync(path.join(payloadDir, rel))) throw new Error("missing from expanded payload");
     });
   }
+
+  check("bin/uninstall.sh ships with exec bits set in the actual payload (not just the source file)", () => {
+    const uninstallPath = path.join(payloadDir, "opt", "loombre", report.version, "bin", "uninstall.sh");
+    if (!existsSync(uninstallPath)) throw new Error("missing from expanded payload");
+    const mode = statSync(uninstallPath).mode;
+    if (!(mode & 0o111)) throw new Error(`not executable in the built payload (mode ${mode.toString(8)})`);
+  });
 
   check("opt/loombre/current is a symlink to the version dir", () => {
     const res = run("readlink", [path.join(payloadDir, "opt", "loombre", "current")]);
