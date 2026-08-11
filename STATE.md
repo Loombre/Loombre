@@ -1052,7 +1052,14 @@ non-vacuity measured real (364/1000 actual demotions). Contract clean
 D2 narrowing REMOVES the old-client hazard). Tier-0: zero workload increase
 (N100 ladder byte-identical, pinned). Honesty table verified genuine (T0
 refusal runs the REAL probe battery with loud-fail-on-capable-hardware).
-THREE NON-BLOCKING FINDINGS → owner decision pending: (1) MODERATE
+**OWNER DECISION (2026-08-11): "Adopt all 3 recommendations."** Follow-up
+lane dispatched (opus): finding-1 spec clause + engine demotion via the
+shared primitive + the reviewer's exact repro as red-first matrix case
+(ENGINE_VERSION 0.10.0→0.10.1); finding-2 companion randomized property
+added to the §10 list; finding-3 VIDEO_ENCODER_NAMES exported + worker
+equality spec. C2 SPEC lane (fable) spawned in parallel — §7.2 rule-(iii)
+reserved to the follow-up lane; C2 spec told the clause is incoming.
+THREE NON-BLOCKING FINDINGS (record) → owner decision pending: (1) MODERATE
 spec-gap-with-repro: Tier-1+ rule-(iii) route-collapse can keep av1 rungs
 whose SOFTWARE encode was never probe-verified (impl faithfully matches
 §7.2; violates design law 4 verified-capabilities-only; low likelihood —
