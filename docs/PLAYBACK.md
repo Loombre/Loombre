@@ -642,7 +642,26 @@ av1-capable hw backend fails encode coverage for a mixed
 `cause=tier0-software-route`) BEFORE the existing ≥1080p height cap runs.
 Tier 1+ rule-(iii) routes keep their av1 rungs (that IS the permitted
 software fallback) — the builder then encodes them with `libsvtav1`
-(§6 interp. M). Known conservatism, stated not hidden: a T0 box whose hw
+(§6 interp. M) — **but only when the SOFTWARE row's own probe-verified
+`encode` list includes av1. On any rule-(iii) route whose software row
+lacks that verified av1 encode, at ANY tier, every av1 rung is demoted by
+the same §7.1(g) shared primitive, `cause=software-route-no-av1`.** That
+clause is design law 4 ("verified capabilities only") applied to the
+route-collapse corner, not a new law: `'hw'` eligibility is a fact about a
+HARDWARE backend, and rule (iii) does not use that backend — the encoder
+that actually runs is the software one, which §7.3's D4 narrowing reports
+av1-capable only when `libsvtav1` really encoded a bitstream on this box.
+Keeping the rungs there would hand the builder an encoder name nothing on
+the machine has. The tier test is evaluated FIRST, so the tier-0 arm above
+is untouched in behaviour AND in reason wording: a T0 route demotes with
+`cause=tier0-software-route` even where the software row does verify av1
+(there the LAW, not a missing encoder, is the reason). Likelihood is low —
+it takes an ffmpeg carrying hardware AV1 but no `libsvtav1`, which every
+vendored build excludes — but "unlikely" is not "impossible", and an
+unverified encoder is precisely what design law 4 exists to refuse
+(C1 fable-review finding 1, owner-adopted 2026-08-11; lands as
+ENGINE_VERSION 0.10.1, matrix case 530).
+Known conservatism, stated not hidden: a T0 box whose hw
 backend covers av1 but not hevc lands on software h264/hevc rather than
 splitting encode across two backends — §8.3's one-route model is not
 renegotiated by this feature.

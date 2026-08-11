@@ -68,24 +68,48 @@ export function av1EncodeEligibility(caps: VerifiedCapabilities, tier: ServerPol
   for (const backend of caps.backends) {
     if (backend.backend !== "software" && backend.encode.includes("av1")) return "hw";
   }
-  if (tier >= 1) {
-    for (const backend of caps.backends) {
-      if (backend.backend === "software" && backend.encode.includes("av1")) return "software";
-    }
-  }
+  // The software arm reads the SAME predicate §7.2's residual guard reads
+  // (`softwareAv1EncodeVerified`, defined below) — one definition of
+  // "this box's software encoder really passed the av1 encode self-test",
+  // so the gate and the guard cannot disagree about it.
+  if (tier >= 1 && softwareAv1EncodeVerified(caps)) return "software";
   return "none";
 }
 
 /**
  * The `cause` half of §4's `av1-rung-demoted` detail. Three causes come
- * from the ladder's own normalization step (§7.1(g)); the fourth comes from
- * §7.2's Stage-G residual guard.
+ * from the ladder's own normalization step (§7.1(g)); the last two come
+ * from §7.2's Stage-G residual guard — its tier-0 arm
+ * (`tier0-software-route`, unreachability leg 4) and its
+ * verified-capabilities arm (`software-route-no-av1`, C1 review finding 1:
+ * a rule-(iii) route whose SOFTWARE row never probe-verified av1 encode,
+ * at any tier).
  */
 export type Av1DemotionCause =
   | "tier0-no-hw-av1"
   | "device-no-av1"
   | "no-av1-encoder"
-  | "tier0-software-route";
+  | "tier0-software-route"
+  | "software-route-no-av1";
+
+/**
+ * §7.2's verified-capabilities arm of the Stage-G residual guard (C1
+ * review finding 1). TRUE iff `caps` carries a software row whose OWN
+ * probe-verified `encode` list includes av1 — the same fact
+ * `av1EncodeEligibility`'s `'software'` arm reads, asked WITHOUT the tier
+ * question because the route, not the tier, is what makes it decisive
+ * here. Kept in this module (rather than inline in `stages/hardware.ts`)
+ * so "software can really encode av1 on this box" has exactly ONE
+ * definition, for the same LD-3 reason everything else here is shared.
+ *
+ * A caps set with no software row at all is `false`: rule (iii) sets
+ * `encoder: 'software'` as DOCTRINE, not as a caps lookup
+ * (`stages/hardware.ts` rule iii), so "no row" is an unverified encoder,
+ * never an assumed-capable one.
+ */
+export function softwareAv1EncodeVerified(caps: VerifiedCapabilities): boolean {
+  return caps.backends.some((backend) => backend.backend === "software" && backend.encode.includes("av1"));
+}
 
 /** §7.1's condition 2, both halves. AV1 cannot ride `ts-hls` — it has no
  *  assigned MPEG-TS stream_type, so muxing it there produces a stream
