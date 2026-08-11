@@ -2,10 +2,14 @@
 // Loombre :: apps/server/src/catalog/admin-logs-tail.ts
 //
 // GET /admin/logs/tail backing implementation (Phase 4 deliverable D).
-// Reads LOOMBRE_LOG_FILE (W3-R: NO shipped installer sets it — they
-// capture console output at the service-manager level instead; this var
-// is an operator opt-in for tailing a file through the Dashboard) and
-// returns its last N lines — WITHOUT reading the whole file into memory
+// Reads LOOMBRE_LOG_FILE — LD-11 (this implementation run's lane
+// B3): every shipped install shape (macOS pkg, Windows MSI, Docker, Linux
+// tarball) now sets this automatically to a real, already-populated log
+// path (installers/**, docker-compose.prod.yml — see each shape's own
+// wiring for how); an unset value now mainly signals a from-source/dev
+// run, which stays a supported, gracefully-handled state (an operator can
+// still opt in locally by setting the var and restarting) — and returns
+// its last N lines — WITHOUT reading the whole file into memory
 // first (the task brief's explicit requirement: "do NOT read whole
 // multi-GB files"). Algorithm: open the file, seek backward from the end
 // in fixed-size chunks, counting newlines as they're read, stopping as
