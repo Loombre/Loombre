@@ -539,9 +539,9 @@ Secure, CORS deliberately credentials:false, hls.js credentialed-XHR reversal,
 native clients have no cookie jar; recorded reopen conditions: web app becomes a
 streaming proxy OR HTTPS mandated). The #10→Wave B direction was given against
 the orchestrator's stale "unassigned" flag — discrepancy surfaced to owner;
-recommendation: honor the recorded closure. Wave B holds a conditional slot
-pending the owner's word; nothing is built for #10 unless the owner genuinely
-reopens it against the recorded reasons.
+recommendation: honor the recorded closure. RESOLVED 2026-08-11: owner directed
+"honor the recorded closure" — task #10 stays CLOSED considered-and-rejected;
+the conditional Wave B slot is withdrawn; Wave B remains B1/B2/B3 as chartered.
 
 ### Wave A — SPAWNED 2026-08-11 (5 parallel worktree lanes; A1/A2 opus, A3/A4/A5 sonnet)
 
@@ -644,6 +644,42 @@ sourceOriginMs), migration 0043 reserved, real columns per invariant #3, plus
 the packages/db read query; controller-side consumption (derivation upgrade +
 progress reporting) sequenced to A2 AFTER A1 lands; -copyts/arg-builder
 timestamp semantics explicitly deferred to the ABR (C2) spec.
+
+**A2 LD-3 checkpoint (2026-08-11): the DV strip is REAL — done and orchestrator-
+verified** (76/76 on re-run: dv-strip real-ffmpeg fence + goldens + contract-
+reason-codes + playback-hls; contract diff empty; ENGINE_VERSION 0.8.5→0.9.0,
+bumped once). EMPIRICAL MECHANISM DECISION (real profile-8.1 + real profile-7
+dual-layer samples, x265+dovi_tool, through the real HLS pipeline): chosen =
+`filter_units=remove_types=62-63` + `-tag:v hvc1` on the DV-strip copy branch.
+dovi_rpu=strip=1 REJECTED — strips the RPU but leaves ALL 104 EL NALs on
+profile-7 (fails LD-15); filter_units clears both to zero. Container DOVI
+config record: ffmpeg 8.x does not propagate it on stream copy at all (no
+residue leg; no STOP needed) — but the dvh1 fourcc DID survive repackage and
+-tag:v hvc1 closes it. Vendored-ffmpeg question moot by choice: filter_units
+long predates the 7.1-era dovi_rpu, so a repin can never silently lose the
+mechanism (manifest pins are 8.1.x). TWO DESIGN-CHANGING LANE FINDINGS:
+(1) trace_headers is BLIND to unspecified NAL types 62/63 — the originally-
+proposed oracle read clean over a fully intact RPU; replaced with a direct
+Annex-B byte scan (the decorative-oracle trap, caught red-first); (2) two
+-bsf:v flags silently overwrite each other (proven: RASL 8/9 survived) — the
+open-GOP + DV composition ships as ONE merged filter_units=remove_types=
+8-9|62-63 (golden 36 pins it; integration asserts exactly one -bsf:v arg).
+Reason semantics contract-free as approved: no new code; detail carries
+dvProfile/blCompatId/elDropped; contract hazard AVOIDED — VideoAction is
+additionalProperties:false so a dvStrip flag would have been a contract change;
+instead packages/playback-engine/src/dv.ts's dvStripApplies() is shared by
+Stage C and the builder, making reason/args drift structurally impossible.
+EXT-X-MEDIA-SEQUENCE fix landed (first-surviving-index = media sequence;
+unpruned playlists byte-identical). LICENSE-INTENT.md gains the external
+test-fixture-tools section (dovi_tool, MIT, PATH-resolved, never vendored).
+NEW FINDING dispositioned to the Wave C2 ABR SPEC's scope: the served playlist
+declares EXT-X-PLAYLIST-TYPE:EVENT while retention prunes segments — a genuine
+RFC 8216 §4.3.3.5 contradiction; NOT one-line-fixable (dropping EVENT makes
+hls.js treat the stream as live and jump to the live edge, breaking resume) —
+the C2 spec must define playlist-type/retention semantics and close it. A2 now
+HOLDS for the sequenced consumption half of the run-origin fix (post-A1-
+continuation). PLAYBACK.md §3/§4/§6/§8.2/§9 updated by the lane; docs sync
+orchestrator-side at integration.
 
 ## an upstream media server comparative architecture study — ANALYSIS-ONLY, COMPLETE 2026-08-10 (owner brief "Comparative Architecture Study — an upstream media server Playback Engine vs. Loombre"; awaiting owner review + implementation authorization)
 
