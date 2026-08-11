@@ -762,6 +762,73 @@ describe("PluginHealthService — breaker auto-disable after 5 consecutive timeo
 });
 
 // ===========================================================================
+// C5.1 fix wave: breaker boot re-seed (closes deferred LPP L-5)
+// ===========================================================================
+
+describe("PluginHealthService.getBreaker — boot re-seed (C5.1, closes deferred L-5)", () => {
+  const stubs: StubServer[] = [];
+  afterEach(async () => {
+    await Promise.all(stubs.splice(0).map((s) => s.close()));
+  });
+
+  it("a simulated restart mid-breaker-window (fresh PluginHealthService instance) does NOT clear the durable failure count", async () => {
+    const stub = await startStub(() => {
+      // Never respond — every request just hangs, exactly like the
+      // existing "5 consecutive timeouts" breaker suite above.
+    });
+    stubs.push(stub);
+
+    const nowMs = Date.now();
+    const { plugin } = await insertPluginAndEmit(dbProvider.db, {
+      id: "018f6f1e-0000-7000-8000-0000000000d2",
+      name: "reseed-stub-plugin",
+      baseUrl: stub.baseUrl,
+      version: "0.1.0",
+      protocolVersion: 1,
+      contentClass: "general",
+      grantedCapabilityTypes: ["metadata-provider"],
+      eventTypes: [],
+      lanAllowlist: [stub.host],
+      manifest: { ...VALID_MANIFEST_BASE, capabilities: [METADATA_CAP] },
+      config: {},
+      actorUserId: adminId,
+      nowMs,
+    });
+
+    // "Before restart": drive 3 failures (below the default threshold of
+    // 5) through a FIRST PluginHealthService instance.
+    const beforeRestart = new PluginHealthService(dbProvider);
+    let lastRow = plugin;
+    for (let i = 0; i < 3; i++) {
+      lastRow = await beforeRestart.runHealthCheck(plugin.id, nowMs + i, { manifestTimeoutMs: 150 });
+    }
+    expect(lastRow.consecutive_failures).toBe(3);
+    expect(lastRow.enabled).toBe(true); // not tripped yet
+
+    // "Restart": a BRAND NEW PluginHealthService — its `breakers` Map is
+    // empty, exactly what a real process restart produces. Without the
+    // C5.1 fix, getBreaker(plugin.id) would start this fresh instance's
+    // breaker at 0, and only 2 more failures would leave it at
+    // consecutiveFailures=2 (not tripped, and — worse — it would
+    // OVERWRITE the durable column back down from 3 to 2, regressing the
+    // count). With the fix, the breaker is re-seeded from
+    // plugin.consecutive_failures (3) on its first construction, so
+    // exactly 2 more failures (for a total effective progress of 5) trip
+    // it and auto-disable, identical to 5 failures against a single
+    // long-lived instance.
+    const afterRestart = new PluginHealthService(dbProvider);
+    for (let i = 3; i < 5; i++) {
+      lastRow = await afterRestart.runHealthCheck(plugin.id, nowMs + i, { manifestTimeoutMs: 150 });
+    }
+
+    expect(lastRow.consecutive_failures).toBe(5);
+    expect(lastRow.enabled).toBe(false);
+    expect(lastRow.disabled_reason).toBe("breaker");
+    expect(afterRestart.getBreaker(plugin.id).snapshot().state).toBe("open");
+  }, 20_000);
+});
+
+// ===========================================================================
 // M-8 fix wave: PluginHealthSchedulerService — periodic health re-check
 // ===========================================================================
 
