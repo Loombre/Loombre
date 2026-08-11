@@ -56,11 +56,14 @@ function placeholderPlanInputTail(): Pick<PlanInput, "network" | "policy" | "cap
  * The `FfmpegPlanShape` a restart hands the builder — PURE, so the one
  * decision in this module that is not I/O can be tested on its own.
  *
- * `ladderRungIndex` is the §9.1.4 slot-handoff target (`pending_rung_index`,
- * the rung the client's `v{K}` path named). Omitted for an ordinary
- * seek-restart, which stays on whatever rung the session was already
- * serving — the top rung by the `topRungOf` convention `plan()` itself uses
- * for the initial spawn.
+ * `ladderRungIndex` is the rung this restart targets: the §9.1.4
+ * slot-handoff target (`pending_rung_index`, the rung the client's `v{K}`
+ * path named) for a switch, and the LIVE run's own rung for an ordinary
+ * seek-restart — the runner passes it explicitly on every restart
+ * (`coincidentRung ?? currentRun.ladderRungIndex`), which is what keeps a
+ * post-switch seek on the rung the session was already serving instead of
+ * snapping back to the top via the `undefined` fallback below. `undefined`
+ * arrives only for a ladder-empty session, where no rung applies at all.
  *
  * THE LOAD-BEARING LINE is `targetCodec: rung.codec`. `buildFfmpegArgs`
  * resolves its encoder name from `video.targetCodec`, NOT from the rung it
