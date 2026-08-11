@@ -1024,6 +1024,33 @@ V5 manifestUrl→master YES; V6 T1+ uncapped YES; V7 both bounded trade-offs
 accepted. Spec merged to main; C2 BUILD lane (opus) spawned. Migration
 0044 assigned to the build; ENGINE_VERSION 0.10.1→0.11.0 expected.
 
+### Wave D — REVIEWERS SPAWNED 2026-08-11 (after a red-gate triage that improved the run)
+
+PRE-D GATE SEQUENCE: first gate:full on the merged consolidation tree went
+RED — one test in 2547 (libraries.e2e restricted-rails, mid-suite 401 on a
+previously-valid admin token) = the characterized under-load flake class,
+now WITH ITS FIRST IN-GATE OCCURRENCE (evidence strengthened for Wave D
+R2; the jwt-secret env-mutation lead stands). Triage then uncovered a
+SYSTEMIC TOOLING BLIND SPOT: 17 finished lane worktrees living INSIDE the
+repo tree were being swept by main-checkout vitest globs — duplicate spec
+copies (with likely-shared derived test-DB names) explain the phantom
+skip counts and at least part of every earlier "combined-run interference"
+observation. ALL LANE WORKTREES REMOVED (branches preserved — every
+ledger SHA reachable); the affected spec went 19/19 × 3 consecutive clean
+runs with zero skips; gate:full RE-RUN GREEN on the cleaned tree (recorded
+honestly: one red occurrence of the flake, one clean pass; the flake's
+root-cause fix is Wave D territory, blocking-if-it-recurs). Orchestrator
+process fixes now standing: explicit-path staging only (no add -A),
+foreground merges with explicit exit codes, worktrees removed at lane
+completion.
+
+WAVE D SPAWNED: three fable reviewers over the FULL run diff
+(88c5e6e5..main — Waves A+B+C1+C2+pre-D): R1 lifecycle/playback
+correctness + the Wave A mutation obligations; R2 contract/security
+posture + the flake root-cause; R3 UI/docs/register completeness. Fix
+lanes for findings, final gate:full, closure ledger + owner-verify tail
+follow.
+
 ### Pre-D consolidation — LANDED + MERGED 2026-08-11 (0e0086d5) — orchestrator-verified
 
 (seek-dedup 7, transcode-sessions 50, playback-hls 50, crash-redact 34,
