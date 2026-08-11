@@ -31,13 +31,14 @@ import {
   appendTokenParam,
   buildHlsManifestUrl,
   buildHlsSubtitleUrl,
+  isSameUrlIgnoringToken,
   useHlsManifestUrl,
   useSessionFileUrl,
 } from "../../lib/media-session-url.js";
 import { decideAttachStrategy, isMseAvailable, isNativeHlsSupported } from "../../lib/hls-attach.js";
 import { buildHlsJsConfig } from "../../lib/hls-js-config.js";
 import { deriveSubtitleTrackInfo, type SubtitleTrackInfo } from "../../lib/subtitle-track.js";
-import { resolveUnavailableReasons } from "../../lib/playback-reasons.js";
+import { clientPlaybackErrorReasons, resolveUnavailableReasons } from "../../lib/playback-reasons.js";
 import { findPlayableFallback, decisionLabel, type FallbackCandidate } from "../../lib/playback-fallback.js";
 import { findProgressForItem, isWorthResuming } from "../../lib/progress-lookup.js";
 import { HeartbeatScheduler, type HeartbeatSnapshot, type ProgressState } from "../../lib/heartbeat.js";
@@ -66,6 +67,29 @@ type HlsInstance = import("hls.js").default;
 type Phase = "loading" | "unavailable" | "ready";
 
 const IDLE_HIDE_MS = 3000;
+// Task #6 (2026-08-08/10 HLS-stall recon; redesigned 2026-08-10 opus review
+// findings 1/2): the direct-play/native-HLS attach effect's bounded
+// recovery path — shared by a fatal `error` event AND the stall watchdog
+// below. RECOVERY_MIN_INTERVAL_MS is a per-attempt COOLDOWN, DEFERRED via
+// setTimeout when hit (never dropped — see `scheduleRecoveryAttach`), not a
+// suppression window: a stretch of genuinely-failing attaches gets at most
+// MAX_RECOVERY_ATTEMPTS tries, no faster than one every
+// RECOVERY_MIN_INTERVAL_MS, before falling through to the same
+// fatal-unavailable path an unrecoverable decode/src-not-supported error
+// already uses (`clientPlaybackErrorReasons`, lib/playback-reasons.ts).
+const RECOVERY_MIN_INTERVAL_MS = 4000;
+const MAX_RECOVERY_ATTEMPTS = 3;
+// How long a stall (`waiting`/`stalled` while playing, no fatal `error`
+// event at all) must sit with a KNOWN-stale attached token — a fresher one
+// already exists, see `onStallSignal` — before it's treated as Safari's
+// native-HLS 401 presentation rather than an ordinary rebuffer.
+const STALL_WATCHDOG_MS = 10_000;
+// W3C HTMLMediaElement MediaError codes — stable literal spec values across
+// every browser, used instead of the global `MediaError.MEDIA_ERR_*`
+// constants because jsdom does not define a `MediaError` constructor at all
+// (this app's test environment — see VideoPlayer.test.tsx).
+const MEDIA_ERR_DECODE = 3;
+const MEDIA_ERR_SRC_NOT_SUPPORTED = 4;
 
 export interface VideoPlayerProps {
   itemId: string;
@@ -163,10 +187,28 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
   // instance) merely because the resume-prompt choice flips — it only
   // needs the LATEST value at the moment its one-shot `loadedmetadata`
   // handler actually fires. The direct-play/native-hls effect doesn't need
-  // this (it already no-ops via its own `currentSrc === activeSrcUrl`
-  // guard on a re-run), so only this ref exists for the hls.js path.
+  // this: it already lists `awaitingResumeChoice` in its own dependency
+  // array (its attach guard is token-aware, not a src-swap-avoiding
+  // no-op — see `isSameUrlIgnoringToken`, task #6 — so re-running on that
+  // flip is cheap and correct), so only this ref exists for the hls.js path.
   const awaitingResumeChoiceRef = useRef(false);
   const hlsRef = useRef<HlsInstance | null>(null);
+  // Task #6 recovery redesign (2026-08-10 opus review finding 1): a
+  // SEPARATE ref from any ordinary (non-recovery) attach — the initial
+  // attach, a genuinely-new-URL reattach, and the paused-boundary
+  // opportunistic refresh all call the same `attach()` below but must NOT
+  // stamp this or consume `recoveryAttemptsRef`'s budget; only a
+  // recovery-triggered attach (`runRecoveryAttach`, driven by the `error`
+  // listener or the stall watchdog) does. `0` is the "never" sentinel —
+  // `Date.now() - 0` is always far past `RECOVERY_MIN_INTERVAL_MS`, so the
+  // very first recovery attempt after a fresh attach is never held back by
+  // a cooldown it never itself started.
+  const recoveryStampRef = useRef(0);
+  // How many recovery attaches the current "stretch" has used, bounded at
+  // MAX_RECOVERY_ATTEMPTS before the fatal-unavailable path. Reset to 0 on
+  // the element's own `playing` event — a stretch that reaches real
+  // playback again earns a fresh budget.
+  const recoveryAttemptsRef = useRef(0);
 
   const serverUrl = getAuthStore().getSnapshot().serverUrl;
 
@@ -341,21 +383,228 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
 
   useEffect(() => {
     const video = videoEl;
-    if (!video || !activeSrcUrl) return;
+    if (!video || !activeSrcUrl) return undefined;
 
-    const wasPlaying = !video.paused;
-    const currentSrc = video.src;
-    if (currentSrc === activeSrcUrl) return; // no-op on first render duplicate
+    // Task #6 finding 3 (2026-08-10 opus review): hoisted to EFFECT scope,
+    // not re-declared fresh inside every `attach()` call — a FAILED attach
+    // never fires `loadedmetadata` on its own, so nothing else ever removed
+    // it. Repeated failed attaches (the recovery retries below, especially)
+    // used to stack one listener per attempt; when a load finally DID
+    // succeed they all fired together — N stale-closure `currentTime` seeks
+    // and `play()` calls in a row. `attach()` now removes any pending one
+    // of its own before registering a new one, and effect cleanup removes
+    // whatever is still pending on unmount/rerun.
+    let onLoaded: (() => void) | null = null;
 
-    const resumeAt = currentSrc ? video.currentTime : (pendingSeekMsRef.current ?? 0) / 1000;
-    video.src = activeSrcUrl;
-    video.load();
-    const onLoaded = (): void => {
-      video.currentTime = resumeAt;
-      if (wasPlaying || (!currentSrc && !awaitingResumeChoice)) void video.play().catch(() => undefined);
-      video.removeEventListener("loadedmetadata", onLoaded);
+    // Swaps `video.src` to `activeSrcUrl`, preserving position/paused-state
+    // the same way for every caller below (first attach, a genuinely new
+    // URL, a paused-boundary token refresh, or a bounded recovery retry —
+    // see `runRecoveryAttach` further down) — see the two direct call sites
+    // right after this declaration. An ARROW function expression (not a
+    // hoisted `function` declaration) so TS's control-flow analysis keeps
+    // `video`/`activeSrcUrl` narrowed to non-null inside it, same as
+    // `onLoaded`.
+    const attach = (): void => {
+      if (onLoaded) {
+        video.removeEventListener("loadedmetadata", onLoaded);
+        onLoaded = null;
+      }
+      const wasPlaying = !video.paused;
+      const currentSrc = video.src;
+      const resumeAt = currentSrc ? video.currentTime : (pendingSeekMsRef.current ?? 0) / 1000;
+      video.src = activeSrcUrl;
+      video.load();
+      onLoaded = (): void => {
+        video.currentTime = resumeAt;
+        if (wasPlaying || (!currentSrc && !awaitingResumeChoice)) void video.play().catch(() => undefined);
+        if (onLoaded) video.removeEventListener("loadedmetadata", onLoaded);
+        onLoaded = null;
+      };
+      video.addEventListener("loadedmetadata", onLoaded);
     };
-    video.addEventListener("loadedmetadata", onLoaded);
+
+    // Task #6 (2026-08-08/10 HLS-stall recon): compare the currently-
+    // attached src against `activeSrcUrl` IGNORING `?token=`
+    // (`isSameUrlIgnoringToken`, lib/media-session-url.ts) instead of a
+    // verbatim string comparison. A verbatim comparison trips on every
+    // token rotation `useSessionFileUrl`/`useHlsManifestUrl` hand back
+    // (~every 14.5 minutes — the 15-minute access-token TTL against the
+    // AuthStore's 30s pre-expiry refresh skew, NOT every 60s poll — see
+    // media-session-url.ts's header) and forced a full reload+reseek for a
+    // stream that never actually changed.
+    const attachedSrc = video.src;
+    const alreadyAttached = attachedSrc.length > 0 && isSameUrlIgnoringToken(attachedSrc, activeSrcUrl);
+
+    if (!alreadyAttached) {
+      // No src yet, or a genuinely different resource (new session/file,
+      // e.g. a fallback/version switch) — always (re)attach.
+      attach();
+    } else if (video.paused && attachedSrc !== activeSrcUrl) {
+      // Same stream, a rotated token, nothing playing to interrupt: take
+      // the free opportunity to swap in the fresh URL now rather than risk
+      // it going stale while paused indefinitely (the server's token
+      // verification has no grace window — apps/server/src/session/
+      // token.service.ts's verifyAccessToken). Trade-offs kept deliberately
+      // as-is (2026-08-10 opus review finding 4, decided not worth a
+      // deferral system): `attach()`'s full `src`/`load()` reset discards
+      // the browser's OWN buffer for this stream, so resuming after this
+      // shows a spinner rather than picking straight back up — and a click
+      // landing between this `paused` check and the `load()` inside
+      // `attach()` loses its own `play()` race (the fresh `load()` pauses
+      // the element again, per the WHATWG resource-selection algorithm —
+      // see the test file's `load()` stub comment). Both are judged better
+      // than the alternative of interrupting genuinely mid-play video to
+      // swap a token that hasn't failed yet.
+      attach();
+    }
+    // else: a token-only refresh while actively playing — deliberately a
+    // no-op. Smooth playback is never interrupted for a token that hasn't
+    // actually failed yet; the `error` listener and the stall watchdog
+    // below are the safety net for when the currently-attached
+    // (increasingly stale) token eventually does cause a real failure.
+
+    // ── Bounded recovery (2026-08-10 opus review findings 1 & 2) ──────────
+    // Shared by BOTH triggers below: a fatal `error` event, and the stall
+    // watchdog (Safari's native-HLS 401 typically presents as a STALL — the
+    // element just stops advancing, no fatal `error` event at all — see
+    // `onStallSignal`). `recoveryStampRef`/`recoveryAttemptsRef` are REFS
+    // (component-scoped, not effect-local) so the cooldown/budget survive
+    // this effect tearing down and re-running on every benign token
+    // rotation (which reruns this effect even when nothing was wrong — see
+    // the no-op branch above).
+    let recoveryTimeoutHandle: ReturnType<typeof setTimeout> | null = null;
+
+    function goFatal(): void {
+      // No reattach can fix this — either the browser already refused to
+      // decode/support the source, or every bounded retry in this stretch
+      // already failed identically. Route to the SAME fatal-unavailable
+      // screen a refused createPlaybackSession already renders (`phase`,
+      // UnavailableScreen below) instead of inventing new UI;
+      // `clientPlaybackErrorReasons` (lib/playback-reasons.ts) follows the
+      // exact precedent `TRANSCODE_SLOTS_EXHAUSTED_CODE` already set there
+      // for a client-synthesized reason with no server HTTP status behind
+      // it.
+      setUnavailableReasons(clientPlaybackErrorReasons());
+      setUnavailableStatus(undefined);
+      setPhase("unavailable");
+    }
+
+    function runRecoveryAttach(): void {
+      recoveryStampRef.current = Date.now();
+      recoveryAttemptsRef.current += 1;
+      attach();
+    }
+
+    function scheduleRecoveryAttach(): void {
+      if (recoveryAttemptsRef.current >= MAX_RECOVERY_ATTEMPTS) {
+        goFatal();
+        return;
+      }
+      const elapsed = Date.now() - recoveryStampRef.current;
+      if (elapsed >= RECOVERY_MIN_INTERVAL_MS) {
+        runRecoveryAttach();
+        return;
+      }
+      // Inside the cooldown: DEFER the retry to when it expires instead of
+      // dropping it. The old bare `return` here silently killed an initial
+      // attach that failed fast (nothing had ever stamped the cooldown
+      // ref, so `Date.now() - 0` should have cleared it — but the OLD code
+      // stamped on every attach, including that very initial one) — or any
+      // retry that landed inside another retry's own cooldown — with no
+      // further trigger ever coming, leaving the player permanently and
+      // silently dead. One pending timer at a time; a second signal
+      // arriving before it fires changes nothing.
+      if (recoveryTimeoutHandle) return;
+      recoveryTimeoutHandle = setTimeout(() => {
+        recoveryTimeoutHandle = null;
+        runRecoveryAttach();
+      }, RECOVERY_MIN_INTERVAL_MS - elapsed);
+    }
+
+    const onError = (): void => {
+      // A fatal media error mid-playback. Two of `video.error.code`'s
+      // values are genuinely UNRECOVERABLE (opus review finding 1c) — the
+      // browser has already refused this exact source; reattaching the
+      // exact same URL cannot change that verdict — everything else is
+      // most likely, on these two branches, the currently-attached URL's
+      // embedded token finally expiring server-side (no grace window) and
+      // a playlist refetch/byte-range GET 401'ing, which a bounded retry
+      // with the LATEST known-fresh URL genuinely can fix: `activeSrcUrl`
+      // in this closure is always current — this effect reruns on every
+      // token rotation even when it chose not to act on it above, tearing
+      // down and re-registering this very listener with the updated
+      // closure.
+      const err = video.error;
+      if (err && (err.code === MEDIA_ERR_SRC_NOT_SUPPORTED || err.code === MEDIA_ERR_DECODE)) {
+        goFatal();
+        return;
+      }
+      scheduleRecoveryAttach();
+    };
+
+    // ── Stall watchdog (2026-08-10 opus review finding 2) ─────────────────
+    // Safari's native-HLS 401 typically presents as a STALL, not a fatal
+    // `error` event — the element just stops advancing and fires
+    // `waiting`/`stalled` with `readyState` dropping, per review. Mirrors
+    // `onError` above (same bounded `scheduleRecoveryAttach` path) but
+    // triggers on "stuck for STALL_WATCHDOG_MS" instead of "the browser
+    // fired a fatal error", and ONLY when a FRESHER token is already known
+    // to exist (`isSameUrlIgnoringToken` true, raw strings different) —
+    // that guard is what keeps this from ever firing during an ORDINARY
+    // rebuffer with a still-current token, where reattaching would help
+    // nothing.
+    let stallTimer: ReturnType<typeof setTimeout> | null = null;
+    let stallBaselineTime: number | null = null;
+
+    const clearStallWatch = (): void => {
+      if (stallTimer) {
+        clearTimeout(stallTimer);
+        stallTimer = null;
+      }
+      stallBaselineTime = null;
+    };
+
+    const onStallSignal = (): void => {
+      if (video.paused || stallTimer) return; // nothing to watch, or already watching (continue, don't restart)
+      stallBaselineTime = video.currentTime;
+      stallTimer = setTimeout(() => {
+        stallTimer = null;
+        if (video.paused || video.currentTime !== stallBaselineTime) return; // resumed advancing on its own
+        const attachedNow = video.src;
+        if (!attachedNow || attachedNow === activeSrcUrl) return; // still the current token — an ordinary rebuffer, not this
+        if (!isSameUrlIgnoringToken(attachedNow, activeSrcUrl)) return; // a genuinely different resource — not this watchdog's concern
+        scheduleRecoveryAttach();
+      }, STALL_WATCHDOG_MS);
+    };
+
+    const onTimeUpdateWatch = (): void => {
+      // Real progress since the watchdog's baseline — the "stall" already
+      // resolved on its own; nothing to recover.
+      if (stallTimer !== null && stallBaselineTime !== null && video.currentTime !== stallBaselineTime) clearStallWatch();
+    };
+
+    const onPlayingSignal = (): void => {
+      recoveryAttemptsRef.current = 0; // a stretch that reaches real playback again earns a fresh budget
+      clearStallWatch();
+    };
+
+    video.addEventListener("error", onError);
+    video.addEventListener("waiting", onStallSignal);
+    video.addEventListener("stalled", onStallSignal);
+    video.addEventListener("timeupdate", onTimeUpdateWatch);
+    video.addEventListener("playing", onPlayingSignal);
+    video.addEventListener("pause", clearStallWatch);
+    return () => {
+      video.removeEventListener("error", onError);
+      video.removeEventListener("waiting", onStallSignal);
+      video.removeEventListener("stalled", onStallSignal);
+      video.removeEventListener("timeupdate", onTimeUpdateWatch);
+      video.removeEventListener("playing", onPlayingSignal);
+      video.removeEventListener("pause", clearStallWatch);
+      if (onLoaded) video.removeEventListener("loadedmetadata", onLoaded);
+      if (recoveryTimeoutHandle) clearTimeout(recoveryTimeoutHandle);
+      clearStallWatch();
+    };
     // Depends on `videoEl` (STATE, not the ref) so this re-runs the moment the
     // element mounts — activeSrcUrl frequently resolves a tick before the
     // <video> attaches, and a ref-only dependency would miss that mount.
