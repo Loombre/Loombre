@@ -972,6 +972,51 @@ now a from-source/dev-run signal; env-reference regenerated via generator.
 One out-of-scope comment-only fix disclosed (admin-logs-tail.ts restated
 the now-false claim). Lane self-scrubbed 12 naming-gate violations.
 
+### Wave C2 — SPEC DELIVERED 2026-08-11, at ⛔ OWNER SIGN-OFF STOP (V1–V7)
+
+Fable spec lane committed b2523b38 (PLAYBACK.md +675/−5, spec only; §7.2
+rule-(iii) untouched per the reservation — composes with the incoming
+finding-1 clause). CORE DESIGN: one session = one slot = at most one live
+pipeline, LD-16 structural — the worker keeps producing ONE union playlist
+(Wave A machinery unchanged); a master playlist (pure render from the stored
+plan, never-503) enumerates plan.ladder; EVERY variant URL serves the same
+playlist bytes — variant identity lives only in the URL path and THE PATH IS
+THE SWITCH SIGNAL (v{K} GET with K≠active records pending_rung_index,
+compare-and-clear discipline); handoff = terminate→observed-exit→spawn at
+origin old.sourceOriginMs+producedMs (exact — ffmpeg's per-run playlist is
+append-only), a SEEK-SHAPED RESTART indistinguishable from any run to every
+Wave A consumer (derivation/progress/dedup/reaper need ZERO semantic
+changes). Rejected alternative recorded: N variant playlists ⇒ N pipelines =
+the exact LD-16 violation. Slot-handoff state table incl. crash-mid-handoff
+(slot correctly HELD — nothing encodes; reaper/sweeper reclaim) + census ≤1
+pinned by real OS sampling at build. TWO NEW SAME-FAMILY DEFECTS FOUND while
+spec'ing: pruning whole runs desyncs hls.js's discontinuity counter (missing
+EXT-X-DISCONTINUITY-SEQUENCE) and completed encodes NEVER get ENDLIST —
+both fixed by the (a) resolution. Findings resolved: (a) EVENT contradiction
+→ type-less sliding window + DISCONTINUITY-SEQUENCE + terminal ENDLIST with
+prune-freeze + client startPosition pin (ffmpeg's per-run playlist KEEPS
+EVENT — its append-only completeness makes handoff origins exact); (b)
+extent trap → runs stay start-only with a normative two-source extent rule,
+one-row >=start derivation FORBIDDEN, doc comment at the query; runs gain
+ladder_rung_index; (c) -copyts REJECTED permanently for v1 (switches need
+discontinuities anyway; run map is the sole timeline bridge; progress
+mapping zero-change, pinned by test). Contract preview EMPIRICAL: 0 err /
+3 warn / 1 info (new master.m3u8 endpoint; ladder-variant-capped reason
+trio; manifestUrl value-semantics only). DB migration 0044 additive
+(active/pending_rung_index + ladder_rung_index). ⭐ V1 = TIER-0 ADVERTISES
+EXACTLY 3 VARIANTS (top + geometric-mid + floor; law constant, not a knob):
+encode cost is count-INVARIANT under slot handoff (cap=1 bounds concurrency)
+— the count's only T0 cost is SWITCH CHURN (1-4s full-pipeline handoff);
+3 rungs guarantee >=~2x adjacent ratios so crossing needs throughput to
+halve/double (rare), vs the 6-rung table's 1.33x boundaries (Wi-Fi-variance
+hovering on a 6W part); 2 leaves a 5-10x cliff, 4+ reintroduces sub-2x
+boundaries. Honesty flags: Safari native token propagation across the
+master→variant hop = build-verify item with spec'd fallback; expected matrix
+churn stated (T0 >3-rung cases change with per-case why:, all else
+byte-identical); CODECS strings need an execution fence (wrong string =
+hls.js rejects the variant). V1-V7 presented (V2-V7 recommendations all
+YES). Build does NOT spawn until owner signs.
+
 ### Wave C1 — SPEC DELIVERED 2026-08-11, at ⛔ OWNER SIGN-OFF STOP
 
 Fable spec lane committed 86ac7e3b (worktree branch; ONE file, docs/PLAYBACK.md
