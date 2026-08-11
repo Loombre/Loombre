@@ -13,17 +13,23 @@
 // Broadcaster loop (single-process v1, documented limitation — see
 // packages/db/src/query/events.ts's markEventsProcessed doc comment):
 // every 500ms, poll the outbox for events['processed_at_ms IS NULL'] in
-// batches of 100 ordered by id (readUnprocessedEvents). For each currently
-// connected socket, RE-RESOLVE that socket's ViewerContext if its cached
-// copy is more than 5s old (mission spec: "an expired unlock must stop
-// restricted deliveries mid-connection"), then filter the batch through
-// filterEventsForViewer(db, ctx, ids) — the SAME visibility predicate
-// readEventsForViewer's HTTP-polling cousin uses (packages/db/src/query/
-// events.ts) — and send each envelope-shaped survivor
-// (packages/contract/event-schemas/envelope.schema.json) over the socket.
-// The whole polled batch is marked processed once every connected socket
-// has had its chance at it, regardless of whether any of them were
-// actually cleared to see any given row.
+// batches of 100 ordered by `seq`, NOT `id` (readUnprocessedEvents — Task
+// #9 fix, see events.ts's header: UUIDv7 `id`'s non-timestamp bits are
+// random, so same-millisecond siblings could sort out of true insertion
+// order; `seq`, a Postgres identity-sequence column, cannot tie). For each
+// currently connected socket, RE-RESOLVE that socket's ViewerContext if its
+// cached copy is more than 5s old (mission spec: "an expired unlock must
+// stop restricted deliveries mid-connection"), then filter the batch
+// through filterEventsForViewer(db, ctx, ids) — the SAME visibility
+// predicate readEventsForViewer uses (packages/db/src/query/events.ts) —
+// ALSO ordered by `seq` (same Task #9 fix — this function's return order
+// is what actually drives the `ws.send()` sequence below, so both
+// functions' orderings had to move together for the fix to reach a live
+// socket) — and send each envelope-shaped survivor (packages/contract/
+// event-schemas/envelope.schema.json) over the socket. The whole polled
+// batch is marked processed once every connected socket has had its
+// chance at it, regardless of whether any of them were actually cleared to
+// see any given row.
 //
 // IMPORTANT (P2.8 fix): the per-socket ViewerContext staleness check runs
 // EVERY tick for EVERY connected socket, independent of whether there is

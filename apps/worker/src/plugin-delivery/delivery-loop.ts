@@ -4,7 +4,12 @@
 // LPP v1 mission §3.2 — the event-subscriber outbox-fanout delivery loop.
 // Per enabled subscriber plugin, in-order at-least-once delivery:
 //
-//   read events AFTER cursor_event_id (batch cap LPP_DELIVERY_BATCH_MAX)
+//   read events AFTER cursor_event_seq (batch cap LPP_DELIVERY_BATCH_MAX —
+//     opus-review LD wave Finding 1 / migrations/
+//     0040_plugin_delivery_cursor_seq.sql switched this from
+//     cursor_event_id, which is unsafe as a PERSISTED same-millisecond
+//     keyset tie-break; cursor_event_id is kept alongside for gap
+//     detection + observability, see that migration's header)
 //     -> filter to GRANTED types (plugin_event_grants intersection —
 //        done by the read query itself, listCandidateEventsForDelivery)
 //     -> clearance-gate (general-scoped subscribers only — C5, via the
@@ -106,7 +111,7 @@ import { extractEventSubscriberCapability, resolveDeliveryUrl, PluginEndpointOri
 // plugin's config secrets are stored per-plugin, not per-capability) and
 // both modules live in apps/worker, no cross-app boundary to respect.
 import { resolvePluginConfigSecrets } from "../metadata/plugin-keyring.js";
-import { boundaryUuidv7AtMs, EPOCH_ZERO_BOUNDARY_UUID } from "./uuidv7.js";
+import { EPOCH_ZERO_BOUNDARY_UUID } from "./uuidv7.js";
 
 export type DeliveryTickOutcome =
   | { kind: "invalid-manifest" }
@@ -237,7 +242,14 @@ export async function deliverOnePluginTick(
   const grantedTypes = plugin.grantedTypes.filter((t) => !LPP_DELIVERY_ADMIN_ONLY_EVENT_TYPES.includes(t));
 
   const windowStartMs = nowMs - LPP_DELIVERY_RETENTION_WINDOW_MS;
+  // `baseAfterId` stays id-shaped and drives ONLY findOldestUnconsumedBeforeMs
+  // below (gap detection compares against ts_ms, which `seq` cannot help
+  // with — migrations/0040_plugin_delivery_cursor_seq.sql's header). The
+  // actual candidate read (listCandidateEventsForDelivery) keysets on
+  // `baseAfterSeq` instead — see that function's doc comment for the
+  // persisted-cursor same-millisecond skip hazard this fixes.
   const baseAfterId = cursorRow?.cursor_event_id ?? EPOCH_ZERO_BOUNDARY_UUID;
+  const baseAfterSeq = cursorRow?.cursor_event_seq ?? 0;
 
   const gapOldestMs = await findOldestUnconsumedBeforeMs(db, {
     afterId: baseAfterId,
@@ -245,10 +257,15 @@ export async function deliverOnePluginTick(
     beforeMs: windowStartMs,
   });
 
-  let effectiveAfterId = baseAfterId;
+  // When a gap is detected, `minTsMs` (not a replaced cursor) tells the
+  // candidate read to skip straight past the gapped region to the window
+  // edge, without ever touching `baseAfterSeq` itself — the gap is
+  // reported (pendingGapReport below), never silently folded into an
+  // advanced cursor.
+  let minTsMs: number | undefined;
   let pendingGapReport: LppGapReport | null = null;
   if (gapOldestMs !== null) {
-    effectiveAfterId = boundaryUuidv7AtMs(windowStartMs);
+    minTsMs = windowStartMs;
     const fromMs = cursorRow?.gap_reported_through_ms ?? gapOldestMs;
     pendingGapReport = {
       detectedAtMs: nowMs,
@@ -257,9 +274,10 @@ export async function deliverOnePluginTick(
   }
 
   const rawCandidates = await listCandidateEventsForDelivery(db, {
-    afterId: effectiveAfterId,
+    afterSeq: baseAfterSeq,
     grantedTypes,
     limit: LPP_DELIVERY_BATCH_MAX,
+    ...(minTsMs !== undefined ? { minTsMs } : {}),
   });
 
   if (rawCandidates.length === 0) {
@@ -270,6 +288,7 @@ export async function deliverOnePluginTick(
   }
 
   const rawLastId = rawCandidates[rawCandidates.length - 1]!.id;
+  const rawLastSeq = rawCandidates[rawCandidates.length - 1]!.seq;
 
   let deliverable = rawCandidates;
   // H-2 fix wave: gate on the event-subscriber CAPABILITY's own
@@ -295,7 +314,7 @@ export async function deliverOnePluginTick(
     // plugin is never stuck re-fetching an all-restricted page forever.
     // A gap, if one was detected, stays unreported this tick (nothing
     // shipped) — recomputed fresh next tick, per this file's header.
-    await advanceCursorPastFilteredEvents(db, { pluginId: plugin.id, cursorEventId: rawLastId, nowMs });
+    await advanceCursorPastFilteredEvents(db, { pluginId: plugin.id, cursorEventId: rawLastId, cursorEventSeq: rawLastSeq, nowMs });
     return { kind: "advanced-no-content", rawCount: rawCandidates.length };
   }
 
@@ -438,6 +457,7 @@ export async function deliverOnePluginTick(
   await recordDeliverySuccess(db, {
     pluginId: plugin.id,
     cursorEventId: rawLastId,
+    cursorEventSeq: rawLastSeq,
     deliveredEventCount: deliverable.length,
     nowMs,
     ...(pendingGapReport ? { gapReportedThroughMs: windowStartMs } : {}),

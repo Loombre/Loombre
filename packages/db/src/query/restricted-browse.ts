@@ -747,7 +747,13 @@ export async function getRestrictedSceneDetail(
       .selectFrom('chapter_markers')
       .select(['id', 'title', 'start_ms'])
       .where('item_id', '=', row.id)
+      // `id` tiebreak on `start_ms` ties — matches src/query/chapters.ts's
+      // getChaptersForItem exactly (that file is the generic bare-item-id
+      // entry point for the SAME chapter_markers rows this inlines for the
+      // zone detail page; the two reads must return chapters in the same
+      // order for the same item, tie or not).
       .orderBy('start_ms', 'asc')
+      .orderBy('id', 'asc')
       .execute(),
     db
       .selectFrom('progress')
