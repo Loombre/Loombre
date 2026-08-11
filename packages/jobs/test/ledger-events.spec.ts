@@ -221,4 +221,64 @@ describe('createLedger job.updated emission (P4.13)', () => {
     const events = await jobUpdatedEventsFor(jobId);
     expect(events.map((e) => e.payload.status)).toEqual(['queued', 'active', 'failed']);
   });
+
+  // M-7 fix wave (second half, closes deferred LPP ledger-error-path
+  // redaction — STATE.md's LPP adversarial findings): the LIVE-SUBSCRIBER
+  // leak of job.updated to a general (non-admin) plugin audience was
+  // already closed by H-4's ADMIN_ONLY gating; this covers the separate,
+  // STORED-STRING half — a filesystem path from the error message must
+  // never persist verbatim in jobs.last_error or the emitted event
+  // payload, narrowly (the rest of the message untouched).
+  describe('M-7: filesystem-path components are redacted at persistence', () => {
+    it('recordFailed redacts a quoted absolute path in BOTH jobs.last_error and the emitted job.updated payload', async () => {
+      const jobId = '018f6f1e-0000-7000-8000-0000000000a6';
+      await ledger.recordQueued(jobId, 'scan', { subjectItemId: null });
+      await ledger.recordActive(jobId);
+      await ledger.recordFailed(jobId, `ENOENT: no such file or directory, open '/data/library/Movies/Film (2020)/movie.mkv'`);
+
+      const jobRow = await readDb.selectFrom('jobs').selectAll().where('id', '=', jobId).executeTakeFirstOrThrow();
+      expect(jobRow.last_error).toBe(`ENOENT: no such file or directory, open '<redacted>/movie.mkv'`);
+      expect(jobRow.last_error).not.toContain('/data/library');
+
+      const events = await jobUpdatedEventsFor(jobId);
+      const failedEvent = events.find((e) => e.payload.status === 'failed');
+      expect(failedEvent?.payload.errorMessage).toBe(`ENOENT: no such file or directory, open '<redacted>/movie.mkv'`);
+      expect(failedEvent?.payload.errorMessage).not.toContain('/data/library');
+    });
+
+    it('recordRetrying (non-terminal failure) also redacts a staging path, same persistence path as recordFailed', async () => {
+      const jobId = '018f6f1e-0000-7000-8000-0000000000a7';
+      await ledger.recordQueued(jobId, 'scan', { subjectItemId: null });
+      await ledger.recordActive(jobId, 1);
+      await ledger.recordRetrying(jobId, 'scan failed: staging path /data/staging/incoming-batch-42/file.mkv not found', 2);
+
+      const jobRow = await readDb.selectFrom('jobs').selectAll().where('id', '=', jobId).executeTakeFirstOrThrow();
+      expect(jobRow.last_error).toBe('scan failed: staging path <redacted>/file.mkv not found');
+      expect(jobRow.status).toBe('queued'); // non-terminal — recordRetrying's own documented contract
+
+      const events = await jobUpdatedEventsFor(jobId);
+      const retryEvent = events.find((e) => e.payload.errorMessage !== null);
+      expect(retryEvent?.payload.errorMessage).toBe('scan failed: staging path <redacted>/file.mkv not found');
+    });
+
+    it('redaction is NARROW: only the path component is touched, every other part of the message is byte-identical', async () => {
+      const jobId = '018f6f1e-0000-7000-8000-0000000000a8';
+      await ledger.recordQueued(jobId, 'probe', { subjectItemId: null });
+      await ledger.recordActive(jobId);
+      await ledger.recordFailed(jobId, `probe failed for '/library/movie.mkv': ffprobe exited with code 1 after 30047ms`);
+
+      const jobRow = await readDb.selectFrom('jobs').selectAll().where('id', '=', jobId).executeTakeFirstOrThrow();
+      expect(jobRow.last_error).toBe(`probe failed for '<redacted>/movie.mkv': ffprobe exited with code 1 after 30047ms`);
+    });
+
+    it('an error message with no path at all is left completely untouched', async () => {
+      const jobId = '018f6f1e-0000-7000-8000-0000000000a9';
+      await ledger.recordQueued(jobId, 'probe', { subjectItemId: null });
+      await ledger.recordActive(jobId);
+      await ledger.recordFailed(jobId, 'ffprobe exited with code 1 after 30047ms');
+
+      const jobRow = await readDb.selectFrom('jobs').selectAll().where('id', '=', jobId).executeTakeFirstOrThrow();
+      expect(jobRow.last_error).toBe('ffprobe exited with code 1 after 30047ms');
+    });
+  });
 });
