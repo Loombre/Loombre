@@ -35,11 +35,25 @@ import type { HwBackend, ProbeEncodeCodec, ProbeVideoCodec, TestableToneMapMetho
 const LAVFI_TESTSRC = `testsrc2=size=320x240:rate=${TEST_CLIP_RATE}:duration=${TEST_CLIP_DURATION_SEC}`;
 const LAVFI_TESTSRC_10BIT = `${LAVFI_TESTSRC},format=yuv420p10le`;
 
+/** The ONE software AV1 encoder the plan's arg builder will ever name
+ *  (packages/playback-engine/src/args/builder.ts's VIDEO_ENCODER_NAMES,
+ *  docs/PLAYBACK.md §6 interpretation M). Kept as a named constant so the
+ *  D4 narrowing below is visibly tied to that fact rather than to taste. */
+const BUILDER_SOFTWARE_AV1_ENCODER = "libsvtav1";
+
 /** libsvtav1 preferred (faster) over libaom-av1, matching scripts/
  *  gen-media-fixtures.mjs's own AV1 preference order. `null` when neither
- *  is present in the resolved ffmpeg's `-encoders` listing. */
+ *  is present in the resolved ffmpeg's `-encoders` listing.
+ *
+ *  SCOPE NARROWED by owner-decision D4 (docs/PLAYBACK.md §7.3, Wave C1):
+ *  this resolver now serves the DECODE-source generation path ONLY. The
+ *  software av1 ENCODE capability test goes through
+ *  `resolveEncoderName` below, which accepts libsvtav1 and nothing else.
+ *  The preference order here stands unchanged for its remaining consumer:
+ *  generating a 2-second av1 clip to decode-test against cares about
+ *  availability, not speed, and names no builder encoder. */
 export function resolveSoftwareAv1Encoder(encoders: ReadonlySet<string>): string | null {
-  if (encoders.has("libsvtav1")) return "libsvtav1";
+  if (encoders.has(BUILDER_SOFTWARE_AV1_ENCODER)) return BUILDER_SOFTWARE_AV1_ENCODER;
   if (encoders.has("libaom-av1")) return "libaom-av1";
   return null;
 }
@@ -63,7 +77,24 @@ export function resolveEncoderName(
   codec: ProbeEncodeCodec,
   encoders: ReadonlySet<string>
 ): string | null {
-  if (backend === "software" && codec === "av1") return resolveSoftwareAv1Encoder(encoders);
+  // D4 (docs/PLAYBACK.md §7.3, Wave C1): SOFTWARE av1 encode capability is
+  // `libsvtav1` and nothing else — a box carrying only `libaom-av1` reports
+  // software-av1 encode ABSENT, and the §7.2 eligibility gate then refuses
+  // AV1 there at every tier. Two reasons, one of them structural:
+  //  - libaom's realtime presets are not a viable streaming encoder; and
+  //  - the plan's arg builder emits ONE FIXED encoder name for a software
+  //    av1 target (BUILDER_SOFTWARE_AV1_ENCODER), so probe-verifying the
+  //    exact encoder the builder will spawn is the same
+  //    probe-proves-the-shipped-plumbing rule the tone-map battery already
+  //    follows. A capability the builder cannot deterministically name is
+  //    not a capability — reporting it would hand a Tier-1 plan an encoder
+  //    name nothing on that machine has.
+  // Costless on shipped builds: every vendored ffmpeg compiles
+  // --enable-libsvtav1 (linux-x64 / linux-arm64 / macos-arm64 verified
+  // 2026-08-11; windows-x64 pending the CI leg, STATE.md P3.4).
+  if (backend === "software" && codec === "av1") {
+    return encoders.has(BUILDER_SOFTWARE_AV1_ENCODER) ? BUILDER_SOFTWARE_AV1_ENCODER : null;
+  }
   const name = VIDEO_ENCODER_NAMES[backend]?.[codec];
   if (!name) return null;
   return encoders.has(name) ? name : null;

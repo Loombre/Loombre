@@ -1,0 +1,71 @@
+name: transcode — opted-in T1 with software av1, but an MPEG-TS-only client -> NO av1 swap, ladder byte-identical to pre-C1
+why: >
+  Wave C1 / LD-7, §7.1's condition-2 negative on the SWAP side (case 525
+  covers the same fact on the demotion side). Every capability condition
+  passes — policies.av1-preferred-t1 opts in, caps.software-av1 gives
+  eligibility 'software' at tier 1 — and the device even declares an av1
+  `device.video` entry. The swap still must not fire, because
+  devices.av1-ts-only cannot take fmp4 and AV1 has no assigned MPEG-TS
+  stream_type (§6 interp. M). The produced ladder is therefore the
+  UNCHANGED instance default table minus the 2160p rung the 1080p source
+  caps away — byte-identical to what this input produced before Wave C1,
+  which is the point: the swap is claimed by nothing here, so the h264
+  fall-through owns every rung. `hevcEncodePreferred` is false in this
+  policy, so no hevc swap masks the result either.
+input:
+  media:
+    fileId: file-527
+    container: ts
+    durationMs: 6000000
+    sizeBytes: 6000000000
+    overallBitrateBps: 20500000
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 41
+        width: 1920
+        height: 1080
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 20000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: true
+        openGop: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 160000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device:
+    fixture: devices.av1-ts-only
+  network:
+    fixture: networks.local
+  policy:
+    fixture: policies.av1-preferred-t1
+  caps:
+    fixture: caps.software-av1
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: transcode
+  reasons:
+    - video-interlaced
+    - software-fallback:encode
+  container: ts-hls
+  ladder:
+    - { heightPx: 1080, videoBitrateBps: 8000000, audioBitrateBps: 384000, codec: h264 }
+    - { heightPx: 1080, videoBitrateBps: 4000000, audioBitrateBps: 160000, codec: h264 }
+    - { heightPx: 720, videoBitrateBps: 3000000, audioBitrateBps: 160000, codec: h264 }
+    - { heightPx: 480, videoBitrateBps: 1500000, audioBitrateBps: 160000, codec: h264 }
+    - { heightPx: 360, videoBitrateBps: 800000, audioBitrateBps: 160000, codec: h264 }

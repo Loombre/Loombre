@@ -1,0 +1,73 @@
+name: transcode — T0 + HARDWARE av1 encode + operator opt-in + av1/fmp4 device -> every sub-2160 rung becomes av1 at ×0.6, routed on hardware
+why: >
+  Wave C1 / LD-7, §7.1's AV1 swap in its POSITIVE form, and §7.2's escape
+  hatch made concrete: on Tier 0 the swap can only ever fire via `'hw'`
+  eligibility, and this box has it (caps.hw-av1-qsv — an Arc/DG2-class
+  Quick Sync engine, `encode ∋ av1`). All three conditions hold:
+  policies.av1-preferred-t0 opts in (1), devices.av1-fmp4-capable declares
+  an av1 entry AND fmp4 (2), eligibility is 'hw' (3). The 1080p interlaced
+  source forces the transcode (Stage B, video-interlaced) and caps the
+  ladder at 1080p, so the 2160p/hevc rung drops on height and the
+  surviving five are exactly the table's sub-2160 rows at ×0.6:
+  8M→4.8M, 4M→2.4M, 3M→1.8M, 1.5M→900k, 0.8M→480k (audioBitrateBps
+  untouched). Stage G then routes them on qsv itself (decode h264 + encode
+  av1 both verified) — a hardware route, so tier 0's ≥1080p software cap
+  never engages. This is the ONLY matrix case in which a Tier-0 plan
+  carries av1 at all, and it does so with a real encode engine behind it.
+input:
+  media:
+    fileId: file-520
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 6000000000
+    overallBitrateBps: 20500000
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 41
+        width: 1920
+        height: 1080
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 20000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: true
+        openGop: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 160000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device:
+    fixture: devices.av1-fmp4-capable
+  network:
+    fixture: networks.local
+  policy:
+    fixture: policies.av1-preferred-t0
+  caps:
+    fixture: caps.hw-av1-qsv
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: transcode
+  reasons:
+    - video-interlaced
+    - hw-encoder-selected:qsv
+  container: fmp4-hls
+  ladder:
+    - { heightPx: 1080, videoBitrateBps: 4800000, audioBitrateBps: 384000, codec: av1 }
+    - { heightPx: 1080, videoBitrateBps: 2400000, audioBitrateBps: 160000, codec: av1 }
+    - { heightPx: 720, videoBitrateBps: 1800000, audioBitrateBps: 160000, codec: av1 }
+    - { heightPx: 480, videoBitrateBps: 900000, audioBitrateBps: 160000, codec: av1 }
+    - { heightPx: 360, videoBitrateBps: 480000, audioBitrateBps: 160000, codec: av1 }

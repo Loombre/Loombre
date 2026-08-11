@@ -220,6 +220,19 @@ export interface ServerPolicy {
   segmentDurationSec: 6;
   /** true when caps verify hevc encode */
   hevcEncodePreferred: boolean;
+  /**
+   * Operator PREFERENCE, passed through VERBATIM — default false (LD-7,
+   * docs/PLAYBACK.md §2.4). DELIBERATELY ASYMMETRIC with
+   * `hevcEncodePreferred`, which arrives already AND-ed with verified hevc
+   * encode capability by `apps/server/src/playback/resolve-policy.ts`:
+   * hevc's only gate is a capability fact, whereas AV1's gate is a TIER LAW
+   * (§7.2, LD-16) that must be enforced INSIDE this pure function, from
+   * `caps` + `policy.tier`, where the matrix can prove its unreachability
+   * property. Resolving it caller-side would put the law's enforcement
+   * outside the tested function — the same reason/flag-drift failure class
+   * the LD-3 shared-predicate fix exists to prevent.
+   */
+  av1EncodePreferred: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -283,11 +296,28 @@ export interface PlanInput {
 // §7 Bitrate ladder
 // ---------------------------------------------------------------------------
 
+/**
+ * The closed set of codecs a ladder rung may ENCODE to (docs/PLAYBACK.md
+ * §7/§7.1, LD-7) — a different concept from `VideoStream['codec']`'s
+ * source-fact union and deliberately narrower: `vp9`/`mpeg2`/`vc1`/`mpeg4`
+ * are things this engine can be handed, never things it produces.
+ *
+ * Exported as a runtime array as well as a type because
+ * `packages/contract/openapi.yaml`'s `LadderCodec` enum and
+ * `packages/shared`'s `LADDER_RUNG_CODECS` must agree with it member for
+ * member, and `apps/server/test/contract-reason-codes.spec.ts` can only
+ * check that against something with a runtime existence (the same reason
+ * `reasons.ts` exports its code lists as arrays beside the types).
+ */
+export const LADDER_CODECS = ["h264", "hevc", "av1"] as const;
+
+export type LadderCodec = (typeof LADDER_CODECS)[number];
+
 export interface LadderRung {
   heightPx: number;
   videoBitrateBps: number;
   audioBitrateBps: number;
-  codec: "h264" | "hevc";
+  codec: LadderCodec;
 }
 
 // ---------------------------------------------------------------------------
@@ -305,7 +335,10 @@ export type ToneMapMethod = "opencl" | "vulkan" | "videotoolbox" | "cuda" | "cpu
 
 export interface PlaybackPlanVideo {
   action: "copy" | "transcode" | "none";
-  targetCodec?: "h264" | "hevc";
+  /** The ENCODE target (docs/PLAYBACK.md §5): ranges over `LadderCodec`,
+   *  not `VideoStream['codec']` — the contract mirrors this, referencing
+   *  the `LadderCodec` schema (§7.4, owner-decision D2). */
+  targetCodec?: LadderCodec;
   encoder?: HardwareBackend;
   toneMap?: ToneMapMethod;
   /** Set (true) ONLY when meaningful — src/plan.ts's final video assembly:

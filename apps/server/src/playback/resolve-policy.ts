@@ -83,6 +83,10 @@ export interface SettingsPolicyInputs {
   /** Operator PREFERENCE only (transcode.hevcEncodePreferred) — ANDed with
    *  actual verified capability below; this is never trusted alone. */
   hevcEncodePreferred: boolean;
+  /** Operator PREFERENCE (transcode.av1EncodePreferred), forwarded VERBATIM
+   *  — deliberately NOT ANDed with capability. See the pass-through in
+   *  `resolveServerPolicy` below and docs/PLAYBACK.md §2.4. */
+  av1EncodePreferred: boolean;
   allowToneMapCpu: ServerPolicy["allowToneMapCpu"];
   ladderRungs: LadderRung[];
 }
@@ -112,6 +116,18 @@ export function resolveServerPolicy(
     ladderRungs: settings.ladderRungs,
     segmentDurationSec: 6,
     hevcEncodePreferred,
+    // VERBATIM — deliberately NOT `&& av1Verified` (docs/PLAYBACK.md §2.4,
+    // LD-7). hevc's preference is resolved two lines up because its only
+    // gate is a capability fact; AV1's gate is a TIER LAW (§7.2, LD-16)
+    // that must be enforced INSIDE the pure engine, from `caps` +
+    // `policy.tier`, where the matrix can prove its unreachability property
+    // (§10 property 5) over randomized inputs. Pre-resolving it here would
+    // put the law's enforcement outside the tested function — exactly the
+    // reason/flag-drift failure class the shared-predicate rule exists to
+    // prevent. Tier-0 lens: a preference flag alone never costs a small
+    // server a CPU cycle; the engine's eligibility gate decides what it may
+    // actually do.
+    av1EncodePreferred: settings.av1EncodePreferred,
   };
 }
 
@@ -134,6 +150,10 @@ export function resolveServerPolicyFromSettings(settingsService: SettingsService
     (settingsService.getEffective("transcode.allowToneMapCpu")?.value as ServerPolicy["allowToneMapCpu"] | undefined) ??
     "tier-gated";
   const ladderRungs = (settingsService.getEffective("transcode.ladderRungs")?.value as LadderRung[] | undefined) ?? DEFAULT_LADDER_RUNGS;
+  // `?? false` mirrors the registry default (owner-decision D5, opt-in) —
+  // defensive only, like every other fallback here.
+  const av1EncodePreferred =
+    (settingsService.getEffective("transcode.av1EncodePreferred")?.value as boolean | undefined) ?? false;
 
   return resolveServerPolicy(
     {
@@ -141,6 +161,6 @@ export function resolveServerPolicyFromSettings(settingsService: SettingsService
       ...(allowTranscode !== undefined ? { allowTranscode } : {}),
     },
     caps,
-    { maxSimultaneousTranscodes, hevcEncodePreferred, allowToneMapCpu, ladderRungs },
+    { maxSimultaneousTranscodes, hevcEncodePreferred, av1EncodePreferred, allowToneMapCpu, ladderRungs },
   );
 }

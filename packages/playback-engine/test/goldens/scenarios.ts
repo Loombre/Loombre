@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 /**
- * The 34 canonical golden scenarios for src/args/builder.ts (docs/PLAYBACK.md
+ * The 41 canonical golden scenarios for src/args/builder.ts (docs/PLAYBACK.md
  * §6, Phase 3 §11 step 4's 25 + step 7b fix F4's two vaapi burn-in
  * scenarios, 26/27, + the step-7 owner-smoke VT tone-map real-execution
  * fix's hybrid-deinterlace scenario, 28, + the four scenarios that landed
@@ -37,9 +37,13 @@
  * (2026-08-10, ffmpeg-verified) adds 33 (video-COPY, hevc openGop:true,
  * withSeek:true -> the `-bsf:v filter_units=remove_types=8-9` strip is
  * present) and its sibling 34 (same shape, withSeek:false -> the bsf is
- * ABSENT — a fresh run starts at the file's true IDR) — 34 files total
- * (golden discipline: each graph change landed with its goldens in the same
- * PR).
+ * ABSENT — a fresh run starts at the file's true IDR). Interpretation L
+ * (LD-3/LD-15, 2026-08-11) adds the four Dolby Vision strip corners, 35-38.
+ * Interpretation M (LD-7, Wave C1, 2026-08-11) adds the three AV1
+ * encode-target scenarios: 39 (hardware av1_nvenc), 40 (software libsvtav1
+ * at `-preset 10`), 41 (a §7.1(g)-DEMOTED rung landing on libx265 at the
+ * admin's verbatim bitrate) — 41 files total (golden discipline: each graph
+ * change landed with its goldens in the same PR).
  */
 import type {
   AudioStream,
@@ -160,6 +164,7 @@ function input(overrides: {
       ladderRungs: [],
       segmentDurationSec: 6,
       hevcEncodePreferred: false,
+      av1EncodePreferred: false,
     },
     caps: { backends: [{ backend: "software", decode: ["h264", "hevc"], encode: ["h264", "hevc"], toneMap: [], verifiedAtMs: 1_750_000_000_000 }] },
     selection: overrides.selection,
@@ -176,6 +181,15 @@ const RUNG_720P_H264: LadderRung = { heightPx: 720, videoBitrateBps: 3_000_000, 
 
 const H264_DEVICE_ENTRY = { codec: "h264" as const, maxProfile: "high", maxLevel: null, maxBitDepth: 8, maxWidth: 3840, maxHeight: 2160, maxFrameRate: 60, maxBitrateBps: null };
 const HEVC_DEVICE_ENTRY = { codec: "hevc" as const, maxProfile: "main10", maxLevel: null, maxBitDepth: 10, maxWidth: 3840, maxHeight: 2160, maxFrameRate: 60, maxBitrateBps: null };
+
+// Wave C1 (LD-7). `maxLevel: 40` is deliberate and load-bearing: §6
+// interpretation M forbids `-level` on an av1 target, and a NULL maxLevel
+// would make the goldens pass for the wrong reason.
+const AV1_DEVICE_ENTRY_WITH_LEVEL = { codec: "av1" as const, maxProfile: null, maxLevel: 40, maxBitDepth: 10, maxWidth: 3840, maxHeight: 2160, maxFrameRate: 60, maxBitrateBps: null };
+/** The §7.1 swap's ×0.6 of the 1080p/4M table rung. */
+const RUNG_1080P_AV1: LadderRung = { heightPx: 1080, videoBitrateBps: 2_400_000, audioBitrateBps: 160_000, codec: "av1" };
+/** An admin's explicit av1 rung after §7.1(g) demoted it — bitrate VERBATIM. */
+const RUNG_1080P_DEMOTED_HEVC: LadderRung = { heightPx: 1080, videoBitrateBps: 5_000_000, audioBitrateBps: 384_000, codec: "hevc" };
 
 export const GOLDEN_SCENARIOS: GoldenScenario[] = [
   {
@@ -782,6 +796,61 @@ export const GOLDEN_SCENARIOS: GoldenScenario[] = [
       video: { action: "copy" },
       audio: { action: "copy" },
       subtitle: { strategy: "none" },
+    },
+    options: { withSeek: false },
+  },
+  // ---- Wave C1 (LD-7): §6 interpretation M, the av1 encode column --------
+  {
+    id: "39-av1-nvenc-hw-encode",
+    scenario:
+      "HARDWARE av1 encode (interpretation M): av1_nvenc with the codec-agnostic -preset p4, the ×0.6 swap bitrate on the rung, and — the load-bearing negatives — NO -level even though the device's av1 entry declares maxLevel 40 (AV1 seq_level_idx ordinals do not correspond to H.264/HEVC decimal levels) and NO -tag:v (an fmp4 AV1 track's av01 sample entry is correct by default)",
+    input: input({
+      media: media({ video: [videoStream({ codec: "hevc", bitDepth: 10 })] }),
+      device: device([AV1_DEVICE_ENTRY_WITH_LEVEL, HEVC_DEVICE_ENTRY]),
+      selection: SEL_V0_A1,
+    }),
+    planShape: {
+      container: "fmp4-hls",
+      video: { action: "transcode", targetCodec: "av1", encoder: "nvenc" },
+      audio: { action: "copy" },
+      subtitle: { strategy: "none" },
+      rung: RUNG_1080P_AV1,
+    },
+    options: { withSeek: false },
+  },
+  {
+    id: "40-software-av1-libsvtav1-preset10",
+    scenario:
+      "SOFTWARE av1 encode on a Tier-1+ box (the permitted §7.2 software fallback): libsvtav1 with the NUMERIC SVT-AV1 -preset 10 (libx264's 'veryfast' is not a legal SVT-AV1 value), same negatives as scenario 39 — no -level, no -tag:v — PLUS the real-execution one: NO -maxrate. libsvtav1 reads bitrate == maxrate as CBR and refuses to open at all, writing zero segments; -b:v and -bufsize alone give it VBR. This is the exact argv apps/worker/test/transcode/av1-encode-args.integration.spec.ts executes against real ffmpeg on this machine",
+    input: input({
+      media: media({ video: [videoStream({ codec: "hevc", bitDepth: 10 })] }),
+      device: device([AV1_DEVICE_ENTRY_WITH_LEVEL, HEVC_DEVICE_ENTRY]),
+      selection: SEL_V0_A1,
+    }),
+    planShape: {
+      container: "fmp4-hls",
+      video: { action: "transcode", targetCodec: "av1", encoder: "software" },
+      audio: { action: "copy" },
+      subtitle: { strategy: "none" },
+      rung: RUNG_1080P_AV1,
+    },
+    options: { withSeek: false },
+  },
+  {
+    id: "41-demoted-av1-rung-software-hevc",
+    scenario:
+      "a DEMOTED rung (§7.1(g)/§7.2's Stage-G guard): the admin configured av1 at 1080p/5,000,000, the box could not deliver it, and the rung came back as hevc at the VERBATIM bitrate. The args must be an ordinary libx265 encode — -preset veryfast, -tag:v hvc1, and NOT one byte of libsvtav1 — proving a demotion really lands on the demoted codec's encoder",
+    input: input({
+      media: media({ video: [videoStream({ codec: "hevc", bitDepth: 10 })] }),
+      device: device([AV1_DEVICE_ENTRY_WITH_LEVEL, HEVC_DEVICE_ENTRY]),
+      selection: SEL_V0_A1,
+    }),
+    planShape: {
+      container: "fmp4-hls",
+      video: { action: "transcode", targetCodec: "hevc", encoder: "software" },
+      audio: { action: "copy" },
+      subtitle: { strategy: "none" },
+      rung: RUNG_1080P_DEMOTED_HEVC,
     },
     options: { withSeek: false },
   },

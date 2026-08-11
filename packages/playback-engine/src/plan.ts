@@ -182,7 +182,23 @@ import { buildFfmpegArgs } from "./args/builder.js";
  * change for a whole class of inputs, which is a behaviour change for
  * anything auditing stored plans.
  */
-export const ENGINE_VERSION = "0.9.0";
+/**
+ * 0.10.0 (LD-7 / LD-16, 2026-08-11, Wave C1): AV1 became a ladder TARGET.
+ * `LadderCodec` widens to `{h264, hevc, av1}`; ladder step (f) generalizes
+ * from "the hevc swap" to ONE codec-selection step with fixed precedence
+ * av1 > hevc > h264 (av1 claims sub-2160 rungs at ×0.6 when the operator
+ * opted in, the device declares av1 + fmp4, and `src/av1.ts`'s eligibility
+ * gate is not `'none'`); a NEW step (g) normalizes any remaining av1 rung
+ * by DEMOTING it (never dropping it) and firing informational
+ * `av1-rung-demoted`; Stage G gains §7.2's residual guard for the tier-0
+ * software-route corner; the arg builder gains §6 interpretation M's av1
+ * encoder column. MINOR, not patch: a new decision rule, new emittable
+ * ladder codec, new reason code, and new `ffmpegArgs` shapes for a whole
+ * class of inputs. Golden count 38 → 41, matrix 519 → 529 cases plus §10
+ * property 5. Copy-preference is untouched by construction — nothing in
+ * §7.1/§7.2 is reachable unless the final `video.action === 'transcode'`.
+ */
+export const ENGINE_VERSION = "0.10.0";
 
 /**
  * Stage D assembly (docs/PLAYBACK.md §3 Stage D.4, binding interpretation
@@ -511,13 +527,22 @@ export function plan(input: PlanInput): PlaybackPlan {
   let topRung: LadderRung | undefined;
 
   if (video.action === "transcode" && !transcodeDisabled) {
-    const builtLadder = buildLadder(media, device, input.network, input.policy, selection.videoStreamIndex);
+    // Wave C1 (LD-7): `buildLadder` returns `{ ladder, reasons }` — step
+    // (g)'s AV1 demotion normalization is the first ladder rule that fires
+    // a reason (`av1-rung-demoted`, §4). Those reasons are appended at
+    // Stage-F position, i.e. BEFORE Stage G's routing reasons, per §4's
+    // "ordered by stage, then axis" — and, like the routing reasons, they
+    // are DISCARDED on a refused plan, whose ladder is thrown away entirely
+    // (reporting a demotion inside a ladder that will never be served would
+    // describe work nothing is going to do).
+    const built = buildLadder(media, device, input.network, input.policy, input.caps, selection.videoStreamIndex);
     const routing = routeHardware(
       media,
+      device,
       selection.videoStreamIndex,
       input.caps,
       input.policy,
-      builtLadder,
+      built.ladder,
       toneMapRequired,
     );
 
@@ -542,9 +567,11 @@ export function plan(input: PlanInput): PlaybackPlan {
       };
       if (stream !== undefined) refusal.streamIndex = stream.index;
       reasons.splice(branchIdx + 1, 0, refusal);
-      // `ladder` stays [], `topRung` stays undefined, and none of
-      // encoder/targetCodec/toneMap are ever set.
+      // `ladder` stays [], `topRung` stays undefined, none of
+      // encoder/targetCodec/toneMap are ever set, and `built.reasons` (any
+      // §7.1(g) demotions) is discarded along with the ladder itself.
     } else {
+      reasons.push(...built.reasons);
       reasons.push(...routing.reasons);
       ladder = routing.ladder;
       video.encoder = routing.encoder;

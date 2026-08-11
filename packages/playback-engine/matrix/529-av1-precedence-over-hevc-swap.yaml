@@ -1,0 +1,70 @@
+name: transcode — BOTH hevcEncodePreferred and av1EncodePreferred on -> sub-2160 rungs go av1 at ×0.6, never hevc at ×0.75
+why: >
+  Wave C1 / LD-7, §7.1's fixed precedence av1 > hevc > h264 made
+  falsifiable. policies.av1-and-hevc-preferred-t1 turns BOTH swaps on
+  against a device declaring av1 AND hevc, on a box whose software
+  libsvtav1 encode is verified (tier 1, so §7.2 permits it). One
+  codec-selection step runs, not two: every rung below 2160p is claimed by
+  the AV1 rule at ×0.6 and the hevc rule never sees them. The numbers are
+  the discriminator — 8M→4,800,000 (av1) and NOT 6,000,000 (hevc ×0.75),
+  4M→2,400,000 and NOT 3,000,000, and so on. The 2160p rung is untouched by
+  either swap exactly as it always was, and drops here only on the 1080p
+  source height. If precedence ever inverted, every bitrate in this ladder
+  changes at once.
+input:
+  media:
+    fileId: file-529
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 6000000000
+    overallBitrateBps: 20500000
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 41
+        width: 1920
+        height: 1080
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 20000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: true
+        openGop: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 160000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device:
+    fixture: devices.av1-fmp4-capable
+  network:
+    fixture: networks.local
+  policy:
+    fixture: policies.av1-and-hevc-preferred-t1
+  caps:
+    fixture: caps.software-av1
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: transcode
+  reasons:
+    - video-interlaced
+    - software-fallback:encode
+  container: fmp4-hls
+  ladder:
+    - { heightPx: 1080, videoBitrateBps: 4800000, audioBitrateBps: 384000, codec: av1 }
+    - { heightPx: 1080, videoBitrateBps: 2400000, audioBitrateBps: 160000, codec: av1 }
+    - { heightPx: 720, videoBitrateBps: 1800000, audioBitrateBps: 160000, codec: av1 }
+    - { heightPx: 480, videoBitrateBps: 900000, audioBitrateBps: 160000, codec: av1 }
+    - { heightPx: 360, videoBitrateBps: 480000, audioBitrateBps: 160000, codec: av1 }

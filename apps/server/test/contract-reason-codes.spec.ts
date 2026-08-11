@@ -33,12 +33,24 @@
 // here by construction, exactly like the closed-enum-vs-pattern split in
 // openapi.yaml's own `oneOf`.
 
+// WAVE C1 EXTENSION (LD-7, 2026-08-11): the same drift class, one schema
+// over. `LadderCodec` is a closed enum with THREE independent runtime
+// echoes — packages/playback-engine's `LADDER_CODECS`, packages/shared's
+// `LADDER_RUNG_CODECS` (the settings-registry validator for
+// `transcode.ladderRungs`), and openapi.yaml's own enum. Nothing but a test
+// connects them: the engine may not import shared's registry (nor shared
+// the engine), and the SDK is generated FROM the contract, so a widened
+// engine union with a stale settings schema would silently make a legal
+// ladder rung unsavable from the admin UI. The final describe block below
+// asserts all three agree, in every direction.
+
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
-import { BLOCKING_REASON_CODES, FIXED_INFORMATIONAL_REASON_CODES } from "@loombre/playback-engine";
+import { BLOCKING_REASON_CODES, FIXED_INFORMATIONAL_REASON_CODES, LADDER_CODECS } from "@loombre/playback-engine";
+import { LADDER_RUNG_CODECS } from "@loombre/shared";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const OPENAPI_PATH = join(__dirname, "../../../packages/contract/openapi.yaml");
@@ -49,13 +61,18 @@ interface OpenApiDoc {
       PlanReasonCode: {
         oneOf: Array<{ type: string; enum?: string[]; pattern?: string }>;
       };
+      LadderCodec: { type: string; enum: string[] };
+      VideoAction: { properties: { targetCodec: { $ref?: string } } };
     };
   };
 }
 
+function loadDoc(): OpenApiDoc {
+  return parse(readFileSync(OPENAPI_PATH, "utf8")) as OpenApiDoc;
+}
+
 function loadClosedEnumMembers(): string[] {
-  const raw = readFileSync(OPENAPI_PATH, "utf8");
-  const doc = parse(raw) as OpenApiDoc;
+  const doc = loadDoc();
   const closedMember = doc.components.schemas.PlanReasonCode.oneOf.find(
     (member) => Array.isArray(member.enum),
   );
@@ -91,5 +108,33 @@ describe("contract PlanReasonCode enum vs engine reason-code lists (drift guard)
     expect(new Set(engineFixedCodes).size).toBe(engineFixedCodes.length);
     expect(new Set(contractClosedCodes).size).toBe(contractClosedCodes.length);
     expect(new Set(engineFixedCodes)).toEqual(new Set(contractClosedCodes));
+  });
+
+  it("av1-rung-demoted (LD-7 / owner-decision D1) is present in BOTH — the Wave C1 closed-enum addition", () => {
+    expect(FIXED_INFORMATIONAL_REASON_CODES).toContain("av1-rung-demoted");
+    expect(contractClosedCodes).toContain("av1-rung-demoted");
+  });
+});
+
+describe("contract LadderCodec vs engine + settings-registry (LD-7 drift guard, Wave C1)", () => {
+  const doc = loadDoc();
+  const contractLadderCodecs = doc.components.schemas.LadderCodec.enum;
+
+  it("the contract's LadderCodec enum is exactly the engine's LADDER_CODECS, in both directions", () => {
+    expect(new Set(contractLadderCodecs)).toEqual(new Set(LADDER_CODECS));
+  });
+
+  it("packages/shared's LADDER_RUNG_CODECS agrees too — an admin must be able to SAVE every rung codec the engine can emit", () => {
+    expect(new Set(LADDER_RUNG_CODECS)).toEqual(new Set(LADDER_CODECS));
+  });
+
+  it("av1 is a member of all three (the Wave C1 widening actually landed everywhere)", () => {
+    expect(contractLadderCodecs).toContain("av1");
+    expect(LADDER_CODECS as readonly string[]).toContain("av1");
+    expect(LADDER_RUNG_CODECS as readonly string[]).toContain("av1");
+  });
+
+  it("VideoAction.targetCodec references LadderCodec, not VideoCodec (owner-decision D2 — the contract states the exactly-emittable set)", () => {
+    expect(doc.components.schemas.VideoAction.properties.targetCodec.$ref).toBe("#/components/schemas/LadderCodec");
   });
 });

@@ -1,0 +1,71 @@
+name: transcode — UNREACHABILITY legs 1+2+3 — T0 + SOFTWARE-only av1 + operator opt-in -> zero av1 anywhere in the plan
+why: >
+  Wave C1 / LD-16, docs/PLAYBACK.md §7.2's unreachability argument, legs 1-3
+  pinned as one plan. Identical to case 520 in EVERY respect except the caps
+  set: caps.software-av1's libsvtav1 encode self-test passed, but no
+  non-software backend verifies av1, so §7.2's `'software'` arm — which
+  requires `tier >= 1` by definition — cannot apply and eligibility is
+  `'none'` (leg 2). With eligibility `'none'` the §7.1(f) swap produces no
+  av1 rung and §7.1(g) has none to normalize (leg 1), so `video.targetCodec`
+  (derived exclusively from the final ladder's top rung) cannot be av1 and
+  no av1 encoder name can appear in ffmpegArgs (leg 3). The operator opt-in
+  is deliberately still ON: a preference flag alone never costs a Tier-0 box
+  a CPU cycle. The resulting ladder is BYTE-IDENTICAL to what the same
+  input produced before Wave C1 — the T0 tier cap then trims it to the
+  ≤480p rungs exactly as it always did (caps.software-av1 has no hardware
+  backend, so §8.3 lands on rule (iii)).
+input:
+  media:
+    fileId: file-521
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 6000000000
+    overallBitrateBps: 20500000
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 41
+        width: 1920
+        height: 1080
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 20000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: true
+        openGop: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 160000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device:
+    fixture: devices.av1-fmp4-capable
+  network:
+    fixture: networks.local
+  policy:
+    fixture: policies.av1-preferred-t0
+  caps:
+    fixture: caps.software-av1
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: transcode
+  reasons:
+    - video-interlaced
+    - software-fallback:encode
+    - software-fallback:tier-capped
+  container: fmp4-hls
+  ladder:
+    - { heightPx: 480, videoBitrateBps: 1500000, audioBitrateBps: 160000, codec: h264 }
+    - { heightPx: 360, videoBitrateBps: 800000, audioBitrateBps: 160000, codec: h264 }

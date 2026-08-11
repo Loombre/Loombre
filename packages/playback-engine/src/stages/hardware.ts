@@ -222,7 +222,9 @@
  * lazy-rung-start model).
  */
 import type {
+  DeviceProfile,
   HardwareBackend,
+  LadderCodec,
   LadderRung,
   MediaInfo,
   ServerPolicy,
@@ -231,6 +233,7 @@ import type {
   VerifiedCapabilities,
 } from "../types.js";
 import type { PlanReason, PlanReasonCode } from "../reasons.js";
+import { av1DemotionReason, demoteAv1Rungs } from "../av1.js";
 
 function reason(code: PlanReasonCode, streamIndex: number | undefined, detail: string): PlanReason {
   const r: PlanReason = { code, detail };
@@ -266,7 +269,7 @@ function pickToneMapMethod(backend: VerifiedBackendCapability): ToneMapMethod | 
 /** The DISTINCT `codec` values of the surviving ladder rungs (binding
  *  interpretation 2) - order-independent (a Set), since only "does the
  *  candidate cover every one of these" is ever asked of it. */
-function distinctTargetCodecs(ladder: readonly LadderRung[]): ReadonlyArray<"h264" | "hevc"> {
+function distinctTargetCodecs(ladder: readonly LadderRung[]): ReadonlyArray<LadderCodec> {
   return Array.from(new Set(ladder.map((rung) => rung.codec)));
 }
 
@@ -275,7 +278,7 @@ function distinctTargetCodecs(ladder: readonly LadderRung[]): ReadonlyArray<"h26
  *  can be "chosen" as an encoder - protects against a real decode-only
  *  backend (§8.2 `d3d11va`) being vacuously selected when `targets` happens
  *  to be empty (`[].every(...)` is trivially true). */
-function encodeCoversTargets(backend: VerifiedBackendCapability, targets: readonly ("h264" | "hevc")[]): boolean {
+function encodeCoversTargets(backend: VerifiedBackendCapability, targets: readonly LadderCodec[]): boolean {
   return backend.encode.length > 0 && targets.every((codec) => backend.encode.includes(codec));
 }
 
@@ -349,6 +352,9 @@ export interface HardwareRoutingResult {
  *
  * @param media              For resolving the SELECTED video stream's own
  *                           codec + height (binding interpretations 2/4).
+ * @param device             ONLY for §7.2's residual guard (Wave C1): the
+ *                           shared demotion primitive decides hevc-vs-h264
+ *                           from `device.video`. No routing rule reads it.
  * @param videoStreamIndex   `selection.videoStreamIndex`, as threaded
  *                           through every other stage.
  * @param caps               `VerifiedCapabilities` (§2.5) - the FAKED P3.3
@@ -368,6 +374,7 @@ export interface HardwareRoutingResult {
  */
 export function routeHardware(
   media: MediaInfo,
+  device: DeviceProfile,
   videoStreamIndex: number | null,
   caps: VerifiedCapabilities,
   policy: ServerPolicy,
@@ -465,7 +472,38 @@ export function routeHardware(
     reason("software-fallback:encode", stream?.index, "no hardware backend covers this route"),
   ];
 
-  const { ladder: cappedLadder, tierCapped } = applyTierCap(ladder, policy.tier, sourceHeightPx);
+  // §7.2 RESIDUAL GUARD (LD-16, Wave C1). `'hw'` eligibility admits av1
+  // rungs into the ladder, but §8.3's one-route resolution can still
+  // terminate HERE at rule (iii) - e.g. the av1-capable hw backend fails
+  // encode coverage for a mixed {av1, hevc} target set. On THIS route only,
+  // and only when `policy.tier === 0`, every av1 rung is demoted through
+  // src/av1.ts's SHARED primitive (the same one stages/ladder.ts's step (g)
+  // calls - one predicate, so the ladder's admission rule and this guard
+  // cannot drift apart), BEFORE the existing >=1080p height cap below runs.
+  // Without it, this is precisely the pairing the LD-16 law forbids: a
+  // Tier-0 box software-encoding AV1 at a fraction of realtime.
+  //
+  // Tier 1+ rule-(iii) routes KEEP their av1 rungs - that IS the permitted
+  // software fallback, and the builder then encodes them with libsvtav1
+  // (§6 interp. M).
+  //
+  // The cause is fixed (`tier0-software-route`) rather than re-derived from
+  // `av1RungBlocker`: by construction that predicate returns `null` here
+  // (the rungs were admitted), so the demotion's cause is the ROUTE, not
+  // any device/capability condition - and saying so is what makes the
+  // reason legible to the admin ("your hardware can encode AV1, but not
+  // everything this ladder needs, so on Tier 0 we would not software-encode
+  // it").
+  let routedLadder: readonly LadderRung[] = ladder;
+  if (policy.tier === 0) {
+    const normalized = demoteAv1Rungs(ladder, device, "tier0-software-route");
+    routedLadder = normalized.rungs;
+    for (const demotion of normalized.demotions) {
+      reasons.push(av1DemotionReason(demotion));
+    }
+  }
+
+  const { ladder: cappedLadder, tierCapped } = applyTierCap(routedLadder, policy.tier, sourceHeightPx);
   if (tierCapped) {
     reasons.push(
       reason(

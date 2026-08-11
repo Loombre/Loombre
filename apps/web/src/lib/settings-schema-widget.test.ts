@@ -58,7 +58,10 @@ const LADDER_RUNG_SCHEMA: JsonSchemaLike = {
       heightPx: { type: "integer", exclusiveMinimum: 0, maximum: Number.MAX_SAFE_INTEGER },
       videoBitrateBps: { type: "integer", exclusiveMinimum: 0, maximum: Number.MAX_SAFE_INTEGER },
       audioBitrateBps: { type: "integer", exclusiveMinimum: 0, maximum: Number.MAX_SAFE_INTEGER },
-      codec: { type: "string", enum: ["h264", "hevc"] },
+      // Tracks packages/shared's LADDER_RUNG_CODECS — av1 landed with LD-7
+      // (Wave C1). This fixture claims to be verbatim z.toJSONSchema()
+      // output, so it has to move when the registry's enum does.
+      codec: { type: "string", enum: ["h264", "hevc", "av1"] },
     },
     required: ["heightPx", "videoBitrateBps", "audioBitrateBps", "codec"],
     additionalProperties: false,
@@ -145,8 +148,15 @@ describe("validateAgainstJsonSchema — the A7 client-side floor", () => {
     const valid = [{ heightPx: 1080, videoBitrateBps: 8_000_000, audioBitrateBps: 384_000, codec: "h264" }];
     expect(validateAgainstJsonSchema(valid, LADDER_RUNG_SCHEMA)).toBeNull();
     expect(validateAgainstJsonSchema([], LADDER_RUNG_SCHEMA)).toContain("at least 1 item");
+    // av1 became a legal rung codec with LD-7 (Wave C1) — this fixture
+    // tracks the registry's real enum, so it must accept it too.
+    const av1 = [{ heightPx: 1080, videoBitrateBps: 8_000_000, audioBitrateBps: 384_000, codec: "av1" }];
+    expect(validateAgainstJsonSchema(av1, LADDER_RUNG_SCHEMA)).toBeNull();
 
-    const badCodec = [{ heightPx: 1080, videoBitrateBps: 8_000_000, audioBitrateBps: 384_000, codec: "av1" }];
+    // vp9 is a SOURCE codec, never an encode target — the enum's job is to
+    // reject exactly this, and it is what the "bad item field" case needs
+    // to be now that av1 is legal.
+    const badCodec = [{ heightPx: 1080, videoBitrateBps: 8_000_000, audioBitrateBps: 384_000, codec: "vp9" }];
     const error = validateAgainstJsonSchema(badCodec, LADDER_RUNG_SCHEMA);
     expect(error).toContain("Item 1");
     expect(error).toContain("codec");
