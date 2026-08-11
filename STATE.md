@@ -1104,6 +1104,26 @@ shared primitive + the reviewer's exact repro as red-first matrix case
 added to the §10 list; finding-3 VIDEO_ENCODER_NAMES exported + worker
 equality spec. C2 SPEC lane (fable) spawned in parallel — §7.2 rule-(iii)
 reserved to the follow-up lane; C2 spec told the clause is incoming.
+
+**C1 FOLLOW-UP LANDED + MERGED (2026-08-11) — orchestrator-verified**
+(537 matrix incl. new case 530 + property 6, hardware/av1 89, mirror 5 on
+re-run; 5th stale-provisioning occurrence self-corrected). Finding 1: one
+shared predicate `softwareAv1EncodeVerified` (eligibility's software arm
+refactored to CALL it — one definition), tier test first so the LD-16
+wording and every leg-4 pin stay byte-identical; new cause
+software-route-no-av1; the old "T1+ keeps av1" unit amended to the only
+legal shape (software row verifies av1). No golden 42 — argv unchanged
+(targetCodec still top-rung hevc; demoted-sibling shape pinned by 41),
+reasoned in the commit body. Finding 2: property 6 at 2000 samples over
+the UNRESTRICTED tier-0 space; measured non-vacuity (1359 hw-av1 boxes /
+383 software routes / 102 guard demotions); scratch mutation proof
+captured (guard neutered → property 6 fails with the emitted rung).
+Finding 3: mirror spec proves per-backend×codec name equality over the
+UNION of both tables + the D4 dynamic-name asymmetry via resolveEncoderName;
+scratch rename caught (av1_qsv_hw drift named in the failure). Orchestrator
+closed the lane's flagged §4 staleness in-merge (cause enum + guard
+qualifier, one commit). ENGINE_VERSION 0.10.1. gate:full running on the
+merged tree.
 THREE NON-BLOCKING FINDINGS (record) → owner decision pending: (1) MODERATE
 spec-gap-with-repro: Tier-1+ rule-(iii) route-collapse can keep av1 rungs
 whose SOFTWARE encode was never probe-verified (impl faithfully matches
