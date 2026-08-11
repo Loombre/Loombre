@@ -364,9 +364,10 @@ directions if the engine and the contract disagree.
 `av1-rung-demoted` (LD-7, 2026-08-11 — owner-decision D1 in §7.4; this IS a
 closed-enum addition and therefore a contract PR per the rule above) fires
 once per ladder rung whose configured/selected `av1` codec was demoted to
-`hevc`/`h264` by §7.1's normalization step or §7.2's Stage-G tier-0
-software-route guard. `detail` is
-`cause=<tier0-no-hw-av1|device-no-av1|no-av1-encoder|tier0-software-route>
+`hevc`/`h264` by §7.1's normalization step or §7.2's Stage-G software-route
+guard (tier-0 always; tier-1+ when the software row lacks probe-verified
+av1 — the rule-(iii) clause). `detail` is
+`cause=<tier0-no-hw-av1|device-no-av1|no-av1-encoder|tier0-software-route|software-route-no-av1>
 demotedTo=<hevc|h264> heightPx=<n>`. It exists because a silent demotion
 would violate design law 3's spirit — the admin asking "why is this rung not
 AV1?" must get an answer from the plan itself, exactly as
