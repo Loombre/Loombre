@@ -36,11 +36,28 @@
 //     to the SAME `onBack` the desktop Back button uses — declining/
 //     dismissing always leaves the user exactly where they were, never
 //     silently picks the fallback for them.
+//
+// LD-1 fix (owner-reported, annotated screenshot, 2026-08-10): two changes
+// to the SESSION-REFUSED presentation, applying to every unavailable
+// variant (a real 409/422/429 AND the client-synthesized
+// `clientPlaybackErrorReasons()` path VideoPlayer.tsx's recovery machinery
+// falls through to — both just set `reasons`/`statusCode` the same way, so
+// nothing here branches on which one it is):
+//   (a) the yellow "Can't play this right now" sparkle `<Tag>` banner is
+//       gone entirely — it repeated the status pill's own message with no
+//       new information.
+//   (b) the desktop Back button moved from a bottom `.footer` row to the
+//       TOP of the card, sharing `.header` with the status/badge row it
+//       used to sit below — Back is far-left, the SESSION REFUSED · HTTP
+//       nnn badge row shifts right of it. `.header` is desktop-only (not
+//       part of the shared `content`/`statusRow` trees below): the phone
+//       BottomSheet already has its own top-of-sheet "Back" done-button
+//       (see the phone branch), so putting Back inside the shared trees
+//       would duplicate it there.
 
-import { ArrowLeft, Sparkles } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import type { components } from "@loombre/sdk";
 import { Icon } from "../icon/Icon.js";
-import { Tag } from "../ui/Chip.js";
 import { Button } from "../ui/Button.js";
 import { BottomSheet } from "../ui/BottomSheet.js";
 import { useMediaQuery } from "../ui/use-media-query.js";
@@ -122,16 +139,18 @@ export function UnavailableScreen({ title, backdropUrl, dominantColor, reasons, 
     </div>
   ) : null;
 
+  // The status/badge row — shared by both forms (part of the phone sheet
+  // body, and combined with the desktop-only Back button in `.header`
+  // below), never duplicated.
+  const statusRow = (
+    <div className={styles.statusRow}>
+      <span className={styles.statusPill}>Session refused{statusCode !== undefined ? ` · HTTP ${statusCode}` : ""}</span>
+      <span className={styles.statusNote}>Planner reasons, verbatim</span>
+    </div>
+  );
+
   const content = (
     <>
-      <div className={styles.statusRow}>
-        <span className={styles.statusPill}>Session refused{statusCode !== undefined ? ` · HTTP ${statusCode}` : ""}</span>
-        <span className={styles.statusNote}>Planner reasons, verbatim</span>
-      </div>
-      <Tag>
-        <Icon icon={Sparkles} size="dense" aria-hidden />
-        Can’t play this right now
-      </Tag>
       <h1 className={styles.title}>“{title}” can’t play on this device right now</h1>
       <p className={styles.subtitle}>Here’s exactly why:</p>
       {reasonList}
@@ -144,7 +163,10 @@ export function UnavailableScreen({ title, backdropUrl, dominantColor, reasons, 
       <div className={styles.wrap}>
         <AmbientBackdrop imageUrl={backdropUrl} dominantColor={dominantColor} />
         <BottomSheet open onClose={onBack} title="Can’t play this right now" doneLabel="Back">
-          <div className={styles.sheetBody}>{content}</div>
+          <div className={styles.sheetBody}>
+            {statusRow}
+            {content}
+          </div>
         </BottomSheet>
       </div>
     );
@@ -154,13 +176,14 @@ export function UnavailableScreen({ title, backdropUrl, dominantColor, reasons, 
     <div className={styles.wrap}>
       <AmbientBackdrop imageUrl={backdropUrl} dominantColor={dominantColor} />
       <div className={styles.panel}>
-        {content}
-        <div className={styles.footer}>
+        <div className={styles.header}>
           <Button type="button" variant="secondary" onClick={onBack}>
             <Icon icon={ArrowLeft} size="dense" />
             Back
           </Button>
+          {statusRow}
         </div>
+        {content}
       </div>
     </div>
   );

@@ -189,12 +189,12 @@ describe("PlayerControls — transport wiring", () => {
     button(view, "Pause").click();
     expect(p.onTogglePlay).toHaveBeenCalledTimes(1);
 
-    // Wave 2 L7: the glyphs have their numerals baked in, so the amounts
-    // are part of the contract — back 15s, forward 30s.
-    button(view, "Back 15 seconds").click();
-    expect(p.onSeekRelative).toHaveBeenCalledWith(-15_000);
-    button(view, "Forward 30 seconds").click();
-    expect(p.onSeekRelative).toHaveBeenCalledWith(30_000);
+    // Wave 2 L7 / LD-12(b): the glyphs have their numerals baked in, so the
+    // amounts are part of the contract — 10s both directions.
+    button(view, "Back 10 seconds").click();
+    expect(p.onSeekRelative).toHaveBeenCalledWith(-10_000);
+    button(view, "Forward 10 seconds").click();
+    expect(p.onSeekRelative).toHaveBeenCalledWith(10_000);
 
     button(view, "Mute").click();
     expect(p.onToggleMute).toHaveBeenCalledTimes(1);
@@ -202,6 +202,44 @@ describe("PlayerControls — transport wiring", () => {
     expect(p.onToggleFullscreen).toHaveBeenCalledTimes(1);
     button(view, "Back").click();
     expect(p.onBack).toHaveBeenCalledTimes(1);
+  });
+
+  it("LD-12(a): groups the transport cluster (skip/play/mute/volume) in its own wrapper, separate from the right-aligned fullscreen/picker controls", () => {
+    const p = props({ isPlaying: true });
+    view = renderIntoBody(<PlayerControls {...p} />);
+
+    const backButton = button(view, "Back 10 seconds");
+    const playButton = button(view, "Pause");
+    const forwardButton = button(view, "Forward 10 seconds");
+    const muteButton = button(view, "Mute");
+    const volumeSlider = view.container.querySelector('input[aria-label="Volume"]')!;
+    const fullscreenButton = button(view, "Fullscreen");
+
+    // The three-zone bar: skip-back/play/skip-forward/volume all share ONE
+    // parent (the centered cluster) — a real DOM grouping the CSS module's
+    // equal-flex left/right zones center as a unit, not five independently
+    // positioned siblings.
+    const cluster = backButton.parentElement!;
+    expect(cluster).toBe(playButton.parentElement);
+    expect(cluster).toBe(forwardButton.parentElement);
+    expect(cluster).toBe(muteButton.parentElement);
+    expect(cluster.contains(volumeSlider)).toBe(true);
+
+    // Fullscreen (and the picker buttons, when present) live in a SEPARATE
+    // right-hand wrapper, not the centered cluster.
+    expect(fullscreenButton.parentElement).not.toBe(cluster);
+    expect(cluster.contains(fullscreenButton)).toBe(false);
+
+    // The cluster sits after an empty leading spacer element (the left
+    // zone that balances the right zone to actually center it) and before
+    // the right-hand wrapper — left spacer, centered cluster, right
+    // controls, in that order.
+    const controlsRow = cluster.parentElement!;
+    const rowChildren = Array.from(controlsRow.children);
+    const clusterIndex = rowChildren.indexOf(cluster);
+    expect(clusterIndex).toBeGreaterThan(0);
+    expect(rowChildren[clusterIndex - 1]!.children.length).toBe(0); // the left spacer is empty
+    expect(rowChildren[clusterIndex + 1]!.contains(fullscreenButton)).toBe(true);
   });
 
   it("only mounts the track pickers once a track popover is opened, and forwards directPlay", () => {

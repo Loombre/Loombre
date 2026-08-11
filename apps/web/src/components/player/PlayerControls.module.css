@@ -115,18 +115,41 @@
   flex-shrink: 0;
 }
 
+/* LD-12(a) owner fix (2026-08-10): three-zone bar — the classic centered-
+   middle shape. `.controlsSideLeft` and `.controlsSideRight` are both
+   `flex: 1 1 0%` (the `flex: 1` shorthand), so they grow to EQUAL widths
+   regardless of `.controlsSideRight`'s content (chapters/tracks/
+   fullscreen) — that equal split is what centers `.transportCluster`
+   (skip-back/play/skip-forward/volume) in the middle, not just visually
+   balances it. `.controlsSideRight` right-aligns its own children so they
+   stay flush with the bar's right edge, unchanged from before. */
 .controlsRow {
   display: flex;
   align-items: center;
   gap: var(--space-2xs);
 }
 
-.spacer {
+.controlsSideLeft {
   flex: 1;
 }
 
+.transportCluster {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2xs);
+  flex-shrink: 0;
+}
+
+.controlsSideRight {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2xs);
+}
+
 /* H6 (W3 fidelity audit): "flanking controls 38x38 ghosts" — dc:1465's
-   back-10/forward-30 buttons are exactly 38x38 with a transparent rest
+   back-10/forward-10 buttons are exactly 38x38 with a transparent rest
    state and `rgba(255,255,255,.08)` hover (was 40x40 / 14%). */
 .iconButton {
   display: inline-flex;

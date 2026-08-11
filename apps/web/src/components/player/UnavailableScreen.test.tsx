@@ -207,6 +207,43 @@ describe("UnavailableScreen rendering the real engine's refusal (desktop)", () =
     expect(view.container.textContent).toContain("Back");
   });
 
+  it("LD-1(a): the yellow 'Can't play this right now' sparkle banner is gone entirely", () => {
+    installMatchMedia(false);
+    const result = plan({ media: seededMovie2160pHdr, device, network, policy, caps, selection, mode: "stream" });
+    view = renderIntoBody(
+      <UnavailableScreen title="Glass Orchard" backdropUrl={null} dominantColor={null} reasons={result.reasons} fallback={null} onAcceptFallback={vi.fn()} onBack={vi.fn()} />,
+    );
+    // The banner was a lucide Sparkles icon inside a Tag pill — lucide-react
+    // stamps a `lucide-sparkles` class on its own generated <svg>, so its
+    // absence proves the glyph (and its wrapping banner) is gone, not just
+    // that the same words moved somewhere else.
+    expect(view.container.querySelector("svg.lucide-sparkles")).toBeNull();
+    // On desktop nothing else says this phrase (the BottomSheet's own title
+    // saying it is phone-only — see the phone describe block below), so its
+    // total absence here proves the banner, not just its icon, is gone.
+    expect(view.container.textContent).not.toContain("Can’t play this right now");
+  });
+
+  it("LD-1(b): Back sits at the TOP of the card, left of the SESSION REFUSED badge row — not in a bottom footer", () => {
+    installMatchMedia(false);
+    const result = plan({ media: seededMovie2160pHdr, device, network, policy, caps, selection, mode: "stream" });
+    view = renderIntoBody(
+      <UnavailableScreen title="Glass Orchard" backdropUrl={null} dominantColor={null} reasons={result.reasons} fallback={null} onAcceptFallback={vi.fn()} onBack={vi.fn()} />,
+    );
+
+    const backButton = Array.from(view.container.querySelectorAll("button")).find((b) => b.textContent?.trim() === "Back");
+    expect(backButton).toBeTruthy();
+    const statusPill = Array.from(view.container.querySelectorAll("span")).find((s) => s.textContent?.startsWith("Session refused"));
+    expect(statusPill).toBeTruthy();
+    const heading = view.container.querySelector("h1");
+    expect(heading).toBeTruthy();
+
+    // Back precedes BOTH the badge row (shifts right of it) and the
+    // reasons/title content below (top of the card, not a bottom footer).
+    expect(backButton!.compareDocumentPosition(statusPill!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(backButton!.compareDocumentPosition(heading!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   it("renders no fallback affordance when none is offered (the design's own \"when the plan offers one\" qualifier)", () => {
     installMatchMedia(false);
     const result = plan({ media: seededMovie2160pHdr, device, network, policy, caps, selection, mode: "stream" });
@@ -271,6 +308,13 @@ describe("UnavailableScreen rendering the real engine's refusal (phone sheet)", 
     expect(dialog).not.toBeNull(); // BottomSheet, not the plain desktop panel
     const text = view.container.textContent ?? "";
     for (const reason of result.reasons) expect(text).toContain(reason.code);
+
+    // LD-1(a) applies to the phone sheet too — the sparkle banner glyph is
+    // gone (the sheet's own title text still legitimately says "Can't play
+    // this right now" as its accessible heading, which is a different
+    // element from the removed banner — so this checks the icon, not the
+    // words).
+    expect(view.container.querySelector("svg.lucide-sparkles")).toBeNull();
 
     document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
     expect(onBack).toHaveBeenCalledTimes(1);
