@@ -927,6 +927,32 @@ grep, whole-tree conflict-marker sweep clean); post-merge re-runs green
 against the merged schema (0041-0043 replayed), depcruise 1466 modules
 clean.
 
+**B1 checkpoint (2026-08-11): LD-13 trio DONE — orchestrator-verified**
+(88/88 on re-run: invites 38 + collision-matrix 23 + reauth-adversarial 14 +
+conformance 13; base current-main lineage after its own double ff). MAJOR
+SCOUT FINDING: LD-13a was ALREADY IMPLEMENTED — not by Wave A's 086643de but
+by the earlier current-password re-auth run (dependentRequired contract
+clause + require-current-password.ts presence check + the P4.23 narrowing
+row) — the brief's premise was stale; the lane verified end-to-end and
+delivered the three missing adversarial tests instead (shape parity 403-vs-
+401 same RFC 9457 field set; timing parity 8-sample medians proving neither
+path short-circuits argon2id; real Promise.all race vs concurrent admin
+reset, coherent under either interleaving). (b) GENUINE BUG fixed red-first:
+email:null was silently ignored → preset applied against claimant intent;
+ClaimInviteRequest.email now [string,'null']; 8-cell grid green; web clear-
+field sends explicit null. (c) TokenPair.emailApplied additive (selective-
+send mirrors mustChangePassword); pre-auth byte-identity proven (the claim
+GET never queries users — no timing floor needed, documented in-test); web
+interstitial. Contract: oasdiff NO BREAKING (additive only; the 13a
+narrowing pre-existed); sdk-drift clean; conformance allowance ZERO.
+PROCESS DEVIATIONS, disclosed + accepted: (a) no red/green pair exists
+because no fix was needed; (c) implemented-before-test (additive, nothing
+pre-existing to contradict) — BOTH flagged to Wave D reviewer 2, who
+independently re-probes LD-13c per charter. Lane ran the docs/website sync
+itself from its branch — orchestrator re-syncs from merged main at Wave B
+integration (branch-state dist is transient). register-lint 27 baseline
+held (pre-existing, inherited from Wave A — not this lane's).
+
 **B4 checkpoint (2026-08-11): stash-connection DELETE DONE — orchestrator-
 verified** (90/90 on re-run: e2e 11 + conformance 13 + event-schemas 54 +
 db 12; base = current main c018b564 after its own ff fix). oasdiff purely
