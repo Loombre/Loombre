@@ -15,6 +15,10 @@ CONFIG_ENV="/Library/Application Support/Loombre/config/loombre.env"
 : "${LOOMBRE_FFPROBE:=$HERE/runtime/ffmpeg/ffprobe}"
 export LOOMBRE_FFMPEG LOOMBRE_FFPROBE
 
+# LOOMBRE_LOG_FILE (LD-11): see bin/loombre-server's comment — same
+# rationale, pointed at com.loombre.worker.plist's own StandardOutPath.
+export LOOMBRE_LOG_FILE="${LOOMBRE_LOG_FILE:-/Library/Logs/Loombre/worker.out.log}"
+
 # No DATABASE_URL default (the rc.1 dev-only localhost:5442 default made
 # the worker crash-loop on every real Mac). Unset + LOOMBRE_DATA_DIR set
 # means the worker DISCOVERS the embedded credentials apps/server's

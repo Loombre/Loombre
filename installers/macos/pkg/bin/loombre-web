@@ -53,7 +53,14 @@ NODE_ENV=production
 # loombre.env wins via the :- expansion.
 LOOMBRE_SERVER_ORIGIN="${LOOMBRE_SERVER_ORIGIN:-http://localhost:3001}"
 
-export PORT HOSTNAME NODE_ENV LOOMBRE_SERVER_ORIGIN
+# LOOMBRE_LOG_FILE (LD-11): see bin/loombre-server's comment — same
+# rationale, pointed at com.loombre.web.plist's own StandardOutPath. Not
+# consumed by anything today (the log-tail card only reads the SERVER
+# process's own env — apps/server/src/catalog/admin-logs-tail.ts), set
+# here for consistency and any future per-process log surface.
+LOOMBRE_LOG_FILE="${LOOMBRE_LOG_FILE:-/Library/Logs/Loombre/web.out.log}"
+
+export PORT HOSTNAME NODE_ENV LOOMBRE_SERVER_ORIGIN LOOMBRE_LOG_FILE
 
 # Monorepo standalone layout: the entry point is apps/web/server.js INSIDE
 # the staged standalone root, not server.js at its top level — see
