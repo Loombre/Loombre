@@ -61,11 +61,29 @@ interface JobUpdatedEventRow {
 }
 
 async function jobUpdatedEventsFor(jobId: string): Promise<JobUpdatedEventRow[]> {
+  // ORDER BY seq alone — NOT `id`, and NOT `ts_ms` even as a leading
+  // sort key. `id` is a UUIDv7 (loombre_uuidv7(), packages/db/schema.sql):
+  // its leading 48 bits are clock_timestamp() truncated to the
+  // millisecond, but every remaining bit is plain `random()` with no
+  // monotonic-counter fallback for same-millisecond collisions. Two events
+  // written within the same Postgres clock millisecond (routine under
+  // concurrent load) therefore tie on the ordered prefix and fall back to
+  // comparing random tail bits — a coin flip uncorrelated with actual
+  // write order (observed once as this exact spec flaking: events read
+  // back ['queued','failed','active']). `ts_ms` is application-supplied
+  // (Date.now()) and therefore not even monotonic on its own host: an NTP
+  // step can walk it backwards mid-run, so ordering BY ts_ms first (even
+  // with `seq` as a tie-break) reintroduces a version of the same hazard
+  // `seq` exists to remove. `seq` (migrations/0039_events_seq.sql) is a
+  // Postgres identity-sequence column: nextval() hands out strictly
+  // increasing values in the exact order it is invoked, with no possible
+  // tie and no dependence on any clock — it is the guaranteed total order
+  // over insertion attempts by itself, so it is used alone.
   const rows = await readDb
     .selectFrom('events')
     .selectAll()
     .where('type', '=', 'job.updated')
-    .orderBy('id', 'asc')
+    .orderBy('seq', 'asc')
     .execute();
   return (rows as unknown as JobUpdatedEventRow[]).filter((r) => r.payload.jobId === jobId);
 }
@@ -161,5 +179,46 @@ describe('createLedger job.updated emission (P4.13)', () => {
     const events = await jobUpdatedEventsFor(jobId);
     expect(events.map((e) => e.payload.status)).toEqual(['queued', 'active', 'failed']);
     expect(events[2]!.payload.errorMessage).toBe('verify step: server_version mismatch');
+  });
+
+  it('read order does not depend on job.updated ids being insertion-ordered (root cause of the observed ms-tie flake, migrations/0039_events_seq.sql)', async () => {
+    const jobId = '018f6f1e-0000-7000-8000-0000000000a5';
+    const tsMs = Date.now();
+
+    // Deterministic reproduction of the flake observed once under a
+    // parallel gate:full run (events read back ['queued','failed','active']
+    // instead of ['queued','active','failed']): inserted directly (bypassing
+    // the ledger and loombre_uuidv7()) with explicit ids chosen so
+    // lexicographic (`ORDER BY id ASC`) order is the REVERSE of physical
+    // insertion order for the active/failed pair. This is exactly the shape
+    // a same-millisecond loombre_uuidv7() collision can produce under load
+    // (its non-timestamp bits are plain `random()`, uncorrelated with
+    // insertion order — see migrations/0039_events_seq.sql's header) but
+    // forced here instead of raced, so the test cannot flake.
+    async function insertRaw(id: string, status: string, errorMessage: string | null) {
+      await readDb
+        .insertInto('events')
+        .values({
+          id,
+          type: 'job.updated',
+          ts_ms: tsMs,
+          actor_user_id: null,
+          payload: { jobId, jobType: 'pg-upgrade', status, errorMessage, updatedAtMs: tsMs },
+        })
+        .execute();
+    }
+
+    await insertRaw('018f6f1e-0000-7000-8000-0000000000b0', 'queued', null);
+    // Inserted SECOND (i.e. first in physical/seq order among this pair)
+    // but given the LEXICOGRAPHICALLY GREATER id.
+    await insertRaw('ffffffff-ffff-7fff-8fff-ffffffffffff', 'active', null);
+    // Inserted THIRD but given the LEXICOGRAPHICALLY SMALLER id — a plain
+    // `ORDER BY id ASC` would sort this ahead of 'active' despite being
+    // written after it, which is semantically impossible (a job cannot
+    // fail before it went active).
+    await insertRaw('00000000-0000-7000-8000-000000000001', 'failed', 'forced tie-break probe');
+
+    const events = await jobUpdatedEventsFor(jobId);
+    expect(events.map((e) => e.payload.status)).toEqual(['queued', 'active', 'failed']);
   });
 });
