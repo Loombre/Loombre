@@ -35,7 +35,8 @@
     "embed-public-key": "node scripts/release/embed-public-key.mjs",
     "release:test": "node --test \"scripts/release/test/**/*.test.mjs\"",
     "scripts:test": "node --test \"scripts/*.test.mjs\" \"scripts/release/test/**/*.test.mjs\"",
-    "installers:test": "node --test \"installers/**/*.test.mjs\""
+    "installers:test": "node --test \"installers/**/*.test.mjs\"",
+    "vendor:check": "node installers/check-vendor-urls.mjs"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
