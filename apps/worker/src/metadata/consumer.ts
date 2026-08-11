@@ -243,7 +243,7 @@ export function metadataConsumerHandler(deps: MetadataConsumerDeps): JobHandler<
           // rows resolves to PROVIDER_CHAIN[payload.mediaKind] verbatim.
           await resolveProviderChainForLibrary(deps.db, item.libraryId, payload.mediaKind, item.contentClass, {
             registry: deps.registry,
-            getBreaker: (pluginId) => pluginBreakers.getBreaker(pluginId),
+            getBreaker: (pluginId, seed) => pluginBreakers.getBreaker(pluginId, seed), // C5.1: forward the seed
             clock,
             log,
           }),

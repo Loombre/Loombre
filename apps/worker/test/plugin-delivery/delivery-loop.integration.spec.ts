@@ -1063,3 +1063,62 @@ describe("kill/restart cursor-resume", () => {
     expect(subscriber.requests).toHaveLength(1);
   });
 });
+
+// ---------------------------------------------------------------------------
+// C5.1 fix wave (closes deferred LPP L-5, worker-side, delivery-loop path)
+// ---------------------------------------------------------------------------
+//
+// startPluginDeliveryLoop's OWN internal breaker map (runOnce's `let
+// breaker = breakers.get(plugin.id); if (!breaker) { ... }`) is a THIRD,
+// independent in-process breaker registry alongside
+// apps/worker/src/metadata/plugin-breakers.ts's — every other breaker test
+// in this file constructs a PluginCircuitBreaker manually and drives
+// deliverOnePluginTick directly, bypassing this exact map/runOnce()
+// construction path entirely, so this is the one test that actually
+// exercises it.
+describe("C5.1: startPluginDeliveryLoop's breaker map seeds from plugins.consecutive_failures on first construction", () => {
+  it("a durable count another process already recorded is not silently discarded by this loop instance's first breaker construction for a plugin", async () => {
+    // Nothing listens here — every attempt is a genuine ECONNREFUSED.
+    const deadProbe = createServer();
+    await new Promise<void>((resolve) => deadProbe.listen(0, "127.0.0.1", resolve));
+    const { port: deadPort } = deadProbe.address() as AddressInfo;
+    await new Promise<void>((resolve) => deadProbe.close(() => resolve()));
+    const deadUrl = `http://127.0.0.1:${deadPort}${LPP_DEFAULT_EVENT_SUBSCRIBER_ENDPOINT}`;
+
+    const secret = "c51-reseed-secret";
+    // 'watchlist.added', restricted-scoped — a type unused by every other
+    // test in this file (H-4 fix wave + per-test type uniqueness, same
+    // reasoning the batch-cap test's own comment gives).
+    const pluginId = await createSubscriberPlugin({ endpointUrl: deadUrl, secret, contentClass: "restricted", eventTypes: ["watchlist.added"] });
+
+    // Simulate: another process (apps/server's periodic health check)
+    // already recorded 3 consecutive failures for this plugin durably —
+    // even though THIS delivery-loop instance has never attempted a
+    // delivery to it yet (its own breaker map is brand new).
+    await db.updateTable("plugins").set({ consecutive_failures: 3 }).where("id", "=", pluginId).execute();
+
+    const base = Date.now();
+    const loop = startPluginDeliveryLoop({ db, env: testEnv(), now: () => base, random: () => 0, pollIntervalMs: 3_600_000 });
+    try {
+      // Exactly 2 more ticks — not 5 — must trip it (LPP_BREAKER_FAILURE_
+      // THRESHOLD), proving the durable count seeded this loop's fresh
+      // breaker instead of starting at 0. Each tick needs a fresh
+      // candidate event, or deliverOnePluginTick has nothing to deliver
+      // and never dials the endpoint at all.
+      for (let i = 0; i < 2; i++) {
+        await insertEvent("watchlist.added", base + i, {
+          userId: "018f6f1e-0000-7000-8000-0000000c5100",
+          itemId: `018f6f1e-0000-7000-8000-0000000c510${i}`,
+        });
+        await loop.runOnce();
+      }
+    } finally {
+      await loop.stop();
+    }
+
+    const row = await db.selectFrom("plugins").select(["enabled", "disabled_reason", "consecutive_failures"]).where("id", "=", pluginId).executeTakeFirstOrThrow();
+    expect(row.enabled).toBe(false);
+    expect(row.disabled_reason).toBe("breaker");
+    expect(row.consecutive_failures).toBe(5);
+  }, 20_000);
+});

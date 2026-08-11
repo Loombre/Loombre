@@ -135,7 +135,7 @@ export function metadataSearchConsumerHandler(deps: MetadataSearchConsumerDeps):
 
     const chain = await resolveProviderChainForLibrary(deps.db, item.libraryId, mediaKind, item.contentClass, {
       registry: deps.registry,
-      getBreaker: (pluginId) => pluginBreakers.getBreaker(pluginId),
+      getBreaker: (pluginId, seed) => pluginBreakers.getBreaker(pluginId, seed), // C5.1: forward the seed
       clock,
       log,
     });
