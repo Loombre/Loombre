@@ -157,8 +157,23 @@ interface ServerPolicy {
   ladderRungs: LadderRung[];               // instance ladder table (§7)
   segmentDurationSec: 6;                   // fixed v1
   hevcEncodePreferred: boolean;            // true when caps verify hevc encode
+  av1EncodePreferred: boolean;             // false; operator PREFERENCE verbatim (LD-7 — see note)
 }
 ```
+
+**`av1EncodePreferred` asymmetry (LD-7, deliberate).** `hevcEncodePreferred`
+arrives ALREADY resolved (operator setting AND caps-verified hevc encode,
+`apps/server/src/playback/resolve-policy.ts`) because its only gate is a
+capability fact. `av1EncodePreferred` is passed through VERBATIM — the raw
+`transcode.av1EncodePreferred` setting (default `false`), never AND-ed with
+capability by the caller — because AV1's gate is a TIER LAW (§7.2, LD-16)
+that must be enforced INSIDE the pure engine, from `caps` + `policy.tier`,
+where the matrix can prove its unreachability property. Resolving it
+caller-side would put the law's enforcement outside the tested function —
+exactly the reason/flag-drift failure class the LD-3 shared-predicate fix
+(§3 Stage C) exists to prevent. Tier-0 lens: a preference flag alone never
+costs an N100 a CPU cycle — §7.2's eligibility gate decides what it may
+actually do.
 
 ### 2.5 VerifiedCapabilities — see §8 for how it is produced
 ```ts
@@ -335,7 +350,7 @@ Blocking-class: `container-not-direct-playable`, `video-codec-unsupported`,
 `subtitle-codec-unknown`, `transcode-disabled-by-policy`.
 Informational-class: `dv-stripped-to-hdr10`, `subtitle-styling-lost`,
 `audio-atmos-lost`, `gapless-degraded`, `open-gop-leading-pictures-stripped`,
-`hw-encoder-selected:*`, `software-fallback:*`.
+`av1-rung-demoted`, `hw-encoder-selected:*`, `software-fallback:*`.
 Every reason carries `{ code, streamIndex?, detail? }`; matrix cases assert on
 codes, golden tests on full objects.
 `dv-stripped-to-hdr10`'s `detail` is
@@ -345,6 +360,17 @@ dual-layer profile-7 enhancement layer went with the RPU (LD-15). It rides in
 contract PRs against `packages/contract/openapi.yaml`'s `PlanReasonCode`, and
 `apps/server/test/contract-reason-codes.spec.ts` fails the build in both
 directions if the engine and the contract disagree.
+
+`av1-rung-demoted` (LD-7, 2026-08-11 — owner-decision D1 in §7.4; this IS a
+closed-enum addition and therefore a contract PR per the rule above) fires
+once per ladder rung whose configured/selected `av1` codec was demoted to
+`hevc`/`h264` by §7.1's normalization step or §7.2's Stage-G tier-0
+software-route guard. `detail` is
+`cause=<tier0-no-hw-av1|device-no-av1|no-av1-encoder|tier0-software-route>
+demotedTo=<hevc|h264> heightPx=<n>`. It exists because a silent demotion
+would violate design law 3's spirit — the admin asking "why is this rung not
+AV1?" must get an answer from the plan itself, exactly as
+`software-fallback:tier-capped` answers "where did my rungs go?".
 
 ## 5. Output contract
 
@@ -363,6 +389,12 @@ interface PlaybackPlan {
 ```
 Serialization for storage/golden tests: `JSON.stringify` with recursively
 sorted keys (`stableStringify` in shared).
+
+`video.targetCodec` ranges over `LadderCodec` (§7.1: `'h264'|'hevc'|'av1'`)
+— the ENCODE-target set, deliberately narrower than `VideoStream['codec']`'s
+source-fact union. The contract mirrors this: `VideoAction.targetCodec`
+references the `LadderCodec` schema, not `VideoCodec` (§7.4 — the
+LD-7-authorized `VideoAction` touch).
 
 ## 6. FFmpeg argument construction (deterministic)
 
@@ -426,6 +458,42 @@ sorted keys (`stableStringify` in shared).
    download-remux included — and the builder is never called at all for a
    direct-play plan, so reaching it IS Stage C's "repackaging happened"
    condition.
+   **Interpretation M — AV1 ENCODE TARGETS (LD-7, spec'd 2026-08-11,
+   Wave C1).** The encoder-name table gains its `av1` column (retiring the
+   C8 probe/ladder-inconsistency comment that reserved it for this change):
+   `software → libsvtav1`, `nvenc → av1_nvenc`, `qsv → av1_qsv`,
+   `vaapi → av1_vaapi`, `amf → av1_amf`. `videotoolbox` has NO `av1` entry
+   — no ffmpeg release ships an `av1_videotoolbox` encoder (no Apple Silicon
+   generation has AV1 encode hardware; decode-only from M3), so the probe
+   battery reports the capability absent by construction (§8.1) and Stage G
+   can never pair `videotoolbox` with an `av1` target; the builder still
+   carries its interpretation-J descriptive throw for the inconsistent
+   shape. Per-codec differences inside the existing encode block, all
+   deterministic:
+   - Software rate/speed flags are PER-ENCODER: `libsvtav1` takes
+     `-preset 10` (SVT-AV1's numeric 0–13 scale; ~the realtime-streaming
+     band, the libx264-`veryfast` analogue — `veryfast` itself is not a
+     legal SVT-AV1 value). `-preset p4` for nvenc is codec-agnostic and
+     unchanged; qsv/vaapi/amf emit no preset flag today for any codec and
+     that stays true for av1.
+   - `-level` is NEVER emitted for an `av1` target in v1: AV1 levels are
+     `seq_level_idx` ordinals whose numbering does not correspond to the
+     H.264/HEVC decimal levels `DeviceProfile.video[].maxLevel` carries — a
+     numerically "mapped" value would be wrong, and every real device
+     profile's av1 entry declares `maxLevel: null` today anyway (the web
+     client's MSE probe cannot derive one).
+   - `-tag:v hvc1` stays hevc-only; an fmp4 AV1 track's `av01` sample entry
+     is correct by default and needs no re-tag.
+   - Bitrate flags (`-b:v`/`-maxrate`/`-bufsize`), GOP flags (`-g`,
+     `-force_key_frames`) and every surrounding segment are codec-agnostic
+     and unchanged.
+   *Container:* an `av1` rung only ever reaches this builder inside
+   `fmp4-hls` (or an `mp4` remux shape, unreachable today) — §7.1's device
+   gate refuses AV1 targeting for `ts-hls` devices (AV1 has no assigned
+   MPEG-TS stream_type; muxing it there produces a stream nothing
+   standard can demux). An `av1` rung paired with `ts-hls` is an
+   internally-inconsistent planShape → interpretation-J descriptive throw,
+   never reachable through `plan()`.
 8. Audio encode/copy block
 9. Output: HLS muxer flags — `-f hls -hls_time {SEG_DUR} -hls_playlist_type
    event -hls_segment_type {fmp4|mpegts} -hls_fmp4_init_filename init.mp4
@@ -438,16 +506,251 @@ inputs; any new flag requires a golden update in the same PR.
 
 ## 7. Bitrate ladder
 
-`LadderRung { heightPx, videoBitrateBps, audioBitrateBps, codec }`.
+`LadderRung { heightPx, videoBitrateBps, audioBitrateBps, codec: LadderCodec }`
+where **`LadderCodec = 'h264' | 'hevc' | 'av1'`** (§7.1, LD-7) — the closed
+set of codecs a rung may ENCODE to, a different concept from
+`VideoStream['codec']`'s source-fact union and deliberately narrower.
 Instance default table (policy-overridable):
 2160p/16M/hevc · 1080p/8M · 1080p/4M · 720p/3M · 480p/1.5M · 360p/0.8M
-(h264 below 2160 unless `hevcEncodePreferred` and device hevc → hevc, −25% bitrate).
+(h264 below 2160 unless codec selection (§7.1) upgrades a rung).
 Construction rules: never exceed source height; never exceed source bitrate;
 drop rungs above `network.maxBitrateBps` (keep at least the lowest rung);
 master playlist lists all surviving rungs; **each rung is a lazily started
 transcode pipeline** — only the initially selected rung starts; a client ABR
 switch starts the sibling rung at the requested segment. `isLocal` networks
 skip the network cap but honor device caps.
+
+### 7.1 Per-rung codec selection (LD-7, spec'd 2026-08-11 — lands as ENGINE_VERSION 0.10.0)
+
+Step (f) of ladder construction (`stages/ladder.ts`, formerly "the hevc
+swap") generalizes to ONE codec-selection step with fixed precedence
+**av1 > hevc > h264**, still applied BEFORE the cap filters (a)–(e)
+(swap-before-caps is unchanged and now covers demotion too: the rung the
+client actually receives is the one every cap must evaluate).
+
+**AV1 swap.** A table rung with `heightPx < 2160` becomes
+`{ codec: 'av1', videoBitrateBps: round(table videoBitrateBps × 0.6) }`
+(`audioBitrateBps` unchanged) IFF ALL of:
+1. `policy.av1EncodePreferred` (operator opt-in, §2.4 — default false);
+2. the DEVICE declares an `av1` entry in `device.video` (the web client's
+   MSE probe already produces one when real decode support exists) AND
+   `device.hls.supportsFmp4` (AV1 cannot ride `ts-hls` — §6 interp. M);
+3. `av1EncodeEligibility(caps, policy.tier) !== 'none'` (§7.2 — the LD-16
+   gate, and the ONLY place capability/tier is consulted).
+The ×0.6 factor is the h264-baseline bitrate-parity convention one
+generation past hevc's documented ×0.75 (owner-decision D3, §7.4). The
+2160p rung is untouched by the swap exactly as it always was for hevc —
+a 2160p AV1 rung is expressible as an explicit policy rung. Rungs the AV1
+swap does not claim fall through to the hevc rule VERBATIM
+(`hevcEncodePreferred` and device hevc → hevc, −25% bitrate, below 2160).
+*Tier-0 lens:* on Tier-0 the swap can only ever fire via `'hw'`
+eligibility (§7.2); on an N100-class box — QSV AV1 decode but NO AV1
+encode engine — the produced ladder is byte-identical to pre-C1.
+
+**Demotion normalization (new step (g), runs after (f), before (a)–(e)).**
+Any rung whose codec is `'av1'` at this point — which can ONLY mean an
+explicit `policy.ladderRungs` row, since the swap already checks these
+gates — is DEMOTED when it fails condition 2 or 3 above (condition 1
+deliberately does NOT apply: an explicit av1 rung IS the operator's
+preference for that rung; the global flag only governs the automatic
+swap): `codec` becomes
+`'hevc'` if `device.video` declares an hevc entry, else `'h264'`;
+`videoBitrateBps` is kept VERBATIM (the admin chose that number; inventing
+a scaled one would guess). A demoted rung that becomes field-identical to
+another table rung is dropped instead of duplicated. Each demotion fires
+informational reason `av1-rung-demoted` (§4). Demote-don't-drop is
+deliberate: dropping could empty a configured ladder or silently discard
+the admin's quality point; demotion keeps the rung count and heights
+stable on every box.
+*Tier-0 lens:* an admin who force-writes av1 rungs into a T0 box's table
+gets the same ladder shape encoded by the machine's REAL encoders (QSV/
+software h264/hevc on an N100) — a serveable plan, never a melted box.
+
+**Copy-preference guarantee (LD-7 hard requirement).** Everything in §7.1/
+§7.2 lives exclusively in ladder construction and Stage G — both reachable
+ONLY when the final `video.action === 'transcode'`. No Stage A–F verdict
+reads a ladder codec; an AV1 SOURCE continues to direct-play/copy exactly
+as §3 already decides (Stage B's device check, Stage A's container check —
+unchanged). Regression pin required in the C1 PR: for every existing
+matrix case whose decision is `direct-play`/`direct-stream`/`remux`,
+decisions AND reasons are byte-identical post-C1 (`engineVersion` aside).
+
+### 7.2 AV1 tier gating — LD-16 verbatim law and the unreachability property
+
+The law (LD register, owner-adjudicated 2026-08-10, restated here as
+normative spec text): **every quality rung is a separate workload governed
+by the existing admission capacity limit (§9 semaphore); a quality change
+hands the existing slot from one rung to another — never an additional
+unrestricted transcode. AV1 on Tier-0 is permitted ONLY when supported
+hardware encoding is verified by the probe battery; Tier-1 and above may
+fall back to software AV1 encoding.** (Tier-0's advertised variant COUNT
+is Wave C2's to propose; nothing in C1 changes admission arithmetic.)
+
+**The single gate.** `src/av1.ts` (new pure module, mirroring `src/dv.ts`'s
+shared-predicate precedent) exports:
+
+```ts
+av1EncodeEligibility(caps: VerifiedCapabilities, tier: 0|1|2):
+    'hw' | 'software' | 'none'
+// 'hw'       iff some backend b with b.backend !== 'software' has 'av1' in b.encode
+// 'software' iff not 'hw', AND tier >= 1, AND the software backend's
+//            own probe-verified encode list includes 'av1'
+// 'none'     otherwise
+```
+
+plus the shared demotion primitive §7.1(g) and Stage G both call. Both
+consumers use THIS function and nothing else — one predicate, so the
+ladder's admission rule and Stage G's guard cannot drift apart
+(structurally, the LD-3 lesson).
+
+Note the `'software'` arm is itself capability-VERIFIED (design law 4):
+it reads the software row's probe-verified encode list, which §8.1 only
+populates when the bundled build's `libsvtav1` actually passed the encode
+self-test on this box — "software can av1" is a tested fact, never an
+assumption.
+
+**Stage G residual guard.** `'hw'` eligibility admits av1 rungs, but §8.3's
+route resolution can still terminate at rule (iii) full-software (e.g. the
+av1-capable hw backend fails encode coverage for a mixed
+`{av1, hevc}` target set). On that rule-(iii) route ONLY, when
+`policy.tier === 0`: every av1 rung in the routed ladder is demoted by the
+§7.1(g) shared primitive (reason `av1-rung-demoted`,
+`cause=tier0-software-route`) BEFORE the existing ≥1080p height cap runs.
+Tier 1+ rule-(iii) routes keep their av1 rungs (that IS the permitted
+software fallback) — the builder then encodes them with `libsvtav1`
+(§6 interp. M). Known conservatism, stated not hidden: a T0 box whose hw
+backend covers av1 but not hevc lands on software h264/hevc rather than
+splitting encode across two backends — §8.3's one-route model is not
+renegotiated by this feature.
+
+**UNREACHABILITY (the LD-16 proof obligation — §10 property 5).** On
+Tier-0 without a probe-verified HARDWARE AV1 encoder, `plan()` is UNABLE
+to emit software-AV1 **by construction**, argued in four steps a test can
+mirror:
+1. The only producers of an av1 rung are §7.1(f)'s swap (gated on
+   eligibility ≠ `'none'`) and explicit policy rows, which §7.1(g)
+   normalizes under the SAME predicate → `buildLadder` output contains no
+   av1 rung when eligibility is `'none'`.
+2. On tier 0, eligibility is `'hw'` or `'none'` — the `'software'` arm
+   requires `tier >= 1` by definition → tier-0-without-hw-av1 ⇒ `'none'`
+   ⇒ no av1 rung exists anywhere downstream.
+3. `video.targetCodec` derives exclusively from the final ladder's top
+   rung, and the builder's av1 encoder names are keyed exclusively off a
+   rung/targetCodec of `'av1'` → no av1 rung ⇒ no av1 targetCodec ⇒ no
+   av1 encoder name in `ffmpegArgs`.
+4. The one remaining pairing — tier-0 `'hw'` eligibility whose route
+   resolution still lands on software — is closed by the Stage G residual
+   guard above, via the same shared primitive.
+Therefore no Tier-0 plan can pair `codec/targetCodec === 'av1'` with
+software encoding. §10 property 5 quantifies this over randomized inputs;
+dedicated matrix cases pin each numbered leg.
+
+**Tier-0 arithmetic (why the law is a law, not a tuning preference —
+N100/4GB reference box).** An N100 (4 Gracemont E-cores, ~6 W, UHD iGPU)
+has Quick Sync AV1 DECODE but NO AV1 encode engine (AV1 hw encode begins
+with the DG2/Arc generation), so its probe verifies `qsv: decode ∋ av1`,
+`encode ∌ av1` → eligibility `'none'` on T0, always. What the gate
+prevents: SVT-AV1 at its realtime-band presets reaches 1080p realtime on
+roughly 8 modern performance cores; four E-cores deliver a small fraction
+of that — order 0.2–0.4× realtime, i.e. a 6-second segment costs ~15–30 s
+to encode. The §9 segment-ahead throttle never engages (the encoder never
+GETS ahead); the playhead overruns the encoder inside the first minute and
+every playback stalls unrecoverably, while all four cores sit pegged —
+starving Postgres, server, and worker on the same 4 GB box (SVT-AV1's
+1080p working set alone runs several hundred MB to ~1 GB beside their
+~1.5–2 GB resident set: OOM territory, not merely slow). A permanently-
+behind encoder is the worst possible violation of design law 5 — hence
+`'none'`, by construction, with the escape hatch being real hardware, not
+a checkbox.
+
+### 7.3 The probe battery is the gating input (C8 closure)
+
+The `'av1' ∈ backend.encode` facts §7.2 consumes are produced ONLY by the
+§8.1 self-test battery (`apps/worker/src/hwcaps/`), which has verified AV1
+encode capability since it landed — previously with no consumer, the
+recorded C8 probe/ladder inconsistency ("hwprobe can report a box
+AV1-encode-capable with no way for a plan to act on that fact"). §7.1/§7.2
+are that consumer; the C8 tracking comment at the engine's
+`VIDEO_ENCODER_NAMES` retires in the same PR that adds the table's av1
+column (§6 interp. M). Two battery refinements ship with C1:
+- **Software AV1 capability narrows to `libsvtav1`** (owner-decision D4,
+  §7.4): the software row's av1 ENCODE test runs against `libsvtav1` only
+  — a box whose ffmpeg has only `libaom-av1` reports software-av1 encode
+  ABSENT. Rationale: libaom's realtime presets are not a viable streaming
+  encoder, and a capability the builder cannot deterministically name is
+  not a capability (§6 emits ONE fixed encoder name; probe-verifying the
+  exact encoder the builder will spawn is the same
+  probe-proves-the-shipped-plumbing rule interp. D already follows for
+  tone-mapping). Costless on shipped builds: every fetchable vendored
+  ffmpeg (linux-x64, linux-arm64, macos-arm64 — verified 2026-08-11,
+  build-config/`-encoders` inspection; windows-x64 pending CI
+  confirmation) compiles `--enable-libsvtav1`. `libaom-av1` keeps its
+  existing role generating av1 DECODE-test sources (speed is irrelevant
+  there and `resolveSoftwareAv1Encoder`'s fallback order stays for that
+  path).
+- **`videotoolbox` av1 encode stays skip→absent by construction** (no
+  `av1_videotoolbox` encoder exists in any ffmpeg; no Apple Silicon has
+  AV1 encode hardware) — already true in `tables.ts`, now load-bearing:
+  it is what makes the Tier-0 refusal path REALLY verifiable on the
+  project's own Apple Silicon hardware (§7.4 honesty register).
+
+### 7.4 C1 change register (contract surface, coordination, owner decisions)
+
+**Contract (`packages/contract/openapi.yaml`) — the COMPLETE list; SDK
+regenerated atomically; conformance unimplemented-allowance stays zero:**
+1. `LadderCodec` enum: `[h264, hevc]` → `[h264, hevc, av1]`.
+2. `VideoAction.targetCodec`: `$ref VideoCodec` → `$ref LadderCodec` (the
+   LD-7-authorized touch of the `additionalProperties:false` schema Wave A
+   deliberately avoided; narrows the contract to the exactly-emittable
+   set — `VideoCodec` had admitted `vp9`/`mpeg2`/… as targets no engine
+   version ever produced).
+3. `PlanReasonCode` fixed informational list: += `av1-rung-demoted`
+   (owner-decision D1; `apps/server/test/contract-reason-codes.spec.ts`
+   enforces engine/contract agreement in both directions).
+Empirical oasdiff preview (run 2026-08-11 against these exact edits):
+**0 errors, warnings only, exit 0 — gate-passing.** Warnings are
+`response-property-enum-value-added` for the ladder codec at
+`POST /playback/plan` 200, `POST /playback/sessions` 201,
+`GET /playback/sessions/{id}` 200 (plus the same trio for the D1 reason
+code). The `targetCodec` re-point produces NO oasdiff finding (response
+narrowing). No other schema changes: `VideoCodec`, `AudioCodec`,
+`MediaInfo`, `DeviceProfile`, capability shapes — all untouched.
+
+**Coordinated single-change surface (one PR; matrix + goldens included per
+invariant 2):** engine `src/av1.ts` (new), `src/types.ts`
+(`LadderCodec`; `LadderRung.codec`; `PlaybackPlanVideo.targetCodec`),
+`src/stages/ladder.ts` (§7.1 f/g), `src/stages/hardware.ts` (target-set
+type + §7.2 residual guard), `src/args/builder.ts` (§6 interp. M;
+C8 comment retires), `src/reasons.ts` (D1), `src/plan.ts`
+(ENGINE_VERSION 0.10.0), matrix generators/fixtures/cases + goldens;
+contract per the list above + SDK regen;
+`packages/shared/src/settings-registry.ts` (`LADDER_RUNG_CODECS` += av1,
+`transcode.ladderRungs` copy, NEW `transcode.av1EncodePreferred` setting —
+default false, no envVar, docs regen per the settings-registry rule);
+`apps/server/src/playback/resolve-policy.ts` (verbatim preference
+pass-through, §2.4 note); `apps/worker/src/hwcaps/args.ts` + `tables.ts`
+(D4 narrowing). **DB: NO change and NO migration** — verified 2026-08-11:
+the only codec CHECK constraints in the schema
+(`hw_capability_backends.decode/encode`, migration 0011) were born
+av1-inclusive, and no real column stores a ladder/target codec (plans are
+whitelisted JSONB; `transcode_runs` carries no codec) — the LD-7
+register's "DB CHECK" line item closes as already-satisfied.
+
+**Owner decisions requested at the C1 stop (each reversible by a small
+text edit here):**
+- **D1** — add informational reason `av1-rung-demoted` (recommended: YES;
+  the alternative — silent demotion, visible only structurally in the
+  ladder — leaves design law 3's "why is this transcoding like this?"
+  unanswerable for AV1).
+- **D2** — re-point `VideoAction.targetCodec` to `LadderCodec`
+  (recommended: YES; zero-oasdiff, makes the contract state the truth;
+  alternative: leave as `VideoCodec` — av1 was technically already legal
+  there, and C1 then touches `VideoAction` not at all).
+- **D3** — AV1 swap bitrate factor ×0.6 of the h264 table value, swap
+  scope sub-2160 only (mirrors hevc precedent).
+- **D4** — software-AV1 capability = `libsvtav1` only (§7.3).
+- **D5** — `transcode.av1EncodePreferred` defaults FALSE (opt-in;
+  flippable per-instance from the settings UI at any time).
 
 ## 8. Hardware acceleration
 
@@ -460,6 +763,14 @@ Timeout 20 s per test; any failure or timeout = capability absent. Results →
 `VerifiedCapabilities`, persisted with ffmpeg build hash; invalidated when the
 bundled ffmpeg or GPU/driver fingerprint changes. Known quirk regressions
 (e.g. iHD VDENC low-power gaps) are just failed self-tests — no quirk lists.
+
+**AV1 encode specifics (LD-7, §7.3):** the battery has always tested av1
+encode per backend; as of C1 its result is load-bearing (§7.2 reads it).
+Two rules: the SOFTWARE row's av1 encode test runs `libsvtav1` ONLY
+(owner-decision D4 — a libaom-only build reports software-av1 encode
+absent; libaom keeps generating av1 decode-test sources); a backend whose
+ffmpeg simply lacks the encoder (`videotoolbox` — no `av1_videotoolbox`
+exists) is skipped→absent by construction, never a failed spawn.
 
 ### 8.2 Backend candidates by platform
 macOS: videotoolbox → software. Windows: nvenc → qsv → amf → d3d11va(decode-
@@ -488,6 +799,21 @@ backend: videotoolbox→`videotoolbox`; nvenc→`cuda`; qsv/vaapi→`opencl`(els
 Decode/encode stay on one device (no hw→sw→hw bounces) except when the
 filtergraph requires download (subtitle burn-in on vaapi: hwdownload →
 overlay → hwupload, exactly once).
+
+**AV1 targets (LD-7).** The target-encode-codec set may now include `av1`
+(§7.1); selection SHAPE is unchanged — a backend must still cover EVERY
+distinct target codec, av1 included, and `videotoolbox` can never be
+selected for an av1 target (§8.1: the capability is absent by
+construction). ONE addition, on the rule-(iii) full-software route only:
+when `policy.tier === 0`, every av1 rung in the routed ladder is demoted
+via `src/av1.ts`'s shared primitive (reason `av1-rung-demoted`,
+`cause=tier0-software-route`) BEFORE the existing ≥1080p tier cap — the
+Stage-G half of §7.2's unreachability construction. Tier 1+ software
+routes keep av1 rungs: that is LD-16's permitted software fallback, and
+the builder encodes them with the probe-verified `libsvtav1` (§6 M, §8.1).
+*Tier-0 lens:* this guard is the last line — even the pathological
+hw-av1-verified-but-software-routed corner cannot put an SVT-AV1 encode
+on an N100-class box.
 
 ## 9. Session execution layer (apps/server playback module + worker)
 
@@ -669,8 +995,27 @@ transcode-disabled}.
 plan twice, byte-equal; (2) direct-play bias — construct inputs where every
 stage passes, assert decision===direct-play and reasons===[]; (3) totality —
 random inputs never throw, always yield schema-valid plans; (4) reason
-completeness — decision!==direct-play ⇒ ≥1 blocking-class reason.
-**Golden args:** 25 canonical scenarios snapshot full token-form ffmpegArgs.
+completeness — decision!==direct-play ⇒ ≥1 blocking-class reason;
+(5) **AV1 tier-0 unreachability (LD-16, §7.2)** — over randomized inputs
+(generators extended to produce av1-preferring policies, explicit-av1
+ladder tables, and av1-bearing caps in all combinations) restricted to
+`policy.tier === 0` AND no non-software backend with `'av1' ∈ encode`:
+NO emitted plan contains a ladder rung with `codec === 'av1'`, a
+`video.targetCodec === 'av1'`, or any `ffmpegArgs` token naming an av1
+encoder (`libsvtav1`, `av1_nvenc`, `av1_qsv`, `av1_vaapi`, `av1_amf`).
+**C1 mandatory matrix case classes (numbers assigned at build; each of
+§7.2's four unreachability legs pinned individually):** T0 + hw-av1 caps +
+opted-in policy + av1/fmp4 device → av1 rungs, hw route; T0 +
+software-only-av1 caps → zero av1 anywhere; T1 + software-only-av1 caps →
+av1 rungs on the software route (`libsvtav1` args); explicit-av1 policy
+rung demoted on each `cause` (device-no-av1, no-av1-encoder,
+tier0-no-hw-av1); T0 `'hw'`-eligibility mixed-target set falling to rule
+(iii) → Stage-G demotion; ts-hls-only device → no av1 swap; av1 SOURCE
+copy/direct-play cases unchanged (the §7.1 regression pin).
+**Golden args:** 25 canonical scenarios snapshot full token-form ffmpegArgs
+(count grows with each landed interpretation; C1 adds at minimum: hw-av1
+transcode (`av1_nvenc`), software-av1 T1 transcode (`libsvtav1 -preset
+10`, no `-level`, no `-tag:v`), and a demoted-ladder scenario).
 **Regression law:** any PR flipping an existing case's decision or reasons
 must edit that case file in the same PR with a `why:` comment.
 **Session integration tests** (not pure): real ffmpeg against generated
