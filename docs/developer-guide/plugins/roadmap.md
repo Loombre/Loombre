@@ -102,3 +102,14 @@ rules out for every other kind of plugin. If Loombre ever supports this
 kind of customization, it would need an entirely different mechanism —
 not an LPP capability type, and not something this roadmap makes any
 claim about.
+
+**Themes-as-an-LPP-plugin is formally retired.** It came up often enough to
+deserve a decision rather than a standing question, and the decision is
+that the idea was never compatible with LPP in the first place — for
+exactly the reason stated in the paragraph above: LPP talks to an
+out-of-process service over HTTP, and a theme is markup and styling that
+has to live inside Loombre's own UI. No capability type will ever bridge
+that gap, so the proposal is closed rather than parked. Colour theming
+itself is a separate question about Loombre's own web client, and it will
+be assessed after 1.0 on its own terms; whatever comes of that assessment,
+it will not arrive as a plugin.

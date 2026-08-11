@@ -747,6 +747,53 @@ describe('recordActiveRungIndex (worker-written, every spawn)', () => {
     await markSessionFailed(db, id, { errorCode: 'transcode-failed', stderrTail: '', nowMs: Date.now() });
     expect(await recordActiveRungIndex(db, id, 1, Date.now())).toBeUndefined();
   });
+
+  // SELF-CLEARING THE ALREADY-SATISFIED REQUEST (pre-D consolidation item
+  // 3c, C2 review finding f5). `pending_rung_index` can end up naming the
+  // rung that is now LIVE, and once it does nothing ever clears it: the
+  // worker's restart block only reacts to a pending rung that DIFFERS from
+  // the running one (docs/PLAYBACK.md §9.1.7's `switchPending`), so an
+  // equal value is skipped on every tick, forever.
+  //
+  // It arises from a real, narrow window: the worker consumes the pending
+  // rung and only then records the new active one, so a `v{K}` GET landing
+  // between those two writes still sees the OLD active rung, passes
+  // requestRungSwitch's absorb-on-match, and re-writes the very rung the
+  // worker is at that moment spawning.
+  //
+  // Harmless to playback — but the row then says a switch is pending when
+  // none is, which is a lie to `GET /playback/sessions/{id}` and to anyone
+  // reading the row during an incident. The spawn write is the natural
+  // clearing site: it is the moment the request became satisfied, it
+  // already touches this row, and it costs no extra statement.
+  it('clears a pending request that names the rung being recorded — it is satisfied by this very spawn', async () => {
+    const id = await newSession();
+    await rawClient.query(`UPDATE playback_sessions SET pending_rung_index = 2 WHERE id = $1`, [id]);
+
+    const row = await recordActiveRungIndex(db, id, 2, Date.now());
+    expect(row?.active_rung_index).toBe(2);
+    expect(row?.pending_rung_index).toBeNull();
+  });
+
+  it('LEAVES a pending request naming a DIFFERENT rung alone — that one is still owed a handoff', async () => {
+    const id = await newSession();
+    await rawClient.query(`UPDATE playback_sessions SET pending_rung_index = 1 WHERE id = $1`, [id]);
+
+    // The worker is spawning rung 2 (whatever it consumed a moment ago);
+    // the client has since asked for rung 1, and that request must survive
+    // to the next poll tick exactly like consumePendingRungIndex's own
+    // compare-and-clear guarantees.
+    const row = await recordActiveRungIndex(db, id, 2, Date.now());
+    expect(row?.active_rung_index).toBe(2);
+    expect(row?.pending_rung_index).toBe(1);
+  });
+
+  it('rung 0 self-clears too (0 is a real rung, never confused with "nothing pending")', async () => {
+    const id = await newSession();
+    await rawClient.query(`UPDATE playback_sessions SET pending_rung_index = 0 WHERE id = $1`, [id]);
+    const row = await recordActiveRungIndex(db, id, 0, Date.now());
+    expect(row?.pending_rung_index).toBeNull();
+  });
 });
 
 describe('consumePendingRungIndex (compare-and-clear, §9.1.3)', () => {
@@ -801,5 +848,75 @@ describe('consumePendingRungIndex (compare-and-clear, §9.1.3)', () => {
     await rawClient.query(`UPDATE playback_sessions SET pending_rung_index = 1 WHERE id = $1`, [id]);
     await markSessionFailed(db, id, { errorCode: 'transcode-failed', stderrTail: '', nowMs: Date.now() });
     expect(await consumePendingRungIndex(db, id, Date.now())).toBeUndefined();
+  });
+
+  // THE EXACT-VALUE GUARD (pre-D consolidation item 2, C2 review finding
+  // f4). `WHERE pending_rung_index = <the value the SELECT read>` — not
+  // merely `IS NOT NULL` — is the difference between "this consumer claimed
+  // what it saw" and "this consumer wiped the column". It was UNPINNED:
+  // replacing the guard with an unconditional write passed the whole suite,
+  // because none of the tests above can put a DIFFERENT value in the gap
+  // between the SELECT and the UPDATE. Every sequential shape is decided at
+  // the SELECT (which re-reads whatever landed), and the two-racing-
+  // consumers test above is decided there too whenever the first
+  // transaction commits before the second's SELECT runs — which, under
+  // Promise.all against a local Postgres, is essentially always.
+  //
+  // So this forces the interleaving with a real row lock on a third
+  // connection, exactly as consumeSeekTarget's own terminal-state race test
+  // does: hold the row past consumePendingRungIndex's SELECT (a plain read,
+  // unaffected by FOR UPDATE), write a NEWER rung request and commit while
+  // its UPDATE is already parked on the lock, and only then let that UPDATE
+  // run — so it evaluates its WHERE against a row whose pending value is no
+  // longer the one it read.
+  //
+  // Why it matters at all, given the worker re-reads the row every tick: a
+  // swallowed switch request is not re-sent. The client's `v{K}` GET is
+  // what writes this column, and `requestRungSwitch`'s own absorb-on-match
+  // means a client already fetching under `v{K}` writes nothing further
+  // once `active_rung_index` says something else — the request that got
+  // wiped is simply lost, and the session keeps serving a rung nobody asked
+  // for until the client's ABR decides to move again.
+  it('never swallows a NEWER pending rung written between its read and its write (real Postgres row-lock race)', async () => {
+    const id = await newSession();
+    await markSessionStarting(db, id, { stagingDir: '/tmp/loombre-transcode/rung-race', nowMs: Date.now() });
+    await markSessionActive(db, id, { producedSegment: 3, nowMs: Date.now() });
+    await recordActiveRungIndex(db, id, 0, Date.now());
+    await rawClient.query(`UPDATE playback_sessions SET pending_rung_index = 2 WHERE id = $1`, [id]);
+
+    const locker = new pg.Client({ connectionString: DATABASE_URL });
+    await locker.connect();
+    let consumePromise: ReturnType<typeof consumePendingRungIndex>;
+    try {
+      await locker.query('BEGIN');
+      await locker.query('SELECT * FROM playback_sessions WHERE id = $1 FOR UPDATE', [id]);
+
+      // Its SELECT reads 2; its UPDATE blocks behind the lock below.
+      consumePromise = consumePendingRungIndex(db, id, Date.now());
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // The client's ABR changes its mind — a NEWER request lands, and
+      // commits, in the gap the consumer's transaction already opened.
+      // Written on the LOCKING connection: any other connection's write
+      // would itself park behind this lock, which is the deadlock this
+      // interleaving exists to avoid.
+      await locker.query(`UPDATE playback_sessions SET pending_rung_index = 1, updated_at_ms = $2 WHERE id = $1`, [id, Date.now()]);
+      await locker.query('COMMIT'); // releases the lock; the parked UPDATE can now run
+    } finally {
+      await locker.end();
+    }
+
+    // Zero rows matched: the value it read is gone, so it claims nothing.
+    expect(await consumePromise).toBeUndefined();
+
+    const row = await getTranscodeSessionRow(db, id);
+    // THE PROPERTY: the newer request SURVIVES to the next poll tick, where
+    // the worker will restart for rung 1 — the rung the client actually
+    // asked for last.
+    expect(row?.pending_rung_index).toBe(1);
+    // And nothing else moved: a failed claim is not a handoff.
+    expect(row?.active_rung_index).toBe(0);
+    expect(row?.status).toBe('active');
+    expect(row?.discontinuity_count).toBe(0);
   });
 });
