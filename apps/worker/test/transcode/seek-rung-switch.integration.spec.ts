@@ -515,6 +515,33 @@ describe.skipIf(!ffmpegAvailable || process.platform === "win32")(
           );
           expect(activeRows[0]!.active_rung_index).toBe(2);
 
+          // ── D-1: worker_pid is REFRESHED at EVERY restart spawn, not just
+          // run 0 ────────────────────────────────────────────────────────
+          // The boot reaper (index.ts / reaper.ts) finds a live pipeline
+          // SOLELY through playback_sessions.worker_pid, and recordSession
+          // WorkerProcess (runner.ts, migration 0041) rewrites it on every
+          // spawn because each seek-restart/rung-switch is a NEW ffmpeg
+          // process. Nothing else in the suite pins that REFRESH: a mutation
+          // recording worker_pid on the run-0 spawn alone leaves the row
+          // naming a long-dead pid yet survives every other assertion. The
+          // census already holds every pid the runner spawned, in spawn
+          // order, so the latest is the switch-era run's own pid.
+          expect(census.pids.length).toBeGreaterThanOrEqual(5); // >=1 live ffmpeg per run, runs 0..4
+          const latestSpawnedPid = census.pids[census.pids.length - 1]!;
+          expect(latestSpawnedPid).not.toBe(census.pids[0]); // sanity: run 4 is a genuinely different process from run 0
+          let observedWorkerPid: number | null = null;
+          await waitFor(
+            async () => {
+              const { rows } = await raw.query<{ worker_pid: number | null }>(`SELECT worker_pid FROM playback_sessions WHERE id = $1`, [sessionId]);
+              observedWorkerPid = rows[0]?.worker_pid ?? null;
+              return observedWorkerPid === latestSpawnedPid;
+            },
+            { timeoutMs: 10_000 * TIME_SCALE, label: "playback_sessions.worker_pid refreshed to the latest spawned run's pid" },
+          );
+          expect(observedWorkerPid).toBe(latestSpawnedPid);
+          // Rewritten FORWARD — never still naming run 0's now-dead pid.
+          expect(observedWorkerPid).not.toBe(census.pids[0]);
+
           // ── per-run derivation is exact INSIDE every run ───────────────
           const entries = parseServedSegmentDurations(readFileSync(join(sessionDir, "media.m3u8"), "utf8"));
           for (const run of runs) {
