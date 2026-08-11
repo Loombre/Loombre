@@ -59,6 +59,7 @@ import {
   disableTunnelStateAndEmit,
   enableTunnelStateAndEmit,
   getRemoteTunnelState,
+  RemotePathConflictError,
   type RemoteTunnelStateRow,
 } from "@loombre/db";
 import { DbProvider } from "../../common/db.provider.js";
@@ -205,6 +206,32 @@ export class RemoteTunnelService {
   }
 
   /**
+   * Best-effort teardown of everything a partially-completed enable left on
+   * Cloudflare's side, in the exact reverse order enable created it —
+   * the same sequence disableRemoteTunnel performs for a live tunnel (R8
+   * "verified teardown"), reused rather than reinvented.
+   *
+   * Every step is swallowed: this only ever runs while an enable is ALREADY
+   * failing, and it must never replace that failure's (more actionable)
+   * error with its own. The database is correct regardless of whether these
+   * succeed — the enable's own state write never happened.
+   */
+  private async rollbackProvisionedTunnel(input: { token: string; accountId: string; tunnelId: string; zoneId: string; dnsRecordId: string }): Promise<void> {
+    await this.connectorManager.stop().catch(() => {});
+    try {
+      await this.provider.removeDnsRoute({ token: input.token, zoneId: input.zoneId, dnsRecordId: input.dnsRecordId });
+    } catch {
+      // deliberately swallowed — see this method's doc comment.
+    }
+    try {
+      await this.provider.deprovisionTunnel({ token: input.token, accountId: input.accountId, tunnelId: input.tunnelId });
+    } catch {
+      // deliberately swallowed — see this method's doc comment.
+    }
+    await this.clearConnectorCredentials().catch(() => {});
+  }
+
+  /**
    * Staged validate -> commit (RG10): every precondition (409s) checked
    * BEFORE any external side effect; every external side effect (provider
    * calls, keyring write, ConnectorManager.start) BEFORE the one atomic
@@ -212,6 +239,17 @@ export class RemoteTunnelService {
    * throws 422 with NOTHING persisted yet — remote_tunnel_state stays
    * enabled=false, so a retried enable starts clean (no partial state to
    * reconcile).
+   *
+   * LD-9 (V-SEC F2): the cross-path check below is now a FAIL-FAST, not the
+   * enforcement. It stops the common case — another path is already active —
+   * before a single Cloudflare call is made, but it cannot stop a path that
+   * becomes active DURING the multi-second provisioning that follows it.
+   * enableTunnelStateAndEmit's own transaction is what enforces RG15: it
+   * re-reads all three paths under a shared advisory lock and throws
+   * RemotePathConflictError rather than committing a second active path
+   * (packages/db/src/query/remote-path-guard.ts). Losing there means this
+   * enable has already provisioned, so it undoes its own side effects before
+   * returning the same 409 the fail-fast would have returned.
    */
   async enableRemoteTunnel(input: { hostname: string; actorUserId: string; nowMs?: number; instancePath?: string }): Promise<RemoteTunnelStatusDto> {
     const nowMs = input.nowMs ?? Date.now();
@@ -223,12 +261,11 @@ export class RemoteTunnelService {
       throw unprocessableEntity("hostname must not be empty.", instancePath);
     }
 
-    // RG15: 409 against a DIFFERENT active path. The real cross-subsystem
-    // check is a Batch-1 seam this lane cannot fully wire alone — see
-    // active-path-reader.ts's own header.
+    // RG15 fail-fast (see this method's doc comment — the ENFORCEMENT is at
+    // the guarded commit below, not here).
     const otherPath = await this.activePathReader.activePath();
     if (otherPath !== "none" && otherPath !== "tunnel") {
-      throw conflict(`The ${otherPath} path is already active — disable it before enabling the Tunnel path.`, instancePath);
+      throw conflict(`The ${otherPath} path is already active — disable it before enabling the Tunnel path.`, instancePath, "remote-path-active");
     }
 
     const current = await getRemoteTunnelState(this.dbProvider.db);
@@ -276,15 +313,39 @@ export class RemoteTunnelService {
     await this.storeConnectorCredentials(provisioned.connectorCredentials);
     await this.connectorManager.start({ tunnelId: provisioned.tunnelId, hostname, credential: provisioned.connectorCredentials });
 
-    const row = await enableTunnelStateAndEmit(this.dbProvider.db, {
-      hostname,
-      tunnelId: provisioned.tunnelId,
-      accountId,
-      zoneId: dnsRoute.zoneId,
-      dnsRecordId: dnsRoute.dnsRecordId,
-      actorUserId: input.actorUserId,
-      nowMs,
-    });
+    let row: RemoteTunnelStateRow;
+    try {
+      row = await enableTunnelStateAndEmit(this.dbProvider.db, {
+        hostname,
+        tunnelId: provisioned.tunnelId,
+        accountId,
+        zoneId: dnsRoute.zoneId,
+        dnsRecordId: dnsRoute.dnsRecordId,
+        actorUserId: input.actorUserId,
+        nowMs,
+      });
+    } catch (err) {
+      if (err instanceof RemotePathConflictError) {
+        // LD-9: another path won the race while this enable was out at
+        // Cloudflare. Nothing was persisted (the guarded transaction rolled
+        // back), but the tunnel, the DNS record and the connector process are
+        // real — undo them, then return the same 409 the fail-fast above
+        // would have returned had the winner been visible in time.
+        await this.rollbackProvisionedTunnel({
+          token,
+          accountId,
+          tunnelId: provisioned.tunnelId,
+          zoneId: dnsRoute.zoneId,
+          dnsRecordId: dnsRoute.dnsRecordId,
+        });
+        throw conflict(
+          `The ${err.activePath} path is already active — disable it before enabling the Tunnel path.`,
+          instancePath,
+          "remote-path-active",
+        );
+      }
+      throw err;
+    }
 
     return this.toStatusDto(row);
   }

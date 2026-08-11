@@ -65,13 +65,20 @@
 import { sql, type Kysely, type Transaction } from 'kysely';
 import type { DB } from '../types.js';
 import { withTransaction, writeEvent } from '../internal/index.js';
+import { REMOTE_DIRECT_STATE_KEY, withRemotePathEnableGuard, type RemotePathIdValue } from './remote-path-guard.js';
 
-/** Not part of SETTINGS_REGISTRY — see this file's header. */
-const DIRECT_STATE_KEY = 'remote.direct.internalState';
+/** Not part of SETTINGS_REGISTRY — see this file's header. The literal
+ *  itself lives in src/query/remote-path-guard.ts, which must read this row
+ *  without importing this module (dependency-cruiser's no-circular rule is
+ *  error-severity, and this module imports the guard). One literal, two
+ *  readers. */
+const DIRECT_STATE_KEY = REMOTE_DIRECT_STATE_KEY;
 
 export type RemoteDirectMode = 'acme' | 'reverse-proxy';
 
-export type RemotePathId = 'none' | 'remote' | 'tunnel' | 'direct';
+/** Canonical name for the union; declared alongside the guard for the same
+ *  no-circular reason as DIRECT_STATE_KEY above. */
+export type RemotePathId = RemotePathIdValue;
 
 export interface RemoteDirectInternalState {
   enabled: boolean;
@@ -150,9 +157,14 @@ export interface EnableRemoteDirectStateInput {
 /** ONE transaction: persists the new internal-state row AND emits exactly
  *  one `remote.path.changed` event (previousPath -> 'direct') — the
  *  mission's "outbox ... + remote.path.changed same-trx" requirement,
- *  corrected to the single real event type per this file's header. */
+ *  corrected to the single real event type per this file's header.
+ *
+ *  LD-9: that transaction is now the guarded one (withRemotePathEnableGuard)
+ *  — it throws RemotePathConflictError, writing and emitting nothing, if
+ *  another remote-access path is enabled by the time it commits. See
+ *  src/query/remote-path-guard.ts's design note. */
 export async function enableRemoteDirectStateAndEmit(db: Kysely<DB>, input: EnableRemoteDirectStateInput): Promise<void> {
-  await withTransaction(db, async (trx) => {
+  await withRemotePathEnableGuard(db, 'direct', async (trx) => {
     await upsertDirectStateRow(
       trx,
       {
