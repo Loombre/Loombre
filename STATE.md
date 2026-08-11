@@ -727,6 +727,31 @@ pass f94a0ce9 after those deferral rows were written; rows now superseded by
 this entry. Lane self-scrubbed 25 competitor-naming violations after the
 mid-run advisory (its comments had used the run's own section title).
 
+**A3 FINAL (2026-08-11): continuation done — lane COMPLETE, orchestrator-
+verified** (126/126 on re-run: ssrf + ledger-events + delivery-loop +
+chain-resolution + redact-paths; 17 commits total; contract/protocol diffs
+empty across the whole lane). C5.2 CLOSED for real: allowlisted-by-name
+hostnames now resolve-once-and-pin like every other name; the allowlist's only
+remaining effect is skipping the disallowed-range check; HostResolution.
+pinnedAddress is no longer nullable and the unpinned fallback branches are
+GONE (flip-resolver proof: resolver called exactly once, pin survives a
+flipped answer; plus live end-to-end through hardenedFetch). Worker breakers:
+lane CORRECTED its own earlier flag — plugin-delivery/backoff.ts has no
+breaker (stateless pacing, nothing to seed); the real second registry
+(metadata/plugin-breakers.ts) AND a third previously-unflagged inline one
+(delivery-loop.ts runOnce Map) are both now seeded from durable counters
+(seed read bounded by plugin count, not poll tick; no index.ts changes —
+judgment call to fix the unflagged third accepted, within the grant's
+spirit). M-7 CLOSED: recordRetrying/recordFailed redact path components once
+before persisting last_error AND emitting job.updated. Lift decision ACCEPTED:
+canonical redactPathsInText in packages/shared (predicate-parameterized;
+apps/worker/crash consumes it, 34-case regression green) + a small documented
+LOCAL DUPLICATE in packages/jobs honoring that package's twice-documented
+"no @loombre/shared dependency" rule (ids.ts precedent) — recorded for Wave D
+reviewer 2: (a) optionally relax the jobs-package constraint instead;
+(b) apps/server/src/crash/redact.ts is a third, untouched twin that could
+consume the shared canonical (integration-time cleanup candidate).
+
 ## an upstream media server comparative architecture study — ANALYSIS-ONLY, COMPLETE 2026-08-10 (owner brief "Comparative Architecture Study — an upstream media server Playback Engine vs. Loombre"; awaiting owner review + implementation authorization)
 
 DELIVERABLE: reports/upstream-media-server-study/upstream-media-server-comparative-study.md (908 lines) —
