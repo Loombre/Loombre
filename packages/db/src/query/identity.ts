@@ -524,7 +524,16 @@ export interface CreateDeviceInput {
 
 /** Login registers a fresh device row every call (STATE.md P1.14) — device
  *  de-duplication/rename is a future UX concern, not an auth-correctness
- *  one; each device row is what refresh_tokens.device_id anchors to. */
+ *  one; each device row is what refresh_tokens.device_id anchors to.
+ *
+ *  `profile` (LD-4/C10, owner-adjudicated 2026-08-10): written here and
+ *  refreshed by `updateDeviceForLogin` below, but NOT read by PlaybackPlan
+ *  today — `apps/server/src/playback/plan-request.ts` parses the caller's
+ *  request-body DeviceProfile on every plan/session call instead. The
+ *  column stays as a deliberate cache for future use, not dead
+ *  persistence to be dropped; see `devices.profile`'s column comment in
+ *  packages/db/migrations/0001_init.sql for the same note at the schema
+ *  level. */
 export async function createDevice(db: Kysely<DB>, input: CreateDeviceInput): Promise<DeviceRow> {
   return db
     .insertInto('devices')
