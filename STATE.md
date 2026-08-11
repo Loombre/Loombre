@@ -611,6 +611,40 @@ lifted from apps/worker/src/crash to a shared home. Final spec-run verification
 of the whole A3 branch happens once, on the settled branch, when the
 continuation returns.
 
+**A1 checkpoint (2026-08-11, mid-wave):** all four items DONE and orchestrator-
+verified (30/30 on re-run in the lane worktree incl. the 4 real-ffmpeg lifecycle
+integration proofs; contract scope empty; migration 0041 additive; requestSeek
+content untouched). C1: run-registry (register-at-spawn-before-any-await,
+allSettled terminate-all) awaited FIRST in shutdown(), SIGCONT-before-SIGTERM
+preserved and timing-asserted (<1.8s for a throttle-suspended run). C2:
+worker_pid/worker_started_at_ms + reapable partial index; reaper with real
+inspector (/proc Linux, ps darwin, tasklist+wmic+CIM win32, zero new native
+deps); PID+cmdline verified against staging_dir — reused/unverifiable pid NEVER
+signalled, session still reclaimed; kills the process GROUP. Lane FOUND+FIXED a
+worse defect while proving the cap invariant: killGroup returned once SIGKILL
+was QUEUED, freeing the admission slot while the process was still scheduled —
+waitForRunExit (bounded, zombie-proof gone-predicate) now pins kill→re-inspect→
+free-slot ordering. C7: reconciliation machinery EXTENDED with per-group
+horizons (transcode group: 15-min queued-stale horizon = the sweeper's own
+idle-timeout, maxRows 500, oldest-first) — singleton list untouched; WARN
+orphan-signature breadcrumb in the query layer (sweeper service is A5-forbidden
+territory; honest limitation documented: jobs ledger has no session id, fact 3
+is instance-level). #11 residuals: (b) advisory-lock serialization of
+migrate/reset (both race interleavings reproduced red first); (a) reset now
+demands live-process evidence (pg_stat_activity application_name loombre-%) AND
+a COMMENT ON DATABASE disposable-claim (stamped on auto-provision/ensureTest/
+--allow-reset adoption; stamping itself gated on isTestDatabaseName so the real
+DB can never be marked). Operator side effects recorded: shared loombre_test on
+5442 stamped once by the lane; dev DB `loombre` verified UNMARKED. Lane also
+tripped+scrubbed the competitor-naming grep gate in first-draft comments —
+advisory relayed to A4/A5. A1 CONTINUATION ordered (A2's two runner-side finds,
+now dispositioned): (1) seek-restart livelock de-dup in runner consumption;
+(2) per-run source-origin recording — durable runs table (runIndex, startSeg,
+sourceOriginMs), migration 0043 reserved, real columns per invariant #3, plus
+the packages/db read query; controller-side consumption (derivation upgrade +
+progress reporting) sequenced to A2 AFTER A1 lands; -copyts/arg-builder
+timestamp semantics explicitly deferred to the ABR (C2) spec.
+
 ## an upstream media server comparative architecture study — ANALYSIS-ONLY, COMPLETE 2026-08-10 (owner brief "Comparative Architecture Study — an upstream media server Playback Engine vs. Loombre"; awaiting owner review + implementation authorization)
 
 DELIVERABLE: reports/upstream-media-server-study/upstream-media-server-comparative-study.md (908 lines) —
