@@ -54,6 +54,20 @@ export { buildFfmpegArgs } from "./args/builder.js";
 export type { FfmpegPlanShape, BuildFfmpegArgsOptions } from "./args/builder.js";
 
 /**
+ * C1 fable-review finding 3 (LOW, owner-adopted 2026-08-11): the worker's
+ * probe battery carries a MIRROR of the builder's encoder-name table
+ * (apps/worker/src/hwcaps/tables.ts) — the names it spawns to VERIFY a
+ * capability must be the names this package spawns to USE it, or the box
+ * verifies one encoder and runs another. Until now that mirror was
+ * enforced by comments in both files pointing at each other. Exporting the
+ * table lets `apps/worker/test/hwcaps/encoder-name-mirror.spec.ts` assert
+ * the equality per backend × codec against the real thing, the same way
+ * `dv.ts`/`av1.ts` are exported so the worker's fences can assert against
+ * the engine's own predicates rather than a re-derivation.
+ */
+export { VIDEO_ENCODER_NAMES } from "./args/builder.js";
+
+/**
  * Kept exported for source compatibility with the Phase-0/Wave-1 scaffold
  * (matrix-meta.spec.ts and matrix.spec.ts both import this class and check
  * `err instanceof NotImplementedError`). Nothing in src throws it anymore

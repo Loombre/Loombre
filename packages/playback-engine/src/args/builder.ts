@@ -416,8 +416,17 @@ const HWACCEL_BY_BACKEND: Partial<Record<HardwareBackend, string>> = {
  *  battery reports the capability absent BY CONSTRUCTION (§8.1) and Stage G
  *  can never pair `videotoolbox` with an `av1` target. The interpretation-J
  *  descriptive throw below covers the inconsistent shape if a caller
- *  constructs one by hand. */
-const VIDEO_ENCODER_NAMES: Partial<Record<HardwareBackend, Partial<Record<LadderCodec, string>>>> = {
+ *  constructs one by hand.
+ *
+ *  EXPORTED (C1 fable-review finding 3, owner-adopted 2026-08-11) so
+ *  apps/worker/src/hwcaps/tables.ts's mirror can be pinned by an EQUALITY
+ *  SPEC instead of by the two files' comments promising each other they
+ *  match. The probe battery spawns THESE names to prove a capability; this
+ *  builder emits THESE names to use it — a silent divergence would mean
+ *  verifying one encoder and running another, which is the exact failure
+ *  class §7.3's probe-proves-the-shipped-plumbing rule exists to prevent.
+ *  Read-only by contract: the worker only ever compares against it. */
+export const VIDEO_ENCODER_NAMES: Partial<Record<HardwareBackend, Partial<Record<LadderCodec, string>>>> = {
   software: { h264: "libx264", hevc: "libx265", av1: "libsvtav1" },
   videotoolbox: { h264: "h264_videotoolbox", hevc: "hevc_videotoolbox" },
   nvenc: { h264: "h264_nvenc", hevc: "hevc_nvenc", av1: "av1_nvenc" },
