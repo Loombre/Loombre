@@ -4380,7 +4380,7 @@ COMMENT ON COLUMN plugin_delivery_cursors.cursor_event_seq IS
 -- SPDX-License-Identifier: AGPL-3.0-only
 -- Loombre :: migration 0042_restricted_browse_rating_sort_indexes
 --
--- LD-12 (STATE.md, an upstream media server-comparative-study implementation run):
+-- LD-12 (STATE.md, comparative-architecture-study implementation run):
 -- restricted-browse.ts's sort=rating gets two per-direction partial
 -- expression indexes on catalog_items — closing the S10 "sort=rating is
 -- CHEAPLY fixable... deliberately not landed because it reverses a
