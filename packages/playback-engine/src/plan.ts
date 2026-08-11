@@ -170,7 +170,19 @@ import { buildFfmpegArgs } from "./args/builder.js";
  * of `reasons` instead of splicing after Stage A's own entry produces an
  * identical order in that specific case).
  */
-export const ENGINE_VERSION = "0.8.5";
+/**
+ * 0.9.0 (LD-3 / LD-15, 2026-08-11): the Dolby Vision strip became REAL.
+ * `dv-stripped-to-hdr10` previously fired over an arg builder that emitted
+ * nothing, so a DV profile-7/8 copy carried its RPU — and, for dual-layer
+ * profile 7, its whole enhancement layer — through to an HDR10-only
+ * device. The copy branch now emits
+ * `-bsf:v filter_units=remove_types=62-63` (merged with the open-GOP
+ * `8-9` range when both apply, since ffmpeg honours only the last
+ * `-bsf:v`) plus `-tag:v hvc1`. MINOR, not patch: emitted `ffmpegArgs`
+ * change for a whole class of inputs, which is a behaviour change for
+ * anything auditing stored plans.
+ */
+export const ENGINE_VERSION = "0.9.0";
 
 /**
  * Stage D assembly (docs/PLAYBACK.md §3 Stage D.4, binding interpretation

@@ -221,8 +221,23 @@ Evaluated on source `hdr`:
   tone-map REQUIRED, reason `dv-profile5-requires-tonemap`.
 - `dv` profile 7/8: device.dolbyVision → copy; else if dvBlCompatId marks an
   HDR10-compatible BL and device.hdr10 → copy base layer with reason
-  `dv-stripped-to-hdr10` (metadata strip in arg builder, no re-encode);
+  `dv-stripped-to-hdr10` (bitstream-level strip in the arg builder, no
+  re-encode — see §6 segment 7 for exactly what is emitted);
   else tone-map required, `hdr-tone-map-required`.
+  - **The strip is REAL as of ENGINE_VERSION 0.9.0 (LD-3/LD-15,
+    2026-08-11).** It previously described itself as a "metadata strip in
+    arg builder" while the builder emitted nothing at all, so a DV copy
+    carried its RPU — and, for dual-layer profile 7, its whole enhancement
+    layer — through to an HDR10-only device. One predicate
+    (`src/dv.ts`'s `dvStripApplies()`) now decides BOTH the reason and the
+    ffmpeg flags, so the two cannot drift apart again.
+  - **Profile 7 dual-layer (LD-15):** the enhancement layer is dropped by
+    the same strip — it is meaningless without the RPU that drives it.
+    Profile-7 sources are NOT gated out; they strip to single-layer HDR10
+    like profile 8.1 does. The outcome difference is reported in the
+    reason's `detail` (`elDropped=true|false`), not as a separate reason
+    code: `PlanReasonCode` is a closed enum whose additions are contract
+    PRs (§4).
 - `hdr10`/`hlg`: device supports matching flag → copy; else tone-map required,
   `hdr-tone-map-required`.
 Tone-map required → transcode. Method chosen in Stage G; if Stage G yields no
@@ -323,6 +338,13 @@ Informational-class: `dv-stripped-to-hdr10`, `subtitle-styling-lost`,
 `hw-encoder-selected:*`, `software-fallback:*`.
 Every reason carries `{ code, streamIndex?, detail? }`; matrix cases assert on
 codes, golden tests on full objects.
+`dv-stripped-to-hdr10`'s `detail` is
+`dvProfile=<n> blCompatId=<n> elDropped=<bool>` — `elDropped` states whether a
+dual-layer profile-7 enhancement layer went with the RPU (LD-15). It rides in
+`detail` deliberately: the code list above is CLOSED, additions to it are
+contract PRs against `packages/contract/openapi.yaml`'s `PlanReasonCode`, and
+`apps/server/test/contract-reason-codes.spec.ts` fails the build in both
+directions if the engine and the contract disagree.
 
 ## 5. Output contract
 
@@ -365,6 +387,7 @@ sorted keys (`stableStringify` in shared).
    GOP for the rest of that invocation loses its own HEVC RASL leading
    pictures (NAL types 8/9) each time it starts, not just the first one at
    the join — a small, PERSISTENT per-GOP frame drop (roughly `bframes`
+
    frames per keyframe interval) for the remainder of the seek-restarted
    segment run, not a one-time join cost. ACCEPTED TRADE-OFF (owner
    decision, 2026-08-10): this persistent minor frame drop is traded
@@ -376,6 +399,33 @@ sorted keys (`stableStringify` in shared).
    QA re-verification of long post-seek playback (does the persistent
    per-GOP drop stay imperceptible over minutes of playback, not just at
    the join) before rc.7 ships.
+   **Interpretation L — DOLBY VISION STRIP (LD-3/LD-15, ffmpeg-verified
+   2026-08-11 against real DV samples).** Also video-COPY-branch only, and
+   emitted whenever `src/dv.ts`'s `dvStripApplies()` holds for the selected
+   stream and device (DV profile 7 or 8, `dvBlCompatId` non-null, device
+   hdr10-capable, device NOT DV-capable):
+   `-bsf:v filter_units=remove_types=62-63` plus `-tag:v hvc1`.
+   HEVC UNSPEC62 is the Dolby Vision RPU and UNSPEC63 the dual-layer
+   enhancement layer (Rec. ITU-T H.265 Table 7-1 reserves 48-63 as
+   unspecified; Dolby's streams spec assigns these two), so removing both
+   leaves clean single-layer HDR10. The `-tag:v hvc1` is not cosmetic: a
+   real DV source's sample entry is `dvh1`/`dvhe`, a plain copy PRESERVES
+   that fourcc, and leaving it would still announce Dolby Vision over a
+   bitstream with no DV data left in it.
+   *Mechanism chosen by measurement, not preference:* ffmpeg's DV-aware
+   `dovi_rpu=strip=1` bsf removes the RPU but leaves EVERY enhancement-layer
+   NAL unit behind (all 104 of them on the profile-7 fixture), failing
+   LD-15 outright; it also needs ffmpeg ≥ 7.1, whereas `filter_units` long
+   predates it and so carries no vendored-build version risk.
+   *Composition with interpretation K:* ffmpeg honours only the LAST
+   `-bsf:v` for a stream, so when both strips apply they MUST merge into one
+   filter_units value — `remove_types=8-9|62-63`. Emitting two flags
+   silently discards the open-GOP strip (verified by doing exactly that and
+   finding RASL units 8/9 intact). Goldens 35-38 pin all four corners.
+   *Not container-gated:* the strip belongs to every repackage, mp4
+   download-remux included — and the builder is never called at all for a
+   direct-play plan, so reaching it IS Stage C's "repackaging happened"
+   condition.
 8. Audio encode/copy block
 9. Output: HLS muxer flags — `-f hls -hls_time {SEG_DUR} -hls_playlist_type
    event -hls_segment_type {fmp4|mpegts} -hls_fmp4_init_filename init.mp4
