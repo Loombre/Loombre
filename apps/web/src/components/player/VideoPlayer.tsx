@@ -144,6 +144,18 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
   const heartbeatRef = useRef<HeartbeatScheduler | null>(null);
   const positionRef = useRef(0);
   const durationRef = useRef<number | null>(null);
+  // Opus review Finding F (2026-08-10): the event-wiring effect below
+  // (`adoptElementDuration`) needs "is this session direct-play"
+  // (`session.manifestUrl === null`, hls-attach.ts's own discriminator) at
+  // the moment a `durationchange`/`loadedmetadata` event fires — but that
+  // effect's dependency array is `[phase]` only (see its own comment), and
+  // `phase` can stay `'ready'` across a session swap (a same-string
+  // setPhase("ready") doesn't retrigger effects keyed on it), so reading
+  // reactive `session` state directly inside its closure would go stale
+  // exactly like `durationRef` would if IT were reactive state instead of a
+  // ref. Mirrors `durationRef`: a plain ref, reset at the same two
+  // session-established sites `durationRef.current` already resets at.
+  const isDirectPlayRef = useRef(false);
   const progressStateRef = useRef<ProgressState>("in-progress");
   const pendingSeekMsRef = useRef<number | null>(null);
   // Mirrors `awaitingResumeChoice` for the hls.js attach effect below: that
@@ -241,6 +253,7 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
       setSession(result.session);
       setDurationMs(result.session.media?.durationMs ?? null);
       durationRef.current = result.session.media?.durationMs ?? null;
+      isDirectPlayRef.current = result.session.manifestUrl === null;
       const defaultAudio = result.session.media?.audio.find((a) => a.isDefault) ?? result.session.media?.audio[0];
       if (defaultAudio) setSelectedAudioIndex(defaultAudio.index);
 
@@ -527,12 +540,42 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
       setPositionMs(ms);
       setBuffered(readBuffered(video));
     };
-    const onLoadedMetadata = (): void => {
-      if (Number.isFinite(video.duration)) {
-        durationRef.current = video.duration * 1000;
-        setDurationMs(video.duration * 1000);
+    // The element's own duration is authoritative only when it EXTENDS
+    // what the session already told us. For an in-progress HLS transcode
+    // the element reports the EVENT playlist's current extent (segments
+    // produced so far) — unconditionally adopting it here clobbered the
+    // real ffprobe duration from session.media.durationMs and pinned the
+    // timeline of a 2-hour movie to ~24s (2026-08-08 owner QA). Growth is
+    // always adopted — durationchange fires as the playlist extends, and a
+    // direct-play file's real metadata may beat a stale probe — shrinkage
+    // never is.
+    //
+    // Opus review Finding F (2026-08-10) exception: on a DIRECT-PLAY session
+    // (`isDirectPlayRef.current`, docs/PLAYBACK.md §9's `manifestUrl===null`
+    // discriminator — no HLS event playlist exists at all, so the "current
+    // extent so far" concern above doesn't apply) the element's own duration
+    // IS the file's real metadata, straight from the browser's own demuxer —
+    // strictly more authoritative than the server's ffprobe-derived
+    // `session.media.durationMs`, which can itself be an over-long probe
+    // artifact (e.g. a container duration field that doesn't match the
+    // actual decodable stream). Adopted unconditionally in that case, growth
+    // or shrinkage alike; every other session (HLS transcode/direct-stream)
+    // keeps the growth-only rule above unchanged.
+    const adoptElementDuration = (): void => {
+      if (!Number.isFinite(video.duration)) return;
+      const candidateMs = video.duration * 1000;
+      if (isDirectPlayRef.current) {
+        durationRef.current = candidateMs;
+        setDurationMs(candidateMs);
+        return;
+      }
+      if (durationRef.current === null || candidateMs > durationRef.current) {
+        durationRef.current = candidateMs;
+        setDurationMs(candidateMs);
       }
     };
+    const onLoadedMetadata = adoptElementDuration;
+    const onDurationChange = adoptElementDuration;
     const onPlay = (): void => {
       setIsPlaying(true);
       progressStateRef.current = "in-progress";
@@ -557,6 +600,7 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
 
     video.addEventListener("timeupdate", onTimeUpdate);
     video.addEventListener("loadedmetadata", onLoadedMetadata);
+    video.addEventListener("durationchange", onDurationChange);
     video.addEventListener("play", onPlay);
     video.addEventListener("pause", onPause);
     video.addEventListener("ended", onEnded);
@@ -566,6 +610,7 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
     return () => {
       video.removeEventListener("timeupdate", onTimeUpdate);
       video.removeEventListener("loadedmetadata", onLoadedMetadata);
+      video.removeEventListener("durationchange", onDurationChange);
       video.removeEventListener("play", onPlay);
       video.removeEventListener("pause", onPause);
       video.removeEventListener("ended", onEnded);
@@ -752,6 +797,7 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
     setSession(result.session);
     setDurationMs(result.session.media?.durationMs ?? null);
     durationRef.current = result.session.media?.durationMs ?? null;
+    isDirectPlayRef.current = result.session.manifestUrl === null;
     const defaultAudio = result.session.media?.audio.find((a) => a.isDefault) ?? result.session.media?.audio[0];
     if (defaultAudio) setSelectedAudioIndex(defaultAudio.index);
     setAwaitingResumeChoice(false);

@@ -254,6 +254,37 @@ function directPlaySession(): PlaybackSession {
   };
 }
 
+/** An HLS session (manifestUrl SET — docs/PLAYBACK.md §9), so
+ *  `isDirectPlayRef` resolves false and duration-adoption stays growth-only
+ *  (opus review Finding F, 2026-08-10: growth-only is now direct-play-vs-not
+ *  branched, so the "never lets a smaller duration clobber" regression guard
+ *  below needs a genuinely non-direct-play session to keep meaning what its
+ *  own comment says — a direct-play session now adopts shrinkage on
+ *  purpose, see the "direct-play... corrects an over-long probe duration"
+ *  case further down). jsdom has neither `MediaSource` nor a working
+ *  `canPlayType`, so `decideAttachStrategy` falls to the 'hlsjs' last-ditch
+ *  branch and the component's own attach effect attempts (and harmlessly
+ *  fails/no-ops) a real hls.js import — verified not to hang or throw
+ *  synchronously in this suite; the duration-adoption effect under test
+ *  here is wired independently of that attach effect. */
+function hlsTranscodeSession(): PlaybackSession {
+  return {
+    ...directPlaySession(),
+    plan: {
+      decision: "direct-stream",
+      reasons: [{ code: "container-not-direct-playable" }],
+      container: "fmp4-hls",
+      video: { action: "copy" },
+      audio: { action: "copy" },
+      subtitle: { strategy: "none" },
+      ladder: [],
+      ffmpegArgs: [],
+      engineVersion: "1.0.0",
+    },
+    manifestUrl: `/v1/playback/sessions/${SESSION_ID}/hls/media.m3u8`,
+  };
+}
+
 function videoEl(view: TestRender): HTMLVideoElement {
   const el = view.container.querySelector("video");
   if (!el) throw new Error("no <video> rendered");
@@ -365,6 +396,60 @@ describe("VideoPlayer", () => {
     });
     expect(apiPut).toHaveBeenCalledTimes(1);
     expect(apiPut.mock.calls[0]?.[1]).toMatchObject({ body: { positionMs: 42_000 } });
+  });
+
+  it("never lets the element's SMALLER duration clobber the session's ffprobe duration (non-direct-play only)", async () => {
+    // Field bug (2026-08-08 owner QA): for an in-progress HLS transcode the
+    // element's own `duration` is only the EVENT playlist's current extent
+    // (segments produced so far ≈ 24s of a 2-hour movie), and the old
+    // unconditional loadedmetadata adoption overwrote the authoritative
+    // session.media.durationMs with it — pinning the timeline to ~24s.
+    // Opus review Finding F (2026-08-10) narrowed growth-only to sessions
+    // that are genuinely NOT direct-play (see hlsTranscodeSession's own
+    // comment, and the direct-play shrink case right below) — this case
+    // now pins that half explicitly rather than relying on the default
+    // fixture happening to be direct-play too.
+    createPlaybackSession.mockReset().mockResolvedValue({ ok: true, session: hlsTranscodeSession() });
+    const v = (view = await renderReady());
+    const video = videoEl(v);
+    Object.defineProperty(video, "duration", { get: () => 24, configurable: true });
+    await act(async () => {
+      video.dispatchEvent(new Event("loadedmetadata"));
+    });
+    const slider = v.container.querySelector('[role="slider"]');
+    expect(slider?.getAttribute("aria-valuemax")).toBe("600000");
+  });
+
+  it("adopts duration GROWTH via durationchange (extending playlist / metadata beating a stale probe)", async () => {
+    const v = (view = await renderReady());
+    const video = videoEl(v);
+    Object.defineProperty(video, "duration", { get: () => 700, configurable: true });
+    await act(async () => {
+      video.dispatchEvent(new Event("durationchange"));
+    });
+    const slider = v.container.querySelector('[role="slider"]');
+    expect(slider?.getAttribute("aria-valuemax")).toBe("700000");
+  });
+
+  it("on a DIRECT-PLAY session, adopts the element's duration UNCONDITIONALLY — including SHRINKAGE, correcting an over-long ffprobe duration", async () => {
+    // Opus review Finding F (2026-08-10): growth-only exists to protect an
+    // IN-PROGRESS HLS EVENT PLAYLIST's partial extent from clobbering the
+    // real probe duration (the case above) — that concern doesn't exist on
+    // direct-play at all (no HLS playlist; the element demuxes the actual
+    // file). On direct-play the element's own duration is strictly MORE
+    // authoritative than session.media.durationMs, which can itself be an
+    // over-long ffprobe artifact (e.g. a container duration field that
+    // overstates the actual decodable stream) — growth-only left THAT case
+    // permanently uncorrectable. The default fixture (directPlaySession(),
+    // this describe block's own beforeEach) already has manifestUrl: null.
+    const v = (view = await renderReady());
+    const video = videoEl(v);
+    Object.defineProperty(video, "duration", { get: () => 500, configurable: true });
+    await act(async () => {
+      video.dispatchEvent(new Event("loadedmetadata"));
+    });
+    const slider = v.container.querySelector('[role="slider"]');
+    expect(slider?.getAttribute("aria-valuemax")).toBe("500000");
   });
 
   it("marks the item played and flushes when the element ends", async () => {
