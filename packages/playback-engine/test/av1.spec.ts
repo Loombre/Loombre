@@ -23,6 +23,7 @@ import {
   av1RungBlocker,
   av1SwapApplies,
   demoteAv1Rungs,
+  softwareAv1EncodeVerified,
 } from "../src/av1.js";
 import type {
   DeviceProfile,
@@ -344,12 +345,53 @@ describe("av1DemotionReason — the §4 detail contract, formatted in ONE place"
   });
 
   it("covers every cause the two consumers can produce", () => {
-    const causes = ["tier0-no-hw-av1", "device-no-av1", "no-av1-encoder", "tier0-software-route"] as const;
+    const causes = [
+      "tier0-no-hw-av1",
+      "device-no-av1",
+      "no-av1-encoder",
+      "tier0-software-route",
+      "software-route-no-av1",
+    ] as const;
     for (const cause of causes) {
       const reason = av1DemotionReason({ heightPx: 720, demotedTo: "h264", cause });
       expect(reason.code).toBe("av1-rung-demoted");
       expect(reason.detail).toBe(`cause=${cause} demotedTo=h264 heightPx=720`);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// softwareAv1EncodeVerified — §7.2's verified-capabilities arm (C1 review
+// finding 1). Exported from this module rather than written inline in
+// stages/hardware.ts so "software can really encode av1 on this box" has
+// exactly ONE definition, shared with av1EncodeEligibility's own software
+// arm.
+// ---------------------------------------------------------------------------
+describe("softwareAv1EncodeVerified — the software row's OWN probe-verified av1 encode", () => {
+  it("true when the software row lists av1", () => {
+    expect(softwareAv1EncodeVerified(CAPS_SOFTWARE_AV1)).toBe(true);
+  });
+
+  it("false when the software row lists h264/hevc only", () => {
+    expect(softwareAv1EncodeVerified(CAPS_SOFTWARE_ONLY)).toBe(false);
+  });
+
+  it("false when only a HARDWARE backend verifies av1 — this predicate never reads hw rows", () => {
+    expect(softwareAv1EncodeVerified(CAPS_HW_AV1)).toBe(false);
+    // ...while the eligibility gate, which DOES read them, says 'hw'.
+    expect(av1EncodeEligibility(CAPS_HW_AV1, 0)).toBe("hw");
+  });
+
+  it("false for an empty caps set — 'software' is rule (iii) DOCTRINE, so a missing row is unverified, never assumed-capable", () => {
+    expect(softwareAv1EncodeVerified({ backends: [] })).toBe(false);
+  });
+
+  it("is tier-BLIND: the same caps answer identically at every tier (the route, not the tier, makes it decisive)", () => {
+    expect(softwareAv1EncodeVerified(CAPS_SOFTWARE_AV1)).toBe(true);
+    // The tier question lives in av1EncodeEligibility, which layers it ON
+    // TOP of this predicate rather than duplicating the encode lookup.
+    expect(av1EncodeEligibility(CAPS_SOFTWARE_AV1, 0)).toBe("none");
+    expect(av1EncodeEligibility(CAPS_SOFTWARE_AV1, 1)).toBe("software");
   });
 });
 

@@ -233,7 +233,7 @@ import type {
   VerifiedCapabilities,
 } from "../types.js";
 import type { PlanReason, PlanReasonCode } from "../reasons.js";
-import { av1DemotionReason, demoteAv1Rungs } from "../av1.js";
+import { av1DemotionReason, demoteAv1Rungs, softwareAv1EncodeVerified, type Av1DemotionCause } from "../av1.js";
 
 function reason(code: PlanReasonCode, streamIndex: number | undefined, detail: string): PlanReason {
   const r: PlanReason = { code, detail };
@@ -485,18 +485,42 @@ export function routeHardware(
   //
   // Tier 1+ rule-(iii) routes KEEP their av1 rungs - that IS the permitted
   // software fallback, and the builder then encodes them with libsvtav1
-  // (§6 interp. M).
+  // (§6 interp. M) - but ONLY when this box's SOFTWARE row itself
+  // probe-verified av1 encode (the second arm below, C1 review finding 1).
   //
-  // The cause is fixed (`tier0-software-route`) rather than re-derived from
+  // The cause is fixed per arm rather than re-derived from
   // `av1RungBlocker`: by construction that predicate returns `null` here
   // (the rungs were admitted), so the demotion's cause is the ROUTE, not
   // any device/capability condition - and saying so is what makes the
   // reason legible to the admin ("your hardware can encode AV1, but not
   // everything this ladder needs, so on Tier 0 we would not software-encode
   // it").
+  //
+  // SECOND ARM - the VERIFIED-CAPABILITIES corner (C1 fable-review finding
+  // 1, owner-adopted 2026-08-11; docs/PLAYBACK.md §7.2's refined
+  // rule-(iii) clause). `'hw'` eligibility is a fact about a HARDWARE
+  // backend, and rule (iii) does not use that backend: the encoder here is
+  // the SOFTWARE one, whose own av1 encode may never have passed the §8.1
+  // self-test (§7.3's D4 narrowing means "software can av1" == "libsvtav1
+  // encoded a real bitstream on this box"). Keeping av1 rungs on such a
+  // route hands the arg builder an encoder name nothing on the machine
+  // has - design law 4's "verified capabilities only" broken in the ONE
+  // place the eligibility gate structurally cannot see. So: on ANY
+  // rule-(iii) route whose software row lacks probe-verified av1 encode,
+  // at ANY tier, every av1 rung is demoted through the same shared
+  // primitive (cause `software-route-no-av1`).
+  //
+  // The tier check runs FIRST so the LD-16 tier law is untouched and its
+  // reason wording is unchanged: a tier-0 route demotes unconditionally
+  // and still reports `tier0-software-route`, even on a box whose software
+  // row DOES verify av1 (there the law, not the missing encoder, is the
+  // reason - and matrix case 526 plus every leg-4 pin stays
+  // byte-identical).
   let routedLadder: readonly LadderRung[] = ladder;
-  if (policy.tier === 0) {
-    const normalized = demoteAv1Rungs(ladder, device, "tier0-software-route");
+  const routeDemotionCause: Av1DemotionCause | null =
+    policy.tier === 0 ? "tier0-software-route" : softwareAv1EncodeVerified(caps) ? null : "software-route-no-av1";
+  if (routeDemotionCause !== null) {
+    const normalized = demoteAv1Rungs(ladder, device, routeDemotionCause);
     routedLadder = normalized.rungs;
     for (const demotion of normalized.demotions) {
       reasons.push(av1DemotionReason(demotion));

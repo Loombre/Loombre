@@ -16,6 +16,11 @@
  * actual change" no-op case), the platform-blind array-order proof, the
  * decode-only-backend defensive guard, and totality on defensive/degenerate
  * inputs (unresolved stream, empty ladder).
+ *
+ * Wave C1 adds §7.2's Stage-G residual guard in BOTH its arms: the tier-0
+ * arm (unreachability leg 4) and — from the C1 review's finding 1 — the
+ * verified-capabilities arm, which demotes av1 rungs on ANY rule-(iii)
+ * route whose software row never probe-verified av1 encode.
  */
 import { describe, expect, it } from "vitest";
 import { routeHardware } from "../../src/stages/hardware.js";
@@ -563,6 +568,19 @@ const MIXED_AV1_LADDER: LadderRung[] = [
   { heightPx: 480, videoBitrateBps: 900_000, audioBitrateBps: 160_000, codec: "av1" },
 ];
 
+/** The SAME hw-av1-encode-only box, but its SOFTWARE row's own av1 encode
+ *  self-test PASSED (§7.3's D4 narrowing: `libsvtav1` really is present and
+ *  really did encode a bitstream here). This is the ONLY shape in which a
+ *  tier-1+ rule-(iii) route may keep its av1 rungs — the permitted software
+ *  fallback is a VERIFIED software encoder, never an assumed one (design law
+ *  4, C1 review finding 1). */
+const HW_AV1_ENCODE_ONLY_SW_AV1: VerifiedCapabilities = {
+  backends: [
+    { backend: "nvenc", decode: ["h264", "hevc", "av1"], encode: ["av1"], toneMap: ["cuda"], verifiedAtMs: 1 },
+    { backend: "software", decode: ["h264", "hevc", "av1", "vp9", "mpeg2", "vc1", "mpeg4"], encode: ["h264", "hevc", "av1"], toneMap: [], verifiedAtMs: 1 },
+  ],
+};
+
 describe("routeHardware: §7.2 Stage-G residual guard (tier-0 software route)", () => {
   it("LEG 4 — T0 'hw' eligibility falling to rule (iii) demotes EVERY av1 rung, reason av1-rung-demoted", () => {
     const media = makeMedia([makeVideoStream({ height: 1080 })]);
@@ -591,9 +609,9 @@ describe("routeHardware: §7.2 Stage-G residual guard (tier-0 software route)", 
     ]);
   });
 
-  it("TIER 1+ on the SAME rule-(iii) route KEEPS its av1 rungs — that IS the permitted software fallback", () => {
+  it("TIER 1+ on the SAME rule-(iii) route KEEPS its av1 rungs when the SOFTWARE row itself verifies av1 — that IS the permitted software fallback", () => {
     const media = makeMedia([makeVideoStream({ height: 1080 })]);
-    const result = routeHardware(media, DEVICE_AV1_HEVC, 0, HW_AV1_ENCODE_ONLY, makePolicy({ tier: 1 }), MIXED_AV1_LADDER, false);
+    const result = routeHardware(media, DEVICE_AV1_HEVC, 0, HW_AV1_ENCODE_ONLY_SW_AV1, makePolicy({ tier: 1 }), MIXED_AV1_LADDER, false);
     expect(result.encoder).toBe("software");
     expect(result.ladder).toEqual(MIXED_AV1_LADDER);
     expect(result.reasons.map((r) => r.code)).toEqual(["software-fallback:encode"]);
@@ -627,5 +645,90 @@ describe("routeHardware: §7.2 Stage-G residual guard (tier-0 software route)", 
     const result = routeHardware(media, DEVICE_AV1_HEVC, 0, FULL_HW, makePolicy({ tier: 0 }), MIXED_AV1_LADDER, false);
     expect(result.encoder).toBe("nvenc");
     expect(result.ladder).toEqual(MIXED_AV1_LADDER);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// C1 REVIEW FINDING 1 (MODERATE, owner-adopted 2026-08-11) — the SAME §7.2
+// residual guard, second arm. The tier-0 arm above closes unreachability
+// leg 4; this one closes the VERIFIED-CAPABILITIES hole the reviewer's
+// repro found at tier 1+: eligibility `'hw'` is a fact about a HARDWARE
+// backend, and the route can still collapse to rule (iii) — where the
+// encoder is the SOFTWARE one, whose own av1 encode may never have been
+// probe-verified. Keeping the rungs there hands the builder `libsvtav1` on
+// a box that never proved it has it (design law 4: "verified capabilities
+// only"; §7.2's own note that the `'software'` eligibility arm is
+// capability-VERIFIED says the same thing about the same encoder).
+//
+// The tier law is untouched: tier 0 still demotes unconditionally on this
+// route (cause=tier0-software-route, checked FIRST so every pre-finding
+// assertion above — and matrix case 526 — stays byte-identical).
+// ---------------------------------------------------------------------------
+describe("routeHardware: §7.2 residual guard — tier-1+ rule-(iii) route whose SOFTWARE row lacks verified av1", () => {
+  it("THE REPRO — tier 1, nvenc encode:[av1] only + software encode WITHOUT av1: every av1 rung demotes, cause=software-route-no-av1", () => {
+    const media = makeMedia([makeVideoStream({ height: 1080 })]);
+    const result = routeHardware(media, DEVICE_AV1_HEVC, 0, HW_AV1_ENCODE_ONLY, makePolicy({ tier: 1 }), MIXED_AV1_LADDER, false);
+    expect(result.encoder).toBe("software");
+    expect(result.ladder.some((r) => r.codec === "av1")).toBe(false);
+    expect(result.ladder).toEqual([
+      { heightPx: 2160, videoBitrateBps: 16_000_000, audioBitrateBps: 384_000, codec: "hevc" },
+      { heightPx: 1080, videoBitrateBps: 4_800_000, audioBitrateBps: 384_000, codec: "hevc" },
+      { heightPx: 720, videoBitrateBps: 1_800_000, audioBitrateBps: 160_000, codec: "hevc" },
+      { heightPx: 480, videoBitrateBps: 900_000, audioBitrateBps: 160_000, codec: "hevc" },
+    ]);
+    expect(result.reasons.map((r) => r.code)).toEqual([
+      "software-fallback:encode",
+      "av1-rung-demoted",
+      "av1-rung-demoted",
+      "av1-rung-demoted",
+    ]);
+    expect(result.reasons.filter((r) => r.code === "av1-rung-demoted").map((r) => r.detail)).toEqual([
+      "cause=software-route-no-av1 demotedTo=hevc heightPx=1080",
+      "cause=software-route-no-av1 demotedTo=hevc heightPx=720",
+      "cause=software-route-no-av1 demotedTo=hevc heightPx=480",
+    ]);
+  });
+
+  it("tier 2 behaves identically — the rule is about the ROUTE's verified encoder, not about the tier", () => {
+    const media = makeMedia([makeVideoStream({ height: 1080 })]);
+    const result = routeHardware(media, DEVICE_AV1_HEVC, 0, HW_AV1_ENCODE_ONLY, makePolicy({ tier: 2 }), MIXED_AV1_LADDER, false);
+    expect(result.ladder.some((r) => r.codec === "av1")).toBe(false);
+    expect(result.reasons.filter((r) => r.code === "av1-rung-demoted")).toHaveLength(3);
+  });
+
+  it("a caps set with NO software row at all counts as unverified — the route's encoder is still 'software'", () => {
+    const media = makeMedia([makeVideoStream({ height: 1080 })]);
+    const noSoftwareRow: VerifiedCapabilities = { backends: [HW_AV1_ENCODE_ONLY.backends[0]!] };
+    const result = routeHardware(media, DEVICE_AV1_HEVC, 0, noSoftwareRow, makePolicy({ tier: 1 }), MIXED_AV1_LADDER, false);
+    expect(result.encoder).toBe("software");
+    expect(result.ladder.some((r) => r.codec === "av1")).toBe(false);
+    expect(result.reasons.filter((r) => r.code === "av1-rung-demoted")).toHaveLength(3);
+  });
+
+  it("TIER 0 PRECEDENCE — a tier-0 route whose software row DOES verify av1 still demotes, and still reports cause=tier0-software-route", () => {
+    const media = makeMedia([makeVideoStream({ height: 1080 })]);
+    const result = routeHardware(media, DEVICE_AV1_HEVC, 0, HW_AV1_ENCODE_ONLY_SW_AV1, makePolicy({ tier: 0 }), MIXED_AV1_LADDER, false);
+    expect(result.ladder.some((r) => r.codec === "av1")).toBe(false);
+    expect(result.reasons.filter((r) => r.code === "av1-rung-demoted").map((r) => r.detail)).toEqual([
+      "cause=tier0-software-route demotedTo=hevc heightPx=1080",
+      "cause=tier0-software-route demotedTo=hevc heightPx=720",
+      "cause=tier0-software-route demotedTo=hevc heightPx=480",
+    ]);
+  });
+
+  it("a HARDWARE route (rule i/ii) at tier 1 never demotes, however unverified the software row is — the guard is rule-(iii)-only", () => {
+    const media = makeMedia([makeVideoStream({ height: 1080 })]);
+    const av1OnlyLadder = MIXED_AV1_LADDER.slice(1); // targets are exactly {av1}, which nvenc covers
+    const result = routeHardware(media, DEVICE_AV1_HEVC, 0, HW_AV1_ENCODE_ONLY, makePolicy({ tier: 1 }), av1OnlyLadder, false);
+    expect(result.encoder).toBe("nvenc");
+    expect(result.ladder).toEqual(av1OnlyLadder);
+    expect(result.reasons.map((r) => r.code)).toEqual(["hw-encoder-selected:nvenc"]);
+  });
+
+  it("an av1-FREE ladder on a tier-1 rule-(iii) route with an av1-less software row is untouched (structural no-op)", () => {
+    const media = makeMedia([makeVideoStream({ height: 1080 })]);
+    const result = routeHardware(media, DEVICE_AV1_HEVC, 0, SOFTWARE_ONLY, makePolicy({ tier: 1 }), DEFAULT_LADDER, false);
+    expect(result.ladder).toEqual(DEFAULT_LADDER);
+    expect(result.reasons.map((r) => r.code)).toEqual(["software-fallback:encode"]);
   });
 });
