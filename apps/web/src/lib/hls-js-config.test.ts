@@ -188,7 +188,7 @@ describe("resolveStartLevel (§9.1.9) — start on the rung the server is ALREAD
   });
 
   it("buildHlsJsConfig passes it straight through, defaulting to -1 when unpinned", () => {
-    const base = { getToken: () => "t", appendToken: (u: string, t: string) => u };
+    const base = { getToken: () => "t", appendToken: (u: string) => u };
     expect(buildHlsJsConfig({ ...base, startLevel: 2 }).startLevel).toBe(2);
     expect(buildHlsJsConfig(base).startLevel).toBe(-1);
   });

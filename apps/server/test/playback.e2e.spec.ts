@@ -515,7 +515,13 @@ describe("POST /playback/sessions (Phase 3 §11 step 6b: admission control + rea
     expectFullPlaybackPlanShape(res.body.plan);
     expect(res.body.plan.decision).toBe("transcode");
     expect(res.body.plan.ffmpegArgs.length).toBeGreaterThan(0);
-    expect(res.body.manifestUrl).toBe(`/playback/sessions/${res.body.id}/hls/media.m3u8`);
+    // why (Wave C2 / owner-decision V5, docs/PLAYBACK.md §9.1.2 item 3):
+    // `manifestUrl` now points at the MULTI-VARIANT master playlist for
+    // every HLS session, ladder-empty ones included — one client path, no
+    // branch, and the variants a client may switch to come from the plan's
+    // own ladder. Value semantics only; the schema is untouched, and the
+    // media playlist still serves the same bytes at v{K}/media.m3u8.
+    expect(res.body.manifestUrl).toBe(`/playback/sessions/${res.body.id}/hls/master.m3u8`);
   });
 
   it("a genuinely UNPLAYABLE plan (tone-map refused by policy) -> 409 'media-unplayable' carrying real reasons", async () => {
