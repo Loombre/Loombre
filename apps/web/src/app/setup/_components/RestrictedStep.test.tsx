@@ -66,10 +66,10 @@ describe("RestrictedStep", () => {
   }
 
   function tabFor(text: string): HTMLButtonElement {
-    const button = Array.from(view!.container.querySelectorAll('[role="tab"]')).find(
+    const button = Array.from(view!.container.querySelectorAll('[role="radio"]')).find(
       (b) => (b.textContent ?? "").trim() === text,
     );
-    if (!button) throw new Error(`no tab labelled "${text}"`);
+    if (!button) throw new Error(`no radio labelled "${text}"`);
     return button as HTMLButtonElement;
   }
 

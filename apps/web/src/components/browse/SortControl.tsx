@@ -14,6 +14,7 @@
 "use client";
 
 import type { components } from "@loombre/sdk";
+import { SegmentedControl } from "../ui/SegmentedControl.js";
 import styles from "./SortControl.module.css";
 
 export const SORT_OPTIONS = [
@@ -32,6 +33,12 @@ export const SORT_PARAMS: Record<SortValue, components["parameters"]["Sort"]> = 
   rating: "rating",
 };
 
+// Item 1 (an upstream media server-study Wave A, radiogroup sweep): used to hand-roll
+// role="tablist"/role="tab" markup — consolidated onto the shared
+// ui/SegmentedControl, which owns the WAI-ARIA radiogroup + roving-
+// tabindex + arrow-key behavior once. SortControl.module.css's own
+// `.track`/`.segment` (composed from SegmentedControl.module.css) are
+// threaded through unchanged via className/segmentClassName.
 export function SortControl({
   active,
   onChange,
@@ -40,20 +47,13 @@ export function SortControl({
   onChange: (value: SortValue) => void;
 }): React.JSX.Element {
   return (
-    <div className={styles.track} role="tablist" aria-label="Sort">
-      {SORT_OPTIONS.map((option) => (
-        <button
-          key={option.value}
-          type="button"
-          role="tab"
-          aria-selected={option.value === active}
-          data-active={option.value === active}
-          className={styles.segment}
-          onClick={() => onChange(option.value)}
-        >
-          {option.label}
-        </button>
-      ))}
-    </div>
+    <SegmentedControl
+      options={SORT_OPTIONS.map((option) => ({ value: option.value as string, label: option.label }))}
+      value={active}
+      onChange={(value) => onChange(value as SortValue)}
+      className={styles.track}
+      segmentClassName={styles.segment}
+      aria-label="Sort"
+    />
   );
 }
