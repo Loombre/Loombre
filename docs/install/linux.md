@@ -314,7 +314,14 @@ This shows the server's boot logs in real time. (Installed with
 `--no-systemd`? There's no unit for `journalctl` to read — run
 `/opt/loombre/bin/loombre-server` in the foreground instead, or check
 wherever you redirected its stdout/stderr when you backgrounded it.)
-Common issues:
+
+Every service also writes its own copy of that same output to
+`<data dir>/logs/<name>.log` (`server.log` / `worker.log` / `web.log`;
+`<data dir>` defaults to `/var/lib/loombre`) — set automatically as
+`LOOMBRE_LOG_FILE`, so the admin Dashboard's log-tail card shows the same
+content in the browser too, no `journalctl` needed there. See
+[Environment variable reference](/ops/env-reference) if you want to point
+it somewhere else. Common issues:
 
 - **`ERR_MODULE_NOT_FOUND` or `Cannot find module`** — usually a build/packaging
   issue. Confirm the tarball extracted completely: `tar -tzf loombre-*.tar.gz |

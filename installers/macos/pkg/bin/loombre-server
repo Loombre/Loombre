@@ -37,6 +37,18 @@ CONFIG_ENV="/Library/Application Support/Loombre/config/loombre.env"
 : "${LOOMBRE_FFPROBE:=$HERE/runtime/ffmpeg/ffprobe}"
 export PORT LOOMBRE_FFMPEG LOOMBRE_FFPROBE
 
+# LOOMBRE_LOG_FILE (LD-11, this implementation run's lane B3):
+# GET /admin/logs/tail (apps/server/src/catalog/admin-logs-tail.ts) reads
+# this to serve the Dashboard's log-tail card. Pointed at the EXACT same
+# path com.loombre.server.plist's StandardOutPath already writes — launchd
+# is already capturing this process's stdout there natively, so no extra
+# redirection is needed here, unlike the Linux/Docker shapes (systemd's
+# default is the journal, not a file; Docker containers have no supervisor-
+# level file capture at all) — see those shapes' own LOOMBRE_LOG_FILE
+# wiring for the tee-based mechanism they need instead. Operator override
+# in config/loombre.env (sourced above) wins via the :- expansion.
+export LOOMBRE_LOG_FILE="${LOOMBRE_LOG_FILE:-/Library/Logs/Loombre/server.out.log}"
+
 # LOOMBRE_DATA_DIR: exported in BOTH database modes — installer
 # completeness audit, gap 4. This export used to live inside the
 # embedded-mode else-branch below, but apps/server/src/ipc/env.ts gates the

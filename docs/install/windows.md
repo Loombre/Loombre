@@ -243,6 +243,12 @@ running; it is a quick, reversible pause rather than a full shutdown.)
 `%ProgramData%` is normally `C:\ProgramData` — a hidden folder by default;
 type the path directly into File Explorer's address bar to open it.
 
+Each service also has its own `logs\<name>.log` set as `LOOMBRE_LOG_FILE`
+automatically, so the admin Dashboard's log-tail card shows the server's
+log in the browser too — no `%ProgramData%` browsing needed there. See
+[Environment variable reference](/ops/env-reference) if you want to point
+it somewhere else.
+
 ## Crash reports
 
 Loombre never sends crash data anywhere automatically (no telemetry, ever —

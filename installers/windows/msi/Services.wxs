@@ -300,6 +300,22 @@
              status response advertises the real web client instead of the
              server-port fallback (apps/server/src/ipc/web-url.ts).
 
+             LOOMBRE_LOG_FILE (LD-11, this implementation run's lane B3):
+             GET /admin/logs/tail (apps/server/src/catalog/
+             admin-logs-tail.ts) reads this to serve the Dashboard's
+             log-tail card. Pointed at the EXACT SAME path each
+             ServiceInstall's own log-file Arguments flag above already
+             names (spelled out in words here per this file's header note
+             on literal double-hyphens inside XML comments — the flag
+             itself is the two-letter word "log" preceded by two hyphens,
+             visible in each Arguments value above). LoombreHostedService.cs
+             writes the child's stdout to that path via a real StreamWriter
+             (not a placeholder) — keep that flag's value and this
+             Environment value in sync if either ever changes. LoombreWeb
+             gets its own copy too (consistency with the other two
+             services; not consumed by anything today since the log-tail
+             card only reads the SERVER process's own env).
+
              DATABASE_URL is deliberately ABSENT — and unlike the earlier
              revision of this comment, that is now the CORRECT, fully-wired
              posture, not an open gap: apps/server's provisioning bootstrap
@@ -317,13 +333,13 @@
           Key="SYSTEM\CurrentControlSet\Services\LoombreServer"
           Name="Environment"
           Type="multiString"
-          Value="NODE_ENV=production[~]PORT=$(var.ServerPort)[~]LOOMBRE_DATA_DIR=[APPDATAFOLDER][~]LOOMBRE_EMBEDDED_PG_VENDOR_DIR=[PGDIR][~]LOOMBRE_EMBEDDED_PG_VERSION=$(var.EmbeddedPgVersion)[~]LOOMBRE_IPC_WINDOWS_GRANT=*S-1-5-32-545[~]LOOMBRE_WEB_URL=http://localhost:$(var.WebPort)" />
+          Value="NODE_ENV=production[~]PORT=$(var.ServerPort)[~]LOOMBRE_DATA_DIR=[APPDATAFOLDER][~]LOOMBRE_EMBEDDED_PG_VENDOR_DIR=[PGDIR][~]LOOMBRE_EMBEDDED_PG_VERSION=$(var.EmbeddedPgVersion)[~]LOOMBRE_IPC_WINDOWS_GRANT=*S-1-5-32-545[~]LOOMBRE_WEB_URL=http://localhost:$(var.WebPort)[~]LOOMBRE_LOG_FILE=[APPDATA_LOGS]server.log" />
         <RegistryValue
           Root="HKLM"
           Key="SYSTEM\CurrentControlSet\Services\LoombreWorker"
           Name="Environment"
           Type="multiString"
-          Value="NODE_ENV=production[~]LOOMBRE_DATA_DIR=[APPDATAFOLDER][~]LOOMBRE_FFMPEG=[FFMPEGDIR]ffmpeg.exe[~]LOOMBRE_FFPROBE=[FFMPEGDIR]ffprobe.exe" />
+          Value="NODE_ENV=production[~]LOOMBRE_DATA_DIR=[APPDATAFOLDER][~]LOOMBRE_FFMPEG=[FFMPEGDIR]ffmpeg.exe[~]LOOMBRE_FFPROBE=[FFMPEGDIR]ffprobe.exe[~]LOOMBRE_LOG_FILE=[APPDATA_LOGS]worker.log" />
         <!-- LoombreWeb's env carries PORT only — HOSTNAME is NOT one of
              these Environment entries. The child is Next's own CLI
              (node_modules\next\dist\bin\next start, see this ServiceInstall's
@@ -343,7 +359,7 @@
           Key="SYSTEM\CurrentControlSet\Services\LoombreWeb"
           Name="Environment"
           Type="multiString"
-          Value="NODE_ENV=production[~]PORT=$(var.WebPort)[~]LOOMBRE_SERVER_ORIGIN=http://localhost:$(var.ServerPort)" />
+          Value="NODE_ENV=production[~]PORT=$(var.WebPort)[~]LOOMBRE_SERVER_ORIGIN=http://localhost:$(var.ServerPort)[~]LOOMBRE_LOG_FILE=[APPDATA_LOGS]web.log" />
       </Component>
     </ComponentGroup>
   </Fragment>
