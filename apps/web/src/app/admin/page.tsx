@@ -60,8 +60,6 @@
 // re-open this gap — it reports OS/tier/node/uptime, all real fields, the
 // same restraint /admin/system's own card already exercised.)
 
-import { useEffect, useState } from "react";
-import type { components } from "@loombre/sdk";
 import { HealthCards } from "../../components/admin/HealthCards.js";
 import { StreamsPanel } from "../../components/admin/StreamsPanel.js";
 import { LibrariesPanel } from "../../components/admin/LibrariesPanel.js";
@@ -74,10 +72,8 @@ import { ProviderKeysNoticeCard } from "../../components/admin/system/ProviderKe
 import { CrashFilesCard } from "../../components/admin/system/CrashFilesCard.js";
 import { LogsTailCard } from "../../components/admin/system/LogsTailCard.js";
 import { Card } from "../../components/ui/Card.js";
-import { apiGet } from "../../lib/api-client.js";
+import { useSystemInfo } from "../../lib/system-info.js";
 import styles from "./page.module.css";
-
-type SystemInfo = components["schemas"]["SystemInfo"];
 
 function formatUptime(uptimeMs: number | null | undefined): string | null {
   if (uptimeMs == null) return null;
@@ -91,17 +87,13 @@ function formatUptime(uptimeMs: number | null | undefined): string | null {
 }
 
 function DashboardHeader(): React.JSX.Element {
-  const [info, setInfo] = useState<SystemInfo | null>(null);
-
-  useEffect(() => {
-    apiGet("/system/info")
-      .then(setInfo)
-      .catch(() => {
-        // Best-effort status line — the dashboard itself already renders
-        // without it; no error banner for a decorative mono readout.
-      });
-  }, []);
-
+  // Item 7 (an upstream media server-study Wave A, /system/info triple-fetch): shares the
+  // same request as SystemInfoCard/Sidebar via lib/system-info.ts instead
+  // of running its own independent fetch — see that module's header. A
+  // fetch failure resolves `info` to null (the hook's own error is unused
+  // here on purpose): best-effort status line, the dashboard itself
+  // already renders without it, no error banner for a decorative readout.
+  const { info } = useSystemInfo();
   const uptime = formatUptime(info?.uptimeMs);
 
   return (
