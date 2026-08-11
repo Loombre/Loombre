@@ -8,7 +8,7 @@
 // exact same object shape VideoPlayer.tsx hands to `new Hls(...)`.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { buildHlsJsConfig } from "./hls-js-config.js";
+import { buildHlsJsConfig, resolveStartLevel } from "./hls-js-config.js";
 
 function fakeXhr(): { openCalls: Array<[string, string, boolean]>; open: (method: string, url: string, async: boolean) => void } {
   const openCalls: Array<[string, string, boolean]> = [];
@@ -112,5 +112,98 @@ describe("buildHlsJsConfig xhrSetup — the token is NEVER logged", () => {
     for (const spy of spies) {
       expect(spy).not.toHaveBeenCalled();
     }
+  });
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// Wave C2 (docs/PLAYBACK.md §9.1.5 rule 6 + §9.1.9): the two pins the
+// multi-variant model requires on the client.
+// ───────────────────────────────────────────────────────────────────────────
+
+describe("buildHlsJsConfig startPosition pin (§9.1.5 rule 6)", () => {
+  const base = { getToken: () => "t", appendToken: (u: string, t: string) => `${u}?token=${t}` };
+
+  it("pins startPosition to the intended start rather than leaving hls.js's live-edge default", () => {
+    // Dropping EXT-X-PLAYLIST-TYPE:EVENT (owner-decision V3) makes the
+    // stream look LIVE, and hls.js's default `startPosition: -1` means
+    // "start at the live edge". For this throttled server the live edge is
+    // up to 10 segments (60 s) PAST the resume point — so the default
+    // would land the viewer a minute ahead of where they asked to be.
+    expect(buildHlsJsConfig({ ...base, startPositionSec: 612.5 }).startPosition).toBe(612.5);
+  });
+
+  it("defaults to 0, NEVER to -1 — 0 is the start of the stream, -1 is the live edge", () => {
+    expect(buildHlsJsConfig(base).startPosition).toBe(0);
+    expect(buildHlsJsConfig({ ...base, startPositionSec: 0 }).startPosition).toBe(0);
+  });
+
+  it("refuses a nonsensical resume point rather than passing it to hls.js", () => {
+    for (const bad of [-5, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(buildHlsJsConfig({ ...base, startPositionSec: bad }).startPosition, String(bad)).toBe(0);
+    }
+  });
+
+  it("sets NO liveMaxLatencyDuration* — nothing may yank a paused or seeking viewer forward", () => {
+    const config = buildHlsJsConfig(base) as unknown as Record<string, unknown>;
+    expect(Object.keys(config).filter((k) => k.startsWith("liveMaxLatency"))).toEqual([]);
+    expect(Object.keys(config).filter((k) => k.startsWith("liveSyncDuration"))).toEqual([]);
+  });
+});
+
+describe("resolveStartLevel (§9.1.9) — start on the rung the server is ALREADY encoding", () => {
+  const rung = (videoBitrateBps: number, audioBitrateBps = 160_000) => ({
+    heightPx: 0,
+    videoBitrateBps,
+    audioBitrateBps,
+    codec: "h264" as const,
+  });
+
+  it("is the index of the TOP rung within hls.js's own ascending-bandwidth ordering", () => {
+    // hls.js re-sorts the master's variants by bandwidth ASCENDING, so a
+    // startLevel is an index into THAT order, not into plan.ladder's array
+    // order. For a normal descending policy table the top rung therefore
+    // lands last.
+    expect(resolveStartLevel([rung(8_000_000, 384_000), rung(3_000_000), rung(800_000)])).toBe(2);
+  });
+
+  it("is computed against the sorted order even when the policy table is UNSORTED", () => {
+    // The array-order index would be 1 here; hls.js's index is 2.
+    expect(resolveStartLevel([rung(800_000), rung(8_000_000, 384_000), rung(3_000_000)])).toBe(2);
+  });
+
+  it("uses TOTAL bandwidth (video + audio) — that is what hls.js sorts on", () => {
+    // Top by videoBitrateBps is the first rung; its audio is small enough
+    // that the second rung outranks it on TOTAL bandwidth, which is the
+    // number BANDWIDTH/AVERAGE-BANDWIDTH carry and the one hls.js orders
+    // by. Pinning the array index here would start on the wrong variant.
+    expect(resolveStartLevel([rung(1_000_000, 0), rung(900_000, 500_000)])).toBe(0);
+  });
+
+  it("a single-variant master pins level 0 (there is exactly one thing to start on)", () => {
+    expect(resolveStartLevel([rung(5_000_000)])).toBe(0);
+  });
+
+  it("an EMPTY ladder yields -1 — hls.js's own 'let ABR decide', never a fabricated index", () => {
+    expect(resolveStartLevel([])).toBe(-1);
+  });
+
+  it("buildHlsJsConfig passes it straight through, defaulting to -1 when unpinned", () => {
+    const base = { getToken: () => "t", appendToken: (u: string, t: string) => u };
+    expect(buildHlsJsConfig({ ...base, startLevel: 2 }).startLevel).toBe(2);
+    expect(buildHlsJsConfig(base).startLevel).toBe(-1);
+  });
+
+  it("a clean start therefore performs ZERO handoffs", () => {
+    // hls.js's default first-load bandwidth guess would pick a LOW level
+    // and immediately switch up — and under §9.1 every switch is a full
+    // pipeline handoff on the server. Starting on the rung the pipeline
+    // is already encoding makes the common case free.
+    const ladder = [rung(8_000_000, 384_000), rung(3_000_000), rung(800_000)];
+    const config = buildHlsJsConfig({
+      getToken: () => "t",
+      appendToken: (u: string) => u,
+      startLevel: resolveStartLevel(ladder),
+    });
+    expect(config.startLevel).toBe(ladder.length - 1);
   });
 });
