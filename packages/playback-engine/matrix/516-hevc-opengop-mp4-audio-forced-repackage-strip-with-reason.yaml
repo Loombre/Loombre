@@ -1,0 +1,76 @@
+name: transcode — mp4 hevc openGop:true vs hevc-sdr, container itself direct-playable, ac3 audio forces the HLS repackage — open-gop-leading-pictures-stripped still fires (Finding D pin, direction 1 of 2)
+why: >
+  Opus review Finding D (2026-08-10): before the fix, the open-gop reason
+  lived in Stage B and fired only when Stage A's OWN verdict wasn't
+  direct-play (`!containerDirectPlayable`) — a predicate DIFFERENT from the
+  one `video.openGop` itself used (the FINAL container/video.action fields,
+  known only after every stage runs). This case pins the "strip-without-
+  reason" divergence direction that bug produced: same stream as case 514/
+  515 (hevc main10, openGop:true) against the SAME devices.hevc-sdr fixture,
+  but in mp4 — a container hevc-sdr DOES direct-play (directPlayContainers:
+  [mp4] only) — so Stage A's own verdict is direct-play and the OLD
+  Stage-B predicate would never have fired the reason here. The audio track
+  is ac3 (hevc-sdr's device.audio declares only aac), so Stage D fires
+  audio-codec-unsupported and the AGGREGATED decision escalates to
+  transcode purely on audio's account — video's own verdict never moves,
+  so `video.action` stays 'copy' and `container` still repackages to
+  fmp4-hls (the final `container` field is decision-driven, not
+  Stage-A-verdict-driven). Under the FIXED assembly-time predicate (the
+  exact same one the flag uses: action==='copy' AND container is
+  fmp4-hls/ts-hls), the strip genuinely happens (the copy goes into an HLS
+  repackage) and the reason now correctly fires alongside
+  audio-codec-unsupported. Case 517 is the mirror-image divergence
+  direction (reason fired with no strip under the old code).
+
+input:
+  media:
+    fileId: file-0516
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 5000000000
+    overallBitrateBps: 8160000
+    video:
+      - index: 0
+        codec: hevc
+        profile: main10
+        level: 123
+        width: 1920
+        height: 1080
+        bitDepth: 10
+        frameRate: 24
+        bitrateBps: 8000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+        openGop: true
+    audio:
+      - index: 1
+        codec: ac3
+        channels: 6
+        sampleRate: 48000
+        bitrateBps: 448000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device:
+    fixture: devices.hevc-sdr
+  network:
+    fixture: networks.local
+  policy:
+    fixture: policies.t0-default
+  caps:
+    fixture: caps.software-only
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+
+expect:
+  decision: transcode
+  reasons:
+    - audio-codec-unsupported
+    - open-gop-leading-pictures-stripped
+  container: fmp4-hls

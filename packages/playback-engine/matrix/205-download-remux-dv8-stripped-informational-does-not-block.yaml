@@ -36,6 +36,7 @@ input:
         dvProfile: 8
         dvBlCompatId: 1
         interlaced: false
+        openGop: false
     audio:
       - index: 1
         codec: aac

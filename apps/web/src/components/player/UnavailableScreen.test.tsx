@@ -122,7 +122,7 @@ const seededMovie2160pHdr: MediaInfo = {
   sizeBytes: 6_400_000_000,
   overallBitrateBps: 7_901_235,
   video: [
-    { index: 0, codec: "hevc", profile: null, level: null, width: 3840, height: 2160, bitDepth: 10, frameRate: 23.976, bitrateBps: 18_000_000, hdr: "hdr10", dvProfile: null, dvBlCompatId: null, interlaced: false },
+    { index: 0, codec: "hevc", profile: null, level: null, width: 3840, height: 2160, bitDepth: 10, frameRate: 23.976, bitrateBps: 18_000_000, hdr: "hdr10", dvProfile: null, dvBlCompatId: null, interlaced: false, openGop: false },
   ],
   audio: [{ index: 1, codec: "eac3", channels: 6, sampleRate: 48_000, bitrateBps: 640_000, language: "eng", isDefault: true, hasAtmos: false }],
   subtitle: [],
@@ -139,7 +139,7 @@ const alternate1080pSdr: MediaInfo = {
   sizeBytes: 3_000_000_000,
   overallBitrateBps: 3_703_704,
   video: [
-    { index: 0, codec: "h264", profile: "high", level: 40, width: 1920, height: 1080, bitDepth: 8, frameRate: 23.976, bitrateBps: 8_000_000, hdr: "none", dvProfile: null, dvBlCompatId: null, interlaced: false },
+    { index: 0, codec: "h264", profile: "high", level: 40, width: 1920, height: 1080, bitDepth: 8, frameRate: 23.976, bitrateBps: 8_000_000, hdr: "none", dvProfile: null, dvBlCompatId: null, interlaced: false, openGop: false },
   ],
   audio: [{ index: 1, codec: "aac", channels: 2, sampleRate: 48_000, bitrateBps: 192_000, language: "eng", isDefault: true, hasAtmos: false }],
   subtitle: [],

@@ -397,6 +397,60 @@ function main() {
     ["libx265"],
   );
 
+  // Open-GOP / closed-GOP HEVC pair (migrations/0038_media_streams_open_
+  // gop.sql, apps/worker/src/probe/opengop.ts's detector + its own test
+  // file). opus review finding 1 (BLOCKER): the detector used to scan a
+  // fixed `-t 3` window from the start of the file, which cannot see past
+  // the FIRST GOP on real content (a typical x265 keyint=250@23.976fps
+  // encode puts its second keyframe — where CRAs/RASLs first appear in an
+  // open-GOP encode — at ~10.4s). The original 3s/keyint=30@25fps fixture
+  // pair only exercised that broken from-start design because it happened
+  // to put a second keyframe inside the 3s window; it never would have
+  // caught the bug it existed to test.
+  //
+  // The detector is now redesigned around a MID-FILE seek-and-scan (see
+  // opengop.ts's own header): for a file at least MID_FILE_MIN_DURATION_MS
+  // long, it seeks to (roughly) the midpoint and scans a short window
+  // there instead. This pair is sized to exercise exactly that path:
+  // duration=6s @25fps, keyint=50:min-keyint=50 => keyframes at frame
+  // 0/50/100, i.e. 0s/2s/4s. The detector's mid-file seek lands at the
+  // file's exact midpoint (3s), which ffmpeg's input-side `-ss` resolves
+  // to the keyframe AT OR BEFORE that point — the 2s keyframe, a CRA in
+  // the open-gop=1 encode (x265 always opens the FIRST GOP with a real IDR
+  // even under open-gop=1; only LATER keyframes become CRA), an IDR in the
+  // open-gop=0 control. no-scenecut=1 keeps x265 from inserting EXTRA
+  // keyframes at scene changes (testsrc2 has none, but pinning it removes
+  // any doubt); bframes=4 is what actually makes x265 emit RASL leading
+  // pictures after a CRA when open-gop=1 (needs B-frames referencing
+  // across the GOP boundary — verified empirically 2026-08-10: with
+  // bframes=0 the same open-gop=1 encode produced type-21 CRA keyframes
+  // but ZERO type-8/9 RASL NALs, silently under-testing the detector's
+  // RASL-presence branch). Both variants otherwise identical so the ONLY
+  // difference the detector can key on is genuinely open-gop=1 vs 0, not
+  // an incidental encoder-settings difference. Kept deliberately tiny
+  // (6s, 320x240) despite the longer duration than most fixtures here —
+  // still a sub-second encode.
+  encodeIfNeeded(
+    "hevc_opengop.mkv",
+    [
+      "-f", "lavfi", "-i", "testsrc2=size=320x240:rate=25:duration=6",
+      "-c:v", "libx265", "-pix_fmt", "yuv420p", "-an",
+      "-x265-params", "keyint=50:min-keyint=50:open-gop=1:no-scenecut=1:bframes=4",
+    ],
+    { container: "mkv", videoCodec: "hevc", interlaced: false },
+    ["libx265"],
+  );
+  encodeIfNeeded(
+    "hevc_closedgop.mkv",
+    [
+      "-f", "lavfi", "-i", "testsrc2=size=320x240:rate=25:duration=6",
+      "-c:v", "libx265", "-pix_fmt", "yuv420p", "-an",
+      "-x265-params", "keyint=50:min-keyint=50:open-gop=0:no-scenecut=1:bframes=4",
+    ],
+    { container: "mkv", videoCodec: "hevc", interlaced: false },
+    ["libx265"],
+  );
+
   // ---------------------------------------------------------------------
   // docs/PLAYBACK.md §10 dimension-grid extension (Phase 3 §11 step 1)
   // ---------------------------------------------------------------------

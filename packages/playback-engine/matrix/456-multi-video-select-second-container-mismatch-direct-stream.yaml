@@ -25,6 +25,7 @@ input:
       dvProfile: null
       dvBlCompatId: null
       interlaced: false
+      openGop: false
     - index: 1
       codec: h264
       profile: high
@@ -38,6 +39,7 @@ input:
       dvProfile: null
       dvBlCompatId: null
       interlaced: false
+      openGop: false
     audio:
     - index: 2
       codec: aac

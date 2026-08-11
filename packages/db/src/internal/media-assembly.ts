@@ -21,6 +21,7 @@ import type {
   AssembledSubtitleStream,
   AssembledVideoStream,
 } from '../query/media-info.js';
+import { toOpenGop } from '../query/media-info.js';
 
 // v1.1 widening (STATE.md H3, docs/PLAYBACK.md §2.1): asf/mpeg/flv/aac/aiff —
 // mirrors query/media-info.ts's CONTAINERS set verbatim (see that file's
@@ -89,6 +90,7 @@ export async function getMediaInfoForFile(db: DbOrTx, fileId: string): Promise<A
       dvProfile: s.dv_profile,
       dvBlCompatId: s.dv_bl_compat_id,
       interlaced: s.interlaced ?? false,
+      openGop: toOpenGop(s.open_gop),
     }));
 
   const audio: AssembledAudioStream[] = streams

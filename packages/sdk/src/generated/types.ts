@@ -3654,6 +3654,8 @@ export interface components {
             dvProfile: 5 | 7 | 8 | null;
             dvBlCompatId: number | null;
             interlaced: boolean;
+            /** @description docs/PLAYBACK.md §2.1 (added 2026-08-10). REQUIRED, never optional — a DB NULL collapses to false at extraction boundaries (the conservative default). */
+            openGop: boolean;
         };
         AudioStream: {
             index: number;
@@ -3720,7 +3722,7 @@ export interface components {
             selection?: components["schemas"]["TrackSelection"];
         };
         /** @description Closed enum plus two pattern-typed families (docs/PLAYBACK.md §4). Additions to the fixed list are contract PRs. */
-        PlanReasonCode: ("container-not-direct-playable" | "video-codec-unsupported" | "video-profile-unsupported" | "video-level-exceeds-device" | "video-bitdepth-unsupported" | "video-resolution-exceeds-device" | "video-framerate-exceeds-device" | "video-interlaced" | "hdr-tone-map-required" | "dv-profile5-requires-tonemap" | "tone-map-refused-by-policy" | "audio-codec-unsupported" | "audio-channels-exceed-device" | "audio-passthrough-unsupported" | "subtitle-format-requires-burn-in" | "subtitle-burn-in-for-styling" | "video-transcode-for-subtitle-burn-in" | "bitrate-exceeds-network" | "subtitle-codec-unknown" | "transcode-disabled-by-policy" | "dv-stripped-to-hdr10" | "subtitle-styling-lost" | "audio-atmos-lost" | "gapless-degraded") | string;
+        PlanReasonCode: ("container-not-direct-playable" | "video-codec-unsupported" | "video-profile-unsupported" | "video-level-exceeds-device" | "video-bitdepth-unsupported" | "video-resolution-exceeds-device" | "video-framerate-exceeds-device" | "video-interlaced" | "hdr-tone-map-required" | "dv-profile5-requires-tonemap" | "tone-map-refused-by-policy" | "audio-codec-unsupported" | "audio-channels-exceed-device" | "audio-passthrough-unsupported" | "subtitle-format-requires-burn-in" | "subtitle-burn-in-for-styling" | "video-transcode-for-subtitle-burn-in" | "bitrate-exceeds-network" | "subtitle-codec-unknown" | "transcode-disabled-by-policy" | "dv-stripped-to-hdr10" | "subtitle-styling-lost" | "audio-atmos-lost" | "gapless-degraded" | "open-gop-leading-pictures-stripped") | string;
         PlanReason: {
             code: components["schemas"]["PlanReasonCode"];
             streamIndex?: number | null;
@@ -3740,6 +3742,8 @@ export interface components {
             /** @description Selected hardware backend or 'software' (docs/PLAYBACK.md §8.3). */
             encoder?: string;
             toneMap?: components["schemas"]["ToneMapMethod"];
+            /** @description Set (true) only when a video COPY into a repackaged HLS container strips open-GOP HEVC leading pictures on a seek-restart (docs/PLAYBACK.md §5/§6); omitted when not applicable. Never emitted false. */
+            openGop?: boolean;
         };
         AudioAction: {
             /** @enum {string} */

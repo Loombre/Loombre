@@ -140,6 +140,20 @@ describe("matrix-meta (burn-up manifest sync + case schema)", () => {
       expect(Array.isArray(input.media.video)).toBe(true);
       expect(Array.isArray(input.media.audio)).toBe(true);
       expect(Array.isArray(input.media.subtitle)).toBe(true);
+      // Finding H (opus review, 2026-08-10): `VideoStream.openGop` (§2.1) is
+      // REQUIRED, never optional — load-cases.ts's `as PlanInput` cast has no
+      // runtime validation, so a case YAML that omits the field would
+      // silently carry `openGop: undefined` at runtime instead of the
+      // conservative `false` default every real extraction path collapses a
+      // DB NULL to. Closes the corpus against regressing back to that state
+      // (all 513 pre-existing cases were mechanically backfilled with
+      // `openGop: false` the same day this assertion landed).
+      for (const stream of input.media.video) {
+        expect(
+          typeof stream.openGop === "boolean",
+          `${matrixCase.file}: video stream index ${stream.index} is missing a boolean openGop field`,
+        ).toBe(true);
+      }
 
       expect(input.device, `${matrixCase.file}: missing device`).toBeTruthy();
       expect(Array.isArray(input.device.directPlayContainers)).toBe(true);

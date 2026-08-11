@@ -11,6 +11,7 @@ export type {
   MetadataSearchJobPayload,
   ImportJobPayload,
   ImageBackfillJobPayload,
+  OpenGopBackfillJobPayload,
   HwProbeJobPayload,
   TranscodeJobPayload,
   SubtitleExtractJobPayload,
