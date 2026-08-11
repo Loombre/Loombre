@@ -27,9 +27,11 @@ import {
   ensureSessionStagingDir,
   getMediaInfoForFile,
   getTranscodeSessionRow,
+  listReapableTranscodeSessions,
   markSessionActive,
   markSessionFailed,
   markSessionStarting,
+  recordSessionWorkerProcess,
   setThrottleSuspended,
   updateProducedSegment,
 } from '../src/internal/index.js';
@@ -486,5 +488,70 @@ describe('ensureSessionStagingDir', () => {
   it('returns undefined for a nonexistent session id', async () => {
     const result = await ensureSessionStagingDir(db, '11111111-1111-4111-8111-111111111111', '/tmp/x', Date.now());
     expect(result).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// migrations/0041_playback_sessions_worker_process.sql (an upstream media server-study
+// implementation run, item C2): the two columns that make a boot-time
+// orphan reaper possible at all. Everything else about an interrupted
+// session survives a hard kill; the ffmpeg process itself does not — its
+// pid is the only handle on it, and it has to be on the row because the
+// process that knew it is gone.
+// ---------------------------------------------------------------------------
+
+describe('recordSessionWorkerProcess', () => {
+  it('records the ffmpeg pid and the supervising worker generation', async () => {
+    const id = await newSession();
+    await markSessionStarting(db, id, { stagingDir: '/tmp/loombre-transcode/pid-a', nowMs: Date.now() });
+    const row = await recordSessionWorkerProcess(db, id, { workerPid: 31337, workerStartedAtMs: 1_700_000_000_000, nowMs: Date.now() });
+    expect(row?.worker_pid).toBe(31337);
+    expect(row?.worker_started_at_ms).toBe(1_700_000_000_000);
+  });
+
+  it('overwrites on a seek-restart (a new run means a new pid)', async () => {
+    const id = await newSession();
+    await recordSessionWorkerProcess(db, id, { workerPid: 1, workerStartedAtMs: 10, nowMs: Date.now() });
+    await recordSessionWorkerProcess(db, id, { workerPid: 2, workerStartedAtMs: 10, nowMs: Date.now() });
+    expect((await getTranscodeSessionRow(db, id))?.worker_pid).toBe(2);
+  });
+
+  it('refuses once the session is terminal', async () => {
+    const id = await newSession();
+    await markSessionFailed(db, id, { errorCode: 'transcode-failed', stderrTail: 'boom', nowMs: Date.now() });
+    const result = await recordSessionWorkerProcess(db, id, { workerPid: 9, workerStartedAtMs: 10, nowMs: Date.now() });
+    expect(result).toBeUndefined();
+    expect((await getTranscodeSessionRow(db, id))?.worker_pid).toBeNull();
+  });
+});
+
+describe('listReapableTranscodeSessions', () => {
+  it('returns only non-terminal sessions with a pid from a PREVIOUS worker generation', async () => {
+    const thisGenerationStart = 2_000_000;
+
+    const orphan = await newSession();
+    await markSessionStarting(db, orphan, { stagingDir: '/tmp/loombre-transcode/orphan', nowMs: Date.now() });
+    await recordSessionWorkerProcess(db, orphan, { workerPid: 4242, workerStartedAtMs: thisGenerationStart - 1, nowMs: Date.now() });
+
+    const mine = await newSession();
+    await recordSessionWorkerProcess(db, mine, { workerPid: 4243, workerStartedAtMs: thisGenerationStart, nowMs: Date.now() });
+
+    const neverSpawned = await newSession(); // no worker_pid at all
+
+    const terminal = await newSession();
+    await recordSessionWorkerProcess(db, terminal, { workerPid: 4244, workerStartedAtMs: thisGenerationStart - 1, nowMs: Date.now() });
+    await markSessionFailed(db, terminal, { errorCode: 'transcode-failed', stderrTail: '', nowMs: Date.now() });
+
+    const reapable = await listReapableTranscodeSessions(db, { workerStartedBeforeMs: thisGenerationStart });
+    const ids = reapable.map((r) => r.id);
+
+    expect(ids).toContain(orphan);
+    expect(ids).not.toContain(mine);
+    expect(ids).not.toContain(neverSpawned);
+    expect(ids).not.toContain(terminal);
+
+    const row = reapable.find((r) => r.id === orphan);
+    expect(row?.worker_pid).toBe(4242);
+    expect(row?.staging_dir).toBe('/tmp/loombre-transcode/orphan');
   });
 });
