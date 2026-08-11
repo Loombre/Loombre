@@ -1515,7 +1515,11 @@ export interface paths {
          */
         put: operations["putAdminLibraryStashConnection"];
         post?: never;
-        delete?: never;
+        /**
+         * Forget a library's Stash SQLite connection entirely (admin)
+         * @description Stash OPEN ledger item 6 ("forget this connection entirely" — the prior surface was disable-only via PUT enabled:false). Deletes the library_stash_connections row (sqlite_path, enabled, status, and every other connection-config/outcome column) — there is no keyring-held secret to clear alongside it (S1: Stash is a first-party read-only SQLite-file provider, never an HTTP API with a credential). NEVER destructive to catalog content: previously synced metadata, matched catalog items, and stash_scene_links rows are untouched (S8's staleness law — synced facts are KEPT, never deleted, even when their source connection itself is forgotten), as are this library's stash-path-mappings (a future re-attach does not require re-entering them). A pending/scheduled sync is not separately cancelled: the periodic schedule loop and any in-flight `stash-sync` job both re-resolve the connection row fresh and treat its absence as an ordinary "unreachable" outcome (ends the job with a failed report; the schedule loop simply stops picking this library as due) — no zombie schedule, no code needed to reach into the job queue. 404s both when the library itself does not exist and when the library exists but has no Stash connection configured (nothing to forget). Emits `stash.provider.disconnected` (admin-only) in the same transaction as the delete.
+         */
+        delete: operations["deleteAdminLibraryStashConnection"];
         options?: never;
         head?: never;
         patch?: never;
@@ -7604,6 +7608,30 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             422: components["responses"]["UnprocessableEntity"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    deleteAdminLibraryStashConnection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["IdPathParam"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Connection forgotten */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
             default: components["responses"]["Problem"];
         };
     };

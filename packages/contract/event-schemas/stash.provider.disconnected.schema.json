@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://loombre.com/schemas/events/stash.provider.disconnected.schema.json",
+  "title": "StashProviderDisconnectedPayload",
+  "description": "Payload for envelope.type === 'stash.provider.disconnected'. Stash OPEN ledger item 6 (Stash SQLite metadata sync): emitted by packages/db/src/query/stash-connections.ts's deleteLibraryStashConnectionAndEmit, in the SAME transaction as the library_stash_connections row DELETE, when an admin uses DELETE /admin/libraries/{id}/stash-connection to forget a library's Stash connection entirely (the prior surface was disable-only via PUT enabled:false) — the admin-initiated counterpart to stash.provider.connected/stash.provider.disabled, both of which are system-originated connect-attempt outcomes. Never carries a secret (S1: Stash has none — a read-only SQLite-file provider, not an HTTP API with a credential) and never implies previously-synced catalog data was touched (S8: synced metadata/matched items are KEPT, never deleted, when a connection is forgotten). envelope.actorUserId carries the acting admin's user id (unlike stash.provider.connected/disabled, which are always null — a connect attempt has no human actor in the loop). ADMIN-ONLY delivery, same operational-event posture as stash.provider.disabled/stash.provider.connected.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["libraryId", "disconnectedAtMs"],
+  "properties": {
+    "libraryId": {
+      "type": "string",
+      "format": "uuid",
+      "description": "The library whose library_stash_connections row was deleted."
+    },
+    "disconnectedAtMs": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Epoch ms the row was deleted."
+    }
+  }
+}

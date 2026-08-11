@@ -26,7 +26,7 @@
 
 import type { Kysely, Selectable } from 'kysely';
 import type { DB, LibraryPathMappingsTable, LibraryStashConnectionsTable, StashConnectionStatus } from '../types.js';
-import { getLibraryById, withTransaction } from '../internal/index.js';
+import { getLibraryById, withTransaction, writeEvent } from '../internal/index.js';
 
 export type LibraryStashConnectionRow = Selectable<LibraryStashConnectionsTable>;
 export type LibraryPathMappingRow = Selectable<LibraryPathMappingsTable>;
@@ -162,12 +162,67 @@ export async function recordStashConnectionOutcome(
     .executeTakeFirstOrThrow();
 }
 
-/** Admin detach: drops the connection row only. Path mappings are a
- *  separate table keyed by library_id (not FK'd to this row's id), so
- *  detaching preserves them for a future re-attach — re-configuring
- *  sqlite_path does not require re-entering the path mappings. */
-export async function deleteLibraryStashConnection(db: Kysely<DB>, libraryId: string): Promise<void> {
-  await db.deleteFrom('library_stash_connections').where('library_id', '=', libraryId).execute();
+export interface DeleteLibraryStashConnectionInput {
+  libraryId: string;
+  actorUserId: string;
+  nowMs: number;
+}
+
+/**
+ * Admin "forget this connection entirely" (Stash OPEN ledger item 6, DELETE
+ * /admin/libraries/{id}/stash-connection): drops the library_stash_connections
+ * row ONLY — every config/status/timestamp column on it. There is no
+ * keyring-held secret to clear alongside it (S1: Stash is a first-party
+ * read-only SQLite-FILE provider, never an HTTP API with a credential —
+ * unlike removePluginAndEmit's keyring cleanup, which this function's
+ * transactional-delete-then-emit shape otherwise mirrors exactly).
+ *
+ * Deliberately NEVER touches (S8 "synced facts are KEPT, never deleted,
+ * even when their source connection is forgotten" — the same law that
+ * marks vanished Stash scenes `stale` instead of removing them):
+ *   - library_path_mappings (separate table keyed by library_id, not FK'd
+ *     to this row's id) — preserved for a future re-attach, same as this
+ *     function's prior "detach" behavior.
+ *   - stash_scene_links / any already-synced catalog item metadata — has
+ *     no FK relationship to this row at all, so nothing to preserve
+ *     defensively; it was never reachable from here.
+ *   - stash_sync_reports / stash_sync_checkpoints — historical run records,
+ *     keyed by library_id, independent of this row's lifecycle.
+ *
+ * No zombie schedule/job to clean up either: apps/worker/src/stash/
+ * schedule-loop.ts's runStashScheduleTick re-reads getLibraryStashConnection
+ * fresh every tick and skips a library with no row, and an already-enqueued
+ * or in-flight `stash-sync` job's connectToStashLibrary (apps/worker/src/
+ * stash/connect.ts) treats a missing row as an ordinary 'unreachable'
+ * outcome — the job fails cleanly (a 'failed' stash_sync_reports row via
+ * pg-boss's normal retry/terminal-failure path) rather than crashing or
+ * silently spinning. Neither needs code here to reach into the job queue.
+ *
+ * Throws StashConnectionNotConfiguredError (checked INSIDE the same
+ * transaction as the delete, closing the TOCTOU window) when the library
+ * has no connection configured — the admin service maps this to 404,
+ * "nothing to forget", rather than a silent no-op 204 (unlike
+ * clearAdminMailCredentials' idempotent-clear posture: that surface owns a
+ * single optional scalar credential pair where "already cleared" is a
+ * natural resting state; a Stash connection is a substantial configured
+ * resource whose absence really is "not found").
+ */
+export async function deleteLibraryStashConnectionAndEmit(db: Kysely<DB>, input: DeleteLibraryStashConnectionInput): Promise<void> {
+  await withTransaction(db, async (trx) => {
+    const existing = await trx.selectFrom('library_stash_connections').select(['id']).where('library_id', '=', input.libraryId).executeTakeFirst();
+    if (!existing) {
+      throw new StashConnectionNotConfiguredError(input.libraryId);
+    }
+
+    await trx.deleteFrom('library_stash_connections').where('library_id', '=', input.libraryId).execute();
+
+    await writeEvent(trx, {
+      type: 'stash.provider.disconnected',
+      tsMs: input.nowMs,
+      actorUserId: input.actorUserId,
+      payload: { libraryId: input.libraryId, disconnectedAtMs: input.nowMs },
+    });
+  });
 }
 
 // ============================================================================
