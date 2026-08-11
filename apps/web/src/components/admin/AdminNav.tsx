@@ -3,7 +3,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Blocks, Briefcase, Video } from "lucide-react";
+import { Briefcase, Video } from "lucide-react";
 import { Icon } from "../icon/Icon.js";
 import styles from "./AdminNav.module.css";
 
@@ -12,11 +12,20 @@ import styles from "./AdminNav.module.css";
 // surface (/settings/libraries, /settings/users, /settings/advanced —
 // components/settings/SettingsShell.tsx). /admin/libraries, /admin/users,
 // and /admin/settings still work (redirect-only stubs to their new homes)
-// but are no longer linked from here. "Plugins" here is the LOOMBRE PLUGIN
-// PROTOCOL registration surface (RegisterPluginWizard etc.) — an unrelated
-// system from the Settings "Plugins" tab (metadata-provider API keys, now
-// at /settings/plugins); the shared label is a real naming collision that
-// lane logged but did not rename (out of scope — see its freeze report).
+// but are no longer linked from here.
+//
+// LD-8 (owner directive, Settings-Plugins consolidation): "Plugins" is ALSO
+// REMOVED from this sub-nav — the Loombre Plugin Protocol registration
+// surface (RegisterPluginWizard etc., formerly linked here as
+// /admin/plugins) moved to Settings -> Plugins
+// (components/settings/sections/RegisteredPluginsPanel.tsx), joining the
+// metadata-provider-key management that tab already had. This retires the
+// real naming collision a previous lane logged rather than renamed (two
+// "Plugins" entries pointing at two unrelated systems) — there is now
+// exactly one "Plugins" surface, reached from the sidebar's System
+// Settings entry, not this sub-nav. /admin/plugins and
+// /admin/plugins/<id> still work (redirect-only stubs) but are no longer
+// linked from here.
 //
 // D-5 (Wave 2, this run — IA restructure): "System" is REMOVED from this
 // sub-nav — /admin/system merged into the Dashboard itself
@@ -33,7 +42,6 @@ const DASHBOARD_HREF = "/admin";
 const SECTIONS = [
   { href: "/admin/jobs", icon: Briefcase, label: "Jobs" },
   { href: "/admin/sessions", icon: Video, label: "Sessions" },
-  { href: "/admin/plugins", icon: Blocks, label: "Plugins" },
 ];
 
 export function AdminNav(): React.JSX.Element {

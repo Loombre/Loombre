@@ -44,9 +44,7 @@
 // (there is no more non-admin bare-/settings branch to special-case to
 // null) — see each section's own file for why it needs one.
 
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
-import { apiGet } from "../../lib/api-client.js";
+import { useAdminGuard } from "../../lib/use-admin-guard.js";
 import { useMediaQuery } from "../ui/use-media-query.js";
 import { sectionByKey, type SettingsSectionKey } from "./section-registry.js";
 import { SettingsTabs } from "./SettingsTabs.js";
@@ -97,33 +95,14 @@ function renderSection(key: SettingsSectionKey, heading: string | null): React.J
 }
 
 export function SettingsShell({ initialSection }: SettingsShellProps): React.JSX.Element | null {
-  const router = useRouter();
   const isPhone = useMediaQuery(PHONE_QUERY);
-  const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    apiGet("/users/me")
-      .then((u) => {
-        if (!cancelled) setIsAdmin(u.isAdmin === true);
-      })
-      .catch(() => {
-        if (!cancelled) setIsAdmin(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
   // D-6: every section is admin-only now (section-registry.ts) — a
   // non-admin has nothing left to see anywhere under /settings*, so this
   // redirects unconditionally rather than only for a subset of keys.
-  useEffect(() => {
-    if (isAdmin === false) router.replace("/profile");
-  }, [isAdmin, router]);
+  const { isAdmin } = useAdminGuard("/profile");
 
   if (isAdmin === null) return null; // resolving /users/me
-  if (!isAdmin) return null; // redirecting to /profile, see effect above
+  if (!isAdmin) return null; // redirecting to /profile, see useAdminGuard
 
   const activeKey: SettingsSectionKey = initialSection ?? "server";
   const heading = sectionByKey(activeKey)?.label ?? "Settings";

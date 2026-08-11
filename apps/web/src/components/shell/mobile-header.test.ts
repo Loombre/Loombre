@@ -135,6 +135,23 @@ describe("resolveMobileHeader", () => {
     });
   });
 
+  it("LD-8: maps the /settings/plugins/<id> detail route back to the Plugins tab, not the generic settingsSection/Home fallback", () => {
+    expect(resolveMobileHeader("/settings/plugins/abc-123", null, null, null)).toEqual({
+      mode: "back",
+      title: "Plugin",
+      backLabel: "Plugins",
+      backHref: "/settings/plugins",
+    });
+    // Bare /settings/plugins (no id) is unaffected — still the ordinary
+    // settingsSection branch, not this new one.
+    expect(resolveMobileHeader("/settings/plugins", null, null, null)).toEqual({
+      mode: "back",
+      title: "Plugins",
+      backLabel: "System Settings",
+      backHref: "/settings",
+    });
+  });
+
   it("falls back to a generic Home-back mapping for unmapped/NEW routes, including the legacy /settings/account redirect stub (D-6: 'account' is no longer a SETTINGS_SECTIONS key)", () => {
     expect(resolveMobileHeader("/watchlist", null, null, null)).toEqual({
       mode: "back",

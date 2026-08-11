@@ -5,56 +5,36 @@
 //
 // Phase 4 deliverable D: the /admin section shell. Wraps every /admin/*
 // route in the normal AppShell (same nav rail/topbar as the rest of the
-// app — P2.20 glass chrome) PLUS an admin-only route guard: a non-admin
-// (or an admin whose token hasn't resolved yet) never sees admin content
-// flash on screen, even for a frame — `status` starts "checking" and only
-// flips to "allowed" after a real GET /users/me confirms isAdmin === true;
-// anything else redirects to /home. This is UX, not the security boundary
-// (every actual admin endpoint independently 403s a non-admin token
-// server-side — apps/server/src/catalog/*.controller.ts's requireAdmin —
-// so a client-side bypass of this guard could see loading skeletons at
-// worst, never real data).
+// app — P2.20 glass chrome) PLUS an admin-only route guard (useAdminGuard,
+// apps/web/src/lib/use-admin-guard.ts): a non-admin (or an admin whose
+// token hasn't resolved yet) never sees admin content flash on screen,
+// even for a frame — `isAdmin` starts `null` ("checking") and only flips
+// to `true` after a real GET /users/me confirms isAdmin === true; anything
+// else redirects to /home. This is UX, not the security boundary (every
+// actual admin endpoint independently 403s a non-admin token server-side —
+// apps/server/src/catalog/*.controller.ts's requireAdmin — so a
+// client-side bypass of this guard could see loading skeletons at worst,
+// never real data).
 
-import { useEffect, useState, type ReactNode } from "react";
-import { useRouter } from "next/navigation";
+import type { ReactNode } from "react";
 import { AppShell } from "../../components/shell/AppShell.js";
 import { AdminNav } from "../../components/admin/AdminNav.js";
 import { SettingsPageLayout } from "../../components/settings/SettingsPageLayout.js";
-import { apiGet } from "../../lib/api-client.js";
+import { useAdminGuard } from "../../lib/use-admin-guard.js";
 import styles from "./layout.module.css";
 
-type GuardStatus = "checking" | "allowed" | "denied";
-
 export default function AdminLayout({ children }: { children: ReactNode }): React.JSX.Element | null {
-  const router = useRouter();
-  const [status, setStatus] = useState<GuardStatus>("checking");
-
-  useEffect(() => {
-    let cancelled = false;
-    apiGet("/users/me")
-      .then((user) => {
-        if (cancelled) return;
-        if ((user as { isAdmin?: boolean }).isAdmin === true) {
-          setStatus("allowed");
-        } else {
-          setStatus("denied");
-          router.replace("/home");
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setStatus("denied");
-          router.replace("/home");
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [router]);
+  // opus-review LD wave, Finding 6: was a hand-rolled duplicate of the SAME
+  // GET /users/me -> redirect-non-admin-away guard SettingsShell.tsx and
+  // PluginDetailScreen.tsx each carried independently — now the shared
+  // useAdminGuard hook. /admin/* redirects to /home (not /profile — see
+  // that hook's header for why the two differ), and keeps AppShell mounted
+  // throughout the check (below) rather than blanking the whole viewport.
+  const { isAdmin } = useAdminGuard("/home");
 
   return (
     <AppShell>
-      {status === "allowed" ? (
+      {isAdmin === true ? (
         // W7/D-4: SettingsPageLayout owns the readable-max-width +
         // centered-in-<main> contract every /admin/* page shares (heading,
         // AdminNav, and whichever page body <main> is currently rendering
