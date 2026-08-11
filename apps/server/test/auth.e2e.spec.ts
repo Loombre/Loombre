@@ -8,11 +8,15 @@
 // beforeAll, same pattern as packages/db/test/leak.spec.ts and
 // apps/server/src/session/*.spec.ts.
 //
-// Runs against a database PRIVATE to apps/server's own test run
-// (ensureTestDatabase, "<base>_server_test") to avoid a cross-package
+// Runs against a database PRIVATE to THIS suite
+// (ensureTestDatabase, "<base>_server_test_auth") to avoid a cross-package
 // concurrent-reset deadlock under turbo (e.g. @loombre/jobs's tests also
 // reset DATABASE_URL's schema, and turbo runs independent packages' `test`
-// tasks in parallel) — see packages/db/src/testing.ts.
+// tasks in parallel) AND a same-name reset collision with sibling
+// apps/server e2e suites — see packages/db/src/testing.ts. (Each of the
+// former "<base>_server_test" sharers — conformance, auth, reauth,
+// password-recovery, and the two cli admin-reset suites — now takes its own
+// distinct suffix, per the convention the ~30 other suites already follow.)
 //
 // Base connection: DATABASE_URL env var, default
 //   postgres://loombre:loombre@localhost:5442/loombre
@@ -93,7 +97,7 @@ async function setRestrictedEnabled(value: "true" | undefined): Promise<void> {
 }
 
 beforeAll(async () => {
-  const databaseUrl = await ensureTestDatabase(BASE_DATABASE_URL, "server_test");
+  const databaseUrl = await ensureTestDatabase(BASE_DATABASE_URL, "server_test_auth");
   run(path.join(DB_PKG_ROOT, "scripts", "migrate.mjs"), ["reset"], databaseUrl);
   run(path.join(DB_PKG_ROOT, "seed", "seed.mjs"), [], databaseUrl);
 

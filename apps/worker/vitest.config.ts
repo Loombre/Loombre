@@ -10,7 +10,7 @@
 // @loombre/db, so packages/db's own schema-resetting specs finish before
 // this package's specs start.
 
-import { defineConfig } from "vitest/config";
+import { configDefaults, defineConfig } from "vitest/config";
 
 // CI-runner time scaling, same mechanism as apps/worker/test/transcode/
 // session.integration.spec.ts's per-test deadlines (which ci.yml already
@@ -28,5 +28,8 @@ export default defineConfig({
     fileParallelism: false,
     testTimeout: 5_000 * TIME_SCALE,
     hookTimeout: 10_000 * TIME_SCALE,
+    // Never collect a worktree's copy of these live-DB specs (see
+    // apps/server/vitest.config.ts's exclude comment).
+    exclude: [...configDefaults.exclude, "**/.claude/worktrees/**"],
   },
 });

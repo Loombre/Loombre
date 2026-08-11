@@ -43,10 +43,11 @@ import { ensureTestDatabase } from "@loombre/db";
 import { API_OPERATIONS, type ApiOperation } from "@loombre/sdk";
 import { AppModule } from "../src/app.module.js";
 
-// Runs against a database PRIVATE to apps/server's own test run
-// (ensureTestDatabase, "<base>_server_test") to avoid a cross-package
-// concurrent-reset deadlock under turbo — see auth.e2e.spec.ts's header and
-// packages/db/src/testing.ts.
+// Runs against a database PRIVATE to THIS suite
+// (ensureTestDatabase, "<base>_server_test_conformance") to avoid a
+// cross-package concurrent-reset deadlock under turbo AND a same-name reset
+// collision with sibling apps/server e2e suites — see auth.e2e.spec.ts's
+// header and packages/db/src/testing.ts.
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DB_PKG_ROOT = path.resolve(__dirname, "../../../packages/db");
 
@@ -580,7 +581,7 @@ async function loginAdmin(): Promise<string> {
 }
 
 beforeAll(async () => {
-  const databaseUrl = await ensureTestDatabase(BASE_DATABASE_URL, "server_test");
+  const databaseUrl = await ensureTestDatabase(BASE_DATABASE_URL, "server_test_conformance");
   run(path.join(DB_PKG_ROOT, "scripts", "migrate.mjs"), ["reset"], databaseUrl);
   run(path.join(DB_PKG_ROOT, "seed", "seed.mjs"), [], databaseUrl);
 

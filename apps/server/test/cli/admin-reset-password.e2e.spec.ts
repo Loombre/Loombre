@@ -89,7 +89,7 @@ function fakeAdminDeps(confirmAnswer: boolean): AdminDeps {
 }
 
 beforeAll(async () => {
-  databaseUrl = await ensureTestDatabase(BASE_DATABASE_URL, "server_test");
+  databaseUrl = await ensureTestDatabase(BASE_DATABASE_URL, "server_test_admin_reset_password");
   run(path.join(DB_PKG_ROOT, "scripts", "migrate.mjs"), ["reset"], databaseUrl);
   run(path.join(DB_PKG_ROOT, "seed", "seed.mjs"), [], databaseUrl);
 

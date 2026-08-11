@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-import { defineConfig } from "vitest/config";
+import { configDefaults, defineConfig } from "vitest/config";
 
 /**
  * Default test project — runs in `pnpm gate` (`pnpm run test`). Includes
@@ -14,5 +14,8 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   test: {
     include: ["test/**/*.spec.ts", "matrix/matrix-meta.spec.ts"],
+    // Never collect a worktree's copy of these specs (see
+    // apps/server/vitest.config.ts's exclude comment).
+    exclude: [...configDefaults.exclude, "**/.claude/worktrees/**"],
   },
 });

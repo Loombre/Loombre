@@ -99,7 +99,7 @@ async function createOrdinaryUser(
 }
 
 beforeAll(async () => {
-  databaseUrl = await ensureTestDatabase(BASE_DATABASE_URL, "server_test");
+  databaseUrl = await ensureTestDatabase(BASE_DATABASE_URL, "server_test_password_recovery");
   run(path.join(DB_PKG_ROOT, "scripts", "migrate.mjs"), ["reset"], databaseUrl);
   run(path.join(DB_PKG_ROOT, "seed", "seed.mjs"), [], databaseUrl);
 
