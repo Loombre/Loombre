@@ -7,7 +7,13 @@
 // per this step's "compile-true wiring + pure-logic coverage" scope.
 
 import { describe, expect, it } from "vitest";
-import { appendTokenParam, buildHlsManifestUrl, buildHlsSubtitleUrl, buildSessionFileUrl } from "./media-session-url.js";
+import {
+  appendTokenParam,
+  buildHlsManifestUrl,
+  buildHlsSubtitleUrl,
+  buildSessionFileUrl,
+  isSameUrlIgnoringToken,
+} from "./media-session-url.js";
 
 describe("buildSessionFileUrl", () => {
   it("builds the direct-play file URL with ?token=", () => {
@@ -60,5 +66,54 @@ describe("appendTokenParam", () => {
     const url = new URL(result);
     expect(url.searchParams.get("foo")).toBe("bar");
     expect(url.searchParams.get("token")).toBe("at-1");
+  });
+});
+
+describe("isSameUrlIgnoringToken", () => {
+  it("treats two URLs that differ ONLY in ?token= as the same (the core token-refresh case)", () => {
+    expect(
+      isSameUrlIgnoringToken(
+        "https://host/playback/sessions/s1/file?token=stale",
+        "https://host/playback/sessions/s1/file?token=fresh",
+      ),
+    ).toBe(true);
+  });
+
+  it("treats a different session id (different pathname) as different, even with the same token", () => {
+    expect(
+      isSameUrlIgnoringToken(
+        "https://host/playback/sessions/s1/file?token=at-1",
+        "https://host/playback/sessions/s2/file?token=at-1",
+      ),
+    ).toBe(false);
+  });
+
+  it("treats a different origin as different", () => {
+    expect(
+      isSameUrlIgnoringToken("https://host-a/playback/sessions/s1/file?token=at-1", "https://host-b/playback/sessions/s1/file?token=at-1"),
+    ).toBe(false);
+  });
+
+  it("ignores token ABSENCE on one side — only non-token differences count", () => {
+    expect(isSameUrlIgnoringToken("https://host/playback/sessions/s1/file", "https://host/playback/sessions/s1/file?token=fresh")).toBe(
+      true,
+    );
+  });
+
+  it("treats a difference in another (non-token) query param as different", () => {
+    expect(
+      isSameUrlIgnoringToken("https://host/hls/media.m3u8?foo=bar&token=at-1", "https://host/hls/media.m3u8?foo=baz&token=at-1"),
+    ).toBe(false);
+  });
+
+  it("ignores query param ORDER — token need not be the last param on either side", () => {
+    expect(
+      isSameUrlIgnoringToken("https://host/hls/media.m3u8?token=stale&foo=bar", "https://host/hls/media.m3u8?foo=bar&token=fresh"),
+    ).toBe(true);
+  });
+
+  it("returns false for an unparseable URL rather than treating it as a no-op match", () => {
+    expect(isSameUrlIgnoringToken("not a url", "https://host/hls/media.m3u8?token=at-1")).toBe(false);
+    expect(isSameUrlIgnoringToken("", "")).toBe(false);
   });
 });

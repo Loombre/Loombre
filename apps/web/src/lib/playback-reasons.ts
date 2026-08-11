@@ -226,3 +226,36 @@ export function resolveUnavailableReasons(status: number, wouldBeReasons: readon
   }
   return [...wouldBeReasons];
 }
+
+/**
+ * VideoPlayer.tsx's direct-play/native-HLS attach effect (task #6, 2026-08-10
+ * opus review findings 1c/1-exhausted-budget): a CLIENT-side unrecoverable
+ * media failure — either the browser flatly refused the source
+ * (MEDIA_ERR_SRC_NOT_SUPPORTED/MEDIA_ERR_DECODE, which no reattach can fix)
+ * or every bounded recovery retry in a stretch already failed identically.
+ * Neither one has a server HTTP status behind it at all (no
+ * createPlaybackSession call even happened), so — same precedent as
+ * `TRANSCODE_SLOTS_EXHAUSTED_CODE` above — this is a second client-
+ * synthesized reason outside the contract's closed `PlanReasonCode` enum,
+ * following the identical {code, title, detail, severity} shape so
+ * UnavailableScreen.tsx needs no separate rendering path for it either.
+ */
+export const CLIENT_PLAYBACK_ERROR_CODE = "client-playback-error";
+
+FIXED_REASONS[CLIENT_PLAYBACK_ERROR_CODE] = {
+  title: "Playback failed in this browser",
+  detail: "Your browser reported it can't play this stream and no retry recovered it.",
+  severity: "blocking",
+};
+
+function clientPlaybackErrorReason(): PlanReason {
+  return { code: CLIENT_PLAYBACK_ERROR_CODE, streamIndex: null, detail: null } as PlanReason;
+}
+
+/** The reasons array UnavailableScreen.tsx renders for the client-side
+ *  unrecoverable-playback-error path above — always this one synthesized
+ *  reason, never merged with any server-provided reasons (none exist for a
+ *  failure that never involved a createPlaybackSession call). */
+export function clientPlaybackErrorReasons(): PlanReason[] {
+  return [clientPlaybackErrorReason()];
+}

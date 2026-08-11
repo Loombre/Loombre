@@ -102,10 +102,16 @@ vi.mock("../notices/SystemNoticeProvider.js", () => ({
   useSystemNotice: () => noticeMockValue,
 }));
 
+// A `let`, not a fixed literal, so the token-refresh tests below (task #6)
+// can rotate it mid-test and have `useSessionFileUrl`/`useHlsManifestUrl`'s
+// polling (media-session-url.ts's `useTokenUrl`) pick up the new value —
+// every other test in this file never reassigns it and gets the same
+// static token throughout, unaffected.
+let mockAccessToken = "test-access-token";
 vi.mock("../../lib/auth-store.js", () => ({
   getAuthStore: () => ({
-    getSnapshot: () => ({ serverUrl: SERVER_URL, accessToken: "test-access-token" }),
-    getAccessToken: async () => "test-access-token",
+    getSnapshot: () => ({ serverUrl: SERVER_URL, accessToken: mockAccessToken }),
+    getAccessToken: async () => mockAccessToken,
   }),
 }));
 
@@ -174,7 +180,19 @@ function installMediaStubs(): void {
       this.dispatchEvent(new Event("pause"));
     },
   });
-  define("load", { value: () => undefined });
+  define("load", {
+    // Real HTMLMediaElement.load() resets playback position AND pauses the
+    // element (WHATWG "resource selection algorithm" §4.8.12.5 step 3: sets
+    // `paused` to true) — the task #6 token-refresh recovery tests below
+    // assert VideoPlayer's src-swap position/paused-state RESTORE round
+    // trip, which only means something if the stub actually clears both
+    // first, the same as a real browser would.
+    value(this: HTMLMediaElement) {
+      const state = mediaState(this);
+      state.currentTime = 0;
+      state.paused = true;
+    },
+  });
   define("canPlayType", { value: () => "" });
   define("paused", { get(this: HTMLMediaElement) { return mediaState(this).paused; } });
   define("currentTime", {
@@ -329,12 +347,20 @@ describe("VideoPlayer", () => {
     apiPut.mockReset().mockResolvedValue(undefined);
     apiGet.mockReset().mockResolvedValue({ items: [] });
     noticeMockValue = { notice: null, severity: null, serverOffsetMs: 0, dismissed: false, dismiss: vi.fn(), bannerVisible: false };
+    mockAccessToken = "test-access-token";
   });
 
   afterEach(() => {
     view?.unmount();
     view = null;
     vi.unstubAllGlobals();
+    vi.useRealTimers();
+    // The native-HLS token-refresh tests below temporarily claim native HLS
+    // support (`canPlayType` -> "maybe") to route `attachStrategy` to
+    // 'native-hls' — reset unconditionally so a test that forgets its own
+    // cleanup (or fails before reaching it) can never leak into a later
+    // test's attach-strategy decision.
+    Object.defineProperty(HTMLMediaElement.prototype, "canPlayType", { configurable: true, value: () => "" });
   });
 
   // REGRESSION GUARD (77-agent review, "every per-version Play button starts
@@ -522,6 +548,415 @@ describe("VideoPlayer", () => {
     await act(async () => options[1]?.click());
     expect(mediaState(video).audioTracks.map((t) => t.enabled)).toEqual([false, true]);
     expect(v.container.textContent).toContain("AAC 2CH");
+  });
+
+  // ── Token refresh (task #6, 2026-08-08/10 HLS-stall recon) ──────────────
+  // The direct-play/native-HLS attach effect (VideoPlayer.tsx) used to
+  // compare `currentSrc === activeSrcUrl` verbatim, which trips on every
+  // token rotation `useSessionFileUrl`/`useHlsManifestUrl` hand back and
+  // forced a full `video.src` reset + `load()` + reseek even though the
+  // underlying stream never changed. These four tests exercise the fix:
+  // token-only refreshes while playing are a no-op, a genuinely different
+  // URL still reattaches, a paused boundary takes the free opportunity to
+  // refresh silently, and a fatal `error` mid-playback recovers using the
+  // freshest known token.
+  it("a token-only refresh (?token= rotates, same underlying resource) never interrupts playback with a reload", async () => {
+    vi.useFakeTimers();
+    const v = (view = await renderReady());
+    const video = videoEl(v);
+    // The initial attach's own one-shot `loadedmetadata` listener autoplays
+    // (no resume prompt in this fixture) — dispatch it now, the way a real
+    // browser would shortly after `load()`, so it fires and self-removes.
+    await act(async () => {
+      video.dispatchEvent(new Event("loadedmetadata"));
+    });
+    expect(video.paused).toBe(false);
+
+    const srcBeforeRefresh = video.src;
+    const loadSpy = vi.spyOn(video, "load");
+
+    mockAccessToken = "rotated-access-token";
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60_000);
+    });
+
+    expect(loadSpy).not.toHaveBeenCalled();
+    expect(video.src).toBe(srcBeforeRefresh); // unchanged — still the ORIGINAL token, never reloaded
+    expect(video.paused).toBe(false); // playback was never interrupted
+  });
+
+  it("a genuinely different URL (e.g. a version/fallback switch to a new session id) still forces a reattach", async () => {
+    const v = (view = await renderReady());
+    const video = videoEl(v);
+    await act(async () => button(v, "Play").click());
+    video.currentTime = 55;
+    const srcBefore = video.src;
+    const loadSpy = vi.spyOn(video, "load");
+
+    createPlaybackSession.mockResolvedValueOnce({ ok: true, session: { ...directPlaySession(), id: SECOND_SESSION_ID } });
+    await act(async () => {
+      v.rerender(
+        <ToastProvider>
+          <VideoPlayer itemId={ITEM_ID} onBack={vi.fn()} mediaFileId={ALT_FILE_ID} />
+        </ToastProvider>,
+      );
+    });
+
+    expect(loadSpy).toHaveBeenCalled();
+    expect(video.src).not.toBe(srcBefore);
+    expect(video.src).toContain(SECOND_SESSION_ID);
+  });
+
+  it("silently swaps in a rotated token while PAUSED — a free refresh at a natural boundary, no play() triggered", async () => {
+    vi.useFakeTimers();
+    const v = (view = await renderReady());
+    const video = videoEl(v);
+    // Retire the initial attach's own one-shot `loadedmetadata` listener
+    // first (it autoplays — no resume prompt in this fixture — same as a
+    // real browser shortly after `load()`), then the user explicitly
+    // pauses and walks away: THAT'S the paused natural boundary under test,
+    // not "never played at all".
+    await act(async () => {
+      video.dispatchEvent(new Event("loadedmetadata"));
+    });
+    expect(video.paused).toBe(false);
+    await act(async () => button(v, "Pause").click());
+    expect(video.paused).toBe(true);
+
+    video.currentTime = 77;
+    const srcBefore = video.src;
+    const loadSpy = vi.spyOn(video, "load");
+
+    mockAccessToken = "paused-refresh-token";
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60_000);
+    });
+
+    expect(loadSpy).toHaveBeenCalledTimes(1);
+    expect(video.src).not.toBe(srcBefore);
+    expect(video.src).toContain("paused-refresh-token");
+
+    await act(async () => {
+      video.dispatchEvent(new Event("loadedmetadata"));
+    });
+    expect(video.currentTime).toBe(77); // position restored
+    expect(video.paused).toBe(true); // was paused before the refresh -> stays paused, no auto-play
+  });
+
+  it("recovers from a fatal media error mid-play on the native-HLS branch by re-attaching with the freshest token, restoring position and resuming playback", async () => {
+    // Claim native HLS support so `attachStrategy` resolves to 'native-hls'
+    // (hls-attach.ts's truth table: usesHls && !mseAvailable && canPlayNativeHls
+    // — jsdom has no MediaSource, so mseAvailable is already false) rather
+    // than the 'hlsjs' fallback, exercising `useHlsManifestUrl` specifically
+    // (not just direct-play's `useSessionFileUrl`) — both feed the SAME
+    // attach effect under test, but this confirms the fix covers both.
+    Object.defineProperty(HTMLMediaElement.prototype, "canPlayType", { configurable: true, value: () => "maybe" });
+    createPlaybackSession.mockResolvedValue({ ok: true, session: hlsTranscodeSession() });
+    vi.useFakeTimers();
+
+    const v = (view = await renderReady());
+    const video = videoEl(v);
+    // Retire the initial attach's own one-shot `loadedmetadata` listener
+    // first (it autoplays — no resume prompt in this fixture), the same as
+    // a real browser would shortly after `load()`, so the LATER
+    // `loadedmetadata` dispatch below (simulating the error-recovery
+    // reattach's own onLoaded) has exactly one listener to fire, not two.
+    await act(async () => {
+      video.dispatchEvent(new Event("loadedmetadata"));
+    });
+    expect(video.paused).toBe(false);
+    video.currentTime = 123;
+
+    // The AuthStore rotates the access token in the background (P2.1's
+    // 15-minute access-token TTL) — the attach effect notices (it re-runs
+    // and re-registers its `error` listener with the fresh URL closure) but
+    // does not reload while playback is smooth.
+    mockAccessToken = "post-rotation-token";
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60_000);
+    });
+    expect(video.src).not.toContain("post-rotation-token"); // still the OLD token — no eager reload
+
+    const loadSpy = vi.spyOn(video, "load");
+    await act(async () => {
+      video.dispatchEvent(new Event("error"));
+    });
+    expect(loadSpy).toHaveBeenCalledTimes(1);
+    expect(video.src).toContain("post-rotation-token"); // recovered using the FRESH token
+    expect(video.src).toContain(SESSION_ID);
+
+    await act(async () => {
+      video.dispatchEvent(new Event("loadedmetadata")); // the browser signals the reattached media is ready
+    });
+    expect(video.currentTime).toBe(123); // position restored
+    expect(video.paused).toBe(false); // was playing before the error -> resumes
+  });
+
+  // ── Recovery redesign (2026-08-10 opus review findings 1-3) ─────────────
+  // The four tests above cover the token-freshness comparison itself; these
+  // cover the recovery-budget/stall-detection machinery layered on top of
+  // it: a separate cooldown ref so an ordinary attach never eats the
+  // recovery budget, a DEFERRED (never dropped) cooldown, a hard 3-attempt
+  // bound before falling through to the same fatal-unavailable screen a
+  // refused createPlaybackSession already renders, a skip of that budget
+  // entirely for two genuinely unrecoverable MediaError codes, a stall
+  // (not just fatal-`error`) trigger for Safari's actual 401 presentation,
+  // and no more stacked stale-closure `loadedmetadata` listeners.
+  it("an initial attach that fails fast still retries immediately — the old bug stamped the cooldown on every attach, including this one, and silently never retried", async () => {
+    const v = (view = await renderReady());
+    const video = videoEl(v);
+    // No `loadedmetadata` was ever dispatched — the very first attach
+    // (fired synchronously by the effect on mount) is what's failing here.
+    const loadSpy = vi.spyOn(video, "load");
+    await act(async () => {
+      video.dispatchEvent(new Event("error"));
+    });
+    expect(loadSpy).toHaveBeenCalledTimes(1); // retried right away, no setTimeout needed
+  });
+
+  it("bounds recovery attempts at 3 (deferring inside the cooldown rather than dropping), then falls through to the fatal unavailable path", async () => {
+    vi.useFakeTimers();
+    const v = (view = await renderReady());
+    const video = videoEl(v);
+    const loadSpy = vi.spyOn(video, "load");
+
+    await act(async () => {
+      video.dispatchEvent(new Event("error")); // attempt 1 — immediate, no prior recovery stamp
+    });
+    expect(loadSpy).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      video.dispatchEvent(new Event("error")); // still inside the 4s cooldown from attempt 1
+    });
+    expect(loadSpy).toHaveBeenCalledTimes(1); // deferred, not dropped and not immediate
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(4_000);
+    });
+    expect(loadSpy).toHaveBeenCalledTimes(2); // attempt 2 — the deferred retry actually ran
+
+    await act(async () => {
+      video.dispatchEvent(new Event("error"));
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(4_000);
+    });
+    expect(loadSpy).toHaveBeenCalledTimes(3); // attempt 3 — budget now exhausted
+
+    await act(async () => {
+      video.dispatchEvent(new Event("error")); // a 4th failure in this stretch
+    });
+    expect(loadSpy).toHaveBeenCalledTimes(3); // NOT retried again — a persistently-failing URL doesn't retry forever
+    expect(v.container.textContent).toContain("can’t play on this device right now");
+    expect(v.container.textContent).toContain("Playback failed in this browser");
+  });
+
+  it("a MEDIA_ERR_DECODE error is unrecoverable — no reattach at all, straight to the fatal unavailable path", async () => {
+    const v = (view = await renderReady());
+    const video = videoEl(v);
+    const loadSpy = vi.spyOn(video, "load");
+    Object.defineProperty(video, "error", { configurable: true, get: () => ({ code: 3 /* MEDIA_ERR_DECODE */ }) });
+    await act(async () => {
+      video.dispatchEvent(new Event("error"));
+    });
+    expect(loadSpy).not.toHaveBeenCalled();
+    expect(v.container.textContent).toContain("Playback failed in this browser");
+  });
+
+  it("a MEDIA_ERR_SRC_NOT_SUPPORTED error is unrecoverable too — same fatal path, no reattach attempted", async () => {
+    const v = (view = await renderReady());
+    const video = videoEl(v);
+    const loadSpy = vi.spyOn(video, "load");
+    Object.defineProperty(video, "error", { configurable: true, get: () => ({ code: 4 /* MEDIA_ERR_SRC_NOT_SUPPORTED */ }) });
+    await act(async () => {
+      video.dispatchEvent(new Event("error"));
+    });
+    expect(loadSpy).not.toHaveBeenCalled();
+    expect(v.container.textContent).toContain("Playback failed in this browser");
+  });
+
+  it("the element's own 'playing' event resets the recovery budget — a stretch that reaches real playback again earns a fresh 3 attempts", async () => {
+    vi.useFakeTimers();
+    const v = (view = await renderReady());
+    const video = videoEl(v);
+    const loadSpy = vi.spyOn(video, "load");
+
+    // Use up the entire 3-attempt budget.
+    await act(async () => {
+      video.dispatchEvent(new Event("error"));
+    });
+    await act(async () => {
+      video.dispatchEvent(new Event("error"));
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(4_000);
+    });
+    await act(async () => {
+      video.dispatchEvent(new Event("error"));
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(4_000);
+    });
+    expect(loadSpy).toHaveBeenCalledTimes(3);
+
+    // Recovery actually worked this time.
+    await act(async () => {
+      video.dispatchEvent(new Event("playing"));
+    });
+
+    // A budget left at 0 (no reset) would send the NEXT failure straight to
+    // the fatal path with no further reattach — confirm it retries instead.
+    await act(async () => {
+      video.dispatchEvent(new Event("error"));
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(4_000);
+    });
+    expect(loadSpy).toHaveBeenCalledTimes(4);
+    expect(v.container.textContent).not.toContain("Playback failed in this browser");
+  });
+
+  it("repeated attaches before any load ever succeeds don't stack pending loadedmetadata listeners — the eventual successful load restores exactly once", async () => {
+    vi.useFakeTimers();
+    const v = (view = await renderReady());
+    const video = videoEl(v);
+    // Intercept `currentTime` ASSIGNMENTS specifically (not the stub's own
+    // internal resets inside `load()`, which mutate the shared state object
+    // directly, bypassing this setter) — `onLoaded`'s restore is the ONLY
+    // code that assigns `video.currentTime` in this scenario, so its call
+    // count is an exact proxy for "how many onLoaded listeners fired".
+    const state = mediaState(video);
+    let setCount = 0;
+    Object.defineProperty(video, "currentTime", {
+      configurable: true,
+      get: () => state.currentTime,
+      set: (value: number) => {
+        setCount++;
+        state.currentTime = value;
+      },
+    });
+
+    // Two consecutive recovery-triggered attaches (clearing the cooldown
+    // between them so each one genuinely fires, on top of the very first
+    // mount-time attach's own still-pending listener), neither of which
+    // ever gets a chance to fire ITS OWN loadedmetadata (a real
+    // repeatedly-failing source). The old code stacked one listener per
+    // attempt and never removed a pending one.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(4_000); // clear the mount attach's own cooldown stamp
+    });
+    await act(async () => {
+      video.dispatchEvent(new Event("error")); // attach #2
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(4_000); // clear attach #2's cooldown stamp
+    });
+    await act(async () => {
+      video.dispatchEvent(new Event("error")); // attach #3
+    });
+
+    // The load finally succeeds.
+    await act(async () => {
+      video.dispatchEvent(new Event("loadedmetadata"));
+    });
+    expect(setCount).toBe(1); // only #3's listener fired — #1 and #2's were removed, not stacked
+  });
+
+  // ── Stall watchdog (2026-08-10 opus review finding 2) ───────────────────
+  // Safari's native-HLS 401 typically presents as a STALL — the element
+  // just stops advancing, firing `waiting`/`stalled` with no fatal `error`
+  // event at all — not as something the `error` listener above would ever
+  // see.
+  it("a stall (waiting) that persists 10s with a rotated token triggers exactly one bounded recovery attach, restoring position", async () => {
+    vi.useFakeTimers();
+    const v = (view = await renderReady());
+    const video = videoEl(v);
+    await act(async () => {
+      video.dispatchEvent(new Event("loadedmetadata")); // initial attach completes, autoplays
+    });
+    expect(video.paused).toBe(false);
+    video.currentTime = 200;
+
+    // The AuthStore rotates the token in the background — the attach
+    // effect notices (re-runs, re-registers every listener with the fresh
+    // URL closure) but does not reload while nothing looks wrong yet.
+    mockAccessToken = "stall-recovery-token";
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60_000);
+    });
+    expect(video.src).not.toContain("stall-recovery-token"); // still the OLD token — no eager reload
+
+    const loadSpy = vi.spyOn(video, "load");
+    await act(async () => {
+      video.dispatchEvent(new Event("waiting"));
+    });
+    expect(loadSpy).not.toHaveBeenCalled(); // the watchdog just started, hasn't fired yet
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10_000); // STALL_WATCHDOG_MS with currentTime never advancing
+    });
+    expect(loadSpy).toHaveBeenCalledTimes(1);
+    expect(video.src).toContain("stall-recovery-token"); // recovered using the FRESH token
+    expect(video.src).toContain(SESSION_ID);
+
+    await act(async () => {
+      video.dispatchEvent(new Event("loadedmetadata"));
+    });
+    expect(video.currentTime).toBe(200); // position restored
+    expect(video.paused).toBe(false); // was playing before the stall -> resumes
+  });
+
+  it("a stall with the SAME token attached (an ordinary rebuffer, no rotation) never triggers a recovery attach", async () => {
+    vi.useFakeTimers();
+    const v = (view = await renderReady());
+    const video = videoEl(v);
+    await act(async () => {
+      video.dispatchEvent(new Event("loadedmetadata"));
+    });
+    expect(video.paused).toBe(false);
+    video.currentTime = 300;
+
+    const loadSpy = vi.spyOn(video, "load");
+    await act(async () => {
+      video.dispatchEvent(new Event("waiting"));
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10_000);
+    });
+    expect(loadSpy).not.toHaveBeenCalled(); // the URL never differed by token — a genuine rebuffer, not a stale-token stall
+  });
+
+  it("the stall watchdog clears when the element resumes advancing (a real timeupdate-with-progress) before the 10s window elapses", async () => {
+    vi.useFakeTimers();
+    const v = (view = await renderReady());
+    const video = videoEl(v);
+    await act(async () => {
+      video.dispatchEvent(new Event("loadedmetadata"));
+    });
+    video.currentTime = 400;
+
+    mockAccessToken = "unused-recovery-token";
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60_000); // primes a fresher URL the watchdog COULD have used
+    });
+
+    const loadSpy = vi.spyOn(video, "load");
+    await act(async () => {
+      video.dispatchEvent(new Event("waiting"));
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000); // halfway through the 10s window
+    });
+
+    // Playback actually resumes on its own — position genuinely advances.
+    await act(async () => {
+      video.currentTime = 405;
+      video.dispatchEvent(new Event("timeupdate"));
+    });
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10_000); // well past the ORIGINAL window, had it not been cleared
+    });
+    expect(loadSpy).not.toHaveBeenCalled();
   });
 
   it("offers a resume prompt without auto-seeking when a worth-resuming position exists", async () => {

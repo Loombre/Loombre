@@ -34,6 +34,23 @@
 // through to a segment GET on its own. Every hls.js request must have the
 // token appended by hand, at request time, via xhrSetup — this is that
 // per-request append.
+//
+// `isSameUrlIgnoringToken` (task #6, 2026-08-08/10 HLS-stall recon): the
+// direct-play/native-HLS attach guard in VideoPlayer.tsx used to compare
+// `currentSrc === activeSrcUrl` verbatim, which trips on every token
+// rotation this file's `useTokenUrl` hands back — access tokens are
+// 15-minute JWTs with NO server-side grace window (apps/server/src/
+// session/token.service.ts's `ACCESS_TOKEN_TTL_MS`/`verifyAccessToken`,
+// jose's `jwtVerify` with no `clockTolerance`), and the AuthStore rotates
+// ~30s before its OWN expiry (apps/web/src/lib/auth-store.ts's
+// `EXPIRY_SKEW_MS`), so a new token — and thus a new URL from this file's
+// builders — appears roughly every ~14.5 minutes, not every 60s
+// (CHECK_INTERVAL_MS below is a POLL interval, not a refresh interval; see
+// `useTokenUrl`'s own comment). A verbatim comparison forced a full
+// `video.src` reset + `load()` + reseek on every one of those rotations
+// even though the underlying stream never changed. This helper lets the
+// caller tell "the token rotated" apart from "this is genuinely a
+// different resource" (a new session/file).
 
 import { useEffect, useState } from "react";
 import { getAuthStore } from "./auth-store.js";
@@ -83,6 +100,42 @@ export function appendTokenParam(url: string, token: string): string {
   const parsed = new URL(url);
   parsed.searchParams.set("token", token);
   return parsed.toString();
+}
+
+/** Structural URL equality that ignores `?token=` — "same underlying
+ *  resource, only the auth token differs" (see this file's header, task #6).
+ *  Compares origin + pathname + every OTHER query param (order-insensitive:
+ *  `token`'s position in the URL is not guaranteed, and nothing here
+ *  guarantees the two inputs were built the same way) + hash. `token` is
+ *  dropped from BOTH sides before comparing, so its value never matters and
+ *  its absence on one or both sides never by itself makes two otherwise-
+ *  identical URLs register as different. Returns `false` (never "same") for
+ *  an unparseable input — a malformed URL must never be silently treated as
+ *  a no-op by a caller using this as an "already attached, skip the reload"
+ *  guard. */
+export function isSameUrlIgnoringToken(a: string, b: string): boolean {
+  let urlA: URL;
+  let urlB: URL;
+  try {
+    urlA = new URL(a);
+    urlB = new URL(b);
+  } catch {
+    return false;
+  }
+  urlA.searchParams.delete("token");
+  urlB.searchParams.delete("token");
+  // Query param order can legitimately differ (URLSearchParams preserves
+  // insertion order; nothing guarantees `token` was appended last) — sort
+  // both before comparing so a reordering alone never registers as
+  // "different".
+  urlA.searchParams.sort();
+  urlB.searchParams.sort();
+  return (
+    urlA.origin === urlB.origin &&
+    urlA.pathname === urlB.pathname &&
+    urlA.searchParams.toString() === urlB.searchParams.toString() &&
+    urlA.hash === urlB.hash
+  );
 }
 
 /** Shared implementation behind `useSessionFileUrl`/`useHlsManifestUrl`:
