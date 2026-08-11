@@ -15,6 +15,7 @@ import { readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { DbOrTx } from "@loombre/db/internal";
 import {
+  absorbSeekTarget,
   consumeSeekTarget,
   getMediaFileById,
   getTranscodeSessionRow,
@@ -106,6 +107,20 @@ interface CurrentRun {
   handle: FfmpegRunHandle;
   exited: boolean;
   exitInfo?: { exitCode: number | null; killedByUs: boolean; stderrTail: string };
+  /** Where this run starts in SOURCE time: 0 for run 0, the consumed seek
+   *  target for every seek-restart. The de-dup rule below compares an
+   *  incoming seek target against this, and migration 0043 persists it
+   *  (see recordTranscodeRun in spawnRun). */
+  sourceOriginMs: number;
+  /** How much of this run's own output has been produced, in source-time
+   *  milliseconds (the sum of its segments' EXTINF durations). Together
+   *  with sourceOriginMs this is the window this run is ALREADY serving. */
+  producedMs: number;
+  /** True once retention pruning has dropped any of THIS run's segments.
+   *  From that moment the run's produced window is no longer contiguous
+   *  from its origin — its head is gone from disk — so the de-dup rule
+   *  narrows to exact-origin matching (see the seek block). */
+  headPruned: boolean;
   /** This runtime's own tracked physical suspend state (process.ts's
    *  header — there is no queryable "is this pid stopped" OS API). */
   processStopped: boolean;
@@ -250,7 +265,17 @@ export async function runTranscodeSession(deps: RunSessionDeps, sessionId: strin
         nowMs: now(),
       }).catch(() => undefined);
     }
-    const run: CurrentRun = { index: runIndex, dir: runDir, handle, exited: false, processStopped: false, unregister };
+    const run: CurrentRun = {
+      index: runIndex,
+      dir: runDir,
+      handle,
+      exited: false,
+      processStopped: false,
+      unregister,
+      sourceOriginMs: seekTargetMs ?? 0,
+      producedMs: 0,
+      headPruned: false,
+    };
     void handle.result.then((r) => {
       run.exited = true;
       run.exitInfo = r;
@@ -296,6 +321,12 @@ export async function runTranscodeSession(deps: RunSessionDeps, sessionId: strin
     if (runPlaylistText !== undefined) {
       const parsed = parseFfmpegPlaylist(runPlaylistText);
       servedState = applyRunUpdate(servedState, currentRun.index, `run${currentRun.index}`, parsed);
+      // Source-time extent of what THIS run has produced so far, read from
+      // ffmpeg's own per-run playlist (authoritative, and monotonic while
+      // the run lives). Feeds the seek de-dup rule below; deliberately
+      // taken BEFORE retention pruning, which is about what is still on
+      // disk rather than what was produced.
+      currentRun.producedMs = Math.round(parsed.segments.reduce((sum, seg) => sum + seg.durationSec, 0) * 1000);
     }
     const producedSegment = highestProducedSegmentIndex(servedState);
 
@@ -309,6 +340,13 @@ export async function runTranscodeSession(deps: RunSessionDeps, sessionId: strin
       // Retention pruning (binding constraint 5) + served-playlist rewrite.
       const pruned = pruneRetention(servedState, SEGMENT_RETENTION_SEC, currentRun.index);
       servedState = pruned.nextState;
+      // Once any of the CURRENT run's own segments has been pruned, its
+      // produced window no longer starts at its origin — the head is gone
+      // from disk — so the seek de-dup rule below must stop trusting
+      // [origin, origin+producedMs] and fall back to exact-origin matching.
+      if (pruned.segmentsToDelete.some((seg) => seg.runDirName === `run${currentRun.index}`)) {
+        currentRun.headPruned = true;
+      }
       for (const seg of pruned.segmentsToDelete) {
         await unlink(join(sessionDir, seg.runDirName, seg.uri)).catch(() => undefined);
       }
@@ -343,6 +381,46 @@ export async function runTranscodeSession(deps: RunSessionDeps, sessionId: strin
     // latency — a stopped ffmpeg would otherwise sit on the pending SIGTERM
     // for the whole graceful window before being SIGKILLed.
     if (row.seek_target_ms !== null) {
+      // DE-DUPLICATION FIRST (process-lifecycle hardening wave, 2026-08-11,
+      // continuation item 1 — THE SEEK-RESTART LIVELOCK).
+      //
+      // A client retrying a 503-retry-after for one too-far-ahead segment
+      // makes the server record the SAME seek target on every retry. This
+      // block used to consume each one unconditionally: kill the in-flight
+      // ffmpeg, respawn it at the same position, repeat on the next tick
+      // because another retry landed meanwhile. The run never survived long
+      // enough to produce its first segment, so the client never stopped
+      // retrying — a livelock that produced nothing while paying the most
+      // expensive part of a run (spawn + input open + first keyframe) over
+      // and over. Measured at 17 spawns for a single seek target before
+      // this guard existed (seek-dedup.integration.spec.ts).
+      //
+      // MATCH SEMANTICS. Absorb only when the LIVE run is already serving
+      // the requested position:
+      //   * exact origin match — the floor, and the case the storm
+      //     actually produces (the retries all name one position, which is
+      //     the position the current run was just started at);
+      //   * plus anything inside [origin, origin + producedMs], i.e. output
+      //     this run has ALREADY written, where a restart would rebuild
+      //     bytes that exist. Only while nothing of this run has been
+      //     pruned: after that the window's lower end is no longer on disk,
+      //     so a target there is a real backward seek and must restart.
+      // Anything else — earlier, later, or a run that has exited — is a
+      // genuine seek and takes the restart path below unchanged.
+      const inFlightWindowEndMs = currentRun.headPruned ? currentRun.sourceOriginMs : currentRun.sourceOriginMs + currentRun.producedMs;
+      const alreadyServing =
+        !currentRun.exited &&
+        row.seek_target_ms >= currentRun.sourceOriginMs &&
+        row.seek_target_ms <= inFlightWindowEndMs;
+      if (alreadyServing) {
+        // Clear it without bumping discontinuity_count or touching status —
+        // nothing restarted. Guarded on the exact value we just read, so a
+        // DIFFERENT target written in the meantime is never swallowed; it
+        // simply survives to the next tick and restarts properly.
+        await absorbSeekTarget(db, sessionId, row.seek_target_ms, now());
+        continue;
+      }
+
       const consumed = await consumeSeekTarget(db, sessionId, now());
       if (consumed) {
         try {

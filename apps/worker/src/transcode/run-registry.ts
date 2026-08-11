@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 /**
- * The worker process's registry of LIVE ffmpeg runs (comparative-study-study
- * implementation run, item C1).
+ * The worker process's registry of LIVE ffmpeg runs (process-lifecycle
+ * hardening wave, 2026-08-11, item C1).
  *
  * WHY THIS EXISTS. process.ts spawns every ffmpeg with `detached: true` on
  * POSIX — deliberately, so suspend/resume/terminate can signal the whole
