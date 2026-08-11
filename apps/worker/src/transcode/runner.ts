@@ -427,9 +427,39 @@ export async function runTranscodeSession(deps: RunSessionDeps, sessionId: strin
       return;
     }
 
+    // PRUNE-FREEZE (Wave C2, §9.1.5 rule 4), decided BEFORE this tick's
+    // fold — and that ordering is the whole fix of the C2-review
+    // fold-resurrect defect. `applyRunUpdate` REPLACES the current run's
+    // segment list with a full re-parse of ffmpeg's own APPEND-ONLY per-run
+    // playlist, so every fold re-adds segments retention already pruned
+    // (and whose files were already unlinked); in steady state that is
+    // invisible only because the prune below re-removes them on the same
+    // tick, after the fold. Gating the prune on the POST-fold ended state
+    // therefore skipped exactly the step that keeps the fold honest, on
+    // exactly the tick ENDLIST first appears: the frozen playlist was
+    // rendered WITH its pruned head resurrected — listing files deleted
+    // from disk, and collapsing EXT-X-MEDIA-SEQUENCE back to 0 (a backward
+    // media-sequence jump RFC 8216 §6.2.2 forbids). Under the real
+    // throttle ENDLIST only ever appears after the viewer has watched to
+    // the end — long after the head was first pruned — so this fired on
+    // essentially every completed watch of >~2-minute content.
+    //
+    // Frozen ⇔ the last FOLDED run is the CURRENT run and its own playlist
+    // carried ENDLIST at the previous fold. So the ENDLIST-arrival tick
+    // itself still folds and still prunes — reconciling served state with
+    // what retention already deleted BEFORE the first frozen serve (the
+    // final cutoff is a superset of every earlier one, so nothing the
+    // frozen playlist lists can be missing from disk) — and every later
+    // tick leaves state, disk, and the served file untouched. A
+    // post-ENDLIST seek/switch (rule 5) bumps `currentRun.index`, the
+    // run-index conjunct goes false, and folding/pruning resume for the
+    // new run exactly as before.
+    const lastFoldedRunIndex = servedState.runs[servedState.runs.length - 1]?.runIndex;
+    const playlistFrozen = servedPlaylistHasEnded(servedState) && lastFoldedRunIndex === currentRun.index;
+
     // Fold this run's own playlist into served state + advance
     // produced_segment (observability + throttle input, docs/PLAYBACK.md §9).
-    const runPlaylistText = await readRunPlaylist(currentRun.dir);
+    const runPlaylistText = playlistFrozen ? undefined : await readRunPlaylist(currentRun.dir);
     if (runPlaylistText !== undefined) {
       const parsed = parseFfmpegPlaylist(runPlaylistText);
       servedState = applyRunUpdate(servedState, currentRun.index, `run${currentRun.index}`, parsed);
@@ -461,7 +491,13 @@ export async function runTranscodeSession(deps: RunSessionDeps, sessionId: strin
       // residual is at most one retention window (§9.1.8), reclaimed at
       // session teardown exactly as always. Tier-0 lens: this strictly
       // REDUCES steady-state I/O after a stream ends.
-      const pruned = servedPlaylistHasEnded(servedState)
+      //
+      // Gated on the PRE-fold `playlistFrozen`, not the post-fold ended
+      // state — the ENDLIST-arrival tick must still prune, or the fold's
+      // re-add of already-pruned segments survives into the frozen
+      // playlist (the fold-resurrect defect; the predicate's own comment
+      // above has the full story).
+      const pruned = playlistFrozen
         ? { nextState: servedState, segmentsToDelete: [], runDirsToDelete: [] }
         : pruneRetention(servedState, SEGMENT_RETENTION_SEC, currentRun.index);
       servedState = pruned.nextState;
@@ -492,10 +528,17 @@ export async function runTranscodeSession(deps: RunSessionDeps, sessionId: strin
       // existing destination on Windows too (MOVEFILE_REPLACE_EXISTING),
       // so readers now see either the previous complete playlist or the
       // next one — never a torn state.
-      const playlistPath = join(sessionDir, "media.m3u8");
-      const playlistTmpPath = `${playlistPath}.tmp`;
-      await writeFile(playlistTmpPath, renderServedPlaylist(servedState), "utf8");
-      await rename(playlistTmpPath, playlistPath);
+      // A FROZEN playlist is also never rewritten: the ENDLIST-bearing
+      // render was written once, on the tick ENDLIST first appeared, and
+      // an ended playlist must not change (§9.1.5 rule 4). Re-writing the
+      // same bytes every tick would be harmless but is pointless I/O on a
+      // Tier-0 box.
+      if (!playlistFrozen) {
+        const playlistPath = join(sessionDir, "media.m3u8");
+        const playlistTmpPath = `${playlistPath}.tmp`;
+        await writeFile(playlistTmpPath, renderServedPlaylist(servedState), "utf8");
+        await rename(playlistTmpPath, playlistPath);
+      }
     }
 
     // ── RESTART BLOCK (§9.1.7's SINGLE-RESTART RULE) ─────────────────────

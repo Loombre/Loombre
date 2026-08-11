@@ -832,9 +832,22 @@ describe.skipIf(!ffmpegAvailable || process.platform === "win32")(
         // element. The parser had recorded `hasEndlist` since it landed;
         // nothing consumed it.
         //
-        // No `testReadrateMultiplier` here: the run is allowed to encode
-        // the whole fixture as fast as the box can, because reaching the
-        // END is the entire point.
+        // `testReadrateMultiplier: 6` is LOAD-BEARING here (C2 review): the
+        // interesting path is ENDLIST arriving on a playlist whose head
+        // retention has ALREADY pruned — which is what production always
+        // looks like, since the throttle means ffmpeg only reaches end of
+        // input once the viewer has watched (nearly) the whole thing, long
+        // after the first prune. An unpaced encode of the 150 s fixture
+        // finishes in a couple of poll ticks and made reaching that path a
+        // coin flip: whenever no tick happened to land between
+        // "content > 120 s" and "ENDLIST written", the test silently
+        // proved only the trivial nothing-was-ever-pruned case — and the
+        // fold-resurrect defect this test caught during review (a frozen
+        // playlist listing deleted files, media-sequence collapsing back
+        // to 0) sailed through whenever the coin landed that way. At 6x,
+        // ~5 s of wall clock separates the first prune from ENDLIST —
+        // dozens of 150 ms ticks — and the precondition assert below makes
+        // the requirement explicit instead of timing-dependent.
         const sessionId = await createSession();
         const sessionDir = join(stagingRoot, sessionId);
         const runPromise = runTranscodeSession(
@@ -842,6 +855,7 @@ describe.skipIf(!ffmpegAvailable || process.platform === "win32")(
             db,
             stagingRoot,
             pollIntervalMs: 150,
+            testReadrateMultiplier: 6,
             onRunSpawned: (pid) => {
               if (pid !== undefined) strayPids.push(pid);
             },
@@ -879,6 +893,19 @@ describe.skipIf(!ffmpegAvailable || process.platform === "win32")(
           // end — an ended playlist is still not an EVENT playlist.
           expect(ended).not.toContain("#EXT-X-PLAYLIST-TYPE");
           expect(ended.trimEnd().endsWith("#EXT-X-ENDLIST")).toBe(true);
+
+          // PRECONDITION, asserted so it can never silently rot back into
+          // a timing coin flip: retention must really have pruned the head
+          // BEFORE ENDLIST arrived (150 s of content against a 120 s
+          // window, paced so dozens of ticks separate the two). A frozen
+          // playlist that still lists segment 0 would mean this test is
+          // exercising the trivial never-pruned path and proving nothing
+          // about the fold-resurrect defect.
+          const endedEntries = parseServedSegmentDurations(ended);
+          expect(
+            endedEntries[0]!.index,
+            "the frozen playlist's head must be PRUNED (media-sequence > 0) — resurrecting segment 0 was the defect",
+          ).toBeGreaterThan(0);
 
           // PRUNE-FREEZE. RFC 8216: a playlist that has ended must not
           // change. Several poll ticks later it must be byte-identical —
