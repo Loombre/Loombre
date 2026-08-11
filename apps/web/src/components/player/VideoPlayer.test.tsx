@@ -19,6 +19,7 @@
 import { act } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { components } from "@loombre/sdk";
+import { LoombreApiError } from "@loombre/sdk";
 import { VideoPlayer } from "./VideoPlayer.js";
 import { ToastProvider } from "../ui/Toast.js";
 import { renderIntoBody, type TestRender } from "../ui/test-render.js";
@@ -1064,5 +1065,52 @@ describe("VideoPlayer", () => {
     const strip = v.container.querySelector('[data-severity="warning"]');
     expect(strip).toBeTruthy();
     expect(stage!.contains(strip)).toBe(true);
+  });
+
+  // AUD-W6-001 (server repro confirmed clean: a real catalog_items row with
+  // zero media_files gets a genuine RFC 9457 404 from POST /playback/sessions
+  // in under 2 seconds — the server does not hang). createPlaybackSession
+  // (lib/playback-session.ts) only intercepts a genuine 409/422/429 refusal
+  // and re-throws anything else, including a 404 — before this fix, that
+  // re-throw reached the session-create effect's `void run()` with no
+  // attached catch: an unhandled promise rejection that left `phase` stuck
+  // at "loading" forever (the observed /watch/<item> hang is client-side,
+  // not a server hang). This is the RED-FIRST pin: today's behavior is the
+  // spinner never resolving — no UnavailableScreen, no thrown/visible error
+  // either (only an unhandled-rejection console warning jsdom doesn't
+  // surface as a test failure by itself, which is exactly how this bug hid).
+  it("a 404 from createPlaybackSession (e.g. an item with zero playable media files) surfaces UnavailableScreen — never an indefinite spinner", async () => {
+    createPlaybackSession.mockReset().mockRejectedValueOnce(
+      new LoombreApiError(404, { type: "about:blank", title: "Not Found", status: 404, detail: "No playable media file for this item." }),
+    );
+    let v: TestRender | null = null;
+    await act(async () => {
+      v = renderIntoBody(
+        <ToastProvider>
+          <VideoPlayer itemId={ITEM_ID} onBack={vi.fn()} />
+        </ToastProvider>,
+      );
+    });
+    view = v;
+    // The SAME fatal-unavailable path client-side DECODE/SRC_NOT_SUPPORTED
+    // already reaches (clientPlaybackErrorReasons(), lib/playback-reasons.ts)
+    // — no server plan reasons exist for a failure this shape either, so
+    // this reuses that exact synthesized copy rather than inventing new UI.
+    expect(v!.container.textContent).toContain("Playback failed in this browser");
+    expect(v!.container.querySelector("video")).toBeNull();
+  });
+
+  it("an unexpected error from createPlaybackSession (not just 404) also surfaces UnavailableScreen, never a silent hang", async () => {
+    createPlaybackSession.mockReset().mockRejectedValueOnce(new Error("network down"));
+    let v: TestRender | null = null;
+    await act(async () => {
+      v = renderIntoBody(
+        <ToastProvider>
+          <VideoPlayer itemId={ITEM_ID} onBack={vi.fn()} />
+        </ToastProvider>,
+      );
+    });
+    view = v;
+    expect(v!.container.textContent).toContain("Playback failed in this browser");
   });
 });
