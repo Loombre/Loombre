@@ -802,4 +802,74 @@ describe('consumePendingRungIndex (compare-and-clear, §9.1.3)', () => {
     await markSessionFailed(db, id, { errorCode: 'transcode-failed', stderrTail: '', nowMs: Date.now() });
     expect(await consumePendingRungIndex(db, id, Date.now())).toBeUndefined();
   });
+
+  // THE EXACT-VALUE GUARD (pre-D consolidation item 2, C2 review finding
+  // f4). `WHERE pending_rung_index = <the value the SELECT read>` — not
+  // merely `IS NOT NULL` — is the difference between "this consumer claimed
+  // what it saw" and "this consumer wiped the column". It was UNPINNED:
+  // replacing the guard with an unconditional write passed the whole suite,
+  // because none of the tests above can put a DIFFERENT value in the gap
+  // between the SELECT and the UPDATE. Every sequential shape is decided at
+  // the SELECT (which re-reads whatever landed), and the two-racing-
+  // consumers test above is decided there too whenever the first
+  // transaction commits before the second's SELECT runs — which, under
+  // Promise.all against a local Postgres, is essentially always.
+  //
+  // So this forces the interleaving with a real row lock on a third
+  // connection, exactly as consumeSeekTarget's own terminal-state race test
+  // does: hold the row past consumePendingRungIndex's SELECT (a plain read,
+  // unaffected by FOR UPDATE), write a NEWER rung request and commit while
+  // its UPDATE is already parked on the lock, and only then let that UPDATE
+  // run — so it evaluates its WHERE against a row whose pending value is no
+  // longer the one it read.
+  //
+  // Why it matters at all, given the worker re-reads the row every tick: a
+  // swallowed switch request is not re-sent. The client's `v{K}` GET is
+  // what writes this column, and `requestRungSwitch`'s own absorb-on-match
+  // means a client already fetching under `v{K}` writes nothing further
+  // once `active_rung_index` says something else — the request that got
+  // wiped is simply lost, and the session keeps serving a rung nobody asked
+  // for until the client's ABR decides to move again.
+  it('never swallows a NEWER pending rung written between its read and its write (real Postgres row-lock race)', async () => {
+    const id = await newSession();
+    await markSessionStarting(db, id, { stagingDir: '/tmp/loombre-transcode/rung-race', nowMs: Date.now() });
+    await markSessionActive(db, id, { producedSegment: 3, nowMs: Date.now() });
+    await recordActiveRungIndex(db, id, 0, Date.now());
+    await rawClient.query(`UPDATE playback_sessions SET pending_rung_index = 2 WHERE id = $1`, [id]);
+
+    const locker = new pg.Client({ connectionString: DATABASE_URL });
+    await locker.connect();
+    let consumePromise: ReturnType<typeof consumePendingRungIndex>;
+    try {
+      await locker.query('BEGIN');
+      await locker.query('SELECT * FROM playback_sessions WHERE id = $1 FOR UPDATE', [id]);
+
+      // Its SELECT reads 2; its UPDATE blocks behind the lock below.
+      consumePromise = consumePendingRungIndex(db, id, Date.now());
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // The client's ABR changes its mind — a NEWER request lands, and
+      // commits, in the gap the consumer's transaction already opened.
+      // Written on the LOCKING connection: any other connection's write
+      // would itself park behind this lock, which is the deadlock this
+      // interleaving exists to avoid.
+      await locker.query(`UPDATE playback_sessions SET pending_rung_index = 1, updated_at_ms = $2 WHERE id = $1`, [id, Date.now()]);
+      await locker.query('COMMIT'); // releases the lock; the parked UPDATE can now run
+    } finally {
+      await locker.end();
+    }
+
+    // Zero rows matched: the value it read is gone, so it claims nothing.
+    expect(await consumePromise).toBeUndefined();
+
+    const row = await getTranscodeSessionRow(db, id);
+    // THE PROPERTY: the newer request SURVIVES to the next poll tick, where
+    // the worker will restart for rung 1 — the rung the client actually
+    // asked for last.
+    expect(row?.pending_rung_index).toBe(1);
+    // And nothing else moved: a failed claim is not a handoff.
+    expect(row?.active_rung_index).toBe(0);
+    expect(row?.status).toBe('active');
+    expect(row?.discontinuity_count).toBe(0);
+  });
 });
