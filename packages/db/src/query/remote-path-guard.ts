@@ -7,9 +7,9 @@
 //
 // STATE.md's LD register, LD-9; closes the "Loombre Remote" OPEN-ledger
 // item `[OPEN — owner decision, V-SEC F2 LOW]`. This module is the whole
-// mechanism; everything below is the
-// argument for why it is shaped exactly this way. The Wave-D reviewer's
-// charter is to attack this note, so it states its own failure modes.
+// mechanism; everything below is the argument for why it is shaped exactly
+// this way. The Wave-D reviewer's charter is to attack this note, so it
+// states its own failure modes.
 //
 // ── 1. THE RACE ────────────────────────────────────────────────────────
 // RG15: at most one of the three remote-access paths (remote/tunnel/
