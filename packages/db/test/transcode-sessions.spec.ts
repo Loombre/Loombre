@@ -23,16 +23,21 @@ import type { DB } from '../src/types.js';
 import type { ViewerContext } from '../src/context.js';
 import { createPlaybackSession } from '../src/query/playback-sessions.js';
 import {
+  absorbSeekTarget,
   consumeSeekTarget,
   ensureSessionStagingDir,
   getMediaInfoForFile,
   getTranscodeSessionRow,
+  listReapableTranscodeSessions,
   markSessionActive,
   markSessionFailed,
   markSessionStarting,
+  recordSessionWorkerProcess,
+  recordTranscodeRun,
   setThrottleSuspended,
   updateProducedSegment,
 } from '../src/internal/index.js';
+import { getTranscodeRunForSegment, listTranscodeRuns } from '../src/query/playback-sessions.js';
 import { resolveTestDatabaseUrl } from '../src/testing.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -486,5 +491,195 @@ describe('ensureSessionStagingDir', () => {
   it('returns undefined for a nonexistent session id', async () => {
     const result = await ensureSessionStagingDir(db, '11111111-1111-4111-8111-111111111111', '/tmp/x', Date.now());
     expect(result).toBeUndefined();
+  });
+});
+
+// The "absorb" counterpart to consumeSeekTarget: clears a REDUNDANT seek
+// request (one the in-flight run is already serving) without bumping
+// discontinuity_count or moving status, and — the property that actually
+// matters — without ever being able to swallow a DIFFERENT target written
+// in the meantime.
+describe('absorbSeekTarget', () => {
+  it('clears the pending target without a discontinuity or a status change', async () => {
+    const id = await newSession();
+    await markSessionStarting(db, id, { stagingDir: '/tmp/loombre-transcode/absorb', nowMs: Date.now() });
+    await markSessionActive(db, id, { producedSegment: 3, nowMs: Date.now() });
+    await rawClient.query(`UPDATE playback_sessions SET seek_target_ms = 60000 WHERE id = $1`, [id]);
+
+    const absorbed = await absorbSeekTarget(db, id, 60000, Date.now());
+    expect(absorbed).toBe(true);
+
+    const row = await getTranscodeSessionRow(db, id);
+    expect(row?.seek_target_ms).toBeNull();
+    expect(row?.discontinuity_count).toBe(0); // nothing restarted
+    expect(row?.status).toBe('active'); // never moved to 'seeking'
+  });
+
+  it('never swallows a DIFFERENT target written between the read and the write', async () => {
+    const id = await newSession();
+    await rawClient.query(`UPDATE playback_sessions SET seek_target_ms = 90000 WHERE id = $1`, [id]);
+
+    // The caller read 60000 and judged it redundant; by the time it writes,
+    // the client has asked for a real seek to 90000 instead.
+    const absorbed = await absorbSeekTarget(db, id, 60000, Date.now());
+    expect(absorbed).toBe(false);
+    expect((await getTranscodeSessionRow(db, id))?.seek_target_ms).toBe(90000);
+  });
+
+  it('is a no-op once the session is terminal', async () => {
+    const id = await newSession();
+    await rawClient.query(`UPDATE playback_sessions SET seek_target_ms = 60000 WHERE id = $1`, [id]);
+    await markSessionFailed(db, id, { errorCode: 'transcode-failed', stderrTail: '', nowMs: Date.now() });
+    expect(await absorbSeekTarget(db, id, 60000, Date.now())).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// migrations/0041_playback_sessions_worker_process.sql (process-lifecycle
+// hardening wave, item C2): the two columns that make a boot-time
+// orphan reaper possible at all. Everything else about an interrupted
+// session survives a hard kill; the ffmpeg process itself does not — its
+// pid is the only handle on it, and it has to be on the row because the
+// process that knew it is gone.
+// ---------------------------------------------------------------------------
+
+describe('recordSessionWorkerProcess', () => {
+  it('records the ffmpeg pid and the supervising worker generation', async () => {
+    const id = await newSession();
+    await markSessionStarting(db, id, { stagingDir: '/tmp/loombre-transcode/pid-a', nowMs: Date.now() });
+    const row = await recordSessionWorkerProcess(db, id, { workerPid: 31337, workerStartedAtMs: 1_700_000_000_000, nowMs: Date.now() });
+    expect(row?.worker_pid).toBe(31337);
+    expect(row?.worker_started_at_ms).toBe(1_700_000_000_000);
+  });
+
+  it('overwrites on a seek-restart (a new run means a new pid)', async () => {
+    const id = await newSession();
+    await recordSessionWorkerProcess(db, id, { workerPid: 1, workerStartedAtMs: 10, nowMs: Date.now() });
+    await recordSessionWorkerProcess(db, id, { workerPid: 2, workerStartedAtMs: 10, nowMs: Date.now() });
+    expect((await getTranscodeSessionRow(db, id))?.worker_pid).toBe(2);
+  });
+
+  it('refuses once the session is terminal', async () => {
+    const id = await newSession();
+    await markSessionFailed(db, id, { errorCode: 'transcode-failed', stderrTail: 'boom', nowMs: Date.now() });
+    const result = await recordSessionWorkerProcess(db, id, { workerPid: 9, workerStartedAtMs: 10, nowMs: Date.now() });
+    expect(result).toBeUndefined();
+    expect((await getTranscodeSessionRow(db, id))?.worker_pid).toBeNull();
+  });
+});
+
+describe('listReapableTranscodeSessions', () => {
+  it('returns only non-terminal sessions with a pid from a PREVIOUS worker generation', async () => {
+    const thisGenerationStart = 2_000_000;
+
+    const orphan = await newSession();
+    await markSessionStarting(db, orphan, { stagingDir: '/tmp/loombre-transcode/orphan', nowMs: Date.now() });
+    await recordSessionWorkerProcess(db, orphan, { workerPid: 4242, workerStartedAtMs: thisGenerationStart - 1, nowMs: Date.now() });
+
+    const mine = await newSession();
+    await recordSessionWorkerProcess(db, mine, { workerPid: 4243, workerStartedAtMs: thisGenerationStart, nowMs: Date.now() });
+
+    const neverSpawned = await newSession(); // no worker_pid at all
+
+    const terminal = await newSession();
+    await recordSessionWorkerProcess(db, terminal, { workerPid: 4244, workerStartedAtMs: thisGenerationStart - 1, nowMs: Date.now() });
+    await markSessionFailed(db, terminal, { errorCode: 'transcode-failed', stderrTail: '', nowMs: Date.now() });
+
+    const reapable = await listReapableTranscodeSessions(db, { workerStartedBeforeMs: thisGenerationStart });
+    const ids = reapable.map((r) => r.id);
+
+    expect(ids).toContain(orphan);
+    expect(ids).not.toContain(mine);
+    expect(ids).not.toContain(neverSpawned);
+    expect(ids).not.toContain(terminal);
+
+    const row = reapable.find((r) => r.id === orphan);
+    expect(row?.worker_pid).toBe(4242);
+    expect(row?.staging_dir).toBe('/tmp/loombre-transcode/orphan');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// migrations/0043_transcode_runs.sql (process-lifecycle hardening wave,
+// continuation item 2): per-run SOURCE-ORIGIN recording.
+//
+// Segment indices are a single global counter across a session's runs
+// (docs/PLAYBACK.md §9 — run 1 continues run 0's numbering), while each
+// seek run's ffmpeg output timeline restarts at zero because it is spawned
+// with `-ss` and no `-copyts`. Nothing durable connected the two, so for
+// every run after the first there was no way to answer "what source time
+// does segment N correspond to?" — which is what a server-side consumer
+// needs for exact source-time anchoring and for post-seek progress
+// reporting. These rows are that record: one per spawned run, carrying the
+// run's index, the segment index it starts numbering at, and where it
+// begins in SOURCE time.
+//
+// Real table, real FK, real columns (CLAUDE.md invariant 3 — this is not
+// one of the JSONB-whitelisted payloads).
+// ---------------------------------------------------------------------------
+
+describe('recordTranscodeRun / transcode run lookup', () => {
+  it('records run 0 at source origin 0 and segment 0', async () => {
+    const id = await newSession();
+    await recordTranscodeRun(db, { sessionId: id, runIndex: 0, startSegment: 0, sourceOriginMs: 0, nowMs: Date.now() });
+
+    const runs = await listTranscodeRuns(db, id);
+    expect(runs).toEqual([{ runIndex: 0, startSegment: 0, sourceOriginMs: 0 }]);
+  });
+
+  it('records a seek restart at the consumed target, continuing the segment numbering', async () => {
+    const id = await newSession();
+    await recordTranscodeRun(db, { sessionId: id, runIndex: 0, startSegment: 0, sourceOriginMs: 0, nowMs: Date.now() });
+    await recordTranscodeRun(db, { sessionId: id, runIndex: 1, startSegment: 43, sourceOriginMs: 600_000, nowMs: Date.now() });
+
+    expect(await listTranscodeRuns(db, id)).toEqual([
+      { runIndex: 0, startSegment: 0, sourceOriginMs: 0 },
+      { runIndex: 1, startSegment: 43, sourceOriginMs: 600_000 },
+    ]);
+  });
+
+  it('is idempotent per (session, runIndex) — a redelivered job never duplicates or fails', async () => {
+    const id = await newSession();
+    await recordTranscodeRun(db, { sessionId: id, runIndex: 0, startSegment: 0, sourceOriginMs: 0, nowMs: Date.now() });
+    await recordTranscodeRun(db, { sessionId: id, runIndex: 0, startSegment: 0, sourceOriginMs: 0, nowMs: Date.now() });
+    expect(await listTranscodeRuns(db, id)).toHaveLength(1);
+  });
+
+  it('maps any served segment index to its OWNING run and that run source origin', async () => {
+    const id = await newSession();
+    await recordTranscodeRun(db, { sessionId: id, runIndex: 0, startSegment: 0, sourceOriginMs: 0, nowMs: Date.now() });
+    await recordTranscodeRun(db, { sessionId: id, runIndex: 1, startSegment: 43, sourceOriginMs: 600_000, nowMs: Date.now() });
+    await recordTranscodeRun(db, { sessionId: id, runIndex: 2, startSegment: 51, sourceOriginMs: 120_000, nowMs: Date.now() });
+
+    // Inside run 0.
+    expect(await getTranscodeRunForSegment(db, id, 0)).toEqual({ runIndex: 0, startSegment: 0, sourceOriginMs: 0 });
+    expect(await getTranscodeRunForSegment(db, id, 42)).toEqual({ runIndex: 0, startSegment: 0, sourceOriginMs: 0 });
+    // The first segment of run 1, and one inside it.
+    expect(await getTranscodeRunForSegment(db, id, 43)).toEqual({ runIndex: 1, startSegment: 43, sourceOriginMs: 600_000 });
+    expect(await getTranscodeRunForSegment(db, id, 50)).toEqual({ runIndex: 1, startSegment: 43, sourceOriginMs: 600_000 });
+    // Run 2 is a BACKWARD seek: its source origin is earlier than run 1's,
+    // while its segment numbering still moves forward. Ownership follows
+    // the segment counter, never the source clock — the exact confusion
+    // this table exists to remove.
+    expect(await getTranscodeRunForSegment(db, id, 51)).toEqual({ runIndex: 2, startSegment: 51, sourceOriginMs: 120_000 });
+    expect(await getTranscodeRunForSegment(db, id, 9_999)).toEqual({ runIndex: 2, startSegment: 51, sourceOriginMs: 120_000 });
+  });
+
+  it('returns undefined for a session with no recorded runs, and scopes strictly to one session', async () => {
+    const empty = await newSession();
+    expect(await getTranscodeRunForSegment(db, empty, 0)).toBeUndefined();
+    expect(await listTranscodeRuns(db, empty)).toEqual([]);
+
+    const other = await newSession();
+    await recordTranscodeRun(db, { sessionId: other, runIndex: 0, startSegment: 0, sourceOriginMs: 0, nowMs: Date.now() });
+    expect(await getTranscodeRunForSegment(db, empty, 0)).toBeUndefined();
+  });
+
+  it('rows are removed with their session (real FK, ON DELETE CASCADE)', async () => {
+    const id = await newSession();
+    await recordTranscodeRun(db, { sessionId: id, runIndex: 0, startSegment: 0, sourceOriginMs: 0, nowMs: Date.now() });
+    await rawClient.query(`DELETE FROM playback_sessions WHERE id = $1`, [id]);
+    const { rows } = await rawClient.query(`SELECT 1 FROM transcode_runs WHERE session_id = $1`, [id]);
+    expect(rows).toHaveLength(0);
   });
 });

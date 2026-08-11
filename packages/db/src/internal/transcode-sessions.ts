@@ -196,6 +196,49 @@ export async function consumeSeekTarget(db: DbOrTx, sessionId: string, nowMs: nu
 }
 
 /**
+ * Clears a pending seek target WITHOUT restarting anything — the
+ * "absorb" counterpart to consumeSeekTarget above (process-lifecycle
+ * hardening wave, 2026-08-11, continuation item 1).
+ *
+ * WHY A SECOND FUNCTION rather than a flag on consumeSeekTarget: the two
+ * do genuinely different things to the row. consumeSeekTarget CLAIMS a
+ * target — it bumps `discontinuity_count` and moves `status` to
+ * `seeking`, because a real restart is about to produce a discontinuity in
+ * the served playlist. Absorbing does neither: nothing restarts, the
+ * playlist gains no discontinuity, and the session's status is whatever it
+ * already was. Folding both into one function would mean a boolean that
+ * changes what the row means.
+ *
+ * The redundant-request case it exists for: a client retrying a
+ * 503-retry-after for one too-far-ahead segment makes the server record
+ * the SAME seek target on every retry. The worker is already producing
+ * exactly that position; consuming each repeat killed and respawned the
+ * run before it could ever produce its first segment (a livelock — see
+ * apps/worker/src/transcode/runner.ts's seek block).
+ *
+ * `WHERE seek_target_ms = $expected` is the whole safety property: if a
+ * DIFFERENT target was written between the caller's read and this write,
+ * zero rows match, nothing is cleared, and the caller sees the new target
+ * on its next poll and restarts for it properly. A redundant request is
+ * never able to swallow a real one.
+ */
+export async function absorbSeekTarget(
+  db: DbOrTx,
+  sessionId: string,
+  expectedSeekTargetMs: number,
+  nowMs: number
+): Promise<boolean> {
+  const result = await db
+    .updateTable('playback_sessions')
+    .set({ seek_target_ms: null, updated_at_ms: nowMs })
+    .where('id', '=', sessionId)
+    .where('seek_target_ms', '=', expectedSeekTargetMs)
+    .where('status', 'in', NON_TERMINAL_STATUSES)
+    .executeTakeFirst();
+  return Number(result.numUpdatedRows ?? 0) > 0;
+}
+
+/**
  * Sets `staging_dir` iff it is currently NULL (Phase 3 §11 step 6b,
  * P3.9(e)). Two consumers can independently need this session's staging
  * directory recorded: the transcode runtime's own `markSessionStarting`
@@ -226,6 +269,154 @@ export async function ensureSessionStagingDir(
     .where('status', 'in', NON_TERMINAL_STATUSES)
     .returningAll()
     .executeTakeFirst();
+}
+
+// ---------------------------------------------------------------------------
+// migrations/0041_playback_sessions_worker_process.sql (item C2) — the
+// crash-survival bookkeeping. See that migration's header for the full
+// rationale; the short version is that a hard-killed worker runs no
+// shutdown code, so the only handle left on its orphaned ffmpeg children
+// is what it wrote to the row before it died.
+// ---------------------------------------------------------------------------
+
+export interface RecordSessionWorkerProcessInput {
+  /** The LIVE ffmpeg run's OS pid (apps/worker/src/transcode/process.ts's
+   *  FfmpegRunHandle.pid). Rewritten on every seek-restart, since each
+   *  restart is a new process. */
+  workerPid: number;
+  /** The SUPERVISING WORKER PROCESS's start time — the generation marker
+   *  the boot reaper compares against its own start time. Not the
+   *  ffmpeg's. */
+  workerStartedAtMs: number;
+  nowMs: number;
+}
+
+/**
+ * Records which ffmpeg process, under which worker generation, is
+ * currently driving this session. Guarded off the terminal states like
+ * every other write in this file: a session someone else already closed
+ * out must not acquire a pid that the next boot's reaper would then go
+ * looking for.
+ */
+export async function recordSessionWorkerProcess(
+  db: DbOrTx,
+  sessionId: string,
+  input: RecordSessionWorkerProcessInput
+): Promise<TranscodeSessionRow | undefined> {
+  return db
+    .updateTable('playback_sessions')
+    .set({
+      worker_pid: input.workerPid,
+      worker_started_at_ms: input.workerStartedAtMs,
+      updated_at_ms: input.nowMs,
+    })
+    .where('id', '=', sessionId)
+    .where('status', 'in', NON_TERMINAL_STATUSES)
+    .returningAll()
+    .executeTakeFirst();
+}
+
+export interface ReapableTranscodeSessionRow {
+  id: string;
+  worker_pid: number;
+  worker_started_at_ms: number | null;
+  staging_dir: string | null;
+}
+
+/**
+ * The boot reaper's candidate set (apps/worker/src/transcode/reaper.ts):
+ * every non-terminal session carrying a pid recorded by a worker
+ * generation that started BEFORE `workerStartedBeforeMs` — in practice,
+ * the booting worker's own start time.
+ *
+ * The horizon is a generation marker, not an age: the shipped topology is
+ * one worker per database (worker-liveness.ts embeds the same
+ * assumption), so a session still non-terminal from before this process
+ * existed was orphaned by a dead predecessor no matter how recently it
+ * was touched — exactly the reasoning jobs.ts's `activeStaleBeforeMs`
+ * already uses for the job ledger. A row this process itself wrote
+ * carries this process's own start time and can never qualify.
+ *
+ * Rows with `worker_started_at_ms IS NULL` (a pid recorded before this
+ * column existed — impossible in practice, since both landed in the same
+ * migration, but cheap to be exact about) are treated as belonging to an
+ * unknown, therefore previous, generation.
+ *
+ * Not ViewerContext-scoped, like everything in this directory: the reaper
+ * is instance-level maintenance with no requesting viewer.
+ */
+export async function listReapableTranscodeSessions(
+  db: DbOrTx,
+  input: { workerStartedBeforeMs: number }
+): Promise<ReapableTranscodeSessionRow[]> {
+  const rows = await db
+    .selectFrom('playback_sessions')
+    .select(['id', 'worker_pid', 'worker_started_at_ms', 'staging_dir'])
+    .where('status', 'in', NON_TERMINAL_STATUSES)
+    .where('worker_pid', 'is not', null)
+    .where((eb) =>
+      eb.or([
+        eb('worker_started_at_ms', 'is', null),
+        eb('worker_started_at_ms', '<', input.workerStartedBeforeMs),
+      ])
+    )
+    .execute();
+  return rows.map((row) => ({
+    id: row.id,
+    worker_pid: row.worker_pid as number,
+    worker_started_at_ms: row.worker_started_at_ms,
+    staging_dir: row.staging_dir,
+  }));
+}
+
+// ---------------------------------------------------------------------------
+// migrations/0043_transcode_runs.sql (continuation item 2) — per-run
+// source-origin recording. See that migration's header for why segment
+// indices alone cannot answer "what source position is this?" for any run
+// after the first.
+// ---------------------------------------------------------------------------
+
+export interface RecordTranscodeRunInput {
+  sessionId: string;
+  /** Zero-based, matching the run's `runN` staging subdirectory. */
+  runIndex: number;
+  /** The absolute segment index this run begins numbering at ({START_SEG}). */
+  startSegment: number;
+  /** Where this run starts in the SOURCE timeline: 0 for run 0, the
+   *  consumed (already clamped) seek target for a restart. */
+  sourceOriginMs: number;
+  nowMs: number;
+}
+
+/**
+ * Records one spawned run. Idempotent per `(session_id, run_index)`: a
+ * redelivered 'transcode' job re-spawning run 0 must update the row rather
+ * than fail on the unique constraint or leave a stale origin behind.
+ *
+ * Deliberately NOT guarded on the session's status, unlike every other
+ * write in this file: this is an audit fact about a process that really was
+ * spawned. If the session is closed out in the same instant, the row is
+ * still true, still needed to interpret whatever segments that run wrote
+ * before teardown, and dies with the session anyway (ON DELETE CASCADE).
+ */
+export async function recordTranscodeRun(db: DbOrTx, input: RecordTranscodeRunInput): Promise<void> {
+  await db
+    .insertInto('transcode_runs')
+    .values({
+      session_id: input.sessionId,
+      run_index: input.runIndex,
+      start_segment: input.startSegment,
+      source_origin_ms: input.sourceOriginMs,
+      created_at_ms: input.nowMs,
+    })
+    .onConflict((oc) =>
+      oc.columns(['session_id', 'run_index']).doUpdateSet({
+        start_segment: input.startSegment,
+        source_origin_ms: input.sourceOriginMs,
+        created_at_ms: input.nowMs,
+      })
+    )
+    .execute();
 }
 
 export interface MarkSessionFailedInput {

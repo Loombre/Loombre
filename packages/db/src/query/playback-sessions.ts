@@ -554,8 +554,71 @@ export async function endStalePlaybackSession(db: Kysely<DB>, id: string, nowMs:
     if (current.status === 'ended' || current.status === 'failed') {
       return mapRow(current);
     }
-    return finalizeSession(trx, current, nowMs, { errorCode: 'heartbeat-timeout', reason: 'idle-timeout' });
+    const finalized = await finalizeSession(trx, current, nowMs, { errorCode: 'heartbeat-timeout', reason: 'idle-timeout' });
+    await warnOnOrphanSignature(trx, id);
+    return finalized;
   });
+}
+
+/**
+ * THE ORPHAN SIGNATURE breadcrumb (process-lifecycle hardening wave,
+ * 2026-08-11, item C7).
+ *
+ * Three facts together mean a detached ffmpeg is about to keep running
+ * with nobody watching it: (1) the heartbeat sweeper just ended this
+ * session, (2) the session still names a live pipeline — a `worker_pid`
+ * recorded by migrations/0041 — and (3) a 'transcode' job-ledger row is
+ * still 'active', i.e. some worker believes it is still driving a session.
+ * That combination is exactly the state where the admission slot is
+ * released (countActiveTranscodeSessions counts only non-terminal rows)
+ * while a process is still burning a core.
+ *
+ * apps/worker/src/transcode/reaper.ts cleans this up on the NEXT worker
+ * boot. The point of this log line is to make it visible BEFORE that — in
+ * the logs of the process that caused it, at the moment it happens, with
+ * the pid an operator would need to act on now.
+ *
+ * HONEST LIMITATION, stated rather than hidden: the jobs ledger has no
+ * session_id column (0001_init.sql — it is queue-agnostic and carries only
+ * `subject_item_id`), so fact (3) is an INSTANCE-level check, not a
+ * per-row join to THIS session's job. It can therefore fire when a
+ * different session's transcode job is legitimately active. That is
+ * acceptable for a breadcrumb whose other two facts are exact and
+ * per-session, and whose whole job is to make a rare pathology greppable —
+ * it is deliberately not a metric and nothing keys behavior on it.
+ *
+ * console.warn from the query layer follows the precedent in
+ * src/query/remote-active-path.ts (a system-level operational fact that
+ * has no request to attach itself to). Never throws: a diagnostic must
+ * never be able to fail a sweep.
+ */
+async function warnOnOrphanSignature(trx: Transaction<DB>, sessionId: string): Promise<void> {
+  try {
+    const session = await trx
+      .selectFrom('playback_sessions')
+      .select(['worker_pid', 'staging_dir'])
+      .where('id', '=', sessionId)
+      .executeTakeFirst();
+    if (!session || session.worker_pid === null) return;
+
+    const activeJob = await trx
+      .selectFrom('jobs')
+      .select('id')
+      .where('type', '=', 'transcode')
+      .where('status', '=', 'active')
+      .executeTakeFirst();
+    if (!activeJob) return;
+
+    console.warn(
+      `playback: heartbeat sweeper ended session ${sessionId} while it still named a live transcode ` +
+        `pipeline (ffmpeg pid ${session.worker_pid}, staging ${session.staging_dir ?? 'unknown'}) and a ` +
+        `'transcode' job ledger row is still active. That combination is the orphaned-encoder signature: ` +
+        `the admission slot is now free while the process may still be running. The worker reclaims it at ` +
+        `its next boot (apps/worker/src/transcode/reaper.ts); check the process now if the machine is busy.`,
+    );
+  } catch {
+    /* a diagnostic must never fail the sweep */
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -679,6 +742,79 @@ export async function suspendStalePlaybackSession(db: Kysely<DB>, id: string, no
   if (!row) return undefined;
   const current = await baseSelect(db).where('playback_sessions.id', '=', id).executeTakeFirst();
   return current ? mapRow(current) : undefined;
+}
+
+// ---------------------------------------------------------------------------
+// migrations/0043_transcode_runs.sql — segment index -> source time
+//
+// The reads a server-side consumer needs to interpret a served segment
+// index. Segment numbering is GLOBAL across a session's runs (docs/
+// PLAYBACK.md §9: a seek restart continues the previous run's numbering)
+// while each seek run's own output timeline restarts at zero, because runs
+// are spawned with `-ss` and without `-copyts`. The two are reconnected by
+// the run's recorded source origin, and nothing else can do it: the served
+// playlist's own durations describe PRESENTATION time, which is exactly
+// what diverges.
+//
+// Not ViewerContext-scoped, and deliberately so — matching
+// getMediaFileForPlaybackSession above: authorization for this session was
+// already established by the caller resolving it through
+// getPlaybackSessionForUser, and these are plain lookups keyed by that
+// session id, not a second guard gate. The worker-side WRITER lives in
+// src/internal/transcode-sessions.ts (recordTranscodeRun).
+// ---------------------------------------------------------------------------
+
+export interface TranscodeRunRow {
+  runIndex: number;
+  /** The absolute segment index this run begins numbering at. */
+  startSegment: number;
+  /** Where this run starts in the SOURCE timeline, milliseconds. */
+  sourceOriginMs: number;
+}
+
+/**
+ * The run that owns `segmentIndex` — the one with the greatest
+ * `start_segment` at or below it.
+ *
+ * Ownership follows the SEGMENT COUNTER, never the source clock: a
+ * backward seek starts a later run at an EARLIER source origin, so
+ * `source_origin_ms` is not monotonic across a session's runs and ordering
+ * by it would hand back the wrong run. `start_segment` is the only
+ * monotonic key, which is why the index is on it.
+ *
+ * Returns `undefined` when the session has no recorded runs (a direct-play
+ * session, a session whose pipeline never started, or one predating
+ * migration 0043) — callers should treat that as "no source anchor
+ * available", never as "origin 0".
+ */
+export async function getTranscodeRunForSegment(
+  db: Kysely<DB>,
+  sessionId: string,
+  segmentIndex: number
+): Promise<TranscodeRunRow | undefined> {
+  const row = await db
+    .selectFrom('transcode_runs')
+    .select(['run_index', 'start_segment', 'source_origin_ms'])
+    .where('session_id', '=', sessionId)
+    .where('start_segment', '<=', segmentIndex)
+    .orderBy('start_segment', 'desc')
+    .limit(1)
+    .executeTakeFirst();
+  if (!row) return undefined;
+  return { runIndex: row.run_index, startSegment: row.start_segment, sourceOriginMs: row.source_origin_ms };
+}
+
+/** Every recorded run for a session, in run order — the whole segment->
+ *  source map in one read, for a caller that needs to interpret more than
+ *  a single index (rendering a playlist, reconstructing a resume point). */
+export async function listTranscodeRuns(db: Kysely<DB>, sessionId: string): Promise<TranscodeRunRow[]> {
+  const rows = await db
+    .selectFrom('transcode_runs')
+    .select(['run_index', 'start_segment', 'source_origin_ms'])
+    .where('session_id', '=', sessionId)
+    .orderBy('run_index', 'asc')
+    .execute();
+  return rows.map((row) => ({ runIndex: row.run_index, startSegment: row.start_segment, sourceOriginMs: row.source_origin_ms }));
 }
 
 // ---------------------------------------------------------------------------
