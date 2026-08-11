@@ -25,9 +25,10 @@
 // stroke="currentColor"/fill="none"; they're `fill="currentColor"`
 // polygons/rects throughout, every size, every screen).
 //
-// `text` elements (the seek glyphs' baked-in "15"/"30" numerals, iOS
-// gobackward.15/goforward.30 convention) are always rendered fill-only
-// regardless of the glyph's own variant — the wrapper hardcodes
+// `text` elements (the seek glyphs' baked-in numerals — LD-12(c) owner fix,
+// 2026-08-10, moved the transport skip amount to 10s BOTH directions; was
+// the iOS gobackward.15/goforward.30 convention) are always rendered
+// fill-only regardless of the glyph's own variant — the wrapper hardcodes
 // fill="currentColor" stroke="none" on every <text>, matching the
 // prototype's own explicit per-element override.
 
@@ -44,8 +45,8 @@ export type PhosphorIconName =
   | "unlock"
   | "play"
   | "pause"
-  | "seekBack15"
-  | "seekForward30"
+  | "seekBack10"
+  | "seekForward10"
   | "reset"
   | "skipBack"
   | "skipForward";
@@ -140,9 +141,15 @@ export const PHOSPHOR_ICONS: Record<PhosphorIconName, PhosphorIconDef> = {
     elements: [rect(5, 11, 14, 9, 1.5), path("M8 11 V7 a4 4 0 0 1 8 0")],
   },
 
-  // ── Player transport (README "Player": play/pause, back-15/forward-30
-  // with numerals baked into the glyph per iOS gobackward.15/goforward.30)
-  // — filled style, matching the prototype's own play/pause everywhere. ──
+  // ── Player transport (README "Player": play/pause, back-10/forward-10 —
+  // LD-12(c) owner fix, 2026-08-10, replaced the old back-15/forward-30
+  // pair with a symmetric ±10s, numerals baked into the glyph per iOS
+  // gobackward.10/goforward.10) — filled style, matching the prototype's
+  // own play/pause everywhere. seekBack10/seekForward10 reuse the exact
+  // same arc+arrowhead construction (viewBox, stroke, mirrored direction)
+  // as the old seekBack15/seekForward30 they replace — only the baked-in
+  // numeral text changed, since the arc/arrowhead encode DIRECTION, not
+  // amount. ──────────────────────────────────────────────────────────────
   play: {
     variant: "fill",
     elements: [path("M6 4 L20 12 L6 20 Z")],
@@ -151,11 +158,11 @@ export const PHOSPHOR_ICONS: Record<PhosphorIconName, PhosphorIconDef> = {
     variant: "fill",
     elements: [rect(6, 4, 4.5, 16, 1), rect(13.5, 4, 4.5, 16, 1)],
   },
-  seekBack15: {
-    elements: [path("M12 4.9 a7.1 7.1 0 1 1 -6.6 4.5"), path("M4.1 3.9 L5.5 9.6 L11.1 8.1"), text(12, 15.2, "15")],
+  seekBack10: {
+    elements: [path("M12 4.9 a7.1 7.1 0 1 1 -6.6 4.5"), path("M4.1 3.9 L5.5 9.6 L11.1 8.1"), text(12, 15.2, "10")],
   },
-  seekForward30: {
-    elements: [path("M12 4.9 a7.1 7.1 0 1 0 6.6 4.5"), path("M19.9 3.9 L18.5 9.6 L12.9 8.1"), text(12, 15.2, "30")],
+  seekForward10: {
+    elements: [path("M12 4.9 a7.1 7.1 0 1 0 6.6 4.5"), path("M19.9 3.9 L18.5 9.6 L12.9 8.1"), text(12, 15.2, "10")],
   },
 
   // ── Admin registry "reset to default" (SettingField/SettingsCategoryCard)
