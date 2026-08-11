@@ -12,26 +12,22 @@
 // line (version + uptime only) doesn't make this card redundant: this is
 // the FULL fact set (OS/tier/node too), not a duplicate of that compact
 // readout.
+//
+// Item 7 (an upstream media server-study Wave A, /system/info triple-fetch): used to run
+// its own independent useEffect + apiGet — one of three call sites racing
+// the same request on every Dashboard load (see lib/system-info.ts's
+// header). Now subscribes to the shared useSystemInfo() data layer.
 
-import { useEffect, useState } from "react";
-import type { components } from "@loombre/sdk";
 import { Card } from "../../ui/Card.js";
 import { Skeleton } from "../../skeleton/Skeleton.js";
 import { formatOsLabel } from "../../../lib/os-label.js";
-import { apiGet, LoombreApiError } from "../../../lib/api-client.js";
+import { LoombreApiError } from "../../../lib/api-client.js";
+import { useSystemInfo } from "../../../lib/system-info.js";
 import styles from "./system-cards.module.css";
 
-type SystemInfo = components["schemas"]["SystemInfo"];
-
 export function SystemInfoCard(): React.JSX.Element {
-  const [info, setInfo] = useState<SystemInfo | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    apiGet("/system/info")
-      .then(setInfo)
-      .catch((err) => setError(err instanceof LoombreApiError ? err.message : "Failed to load system info."));
-  }, []);
+  const { info, error: rawError } = useSystemInfo();
+  const error = rawError ? (rawError instanceof LoombreApiError ? rawError.message : "Failed to load system info.") : null;
 
   return (
     <Card>
