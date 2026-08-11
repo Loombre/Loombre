@@ -747,6 +747,53 @@ describe('recordActiveRungIndex (worker-written, every spawn)', () => {
     await markSessionFailed(db, id, { errorCode: 'transcode-failed', stderrTail: '', nowMs: Date.now() });
     expect(await recordActiveRungIndex(db, id, 1, Date.now())).toBeUndefined();
   });
+
+  // SELF-CLEARING THE ALREADY-SATISFIED REQUEST (pre-D consolidation item
+  // 3c, C2 review finding f5). `pending_rung_index` can end up naming the
+  // rung that is now LIVE, and once it does nothing ever clears it: the
+  // worker's restart block only reacts to a pending rung that DIFFERS from
+  // the running one (docs/PLAYBACK.md §9.1.7's `switchPending`), so an
+  // equal value is skipped on every tick, forever.
+  //
+  // It arises from a real, narrow window: the worker consumes the pending
+  // rung and only then records the new active one, so a `v{K}` GET landing
+  // between those two writes still sees the OLD active rung, passes
+  // requestRungSwitch's absorb-on-match, and re-writes the very rung the
+  // worker is at that moment spawning.
+  //
+  // Harmless to playback — but the row then says a switch is pending when
+  // none is, which is a lie to `GET /playback/sessions/{id}` and to anyone
+  // reading the row during an incident. The spawn write is the natural
+  // clearing site: it is the moment the request became satisfied, it
+  // already touches this row, and it costs no extra statement.
+  it('clears a pending request that names the rung being recorded — it is satisfied by this very spawn', async () => {
+    const id = await newSession();
+    await rawClient.query(`UPDATE playback_sessions SET pending_rung_index = 2 WHERE id = $1`, [id]);
+
+    const row = await recordActiveRungIndex(db, id, 2, Date.now());
+    expect(row?.active_rung_index).toBe(2);
+    expect(row?.pending_rung_index).toBeNull();
+  });
+
+  it('LEAVES a pending request naming a DIFFERENT rung alone — that one is still owed a handoff', async () => {
+    const id = await newSession();
+    await rawClient.query(`UPDATE playback_sessions SET pending_rung_index = 1 WHERE id = $1`, [id]);
+
+    // The worker is spawning rung 2 (whatever it consumed a moment ago);
+    // the client has since asked for rung 1, and that request must survive
+    // to the next poll tick exactly like consumePendingRungIndex's own
+    // compare-and-clear guarantees.
+    const row = await recordActiveRungIndex(db, id, 2, Date.now());
+    expect(row?.active_rung_index).toBe(2);
+    expect(row?.pending_rung_index).toBe(1);
+  });
+
+  it('rung 0 self-clears too (0 is a real rung, never confused with "nothing pending")', async () => {
+    const id = await newSession();
+    await rawClient.query(`UPDATE playback_sessions SET pending_rung_index = 0 WHERE id = $1`, [id]);
+    const row = await recordActiveRungIndex(db, id, 0, Date.now());
+    expect(row?.pending_rung_index).toBeNull();
+  });
 });
 
 describe('consumePendingRungIndex (compare-and-clear, §9.1.3)', () => {
