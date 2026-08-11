@@ -1085,6 +1085,41 @@ if [ -n "\${LOOMBRE_DATA_DIR:-}" ]; then
 fi
 `;
 
+  // LOOMBRE_LOG_FILE (LD-11, this implementation run's lane B3):
+  // GET /admin/logs/tail (apps/server/src/catalog/admin-logs-tail.ts) reads
+  // this to serve the Dashboard's log-tail card. systemd's default
+  // StandardOutput (unset here — installers/linux/systemd/*.template never
+  // overrides it) is the JOURNAL, not a file, and journalctl is the
+  // extensively documented Linux troubleshooting path (docs/ops/systemd.md,
+  // docs/install/linux.md, docs/install/troubleshooting.md all point
+  // operators at `journalctl -u loombre-<name>`) — switching StandardOutput
+  // to `append:<path>` would silently break that. Instead this block
+  // duplicates the process's own stdout+stderr to a real file WITHOUT
+  // touching the systemd unit at all: `exec > >(tee -a "$LOOMBRE_LOG_FILE")
+  // 2>&1` keeps the original fd (still captured by systemd -> journal)
+  // flowing through tee's pass-through side, then the wrapper's own final
+  // `exec "$NODE_BIN" ...` (unchanged, below) replaces THIS shell with node
+  // — since `exec` preserves the process's pid across the image swap, node
+  // becomes systemd's tracked main pid directly, so `systemctl stop`'s
+  // SIGTERM (TimeoutStopSec=30) still reaches node with no shell in the
+  // way. Same verified-safe shape as docker-compose.prod.yml's `server`/
+  // `worker` command overrides (real tini+bash+node scratch test, see this
+  // lane's exit report) — systemd's own direct-child pid tracking gives the
+  // identical guarantee tini's does. Relative path: the common block above
+  // already `cd`s into LOOMBRE_DATA_DIR when set (systemd's own
+  // WorkingDirectory= does the same under the unit), so `logs/<name>.log`
+  // lands under the data dir — the one writable path under
+  // ProtectSystem=strict + ReadWritePaths=<data dir>
+  // (installers/linux/systemd/*.template) — without hardcoding it twice.
+  // No-DATA_DIR manual invocation falls back to the caller's own cwd,
+  // mirroring AnomalyLogService's identical LOOMBRE_DATA_DIR-then-cwd
+  // fallback (apps/server/src/common/anomaly-log.service.ts).
+  const logRedirectBlock = (logName) => `: "\${LOOMBRE_LOG_FILE:=logs/${logName}}"
+export LOOMBRE_LOG_FILE
+mkdir -p "$(dirname "\${LOOMBRE_LOG_FILE}")"
+exec > >(tee -a "\${LOOMBRE_LOG_FILE}") 2>&1
+`;
+
   // Embedded-PostgreSQL wiring for the SERVER wrapper only (installer
   // completeness audit, gap 2) — mirrors the macOS shim
   // (installers/macos/pkg/bin/loombre-server), the reference for correct
@@ -1128,11 +1163,11 @@ fi
 
   writeFileSync(
     join(binDir, "loombre-server"),
-    common + serverEmbeddedWiring + `exec "\${NODE_BIN}" "\${APP_ROOT}/lib/server/dist/main.js" "$@"\n`,
+    common + serverEmbeddedWiring + logRedirectBlock("server.log") + `exec "\${NODE_BIN}" "\${APP_ROOT}/lib/server/dist/main.js" "$@"\n`,
   );
   writeFileSync(
     join(binDir, "loombre-worker"),
-    common + `exec "\${NODE_BIN}" "\${APP_ROOT}/lib/worker/dist/index.js" "$@"\n`,
+    common + logRedirectBlock("worker.log") + `exec "\${NODE_BIN}" "\${APP_ROOT}/lib/worker/dist/index.js" "$@"\n`,
   );
 
   // bin/loombre-web (installer completeness audit, gap 3): runs the web
@@ -1152,7 +1187,7 @@ fi
 export PORT="\${LOOMBRE_WEB_PORT:-3000}"
 export HOSTNAME="0.0.0.0"
 export LOOMBRE_SERVER_ORIGIN="\${LOOMBRE_SERVER_ORIGIN:-http://localhost:3001}"
-exec "\${NODE_BIN}" "\${APP_ROOT}/web/apps/web/server.js" "$@"
+` + logRedirectBlock("web.log") + `exec "\${NODE_BIN}" "\${APP_ROOT}/web/apps/web/server.js" "$@"
 `;
   writeFileSync(join(binDir, "loombre-web"), webWrapper);
 

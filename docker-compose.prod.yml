@@ -71,11 +71,35 @@ services:
       target: runtime
     image: ${LOOMBRE_IMAGE:-loombre:latest}
     restart: unless-stopped
-    # Default CMD from the Dockerfile (node apps/server/dist/main.js).
+    # LD-11 (this implementation run's lane B3): overrides the
+    # Dockerfile's default CMD (plain `node apps/server/dist/main.js`) so
+    # GET /admin/logs/tail (apps/server/src/catalog/admin-logs-tail.ts) has
+    # a real file to read — unlike macOS/Windows, nothing in the container
+    # supervision stack otherwise writes this process's stdout to a file
+    # (Docker's own log driver captures it, but that's on the HOST, outside
+    # the container's own filesystem, unreachable from the admin API).
+    # `bash -c 'exec > >(tee -a ...) 2>&1 && exec node ...'` duplicates
+    # stdout+stderr to BOTH the original destination (still visible via
+    # `docker compose logs server`, the documented troubleshooting path —
+    # docs/install/docker.md) and the file, THEN execs node so it directly
+    # replaces the shell as tini's tracked child (ENTRYPOINT ["tini", "--"]
+    # in the Dockerfile) — `exec` preserves the process's PID across the
+    # image swap, so tini's SIGTERM-forwarding-on-`docker stop` still
+    # reaches node directly with no shell in between, exactly the property
+    # tini exists for. Verified empirically (scratch image, never
+    # committed): the child observed by tini IS node's own pid, `docker
+    # logs` and the tee'd file carry identical content, and `docker stop`
+    # delivers SIGTERM to node with no added delay. `/data/logs` already
+    # exists at image build time (Dockerfile's `mkdir -p /data/transcode
+    # /data/logs /data/config`) — this repeats `mkdir -p` defensively in
+    # case a future image build ever drops that, at negligible cost.
+    command: >-
+      bash -c "mkdir -p /data/logs && exec > >(tee -a /data/logs/server.log) 2>&1 && exec node apps/server/dist/main.js"
     depends_on:
       postgres:
         condition: service_healthy
     environment:
+      LOOMBRE_LOG_FILE: /data/logs/server.log
       # Assembled from POSTGRES_USER/PASSWORD/DB below with NO URI-encoding —
       # a password containing '/', '?', '#', '%', or '@' will corrupt this
       # URI (silently, for '%') and the container will fail to reach
@@ -156,7 +180,15 @@ services:
       target: runtime
     image: ${LOOMBRE_IMAGE:-loombre:latest}
     restart: unless-stopped
-    command: ["node", "apps/worker/dist/index.js"]
+    # LD-11: same tee-based dual-output rationale as `server` above,
+    # replacing this service's existing plain command override rather than
+    # the Dockerfile's CMD (which `server` overrides instead). Worker has
+    # no admin API of its own to serve a log-tail card from (LOOMBRE_LOG_FILE
+    # is only read by apps/server), but gets a real log file for the same
+    # reasons this env var is set consistently on every process across the
+    # macOS/Windows shapes.
+    command: >-
+      bash -c "mkdir -p /data/logs && exec > >(tee -a /data/logs/worker.log) 2>&1 && exec node apps/worker/dist/index.js"
     depends_on:
       postgres:
         condition: service_healthy
@@ -164,6 +196,7 @@ services:
       # Same DATABASE_URL assembly (and the same escape hatch) as `server`
       # above — server and worker must agree, so keep both in sync.
       DATABASE_URL: ${DATABASE_URL:-postgres://${POSTGRES_USER:-loombre}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}@postgres:5432/${POSTGRES_DB:-loombre}}
+      LOOMBRE_LOG_FILE: /data/logs/worker.log
       LOOMBRE_TIER: ${LOOMBRE_TIER:-}
       LOOMBRE_SCAN_CONCURRENCY: ${LOOMBRE_SCAN_CONCURRENCY:-}
       LOOMBRE_TRANSCODE_WORKER_CONCURRENCY: ${LOOMBRE_TRANSCODE_WORKER_CONCURRENCY:-}
