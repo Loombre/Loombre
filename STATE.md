@@ -1035,6 +1035,35 @@ unreachability attack, 4 mutations incl. the leg-4-pin question, -maxrate
 amendment judgment, contract atomicity, Tier-0 arithmetic, honesty-table
 audit).
 
+**C1 FABLE REVIEW (2026-08-11): ACCEPT** (+1 comment-only review-fix
+a6e26655; merged to main 6de8fce0). Evidence: unreachability HELD under a
+5,000-sample randomized attack over a LARGER space than property 5's
+(hw-av1 caps allowed) + deterministic corner probes (tier-cap keep-lowest
+rescue, duplicate-drop, targetCodec-from-final-ladder all safe). Mutations:
+(a) tier-check neutered → 8 named unit + matrix 521/523 fail; (b) Stage-G
+guard removed → 3 named + matrix 526 fail — the feared unpinned-redundancy
+scenario does NOT materialize, per-leg pins are real; (a)+(b) → property 5
+falsifies (bottom net real); (c) -maxrate restored → fence + golden 40 +
+named builder test fail (three layers); (d) registry drop → 4 named fail.
+-maxrate amendment APPROVED (reproduced on real SVT-AV1 v4.1.0; +27/−3
+minimal; scoping pinned by builder.spec:819 + golden 39). Property-5
+non-vacuity measured real (364/1000 actual demotions). Contract clean
+(6 warn/0 err reproduced; half-landed analysis: coherence machine-enforced;
+D2 narrowing REMOVES the old-client hazard). Tier-0: zero workload increase
+(N100 ladder byte-identical, pinned). Honesty table verified genuine (T0
+refusal runs the REAL probe battery with loud-fail-on-capable-hardware).
+THREE NON-BLOCKING FINDINGS → owner decision pending: (1) MODERATE
+spec-gap-with-repro: Tier-1+ rule-(iii) route-collapse can keep av1 rungs
+whose SOFTWARE encode was never probe-verified (impl faithfully matches
+§7.2; violates design law 4 verified-capabilities-only; low likelihood —
+needs an ffmpeg with hw-av1 but no libsvtav1; vendored builds always carry
+it) — suggested one-clause refinement: demote av1 on any rule-(iii) route
+whose software row lacks verified av1; (2) LOW: randomized companion
+property for leg 4 (validated green on real engine, failing under mutation
+b — §10 list is owner-signed, so recommend-not-land); (3) LOW: worker
+probe-table ↔ engine encoder-name mirroring is comment-enforced only —
+cheap closure: export VIDEO_ENCODER_NAMES + worker equality spec.
+
 ### Wave B — CLOSED 2026-08-11 (exit gate MET)
 
 Integration: four branches merged (B2 → B4 → B1 → B3, zero manual conflict
