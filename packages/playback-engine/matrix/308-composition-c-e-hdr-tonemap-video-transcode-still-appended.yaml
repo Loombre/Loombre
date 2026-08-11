@@ -2,6 +2,20 @@ name: "transcode — composition C+E: HDR tone-map (Stage B copies!) + IMAGE (pg
 why: >
   hevc-sdr's hevc entry accommodates this stream on every Stage B axis (main10/153/4K60/10bit), so Stage B's OWN verdict is 'direct-play' (copy) — Stage C escalates independently (source hdr10, device hdr10:false) -> hdr-tone-map-required. pgs burns in (hevc-sdr's renderImage is false). Binding interpretation constraint 6 gates video-transcode-for-subtitle-burn-in on STAGE B's verdict alone, not the eventual aggregate video.action — so even though video.action will end up 'transcode' anyway (via Stage C), the reason still fires because Stage B itself never independently decided a re-encode was needed. full-hw's hardware tone-map avoids an additional tone-map-refused-by-policy reason. why (Phase 3 §11 step 3, Stage G arrival, STATE.md P3.2 regression law): this case's caps fixture verifies a real hardware backend for the selected stream's codec + surviving ladder targets, so Stage G now selects it (`hw-encoder-selected:nvenc`).
 
+  Wave C2 / §7.5 step (h) CHURN (regression law, §10). This case's own
+  arithmetic: the FINAL Tier-0 ladder had 4 rungs, more than
+  TIER0_MAX_ADVERTISED_VARIANTS (3), so the ADVERTISED set — which §9.1's
+  master playlist enumerates verbatim — is trimmed to top 1080p@4000000 +
+  geometric-mid 480p@1500000 + floor 360p@800000. The geometric mean of
+  4000000 and 800000 is ~1788854 bps, and 1500000 is the surviving
+  candidate nearest it in log space. Dropped: 720p@3000000. One
+  informational `ladder-variant-capped` fires (single-firing,
+  owner-decision V2) with every dropped rung in its detail, LAST in the
+  reason list because step (h) runs after Stage G. decision, container,
+  video.* and ffmpegArgs are UNCHANGED — the keep rule's first clause is
+  "keep the top rung", which is the only rung `video.targetCodec` and the
+  initially-encoded pipeline ever read.
+
 input:
   media:
     fileId: file-0308
@@ -58,4 +72,5 @@ expect:
     - subtitle-format-requires-burn-in
     - video-transcode-for-subtitle-burn-in
     - hw-encoder-selected:nvenc
+    - ladder-variant-capped
   subtitleStrategy: burn-in

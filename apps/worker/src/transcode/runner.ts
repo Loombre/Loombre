@@ -16,12 +16,14 @@ import { join } from "node:path";
 import type { DbOrTx } from "@loombre/db/internal";
 import {
   absorbSeekTarget,
+  consumePendingRungIndex,
   consumeSeekTarget,
   getMediaFileById,
   getTranscodeSessionRow,
   markSessionActive,
   markSessionFailed,
   markSessionStarting,
+  recordActiveRungIndex,
   recordSessionWorkerProcess,
   recordTranscodeRun,
   updateProducedSegment,
@@ -37,7 +39,7 @@ import {
   resolveTranscodePollIntervalMs,
   resolveTranscodeStagingRoot,
 } from "./config.js";
-import { InvalidStoredPlanError, parseStoredPlan, type StoredPlan } from "./plan-shape.js";
+import { InvalidStoredPlanError, parseStoredPlan, topRungOf, type StoredPlan } from "./plan-shape.js";
 import {
   applyRunUpdate,
   emptyServedPlaylistState,
@@ -45,6 +47,7 @@ import {
   parseFfmpegPlaylist,
   pruneRetention,
   renderServedPlaylist,
+  servedPlaylistHasEnded,
   type ServedPlaylistState,
 } from "./playlist.js";
 import { spawnFfmpegRun, type FfmpegRunHandle, type SpawnFn } from "./process.js";
@@ -125,6 +128,11 @@ interface CurrentRun {
   /** This runtime's own tracked physical suspend state (process.ts's
    *  header — there is no queryable "is this pid stopped" OS API). */
   processStopped: boolean;
+  /** Which rung of the stored plan's ladder this run is encoding (Wave C2,
+   *  docs/PLAYBACK.md §9.1.3). `undefined` for a ladder-empty session,
+   *  where no rung applies at all — never defaulted to 0, which is a real
+   *  rung. */
+  ladderRungIndex: number | undefined;
   /** Idempotent removal from the process-wide live-run registry
    *  (run-registry.ts, item C1) — called from this run's own exit handler
    *  AND from whichever path replaced/tore it down, whichever happens
@@ -233,7 +241,27 @@ export async function runTranscodeSession(deps: RunSessionDeps, sessionId: strin
     return args;
   }
 
-  async function spawnRun(runIndex: number, startSeg: number, args: string[], seekTargetMs?: number): Promise<CurrentRun> {
+  // Wave C2 (§9.1.3): the rung run 0 encodes. `plan()`'s own `ffmpegArgs`
+  // target the ladder's TOP rung, so the initial spawn's rung is that
+  // rung's INDEX — the same index §9.1.1's master playlist publishes it
+  // under, which is what makes a client's `v{K}` comparable to
+  // `active_rung_index` at all. `undefined` for a ladder-empty session
+  // (direct-stream copy, audio-only transcode): no rung applies, and 0
+  // would be a lie about a real rung.
+  const initialRungIndex = ((): number | undefined => {
+    const top = topRungOf(plan.ladder);
+    if (top === undefined) return undefined;
+    const index = plan.ladder.indexOf(top);
+    return index >= 0 ? index : undefined;
+  })();
+
+  async function spawnRun(
+    runIndex: number,
+    startSeg: number,
+    args: string[],
+    seekTargetMs?: number,
+    ladderRungIndex?: number,
+  ): Promise<CurrentRun> {
     const runDir = await createRunDir(stagingRoot, sessionDir, runIndex);
     const substituted = substituteTokens(args, {
       input: file!.path,
@@ -262,8 +290,22 @@ export async function runTranscodeSession(deps: RunSessionDeps, sessionId: strin
       runIndex,
       startSegment: startSeg,
       sourceOriginMs: seekTargetMs ?? 0,
+      // Wave C2 (migration 0044): WHICH rung this run encoded, so a
+      // session's run history says not just where each run started but at
+      // what quality. Omitted (-> NULL) for a ladder-empty session.
+      ...(ladderRungIndex !== undefined ? { ladderRungIndex } : {}),
       nowMs: now(),
     }).catch(() => undefined);
+    // §9.1.3: the row must always name the rung that is REALLY running —
+    // the server decides whether an incoming `v{K}` GET is a switch signal
+    // by comparing K against this column, so a stale value would either
+    // miss a real switch or manufacture a phantom one. Written at every
+    // spawn, exactly like `worker_pid` below and for the same reason.
+    // Best-effort: a failure here must never take down an otherwise-fine
+    // session (the worst case is one redundant handoff).
+    if (ladderRungIndex !== undefined) {
+      await recordActiveRungIndex(db, sessionId, ladderRungIndex, now()).catch(() => undefined);
+    }
     // Item C1: publish the live handle BEFORE anything can await, so a
     // shutdown signal arriving between the spawn and the next poll tick
     // still finds this process to terminate. ffmpeg is spawned detached on
@@ -295,6 +337,7 @@ export async function runTranscodeSession(deps: RunSessionDeps, sessionId: strin
       sourceOriginMs: seekTargetMs ?? 0,
       producedMs: 0,
       headPruned: false,
+      ladderRungIndex,
     };
     void handle.result.then((r) => {
       run.exited = true;
@@ -306,7 +349,56 @@ export async function runTranscodeSession(deps: RunSessionDeps, sessionId: strin
     return run;
   }
 
-  let currentRun = await spawnRun(0, 0, plan.ffmpegArgs);
+  let currentRun = await spawnRun(0, 0, plan.ffmpegArgs, undefined, initialRungIndex);
+
+  /**
+   * THE one restart path — shared by a seek, a §9.1.4 slot handoff, and the
+   * §9.1.7 coincident pair. Kill the live run, wait for its OBSERVED exit,
+   * rebuild args for `ladderRungIndex`, spawn at `startSeg` with
+   * `originMs`. Returns false when the session was failed and the caller
+   * must stop driving it.
+   *
+   * The sequencing is what makes §9.1.4's PROCESS-CENSUS INVARIANT ("at
+   * every instant a session has <= 1 live ffmpeg") structural rather than
+   * policed: `terminate()` resolves only on observed exit, and the spawn is
+   * strictly after that `await`. There is no code path that can start a
+   * second encoder while the first is alive — not "forbidden", but
+   * inexpressible.
+   */
+  async function restartAt(
+    nextIndex: number,
+    startSeg: number,
+    originMs: number,
+    ladderRungIndex: number | undefined,
+  ): Promise<boolean> {
+    try {
+      await currentRun.handle.terminate();
+      currentRun.unregister();
+      const args = await rebuildSeekArgs(db, {
+        fileId: sessionRow!.file_id!,
+        deviceId: sessionRow!.device_id ?? "",
+        plan,
+        ...(ladderRungIndex !== undefined ? { ladderRungIndex } : {}),
+      });
+      currentRun = await spawnRun(nextIndex, startSeg, args, originMs, ladderRungIndex);
+      return true;
+    } catch (err) {
+      // A restart that cannot even regenerate args (e.g. the device/file
+      // can no longer be resolved, rebuild-args.ts's SeekRebuildError) is a
+      // real, unrecoverable pipeline failure — never a silently-stuck
+      // 'seeking' row. §9.1.4's failure table, row 1: old process dead, new
+      // never started, session -> failed -> terminal -> the admission slot
+      // frees only via that terminal status, and the client's existing
+      // fatal path surfaces it.
+      await markSessionFailed(db, sessionId, {
+        errorCode: "transcode-failed",
+        stderrTail: err instanceof Error ? err.message : String(err),
+        nowMs: now(),
+      });
+      await deleteSessionDir(stagingRoot, sessionDir).catch(() => undefined);
+      return false;
+    }
+  }
 
   async function teardown(): Promise<void> {
     await currentRun.handle.terminate().catch(() => undefined);
@@ -335,9 +427,39 @@ export async function runTranscodeSession(deps: RunSessionDeps, sessionId: strin
       return;
     }
 
+    // PRUNE-FREEZE (Wave C2, §9.1.5 rule 4), decided BEFORE this tick's
+    // fold — and that ordering is the whole fix of the C2-review
+    // fold-resurrect defect. `applyRunUpdate` REPLACES the current run's
+    // segment list with a full re-parse of ffmpeg's own APPEND-ONLY per-run
+    // playlist, so every fold re-adds segments retention already pruned
+    // (and whose files were already unlinked); in steady state that is
+    // invisible only because the prune below re-removes them on the same
+    // tick, after the fold. Gating the prune on the POST-fold ended state
+    // therefore skipped exactly the step that keeps the fold honest, on
+    // exactly the tick ENDLIST first appears: the frozen playlist was
+    // rendered WITH its pruned head resurrected — listing files deleted
+    // from disk, and collapsing EXT-X-MEDIA-SEQUENCE back to 0 (a backward
+    // media-sequence jump RFC 8216 §6.2.2 forbids). Under the real
+    // throttle ENDLIST only ever appears after the viewer has watched to
+    // the end — long after the head was first pruned — so this fired on
+    // essentially every completed watch of >~2-minute content.
+    //
+    // Frozen ⇔ the last FOLDED run is the CURRENT run and its own playlist
+    // carried ENDLIST at the previous fold. So the ENDLIST-arrival tick
+    // itself still folds and still prunes — reconciling served state with
+    // what retention already deleted BEFORE the first frozen serve (the
+    // final cutoff is a superset of every earlier one, so nothing the
+    // frozen playlist lists can be missing from disk) — and every later
+    // tick leaves state, disk, and the served file untouched. A
+    // post-ENDLIST seek/switch (rule 5) bumps `currentRun.index`, the
+    // run-index conjunct goes false, and folding/pruning resume for the
+    // new run exactly as before.
+    const lastFoldedRunIndex = servedState.runs[servedState.runs.length - 1]?.runIndex;
+    const playlistFrozen = servedPlaylistHasEnded(servedState) && lastFoldedRunIndex === currentRun.index;
+
     // Fold this run's own playlist into served state + advance
     // produced_segment (observability + throttle input, docs/PLAYBACK.md §9).
-    const runPlaylistText = await readRunPlaylist(currentRun.dir);
+    const runPlaylistText = playlistFrozen ? undefined : await readRunPlaylist(currentRun.dir);
     if (runPlaylistText !== undefined) {
       const parsed = parseFfmpegPlaylist(runPlaylistText);
       servedState = applyRunUpdate(servedState, currentRun.index, `run${currentRun.index}`, parsed);
@@ -358,7 +480,26 @@ export async function runTranscodeSession(deps: RunSessionDeps, sessionId: strin
       }
 
       // Retention pruning (binding constraint 5) + served-playlist rewrite.
-      const pruned = pruneRetention(servedState, SEGMENT_RETENTION_SEC, currentRun.index);
+      //
+      // PRUNE-FREEZE (Wave C2, §9.1.5 rule 4): once the served playlist
+      // carries a terminal `EXT-X-ENDLIST`, pruning CEASES for this
+      // session. RFC 8216 is explicit that a playlist which has ended must
+      // not change, and removing its head is a change — a client that has
+      // stopped polling would find its already-parsed fragments gone from
+      // disk with no signal that anything moved. Disk stays bounded
+      // regardless: at ENDLIST no new segments are produced either, so the
+      // residual is at most one retention window (§9.1.8), reclaimed at
+      // session teardown exactly as always. Tier-0 lens: this strictly
+      // REDUCES steady-state I/O after a stream ends.
+      //
+      // Gated on the PRE-fold `playlistFrozen`, not the post-fold ended
+      // state — the ENDLIST-arrival tick must still prune, or the fold's
+      // re-add of already-pruned segments survives into the frozen
+      // playlist (the fold-resurrect defect; the predicate's own comment
+      // above has the full story).
+      const pruned = playlistFrozen
+        ? { nextState: servedState, segmentsToDelete: [], runDirsToDelete: [] }
+        : pruneRetention(servedState, SEGMENT_RETENTION_SEC, currentRun.index);
       servedState = pruned.nextState;
       // Once any of the CURRENT run's own segments has been pruned, its
       // produced window no longer starts at its origin — the head is gone
@@ -387,19 +528,51 @@ export async function runTranscodeSession(deps: RunSessionDeps, sessionId: strin
       // existing destination on Windows too (MOVEFILE_REPLACE_EXISTING),
       // so readers now see either the previous complete playlist or the
       // next one — never a torn state.
-      const playlistPath = join(sessionDir, "media.m3u8");
-      const playlistTmpPath = `${playlistPath}.tmp`;
-      await writeFile(playlistTmpPath, renderServedPlaylist(servedState), "utf8");
-      await rename(playlistTmpPath, playlistPath);
+      // A FROZEN playlist is also never rewritten: the ENDLIST-bearing
+      // render was written once, on the tick ENDLIST first appeared, and
+      // an ended playlist must not change (§9.1.5 rule 4). Re-writing the
+      // same bytes every tick would be harmless but is pointless I/O on a
+      // Tier-0 box.
+      if (!playlistFrozen) {
+        const playlistPath = join(sessionDir, "media.m3u8");
+        const playlistTmpPath = `${playlistPath}.tmp`;
+        await writeFile(playlistTmpPath, renderServedPlaylist(servedState), "utf8");
+        await rename(playlistTmpPath, playlistPath);
+      }
     }
 
-    // Seek-restart (binding constraint 5) takes priority over throttle —
-    // a viewer explicitly seeking should never be blocked by an
-    // in-progress throttle reconciliation. That holds physically too:
+    // ── RESTART BLOCK (§9.1.7's SINGLE-RESTART RULE) ─────────────────────
+    //
+    // Wave C2 made this block serve TWO causes: a seek (`seek_target_ms`)
+    // and a slot handoff (`pending_rung_index`). They are independent
+    // columns written by independent request paths, and this tick reads
+    // BOTH and spawns exactly ONE run — rung = pending rung if set else the
+    // live rung, origin = seek target if set else the live-edge
+    // continuation origin. Never two restarts, whichever landed first: the
+    // interleaving is commutative because the spawned run is always
+    // (requested rung, requested origin).
+    //
+    // Why that matters beyond tidiness: a restart is the most expensive
+    // thing this runtime does (kill + observed exit + spawn + input open +
+    // seek + encoder init + a full GOP), and the seek-livelock incident
+    // proved that paying it twice for one client intention is how a session
+    // produces nothing at all.
+    //
+    // The whole block still takes priority over throttle — a viewer
+    // explicitly seeking (or switching quality) should never be blocked by
+    // an in-progress throttle reconciliation. That holds physically too:
     // terminate() SIGCONTs before its SIGTERM (process.ts), so restarting a
     // run whose process is currently throttle-SUSPENDED costs no extra kill
     // latency — a stopped ffmpeg would otherwise sit on the pending SIGTERM
     // for the whole graceful window before being SIGKILLed.
+    //
+    // A PENDING SWITCH ALSO NARROWS SEEK ABSORPTION (§9.1.7): the "the live
+    // run is already serving that position" shortcut is only sound when the
+    // client wants the same BYTES. Under a pending switch to a different
+    // rung it wants different ones, so absorption must not fire.
+    const pendingRungIndex = row.pending_rung_index;
+    const switchPending = pendingRungIndex !== null && pendingRungIndex !== currentRun.ladderRungIndex;
+
     if (row.seek_target_ms !== null) {
       // DE-DUPLICATION FIRST (process-lifecycle hardening wave, 2026-08-11,
       // continuation item 1 — THE SEEK-RESTART LIVELOCK).
@@ -427,9 +600,16 @@ export async function runTranscodeSession(deps: RunSessionDeps, sessionId: strin
       //     so a target there is a real backward seek and must restart.
       // Anything else — earlier, later, or a run that has exited — is a
       // genuine seek and takes the restart path below unchanged.
+      //
+      // Wave C2 adds ONE conjunct (§9.1.7): absorb only when no switch to a
+      // DIFFERENT rung is pending. A seek into already-produced output is
+      // "bytes we already have" — unless the client has meanwhile asked for
+      // different bytes, in which case those bytes are the OLD rung's and
+      // re-serving them is not what was requested.
       const inFlightWindowEndMs = currentRun.headPruned ? currentRun.sourceOriginMs : currentRun.sourceOriginMs + currentRun.producedMs;
       const alreadyServing =
         !currentRun.exited &&
+        !switchPending &&
         row.seek_target_ms >= currentRun.sourceOriginMs &&
         row.seek_target_ms <= inFlightWindowEndMs;
       if (alreadyServing) {
@@ -443,26 +623,54 @@ export async function runTranscodeSession(deps: RunSessionDeps, sessionId: strin
 
       const consumed = await consumeSeekTarget(db, sessionId, now());
       if (consumed) {
-        try {
-          await currentRun.handle.terminate();
-          currentRun.unregister();
-          const nextIndex = currentRun.index + 1;
-          const startSeg = (producedSegment ?? -1) + 1;
-          const seekArgs = await rebuildSeekArgs(db, { fileId: sessionRow.file_id, deviceId: sessionRow.device_id ?? "", plan });
-          currentRun = await spawnRun(nextIndex, startSeg, seekArgs, consumed.seekTargetMs);
-        } catch (err) {
-          // A seek-restart that cannot even regenerate args (e.g. the
-          // device/file can no longer be resolved, rebuild-args.ts's
-          // SeekRebuildError) is a real, unrecoverable pipeline failure —
-          // never a silently-stuck 'seeking' row.
-          await markSessionFailed(db, sessionId, {
-            errorCode: "transcode-failed",
-            stderrTail: err instanceof Error ? err.message : String(err),
-            nowMs: now(),
-          });
-          await deleteSessionDir(stagingRoot, sessionDir).catch(() => undefined);
-          return;
-        }
+        // §9.1.7: this seek restart ALSO carries any pending rung. Consumed
+        // in the SAME tick so the coincident pair produces exactly one
+        // spawned run rather than a seek restart immediately followed by a
+        // handoff restart.
+        const coincidentRung = switchPending ? await consumePendingRungIndex(db, sessionId, now()) : undefined;
+        const restarted = await restartAt(
+          currentRun.index + 1,
+          (producedSegment ?? -1) + 1,
+          consumed.seekTargetMs,
+          coincidentRung ?? currentRun.ladderRungIndex,
+        );
+        if (!restarted) return;
+        continue;
+      }
+    }
+
+    // ── SLOT HANDOFF (§9.1.4), when no seek is also pending ──────────────
+    //
+    // Terminate-then-start, ZERO OVERLAP. Bounded overlap (start the new
+    // rung, kill the old once the new produces) was considered and rejected
+    // in the spec: it doubles encode load for the overlap window, which on
+    // a box sized for one pipeline IS the "additional unrestricted
+    // transcode" LD-16 forbids, merely time-limited. Zero overlap costs a
+    // few seconds of live-edge 503 that the client's 8x1s retry policy —
+    // tuned for exactly this server behaviour — already absorbs.
+    //
+    // The origin is EXACT, not an estimate: `old.sourceOriginMs +
+    // old.producedMs` is the precise source instant after the old run's
+    // last produced segment, and `producedMs` is read from ffmpeg's OWN
+    // per-run playlist, which is append-only (§6 keeps
+    // `-hls_playlist_type event` there) and therefore still complete even
+    // after retention has pruned the SERVED playlist's head. Presentation
+    // time stays continuous across the switch discontinuity, and the
+    // spawned run is indistinguishable from any other run to every §9
+    // derivation.
+    //
+    // The admission slot is untouched throughout: it is held by the
+    // SESSION, and the session never goes terminal here.
+    if (switchPending) {
+      const consumedRung = await consumePendingRungIndex(db, sessionId, now());
+      if (consumedRung !== undefined && consumedRung !== currentRun.ladderRungIndex) {
+        const restarted = await restartAt(
+          currentRun.index + 1,
+          (producedSegment ?? -1) + 1,
+          currentRun.sourceOriginMs + currentRun.producedMs,
+          consumedRung,
+        );
+        if (!restarted) return;
         continue;
       }
     }

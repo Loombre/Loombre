@@ -468,6 +468,15 @@ export interface PlaybackSessionsTable {
    *  (the generation marker). Never serialized into an API response. */
   worker_pid: number | null;
   worker_started_at_ms: number | null;
+  /** migrations/0044_playback_rung_switch.sql (Wave C2, docs/PLAYBACK.md
+   *  §9.1.3) — the ABR slot-handoff control channel. `active_rung_index` is
+   *  worker-written at every spawn and names the rung the live pipeline is
+   *  encoding; `pending_rung_index` is server-written (requestRungSwitch)
+   *  and worker-consumed under compare-and-clear. NULL means "no rung
+   *  applies" (direct-play, ladder-empty, pre-C2), NEVER rung 0 — which is
+   *  the ladder's TOP rung. */
+  active_rung_index: number | null;
+  pending_rung_index: number | null;
 }
 
 /** migrations/0043_transcode_runs.sql — one row per ffmpeg run spawned for
@@ -481,6 +490,11 @@ export interface TranscodeRunsTable {
   run_index: number;
   start_segment: number;
   source_origin_ms: number;
+  /** migrations/0044 — which rung of the stored plan's ladder this run
+   *  encoded. Bookkeeping only; segment ownership still follows
+   *  `start_segment` alone. NULL for pre-C2 rows and ladder-empty
+   *  sessions. */
+  ladder_rung_index: number | null;
   created_at_ms: number;
 }
 

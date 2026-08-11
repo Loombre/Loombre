@@ -35,8 +35,12 @@ export interface ParsedFfmpegPlaylist {
   initUri: string | undefined;
   segments: ParsedSegment[];
   /** True once ffmpeg has written `#EXT-X-ENDLIST` (its own run has
-   *  reached the end of input / was told to stop cleanly) — informational
-   *  only, this module never relies on it for anything load-bearing. */
+   *  reached the end of input / was told to stop cleanly). LOAD-BEARING as
+   *  of Wave C2 (§9.1.5 rule 4): folded onto the run's `RunState` and read
+   *  by `servedPlaylistHasEnded`, which drives both the served playlist's
+   *  own terminal `EXT-X-ENDLIST` and the retention prune-freeze. It was
+   *  parsed-but-unused before that, which is precisely why a completed
+   *  encode never produced an `ended` signal. */
   hasEndlist: boolean;
 }
 
@@ -104,6 +108,12 @@ export function segmentIndexFromUri(uri: string): number | undefined {
 
 export interface RunState {
   runIndex: number;
+  /** Whether THIS run's own ffmpeg playlist carried `#EXT-X-ENDLIST` —
+   *  i.e. whether ffmpeg reached the end of its input (or was told to stop
+   *  cleanly) rather than being killed mid-run. Consumed by
+   *  `servedPlaylistHasEnded` (§9.1.5 rule 4), which reads it from the
+   *  CURRENT run only. */
+  hasEndlist: boolean;
   /** Run-relative directory name, e.g. "run0" — segment/init URIs in the
    *  RENDERED served playlist are prefixed with this (`run0/s000000.m4s`),
    *  so Lane B's future file-serving handler resolves a requested relative
@@ -133,24 +143,75 @@ export function emptyServedPlaylistState(targetDurationSec: number, isFmp4: bool
  *  order the first time they're seen; an update to an existing run
  *  replaces it in place. */
 export function applyRunUpdate(state: ServedPlaylistState, runIndex: number, runDirName: string, parsed: ParsedFfmpegPlaylist): ServedPlaylistState {
-  const nextRun: RunState = { runIndex, runDirName, initUri: parsed.initUri, segments: parsed.segments };
+  const nextRun: RunState = {
+    runIndex,
+    runDirName,
+    initUri: parsed.initUri,
+    segments: parsed.segments,
+    hasEndlist: parsed.hasEndlist,
+  };
   const existingIdx = state.runs.findIndex((r) => r.runIndex === runIndex);
   const runs = existingIdx === -1 ? [...state.runs, nextRun] : state.runs.map((r, i) => (i === existingIdx ? nextRun : r));
   runs.sort((a, b) => a.runIndex - b.runIndex);
   return { ...state, targetDurationSec: Math.max(state.targetDurationSec, parsed.targetDurationSec), runs };
 }
 
+/**
+ * Has the SERVED playlist ended? — the §9.1.5 rule-4 predicate, true when
+ * the CURRENT run's own ffmpeg playlist carries `#EXT-X-ENDLIST`.
+ *
+ * "Current" is the LAST run in state order, and that qualifier is
+ * load-bearing rather than pedantic: a seek or a rung switch kills the
+ * in-flight run, and ffmpeg writes its ENDLIST on the way out. Reading
+ * `hasEndlist` across all runs would therefore declare a still-live
+ * playlist finished the moment its FIRST run was replaced — the exact
+ * inverse of the defect this rule fixes.
+ *
+ * The runtime gates TWO things on this: appending the tag (below) and
+ * FREEZING retention pruning (runner.ts). RFC 8216: a playlist that has
+ * ended must not change, and pruning its head would change it. Disk stays
+ * bounded anyway — at ENDLIST no new segments are produced either, so the
+ * residual is at most one retention window, reclaimed at session teardown
+ * exactly as always (§9.1.8).
+ */
+export function servedPlaylistHasEnded(state: ServedPlaylistState): boolean {
+  const current = state.runs[state.runs.length - 1];
+  return current?.hasEndlist === true;
+}
+
 /** Renders the WRAPPER playlist Lane B serves as `media.m3u8`: every run's
  *  segments concatenated in order, `#EXT-X-DISCONTINUITY` + a fresh
  *  `#EXT-X-MAP` before the first segment of every run after the first
  *  (binding constraint 5). Segment/init URIs are rewritten run-relative
- *  (`run0/s000000.m4s`) — see RunState's own doc comment. */
+ *  (`run0/s000000.m4s`) — see RunState's own doc comment.
+ *
+ * §9.1.5 (owner-decision V3) settled this playlist's TAG MODEL:
+ *
+ *   - NO `EXT-X-PLAYLIST-TYPE`, ever — neither EVENT nor VOD. The tag used
+ *     to say EVENT, which RFC 8216 §4.3.3.5 defines as append-only, while
+ *     `pruneRetention` below removed segments from the head: a real
+ *     contradiction, not a nit. A type-LESS playlist is the RFC's sliding-
+ *     window live shape, where head removal is legal as long as it is
+ *     signalled — which `EXT-X-MEDIA-SEQUENCE` and (Wave C2)
+ *     `EXT-X-DISCONTINUITY-SEQUENCE` do, both added at SERVE time by
+ *     apps/server/src/common/served-playlist.ts.
+ *   - A terminal `EXT-X-ENDLIST` once the current run has ended. Before
+ *     this, a completed encode played out and then polled forever: no
+ *     duration resolved and the media element never fired `ended`.
+ *
+ * SCOPE GUARD (§9.1.5, quoted because a future lane will be tempted to
+ * "fix" it by analogy): this model governs the SERVED playlist ONLY.
+ * ffmpeg's own per-run playlist KEEPS §6's `-hls_playlist_type event` —
+ * within one run it genuinely IS append-only, ffmpeg never prunes it, and
+ * that completeness is exactly what makes `producedMs` (and therefore
+ * §9.1.4's handoff-origin arithmetic) exact even after the SERVED
+ * playlist's head has been pruned away.
+ */
 export function renderServedPlaylist(state: ServedPlaylistState): string {
   const lines: string[] = [
     "#EXTM3U",
     "#EXT-X-VERSION:7",
     `#EXT-X-TARGETDURATION:${Math.ceil(state.targetDurationSec)}`,
-    "#EXT-X-PLAYLIST-TYPE:EVENT",
   ];
 
   state.runs.forEach((run, i) => {
@@ -163,6 +224,8 @@ export function renderServedPlaylist(state: ServedPlaylistState): string {
       lines.push(`${run.runDirName}/${seg.uri}`);
     }
   });
+
+  if (servedPlaylistHasEnded(state)) lines.push("#EXT-X-ENDLIST");
 
   return lines.join("\n") + "\n";
 }

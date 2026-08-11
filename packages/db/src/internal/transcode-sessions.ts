@@ -383,8 +383,15 @@ export interface RecordTranscodeRunInput {
   /** The absolute segment index this run begins numbering at ({START_SEG}). */
   startSegment: number;
   /** Where this run starts in the SOURCE timeline: 0 for run 0, the
-   *  consumed (already clamped) seek target for a restart. */
+   *  consumed (already clamped) seek target for a restart, and — Wave C2,
+   *  docs/PLAYBACK.md §9.1.4 step 3 — `old.sourceOriginMs + old.producedMs`
+   *  for a slot handoff. */
   sourceOriginMs: number;
+  /** Wave C2 (migration 0044): which rung of the stored plan's ladder this
+   *  run encoded. OMITTED (-> NULL) for ladder-empty sessions — never
+   *  defaulted to 0, which is the ladder's TOP rung and would falsely claim
+   *  top quality. */
+  ladderRungIndex?: number;
   nowMs: number;
 }
 
@@ -400,6 +407,7 @@ export interface RecordTranscodeRunInput {
  * before teardown, and dies with the session anyway (ON DELETE CASCADE).
  */
 export async function recordTranscodeRun(db: DbOrTx, input: RecordTranscodeRunInput): Promise<void> {
+  const rungIndex = input.ladderRungIndex ?? null;
   await db
     .insertInto('transcode_runs')
     .values({
@@ -407,16 +415,104 @@ export async function recordTranscodeRun(db: DbOrTx, input: RecordTranscodeRunIn
       run_index: input.runIndex,
       start_segment: input.startSegment,
       source_origin_ms: input.sourceOriginMs,
+      ladder_rung_index: rungIndex,
       created_at_ms: input.nowMs,
     })
     .onConflict((oc) =>
       oc.columns(['session_id', 'run_index']).doUpdateSet({
         start_segment: input.startSegment,
         source_origin_ms: input.sourceOriginMs,
+        ladder_rung_index: rungIndex,
         created_at_ms: input.nowMs,
       })
     )
     .execute();
+}
+
+// ---------------------------------------------------------------------------
+// migrations/0044_playback_rung_switch.sql (Wave C2, docs/PLAYBACK.md §9.1) —
+// the WORKER half of the slot-handoff control channel. The server half
+// (`requestRungSwitch`) lives in src/query/playback-sessions.ts, exactly as
+// `requestSeek` and `consumeSeekTarget` are split.
+// ---------------------------------------------------------------------------
+
+/**
+ * Records which ladder rung the live pipeline is encoding — written at
+ * EVERY spawn (run 0's initial rung and every §9.1.4 handoff alike), so the
+ * row always names what is really running. That is the same discipline
+ * `recordSessionWorkerProcess` follows for the pid, and for the same
+ * reason: the server decides whether an incoming `v{K}` GET is a switch
+ * signal by comparing K against this column, so a stale value would make it
+ * either miss a real switch or manufacture a phantom one.
+ *
+ * Guarded off the terminal states like every other write in this file.
+ */
+export async function recordActiveRungIndex(
+  db: DbOrTx,
+  sessionId: string,
+  ladderRungIndex: number,
+  nowMs: number
+): Promise<TranscodeSessionRow | undefined> {
+  return db
+    .updateTable('playback_sessions')
+    .set({ active_rung_index: ladderRungIndex, updated_at_ms: nowMs })
+    .where('id', '=', sessionId)
+    .where('status', 'in', NON_TERMINAL_STATUSES)
+    .returningAll()
+    .executeTakeFirst();
+}
+
+/**
+ * Atomically claims a pending rung switch (docs/PLAYBACK.md §9.1.3),
+ * mirroring `consumeSeekTarget`'s transaction shape — with two deliberate
+ * differences that are the whole reason it is a separate function rather
+ * than a flag:
+ *
+ *   1. It does NOT move `status` to `seeking`. A pure rung switch leaves
+ *      the union playlist fully servable: everything the old rung produced
+ *      stays on disk and stays correct, and only the LIVE EDGE waits while
+ *      the new rung spawns (§9.1.4's status rule). A seek is different in
+ *      kind — its restart INVALIDATES the forward timeline, which is what
+ *      `seeking` announces.
+ *   2. It does NOT bump `discontinuity_count`. That counter is
+ *      seek-restart bookkeeping; the served playlist's own
+ *      `EXT-X-DISCONTINUITY` tags come from run FOLDING
+ *      (apps/worker/src/transcode/playlist.ts inserts one before every run
+ *      after the first), not from this column. Bumping it here would also
+ *      double-count the §9.1.7 coincident seek+switch tick, which is ONE
+ *      restart.
+ *
+ * The UPDATE is guarded on the EXACT value the SELECT read, not merely on
+ * `IS NOT NULL`: under READ COMMITTED a client can request a different rung
+ * between the two statements, and clearing the column then would swallow a
+ * request nothing else will ever re-send. Zero rows matched returns
+ * `undefined` and the newer value survives to the next tick.
+ *
+ * Returns the rung index (0 IS a valid, common answer — it is the ladder's
+ * top rung) or `undefined` when there is nothing to consume.
+ */
+export async function consumePendingRungIndex(db: DbOrTx, sessionId: string, nowMs: number): Promise<number | undefined> {
+  return withTransaction(db, async (trx: Transaction<DB>) => {
+    const current = await trx
+      .selectFrom('playback_sessions')
+      .select(['pending_rung_index'])
+      .where('id', '=', sessionId)
+      .where('status', 'in', NON_TERMINAL_STATUSES)
+      .where('pending_rung_index', 'is not', null)
+      .executeTakeFirst();
+    if (!current || current.pending_rung_index === null) return undefined;
+
+    const updated = await trx
+      .updateTable('playback_sessions')
+      .set({ pending_rung_index: null, updated_at_ms: nowMs })
+      .where('id', '=', sessionId)
+      .where('pending_rung_index', '=', current.pending_rung_index)
+      .where('status', 'in', NON_TERMINAL_STATUSES)
+      .executeTakeFirst();
+    if (updated.numUpdatedRows === 0n) return undefined;
+
+    return current.pending_rung_index;
+  });
 }
 
 export interface MarkSessionFailedInput {

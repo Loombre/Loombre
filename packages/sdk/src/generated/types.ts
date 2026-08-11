@@ -1049,18 +1049,37 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/playback/sessions/{id}/hls/master.m3u8": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["IdPathParam"];
+            };
+            cookie?: never;
+        };
+        /** Fetch the MULTI-VARIANT master playlist for a transcode/direct-stream/remux session (docs/PLAYBACK.md §9.1.1). One `EXT-X-STREAM-INF` per rung of the session's stored `plan.ladder`, in array order, with variant URIs `v{K}/media.m3u8`. A ladder-empty session (direct-stream copy, audio-only transcode) renders a single-variant master, so `manifestUrl` points here for every HLS session. NEVER 503s: it is rendered purely from the stored plan and the probed MediaInfo, so it is available the moment the session row exists — unlike the media playlist, which cannot exist until the worker has produced a segment. The retry contract lives on the variant playlist. Also accepts `?token=<accessToken>` for media elements that cannot send Authorization headers. */
+        get: operations["getPlaybackHlsMasterPlaylist"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/playback/sessions/{id}/hls/{file}": {
         parameters: {
             query?: never;
             header?: never;
             path: {
                 id: components["parameters"]["IdPathParam"];
-                /** @description `runN/sNNNNNN.m4s`, `runN/sNNNNNN.ts`, or `runN/init.mp4` (fmp4 init segment) — the transcoder's per-run layout. Strictly pattern-validated; anything else is rejected (traversal-safe by construction — a client-supplied path is never trusted). */
+                /** @description `runN/sNNNNNN.m4s`, `runN/sNNNNNN.ts`, or `runN/init.mp4` (fmp4 init segment) — the transcoder's per-run layout — each optionally prefixed with `v{K}/`, the variant segment of the multi-variant path family (`v{K}/media.m3u8`, `v{K}/runN/sNNNNNN.m4s`, `v{K}/runN/init.mp4`, docs/PLAYBACK.md §9.1.1). K is a rung's index in the session's stored `plan.ladder`; every variant serves the same bytes, so the prefix carries no content difference — it is the ABR SWITCH SIGNAL. Bare legacy shapes remain valid and are treated as the session's active rung, signalling nothing. Strictly pattern-validated; anything else is rejected (traversal-safe by construction — a client-supplied path is never trusted). */
                 file: string;
             };
             cookie?: never;
         };
-        /** Serve one HLS init segment/media segment for a session. Updates the session's `requested_segment` (parsed from `file`) on every call — the transcoder's pacing input. A request for a segment index outside the currently-produced window (before the current run's start, or more than 3 segments ahead of `produced_segment`) triggers a seek request (`requestSeek`) and responds 503 (hls.js-compatible retry behavior) instead of 404 while the worker restarts the pipeline. Also accepts `?token=` for media elements that cannot send Authorization headers. */
+        /** Serve one HLS variant playlist/init segment/media segment for a session. Updates the session's `requested_segment` (parsed from `file`) on every call — the transcoder's pacing input. A `v{K}` prefix naming a rung other than the session's active one additionally records a rung-switch request (`requestRungSwitch`); the worker hands the session's existing admission slot to that rung at its next poll tick and never starts a second pipeline (LD-16). A request for a segment index outside the currently-produced window (before the current run's start, or more than 3 segments ahead of `produced_segment`) triggers a seek request (`requestSeek`) and responds 503 (hls.js-compatible retry behavior) instead of 404 while the worker restarts the pipeline. Also accepts `?token=` for media elements that cannot send Authorization headers. */
         get: operations["getPlaybackHlsFile"];
         put?: never;
         post?: never;
@@ -3728,7 +3747,7 @@ export interface components {
             selection?: components["schemas"]["TrackSelection"];
         };
         /** @description Closed enum plus two pattern-typed families (docs/PLAYBACK.md §4). Additions to the fixed list are contract PRs. */
-        PlanReasonCode: ("container-not-direct-playable" | "video-codec-unsupported" | "video-profile-unsupported" | "video-level-exceeds-device" | "video-bitdepth-unsupported" | "video-resolution-exceeds-device" | "video-framerate-exceeds-device" | "video-interlaced" | "hdr-tone-map-required" | "dv-profile5-requires-tonemap" | "tone-map-refused-by-policy" | "audio-codec-unsupported" | "audio-channels-exceed-device" | "audio-passthrough-unsupported" | "subtitle-format-requires-burn-in" | "subtitle-burn-in-for-styling" | "video-transcode-for-subtitle-burn-in" | "bitrate-exceeds-network" | "subtitle-codec-unknown" | "transcode-disabled-by-policy" | "dv-stripped-to-hdr10" | "subtitle-styling-lost" | "audio-atmos-lost" | "gapless-degraded" | "open-gop-leading-pictures-stripped" | "av1-rung-demoted") | string;
+        PlanReasonCode: ("container-not-direct-playable" | "video-codec-unsupported" | "video-profile-unsupported" | "video-level-exceeds-device" | "video-bitdepth-unsupported" | "video-resolution-exceeds-device" | "video-framerate-exceeds-device" | "video-interlaced" | "hdr-tone-map-required" | "dv-profile5-requires-tonemap" | "tone-map-refused-by-policy" | "audio-codec-unsupported" | "audio-channels-exceed-device" | "audio-passthrough-unsupported" | "subtitle-format-requires-burn-in" | "subtitle-burn-in-for-styling" | "video-transcode-for-subtitle-burn-in" | "bitrate-exceeds-network" | "subtitle-codec-unknown" | "transcode-disabled-by-policy" | "dv-stripped-to-hdr10" | "subtitle-styling-lost" | "audio-atmos-lost" | "gapless-degraded" | "open-gop-leading-pictures-stripped" | "av1-rung-demoted" | "ladder-variant-capped") | string;
         PlanReason: {
             code: components["schemas"]["PlanReasonCode"];
             streamIndex?: number | null;
@@ -3805,7 +3824,7 @@ export interface components {
             media?: components["schemas"]["MediaInfo"];
             status: components["schemas"]["PlaybackSessionStatus"];
             errorCode: string | null;
-            /** @description Relative URL to GET .../hls/media.m3u8; null for direct-play sessions (docs/PLAYBACK.md §9 — direct-play bypasses HLS packaging entirely). */
+            /** @description Relative URL to GET .../hls/master.m3u8 — the MULTI-VARIANT master playlist (docs/PLAYBACK.md §9.1, owner-decision V5), for EVERY HLS session including ladder-empty ones, which render a single-variant master so the client has ONE path and no branch. Its variant URIs are `v{K}/media.m3u8`, K being the rung's index in `plan.ladder`; every variant serves the same playlist bytes, and the `v{K}` prefix is how a client's ABR switch reaches the server (§9.1.1). Still null for direct-play sessions (docs/PLAYBACK.md §9 — direct-play bypasses HLS packaging entirely). */
             manifestUrl?: string | null;
             /** Format: int64 */
             createdAtMs: number;
@@ -6812,6 +6831,43 @@ export interface operations {
             default: components["responses"]["Problem"];
         };
     };
+    getPlaybackHlsMasterPlaylist: {
+        parameters: {
+            query?: {
+                /** @description Access JWT fallback for media elements that cannot send Authorization headers. */
+                token?: string;
+            };
+            header?: never;
+            path: {
+                id: components["parameters"]["IdPathParam"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description HLS master playlist (Cache-Control private, no-store) */
+            200: {
+                headers: {
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/vnd.apple.mpegurl": string;
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description Unknown, foreign or terminal session — and direct-play sessions, which have no HLS surface at all. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
     getPlaybackHlsFile: {
         parameters: {
             query?: {
@@ -6821,7 +6877,7 @@ export interface operations {
             header?: never;
             path: {
                 id: components["parameters"]["IdPathParam"];
-                /** @description `runN/sNNNNNN.m4s`, `runN/sNNNNNN.ts`, or `runN/init.mp4` (fmp4 init segment) — the transcoder's per-run layout. Strictly pattern-validated; anything else is rejected (traversal-safe by construction — a client-supplied path is never trusted). */
+                /** @description `runN/sNNNNNN.m4s`, `runN/sNNNNNN.ts`, or `runN/init.mp4` (fmp4 init segment) — the transcoder's per-run layout — each optionally prefixed with `v{K}/`, the variant segment of the multi-variant path family (`v{K}/media.m3u8`, `v{K}/runN/sNNNNNN.m4s`, `v{K}/runN/init.mp4`, docs/PLAYBACK.md §9.1.1). K is a rung's index in the session's stored `plan.ladder`; every variant serves the same bytes, so the prefix carries no content difference — it is the ABR SWITCH SIGNAL. Bare legacy shapes remain valid and are treated as the session's active rung, signalling nothing. Strictly pattern-validated; anything else is rejected (traversal-safe by construction — a client-supplied path is never trusted). */
                 file: string;
             };
             cookie?: never;

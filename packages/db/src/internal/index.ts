@@ -195,6 +195,10 @@ export {
   listReapableTranscodeSessions,
   absorbSeekTarget,
   recordTranscodeRun,
+  // migrations/0044 (Wave C2, docs/PLAYBACK.md §9.1) — the worker half of
+  // the slot-handoff control channel.
+  recordActiveRungIndex,
+  consumePendingRungIndex,
 } from './transcode-sessions.js';
 
 export { getMediaInfoForFile } from './media-assembly.js';

@@ -1,0 +1,76 @@
+name: "transcode — T0 MIXED-CODEC ladder (hevc 2160p top + av1 sub-rungs) capped to 3: targetCodec survives the trim"
+why: >
+  Wave C2 / §7.5, §10's C2 class 5 — "trim preserves topRungOf =>
+  video.targetCodec unchanged in every trimmed case" — pinned on the ONE
+  shape where a wrong keep rule would visibly corrupt the plan: a
+  MIXED-codec ladder. §7.1's AV1 swap claims every sub-2160 rung (this
+  box has a real QSV AV1 encode engine, `caps.hw-av1-qsv`, and the device
+  declares av1 + fmp4) but never the 2160p rung, so the routed ladder is
+  hevc-on-top over five av1 rungs. A trim that dropped the top rung — or
+  kept a merely EQUAL one — would flip `video.targetCodec` from hevc to
+  av1 and, with it, the encoder name and the whole `ffmpegArgs` block.
+
+  The arithmetic: top = 2160p@16,000,000 (hevc), floor = 360p@480,000
+  (av1, the ×0.6 AV1 bitrate factor applied to the table's 800,000),
+  geometric mean = sqrt(16e6 x 0.48e6) ~= 2,771,281. Candidates sit at
+  |ln(v/2771281)| = 0.549 (4.8M), 0.144 (2.4M), 0.432 (1.8M), 1.125
+  (0.9M) — so 1080p@2,400,000 is the geometric mid and the advertised set
+  is 16M hevc / 2.4M av1 / 0.48M av1. `video.targetCodec` stays `hevc`,
+  which is also the rung the initial pipeline encodes and therefore the
+  rung a §9.1.4 handoff switches AWAY from rather than to.
+
+  It is also the plan behind the C2 rung-switch argv golden: rung index 1
+  of this ladder is an av1 rung under an hevc `targetCodec`, so rebuilding
+  args for it must name `av1_qsv`, not the top rung's `hevc_qsv`.
+input:
+  media:
+    fileId: file-536
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 15000000000
+    overallBitrateBps: 20000000
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 52
+        width: 3840
+        height: 2160
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 18000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: true
+        openGop: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 160000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device: { fixture: devices.av1-fmp4-capable }
+  network: { fixture: networks.local }
+  policy: { fixture: policies.av1-preferred-t0 }
+  caps: { fixture: caps.hw-av1-qsv }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: transcode
+  reasons:
+    - video-interlaced
+    - hw-encoder-selected:qsv
+    - ladder-variant-capped
+  container: fmp4-hls
+  ladder:
+    - { heightPx: 2160, videoBitrateBps: 16000000, audioBitrateBps: 384000, codec: hevc }
+    - { heightPx: 1080, videoBitrateBps: 2400000, audioBitrateBps: 160000, codec: av1 }
+    - { heightPx: 360, videoBitrateBps: 480000, audioBitrateBps: 160000, codec: av1 }

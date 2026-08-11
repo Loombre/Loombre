@@ -29,14 +29,15 @@ import { getAuthStore } from "../../lib/auth-store.js";
 import { createPlaybackSession, endPlaybackSession } from "../../lib/playback-session.js";
 import {
   appendTokenParam,
-  buildHlsManifestUrl,
+  buildHlsMasterUrl,
   buildHlsSubtitleUrl,
   isSameUrlIgnoringToken,
   useHlsManifestUrl,
   useSessionFileUrl,
 } from "../../lib/media-session-url.js";
 import { decideAttachStrategy, isMseAvailable, isNativeHlsSupported } from "../../lib/hls-attach.js";
-import { buildHlsJsConfig } from "../../lib/hls-js-config.js";
+import { buildHlsJsConfig, resolveStartLevel } from "../../lib/hls-js-config.js";
+import { QualitySelector, type QualityLevel } from "./QualitySelector.js";
 import { deriveSubtitleTrackInfo, type SubtitleTrackInfo } from "../../lib/subtitle-track.js";
 import { clientPlaybackErrorReasons, resolveUnavailableReasons } from "../../lib/playback-reasons.js";
 import { findPlayableFallback, decisionLabel, type FallbackCandidate } from "../../lib/playback-fallback.js";
@@ -193,6 +194,14 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
   // flip is cheap and correct), so only this ref exists for the hls.js path.
   const awaitingResumeChoiceRef = useRef(false);
   const hlsRef = useRef<HlsInstance | null>(null);
+  // Wave C2 (§9.1.9) — the quality selector's state, MIRRORED from hls.js
+  // rather than modelled independently: `hls.levels` after the master is
+  // parsed, and `currentLevel`/`autoLevelEnabled` on every level switch.
+  // Empty for direct-play and for the Safari-native path (no hls.js
+  // instance at all), which is exactly when QualitySelector renders nothing.
+  const [hlsLevels, setHlsLevels] = useState<QualityLevel[]>([]);
+  const [currentHlsLevel, setCurrentHlsLevel] = useState(-1);
+  const [hlsAutoMode, setHlsAutoMode] = useState(true);
   // Task #6 recovery redesign (2026-08-10 opus review finding 1): a
   // SEPARATE ref from any ordinary (non-recovery) attach — the initial
   // attach, a genuinely-new-URL reattach, and the paused-boundary
@@ -655,7 +664,14 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
     void (async () => {
       const initialToken = await getAuthStore().getAccessToken();
       if (cancelled || !initialToken) return;
-      const manifestUrl = buildHlsManifestUrl(serverUrl, session.id, initialToken);
+      // Wave C2 / owner-decision V5: the MASTER playlist, for every HLS
+      // session. hls.js discovers the variants from it and runs its own
+      // ABR; each level switch surfaces to the server as a `v{K}` request
+      // (docs/PLAYBACK.md §9.1.1) and hands the session's existing
+      // admission slot to that rung. No new client auth surface: the
+      // master, the variant playlists and the `v{K}/`-prefixed segments all
+      // ride the same per-request `xhrSetup` token rewrite below.
+      const manifestUrl = buildHlsMasterUrl(serverUrl, session.id, initialToken);
 
       const { default: HlsCtor } = await import("hls.js");
       if (cancelled) return;
@@ -676,9 +692,29 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
           // lib/auth-store.ts) is picked up on the very next request.
           getToken: () => getAuthStore().getAccessToken(),
           appendToken: appendTokenParam,
+          // §9.1.5 rule 6: the served playlist no longer declares
+          // PLAYLIST-TYPE:EVENT, so it reads as LIVE and hls.js's default
+          // startPosition (-1, the live edge) would land the viewer up to
+          // 10 segments past the resume point. Pin it.
+          startPositionSec: (pendingSeekMsRef.current ?? 0) / 1000,
+          // §9.1.9: start on the rung the server's pipeline is ALREADY
+          // encoding, so a clean start performs ZERO handoffs.
+          startLevel: resolveStartLevel(session.plan.ladder ?? []),
         }),
       );
       hlsRef.current = hls;
+
+      // Quality-selector state (§9.1.9). Read from hls.js's own level list
+      // and level events — this component holds no parallel model of what
+      // is playing, it mirrors what hls.js reports.
+      const syncLevels = (): void => {
+        if (!hls) return;
+        setHlsLevels(hls.levels.map((level) => ({ height: level.height ?? 0, bitrate: level.bitrate ?? 0 })));
+        setCurrentHlsLevel(hls.currentLevel);
+        setHlsAutoMode(hls.autoLevelEnabled);
+      };
+      hls.on(HlsCtor.Events.MANIFEST_PARSED, syncLevels);
+      hls.on(HlsCtor.Events.LEVEL_SWITCHED, syncLevels);
 
       // hls.js's own documented fatal-error recovery pattern: retry a
       // network error in place, attempt MSE recovery for a media error,
@@ -1190,6 +1226,27 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
             onSelectAudio={selectAudio}
             onSelectSubtitle={selectSubtitle}
           />
+          {/* §9.1.9's ONE new piece of player UI. Rendered beside the
+              controls and only while they are visible; it returns null by
+              itself whenever there is nothing to choose between (direct-play,
+              or a single-variant master), so no extra guard is needed here.
+              Pinning a level only sets `hls.nextLevel` — the server learns
+              about it purely from the `v{K}` requests that follow. */}
+          {(controlsVisible || !isPlaying) && (
+            <div className={styles.qualityDock}>
+              <QualitySelector
+                levels={hlsLevels}
+                currentLevel={currentHlsLevel}
+                autoMode={hlsAutoMode}
+                onSelect={(level) => {
+                  const hls = hlsRef.current;
+                  if (!hls) return;
+                  hls.nextLevel = level;
+                  setHlsAutoMode(level === -1);
+                }}
+              />
+            </div>
+          )}
         </>
       )}
     </div>

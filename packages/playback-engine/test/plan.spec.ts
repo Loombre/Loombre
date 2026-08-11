@@ -404,12 +404,14 @@ describe("plan(): engineVersion", () => {
     expect(ENGINE_VERSION).toMatch(/^\d+\.\d+\.\d+$/);
   });
 
-  it("C1 review finding 1 bumps the ruleset to 0.10.1 — a narrowing of an existing rule, so PATCH", () => {
-    // Wave C1 (LD-7) landed 0.10.0 (a new decision rule: AV1 ladder
-    // targeting, so MINOR). The finding-1 follow-up only NARROWS §7.2's
-    // Stage-G guard to the verified-capabilities case it always meant —
-    // no new rule, no new emittable codec, no new reason code — so PATCH.
-    expect(ENGINE_VERSION).toBe("0.10.1");
+  it("Wave C2 bumps the ruleset to 0.11.0 — a NEW decision rule (§7.5 step (h)) + a new reason code, so MINOR", () => {
+    // Wave C1 (LD-7) landed 0.10.0 (AV1 ladder targeting) and its review
+    // finding-1 follow-up 0.10.1 (a narrowing of an existing rule, PATCH).
+    // Wave C2 adds §7.5's Tier-0 advertised-variant cap: a genuinely new
+    // decision rule with a new emittable reason code, changing the stored
+    // `ladder` for a whole class of Tier-0 plans — MINOR, by the same
+    // policy that made 0.10.0 minor and 0.10.1 patch.
+    expect(ENGINE_VERSION).toBe("0.11.0");
   });
 });
 

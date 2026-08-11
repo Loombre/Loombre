@@ -876,3 +876,281 @@ describe("GET /playback/sessions/{id}/subtitles/media.m3u8 + {file} (STATE.md P3
     expect(JSON.stringify(res.body)).not.toContain("not-a-real-token");
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Wave C2 — multi-variant delivery (docs/PLAYBACK.md §9.1, LD-6 under LD-16)
+//
+// One session = one admission slot = at most one live pipeline, ever. A
+// client's ABR switch reaches the server as a `v{K}` path and hands the
+// EXISTING slot to that rung; it never starts a second transcode. These
+// tests pin the HTTP half of that: the master playlist, the variant path
+// family, and the switch-signal recording.
+// ═══════════════════════════════════════════════════════════════════════════
+
+async function readRungColumns(sessionId: string): Promise<{ active: number | null; pending: number | null }> {
+  const db = createDb(process.env["DATABASE_URL"]!);
+  try {
+    const row = await db
+      .selectFrom("playback_sessions")
+      .select(["active_rung_index", "pending_rung_index"])
+      .where("id", "=", sessionId)
+      .executeTakeFirstOrThrow();
+    return { active: row.active_rung_index, pending: row.pending_rung_index };
+  } finally {
+    await db.destroy();
+  }
+}
+
+async function setActiveRung(sessionId: string, rungIndex: number): Promise<void> {
+  const db = createDb(process.env["DATABASE_URL"]!);
+  try {
+    await db
+      .updateTable("playback_sessions")
+      .set({ active_rung_index: rungIndex, updated_at_ms: Date.now() })
+      .where("id", "=", sessionId)
+      .execute();
+  } finally {
+    await db.destroy();
+  }
+}
+
+async function storedPlanOf(sessionId: string): Promise<Record<string, unknown>> {
+  const db = createDb(process.env["DATABASE_URL"]!);
+  try {
+    const row = await db.selectFrom("playback_sessions").select("plan").where("id", "=", sessionId).executeTakeFirstOrThrow();
+    return row.plan as Record<string, unknown>;
+  } finally {
+    await db.destroy();
+  }
+}
+
+describe("GET /playback/sessions/{id}/hls/master.m3u8 (§9.1.1)", () => {
+  it("200 IMMEDIATELY after session create — this route NEVER 503s (§9.1.2 item 1)", async () => {
+    // The contrast that makes this a real property: the sibling
+    // media.m3u8 route 503s for this exact session (nothing produced yet,
+    // status still 'created'), because a media playlist cannot exist until
+    // ffmpeg has written a segment. A master playlist is fully determined
+    // by the stored plan, so there is nothing to wait for and no poll loop.
+    const { sessionId } = await createSimulatedTranscodeSession();
+
+    const master = await admin().get(`/playback/sessions/${sessionId}/hls/master.m3u8`);
+    expect(master.status).toBe(200);
+    expect(master.headers["content-type"]).toMatch(/application\/vnd\.apple\.mpegurl/);
+    expect(master.headers["cache-control"]).toBe("private, no-store");
+    expect(master.text.startsWith("#EXTM3U")).toBe(true);
+
+    const media = await admin().get(`/playback/sessions/${sessionId}/hls/media.m3u8`);
+    expect(media.status).toBe(503);
+  }, 20_000);
+
+  it("advertises EXACTLY the stored plan's ladder, in array order, as v{K}/media.m3u8", async () => {
+    const { sessionId } = await createSimulatedTranscodeSession();
+    const plan = await storedPlanOf(sessionId);
+    const ladder = plan["ladder"] as { videoBitrateBps: number; audioBitrateBps: number }[];
+    expect(ladder.length).toBeGreaterThan(0);
+
+    const res = await admin().get(`/playback/sessions/${sessionId}/hls/master.m3u8`);
+    const lines = res.text.split("\n");
+    const variants = lines.filter((l) => /^v\d+\/media\.m3u8$/.test(l));
+    // §7.5: "the master playlist advertises plan.ladder — nothing else,
+    // and all of it". Which rungs a client may switch to is a PLAN
+    // decision the matrix proves, never a session-layer filter.
+    expect(variants).toEqual(ladder.map((_, i) => `v${i}/media.m3u8`));
+
+    const streamInfs = lines.filter((l) => l.startsWith("#EXT-X-STREAM-INF"));
+    expect(streamInfs).toHaveLength(ladder.length);
+    ladder.forEach((rung, i) => {
+      expect(streamInfs[i]).toContain(`AVERAGE-BANDWIDTH=${rung.videoBitrateBps + rung.audioBitrateBps}`);
+    });
+    expect(res.text).toContain("#EXT-X-INDEPENDENT-SEGMENTS");
+  }, 20_000);
+
+  it("PlaybackSession.manifestUrl points at THIS route for every HLS session (owner-decision V5)", async () => {
+    const { sessionId } = await createSimulatedTranscodeSession();
+    const session = await admin().get(`/playback/sessions/${sessionId}`);
+    expect(session.status).toBe(200);
+    expect(session.body.manifestUrl).toBe(`/playback/sessions/${sessionId}/hls/master.m3u8`);
+  }, 20_000);
+
+  it("404 for another user's session, an unknown id, and a non-uuid", async () => {
+    const { sessionId } = await createSimulatedTranscodeSession();
+    expect((await casual().get(`/playback/sessions/${sessionId}/hls/master.m3u8`)).status).toBe(404);
+    expect((await admin().get(`/playback/sessions/11111111-1111-4111-8111-111111111111/hls/master.m3u8`)).status).toBe(404);
+    expect((await admin().get(`/playback/sessions/not-a-uuid/hls/master.m3u8`)).status).toBe(404);
+  }, 20_000);
+
+  it("404 once the session is terminal", async () => {
+    const { sessionId } = await createSimulatedTranscodeSession();
+    expect((await admin().get(`/playback/sessions/${sessionId}/hls/master.m3u8`)).status).toBe(200);
+    const db = createDb(process.env["DATABASE_URL"]!);
+    try {
+      await db.updateTable("playback_sessions").set({ status: "ended" }).where("id", "=", sessionId).execute();
+    } finally {
+      await db.destroy();
+    }
+    expect((await admin().get(`/playback/sessions/${sessionId}/hls/master.m3u8`)).status).toBe(404);
+  }, 20_000);
+
+  it("?token= works with no Authorization header, exactly like the sibling media routes", async () => {
+    const { sessionId } = await createSimulatedTranscodeSession();
+    const res = await request(app.getHttpServer()).get(
+      `/playback/sessions/${sessionId}/hls/master.m3u8?token=${adminToken}`,
+    );
+    expect(res.status).toBe(200);
+    expect(res.text.startsWith("#EXTM3U")).toBe(true);
+  }, 20_000);
+});
+
+describe("GET /playback/sessions/{id}/hls/v{K}/… — the variant path family (§9.1.1)", () => {
+  const PLAYLIST = "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-TARGETDURATION:6\n#EXTINF:6,\nrun0/s000000.m4s\n";
+
+  async function activeSessionWithPlaylist(): Promise<{ sessionId: string; sessionDir: string }> {
+    const created = await createSimulatedTranscodeSession();
+    mkdirSync(created.sessionDir, { recursive: true });
+    writeFileSync(path.join(created.sessionDir, "media.m3u8"), PLAYLIST, "utf8");
+    await markSessionActiveWithProducedSegment(created.sessionId, created.sessionDir, 0);
+    return created;
+  }
+
+  it("v{K}/media.m3u8 serves the SAME bytes as the bare route — one pipeline, one playlist", async () => {
+    const { sessionId } = await activeSessionWithPlaylist();
+    await setActiveRung(sessionId, 0);
+
+    const bare = await admin().get(`/playback/sessions/${sessionId}/hls/media.m3u8`);
+    const v0 = await admin().get(`/playback/sessions/${sessionId}/hls/v0/media.m3u8`);
+    const v1 = await admin().get(`/playback/sessions/${sessionId}/hls/v1/media.m3u8`);
+    expect(bare.status).toBe(200);
+    expect(v0.text).toBe(bare.text);
+    // Every variant URL serves the same playlist bytes — RFC 8216's
+    // cross-variant obligations (media sequence numbers, discontinuity
+    // structure, timelines "match across variants") are met trivially
+    // because the variants ARE one playlist.
+    expect(v1.text).toBe(bare.text);
+  }, 20_000);
+
+  it("v{K}/runN/… serves the SAME segment file as the bare path (no per-variant segment sets on disk)", async () => {
+    const { sessionId, sessionDir } = await activeSessionWithPlaylist();
+    mkdirSync(path.join(sessionDir, "run0"), { recursive: true });
+    writeFileSync(path.join(sessionDir, "run0", "s000000.m4s"), "SEGMENT-BYTES", "utf8");
+    await setActiveRung(sessionId, 0);
+
+    const bare = await admin().get(`/playback/sessions/${sessionId}/hls/run0/s000000.m4s`);
+    const variant = await admin().get(`/playback/sessions/${sessionId}/hls/v1/run0/s000000.m4s`);
+    expect(bare.status).toBe(200);
+    expect(variant.status).toBe(200);
+    expect(variant.text).toBe(bare.text);
+  }, 20_000);
+
+  it("a MISMATCHED K records the rung-switch request (THE PATH IS THE SWITCH SIGNAL)", async () => {
+    const { sessionId } = await activeSessionWithPlaylist();
+    const ladder = (await storedPlanOf(sessionId))["ladder"] as unknown[];
+    expect(ladder.length).toBeGreaterThan(1); // a switch needs somewhere to switch TO
+    const target = ladder.length - 1;
+    await setActiveRung(sessionId, 0);
+
+    const res = await admin().get(`/playback/sessions/${sessionId}/hls/v${target}/media.m3u8`);
+    // Served completely normally — the switch is a SIDE EFFECT, not a
+    // different response.
+    expect(res.status).toBe(200);
+    expect((await readRungColumns(sessionId)).pending).toBe(target);
+  }, 20_000);
+
+  it("a MATCHING K records nothing — absorbed at the write side, so a pinned client never storms", async () => {
+    const { sessionId } = await activeSessionWithPlaylist();
+    await setActiveRung(sessionId, 1);
+
+    // A client pinned to rung 1 fetches every playlist and segment under
+    // v1/, and none of them is a switch.
+    await admin().get(`/playback/sessions/${sessionId}/hls/v1/media.m3u8`);
+    await admin().get(`/playback/sessions/${sessionId}/hls/v1/media.m3u8`);
+    expect((await readRungColumns(sessionId)).pending).toBeNull();
+  }, 20_000);
+
+  it("a BARE legacy path signals nothing at all (§9.1.2 item 2 — treated as the active rung)", async () => {
+    const { sessionId } = await activeSessionWithPlaylist();
+    await setActiveRung(sessionId, 1);
+
+    await admin().get(`/playback/sessions/${sessionId}/hls/media.m3u8`);
+    await admin().get(`/playback/sessions/${sessionId}/hls/run0/s000000.m4s`);
+    expect((await readRungColumns(sessionId)).pending).toBeNull();
+  }, 20_000);
+
+  it("a K outside the advertised ladder is a 404 — the URL space never claims more than the master does", async () => {
+    const { sessionId } = await activeSessionWithPlaylist();
+    const ladder = (await storedPlanOf(sessionId))["ladder"] as unknown[];
+    const res = await admin().get(`/playback/sessions/${sessionId}/hls/v${ladder.length + 5}/media.m3u8`);
+    expect(res.status).toBe(404);
+    expect((await readRungColumns(sessionId)).pending).toBeNull();
+  }, 20_000);
+
+  it("the variant prefix cannot widen what the strict segment pattern admits (traversal stays impossible)", async () => {
+    const { sessionId } = await activeSessionWithPlaylist();
+    for (const evil of ["v0/run0/../../../etc/passwd", "vX/run0/s000000.m4s", "v0/run0/s0.m4s"]) {
+      const res = await admin().get(`/playback/sessions/${sessionId}/hls/${evil}`);
+      expect(res.status, evil).toBe(404);
+    }
+  }, 20_000);
+
+  it("a switch request on a mismatched SEGMENT GET is recorded too (hls.js switches mid-fragment-load)", async () => {
+    const { sessionId, sessionDir } = await activeSessionWithPlaylist();
+    mkdirSync(path.join(sessionDir, "run0"), { recursive: true });
+    writeFileSync(path.join(sessionDir, "run0", "s000000.m4s"), "SEGMENT-BYTES", "utf8");
+    await setActiveRung(sessionId, 0);
+
+    const res = await admin().get(`/playback/sessions/${sessionId}/hls/v1/run0/s000000.m4s`);
+    expect(res.status).toBe(200);
+    expect((await readRungColumns(sessionId)).pending).toBe(1);
+  }, 20_000);
+});
+
+describe("served playlist tag model over HTTP (§9.1.5, owner-decision V3)", () => {
+  async function serveWorkerPlaylist(text: string): Promise<string> {
+    const { sessionId, sessionDir } = await createSimulatedTranscodeSession();
+    mkdirSync(sessionDir, { recursive: true });
+    writeFileSync(path.join(sessionDir, "media.m3u8"), text, "utf8");
+    await markSessionActiveWithProducedSegment(sessionId, sessionDir, 99);
+    const res = await admin().get(`/playback/sessions/${sessionId}/hls/media.m3u8`);
+    expect(res.status).toBe(200);
+    return res.text;
+  }
+
+  it("no EXT-X-PLAYLIST-TYPE ever reaches the client", async () => {
+    const served = await serveWorkerPlaylist(
+      "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-TARGETDURATION:6\n#EXTINF:6,\nrun0/s000000.m4s\n",
+    );
+    expect(served).not.toContain("#EXT-X-PLAYLIST-TYPE");
+  }, 20_000);
+
+  it("MEDIA-SEQUENCE and DISCONTINUITY-SEQUENCE are emitted together once the head is pruned across a run boundary", async () => {
+    const served = await serveWorkerPlaylist(
+      "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-TARGETDURATION:6\n" +
+        '#EXT-X-MAP:URI="run3/init.mp4"\n#EXTINF:6,\nrun3/s000042.m4s\n',
+    );
+    expect(served).toContain("#EXT-X-MEDIA-SEQUENCE:42");
+    expect(served).toContain("#EXT-X-DISCONTINUITY-SEQUENCE:3");
+  }, 20_000);
+
+  it("neither tag is emitted for an unpruned playlist — byte-identical passthrough", async () => {
+    const text = "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-TARGETDURATION:6\n#EXTINF:6,\nrun0/s000000.m4s\n";
+    expect(await serveWorkerPlaylist(text)).toBe(text);
+  }, 20_000);
+
+  it("a terminal EXT-X-ENDLIST written by the worker reaches the client intact", async () => {
+    // Pre-C2 this was UNREACHABLE: a completed encode never got an ENDLIST
+    // at all, so a finished stream played out and then polled forever with
+    // no resolved duration and no `ended` event on the media element.
+    const served = await serveWorkerPlaylist(
+      "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-TARGETDURATION:6\n#EXTINF:6,\nrun0/s000000.m4s\n#EXT-X-ENDLIST\n",
+    );
+    expect(served.trimEnd().endsWith("#EXT-X-ENDLIST")).toBe(true);
+  }, 20_000);
+
+  it("ENDLIST survives the sequence-tag insertion on a pruned playlist", async () => {
+    const served = await serveWorkerPlaylist(
+      "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-TARGETDURATION:6\n#EXTINF:6,\nrun2/s000030.m4s\n#EXT-X-ENDLIST\n",
+    );
+    expect(served).toContain("#EXT-X-MEDIA-SEQUENCE:30");
+    expect(served).toContain("#EXT-X-DISCONTINUITY-SEQUENCE:2");
+    expect(served.trimEnd().endsWith("#EXT-X-ENDLIST")).toBe(true);
+  }, 20_000);
+});

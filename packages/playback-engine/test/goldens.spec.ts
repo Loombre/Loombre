@@ -8,7 +8,10 @@
  * strip pair (interpretation K, 2026-08-10) + the four Dolby Vision strip
  * scenarios (interpretation L, LD-3/LD-15, 2026-08-11) + the three AV1
  * encode-target scenarios (interpretation M, LD-7, Wave C1: hw av1_nvenc,
- * software libsvtav1, and a demoted rung landing on libx265) = exactly 41
+ * software libsvtav1, and a demoted rung landing on libx265) + Wave C2's
+ * §9.1.4 mixed-codec RUNG-SWITCH scenario (the slot-handoff argv: a switch
+ * to a non-top rung of a mixed hevc/av1 ladder must name the RUNG's
+ * encoder, av1_qsv, not the plan's stored hevc targetCodec) = exactly 42
  * scenario files
  * under test/goldens/
  * (test/goldens/scenarios.ts constructs the inputs in test
@@ -43,9 +46,9 @@ function loadSnapshot(id: string): GoldenSnapshot {
   return JSON.parse(raw) as GoldenSnapshot;
 }
 
-describe("ffmpeg arg builder goldens (docs/PLAYBACK.md §6, exactly 41 scenarios)", () => {
-  it("exactly 41 scenarios are defined (step 4's 25 + step 7b F4's two vaapi burn-in goldens + the VT tone-map hybrid golden + interpretation D's four backend-agnostic hw tone-map goldens + interpretation K's open-GOP seek-restart strip pair + interpretation L's four Dolby Vision strip goldens + interpretation M's three AV1 encode-target goldens)", () => {
-    expect(GOLDEN_SCENARIOS).toHaveLength(41);
+describe("ffmpeg arg builder goldens (docs/PLAYBACK.md §6, exactly 42 scenarios)", () => {
+  it("exactly 42 scenarios are defined (step 4's 25 + step 7b F4's two vaapi burn-in goldens + the VT tone-map hybrid golden + interpretation D's four backend-agnostic hw tone-map goldens + interpretation K's open-GOP seek-restart strip pair + interpretation L's four Dolby Vision strip goldens + interpretation M's three AV1 encode-target goldens + Wave C2's §9.1.4 mixed-codec rung-switch golden)", () => {
+    expect(GOLDEN_SCENARIOS).toHaveLength(42);
   });
 
   it("every scenario id is unique", () => {

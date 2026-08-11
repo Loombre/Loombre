@@ -68,6 +68,17 @@ export type { FfmpegPlanShape, BuildFfmpegArgsOptions } from "./args/builder.js"
 export { VIDEO_ENCODER_NAMES } from "./args/builder.js";
 
 /**
+ * Wave C2 (LD-6, docs/PLAYBACK.md §9.1.1): the master playlist's
+ * `RESOLUTION` must state what the ENCODER will actually emit, and the
+ * builder expresses that as ffmpeg's `-2` rather than a literal number.
+ * Exporting the arithmetic is what lets apps/server's master-playlist
+ * renderer share the builder's own answer instead of keeping a second copy
+ * that could drift — the identical structural argument behind the
+ * `dv.ts`/`av1.ts` shared predicates.
+ */
+export { scaledWidthForHeight } from "./args/builder.js";
+
+/**
  * Kept exported for source compatibility with the Phase-0/Wave-1 scaffold
  * (matrix-meta.spec.ts and matrix.spec.ts both import this class and check
  * `err instanceof NotImplementedError`). Nothing in src throws it anymore

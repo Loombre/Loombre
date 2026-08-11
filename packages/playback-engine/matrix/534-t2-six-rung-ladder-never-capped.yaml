@@ -1,0 +1,66 @@
+name: "transcode — TIER 2 + the same 6-rung table: NEVER trimmed (owner-decision V6, the upper half)"
+why: >
+  Wave C2 / §7.5, the T2 companion to case 533. The guard reads
+  `tier !== 0`, not `tier < 1`, so this case exists to prove the property
+  holds at the TOP of the tier range too rather than merely one step above
+  Tier-0 — the same reasoning that made case 443 pin the hw-route/tier-cap
+  boundary at 2160p after 388 pinned it at 1080p.
+
+  `policies.t2-default` is deliberately identical to `policies.t0-default`
+  except `tier` and `maxSimultaneousTranscodes`, so a T0-vs-T2 comparison
+  across cases 531/534 has exactly one moving part: the tier. Six rungs
+  advertised, no `ladder-variant-capped`.
+input:
+  media:
+    fileId: file-534
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 15000000000
+    overallBitrateBps: 20000000
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 52
+        width: 3840
+        height: 2160
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 18000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: true
+        openGop: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 160000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device: { fixture: devices.web-chrome }
+  network: { fixture: networks.local }
+  policy: { fixture: policies.t2-default }
+  caps: { fixture: caps.full-hw }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: transcode
+  reasons:
+    - video-interlaced
+    - hw-encoder-selected:nvenc
+  container: fmp4-hls
+  ladder:
+    - { heightPx: 2160, videoBitrateBps: 16000000, audioBitrateBps: 384000, codec: hevc }
+    - { heightPx: 1080, videoBitrateBps: 8000000, audioBitrateBps: 384000, codec: h264 }
+    - { heightPx: 1080, videoBitrateBps: 4000000, audioBitrateBps: 160000, codec: h264 }
+    - { heightPx: 720, videoBitrateBps: 3000000, audioBitrateBps: 160000, codec: h264 }
+    - { heightPx: 480, videoBitrateBps: 1500000, audioBitrateBps: 160000, codec: h264 }
+    - { heightPx: 360, videoBitrateBps: 800000, audioBitrateBps: 160000, codec: h264 }
