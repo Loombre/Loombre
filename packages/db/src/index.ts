@@ -366,7 +366,10 @@ export {
   listHeartbeatStalePlaybackSessions,
   suspendStalePlaybackSession,
   countActiveTranscodeSessions,
+  getTranscodeRunForSegment,
+  listTranscodeRuns,
 } from './query/playback-sessions.js';
+export type { TranscodeRunRow } from './query/playback-sessions.js';
 export type { PlaybackSessionStatus } from './types.js';
 
 // MediaInfo assembly (P2.17) — see src/query/media-info.ts header for why

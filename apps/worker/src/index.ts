@@ -6,6 +6,8 @@ import {
   listLibraries,
   listImagesNeedingDominantColor,
   hasQueuedOrActiveJobOfType,
+  listReapableTranscodeSessions,
+  markSessionFailed,
   reconcileAbandonedJobLedgerRows,
   hasVideoStreamsNeedingOpenGopBackfill,
 } from "@loombre/db/internal";
@@ -13,7 +15,13 @@ import { LOOMBRE_VERSION_FULL } from "@loombre/shared";
 import { installCrashHandlers, installGracefulShutdown, type ShutdownSignal } from "./crash/index.js";
 import { resolveWorkerDatabaseUrl } from "./db-url.js";
 import { resolveWorkerDataDir } from "./crash/data-dir.js";
-import { createTranscodeConsumerHandler, resolveTranscodeWorkerConcurrency } from "./transcode/index.js";
+import {
+  createProcessInspector,
+  createTranscodeConsumerHandler,
+  reapOrphanedTranscodeSessions,
+  resolveTranscodeWorkerConcurrency,
+  terminateAllTranscodeRuns,
+} from "./transcode/index.js";
 import { createSubtitleExtractConsumerHandler } from "./subtitles/index.js";
 import { runScan } from "./scan/scanner.js";
 import { createHashPool, type HashPool } from "./scan/identity/pool.js";
@@ -252,7 +260,7 @@ queue.work(
 // children ONE worker process will run.
 queue.work(
   "transcode",
-  createTranscodeConsumerHandler(db),
+  createTranscodeConsumerHandler(db, { workerStartedAtMs: WORKER_STARTED_AT_MS }),
   { concurrency: resolveTranscodeWorkerConcurrency() },
 );
 
@@ -460,10 +468,11 @@ async function enqueueOpenGopBackfillIfNeeded(): Promise<void> {
 // 'queued'/'active' forever — which permanently satisfies
 // hasQueuedOrActiveJobOfType and wedges the hwprobe/image-backfill/stash
 // re-enqueues (the Windows-ARM-VM "probe never runs again, no backends
-// ever" failure). Scoped to EXACTLY the singleton-guarded job types — the
-// only rows any behavior keys on, and one-per-type by design, so the
-// sweep is bounded to a handful of rows (never a 30k-row 'probe' backlog
-// with a matching outbox-event flood).
+// ever" failure). Scoped to EXPLICITLY ENUMERATED job types — never every
+// type — so the sweep can never become a 30k-row 'probe' backlog with a
+// matching outbox-event flood. The singleton group below is one-per-type
+// by design and therefore bounded by construction; item C7's transcode
+// group is many-concurrent-rows and carries an explicit row cap instead.
 //
 // Two horizons (opus review W1-R1/R3): 'queued' rows go stale after 24h —
 // strictly past the longest per-attempt expiry (23h, packages/jobs/src/
@@ -483,13 +492,50 @@ async function enqueueOpenGopBackfillIfNeeded(): Promise<void> {
 const QUEUED_STALE_HORIZON_MS = 24 * 60 * 60 * 1000;
 const SINGLETON_GUARDED_JOB_TYPES = ["hwprobe", "image-backfill", "opengop-backfill", "stash-inventory", "stash-sync"] as const;
 
+// Item C7 (process-lifecycle hardening wave (2026-08-11)): 'transcode' folded into the
+// same sweep, as its OWN group rather than by widening the singleton list
+// above — it is the opposite shape (one ledger row per playback session,
+// many concurrent), and the original scoping comment's warning about an
+// unbounded loop plus a matching outbox-event flood applies to it in full.
+// The machinery grew groups + a per-group row cap for exactly this
+// (packages/db/src/internal/jobs.ts's ReconcileJobLedgerGroup).
+//
+// Its horizons are a PLAYBACK SESSION's, not a background job's:
+//   * 'queued' — 15 minutes, the heartbeat sweeper's own idle-timeout
+//     (docs/PLAYBACK.md §9). A transcode job still queued past that point
+//     belongs to a session the server has already ended; nothing will ever
+//     fetch it, and leaving the row 'queued' lies to the admin jobs panel.
+//     The 24h singleton horizon would be absurd here — it is ~96 session
+//     lifetimes.
+//   * 'active' — the same previous-generation rule everything else uses.
+//     An 'active' transcode row from before this process existed IS the
+//     orphaned-ffmpeg signature (see ./transcode/reaper.ts, which handles
+//     the process half of that same event on the same boot).
+const TRANSCODE_QUEUED_STALE_HORIZON_MS = 15 * 60 * 1000;
+// Bounded because a bad night (an install that crash-looped while several
+// viewers were streaming) must not turn one boot into a multi-thousand-row
+// sweep and an equally large job.updated outbox flood on a Tier-0 box. The
+// remainder is picked up by the next boot; the reaper's own process-level
+// cleanup is independent of this cap.
+const TRANSCODE_RECONCILE_MAX_ROWS = 500;
+
 async function reconcileStaleJobLedger(): Promise<void> {
   try {
     const nowMs = Date.now();
     const reconciled = await reconcileAbandonedJobLedgerRows(db, {
-      types: SINGLETON_GUARDED_JOB_TYPES,
-      queuedStaleBeforeMs: nowMs - QUEUED_STALE_HORIZON_MS,
-      activeStaleBeforeMs: WORKER_STARTED_AT_MS,
+      groups: [
+        {
+          types: SINGLETON_GUARDED_JOB_TYPES,
+          queuedStaleBeforeMs: nowMs - QUEUED_STALE_HORIZON_MS,
+          activeStaleBeforeMs: WORKER_STARTED_AT_MS,
+        },
+        {
+          types: ["transcode"],
+          queuedStaleBeforeMs: nowMs - TRANSCODE_QUEUED_STALE_HORIZON_MS,
+          activeStaleBeforeMs: WORKER_STARTED_AT_MS,
+          maxRows: TRANSCODE_RECONCILE_MAX_ROWS,
+        },
+      ],
       nowMs,
     });
     if (reconciled.length > 0) {
@@ -498,6 +544,47 @@ async function reconcileStaleJobLedger(): Promise<void> {
     }
   } catch (err) {
     console.error("worker: failed to reconcile stale job ledger rows:", err);
+  }
+}
+
+// Item C2 (process-lifecycle hardening wave (2026-08-11)): boot-time orphaned-ffmpeg
+// reaper, the crash-path companion to shutdown()'s graceful
+// terminateAllTranscodeRuns(). A hard kill (SIGKILL, OOM, power cut, a
+// container stop that skips to SIGKILL) runs no shutdown code at all, and
+// every ffmpeg run is spawned detached (transcode/process.ts), so the
+// encoder survives its supervisor — burning a core at full rate with
+// nothing left to throttle it, while its admission slot is freed the
+// moment the server's heartbeat sweeper ends the session. Runs alongside
+// reconcileStaleJobLedger for the same reason and with the same posture:
+// same generation horizon (WORKER_STARTED_AT_MS), failure logged and
+// swallowed, never fatal to boot. See ./transcode/reaper.ts's header for
+// the pid+cmdline verification rule (a pid alone is never enough to
+// justify a kill).
+async function reapOrphanedTranscodes(): Promise<void> {
+  try {
+    const inspector = createProcessInspector({ platform: process.platform });
+    const reaped = await reapOrphanedTranscodeSessions({
+      listReapable: async () => {
+        const rows = await listReapableTranscodeSessions(db, { workerStartedBeforeMs: WORKER_STARTED_AT_MS });
+        return rows.map((row) => ({
+          id: row.id,
+          workerPid: row.worker_pid,
+          workerStartedAtMs: row.worker_started_at_ms,
+          stagingDir: row.staging_dir,
+        }));
+      },
+      failSession: async (sessionId, stderrTail) => {
+        await markSessionFailed(db, sessionId, { errorCode: "transcode-failed", stderrTail, nowMs: Date.now() });
+      },
+      inspector,
+      workerStartedAtMs: WORKER_STARTED_AT_MS,
+    });
+    if (reaped.length > 0) {
+      const summary = reaped.map((r) => `${r.sessionId} (pid ${r.workerPid}: ${r.outcome})`).join(", ");
+      console.warn(`worker: reclaimed ${reaped.length} orphaned transcode session(s) from a previous worker — ${summary}`);
+    }
+  } catch (err) {
+    console.error("worker: failed to reap orphaned transcode sessions:", err);
   }
 }
 
@@ -562,6 +649,28 @@ let keepAlive: NodeJS.Timeout | undefined;
 // watcherHandle.stop() already was).
 async function shutdown(_signal: ShutdownSignal): Promise<void> {
   if (keepAlive) clearInterval(keepAlive);
+
+  // Item C1 (process-lifecycle hardening wave (2026-08-11)), FIRST and awaited on its
+  // own rather than folded into the Promise.all below. Every ffmpeg run is
+  // spawned `detached: true` on POSIX (transcode/process.ts) so the whole
+  // process group can be signaled — which also means the child does NOT
+  // die with this process. Until this call existed, an ordinary restart or
+  // deploy orphaned every in-flight encoder: still running at full rate,
+  // with no supervisor left to throttle, seek, or reap it (on Tier-0
+  // hardware, two of those is the machine).
+  //
+  // Ordering matters twice over. It runs BEFORE queue.stop() because the
+  // 'transcode' consumer's handler promise only resolves when its session
+  // reaches a terminal state — a stop that waits on in-flight handlers can
+  // burn the whole graceful window, and the ffmpeg children must already
+  // be dead by then. And terminate() itself SIGCONTs before SIGTERM
+  // (process.ts), so a throttle-SUSPENDED run dies promptly here instead
+  // of sitting on a pending signal it can never handle while stopped.
+  const terminated = await terminateAllTranscodeRuns();
+  if (terminated > 0) {
+    console.log(`worker: terminated ${terminated} in-flight transcode run(s) during shutdown`);
+  }
+
   await Promise.all([
     queue.stop(),
     hashPool.terminate(),
@@ -609,6 +718,7 @@ async function waitForDatabaseReady(timeoutMs = 30_000, intervalMs = 1000): Prom
 async function main(): Promise<void> {
   await waitForDatabaseReady();
   await reconcileStaleJobLedger();
+  await reapOrphanedTranscodes();
   await startLibraryWatcher();
   await startStashLibraryWatcher();
   await enqueueImageBackfillIfNeeded();
