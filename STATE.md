@@ -1102,6 +1102,95 @@ security-posture.md HTML comment contains "an upstream media server-study" (doc 
 outside grep-gates' apps/packages scope — reword + optionally extend gate
 to docs/); F8 PinModal stale arrow-key comment.
 
+**D-R2 (contract/security): ACCEPT for the dimension — two substantive
+findings routed to the fix lane.** Contract totality PASS (oasdiff 0
+breaking / 31 changes all additive-or-the-one-recorded-narrowing;
+targetCodec→LadderCodec removes vp9/mpeg2/vc1/mpeg4/unknown exactly;
+sdk-drift 0; conformance allowance EXACTLY ZERO, both new ops covered;
+LD-13a currentPassword confirmed PRE-EXISTING). LD-13c NO pre-auth oracle
+(claim GET never queries users; emailApplied claim-only; 200ms floor; only
+a weak POST-auth timing residual = design's stated posture). B2 LD-9 HELD
+under attack (pure-SQL locked region, throw-before-fn, xact-scoped release,
+5-check isolation assertion incl. non-vacuity, disable-never-blocked).
+K12 additive + substantively gated — RECOMMENDATION (future-run process,
+not a defect): event-schemas lives under packages/contract but is invisible
+to oasdiff → add an event-schemas totality step to the contract-reviewer
+charter + clarify contract-free scope. Authz uniformly user_id-scoped, no
+query-token bypass. FINDINGS → FIX LANE: (F1, HIGH data-exposure) M-7
+redaction PLUMBING correct but REGEX misses UNC (backslash-backslash),
+glued-prefix (path=/data/…), quoted/JSON file://, space-containing paths —
+realistic shapes leak into BOTH jobs.last_error AND the job.updated event
+(audience incl. admin-granted plugins); no adversarial test probes them;
+fix spans packages/shared + packages/jobs redact-paths + goldens, red-first.
+(F2, MED) breaker delivery-loop reseed gap — C5.1 closed the server-health
+path but the delivery-loop's 1-4-failure in-memory breaker reseeds from
+plugins.consecutive_failures (full-trip only), not
+plugin_delivery_cursors.consecutive_failures → restart mid-window discards
+near-trip progress. (F3 flake) ENV-MUTATION LEAD DISCONFIRMED — real cause =
+ensureTestDatabase derives <base>_<suffix> with NO per-checkout
+discriminant; the 17 stray worktrees' duplicate specs computed the SAME
+physical DB name → concurrent reseed moved admin password_changed_at_ms past
+a live token's iat → mid-suite 401. WORKTREE REMOVAL IS THE MITIGATION
+(gate green after); durable guard adopted = the standing remove-worktrees-
+at-lane-completion process control (structural per-checkout-DB-name fix has
+broad blast radius → deferred to a future hardening run, recorded). LOWER →
+fix lane: F4 shared golden-vector for both redact suites; F5 SSRF
+fetchImpl-override branch unpinned (test-seam only, prod default pinned) —
+framing comment; F6 AllowQueryToken stale two-routes doc-comment.
+
+**CORRECTION (2026-08-11): worktree agent-af5b1030cd95931b1 was NOT a
+foreign session — it was THIS run's own Wave D R1-duplicate reviewer (its
+process parented under the long-running orchestrator, which read as a stale
+19h pid). It completed with a corroborating ACCEPT and one comment-only
+review-fix (rebuild-args header), cherry-picked to main as 95174cc3. All
+reviewer worktrees now removed; git worktree list = main only. The
+duplication: R1 and R2 each ran twice (harness re-dispatch) — both R1s
+ACCEPT, both R2s ACCEPT, findings corroborated, no contradictions (the
+second R1 simply didn't attempt the two subtle mutations the first found —
+D-1/D-2 stand; the second R2 refined the flake remedy). Extra R1 coverage
+note folded into the fix lane: clampSeekTargetMs is pinned only at e2e
+(add a served-playlist unit pin, same class as D-1/D-2).**
+
+**D-R2 CORROBORATION (a second reviewer ran the same charter — corroborates
++ refines):** agrees env-lead DISCONFIRMED and cause = shared-test-DB reset;
+adds the PRECISE substrate — SIX apps/server suites share the single
+<base>_server_test DB name (conformance, auth.e2e, reauth.e2e,
+password-recovery.e2e, cli/admin-reset-{pin,password}); a stray/duplicate
+copy's `migrate reset` drops the schema under a live suite → getUserById
+undefined → 401. BETTER REMEDY ADOPTED (close-by-construction, low blast
+radius, replaces the deferred per-checkout-discriminant): give the 6 sharers
+distinct DB suffixes (the convention ~30 other suites already follow) +
+add .claude/worktrees to the vitest exclude(s) as belt-and-braces → FIX LANE
+(retires the run's one open flake rather than leaving it to process
+control). Also independently: contract 0-breaking, LD-13c no oracle, B2
+holds, K12 additive — all re-confirmed. ONE DISAGREEMENT on M-7, RESOLVED:
+this reviewer called the redaction "sound" (verified plumbing + the
+job.updated ADMIN-ONLY audience — so F1 is admin-scoped exposure, MED not
+HIGH), but the first reviewer produced CONCRETE missed-shape repros
+(UNC/glued/quoted-file://); orchestrator ruling — a concrete repro beats a
+happy-path pass: F1 STAYS a fix-lane item (defense-in-depth redaction that
+misses realistic NAS/UNC paths is a real gap even to an admin-plugin
+audience; severity MED).
+
+### Wave D — CONSOLIDATED FIX LANE dispatched 2026-08-11 (opus)
+
+All three reviewers ACCEPT/ACCEPT-WITH-FIXES, ZERO REJECT, ZERO
+product-correctness defects in the shipped decision/transcode/contract
+paths. Fix lane closes: F1 (M-7 redaction regex completeness, red-first
+adversarial) + F4 (shared golden-vector for both redact suites); F2
+(breaker delivery-loop reseed source); FLAKE close-by-construction (6-suite
+DB-suffix split + worktree glob-exclude); D-1/D-2 (R1 test pins:
+worker_pid-at-restart, shutdown-await); D-3 (LD-14 ~53-decl subtle/hint→
+muted sweep); D-4 + the doc-comment drift set (PLAYBACK §4 detail string,
+reasons.ts:66 cause comment, PLAYBACK §7.4 xref, PinModal comment, SSRF
+fetchImpl framing, AllowQueryToken comment, security-posture.md naming
+reword, system-info comment/2 stragglers). ORCHESTRATOR-HELD (register =
+STATE.md territory): D-5 five Wave B origin annotations + the P3.4
+durable-row AV1 fixture-only amend. FUTURE-RUN process notes recorded: K12
+event-schemas totality step in the contract-reviewer charter; the
+per-checkout-DB-name structural fix (deferred, superseded by the 6-suite
+split for this flake).
+
 ### Pre-D consolidation — LANDED + MERGED 2026-08-11 (0e0086d5) — orchestrator-verified
 
 (seek-dedup 7, transcode-sessions 50, playback-hls 50, crash-redact 34,
