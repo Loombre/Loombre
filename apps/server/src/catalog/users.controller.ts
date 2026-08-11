@@ -299,6 +299,20 @@ export class UsersController {
       if (typeof body["password"] !== "string" || body["password"].length === 0) {
         throw unprocessableEntity("password must be a non-empty string.", instance);
       }
+      // OPEN ledger item 8 ("Re-setting the same temporary password clears
+      // must_change_password — no 'must differ from temp' check"): without
+      // this, a user handed a temporary password could satisfy the
+      // required-change gate (auth.guard.ts's must-change-password lockdown)
+      // by resubmitting the SAME password — must_change_password clears
+      // (runUpdateUserSelfTransaction below), but nothing has actually
+      // changed. `reauthRequired` above guarantees requireCurrentPassword
+      // already verified `body["currentPassword"]` against the caller's
+      // CURRENT hash whenever `password` is present, so it is a plaintext
+      // string here — a plain equality check against the new password is
+      // both correct and free (no extra hash work).
+      if (body["password"] === body["currentPassword"]) {
+        throw unprocessableEntity("password must differ from the current password.", instance);
+      }
       passwordHash = await this.hashService.hash(body["password"]);
     }
 
