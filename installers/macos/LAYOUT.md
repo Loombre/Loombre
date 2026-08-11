@@ -18,7 +18,7 @@ the same commit.
 | Embedded-PG subtree (created by the SERVER at first boot, not postinstall) | `/Library/Application Support/Loombre/postgres/` | `_loombre:_loombre` | initdb-enforced `0700` on `postgres/data`, `superuser.secret` file0600 — never loosened |
 | Logs | `/Library/Logs/Loombre/` | `_loombre:_loombre` | `0755` (dir), `0644` (files, so `tail`/Console.app work for an admin without sudo) |
 | LaunchDaemons (three since the completeness audit) | `/Library/LaunchDaemons/com.loombre.server.plist`, `com.loombre.worker.plist`, `com.loombre.web.plist` | `root:wheel` | `0644` |
-| Service account | `_loombre` (system, UID < 500, `dsAttrTypeStandard:UniqueID` auto-picked in the system range) | — | — |
+| Service account | `_loombre` (system, UID in `(200, 500)` — strictly, not just "< 500", per the rc.6 fix in §12 — auto-picked by `pkg/scripts/pick-service-uid.sh`) | — | — |
 
 ## 1. Binaries: `/opt/loombre`, not `/usr/local/loombre`
 
@@ -52,6 +52,9 @@ Layout inside `/opt/loombre/<version>/`:
   bin/loombre-worker          # thin shim: exec runtime/node against worker/dist/index.js
   bin/loombre-web             # thin shim: exec runtime/node against web/apps/web/server.js
                               # (completeness audit — see §11 for the whole web story)
+  bin/uninstall.sh            # ship-side uninstall (rc.6 uninstall audit — see §12);
+                              # reachable at the STABLE /opt/loombre/current/bin/uninstall.sh
+                              # path across upgrades, same as the three shims above
   runtime/node/bin/node      # bundled Node (fetch-node.mjs), pinned to .nvmrc's major
   runtime/ffmpeg/{ffmpeg,ffprobe}   # bundled ffmpeg (fetch-ffmpeg.mjs / placeholder)
   runtime/pg/...             # embedded-PG, vendor-layout shape (fetch-embedded-pg.mjs)
@@ -488,3 +491,72 @@ own Node service — and this installer now completes its half:
   `postinstall` bootstraps all three; the homebrew cask's
   `uninstall launchctl:` stanza must list `com.loombre.web` too (cask is
   outside this audit's file ownership — flagged in its report).
+
+## 12. Uninstall script + the postinstall UID off-by-one (rc.6 uninstall audit)
+
+A real rc.6 uninstall audit on macOS 26 found operators doing the manual
+removal from `docs/install/macos.md`'s old "Uninstalling" block and landing
+in a PARTIAL state — daemon plists + `/opt/loombre` left behind, so the
+stack resurrected on the next boot — because that block was many separate
+`sudo` commands with no single idempotent entry point, no
+`pkgutil --forget`, and a `dscl . -delete /Users/_loombre` line that simply
+fails outright on macOS 26 (see below).
+
+**`pkg/bin/uninstall.sh`** — shipped in the payload at the STABLE
+`/opt/loombre/current/bin/uninstall.sh` path (staged by `assemblePayload()`
+alongside the other `bin/` shims — see `BIN_PAYLOAD_SCRIPTS` in
+`build-pkg.mjs`, and `pkg/uninstall-script.test.mjs` for the coverage that
+keeps it from drifting behind the payload the way the homebrew cask's
+launchd list already has once). It:
+
+- boots out all four launchd jobs (`system/com.loombre.{server,worker,web}`
+  + `gui/<console-uid>/com.loombre.menubar`) via `launchctl bootout`,
+  tolerating "not loaded" gracefully;
+- runs `pkgutil --forget com.loombre.pkg` (the real receipt id — matches
+  `pkgbuild --identifier` in §6);
+- removes the LaunchDaemon/LaunchAgent plists, `/opt/loombre`,
+  `/Applications/Loombre.app`, and `/Library/Logs/Loombre`;
+- optionally removes `/Library/Application Support/Loombre` (app data)
+  behind `--purge` — the same flag name as
+  `installers/linux/uninstall.sh`, same default posture (KEEP data unless
+  asked);
+- deletes the `_loombre` service account via
+  `sysadminctl -deleteUser _loombre interactive` (a GUI admin-auth
+  prompt) — **not** `dscl . -delete` and **not** a plain root
+  `sysadminctl -deleteUser`, both of which fail on macOS 26 with
+  `eDSPermissionError` (`-14120`), the actual audit finding.
+  `--adminUser`/`--adminPassword` pass through to `sysadminctl` for
+  scripted/unattended use instead of the GUI prompt. `-keepHome` no
+  longer exists on macOS 26 and `sysadminctl` refuses to delete
+  `/var/empty` regardless — harmless (not real Loombre data), and the
+  script says so in its own output;
+- is idempotent / partial-state tolerant BY DESIGN (no global `set -e`;
+  every step existence-checks first or treats failure as a warning, never
+  a hard stop) — this is the actual fix for the audit's field finding, not
+  just a nicety;
+- supports `--dry-run` (prints every planned action, needs no root) —
+  the vehicle for testing this script without a real install (see
+  `pkg/uninstall-script.test.mjs`).
+
+Self-removal is safe by construction: the script's own file lives inside
+`/opt/loombre`, which it removes as one of its own steps, ordered LAST
+among filesystem-affecting steps — POSIX unlink semantics keep the
+already-open file descriptor valid regardless (see the script's own header
+for the full reasoning).
+
+**The postinstall UID off-by-one (a real bug, not just an uninstall gap)**:
+the rc.6 install allocated `_loombre` at UID 500 — macOS's first HUMAN
+account uid, not a service uid. The old inline picker
+(`dscl . -list /Users UniqueID | awk '$1<500 && $1>200' | sort -n | tail -1`,
+`+1`) filtered CANDIDATES to the service range but never re-checked the
+`+1` RESULT against that same bound: if the highest already-used candidate
+was 499, the result was exactly 500. Replaced by
+`pkg/scripts/pick-service-uid.sh` (a sibling file in the same Scripts
+payload, invoked by `postinstall` via `$(dirname "$0")`), which scans
+ascending for the first FREE uid strictly inside `(200, 500)` — the result
+is a member of the allowed range by construction, and the whole install
+fails loudly (nonzero exit) if the entire 201-499 range is somehow
+exhausted, rather than silently wrapping past 500. Regression coverage:
+`pkg/pick-service-uid.test.mjs`, including the exact "highest existing
+candidate is 499" case that reproduces the rc.6 defect against the OLD
+algorithm and proves the new one never produces it.
