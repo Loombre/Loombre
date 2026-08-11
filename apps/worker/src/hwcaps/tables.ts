@@ -94,21 +94,33 @@ export const HWACCEL_PIXFMT_MARKER: Partial<Record<HwBackend, string>> = {
   d3d11va: 'd3d11',
 };
 
-/** Segment-7-style video encoder name per backend x target codec. h264/hevc
- *  entries mirror builder.ts's VIDEO_ENCODER_NAMES verbatim; the `av1`
- *  column is new (builder.ts never needs it — LadderRung.codec is only
- *  'h264'|'hevc', docs/PLAYBACK.md §7 — but §2.5's VerifiedBackendCapability
- *  ['encode'] type DOES include 'av1', so the self-test battery covers it
- *  as a forward-looking capability check even though today's ladder never
- *  targets it). `videotoolbox` has no `av1` key at all: as of this
- *  writing, ffmpeg has no `av1_videotoolbox` encoder on any macOS release
- *  (verified: absent from `ffmpeg -encoders` on this M3 Max, ffmpeg 8.1.1)
- *  — the battery must never attempt what doesn't exist, so av1 encode is
- *  skipped (untested -> absent) for videotoolbox by construction, not by a
- *  failed spawn. `d3d11va` has no entries at all (decode-only per §8.2).
+/** Segment-7-style video encoder name per backend x target codec — mirrors
+ *  packages/playback-engine/src/args/builder.ts's VIDEO_ENCODER_NAMES
+ *  verbatim, av1 column included.
+ *
+ *  The `av1` column was originally a FORWARD-LOOKING capability check here
+ *  (§2.5's VerifiedBackendCapability['encode'] has always included 'av1'
+ *  while the ladder could not target it) — the recorded C8 probe/ladder
+ *  inconsistency. Wave C1 / LD-7 closes it from the other side: the ladder
+ *  now targets av1 (docs/PLAYBACK.md §7.1) gated on exactly the facts this
+ *  battery produces (§7.2/§7.3), and builder.ts's own table gained the
+ *  matching column. The two tables are now mirrors again in full.
+ *
+ *  `videotoolbox` has no `av1` key at all, and that absence is now
+ *  LOAD-BEARING rather than incidental: ffmpeg has no `av1_videotoolbox`
+ *  encoder on any macOS release (verified: absent from `ffmpeg -encoders`
+ *  on this M3 Max, ffmpeg 8.1.1) and no Apple Silicon generation has AV1
+ *  encode hardware, so the battery skips it by construction (untested ->
+ *  absent) rather than by a failed spawn — which is what makes the §7.2
+ *  Tier-0 refusal path REALLY verifiable on this project's own hardware.
+ *  `d3d11va` has no entries at all (decode-only per §8.2).
+ *
+ *  `software` deliberately carries NO av1 entry: its name is resolved
+ *  dynamically, and since D4 (§7.3) the ENCODE test accepts `libsvtav1`
+ *  ONLY — see args.ts's resolveEncoderName.
  */
 export const VIDEO_ENCODER_NAMES: Partial<Record<HwBackend, Partial<Record<ProbeEncodeCodec, string>>>> = {
-  software: { h264: 'libx264', hevc: 'libx265' /* av1 resolved dynamically — see resolveSoftwareAv1Encoder() */ },
+  software: { h264: 'libx264', hevc: 'libx265' /* av1 resolved dynamically — see args.ts's resolveEncoderName (D4: libsvtav1 only) */ },
   videotoolbox: { h264: 'h264_videotoolbox', hevc: 'hevc_videotoolbox' },
   nvenc: { h264: 'h264_nvenc', hevc: 'hevc_nvenc', av1: 'av1_nvenc' },
   qsv: { h264: 'h264_qsv', hevc: 'hevc_qsv', av1: 'av1_qsv' },
