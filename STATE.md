@@ -727,6 +727,68 @@ pass f94a0ce9 after those deferral rows were written; rows now superseded by
 this entry. Lane self-scrubbed 25 competitor-naming violations after the
 mid-run advisory (its comments had used the run's own section title).
 
+**A1 FINAL (2026-08-11): continuation done — lane COMPLETE, orchestrator-
+verified** (44/44 on re-run: seek-dedup + lifecycle + transcode-sessions;
+migration 0043 + the WHERE seek_target_ms = $expected compare-and-clear guard
+confirmed at source). Livelock: 17-spawns-red → absorb-don't-obey; absorption
+only when the run is ALIVE and the target lies in [sourceOriginMs,
+sourceOriginMs + producedMs] (window collapses to exact-origin once retention
+prunes the run's head); a different target can NEVER be swallowed (SQL guard —
+zero rows matched, survives to next tick). Run origins: transcode_runs table
+(0043, real columns + FK + UNIQUE(session_id, run_index)); recorded for EVERY
+spawn incl. run 0 (idempotent per (session,run) for job redelivery); reads
+keyed by start_segment (the only monotonic key — source_origin_ms is NOT
+monotonic under backward seeks, pinned by a three-run test); real-ffmpeg proof
+maps segment→run→origin across the seek boundary. Lane root-caused a
+mid-verification flake: a parallel suite reset shared loombre_test mid-run —
+the NAMESPACING half of #11 residual (b); its two new integration suites now
+provision per-suite DBs (worker_lifecycle_test, worker_seek_dedup_test);
+RECOMMENDATION recorded: move remaining worker/jobs live-DB suites per-suite
+at integration (two-line change per file). PLAYBACK.md §9 two bullets added
+in A1's own block.
+
+**A5 FINAL (2026-08-11): 16 items dispositioned — lane COMPLETE, orchestrator-
+verified per-file** (sync-consumer 14/14, connect 8/8, zero-file-e2e 2/2,
+events-ordering 5/5, password-recovery 21/21; earlier combined-invocation
+failures were the ORCHESTRATOR'S harness batching multiple stash/db suites in
+one vitest run — lanes' per-file discipline is the correct protocol, adopted
+for all future verification). LANDED: C10/LD-4 comments; C8→Wave-C1 linkage
+comment at args/builder.ts VIDEO_ENCODER_NAMES; reverse-proxy /images/** in
+all three recipes (docs sync pending); AUD-W1-001 dotnet test step on the
+gate job's Linux leg (EXECUTION PROOF = NEXT CI RUN — no local dotnet SDK);
+AUD-W4-001 afterSeq NaN→MalformedCursorError (original defect closed by #9;
+same class resurfaced one type down); AUD-W6-002 documented-not-faked;
+AUD-W6-004 cron-parser 5.7.0 via pnpm-workspace.yaml overrides (pnpm 11 moved
+overrides out of package.json — caught live); AUD-W2-001 full-mode marker
+retirement deferred past apply (mirrors the incremental fix); depcruise
+no-orphans (3 legitimate orphans excluded by pattern); temp-password-reuse
+rejected same-password self-change; stash.provider.connected event
+(transition-gated; K12: events live OUTSIDE openapi.yaml — the 8-step
+closed-list touch DOES edit packages/contract/event-schemas/, accepted as the
+established additive procedure, FLAGGED to Wave D reviewer 2 for
+re-adjudication); LD-12 migration 0042 with the decision-0009 PARTIAL-REVERSAL
+quoted at the decision site (238.7→7.4ms desc, 253.1→7.5ms asc; rating-only,
+restricted-zone-only; year + date/duration remain open); LD-14 rule amended
+(subtle/hint only on --text-* >=12px, NEVER --mono-*) + 8 declarations
+conformed with measured contrast (login labels were 2.34-3.38:1 → 7.4:1).
+REJECTED-with-evidence: limit clamp (all ~31 paginated ops already clamp,
+R-F9 spec green), node drift (BUILD-NOTES already fixed; gate-node-next 26
+deliberate), win32 DACL (closed by the 3-OS gate wave, mkdtempSync confirmed),
+sort=date sentinel (mechanism internally consistent; the LEFT-JOIN index
+limitation is A8b's recorded architectural constraint, not a bug).
+CLASSIFIED→Wave B: DELETE /admin/libraries/{id}/stash-connection (new
+contract op — added to Wave B's charter). REASSIGNED→A4: AUD-W6-001's real
+fix is client-side (server returns clean 404 <2s, proven by committed repro).
+
+DISPATCHES (2026-08-11): A2 continuation = consumption half (merge A1's
+branch; exact per-run derivation via getTranscodeRunForSegment; post-seek
+progress mapping SERVER-SIDE preferred — A4 owns web components; triple-seek
+red-first). A4 continuation = AUD-W6-001 client fix (404 → UnavailableScreen)
++ LD-14 re-verify of registry footers + SORTED-BY label against the amended
+rule. Wave A remaining: those two continuations, then integration (merge all
+branches → gate:full → docs sync → deferral annotation sweep CLOSED/
+RE-AFFIRMED → exit-gate proofs on the merged tree).
+
 **A3 FINAL (2026-08-11): continuation done — lane COMPLETE, orchestrator-
 verified** (126/126 on re-run: ssrf + ledger-events + delivery-loop +
 chain-resolution + redact-paths; 17 commits total; contract/protocol diffs
