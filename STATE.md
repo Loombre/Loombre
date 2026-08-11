@@ -1051,6 +1051,29 @@ posture + the flake root-cause; R3 UI/docs/register completeness. Fix
 lanes for findings, final gate:full, closure ledger + owner-verify tail
 follow.
 
+**D-R1 (lifecycle/playback): ACCEPT-WITH-FIXES — ZERO product-code
+defects.** All 6 mandated mutations CAUGHT (shutdown-terminate →
+run-registry; reaper waitForRunExit → boot-reaper ×2; DV filter_units →
+goldens 35/36/37 + fence 3/4; slot-handoff ordering → the pre-D
+deterministic pin fires in 2.5s; T0 AV1 gate → matrix 521/523 + av1 units;
+ABR cap → 35 matrix incl. 531/536), plus the CASE-not-WHERE hoist caught
+(playback-sessions ×2). All headline integration proofs re-run green on
+REAL state (lifecycle ps-census, seek-rung-switch 25ms census max=1, DV
+Annex-B byte scan + ffprobe, AV1 real-probe refusal + real-libsvtav1 T1).
+Cross-wave checks: ABR×A1 composes; C3 derivation×C2 switch composes
+(backward-seek non-monotonicity pinned); DV×AV1 structurally exclusive
+(golden 42 carries no filter_units/hvc1). TWO TEST-PIN GAPS (both
+test-only fixes → Wave D fix lane): (D-1, MODERATE) worker_pid refresh at
+RESTART spawns is unpinned — a mutation gating re-record to run 0 only
+survives all suites; current source is correct (spawnRun re-records every
+spawn) but a regression would resurface the C2 orphan class through the
+restart seam; fix = assert row.worker_pid==latest spawned pid after the
+switch in seek-rung-switch.integration. (D-2, LOW-MOD) shutdown's terminate
+survives dropping its `await` (void terminateAllTranscodeRuns) — the
+wiring pin is a source regex not policing the await, which C1's own
+comment declares load-bearing; fix = strengthen the pin to require await
+or extract a testable sequencing unit.
+
 ### Pre-D consolidation — LANDED + MERGED 2026-08-11 (0e0086d5) — orchestrator-verified
 
 (seek-dedup 7, transcode-sessions 50, playback-hls 50, crash-redact 34,
