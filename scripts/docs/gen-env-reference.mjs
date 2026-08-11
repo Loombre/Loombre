@@ -193,7 +193,11 @@ lines.push(
       "`LOOMBRE_ACME_CA_BUNDLE`, `LOOMBRE_ACME_RENEW_WINDOW_DAYS`/`RENEW_CHECK_INTERVAL_MS` " +
       "— see [docs/ops/remote-access/acme.md](/ops/remote-access/acme); `LOOMBRE_ACME_DOMAINS`/`CHALLENGE_TYPE`/`TOS_AGREED` " +
       "ARE covered above, as registry pins), IPC and logging " +
-      "(`LOOMBRE_IPC_*`, `LOOMBRE_LOG_FILE`), and embedded-PG plumbing " +
+      "(`LOOMBRE_IPC_*`, `LOOMBRE_LOG_FILE` — every install shape (macOS pkg, Windows MSI, " +
+      "Docker, Linux tarball) sets this automatically to a real, already-populated log file " +
+      "so the admin Dashboard's log-tail card works out of the box; see each platform's own " +
+      "[Install](/install/) page for the exact path, or override it yourself), and " +
+      "embedded-PG plumbing " +
       "(`LOOMBRE_EMBEDDED_PG_*`). The full, accurate, hand-maintained list of every variable " +
       "Loombre's Docker Compose distribution reads lives in " +
       "[`installers/docker/loombre.env.example`](https://github.com/Loombre/Loombre/blob/main/installers/docker/loombre.env.example); " +

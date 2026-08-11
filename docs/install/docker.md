@@ -342,6 +342,7 @@ version pins, and native-dependency findings from that run.
 |---|---|
 | Postgres data | named volume `loombre_pgdata` |
 | Application data (image variants, transcode staging) | named volume `loombre_data`, mounted at `/data` in the `server` and `worker` containers (`web` is stateless — no volumes) |
+| Logs (`server.log` / `worker.log`, `LOOMBRE_LOG_FILE`) | `/data/logs/` — inside the same `loombre_data` volume |
 | Your media | wherever you bind-mount it (see [Media library paths](#media-library-paths)) — never copied, never modified |
 
 `docker compose -f docker-compose.prod.yml --env-file
@@ -363,7 +364,12 @@ System panel (`docs/admin-guide/capability-report.md`'s "Crash files"
 section) or directly from the volume. `docker compose -f
 docker-compose.prod.yml --env-file installers/docker/loombre.env logs
 server` (or `logs worker`) captures normal stdout/stderr regardless, and
-is the first thing to check today.
+is the first thing to check today. The `server`/`worker` containers also
+set `LOOMBRE_LOG_FILE` to `/data/logs/server.log` / `worker.log`
+respectively and duplicate their output there (in addition to, never
+instead of, what `docker compose logs` shows), so the admin Dashboard's
+log-tail card works from the browser too. See [Environment variable
+reference](/ops/env-reference) if you want to point it somewhere else.
 
 ## Troubleshooting
 
