@@ -2,6 +2,20 @@ name: transcode — a 2160p source WITHOUT hevc-preferred survives as a MIXED {h
 why: >
   t0-default (hevcEncodePreferred:false) + a 2160p h264 source generous enough that NOTHING is dropped (network cap 20Mbps >= every rung's bitrate, device/source height/bitrate never narrow it) -> the FULL 6-rung default table survives UNCHANGED: {2160p/hevc, 1080p x2/h264, 720p/h264, 480p/h264, 360p/h264} — the 2160p rung is hevc (§7's own default table), every other rung stays h264 (no swap requested). Target codecs are therefore {hevc, h264} (binding interpretation 2's multi-codec case, constructed WITHOUT the hevc-preferred swap). full-hw's nvenc covers h264 decode AND both hevc+h264 encode, so rule (i) fires hw-encoder-selected:nvenc — pinned via expect.ladder (the untouched, unswapped 6-rung table, exact order).
 
+  Wave C2 / §7.5 step (h) CHURN (regression law, §10). This case's own
+  arithmetic: the FINAL Tier-0 ladder had 6 rungs, more than
+  TIER0_MAX_ADVERTISED_VARIANTS (3), so the ADVERTISED set — which §9.1's
+  master playlist enumerates verbatim — is trimmed to top 2160p@16000000 +
+  geometric-mid 1080p@4000000 + floor 360p@800000. The geometric mean of
+  16000000 and 800000 is ~3577709 bps, and 4000000 is the surviving
+  candidate nearest it in log space. Dropped: 1080p@8000000, 720p@3000000,
+  480p@1500000. One informational `ladder-variant-capped` fires
+  (single-firing, owner-decision V2) with every dropped rung in its
+  detail, LAST in the reason list because step (h) runs after Stage G.
+  decision, container, video.* and ffmpegArgs are UNCHANGED — the keep
+  rule's first clause is "keep the top rung", which is the only rung
+  `video.targetCodec` and the initially-encoded pipeline ever read.
+
 input:
   media:
     fileId: gen-file
@@ -49,28 +63,8 @@ expect:
   reasons:
     - bitrate-exceeds-network
     - hw-encoder-selected:nvenc
+    - ladder-variant-capped
   ladder:
-    - heightPx: 2160
-      videoBitrateBps: 16000000
-      audioBitrateBps: 384000
-      codec: hevc
-    - heightPx: 1080
-      videoBitrateBps: 8000000
-      audioBitrateBps: 384000
-      codec: h264
-    - heightPx: 1080
-      videoBitrateBps: 4000000
-      audioBitrateBps: 160000
-      codec: h264
-    - heightPx: 720
-      videoBitrateBps: 3000000
-      audioBitrateBps: 160000
-      codec: h264
-    - heightPx: 480
-      videoBitrateBps: 1500000
-      audioBitrateBps: 160000
-      codec: h264
-    - heightPx: 360
-      videoBitrateBps: 800000
-      audioBitrateBps: 160000
-      codec: h264
+    - { heightPx: 2160, videoBitrateBps: 16000000, audioBitrateBps: 384000, codec: hevc }
+    - { heightPx: 1080, videoBitrateBps: 4000000, audioBitrateBps: 160000, codec: h264 }
+    - { heightPx: 360, videoBitrateBps: 800000, audioBitrateBps: 160000, codec: h264 }

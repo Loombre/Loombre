@@ -1,14 +1,29 @@
 name: 'transcode — PGS burn-in routed onto vaapi (§8.3''s one-device exception clause''s own scenario):
   decision layer pinned; the hwdownload→overlay→hwupload filtergraph now IS modeled by the arg builder
   (step 7b F4)'
-why: 'Decision-layer pin for the §8.3 one-device exception scenario (expectation UNCHANGED by step 7b
+why: |
+  Decision-layer pin for the §8.3 one-device exception scenario (expectation UNCHANGED by step 7b
   F4 — the fix is arg-builder-territory, invisible to this schema; only this prose updated): the routing
   (rule (i) vaapi decode h264 + encode h264 targets, no tone-map needed) and the burn-in reasons. The
   audit-era divergence this case used to document — no hwdownload/hwupload anywhere in args/builder.ts
   — is FIXED: the builder now wraps a vaapi burn-in overlay in exactly one hwdownload,format=nv12 →
   (system-memory filters + overlay) → hwupload sequence, pinned by goldens 26 (embedded PGS) and 27
-  (external SRT). This exact input''s args now carry that graph (probe-verified). Deliberate future-proof
-  exception: mkv container + un-renderable PGS (the burn-in drivers).'
+  (external SRT). This exact input's args now carry that graph (probe-verified). Deliberate future-proof
+  exception: mkv container + un-renderable PGS (the burn-in drivers).
+
+  Wave C2 / §7.5 step (h) CHURN (regression law, §10). This case's own
+  arithmetic: the FINAL Tier-0 ladder had 4 rungs, more than
+  TIER0_MAX_ADVERTISED_VARIANTS (3), so the ADVERTISED set — which §9.1's
+  master playlist enumerates verbatim — is trimmed to top 1080p@4000000 +
+  geometric-mid 480p@1500000 + floor 360p@800000. The geometric mean of
+  4000000 and 800000 is ~1788854 bps, and 1500000 is the surviving
+  candidate nearest it in log space. Dropped: 720p@3000000. One
+  informational `ladder-variant-capped` fires (single-firing,
+  owner-decision V2) with every dropped rung in its detail, LAST in the
+  reason list because step (h) runs after Stage G. decision, container,
+  video.* and ffmpegArgs are UNCHANGED — the keep rule's first clause is
+  "keep the top rung", which is the only rung `video.targetCodec` and the
+  initially-encoded pipeline ever read.
 input:
   media:
     fileId: file-471
@@ -64,8 +79,9 @@ input:
 expect:
   decision: transcode
   reasons:
-  - container-not-direct-playable
-  - subtitle-format-requires-burn-in
-  - video-transcode-for-subtitle-burn-in
-  - hw-encoder-selected:vaapi
+    - container-not-direct-playable
+    - subtitle-format-requires-burn-in
+    - video-transcode-for-subtitle-burn-in
+    - hw-encoder-selected:vaapi
+    - ladder-variant-capped
   subtitleStrategy: burn-in

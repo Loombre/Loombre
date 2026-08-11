@@ -2,6 +2,20 @@ name: transcode — a vc1 source skips nvenc/qsv (neither decodes vc1) and route
 why: >
   windows-platform-order lists nvenc, qsv, amf, d3d11va, software. nvenc/qsv both verify decode of everything EXCEPT vc1 (a deliberate self-test gap); amf verifies vc1 decode + h264/hevc encode. Stage G's rule (i) loop genuinely tries nvenc (decode fails), then qsv (decode fails), then amf (decode+encode both succeed) -> hw-encoder-selected:amf — proving array iteration actually walks past real non-matches rather than special-casing anything about amf's position. Stage F fires bitrate-exceeds-network (25Mbps over the 20Mbps cap) to force the transcode.
 
+  Wave C2 / §7.5 step (h) CHURN (regression law, §10). This case's own
+  arithmetic: the FINAL Tier-0 ladder had 5 rungs, more than
+  TIER0_MAX_ADVERTISED_VARIANTS (3), so the ADVERTISED set — which §9.1's
+  master playlist enumerates verbatim — is trimmed to top 1080p@8000000 +
+  geometric-mid 720p@3000000 + floor 360p@800000. The geometric mean of
+  8000000 and 800000 is ~2529822 bps, and 3000000 is the surviving
+  candidate nearest it in log space. Dropped: 1080p@4000000, 480p@1500000.
+  One informational `ladder-variant-capped` fires (single-firing,
+  owner-decision V2) with every dropped rung in its detail, LAST in the
+  reason list because step (h) runs after Stage G. decision, container,
+  video.* and ffmpegArgs are UNCHANGED — the keep rule's first clause is
+  "keep the top rung", which is the only rung `video.targetCodec` and the
+  initially-encoded pipeline ever read.
+
 input:
   media:
     fileId: gen-file
@@ -49,3 +63,4 @@ expect:
   reasons:
     - bitrate-exceeds-network
     - hw-encoder-selected:amf
+    - ladder-variant-capped

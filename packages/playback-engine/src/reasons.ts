@@ -70,7 +70,23 @@ export type FixedInformationalReasonCode =
    * unanswerable for AV1: the admin asking "why is this rung not AV1?" must
    * get an answer from the plan itself.
    */
-  | "av1-rung-demoted";
+  | "av1-rung-demoted"
+  /**
+   * LD-6 under LD-16 / owner-decision V2 (docs/PLAYBACK.md §4/§7.5, Wave
+   * C2). Fires AT MOST ONCE per plan — SINGLE-FIRING by construction, not
+   * by convention: §7.5's step (h) is one trim of one ladder, so there is
+   * exactly one event to report no matter how many rungs it removed.
+   * `detail` is `cap=<n> dropped=<heightPx>p@<videoBitrateBps>[,…]`,
+   * naming EVERY dropped rung in table order — formatted in exactly one
+   * place, `src/stages/ladder.ts`'s `capAdvertisedVariants`. It exists for
+   * the same reason `av1-rung-demoted` does: a silent trim leaves "where
+   * did my rungs go?" unanswerable from the plan an audit row stores, and
+   * the answer ("Tier-0 advertises exactly
+   * TIER0_MAX_ADVERTISED_VARIANTS") is a law the operator cannot find in
+   * any settings screen — §7.5 deliberately makes it a tier law rather
+   * than a knob.
+   */
+  | "ladder-variant-capped";
 
 export const FIXED_INFORMATIONAL_REASON_CODES: readonly FixedInformationalReasonCode[] = [
   "dv-stripped-to-hdr10",
@@ -79,6 +95,7 @@ export const FIXED_INFORMATIONAL_REASON_CODES: readonly FixedInformationalReason
   "gapless-degraded",
   "open-gop-leading-pictures-stripped",
   "av1-rung-demoted",
+  "ladder-variant-capped",
 ];
 
 /** `hw-encoder-selected:<backend>` — the chosen hardware backend suffixed. */

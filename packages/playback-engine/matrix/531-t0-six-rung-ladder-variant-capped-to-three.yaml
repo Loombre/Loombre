@@ -1,0 +1,75 @@
+name: "transcode — T0 + the instance-default 6-rung table: the advertised set is capped to EXACTLY 3 (top/geometric-mid/floor)"
+why: >
+  Wave C2 / LD-6 under LD-16, §7.5's step (h) on its PRIMARY path — the
+  dedicated pin for "T0 >3-rung ladder trimmed to exactly 3 with the §7.5
+  keep rule + a single `ladder-variant-capped` reason" (§10's C2 class 1).
+  Nothing here is caps- or device-driven: `full-hw` routes normally
+  (hw-encoder-selected:nvenc, no tier cap — the height cap only bites the
+  software route), so the ladder reaching step (h) is the whole surviving
+  6-rung table and the ONLY thing narrowing it is the tier law.
+
+  The arithmetic, checkable by hand: top = 2160p@16,000,000, floor =
+  360p@800,000, geometric mean = sqrt(16e6 x 0.8e6) ~= 3,577,709 bps. The
+  four candidates sit at |ln(v/3577709)| = 0.805 (8M), 0.112 (4M), 0.176
+  (3M), 0.869 (1.5M) — so 1080p@4,000,000 wins, and the advertised set
+  becomes 16M / 4M / 0.8M with adjacent ratios 4.0x and 5.0x. A client's
+  throughput estimate has to quarter or fifth itself to cross a boundary,
+  which is exactly the anti-churn property §7.5 buys on a 6 W part.
+
+  Array order is preserved (the trim removes elements, it never reorders),
+  the top rung survives by the keep rule's first clause — so
+  `video.targetCodec` stays `hevc` and `ffmpegArgs` are byte-identical to
+  the untrimmed plan's — and the one informational reason lands LAST,
+  after Stage G's routing reason, because step (h) runs after Stage G.
+input:
+  media:
+    fileId: file-531
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 15000000000
+    overallBitrateBps: 20000000
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 52
+        width: 3840
+        height: 2160
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 18000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: true
+        openGop: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 160000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device: { fixture: devices.web-chrome }
+  network: { fixture: networks.local }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.full-hw }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: transcode
+  reasons:
+    - video-interlaced
+    - hw-encoder-selected:nvenc
+    - ladder-variant-capped
+  container: fmp4-hls
+  ladder:
+    - { heightPx: 2160, videoBitrateBps: 16000000, audioBitrateBps: 384000, codec: hevc }
+    - { heightPx: 1080, videoBitrateBps: 4000000, audioBitrateBps: 160000, codec: h264 }
+    - { heightPx: 360, videoBitrateBps: 800000, audioBitrateBps: 160000, codec: h264 }
