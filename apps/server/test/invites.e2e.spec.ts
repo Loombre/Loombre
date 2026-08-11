@@ -467,6 +467,90 @@ describe("POST /invites/claim/{token} (public, E1/M13) — the whole flow, zero 
     expect(me.body.displayName).toBe("Default Preset");
   });
 
+  // ==========================================================================
+  // LD-13b (STATE.md "Mail posture trio"): ClaimInviteRequest.email
+  // ABSENT-vs-NULL-vs-VALUE, crossed with WITH-a-preset / WITHOUT-a-preset.
+  // The full 3x2 grid the mission's adversarial obligation names verbatim
+  // ("grid over absent/null/value x preset/no-preset"). ABSENT was already
+  // pinned above (preset wins) and is not repeated here except as the (0,0)
+  // control cell every other cell is compared against.
+  // ==========================================================================
+  describe("LD-13b: ClaimInviteRequest.email — absent vs null vs value, x preset vs no-preset", () => {
+    it("preset present + email ABSENT -> preset wins (control, mirrors the test above)", async () => {
+      const created = await createInviteRaw({ username: "grid-preset-absent", email: "grid-preset-absent@example.invalid" });
+      const claim = await request(app.getHttpServer()).post(`/invites/claim/${created.claimToken}`).send({ password: "claim-e2e-password" });
+      expect(claim.status, JSON.stringify(claim.body)).toBe(201);
+      const me = await request(app.getHttpServer()).get("/users/me").set("Authorization", `Bearer ${claim.body.accessToken}`);
+      expect(me.body.email).toBe("grid-preset-absent@example.invalid");
+    });
+
+    it("preset present + email EXPLICIT NULL -> opts OUT, the new account has NO email (the defect this item closes)", async () => {
+      const created = await createInviteRaw({ username: "grid-preset-null", email: "grid-preset-null@example.invalid" });
+      const claim = await request(app.getHttpServer())
+        .post(`/invites/claim/${created.claimToken}`)
+        .send({ password: "claim-e2e-password", email: null });
+      expect(claim.status, JSON.stringify(claim.body)).toBe(201);
+      const me = await request(app.getHttpServer()).get("/users/me").set("Authorization", `Bearer ${claim.body.accessToken}`);
+      expect(me.body.email).toBeNull();
+    });
+
+    it("preset present + email VALUE -> the submitted value wins over the preset", async () => {
+      const created = await createInviteRaw({ username: "grid-preset-value", email: "grid-preset-value-preset@example.invalid" });
+      const claim = await request(app.getHttpServer())
+        .post(`/invites/claim/${created.claimToken}`)
+        .send({ password: "claim-e2e-password", email: "grid-preset-value-submitted@example.invalid" });
+      expect(claim.status, JSON.stringify(claim.body)).toBe(201);
+      const me = await request(app.getHttpServer()).get("/users/me").set("Authorization", `Bearer ${claim.body.accessToken}`);
+      expect(me.body.email).toBe("grid-preset-value-submitted@example.invalid");
+    });
+
+    it("NO preset + email ABSENT -> no email (nothing to default to)", async () => {
+      const created = await createInviteRaw({ username: "grid-nopreset-absent" });
+      const claim = await request(app.getHttpServer()).post(`/invites/claim/${created.claimToken}`).send({ password: "claim-e2e-password" });
+      expect(claim.status, JSON.stringify(claim.body)).toBe(201);
+      const me = await request(app.getHttpServer()).get("/users/me").set("Authorization", `Bearer ${claim.body.accessToken}`);
+      expect(me.body.email).toBeNull();
+    });
+
+    it("NO preset + email EXPLICIT NULL -> no email (opting out of nothing is a harmless no-op, not a 422)", async () => {
+      const created = await createInviteRaw({ username: "grid-nopreset-null" });
+      const claim = await request(app.getHttpServer())
+        .post(`/invites/claim/${created.claimToken}`)
+        .send({ password: "claim-e2e-password", email: null });
+      expect(claim.status, JSON.stringify(claim.body)).toBe(201);
+      const me = await request(app.getHttpServer()).get("/users/me").set("Authorization", `Bearer ${claim.body.accessToken}`);
+      expect(me.body.email).toBeNull();
+    });
+
+    it("NO preset + email VALUE -> the submitted value is used", async () => {
+      const created = await createInviteRaw({ username: "grid-nopreset-value" });
+      const claim = await request(app.getHttpServer())
+        .post(`/invites/claim/${created.claimToken}`)
+        .send({ password: "claim-e2e-password", email: "grid-nopreset-value@example.invalid" });
+      expect(claim.status, JSON.stringify(claim.body)).toBe(201);
+      const me = await request(app.getHttpServer()).get("/users/me").set("Authorization", `Bearer ${claim.body.accessToken}`);
+      expect(me.body.email).toBe("grid-nopreset-value@example.invalid");
+    });
+
+    it("an all-whitespace email is NOT the null-to-clear signal — it still falls back to the preset (unchanged F7/R-F4 posture)", async () => {
+      const created = await createInviteRaw({ username: "grid-whitespace-not-null", email: "grid-whitespace-not-null@example.invalid" });
+      const claim = await request(app.getHttpServer())
+        .post(`/invites/claim/${created.claimToken}`)
+        .send({ password: "claim-e2e-password", email: "   " });
+      expect(claim.status, JSON.stringify(claim.body)).toBe(201);
+      const me = await request(app.getHttpServer()).get("/users/me").set("Authorization", `Bearer ${claim.body.accessToken}`);
+      expect(me.body.email).toBe("grid-whitespace-not-null@example.invalid");
+    });
+
+    it("a non-string, non-null email (e.g. a number) 422s — the null-to-clear widening does not loosen shape validation", async () => {
+      const created = await createInviteRaw({ username: "grid-bad-shape" });
+      const claim = await request(app.getHttpServer())
+        .post(`/invites/claim/${created.claimToken}`)
+        .send({ password: "claim-e2e-password", email: 12345 });
+      expect(claim.status, JSON.stringify(claim.body)).toBe(422);
+    });
+  });
+
   it("library grants: general library granted, restricted skipped (M4 defense in depth) — the claimed user cannot see the restricted library", async () => {
     // createInvite itself already rejects a restricted-class libraryId at
     // creation time (422, tested above) — the ONLY way a restricted grant

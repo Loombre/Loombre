@@ -44,7 +44,15 @@ import styles from "../../../components/auth/AuthScreen.module.css";
 
 type ClaimState = components["schemas"]["ClaimState"];
 
-type Phase = "loading" | "invalid" | "load-error" | "ready" | "submitting";
+// LD-13c (STATE.md "Mail posture trio"): once signed in (M13), a claim
+// whose intended email silently collided (`emailApplied: false` — see
+// TokenPair's own contract description) shows ONE honest interstitial
+// before handing off to /home, instead of redirecting straight there and
+// leaving the new accountholder to discover the missing email later with
+// no explanation. `emailApplied: true` (or, for an older/mismatched
+// server build, simply absent) skips straight to /home exactly as before —
+// this phase exists ONLY for the honest-signal case.
+type Phase = "loading" | "invalid" | "load-error" | "ready" | "submitting" | "claimed-email-dropped";
 
 function publicClient(): LoombreClient {
   const store = getAuthStore();
@@ -100,18 +108,35 @@ export function ClaimScreen({ token }: { token: string }): React.JSX.Element {
     try {
       const deviceProfile = await buildDeviceProfile();
       const hasUsernamePreset = claimState.usernamePreset !== null;
+      const hasEmailPreset = claimState.emailPreset !== null;
+      const trimmedEmail = email.trim();
+      // LD-13b (STATE.md "Mail posture trio"): a preset-prefilled field the
+      // claimant CLEARED is opt-out intent — send an explicit `null` so the
+      // server drops the preset outright, rather than omitting the member
+      // (which means "keep the preset" and would silently re-apply it, the
+      // exact bug this item closes). With no preset there was never
+      // anything to opt out of, so an empty field stays simply omitted,
+      // unchanged from before.
+      const emailBody = trimmedEmail ? { email: trimmedEmail } : hasEmailPreset ? { email: null } : {};
       const pair = await publicClient().post("/invites/claim/{token}", {
         params: { path: { token } },
         body: {
           ...(hasUsernamePreset ? {} : { username }),
           password,
           ...(displayName.trim() ? { displayName: displayName.trim() } : {}),
-          ...(email.trim() ? { email: email.trim() } : {}),
+          ...emailBody,
           deviceName: `Loombre Web (${deviceProfile.profileId})`,
           deviceProfile,
         },
       });
       getAuthStore().applyTokenPair(pair);
+      // LD-13c: already signed in either way (M13 unaffected) — only the
+      // REDIRECT is gated on the honest signal, so a dropped email gets
+      // one interstitial explaining why instead of vanishing silently.
+      if (pair.emailApplied === false) {
+        setPhase("claimed-email-dropped");
+        return;
+      }
       router.replace("/home");
     } catch (err) {
       if (err instanceof LoombreApiError && err.status === 404) {
@@ -163,8 +188,24 @@ export function ClaimScreen({ token }: { token: string }): React.JSX.Element {
     );
   }
 
+  if (phase === "claimed-email-dropped") {
+    return (
+      <AuthScreen tagline="Your media. Your hardware. Your rules.">
+        <p className={styles.formHeading}>Account created</p>
+        <p className={styles.bodyText}>
+          You&apos;re signed in — but the email address on this invite is already in use by another account
+          here, so it wasn&apos;t added to yours. Add a different one anytime from Settings.
+        </p>
+        <Button type="button" variant="primary" className={styles.submit} onClick={() => router.replace("/home")}>
+          Continue
+        </Button>
+      </AuthScreen>
+    );
+  }
+
   const submitting = phase === "submitting";
   const usernameLocked = claimState?.usernamePreset !== null && claimState?.usernamePreset !== undefined;
+  const hasEmailPreset = claimState?.emailPreset !== null && claimState?.emailPreset !== undefined;
 
   return (
     <AuthScreen tagline="Your media. Your hardware. Your rules.">
@@ -202,6 +243,12 @@ export function ClaimScreen({ token }: { token: string }): React.JSX.Element {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
           />
+          {/* LD-13b: a preset-prefilled field the claimant clears is sent as
+              an explicit `email: null` opt-out (see handleSubmit above),
+              not silently re-defaulted to the preset — this hint is what
+              tells them clearing it actually does something. No preset,
+              nothing to opt out of, so no hint. */}
+          {hasEmailPreset && <span className={styles.hint}>Pre-filled from your invite — clear this to skip it.</span>}
         </label>
         <label className={styles.field} htmlFor="password">
           <span className={styles.label}>Password</span>
