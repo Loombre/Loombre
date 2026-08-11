@@ -415,6 +415,17 @@ bundled ffmpeg or GPU/driver fingerprint changes. Known quirk regressions
 macOS: videotoolbox → software. Windows: nvenc → qsv → amf → d3d11va(decode-
 only) → software. Linux: nvenc → qsv → vaapi → software.
 
+**Arch pruning (LD-2).** The rows above are keyed on platform AND
+architecture. The Windows row is an x86 row: nvenc, qsv and amf are all
+x86-vendor facts, and d3d11va only LOOKS architecture-neutral — its ARM64
+Windows path runs against drivers nobody in this project has probed, and an
+unverified hwaccel fails mid-session after the plan is already committed.
+**Windows on arm64 → `software` only.** macOS and Linux on arm64 are
+unchanged (Apple Silicon videotoolbox is the primary Mac target; Linux arm64
+vaapi/nvenc are real). Re-open condition, and the only one: a real probe-
+battery PASS for d3d11va decode on real ARM64 Windows hardware, recorded in
+STATE.md.
+
 ### 8.3 Selection & pipelines
 Choose the first backend (platform order) whose VERIFIED caps cover BOTH the
 required decode codec and target encode codec; else first covering encode with
