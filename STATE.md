@@ -587,6 +587,30 @@ unconditionally (no de-dup against in-flight target); (3) renderServedPlaylist
 EVENT playlist prunes head without EXT-X-MEDIA-SEQUENCE (assigned to A2's
 continuation, its file).
 
+**A3 checkpoint (2026-08-11, mid-wave):** first pass done. GENUINELY-OPEN items
+closed: C5.1 breaker boot re-seed (pure seed primitive + server wiring; RED run
+exposed a WORSE bug — an un-reseeded restart REGRESSED the durable
+consecutive_failures column downward on next write); C5.3's new half (secret
+dropped from a live manifest stranded its keyring entry forever —
+removeOrphanedManifestSecrets keyed on the manifest schema diff, deliberately
+NOT on config submissions whose omission=unchanged contract is intentional);
+L-6. ALREADY-CLOSED-IN-TREE verified not re-implemented: L-4 (+ a db-layer
+lpp:-prefix reject covering ALL future callers), L-7, L-2/L-3 (regression tests
+backfilled — none existed). Orchestrator CORRECTED one lane call: the
+LAN-allowlist exact-hostname bypass (ssrf.ts:361, pinnedAddress:null) is NOT
+by-design-acceptable — it is precisely the residual the owner's C5.2 wording
+directs closing; continuation ordered (resolve-once-and-pin for allowlisted
+names, allowlist's only remaining effect = skip the disallowed-range check;
+red-first flip-resolver test). SCOPE EXTENSIONS granted to A3: (a) worker-side
+SECOND breaker registry with the same unseeded gap (apps/worker metadata/
+plugin-breakers.ts + plugin-delivery/backoff.ts — A3's find; index.ts wiring
+would hand off through A1); (b) M-7 ledger redaction landed in packages/jobs/
+src/ledger.ts recordRetrying/recordFailed (verbatim errorMessage → jobs.
+last_error + job.updated outbox payload; verified at source), redactPaths
+lifted from apps/worker/src/crash to a shared home. Final spec-run verification
+of the whole A3 branch happens once, on the settled branch, when the
+continuation returns.
+
 ## an upstream media server comparative architecture study — ANALYSIS-ONLY, COMPLETE 2026-08-10 (owner brief "Comparative Architecture Study — an upstream media server Playback Engine vs. Loombre"; awaiting owner review + implementation authorization)
 
 DELIVERABLE: reports/upstream-media-server-study/upstream-media-server-comparative-study.md (908 lines) —
