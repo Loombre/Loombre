@@ -268,22 +268,197 @@ describe("SettingField — Phosphor registry card fidelity", () => {
       expect(save.hasAttribute("disabled")).toBe(false);
     });
 
-    it("boolean widget: clicking the ON/OFF label text (outside the switch itself, but inside the clickable row) also toggles exactly once — not zero, not twice", () => {
-      // The row wraps its own onClick AROUND the shared Toggle (whose own
-      // internal <label> already makes the switch itself clickable) so the
-      // text label is clickable too. A click on the switch bubbles through
-      // BOTH handlers (Toggle's onChange AND the row's onClick) in the same
-      // tick — this asserts that doesn't produce a double-toggle-back-to-
-      // start, which the previous test's "click the switch" case already
-      // covers; this one drives the OTHER path (a click that never reaches
-      // the switch at all) to confirm the row-level handler alone is
-      // sufficient and idempotent-safe either way.
+    it("boolean widget: clicking the ON/OFF label text also toggles, via its OWN onClick — not a row-level handler it bubbles up to", () => {
+      // LD-13 hardening: the ON/OFF <span> now carries its own onClick
+      // directly (SettingField.tsx) rather than relying on the wrapping
+      // row to catch a bubbled click — exactly one handler per interactive
+      // target, never a redundant duplicate. This still proves the label
+      // itself is clickable and toggles cleanly.
       view = renderIntoBody(<SettingField entry={HEVC_ENTRY} value={true} source="default" onChanged={noop} />);
       const label = Array.from(view.container.querySelectorAll("span")).find((s) => s.textContent === "ON")!;
       act(() => label.click());
       expect(view.container.textContent).toContain("OFF");
       const checkbox = view.container.querySelector('input[type="checkbox"]') as HTMLInputElement;
       expect(checkbox.checked).toBe(false);
+    });
+
+    it("boolean widget: clicking the switch itself fires exactly one net toggle (LD-13 — no redundant row-level handler duplicating Toggle's own onChange)", () => {
+      // opus-review LD wave, Finding 2 — the REAL mechanism (reproduced and
+      // confirmed by the review; this replaces an earlier version of this
+      // test/comment that could not reproduce a dead switch and wrongly
+      // concluded the double invocation was harmless):
+      //
+      // A real click landing on the switch (its track/thumb, a descendant
+      // of Toggle's own <label>, not the row's ON/OFF text) actually
+      // reaches the app in TWO separate native click dispatches, not one:
+      // the user's own click, AND — synthesized by the browser's native
+      // label-to-<input> click-forwarding (HTML spec activation behavior)
+      // — a SECOND click on the <input> itself. React 18 flushes discrete
+      // click updates at the end of EACH native dispatch, so whatever ran
+      // from the first dispatch is already committed by the time the
+      // second dispatch's handlers read state. Before the LD-13 hardening
+      // fix, the wrapping row ALSO carried onClick={handleBoolToggle},
+      // duplicating Toggle's own onChange — so:
+      //   - dispatch A (the user's own click, bubbling through the row):
+      //     row onClick reads the PRE-click value and commits its flip.
+      //   - dispatch B (the label-forwarded click on the <input>): Toggle
+      //     onChange AND row onClick (bubbled from this SAME forwarded
+      //     click) both read dispatch A's COMMITTED value and each flip it
+      //     back.
+      // Net effect: false -> true -> false — a SILENT DEAD SWITCH on every
+      // click of the switch itself. (Clicking the ON/OFF text worked fine:
+      // it fires only ONE dispatch, with no label-forwarding involved.)
+      //
+      // This test drives that exact two-dispatch/two-flush shape directly,
+      // as two SEPARATE act() blocks, rather than dispatching a single
+      // click on the track and letting jsdom synthesize the forwarded
+      // click as a nested call within that SAME act(): jsdom performs that
+      // forwarding synchronously with no yield point, so a single act()
+      // around it lets React's batching collapse everything sharing one
+      // stale closure — which happens to net the SAME single flip the
+      // fixed code produces, passing against BOTH the old buggy wiring and
+      // the new correct wiring alike (verified empirically), pinning
+      // nothing. Dispatch A below targets the ROW itself directly (outside
+      // Toggle's <label> subtree, so no jsdom-native forwarding is
+      // triggered as a side effect of this call) — modeling "whatever the
+      // user's own click's bubble reaches" in isolation. Dispatch B is
+      // `checkbox.click()` — a direct, spec-correct simulation of the
+      // label-forwarded click landing on the <input>, as its own separate
+      // flush. Verified by temporarily reverting SettingField.tsx's
+      // handler split back to the old row-onClick-plus-Toggle-onChange
+      // duplication and confirming this exact test goes red (net stays
+      // true — the dead switch), then restoring the fix and confirming
+      // green (net false — one clean toggle).
+      view = renderIntoBody(<SettingField entry={HEVC_ENTRY} value={true} source="default" onChanged={noop} />);
+      const checkbox = view.container.querySelector('input[type="checkbox"]') as HTMLInputElement;
+      expect(checkbox.checked).toBe(true);
+      const boolRow = checkbox.closest("label")!.parentElement!; // Toggle's <label> parent is the row div
+
+      // Dispatch A: the user's own click, landing somewhere in the row
+      // outside Toggle's <label> subtree (no native label-forwarding side
+      // effect from this call) — its own discrete React flush, committed
+      // before dispatch B begins.
+      act(() => {
+        boolRow.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+      });
+
+      // Dispatch B: the browser's native label-forwarded click, landing
+      // directly on the <input> — a SEPARATE discrete dispatch/flush.
+      act(() => {
+        checkbox.click();
+      });
+
+      expect(checkbox.checked).toBe(false); // net ONE toggle, not a self-cancel back to true
+      expect(view.container.textContent).toContain("OFF");
+    });
+
+    it("boolean widget: clicking empty space in the row (neither the label nor the switch) does NOT toggle — the row itself carries no click handler anymore", () => {
+      view = renderIntoBody(<SettingField entry={HEVC_ENTRY} value={true} source="default" onChanged={noop} />);
+      const checkbox = view.container.querySelector('input[type="checkbox"]') as HTMLInputElement;
+      const boolRow = checkbox.closest("label")!.parentElement!; // Toggle's <label> parent is the row div
+      act(() => {
+        boolRow.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+      });
+      expect(checkbox.checked).toBe(true);
+      expect(view.container.textContent).toContain("ON");
+    });
+
+    // LD-13 discovery: audited every boolean-typed key actually defined in
+    // packages/shared/src/settings-registry.ts (five total, verified via
+    // `grep -n "z\\.boolean" settings-registry.ts` at the time of this
+    // fix). Fixtures below mirror each entry's real key/scope/envVar shape
+    // (U9: never invented fixture strings). Two of the five carry an envVar
+    // (restricted.enabled, tls.acmeTosAgreed) and can be legitimately
+    // env-pinned; the other three never carry one and must ALWAYS be
+    // editable. This sweep is the "genuinely broken vs correctly disabled"
+    // discovery this ticket asked for, pinned as a test: every unlocked
+    // boolean renders and responds to a click; every actively-locked one
+    // renders NO switch at all (the A8 read-only display), which is
+    // correct-by-design, not a dead control.
+    describe("LD-13 sweep — every real boolean registry key", () => {
+      const REAL_BOOLEAN_ENTRIES: AdminSettingSchemaEntry[] = [
+        {
+          key: "transcode.hevcEncodePreferred",
+          category: "transcode",
+          description: "Prefer HEVC over H.264 when hardware supports it.",
+          scope: "ui",
+          requiresRestart: false,
+          default: true,
+          valueSchema: valueSchema({ type: "boolean" }),
+          locked: false,
+        },
+        {
+          key: "images.avifEnabled",
+          category: "images",
+          description: "Also save each poster/thumbnail as AVIF when this server can create it.",
+          scope: "ui",
+          requiresRestart: false,
+          default: true,
+          valueSchema: valueSchema({ type: "boolean" }),
+          locked: false,
+        },
+        {
+          key: "security.loginAnomalyLogEnabled",
+          category: "security",
+          description: "Record suspicious sign-in activity to a local log file.",
+          scope: "ui",
+          requiresRestart: false,
+          default: true,
+          valueSchema: valueSchema({ type: "boolean" }),
+          locked: false,
+        },
+        {
+          key: "restricted.enabled",
+          category: "restricted",
+          description: "Turns the restricted-content feature on for this server.",
+          scope: "ui",
+          requiresRestart: false,
+          envVar: "LOOMBRE_RESTRICTED_ENABLED",
+          default: false,
+          valueSchema: valueSchema({ type: "boolean" }),
+          locked: false, // env var unset in this fixture — must be editable
+        },
+        {
+          key: "tls.acmeTosAgreed",
+          category: "tls",
+          description: "Confirms acceptance of the certificate authority's Terms of Service.",
+          scope: "ui",
+          requiresRestart: true,
+          envVar: "LOOMBRE_ACME_TOS_AGREED",
+          default: false,
+          valueSchema: valueSchema({ type: "boolean" }),
+          locked: false, // env var unset in this fixture — must be editable
+        },
+      ];
+
+      it.each(REAL_BOOLEAN_ENTRIES)("$key: unlocked renders an interactive switch that responds to a click and enables Save", (entry) => {
+        view = renderIntoBody(<SettingField entry={entry} value={entry.default} source="default" onChanged={noop} />);
+        const checkbox = view.container.querySelector('input[type="checkbox"]') as HTMLInputElement;
+        expect(checkbox).not.toBeNull();
+        const before = checkbox.checked;
+        act(() => checkbox.click());
+        expect(checkbox.checked).toBe(!before);
+        const buttons = Array.from(view.container.querySelectorAll("button"));
+        const save = buttons.find((b) => b.textContent === "Save")!;
+        expect(save.hasAttribute("disabled")).toBe(false);
+      });
+
+      const PINNABLE_ENTRIES = REAL_BOOLEAN_ENTRIES.filter((e) => e.envVar !== undefined);
+
+      it.each(PINNABLE_ENTRIES)(
+        "$key: actively env-pinned renders NO switch at all — the A8 read-only display, correctly non-interactive by design (not a dead control)",
+        (entry) => {
+          // exactOptionalPropertyTypes forbids `lockedBy: entry.envVar` here
+          // even though PINNABLE_ENTRIES is filtered to envVar !== undefined
+          // — the filter doesn't narrow the type inside this closure — so
+          // spread conditionally rather than assign a `string | undefined`.
+          const lockedEntry: AdminSettingSchemaEntry = { ...entry, locked: true, ...(entry.envVar !== undefined ? { lockedBy: entry.envVar } : {}) };
+          view = renderIntoBody(<SettingField entry={lockedEntry} value={true} source="environment" onChanged={noop} />);
+          expect(view.container.querySelector('input[type="checkbox"]')).toBeNull();
+          expect(view.container.querySelector('svg[aria-label="Locked"]')).not.toBeNull();
+          expect(view.container.textContent).toContain(`Set by environment (${entry.envVar})`);
+        },
+      );
     });
 
     // W3-R adjudicated D-3 exception (recorded in STATE.md): registry enum

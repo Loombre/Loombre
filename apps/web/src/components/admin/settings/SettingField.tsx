@@ -346,8 +346,38 @@ export function SettingField({ entry, value, source, onChanged, technicalDetails
         ) : (
           <div className={styles.editor}>
             {kind === "boolean" && (
-              <div className={styles.boolRow} onClick={handleBoolToggle}>
-                <span className={styles.boolLabel}>{boolDraft ? "ON" : "OFF"}</span>
+              // LD-13 hardening: previously the ROW div also carried
+              // onClick={handleBoolToggle}, duplicating Toggle's own
+              // onChange — this was a REAL, reproduced dead-switch bug, not
+              // a harmless redundancy (opus-review LD wave, Finding 2 —
+              // see SettingField.test.tsx's "exactly one net toggle" test
+              // for the confirmed red-then-green proof). A click landing on
+              // the switch itself (its track/thumb, not the row's ON/OFF
+              // text) reaches the app as TWO SEPARATE native click
+              // dispatches: the user's own click, then — synthesized by the
+              // browser's native <label>-to-<input> click-forwarding (HTML
+              // spec activation behavior) — a second click on the <input>
+              // itself. React 18 flushes discrete click updates at the end
+              // of EACH native dispatch, so the first dispatch's flip was
+              // already committed by the time the second dispatch's
+              // handlers ran: dispatch A (row onClick) read the pre-click
+              // value and flipped it; dispatch B (Toggle onChange AND row
+              // onClick, both firing off the SAME forwarded click) each
+              // read dispatch A's already-committed value and flipped it
+              // BACK. Net effect: false -> true -> false — the switch
+              // visibly failed to respond to a click on itself, while
+              // clicking the ON/OFF text (a single dispatch, no
+              // label-forwarding involved) worked fine, which is what made
+              // this easy to dismiss as user error rather than a real bug.
+              // Exactly one element now owns each interactive target: the
+              // label text has its own onClick, the switch is governed
+              // solely by Toggle's onChange. Same visual affordance (click
+              // the text OR the switch), zero redundant invocations, by
+              // construction rather than by lucky batching.
+              <div className={styles.boolRow}>
+                <span className={styles.boolLabel} onClick={handleBoolToggle}>
+                  {boolDraft ? "ON" : "OFF"}
+                </span>
                 <Toggle checked={boolDraft} onChange={handleBoolToggle} />
               </div>
             )}

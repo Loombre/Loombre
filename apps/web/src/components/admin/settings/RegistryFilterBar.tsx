@@ -24,8 +24,21 @@
 // schema entries every render, never cached/stored (STATE.md U9: "user and
 // restricted-profile count... must be derived, not stored" is the named
 // precedent this follows for every other derivable count in the app). The
-// padlock glyph on a pill marks a category where EVERY key is scope
-// 'env-only' (no UI-editable key exists in it at all).
+// padlock glyph on a pill marks a category that contains AT LEAST ONE key
+// scoped 'env-only' — LD-9 (owner screenshot): this used to require EVERY
+// key in the category to be env-only, which silently dropped the padlock
+// from a mixed category like "network" (env-only http.port/
+// network.corsOrigins alongside ui-scope network.publicUrl/
+// network.trustProxy) even though it genuinely holds a key nobody can edit
+// here. `hasEnvOnlyKey` (lib/settings-schema-widget.ts#categorySummaries)
+// is the single source of that condition — never re-derived here.
+//
+// LD-10 (owner screenshot): the pill row itself is sorted alphabetically by
+// its displayed label — the ONLY ordering rule for this row (categories
+// prop arrives in registry/first-seen order from categorySummaries(), which
+// every OTHER consumer, e.g. the category section list, keeps unchanged;
+// this component alone re-sorts for its own display, right before mapping,
+// rather than inventing a second ordering utility elsewhere).
 //
 // W15 (owner screenshot, Settings > Advanced Server): the category pills
 // used to be a bespoke button forked straight into this file's own
@@ -60,6 +73,14 @@ export function RegistryFilterBar({
   query,
   onQueryChange,
 }: RegistryFilterBarProps): React.JSX.Element {
+  // LD-10: alphabetical by displayed label (case-insensitive) — the sole
+  // ordering rule for this row. A fresh array (never mutates the `categories`
+  // prop, whose own registry-order identity other consumers may still rely
+  // on) sorted immediately before render.
+  const sortedCategories = [...categories].sort((a, b) =>
+    (categoryLabels[a.category] ?? a.category).localeCompare(categoryLabels[b.category] ?? b.category),
+  );
+
   return (
     <div className={styles.bar}>
       <div className={styles.row}>
@@ -76,7 +97,7 @@ export function RegistryFilterBar({
           />
         </div>
         <div className={styles.pillRow} role="tablist" aria-label="Registry category">
-          {categories.map((c) => (
+          {sortedCategories.map((c) => (
             <FilterChip
               key={c.category}
               role="tab"
@@ -84,7 +105,7 @@ export function RegistryFilterBar({
               active={activeCategory === c.category}
               count={c.count}
               onClick={() => onSelectCategory(c.category)}
-              {...(c.allEnvOnly ? { icon: <Icon icon={Lock} size="dense" aria-hidden /> } : {})}
+              {...(c.hasEnvOnlyKey ? { icon: <Icon icon={Lock} size="dense" aria-hidden /> } : {})}
             >
               {categoryLabels[c.category] ?? c.category}
             </FilterChip>

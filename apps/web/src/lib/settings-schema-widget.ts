@@ -236,23 +236,37 @@ export interface RegistryCategorySummary {
    *  else (STATE.md U9: user/restricted counts are the cautionary
    *  precedent for "derived, not stored"). */
   count: number;
-  /** True when EVERY entry in this category is scope:'env-only' — drives
-   *  the pill's padlock glyph (mirrors the prototype's
-   *  `entries.every(e => e.envOnly)`). */
-  allEnvOnly: boolean;
+  /** LD-9 (owner screenshot, Settings > Advanced Server): true when the
+   *  category contains AT LEAST ONE scope:'env-only' key — drives the
+   *  pill's padlock glyph. Previously this required EVERY entry in the
+   *  category to be env-only (`es.every(...)`, mirroring a misread of the
+   *  prototype's `entries.every(e => e.envOnly)`), which meant a MIXED
+   *  category — one holding both an env-only key and a UI-editable one,
+   *  e.g. "network" (http.port/network.corsOrigins are env-only;
+   *  network.publicUrl/network.trustProxy are ui-scope) — never got the
+   *  padlock at all, even though it genuinely has environment-pinned,
+   *  never-editable-here keys inside it. The lock's honest meaning is "this
+   *  category has at least one key you cannot edit through this surface no
+   *  matter what" — `some`, not `every`. */
+  hasEnvOnlyKey: boolean;
 }
 
-/** One summary row per category, in registry (first-seen) order — the
- *  category pill row's sole data source. Pure projection over
- *  groupByCategory, so pill order and category-section order can never
- *  drift apart. */
+/** One summary row per category, in registry (first-seen) order. Pure
+ *  projection over groupByCategory, so this order and the category-section
+ *  order can never drift apart. NOTE: this is NOT the pill ROW's own
+ *  display order — LD-10 (owner screenshot) locked the category filter
+ *  chips to a simple alphabetical-by-label sort, applied by
+ *  RegistryFilterBar.tsx immediately before rendering (the one place that
+ *  ordering exists — never re-derived here or anywhere else), while every
+ *  OTHER consumer of this function (the category section list, etc.) keeps
+ *  reproducing the registry's own grouping unchanged. */
 export function categorySummaries<T extends { category: string; scope: string }>(
   entries: readonly T[],
 ): RegistryCategorySummary[] {
   return groupByCategory(entries).map(({ category, entries: es }) => ({
     category,
     count: es.length,
-    allEnvOnly: es.every((e) => e.scope === "env-only"),
+    hasEnvOnlyKey: es.some((e) => e.scope === "env-only"),
   }));
 }
 
