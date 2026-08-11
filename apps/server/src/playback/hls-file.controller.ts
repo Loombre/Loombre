@@ -33,13 +33,35 @@
 // (hls.js-compatible: it already retries a 503 GET), never 404 — a 404
 // would make hls.js treat the segment as permanently gone rather than
 // "coming soon after a restart".
+//
+// SEEK-TARGET DERIVATION (docs/PLAYBACK.md §9 "Seek", C3): the millisecond
+// value handed to `requestSeek` is derived from the REAL durations the
+// worker actually produced — the `#EXTINF` values in the served
+// `media.m3u8` this controller also serves — never from
+// `segmentIndex * SEGMENT_DURATION_SEC * 1000`. Nominal arithmetic is
+// wrong by construction: `-hls_time {SEG_DUR}` is a LOWER bound and
+// `-force_key_frames expr:gte(t,n_forced*{SEG_DUR})`
+// (packages/playback-engine/src/args/builder.ts §6) cuts at the first
+// keyframe AT OR AFTER each mark, so a real segment is 6.006s..9s+ and the
+// error COMPOUNDS with the index — tens of seconds by the middle of a
+// feature. `deriveSegmentStartMs` below is exact inside the window the
+// served playlist still lists and extrapolates at that window's MEASURED
+// mean outside it (retention-pruned head, not-yet-produced tail); the
+// nominal constant survives only as the last resort when no served
+// playlist is readable at all. The result is then clamped to
+// `[0, durationMs]` — `requestSeek` writes `seek_target_ms` verbatim
+// (packages/db/src/query/playback-sessions.ts, deliberately: it never
+// re-derives a decision its caller already made), and an unclamped value
+// becomes an ffmpeg `-ss` past EOF, i.e. a restart that produces nothing,
+// forever.
 
 import { createReadStream } from "node:fs";
 import { stat, readFile } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { Controller, Get, Param, Req, Res, UseFilters, UseGuards } from "@nestjs/common";
 import type { Response } from "express";
-import { getPlaybackSessionForUser, requestSeek, updateRequestedSegment } from "@loombre/db";
+import { getMediaInfoAssembly, getPlaybackSessionForUser, requestSeek, updateRequestedSegment } from "@loombre/db";
+import type { ViewerContext } from "@loombre/db";
 import { nowMs as clockNowMs } from "@loombre/shared";
 import { notFound } from "../gateway/problem.exception.js";
 import { requireUuidParam } from "../gateway/require-uuid-param.js";
@@ -108,6 +130,113 @@ function isStrictlyUnder(root: string, candidate: string): boolean {
 function joinFileParam(file: unknown): string {
   if (Array.isArray(file)) return file.join("/");
   return typeof file === "string" ? file : "";
+}
+
+// ---------------------------------------------------------------------------
+// Seek-target derivation (module header's SEEK-TARGET DERIVATION note)
+// ---------------------------------------------------------------------------
+
+/** One entry of the served playlist: its GLOBALLY-CONTINUOUS segment index
+ *  (docs/PLAYBACK.md §9 — `{START_SEG}` continues the numbering across
+ *  every seek-restart run, so an index is unique session-wide) and the
+ *  duration ffmpeg really wrote for it. */
+export interface ServedSegmentEntry {
+  index: number;
+  durationMs: number;
+}
+
+/** `#EXTINF:<sec>,` immediately followed by a `runN/sNNNNNN.{m4s,ts}` URI —
+ *  the exact two-line shape apps/worker/src/transcode/playlist.ts's
+ *  `renderServedPlaylist()` emits. Parsed here rather than imported for the
+ *  same reason `isStrictlyUnder` above is duplicated rather than imported:
+ *  apps/server must not reach into apps/worker's internals across the
+ *  process boundary the seam contract allows no channel across. */
+const EXTINF_RE = /^#EXTINF:([0-9.]+),/;
+const SERVED_SEGMENT_URI_RE = /^run\d+\/s(\d+)\.(?:m4s|ts)$/;
+
+/** Tolerant by design (same posture as the worker's own parser): a playlist
+ *  read mid-rewrite, a dangling `#EXTINF` with no URI after it yet, or an
+ *  unrecognized line all degrade to "fewer entries", never a throw. Entries
+ *  come back in playlist order, which is also increasing index order. */
+export function parseServedSegmentDurations(playlistText: string): ServedSegmentEntry[] {
+  const entries: ServedSegmentEntry[] = [];
+  let pendingDurationMs: number | undefined;
+  for (const rawLine of playlistText.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (line.startsWith("#EXTINF")) {
+      const m = EXTINF_RE.exec(line);
+      const sec = m?.[1] === undefined ? Number.NaN : Number.parseFloat(m[1]);
+      pendingDurationMs = Number.isFinite(sec) && sec > 0 ? sec * 1000 : undefined;
+      continue;
+    }
+    if (line.startsWith("#") || line === "") continue;
+    if (pendingDurationMs === undefined) continue;
+    const uri = SERVED_SEGMENT_URI_RE.exec(line);
+    if (uri?.[1] !== undefined) {
+      entries.push({ index: Number.parseInt(uri[1], 10), durationMs: pendingDurationMs });
+    }
+    pendingDurationMs = undefined;
+  }
+  return entries;
+}
+
+/**
+ * Media-timeline start of `segmentIndex`, in ms, from what the session has
+ * ACTUALLY produced.
+ *
+ * Rules (in this order — the whole point is that the nominal constant is
+ * the LAST of them, not the first):
+ *   1. No entries at all (playlist unreadable / not written yet): fall back
+ *      to `segmentIndex * nominalSegmentDurationMs`. This is the only path
+ *      on which the pre-C3 arithmetic survives, and it is reached only when
+ *      there is genuinely nothing measured to reason from.
+ *   2. `segmentIndex` is at or after some listed entry: exact cumulative
+ *      sum of the real durations preceding it, anchored at
+ *      `firstListedIndex * mean` (the pruned head is gone from the
+ *      playlist, so its length can only be estimated — at the measured
+ *      mean, never the nominal constant). A gap or a not-yet-produced tail
+ *      extrapolates from the nearest listed entry at the same mean.
+ *   3. `segmentIndex` precedes every listed entry (a backward seek into the
+ *      retention-pruned head): `segmentIndex * mean`.
+ *
+ * `mean` is the measured mean of every listed segment. Rule 2 collapses to
+ * an EXACT answer for the common case — a session whose playlist still
+ * starts at index 0 — because the anchor is then `0 * mean`.
+ *
+ * Pure: no I/O, no clock. The caller supplies the playlist text.
+ */
+export function deriveSegmentStartMs(entries: readonly ServedSegmentEntry[], segmentIndex: number, nominalSegmentDurationMs: number): number {
+  if (entries.length === 0) return segmentIndex * nominalSegmentDurationMs;
+
+  let totalMs = 0;
+  for (const entry of entries) totalMs += entry.durationMs;
+  const meanMs = totalMs / entries.length;
+
+  const firstIndex = entries[0]!.index;
+  if (segmentIndex < firstIndex) return segmentIndex * meanMs;
+
+  let cumulativeMs = firstIndex * meanMs;
+  let lastCrossedIndex = firstIndex;
+  for (const entry of entries) {
+    if (entry.index === segmentIndex) return cumulativeMs;
+    // A listed index PAST the requested one means `segmentIndex` sits in a
+    // gap — stop and extrapolate forward from the last entry crossed.
+    if (entry.index > segmentIndex) break;
+    cumulativeMs += entry.durationMs;
+    lastCrossedIndex = entry.index;
+  }
+  // Past the end of the listed window, or inside a gap: `cumulativeMs` is
+  // the end of the last entry crossed.
+  return cumulativeMs + (segmentIndex - lastCrossedIndex - 1) * meanMs;
+}
+
+/** `[0, durationMs]`. `durationMs` null/non-positive (an unprobed file)
+ *  leaves only the lower bound — better an un-ceilinged seek than a seek
+ *  clamped to a duration nobody measured. */
+export function clampSeekTargetMs(targetMs: number, durationMs: number | null): number {
+  const lower = Number.isFinite(targetMs) ? Math.max(0, targetMs) : 0;
+  if (durationMs === null || !Number.isFinite(durationMs) || durationMs <= 0) return Math.round(lower);
+  return Math.round(Math.min(lower, durationMs));
 }
 
 @Controller()
@@ -252,7 +381,8 @@ export class PlaybackHlsFileController {
     if (parsed.segmentIndex !== undefined) {
       const ahead = session.producedSegment === null ? Number.POSITIVE_INFINITY : parsed.segmentIndex - session.producedSegment;
       if (ahead > SEEK_LOOKAHEAD_SEGMENTS) {
-        await requestSeek(this.dbProvider.db, ctx, id, parsed.segmentIndex * SEGMENT_DURATION_SEC * 1000, now);
+        const targetMs = await this.resolveSeekTargetMs(ctx, session, parsed.segmentIndex);
+        await requestSeek(this.dbProvider.db, ctx, id, targetMs, now);
         this.respondSeekRetry(res, sanitizeInstancePath(req));
         return;
       }
@@ -271,7 +401,8 @@ export class PlaybackHlsFileController {
       // (b): also a seek-worthy condition for a real segment index; for
       // init.mp4 (no index), just ask the client to retry shortly.
       if (parsed.segmentIndex !== undefined) {
-        await requestSeek(this.dbProvider.db, ctx, id, parsed.segmentIndex * SEGMENT_DURATION_SEC * 1000, now);
+        const targetMs = await this.resolveSeekTargetMs(ctx, session, parsed.segmentIndex);
+        await requestSeek(this.dbProvider.db, ctx, id, targetMs, now);
       }
       this.respondSeekRetry(res, sanitizeInstancePath(req));
       return;
@@ -282,6 +413,48 @@ export class PlaybackHlsFileController {
     res.setHeader("Cache-Control", "private, immutable");
     res.setHeader("Content-Length", sizeBytes);
     createReadStream(absolutePath).pipe(res);
+  }
+
+  /**
+   * The ms value handed to `requestSeek` — module header's SEEK-TARGET
+   * DERIVATION note. Runs ONLY on a seek path (both call sites are already
+   * inside a 503-and-restart branch), never on the hot segment-serving
+   * path: CLAUDE.md invariant 9 (Tier-0 — request paths do no CPU-heavy
+   * work) is satisfied by rarity plus the work itself being one small
+   * text read plus a linear scan of a playlist that retention keeps
+   * bounded, not by any caching this would otherwise need.
+   *
+   * Every failure degrades rather than throws — a seek-restart is the
+   * recovery path for a client that is ALREADY stalled, so a 500 here
+   * would turn a recoverable stall into a dead session. An unreadable
+   * playlist falls back to nominal arithmetic; an unresolvable media
+   * assembly drops only the upper clamp.
+   */
+  private async resolveSeekTargetMs(ctx: ViewerContext, session: { stagingDir: string | null; itemId: string | null; fileId: string | null }, segmentIndex: number): Promise<number> {
+    let entries: ServedSegmentEntry[] = [];
+    if (session.stagingDir) {
+      try {
+        entries = parseServedSegmentDurations(await readFile(join(session.stagingDir, "media.m3u8"), "utf8"));
+      } catch {
+        // No served playlist yet (or a read that raced the worker's
+        // atomic rewrite) — `deriveSegmentStartMs` falls back to nominal.
+      }
+    }
+    const derivedMs = deriveSegmentStartMs(entries, segmentIndex, SEGMENT_DURATION_SEC * 1000);
+
+    let durationMs: number | null = null;
+    if (session.fileId) {
+      try {
+        const assembly = await getMediaInfoAssembly(this.dbProvider.db, ctx, {
+          fileId: session.fileId,
+          ...(session.itemId ? { itemId: session.itemId } : {}),
+        });
+        durationMs = assembly?.media.durationMs ?? null;
+      } catch {
+        // Unprobed/vanished file — clamp with the lower bound only.
+      }
+    }
+    return clampSeekTargetMs(derivedMs, durationMs);
   }
 
   private respondSeekRetry(res: Response, instance: string): void {

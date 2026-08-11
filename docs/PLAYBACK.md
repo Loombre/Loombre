@@ -444,6 +444,38 @@ State machine: `created → starting → active ⇄ suspended → seeking → ac
   restart with `{SEEK_SECONDS}=target` and `{START_SEG}` continuing the
   numbering, playlist gains `EXT-X-DISCONTINUITY`. Old segments beyond a
   retention window (120 s behind live edge) are deleted.
+  - **"Outside" is decided per segment GET** (apps/server's
+    `hls-file.controller.ts`): the requested index is more than 3 ahead of
+    `produced_segment`, OR the file is simply not on disk (a run that has
+    not reached that number yet, or a retention-pruned one). Either way the
+    response is 503 + `Retry-After`, never 404 — a 404 makes hls.js treat
+    the segment as permanently gone instead of "coming after a restart".
+  - **Seek-target derivation (MANDATORY — never nominal arithmetic).** The
+    ms value written to `seek_target_ms` is derived from the durations the
+    session ACTUALLY produced: the `#EXTINF` values in the served
+    `media.m3u8`. `segmentIndex × segmentDurationSec × 1000` is wrong by
+    construction — `-hls_time {SEG_DUR}` is a lower bound and
+    `-force_key_frames expr:gte(t,n_forced*{SEG_DUR})` (§6) cuts at the
+    first keyframe AT OR AFTER each mark, so a real segment overshoots and
+    the error compounds with the index (tens of seconds by mid-feature; a
+    seek then lands somewhere the viewer did not ask for, and a second seek
+    compounds it again). The rule, in order:
+      1. no served playlist readable → `index × segmentDurationSec × 1000`
+         (LAST resort only — there is nothing measured to reason from);
+      2. index at/after a listed entry → exact cumulative sum of the real
+         durations before it, anchored at `firstListedIndex × mean`;
+      3. index before every listed entry (backward seek into the pruned
+         head) → `index × mean`;
+    where `mean` is the measured mean of every listed segment. Rule 2 is
+    EXACT whenever the playlist still starts at index 0 — the anchor is
+    `0 × mean` and nothing is estimated.
+  - **Clamp:** the derived target is clamped to `[0, durationMs]` at the
+    controller before `requestSeek`. `requestSeek` itself writes
+    `seek_target_ms` verbatim by design (it never re-derives a decision its
+    caller made), so the clamp belongs to whoever decides the target. An
+    unclamped value becomes an ffmpeg `-ss` past EOF: a restart that
+    produces nothing, forever. An unprobed file (no `durationMs`) keeps the
+    lower bound only.
 - **Heartbeat:** client progress PUT doubles as heartbeat; no heartbeat for
   90 s → suspend; 15 min → end session, delete dir, emit `playback.ended`.
 - **Concurrency:** global semaphore = `maxSimultaneousTranscodes`; admission
