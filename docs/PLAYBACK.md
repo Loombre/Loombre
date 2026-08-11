@@ -497,6 +497,17 @@ State machine: `created → starting → active ⇄ suspended → seeking → ac
     where `mean` is the measured mean of every listed segment. Rule 2 is
     EXACT whenever the playlist still starts at index 0 — the anchor is
     `0 × mean` and nothing is estimated.
+  - **`EXT-X-MEDIA-SEQUENCE` is MANDATORY once retention has pruned.**
+    Retention deletes segments from the FRONT of the served playlist, and
+    RFC 8216 §4.3.3.2 reads an absent media-sequence tag as 0 — "the first
+    segment listed is segment number 0". Without the tag every prune
+    silently renumbers the playlist from the client's point of view, and
+    hls.js derives each fragment's `sn` (and the media-time offset it maps
+    a seek to) from that base. Because this layer numbers segments
+    absolutely and continuously across every seek-restart run, the first
+    surviving segment's own index IS the media sequence number — the server
+    adds `#EXT-X-MEDIA-SEQUENCE:<firstIndex>` when, and only when,
+    `firstIndex > 0`. An unpruned playlist stays byte-identical.
   - **Clamp:** the derived target is clamped to `[0, durationMs]` at the
     controller before `requestSeek`. `requestSeek` itself writes
     `seek_target_ms` verbatim by design (it never re-derives a decision its

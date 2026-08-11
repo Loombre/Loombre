@@ -230,6 +230,47 @@ export function deriveSegmentStartMs(entries: readonly ServedSegmentEntry[], seg
   return cumulativeMs + (segmentIndex - lastCrossedIndex - 1) * meanMs;
 }
 
+/**
+ * Adds `#EXT-X-MEDIA-SEQUENCE:<n>` to a served playlist whose head has been
+ * retention-pruned, where `n` is the absolute index of the first surviving
+ * segment.
+ *
+ * apps/worker/src/transcode/playlist.ts's `pruneRetention` deletes segments
+ * from the FRONT of the playlist (120s behind the live edge) and
+ * `renderServedPlaylist` emits no media-sequence tag. RFC 8216 §4.3.3.2:
+ * an absent tag means 0 — "the first segment listed is segment number 0" —
+ * so every prune silently renumbers the playlist from the client's point of
+ * view. hls.js derives each fragment's `sn`, and the media-time offset it
+ * maps a seek to, from that base; after a prune its already-buffered
+ * fragments stop lining up with the ones the server is naming. Since this
+ * session layer numbers segments ABSOLUTELY and CONTINUOUSLY across every
+ * seek-restart run (docs/PLAYBACK.md §9, `{START_SEG}` continues the
+ * numbering), the first surviving segment's own index IS the media sequence
+ * number by definition — nothing has to be counted or remembered.
+ *
+ * Added ONLY when a prune has actually happened (`firstIndex > 0`): an
+ * unpruned playlist is byte-identical to what the worker wrote, because
+ * absent already means 0 and emitting `:0` would be pure noise.
+ *
+ * The tag is inserted after `#EXT-X-VERSION` when present (conventional
+ * placement), else right after `#EXTM3U` — either way before the first
+ * Media Segment, which is what §4.3.3 requires.
+ */
+export function withMediaSequence(playlistText: string): string {
+  const entries = parseServedSegmentDurations(playlistText);
+  const firstIndex = entries[0]?.index;
+  if (firstIndex === undefined || firstIndex <= 0) return playlistText;
+  if (/^#EXT-X-MEDIA-SEQUENCE:/m.test(playlistText)) return playlistText;
+
+  const lines = playlistText.split("\n");
+  let insertAfter = lines.findIndex((l) => l.startsWith("#EXT-X-VERSION"));
+  if (insertAfter === -1) insertAfter = lines.findIndex((l) => l.startsWith("#EXTM3U"));
+  if (insertAfter === -1) return playlistText;
+
+  lines.splice(insertAfter + 1, 0, `#EXT-X-MEDIA-SEQUENCE:${firstIndex}`);
+  return lines.join("\n");
+}
+
 /** `[0, durationMs]`. `durationMs` null/non-positive (an unprobed file)
  *  leaves only the lower bound — better an un-ceilinged seek than a seek
  *  clamped to a duration nobody measured. */
@@ -313,7 +354,7 @@ export class PlaybackHlsFileController {
             res.status(200);
             res.setHeader("Content-Type", "application/vnd.apple.mpegurl");
             res.setHeader("Cache-Control", "private, no-store");
-            res.send(text);
+            res.send(withMediaSequence(text));
             return;
           }
         } catch {
