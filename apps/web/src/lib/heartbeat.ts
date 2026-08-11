@@ -20,7 +20,14 @@ export interface HeartbeatOptions {
   intervalMs?: number;
   getSnapshot: () => HeartbeatSnapshot;
   send: (snapshot: HeartbeatSnapshot) => void;
-  /** Injectable for tests; defaults to the real timer functions. */
+  /** Injectable for tests; defaults to the real timer functions. Typed
+   *  `typeof setInterval`/`typeof clearInterval` (not a narrowed one-call-
+   *  shape signature) — consistent with featured-rotation.ts's identical
+   *  seam, whose own header explains why: both the default AND any
+   *  caller-supplied real-timer function reference get `.bind(globalThis)`
+   *  applied at construction (see the constructor below), so the narrowed
+   *  shape isn't needed to keep the defaults callable — `.bind()` doesn't
+   *  care about the seam's declared arity. */
   setIntervalImpl?: typeof setInterval;
   clearIntervalImpl?: typeof clearInterval;
 }
@@ -47,8 +54,26 @@ export class HeartbeatScheduler {
     this.intervalMs = options.intervalMs ?? 10_000;
     this.getSnapshot = options.getSnapshot;
     this.send = options.send;
-    this.setIntervalImpl = options.setIntervalImpl ?? setInterval;
-    this.clearIntervalImpl = options.clearIntervalImpl ?? clearInterval;
+    // BUG (caught live in owner QA on the first video play, 2026-08-08) +
+    // FIX PATTERN (aligned with featured-rotation.ts's identical seam,
+    // 2026-08-10 — see that file's own header for the full "Illegal
+    // invocation" explanation): this class calls the impls as
+    // `this.setIntervalImpl(...)`, which is a METHOD-CALL — the receiver
+    // handed to the callee as `this` is the scheduler instance, not
+    // `window` — and the browser's NATIVE timer functions throw "Illegal
+    // invocation" for any receiver that isn't Window-branded. Every unit
+    // test injects its own impls through this seam, so the default branch
+    // only ever ran (and broke) in a real browser. `.bind(globalThis)`
+    // fixes it unconditionally, for BOTH the default AND any caller-
+    // supplied real-timer function reference (an arrow-wrapped default
+    // alone — this file's PREVIOUS fix — only protected the no-options-
+    // given case: a caller who explicitly passed a bare `window.setInterval`
+    // reference as `options.setIntervalImpl` would still have hit the same
+    // "Illegal invocation" once called as `this.setIntervalImpl(...)`).
+    // Test doubles (plain arrows/closures) are unaffected either way, since
+    // those never carry a `this` requirement.
+    this.setIntervalImpl = (options.setIntervalImpl ?? setInterval).bind(globalThis);
+    this.clearIntervalImpl = (options.clearIntervalImpl ?? clearInterval).bind(globalThis);
   }
 
   isRunning(): boolean {
