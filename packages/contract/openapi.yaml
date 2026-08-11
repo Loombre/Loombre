@@ -1685,6 +1685,50 @@ paths:
               schema: { $ref: '#/components/schemas/Problem' }
         default: { $ref: '#/components/responses/Problem' }
 
+  /playback/sessions/{id}/hls/master.m3u8:
+    parameters:
+      - $ref: '#/components/parameters/IdPathParam'
+    get:
+      operationId: getPlaybackHlsMasterPlaylist
+      tags: [playback]
+      summary: >-
+        Fetch the MULTI-VARIANT master playlist for a
+        transcode/direct-stream/remux session (docs/PLAYBACK.md §9.1.1).
+        One `EXT-X-STREAM-INF` per rung of the session's stored
+        `plan.ladder`, in array order, with variant URIs
+        `v{K}/media.m3u8`. A ladder-empty session (direct-stream copy,
+        audio-only transcode) renders a single-variant master, so
+        `manifestUrl` points here for every HLS session.
+        NEVER 503s: it is rendered purely from the stored plan and the
+        probed MediaInfo, so it is available the moment the session row
+        exists — unlike the media playlist, which cannot exist until the
+        worker has produced a segment. The retry contract lives on the
+        variant playlist. Also accepts `?token=<accessToken>` for media
+        elements that cannot send Authorization headers.
+      parameters:
+        - name: token
+          in: query
+          required: false
+          schema: { type: string }
+          description: Access JWT fallback for media elements that cannot send Authorization headers.
+      responses:
+        '200':
+          description: HLS master playlist (Cache-Control private, no-store)
+          headers:
+            Cache-Control: { schema: { type: string } }
+          content:
+            application/vnd.apple.mpegurl:
+              schema: { type: string }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404':
+          description: >-
+            Unknown, foreign or terminal session — and direct-play
+            sessions, which have no HLS surface at all.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        default: { $ref: '#/components/responses/Problem' }
+
   /playback/sessions/{id}/hls/{file}:
     parameters:
       - $ref: '#/components/parameters/IdPathParam'
@@ -1695,17 +1739,29 @@ paths:
         description: >-
           `runN/sNNNNNN.m4s`, `runN/sNNNNNN.ts`, or `runN/init.mp4` (fmp4
           init segment) — the transcoder's per-run
-          layout. Strictly pattern-validated;
+          layout — each optionally prefixed with `v{K}/`, the variant
+          segment of the multi-variant path family
+          (`v{K}/media.m3u8`, `v{K}/runN/sNNNNNN.m4s`,
+          `v{K}/runN/init.mp4`, docs/PLAYBACK.md §9.1.1). K is a rung's
+          index in the session's stored `plan.ladder`; every variant serves
+          the same bytes, so the prefix carries no content difference — it
+          is the ABR SWITCH SIGNAL. Bare legacy shapes remain valid and are
+          treated as the session's active rung, signalling nothing.
+          Strictly pattern-validated;
           anything else is rejected (traversal-safe by construction — a
           client-supplied path is never trusted).
     get:
       operationId: getPlaybackHlsFile
       tags: [playback]
       summary: >-
-        Serve one HLS init segment/media segment for a
+        Serve one HLS variant playlist/init segment/media segment for a
         session. Updates the session's `requested_segment` (parsed from
         `file`) on every call — the transcoder's pacing
-        input. A request for a segment index outside the
+        input. A `v{K}` prefix naming a rung other than the session's
+        active one additionally records a rung-switch request
+        (`requestRungSwitch`); the worker hands the session's existing
+        admission slot to that rung at its next poll tick and never starts a
+        second pipeline (LD-16). A request for a segment index outside the
         currently-produced window (before the current run's start, or more
         than 3 segments ahead of `produced_segment`) triggers a seek request
         (`requestSeek`) and responds 503 (hls.js-compatible retry
@@ -6479,6 +6535,16 @@ components:
             # `cause=<tier0-no-hw-av1|device-no-av1|no-av1-encoder|tier0-software-route>
             # demotedTo=<hevc|h264> heightPx=<n>`.
             - av1-rung-demoted
+            # LD-6 under LD-16 / owner-decision V2 (docs/PLAYBACK.md
+            # §4/§7.5): fires AT MOST ONCE per plan when a Tier-0 ladder
+            # was trimmed to the advertised-variant cap
+            # (TIER0_MAX_ADVERTISED_VARIANTS = 3, a tier law rather than a
+            # settings knob). detail is
+            # `cap=<n> dropped=<heightPx>p@<videoBitrateBps>[,...]`, naming
+            # every dropped rung in table order — the master playlist
+            # advertises plan.ladder verbatim, so a silent trim would leave
+            # "where did my rungs go?" unanswerable from the stored plan.
+            - ladder-variant-capped
         - type: string
           description: 'hw-encoder-selected:<backend> informational reason.'
           pattern: '^hw-encoder-selected:(videotoolbox|qsv|vaapi|nvenc|amf|d3d11va|software)$'
@@ -6624,9 +6690,16 @@ components:
         manifestUrl:
           type: [string, 'null']
           description: >-
-            Relative URL to GET .../hls/media.m3u8; null for direct-play
-            sessions (docs/PLAYBACK.md §9 — direct-play bypasses HLS
-            packaging entirely).
+            Relative URL to GET .../hls/master.m3u8 — the MULTI-VARIANT
+            master playlist (docs/PLAYBACK.md §9.1, owner-decision V5), for
+            EVERY HLS session including ladder-empty ones, which render a
+            single-variant master so the client has ONE path and no branch.
+            Its variant URIs are `v{K}/media.m3u8`, K being the rung's index
+            in `plan.ladder`; every variant serves the same playlist bytes,
+            and the `v{K}` prefix is how a client's ABR switch reaches the
+            server (§9.1.1). Still null for direct-play sessions
+            (docs/PLAYBACK.md §9 — direct-play bypasses HLS packaging
+            entirely).
         createdAtMs: { type: integer, format: int64 }
         updatedAtMs: { type: integer, format: int64 }
 

@@ -24,18 +24,29 @@ export interface ContractPlaybackSessionRow {
 }
 
 /**
- * `manifestUrl` (docs/PLAYBACK.md §9, contract PlaybackSession schema):
- * `null` for direct-play (bypasses HLS packaging entirely); the relative
- * HLS manifest URL for every other decision (direct-stream/remux/
- * transcode) — the worker may not have produced anything yet (the manifest
- * GET itself blocks/503s for that), but the URL is stable from
- * session-create time onward. Derived from the row's OWN stored
+ * `manifestUrl` (docs/PLAYBACK.md §9/§9.1, contract PlaybackSession
+ * schema): `null` for direct-play (bypasses HLS packaging entirely); the
+ * relative HLS MASTER playlist URL for every other decision
+ * (direct-stream/remux/transcode).
+ *
+ * Wave C2 / owner-decision V5 re-pointed this from `hls/media.m3u8` to
+ * `hls/master.m3u8` — a VALUE-semantics change, not a schema one. Every
+ * HLS session gets a master, ladder-empty ones included (they render a
+ * single-variant master, §9.1.1), so the client has ONE path and no
+ * branch: attach to `manifestUrl`, let hls.js discover the variants, and
+ * every ABR switch reaches the server as a `v{K}` request with no new API
+ * surface at all. The old media-playlist route is untouched and still
+ * serves the same bytes at `v{K}/media.m3u8`.
+ *
+ * The master is additionally available IMMEDIATELY (§9.1.2 item 1 — it is
+ * rendered from the stored plan and never 503s), where the media playlist
+ * blocks up to 8s for the first segment. Derived from the row's OWN stored
  * `plan.decision` (not threaded through every call site separately), so
  * both session-create's response and every later GET automatically agree.
  */
 export function playbackManifestUrl(sessionId: string, decision: string | undefined): string | null {
   if (decision === "direct-play" || decision === undefined) return null;
-  return `/playback/sessions/${sessionId}/hls/media.m3u8`;
+  return `/playback/sessions/${sessionId}/hls/master.m3u8`;
 }
 
 function decisionOf(plan: Record<string, unknown> | null): string | undefined {

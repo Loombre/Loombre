@@ -74,6 +74,7 @@ import {
   getMediaInfoAssembly,
   getPlaybackSessionForUser,
   getTranscodeRunForSegment,
+  requestRungSwitch,
   requestSeek,
   updateRequestedSegment,
 } from "@loombre/db";
@@ -92,10 +93,16 @@ import {
   clampSeekTargetMs,
   deriveSegmentStartMs,
   parseServedSegmentDurations,
-  withMediaSequence,
+  withPlaylistSequenceTags,
   type RunAnchor,
   type ServedSegmentEntry,
 } from "../common/served-playlist.js";
+import {
+  renderMasterPlaylist,
+  type MasterAudioFacts,
+  type MasterPlaylistRung,
+  type MasterVideoFacts,
+} from "../common/master-playlist.js";
 import { resolveViewer } from "./viewer.js";
 
 const MANIFEST_POLL_TIMEOUT_MS = 8_000;
@@ -114,6 +121,33 @@ function sleep(ms: number): Promise<void> {
  *  no extra segments can ever match). */
 const SEGMENT_FILE_PATTERN = /^run(\d+)\/(?:s(\d{6})\.(m4s|ts)|init\.mp4)$/;
 
+/** The Wave C2 variant prefix (docs/PLAYBACK.md §9.1.1): `v{K}/` in front of
+ *  ANY of this route family's shapes, K being a rung's index in the stored
+ *  plan's ladder. Deliberately anchored and digits-only — the prefix is
+ *  stripped before the strict pattern above ever sees the path, so it can
+ *  never widen what that pattern admits. */
+const VARIANT_PREFIX_PATTERN = /^v(\d+)\//;
+
+interface ParsedHlsPath {
+  /** The rung K a `v{K}/` prefix named, or `undefined` for a bare legacy
+   *  path — which §9.1.2 item 2 defines as "the ACTIVE rung", i.e. no
+   *  switch signal at all. */
+  variantRungIndex: number | undefined;
+  /** The path with any variant prefix removed — what resolves on disk.
+   *  Variant identity lives ONLY in the URL (§9.1.1): every variant of a
+   *  session serves the same bytes from the same files. */
+  fileRelativePath: string;
+}
+
+function parseVariantPrefix(relativePath: string): ParsedHlsPath {
+  const match = VARIANT_PREFIX_PATTERN.exec(relativePath);
+  if (!match) return { variantRungIndex: undefined, fileRelativePath: relativePath };
+  return {
+    variantRungIndex: Number.parseInt(match[1]!, 10),
+    fileRelativePath: relativePath.slice(match[0].length),
+  };
+}
+
 interface ParsedSegmentFile {
   runIndex: number;
   segmentIndex: number | undefined; // undefined for init.mp4
@@ -128,6 +162,28 @@ function parseSegmentFile(fileRelativePath: string): ParsedSegmentFile | undefin
     return { runIndex, segmentIndex: Number.parseInt(match[2], 10), extension: match[3] as "m4s" | "ts" };
   }
   return { runIndex, segmentIndex: undefined, extension: "mp4" };
+}
+
+/** The rungs of the session's STORED plan — the single authority on which
+ *  variants exist (§7.5: "the master playlist advertises `plan.ladder` —
+ *  nothing else, and all of it"). Read defensively: `plan` is JSONB and a
+ *  malformed blob must degrade to "no ladder", never throw on a media
+ *  path. */
+function storedLadder(plan: Record<string, unknown> | null): MasterPlaylistRung[] {
+  const ladder = plan && typeof plan === "object" ? (plan as { ladder?: unknown }).ladder : undefined;
+  if (!Array.isArray(ladder)) return [];
+  return ladder.filter(
+    (r): r is MasterPlaylistRung =>
+      typeof r === "object" &&
+      r !== null &&
+      typeof (r as MasterPlaylistRung).heightPx === "number" &&
+      typeof (r as MasterPlaylistRung).videoBitrateBps === "number",
+  );
+}
+
+function storedDecision(plan: Record<string, unknown> | null): string | undefined {
+  const decision = plan && typeof plan === "object" ? (plan as { decision?: unknown }).decision : undefined;
+  return typeof decision === "string" ? decision : undefined;
 }
 
 const CONTENT_TYPE_BY_EXTENSION: Record<"m4s" | "ts" | "mp4", string> = {
@@ -164,10 +220,56 @@ export class PlaybackHlsFileController {
     private readonly viewerContextProvider: ViewerContextProvider,
   ) {}
 
+  // Declared FIRST, before both the literal media.m3u8 route and the
+  // wildcard — Express/Nest match in declaration order, and `master.m3u8`
+  // would otherwise be captured by `hls/*file` and rejected by the strict
+  // segment pattern.
+  //
+  // §9.1.2 item 1: this route NEVER 503s. Everything it needs — the stored
+  // plan's ladder and the probed MediaInfo — exists the moment the session
+  // row does, so unlike the media playlist there is nothing to wait for.
+  // That is what lets a client attach immediately and run its retry cycle
+  // against the VARIANT playlist, where the 503/Retry-After contract already
+  // lives. Concretely: no poll loop here, and no `503` in the contract's
+  // response list.
+  @AllowQueryToken()
+  @UseGuards(SurfaceRateLimitGuard)
+  @RateLimit("mediaToken", "identity")
+  @Get("playback/sessions/:id/hls/master.m3u8")
+  async getMasterPlaylist(
+    @Param("id") id: string,
+    @Req() req: AuthenticatedRequest,
+    @Res() res: Response,
+  ): Promise<void> {
+    requireUuidParam(id, "Playback session not found.", sanitizeInstancePath(req));
+    const ctx = await resolveViewer(this.viewerContextProvider, req);
+
+    const session = await getPlaybackSessionForUser(this.dbProvider.db, ctx, id);
+    if (!session || session.status === "ended" || session.status === "failed") {
+      throw notFound("Playback session not found.", sanitizeInstancePath(req));
+    }
+    // Direct-play sessions have no HLS surface at all (docs/PLAYBACK.md §9:
+    // "direct-play sessions bypass all of this"), and their `manifestUrl`
+    // is null — a request here is a client bug or a probe, not a session
+    // state worth describing.
+    if (storedDecision(session.plan) === "direct-play") {
+      throw notFound("Playback session not found.", sanitizeInstancePath(req));
+    }
+
+    res.status(200);
+    res.setHeader("Content-Type", "application/vnd.apple.mpegurl");
+    res.setHeader("Cache-Control", "private, no-store");
+    res.send(renderMasterPlaylist(await this.masterPlaylistInput(ctx, session)));
+  }
+
   // Declared BEFORE the wildcard route below — Express/Nest match in
   // declaration order, so this literal path always wins over `hls/*file`
   // for an exact "media.m3u8" request (empirically verified against this
-  // exact ambiguity before this file was written).
+  // exact ambiguity before this file was written). Its VARIANT form,
+  // `v{K}/media.m3u8`, necessarily goes through the wildcard instead and is
+  // routed back here by `serveMediaPlaylist` — one implementation, two
+  // entry points, because §9.1.1's whole delivery model is that every
+  // variant URL serves the SAME playlist bytes.
   //
   // STATE.md P4.15: one of the four `?token=` media GET families.
   // per-identity, GENEROUS ceiling (SurfaceRateLimiterService.mediaToken) —
@@ -180,7 +282,20 @@ export class PlaybackHlsFileController {
   async getManifest(@Param("id") id: string, @Req() req: AuthenticatedRequest, @Res() res: Response): Promise<void> {
     requireUuidParam(id, "Playback session not found.", sanitizeInstancePath(req));
     const ctx = await resolveViewer(this.viewerContextProvider, req);
+    await this.serveMediaPlaylist(ctx, id, req, res);
+  }
 
+  /**
+   * The media-playlist body, shared by the bare `hls/media.m3u8` route and
+   * every `hls/v{K}/media.m3u8` variant (§9.1.1: variant identity lives
+   * only in the URL — there is one pipeline and one playlist).
+   */
+  private async serveMediaPlaylist(
+    ctx: ViewerContext,
+    id: string,
+    req: AuthenticatedRequest,
+    res: Response,
+  ): Promise<void> {
     const deadline = Date.now() + MANIFEST_POLL_TIMEOUT_MS;
     for (;;) {
       const session = await getPlaybackSessionForUser(this.dbProvider.db, ctx, id);
@@ -230,7 +345,7 @@ export class PlaybackHlsFileController {
             res.status(200);
             res.setHeader("Content-Type", "application/vnd.apple.mpegurl");
             res.setHeader("Cache-Control", "private, no-store");
-            res.send(withMediaSequence(text));
+            res.send(withPlaylistSequenceTags(text));
             return;
           }
         } catch {
@@ -274,18 +389,65 @@ export class PlaybackHlsFileController {
     requireUuidParam(id, "Playback session not found.", sanitizeInstancePath(req));
     const ctx = await resolveViewer(this.viewerContextProvider, req);
 
+    // §9.1.1: strip the OPTIONAL `v{K}/` variant prefix first. Variant
+    // identity lives only in the URL — `v2/run0/s000007.m4s` and
+    // `run0/s000007.m4s` name the SAME file on disk — so the prefix is
+    // removed before the strict segment pattern (or the media.m3u8 literal)
+    // ever sees the path, and can never widen what either admits.
     const relativePath = joinFileParam(fileParam);
-    const parsed = parseSegmentFile(relativePath);
-    if (!parsed) {
+    const { variantRungIndex, fileRelativePath } = parseVariantPrefix(relativePath);
+
+    const session = await getPlaybackSessionForUser(this.dbProvider.db, ctx, id);
+    if (!session) {
       throw notFound("Playback session not found.", sanitizeInstancePath(req));
     }
 
-    const session = await getPlaybackSessionForUser(this.dbProvider.db, ctx, id);
-    if (!session || !session.stagingDir) {
+    // Which variants exist at all, from the session's own STORED plan
+    // (§7.5: the master advertises `plan.ladder` — nothing else, and all of
+    // it). A ladder-EMPTY session still advertises exactly one variant, v0
+    // (owner-decision V5's single-variant master), so its floor is 1 rather
+    // than 0. A `v{K}` outside that range names a variant this session never
+    // published: a 404, not a served-anyway request, because answering it
+    // would make the URL space claim more than the master does.
+    const ladder = storedLadder(session.plan);
+    if (variantRungIndex !== undefined && variantRungIndex >= Math.max(1, ladder.length)) {
       throw notFound("Playback session not found.", sanitizeInstancePath(req));
     }
 
     const now = clockNowMs();
+
+    // THE PATH IS THE SWITCH SIGNAL (§9.1.1). A playlist or segment GET
+    // whose `v{K}` names a rung other than the session's ACTIVE one records
+    // a rung-switch request as a SIDE EFFECT and is otherwise served
+    // completely normally — segments the old rung already produced are
+    // presentation history and keep serving from disk; only the live edge
+    // waits (the existing 503 + Retry-After) until the new rung produces.
+    //
+    // Recorded BEFORE the seek detection below, and independent of it:
+    // `pending_rung_index` and `seek_target_ms` are separate columns, and
+    // the worker's single-restart rule (§9.1.7) folds a coincident pair into
+    // ONE spawned run — (requested rung, requested origin) — whichever
+    // landed first. Nothing here needs to sequence them.
+    //
+    // Requests naming the already-active rung are absorbed at the WRITE side
+    // (`requestRungSwitch`), which is what stops a client steadily pinned to
+    // one variant from writing a "switch" on literally every segment GET.
+    if (variantRungIndex !== undefined && ladder.length > 0) {
+      await requestRungSwitch(this.dbProvider.db, ctx, id, variantRungIndex, now);
+    }
+
+    // `v{K}/media.m3u8` — the variant playlist. Same bytes as the bare
+    // route (one pipeline, one playlist), so it delegates rather than
+    // duplicating the poll/serve logic.
+    if (fileRelativePath === "media.m3u8") {
+      await this.serveMediaPlaylist(ctx, id, req, res);
+      return;
+    }
+
+    const parsed = parseSegmentFile(fileRelativePath);
+    if (!parsed || !session.stagingDir) {
+      throw notFound("Playback session not found.", sanitizeInstancePath(req));
+    }
 
     if (parsed.segmentIndex !== undefined) {
       await updateRequestedSegment(this.dbProvider.db, ctx, id, parsed.segmentIndex, now);
@@ -305,7 +467,11 @@ export class PlaybackHlsFileController {
       }
     }
 
-    const absolutePath = join(session.stagingDir, relativePath);
+    // The PREFIX-STRIPPED path — the on-disk layout has no `v{K}` level,
+    // because there is one set of segments (§9.1.1: no sibling pipelines,
+    // no per-variant segment sets, §9.1.8's "the advertised-variant count
+    // contributes ZERO bytes").
+    const absolutePath = join(session.stagingDir, fileRelativePath);
     if (!isStrictlyUnder(session.stagingDir, absolutePath)) {
       throw notFound("Playback session not found.", sanitizeInstancePath(req));
     }
@@ -330,6 +496,100 @@ export class PlaybackHlsFileController {
     res.setHeader("Cache-Control", "private, immutable");
     res.setHeader("Content-Length", sizeBytes);
     createReadStream(absolutePath).pipe(res);
+  }
+
+  /**
+   * Assembles the §9.1.1 master-playlist input from the session's STORED
+   * plan plus the probed MediaInfo — the two facts a master is entirely
+   * determined by.
+   *
+   * Every failure degrades to "state less", never to a throw or a 503: the
+   * contract says this route always answers 200 for a live HLS session, and
+   * a master with a missing RESOLUTION still plays, while a 500 does not.
+   * A media assembly that cannot be read therefore yields `video: null`
+   * rather than aborting.
+   *
+   * The codecs reported are the ones the client will ACTUALLY RECEIVE, not
+   * the source's: on an audio transcode that is the plan's own
+   * `targetCodec`/`targetBitrateBps`; on a copy it is the probed source
+   * stream. Reporting the source codec for a transcoded track would be the
+   * silent-variant-rejection failure the CODECS execution fence exists to
+   * prevent, just introduced one layer up from the table.
+   */
+  private async masterPlaylistInput(
+    ctx: ViewerContext,
+    session: {
+      plan: Record<string, unknown> | null;
+      itemId: string | null;
+      fileId: string | null;
+    },
+  ): Promise<{
+    ladder: MasterPlaylistRung[];
+    video: MasterVideoFacts | null;
+    audio: MasterAudioFacts | null;
+    overallBitrateBps: number | null;
+  }> {
+    const plan = (session.plan ?? {}) as {
+      audio?: { action?: string; targetCodec?: string; targetBitrateBps?: number };
+      selection?: { videoStreamIndex?: number | null; audioStreamIndex?: number | null };
+    };
+
+    let media: { durationMs: number | null; overallBitrateBps: number | null; video: unknown[]; audio: unknown[] } | undefined;
+    if (session.fileId) {
+      try {
+        const assembly = await getMediaInfoAssembly(this.dbProvider.db, ctx, {
+          fileId: session.fileId,
+          ...(session.itemId ? { itemId: session.itemId } : {}),
+        });
+        media = assembly?.media as typeof media;
+      } catch {
+        // Unprobed/vanished file — the master states less; it never fails.
+      }
+    }
+
+    const videoStreams = (media?.video ?? []) as {
+      index: number;
+      codec: string;
+      width: number;
+      height: number;
+      bitDepth: number;
+      frameRate: number;
+    }[];
+    const audioStreams = (media?.audio ?? []) as {
+      index: number;
+      codec: string;
+      bitrateBps: number | null;
+    }[];
+
+    const videoIndex = plan.selection?.videoStreamIndex ?? null;
+    const selectedVideo =
+      videoIndex !== null ? videoStreams.find((v) => v.index === videoIndex) : videoStreams[0];
+    const audioIndex = plan.selection?.audioStreamIndex ?? null;
+    const selectedAudio =
+      audioIndex !== null ? audioStreams.find((a) => a.index === audioIndex) : audioStreams[0];
+
+    const transcodingAudio = plan.audio?.action === "transcode";
+    const audio: MasterAudioFacts | null =
+      transcodingAudio && plan.audio?.targetCodec
+        ? { codec: plan.audio.targetCodec, bitrateBps: plan.audio.targetBitrateBps ?? null }
+        : selectedAudio
+          ? { codec: selectedAudio.codec, bitrateBps: selectedAudio.bitrateBps }
+          : null;
+
+    return {
+      ladder: storedLadder(session.plan),
+      video: selectedVideo
+        ? {
+            widthPx: selectedVideo.width,
+            heightPx: selectedVideo.height,
+            frameRate: selectedVideo.frameRate,
+            bitDepth: selectedVideo.bitDepth,
+            codec: selectedVideo.codec,
+          }
+        : null,
+      audio,
+      overallBitrateBps: media?.overallBitrateBps ?? null,
+    };
   }
 
   /**
