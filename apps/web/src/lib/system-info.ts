@@ -12,13 +12,20 @@
 // EVERY admin page) — each ran its own useEffect + apiGet, so a single
 // Dashboard navigation fired the identical request three times.
 //
-// This module is now the ONE place that calls apiGet("/system/info"): a
-// module-level cache + in-flight-promise de-dup means N consumers mounting
-// within the same tick share exactly one network request; every consumer
-// subscribes via useSystemInfo() instead of fetching for itself. Cached
-// for the lifetime of the module (a page load) — same "fetch once" horizon
-// every prior per-component useEffect already had (none of them polled or
-// refetched on focus), just shared instead of duplicated.
+// This module is the shared de-dup layer for the DASHBOARD cluster that
+// used to race: a module-level cache + in-flight-promise de-dup means N
+// consumers mounting within the same tick share exactly one network
+// request; each subscribes via useSystemInfo() instead of fetching for
+// itself. Cached for the lifetime of the module (a page load) — same
+// "fetch once" horizon every prior per-component useEffect already had
+// (none polled or refetched on focus), just shared instead of duplicated.
+//
+// NOTE: it is the shared path for the Dashboard consumers, not the sole
+// caller of GET /system/info in the whole app. Two settings-only screens —
+// components/settings/SettingsHub.tsx and
+// components/settings/sections/AboutSection.tsx — still call
+// apiGet("/system/info") directly; each mounts ALONE on its own settings
+// page (one fetch, no race), so they were deliberately left off the hook.
 
 import { useEffect, useState } from "react";
 import type { components } from "@loombre/sdk";

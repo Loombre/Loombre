@@ -14,10 +14,13 @@ import { SetMetadata } from "@nestjs/common";
 export const ALLOW_QUERY_TOKEN_KEY = "loombre:allowQueryToken";
 
 /** Apply to a controller method to allow `?token=<accessToken>` as a
- *  fallback when no (or no valid) Authorization header is present. Scoped
- *  to exactly GET /images/{entityType}/{id}/{kind} and
- *  GET /playback/sessions/{id}/file (STATE.md P2.18) — do not add this to
- *  any other route without a matching STATE.md decision. */
+ *  fallback when no (or no valid) Authorization header is present — for the
+ *  browser-media GET routes whose element or player fetch (<img>/<video>/
+ *  <audio>, hls.js) cannot set an Authorization header. Applied to the
+ *  image route (STATE.md P2.18) and the three HLS file-serving families
+ *  added in P4.15: the session file, the HLS playlist/segment files, and
+ *  the subtitle files. Do not add this to any other route without a
+ *  matching STATE.md decision. */
 export function AllowQueryToken(): MethodDecorator {
   return SetMetadata(ALLOW_QUERY_TOKEN_KEY, true);
 }
