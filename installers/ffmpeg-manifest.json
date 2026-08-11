@@ -3,34 +3,34 @@
   "pinnedAtMs": 1784903400000,
   "pinnedAtIso": "2026-07-24T14:30:00Z",
   "provenance": {
-    "note": "ffmpeg and ffprobe are vendored as separate, pre-built executables fetched by scripts/fetch-ffmpeg.mjs into a gitignored vendor/ directory at build time — never committed, never `pnpm add`-ed, never linked against Loombre's own code. Every platform pinned below ships a GPL build (GPL-2.0-or-later or GPL-3.0-or-later depending on source — see each platform's `license` field) because Loombre needs libx264/libx265 for H.264/HEVC transcoding, which FFmpeg's default LGPL configuration cannot provide.",
-    "aggregationRationale": "Loombre's server/worker (AGPL-3.0 relicense target, see /LICENSE-INTENT.md) invoke ffmpeg/ffprobe strictly as separate child processes (packages/jobs job workers spawn them, communicate over argv + stdio/pipes + exit codes) — never dlopen'd, never statically or dynamically linked into a Loombre binary, never sharing an address space or a build. This is the FSF's own 'mere aggregation' case (GPL FAQ: 'if the programs communicate through pipes ... that is a fairly strong indicator that they are separate programs'), reinforced here by process-isolation: the installer tarball ships them as distinct executables in bin/ and vendor/ffmpeg/, not part of the linked `dist/` output. AGPL-3.0 does not forbid an AGPL work distributed on the same medium as unrelated GPL executables; each retains its own license and neither is a derivative of the other.",
-    "licenseIntentTodo": "ORCHESTRATOR TODO (not performed by this lane, per I1 mission scope): /LICENSE-INTENT.md's dependency allow-list already includes GPL-3.0/GPL-2.0 for npm-resolved deps, but `license-checker` never sees these vendored binaries (they are fetched by a script into a gitignored dir, not installed via pnpm) — the allow-list gate is silently blind to them. LICENSE-INTENT.md needs a new section (e.g. 'Vendored non-npm binaries') that names ffmpeg/ffprobe explicitly, points at this manifest's `provenance` block as the aggregation argument, and records that verification here is intentionally manual (checksum-pinned + human-read license text) rather than CI-scanned.",
-    "verificationPosture": "Every entry's sha256 was checked in one of two ways, recorded per-entry in `verification.method`: (a) 'independently downloaded and hashed' — this lane fetched the actual bytes and computed sha256 itself; or (b) 'publisher-checksums-file' — taken from the upstream project's own signed/published checksums file without a redundant full download here (still real bytes-in-hand where noted). Any MISMATCH found against a publisher's own webpage-published checksum is called out explicitly in that entry's `verification.notes` — see macos-arm64."
+    "note": "ffmpeg and ffprobe are vendored as separate, pre-built executables fetched by scripts/fetch-ffmpeg.mjs into a gitignored vendor/ directory at build time \u2014 never committed, never `pnpm add`-ed, never linked against Loombre's own code. Every platform pinned below ships a GPL build (GPL-2.0-or-later or GPL-3.0-or-later depending on source \u2014 see each platform's `license` field) because Loombre needs libx264/libx265 for H.264/HEVC transcoding, which FFmpeg's default LGPL configuration cannot provide.",
+    "aggregationRationale": "Loombre's server/worker (AGPL-3.0 relicense target, see /LICENSE-INTENT.md) invoke ffmpeg/ffprobe strictly as separate child processes (packages/jobs job workers spawn them, communicate over argv + stdio/pipes + exit codes) \u2014 never dlopen'd, never statically or dynamically linked into a Loombre binary, never sharing an address space or a build. This is the FSF's own 'mere aggregation' case (GPL FAQ: 'if the programs communicate through pipes ... that is a fairly strong indicator that they are separate programs'), reinforced here by process-isolation: the installer tarball ships them as distinct executables in bin/ and vendor/ffmpeg/, not part of the linked `dist/` output. AGPL-3.0 does not forbid an AGPL work distributed on the same medium as unrelated GPL executables; each retains its own license and neither is a derivative of the other.",
+    "licenseIntentTodo": "ORCHESTRATOR TODO (not performed by this lane, per I1 mission scope): /LICENSE-INTENT.md's dependency allow-list already includes GPL-3.0/GPL-2.0 for npm-resolved deps, but `license-checker` never sees these vendored binaries (they are fetched by a script into a gitignored dir, not installed via pnpm) \u2014 the allow-list gate is silently blind to them. LICENSE-INTENT.md needs a new section (e.g. 'Vendored non-npm binaries') that names ffmpeg/ffprobe explicitly, points at this manifest's `provenance` block as the aggregation argument, and records that verification here is intentionally manual (checksum-pinned + human-read license text) rather than CI-scanned.",
+    "verificationPosture": "Every entry's sha256 was checked in one of two ways, recorded per-entry in `verification.method`: (a) 'independently downloaded and hashed' \u2014 this lane fetched the actual bytes and computed sha256 itself; or (b) 'publisher-checksums-file' \u2014 taken from the upstream project's own signed/published checksums file without a redundant full download here (still real bytes-in-hand where noted). Any MISMATCH found against a publisher's own webpage-published checksum is called out explicitly in that entry's `verification.notes` \u2014 see macos-arm64."
   },
   "platforms": {
     "linux-x64": {
       "source": "BtbN/FFmpeg-Builds",
       "sourceKind": "github-release",
-      "sourceUrl": "https://github.com/BtbN/FFmpeg-Builds/releases/tag/autobuild-2026-07-24-13-32",
+      "sourceUrl": "https://github.com/BtbN/FFmpeg-Builds/releases/tag/autobuild-2026-08-10-13-17",
       "ffmpegVersion": "8.1.2",
-      "buildTag": "autobuild-2026-07-24-13-32",
-      "buildId": "n8.1.2-31-g8c9502e9b0",
+      "buildTag": "autobuild-2026-08-10-13-17",
+      "buildId": "n8.1.2-34-g9b6c8969e0",
       "license": "GPL-3.0-or-later",
-      "licenseNote": "Confirmed by the full GNU GPLv3 text bundled as LICENSE.txt inside the archive itself (copied to vendor/ffmpeg/linux-x64/LICENSE.txt by fetch-ffmpeg.mjs); this is BtbN's '-gpl' (non-'-shared') variant, which links libx264/libx265 statically into the ffmpeg/ffprobe executables — no external .so dependency on either.",
+      "licenseNote": "Confirmed by the full GNU GPLv3 text bundled as LICENSE.txt inside the archive itself (copied to vendor/ffmpeg/linux-x64/LICENSE.txt by fetch-ffmpeg.mjs); this is BtbN's '-gpl' (non-'-shared') variant, which links libx264/libx265 statically into the ffmpeg/ffprobe executables \u2014 no external .so dependency on either.",
       "components": {
         "ffmpeg": {
-          "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-07-24-13-32/ffmpeg-n8.1.2-31-g8c9502e9b0-linux64-gpl-8.1.tar.xz",
+          "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-08-10-13-17/ffmpeg-n8.1.2-34-g9b6c8969e0-linux64-gpl-8.1.tar.xz",
           "format": "tar.xz",
-          "sha256": "67b4011d82c67586c3703c81d3c967a837319f75e5e61551f22a91588e440660",
-          "sizeBytes": 124905944,
+          "sha256": "7b0c2ad593860d8bb157e346777ac7d741b5bf25b456382051138aaa8256f92d",
+          "sizeBytes": 125511580,
           "binaryEntryName": "ffmpeg"
         },
         "ffprobe": {
-          "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-07-24-13-32/ffmpeg-n8.1.2-31-g8c9502e9b0-linux64-gpl-8.1.tar.xz",
+          "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-08-10-13-17/ffmpeg-n8.1.2-34-g9b6c8969e0-linux64-gpl-8.1.tar.xz",
           "format": "tar.xz",
-          "sha256": "67b4011d82c67586c3703c81d3c967a837319f75e5e61551f22a91588e440660",
-          "sizeBytes": 124905944,
+          "sha256": "7b0c2ad593860d8bb157e346777ac7d741b5bf25b456382051138aaa8256f92d",
+          "sizeBytes": 125511580,
           "binaryEntryName": "ffprobe"
         }
       },
@@ -43,63 +43,63 @@
     "linux-arm64": {
       "source": "BtbN/FFmpeg-Builds",
       "sourceKind": "github-release",
-      "sourceUrl": "https://github.com/BtbN/FFmpeg-Builds/releases/tag/autobuild-2026-07-24-13-32",
+      "sourceUrl": "https://github.com/BtbN/FFmpeg-Builds/releases/tag/autobuild-2026-08-10-13-17",
       "ffmpegVersion": "8.1.2",
-      "buildTag": "autobuild-2026-07-24-13-32",
-      "buildId": "n8.1.2-31-g8c9502e9b0",
+      "buildTag": "autobuild-2026-08-10-13-17",
+      "buildId": "n8.1.2-34-g9b6c8969e0",
       "license": "GPL-3.0-or-later",
-      "licenseNote": "Same BtbN build matrix as linux-x64 (see that entry's licenseNote) — GPLv3 LICENSE.txt bundled in-archive, '-gpl' non-shared variant.",
+      "licenseNote": "Same BtbN build matrix as linux-x64 (see that entry's licenseNote) \u2014 GPLv3 LICENSE.txt bundled in-archive, '-gpl' non-shared variant.",
       "components": {
         "ffmpeg": {
-          "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-07-24-13-32/ffmpeg-n8.1.2-31-g8c9502e9b0-linuxarm64-gpl-8.1.tar.xz",
+          "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-08-10-13-17/ffmpeg-n8.1.2-34-g9b6c8969e0-linuxarm64-gpl-8.1.tar.xz",
           "format": "tar.xz",
-          "sha256": "9674faaeeafd519add630da412e84a1dabaed3759f516b5da41001a1d345d956",
-          "sizeBytes": 107163384,
+          "sha256": "4de38246590f87a959275ed359d9378acb46295b56851968b239763b4d481f3a",
+          "sizeBytes": 107552608,
           "binaryEntryName": "ffmpeg"
         },
         "ffprobe": {
-          "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-07-24-13-32/ffmpeg-n8.1.2-31-g8c9502e9b0-linuxarm64-gpl-8.1.tar.xz",
+          "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-08-10-13-17/ffmpeg-n8.1.2-34-g9b6c8969e0-linuxarm64-gpl-8.1.tar.xz",
           "format": "tar.xz",
-          "sha256": "9674faaeeafd519add630da412e84a1dabaed3759f516b5da41001a1d345d956",
-          "sizeBytes": 107163384,
+          "sha256": "4de38246590f87a959275ed359d9378acb46295b56851968b239763b4d481f3a",
+          "sizeBytes": 107552608,
           "binaryEntryName": "ffprobe"
         }
       },
       "verification": {
         "method": "publisher-checksums-file",
         "verifiedAtMs": 1784903400000,
-        "notes": "sha256 taken verbatim from BtbN's own checksums.sha256 for release tag autobuild-2026-07-24-13-32 (fetched over HTTPS from the GitHub release, same trust boundary as the linux-x64 archive this lane DID fully download+re-hash). Not independently re-downloaded here because this lane's own smoke test only exercises linux-x64 (its container/dev host is x86_64) — arm64 hardware verification is a discovery flagged to lane I owning multi-arch release CI."
+        "notes": "sha256 taken verbatim from BtbN's own checksums.sha256 for release tag autobuild-2026-07-24-13-32 (fetched over HTTPS from the GitHub release, same trust boundary as the linux-x64 archive this lane DID fully download+re-hash). Not independently re-downloaded here because this lane's own smoke test only exercises linux-x64 (its container/dev host is x86_64) \u2014 arm64 hardware verification is a discovery flagged to lane I owning multi-arch release CI."
       }
     },
     "windows-x64": {
       "source": "BtbN/FFmpeg-Builds",
       "sourceKind": "github-release",
-      "sourceUrl": "https://github.com/BtbN/FFmpeg-Builds/releases/tag/autobuild-2026-07-24-13-32",
+      "sourceUrl": "https://github.com/BtbN/FFmpeg-Builds/releases/tag/autobuild-2026-08-10-13-17",
       "ffmpegVersion": "8.1.2",
-      "buildTag": "autobuild-2026-07-24-13-32",
-      "buildId": "n8.1.2-31-g8c9502e9b0",
+      "buildTag": "autobuild-2026-08-10-13-17",
+      "buildId": "n8.1.2-34-g9b6c8969e0",
       "license": "GPL-3.0-or-later",
-      "licenseNote": "Same BtbN build matrix (see linux-x64) — GPLv3, '-gpl' non-shared variant, .exe binaries live at <extracted-root>/bin/ffmpeg.exe and ffprobe.exe (BtbN's win64 layout mirrors its linux layout 1:1; not independently confirmed by this lane's extraction — see verification.notes).",
+      "licenseNote": "Same BtbN build matrix (see linux-x64) \u2014 GPLv3, '-gpl' non-shared variant, .exe binaries live at <extracted-root>/bin/ffmpeg.exe and ffprobe.exe (BtbN's win64 layout mirrors its linux layout 1:1; not independently confirmed by this lane's extraction \u2014 see verification.notes).",
       "components": {
         "ffmpeg": {
-          "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-07-24-13-32/ffmpeg-n8.1.2-31-g8c9502e9b0-win64-gpl-8.1.zip",
+          "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-08-10-13-17/ffmpeg-n8.1.2-34-g9b6c8969e0-win64-gpl-8.1.zip",
           "format": "zip",
-          "sha256": "ef4f875f374414a6c49bdc91f1acc227e65d0a82af6e6888874a7b812a18de97",
-          "sizeBytes": 168739582,
+          "sha256": "f3306635faa0cb7ac575c2b3781705c1f102249fb7baea24bedeb89d8b21fd0b",
+          "sizeBytes": 167990084,
           "binaryEntryName": "ffmpeg.exe"
         },
         "ffprobe": {
-          "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-07-24-13-32/ffmpeg-n8.1.2-31-g8c9502e9b0-win64-gpl-8.1.zip",
+          "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-08-10-13-17/ffmpeg-n8.1.2-34-g9b6c8969e0-win64-gpl-8.1.zip",
           "format": "zip",
-          "sha256": "ef4f875f374414a6c49bdc91f1acc227e65d0a82af6e6888874a7b812a18de97",
-          "sizeBytes": 168739582,
+          "sha256": "f3306635faa0cb7ac575c2b3781705c1f102249fb7baea24bedeb89d8b21fd0b",
+          "sizeBytes": 167990084,
           "binaryEntryName": "ffprobe.exe"
         }
       },
       "verification": {
         "method": "publisher-checksums-file",
         "verifiedAtMs": 1784903400000,
-        "notes": "sha256 taken verbatim from BtbN's own checksums.sha256 for this release tag (same file this lane downloaded and cross-checked its linux-x64 entry against, byte-for-byte match there). The 168 MB win64 archive itself was NOT downloaded by this lane (Linux-lane host has no Windows binary to run) — DISCOVERY for lane I3: fetch-ffmpeg.mjs's recursive binary-locator does not assume the exact internal folder name (it searches for the literal basename ffmpeg.exe/ffprobe.exe under the extraction root), so this pin does not depend on BtbN's folder-naming convention holding — but lane I3 should do one real end-to-end fetch+extract+run on Windows before shipping, since this entry's bytes are unverified by direct download here."
+        "notes": "sha256 taken verbatim from BtbN's own checksums.sha256 for this release tag (same file this lane downloaded and cross-checked its linux-x64 entry against, byte-for-byte match there). The 168 MB win64 archive itself was NOT downloaded by this lane (Linux-lane host has no Windows binary to run) \u2014 DISCOVERY for lane I3: fetch-ffmpeg.mjs's recursive binary-locator does not assume the exact internal folder name (it searches for the literal basename ffmpeg.exe/ffprobe.exe under the extraction root), so this pin does not depend on BtbN's folder-naming convention holding \u2014 but lane I3 should do one real end-to-end fetch+extract+run on Windows before shipping, since this entry's bytes are unverified by direct download here."
       }
     },
     "macos-x64": {
@@ -108,7 +108,7 @@
       "sourceUrl": "https://evermeet.cx/ffmpeg/",
       "ffmpegVersion": "8.1.2",
       "license": "GPL-3.0-or-later",
-      "licenseNote": "evermeet.cx (Landon Fuller) publishes its exact `ffmpeg` build configure invocation on-page: includes --enable-gpl --enable-version3 --enable-libx264 --enable-libx265 — --enable-version3 is FFmpeg's own flag for 'this build is GPLv3, not GPLv2', so GPL-3.0-or-later is a direct read of the publisher's stated configuration, not an inference. evermeet.cx explicitly does NOT build for Apple Silicon (see 'apple-silicon-arm' page linked from their FAQ: 'I do not plan to provide native ffmpeg binaries for Apple Silicon ARM') — this entry is Intel/x86_64 only; it runs under Rosetta 2 on Apple Silicon Macs but macos-arm64 below is the native-arm pin.",
+      "licenseNote": "evermeet.cx (Landon Fuller) publishes its exact `ffmpeg` build configure invocation on-page: includes --enable-gpl --enable-version3 --enable-libx264 --enable-libx265 \u2014 --enable-version3 is FFmpeg's own flag for 'this build is GPLv3, not GPLv2', so GPL-3.0-or-later is a direct read of the publisher's stated configuration, not an inference. evermeet.cx explicitly does NOT build for Apple Silicon (see 'apple-silicon-arm' page linked from their FAQ: 'I do not plan to provide native ffmpeg binaries for Apple Silicon ARM') \u2014 this entry is Intel/x86_64 only; it runs under Rosetta 2 on Apple Silicon Macs but macos-arm64 below is the native-arm pin.",
       "components": {
         "ffmpeg": {
           "url": "https://evermeet.cx/ffmpeg/ffmpeg-8.1.2.zip",
@@ -128,7 +128,7 @@
       "verification": {
         "method": "independently downloaded and hashed",
         "verifiedAtMs": 1784903400000,
-        "notes": "Downloaded both zips in full and sha256'd locally; each contains exactly one flat file (`ffmpeg` / `ffprobe`, no wrapper directory) whose size matches evermeet's own JSON release-info API (evermeet.cx/ffmpeg/info/ffmpeg/release) exactly. evermeet publishes a detached GPG .sig per file instead of a plain sha256 on-page — this pin's sha256 is this lane's own hash of the bytes it downloaded, not transcribed from the publisher, so it is exact for THIS pin but a future re-pin must re-download+re-hash (fetch-ffmpeg.mjs's own checksum-verify step, not a comparison against a publisher-listed value)."
+        "notes": "Downloaded both zips in full and sha256'd locally; each contains exactly one flat file (`ffmpeg` / `ffprobe`, no wrapper directory) whose size matches evermeet's own JSON release-info API (evermeet.cx/ffmpeg/info/ffmpeg/release) exactly. evermeet publishes a detached GPG .sig per file instead of a plain sha256 on-page \u2014 this pin's sha256 is this lane's own hash of the bytes it downloaded, not transcribed from the publisher, so it is exact for THIS pin but a future re-pin must re-download+re-hash (fetch-ffmpeg.mjs's own checksum-verify step, not a comparison against a publisher-listed value)."
       }
     },
     "macos-arm64": {
@@ -136,8 +136,8 @@
       "sourceKind": "static-site",
       "sourceUrl": "https://www.osxexperts.net/",
       "ffmpegVersion": "8.1",
-      "license": "GPL-2.0-or-later (unconfirmed vs GPL-3.0 — see licenseNote)",
-      "licenseNote": "osxexperts.net publishes its build script on-page: ./configure --enable-gpl --enable-libx264 --enable-libx265 ... with NO --enable-version3 flag present anywhere in the visible script. FFmpeg's own convention is --enable-gpl alone = GPLv2-or-later; --enable-version3 is required to opt into GPLv3. No LICENSE.txt ships in the zip (just the bare binary) to cross-check against, so this is read directly from the publisher's own build script, not confirmed via bundled license text the way linux-x64/macos-x64 are — flagged for lane I4 to re-verify (e.g. by asking `ffmpeg -L`/-version banner text, which FFmpeg embeds at build time) before this pin ships.",
+      "license": "GPL-2.0-or-later (unconfirmed vs GPL-3.0 \u2014 see licenseNote)",
+      "licenseNote": "osxexperts.net publishes its build script on-page: ./configure --enable-gpl --enable-libx264 --enable-libx265 ... with NO --enable-version3 flag present anywhere in the visible script. FFmpeg's own convention is --enable-gpl alone = GPLv2-or-later; --enable-version3 is required to opt into GPLv3. No LICENSE.txt ships in the zip (just the bare binary) to cross-check against, so this is read directly from the publisher's own build script, not confirmed via bundled license text the way linux-x64/macos-x64 are \u2014 flagged for lane I4 to re-verify (e.g. by asking `ffmpeg -L`/-version banner text, which FFmpeg embeds at build time) before this pin ships.",
       "components": {
         "ffmpeg": {
           "url": "https://www.osxexperts.net/ffmpeg81arm.zip",
@@ -157,7 +157,7 @@
       "verification": {
         "method": "independently downloaded and hashed",
         "verifiedAtMs": 1784903400000,
-        "notes": "DISCOVERY / CAUTION for lane I4: the sha256 this lane computed from the ACTUAL downloaded bytes (recorded above, and what fetch-ffmpeg.mjs verifies against) does NOT match the sha256 osxexperts.net prints on its own webpage for ffmpeg81arm.zip (page says 9a08d61f9328e8164ba560ee7a79958e357307fcfeea6fe626b7d66cdc287028; this lane's real download hashes to ebb82529562b71170807bbc6b0e7eb4f0b13af8cbb0e085bb9e8f6fe709598ad instead — same mismatch pattern on ffprobe81arm.zip, page says aab17ac7379c1178aaf400c3ef36cdb67db0b75b1a23eeef2cb9f658be8844e6, actual is a6640a77d38a6f0527c5b597e599cb36a3427a6931444ed80bc62542421950a1). Most likely explanation: the site re-published a build at the same static URL without updating the printed checksum text (these unversioned URLs are themselves a supply-chain smell — unlike BtbN's dated release tags or evermeet's version-numbered filenames, a re-pin here can silently change without any URL change). This pin is internally consistent (fetch-ffmpeg.mjs will correctly verify-and-accept the bytes actually served today) but lane I4 should NOT treat this source as fire-and-forget — re-verify immediately before any release build, and consider evaluating an alternative arm64-native source (e.g. self-building via the osxexperts published script, or a Homebrew-bottle extraction) if this mismatch recurs on re-check."
+        "notes": "DISCOVERY / CAUTION for lane I4: the sha256 this lane computed from the ACTUAL downloaded bytes (recorded above, and what fetch-ffmpeg.mjs verifies against) does NOT match the sha256 osxexperts.net prints on its own webpage for ffmpeg81arm.zip (page says 9a08d61f9328e8164ba560ee7a79958e357307fcfeea6fe626b7d66cdc287028; this lane's real download hashes to ebb82529562b71170807bbc6b0e7eb4f0b13af8cbb0e085bb9e8f6fe709598ad instead \u2014 same mismatch pattern on ffprobe81arm.zip, page says aab17ac7379c1178aaf400c3ef36cdb67db0b75b1a23eeef2cb9f658be8844e6, actual is a6640a77d38a6f0527c5b597e599cb36a3427a6931444ed80bc62542421950a1). Most likely explanation: the site re-published a build at the same static URL without updating the printed checksum text (these unversioned URLs are themselves a supply-chain smell \u2014 unlike BtbN's dated release tags or evermeet's version-numbered filenames, a re-pin here can silently change without any URL change). This pin is internally consistent (fetch-ffmpeg.mjs will correctly verify-and-accept the bytes actually served today) but lane I4 should NOT treat this source as fire-and-forget \u2014 re-verify immediately before any release build, and consider evaluating an alternative arm64-native source (e.g. self-building via the osxexperts published script, or a Homebrew-bottle extraction) if this mismatch recurs on re-check."
       }
     }
   }
