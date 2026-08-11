@@ -55,8 +55,33 @@
     0 0 0 1px color-mix(in srgb, var(--color-accent) 45%, transparent);
 }
 
+/* Item 6 (poster-card a11y sweep): the app-wide `:focus-visible` default
+   this would otherwise inherit is a NON-inset box-shadow (globals.css) —
+   Home's Row.module.css wraps this tile in a horizontal `.scroller`
+   (`overflow-x: auto`, which per the CSS Overflow spec forces `overflow-y`
+   to compute to `auto` too) with no top padding, so the ring gets clipped
+   dead for any card in the first row. Same defect class Input/Button/
+   SegmentedControl already got fixed for (Input.module.css's header has
+   the full root-cause writeup) — an inset ring can never be clipped by any
+   ancestor, so it's fixed once here rather than padding-patching every
+   current and future scroller. Local keyframe for the same reason those
+   fixes needed one: the global rule's own `loombre-focus-in` keyframe
+   hard-codes the non-inset shadow as its "to" state and would otherwise
+   re-clobber this the instant the entrance animation finished. */
 .tile:focus-visible {
   border-radius: var(--radius-md);
+  box-shadow: inset 0 0 0 3px var(--color-focus);
+  animation: loombre-poster-tile-focus-in var(--motion-fast) var(--ease-spring);
+}
+
+@keyframes loombre-poster-tile-focus-in {
+  from {
+    box-shadow: inset 0 0 0 0 var(--color-focus);
+  }
+
+  to {
+    box-shadow: inset 0 0 0 3px var(--color-focus);
+  }
 }
 
 /* S7 poster signature: inner hairline, inset 7px / 1px rgba(255,255,255,.16)
