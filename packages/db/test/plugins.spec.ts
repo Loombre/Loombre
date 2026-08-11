@@ -109,6 +109,71 @@ describe('plugins queries', () => {
     expect(await listPlugins(db)).toEqual([]);
   });
 
+  it('listPlugins: two plugins registered in the SAME created_at_ms millisecond sort deterministically by id, not by an unspecified tie order (Task #9 Class A fix)', async () => {
+    const nowMs = Date.now();
+    // Ids chosen so lexicographic (`id ASC`) order is the REVERSE of
+    // registration order: pluginA registered FIRST but given the
+    // LEXICOGRAPHICALLY GREATEST id, pluginB registered SECOND but given
+    // the LEXICOGRAPHICALLY SMALLEST id — mirrors packages/jobs/test/
+    // ledger-events.spec.ts's forced-tie technique for migration
+    // 0039_events_seq.sql. This does NOT claim `id` recovers registration
+    // order (it provably does the opposite here) — only that the SAME two
+    // rows sort in the SAME relative order on every call, which is what
+    // the missing tiebreak failed to guarantee before this fix (see
+    // packages/db/src/query/cursor.ts's header for the "stable, not
+    // causal" distinction).
+    const { plugin: pluginA } = await insertPluginAndEmit(db, {
+      id: 'ffffffff-ffff-7fff-8fff-ffffffffff01',
+      name: 'tiebreak-a',
+      baseUrl: 'http://127.0.0.1:9101',
+      version: '0.1.0',
+      protocolVersion: 1,
+      contentClass: 'general',
+      grantedCapabilityTypes: [],
+      eventTypes: [],
+      lanAllowlist: [],
+      manifest: fixtureManifest({ name: 'tiebreak-a' }),
+      config: {},
+      actorUserId: adminUserId,
+      nowMs,
+    });
+    const { plugin: pluginB } = await insertPluginAndEmit(db, {
+      id: '00000000-0000-7000-8000-000000000b01',
+      name: 'tiebreak-b',
+      baseUrl: 'http://127.0.0.1:9102',
+      version: '0.1.0',
+      protocolVersion: 1,
+      contentClass: 'general',
+      grantedCapabilityTypes: [],
+      eventTypes: [],
+      lanAllowlist: [],
+      manifest: fixtureManifest({ name: 'tiebreak-b' }),
+      config: {},
+      actorUserId: adminUserId,
+      nowMs,
+    });
+
+    const runOnce = async () => {
+      const rows = await listPlugins(db);
+      const ids = rows.map((r) => r.id);
+      return { indexA: ids.indexOf(pluginA.id), indexB: ids.indexOf(pluginB.id) };
+    };
+
+    const first = await runOnce();
+    expect(first.indexA).toBeGreaterThanOrEqual(0);
+    expect(first.indexB).toBeGreaterThanOrEqual(0);
+    // `id ASC` secondary key: pluginB's smaller id sorts before pluginA's
+    // larger id, despite pluginA being registered first.
+    expect(first.indexB).toBeLessThan(first.indexA);
+
+    // Repeatability is the actual property under test — a missing tiebreak
+    // would still frequently happen to return a consistent order on a
+    // small table with no concurrent writers, so a single observation
+    // proves little on its own.
+    const second = await runOnce();
+    expect(second).toEqual(first);
+  });
+
   it('insertPluginAndEmit writes the row + event grants + plugin.registered event in one transaction', async () => {
     const pluginId = randomUUID();
     const nowMs = Date.now();

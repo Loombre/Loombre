@@ -57,8 +57,17 @@ export type PluginEventGrantRow = Selectable<PluginEventGrantsTable>;
 // reads
 // ============================================================================
 
+// `id` (UUIDv7) as a secondary sort key is a deterministic tiebreak, not a
+// causal-order claim: two plugins registered within the same Postgres
+// clock millisecond tie on `created_at_ms`, and loombre_uuidv7()'s
+// non-timestamp bits are plain random() (migrations/0039_events_seq.sql's
+// header has the full analysis) so `id` does not resolve that tie by
+// registration order either — it only makes the RESULT ROW ORDER stable
+// across repeated calls instead of depending on the database's unspecified
+// same-key tie-break (packages/db/src/query/cursor.ts's header documents
+// this class of fix).
 export async function listPlugins(db: Kysely<DB>): Promise<PluginRow[]> {
-  return db.selectFrom('plugins').selectAll().orderBy('created_at_ms', 'asc').execute();
+  return db.selectFrom('plugins').selectAll().orderBy('created_at_ms', 'asc').orderBy('id', 'asc').execute();
 }
 
 export async function getPluginById(db: Kysely<DB>, id: string): Promise<PluginRow | undefined> {

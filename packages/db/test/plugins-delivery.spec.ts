@@ -168,6 +168,32 @@ async function insertEvent(type: string, tsMs: number, payload: Record<string, u
   return row.rows[0]!.id;
 }
 
+/**
+ * Explicit-id variant, mirroring apps/worker/test/plugin-delivery/
+ * delivery-loop.integration.spec.ts's own insertEventWithId — needed for
+ * the same-millisecond adversarial fixture below, which must control the
+ * exact lexicographic relationship between two ids independent of
+ * loombre_uuidv7()'s real (server-clock, random-tail) output. No sleep
+ * here (unlike insertEvent): callers of this variant are proving `seq`
+ * ordering, not `id` ordering, so they don't need real-clock spacing.
+ */
+async function insertEventWithId(id: string, type: string, tsMs: number, payload: Record<string, unknown> = {}): Promise<string> {
+  await rawClient.query(
+    `INSERT INTO events (id, type, ts_ms, actor_user_id, payload) VALUES ($1, $2, $3, NULL, $4::jsonb)`,
+    [id, type, tsMs, JSON.stringify(payload)],
+  );
+  return id;
+}
+
+/** events.seq (migrations/0039_events_seq.sql) for a given events.id —
+ *  BIGINT parses to a real JS number via db.ts's pg.types.setTypeParser(20,
+ *  ...) side effect, already in force process-wide by the time this test
+ *  file's top-level `import { createDb } from '../src/db.js'` has run. */
+async function seqOf(eventId: string): Promise<number> {
+  const { rows } = await rawClient.query<{ seq: number }>(`SELECT seq FROM events WHERE id = $1`, [eventId]);
+  return rows[0]!.seq;
+}
+
 beforeAll(async () => {
   DATABASE_URL = await ensureFreshIsolatedDatabase(BASE_DATABASE_URL, 'lpp_w4_plugins_delivery');
   runMigrate(DATABASE_URL);
@@ -190,6 +216,7 @@ describe('migrations/0016_plugin_delivery_cursors.sql (applied for real via scri
       [
         'plugin_id',
         'cursor_event_id',
+        'cursor_event_seq',
         'last_attempt_ms',
         'last_success_ms',
         'consecutive_failures',
@@ -292,24 +319,28 @@ describe('ensurePseudonymSalt', () => {
 });
 
 describe('recordDeliverySuccess / recordDeliveryFailure', () => {
-  it('recordDeliverySuccess creates the cursor row on first call and advances cursor_event_id', async () => {
+  it('recordDeliverySuccess creates the cursor row on first call and advances cursor_event_id + cursor_event_seq together', async () => {
     const id = await insertPlugin({});
     const eventId = await insertEvent('item.added', 1_700_000_001_000);
-    const row = await recordDeliverySuccess(db, { pluginId: id, cursorEventId: eventId, deliveredEventCount: 3, nowMs: 1_700_000_002_000 });
+    const eventSeq = await seqOf(eventId);
+    const row = await recordDeliverySuccess(db, { pluginId: id, cursorEventId: eventId, cursorEventSeq: eventSeq, deliveredEventCount: 3, nowMs: 1_700_000_002_000 });
     expect(row.cursor_event_id).toBe(eventId);
+    expect(row.cursor_event_seq).toBe(eventSeq);
     expect(row.delivered_batches).toBe(1);
     expect(row.delivered_events).toBe(3);
     expect(row.consecutive_failures).toBe(0);
     expect(row.last_success_ms).toBe(1_700_000_002_000);
   });
 
-  it('a second success accumulates delivered_batches/delivered_events and advances the cursor again', async () => {
+  it('a second success accumulates delivered_batches/delivered_events and advances the cursor (id + seq) again', async () => {
     const id = await insertPlugin({});
     const firstEventId = await insertEvent('item.added', 1_700_000_001_000);
-    await recordDeliverySuccess(db, { pluginId: id, cursorEventId: firstEventId, deliveredEventCount: 2, nowMs: 1_700_000_002_000 });
+    await recordDeliverySuccess(db, { pluginId: id, cursorEventId: firstEventId, cursorEventSeq: await seqOf(firstEventId), deliveredEventCount: 2, nowMs: 1_700_000_002_000 });
     const secondEventId = await insertEvent('item.added', 1_700_000_003_000);
-    const row = await recordDeliverySuccess(db, { pluginId: id, cursorEventId: secondEventId, deliveredEventCount: 5, nowMs: 1_700_000_004_000 });
+    const secondEventSeq = await seqOf(secondEventId);
+    const row = await recordDeliverySuccess(db, { pluginId: id, cursorEventId: secondEventId, cursorEventSeq: secondEventSeq, deliveredEventCount: 5, nowMs: 1_700_000_004_000 });
     expect(row.cursor_event_id).toBe(secondEventId);
+    expect(row.cursor_event_seq).toBe(secondEventSeq);
     expect(row.delivered_batches).toBe(2);
     expect(row.delivered_events).toBe(7);
   });
@@ -319,11 +350,11 @@ describe('recordDeliverySuccess / recordDeliveryFailure', () => {
     await recordDeliveryFailure(db, { pluginId: id, nowMs: 1 });
     await recordDeliveryFailure(db, { pluginId: id, nowMs: 2 });
     const eventId = await insertEvent('item.added', 3);
-    const row = await recordDeliverySuccess(db, { pluginId: id, cursorEventId: eventId, deliveredEventCount: 1, nowMs: 4 });
+    const row = await recordDeliverySuccess(db, { pluginId: id, cursorEventId: eventId, cursorEventSeq: await seqOf(eventId), deliveredEventCount: 1, nowMs: 4 });
     expect(row.consecutive_failures).toBe(0);
   });
 
-  it('recordDeliveryFailure creates the row and increments consecutive_failures, leaving cursor_event_id null', async () => {
+  it('recordDeliveryFailure creates the row and increments consecutive_failures, leaving cursor_event_id/cursor_event_seq null', async () => {
     const id = await insertPlugin({});
     const first = await recordDeliveryFailure(db, { pluginId: id, nowMs: 100 });
     expect(first.consecutiveFailures).toBe(1);
@@ -331,6 +362,7 @@ describe('recordDeliverySuccess / recordDeliveryFailure', () => {
     expect(second.consecutiveFailures).toBe(2);
     const row = await getDeliveryCursor(db, id);
     expect(row?.cursor_event_id).toBeNull();
+    expect(row?.cursor_event_seq).toBeNull();
     expect(row?.last_success_ms).toBeNull();
   });
 
@@ -345,29 +377,31 @@ describe('recordDeliverySuccess / recordDeliveryFailure', () => {
   it('gapReportedThroughMs is left unchanged when omitted, and set when provided', async () => {
     const id = await insertPlugin({});
     const e1 = await insertEvent('item.added', 10);
-    await recordDeliverySuccess(db, { pluginId: id, cursorEventId: e1, deliveredEventCount: 1, nowMs: 20 });
+    await recordDeliverySuccess(db, { pluginId: id, cursorEventId: e1, cursorEventSeq: await seqOf(e1), deliveredEventCount: 1, nowMs: 20 });
     let row = await getDeliveryCursor(db, id);
     expect(row?.gap_reported_through_ms).toBeNull();
 
     const e2 = await insertEvent('item.added', 30);
-    await recordDeliverySuccess(db, { pluginId: id, cursorEventId: e2, deliveredEventCount: 1, nowMs: 40, gapReportedThroughMs: 25 });
+    await recordDeliverySuccess(db, { pluginId: id, cursorEventId: e2, cursorEventSeq: await seqOf(e2), deliveredEventCount: 1, nowMs: 40, gapReportedThroughMs: 25 });
     row = await getDeliveryCursor(db, id);
     expect(row?.gap_reported_through_ms).toBe(25);
 
     const e3 = await insertEvent('item.added', 50);
-    await recordDeliverySuccess(db, { pluginId: id, cursorEventId: e3, deliveredEventCount: 1, nowMs: 60 });
+    await recordDeliverySuccess(db, { pluginId: id, cursorEventId: e3, cursorEventSeq: await seqOf(e3), deliveredEventCount: 1, nowMs: 60 });
     row = await getDeliveryCursor(db, id);
     expect(row?.gap_reported_through_ms).toBe(25); // untouched by the omitted-field call
   });
 });
 
 describe('advanceCursorPastFilteredEvents', () => {
-  it('advances the cursor without touching delivery-stats columns', async () => {
+  it('advances the cursor (id + seq) without touching delivery-stats columns', async () => {
     const id = await insertPlugin({});
     const eventId = await insertEvent('restricted.locked', 1_700_000_005_000);
-    await advanceCursorPastFilteredEvents(db, { pluginId: id, cursorEventId: eventId, nowMs: 1_700_000_006_000 });
+    const eventSeq = await seqOf(eventId);
+    await advanceCursorPastFilteredEvents(db, { pluginId: id, cursorEventId: eventId, cursorEventSeq: eventSeq, nowMs: 1_700_000_006_000 });
     const row = await getDeliveryCursor(db, id);
     expect(row?.cursor_event_id).toBe(eventId);
+    expect(row?.cursor_event_seq).toBe(eventSeq);
     expect(row?.delivered_batches).toBe(0);
     expect(row?.delivered_events).toBe(0);
     expect(row?.last_success_ms).toBeNull();
@@ -376,14 +410,14 @@ describe('advanceCursorPastFilteredEvents', () => {
 });
 
 describe('listCandidateEventsForDelivery', () => {
-  it('returns only granted types, after the cursor, in ascending id order, capped at limit', async () => {
+  it('returns only granted types, after the cursor, in ascending SEQ order, capped at limit', async () => {
     const base = 1_700_100_000_000;
     const e1 = await insertEvent('item.added', base);
     const e2 = await insertEvent('user.created', base + 1);
     await insertEvent('scan.started', base + 2); // not granted — must be excluded
     const e4 = await insertEvent('item.added', base + 3);
 
-    const rows = await listCandidateEventsForDelivery(db, { afterId: e1, grantedTypes: ['item.added', 'user.created'], limit: 100 });
+    const rows = await listCandidateEventsForDelivery(db, { afterSeq: await seqOf(e1), grantedTypes: ['item.added', 'user.created'], limit: 100 });
     expect(rows.map((r) => r.id)).toEqual([e2, e4]);
   });
 
@@ -393,13 +427,87 @@ describe('listCandidateEventsForDelivery', () => {
     for (let i = 1; i <= 5; i++) {
       await insertEvent('library.created', base + i);
     }
-    const rows = await listCandidateEventsForDelivery(db, { afterId: first, grantedTypes: ['library.created'], limit: 3 });
+    const rows = await listCandidateEventsForDelivery(db, { afterSeq: await seqOf(first), grantedTypes: ['library.created'], limit: 3 });
     expect(rows).toHaveLength(3);
   });
 
   it('returns [] for an empty grantedTypes list (no query issued)', async () => {
-    const rows = await listCandidateEventsForDelivery(db, { afterId: '00000000-0000-7000-8000-000000000000', grantedTypes: [], limit: 10 });
+    const rows = await listCandidateEventsForDelivery(db, { afterSeq: 0, grantedTypes: [], limit: 10 });
     expect(rows).toEqual([]);
+  });
+
+  it('respects an optional minTsMs floor on top of the seq keyset (the retention-window gap-skip mechanism delivery-loop.ts uses)', async () => {
+    const base = 1_700_250_000_000;
+    const before = await insertEvent('library.created', base); // seq baseline, cursor "already here"
+    await insertEvent('library.created', base + 10); // after cursor, but ts_ms < minTsMs — must be excluded
+    const inWindow = await insertEvent('library.created', base + 1000); // after cursor AND ts_ms >= minTsMs — must be included
+
+    const rows = await listCandidateEventsForDelivery(db, {
+      afterSeq: await seqOf(before),
+      grantedTypes: ['library.created'],
+      limit: 100,
+      minTsMs: base + 500,
+    });
+    expect(rows.map((r) => r.id)).toEqual([inWindow]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// opus-review LD wave, Finding 1 — the real persisted-cursor skip hazard:
+// events.id (UUIDv7) ties within a same-millisecond write and resolves the
+// tie on RANDOM tail bits (migrations/0039_events_seq.sql's header), not
+// insertion order. For a STATELESS reader that's a same-tick reordering
+// nuisance; for a PERSISTED cursor (this table) it is a PERMANENT skip: a
+// same-millisecond sibling event whose id sorts before the already-advanced
+// cursor id would never again satisfy `id > afterId`. This fixture
+// reproduces that exact shape directly (crafted ids, no reliance on
+// winning a real same-millisecond race) and proves both halves of the
+// fix: the counterfactual old-shape read really would have skipped the
+// sibling, and the new seq-keyed read does not.
+// ---------------------------------------------------------------------------
+describe('opus-review LD wave Finding 1: same-millisecond sibling events across a persisted cursor advance', () => {
+  it('old id-keyed read would permanently skip a same-ms sibling inserted AFTER the cursor advanced; the new seq-keyed read delivers it', async () => {
+    const tsMs = 1_700_500_000_000;
+    // Same 48-bit timestamp prefix ("018bedb2cd00") on both ids — a genuine
+    // same-millisecond UUIDv7 pair — with the tail bits deliberately
+    // REVERSED relative to insertion order: idA (inserted/delivered FIRST,
+    // becomes the cursor) is the LEXICOGRAPHICALLY LARGER id; idB (inserted
+    // SECOND, after the cursor already advanced past idA) is the smaller
+    // one. This is exactly the "random tail bits, no monotonic fallback"
+    // collision migrations/0039_events_seq.sql's header describes, pinned
+    // deterministically instead of left to a real same-ms race.
+    const idA = '018bedb2-cd00-7fff-bfff-ffffffffffff';
+    const idB = '018bedb2-cd00-7000-8000-000000000000';
+    expect(idB < idA).toBe(true); // sanity: confirms the adversarial ordering this test relies on
+
+    await insertEventWithId(idA, 'item.added', tsMs, { itemId: '018f6f1e-0000-7000-8000-00000000fa01' });
+    const seqA = await seqOf(idA);
+
+    // Simulate: idA was already delivered and the cursor advanced past it —
+    // exactly what a real delivery tick's recordDeliverySuccess call does.
+    const pluginId = await insertPlugin({});
+    await recordDeliverySuccess(db, { pluginId, cursorEventId: idA, cursorEventSeq: seqA, deliveredEventCount: 1, nowMs: tsMs + 1 });
+
+    // idB — same millisecond, inserted AFTER the cursor advance (so its
+    // seq is strictly greater than idA's) but with a SMALLER id.
+    await insertEventWithId(idB, 'item.added', tsMs, { itemId: '018f6f1e-0000-7000-8000-00000000fa02' });
+    const seqB = await seqOf(idB);
+    expect(seqB).toBeGreaterThan(seqA); // real insertion order, correctly captured by seq
+
+    // OLD-SHAPE COUNTERFACTUAL: listCandidateEventsForDelivery no longer
+    // accepts an id-shaped cursor at all (this fix wave removed it), so the
+    // old `WHERE id > afterId` clause is reproduced directly here to prove
+    // it really would have missed idB — not merely asserted as a claim.
+    const oldShape = await rawClient.query<{ id: string }>(
+      `SELECT id FROM events WHERE id > $1 AND type = 'item.added' AND ts_ms = $2 ORDER BY id ASC`,
+      [idA, tsMs],
+    );
+    expect(oldShape.rows.map((r) => r.id)).not.toContain(idB); // proves the skip WOULD have occurred
+
+    // NEW SHAPE: the actual fixed function, keyed on the real persisted
+    // cursor's seq value, delivers idB across the cursor advance.
+    const rows = await listCandidateEventsForDelivery(db, { afterSeq: seqA, grantedTypes: ['item.added'], limit: 100 });
+    expect(rows.map((r) => r.id)).toContain(idB);
   });
 });
 

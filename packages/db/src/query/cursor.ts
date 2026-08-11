@@ -18,6 +18,42 @@
 // — it cannot make an invisible row visible, because the guard predicates
 // are unconditional on every guarded query regardless of cursor content.
 
+// Tie-break law for every keyset cursor built with this codec (Task #9
+// triage, STATE.md): every list/search surface in this package that pages
+// on an application sort key (created_at_ms, added_at_ms, started_at_ms,
+// name, ord, ...) ALSO orders on a unique secondary key — `id` (the row's
+// own UUIDv7 PK) for globally-unique tables, or a column unique within the
+// query's fixed scope (e.g. progress/watchlist/restricted-home's
+// `item_id`, already unique per user since those tables are always
+// additionally filtered to `user_id = ctx.userId`) where there is no
+// row-level PK to reach for. That secondary key is what makes the
+// resulting keyset pagination CORRECT — no row is ever skipped or
+// duplicated across pages, including when many rows share the exact same
+// primary sort-key value — because `(primary key, secondary key)` is
+// always unique per row, so the keyset comparison
+// `(k, secondary) < (cursor.k, cursor.secondary)` strictly and completely
+// orders the result set with no ties left over.
+//
+// What it does NOT give you: causal/insertion order among rows that tie on
+// the primary sort key. When the secondary key is a UUIDv7 `id`, its
+// non-timestamp bits are plain `random()` with no monotonic fallback for
+// same-millisecond collisions (migrations/0039_events_seq.sql's header has
+// the full analysis) — so on a tie, which row sorts first is a stable
+// coin flip, not "whichever was written first". That is an acceptable,
+// deliberate trade-off for these browse/list/admin surfaces: a user
+// paging through a catalog or admin list needs "never see a dup, never
+// miss a row" (guaranteed above), not "same-millisecond siblings appear in
+// write order" (not guaranteed, and no surface here depends on it). When a
+// caller DOES need genuine causal order — e.g. an audit trail or an
+// outbox read where "which of two same-millisecond events happened first"
+// is part of the contract — `events.seq` (migrations/0039_events_seq.sql)
+// is the pattern: a Postgres identity-sequence column, assigned
+// synchronously in call order with no possible tie and no dependence on
+// any clock, used as the ENTIRE sort key rather than a tiebreak alongside
+// a timestamp (packages/jobs/test/ledger-events.spec.ts's
+// jobUpdatedEventsFor is the worked example, including the historical
+// flake `ORDER BY id` caused before that column existed).
+
 export function encodeCursor<T>(payload: T): string {
   return Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url');
 }

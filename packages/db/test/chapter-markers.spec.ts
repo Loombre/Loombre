@@ -96,6 +96,29 @@ describe('chapter-markers', () => {
     expect(rows).toHaveLength(2);
   });
 
+  it('getChapterMarkers: two markers at the identical start_ms sort deterministically by id (Task #9 Class A fix), not by an unspecified tie order', async () => {
+    await replaceChapterMarkers(db, itemId, []); // clear this item's rows first
+    // Explicit ids (bypassing replaceChapterMarkers, which cannot pin an
+    // id) chosen so lexicographic (id ASC) order is the REVERSE of insert
+    // order — same forced-tie technique as packages/jobs/test/
+    // ledger-events.spec.ts for migration 0039_events_seq.sql, applied to
+    // start_ms instead of a timestamp column.
+    await db
+      .insertInto('chapter_markers')
+      .values([
+        { id: 'ffffffff-ffff-7fff-8fff-ffffffffffd1', item_id: itemId, title: 'Inserted first, greatest id', start_ms: 20_000, source: 'stash' },
+        { id: '00000000-0000-7000-8000-000000000d01', item_id: itemId, title: 'Inserted second, smallest id', start_ms: 20_000, source: 'stash' },
+      ])
+      .execute();
+
+    const first = await getChapterMarkers(db, itemId);
+    expect(first.map((r) => r.title)).toEqual(['Inserted second, smallest id', 'Inserted first, greatest id']);
+
+    // Repeatability, not a single lucky observation.
+    const second = await getChapterMarkers(db, itemId);
+    expect(second.map((r) => r.id)).toEqual(first.map((r) => r.id));
+  });
+
   it('markers are scoped per item — replacing one item never touches another\'s rows', async () => {
     const now = Date.now();
     const lib = await db.selectFrom('libraries').selectAll().executeTakeFirstOrThrow();
