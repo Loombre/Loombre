@@ -19,7 +19,9 @@
 // user (clean error).
 //
 // Self-sufficient, same convention as every other apps/server e2e suite:
-// own ensureTestDatabase("server_test") suffix, own reset+reseed.
+// own ensureTestDatabase("server_test_admin_reset_pin") suffix, own
+// reset+reseed (a distinct per-suite name so no sibling suite's reset can
+// DROP SCHEMA out from under this one).
 
 import "reflect-metadata";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -102,7 +104,7 @@ async function setRestrictedEnabled(): Promise<void> {
 }
 
 beforeAll(async () => {
-  databaseUrl = await ensureTestDatabase(BASE_DATABASE_URL, "server_test");
+  databaseUrl = await ensureTestDatabase(BASE_DATABASE_URL, "server_test_admin_reset_pin");
   run(path.join(DB_PKG_ROOT, "scripts", "migrate.mjs"), ["reset"], databaseUrl);
   run(path.join(DB_PKG_ROOT, "seed", "seed.mjs"), [], databaseUrl);
 
