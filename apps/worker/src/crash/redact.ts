@@ -31,36 +31,24 @@
 //      no field an env var could ride in except these two free-text ones,
 //      which is exactly what this pass scrubs).
 //
-// Deliberately module-local (not imported from packages/shared): this
-// wave's task explicitly scopes the ONE new packages/shared export to
-// crashDirPath alone, to avoid touching shared files a concurrent lane
-// (the IPC listener) also depends on. apps/server/src/crash/redact.ts is
-// an intentional near-identical twin — same rationale as
-// packages/secrets/src/file0600.ts's header on package-local duplication
-// across an app boundary neither app may import the other across (D2).
+// M-7 fix wave (second half): the generic path-matching MACHINERY (stack
+// frame / quoted / bare-path rules) now lives in
+// packages/shared/src/redact-paths.ts (redactPathsInText +
+// normalizeSlashes/stripFileUrlPrefix), lifted so packages/jobs's ledger
+// error-path redaction (a second, independent caller with NO "trusted
+// dataDir" concept at all) can reuse the exact same, already-hardened
+// matching logic instead of re-deriving it. This module keeps ONLY the
+// dataDir-aware DECISION (isInsideDataDir) and calls the shared primitive
+// with it — apps/server/src/crash/redact.ts remains an intentional
+// near-identical twin (same package-local-duplication rationale
+// packages/secrets/src/file0600.ts's header gives for an app boundary
+// neither app may import the other across, D2), UNCHANGED by this lift;
+// only the underlying generic-matching half moved, not the app-to-app
+// duplication.
+
+import { normalizeSlashes, redactPathsInText, stripFileUrlPrefix } from "@loombre/shared";
 
 const REDACTED = "<redacted>";
-
-function normalizeSlashes(path: string): string {
-  return path.replace(/\\/g, "/");
-}
-
-/** `file://` URLs (ESM import errors/stack frames commonly carry these,
- *  e.g. "Cannot find package ... imported from file:///Users/x/app.js") are
- *  percent-encoded — a literal space becomes `%20` — so decodeURIComponent
- *  recovers the real filesystem path before the inside/outside-dataDir
- *  comparison runs. Non-file:// input passes through unchanged. Malformed
- *  percent-encoding must never throw and abort redaction — falls back to
- *  the raw string. */
-function stripFileUrlPrefix(candidate: string): string {
-  if (!/^file:\/\//i.test(candidate)) return candidate;
-  const withoutScheme = candidate.replace(/^file:\/\//i, "");
-  try {
-    return decodeURIComponent(withoutScheme);
-  } catch {
-    return withoutScheme;
-  }
-}
 
 function isInsideDataDir(candidatePath: string, dataDir: string): boolean {
   if (dataDir.length === 0) return false;
@@ -69,83 +57,16 @@ function isInsideDataDir(candidatePath: string, dataDir: string): boolean {
   return normCandidate === normDataDir || normCandidate.startsWith(`${normDataDir}/`);
 }
 
-function basenameOf(path: string): string {
-  const normalized = normalizeSlashes(stripFileUrlPrefix(path)).replace(/\/+$/, "");
-  const idx = normalized.lastIndexOf("/");
-  return idx === -1 ? normalized : normalized.slice(idx + 1);
-}
-
-function looksLikeAbsolutePath(candidate: string): boolean {
-  const trimmed = candidate.trim();
-  return trimmed.startsWith("/") || /^[A-Za-z]:[\\/]/.test(trimmed) || /^file:\/\//i.test(trimmed);
-}
-
-function redactPath(path: string, dataDir: string): string {
-  if (isInsideDataDir(path, dataDir)) return path;
-  return `${REDACTED}/${basenameOf(path)}`;
-}
-
 /** Redacts every absolute filesystem path found in free text that lies
- *  OUTSIDE dataDir, keeping only the basename. Processes LINE BY LINE
- *  (never a single blanket multi-pass regex sweep over the whole text) so
- *  a line that a stack-frame rule (1/2) already resolved — including the
- *  "leave it alone, it's inside dataDir" outcome — is never re-scanned by
- *  the generic message-path rules (3/4) below it: those use a
- *  no-embedded-spaces fast path that would otherwise truncate an
- *  ALREADY-CORRECT parenthesized match at the first space (this repo's own
- *  dev checkout path has one — "App Development" — caught by exactly this
- *  bug during testing) and mis-redact the tail as if it were a second,
- *  unrelated path. */
+ *  OUTSIDE dataDir, keeping only the basename — paths INSIDE dataDir
+ *  (Loombre's own managed directory — a path like
+ *  `<dataDir>/postgres/data/base/16384` in a crash stack is useful
+ *  diagnostic signal, not personal information) are left alone. Thin
+ *  wrapper: the actual line-by-line pattern matching is
+ *  packages/shared/src/redact-paths.ts's redactPathsInText; this function
+ *  supplies only the dataDir decision. */
 export function redactPaths(text: string, dataDir: string): string {
-  return text
-    .split("\n")
-    .map((line) => redactPathsInLine(line, dataDir))
-    .join("\n");
-}
-
-function redactPathsInLine(line: string, dataDir: string): string {
-  // 1) "at fn (PATH:line:col)" — [^()]+ tolerates spaces inside the parens.
-  //    If this line contains one or more such frames, that's the ENTIRE
-  //    redaction this line gets — rules 3/4 below are skipped for it.
-  let matchedParenFrame = false;
-  const parenResult = line.replace(/\(([^()]+):(\d+):(\d+)\)/g, (whole, path: string, ln: string, col: string) => {
-    if (!looksLikeAbsolutePath(path)) return whole;
-    matchedParenFrame = true;
-    return `(${redactPath(path, dataDir)}:${ln}:${col})`;
-  });
-  if (matchedParenFrame) return parenResult;
-
-  // 2) "at PATH:line:col" with no parens (top-level/anonymous frames) —
-  //    anchored on the trailing ":digits:digits" so the captured path can
-  //    safely contain spaces. Whole-line match, so this also fully
-  //    replaces the line when it fires (no rule-3/4 fallthrough needed).
-  const bareMatch = /^(\s*at )(.+):(\d+):(\d+)(\s*)$/.exec(line);
-  if (bareMatch) {
-    const [, prefix, path, ln, col, suffix] = bareMatch as unknown as [string, string, string, string, string, string];
-    if (looksLikeAbsolutePath(path)) {
-      return `${prefix}${redactPath(path, dataDir)}:${ln}:${col}${suffix}`;
-    }
-  }
-
-  // 3) Quoted absolute paths anywhere in a non-stack-frame line (fs error
-  //    strings like `open '/Users/x/.secret'`).
-  let result = line;
-  result = result.replace(/'((?:\/|[A-Za-z]:[\\/])[^']*)'/g, (_whole, path: string) => `'${redactPath(path, dataDir)}'`);
-  result = result.replace(/"((?:\/|[A-Za-z]:[\\/])[^"]*)"/g, (_whole, path: string) => `"${redactPath(path, dataDir)}"`);
-
-  // 4) Bare (unquoted) absolute paths and file:// URLs anywhere else — the
-  //    common case for most real deployments. file:// URLs never contain a
-  //    literal space (always percent-encoded), so this no-embedded-spaces
-  //    pass captures them completely regardless of the underlying path's
-  //    own contents; a space-containing bare PLAIN path OUTSIDE a stack
-  //    frame or quotes has no reliable delimiter and is a known, documented
-  //    limitation (see this module's header).
-  result = result.replace(
-    /(^|[\s(])((?:file:\/\/|\/|[A-Za-z]:[\\/])[^\s'")]+)/gi,
-    (whole, pre: string, path: string) => `${pre}${redactPath(path, dataDir)}`,
-  );
-
-  return result;
+  return redactPathsInText(text, (path) => !isInsideDataDir(path, dataDir));
 }
 
 /** Redacts Bearer tokens, JWT-shaped three-segment base64url strings, and
