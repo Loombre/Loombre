@@ -1172,6 +1172,71 @@ happy-path pass: F1 STAYS a fix-lane item (defense-in-depth redaction that
 misses realistic NAS/UNC paths is a real gap even to an admin-plugin
 audience; severity MED).
 
+### RUN EXIT — an upstream media server-study IMPLEMENTATION run COMPLETE 2026-08-11 (all four wave gates green)
+
+199 commits over 88c5e6e5..HEAD. Four wave gates all met: Wave A (1.0
+ship-gate work) → Wave B → Wave C1+C2 → Wave D. FINAL gate:full GREEN, all
+16 steps, on the settled tree (web bundle 170.6 KB gz / 200 budget; one
+prefer-const lint miss from the fix lane caught by this gate and fixed —
+exactly what the final gate is for). Migrations added 0041 (worker pid/
+started), 0042 (LD-12 rating indexes), 0043 (transcode_runs), 0044 (rung
+indexes) — all additive, migrate-check 56 tables. ENGINE_VERSION
+0.8.5→0.11.0 (DV strip → AV1 → ABR). Contract 161 operations, additive-only
+across the run except the two P4.22/P4.23-precedent narrowings (currentPassword
+pre-existing; targetCodec→LadderCodec truth-narrowing); sdk-drift 0;
+conformance unimplemented-allowance held at EXACTLY ZERO throughout.
+
+LD REGISTER — ALL SIXTEEN CLOSED: LD-1 study internality (Wave 0); LD-2/C6
+win-ARM pruning; LD-3/LD-15 DV strip REAL (5-layer owner-ordered independent
+verification: genuine filter_units strip, EL drop, clean HDR10, zero
+residue); LD-4 devices.profile kept + comment; LD-5 themes retired (roadmap
+doc); LD-6 ABR (C2); LD-7 AV1 (C1); LD-8 rateLimit accepted; LD-9 remote
+TOCTOU (structural-release guard, held under D-R2 attack); LD-10 variance-
+resilient perf harness; LD-11 LOOMBRE_LOG_FILE all shapes; LD-12 stash
+sort=rating; LD-13a/b/c mail posture (a pre-existing+adversarially-tested,
+b null-to-clear bug fixed, c emailApplied no-oracle); LD-14 contrast rule
+amended + conformed (D-3 swept 53 declarations); LD-16 tier posture (AV1 T0
+hardware-only unreachable-by-construction; ABR slot-handoff never a 2nd
+process — both mutation-proven).
+
+WAVE D VERDICT: three fable reviewers (each corroborated by a duplicate
+run) — ALL ACCEPT / ACCEPT-WITH-FIXES, ZERO REJECT, ZERO product-correctness
+defects in the shipped decision/transcode/contract paths. Every load-bearing
+guarantee mutation-pinned. Consolidated fix lane closed: F1 M-7 redaction
+regex (UNC/glued/file:///space — orchestrator honored the concrete repro over
+the happy-path pass), F2 delivery-loop breaker reseed, the run's ONE open
+flake CLOSED BY CONSTRUCTION (6 shared-DB suites split to distinct names +
+worktree glob-exclude — env-lead disconfirmed, real cause was the shared
+<base>_server_test reset race), R1 test-pins (D-1/D-2/D-1b), D-3 LD-14
+sweep, 8 doc/comment drifts. Register D-5: five Wave B origin ledgers now
+CLOSED-with-commit; P3.4 backlog AV1-amended.
+
+INTEGRATION HYGIENE this run (all recovered, recorded, memory-updated):
+STATE.md concurrent-clobber (re-applied); worktree-glob test pollution (17
+lanes removed → gate green); a backgrounded-piped merge that committed
+conflict markers (--amend recovered, parents preserved); an R1/R2 reviewer
+mis-provisioned onto the WEBSITE repo (stopped-and-reported, respawned);
+five stale-base provisionings (self-corrected by the standing base check).
+
+OWNER-VERIFY OPEN TAIL (agents cannot close — scheduled with the next rc):
+(1) real-Safari master→variant token-hop (URL semantics verified here, WebKit
+not runnable); (2) N100 ABR rung-switch eyeball + tray/System single-slot
+occupancy; (3) per-install-shape LOOMBRE_LOG_FILE path eyeball; (4)
+AUD-W1-001 dotnet tray-test CI step execution proof (next CI run); (5)
+C2-f5b phantom-switch-back — a §9.1.3 SEMANTIC decision (any guard window
+trades against suppressing a legitimate switch-back) needing owner
+adjudication + a future migration; (6) the AV1 hardware backlog
+(av1_nvenc/qsv/vaapi/amf encode + windows-x64 libsvtav1 — fixture-only here);
+(7) the pre-existing rc.7 Windows MSI nondeterminism (task #17). FUTURE-RUN
+process notes: K12 event-schemas totality step for the contract-reviewer
+charter; the per-checkout test-DB-name discriminant (deferred, superseded
+for the flake by the 6-suite split); optionally extend grep-gates naming
+scan to docs/ (needs a not-a-fork prose allowlist).
+
+RELEASE GATING: owner deferred the 1.0-tag decision to run exit (2026-08-11).
+Wave A's ship-gate criteria held from the start; B/C/D gate the release only
+if the owner now says so. **AWAITS OWNER: the 1.0 tag decision.**
+
 ### Wave D — CONSOLIDATED FIX LANE dispatched 2026-08-11 (opus)
 
 All three reviewers ACCEPT/ACCEPT-WITH-FIXES, ZERO REJECT, ZERO
