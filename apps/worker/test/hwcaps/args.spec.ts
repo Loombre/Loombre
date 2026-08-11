@@ -139,6 +139,55 @@ describe("resolveSoftwareAv1Encoder / resolveDecodeSourceEncoder / resolveEncode
   });
 });
 
+// ===========================================================================
+// Wave C1 / LD-7 owner-decision D4 (docs/PLAYBACK.md §7.3): SOFTWARE AV1
+// ENCODE capability narrows to libsvtav1 ONLY. A box whose ffmpeg carries
+// only libaom-av1 must report software-av1 encode ABSENT.
+//
+// WHY this is a capability question and not a tuning one: libaom's realtime
+// presets are not a viable streaming encoder, and — the structural half —
+// the plan's arg builder emits ONE FIXED encoder name for a software av1
+// target (`libsvtav1`, §6 interpretation M). A capability the builder
+// cannot deterministically name is not a capability: probe-verifying the
+// exact encoder the builder will spawn is the same
+// probe-proves-the-shipped-plumbing rule interpretation D already follows
+// for tone-mapping. Reporting "software can av1" off a libaom-only box
+// would hand a Tier-1 plan an encoder name nothing on that machine has.
+//
+// libaom-av1 KEEPS its existing role generating av1 DECODE-test sources —
+// speed is irrelevant there, and the decode battery never spawns a
+// builder-named encoder.
+// ===========================================================================
+
+describe("D4: software AV1 encode capability is libsvtav1-only", () => {
+  it("resolveEncoderName('software','av1') resolves libsvtav1 when present", () => {
+    expect(resolveEncoderName("software", "av1", new Set(["libsvtav1", "libx264"]))).toBe("libsvtav1");
+  });
+
+  it("resolveEncoderName('software','av1') is NULL on a libaom-only box — encode capability reported ABSENT", () => {
+    expect(resolveEncoderName("software", "av1", new Set(["libaom-av1", "libx264"]))).toBeNull();
+  });
+
+  it("resolveEncoderName('software','av1') is NULL when neither encoder exists", () => {
+    expect(resolveEncoderName("software", "av1", new Set(["libx264"]))).toBeNull();
+  });
+
+  it("software h264/hevc are untouched by the narrowing", () => {
+    expect(resolveEncoderName("software", "h264", new Set(["libx264"]))).toBe("libx264");
+    expect(resolveEncoderName("software", "hevc", new Set(["libx265"]))).toBe("libx265");
+  });
+
+  it("DECODE-SOURCE generation still accepts libaom-av1 — that path names no builder encoder", () => {
+    expect(resolveDecodeSourceEncoder("av1", new Set(["libaom-av1"]))).toBe("libaom-av1");
+    expect(resolveDecodeSourceEncoder("av1", new Set(["libsvtav1", "libaom-av1"]))).toBe("libsvtav1");
+    expect(resolveDecodeSourceEncoder("av1", new Set(["libx264"]))).toBeNull();
+  });
+
+  it("resolveSoftwareAv1Encoder itself keeps both — it is the DECODE-source resolver now, and its own preference order stands", () => {
+    expect(resolveSoftwareAv1Encoder(new Set(["libaom-av1"]))).toBe("libaom-av1");
+  });
+});
+
 describe("parseEncoderNames", () => {
   it("parses ffmpeg -encoders' fixed-width listing format", () => {
     const stdout = [
