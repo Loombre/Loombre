@@ -28,6 +28,14 @@ export * from "./plan.js";
  *  engine decides with. */
 export * from "./dv.js";
 
+/** LD-7/LD-16: the ONE definition of "may this box encode AV1, and what
+ *  happens to a rung when it may not" (docs/PLAYBACK.md §7.2), shared by
+ *  ladder construction and Stage G exactly as `dv.ts` is shared by Stage C
+ *  and the arg builder. Exported so the worker's real-ffmpeg fences and
+ *  apps/server's contract drift guard can assert against the same
+ *  predicate the engine decides with, rather than a re-derivation. */
+export * from "./av1.js";
+
 /**
  * Phase 3 §11 step 6a (worker-side transcode session runtime) BARREL
  * ADDITION — reported per this step's purity fence ("if a builder OPTION

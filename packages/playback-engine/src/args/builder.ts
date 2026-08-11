@@ -304,11 +304,41 @@
  *     including a `mp4` download-remux — and this builder is never called
  *     for a direct-play plan at all, so reaching it IS the "repackaging
  *     happened" condition Stage C gates its reason on.
+ *
+ * (M) AV1 ENCODE TARGETS (LD-7, docs/PLAYBACK.md §6/§7.1, Wave C1). The
+ *     encoder-name table gains its `av1` column — `software → libsvtav1`,
+ *     `nvenc → av1_nvenc`, `qsv → av1_qsv`, `vaapi → av1_vaapi`,
+ *     `amf → av1_amf`, and NO `videotoolbox` entry (no ffmpeg release ships
+ *     an `av1_videotoolbox` encoder; no Apple Silicon generation has AV1
+ *     encode hardware, decode-only from M3) — which RETIRES the C8
+ *     probe/ladder-inconsistency comment that table carried. Per-codec
+ *     differences inside the existing encode block, all deterministic:
+ *       - Software rate/speed flags are PER-ENCODER: `libsvtav1` takes
+ *         `-preset 10` (SVT-AV1's numeric 0-13 scale, ~the
+ *         realtime-streaming band and the libx264-`veryfast` analogue —
+ *         `veryfast` itself is not a legal SVT-AV1 value). `-preset p4` for
+ *         nvenc is codec-agnostic and unchanged; qsv/vaapi/amf emit no
+ *         preset flag today for any codec and that stays true for av1.
+ *       - `-level` is NEVER emitted for an `av1` target in v1: AV1 levels
+ *         are `seq_level_idx` ordinals whose numbering does not correspond
+ *         to the H.264/HEVC decimal levels `DeviceProfile.video[].maxLevel`
+ *         carries, so a numerically "mapped" value would be wrong.
+ *       - `-tag:v hvc1` stays hevc-only; an fmp4 AV1 track's `av01` sample
+ *         entry is correct by default.
+ *       - Bitrate flags (`-b:v`/`-maxrate`/`-bufsize`), GOP flags (`-g`,
+ *         `-force_key_frames`) and every surrounding segment are
+ *         codec-agnostic and unchanged.
+ *     CONTAINER: an `av1` target paired with `ts-hls` is an
+ *     internally-inconsistent planShape → interpretation-J descriptive
+ *     throw, never reachable through `plan()` (§7.1's device gate refuses
+ *     AV1 targeting for ts-hls devices). Goldens 39/40/41 pin the hardware,
+ *     software, and demoted-rung argv respectively.
  */
 import type {
   AudioCodec,
   DeviceProfile,
   HardwareBackend,
+  LadderCodec,
   LadderRung,
   PlaybackPlanAudio,
   PlaybackPlanSubtitle,
@@ -365,25 +395,38 @@ const HWACCEL_BY_BACKEND: Partial<Record<HardwareBackend, string>> = {
  *  module's own defensive guard below still names it explicitly rather than
  *  silently falling through).
  *
- *  C8 (comparative-architecture audit, tracked not pruned): keyed only to
- *  `"h264" | "hevc"` — deliberately, today. apps/worker/src/hwcaps/
- *  tables.ts's mirror `VIDEO_ENCODER_NAMES` DOES verify av1 encode capability
- *  (its own header explains why: a forward-looking capability check even
- *  though the ladder never targets it), so hwprobe can report a box as
- *  AV1-encode-capable with no way for a plan to ever act on that fact — a
- *  real probe/ladder inconsistency, not a bug in either table alone. This
- *  is intentional under LD-7/LD-16 (STATE.md, implementation run): AV1
- *  targeting lands in Wave C1 (LadderCodec enum +
- *  VideoAction.targetCodec contract additions, encoder tables + DB CHECK +
- *  TS unions as one coordinated change, matrix/goldens same PR) — that PR
- *  is where this table gains its `av1` column, not a prune here. */
-const VIDEO_ENCODER_NAMES: Partial<Record<HardwareBackend, Record<"h264" | "hevc", string>>> = {
-  software: { h264: "libx264", hevc: "libx265" },
+ *  The `av1` column landed with Wave C1 (§6 interpretation M / LD-7),
+ *  RETIRING the C8 probe/ladder-inconsistency comment this table carried:
+ *  apps/worker/src/hwcaps/tables.ts's mirror had verified av1 encode
+ *  capability since it landed, with no consumer able to act on the fact.
+ *  §7.1/§7.2 are that consumer, so the inconsistency closes here.
+ *
+ *  `videotoolbox` has NO `av1` entry, deliberately and permanently: no
+ *  ffmpeg release ships an `av1_videotoolbox` encoder (no Apple Silicon
+ *  generation has AV1 encode hardware; decode-only from M3), so the probe
+ *  battery reports the capability absent BY CONSTRUCTION (§8.1) and Stage G
+ *  can never pair `videotoolbox` with an `av1` target. The interpretation-J
+ *  descriptive throw below covers the inconsistent shape if a caller
+ *  constructs one by hand. */
+const VIDEO_ENCODER_NAMES: Partial<Record<HardwareBackend, Partial<Record<LadderCodec, string>>>> = {
+  software: { h264: "libx264", hevc: "libx265", av1: "libsvtav1" },
   videotoolbox: { h264: "h264_videotoolbox", hevc: "hevc_videotoolbox" },
-  nvenc: { h264: "h264_nvenc", hevc: "hevc_nvenc" },
-  qsv: { h264: "h264_qsv", hevc: "hevc_qsv" },
-  vaapi: { h264: "h264_vaapi", hevc: "hevc_vaapi" },
-  amf: { h264: "h264_amf", hevc: "hevc_amf" },
+  nvenc: { h264: "h264_nvenc", hevc: "hevc_nvenc", av1: "av1_nvenc" },
+  qsv: { h264: "h264_qsv", hevc: "hevc_qsv", av1: "av1_qsv" },
+  vaapi: { h264: "h264_vaapi", hevc: "hevc_vaapi", av1: "av1_vaapi" },
+  amf: { h264: "h264_amf", hevc: "hevc_amf", av1: "av1_amf" },
+};
+
+/** Segment 7's SOFTWARE rate/speed flag, which is PER-ENCODER rather than
+ *  per-backend (§6 interpretation M): `libx264`/`libx265` take the named
+ *  `veryfast` preset, `libsvtav1` takes SVT-AV1's own NUMERIC 0-13 scale,
+ *  where 10 is ~the realtime-streaming band and the `veryfast` analogue.
+ *  `veryfast` itself is not a legal SVT-AV1 value — passing it fails the
+ *  encoder open, so this split is a correctness requirement, not tuning. */
+const SOFTWARE_PRESET_BY_TARGET: Record<LadderCodec, string> = {
+  h264: "veryfast",
+  hevc: "veryfast",
+  av1: "10",
 };
 
 /** scale_vt's bt709 tone-map parameters (interpretation D route (a)) —
@@ -476,7 +519,7 @@ function typeRelativeIndex<T extends { index: number }>(streams: readonly T[], s
  *  target codec, read from `device.video` exactly like every stage that
  *  reads device capability. `null` (either no matching entry, or the entry
  *  declares an unconstrained `maxLevel`) means: no `-level` flag. */
-function levelCap(device: DeviceProfile, targetCodec: "h264" | "hevc"): number | null {
+function levelCap(device: DeviceProfile, targetCodec: LadderCodec): number | null {
   const entry = device.video.find((v) => v.codec === targetCodec);
   return entry?.maxLevel ?? null;
 }
@@ -670,22 +713,56 @@ export function buildFfmpegArgs(input: PlanInput, planShape: FfmpegPlanShape, op
       if (!video.targetCodec) {
         throw new Error("buildFfmpegArgs: video.action==='transcode' requires planShape.video.targetCodec");
       }
+      // Interpretation M's container law: an `av1` rung only ever reaches
+      // this builder inside `fmp4-hls` (or an `mp4` remux shape,
+      // unreachable today) — §7.1's device gate refuses AV1 targeting for
+      // `ts-hls` devices, because AV1 has no assigned MPEG-TS stream_type
+      // and muxing it there produces a stream nothing standard can demux.
+      // The pairing is therefore an internally-inconsistent planShape, and
+      // gets interpretation J's descriptive throw rather than a silently
+      // undemuxable output. Never reachable through plan() (matrix cases
+      // 525/527 pin the two ways a ts-hls device is refused AV1).
+      if (video.targetCodec === "av1" && container === "ts-hls") {
+        throw new Error(
+          "buildFfmpegArgs: targetCodec 'av1' with container 'ts-hls' is an internally-inconsistent planShape — AV1 has no assigned MPEG-TS stream_type (docs/PLAYBACK.md §6 interpretation M); plan() refuses AV1 targeting for ts-hls devices, so this shape can only come from a hand-built caller",
+        );
+      }
       const encoderTable = VIDEO_ENCODER_NAMES[video.encoder!];
       if (!encoderTable) {
         throw new Error(
           `buildFfmpegArgs: backend "${video.encoder}" has no video encoder mapping (decode-only backends are never a valid video.encoder)`,
         );
       }
-      args.push("-c:v", encoderTable[video.targetCodec]);
-      if (video.encoder === "software") args.push("-preset", "veryfast");
+      const encoderName = encoderTable[video.targetCodec];
+      if (!encoderName) {
+        throw new Error(
+          `buildFfmpegArgs: backend "${video.encoder}" has no ${video.targetCodec} encoder (docs/PLAYBACK.md §6 interpretation M — no av1_videotoolbox encoder exists in any ffmpeg release, so the probe battery reports the capability absent and Stage G can never produce this pair)`,
+        );
+      }
+      args.push("-c:v", encoderName);
+      // Software rate/speed flags are PER-ENCODER (interpretation M);
+      // nvenc's `-preset p4` is codec-agnostic; qsv/vaapi/amf emit no
+      // preset flag for any codec, av1 included.
+      if (video.encoder === "software") args.push("-preset", SOFTWARE_PRESET_BY_TARGET[video.targetCodec]);
       if (video.encoder === "nvenc") args.push("-preset", "p4");
       args.push("-b:v", String(rung.videoBitrateBps));
       args.push("-maxrate", String(rung.videoBitrateBps));
       args.push("-bufsize", String(rung.videoBitrateBps * 2));
-      const cap = levelCap(device, video.targetCodec);
-      if (cap !== null) args.push("-level", String(cap));
+      // `-level` is NEVER emitted for an av1 target in v1 (interpretation
+      // M): AV1 levels are `seq_level_idx` ordinals whose numbering does not
+      // correspond to the H.264/HEVC decimal levels
+      // `DeviceProfile.video[].maxLevel` carries, so a numerically "mapped"
+      // value would simply be wrong. (Every real device profile's av1 entry
+      // declares `maxLevel: null` today anyway — the web client's MSE probe
+      // cannot derive one — but this guard does not depend on that.)
+      if (video.targetCodec !== "av1") {
+        const cap = levelCap(device, video.targetCodec);
+        if (cap !== null) args.push("-level", String(cap));
+      }
       args.push("-g", String(Math.round(videoStream.frameRate * 2)));
       args.push("-force_key_frames", "expr:gte(t,n_forced*{SEG_DUR})");
+      // `-tag:v hvc1` stays hevc-only: an fmp4 AV1 track's `av01` sample
+      // entry is correct by default and needs no re-tag.
       if (video.targetCodec === "hevc") args.push("-tag:v", "hvc1");
     } else if (video.action === "copy") {
       args.push("-c:v", "copy");
