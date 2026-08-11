@@ -196,3 +196,18 @@ describe("NoticesSection — composition", () => {
     expect(apiGetMock).toHaveBeenCalledWith("/system/notices", { params: { query: { limit: 20 } } });
   });
 });
+
+describe("NoticesSection — LD-4 (owner QA, 2026-08-10): copy placement", () => {
+  it("opens with the notices copy VERBATIM under the page title, ahead of the Compose card, not inside it", async () => {
+    await render();
+    const text = textOf();
+    const COPY =
+      "Notices are shown to every user on this server — never include restricted-zone references or personal " +
+      "information. A notice is communication only: publishing one does not restart, shut down, or otherwise change " +
+      "anything on the server by itself (use Settings → Server for that).";
+    expect(text).toContain(COPY);
+    // "opens with it" — the copy appears before the Compose card's own
+    // title, not nested inside its form.
+    expect(text.indexOf(COPY)).toBeLessThan(text.indexOf("Compose notice"));
+  });
+});

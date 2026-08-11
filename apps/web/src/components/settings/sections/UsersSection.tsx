@@ -298,8 +298,10 @@ export function UsersSection({ heading }: { heading: string | null }): React.JSX
       {heading !== null && <h1 className={styles.heading}>{heading}</h1>}
 
       <div className={styles.header}>
+        {/* LD-6 (owner QA, 2026-08-10): renamed from "Users" — the count
+            stays attached exactly as before. */}
         <h2 className={styles.title}>
-          Users{users !== null && <span className={styles.countMono}> · {users.length}</span>}
+          Active Users{users !== null && <span className={styles.countMono}> · {users.length}</span>}
         </h2>
         {/* H16 (W3 fidelity audit): solid accent pill in the header row
             (dc:753's `+ Add user` button), not the dashed add-tile —
