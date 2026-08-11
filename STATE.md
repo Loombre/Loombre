@@ -789,6 +789,46 @@ rule. Wave A remaining: those two continuations, then integration (merge all
 branches → gate:full → docs sync → deferral annotation sweep CLOSED/
 RE-AFFIRMED → exit-gate proofs on the merged tree).
 
+**A4 continuation verified (2026-08-11):** AUD-W6-001 CLOSED client-side —
+root cause exactly as A5's repro implied: createPlaybackSession deliberately
+re-throws non-refusal errors and VideoPlayer's session-create effect ran
+`void run()` with no catch → unhandled rejection, phase stuck on "loading"
+forever; fix routes ANY thrown error into the existing client-synthesized-
+reason fatal path (UnavailableScreen), red-first with the unhandled-rejection
+failure mode captured (33/33 on orchestrator re-run). LD-14 spots both
+resolved-with-evidence, no changes: registry footer already complies (13px
+--text-sm + hint = the accepted-exception tier — a side effect of A4's own W8
+fix, anticipated in its code comment); "SORTED BY DATE ADDED" NEVER SHIPPED —
+prototype-only copy in the Phosphor .dc.html (watchlist screen), traced
+exhaustively, the violating mono+hint pattern was never built. A4 flagged one
+NEW violation outside its asked spots: .sourcePill[data-source="default"] =
+subtle color on the shared --mono-xs size — micro-continuation dispatched
+(conform per the amended rule, lane's design call on color-vs-size).
+
+**A2 FINAL (2026-08-11): consumption half done — lane COMPLETE, orchestrator-
+verified** (66/66 across playback-hls + playback e2e on re-run; A1-branch
+merge commit 2361e0e5 clean, zero conflicts). Exact per-run derivation: run 2
+origin deliberately EARLIER than run 1's in the triple-seek case (backward
+seek — clock ordering picks the wrong run), distinct per-run durations
+(6006/9009/7007) so no cross-run mean can accidentally pass; mid-run leg fully
+exact. LANE SELF-CAUGHT BUG worth institutional memory: selecting a run's
+segments by `index >= run.startSegment` sweeps in every LATER run's segments —
+a transcode_runs row records where a run STARTS, not where it ends; membership
+now decided by the runN/ prefix the playlist URIs already carry. FLAG FOR
+WAVE C2 SPEC + any future consumer: getTranscodeRunForSegment gives a run's
+START; consumers needing EXTENT will hit the same trap. Progress mapping:
+server-side at putProgress ingestion (catalog/progress.controller.ts), mapped
+BEFORE the write so resume point and playback.progress payload cannot
+disagree; NEVER-GUESS contract (no session/runs/staging/playlist, or position
+past end → client value passes through unchanged — correct for direct-play
+and un-seeked sessions, pinned by guard cases); red evidence: stored 66066
+where 606006 was correct (off by 9.5 min). D2 boundary honored: pure helpers
+lifted to apps/server/src/common/served-playlist.ts (catalog may not import
+playback/) — depcruise clean. No engine changes; ENGINE_VERSION stays at the
+single 0.9.0 bump; contract untouched. PLAYBACK.md §9: per-run anchoring rule
++ heartbeat mapping formula added. WAVE A CODE WORK NOW COMPLETE except A4's
+.sourcePill micro-fix; integration begins when it lands.
+
 **A3 FINAL (2026-08-11): continuation done — lane COMPLETE, orchestrator-
 verified** (126/126 on re-run: ssrf + ledger-events + delivery-loop +
 chain-resolution + redact-paths; 17 commits total; contract/protocol diffs
