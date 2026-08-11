@@ -60,7 +60,10 @@
   font-size: var(--mono-lg);
   letter-spacing: 0.2em;
   text-transform: uppercase;
-  color: var(--color-text-subtle);
+
+  /* AUD-A4v3-003: --mono-* may never pair with subtle/hint (tokens.css's
+     amended rule) — muted (7.4:1, AA-clean) replaces subtle here. */
+  color: var(--color-text-muted);
   margin-bottom: var(--space-2xl);
   text-align: center;
 }
@@ -89,7 +92,9 @@
   font-size: var(--mono-md);
   letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: var(--color-text-subtle);
+
+  /* AUD-A4v3-003: --mono-* may never pair with subtle/hint. */
+  color: var(--color-text-muted);
   text-align: center;
   margin-bottom: var(--space-2xs);
 }
@@ -130,7 +135,11 @@
   font-size: var(--mono-sm);
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: var(--color-text-subtle);
+
+  /* AUD-A4v3-003: --mono-* may never pair with subtle/hint — these are
+     the "Username or email"/"Password" field labels, real functional
+     text every user reads to sign in, not decoration. */
+  color: var(--color-text-muted);
 }
 
 .error {
@@ -161,7 +170,11 @@
   font-size: var(--mono-xs);
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: var(--color-text-hint);
+
+  /* AUD-A4v3-003: --mono-* may never pair with subtle/hint — this is the
+     "Credentials never leave your network" security disclosure, real
+     content a user should be able to actually read. */
+  color: var(--color-text-muted);
   text-align: center;
   margin-top: var(--space-sm);
 }
