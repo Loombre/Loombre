@@ -115,11 +115,36 @@ export function parseStoredPlan(raw: Record<string, unknown> | null): StoredPlan
 /** Mirrors `@loombre/playback-engine`'s `plan.ts` own `topRung` selection
  *  (highest `videoBitrateBps`) EXACTLY — kept in sync intentionally (that
  *  file's own comment names this as the "DEFAULT rung" convention); a
- *  seek-restart targets the SAME rung the session originally started at,
- *  never a different quality. */
+ *  seek-restart targets the SAME rung the session was already serving,
+ *  never a different quality. A RUNG SWITCH is the one thing that does
+ *  change quality, and it names its rung by index — `rungAtIndex` below. */
 export function topRungOf(ladder: LadderRung[]): LadderRung | undefined {
   return ladder.reduce<LadderRung | undefined>(
     (max, rung) => (max === undefined || rung.videoBitrateBps > max.videoBitrateBps ? rung : max),
     undefined,
   );
+}
+
+/**
+ * The rung a §9.1.4 slot handoff is switching TO, addressed by its INDEX in
+ * the stored plan's ladder — which is exactly what the client's `v{K}` path
+ * named and what `pending_rung_index` carries.
+ *
+ * POSITIONAL, deliberately, not "the Kth highest bitrate": §9.1.1's master
+ * playlist emits one `EXT-X-STREAM-INF` per `plan.ladder[K]` **in array
+ * order**, and `policy.ladderRungs` is never re-sorted by the engine
+ * (`stages/ladder.ts`: "Table order is `policy.ladderRungs` as given"). An
+ * admin table that is not bitrate-descending would therefore make a
+ * rank-based lookup hand back a different rung than the one the client
+ * asked for — silently, at a different quality.
+ *
+ * `undefined` for anything that does not name a real rung (out of range,
+ * negative, non-integer, empty ladder). The caller decides what that means;
+ * `rebuild-args.ts` falls back to the top rung rather than restarting with
+ * no rung at all.
+ */
+export function rungAtIndex(ladder: LadderRung[], index: number | undefined | null): LadderRung | undefined {
+  if (index === undefined || index === null || !Number.isInteger(index)) return undefined;
+  if (index < 0 || index >= ladder.length) return undefined;
+  return ladder[index];
 }
