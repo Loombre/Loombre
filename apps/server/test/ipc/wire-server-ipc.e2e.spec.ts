@@ -7,7 +7,7 @@
 // DbProvider from a booted app and that GET /ipc/v1/status's worker field
 // flows through a REAL @loombre/db `listJobsAdmin` query against a REAL
 // Postgres — not a fake. Self-sufficient (own ensureTestDatabase suffix,
-// RESOURCE ISOLATION: `loombre_ipc`, ports left ephemeral) per this
+// RESOURCE ISOLATION: `loombre_ipc_test`, ports left ephemeral) per this
 // package's established live-DB test convention (see
 // apps/server/test/ws-broadcaster.e2e.spec.ts's own header for the same
 // pattern this file mirrors).
@@ -62,7 +62,7 @@ let databaseUrl: string;
 let dataDir: string;
 
 beforeAll(async () => {
-  databaseUrl = await ensureTestDatabase(BASE_DATABASE_URL, "ipc");
+  databaseUrl = await ensureTestDatabase(BASE_DATABASE_URL, "ipc_test");
   run(path.join(DB_PKG_ROOT, "scripts", "migrate.mjs"), ["reset"], databaseUrl);
   process.env["DATABASE_URL"] = databaseUrl;
 

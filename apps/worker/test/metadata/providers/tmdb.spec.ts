@@ -16,7 +16,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { spawnSync } from 'node:child_process';
-import { createDb } from '@loombre/db';
+import { createDb, resolveTestDatabaseUrl } from '@loombre/db';
 import {
   createTmdbProvider,
   mapEpisodeDetails,
@@ -95,7 +95,7 @@ describe('tmdb mappers (fixture-based, no network)', () => {
 });
 
 describe('createTmdbProvider (fake fetch + dedicated live DB)', () => {
-  const DATABASE_URL = process.env.DATABASE_URL ?? 'postgres://loombre:loombre@localhost:5442/loombre';
+  const DATABASE_URL = resolveTestDatabaseUrl();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let db: any;
 

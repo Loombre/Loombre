@@ -13,7 +13,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createDb } from '@loombre/db';
+import { createDb, resolveTestDatabaseUrl } from '@loombre/db';
 import { metadataSearchConsumerHandler, type MatchCandidate } from '../../src/metadata/match-search-consumer.js';
 import { ProviderFetchError } from '../../src/metadata/cache.js';
 import { ProviderRegistry } from '../../src/metadata/registry.js';
@@ -22,7 +22,7 @@ import { makeFakeProvider } from '../../src/metadata/test-support.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DB_PKG_ROOT = path.resolve(__dirname, '../../../../packages/db');
 
-const DATABASE_URL = process.env.DATABASE_URL ?? 'postgres://loombre:loombre@localhost:5442/loombre';
+const DATABASE_URL = resolveTestDatabaseUrl();
 
 function run(script: string, args: string[]) {
   const result = spawnSync(process.execPath, [script, ...args], {

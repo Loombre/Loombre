@@ -10,6 +10,7 @@
 // Commands:
 //   migrate        apply every migration not yet recorded as applied
 //   reset          drop and recreate the public schema, then migrate
+//                  (GUARDED — see below)
 //   status         list migrations and whether each is applied
 //   migrate-check  (a) sha256-compare schema.sql against the concatenation
 //                  of migrations/*.sql, (b) replay every migration into a
@@ -19,6 +20,51 @@
 //
 // Connection: DATABASE_URL env var, default
 //   postgres://loombre:loombre@localhost:5442/loombre
+//
+// RESET GUARD (2026-08-10 incident: packages/jobs/test/queue.spec.ts's
+// beforeAll spawned `reset` — DROP SCHEMA public CASCADE — straight
+// against DATABASE_URL's bare default, which was the live dev database,
+// because nothing but convention distinguished "a test run" from "an
+// operator's real database"). `reset` now REFUSES to run unless the
+// TARGET database's name contains "_test" as an underscore-delimited
+// segment (matches both the `<name>_test` convention
+// packages/db/src/testing.ts's resolveTestDatabaseUrl() produces AND the
+// pre-existing `ensureTestDatabase`-derived per-suite names already in
+// use across the test suites, e.g. "loombre_server_test",
+// "loombre_test_export_spec") — or LOOMBRE_ALLOW_RESET=1 is set (the
+// operator/CI escape hatch; `pnpm db:reset` sets it inline). `migrate`,
+// `status`, `migrate-check`, and `generate-schema` are all read-only or
+// additive and stay unguarded.
+//
+// AUTO-PROVISION: when `reset` targets a database that doesn't exist yet
+// (first run against a freshly-derived `<name>_test`), it is CREATEd via
+// a maintenance connection to the same server's `postgres` database
+// before the real connection is opened — every consumer (test suite,
+// operator) gets this for free without provisioning its own database
+// first. Concurrent creation (two suites racing the same missing
+// database) is resolved by catching duplicate_database (42P04) and
+// continuing. This step is best-effort (see ensureDatabaseExists's own
+// header below) — an operator-managed external Postgres is not required
+// to grant CONNECT on `postgres` or CREATEDB (docs/ops/external-postgres.md
+// never promises either), so a failure here is logged and swallowed
+// rather than raised.
+//
+// RESIDUAL RACE (not fixed by this guard, unchanged by this wave): the
+// guard only decides WHETHER a reset is allowed to proceed against a
+// given database name; it does nothing about two DIFFERENT packages'
+// test suites choosing to reset the SAME database name concurrently.
+// apps/worker and packages/jobs both derive their live-DB suites from the
+// same shared `resolveTestDatabaseUrl()` default (`<base>_test`, e.g.
+// "loombre_test") rather than each having its own `ensureTestDatabase`-
+// isolated database — turbo can run their `test` tasks in parallel, and
+// two concurrent `reset` (DROP SCHEMA public CASCADE + replay) calls
+// against the SAME `loombre_test` database can race each other (lost
+// schema, a replay observing a half-dropped schema, or a Postgres
+// deadlock — the same failure mode packages/db/src/testing.ts's own
+// header documents ensureTestDatabase as solving for packages that opt
+// into it). Not addressed here: giving apps/worker and packages/jobs
+// their own per-package databases is a real fix but out of scope for this
+// wave (documentation only).
 
 import { readFileSync, readdirSync, writeFileSync, existsSync } from 'node:fs';
 import { createHash } from 'node:crypto';
@@ -119,6 +165,118 @@ async function cmdMigrate(client) {
   console.log(`migrate: ${count} migration(s) applied, ${files.length} total.`);
 }
 
+// Matches "loombre_test", "loombre_test_export_spec", "server_test_x",
+// bare "test" — anything with "_test" as an underscore-delimited segment.
+// Deliberately NOT a strict "ends with _test" check: several already-
+// isolated per-suite database names (ensureTestDatabase-derived, e.g.
+// "loombre_server_test_review_findings") carry a suffix AFTER "_test",
+// not just before it.
+function isTestDatabaseName(name) {
+  return /(^|_)test(_|$)/.test(name);
+}
+
+function assertResetAllowed(databaseUrl) {
+  const dbName = new URL(databaseUrl).pathname.replace(/^\//, '');
+  // Two equivalent escape hatches: the env var (documented, works from any
+  // caller including a spawned child process) and a `--allow-reset` CLI
+  // flag (what `pnpm db:reset` actually uses — package.json scripts run
+  // through cmd.exe on the Windows dev/installer channel, which does not
+  // understand `VAR=1 command` shell syntax, and this repo has no
+  // cross-env dependency to paper over that; a plain argv flag needs
+  // neither).
+  const allowed =
+    isTestDatabaseName(dbName) ||
+    process.env.LOOMBRE_ALLOW_RESET === '1' ||
+    process.argv.includes('--allow-reset');
+  if (allowed) return;
+  throw new Error(
+    `reset: refusing to drop schema "public" on database "${dbName}" — its name ` +
+    `does not contain "_test", so this does not look like a disposable test ` +
+    `database.\n` +
+    `Escape hatches:\n` +
+    `  - point DATABASE_URL at a database whose name contains "_test" (test ` +
+    `suites derive this automatically via resolveTestDatabaseUrl, which honors ` +
+    `LOOMBRE_TEST_DATABASE_URL), e.g. "${dbName}_test"\n` +
+    `  - pass --allow-reset / set LOOMBRE_ALLOW_RESET=1 for a deliberate reset ` +
+    `(operator/CI use only — \`pnpm db:reset\` already does this for you)`
+  );
+}
+
+// `reset` against a database that doesn't exist yet (first run against a
+// freshly-derived <name>_test) would otherwise fail at client.connect()
+// before cmdReset ever runs. Connects to the same server's `postgres`
+// maintenance database (present on every Postgres install this repo
+// targets — docker-compose.dev.yml's image, CI's action-setup-postgres on
+// all 3 OSes) to check for and, if missing, create the target database.
+//
+// BEST-EFFORT, not required: docs/ops/external-postgres.md's documented
+// setup only grants the loombre role "ordinary DDL+DML privileges on
+// [its] database" — it never promises CONNECT on the `postgres` database
+// or CREATEDB, and an operator-managed Postgres is free to withhold both.
+// Against that setup this whole auto-provision step would previously fail
+// outright (throwing before `reset`'s real connection ever opens),
+// breaking `pnpm db:reset --allow-reset` for exactly the external-Postgres
+// path docs/ops/external-postgres.md documents as first-class (D1). Any
+// failure here — connect refused, permission denied, `postgres` database
+// not reachable, anything — is therefore caught and logged as a note, not
+// raised: if the target database genuinely doesn't exist, the real
+// connection opened right after this returns fails with Postgres's own
+// (accurate) error, which is a better failure than this function's guess.
+async function ensureDatabaseExists(databaseUrl) {
+  const target = new URL(databaseUrl);
+  const dbName = target.pathname.replace(/^\//, '');
+  if (!dbName) return;
+
+  const maintenanceUrl = new URL(databaseUrl);
+  maintenanceUrl.pathname = '/postgres';
+  const admin = new pg.Client({ connectionString: maintenanceUrl.toString() });
+  try {
+    await admin.connect();
+  } catch (err) {
+    console.log(
+      `reset: could not auto-provision database "${dbName}" (failed to connect to the ` +
+      `maintenance database "postgres" on the same server): ${err.message}; proceeding — ` +
+      `if the database does not exist the next step will fail with the real error.`
+    );
+    return;
+  }
+  try {
+    const { rowCount } = await admin.query('SELECT 1 FROM pg_database WHERE datname = $1', [dbName]);
+    if (rowCount > 0) return;
+    try {
+      // CREATE DATABASE cannot be parameterized or run inside a
+      // transaction; dbName is either the _test-suffix convention or
+      // already passed the assertResetAllowed guard above, never
+      // unvalidated request input.
+      await admin.query(`CREATE DATABASE "${dbName.replace(/"/g, '""')}"`);
+      console.log(`reset: created database "${dbName}" (did not exist).`);
+    } catch (err) {
+      // 42P04 = duplicate_database: a sibling test suite created it
+      // concurrently between our existence check and our CREATE — the
+      // exact race two independent packages' beforeAll hooks can hit
+      // under turbo's parallel package execution. Not our problem to
+      // fail on; the database exists either way.
+      if (err && err.code === '42P04') {
+        console.log(`reset: database "${dbName}" was created concurrently by another process — continuing.`);
+      } else {
+        console.log(
+          `reset: could not auto-provision database "${dbName}" (CREATE DATABASE failed): ` +
+          `${err.message}; proceeding — if the database does not exist the next step will ` +
+          `fail with the real error.`
+        );
+      }
+    }
+  } catch (err) {
+    console.log(
+      `reset: could not auto-provision database "${dbName}" (checking pg_database failed): ` +
+      `${err.message}; proceeding — if the database does not exist the next step will fail ` +
+      `with the real error.`
+    );
+  } finally {
+    await admin.end();
+  }
+}
+
 async function cmdReset(client) {
   console.log('reset: dropping and recreating schema "public"...');
   // IF EXISTS: a reset aborted between DROP and CREATE (task kill, turbo
@@ -207,6 +365,11 @@ async function main() {
   if (command === 'generate-schema') {
     cmdGenerateSchema();
     return;
+  }
+
+  if (command === 'reset') {
+    assertResetAllowed(DATABASE_URL);
+    await ensureDatabaseExists(DATABASE_URL);
   }
 
   const client = new pg.Client({ connectionString: DATABASE_URL });

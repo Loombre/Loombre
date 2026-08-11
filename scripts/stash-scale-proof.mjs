@@ -102,7 +102,12 @@ function runMigrate(databaseUrl, args) {
 
 async function main() {
   const { ensureTestDatabase, createDb } = await import("@loombre/db");
-  const databaseUrl = await ensureTestDatabase(BASE_DATABASE_URL, "stash_scale_proof");
+  // "_test" suffix (not a plain "stash_scale_proof" suffix): scripts/
+  // migrate.mjs's `reset` guard (RESET GUARD block in that file's header)
+  // refuses to DROP SCHEMA on a database whose name doesn't contain "_test"
+  // as an underscore-delimited segment, and this script's runMigrate(...,
+  // ["reset"]) below depends on that guard letting it through.
+  const databaseUrl = await ensureTestDatabase(BASE_DATABASE_URL, "stash_scale_proof_test");
   log(`database: ${databaseUrl}`);
   runMigrate(databaseUrl, ["reset"]);
 

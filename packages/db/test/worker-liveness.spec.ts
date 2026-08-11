@@ -9,16 +9,25 @@
 // the rejection and quietly falls back to the old ledger heuristic, so a
 // broken query would present as "the bug we just fixed came back".
 //
-// Connection: DATABASE_URL env var, default
-//   postgres://loombre:loombre@localhost:5442/loombre
+// Connection: an ISOLATED per-suite database (ensureTestDatabase), NOT the
+// live default — this spec is non-destructive, but it scopes its
+// pg_stat_activity reads to current_database(), so pointing it at the dev
+// database made a RUNNING dev worker's labeled connection fail the
+// "no worker connected" case. The suite needs no schema at all (it reads
+// only PostgreSQL's session catalog), just a database of its own to
+// connect to; isolating it retires the stop-the-dev-stack-before-gate
+// ritual for good.
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import pg from 'pg';
 import { Kysely, PostgresDialect } from 'kysely';
 import type { DB } from '../src/types.js';
 import { getWorkerLiveness, workerApplicationName } from '../src/query/worker-liveness.js';
+import { ensureTestDatabase } from '../src/testing.js';
 
-const DATABASE_URL = process.env.DATABASE_URL ?? 'postgres://loombre:loombre@localhost:5442/loombre';
+const BASE_DATABASE_URL =
+  process.env.DATABASE_URL ?? 'postgres://loombre:loombre@localhost:5442/loombre';
+let DATABASE_URL: string;
 
 /** A pool that identifies itself the way apps/worker's queue pool does. */
 function poolAs(applicationName: string | undefined): pg.Pool {
@@ -33,7 +42,8 @@ describe('getWorkerLiveness (real PostgreSQL)', () => {
   let readerPool: pg.Pool;
   let db: Kysely<DB>;
 
-  beforeAll(() => {
+  beforeAll(async () => {
+    DATABASE_URL = await ensureTestDatabase(BASE_DATABASE_URL, 'worker_liveness_test');
     // The READER is deliberately unlabelled — it stands in for the server,
     // and must never match its own query.
     readerPool = poolAs(undefined);

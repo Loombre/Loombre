@@ -15,12 +15,12 @@ import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
-import { createDb, createStashSyncReport, upsertLibraryStashConnectionConfig, upsertServerSettingAndEmit } from "@loombre/db";
+import { createDb, createStashSyncReport, resolveTestDatabaseUrl, upsertLibraryStashConnectionConfig, upsertServerSettingAndEmit } from "@loombre/db";
 import { runStashScheduleTick } from "../../src/stash/schedule-loop.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PKG_DB_ROOT = path.resolve(__dirname, "../../../../packages/db");
-const DATABASE_URL = process.env.DATABASE_URL ?? "postgres://loombre:loombre@localhost:5442/loombre";
+const DATABASE_URL = resolveTestDatabaseUrl();
 
 function run(script: string, args: string[]) {
   const result = spawnSync(process.execPath, [script, ...args], {

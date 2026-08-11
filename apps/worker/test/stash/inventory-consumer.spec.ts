@@ -13,13 +13,13 @@ import { rmSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
-import { createDb, listStashSceneLinksForLibrary, upsertLibraryStashConnectionConfig } from "@loombre/db";
+import { createDb, listStashSceneLinksForLibrary, resolveTestDatabaseUrl, upsertLibraryStashConnectionConfig } from "@loombre/db";
 import { stashInventoryConsumerHandler } from "../../src/stash/inventory-consumer.js";
 import { buildSyncFixtureDb, type FixtureScene } from "./sync-fixtures/build-sync-fixture.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PKG_DB_ROOT = path.resolve(__dirname, "../../../../packages/db");
-const DATABASE_URL = process.env.DATABASE_URL ?? "postgres://loombre:loombre@localhost:5442/loombre";
+const DATABASE_URL = resolveTestDatabaseUrl();
 
 function run(script: string, args: string[]) {
   const result = spawnSync(process.execPath, [script, ...args], {

@@ -26,7 +26,7 @@ import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Kysely } from 'kysely';
-import { createDb } from '@loombre/db';
+import { createDb, resolveTestDatabaseUrl } from '@loombre/db';
 import type { DB } from '@loombre/db';
 import { applyStashSceneMetadata, type ApplyStashSceneMetadataInput } from '../../src/stash/apply.js';
 import { metadataConsumerHandler } from '../../src/metadata/consumer.js';
@@ -40,7 +40,7 @@ import type { StashPerformer, StashScene, StashSceneFile, StashSceneMarker, Stas
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DB_PKG_ROOT = path.resolve(__dirname, '../../../../packages/db');
 const FIXTURES_DIR = path.join(__dirname, 'fixtures');
-const DATABASE_URL = process.env.DATABASE_URL ?? 'postgres://loombre:loombre@localhost:5442/loombre';
+const DATABASE_URL = resolveTestDatabaseUrl();
 
 function run(script: string, args: string[]) {
   const result = spawnSync(process.execPath, [script, ...args], {

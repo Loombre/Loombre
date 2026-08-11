@@ -36,7 +36,7 @@ import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';
-import { createDb, getUserByUsername, insertPluginAndEmit, replaceLibraryProviderChain } from '@loombre/db';
+import { createDb, getUserByUsername, insertPluginAndEmit, replaceLibraryProviderChain, resolveTestDatabaseUrl } from '@loombre/db';
 import { resolveProviderChainForLibrary } from '../../src/metadata/chain-resolution.js';
 import { createPluginBreakerRegistry } from '../../src/metadata/plugin-breakers.js';
 import { ProviderRegistry } from '../../src/metadata/registry.js';
@@ -45,7 +45,7 @@ import type { ContentClass, MediaKind } from '../../src/metadata/provider.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DB_PKG_ROOT = path.resolve(__dirname, '../../../../packages/db');
-const DATABASE_URL = process.env.DATABASE_URL ?? 'postgres://loombre:loombre@localhost:5442/loombre';
+const DATABASE_URL = resolveTestDatabaseUrl();
 
 function run(script: string, args: string[]) {
   const result = spawnSync(process.execPath, [script, ...args], {

@@ -9,9 +9,9 @@
 // rule. round-trip.spec.ts is the sibling suite covering the full
 // export->wipe->import->diff exit bar via the real HTTP/job paths.
 //
-// Resource isolation (this lane's ports 3700-3799, DBs loombre_e /
-// loombre_e_roundtrip): this file never touches the shared `loombre` dev
-// database directly — every case runs against `loombre_e_unit`
+// Resource isolation (this lane's ports 3700-3799, DBs loombre_e_test /
+// loombre_e_roundtrip_test): this file never touches the shared `loombre`
+// dev database directly — every case runs against `loombre_e_unit_test`
 // (ensureTestDatabase's suffix convention, @loombre/db/src/testing.ts, the
 // same helper apps/server/test/auth.e2e.spec.ts already uses), reset once
 // per `it` via TRUNCATE (not a full migrate reset — cheap enough for a
@@ -61,7 +61,7 @@ let db: ReturnType<typeof createDb>;
 let raw: pg.Client;
 
 beforeAll(async () => {
-  databaseUrl = await ensureTestDatabase(BASE_DATABASE_URL, 'e_unit');
+  databaseUrl = await ensureTestDatabase(BASE_DATABASE_URL, 'e_unit_test');
   run(path.join(DB_PKG_ROOT, 'scripts', 'migrate.mjs'), ['reset'], databaseUrl);
   db = createDb(databaseUrl);
   raw = new pg.Client({ connectionString: databaseUrl });

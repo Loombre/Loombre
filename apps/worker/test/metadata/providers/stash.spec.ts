@@ -17,7 +17,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
-import { createDb, upsertLibraryStashConnectionConfig } from "@loombre/db";
+import { createDb, resolveTestDatabaseUrl, upsertLibraryStashConnectionConfig } from "@loombre/db";
 import {
   InvalidStashExternalIdError,
   StashLibraryUnavailableError,
@@ -31,7 +31,7 @@ import { buildFixtureDb } from "../../stash/fixtures/build-fixture-db.js";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PKG_DB_ROOT = path.resolve(__dirname, "../../../../../packages/db");
 const FIXTURES_DIR = path.resolve(__dirname, "../../stash/fixtures");
-const DATABASE_URL = process.env.DATABASE_URL ?? "postgres://loombre:loombre@localhost:5442/loombre";
+const DATABASE_URL = resolveTestDatabaseUrl();
 
 function run(script: string, args: string[]) {
   const result = spawnSync(process.execPath, [script, ...args], {

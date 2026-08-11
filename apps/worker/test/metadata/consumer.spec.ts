@@ -18,7 +18,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createDb } from '@loombre/db';
+import { createDb, resolveTestDatabaseUrl } from '@loombre/db';
 import { upsertMetadataProvenance } from '@loombre/db/internal';
 import { metadataConsumerHandler } from '../../src/metadata/consumer.js';
 import { ProviderFetchError } from '../../src/metadata/cache.js';
@@ -29,7 +29,7 @@ import type { ProviderDetails } from '../../src/metadata/provider.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DB_PKG_ROOT = path.resolve(__dirname, '../../../../packages/db');
 
-const DATABASE_URL = process.env.DATABASE_URL ?? 'postgres://loombre:loombre@localhost:5442/loombre';
+const DATABASE_URL = resolveTestDatabaseUrl();
 
 function run(script: string, args: string[]) {
   const result = spawnSync(process.execPath, [script, ...args], {
