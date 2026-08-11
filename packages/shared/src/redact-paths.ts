@@ -126,7 +126,7 @@ function redactPathsInLine(line: string, shouldRedact: PathRedactionDecision): s
   //    Redacts each frame in place; the (possibly space-containing) message
   //    paths on the SAME line are still handled by rules 3/4 below.
   let matchedParenFrame = false;
-  let working = line.replace(/\(([^()]+):(\d+):(\d+)\)/g, (whole, path: string, ln: string, col: string) => {
+  const working = line.replace(/\(([^()]+):(\d+):(\d+)\)/g, (whole, path: string, ln: string, col: string) => {
     if (!looksLikeAbsolutePath(path)) return whole;
     matchedParenFrame = true;
     return `(${redactOnePath(path, shouldRedact)}:${ln}:${col})`;
