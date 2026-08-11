@@ -23,6 +23,7 @@
     "db:seed": "pnpm --filter @loombre/db run db:seed",
     "db:seed-large": "pnpm --filter @loombre/db run db:seed-large",
     "db:migrate-check": "pnpm --filter @loombre/db run db:migrate-check",
+    "db:cleanup-test-dbs": "pnpm --filter @loombre/db run db:cleanup-test-dbs",
     "lpp:conform": "pnpm --filter @loombre/plugin-protocol run conform",
     "grep-gates": "node scripts/grep-gates.mjs",
     "docs:build": "node scripts/docs/build.mjs",
