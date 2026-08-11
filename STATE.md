@@ -555,6 +555,38 @@ any DV implementation); A5 reads audit candidates read-only from the MAIN
 checkout's reports/ (gitignored → absent from worktrees). Orchestrator holds:
 gate runs, docs sync, integration merges, per-claim verification.
 
+**A2 checkpoint (2026-08-11, mid-wave):** items 1–3 DONE and orchestrator-verified
+(38/38 re-run in the lane worktree; zero engine/contract diffs). C3 landed as a
+pure controller-side derivation (deriveSegmentStartMs: exact cumulative real
+#EXTINF sums inside the served window, measured-mean extrapolation outside,
+nominal only as last resort) + [0,durationMs] clamp at both call sites —
+requestSeek untouched (no A1 handoff needed). LD-2/C6: candidatesForPlatform
+arch param REQUIRED (not defaulted — a default would silently re-admit the x86
+list); win32+arm64 → ['software']; re-open condition in-file. C9 done. SCOUT
+CONFIRMED THE STUDY'S C4 FINDING IS WORSE THAN DOCUMENTED: dv-stripped-to-hdr10
+emits `-c:v copy` and NOTHING else — no DV-aware builder code exists; RPU NALs
+AND container dvcC/dvvC signalling pass through; profile-7 EL not dropped
+either; copy branch never re-tags hvc1. LD-3 implementation AUTHORIZED at the
+checkpoint with: fixtures = NAL-splice CI floor + dovi_tool primary (2.3.3
+installed via brew, PATH-resolved dev tool, MIT — LICENSE-INTENT.md entry
+required) + owner-sample env hook; mechanism decided EMPIRICALLY between
+filter_units=remove_types=62-63 and the DV-aware dovi_rpu bsf (present in PATH
+ffmpeg; vendored-build availability must be reported) against a three-fold
+zero-residue oracle (trace_headers NAL scan + no DOVI side-data record + hvc1
+tag); open-GOP composition ships as ONE -bsf:v value (golden 37); reason stays
+`dv-stripped-to-hdr10` made TRUE with EL-drop in parameterized detail (NO new
+reason code — contract enum is closed; distinct-code option deferred to owner).
+NEW A2-FOUND DEFECTS RECORDED FOR POST-A1 DISPOSITION (runner.ts is A1's file):
+(1) presentation-vs-source timeline divergence — seek runs spawn `-ss` without
+-copyts, output timeline restarts at 0 while segment indices are a global
+monotonic counter and no per-run source origin is recorded server-side → exact
+source-time anchoring impossible for runs ≥1 and post-seek progress reporting
+(video.currentTime) is wrong; (2) seek-restart livelock — client retrying a
+too-far-ahead index re-fires requestSeek per 503 and the worker restarts
+unconditionally (no de-dup against in-flight target); (3) renderServedPlaylist
+EVENT playlist prunes head without EXT-X-MEDIA-SEQUENCE (assigned to A2's
+continuation, its file).
+
 ## an upstream media server comparative architecture study — ANALYSIS-ONLY, COMPLETE 2026-08-10 (owner brief "Comparative Architecture Study — an upstream media server Playback Engine vs. Loombre"; awaiting owner review + implementation authorization)
 
 DELIVERABLE: reports/upstream-media-server-study/upstream-media-server-comparative-study.md (908 lines) —
