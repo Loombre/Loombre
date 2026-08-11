@@ -380,6 +380,19 @@ exit 1
 `;
     writeFileSync(path.join(shimDir, "pkgutil"), fakePkgutil);
     chmodSync(path.join(shimDir, "pkgutil"), 0o755);
+    // plutil is macOS-only, but the gate's installers-test step also runs
+    // these behaviorally on the ubuntu leg (caught live: rc.7 CI red while
+    // the same tests passed on the macOS dev machine). Shim the one
+    // invocation shape uninstall.sh uses — `plutil -extract <key> raw -o - -`
+    // — against the fixed plist shape this harness itself generates, so the
+    // whole receipt pipeline is hermetic on both OSes.
+    const fakePlutil = `#!/bin/sh
+key="$2"
+sed -n "/<key>$key<\\/key>/{n;s/.*<string>\\(.*\\)<\\/string>.*/\\1/p;}"
+exit 0
+`;
+    writeFileSync(path.join(shimDir, "plutil"), fakePlutil);
+    chmodSync(path.join(shimDir, "plutil"), 0o755);
     return fn(shimDir);
   } finally {
     rmSync(shimDir, { recursive: true, force: true });
