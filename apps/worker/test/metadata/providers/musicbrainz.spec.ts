@@ -6,7 +6,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { createDb, resolveTestDatabaseUrl } from '@loombre/db';
+import { createDb, ensureTestDatabase, resolveTestDatabaseUrl } from '@loombre/db';
 import {
   createMusicBrainzProvider,
   mapAlbumDetails,
@@ -22,6 +22,15 @@ import {
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const FIXTURES = join(__dirname, '..', 'fixtures', 'musicbrainz');
 const DB_PKG_ROOT = join(__dirname, '..', '..', '..', '..', '..', 'packages', 'db');
+
+// PER-SUITE DATABASE (Wave A / A1's recommendation, swept at pre-D
+// consolidation). This suite RESETS the schema in its own hook; on the
+// shared `<base>_test` database a sibling package's reset landing mid-run
+// wipes it out from under whatever is executing and presents as a product
+// bug. `ensureTestDatabase` gives it one of its own — resolved at module
+// load (top-level await) so every describe-scope handle below is built
+// against the right connection string.
+const DATABASE_URL = await ensureTestDatabase(resolveTestDatabaseUrl(), 'worker_musicbrainz_test');
 
 function fixture<T>(name: string): T {
   return JSON.parse(readFileSync(join(FIXTURES, `${name}.json`), 'utf8')) as T;
@@ -63,7 +72,6 @@ describe('musicbrainz mappers (fixture-based, no network)', () => {
 });
 
 describe('createMusicBrainzProvider (fake fetch + dedicated live DB)', () => {
-  const DATABASE_URL = resolveTestDatabaseUrl();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let db: any;
 

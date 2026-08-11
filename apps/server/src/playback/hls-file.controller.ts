@@ -76,6 +76,7 @@ import {
   getTranscodeRunForSegment,
   requestRungSwitch,
   requestSeek,
+  requestSeekWithRungSwitch,
   updateRequestedSegment,
 } from "@loombre/db";
 import type { ViewerContext } from "@loombre/db";
@@ -423,29 +424,51 @@ export class PlaybackHlsFileController {
     // presentation history and keep serving from disk; only the live edge
     // waits (the existing 503 + Retry-After) until the new rung produces.
     //
-    // Recorded BEFORE the seek detection below, and independent of it:
-    // `pending_rung_index` and `seek_target_ms` are separate columns, and
-    // the worker's single-restart rule (§9.1.7) folds a coincident pair into
-    // ONE spawned run — (requested rung, requested origin) — whichever
-    // landed first. Nothing here needs to sequence them.
-    //
     // Requests naming the already-active rung are absorbed at the WRITE side
-    // (`requestRungSwitch`), which is what stops a client steadily pinned to
-    // one variant from writing a "switch" on literally every segment GET.
-    if (variantRungIndex !== undefined && ladder.length > 0) {
-      await requestRungSwitch(this.dbProvider.db, ctx, id, variantRungIndex, now);
-    }
+    // (`requestRungSwitch`/`requestSeekWithRungSwitch`'s CASE), which is
+    // what stops a client steadily pinned to one variant from writing a
+    // "switch" on literally every segment GET.
+    //
+    // ONE CONTROL-CHANNEL WRITE PER REQUEST (§9.1.7's write side). The
+    // switch is NOT recorded up front any more: one request can carry BOTH
+    // intentions — a far-ahead index under a `v{K}` naming a different rung
+    // — and writing them as two statements leaves a window in which a
+    // worker poll tick observes only the switch. It then pays a handoff
+    // restart at the live-edge continuation origin, and the seek's restart
+    // on the next tick: two of the most expensive operations that runtime
+    // performs for one client intention, with an intermediate run producing
+    // bytes nobody asked for. So each exit path below issues exactly one
+    // write, carrying whichever intentions this request actually has.
+    const switchRungIndex = variantRungIndex !== undefined && ladder.length > 0 ? variantRungIndex : undefined;
+    const recordSwitchOnly = async (): Promise<void> => {
+      if (switchRungIndex !== undefined) {
+        await requestRungSwitch(this.dbProvider.db, ctx, id, switchRungIndex, now);
+      }
+    };
+    /** The seek half, folded together with any switch this same request
+     *  carries — §9.1.7's coincident pair as a single statement. */
+    const recordSeek = async (targetMs: number): Promise<void> => {
+      if (switchRungIndex !== undefined) {
+        await requestSeekWithRungSwitch(this.dbProvider.db, ctx, id, targetMs, switchRungIndex, now);
+        return;
+      }
+      await requestSeek(this.dbProvider.db, ctx, id, targetMs, now);
+    };
 
     // `v{K}/media.m3u8` — the variant playlist. Same bytes as the bare
     // route (one pipeline, one playlist), so it delegates rather than
-    // duplicating the poll/serve logic.
+    // duplicating the poll/serve logic. A playlist GET carries no segment
+    // index and therefore never a seek, so the switch stands alone — and
+    // it is recorded BEFORE the (blocking) poll, exactly as before.
     if (fileRelativePath === "media.m3u8") {
+      await recordSwitchOnly();
       await this.serveMediaPlaylist(ctx, id, req, res);
       return;
     }
 
     const parsed = parseSegmentFile(fileRelativePath);
     if (!parsed || !session.stagingDir) {
+      await recordSwitchOnly();
       throw notFound("Playback session not found.", sanitizeInstancePath(req));
     }
 
@@ -461,7 +484,7 @@ export class PlaybackHlsFileController {
       const ahead = session.producedSegment === null ? Number.POSITIVE_INFINITY : parsed.segmentIndex - session.producedSegment;
       if (ahead > SEEK_LOOKAHEAD_SEGMENTS) {
         const targetMs = await this.resolveSeekTargetMs(ctx, session, parsed.segmentIndex);
-        await requestSeek(this.dbProvider.db, ctx, id, targetMs, now);
+        await recordSeek(targetMs);
         this.respondSeekRetry(res, sanitizeInstancePath(req));
         return;
       }
@@ -482,14 +505,21 @@ export class PlaybackHlsFileController {
     } catch {
       // "Before run-start" / already-pruned — module header's BIND part
       // (b): also a seek-worthy condition for a real segment index; for
-      // init.mp4 (no index), just ask the client to retry shortly.
+      // init.mp4 (no index), just ask the client to retry shortly. Either
+      // way, one write: the seek folds any switch in with it, and without
+      // an index there is only the switch to record.
       if (parsed.segmentIndex !== undefined) {
         const targetMs = await this.resolveSeekTargetMs(ctx, session, parsed.segmentIndex);
-        await requestSeek(this.dbProvider.db, ctx, id, targetMs, now);
+        await recordSeek(targetMs);
+      } else {
+        await recordSwitchOnly();
       }
       this.respondSeekRetry(res, sanitizeInstancePath(req));
       return;
     }
+
+    // Served from disk: no seek, so the switch (if any) stands alone.
+    await recordSwitchOnly();
 
     res.status(200);
     res.setHeader("Content-Type", CONTENT_TYPE_BY_EXTENSION[parsed.extension]);

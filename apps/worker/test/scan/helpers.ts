@@ -22,13 +22,20 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
-import { createDb, resolveTestDatabaseUrl } from "@loombre/db";
+import { createDb, ensureTestDatabase, resolveTestDatabaseUrl } from "@loombre/db";
 import type { QueueLike } from "../../src/scan/scanner.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DB_PKG_ROOT = path.resolve(__dirname, "../../../../packages/db");
 
-export const DATABASE_URL = resolveTestDatabaseUrl();
+// PER-SUITE DATABASE (Wave A / A1's recommendation, swept at pre-D
+// consolidation). This suite RESETS the schema in its own hook; on the
+// shared `<base>_test` database a sibling package's reset landing mid-run
+// wipes it out from under whatever is executing and presents as a product
+// bug. `ensureTestDatabase` gives it one of its own — resolved at module
+// load (top-level await) so every describe-scope handle below is built
+// against the right connection string.
+export const DATABASE_URL = await ensureTestDatabase(resolveTestDatabaseUrl(), "worker_scan_test");
 
 export function resetSchema(): void {
   const result = spawnSync(process.execPath, [path.join(DB_PKG_ROOT, "scripts", "migrate.mjs"), "reset"], {

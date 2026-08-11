@@ -26,6 +26,7 @@ import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 import {
   createDb,
+  ensureTestDatabase,
   listStashSceneLinksForLibrary,
   replaceLibraryPathMappings,
   resolveTestDatabaseUrl,
@@ -53,7 +54,14 @@ vi.mock("../../src/stash/oshash.js", async (importOriginal) => {
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PKG_DB_ROOT = path.resolve(__dirname, "../../../../packages/db");
-const DATABASE_URL = resolveTestDatabaseUrl();
+// PER-SUITE DATABASE (Wave A / A1's recommendation, swept at pre-D
+// consolidation). This suite RESETS the schema in its own hook; on the
+// shared `<base>_test` database a sibling package's reset landing mid-run
+// wipes it out from under whatever is executing and presents as a product
+// bug. `ensureTestDatabase` gives it one of its own — resolved at module
+// load (top-level await) so every describe-scope handle below is built
+// against the right connection string.
+const DATABASE_URL = await ensureTestDatabase(resolveTestDatabaseUrl(), "worker_stash_pipeline_test");
 
 function run(script: string, args: string[]) {
   const result = spawnSync(process.execPath, [script, ...args], {
