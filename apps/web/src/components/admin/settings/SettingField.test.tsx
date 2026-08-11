@@ -65,6 +65,38 @@ describe("SettingField.module.css — W8 tail (.caution/.lockedValue onto the ty
   });
 });
 
+// LD-14 follow-through (amended design rule, verbatim effect: subtle/hint
+// low-contrast text colors are allowed only on --text-* sizes >= 12px, and
+// NEVER on --mono-* tiers — every --mono-* tier sits below --text-xs by
+// construction, which is what made the OLD "never below --text-xs" wording
+// self-contradictory). Self-flagged during that review: .sourcePill/
+// .restartPill share font-size: var(--mono-xs) (8.5px) — a --mono-* tier —
+// and the "default" source variant paired that with --color-text-subtle
+// (the 3.4:1 accepted-exception hint tier), which the amended rule now
+// forbids outright regardless of size. The "environment"/"database"
+// variants use --color-warning/--color-accent (full-strength, non-exception
+// colors) so they were never implicated.
+describe("SettingField.module.css — LD-14 sourcePill conformance", () => {
+  const css = readFileSync(path.join(__dirname, "SettingField.module.css"), "utf8");
+
+  it("the default-source pill never pairs an AA-exception subtle/hint color with the shared --mono-xs badge size", () => {
+    const rule = ruleFor(css, '.sourcePill[data-source="default"]');
+    expect(rule).not.toMatch(/color:\s*var\(--color-text-subtle\)/);
+    expect(rule).not.toMatch(/color:\s*var\(--color-text-hint\)/);
+  });
+
+  it("conforms via --color-text-muted (7.4:1, already clears AA unconditionally — A5's precedent), not by resizing just this one pill off its siblings' shared badge size", () => {
+    const rule = ruleFor(css, '.sourcePill[data-source="default"]');
+    expect(rule).toMatch(/color:\s*var\(--color-text-muted\);/);
+    // The shared badge shape (size/padding/family) stays on ALL THREE
+    // source pills — conforming color, not carving out a per-variant size,
+    // keeps the environment/database/default trio visually uniform.
+    const sharedSizeMatch = /\.sourcePill,\s*\.restartPill\s*\{([^}]*)\}/.exec(css);
+    expect(sharedSizeMatch, "expected the shared .sourcePill, .restartPill rule").not.toBeNull();
+    expect(sharedSizeMatch![1]).toMatch(/font-size:\s*var\(--mono-xs\);/);
+  });
+});
+
 type AdminSettingSchemaEntry = components["schemas"]["AdminSettingSchemaEntry"];
 type UpdateSettingResponse = components["schemas"]["UpdateSettingResponse"];
 

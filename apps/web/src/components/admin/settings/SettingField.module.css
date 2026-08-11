@@ -167,9 +167,21 @@
 /* Source tones — exact mapping the Phosphor registry card uses (README
    §Interactions "Registry editing" + the prototype's own regRow():
    environment (env pin winning) = warning amber, database (a stored
-   override) = accent, default (untouched) = the --color-text-subtle
-   AA-exception tier — never the ONLY signal here, since it's always
-   paired with the literal word "default" (U4). */
+   override) = accent, default (untouched) = a neutral grey — never the
+   ONLY signal here, since it's always paired with the literal word
+   "default" (U4).
+   LD-14 follow-through (amended rule: subtle/hint AA-exception colors —
+   --color-text-subtle/--color-text-hint — are allowed only on --text-*
+   sizes >= 12px, NEVER on a --mono-* tier; this pill shares .sourcePill,
+   .restartPill's --mono-xs, 8.5px, above). default used to sit on
+   --color-text-subtle (the 3.4:1 exception tier) at that mono size —
+   forbidden outright under the amended rule regardless of size.
+   Conforms via --color-text-muted (7.4:1 — already clears AA
+   unconditionally, no exception needed at any size), the same
+   conformance A5 used elsewhere, rather than lifting just this one
+   variant's font-size off the shared --mono-xs badge shape the
+   environment/database siblings both keep — a same-row size mismatch
+   would read as a layout bug, not a fix. */
 .sourcePill[data-source="environment"] {
   color: var(--color-warning);
   border-color: color-mix(in srgb, var(--color-warning) 32%, transparent);
@@ -183,7 +195,7 @@
 }
 
 .sourcePill[data-source="default"] {
-  color: var(--color-text-subtle);
+  color: var(--color-text-muted);
   border-color: var(--color-border);
   background: transparent;
 }
