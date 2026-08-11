@@ -521,6 +521,104 @@ describe("claim flow (POST /invites/claim/{token}): actor-visible identity matri
   });
 });
 
+// ============================================================================
+// LD-13c (STATE.md "Mail posture trio"): emailApplied — the honest,
+// POST-AUTH-ONLY signal that a collision silently dropped the intended
+// email. The "actor-visible identity matrix" describe block above already
+// proves the colliding/free RESPONSE SHAPE is identical (shapeOf compares
+// `typeof`, not value, so a boolean that legitimately differs in VALUE
+// between the two cells still passes that shape check — by design: the
+// shape/status/headers must never leak anything, only this one named,
+// documented field's VALUE is allowed to, and only after a real account
+// now exists). This block proves the VALUE side directly, and — the
+// mission's own adversarial obligation, verbatim — that the signal
+// introduces NO pre-auth distinguishability: GET /invites/claim/{token}
+// (the only surface reachable BEFORE an account is created) never even
+// queries the `users` table (see getClaimState/mapClaimState in
+// invites.controller.ts/packages/db/src/query/invites.ts — it derives its
+// response purely from the invite row), so there is no collision branch
+// to time or leak from at that layer; nothing further is asserted there
+// beyond the byte-identity proof below, which is the strongest available
+// proof of "no branch" (a branch that produced identical output on every
+// observed input would still be indistinguishable from no branch at all).
+// ============================================================================
+describe("LD-13c: emailApplied — the honest post-auth signal, with NO pre-auth leak", () => {
+  async function createInviteWithEmailPreset(email: string | null): Promise<{ claimToken: string }> {
+    const res = await request(app.getHttpServer())
+      .post("/invites")
+      .set("Authorization", `Bearer ${adminAccessToken}`)
+      .send({ libraryIds: [], ...(email !== null ? { email } : {}) });
+    expect(res.status, JSON.stringify(res.body)).toBe(201);
+    return { claimToken: res.body.claimToken };
+  }
+
+  it("a colliding claim reports emailApplied:false; a free claim reports emailApplied:true — same status/shape either way", async () => {
+    const victim = await createAndLoginFreshUser("ic-applied-victim");
+    const collidingInvite = await createInviteRaw();
+    const colliding = await claim(collidingInvite.claimToken, victim.email);
+    const freeInvite = await createInviteRaw();
+    const free = await claim(freeInvite.claimToken, `${uniqueTag("ic-applied-free")}@example.invalid`);
+
+    expect(colliding.status, JSON.stringify(colliding.body)).toBe(201);
+    expect(free.status, JSON.stringify(free.body)).toBe(201);
+    expect(colliding.body.emailApplied).toBe(false);
+    expect(free.body.emailApplied).toBe(true);
+    // The only field allowed to differ in VALUE by construction — every
+    // OTHER key present on one body is present on the other (no field was
+    // added/removed asymmetrically alongside the honest signal).
+    expect(Object.keys(colliding.body).sort()).toEqual(Object.keys(free.body).sort());
+  });
+
+  it("LD-13b's explicit `email: null` opt-out is NOT a drop — emailApplied stays true (intent achieved, not a collision)", async () => {
+    const preset = await createAndLoginFreshUser("ic-applied-optout-preset-owner");
+    // The invite's OWN preset is a real, already-taken address — if the
+    // opt-out were implemented as "silently fall back to the preset" (the
+    // LD-13b bug) rather than a genuine null, this would exercise the
+    // collision path and wrongly report false.
+    const invite = await createInviteWithEmailPreset(preset.email);
+    const res = await request(app.getHttpServer())
+      .post(`/invites/claim/${invite.claimToken}`)
+      .send({ username: uniqueTag("claim-optout-user"), password: "claim-matrix-password-1", email: null });
+    expect(res.status, JSON.stringify(res.body)).toBe(201);
+    expect(res.body.emailApplied).toBe(true);
+
+    const me = await request(app.getHttpServer()).get("/users/me").set("Authorization", `Bearer ${res.body.accessToken}`);
+    expect(me.body.email).toBeNull();
+  });
+
+  it("no email submitted or preset at all -> emailApplied:true (nothing to drop)", async () => {
+    const invite = await createInviteRaw();
+    const res = await request(app.getHttpServer())
+      .post(`/invites/claim/${invite.claimToken}`)
+      .send({ username: uniqueTag("claim-no-email-user"), password: "claim-matrix-password-1" });
+    expect(res.status, JSON.stringify(res.body)).toBe(201);
+    expect(res.body.emailApplied).toBe(true);
+  });
+
+  it("PRE-AUTH byte-identity: GET /invites/claim/{token} is identical whether the invite's preset email would later collide or not", async () => {
+    const victim = await createAndLoginFreshUser("ic-applied-preauth-victim");
+    const collidingInvite = await createInviteWithEmailPreset(victim.email);
+    const freeInvite = await createInviteWithEmailPreset(`${uniqueTag("ic-applied-preauth-free")}@example.invalid`);
+
+    const collidingState = await request(app.getHttpServer()).get(`/invites/claim/${collidingInvite.claimToken}`);
+    const freeState = await request(app.getHttpServer()).get(`/invites/claim/${freeInvite.claimToken}`);
+
+    expect(collidingState.status).toBe(200);
+    expect(freeState.status).toBe(200);
+    expect(collidingState.headers["content-type"]).toBe(freeState.headers["content-type"]);
+    // Same key set (ClaimState is additionalProperties:false with exactly
+    // three required keys) — the preset EMAIL VALUE legitimately differs
+    // (that's the two invites' own distinct presets, not a signal), but
+    // there is no extra field, no different status, nothing an attacker
+    // could use to learn "this preset happens to collide" before ever
+    // submitting a claim.
+    expect(Object.keys(collidingState.body).sort()).toEqual(Object.keys(freeState.body).sort());
+    expect(typeof collidingState.body.emailPreset).toBe("string");
+    expect((collidingState.body as Record<string, unknown>)["emailApplied"]).toBeUndefined();
+    expect((freeState.body as Record<string, unknown>)["emailApplied"]).toBeUndefined();
+  });
+});
+
 describe("claim flow (POST /invites/claim/{token}): signal correctness", () => {
   it("[mail ON, window FRESH] exactly ONE notice, to the existing owner", async () => {
     const victim = await createAndLoginFreshUser("ic-sig-on-fresh-victim");

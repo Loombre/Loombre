@@ -31,6 +31,10 @@ in if you ever forget your password, and only if whoever runs your
 household's Loombre has turned that on. If they haven't, or you don't add
 one, they can still help you get back in — see below.
 
+If whoever invited you already filled in an email address for you, it'll
+show up pre-filled on the invite screen — you're free to change it, or
+clear the field entirely if you'd rather not use it at all.
+
 [SCREENSHOT: Account settings showing the optional email field]
 
 ## Forgetting your password

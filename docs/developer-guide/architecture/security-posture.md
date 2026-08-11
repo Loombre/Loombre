@@ -215,6 +215,82 @@ precedent already used elsewhere — so the collision and clean cells cost
 the caller the same regardless of which one actually happened. A plain
 profile save with no email member is not floored at all.
 
+## LD-13 addendum: currentPassword staying mandatory, null-to-clear, and the emailApplied honesty signal
+
+<!-- Sourcing: STATE.md "an upstream media server-study IMPLEMENTATION run" LD register,
+     LD-13(a/b/c); apps/server/src/catalog/users.controller.ts's updateMe
+     (unchanged — verified still mandatory-when-applicable, see (a) below);
+     apps/server/src/invites/invites.controller.ts's claimInvite (email
+     ABSENT/`null`/string resolution + `emailApplied`); packages/contract/
+     openapi.yaml's ClaimInviteRequest.email and TokenPair.emailApplied.
+     Does NOT touch or reopen the R-F1/R-F2 owner-accepted limitation
+     documented above under "Email-collision signal (F5)". -->
+
+Landed 2026-08-11 as three small, additive follow-ups to the run above —
+none of them relax E8, and (c) is explicitly scoped to avoid the R-F1/R-F2
+trap the previous section documents.
+
+**(a) currentPassword stays mandatory-when-applicable — verified, not
+changed.** This run scouted the "Current-password re-auth" machinery above
+expecting to need to make `currentPassword` mandatory; it already was —
+`UpdateMeRequest`'s `dependentRequired` (contract) and
+`require-current-password.ts`'s presence/shape check (server) already
+throw a `422` on a missing `currentPassword` whenever the body carries
+`password`/`email`, and the Phosphor forms already carry the field
+(`ProfileSettings.tsx`'s three sections). Two new adversarial cases close
+the gap between "implemented" and "adversarial-grade tested":
+`reauth-adversarial.e2e.spec.ts`'s `"LD-13a: wrong currentPassword is
+indistinguishable..."` block proves a wrong currentPassword and a wrong
+login password share the same RFC 9457 problem+json field set (only the
+reserved `status`/`type`/`code` values differ, by design — F2's own
+reasoning) and pay comparable real `argon2id` compare cost (median ratio
+bounded to a 0.2x–5x band across 8 samples — neither path is a
+cheap/short-circuited reject); its `"LD-13a race: ..."` block races a
+self-service password change against a concurrent ADMIN-driven reset of
+the SAME account (`Promise.all`, two genuinely concurrent HTTP requests)
+and proves the account always settles into exactly one coherent state —
+never a corrupted row accepting two hashes, never a torn write matching
+neither, and never a `500`.
+
+**(b) `ClaimInviteRequest.email` null-to-clear.** Before this addendum, a
+claimant had no way to opt OUT of an invite's `emailPreset` — omitting the
+`email` member meant "use the preset" (unchanged), but so did submitting
+an empty string (F7/R-F4's existing whitespace-folds-to-absent rule), and
+there was no third option. `email` is now `[string, 'null']` in the
+contract; an explicit `email: null` in the claim body drops the preset
+outright, distinct from omitting the member. `invites.controller.ts`'s
+`claimInvite` resolves the three cases explicitly (absent → preset wins;
+`null` → cleared; string → trimmed and format-validated, unchanged) before
+falling through to the DB layer, which already accepted `email: string |
+null` and needed no change. The claim web page shows a hint under a
+preset-prefilled field ("Pre-filled from your invite — clear this to skip
+it.") and sends the explicit `null` when the claimant clears it.
+`invites.e2e.spec.ts`'s `"LD-13b"` block is the full grid — absent/null/
+value crossed with preset/no-preset (six cells) plus the whitespace and
+bad-shape edge cases.
+
+**(c) `emailApplied` — the honest post-auth claim signal.** `TokenPair`
+(shared by `authLogin`/`authRefresh`/`claimInvite`/`first-admin`) gains an
+optional `emailApplied: boolean`, sent ONLY by `claimInvite`: `false` iff
+the claim's intended email (submitted or preset-inherited) collided and
+was silently dropped (the F5 no-op above); `true` otherwise, including
+"no email was ever in play" and "the claimant explicitly opted out via
+(b)". **This does not create a new oracle** — it makes explicit something
+the claim flow's own residual R-F2 twin (documented above) already
+exposed independently: a colliding claim already leaves the new account's
+`email` field `null`, readable via `GET /users/me` with the very access
+token the claim response hands back. `emailApplied` is strictly POST-AUTH
+(present only on a response the caller obtains by completing a real,
+rate-limited account creation — never on `GET /invites/claim/{token}`,
+which resolves purely from the invite row and never queries `users` at
+all) and never appears on any pre-account-creation response, so it adds no
+FREE, repeatable probe. `email-collision-matrix.e2e.spec.ts`'s
+`"LD-13c"` block proves the value (`false`/`true` across the collision/
+free/opt-out/no-email cells), that the `201` body's key set is otherwise
+identical between a colliding and a free claim, and that
+`GET /invites/claim/{token}` is byte-identical (status, headers, key set)
+whether or not the invite's preset would later collide.
+
 ## Why this holds together: enumeration safety (E8)
 
 All three measures were built against one standing rule: a response must
