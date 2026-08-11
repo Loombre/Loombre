@@ -38,6 +38,7 @@ import type { DB } from '../src/types.js';
 import type { ViewerContext } from '../src/context.js';
 import { ensureTestDatabase } from '../src/testing.js';
 import { filterEventsForViewer, readEventsForViewer, readUnprocessedEvents } from '../src/query/events.js';
+import { MalformedCursorError } from '../src/query/cursor.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PKG_ROOT = path.resolve(__dirname, '..');
@@ -120,6 +121,28 @@ describe('events.ts ordering (Task #9: seq, not id)', () => {
     const after = await readEventsForViewer(db, ctx, { afterSeq: firstRow.seq });
     const markedAfter = after.filter((r) => (r.payload as { marker?: string }).marker === 'events-ordering-spec');
     expect(markedAfter.map((r) => (r.payload as { order: string }).order)).toEqual(['second']);
+  });
+
+  // AUD-W4-001 (audit fafa47f): the ORIGINAL finding was `afterId: string`
+  // bound raw into `WHERE events.id > afterId`, a uuid-column comparison
+  // that raised Postgres 22P02 (-> unhandled 500) on a non-uuid string.
+  // Task #9 already replaced that shape with `afterSeq: number` compared
+  // against the `events.seq` integer column, which is no longer reachable
+  // by the SAME defect — but the function still had no runtime guard of
+  // its own, so any future caller (still none in prod today — this stays
+  // latent) parsing an untrusted query-string value into a non-finite or
+  // non-integer `number` (`Number("abc")` -> NaN, a negative index, a
+  // float) would reach the DB unchecked. This pins the house pattern
+  // instead: malformed cursor input is MalformedCursorError (RFC 9457 400
+  // via apps/server/src/gateway/problem-json.filter.ts), never a raw
+  // 500/silent full scan.
+  it('readEventsForViewer: non-finite/non-integer/negative afterSeq throws MalformedCursorError before touching the DB', async () => {
+    await expect(readEventsForViewer(db, ctx, { afterSeq: Number.NaN })).rejects.toThrow(MalformedCursorError);
+    await expect(readEventsForViewer(db, ctx, { afterSeq: Number.POSITIVE_INFINITY })).rejects.toThrow(
+      MalformedCursorError
+    );
+    await expect(readEventsForViewer(db, ctx, { afterSeq: 1.5 })).rejects.toThrow(MalformedCursorError);
+    await expect(readEventsForViewer(db, ctx, { afterSeq: -1 })).rejects.toThrow(MalformedCursorError);
   });
 
   it('filterEventsForViewer returns the SAME (seq, not id) order the websocket broadcaster relies on for ws.send() sequencing', async () => {
