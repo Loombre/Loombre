@@ -20,7 +20,7 @@ import type { DB } from '../src/types.js';
 import {
   LibraryNotFoundForStashError,
   StashConnectionNotConfiguredError,
-  deleteLibraryStashConnection,
+  deleteLibraryStashConnectionAndEmit,
   getLibraryPathMappings,
   getLibraryStashConnection,
   recordStashConnectionOutcome,
@@ -46,10 +46,29 @@ function run(script: string, args: string[]) {
 }
 
 let db: Kysely<DB>;
+let actorUserId: string;
 
 beforeAll(async () => {
   run(path.join(PKG_ROOT, 'scripts', 'migrate.mjs'), ['reset']);
   db = createDb(DATABASE_URL);
+
+  // A real users.id (events.actor_user_id FKs to it) — inserted directly
+  // rather than pulling in the full seed.mjs, same lightweight-fixture
+  // posture makeLibrary() below already establishes for this file.
+  const now = Date.now();
+  const user = await db
+    .insertInto('users')
+    .values({
+      username: `stash-conn-test-actor-${randomUUID()}`,
+      email: `stash-conn-test-actor-${randomUUID()}@example.invalid`,
+      password_hash: 'test-fixture-not-a-real-hash',
+      is_admin: true,
+      created_at_ms: now,
+      updated_at_ms: now,
+    })
+    .returningAll()
+    .executeTakeFirstOrThrow();
+  actorUserId = user.id;
 });
 
 afterAll(async () => {
@@ -116,12 +135,38 @@ describe('library_stash_connections config + outcome writers', () => {
     expect(ok.status_detail).toBeNull();
   });
 
-  it('getLibraryStashConnection / deleteLibraryStashConnection round-trip', async () => {
+  it('getLibraryStashConnection / deleteLibraryStashConnectionAndEmit round-trip', async () => {
     const libraryId = await makeLibrary();
     await upsertLibraryStashConnectionConfig(db, { libraryId, sqlitePath: '/a.sqlite', nowMs: Date.now() });
     expect(await getLibraryStashConnection(db, libraryId)).not.toBeUndefined();
-    await deleteLibraryStashConnection(db, libraryId);
+    await deleteLibraryStashConnectionAndEmit(db, { libraryId, actorUserId, nowMs: Date.now() });
     expect(await getLibraryStashConnection(db, libraryId)).toBeUndefined();
+  });
+
+  it('deleteLibraryStashConnectionAndEmit throws StashConnectionNotConfiguredError when nothing is configured (Stash OPEN ledger item 6: "nothing to forget" is 404, not a silent no-op)', async () => {
+    const libraryId = await makeLibrary();
+    await expect(deleteLibraryStashConnectionAndEmit(db, { libraryId, actorUserId, nowMs: Date.now() })).rejects.toThrow(
+      StashConnectionNotConfiguredError
+    );
+  });
+
+  it('deleteLibraryStashConnectionAndEmit emits stash.provider.disconnected in the same transaction as the delete, with the acting admin as actorUserId', async () => {
+    const libraryId = await makeLibrary();
+    const nowMs = Date.now();
+    await upsertLibraryStashConnectionConfig(db, { libraryId, sqlitePath: '/a.sqlite', nowMs });
+
+    const disconnectedAtMs = nowMs + 1000;
+    await deleteLibraryStashConnectionAndEmit(db, { libraryId, actorUserId, nowMs: disconnectedAtMs });
+
+    const event = await db
+      .selectFrom('events')
+      .selectAll()
+      .where('type', '=', 'stash.provider.disconnected')
+      .where('actor_user_id', '=', actorUserId)
+      .orderBy('id', 'desc')
+      .executeTakeFirstOrThrow();
+    expect(event.ts_ms).toBe(disconnectedAtMs);
+    expect(event.payload).toMatchObject({ libraryId, disconnectedAtMs });
   });
 });
 
@@ -149,11 +194,11 @@ describe('library_path_mappings', () => {
     expect(await getLibraryPathMappings(db, libraryId)).toEqual([]);
   });
 
-  it('detaching a connection preserves path mappings for a future re-attach', async () => {
+  it('forgetting a connection (DELETE) preserves path mappings for a future re-attach', async () => {
     const libraryId = await makeLibrary();
     await upsertLibraryStashConnectionConfig(db, { libraryId, sqlitePath: '/a.sqlite', nowMs: Date.now() });
     await replaceLibraryPathMappings(db, libraryId, [{ stashPrefix: '/a', loombrePrefix: '/b' }]);
-    await deleteLibraryStashConnection(db, libraryId);
+    await deleteLibraryStashConnectionAndEmit(db, { libraryId, actorUserId, nowMs: Date.now() });
     expect(await getLibraryPathMappings(db, libraryId)).toHaveLength(1);
   });
 

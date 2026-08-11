@@ -87,6 +87,15 @@
 //     posture (which library, which schema version), transition-gated so
 //     it fires once per real "just started working" moment rather than on
 //     every per-scene metadata-fetch connect.
+//   - `stash.provider.disconnected` (Stash OPEN ledger item 6): emitted by
+//     packages/db/src/query/stash-connections.ts's
+//     deleteLibraryStashConnectionAndEmit when an admin uses DELETE
+//     /admin/libraries/{id}/stash-connection to forget a connection
+//     entirely — instance-configuration bookkeeping (which library, when),
+//     same posture as stash.provider.disabled/connected. Unlike those two
+//     (always actorUserId: null, system-originated), this one carries the
+//     acting admin's real user id at the envelope level — an admin HTTP
+//     DELETE always has a human actor.
 //   - `stash.sync.started` / `stash.sync.completed` (STATE.md "Stash
 //     SQLite metadata sync", S8/K12, Lane C sync engine): emitted by
 //     apps/worker/src/stash/sync-consumer.ts around a `stash-sync` job
@@ -164,6 +173,8 @@ export const ADMIN_ONLY_EVENT_TYPES: readonly string[] = [
   "stash.provider.disabled",
   // Stash OPEN ledger item 7 (success-connect counterpart to disabled).
   "stash.provider.connected",
+  // Stash OPEN ledger item 6 (admin DELETE — forget a connection entirely).
+  "stash.provider.disconnected",
   // Stash SQLite metadata sync, S8/K12 (Lane C sync engine).
   "stash.sync.started",
   "stash.sync.completed",

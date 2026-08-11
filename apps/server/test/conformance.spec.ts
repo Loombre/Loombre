@@ -434,6 +434,11 @@ const IMPLEMENTED_NON_PUBLIC_EXPECTATIONS: Record<string, number> = {
   getAdminStashSyncReport: 404,
   getAdminLibraryStashConnection: 404,
   putAdminLibraryStashConnection: 404,
+  // Stash OPEN ledger item 6 (DELETE — "forget this connection entirely"):
+  // PLACEHOLDER_UUID never resolves to a real library, so the library
+  // existence check 404s before the (nonexistent, for a DELETE) body is
+  // ever relevant — same ordering as every other library-scoped op above.
+  deleteAdminLibraryStashConnection: 404,
   getAdminLibraryStashPathMappings: 404,
   putAdminLibraryStashPathMappings: 404,
   previewAdminLibraryStashPathMappings: 404,

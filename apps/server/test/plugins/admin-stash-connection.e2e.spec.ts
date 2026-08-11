@@ -1,21 +1,30 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Loombre :: apps/server/test/plugins/admin-stash-connection.e2e.spec.ts
 //
-// HTTP-level exit proof for GET/PUT /admin/libraries/{id}/stash-connection
-// (packages/contract/openapi.yaml, STATE.md K15, Lane E) — apps/server/src/
-// plugins/admin-stash.{controller,service}.ts around packages/db/src/query/
-// stash-connections.ts's genreTagNames tri-state. Mirrors
-// admin-stash-sync-report.e2e.spec.ts's lighter-weight convention (own
-// ensureTestDatabase suffix, real NestFactory-booted AppModule, supertest,
-// direct DB row seeding for the library rather than spawning any child
-// process).
+// HTTP-level exit proof for GET/PUT/DELETE /admin/libraries/{id}/
+// stash-connection (packages/contract/openapi.yaml, STATE.md K15, Lane E;
+// DELETE added for the Stash OPEN ledger item 6 lane, "forget this
+// connection entirely") — apps/server/src/plugins/admin-stash.
+// {controller,service}.ts around packages/db/src/query/
+// stash-connections.ts's genreTagNames tri-state and (DELETE)
+// deleteLibraryStashConnectionAndEmit. Mirrors admin-stash-sync-report.
+// e2e.spec.ts's lighter-weight convention (own ensureTestDatabase suffix,
+// real NestFactory-booted AppModule, supertest, direct DB row seeding for
+// the library rather than spawning any child process).
 //
-// Covers: 403 for a non-admin token, 404 for an unknown library on both
-// GET and PUT, the `configured: false` shape (genreTagNames null) before
+// Covers: 403 for a non-admin token, 404 for an unknown library on GET/
+// PUT/DELETE, the `configured: false` shape (genreTagNames null) before
 // any save, a round-trip saving sqlitePath + an explicit genreTagNames
 // array, leaving genreTagNames untouched across a save that omits the key,
 // and explicitly resetting it back to null (the default heuristic) via a
-// literal `null` in the body.
+// literal `null` in the body. DELETE: 404 for a library that EXISTS but
+// has no Stash connection configured (nothing to forget — distinct from
+// the unknown-library-id 404 above), a happy-path forget (204) that
+// returns GET to the EXACT pre-configuration resting state (200
+// configured:false — deliberately NOT a 404: this mirrors GET's own
+// documented "never 404s for an otherwise-valid library id just because
+// Stash hasn't been configured yet" contract, which this lane does not
+// change), and admin-only authz.
 
 import "reflect-metadata";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -248,5 +257,83 @@ describe("GET/PUT /admin/libraries/{id}/stash-connection", () => {
       .set("Authorization", `Bearer ${adminToken}`)
       .send({ sqlitePath: "/data/stash.sqlite", blobsPath: 42 });
     expect(res.status, JSON.stringify(res.body)).toBe(422);
+  });
+});
+
+describe("DELETE /admin/libraries/{id}/stash-connection (Stash OPEN ledger item 6: forget a connection entirely)", () => {
+  it("403s for a non-admin token", async () => {
+    const libraryId = await makeRestrictedLibrary("stash-conn-delete-403-lib");
+    const res = await request(app.getHttpServer())
+      .delete(`/admin/libraries/${libraryId}/stash-connection`)
+      .set("Authorization", `Bearer ${casualToken}`);
+    expect(res.status).toBe(403);
+  });
+
+  it("404s for an unknown library id", async () => {
+    const unknownId = "11111111-1111-4111-8111-111111111111";
+    const res = await request(app.getHttpServer())
+      .delete(`/admin/libraries/${unknownId}/stash-connection`)
+      .set("Authorization", `Bearer ${adminToken}`);
+    expect(res.status).toBe(404);
+  });
+
+  it("404s for a library that exists but has no Stash connection configured — nothing to forget", async () => {
+    const libraryId = await makeRestrictedLibrary("stash-conn-delete-unconfigured-lib");
+    const res = await request(app.getHttpServer())
+      .delete(`/admin/libraries/${libraryId}/stash-connection`)
+      .set("Authorization", `Bearer ${adminToken}`);
+    expect(res.status, JSON.stringify(res.body)).toBe(404);
+  });
+
+  it("204s and forgets a configured connection: GET returns to the exact pre-configuration resting state (200 configured:false — GET never 404s just because Stash isn't configured, same contract as before any save), path mappings survive for a future re-attach", async () => {
+    const libraryId = await makeRestrictedLibrary("stash-conn-delete-happy-lib");
+
+    const put = await request(app.getHttpServer())
+      .put(`/admin/libraries/${libraryId}/stash-connection`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ sqlitePath: "/data/stash.sqlite", genreTagNames: ["Action"] });
+    expect(put.status, JSON.stringify(put.body)).toBe(200);
+
+    const putMappings = await request(app.getHttpServer())
+      .put(`/admin/libraries/${libraryId}/stash-path-mappings`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ mappings: [{ stashPrefix: "/mnt/stash", loombrePrefix: "/media/general" }] });
+    expect(putMappings.status, JSON.stringify(putMappings.body)).toBe(200);
+
+    const del = await request(app.getHttpServer())
+      .delete(`/admin/libraries/${libraryId}/stash-connection`)
+      .set("Authorization", `Bearer ${adminToken}`);
+    expect(del.status, JSON.stringify(del.body)).toBe(204);
+    expect(del.body).toEqual({});
+
+    const getAfter = await request(app.getHttpServer())
+      .get(`/admin/libraries/${libraryId}/stash-connection`)
+      .set("Authorization", `Bearer ${adminToken}`);
+    expect(getAfter.status, JSON.stringify(getAfter.body)).toBe(200);
+    expect(getAfter.body).toMatchObject({
+      libraryId,
+      configured: false,
+      sqlitePath: null,
+      enabled: false,
+      genreTagNames: null,
+      status: "never_connected",
+    });
+
+    // Forgetting the connection must never touch previously-saved path
+    // mappings (S8: preserved for a future re-attach — same as the
+    // pre-existing packages/db-level "detaching preserves path mappings"
+    // contract, now proven at the HTTP layer too).
+    const mappingsAfter = await request(app.getHttpServer())
+      .get(`/admin/libraries/${libraryId}/stash-path-mappings`)
+      .set("Authorization", `Bearer ${adminToken}`);
+    expect(mappingsAfter.status).toBe(200);
+    expect(mappingsAfter.body.mappings).toHaveLength(1);
+
+    // A second DELETE now 404s — the connection really is gone, not
+    // merely disabled (idempotent-204 would hide that distinction).
+    const secondDelete = await request(app.getHttpServer())
+      .delete(`/admin/libraries/${libraryId}/stash-connection`)
+      .set("Authorization", `Bearer ${adminToken}`);
+    expect(secondDelete.status).toBe(404);
   });
 });

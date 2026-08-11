@@ -109,6 +109,14 @@ export const ACTOR_FIELD_MAP: Record<string, readonly string[]> = {
   // reason stash.provider.disabled's entry is. Also ADMIN_ONLY, same
   // posture.
   "stash.provider.connected": [],
+  // Stash OPEN ledger item 6: stash.provider.disconnected's payload names
+  // only {libraryId, disconnectedAtMs} — no user-correlating field in the
+  // PAYLOAD itself (the acting admin's id lives only at the envelope's own
+  // actorUserId, same as plugin.removed's empty entry despite ALSO
+  // carrying a real actorUserId at the envelope level) — empty for the
+  // same reason stash.provider.disabled's entry is. Also ADMIN_ONLY, same
+  // posture.
+  "stash.provider.disconnected": [],
   // STATE.md "Stash SQLite metadata sync", S8/K12 (Lane C sync engine):
   // stash.sync.started's {jobId, libraryId, mode, startedAtMs} and
   // stash.sync.completed's {jobId, libraryId, mode, status, counts,

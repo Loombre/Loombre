@@ -717,7 +717,7 @@ export type { LibraryPathMappingRow, LibraryStashConnectionRow } from './query/s
 export {
   LibraryNotFoundForStashError,
   StashConnectionNotConfiguredError,
-  deleteLibraryStashConnection,
+  deleteLibraryStashConnectionAndEmit,
   getLibraryPathMappings,
   getLibraryStashConnection,
   recordStashConnectionOutcome,
