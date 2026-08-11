@@ -228,6 +228,104 @@ export async function ensureSessionStagingDir(
     .executeTakeFirst();
 }
 
+// ---------------------------------------------------------------------------
+// migrations/0041_playback_sessions_worker_process.sql (item C2) — the
+// crash-survival bookkeeping. See that migration's header for the full
+// rationale; the short version is that a hard-killed worker runs no
+// shutdown code, so the only handle left on its orphaned ffmpeg children
+// is what it wrote to the row before it died.
+// ---------------------------------------------------------------------------
+
+export interface RecordSessionWorkerProcessInput {
+  /** The LIVE ffmpeg run's OS pid (apps/worker/src/transcode/process.ts's
+   *  FfmpegRunHandle.pid). Rewritten on every seek-restart, since each
+   *  restart is a new process. */
+  workerPid: number;
+  /** The SUPERVISING WORKER PROCESS's start time — the generation marker
+   *  the boot reaper compares against its own start time. Not the
+   *  ffmpeg's. */
+  workerStartedAtMs: number;
+  nowMs: number;
+}
+
+/**
+ * Records which ffmpeg process, under which worker generation, is
+ * currently driving this session. Guarded off the terminal states like
+ * every other write in this file: a session someone else already closed
+ * out must not acquire a pid that the next boot's reaper would then go
+ * looking for.
+ */
+export async function recordSessionWorkerProcess(
+  db: DbOrTx,
+  sessionId: string,
+  input: RecordSessionWorkerProcessInput
+): Promise<TranscodeSessionRow | undefined> {
+  return db
+    .updateTable('playback_sessions')
+    .set({
+      worker_pid: input.workerPid,
+      worker_started_at_ms: input.workerStartedAtMs,
+      updated_at_ms: input.nowMs,
+    })
+    .where('id', '=', sessionId)
+    .where('status', 'in', NON_TERMINAL_STATUSES)
+    .returningAll()
+    .executeTakeFirst();
+}
+
+export interface ReapableTranscodeSessionRow {
+  id: string;
+  worker_pid: number;
+  worker_started_at_ms: number | null;
+  staging_dir: string | null;
+}
+
+/**
+ * The boot reaper's candidate set (apps/worker/src/transcode/reaper.ts):
+ * every non-terminal session carrying a pid recorded by a worker
+ * generation that started BEFORE `workerStartedBeforeMs` — in practice,
+ * the booting worker's own start time.
+ *
+ * The horizon is a generation marker, not an age: the shipped topology is
+ * one worker per database (worker-liveness.ts embeds the same
+ * assumption), so a session still non-terminal from before this process
+ * existed was orphaned by a dead predecessor no matter how recently it
+ * was touched — exactly the reasoning jobs.ts's `activeStaleBeforeMs`
+ * already uses for the job ledger. A row this process itself wrote
+ * carries this process's own start time and can never qualify.
+ *
+ * Rows with `worker_started_at_ms IS NULL` (a pid recorded before this
+ * column existed — impossible in practice, since both landed in the same
+ * migration, but cheap to be exact about) are treated as belonging to an
+ * unknown, therefore previous, generation.
+ *
+ * Not ViewerContext-scoped, like everything in this directory: the reaper
+ * is instance-level maintenance with no requesting viewer.
+ */
+export async function listReapableTranscodeSessions(
+  db: DbOrTx,
+  input: { workerStartedBeforeMs: number }
+): Promise<ReapableTranscodeSessionRow[]> {
+  const rows = await db
+    .selectFrom('playback_sessions')
+    .select(['id', 'worker_pid', 'worker_started_at_ms', 'staging_dir'])
+    .where('status', 'in', NON_TERMINAL_STATUSES)
+    .where('worker_pid', 'is not', null)
+    .where((eb) =>
+      eb.or([
+        eb('worker_started_at_ms', 'is', null),
+        eb('worker_started_at_ms', '<', input.workerStartedBeforeMs),
+      ])
+    )
+    .execute();
+  return rows.map((row) => ({
+    id: row.id,
+    worker_pid: row.worker_pid as number,
+    worker_started_at_ms: row.worker_started_at_ms,
+    staging_dir: row.staging_dir,
+  }));
+}
+
 export interface MarkSessionFailedInput {
   errorCode: string;
   /** Last 4 KB ring of ffmpeg stderr (docs/PLAYBACK.md §9 audit

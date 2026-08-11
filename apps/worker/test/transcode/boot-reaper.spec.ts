@@ -157,7 +157,10 @@ describe("reapOrphanedTranscodeSessions (C2 boot crash reaper)", () => {
 
     expect(killed).toEqual([]);
     expect(failed.sort()).toEqual(["s-nocmdline", "s-nostaging"]);
-    expect(report.map((r) => r.outcome)).toEqual(["unverified", "pid-reused"]);
+    // Both are "unverified", not "pid-reused": a missing staging_dir means
+    // there is nothing to compare the cmdline AGAINST, which is a
+    // different fact from "compared, and it is somebody else's process".
+    expect(report.map((r) => r.outcome)).toEqual(["unverified", "unverified"]);
   });
 
   it("leaves THIS generation's own sessions strictly alone", async () => {

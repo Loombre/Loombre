@@ -461,6 +461,13 @@ export interface PlaybackSessionsTable {
   discontinuity_count: Generated<number>;
   suspended_by_throttle: Generated<boolean>;
   stderr_tail: string | null;
+  /** migrations/0041_playback_sessions_worker_process.sql — worker-internal
+   *  bookkeeping for the boot-time orphan reaper (apps/worker/src/transcode/
+   *  reaper.ts). `worker_pid` is the LIVE ffmpeg run's pid;
+   *  `worker_started_at_ms` is the SUPERVISING WORKER PROCESS's start time
+   *  (the generation marker). Never serialized into an API response. */
+  worker_pid: number | null;
+  worker_started_at_ms: number | null;
 }
 
 // ============================================================================

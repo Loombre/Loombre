@@ -178,6 +178,8 @@ export type {
   TranscodeSessionRow,
   ConsumedSeekTarget,
   MarkSessionFailedInput,
+  RecordSessionWorkerProcessInput,
+  ReapableTranscodeSessionRow,
 } from './transcode-sessions.js';
 export {
   getTranscodeSessionRow,
@@ -188,6 +190,8 @@ export {
   consumeSeekTarget,
   markSessionFailed,
   ensureSessionStagingDir,
+  recordSessionWorkerProcess,
+  listReapableTranscodeSessions,
 } from './transcode-sessions.js';
 
 export { getMediaInfoForFile } from './media-assembly.js';
