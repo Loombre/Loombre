@@ -79,10 +79,11 @@ export function PinModal(): React.JSX.Element | null {
   }
 
   function handleKeypadKeyDown(event: KeyboardEvent<HTMLButtonElement>, digit: string): void {
-    // 74px circular keys are still real buttons — Enter/Space activation
-    // comes for free; this only exists so the keypad grid is genuinely
-    // arrow-key navigable rather than a plain tab-order-only grid, matching
-    // the roving grid pattern the rest of the app's grids use.
+    // The 74px circular keys are real <button>s. This handler activates a
+    // key on Enter/Space (append the digit) and preventDefault()s the key so
+    // Space never scrolls the sheet and Enter never submits a surrounding
+    // form. It is NOT arrow-key roving between keys — the keypad grid uses
+    // plain tab-order navigation, not a roving-tabindex pattern.
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
       appendDigit(digit);
