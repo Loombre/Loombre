@@ -13,7 +13,7 @@ import { LOOMBRE_VERSION_FULL } from "@loombre/shared";
 import { installCrashHandlers, installGracefulShutdown, type ShutdownSignal } from "./crash/index.js";
 import { resolveWorkerDatabaseUrl } from "./db-url.js";
 import { resolveWorkerDataDir } from "./crash/data-dir.js";
-import { createTranscodeConsumerHandler, resolveTranscodeWorkerConcurrency } from "./transcode/index.js";
+import { createTranscodeConsumerHandler, resolveTranscodeWorkerConcurrency, terminateAllTranscodeRuns } from "./transcode/index.js";
 import { createSubtitleExtractConsumerHandler } from "./subtitles/index.js";
 import { runScan } from "./scan/scanner.js";
 import { createHashPool, type HashPool } from "./scan/identity/pool.js";
@@ -562,6 +562,28 @@ let keepAlive: NodeJS.Timeout | undefined;
 // watcherHandle.stop() already was).
 async function shutdown(_signal: ShutdownSignal): Promise<void> {
   if (keepAlive) clearInterval(keepAlive);
+
+  // Item C1 (an upstream media server-study implementation run), FIRST and awaited on its
+  // own rather than folded into the Promise.all below. Every ffmpeg run is
+  // spawned `detached: true` on POSIX (transcode/process.ts) so the whole
+  // process group can be signaled — which also means the child does NOT
+  // die with this process. Until this call existed, an ordinary restart or
+  // deploy orphaned every in-flight encoder: still running at full rate,
+  // with no supervisor left to throttle, seek, or reap it (on Tier-0
+  // hardware, two of those is the machine).
+  //
+  // Ordering matters twice over. It runs BEFORE queue.stop() because the
+  // 'transcode' consumer's handler promise only resolves when its session
+  // reaches a terminal state — a stop that waits on in-flight handlers can
+  // burn the whole graceful window, and the ffmpeg children must already
+  // be dead by then. And terminate() itself SIGCONTs before SIGTERM
+  // (process.ts), so a throttle-SUSPENDED run dies promptly here instead
+  // of sitting on a pending signal it can never handle while stopped.
+  const terminated = await terminateAllTranscodeRuns();
+  if (terminated > 0) {
+    console.log(`worker: terminated ${terminated} in-flight transcode run(s) during shutdown`);
+  }
+
   await Promise.all([
     queue.stop(),
     hashPool.terminate(),
