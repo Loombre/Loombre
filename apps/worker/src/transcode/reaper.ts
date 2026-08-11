@@ -106,7 +106,16 @@ export interface ReapOrphanedTranscodeSessionsDeps {
   /** THIS worker process's start time — the generation horizon. */
   workerStartedAtMs: number;
   nowMs?: () => number;
+  /** How long to wait for a killed process to actually disappear before
+   *  giving up and reclaiming the row anyway. See waitForRunExit below for
+   *  why this wait exists at all. */
+  exitWaitTimeoutMs?: number;
+  /** Test seam for that wait. */
+  sleep?: (ms: number) => Promise<void>;
 }
+
+const DEFAULT_EXIT_WAIT_TIMEOUT_MS = 5_000;
+const EXIT_WAIT_POLL_MS = 50;
 
 /** Plain language on purpose: this string lands in
  *  `playback_sessions.stderr_tail`, which is surfaced to operators (admin
@@ -126,6 +135,49 @@ function reclaimedMessage(pid: number, outcome: ReapOutcome): string {
 }
 
 /**
+ * Waits until `pid` is no longer running this session's ffmpeg.
+ *
+ * WHY THIS EXISTS — it is the difference between the fix working and only
+ * appearing to. Signal delivery is asynchronous: `kill(2)` returns as soon
+ * as the signal is queued, not when the target has died. Without this
+ * wait, the reaper marked the session terminal (which is exactly what
+ * frees its admission slot — countActiveTranscodeSessions counts only
+ * non-terminal rows) while the process it had just SIGKILLed was still
+ * scheduled. That window is small, but it is the SAME window the whole
+ * item exists to close: a slot handed to the next viewer on top of a
+ * process still holding a core. Caught by lifecycle.integration.spec.ts
+ * scenario (c), which asserts the ordering from inside the transition.
+ *
+ * "Gone" is deliberately `not alive OR no longer running this session's
+ * ffmpeg`, not `not alive` alone: a killed process can linger briefly as a
+ * zombie (an un-reaped entry that holds no CPU and no memory), which some
+ * platforms still report as a process. A zombie has no command line, so
+ * the cmdline predicate settles it correctly and platform-independently.
+ */
+async function waitForRunExit(
+  inspector: ProcessInspector,
+  pid: number,
+  stagingDir: string,
+  timeoutMs: number,
+  sleep: (ms: number) => Promise<void>,
+  nowMs: () => number,
+): Promise<boolean> {
+  const deadline = nowMs() + timeoutMs;
+  for (;;) {
+    let gone = true;
+    try {
+      const inspection = await inspector.inspect(pid);
+      gone = !inspection.alive || !(inspection.commandLine ?? "").includes(stagingDir);
+    } catch {
+      gone = true; // cannot see it any more — treat as gone rather than spin
+    }
+    if (gone) return true;
+    if (nowMs() >= deadline) return false;
+    await sleep(EXIT_WAIT_POLL_MS);
+  }
+}
+
+/**
  * Reclaims every session orphaned by a previous worker generation.
  *
  * Never throws: like every other boot step in apps/worker/src/index.ts, a
@@ -138,6 +190,9 @@ export async function reapOrphanedTranscodeSessions(
 ): Promise<ReapedSession[]> {
   const candidates = await deps.listReapable();
   const reaped: ReapedSession[] = [];
+  const nowMs = deps.nowMs ?? Date.now;
+  const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+  const exitWaitTimeoutMs = deps.exitWaitTimeoutMs ?? DEFAULT_EXIT_WAIT_TIMEOUT_MS;
 
   for (const session of candidates) {
     // Defense in depth: the query already applies the generation horizon,
@@ -154,6 +209,10 @@ export async function reapOrphanedTranscodeSessions(
         outcome = "unverified";
       } else if (inspection.commandLine.includes(session.stagingDir)) {
         await deps.inspector.killGroup(session.workerPid);
+        // The session must not become terminal — freeing its admission
+        // slot — until the process is actually gone (waitForRunExit's
+        // header).
+        await waitForRunExit(deps.inspector, session.workerPid, session.stagingDir, exitWaitTimeoutMs, sleep, nowMs);
         outcome = "killed";
       } else {
         outcome = "pid-reused";
