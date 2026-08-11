@@ -34,7 +34,16 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { createDb, countActiveTranscodeSessions, createPlaybackSession, endPlaybackSession, resolveTestDatabaseUrl } from "@loombre/db";
+import {
+  createDb,
+  countActiveTranscodeSessions,
+  createPlaybackSession,
+  endPlaybackSession,
+  getTranscodeRunForSegment,
+  listTranscodeRuns,
+  requestSeek,
+  resolveTestDatabaseUrl,
+} from "@loombre/db";
 import type { ViewerContext } from "@loombre/db";
 import { listReapableTranscodeSessions, markSessionFailed, recordSessionWorkerProcess, markSessionStarting } from "@loombre/db/internal";
 import { plan, type DeviceProfile, type MediaInfo, type NetworkConditions, type PlanInput, type ServerPolicy, type TrackSelection, type VerifiedCapabilities } from "@loombre/playback-engine";
@@ -364,6 +373,84 @@ describe.skipIf(!ffmpegAvailable || process.platform === "win32")(
         // SIGKILL. A stopped process that never got SIGCONT would burn the
         // whole window; this asserts it did not.
         expect(elapsed, `stopped ffmpeg took ${elapsed}ms to die — SIGCONT-before-SIGTERM regression?`).toBeLessThan(1_800 * TIME_SCALE);
+
+        await endPlaybackSession(db, ctx, sessionId, Date.now());
+        await runPromise;
+      },
+    );
+
+    // ---------------------------------------------------------------------
+    // (a3) per-run source-origin recording (continuation item 2)
+    // ---------------------------------------------------------------------
+    it(
+      "(a3) every spawned run durably records its index, start segment and SOURCE origin",
+      { timeout: 90_000 * TIME_SCALE },
+      async () => {
+        const sessionId = await createSession();
+        const runPromise = runTranscodeSession(
+          {
+            db,
+            stagingRoot,
+            testReadrateMultiplier: 6,
+            onRunSpawned: (spawned) => {
+              if (spawned !== undefined) strayPids.push(spawned);
+            },
+          },
+          sessionId,
+        );
+
+        // Run 0 must be on record from the moment it starts — before any
+        // seek, and before anything has been produced.
+        await waitFor(async () => (await listTranscodeRuns(db, sessionId)).length >= 1, {
+          timeoutMs: 30_000 * TIME_SCALE,
+          label: "run 0 recorded",
+        });
+        expect(await listTranscodeRuns(db, sessionId)).toEqual([{ runIndex: 0, startSegment: 0, sourceOriginMs: 0 }]);
+
+        // Let real segments accumulate so the seek restart continues a
+        // NON-zero segment numbering — the case where a global segment
+        // counter and a per-run output timeline diverge.
+        await waitFor(async () => {
+          const { rows } = await raw.query<{ produced_segment: number | null }>(
+            `SELECT produced_segment FROM playback_sessions WHERE id = $1`,
+            [sessionId],
+          );
+          return (rows[0]?.produced_segment ?? -1) >= 1;
+        }, { timeoutMs: 40_000 * TIME_SCALE, label: "segments produced" });
+
+        const { rows: beforeSeek } = await raw.query<{ produced_segment: number | null }>(
+          `SELECT produced_segment FROM playback_sessions WHERE id = $1`,
+          [sessionId],
+        );
+        const producedBeforeSeek = beforeSeek[0]!.produced_segment!;
+
+        const seekTargetMs = 90_000;
+        await requestSeek(db, ctx, sessionId, seekTargetMs, Date.now());
+
+        await waitFor(async () => (await listTranscodeRuns(db, sessionId)).length >= 2, {
+          timeoutMs: 40_000 * TIME_SCALE,
+          label: "run 1 recorded",
+        });
+
+        const runs = await listTranscodeRuns(db, sessionId);
+        const runOne = runs.find((r) => r.runIndex === 1)!;
+        // Source origin is where the run was told to start in the SOURCE,
+        // which is the consumed seek target — not a segment index times a
+        // nominal duration, and not the run's own output timeline (which
+        // restarts at zero).
+        expect(runOne.sourceOriginMs).toBe(seekTargetMs);
+        // Segment numbering continues globally from what run 0 finished.
+        expect(runOne.startSegment).toBe(producedBeforeSeek + 1);
+        expect(runOne.startSegment).toBeGreaterThan(0);
+
+        // And the mapping a server-side consumer actually performs: any
+        // served segment index resolves to its owning run's origin.
+        expect(await getTranscodeRunForSegment(db, sessionId, 0)).toMatchObject({ runIndex: 0, sourceOriginMs: 0 });
+        expect(await getTranscodeRunForSegment(db, sessionId, runOne.startSegment)).toMatchObject({
+          runIndex: 1,
+          sourceOriginMs: seekTargetMs,
+        });
+        expect(await getTranscodeRunForSegment(db, sessionId, runOne.startSegment - 1)).toMatchObject({ runIndex: 0 });
 
         await endPlaybackSession(db, ctx, sessionId, Date.now());
         await runPromise;

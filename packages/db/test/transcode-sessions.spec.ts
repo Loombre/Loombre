@@ -33,9 +33,11 @@ import {
   markSessionFailed,
   markSessionStarting,
   recordSessionWorkerProcess,
+  recordTranscodeRun,
   setThrottleSuspended,
   updateProducedSegment,
 } from '../src/internal/index.js';
+import { getTranscodeRunForSegment, listTranscodeRuns } from '../src/query/playback-sessions.js';
 import { resolveTestDatabaseUrl } from '../src/testing.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -594,5 +596,90 @@ describe('listReapableTranscodeSessions', () => {
     const row = reapable.find((r) => r.id === orphan);
     expect(row?.worker_pid).toBe(4242);
     expect(row?.staging_dir).toBe('/tmp/loombre-transcode/orphan');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// migrations/0043_transcode_runs.sql (process-lifecycle hardening wave,
+// continuation item 2): per-run SOURCE-ORIGIN recording.
+//
+// Segment indices are a single global counter across a session's runs
+// (docs/PLAYBACK.md §9 — run 1 continues run 0's numbering), while each
+// seek run's ffmpeg output timeline restarts at zero because it is spawned
+// with `-ss` and no `-copyts`. Nothing durable connected the two, so for
+// every run after the first there was no way to answer "what source time
+// does segment N correspond to?" — which is what a server-side consumer
+// needs for exact source-time anchoring and for post-seek progress
+// reporting. These rows are that record: one per spawned run, carrying the
+// run's index, the segment index it starts numbering at, and where it
+// begins in SOURCE time.
+//
+// Real table, real FK, real columns (CLAUDE.md invariant 3 — this is not
+// one of the JSONB-whitelisted payloads).
+// ---------------------------------------------------------------------------
+
+describe('recordTranscodeRun / transcode run lookup', () => {
+  it('records run 0 at source origin 0 and segment 0', async () => {
+    const id = await newSession();
+    await recordTranscodeRun(db, { sessionId: id, runIndex: 0, startSegment: 0, sourceOriginMs: 0, nowMs: Date.now() });
+
+    const runs = await listTranscodeRuns(db, id);
+    expect(runs).toEqual([{ runIndex: 0, startSegment: 0, sourceOriginMs: 0 }]);
+  });
+
+  it('records a seek restart at the consumed target, continuing the segment numbering', async () => {
+    const id = await newSession();
+    await recordTranscodeRun(db, { sessionId: id, runIndex: 0, startSegment: 0, sourceOriginMs: 0, nowMs: Date.now() });
+    await recordTranscodeRun(db, { sessionId: id, runIndex: 1, startSegment: 43, sourceOriginMs: 600_000, nowMs: Date.now() });
+
+    expect(await listTranscodeRuns(db, id)).toEqual([
+      { runIndex: 0, startSegment: 0, sourceOriginMs: 0 },
+      { runIndex: 1, startSegment: 43, sourceOriginMs: 600_000 },
+    ]);
+  });
+
+  it('is idempotent per (session, runIndex) — a redelivered job never duplicates or fails', async () => {
+    const id = await newSession();
+    await recordTranscodeRun(db, { sessionId: id, runIndex: 0, startSegment: 0, sourceOriginMs: 0, nowMs: Date.now() });
+    await recordTranscodeRun(db, { sessionId: id, runIndex: 0, startSegment: 0, sourceOriginMs: 0, nowMs: Date.now() });
+    expect(await listTranscodeRuns(db, id)).toHaveLength(1);
+  });
+
+  it('maps any served segment index to its OWNING run and that run source origin', async () => {
+    const id = await newSession();
+    await recordTranscodeRun(db, { sessionId: id, runIndex: 0, startSegment: 0, sourceOriginMs: 0, nowMs: Date.now() });
+    await recordTranscodeRun(db, { sessionId: id, runIndex: 1, startSegment: 43, sourceOriginMs: 600_000, nowMs: Date.now() });
+    await recordTranscodeRun(db, { sessionId: id, runIndex: 2, startSegment: 51, sourceOriginMs: 120_000, nowMs: Date.now() });
+
+    // Inside run 0.
+    expect(await getTranscodeRunForSegment(db, id, 0)).toEqual({ runIndex: 0, startSegment: 0, sourceOriginMs: 0 });
+    expect(await getTranscodeRunForSegment(db, id, 42)).toEqual({ runIndex: 0, startSegment: 0, sourceOriginMs: 0 });
+    // The first segment of run 1, and one inside it.
+    expect(await getTranscodeRunForSegment(db, id, 43)).toEqual({ runIndex: 1, startSegment: 43, sourceOriginMs: 600_000 });
+    expect(await getTranscodeRunForSegment(db, id, 50)).toEqual({ runIndex: 1, startSegment: 43, sourceOriginMs: 600_000 });
+    // Run 2 is a BACKWARD seek: its source origin is earlier than run 1's,
+    // while its segment numbering still moves forward. Ownership follows
+    // the segment counter, never the source clock — the exact confusion
+    // this table exists to remove.
+    expect(await getTranscodeRunForSegment(db, id, 51)).toEqual({ runIndex: 2, startSegment: 51, sourceOriginMs: 120_000 });
+    expect(await getTranscodeRunForSegment(db, id, 9_999)).toEqual({ runIndex: 2, startSegment: 51, sourceOriginMs: 120_000 });
+  });
+
+  it('returns undefined for a session with no recorded runs, and scopes strictly to one session', async () => {
+    const empty = await newSession();
+    expect(await getTranscodeRunForSegment(db, empty, 0)).toBeUndefined();
+    expect(await listTranscodeRuns(db, empty)).toEqual([]);
+
+    const other = await newSession();
+    await recordTranscodeRun(db, { sessionId: other, runIndex: 0, startSegment: 0, sourceOriginMs: 0, nowMs: Date.now() });
+    expect(await getTranscodeRunForSegment(db, empty, 0)).toBeUndefined();
+  });
+
+  it('rows are removed with their session (real FK, ON DELETE CASCADE)', async () => {
+    const id = await newSession();
+    await recordTranscodeRun(db, { sessionId: id, runIndex: 0, startSegment: 0, sourceOriginMs: 0, nowMs: Date.now() });
+    await rawClient.query(`DELETE FROM playback_sessions WHERE id = $1`, [id]);
+    const { rows } = await rawClient.query(`SELECT 1 FROM transcode_runs WHERE session_id = $1`, [id]);
+    expect(rows).toHaveLength(0);
   });
 });
