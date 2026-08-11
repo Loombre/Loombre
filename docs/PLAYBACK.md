@@ -447,10 +447,27 @@ State machine: `created → starting → active ⇄ suspended → seeking → ac
   (NVMe path from config); first playlist request blocks ≤ 8 s for init +
   first segment, else 503-retry-after (client shows buffering).
 - **Segment-ahead throttle:** monitor produced-vs-requested segment index;
-  when ahead > 10 segments (60 s), suspend encode (SIGSTOP on POSIX; on
-  Windows, NtSuspendProcess via job object helper); resume at ahead ≤ 5.
-  Throttling is mandatory — a T0 box must never spend CPU racing ahead of a
-  paused viewer.
+  when ahead > 10 segments (60 s), suspend encode (SIGSTOP on the ffmpeg
+  process group; resume with SIGCONT at ahead ≤ 5). Throttling is mandatory
+  — a T0 box must never spend CPU racing ahead of a paused viewer.
+  - **POSIX (darwin/linux):** the above, literally — real SIGSTOP/SIGCONT
+    (`apps/worker/src/transcode/process.ts`), the session row carrying
+    `suspended_by_throttle = true` while stopped.
+  - **Windows:** NOT process suspension. Job-object suspension
+    (`NtSuspendProcess`) needs a native addon, and this project ships no
+    new native dependency for it (P3.8). The shipped mechanism is
+    **`-readrate` pacing**: every win32 ffmpeg run is spawned with
+    `-readrate 1.2` injected into its global-options segment
+    (`apps/worker/src/transcode/args.ts` `injectReadrate`,
+    `WIN32_READRATE_MULTIPLIER` in `throttle.ts`), pacing the encode at
+    ~1.2× realtime so it structurally never races far enough ahead to need
+    suspending. Behavioral consequence, stated rather than hidden: a win32
+    worker never SIGSTOPs anything and never writes
+    `suspended_by_throttle = true` — `reconcileThrottle` returns
+    `{ action: 'none' }` whenever the mechanism is `readrate`. Swapping a
+    real suspension helper in later changes only
+    `throttleMechanismForPlatform`'s win32 branch; the reconciliation table
+    is mechanism-agnostic and does not move.
 - **Seek:** target inside produced range → serve. Outside → kill pipeline,
   restart with `{SEEK_SECONDS}=target` and `{START_SEG}` continuing the
   numbering, playlist gains `EXT-X-DISCONTINUITY`. Old segments beyond a
