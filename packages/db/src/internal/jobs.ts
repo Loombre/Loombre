@@ -101,18 +101,28 @@ export async function hasQueuedOrActiveJobOfType(db: DbOrTx, type: string): Prom
   return row !== undefined;
 }
 
-export interface ReconcileAbandonedJobsInput {
-  /** ONLY these job types are swept — scope this to the singleton-guarded
-   *  types (hwprobe/image-backfill/stash-inventory/stash-sync), which are
-   *  one-per-type by design, so the sweep touches at most a handful of
-   *  rows. Sweeping every type would mean an unbounded loop (one 'probe'
-   *  row per media file after an interrupted scan) and a matching flood of
-   *  job.updated outbox events for rows nothing is guarded on. */
+/**
+ * One horizon-homogeneous slice of the boot sweep (item C7 generalized the
+ * single flat `types` list into these). A group exists because different
+ * job types are stale for different reasons and at wildly different
+ * timescales — a background probe queued 23 hours ago may still be worth
+ * running; a transcode job queued 23 hours ago belongs to a playback
+ * session that was swept out of existence 22 hours and 45 minutes ago.
+ */
+export interface ReconcileJobLedgerGroup {
+  /** ONLY these job types are swept. Keep each group's list to types whose
+   *  staleness really is governed by the same two horizons; sweeping every
+   *  type in one undifferentiated group would mean an unbounded loop (one
+   *  'probe' row per media file after an interrupted scan) and a matching
+   *  flood of job.updated outbox events for rows nothing is guarded on. */
   types: readonly string[];
-  /** 'queued' rows older than this are treated as orphaned. Pick a horizon
-   *  past the longest per-attempt expiry (23h for scan/hwprobe) — old
-   *  enough that a still-live queue job re-running promptly after this
-   *  worker's consumers register makes the row self-heal anyway. */
+  /** 'queued' rows older than this are treated as orphaned. For the
+   *  singleton-guarded background types, pick a horizon past the longest
+   *  per-attempt expiry (23h for scan/hwprobe) — old enough that a
+   *  still-live queue job re-running promptly after this worker's
+   *  consumers register makes the row self-heal anyway. For a job type
+   *  tied to a live user session (transcode), the horizon is that
+   *  session's own lifetime instead. */
   queuedStaleBeforeMs: number;
   /** 'active' rows last updated before this are treated as orphaned. The
    *  correct value is THIS WORKER PROCESS'S OWN START TIME: the ledger
@@ -125,6 +135,21 @@ export interface ReconcileAbandonedJobsInput {
    *  this process itself marked active always has updated_at_ms >= the
    *  process start and can never qualify. */
   activeStaleBeforeMs: number;
+  /** Hard cap on rows this group may reconcile in ONE pass. Omit for a
+   *  singleton group (bounded by construction — one row per type). REQUIRED
+   *  in spirit for any many-concurrent-rows type: it is what keeps the
+   *  sweep, and the job.updated outbox events it writes, bounded on an
+   *  install that accumulated a large backlog. Whatever is left over is
+   *  swept by the next boot; nothing is lost, it just takes longer to
+   *  drain than it does to accumulate — the correct trade for a boot-path
+   *  step on Tier-0 hardware. */
+  maxRows?: number;
+}
+
+export interface ReconcileAbandonedJobsInput {
+  /** Swept in order, all inside ONE transaction — a partial sweep would
+   *  leave the ledger in a state no single boot ever produced. */
+  groups: readonly ReconcileJobLedgerGroup[];
   nowMs: number;
 }
 
@@ -158,6 +183,14 @@ const RECONCILED_MESSAGE =
  * event in the SAME transaction — the exact pattern packages/jobs/src/
  * ledger.ts uses for every ordinary transition.
  *
+ * Item C7 (2026-08-11) generalized the original single flat type list into
+ * `groups`, each with its own two horizons and an optional row cap. That
+ * is what let 'transcode' — the one job type whose orphaned rows are the
+ * signature of a detached ffmpeg still burning CPU — be folded in WITHOUT
+ * pretending it is a singleton: it is one row per playback session, many
+ * concurrent, and its staleness is measured against a session's lifetime
+ * rather than a background job's retry window.
+ *
  * Concurrency: the worker's queue consumers register at module scope and
  * can be fetching jobs WHILE main() runs this, so a row this sweep read as
  * stale may be moved to 'active' by recordActive at any moment. Two
@@ -173,54 +206,63 @@ export async function reconcileAbandonedJobLedgerRows(
   db: DbOrTx,
   input: ReconcileAbandonedJobsInput
 ): Promise<AbandonedJobLedgerRow[]> {
-  if (input.types.length === 0) return [];
+  const groups = input.groups.filter((group) => group.types.length > 0);
+  if (groups.length === 0) return [];
   return withTransaction(db, async (trx) => {
-    const stale = await trx
-      .selectFrom('jobs')
-      .select(['id', 'type', 'status', 'updated_at_ms'])
-      .where('type', 'in', [...input.types])
-      .where((eb) =>
-        eb.or([
-          eb.and([eb('status', '=', 'queued'), eb('updated_at_ms', '<', input.queuedStaleBeforeMs)]),
-          eb.and([eb('status', '=', 'active'), eb('updated_at_ms', '<', input.activeStaleBeforeMs)]),
-        ])
-      )
-      .forUpdate()
-      .execute();
-    if (stale.length === 0) return [];
-
     const reconciled: AbandonedJobLedgerRow[] = [];
-    for (const row of stale) {
-      const previousStatus = row.status as AbandonedJobLedgerRow['previousStatus'];
-      const staleBeforeMs = previousStatus === 'queued' ? input.queuedStaleBeforeMs : input.activeStaleBeforeMs;
-      const updated = await trx
-        .updateTable('jobs')
-        .set({
-          status: 'failed',
-          last_error: RECONCILED_MESSAGE,
-          finished_at_ms: input.nowMs,
-          updated_at_ms: input.nowMs,
-        })
-        .where('id', '=', row.id)
-        .where('status', '=', previousStatus)
-        .where('updated_at_ms', '<', staleBeforeMs)
-        .executeTakeFirst();
-      if (Number(updated.numUpdatedRows ?? 0) === 0) continue;
 
-      await writeEvent(trx, {
-        type: 'job.updated',
-        tsMs: input.nowMs,
-        actorUserId: null,
-        payload: {
-          jobId: row.id,
-          jobType: row.type,
-          status: 'failed',
-          errorMessage: RECONCILED_MESSAGE,
-          updatedAtMs: input.nowMs,
-        },
-      });
-      reconciled.push({ id: row.id, type: row.type, previousStatus });
+    for (const group of groups) {
+      let query = trx
+        .selectFrom('jobs')
+        .select(['id', 'type', 'status', 'updated_at_ms'])
+        .where('type', 'in', [...group.types])
+        .where((eb) =>
+          eb.or([
+            eb.and([eb('status', '=', 'queued'), eb('updated_at_ms', '<', group.queuedStaleBeforeMs)]),
+            eb.and([eb('status', '=', 'active'), eb('updated_at_ms', '<', group.activeStaleBeforeMs)]),
+          ])
+        );
+      if (group.maxRows !== undefined) {
+        // Oldest first, so a bounded pass always drains the rows that have
+        // been wrong for longest rather than an arbitrary slice.
+        query = query.orderBy('updated_at_ms', 'asc').limit(group.maxRows);
+      }
+      const stale = await query.forUpdate().execute();
+      if (stale.length === 0) continue;
+
+      for (const row of stale) {
+        const previousStatus = row.status as AbandonedJobLedgerRow['previousStatus'];
+        const staleBeforeMs = previousStatus === 'queued' ? group.queuedStaleBeforeMs : group.activeStaleBeforeMs;
+        const updated = await trx
+          .updateTable('jobs')
+          .set({
+            status: 'failed',
+            last_error: RECONCILED_MESSAGE,
+            finished_at_ms: input.nowMs,
+            updated_at_ms: input.nowMs,
+          })
+          .where('id', '=', row.id)
+          .where('status', '=', previousStatus)
+          .where('updated_at_ms', '<', staleBeforeMs)
+          .executeTakeFirst();
+        if (Number(updated.numUpdatedRows ?? 0) === 0) continue;
+
+        await writeEvent(trx, {
+          type: 'job.updated',
+          tsMs: input.nowMs,
+          actorUserId: null,
+          payload: {
+            jobId: row.id,
+            jobType: row.type,
+            status: 'failed',
+            errorMessage: RECONCILED_MESSAGE,
+            updatedAtMs: input.nowMs,
+          },
+        });
+        reconciled.push({ id: row.id, type: row.type, previousStatus });
+      }
     }
+
     return reconciled;
   });
 }

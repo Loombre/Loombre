@@ -9,8 +9,18 @@ import type { DbOrTx } from "@loombre/db/internal";
 import type { TranscodeJobPayload } from "@loombre/jobs";
 import { runTranscodeSession } from "./runner.js";
 
-export function createTranscodeConsumerHandler(db: DbOrTx): (payload: TranscodeJobPayload) => Promise<void> {
+export function createTranscodeConsumerHandler(
+  db: DbOrTx,
+  options: { workerStartedAtMs?: number } = {},
+): (payload: TranscodeJobPayload) => Promise<void> {
   return async (payload: TranscodeJobPayload): Promise<void> => {
-    await runTranscodeSession({ db }, payload.sessionId);
+    // workerStartedAtMs (item C2) is this PROCESS's start time, recorded on
+    // every session row alongside its ffmpeg pid so the next boot's reaper
+    // can tell "supervised by a dead predecessor" from "mine" — see
+    // ./reaper.ts and migrations/0041.
+    await runTranscodeSession(
+      { db, ...(options.workerStartedAtMs !== undefined ? { workerStartedAtMs: options.workerStartedAtMs } : {}) },
+      payload.sessionId,
+    );
   };
 }
