@@ -369,6 +369,56 @@ export async function listReapableTranscodeSessions(
   }));
 }
 
+// ---------------------------------------------------------------------------
+// migrations/0043_transcode_runs.sql (continuation item 2) — per-run
+// source-origin recording. See that migration's header for why segment
+// indices alone cannot answer "what source position is this?" for any run
+// after the first.
+// ---------------------------------------------------------------------------
+
+export interface RecordTranscodeRunInput {
+  sessionId: string;
+  /** Zero-based, matching the run's `runN` staging subdirectory. */
+  runIndex: number;
+  /** The absolute segment index this run begins numbering at ({START_SEG}). */
+  startSegment: number;
+  /** Where this run starts in the SOURCE timeline: 0 for run 0, the
+   *  consumed (already clamped) seek target for a restart. */
+  sourceOriginMs: number;
+  nowMs: number;
+}
+
+/**
+ * Records one spawned run. Idempotent per `(session_id, run_index)`: a
+ * redelivered 'transcode' job re-spawning run 0 must update the row rather
+ * than fail on the unique constraint or leave a stale origin behind.
+ *
+ * Deliberately NOT guarded on the session's status, unlike every other
+ * write in this file: this is an audit fact about a process that really was
+ * spawned. If the session is closed out in the same instant, the row is
+ * still true, still needed to interpret whatever segments that run wrote
+ * before teardown, and dies with the session anyway (ON DELETE CASCADE).
+ */
+export async function recordTranscodeRun(db: DbOrTx, input: RecordTranscodeRunInput): Promise<void> {
+  await db
+    .insertInto('transcode_runs')
+    .values({
+      session_id: input.sessionId,
+      run_index: input.runIndex,
+      start_segment: input.startSegment,
+      source_origin_ms: input.sourceOriginMs,
+      created_at_ms: input.nowMs,
+    })
+    .onConflict((oc) =>
+      oc.columns(['session_id', 'run_index']).doUpdateSet({
+        start_segment: input.startSegment,
+        source_origin_ms: input.sourceOriginMs,
+        created_at_ms: input.nowMs,
+      })
+    )
+    .execute();
+}
+
 export interface MarkSessionFailedInput {
   errorCode: string;
   /** Last 4 KB ring of ffmpeg stderr (docs/PLAYBACK.md §9 audit
