@@ -45,6 +45,7 @@ import {
   type ServedPlaylistState,
 } from "./playlist.js";
 import { spawnFfmpegRun, type FfmpegRunHandle, type SpawnFn } from "./process.js";
+import { registerTranscodeRun } from "./run-registry.js";
 import { rebuildSeekArgs } from "./rebuild-args.js";
 import { createRunDir, createSessionDir, deleteRunDir, deleteSessionDir, runDirFor, sessionDirFor } from "./staging.js";
 import {
@@ -101,6 +102,11 @@ interface CurrentRun {
   /** This runtime's own tracked physical suspend state (process.ts's
    *  header — there is no queryable "is this pid stopped" OS API). */
   processStopped: boolean;
+  /** Idempotent removal from the process-wide live-run registry
+   *  (run-registry.ts, item C1) — called from this run's own exit handler
+   *  AND from whichever path replaced/tore it down, whichever happens
+   *  first. */
+  unregister: () => void;
 }
 
 /** Reads a run's own ffmpeg-written playlist off disk, tolerating "not
@@ -212,10 +218,19 @@ export async function runTranscodeSession(deps: RunSessionDeps, sessionId: strin
     const paced = applyPlatformPacing(substituted);
     const handle = spawnFfmpegRun(ffmpegPath!, paced, { cwd: runDir, ...(deps.spawnFn ? { spawnFn: deps.spawnFn } : {}) });
     deps.onRunSpawned?.(handle.pid, runIndex);
-    const run: CurrentRun = { index: runIndex, dir: runDir, handle, exited: false, processStopped: false };
+    // Item C1: publish the live handle BEFORE anything can await, so a
+    // shutdown signal arriving between the spawn and the next poll tick
+    // still finds this process to terminate. ffmpeg is spawned detached on
+    // POSIX (process.ts) and therefore outlives this worker unless
+    // something explicitly kills it.
+    const unregister = registerTranscodeRun(handle);
+    const run: CurrentRun = { index: runIndex, dir: runDir, handle, exited: false, processStopped: false, unregister };
     void handle.result.then((r) => {
       run.exited = true;
       run.exitInfo = r;
+      // Exited on its own (or in response to our terminate) — it is no
+      // longer something shutdown needs to kill.
+      unregister();
     });
     return run;
   }
@@ -224,6 +239,7 @@ export async function runTranscodeSession(deps: RunSessionDeps, sessionId: strin
 
   async function teardown(): Promise<void> {
     await currentRun.handle.terminate().catch(() => undefined);
+    currentRun.unregister();
     await deleteSessionDir(stagingRoot, sessionDir).catch(() => undefined);
   }
 
@@ -305,6 +321,7 @@ export async function runTranscodeSession(deps: RunSessionDeps, sessionId: strin
       if (consumed) {
         try {
           await currentRun.handle.terminate();
+          currentRun.unregister();
           const nextIndex = currentRun.index + 1;
           const startSeg = (producedSegment ?? -1) + 1;
           const seekArgs = await rebuildSeekArgs(db, { fileId: sessionRow.file_id, deviceId: sessionRow.device_id ?? "", plan });
