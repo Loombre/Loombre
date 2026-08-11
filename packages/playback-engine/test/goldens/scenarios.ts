@@ -42,8 +42,13 @@
  * Interpretation M (LD-7, Wave C1, 2026-08-11) adds the three AV1
  * encode-target scenarios: 39 (hardware av1_nvenc), 40 (software libsvtav1
  * at `-preset 10`), 41 (a §7.1(g)-DEMOTED rung landing on libx265 at the
- * admin's verbatim bitrate) — 41 files total (golden discipline: each graph
- * change landed with its goldens in the same PR).
+ * admin's verbatim bitrate). Wave C2 (LD-6 under LD-16, 2026-08-11) adds 42,
+ * the §9.1.4 SLOT-HANDOFF argv: a rung switch on a MIXED-codec ladder
+ * (hevc top / av1 sub-rungs, matrix case 536) targeting the av1 mid rung —
+ * it must name `av1_qsv`, the RUNG's encoder, never the plan's stored hevc
+ * targetCodec, which is the one thing a handoff can silently get wrong —
+ * 42 files total (golden discipline: each graph change landed with its
+ * goldens in the same PR).
  */
 import type {
   AudioStream,
@@ -853,5 +858,24 @@ export const GOLDEN_SCENARIOS: GoldenScenario[] = [
       rung: RUNG_1080P_DEMOTED_HEVC,
     },
     options: { withSeek: false },
+  },
+  // ---- Wave C2 (LD-6 under LD-16): the §9.1.4 rung-switch argv ----------
+  {
+    id: "42-rung-switch-mixed-codec-ladder-av1-qsv",
+    scenario:
+      "the §9.1.4 SLOT-HANDOFF argv on a MIXED-codec ladder (matrix case 536's plan: hevc 2160p top over av1 sub-rungs, routed to qsv). A rung switch to ladder index 1 must encode with av1_qsv — the rung's OWN codec — not the plan's stored hevc targetCodec, which is why apps/worker/src/transcode/rebuild-args.ts re-points video.targetCodec at the rung it is building for. withSeek: true because a handoff IS a seek-shaped restart (spawned -ss at old.sourceOriginMs + old.producedMs, §9.1.4 step 3). The load-bearing negatives are the av1 ones interpretation M already pins — no -level, no -tag:v — plus -maxrate PRESENT (hardware av1 does not have libsvtav1's CBR-refusal problem, scenario 40)",
+    input: input({
+      media: media({ video: [videoStream({ codec: "hevc", bitDepth: 10 })] }),
+      device: device([AV1_DEVICE_ENTRY_WITH_LEVEL, HEVC_DEVICE_ENTRY]),
+      selection: SEL_V0_A1,
+    }),
+    planShape: {
+      container: "fmp4-hls",
+      video: { action: "transcode", targetCodec: "av1", encoder: "qsv" },
+      audio: { action: "copy" },
+      subtitle: { strategy: "none" },
+      rung: RUNG_1080P_AV1,
+    },
+    options: { withSeek: true },
   },
 ];

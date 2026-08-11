@@ -145,6 +145,18 @@
  *       the lowest rung" — §7; "the ladder of a transcode is never empty
  *       except the refused case", this step's binding instructions).
  *
+ *   (h) TIER-0 ADVERTISED-VARIANT CAP (docs/PLAYBACK.md §7.5, Wave C2 /
+ *       LD-6 under LD-16) — NOT part of `buildLadder` at all. It is a
+ *       separate exported function (`capAdvertisedVariants`, bottom of this
+ *       file) that `src/plan.ts` calls at FINAL assembly, on the FINAL
+ *       ladder: after (f)/(g), after (a)-(e), and after Stage G may have
+ *       REPLACED the ladder with a tier-capped version. That placement is
+ *       the whole point — the facts it needs (what Stage G actually routed)
+ *       are not settled inside this function, exactly like the open-GOP
+ *       flag's own final-assembly home. See `capAdvertisedVariants`'s own
+ *       doc comment for the keep rule and the §7.5 arithmetic behind the
+ *       constant.
+ *
  * (a)-(d) are independent conjunctive filters — a rung survives iff ALL FOUR
  * hold — so the order they're checked in among themselves doesn't change the
  * final surviving set; only (e)'s fallback needs every other rule's verdict
@@ -366,4 +378,144 @@ export function buildLadder(
   // post-normalization table) when every rung was dropped by (a)-(d).
   const lowest = table.reduce((min, rung) => (rung.videoBitrateBps < min.videoBitrateBps ? rung : min));
   return { ladder: [lowest], reasons };
+}
+
+// ---------------------------------------------------------------------------
+// Step (h) — Tier-0 advertised-variant cap (docs/PLAYBACK.md §7.5, LD-6
+// under LD-16, Wave C2). See this module's header block below for the full
+// rule text; the short version is that the master playlist advertises
+// `plan.ladder` and nothing else, so WHICH rungs a client may switch to is
+// a PLAN decision the matrix can prove, never a session-layer filter that
+// could drift from the plan the audit row stores.
+// ---------------------------------------------------------------------------
+
+/**
+ * The Tier-0 advertised-variant count (owner-decision V1, docs/PLAYBACK.md
+ * §7.5). A TIER LAW, deliberately NOT a `ServerPolicy` knob: a settings
+ * checkbox that re-widened the advertised set on Tier-0 would be exactly
+ * the "escape hatch is a checkbox" failure §7.2 refuses for AV1. The escape
+ * hatch is the tier, same as it is there — Tier 1+ ladders are never
+ * trimmed by this step at all (owner-decision V6).
+ *
+ * Why 3 (the arithmetic the owner signed, §7.5): encoding cost is
+ * count-INVARIANT under §9.1's slot-handoff delivery model (exactly one
+ * rung encodes at any instant, whatever the advertised count), so the cap
+ * is not about concurrent load — the admission semaphore already bounds
+ * that. The count's real Tier-0 cost is SWITCH CHURN: every ABR switch is a
+ * full pipeline handoff (kill + observed exit + spawn + input open + seek +
+ * encoder init + first GOP, 1-4 s on the reference box). Churn frequency is
+ * governed by rung SPACING, and the top/geometric-mid/floor keep rule
+ * guarantees ~2x+ adjacent ratios for every realistic table, so the
+ * client's throughput estimate must halve or double to cross a boundary.
+ * The default 6-rung table has adjacent ratios as low as 1.33x — inside
+ * ordinary Wi-Fi variance, i.e. boundary-hovering, i.e. a handoff per
+ * hover. 2 would leave a 5-10x cliff with no intermediate recovery step;
+ * 4+ re-introduces a sub-2x boundary and buys no capability 3 lacks.
+ */
+export const TIER0_MAX_ADVERTISED_VARIANTS = 3;
+
+/**
+ * `capAdvertisedVariants`'s return shape — the same `{ ladder, reasons }`
+ * pair `buildLadder` uses, for the same reason: step (h) can fire a reason
+ * (`ladder-variant-capped`, §4/owner-decision V2) and the caller
+ * (`src/plan.ts`'s final assembly) appends it to the plan's own list.
+ */
+export interface VariantCapResult {
+  ladder: LadderRung[];
+  /** Empty, or exactly ONE `ladder-variant-capped` (single-firing). */
+  reasons: PlanReason[];
+}
+
+/** Bitrates come from a policy table an admin can configure; a 0 (or
+ *  negative) value is degenerate but structurally legal, and `Math.log(0)`
+ *  is `-Infinity`, which would poison every comparison below. Clamping to 1
+ *  keeps the geometric-mid arithmetic finite without inventing a rung or
+ *  reordering anything — `plan()` must stay TOTAL (§10 property 3). */
+function logBitrate(rung: LadderRung): number {
+  return Math.log(Math.max(1, rung.videoBitrateBps));
+}
+
+/**
+ * Step (h) — the §7.5 Tier-0 advertised-variant cap, run at FINAL assembly
+ * on the FINAL ladder: after §7.1's steps (f)/(g), after the cap filters
+ * (a)-(e), and after any Stage-G replacement (`software-fallback:
+ * tier-capped` dropping, the av1 residual demotion). It lives at final
+ * assembly for the same reason the open-GOP flag does — the facts it needs
+ * are not settled earlier.
+ *
+ * When `tier === 0` AND the ladder has more than
+ * `TIER0_MAX_ADVERTISED_VARIANTS` rungs, it is trimmed to exactly that many
+ * by a deterministic keep rule:
+ *   1. the TOP rung — the `topRungOf` maximum, so `video.targetCodec` and
+ *      the initially-encoded rung are untouched by the cap;
+ *   2. the LOWEST rung — the same floor the network-cap filter already
+ *      refuses to drop, the rescue rung a collapsing connection falls to;
+ *   3. the rung minimizing `|ln(v) − (ln(top) + ln(lowest))/2|` — the
+ *      geometric middle; a tie goes to the LOWER-bitrate candidate.
+ *
+ * Array ORDER IS PRESERVED (the ladder is emitted in policy-table order;
+ * this trims elements, it never reorders). A ladder already at or below the
+ * cap — every T0 full-software route today, since §8.3's tier cap already
+ * leaves <= 2 rungs, and every <=-3-rung policy table — comes back
+ * IDENTICAL with no reason fired, which is what makes those plans
+ * byte-identical to their pre-C2 selves.
+ *
+ * Pure and non-mutating: the input array and its rungs are never touched.
+ * `topRungOf`'s own first-maximum tie rule is mirrored exactly here (strict
+ * `>` / strict `<`), so "the cap keeps the top rung" is true of the SAME
+ * rung `src/plan.ts` reads `targetCodec` from, not merely of an equal one.
+ */
+export function capAdvertisedVariants(ladder: readonly LadderRung[], tier: ServerPolicy["tier"]): VariantCapResult {
+  if (tier !== 0 || ladder.length <= TIER0_MAX_ADVERTISED_VARIANTS) {
+    return { ladder: [...ladder], reasons: [] };
+  }
+
+  // (1)/(2) — top and floor. Strict comparisons keep the FIRST extreme, the
+  // same tie rule `src/plan.ts`'s `topRung` reduce and step (e)'s
+  // keep-lowest reduce already use.
+  let topIdx = 0;
+  let lowIdx = 0;
+  for (let i = 1; i < ladder.length; i += 1) {
+    if (ladder[i]!.videoBitrateBps > ladder[topIdx]!.videoBitrateBps) topIdx = i;
+    if (ladder[i]!.videoBitrateBps < ladder[lowIdx]!.videoBitrateBps) lowIdx = i;
+  }
+
+  // (3) — the geometric middle, in log space so "midway between 8M and
+  // 0.8M" means the 2.5M a bitrate ladder actually wants, not the 4.4M an
+  // arithmetic mean would name. Candidates exclude the two rungs already
+  // kept; ties break to the LOWER bitrate, then (bitrates being equal too)
+  // to the earlier table position, so the result is total-ordered and
+  // deterministic for every input.
+  const target = (logBitrate(ladder[topIdx]!) + logBitrate(ladder[lowIdx]!)) / 2;
+  let midIdx = -1;
+  for (let i = 0; i < ladder.length; i += 1) {
+    if (i === topIdx || i === lowIdx) continue;
+    if (midIdx === -1) {
+      midIdx = i;
+      continue;
+    }
+    const d = Math.abs(logBitrate(ladder[i]!) - target);
+    const best = Math.abs(logBitrate(ladder[midIdx]!) - target);
+    if (d < best || (d === best && ladder[i]!.videoBitrateBps < ladder[midIdx]!.videoBitrateBps)) {
+      midIdx = i;
+    }
+  }
+
+  const keep = new Set([topIdx, lowIdx, midIdx]);
+  const kept: LadderRung[] = [];
+  const dropped: LadderRung[] = [];
+  for (let i = 0; i < ladder.length; i += 1) {
+    (keep.has(i) ? kept : dropped).push(ladder[i]!);
+  }
+
+  // Single-firing (owner-decision V2): one trim, one reason, `detail`
+  // naming every dropped rung in table order so "where did my rungs go?"
+  // is answerable from the stored plan alone.
+  const reason: PlanReason = {
+    code: "ladder-variant-capped",
+    detail: `cap=${TIER0_MAX_ADVERTISED_VARIANTS} dropped=${dropped
+      .map((r) => `${r.heightPx}p@${r.videoBitrateBps}`)
+      .join(",")}`,
+  };
+  return { ladder: kept, reasons: [reason] };
 }

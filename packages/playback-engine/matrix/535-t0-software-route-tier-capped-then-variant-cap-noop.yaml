@@ -1,0 +1,70 @@
+name: "transcode — T0 software route: Stage G's tier cap has ALREADY shrunk the ladder, so step (h) is a no-op (ordering proof)"
+why: >
+  Wave C2 / §7.5, §10's C2 class 4 — "the cap runs AFTER Stage-G
+  replacement (T0 software route's tier-capped ladder -> cap no-op)". This
+  is an ORDERING proof, and it is only decidable because the two steps
+  disagree about what to keep: Stage G's tier cap keeps the rungs BELOW
+  1080p (a height rule), while step (h) keeps top/geometric-mid/floor (a
+  bitrate rule). If step (h) had run on the PRE-routing ladder it would
+  have trimmed the six-rung table to 16M/4M/0.8M first, Stage G would then
+  have height-capped that to a different surviving set, and this case's
+  expected ladder would differ. It does not: the software route's own
+  `software-fallback:tier-capped` leaves 480p@1,500,000 + 360p@800,000 —
+  two rungs, at or below the cap — so step (h) fires nothing at all.
+
+  `caps.software-only` forces §8.3 rule (iii) (no hardware backend to
+  route to) and `policies.t0-default`'s tier 0 is what arms the >=1080p
+  height cap; `networks.local` keeps the network filter out of the picture
+  entirely so the only two narrowings in play are the two whose ORDER this
+  case pins.
+input:
+  media:
+    fileId: file-535
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 15000000000
+    overallBitrateBps: 20000000
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 52
+        width: 3840
+        height: 2160
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 18000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: true
+        openGop: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 160000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device: { fixture: devices.web-chrome }
+  network: { fixture: networks.local }
+  policy: { fixture: policies.t0-default }
+  caps: { fixture: caps.software-only }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: transcode
+  reasons:
+    - video-interlaced
+    - software-fallback:encode
+    - software-fallback:tier-capped
+  container: fmp4-hls
+  ladder:
+    - { heightPx: 480, videoBitrateBps: 1500000, audioBitrateBps: 160000, codec: h264 }
+    - { heightPx: 360, videoBitrateBps: 800000, audioBitrateBps: 160000, codec: h264 }

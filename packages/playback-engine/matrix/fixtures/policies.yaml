@@ -368,6 +368,53 @@ explicit-av1-ladder-t0:
   hevcEncodePreferred: false
   av1EncodePreferred: false
 
+# --- Wave C2 (§7.5 step (h), LD-6 under LD-16) additive fixtures ----------
+# A Tier-0 instance whose ladder TABLE is already at the advertised-variant
+# cap (3 rungs). Proves the no-op arm of step (h) against a real,
+# non-degenerate table: <= TIER0_MAX_ADVERTISED_VARIANTS rungs come back
+# byte-identical with NO `ladder-variant-capped` reason at all — which is
+# what makes every <=-3-rung instance's plans identical to their pre-C2
+# selves. Adjacent ratios (2.67x, 3.75x) are already what the keep rule
+# aims for, so there is nothing for the trim to improve either.
+t0-three-rung:
+  allowTranscode: true
+  allowToneMapCpu: tier-gated
+  tier: 0
+  preferredTextSubMode: hls-vtt
+  preserveAssStyling: false
+  audioTranscodeCodecPriority: [opus, aac]
+  maxSimultaneousTranscodes: 1
+  ladderRungs:
+    - { heightPx: 1080, videoBitrateBps: 8000000, audioBitrateBps: 384000, codec: h264 }
+    - { heightPx: 720, videoBitrateBps: 3000000, audioBitrateBps: 160000, codec: h264 }
+    - { heightPx: 360, videoBitrateBps: 800000, audioBitrateBps: 160000, codec: h264 }
+  segmentDurationSec: 6
+  hevcEncodePreferred: false
+  av1EncodePreferred: false
+
+# Tier 2 with the INSTANCE DEFAULT 6-rung table — the T2 half of
+# owner-decision V6 ("Tier 1+ advertise ALL surviving rungs, uncapped").
+# Deliberately identical to t0-default except `tier`/`maxSimultaneousTranscodes`
+# so the only thing a T0-vs-T2 comparison can be reading is the tier.
+t2-default:
+  allowTranscode: true
+  allowToneMapCpu: tier-gated
+  tier: 2
+  preferredTextSubMode: hls-vtt
+  preserveAssStyling: false
+  audioTranscodeCodecPriority: [opus, aac]
+  maxSimultaneousTranscodes: 4
+  ladderRungs:
+    - { heightPx: 2160, videoBitrateBps: 16000000, audioBitrateBps: 384000, codec: hevc }
+    - { heightPx: 1080, videoBitrateBps: 8000000, audioBitrateBps: 384000, codec: h264 }
+    - { heightPx: 1080, videoBitrateBps: 4000000, audioBitrateBps: 160000, codec: h264 }
+    - { heightPx: 720, videoBitrateBps: 3000000, audioBitrateBps: 160000, codec: h264 }
+    - { heightPx: 480, videoBitrateBps: 1500000, audioBitrateBps: 160000, codec: h264 }
+    - { heightPx: 360, videoBitrateBps: 800000, audioBitrateBps: 160000, codec: h264 }
+  segmentDurationSec: 6
+  hevcEncodePreferred: false
+  av1EncodePreferred: false
+
 # Same explicit table at tier 2 — isolates the `no-av1-encoder` cause from
 # the `tier0-no-hw-av1` one.
 explicit-av1-ladder-t2:

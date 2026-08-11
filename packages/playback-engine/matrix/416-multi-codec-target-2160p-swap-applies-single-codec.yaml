@@ -2,6 +2,20 @@ name: "transcode — the SAME 2160p scenario WITH hevc-preferred: the swap colla
 why: >
   Contrast with 415: hevc-preferred (hevcEncodePreferred:true) + web-safari (declares an hevc device.video entry) -> stages/ladder.ts's swap converts every sub-2160p rung to hevc too (x0.75 bitrate), so ALL six surviving rungs are hevc — target codecs collapse to the SINGLE set {hevc}, not a multi-codec case. full-hw's nvenc trivially covers it (hw-encoder-selected:nvenc) — pinned via expect.ladder to prove the swapped (all-hevc, x0.75) table, not the unswapped one from 415.
 
+  Wave C2 / §7.5 step (h) CHURN (regression law, §10). This case's own
+  arithmetic: the FINAL Tier-0 ladder had 6 rungs, more than
+  TIER0_MAX_ADVERTISED_VARIANTS (3), so the ADVERTISED set — which §9.1's
+  master playlist enumerates verbatim — is trimmed to top 2160p@16000000 +
+  geometric-mid 1080p@3000000 + floor 360p@600000. The geometric mean of
+  16000000 and 600000 is ~3098387 bps, and 3000000 is the surviving
+  candidate nearest it in log space. Dropped: 1080p@6000000, 720p@2250000,
+  480p@1125000. One informational `ladder-variant-capped` fires
+  (single-firing, owner-decision V2) with every dropped rung in its
+  detail, LAST in the reason list because step (h) runs after Stage G.
+  decision, container, video.* and ffmpegArgs are UNCHANGED — the keep
+  rule's first clause is "keep the top rung", which is the only rung
+  `video.targetCodec` and the initially-encoded pipeline ever read.
+
 input:
   media:
     fileId: gen-file
@@ -49,28 +63,8 @@ expect:
   reasons:
     - bitrate-exceeds-network
     - hw-encoder-selected:nvenc
+    - ladder-variant-capped
   ladder:
-    - heightPx: 2160
-      videoBitrateBps: 16000000
-      audioBitrateBps: 384000
-      codec: hevc
-    - heightPx: 1080
-      videoBitrateBps: 6000000
-      audioBitrateBps: 384000
-      codec: hevc
-    - heightPx: 1080
-      videoBitrateBps: 3000000
-      audioBitrateBps: 160000
-      codec: hevc
-    - heightPx: 720
-      videoBitrateBps: 2250000
-      audioBitrateBps: 160000
-      codec: hevc
-    - heightPx: 480
-      videoBitrateBps: 1125000
-      audioBitrateBps: 160000
-      codec: hevc
-    - heightPx: 360
-      videoBitrateBps: 600000
-      audioBitrateBps: 160000
-      codec: hevc
+    - { heightPx: 2160, videoBitrateBps: 16000000, audioBitrateBps: 384000, codec: hevc }
+    - { heightPx: 1080, videoBitrateBps: 3000000, audioBitrateBps: 160000, codec: hevc }
+    - { heightPx: 360, videoBitrateBps: 600000, audioBitrateBps: 160000, codec: hevc }

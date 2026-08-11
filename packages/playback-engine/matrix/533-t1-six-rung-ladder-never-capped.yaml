@@ -1,0 +1,70 @@
+name: "transcode — TIER 1 + the same 6-rung table: NEVER trimmed (owner-decision V6)"
+why: >
+  Wave C2 / §7.5, owner-decision V6 ("Tier 1+ advertise ALL surviving
+  rungs, uncapped") — §10's C2 class 3. Byte-for-byte the same input as
+  case 531 apart from the policy fixture's `tier` (and the
+  maxSimultaneousTranscodes that goes with a bigger box), so the ONLY
+  thing that can explain the different ladder length is the tier test in
+  step (h)'s guard. All six surviving rungs are advertised and no
+  `ladder-variant-capped` reason fires.
+
+  Why the law stops at Tier-0 rather than applying everywhere: LD-16
+  constrains Tier-0's advertised COUNT because a 6 W part pays 1-4 s of
+  full-pipeline handoff for every ABR switch and the default table's
+  1.33x adjacent ratios invite boundary-hovering. On bigger hardware that
+  churn is absorbed by headroom Tier-0 does not have, and the extra
+  quality points are strictly better for the viewer.
+input:
+  media:
+    fileId: file-533
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 15000000000
+    overallBitrateBps: 20000000
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 52
+        width: 3840
+        height: 2160
+        bitDepth: 8
+        frameRate: 23.976
+        bitrateBps: 18000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: true
+        openGop: false
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 160000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device: { fixture: devices.web-chrome }
+  network: { fixture: networks.local }
+  policy: { fixture: policies.tiergated-t1 }
+  caps: { fixture: caps.full-hw }
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+expect:
+  decision: transcode
+  reasons:
+    - video-interlaced
+    - hw-encoder-selected:nvenc
+  container: fmp4-hls
+  ladder:
+    - { heightPx: 2160, videoBitrateBps: 16000000, audioBitrateBps: 384000, codec: hevc }
+    - { heightPx: 1080, videoBitrateBps: 8000000, audioBitrateBps: 384000, codec: h264 }
+    - { heightPx: 1080, videoBitrateBps: 4000000, audioBitrateBps: 160000, codec: h264 }
+    - { heightPx: 720, videoBitrateBps: 3000000, audioBitrateBps: 160000, codec: h264 }
+    - { heightPx: 480, videoBitrateBps: 1500000, audioBitrateBps: 160000, codec: h264 }
+    - { heightPx: 360, videoBitrateBps: 800000, audioBitrateBps: 160000, codec: h264 }

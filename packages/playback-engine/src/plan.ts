@@ -110,7 +110,7 @@ import { evaluateVideo } from "./stages/video.js";
 import { evaluateHdr } from "./stages/hdr.js";
 import { evaluateAudio } from "./stages/audio.js";
 import { evaluateSubtitle } from "./stages/subtitle.js";
-import { evaluateBitrate, buildLadder } from "./stages/ladder.js";
+import { buildLadder, capAdvertisedVariants, evaluateBitrate } from "./stages/ladder.js";
 import { routeHardware } from "./stages/hardware.js";
 import { STAGE_SEVERITY, severityToVerdict, type StageResult } from "./stages/types.js";
 import { buildFfmpegArgs } from "./args/builder.js";
@@ -212,7 +212,28 @@ import { buildFfmpegArgs } from "./args/builder.js";
  * box actually verified. Matrix 529 → 530 cases; §10 gains the companion
  * randomized property (leg 4 over the unrestricted tier-0 space).
  */
-export const ENGINE_VERSION = "0.10.1";
+/**
+ * 0.11.0 (LD-6 under LD-16, 2026-08-11, Wave C2): the ladder became the
+ * ADVERTISED VARIANT SET. §9.1's master playlist enumerates `plan.ladder`
+ * and nothing else, so which rungs a client may switch to is now a PLAN
+ * decision — which makes §7.5's new step (h) a real decision rule, not a
+ * presentation detail. On `policy.tier === 0` a FINAL ladder of more than
+ * `TIER0_MAX_ADVERTISED_VARIANTS` (= 3, owner-decision V1) rungs is trimmed
+ * to exactly 3 by the deterministic top/geometric-mid/floor keep rule
+ * (`stages/ladder.ts`'s `capAdvertisedVariants`, called from final assembly
+ * below AFTER Stage G's own possible ladder replacement), firing the new
+ * informational reason `ladder-variant-capped` ONCE with every dropped rung
+ * in its detail. Tier 1+ is never trimmed (owner-decision V6). MINOR, not
+ * patch: a new decision rule and a new reason code, and a whole class of
+ * Tier-0 plans now stores a different `ladder` for anything auditing stored
+ * plans. Deliberately NOT a behaviour change anywhere else — the cap keeps
+ * the top rung by construction, so `video.targetCodec` and `ffmpegArgs` are
+ * byte-identical across the trim, and every T1+/non-transcode/<=-3-rung
+ * plan is byte-identical to its 0.10.1 self (`engineVersion` aside). That
+ * IS the C2 regression pin (§7.5's "Matrix churn" paragraph). Matrix
+ * 530 -> 536 cases, golden count 41 -> 42.
+ */
+export const ENGINE_VERSION = "0.11.0";
 
 /**
  * Stage D assembly (docs/PLAYBACK.md §3 Stage D.4, binding interpretation
@@ -587,7 +608,20 @@ export function plan(input: PlanInput): PlaybackPlan {
     } else {
       reasons.push(...built.reasons);
       reasons.push(...routing.reasons);
-      ladder = routing.ladder;
+      // Step (h) — the §7.5 Tier-0 advertised-variant cap (Wave C2, LD-6
+      // under LD-16). Runs HERE and nowhere else: on the FINAL ladder,
+      // after Stage G has had its chance to REPLACE it with a tier-capped
+      // version, because §9.1's master playlist advertises exactly this
+      // array and a rung the client can see is a rung it can ask the
+      // handoff for. Its reason appends AFTER the routing reasons — §4's
+      // "ordered by stage" puts a step that runs after G after G's own
+      // reasons — and it is single-firing, so this pushes 0 or 1 entry.
+      // `topRung` below is computed from the CAPPED ladder, which changes
+      // nothing by construction: the keep rule's first clause is "keep the
+      // top rung", mirroring this very reduce's tie semantics.
+      const capped = capAdvertisedVariants(routing.ladder, input.policy.tier);
+      reasons.push(...capped.reasons);
+      ladder = capped.ladder;
       video.encoder = routing.encoder;
       if (routing.toneMap !== undefined) {
         video.toneMap = routing.toneMap;
