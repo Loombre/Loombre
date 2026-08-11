@@ -169,6 +169,12 @@ export async function listEventSubscriberPlugins(db: Kysely<DB>): Promise<EventS
 
 export interface PluginCandidateEventRow {
   id: string;
+  /** events.seq (migrations/0039_events_seq.sql) — the value the CALLER
+   *  must persist as the next cursor_event_seq (see
+   *  migrations/0040_plugin_delivery_cursor_seq.sql). `id` remains this
+   *  row's opaque identifier (still what a delivered batch carries), but
+   *  is no longer what advances the delivery cursor. */
+  seq: number;
   type: string;
   tsMs: number;
   payload: Record<string, unknown>;
@@ -176,34 +182,61 @@ export interface PluginCandidateEventRow {
 
 /**
  * Raw (unguarded-by-design) outbox read for the delivery loop: events
- * after `afterId` whose `type` is one of `grantedTypes`, ordered by id
- * ascending (UUIDv7 keyset order — packages/db/src/query/events.ts's
- * header), capped at `limit`. Deliberately NOT clearance-filtered — this
- * is the SAME "system-wide bookkeeping read, filtered per-consumer
- * afterward" shape as readUnprocessedEvents (src/query/events.ts),
- * generalized to a type allowlist + a caller-supplied cursor instead of
- * "unprocessed". The delivery loop (apps/worker/src/plugin-delivery/
- * delivery-loop.ts) is responsible for passing the returned ids through
- * the EXISTING guard-compiled `filterEventsForViewer` before ever
- * delivering to a general-scoped subscriber (C5) — this function does not
- * and must not apply that filter itself, so there is exactly one place
+ * after `afterSeq` (events.seq — migrations/0039_events_seq.sql) whose
+ * `type` is one of `grantedTypes`, ordered by `seq` ascending, capped at
+ * `limit`.
+ *
+ * Keyset on `seq`, NOT `id` (opus-review LD wave, Finding 1 — the real
+ * persisted-cursor skip hazard; see migrations/
+ * 0040_plugin_delivery_cursor_seq.sql's header for the full mechanism):
+ * `id` (UUIDv7) ties on any two events written in the same Postgres clock
+ * millisecond and resolves the tie on RANDOM tail bits, uncorrelated with
+ * insertion order (migrations/0039_events_seq.sql's header). That is only
+ * a same-tick reordering hazard for a STATELESS reader, but this cursor is
+ * PERSISTED between poll ticks: a same-millisecond sibling event whose id
+ * happens to sort BEFORE the plugin's just-advanced cursor id would never
+ * again satisfy `id > afterId` — a silent, PERMANENT skip, not a
+ * transient reordering. `seq` is a Postgres identity-sequence value
+ * assigned synchronously, in call order, at INSERT time, with no
+ * dependence on clock resolution — same-millisecond siblings can never tie
+ * on it, so a `seq`-keyed keyset read can never skip one.
+ *
+ * `minTsMs`, when given, ADDS a `ts_ms >= minTsMs` floor on top of the
+ * `seq` keyset — used ONLY by the caller (apps/worker/src/plugin-delivery/
+ * delivery-loop.ts) after it has already detected a retention-window gap
+ * (findOldestUnconsumedBeforeMs, below) and wants this read to skip
+ * straight past the gapped region to the window edge, without discarding
+ * or replacing the real `afterSeq` cursor value itself — the gap is
+ * reported (delivery-loop.ts's gapReport), never silently absorbed into an
+ * advanced cursor.
+ *
+ * Deliberately NOT clearance-filtered — this is the SAME "system-wide
+ * bookkeeping read, filtered per-consumer afterward" shape as
+ * readUnprocessedEvents (src/query/events.ts), generalized to a type
+ * allowlist + a caller-supplied cursor instead of "unprocessed". The
+ * delivery loop (apps/worker/src/plugin-delivery/delivery-loop.ts) is
+ * responsible for passing the returned ids through the EXISTING
+ * guard-compiled `filterEventsForViewer` before ever delivering to a
+ * general-scoped subscriber (C5) — this function does not and must not
+ * apply that filter itself, so there is exactly one place
  * (filterEventsForViewer) that ever decides content visibility, per
  * CLAUDE.md invariant 4.
  */
 export async function listCandidateEventsForDelivery(
   db: Kysely<DB>,
-  input: { afterId: string; grantedTypes: readonly string[]; limit: number }
+  input: { afterSeq: number; grantedTypes: readonly string[]; limit: number; minTsMs?: number }
 ): Promise<PluginCandidateEventRow[]> {
   if (input.grantedTypes.length === 0) return [];
-  const rows = await db
+  let query = db
     .selectFrom('events')
-    .select(['id', 'type', 'ts_ms', 'payload'])
-    .where('id', '>', input.afterId)
-    .where('type', 'in', input.grantedTypes as string[])
-    .orderBy('id', 'asc')
-    .limit(input.limit)
-    .execute();
-  return rows.map((r) => ({ id: r.id, type: r.type, tsMs: r.ts_ms, payload: r.payload }));
+    .select(['id', 'seq', 'type', 'ts_ms', 'payload'])
+    .where('seq', '>', input.afterSeq)
+    .where('type', 'in', input.grantedTypes as string[]);
+  if (input.minTsMs !== undefined) {
+    query = query.where('ts_ms', '>=', input.minTsMs);
+  }
+  const rows = await query.orderBy('seq', 'asc').limit(input.limit).execute();
+  return rows.map((r) => ({ id: r.id, seq: r.seq, type: r.type, tsMs: r.ts_ms, payload: r.payload }));
 }
 
 /**
@@ -229,7 +262,15 @@ export async function findOldestUnconsumedBeforeMs(
     .where('id', '>', input.afterId)
     .where('type', 'in', input.grantedTypes as string[])
     .where('ts_ms', '<', input.beforeMs)
+    // `id` tiebreak on `ts_ms` ties (routine under concurrent load, same
+    // "random tail bits, no monotonic fallback" hazard migrations/
+    // 0039_events_seq.sql's header documents for events.id): without it,
+    // which of several same-ts_ms rows this limit-1 read returns is
+    // whatever order Postgres happens to produce, not a deterministic
+    // choice. `ts_ms` remains the value actually returned/compared against
+    // `beforeMs` — this only makes ROW SELECTION on a tie repeatable.
     .orderBy('ts_ms', 'asc')
+    .orderBy('id', 'asc')
     .limit(1)
     .executeTakeFirst();
   return row ? row.ts_ms : null;
@@ -288,13 +329,14 @@ export async function ensurePseudonymSalt(db: Kysely<DB>, pluginId: string): Pro
  */
 export async function advanceCursorPastFilteredEvents(
   db: Kysely<DB>,
-  input: { pluginId: string; cursorEventId: string; nowMs: number }
+  input: { pluginId: string; cursorEventId: string; cursorEventSeq: number; nowMs: number }
 ): Promise<void> {
   await db
     .insertInto('plugin_delivery_cursors')
     .values({
       plugin_id: input.pluginId,
       cursor_event_id: input.cursorEventId,
+      cursor_event_seq: input.cursorEventSeq,
       last_attempt_ms: input.nowMs,
       last_success_ms: null,
       consecutive_failures: 0,
@@ -305,6 +347,7 @@ export async function advanceCursorPastFilteredEvents(
     .onConflict((oc) =>
       oc.column('plugin_id').doUpdateSet({
         cursor_event_id: input.cursorEventId,
+        cursor_event_seq: input.cursorEventSeq,
         last_attempt_ms: input.nowMs,
       })
     )
@@ -313,9 +356,18 @@ export async function advanceCursorPastFilteredEvents(
 
 export interface RecordDeliverySuccessInput {
   pluginId: string;
-  /** The last (highest, since events are read in ascending id order)
-   *  events.id included in the batch that was just 2xx-acknowledged. */
+  /** The last (highest, since events are read in ascending SEQ order —
+   *  see listCandidateEventsForDelivery) events.id included in the batch
+   *  that was just 2xx-acknowledged. Kept for observability/back-compat
+   *  (migrations/0040_plugin_delivery_cursor_seq.sql's header) — no longer
+   *  what the next read's keyset comparison uses. */
   cursorEventId: string;
+  /** The SAME event's events.seq (migrations/0039_events_seq.sql) — this
+   *  is what listCandidateEventsForDelivery's `afterSeq` keyset actually
+   *  compares against on the next tick. Always written together with
+   *  cursorEventId, in the same statement, so the two columns can never
+   *  observably disagree about how far this plugin's cursor has advanced. */
+  cursorEventSeq: number;
   /** events.length of the acknowledged batch — added to the lifetime
    *  delivered_events counter. */
   deliveredEventCount: number;
@@ -330,11 +382,12 @@ export interface RecordDeliverySuccessInput {
 
 /**
  * Advances a plugin's delivery cursor ONLY with a delivered batch's last
- * event id (never speculatively) and updates the lifetime stats in the
- * SAME transaction/statement — cursor_event_id and delivered_batches/
- * delivered_events can never observably disagree about "how far did this
- * plugin get". Upserts the row (plugin_delivery_cursors has no row until
- * a plugin's first delivery attempt — see that table's COMMENT ON TABLE).
+ * event id+seq (never speculatively) and updates the lifetime stats in the
+ * SAME transaction/statement — cursor_event_id/cursor_event_seq and
+ * delivered_batches/delivered_events can never observably disagree about
+ * "how far did this plugin get". Upserts the row (plugin_delivery_cursors
+ * has no row until a plugin's first delivery attempt — see that table's
+ * COMMENT ON TABLE).
  */
 export async function recordDeliverySuccess(
   db: Kysely<DB>,
@@ -356,6 +409,7 @@ export async function recordDeliverySuccess(
       .values({
         plugin_id: input.pluginId,
         cursor_event_id: input.cursorEventId,
+        cursor_event_seq: input.cursorEventSeq,
         last_attempt_ms: input.nowMs,
         last_success_ms: input.nowMs,
         consecutive_failures: 0,
@@ -366,6 +420,7 @@ export async function recordDeliverySuccess(
       .onConflict((oc) =>
         oc.column('plugin_id').doUpdateSet({
           cursor_event_id: input.cursorEventId,
+          cursor_event_seq: input.cursorEventSeq,
           last_attempt_ms: input.nowMs,
           last_success_ms: input.nowMs,
           consecutive_failures: 0,
@@ -411,6 +466,7 @@ export async function recordDeliveryFailure(
       .values({
         plugin_id: input.pluginId,
         cursor_event_id: null,
+        cursor_event_seq: null,
         last_attempt_ms: input.nowMs,
         last_success_ms: null,
         consecutive_failures: consecutiveFailures,

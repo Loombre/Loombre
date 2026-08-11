@@ -48,27 +48,88 @@
 //     authenticated viewer, not scoped to any item/library/user), so the
 //     fallthrough is correct, not an oversight.
 //
-// Cursor: `afterId` is a raw events.id (UUIDv7) — `WHERE id > afterId`,
-// ordered by id ascending. UUIDv7's layout (48-bit big-endian unix_ts_ms in
-// the leading bytes, migrations/0001_init.sql's loombre_uuidv7()) gives a
-// STABLE, UNIQUE total order, but NOT insertion order: only the leading
-// 48 timestamp bits are ordered by clock; every remaining bit is plain
-// `random()` with no monotonic-counter fallback, so two ids stamped in the
-// same Postgres clock millisecond sort by those random tail bits, not by
-// which INSERT actually ran first (migrations/0039_events_seq.sql's header
-// has the full analysis — this exact claim, stated here as fact in an
-// earlier version of this file, is what that migration disproves). The
-// practical effect on this keyset cursor: a same-millisecond sibling can
-// sort BEFORE `afterId` despite being inserted after it, so a client
-// polling with this cursor can skip that sibling forever. That hazard is
-// real, but fixing it here is deliberately deferred (STATE.md open item,
-// task #9) — migration 0039 added `events.seq` as the column that carries
-// the actual guaranteed insertion order, and switching readEventsForViewer
-// / readUnprocessedEvents to cursor on `seq` instead of `id` is the fix,
-// but it changes the cursor token's semantics for every already-connected
-// client (a `seq`-based cursor is not interchangeable with an `id`-based
-// one), so it is being done as its own reviewed change rather than folded
-// in here. The queries below still `ORDER BY id` unchanged.
+// Cursor / ordering (Task #9 resolution — see migrations/0039_events_seq.sql
+// for the underlying defect this fixes): every read below orders by
+// `events.seq`, NOT `events.id`. UUIDv7's layout (48-bit big-endian
+// unix_ts_ms in the leading bytes, migrations/0001_init.sql's
+// loombre_uuidv7()) gives a STABLE, UNIQUE total order, but NOT insertion
+// order: only the leading 48 timestamp bits are ordered by clock; every
+// remaining bit is plain `random()` with no monotonic-counter fallback, so
+// two ids stamped in the same Postgres clock millisecond sort by those
+// random tail bits, not by which INSERT actually ran first. `seq`
+// (migrations/0039_events_seq.sql) is a Postgres identity-sequence column
+// instead — assigned synchronously in call order, never tied, with no
+// dependence on any clock — so `ORDER BY seq` is a real guaranteed
+// insertion-order total order for rows written after that migration ran.
+//
+// This was previously deferred (an earlier version of this file's header
+// stated the `id -> seq` switch was withheld because "it changes the
+// cursor token's semantics for every already-connected client"). Evidence
+// gathered resolving that deferral (STATE.md task #9):
+//   - readEventsForViewer's `afterId` cursor (now `afterSeq`, see below)
+//     has NO production caller anywhere in the codebase — no HTTP-polling
+//     endpoint exists (no `/v1/events`-shaped path in
+//     packages/contract/openapi.yaml), the websocket layer does not call
+//     this function, and the web client (apps/web/src/lib/events-socket.ts)
+//     holds no cursor state at all, sends nothing back to the server on
+//     reconnect, and simply resumes live-tail from connection time. The
+//     ONLY callers found were two tests (packages/db/test/leak.spec.ts)
+//     passing a hardcoded epoch-zero boundary constant. There is therefore
+//     no external contract for an `id`-shaped cursor token to preserve —
+//     changing its shape/semantics breaks nothing live.
+//   - readUnprocessedEvents has no cursor at all (stateless `WHERE
+//     processed_at_ms IS NULL` poll every tick, apps/server/src/gateway/
+//     ws-broadcaster.service.ts's poll()) — its `ORDER BY` only decides (a)
+//     which N rows a tick picks when more than POLL_BATCH_SIZE are
+//     pending, and (b) indirectly, the order the SAME tick's
+//     filterEventsForViewer(db, ctx, ids) re-selects and the broadcaster
+//     iterates for `ws.send()` — i.e. same-millisecond sibling events (e.g.
+//     playback.started/playback.ended landing in one 500ms poll window)
+//     could reach a live socket in an order that does not match true
+//     insertion order. filterEventsForViewer runs its own fresh SELECT
+//     with its own ORDER BY (it does not preserve readUnprocessedEvents'
+//     row order), so BOTH functions' orderings must move together for the
+//     fix to actually reach the observable websocket delivery sequence —
+//     switching only one would leave the hazard live in production.
+// Given both, switching all three (readEventsForViewer, filterEventsForViewer,
+// readUnprocessedEvents) to `seq` is safe (nothing external depends on the
+// prior `id` ordering or the `afterId` token shape) and fixes the real
+// same-millisecond skip/misorder hazard for what, AT THE TIME this migration
+// landed, was the ONE path with an actual production caller (the websocket
+// broadcaster). That is no longer the full picture: opus-review LD wave
+// Finding 1 identified a SECOND production caller carrying the identical
+// hazard in a materially worse form — packages/db/src/query/
+// plugins-delivery.ts's listCandidateEventsForDelivery, whose `afterId`
+// cursor is PERSISTED (plugin_delivery_cursors.cursor_event_id) rather than
+// re-derived every tick, so a same-millisecond sibling sorting before an
+// already-advanced cursor was not a same-tick reordering nuisance but a
+// silent, PERMANENT skip. Migration 0040 (migrations/
+// 0040_plugin_delivery_cursor_seq.sql) gave that table its own `seq`
+// tie-break and switched that read the same way this migration switched
+// the three functions below — see that migration's header and
+// apps/worker/src/plugin-delivery/delivery-loop.ts's for the full fix.
+//
+// One-time upgrade artifact this migration itself creates, independent of
+// the plugin-delivery fix above: any `events` row still unprocessed
+// (processed_at_ms IS NULL) at the moment 0039 runs gets its `seq`
+// assigned in physical heap-scan backfill order (this migration's own
+// header), not true insertion order — so the very first post-upgrade
+// readUnprocessedEvents tick can drain that specific backlog in an order
+// that does not match when those rows were originally written. Bounded (at
+// most however many rows were mid-flight through the broadcaster's
+// `WHERE processed_at_ms IS NULL` poll at upgrade time — normally zero,
+// since the broadcaster drains continuously) and strictly no worse than
+// pre-migration behavior (`ORDER BY id`, which had this exact same
+// same-millisecond-tie weakness unconditionally, forever, not just for one
+// upgrade tick) — not a regression, just not yet the FULL guarantee this
+// migration establishes going forward.
+//
+// `id` remains every function's opaque row identifier (selectAll() below
+// still returns it, and it's still what the client sees in the envelope)
+// — only the ORDER BY / cursor-comparison column changed, per
+// packages/db/src/query/cursor.ts's header ("UUIDv7 secondary keys give
+// stable pagination but not causal order on same-ms ties; events.seq is
+// the pattern when causal order matters").
 
 import { sql, type Expression, type ExpressionBuilder, type Kysely, type Selectable, type SqlBool } from 'kysely';
 import type { DB, EventsTable } from '../types.js';
@@ -78,7 +139,10 @@ import { applyContentClassFilter, applyGuardToJoined, applyLibraryIdFilter } fro
 export type EventRow = Selectable<EventsTable>;
 
 export interface ReadEventsForViewerParams {
-  afterId?: string;
+  /** Cursor: rows with `events.seq` strictly greater than this value
+   *  (migrations/0039_events_seq.sql) — NOT an events.id. Omit for "from
+   *  the beginning". See this module's header for why `seq`, not `id`. */
+  afterSeq?: number;
   limit?: number;
 }
 
@@ -176,13 +240,13 @@ export async function readEventsForViewer(
   const limit = params.limit ?? DEFAULT_LIMIT;
 
   let query = db.selectFrom('events');
-  if (params.afterId) {
-    query = query.where('events.id', '>', params.afterId);
+  if (params.afterSeq !== undefined) {
+    query = query.where('events.seq', '>', params.afterSeq);
   }
 
   query = query.where(eventVisibilityWhere(ctx));
 
-  return query.selectAll().orderBy('events.id', 'asc').limit(limit).execute();
+  return query.selectAll().orderBy('events.seq', 'asc').limit(limit).execute();
 }
 
 // ============================================================================
@@ -198,7 +262,13 @@ export async function readEventsForViewer(
  * IDENTICAL eventVisibilityWhere() predicate — used by the broadcaster to
  * ask "of THIS already-polled outbox batch, which rows may THIS socket's
  * (freshly re-resolved) ViewerContext see" without re-deriving the
- * visibility rules a second time anywhere.
+ * visibility rules a second time anywhere. Ordered by `seq`, not `id` (this
+ * module's header): apps/server/src/gateway/ws-broadcaster.service.ts
+ * iterates this function's return value directly to decide the SEQUENCE it
+ * `ws.send()`s survivors in, so this is the ordering that actually reaches
+ * a live client — same-millisecond siblings (e.g. playback.started/
+ * playback.ended from one transition) must reach the socket in true
+ * insertion order, which `id` cannot guarantee and `seq` can.
  */
 export async function filterEventsForViewer(
   db: Kysely<DB>,
@@ -211,7 +281,7 @@ export async function filterEventsForViewer(
     .where('events.id', 'in', ids as string[])
     .where(eventVisibilityWhere(ctx))
     .selectAll()
-    .orderBy('events.id', 'asc')
+    .orderBy('events.seq', 'asc')
     .execute();
 }
 
@@ -222,14 +292,17 @@ export async function filterEventsForViewer(
  * filtered per-socket by filterEventsForViewer above before ever reaching
  * a client. Single-process v1 (mission spec): one poller drains the whole
  * outbox — see markEventsProcessed's doc comment for what "drained" means
- * across multiple server processes (out of scope this wave).
+ * across multiple server processes (out of scope this wave). Ordered by
+ * `seq`, not `id` (this module's header): when more than `limit` rows are
+ * pending, `seq` picks the truly-oldest N by insertion order rather than a
+ * same-millisecond coin flip.
  */
 export async function readUnprocessedEvents(db: Kysely<DB>, limit = 100): Promise<EventRow[]> {
   return db
     .selectFrom('events')
     .where('processed_at_ms', 'is', null)
     .selectAll()
-    .orderBy('id', 'asc')
+    .orderBy('seq', 'asc')
     .limit(limit)
     .execute();
 }

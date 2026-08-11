@@ -873,6 +873,64 @@ describe("H-4 fix wave: the delivery loop never fans out an ADMIN_ONLY event typ
   });
 });
 
+// ---------------------------------------------------------------------------
+// opus-review LD wave, Finding 1 — the real persisted-cursor skip hazard
+// ---------------------------------------------------------------------------
+
+describe("opus-review LD wave Finding 1: a same-millisecond sibling event inserted AFTER the cursor already advanced past it is still delivered", () => {
+  it("would have been permanently skipped under the old id-keyed cursor; the seq-keyed cursor delivers it on the next tick", async () => {
+    const secret = "same-ms-sibling-secret";
+    const subscriber = track(await startSubscriber(secret));
+    // 'watchlist.added', restricted-scoped — see the batch-cap test's
+    // comment above (H-4 fix wave + per-test type uniqueness: a fresh
+    // plugin's cursor starts at epoch zero and would otherwise pick up
+    // every prior test's same-typed fixture events too). Restricted-scoped
+    // so clearance (filterEventsForViewer) never runs — this test is
+    // proving the SEQ-vs-ID keyset hazard, not clearance.
+    const pluginId = await createSubscriberPlugin({ endpointUrl: subscriber.url, secret, contentClass: "restricted", eventTypes: ["watchlist.added"] });
+
+    const tsMs = Date.now();
+    // Same 48-bit timestamp prefix ("018bedb2cd00" — a real UUIDv7
+    // encoding of 1_700_500_000_000ms, chosen only for a stable literal;
+    // this test does not depend on tsMs matching the id's embedded
+    // timestamp) on both ids, tail bits deliberately REVERSED relative to
+    // insertion order: idA (delivered FIRST, becomes the persisted cursor)
+    // is the LEXICOGRAPHICALLY LARGER id; idB (inserted SECOND, after the
+    // cursor already advanced past idA) is the smaller one — the exact
+    // "random tail bits, no monotonic fallback" same-millisecond collision
+    // migrations/0039_events_seq.sql's header describes, pinned
+    // deterministically instead of left to a real same-ms race.
+    const idA = "018bedb2-cd00-7fff-bfff-fffffffffff1";
+    const idB = "018bedb2-cd00-7000-8000-000000000002";
+    expect(idB < idA).toBe(true); // sanity: confirms the adversarial ordering this test relies on
+
+    const userId = "018f6f1e-0000-7000-8000-0000000use01";
+    await insertEventWithId(idA, "watchlist.added", tsMs, { userId, itemId: "018f6f1e-0000-7000-8000-00000000ita1" });
+
+    // ---- Tick 1: delivers idA for real, cursor (id + seq) advances past it. ----
+    const now = () => tsMs;
+    const plugin1 = await loadEventSubscriberPlugin(pluginId);
+    const outcome1 = await deliverOnePluginTick({ db, env: testEnv(), now, random: () => 1 }, plugin1, new PluginCircuitBreaker());
+    expect(outcome1.kind).toBe("delivered");
+    expect(subscriber.requests).toHaveLength(1);
+    expect(subscriber.requests[0]!.batch!.events.map((e) => e.id)).toEqual([idA]);
+
+    // idB — same millisecond, inserted AFTER the cursor advance (so its
+    // seq is strictly greater than idA's) but with a SMALLER id than the
+    // cursor now sitting on idA.
+    await insertEventWithId(idB, "watchlist.added", tsMs, { userId, itemId: "018f6f1e-0000-7000-8000-00000000itb2" });
+
+    // ---- Tick 2: under the OLD `id > cursor_event_id` keyset this would
+    // return skip-empty forever (idB.id < idA.id, permanently excluded).
+    // Under the fixed `seq > cursor_event_seq` keyset, idB's seq is
+    // strictly greater than idA's, so it is delivered. ----
+    const outcome2 = await deliverOnePluginTick({ db, env: testEnv(), now, random: () => 1 }, plugin1, new PluginCircuitBreaker());
+    expect(outcome2.kind).toBe("delivered");
+    expect(subscriber.requests).toHaveLength(2);
+    expect(subscriber.requests[1]!.batch!.events.map((e) => e.id)).toEqual([idB]); // the sibling — NOT skipped
+  });
+});
+
 describe("kill/restart cursor-resume", () => {
   it("resumes from the persisted cursor after an abrupt stop, with no loss; a simulated crash between ack and persist yields a duplicate, never a loss", async () => {
     const secret = "resume-secret";
@@ -915,16 +973,21 @@ describe("kill/restart cursor-resume", () => {
     expect(subscriber.requests).toHaveLength(1);
     expect(subscriber.requests[0]!.batch!.events.map((e) => e.id)).toEqual(batch1Ids);
 
-    const cursorAfterA = await db.selectFrom("plugin_delivery_cursors").select("cursor_event_id").where("plugin_id", "=", pluginId).executeTakeFirstOrThrow();
+    const cursorAfterA = await db.selectFrom("plugin_delivery_cursors").select(["cursor_event_id", "cursor_event_seq"]).where("plugin_id", "=", pluginId).executeTakeFirstOrThrow();
     expect(cursorAfterA.cursor_event_id).toBe(batch1Ids[batch1Ids.length - 1]);
+    expect(cursorAfterA.cursor_event_seq).not.toBeNull(); // opus-review LD wave Finding 1: the real keyset value, now seq not id
 
     // ---- Simulate a crash between "subscriber ack'd" and "cursor persisted":
     // revert the persisted cursor to its pre-batch-1 value directly (a
     // real crash never gets a chance to run this delivery attempt's DB
     // write at all — reverting it here reproduces the exact same
     // post-crash DB state without needing to interrupt the process
-    // mid-function). "Instance A" is now abandoned (never called again). ----
-    await db.updateTable("plugin_delivery_cursors").set({ cursor_event_id: null, delivered_batches: 0, delivered_events: 0 }).where("plugin_id", "=", pluginId).execute();
+    // mid-function). Both cursor_event_id AND cursor_event_seq must be
+    // reverted together (opus-review LD wave Finding 1: listCandidateEvents
+    // ForDelivery keysets on cursor_event_seq now, not cursor_event_id — a
+    // partial revert here would silently no-op the redelivery this test is
+    // proving). "Instance A" is now abandoned (never called again). ----
+    await db.updateTable("plugin_delivery_cursors").set({ cursor_event_id: null, cursor_event_seq: null, delivered_batches: 0, delivered_events: 0 }).where("plugin_id", "=", pluginId).execute();
 
     // ---- "Instance B" (fresh breaker, simulating a worker restart)
     // redelivers batch 1 — a DUPLICATE, never silently dropped. ----

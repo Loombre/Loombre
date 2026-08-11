@@ -176,6 +176,37 @@ describe('stash-sync-reports (S8/K14)', () => {
     expect(latest).toBeUndefined();
   });
 
+  it('getLatestStashSyncReport: two runs opened in the SAME started_at_ms millisecond resolve deterministically by id (Task #9 Class A fix), not by an unspecified tie order', async () => {
+    const libraryId = await makeRestrictedLibrary();
+    const startedAtMs = 9_000;
+    // Ids chosen so lexicographic (id DESC) order picks the SMALLER-id row
+    // — inserted SECOND (later job_id/attempt) but given the
+    // LEXICOGRAPHICALLY GREATER id, so it is what `id DESC` actually
+    // selects; same forced-tie technique as
+    // packages/jobs/test/ledger-events.spec.ts for migration
+    // 0039_events_seq.sql. Not a causal-order claim (started_at_ms is
+    // application-supplied Date.now(), same tie hazard as events.id — see
+    // packages/db/src/query/cursor.ts's header) — only a repeatability one.
+    const runA = await db
+      .insertInto('stash_sync_reports')
+      .values({ id: '00000000-0000-7000-8000-0000000000a1', library_id: libraryId, job_id: randomUUID(), mode: 'full', started_at_ms: startedAtMs })
+      .returningAll()
+      .executeTakeFirstOrThrow();
+    const runB = await db
+      .insertInto('stash_sync_reports')
+      .values({ id: 'ffffffff-ffff-7fff-8fff-ffffffffffb1', library_id: libraryId, job_id: randomUUID(), mode: 'incremental', started_at_ms: startedAtMs })
+      .returningAll()
+      .executeTakeFirstOrThrow();
+
+    const first = await getLatestStashSyncReport(db, libraryId);
+    expect(first?.id).toBe(runB.id);
+    void runA;
+
+    // Repeatability, not a single lucky observation.
+    const second = await getLatestStashSyncReport(db, libraryId);
+    expect(second?.id).toBe(first?.id);
+  });
+
   it('findRunningStashSyncReport locates the in-flight row and ignores finished ones', async () => {
     const libraryId = await makeRestrictedLibrary();
     const finished = await createStashSyncReport(db, { libraryId, jobId: randomUUID(), mode: 'full', startedAtMs: 1000 });
@@ -186,6 +217,25 @@ describe('stash-sync-reports (S8/K14)', () => {
     const running = await createStashSyncReport(db, { libraryId, jobId: randomUUID(), mode: 'incremental', startedAtMs: 2000 });
     const found = await findRunningStashSyncReport(db, libraryId);
     expect(found?.id).toBe(running.id);
+  });
+
+  it('findRunningStashSyncReport: two running rows opened in the SAME started_at_ms millisecond resolve deterministically by id — same tiebreak as getLatestStashSyncReport above', async () => {
+    const libraryId = await makeRestrictedLibrary();
+    const startedAtMs = 9_500;
+    const runA = await db
+      .insertInto('stash_sync_reports')
+      .values({ id: '00000000-0000-7000-8000-0000000000c1', library_id: libraryId, job_id: randomUUID(), mode: 'full', started_at_ms: startedAtMs })
+      .returningAll()
+      .executeTakeFirstOrThrow();
+    const runB = await db
+      .insertInto('stash_sync_reports')
+      .values({ id: 'ffffffff-ffff-7fff-8fff-ffffffffffc1', library_id: libraryId, job_id: randomUUID(), mode: 'incremental', started_at_ms: startedAtMs })
+      .returningAll()
+      .executeTakeFirstOrThrow();
+    void runA;
+
+    const found = await findRunningStashSyncReport(db, libraryId);
+    expect(found?.id).toBe(runB.id);
   });
 
   it('listUnmatchedStashScenes: only item_id IS NULL rows, keyset-paginated, ordered by stash_scene_id', async () => {

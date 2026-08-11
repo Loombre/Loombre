@@ -1414,7 +1414,7 @@ describe('restricted-content leak impossibility', () => {
         // A different user (casual) must never see admin's watchlist.added
         // event, even though lastFerryOutItemId is a general item casual
         // can otherwise see fine via every other guarded surface.
-        const casualsView = await readEventsForViewer(db, casualUncleared, { afterId: '00000000-0000-7000-8000-000000000000' });
+        const casualsView = await readEventsForViewer(db, casualUncleared, { afterSeq: 0 });
         expect(casualsView.some((e) => e.type === 'watchlist.added')).toBe(false);
 
         // The ACTOR (admin) sees their own event even while simulating
@@ -1422,7 +1422,7 @@ describe('restricted-content leak impossibility', () => {
         // item/content_class-gated (mirrors restricted.locked/unlocked's
         // documented posture in this file's own header).
         const actorViewLocked = await readEventsForViewer(db, adminClearedButNotUnlocked, {
-          afterId: '00000000-0000-7000-8000-000000000000',
+          afterSeq: 0,
         });
         expect(actorViewLocked.some((e) => e.type === 'watchlist.added' && (e.payload as { itemId: string }).itemId === lastFerryOutItemId)).toBe(true);
       } finally {

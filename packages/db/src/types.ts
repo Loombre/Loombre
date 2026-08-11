@@ -782,6 +782,11 @@ export interface PluginEventGrantsTable {
 export interface PluginDeliveryCursorsTable {
   plugin_id: string;
   cursor_event_id: string | null;
+  /** migrations/0040_plugin_delivery_cursor_seq.sql — the events.seq value
+   *  listCandidateEventsForDelivery actually keysets reads on. See that
+   *  migration's header for why cursor_event_id (UUIDv7) is unsafe as a
+   *  same-millisecond keyset tie-break. NULL = never delivered. */
+  cursor_event_seq: number | null;
   last_attempt_ms: number | null;
   last_success_ms: number | null;
   consecutive_failures: Generated<number>;

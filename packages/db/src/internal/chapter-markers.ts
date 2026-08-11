@@ -39,6 +39,19 @@ export async function replaceChapterMarkers(db: DbOrTx, itemId: string, markers:
   });
 }
 
+// `id` tiebreak on `start_ms` ties — same convention src/query/chapters.ts's
+// getChaptersForItem and src/query/restricted-browse.ts's
+// getRestrictedSceneDetail chapter read both apply to this exact table (a
+// migration source can legitimately place two markers at the identical
+// offset — this file's own header notes chapter_markers has no uniqueness
+// constraint on (item_id, start_ms) — so `start_ms` alone does not
+// determine row order).
 export async function getChapterMarkers(db: DbOrTx, itemId: string): Promise<ChapterMarkerRow[]> {
-  return db.selectFrom('chapter_markers').selectAll().where('item_id', '=', itemId).orderBy('start_ms', 'asc').execute();
+  return db
+    .selectFrom('chapter_markers')
+    .selectAll()
+    .where('item_id', '=', itemId)
+    .orderBy('start_ms', 'asc')
+    .orderBy('id', 'asc')
+    .execute();
 }
