@@ -23,6 +23,7 @@ import {
   markSessionFailed,
   markSessionStarting,
   recordSessionWorkerProcess,
+  recordTranscodeRun,
   updateProducedSegment,
   setThrottleSuspended,
   type TranscodeSessionRow,
@@ -244,6 +245,25 @@ export async function runTranscodeSession(deps: RunSessionDeps, sessionId: strin
     const paced = applyPlatformPacing(substituted);
     const handle = spawnFfmpegRun(ffmpegPath!, paced, { cwd: runDir, ...(deps.spawnFn ? { spawnFn: deps.spawnFn } : {}) });
     deps.onRunSpawned?.(handle.pid, runIndex);
+    // Continuation item 2 (migrations/0043): durably record WHERE this run
+    // starts, in both coordinate systems it participates in — the global
+    // segment counter (`startSeg`) and the SOURCE timeline
+    // (`sourceOriginMs`). They are independent: segment numbering only ever
+    // moves forward across a session's runs, while a backward seek starts a
+    // later run at an earlier source position. Without this row, a run
+    // after the first cannot be anchored in source time at all — its own
+    // output timestamps restart at zero (spawned with `-ss`, no
+    // `-copyts`), so the served playlist's durations describe presentation
+    // time, which is exactly the thing that diverged. Run 0 is recorded
+    // too, at origin 0: a consumer must never have to special-case "no row
+    // means the first run".
+    await recordTranscodeRun(db, {
+      sessionId,
+      runIndex,
+      startSegment: startSeg,
+      sourceOriginMs: seekTargetMs ?? 0,
+      nowMs: now(),
+    }).catch(() => undefined);
     // Item C1: publish the live handle BEFORE anything can await, so a
     // shutdown signal arriving between the spawn and the next poll tick
     // still finds this process to terminate. ffmpeg is spawned detached on

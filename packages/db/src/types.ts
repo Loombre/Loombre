@@ -470,6 +470,20 @@ export interface PlaybackSessionsTable {
   worker_started_at_ms: number | null;
 }
 
+/** migrations/0043_transcode_runs.sql — one row per ffmpeg run spawned for
+ *  a transcode session, carrying where that run starts in SOURCE time.
+ *  Segment numbering is global across a session's runs while each seek
+ *  run's own output timeline restarts at zero; this is what reconnects
+ *  them. Worker-written, server-read. */
+export interface TranscodeRunsTable {
+  id: Generated<string>;
+  session_id: string;
+  run_index: number;
+  start_segment: number;
+  source_origin_ms: number;
+  created_at_ms: number;
+}
+
 // ============================================================================
 // events (outbox)
 // ============================================================================
@@ -964,6 +978,7 @@ export interface DB {
   progress: ProgressTable;
   watchlists: WatchlistsTable;
   playback_sessions: PlaybackSessionsTable;
+  transcode_runs: TranscodeRunsTable;
   events: EventsTable;
   jobs: JobsTable;
   images: ImagesTable;

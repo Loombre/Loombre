@@ -745,6 +745,79 @@ export async function suspendStalePlaybackSession(db: Kysely<DB>, id: string, no
 }
 
 // ---------------------------------------------------------------------------
+// migrations/0043_transcode_runs.sql — segment index -> source time
+//
+// The reads a server-side consumer needs to interpret a served segment
+// index. Segment numbering is GLOBAL across a session's runs (docs/
+// PLAYBACK.md §9: a seek restart continues the previous run's numbering)
+// while each seek run's own output timeline restarts at zero, because runs
+// are spawned with `-ss` and without `-copyts`. The two are reconnected by
+// the run's recorded source origin, and nothing else can do it: the served
+// playlist's own durations describe PRESENTATION time, which is exactly
+// what diverges.
+//
+// Not ViewerContext-scoped, and deliberately so — matching
+// getMediaFileForPlaybackSession above: authorization for this session was
+// already established by the caller resolving it through
+// getPlaybackSessionForUser, and these are plain lookups keyed by that
+// session id, not a second guard gate. The worker-side WRITER lives in
+// src/internal/transcode-sessions.ts (recordTranscodeRun).
+// ---------------------------------------------------------------------------
+
+export interface TranscodeRunRow {
+  runIndex: number;
+  /** The absolute segment index this run begins numbering at. */
+  startSegment: number;
+  /** Where this run starts in the SOURCE timeline, milliseconds. */
+  sourceOriginMs: number;
+}
+
+/**
+ * The run that owns `segmentIndex` — the one with the greatest
+ * `start_segment` at or below it.
+ *
+ * Ownership follows the SEGMENT COUNTER, never the source clock: a
+ * backward seek starts a later run at an EARLIER source origin, so
+ * `source_origin_ms` is not monotonic across a session's runs and ordering
+ * by it would hand back the wrong run. `start_segment` is the only
+ * monotonic key, which is why the index is on it.
+ *
+ * Returns `undefined` when the session has no recorded runs (a direct-play
+ * session, a session whose pipeline never started, or one predating
+ * migration 0043) — callers should treat that as "no source anchor
+ * available", never as "origin 0".
+ */
+export async function getTranscodeRunForSegment(
+  db: Kysely<DB>,
+  sessionId: string,
+  segmentIndex: number
+): Promise<TranscodeRunRow | undefined> {
+  const row = await db
+    .selectFrom('transcode_runs')
+    .select(['run_index', 'start_segment', 'source_origin_ms'])
+    .where('session_id', '=', sessionId)
+    .where('start_segment', '<=', segmentIndex)
+    .orderBy('start_segment', 'desc')
+    .limit(1)
+    .executeTakeFirst();
+  if (!row) return undefined;
+  return { runIndex: row.run_index, startSegment: row.start_segment, sourceOriginMs: row.source_origin_ms };
+}
+
+/** Every recorded run for a session, in run order — the whole segment->
+ *  source map in one read, for a caller that needs to interpret more than
+ *  a single index (rendering a playlist, reconstructing a resume point). */
+export async function listTranscodeRuns(db: Kysely<DB>, sessionId: string): Promise<TranscodeRunRow[]> {
+  const rows = await db
+    .selectFrom('transcode_runs')
+    .select(['run_index', 'start_segment', 'source_origin_ms'])
+    .where('session_id', '=', sessionId)
+    .orderBy('run_index', 'asc')
+    .execute();
+  return rows.map((row) => ({ runIndex: row.run_index, startSegment: row.start_segment, sourceOriginMs: row.source_origin_ms }));
+}
+
+// ---------------------------------------------------------------------------
 // Phase 3 §11 step 6b (Lane B) — admission control
 // ---------------------------------------------------------------------------
 
