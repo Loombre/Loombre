@@ -298,6 +298,61 @@ schema descriptions reworded neutrally; YAML comments kept — they never render
 SDK regenerated; docs rebuilt + synced to website (70 routes, build green;
 deploy remains manual).
 
+## Fix-list wave — uninstall script, ledger ordering, Safari token reload, test-DB isolation (2026-08-10, lanes + opus review)
+
+Owner directive: "continue with the fix list until completion." Tasks #4/#5/
+#6/#8 built by four parallel sonnet lanes, opus-reviewed (18 findings: 0
+BLOCKER, 6 MAJOR — all applied by three fix lanes), landed as cb571667 +
+3c3a372b + 0c048170 + 1a5aaa2e. `pnpm gate:full` ALL 16 STEPS PASSED.
+
+- **#5 ledger ms-tie flake (cb571667):** root cause structural —
+  loombre_uuidv7()'s tail is pure random() (no RFC 9562 §6.2 counter), so
+  same-ms ids sort by coin flip; ORDER BY id is NOT insertion order on
+  ties. events.seq identity column (migration 0039; header documents the
+  heap-order backfill for pre-existing rows + the one-time ACCESS
+  EXCLUSIVE rewrite on upgrade); spec helper orders by seq alone;
+  deterministic adversarial-id reproduction. events.ts's false "UUIDv7 ==
+  insertion order" header claim replaced (its id-cursor CAN skip a same-ms
+  sibling — switch to seq deferred as task #9 with the full ~20-site
+  sweep of Class A no-tiebreak / Class B UUIDv7-tiebreak reads recorded).
+- **#4 macOS uninstall (3c3a372b):** shipped uninstall.sh (4 launchd jobs,
+  plists, app bundle incl. receipt-located relocation-era strays under
+  tight validation, logs, /opt/loombre, --purge-gated app data, receipt
+  forgotten LAST, sysadminctl-interactive account deletion, --dry-run
+  covering every mutation, partial-state tolerant). Review catches: shift
+  2 on a trailing valueless flag spun a root busy-loop forever (now exits
+  1); receipt was forgotten before payload removal; GID namespace missing
+  from the UID picker (value used as UID AND GID). UID-500 rc.6 bug fixed
+  in extracted pick-service-uid.sh (first free strictly in [201,499],
+  both /Users+/Groups namespaces). Installers suite 46/46. rm -rf audit
+  CLEAN: every target a literal, existence-checked constant.
+- **#6 Safari token reload (0c048170):** recon corrected — tokens are
+  15-min JWTs refreshed ~30s early (60s was the poll), so the reload hit
+  every ~14.5min and NOT reloading guaranteed a mid-play 401 (server
+  verifies with zero clockTolerance). isSameUrlIgnoringToken no-ops
+  token-only rotations; paused-time silent swap; bounded recovery (error
+  OR 10s stall watchdog — Safari presents playlist-refresh 401s as
+  stalls; 3 attempts/stretch, 4s deferred cooldown, reset on 'playing',
+  DECODE/SRC_NOT_SUPPORTED → UnavailableScreen via client-synthesized
+  reason). Future structural fix filed as task #10 (cookie auth for
+  media routes).
+- **#8 test-DB isolation (1a5aaa2e, incident follow-up):** migrate.mjs
+  reset refuses non-`_test`-segment database names (pnpm db:reset passes
+  --allow-reset); resolveTestDatabaseUrl() derives loombre_test (55
+  files rewired); auto-provision is best-effort (external-Postgres
+  db:reset regression caught in review); worker-liveness.spec on its own
+  isolated DB. CONSEQUENCE: `pnpm gate` no longer touches dev data and
+  the stop-the-dev-stack-before-gate ritual is RETIRED (memory updated).
+  Residuals documented, not hidden: a *_test-named live DB is still
+  wipeable; worker/jobs can race concurrent resets of shared
+  loombre_test under turbo. ~1200 leaked per-suite test DBs discovered
+  on 5442 — cleanup is task #11.
+- **Process:** four workstreams in one shared checkout with disjoint-file
+  lane scopes again produced zero cross-lane conflicts (marker-scanned).
+  Review's highest-stakes dimension (root rm -rf in the uninstaller) came
+  back clean on first pass — the lane discipline of literal-constant rm
+  targets held.
+
 ## Post-rc.6 owner-QA wave — three playback fixes + open-GOP HEVC strip (2026-08-08→10, lanes + opus review)
 
 Owner ran a manual QA session against the dev stack; every reported defect
