@@ -1000,6 +1000,12 @@ av1_amf encode + windows-x64 libsvtav1 presence (Windows CI leg). OPEN
 DECISIONS D1-D5 presented to owner (recommendations: D1 YES, D2 YES, D3/D4/D5
 confirm). Build lane does NOT spawn until owner signs off.
 
+**OWNER SIGN-OFF (2026-08-11): "Approve as recommended."** D1 YES
+(av1-rung-demoted reason added to the closed enum), D2 YES (targetCodec
+re-pointed to LadderCodec — narrowing-to-truth), D3 ×0.6/sub-2160 confirmed,
+D4 libsvtav1-only confirmed, D5 default-false opt-in confirmed. Spec merged
+to main; C1 BUILD lane (opus) spawned against the signed spec.
+
 ### Wave B — CLOSED 2026-08-11 (exit gate MET)
 
 Integration: four branches merged (B2 → B4 → B1 → B3, zero manual conflict
