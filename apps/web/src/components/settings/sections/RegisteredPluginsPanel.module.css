@@ -1,0 +1,32 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+
+/* Loombre :: apps/web/src/components/settings/sections/RegisteredPluginsPanel.module.css
+ *
+ * Sibling-card separation from ProviderKeysCard above it in
+ * PluginsSection.tsx — same hairline + top spacing recipe as
+ * InvitesPanel.module.css's .panel (that file's own header explains the
+ * "sibling card, not a boxed card" call).
+ */
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  margin-top: var(--space-xl);
+  padding-top: var(--space-lg);
+  border-top: 1px solid var(--color-border-subtle);
+}
+
+/* shared.module.css's .row has no anchor treatment (every existing user is
+   a plain <div> row) — this plugin list is the first Settings row that's
+   also a Link (straight to the plugin's detail route), so the anchor
+   reset + hover fill live here rather than growing shared.module.css for
+   one consumer. */
+.rowLink {
+  color: inherit;
+  text-decoration: none;
+}
+
+.rowLink:hover {
+  background: var(--color-surface-hover);
+}
