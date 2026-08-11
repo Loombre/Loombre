@@ -972,6 +972,34 @@ now a from-source/dev-run signal; env-reference regenerated via generator.
 One out-of-scope comment-only fix disclosed (admin-logs-tail.ts restated
 the now-false claim). Lane self-scrubbed 12 naming-gate violations.
 
+### Wave C1 — SPEC DELIVERED 2026-08-11, at ⛔ OWNER SIGN-OFF STOP
+
+Fable spec lane committed 86ac7e3b (worktree branch; ONE file, docs/PLAYBACK.md
++350/−5; base current main after its own ff — third stale-provisioning
+occurrence, self-corrected per the standing check). Design: LadderCodec closed
+set {h264,hevc,av1}; codec-selection precedence av1>hevc>h264 swap-before-caps
+(av1 swap: sub-2160 rungs, ×0.6, requires av1EncodePreferred policy + device
+av1 entry + fmp4-hls [no AV1-in-TS] + eligibility gate); demotion
+normalization step (av1 rungs failing gates demote to hevc/h264, never drop);
+single pure gate src/av1.ts `av1EncodeEligibility(caps,tier)→hw|software|none`
+shared by ladder AND Stage G (dv.ts no-drift precedent); LD-16 verbatim law in
+spec; UNREACHABILITY testable in four legs (matrix property 5 + per-leg pins);
+copy-preference untouched (AV1 sources direct-play/copy as before, regression
+pin = every existing case byte-identical). Contract enumeration EMPIRICALLY
+PREVIEWED (real oasdiff in scratch: 0 errors, WARN-only): LadderCodec enum
++av1; targetCodec re-point VideoCodec→LadderCodec (a NARROWING-to-truth — the
+contract already over-admitted vp9/mpeg2 there); optional av1-rung-demoted
+reason (D1). ORCHESTRATOR-VERIFIED surprise: NO DB change needed — encode
+CHECK was born av1-inclusive (schema.sql:1224, migration 0011 verified);
+register's "DB CHECK" item closes as already-satisfied. Honesty table:
+M3 Max genuinely proves the T0-refusal path (real hw-av1-absent caps — no
+av1_videotoolbox exists), software-AV1 T1 end-to-end (bundled libsvtav1
+verified by execution), av1 hw decode; FIXTURE-ONLY → P3.4 backlog by name:
+av1_nvenc/av1_qsv (N100 QSV is av1-DECODE-only — spec says so)/av1_vaapi/
+av1_amf encode + windows-x64 libsvtav1 presence (Windows CI leg). OPEN
+DECISIONS D1-D5 presented to owner (recommendations: D1 YES, D2 YES, D3/D4/D5
+confirm). Build lane does NOT spawn until owner signs off.
+
 ### Wave B — CLOSED 2026-08-11 (exit gate MET)
 
 Integration: four branches merged (B2 → B4 → B1 → B3, zero manual conflict
