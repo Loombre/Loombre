@@ -378,12 +378,42 @@ describe("seek-restart de-duplication (continuation item 1: livelock)", () => {
     }
   }
 
+  /** Blocks until the runtime has RECORDED the rung a spawn is encoding.
+   *  `waitForSpawnCount` returns the instant `spawnFn` is called, and
+   *  `recordActiveRungIndex` is awaited AFTER that inside `spawnRun` — so
+   *  reading the column straight after a spawn count is a genuine race
+   *  (observed failing ~1 run in 3 as a bare assertion). */
+  async function waitForActiveRung(sessionId: string, expected: number, timeoutMs: number): Promise<void> {
+    const deadline = Date.now() + timeoutMs;
+    for (;;) {
+      const { rows } = await raw.query<{ active_rung_index: number | null }>(`SELECT active_rung_index FROM playback_sessions WHERE id = $1`, [sessionId]);
+      if (rows[0]?.active_rung_index === expected) return;
+      if (Date.now() > deadline) throw new Error(`timed out waiting for active_rung_index=${expected}; saw ${String(rows[0]?.active_rung_index)}`);
+      await new Promise((r) => setTimeout(r, 10));
+    }
+  }
+
   async function readRungRow(sessionId: string): Promise<{ active_rung_index: number | null; pending_rung_index: number | null }> {
     const { rows } = await raw.query<{ active_rung_index: number | null; pending_rung_index: number | null }>(
       `SELECT active_rung_index, pending_rung_index FROM playback_sessions WHERE id = $1`,
       [sessionId],
     );
     return rows[0]!;
+  }
+
+  /** Blocks until `expected` runs have been RECORDED. Same race as
+   *  waitForActiveRung: `recordTranscodeRun` is awaited after the spawn, so
+   *  a spawn count is not yet a durable run row. (A ladder-empty session
+   *  never calls recordActiveRungIndex at all, so waiting on the rung is
+   *  not an option there — this is the general form.) */
+  async function waitForRunCount(sessionId: string, expected: number, timeoutMs: number): Promise<void> {
+    const deadline = Date.now() + timeoutMs;
+    for (;;) {
+      const { rows } = await raw.query<{ n: string }>(`SELECT count(*)::text AS n FROM transcode_runs WHERE session_id = $1`, [sessionId]);
+      if (Number(rows[0]?.n ?? 0) >= expected) return;
+      if (Date.now() > deadline) throw new Error(`timed out waiting for ${expected} recorded run(s); saw ${String(rows[0]?.n)}`);
+      await new Promise((r) => setTimeout(r, 10));
+    }
   }
 
   async function readRuns(sessionId: string): Promise<{ run_index: number; source_origin_ms: number; ladder_rung_index: number | null }[]> {
@@ -682,6 +712,7 @@ describe("seek-restart de-duplication (continuation item 1: livelock)", () => {
       // backward seek into bytes that are no longer there.
       await requestSeek(db, ctx, sessionId, 12_000, Date.now());
       await waitForSpawnCount(2, 10_000 * TIME_SCALE);
+      await waitForRunCount(sessionId, 2, 10_000 * TIME_SCALE);
 
       const row = await readRow(sessionId);
       expect(row.discontinuity_count, "a real restart produces exactly one discontinuity").toBe(1);
@@ -717,8 +748,9 @@ describe("seek-restart de-duplication (continuation item 1: livelock)", () => {
 
       await waitForSpawnCount(1, 10_000 * TIME_SCALE);
       // Run 0 encodes the ladder's TOP rung (index 0) — §9.1.3's convention,
-      // recorded on the row at spawn.
-      expect((await readRungRow(sessionId)).active_rung_index).toBe(0);
+      // recorded on the row at spawn (which is strictly after the spawn
+      // itself, hence the wait rather than a bare read).
+      await waitForActiveRung(sessionId, 0, 10_000 * TIME_SCALE);
 
       // Same unpruned [0, 24 000] window as the absorbing test.
       fabricateRunPlaylist(sessionId, 0, 4);
@@ -733,6 +765,11 @@ describe("seek-restart de-duplication (continuation item 1: livelock)", () => {
       await raw.query(`UPDATE playback_sessions SET seek_target_ms = 12000, pending_rung_index = 2, updated_at_ms = $2 WHERE id = $1`, [sessionId, Date.now()]);
 
       await waitForSpawnCount(2, 10_000 * TIME_SCALE);
+      // The rung write is the LAST of run 1's post-spawn row writes
+      // (transcode_runs first, then this), so waiting for it makes every
+      // assertion below deterministic rather than settle-timed.
+      await waitForActiveRung(sessionId, 2, 10_000 * TIME_SCALE);
+      await waitForRunCount(sessionId, 2, 10_000 * TIME_SCALE);
       await new Promise((r) => setTimeout(r, 400 * TIME_SCALE));
 
       // EXACTLY ONE restart — not an absorb followed by a handoff, and not
