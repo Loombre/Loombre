@@ -908,6 +908,25 @@ load-bearing READ COMMITTED dependency (lane's own flag — guard unsound
 under REPEATABLE READ, currently enforced by nothing) becomes a runtime
 assertion with a red-first spec; plus the main merge.
 
+**B2 FINAL (2026-08-11): lane COMPLETE — orchestrator-verified post-merge**
+(17/17 on re-run: 13 serialization incl. the new isolation checks + 4 e2e
+race). Isolation hardening 1d5dcf8c: guard reads current_setting
+('transaction_isolation') after taking the lock, throws
+RemotePathGuardIsolationError (names the design-note section verbatim; no
+mapped problem shape — surfaces as a 500, the visibly-broken-never-masked
+posture) unless exactly 'read committed'. Five checks, 4 red-first + 1
+anti-vacuity: REPEATABLE READ refused; the SESSION-DEFAULT inheritance
+vector refused (SET default_transaction_isolation on a pinned connection —
+the shape a pooler/server-config/withTransaction change actually takes);
+SERIALIZABLE refused (equality check, not a blocklist of one); refusal
+precedes the body with zero locks held and activePath untouched; and the
+writers' real default IS read committed (check not vacuously passing).
+Main merge 80138a34 clean — the anticipated barrel conflict did not occur
+(A1's exports at index.ts:369-372, B2's at :583; both verified surviving by
+grep, whole-tree conflict-marker sweep clean); post-merge re-runs green
+against the merged schema (0041-0043 replayed), depcruise 1466 modules
+clean.
+
 **B4 checkpoint (2026-08-11): stash-connection DELETE DONE — orchestrator-
 verified** (90/90 on re-run: e2e 11 + conformance 13 + event-schemas 54 +
 db 12; base = current main c018b564 after its own ff fix). oasdiff purely
