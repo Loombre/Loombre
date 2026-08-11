@@ -1017,6 +1017,13 @@ byte-identical); CODECS strings need an execution fence (wrong string =
 hls.js rejects the variant). V1-V7 presented (V2-V7 recommendations all
 YES). Build does NOT spawn until owner signs.
 
+**OWNER SIGN-OFF (2026-08-11): "Approved as recommended."** V1 = Tier-0
+advertises EXACTLY 3 variants (law constant); V2 ladder-variant-capped
+reason YES; V3 playlist model YES; V4 -copyts rejected permanently YES;
+V5 manifestUrl→master YES; V6 T1+ uncapped YES; V7 both bounded trade-offs
+accepted. Spec merged to main; C2 BUILD lane (opus) spawned. Migration
+0044 assigned to the build; ENGINE_VERSION 0.10.1→0.11.0 expected.
+
 ### Wave C1 — SPEC DELIVERED 2026-08-11, at ⛔ OWNER SIGN-OFF STOP
 
 Fable spec lane committed 86ac7e3b (worktree branch; ONE file, docs/PLAYBACK.md
