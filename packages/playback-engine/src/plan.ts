@@ -136,9 +136,41 @@ import { buildFfmpegArgs } from "./args/builder.js";
  * backend's own `-hwaccel_output_format` and scales with that backend's own
  * hw scaler, route (b)'s cpu-zscale fallback covers all of them.
  * ffmpegArgs-only change, no decision/reason/toneMap flips, golden count
- * 28 → 32).
+ * 28 → 32). 0.8.3 → 0.8.4: open-GOP HEVC leading-pictures strip (decided +
+ * ffmpeg-verified 2026-08-10) — a video COPY into a repackaged container
+ * for an hevc stream with `openGop===true` now carries informational
+ * reason `open-gop-leading-pictures-stripped`; `video.openGop` is set true
+ * in final assembly below when that same copy+repackage condition holds;
+ * args/builder.ts's video-copy branch emits `-bsf:v
+ * filter_units=remove_types=8-9` on a seek-restart (`withSeek: true`) only
+ * — a fresh (non-seek) run starts at the file's true IDR and needs no
+ * strip. No decision/severity change (informational reason only), golden
+ * count 32 → 34 (33/34: the seek-restart strip and its withSeek:false
+ * sibling proving the bsf's absence). 0.8.4 → 0.8.5: opus review fixes
+ * (2026-08-10) — (Finding C) the `video.openGop` assembly below gained a
+ * `selectedStream.codec === 'hevc'` gate it was missing (an h264 stream
+ * with a stray `openGop:true` fact would previously have set the flag and
+ * had args/builder.ts's bsf strip NAL unit type 8 from an h264 bitstream —
+ * PPS, not RASL_N — since the same numeric NAL type means something
+ * entirely different per-codec); (Finding D) the reason and the flag fired
+ * on TWO DIFFERENT predicates (the reason lived in Stage B, gated on
+ * `!containerDirectPlayable`; the flag lived here, gated on the FINAL
+ * `container` field) and could diverge in both directions — e.g. an
+ * audio-forced HLS repackage of an otherwise direct-playable container
+ * stripped without ever reporting the reason, while a Stage C/F escalation
+ * to a full video transcode reported the reason despite no strip ever
+ * happening. `open-gop-leading-pictures-stripped` is now emitted HERE, at
+ * the exact site `video.openGop` is set, from the exact same (now
+ * hevc-gated) predicate — Stage B's own branch and its
+ * `containerDirectPlayable` parameter are gone (stages/video.ts, reverted
+ * to its pre-2026-08-10 signature). See stages/video.ts's header and
+ * docs/PLAYBACK.md §3 Final assembly for the corrected rule text. Matrix
+ * cases 516/517 pin both former divergence directions; 514 was re-verified
+ * unaffected (its only other reason is Stage A's, so appending at the end
+ * of `reasons` instead of splicing after Stage A's own entry produces an
+ * identical order in that specific case).
  */
-export const ENGINE_VERSION = "0.8.3";
+export const ENGINE_VERSION = "0.8.5";
 
 /**
  * Stage D assembly (docs/PLAYBACK.md §3 Stage D.4, binding interpretation
@@ -234,15 +266,21 @@ export function plan(input: PlanInput): PlaybackPlan {
   // its own `reasons` array (Stage A only ever emits one reason, so there
   // is no intra-stage ordering decision to make yet).
   const stageA = evaluateContainer(media, device);
-  const stageB = evaluateVideo(media, device, selection.videoStreamIndex);
-  // Stage C (HDR): `containerDirectPlayable` is threaded in as a plain
-  // boolean derived from Stage A's OWN verdict (binding interpretation
-  // constraint 3 — stages/hdr.ts's header explains why the strip-reason
-  // gating lives on this fact rather than the stage re-deriving container
-  // membership itself). Stage A only ever verdicts 'direct-play' when the
-  // container IS in device.directPlayContainers (stages/container.ts), so
-  // this equality is exact, not an approximation.
+  // `containerDirectPlayable` is threaded into Stage C as a plain boolean
+  // derived from Stage A's OWN verdict (binding interpretation constraint 3
+  // — stages/hdr.ts's header explains why the dv-strip-reason gating lives
+  // on this fact rather than the stage re-deriving container membership
+  // itself). Stage A only ever verdicts 'direct-play' when the container IS
+  // in device.directPlayContainers (stages/container.ts), so this equality
+  // is exact, not an approximation. Stage B briefly threaded this same
+  // value too (2026-08-10's open-gop-leading-pictures-stripped branch) but
+  // that branch was REMOVED by the opus-review fix documented in this
+  // file's ENGINE_VERSION 0.8.5 header note (Finding D): the reason is now
+  // emitted at assembly time, from the exact predicate `video.openGop` uses
+  // below, not from Stage A's verdict alone — see that assembly block's own
+  // comment.
   const containerDirectPlayable = stageA.verdict === "direct-play";
+  const stageB = evaluateVideo(media, device, selection.videoStreamIndex);
   // Step 7b fix F2: Stage C no longer reads policy/caps at all — tone-map
   // REFUSAL is decided below, at the Stage G assembly block, from the real
   // §8.3 route resolution.
@@ -340,6 +378,42 @@ export function plan(input: PlanInput): PlaybackPlan {
           : "copy"
         : "none",
   };
+  // openGop (§5, added 2026-08-10) + its INFORMATIONAL reason
+  // `open-gop-leading-pictures-stripped` — ASSEMBLY-TIME per the opus-review
+  // Finding D fix (ENGINE_VERSION 0.8.5 header note above): both the flag
+  // and the reason now fire from this ONE predicate, closing the
+  // reason/flag divergence a Stage-B-time reason (gated on Stage A's OWN
+  // verdict, `containerDirectPlayable`) had — a container that started
+  // direct-playable but got repackaged anyway for an UNRELATED reason
+  // (e.g. Stage D forcing an audio transcode) stripped without ever
+  // reporting it, while a later stage (C/F) escalating video to a full
+  // transcode reported the reason despite no strip ever happening (video
+  // isn't a 'copy' anymore). Set/fired ONLY when meaningful: the final
+  // action is 'copy' (nothing re-encoded), `container` is a repackaged HLS
+  // container (`fmp4-hls`|`ts-hls` — never `'source'`, since a direct-play
+  // copy serves the original file untouched, and never `'mp4'`/remux, which
+  // this engine's video-copy path never reaches with an open-GOP HEVC
+  // concern per this decision), the SELECTED stream's own `openGop` fact is
+  // true, AND (Finding C's codec gate) that stream is `hevc` — the bsf this
+  // flag drives (args/builder.ts's `-bsf:v filter_units=remove_types=8-9`)
+  // strips HEVC NAL unit type 8/9 (RASL leading pictures); the SAME numeric
+  // type means PPS on h264, so an ungated flag on a stray non-hevc
+  // `openGop:true` fact would have corrupted an h264 copy's bitstream.
+  // `video.openGop` stays a plan()-computed fact, never read back off the
+  // stream by the arg builder (types.ts's `PlaybackPlanVideo.openGop` doc
+  // comment: only ever set for hevc, by this assembly, so a caller
+  // consuming the plan shape alone never needs to re-check codec). Consumed
+  // by args/builder.ts's seek-restart bitstream-filter branch (interpretation K).
+  if (video.action === "copy" && (container === "fmp4-hls" || container === "ts-hls")) {
+    const selectedStream =
+      selection.videoStreamIndex !== null
+        ? media.video.find((v) => v.index === selection.videoStreamIndex)
+        : undefined;
+    if (selectedStream?.openGop === true && selectedStream.codec === "hevc") {
+      video.openGop = true;
+      reasons.push({ code: "open-gop-leading-pictures-stripped", streamIndex: selectedStream.index });
+    }
+  }
   // audio action + target* fields (architecture requirement 3 / this step's
   // binding interpretation constraints 1/4): 'none' mirrors Stage D's own
   // vacuous-pass condition (selection.audioStreamIndex null, or the index

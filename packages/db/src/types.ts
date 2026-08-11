@@ -400,6 +400,10 @@ export interface MediaStreamsTable {
   has_atmos: boolean | null;
   /** migrations/0002_phase1_catalog.sql — video-only. */
   interlaced: boolean | null;
+  /** migrations/0038_media_streams_open_gop.sql — video-only, HEVC-only in
+   *  v1. NULL = not yet probed for this fact; see that migration's column
+   *  comment for the full true/false/NULL contract. */
+  open_gop: boolean | null;
 }
 
 // ============================================================================

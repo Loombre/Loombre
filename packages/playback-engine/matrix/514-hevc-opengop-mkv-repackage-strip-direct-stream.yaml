@@ -1,0 +1,69 @@
+name: direct-stream — mkv hevc openGop:true vs hevc-sdr (container-only obstacle) — open-gop-leading-pictures-stripped fires alongside the container reason
+why: >
+  2026-08-10 decision (ffmpeg-verified — see args/builder.ts's seek-restart
+  bsf comment for the evidence): a video COPY into a repackaged container
+  for an hevc stream with openGop:true now carries the informational reason
+  open-gop-leading-pictures-stripped, mirroring case 165's dv-stripped-to-
+  hdr10 precedent exactly (same "only when container repackaging is
+  required" gating, threaded via containerDirectPlayable). devices.hevc-sdr
+  declares directPlayContainers:[mp4] only and hdr all-false; mkv is not a
+  member, so Stage A alone escalates to direct-stream with
+  container-not-direct-playable, and — since the stream is otherwise fully
+  within device caps (Stage B's own rules 1-3 find nothing) — Stage B adds
+  open-gop-leading-pictures-stripped right after it. No re-encode: video
+  stays a copy, decision stays direct-stream (never transcode). Case 515 is
+  the direct-play counterpart (same stream, mp4 container) proving the
+  reason does NOT fire when nothing is repackaged.
+
+input:
+  media:
+    fileId: file-0514
+    container: mkv
+    durationMs: 6000000
+    sizeBytes: 5000000000
+    overallBitrateBps: 8160000
+    video:
+      - index: 0
+        codec: hevc
+        profile: main10
+        level: 123
+        width: 1920
+        height: 1080
+        bitDepth: 10
+        frameRate: 24
+        bitrateBps: 8000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+        openGop: true
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 160000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device:
+    fixture: devices.hevc-sdr
+  network:
+    fixture: networks.local
+  policy:
+    fixture: policies.t0-default
+  caps:
+    fixture: caps.software-only
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+
+expect:
+  decision: direct-stream
+  reasons:
+    - container-not-direct-playable
+    - open-gop-leading-pictures-stripped
+  container: fmp4-hls

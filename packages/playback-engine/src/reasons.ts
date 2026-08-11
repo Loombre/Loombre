@@ -56,13 +56,15 @@ export type FixedInformationalReasonCode =
   | "dv-stripped-to-hdr10"
   | "subtitle-styling-lost"
   | "audio-atmos-lost"
-  | "gapless-degraded";
+  | "gapless-degraded"
+  | "open-gop-leading-pictures-stripped";
 
 export const FIXED_INFORMATIONAL_REASON_CODES: readonly FixedInformationalReasonCode[] = [
   "dv-stripped-to-hdr10",
   "subtitle-styling-lost",
   "audio-atmos-lost",
   "gapless-degraded",
+  "open-gop-leading-pictures-stripped",
 ];
 
 /** `hw-encoder-selected:<backend>` — the chosen hardware backend suffixed. */

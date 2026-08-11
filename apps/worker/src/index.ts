@@ -7,6 +7,7 @@ import {
   listImagesNeedingDominantColor,
   hasQueuedOrActiveJobOfType,
   reconcileAbandonedJobLedgerRows,
+  hasVideoStreamsNeedingOpenGopBackfill,
 } from "@loombre/db/internal";
 import { LOOMBRE_VERSION_FULL } from "@loombre/shared";
 import { installCrashHandlers, installGracefulShutdown, type ShutdownSignal } from "./crash/index.js";
@@ -20,6 +21,13 @@ import { startWatcher, type WatcherHandle } from "./scan/watcher.js";
 import { getWorkerSettingValue, loadWorkerEffectiveSettings, resolveScanConcurrencyFromEffective } from "./settings/effective-settings.js";
 import { runProbe } from "./probe/consumer.js";
 import { createProbeTerminalFailureHook } from "./probe/terminal-failure-hook.js";
+// Imported from the ./probe barrel, not the direct opengop-backfill-consumer.js
+// module path — matching imageBackfillConsumerHandler's own convention just
+// below (imported from ./image/index.js, not image/backfill-consumer.js).
+// Opus review finding 15a: ./probe/index.ts exports this handler and had
+// zero consumers of that export; this is the one import site the barrel
+// export exists for.
+import { opengopBackfillConsumerHandler } from "./probe/index.js";
 import { createStashProvider } from "./metadata/providers/stash.js";
 import { applyStashSceneMetadata } from "./stash/apply.js";
 import { stashInventoryConsumerHandler } from "./stash/inventory-consumer.js";
@@ -285,6 +293,25 @@ queue.work(
   { concurrency: 2 },
 );
 
+// migrations/0038_media_streams_open_gop.sql: one-time open_gop backfill
+// for media_streams rows that predate the column. concurrency: 2 mirrors
+// 'image-backfill's own cap (short-lived bounded ffmpeg children, not a
+// CPU-bound worker_thread decode, but the same "small, bounded batch work"
+// class — no reason to give it a wider slot than the precedent it copies).
+queue.work(
+  "opengop-backfill",
+  opengopBackfillConsumerHandler({
+    db,
+    enqueueSelf: async (cursor, batchSize) => {
+      // exactOptionalPropertyTypes: an explicit `batchSize: undefined` is a
+      // different (rejected) shape than simply omitting the key — only
+      // include it when the caller actually passed one.
+      await queue.enqueue("opengop-backfill", batchSize === undefined ? { cursor } : { cursor, batchSize });
+    },
+  }),
+  { concurrency: 2 },
+);
+
 // Stash SQLite metadata sync, Lane C (S8): 'stash-inventory' is the cheap
 // K10 pass (path/size/oshash rows only, bounded even at 33k scenes);
 // 'stash-sync' is the full/incremental engine (checkpointed internally —
@@ -402,6 +429,29 @@ async function enqueueImageBackfillIfNeeded(): Promise<void> {
   }
 }
 
+// migrations/0038_media_streams_open_gop.sql: idempotent boot-time enqueue
+// of the one-time open_gop backfill — same "singleton key" via the jobs
+// ledger + hasVideoStreamsNeedingOpenGopBackfill limit-1 pending check as
+// enqueueImageBackfillIfNeeded immediately above. Once every media_streams
+// video row has a real open_gop verdict (HEVC: a resolved true/false from
+// the scan; every other codec: the backfill's own bulk-false pass),
+// hasVideoStreamsNeedingOpenGopBackfill returns false and this becomes a
+// permanent no-op on every future boot.
+async function enqueueOpenGopBackfillIfNeeded(): Promise<void> {
+  try {
+    const alreadyPending = await hasQueuedOrActiveJobOfType(db, "opengop-backfill");
+    if (alreadyPending) return;
+
+    const pending = await hasVideoStreamsNeedingOpenGopBackfill(db);
+    if (!pending) return;
+
+    await queue.enqueue("opengop-backfill", { cursor: null });
+    console.log("worker: enqueued opengop-backfill (media_streams video rows pending open_gop found)");
+  } catch (err) {
+    console.error("worker: failed to enqueue opengop-backfill:", err);
+  }
+}
+
 // W1/D-1 (2026-08-07): boot-time job-ledger reconciliation, BEFORE the
 // singleton-guard boot checks below. The ledger only transitions inside
 // this process's batch handlers; pg-boss's SQL-side sweeps (timeout-fail
@@ -431,7 +481,7 @@ async function enqueueImageBackfillIfNeeded(): Promise<void> {
 // write failure stays wedged until the next restart (logged as a known
 // limitation in STATE.md — a periodic sweep is future work, not W1's).
 const QUEUED_STALE_HORIZON_MS = 24 * 60 * 60 * 1000;
-const SINGLETON_GUARDED_JOB_TYPES = ["hwprobe", "image-backfill", "stash-inventory", "stash-sync"] as const;
+const SINGLETON_GUARDED_JOB_TYPES = ["hwprobe", "image-backfill", "opengop-backfill", "stash-inventory", "stash-sync"] as const;
 
 async function reconcileStaleJobLedger(): Promise<void> {
   try {
@@ -562,6 +612,7 @@ async function main(): Promise<void> {
   await startLibraryWatcher();
   await startStashLibraryWatcher();
   await enqueueImageBackfillIfNeeded();
+  await enqueueOpenGopBackfillIfNeeded();
   await checkHwCapabilitiesAndEnqueueIfNeeded();
 
   // LPP v1, Lane W4: outbox fanout to event-subscriber plugins. Not a
@@ -604,7 +655,7 @@ async function main(): Promise<void> {
   await queue.ready();
 
   console.log(
-    "worker up — pg-boss consumers registered: scan, probe, metadata, image, import, image-backfill, hwprobe, transcode, subtitle-extract, stash-inventory, stash-sync, mail-send",
+    "worker up — pg-boss consumers registered: scan, probe, metadata, image, import, image-backfill, opengop-backfill, hwprobe, transcode, subtitle-extract, stash-inventory, stash-sync, mail-send",
   );
   console.log("worker up — plugin-delivery loop started (LPP v1 event-subscriber fanout)");
   console.log("worker up — stash schedule-loop started (Stash SQLite metadata sync, trigger (b), default OFF)");

@@ -267,7 +267,7 @@ describe.skipIf(!ffmpegAvailable)("transcode session runtime integration (real f
       sizeBytes,
       overallBitrateBps: Math.round((sizeBytes * 8) / 150),
       video: [
-        { index: 0, codec: "h264", profile: "high", level: null, width: 320, height: 240, bitDepth: 8, frameRate: 25, bitrateBps: null, hdr: "none", dvProfile: null, dvBlCompatId: null, interlaced: false },
+        { index: 0, codec: "h264", profile: "high", level: null, width: 320, height: 240, bitDepth: 8, frameRate: 25, bitrateBps: null, hdr: "none", dvProfile: null, dvBlCompatId: null, interlaced: false, openGop: false },
       ],
       audio: [{ index: 1, codec: "aac", channels: 2, sampleRate: 48000, bitrateBps: null, language: null, isDefault: true, hasAtmos: false }],
       subtitle: [],

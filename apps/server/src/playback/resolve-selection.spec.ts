@@ -8,8 +8,8 @@ import { describe, expect, it } from "vitest";
 import { resolveTrackSelection } from "./resolve-selection.js";
 
 const VIDEO = [
-  { index: 0, codec: "h264" as const, profile: null, level: null, width: 1920, height: 1080, bitDepth: 8 as const, frameRate: 24, bitrateBps: null, hdr: "none" as const, dvProfile: null, dvBlCompatId: null, interlaced: false },
-  { index: 1, codec: "h264" as const, profile: null, level: null, width: 1280, height: 720, bitDepth: 8 as const, frameRate: 24, bitrateBps: null, hdr: "none" as const, dvProfile: null, dvBlCompatId: null, interlaced: false },
+  { index: 0, codec: "h264" as const, profile: null, level: null, width: 1920, height: 1080, bitDepth: 8 as const, frameRate: 24, bitrateBps: null, hdr: "none" as const, dvProfile: null, dvBlCompatId: null, interlaced: false, openGop: false },
+  { index: 1, codec: "h264" as const, profile: null, level: null, width: 1280, height: 720, bitDepth: 8 as const, frameRate: 24, bitrateBps: null, hdr: "none" as const, dvProfile: null, dvBlCompatId: null, interlaced: false, openGop: false },
 ];
 
 const AUDIO = [

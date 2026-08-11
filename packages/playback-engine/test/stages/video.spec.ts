@@ -29,6 +29,7 @@ function makeVideoStream(overrides: Partial<VideoStream> = {}): VideoStream {
     dvProfile: null,
     dvBlCompatId: null,
     interlaced: false,
+    openGop: false,
     ...overrides,
   };
 }
@@ -413,3 +414,12 @@ describe("Stage B: purity / determinism", () => {
     expect(second).toEqual(first);
   });
 });
+
+// The open-GOP HEVC leading-pictures strip reason (open-gop-leading-
+// pictures-stripped) briefly lived here as a 2026-08-10 Stage B branch.
+// Opus-review Finding D (src/plan.ts's ENGINE_VERSION 0.8.5 header note)
+// moved it to assembly time in plan() — its predicate needs the FINAL
+// container/video.action fields, which aren't known until every stage has
+// run, not just Stage A. Coverage now lives in test/plan.spec.ts's
+// "plan(): video.openGop assembly" describe block, extended to also assert
+// the reason.

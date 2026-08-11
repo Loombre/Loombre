@@ -62,6 +62,7 @@ function makeMedia(overrides: Partial<MediaInfo> = {}): MediaInfo {
         dvProfile: null,
         dvBlCompatId: null,
         interlaced: false,
+        openGop: false,
       },
     ],
     audio: [

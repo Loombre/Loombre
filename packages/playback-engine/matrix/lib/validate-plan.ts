@@ -128,6 +128,9 @@ export function validatePlan(plan: PlaybackPlan): void {
   if (plan.video.toneMap !== undefined && !VALID_TONE_MAP_METHODS.has(plan.video.toneMap)) {
     fail(`video.toneMap ${JSON.stringify(plan.video.toneMap)} not a valid ToneMapMethod`);
   }
+  if (plan.video.openGop !== undefined && typeof plan.video.openGop !== "boolean") {
+    fail(`video.openGop must be a boolean when present, got ${JSON.stringify(plan.video.openGop)}`);
+  }
 
   if (plan.audio === null || typeof plan.audio !== "object" || !VALID_AUDIO_ACTIONS.has(plan.audio.action)) {
     fail(`audio.action ${JSON.stringify(plan.audio?.action)} not in the closed §5 enum`);
