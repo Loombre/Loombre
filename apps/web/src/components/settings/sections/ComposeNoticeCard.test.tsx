@@ -8,9 +8,14 @@
 // SHOW its error and return to an actionable form, never a stuck
 // confirm/progress block.
 
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import React, { act } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { renderIntoBody, type TestRender } from "../../ui/test-render.js";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const apiPostMock = vi.fn();
 
@@ -137,7 +142,7 @@ describe("ComposeNoticeCard — restart presets", () => {
     );
     // Severity segmented control shows Critical active.
     const criticalTab = buttonByText("Critical");
-    expect(criticalTab.getAttribute("aria-selected")).toBe("true");
+    expect(criticalTab.getAttribute("aria-checked")).toBe("true");
     // Effective select shows "In 5 minutes"; expiry select shows the custom
     // minutes input pre-filled at 15 (5 + 10, N4's self-clear window).
     expect(selectContainingOption("In 5 minutes").value).toBe("5");
@@ -222,7 +227,7 @@ describe("ComposeNoticeCard — warning requires expiry", () => {
   it("Maintenance preset leaves expiry unset; publishing without choosing one blocks with an inline error", async () => {
     await render(null);
     await click("Maintenance");
-    expect(buttonByText("Warning").getAttribute("aria-selected")).toBe("true");
+    expect(buttonByText("Warning").getAttribute("aria-checked")).toBe("true");
 
     await click("Publish notice");
     expect(textOf()).toContain("Warning notices require an expiry.");
@@ -349,5 +354,32 @@ describe("ComposeNoticeCard — LD-4 (owner QA, 2026-08-10)", () => {
   it("no longer renders the page-level notices copy — it moved to NoticesSection, under the page title", async () => {
     await render(null);
     expect(textOf()).not.toContain("Notices are shown to every user on this server");
+  });
+});
+
+// Item 2 (Wave A): the two "custom minutes" number fields
+// used to borrow shared.module.css's `.textarea` class (a rectangular
+// <textarea>-shaped recipe applied to an <input type="number">, not the
+// canonical ui/Input primitive) — consolidated onto TextInput so there's
+// ONE text-input styling system, not two independently-maintained ones
+// that each need their own copy of the inset-focus-ring fix.
+describe("ComposeNoticeCard — custom-minutes fields consolidated onto ui/Input (item 2)", () => {
+  it("both custom-minutes fields still render as functioning number inputs with the right constraints", async () => {
+    await render(null);
+    await selectOption(selectContainingOption("Custom minutes…"), "Custom minutes…");
+    const inputs = numberInputs();
+    expect(inputs.length).toBeGreaterThanOrEqual(1);
+    for (const input of inputs) {
+      expect(input.min).toBe("1");
+      expect(input.step).toBe("1");
+      expect(input.placeholder).toBe("Minutes");
+    }
+  });
+
+  it("source no longer styles a number input with the shared .textarea recipe", () => {
+    const source = readFileSync(path.join(__dirname, "ComposeNoticeCard.tsx"), "utf8");
+    expect(source).not.toMatch(/\$\{sharedStyles\.textarea\}/);
+    expect(source).toMatch(/import\s*\{[^}]*\bTextInput\b[^}]*\}\s*from\s*"..\/..\/ui\/Input\.js"/);
+    expect((source.match(/<TextInput\b/g) ?? []).length).toBe(2);
   });
 });
