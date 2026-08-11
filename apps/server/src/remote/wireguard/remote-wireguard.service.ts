@@ -85,6 +85,7 @@ import {
   getWgPeerByDeviceId,
   enrollRemoteWireguardDeviceAndEmit,
   revokeRemoteWireguardDeviceAndEmit,
+  RemotePathConflictError,
   type ListWgPeersParams,
   type RevokeRemoteWireguardDeviceResult,
 } from "@loombre/db";
@@ -193,6 +194,16 @@ export class RemoteWireguardService implements OnApplicationBootstrap, OnModuleD
     await this.stopRuntime();
   }
 
+  /**
+   * LD-9 (V-SEC F2): assertNoOtherRemotePathActive() below is a FAIL-FAST,
+   * not the enforcement — it cannot see a path that becomes active between
+   * its own read and this method's commit. enableRemoteWireguardAndEmit's
+   * transaction is what enforces RG15 (packages/db/src/query/
+   * remote-path-guard.ts): it re-reads all three paths under a shared
+   * advisory lock and throws RemotePathConflictError rather than committing
+   * a second active path. Losing there means the listener is already up, so
+   * it is torn back down before the same 409 is returned.
+   */
   async enable(actorUserId: string, nowMs = Date.now()): Promise<RemoteWireguardStatusDto> {
     if (this.runtime !== null) {
       // Idempotent: already live in this process — see this file's header.
@@ -213,11 +224,29 @@ export class RemoteWireguardService implements OnApplicationBootstrap, OnModuleD
     await this.storePrivateKey(keys.privateKey);
     await this.startRuntimeWith(client, keys.privateKey);
 
-    await enableRemoteWireguardAndEmit(this.dbProvider.db, {
-      serverPublicKey: keys.publicKey,
-      actorUserId,
-      nowMs,
-    });
+    try {
+      await enableRemoteWireguardAndEmit(this.dbProvider.db, {
+        serverPublicKey: keys.publicKey,
+        actorUserId,
+        nowMs,
+      });
+    } catch (err) {
+      if (err instanceof RemotePathConflictError) {
+        // Drop the UDP listener and the loopback backend this enable just
+        // brought up; nothing was persisted (the guarded transaction rolled
+        // back). The freshly generated private key stays in the keyring,
+        // unreferenced — no DB row points at it and the next real enable
+        // overwrites it, which is the pre-existing behaviour for ANY failure
+        // after storePrivateKey, not a new leak.
+        await this.stopRuntime();
+        throw conflict(
+          `Cannot enable Loombre Remote (WireGuard) — the ${err.activePath} path is already active. Disable it first.`,
+          "/admin/remote/wireguard/enable",
+          "remote-path-active",
+        );
+      }
+      throw err;
+    }
 
     return this.status();
   }
@@ -488,8 +517,10 @@ export class RemoteWireguardService implements OnApplicationBootstrap, OnModuleD
   }
 
   /** RG15: "at most one active path ... enforced by each path's staged
-   *  enable flow." Now a REAL check (WG2 integration unification) — see
-   *  this file's header. */
+   *  enable flow." A REAL cross-subsystem check (WG2 integration
+   *  unification) — see this file's header. LD-9 demoted it from the
+   *  enforcement to a fail-fast; enable()'s own doc comment says where the
+   *  enforcement moved to and why. */
   private async assertNoOtherRemotePathActive(): Promise<void> {
     const other = await this.activePathReader.activePath();
     if (other !== "none" && other !== "remote") {
