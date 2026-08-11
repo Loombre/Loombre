@@ -70,23 +70,33 @@
 // pre-creates just that row, deliberately WITHOUT touching
 // stash_updated_at_ms (see its own header).
 //
-// FULL MODE'S NARROWER RESIDUAL (same audit; not closed by this fix —
-// AUD-W2-001, owner triage): runFullSync's inventory pass also writes the
-// real, unconditional stash_updated_at_ms for every scene — through the
-// SAME upsertStashSceneLinksFromInventory writer incremental mode uses —
-// and does so BEFORE runApplyPhase, every attempt. WITHIN one job.id's own
-// pg-boss retries this is fine: full mode's scene set is re-read from the
-// live Stash connection every attempt, never diffed against that marker,
-// so a same-job.id retry resumes correctly via the checkpoint's skip-by-
-// equality exactly as always. The gap is narrower and cross-job: if this
-// job.id terminally fails (pg-boss exhausts retryLimit) before
-// runApplyPhase reaches 'completed', the marker has already been bumped to
-// its real, fresh value for scenes applyOneScene never ran on. A LATER,
-// SEPARATE incremental sync's touched-diff then reads that already-current
-// marker and silently excludes those scenes too — the same end state
-// AUD-A2d-001 fixed for the single-job case, just reached across two jobs
-// and preceded by a loud 'failed' report on the first one instead of a
-// silent 'succeeded' one.
+// FULL MODE'S NARROWER RESIDUAL, CLOSED (AUD-W2-001, an upstream media server-study run Lane
+// A5): runFullSync's inventory pass used to write the real, unconditional
+// stash_updated_at_ms for every scene — through the SAME
+// upsertStashSceneLinksFromInventory writer incremental mode uses — BEFORE
+// runApplyPhase, every attempt. WITHIN one job.id's own pg-boss retries this
+// was fine (full mode's scene set is re-read from the live Stash connection
+// every attempt, never diffed against that marker, so a same-job.id retry
+// always resumed correctly via the checkpoint's skip-by-equality). The gap
+// was narrower and cross-job: if a job.id terminally failed (pg-boss
+// exhausts retryLimit) before runApplyPhase reached 'completed', the marker
+// had already been bumped to its real, fresh value for scenes
+// applyOneScene never ran on — a LATER, SEPARATE incremental sync's
+// touched-diff would then read that already-current marker and silently
+// exclude those scenes too, the same end state AUD-A2d-001 fixed for the
+// single-job case, just reached across two jobs.
+//
+// Fix (same shape as AUD-A2d-001, applied to full mode): runFullSync no
+// longer calls runInventoryPass at all. It reads scenes directly
+// (listScenesForInventory), pre-creates rows ONLY for genuinely new scenes
+// via ensureInventoryRowsExist (stashUpdatedAtMs: null, never the real
+// value — matching runs against the in-memory scene list, not the DB row,
+// so this is purely "give applyStashSceneMatchResults's UPDATE a row to
+// hit"), runs matching + apply as before, and retires the REAL marker for
+// the WHOLE scene set in ONE upsertInventorySubset call strictly AFTER
+// runApplyPhase returns. runInventoryPass itself is untouched and still
+// correct for its OTHER caller (the bounded 'stash-inventory' job, which
+// has no apply phase to defer against).
 //
 // EVENTS (K12): stash.sync.started is written the FIRST time a report row
 // is created for this job.id (never re-written on a resume — one job.id,
@@ -121,7 +131,7 @@ import {
 import { connectToStashLibrary, type ConnectToStashLibraryDeps } from './connect.js';
 import { getBlob, getScene, getSceneFiles, getScenePerformers, getSceneTags, getSceneMarkers, getStudio, listScenesForInventory, type SqliteReadable, type StashInventoryScene, type StashStudio } from './read-model.js';
 import { makeBlobResolver } from './blob-store.js';
-import { runInventoryPass, runMatchingPass, upsertInventorySubset, ensureInventoryRowsExist, toMatchInput } from './pipeline.js';
+import { runMatchingPass, upsertInventorySubset, ensureInventoryRowsExist, toMatchInput } from './pipeline.js';
 import type { StashSceneMatchResult } from './matching.js';
 import type { ApplyStashSceneMetadataFn } from './apply-types.js';
 
@@ -330,13 +340,40 @@ async function runFullSync(
   const preExisting = await listStashSceneLinksForLibrary(deps.db, libraryId);
   const preExistingIds = new Set(preExisting.map((r) => r.stash_scene_id));
 
-  const { scenes } = await runInventoryPass(deps.db, stashDb, libraryId, clock());
+  // AUD-W2-001 fix: mirrors runIncrementalSync's own AUD-A2d-001 ordering
+  // exactly (see this module's header, "INCREMENTAL MODE'S CHECKPOINT
+  // ORDERING" / "FULL MODE'S NARROWER RESIDUAL"). Read the fresh scene list
+  // directly (NOT runInventoryPass, which bulk-writes the real
+  // stash_updated_at_ms marker for every scene unconditionally — the exact
+  // write this fix defers). A genuinely new scene still needs a
+  // stash_scene_links row to exist before runMatchingPass's UPDATE can
+  // attach an item_id to it, so ensureInventoryRowsExist pre-creates just
+  // those rows, deliberately writing stashUpdatedAtMs: null (never the real
+  // value) — identical reasoning to incremental mode's own newScenes call.
+  // A scene that already has a row needs no pre-write at all: its existing
+  // stash_updated_at_ms is left exactly as it was (old, not-yet-retired, or
+  // already null) until the real bulk retirement below.
+  const scenes = listScenesForInventory(stashDb);
   const currentIds = new Set(scenes.map((s) => s.stashSceneId));
   const vanished = [...preExistingIds].filter((id) => !currentIds.has(id));
   await markStashScenesStale(deps.db, { libraryId, stashSceneIds: vanished, nowMs: clock() });
 
+  const newScenes = scenes.filter((s) => !preExistingIds.has(s.stashSceneId));
+  await ensureInventoryRowsExist(deps.db, libraryId, newScenes, clock());
+
   const { results } = await runMatchingPass(deps.db, libraryId, scenes.map(toMatchInput), clock());
   await runApplyPhase(deps, stashDb, libraryId, jobId, results, checkpoint, clock, genreTagNames, blobsPath, counts);
+
+  // AUD-W2-001 fix: retire the REAL stash_updated_at_ms (plus path/size/
+  // oshash) for the WHOLE scene set ONLY here, after runApplyPhase has
+  // returned — same upsertInventorySubset writer incremental mode's own
+  // post-apply retirement uses (the "subset" is the full inventory for
+  // full mode, which the writer treats identically). A crash/terminal
+  // failure anywhere above this line leaves every not-yet-applied scene's
+  // marker at its pre-attempt value (old, or null for a brand-new scene),
+  // so a LATER, separate sync's own diff re-selects it instead of silently
+  // excluding it forever.
+  await upsertInventorySubset(deps.db, libraryId, scenes, clock());
 
   return { touchedCount: scenes.length };
 }
