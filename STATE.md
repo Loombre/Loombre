@@ -298,6 +298,81 @@ schema descriptions reworded neutrally; YAML comments kept — they never render
 SDK regenerated; docs rebuilt + synced to website (70 routes, build green;
 deploy remains manual).
 
+## LD wave — owner fix list LD-1..13 + follow-ups #9/#10/#11 (2026-08-10, six lanes + opus review, pre-rc.7)
+
+Owner's annotated-QA fix list, built by five parallel sonnet lanes + a
+sequenced sixth, opus-reviewed (9 findings: 0 BLOCKER, 3 MAJOR — all
+applied by fix lane V4), landed as b7825f4a + 4a771dc1 + 954e74ae +
+4759b08b + 1bcc5271 + 0c90b8a3. `pnpm gate:full` ALL 16 STEPS PASSED.
+rc.7 tagged from this tree (owner: "push all commits and draft rc7").
+
+- **LD-2 (954e74ae):** Settings→Server hardware card called the PUBLIC
+  /system/capabilities endpoint, which hardcodes enabled:false BY DESIGN
+  — structurally incapable of showing available. Now composes the
+  dashboard's CapabilitiesCard against /admin/capabilities (same
+  component, same three-state derivation; cannot drift). LD-3..6 order/
+  copy/heading fixes same commit. LD-7 root cause: a repeated stale
+  ch-max-width pattern (HeroCard, three Mail modules, origin in
+  ProviderKeysCard) — not one shared class; all instances dropped.
+- **LD-13 (4759b08b):** dead boolean switches REAL and root-caused (by
+  the review after the lane couldn't reproduce it under act()):
+  handleBoolToggle was wired to BOTH the row onClick and Toggle
+  onChange; a switch click is TWO native dispatches (bubble + label
+  activation-forward) and React 18 commits between them → second
+  dispatch flips the fresh value back. Net: switch dead, ON/OFF text
+  worked — exactly the owner report. Fix: exclusive handlers; two-act()
+  regression test proven red on old wiring. All 5 boolean keys swept.
+  LD-9: chip lock now = "category CONTAINS an env-pinned key" (was
+  all-env-only; mixed `network` was silently unlocked). LD-10
+  alphabetical chips (render-site sort only). LD-11: contained
+  multi-line editor for ALL JSON-typed keys (bounded height, internal
+  scroll, W4 inset ring, wrapping fact values).
+- **LD-1/12 (1bcc5271):** session-refused screen debannered, Back leads
+  the badge row (phone sheet keeps its own Back); transport cluster
+  centered via three-zone bar; 10s skips both directions incl. keyboard;
+  seekBack10/seekForward10 glyphs reuse the exact existing arc/arrowhead
+  construction. Recovery state machine untouched (proven by suite).
+- **LD-8 (0c90b8a3):** plugins consolidated onto Settings→Plugins (full
+  12-feature inventory moved: list, register wizard, config, event
+  grants, enable/disable, refresh→re-approval, HMAC once-display,
+  remove, delivery status, pseudonymization, live ws). Dashboard tab
+  removed; /admin/plugins* → redirect stubs (id preserved). REAL AUTHZ
+  GAP found in the move: the new detail route rendered below both
+  client-side admin gates — fixed via NEW shared useAdminGuard hook
+  (replaces 3 copy-pasted guards; AppShell chrome now mounts during the
+  check instead of a blank viewport).
+- **#9 CLOSED (b7825f4a):** Class-A no-tiebreak reads fixed (plugins,
+  plugins-delivery, stash-sync-reports, both chapter-marker reads);
+  Class-B UUIDv7 tiebreaks verified pagination-safe + documented in
+  cursor.ts. Event reads switched to ORDER BY seq (readEventsForViewer
+  afterId→afterSeq — verified zero production callers;
+  filterEventsForViewer = the ws send order; readUnprocessedEvents).
+  REVIEW CATCH: the plugin-delivery cursor was a SECOND persisted
+  id-keyset — same-ms sibling below an advanced cursor was skipped
+  permanently, silently, outside the ts_ms gap detector (LPP §3.2
+  violation). Migration 0040: cursor_event_seq (backfilled; events
+  never pruned), candidate read keysets on seq with explicit minTsMs
+  floor; cursor_event_id kept for the still-id-based gap detection.
+  Old-shape skip proven by counterfactual test in both suites.
+- **#10 CLOSED as considered-and-rejected:** cookie auth for media
+  routes is architecturally unavailable — serverUrl is a runtime
+  user-entered value (cross-SITE in the general case), plain-HTTP LAN
+  is first-class (kills SameSite=None;Secure), CORS is deliberately
+  credentials:false, hls.js needs credentialed-XHR reversal, native
+  clients have no cookie jar. Reopens only if the web app becomes a
+  streaming proxy or HTTPS is mandated (spec changes). The #6
+  client-side machinery is the durable answer. Full record in task #10.
+- **#11 CLOSED (4a771dc1):** cleanup-test-databases.mjs dropped 1062
+  leaked per-suite DBs (1302→240, 14.6 GB reclaimed). Guards: never
+  touches loombre/postgres/template*/active-connection targets or
+  DATABASE_URL's own database; dry-run default. 238 remaining
+  disposables predate the _test naming contract — left for a human.
+- **Process:** parallel owner session running the an upstream media server comparative
+  study shares this checkout (STATE.md section + docs/analysis/ are
+  ITS files — deliberately excluded from this wave's commits). Its
+  Phase-0 file:line citations predate this wave's playback commits —
+  flagged to the owner for its Phase-2 pass.
+
 ## Fix-list wave — uninstall script, ledger ordering, Safari token reload, test-DB isolation (2026-08-10, lanes + opus review)
 
 Owner directive: "continue with the fix list until completion." Tasks #4/#5/
