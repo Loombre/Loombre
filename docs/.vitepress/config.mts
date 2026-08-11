@@ -64,7 +64,11 @@ export default defineConfig({
   // globs .md files inside it for PAGES (docs/public/fonts/README.md became
   // a published /public/fonts/README route until this exclude). The files
   // themselves ship verbatim either way — this only stops page rendering.
-  srcExclude: ["PLAN.md", "PLAYBACK.md", "public/**"],
+  // analysis/** is a firewall, not a mapping: internal comparative-study
+  // material lives OUTSIDE the tracked tree (gitignored reports/), and this
+  // entry guarantees that even a stray copy under docs/analysis/ can never
+  // reach the built site (owner decision LD-1, 2026-08-10).
+  srcExclude: ["PLAN.md", "PLAYBACK.md", "public/**", "analysis/**"],
   ignoreDeadLinks: false,
 
   head: [["meta", { name: "referrer", content: "no-referrer" }]],
