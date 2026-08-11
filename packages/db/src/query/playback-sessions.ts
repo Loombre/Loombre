@@ -554,8 +554,71 @@ export async function endStalePlaybackSession(db: Kysely<DB>, id: string, nowMs:
     if (current.status === 'ended' || current.status === 'failed') {
       return mapRow(current);
     }
-    return finalizeSession(trx, current, nowMs, { errorCode: 'heartbeat-timeout', reason: 'idle-timeout' });
+    const finalized = await finalizeSession(trx, current, nowMs, { errorCode: 'heartbeat-timeout', reason: 'idle-timeout' });
+    await warnOnOrphanSignature(trx, id);
+    return finalized;
   });
+}
+
+/**
+ * THE ORPHAN SIGNATURE breadcrumb (an upstream media server-study implementation run,
+ * item C7).
+ *
+ * Three facts together mean a detached ffmpeg is about to keep running
+ * with nobody watching it: (1) the heartbeat sweeper just ended this
+ * session, (2) the session still names a live pipeline — a `worker_pid`
+ * recorded by migrations/0041 — and (3) a 'transcode' job-ledger row is
+ * still 'active', i.e. some worker believes it is still driving a session.
+ * That combination is exactly the state where the admission slot is
+ * released (countActiveTranscodeSessions counts only non-terminal rows)
+ * while a process is still burning a core.
+ *
+ * apps/worker/src/transcode/reaper.ts cleans this up on the NEXT worker
+ * boot. The point of this log line is to make it visible BEFORE that — in
+ * the logs of the process that caused it, at the moment it happens, with
+ * the pid an operator would need to act on now.
+ *
+ * HONEST LIMITATION, stated rather than hidden: the jobs ledger has no
+ * session_id column (0001_init.sql — it is queue-agnostic and carries only
+ * `subject_item_id`), so fact (3) is an INSTANCE-level check, not a
+ * per-row join to THIS session's job. It can therefore fire when a
+ * different session's transcode job is legitimately active. That is
+ * acceptable for a breadcrumb whose other two facts are exact and
+ * per-session, and whose whole job is to make a rare pathology greppable —
+ * it is deliberately not a metric and nothing keys behavior on it.
+ *
+ * console.warn from the query layer follows the precedent in
+ * src/query/remote-active-path.ts (a system-level operational fact that
+ * has no request to attach itself to). Never throws: a diagnostic must
+ * never be able to fail a sweep.
+ */
+async function warnOnOrphanSignature(trx: Transaction<DB>, sessionId: string): Promise<void> {
+  try {
+    const session = await trx
+      .selectFrom('playback_sessions')
+      .select(['worker_pid', 'staging_dir'])
+      .where('id', '=', sessionId)
+      .executeTakeFirst();
+    if (!session || session.worker_pid === null) return;
+
+    const activeJob = await trx
+      .selectFrom('jobs')
+      .select('id')
+      .where('type', '=', 'transcode')
+      .where('status', '=', 'active')
+      .executeTakeFirst();
+    if (!activeJob) return;
+
+    console.warn(
+      `playback: heartbeat sweeper ended session ${sessionId} while it still named a live transcode ` +
+        `pipeline (ffmpeg pid ${session.worker_pid}, staging ${session.staging_dir ?? 'unknown'}) and a ` +
+        `'transcode' job ledger row is still active. That combination is the orphaned-encoder signature: ` +
+        `the admission slot is now free while the process may still be running. The worker reclaims it at ` +
+        `its next boot (apps/worker/src/transcode/reaper.ts); check the process now if the machine is busy.`,
+    );
+  } catch {
+    /* a diagnostic must never fail the sweep */
+  }
 }
 
 // ---------------------------------------------------------------------------
