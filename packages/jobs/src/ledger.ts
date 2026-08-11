@@ -23,9 +23,19 @@
 // per-tick progress at all, so `progress` is simply omitted from every
 // payload here (the schema marks it optional for exactly this reason)
 // rather than faked with a placeholder value.
+//
+// M-7 fix wave (second half): recordRetrying/recordFailed redact
+// filesystem-path components out of the caller-supplied `errorMessage`
+// BEFORE it is used anywhere — both the persisted `jobs.last_error` column
+// and the emitted `job.updated` payload get the SAME already-redacted
+// string, by construction (there is no code path that could persist the
+// raw one to either place). See redact-paths.ts's own header for why this
+// is a deliberate LOCAL duplicate of packages/shared's implementation.
+// Narrow: only path components are touched, never the rest of the message.
 
 import { createDb } from '@loombre/db';
 import { insertJobLedgerRow, transitionJobLedgerRow, withTransaction, writeEvent } from '@loombre/db/internal';
+import { redactAllPaths } from './redact-paths.js';
 import type { JobType } from './types.js';
 
 interface EmitJobUpdatedInput {
@@ -127,27 +137,32 @@ export function createLedger(connectionString: string): Ledger {
 
     async recordRetrying(id, errorMessage, attempts) {
       const now = Date.now();
+      // M-7: redact ONCE — the same already-redacted string is what gets
+      // persisted AND emitted, so there is no path that could send the raw
+      // one to either place.
+      const redactedErrorMessage = redactAllPaths(errorMessage);
       await withTransaction(db, async (trx) => {
         const row = await transitionJobLedgerRow(trx, id, {
           status: 'queued',
           attempts,
-          lastError: errorMessage,
+          lastError: redactedErrorMessage,
           updatedAtMs: now,
         });
-        await emitJobUpdated(trx, { jobId: id, jobType: row.type, status: 'queued', errorMessage, updatedAtMs: now });
+        await emitJobUpdated(trx, { jobId: id, jobType: row.type, status: 'queued', errorMessage: redactedErrorMessage, updatedAtMs: now });
       });
     },
 
     async recordFailed(id, errorMessage) {
       const now = Date.now();
+      const redactedErrorMessage = redactAllPaths(errorMessage); // M-7 — see recordRetrying's comment
       await withTransaction(db, async (trx) => {
         const row = await transitionJobLedgerRow(trx, id, {
           status: 'failed',
-          lastError: errorMessage,
+          lastError: redactedErrorMessage,
           finishedAtMs: now,
           updatedAtMs: now,
         });
-        await emitJobUpdated(trx, { jobId: id, jobType: row.type, status: 'failed', errorMessage, updatedAtMs: now });
+        await emitJobUpdated(trx, { jobId: id, jobType: row.type, status: 'failed', errorMessage: redactedErrorMessage, updatedAtMs: now });
       });
     },
 
