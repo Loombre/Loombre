@@ -286,6 +286,59 @@ describe("GET /playback/sessions/{id}/hls/media.m3u8", () => {
     expect(res.text).toBe(playlistText);
   }, 15_000);
 
+  // ── EXT-X-MEDIA-SEQUENCE after a retention prune ───────────────────────
+  //
+  // apps/worker/src/transcode/playlist.ts's `pruneRetention` DELETES
+  // segments from the FRONT of the served playlist (120s behind the live
+  // edge) but `renderServedPlaylist` emits no `#EXT-X-MEDIA-SEQUENCE`. Per
+  // RFC 8216 §4.3.3.2 an absent tag means 0 — i.e. "the first segment
+  // listed is segment number 0" — so every prune silently RENUMBERS the
+  // whole playlist from the client's point of view: hls.js derives each
+  // fragment's `sn` (and the media-time offset it maps a seek to) from
+  // that base, so after a prune its already-buffered fragments no longer
+  // line up with the ones the server is naming. This is the same class of
+  // defect as C3's seek-target drift and composes directly with it — the
+  // server's absolute, globally-continuous segment numbering has to be
+  // stated in the playlist, not assumed.
+  it("a retention-pruned playlist carries #EXT-X-MEDIA-SEQUENCE equal to the first surviving absolute index", async () => {
+    const { sessionId, sessionDir } = await createSimulatedTranscodeSession();
+    mkdirSync(sessionDir, { recursive: true });
+    // Indices 0..4 pruned; the playlist now starts at the 6th segment ever
+    // produced, exactly as the worker leaves it after a prune.
+    const lines = ["#EXTM3U", "#EXT-X-VERSION:7", "#EXT-X-TARGETDURATION:7", "#EXT-X-PLAYLIST-TYPE:EVENT", '#EXT-X-MAP:URI="run0/init.mp4"'];
+    for (let i = 5; i <= 9; i += 1) {
+      lines.push("#EXTINF:6.006,");
+      lines.push(`run0/s${String(i).padStart(6, "0")}.m4s`);
+    }
+    writeFileSync(path.join(sessionDir, "media.m3u8"), lines.join("\n") + "\n", "utf8");
+    await markSessionActiveWithProducedSegment(sessionId, sessionDir, 9);
+
+    const res = await admin().get(`/playback/sessions/${sessionId}/hls/media.m3u8`);
+    expect(res.status).toBe(200);
+    expect(res.text).toContain("#EXT-X-MEDIA-SEQUENCE:5");
+    // The tag must precede the first segment (RFC 8216 §4.3.3: Media
+    // Playlist tags apply to the whole playlist and appear before any
+    // Media Segment).
+    expect(res.text.indexOf("#EXT-X-MEDIA-SEQUENCE:5")).toBeLessThan(res.text.indexOf("#EXTINF"));
+    // Every segment line survives untouched — this adds a tag, it never
+    // rewrites the worker's own segment bookkeeping.
+    expect(res.text).toContain("run0/s000005.m4s");
+    expect(res.text).toContain("run0/s000009.m4s");
+  }, 15_000);
+
+  it("an unpruned playlist is served BYTE-IDENTICAL — absent EXT-X-MEDIA-SEQUENCE already means 0", async () => {
+    const { sessionId, sessionDir } = await createSimulatedTranscodeSession();
+    mkdirSync(sessionDir, { recursive: true });
+    const playlistText = '#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-TARGETDURATION:7\n#EXT-X-PLAYLIST-TYPE:EVENT\n#EXT-X-MAP:URI="run0/init.mp4"\n#EXTINF:6.006,\nrun0/s000000.m4s\n';
+    writeFileSync(path.join(sessionDir, "media.m3u8"), playlistText, "utf8");
+    await markSessionActiveWithProducedSegment(sessionId, sessionDir, 0);
+
+    const res = await admin().get(`/playback/sessions/${sessionId}/hls/media.m3u8`);
+    expect(res.status).toBe(200);
+    expect(res.text).toBe(playlistText);
+    expect(res.text).not.toContain("#EXT-X-MEDIA-SEQUENCE");
+  }, 15_000);
+
   it("404 for a nonexistent session", async () => {
     const res = await admin().get("/playback/sessions/11111111-1111-4111-8111-111111111111/hls/media.m3u8");
     expect(res.status).toBe(404);
