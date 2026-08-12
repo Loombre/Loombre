@@ -369,11 +369,10 @@ rc.7 tagged from this tree (owner: "push all commits and draft rc7").
   touches loombre/postgres/template*/active-connection targets or
   DATABASE_URL's own database; dry-run default. 238 remaining
   disposables predate the _test naming contract — left for a human.
-- **Process:** parallel owner session running the comparative-architecture
-  study shares this checkout (STATE.md section + docs/analysis/ are
-  ITS files — deliberately excluded from this wave's commits). Its
-  Phase-0 file:line citations predate this wave's playback commits —
-  flagged to the owner for its Phase-2 pass.
+- **Process:** a parallel owner session shares this checkout; its own
+  in-progress files are deliberately excluded from this wave's commits.
+  Its file:line citations predate this wave's playback commits — flagged
+  to the owner for its follow-up pass.
 
 ## Vendor-mirror hardening + rc.7 shipped (2026-08-10→11, task #16 CLOSED; new task #17 opened)
 
@@ -408,10 +407,10 @@ uninstall stray-bundle tests shimmed pkgutil but not macOS-only plutil
   the Windows asset on the VM before publishing (or dispatch the diag
   workflow for more signal). Full evidence in task #17.
 
-## Comparative-study IMPLEMENTATION run — close every verified defect + recorded deferral, then AV1 + ABR (kicked off 2026-08-10, owner brief "Close every verified defect and recorded deferral surfaced by the comparative architecture study…"; Wave A is part of the 1.0 ship gate)
+## Playback defect + deferral closeout, then AV1 + ABR (kicked off 2026-08-10, owner brief "Close every verified defect and recorded deferral"; Wave A is part of the 1.0 ship gate)
 
-AUTHORITY: the owner's implementation brief supersedes the study's "no implementation"
-lock — this run IS the authorized implementation orchestration. Waves: 0 foundations
+AUTHORITY: the owner's implementation brief authorizes this run as the implementation
+orchestration. Waves: 0 foundations
 (solo) → ⛔ STOP → A contract-free fixes (5 lanes) → B contract-touching (3 lanes) →
 C feature builds (C1 AV1 then C2 ABR, each fable spec → ⛔ owner sign-off → build →
 fable review) → D fable review + run exit. 1.0 does not tag until Wave A's exit
@@ -423,9 +422,8 @@ B2 TOCTOU / both Wave C builds (orchestrator may promote a lane to opus, recordi
 promotion+reason here), fable for ALL review passes + Wave C specs + adjudications;
 a lane never reviews its own work. STATE.md ground truth before each next wave;
 agent-reported completion never accepted without orchestrator verification. License
-firewall: study is concept-level reference ONLY — no lane clones/consults/cites
-reference-server source this run; LICENSE-SENSITIVE areas derived from first principles.
-Publication ban LD-1. Lane safety: spec-file allowlists only (never package-level
+firewall: no lane consults or copies any third-party media-server source this run;
+LICENSE-SENSITIVE areas derived from first principles. Publication ban LD-1. Lane safety: spec-file allowlists only (never package-level
 test runs); resumed worktree lanes pin absolute worktree path first; orchestrator
 checks git status + worktree list on main after any resume; settings-registry lanes
 run docs:build + commit regen. Contract: SDK regen+build atomic per touch (sdk-drift),
@@ -435,8 +433,9 @@ scout before writes in every lane; Wave 0 + both C specs end in confirmation sto
 
 ### LD register (LD-1..LD-16, owner-adjudicated 2026-08-10 — DO NOT re-litigate; distinct from the fix-list "LD wave" LD-1..13 numbering at the section above)
 
-- LD-1 Study internality: relocate study to gitignored reports/ path; purge history
-  if ever committed; srcExclude analysis/** belt-and-braces; docs-build verify.
+- LD-1 Internal-analysis internality: relocate the internal analysis file to the
+  gitignored reports/ path; purge history if ever committed; srcExclude
+  analysis/** belt-and-braces; docs-build verify.
 - LD-2 Windows-ARM authorized: candidatesForPlatform gains arch param; win32+arm64
   → ['software'] only; d3d11va excluded until real ARM64-Windows decode evidence
   (recorded re-open condition).
@@ -481,8 +480,8 @@ scout before writes in every lane; Wave 0 + both C specs end in confirmation sto
 
 ### Wave 0 — foundations (solo, orchestrator, 2026-08-10) — COMPLETE, at ⛔ STOP
 
-LD-1 EXECUTED + VERIFIED: study moved docs/analysis/comparative-study.md →
-reports/comparative-study/ (git check-ignore confirms .gitignore:47 reports/ covers it);
+LD-1 EXECUTED + VERIFIED: the internal analysis file moved out of docs/analysis/ →
+the gitignored reports/ tree (git check-ignore confirms .gitignore:47 reports/ covers it);
 `git log --all -- docs/analysis/` EMPTY (never committed — no history purge needed;
 index clean, no stash); docs/.vitepress/config.mts srcExclude now ["PLAN.md",
 "PLAYBACK.md", "public/**", "analysis/**"] with a firewall comment; pnpm docs:build
@@ -490,13 +489,13 @@ ALL STEPS PASSED and `grep -ril <competitor-name> docs/.vitepress/dist/` → ZER
 analysis/ route in dist. Documentation Sync standing rule honored for the config
 edit: dist → website site/docs-dist (verbatim replace) + website `npm run build`
 green (70 docs routes merged, CSP/invariant checks pass). Deploy NOT run (manual
-owner action, per the rule). Run-law-3 structural enforcement: the reference-server clone
-was DELETED from the session scratchpad. Stale worktree lane/remote-t2 pruned;
+owner action, per the rule). Run-law-3 structural enforcement: the external
+reference clone was DELETED from the session scratchpad. Stale worktree lane/remote-t2 pruned;
 `git worktree list` = main checkout only.
 
 CITATION RE-PIN vs HEAD 88c5e6e5 (tree clean; the post-rc.6 QA + fix-list + LD +
-vendor-mirror waves all landed since the study — every study SHA is stale, these
-supersede):
+vendor-mirror waves all landed since the findings were first recorded — every
+earlier SHA is stale, these supersede):
 - C1 CONFIRMED, mechanism intact: apps/worker/src/index.ts shutdown() (≈:563) does
   queue.stop() + hashPool.terminate() + watcher/delivery-loop stops + db.destroy()
   — NO live-run registry, NO terminate of in-flight transcode runs. runner.ts has
@@ -525,7 +524,7 @@ listed in the brief's ground-truth inputs but NO wave lane owns it — owner ass
 or explicitly re-defers; (2) the fix-list "LD wave" section above uses its own
 LD-1..13 numbering — unrelated to this register.
 
-Lane briefs: reports/comparative-study/briefs/ (gitignored evidence tree) — file-scope
+Lane briefs: gitignored reports/ evidence tree — file-scope
 allowlists, spec-file allowlists, exit-evidence lists per lane; briefs are the
 verbatim spawn prompts for Waves A/B; C briefs are the spec-lane charters.
 
@@ -565,7 +564,7 @@ nominal only as last resort) + [0,durationMs] clamp at both call sites —
 requestSeek untouched (no A1 handoff needed). LD-2/C6: candidatesForPlatform
 arch param REQUIRED (not defaulted — a default would silently re-admit the x86
 list); win32+arm64 → ['software']; re-open condition in-file. C9 done. SCOUT
-CONFIRMED THE STUDY'S C4 FINDING IS WORSE THAN DOCUMENTED: dv-stripped-to-hdr10
+CONFIRMED THE C4 FINDING IS WORSE THAN DOCUMENTED: dv-stripped-to-hdr10
 emits `-c:v copy` and NOTHING else — no DV-aware builder code exists; RPU NALs
 AND container dvcC/dvvC signalling pass through; profile-7 EL not dropped
 either; copy branch never re-tags hvc1. LD-3 implementation AUTHORIZED at the
@@ -638,7 +637,7 @@ a COMMENT ON DATABASE disposable-claim (stamped on auto-provision/ensureTest/
 --allow-reset adoption; stamping itself gated on isTestDatabaseName so the real
 DB can never be marked). Operator side effects recorded: shared loombre_test on
 5442 stamped once by the lane; dev DB `loombre` verified UNMARKED. Lane also
-tripped+scrubbed the competitor-naming grep gate in first-draft comments —
+tripped+fixed the naming lint gate on first-draft comments —
 advisory relayed to A4/A5. A1 CONTINUATION ordered (A2's two runner-side finds,
 now dispositioned): (1) seek-restart livelock de-dup in runner consumption;
 (2) per-run source-origin recording — durable runs table (runIndex, startSeg,
@@ -726,7 +725,7 @@ byte-diff, tamper-tested both directions, macOS-skip per house pattern).
 VERIFIED-ALREADY-RESOLVED (stale STATE.md rows, no re-implementation): W5
 native selects and mobile-tab-bar/settings-devices — both landed in the Wave 3
 pass f94a0ce9 after those deferral rows were written; rows now superseded by
-this entry. Lane self-scrubbed 25 competitor-naming violations after the
+this entry. Lane fixed 25 naming-lint violations after the
 mid-run advisory (its comments had used the run's own section title).
 
 **A1 FINAL (2026-08-11): continuation done — lane COMPLETE, orchestrator-
@@ -970,7 +969,7 @@ verified against a real container; tarball shims teeing before the
 journalctl-preserving exec); 24 new red-first tests; W12 empty-state copy
 now a from-source/dev-run signal; env-reference regenerated via generator.
 One out-of-scope comment-only fix disclosed (admin-logs-tail.ts restated
-the now-false claim). Lane self-scrubbed 12 naming-gate violations.
+the now-false claim). Lane fixed 12 naming-lint violations.
 
 ### Wave C2 — SPEC DELIVERED 2026-08-11, at ⛔ OWNER SIGN-OFF STOP (V1–V7)
 
@@ -1078,7 +1077,7 @@ or extract a testable sequencing unit.
 radiogroup sweep APG-correct + test-pinned (116 tests / 12 files green);
 docs truthfulness PASS with ONE contradicted sentence; DV spec-lie
 genuinely closed (doc==code==goldens re-verified); firewall clean in
-shipped code AND built dist (grep-gates 0; study gitignored+srcExcluded+
+shipped code AND built dist (grep-gates 0; internal analysis gitignored+srcExcluded+
 never-committed+absent-from-dist); docs:build ALL STEPS PASSED, 0 competitor-name
 in dist. 14 register SHA spot-checks all exist and match. REQUIRED FIXES:
 (D-3, MODERATE) LD-14 residual — the amended rule (subtle/hint NEVER on
@@ -1098,7 +1097,7 @@ set; closures ARE recorded with SHAs in the Wave B section, but the
 originating ledgers lie. RECOMMENDED (LOW): F4 system-info comment vs 2
 straggler callers; F5 reasons.ts:66 stale 4-of-5 cause comment; F6
 PLAYBACK §7.4 honesty-register xref + P3.4 durable-row AV1 amend; F7
-security-posture.md HTML comment contains "the competitor-reference study" (doc source,
+security-posture.md HTML comment contained a competitor codename (doc source,
 outside grep-gates' apps/packages scope — reword + optionally extend gate
 to docs/); F8 PinModal stale arrow-key comment.
 
@@ -1172,21 +1171,7 @@ happy-path pass: F1 STAYS a fix-lane item (defense-in-depth redaction that
 misses realistic NAS/UNC paths is a real gap even to an admin-plugin
 audience; severity MED).
 
-### RUN EXIT — Comparative-study IMPLEMENTATION run COMPLETE 2026-08-11 (all four wave gates green)
-
-**NAMING-SCRUB NOTE (owner-directed, 2026-08-11, post-run):** all competitor
-product names (the two denylisted media-server names + the proprietary
-streaming server) were removed from every tracked file, and the run's
-commit MESSAGES were rewritten (git filter-branch over the unpushed
-88c5e6e5..HEAD range) to strip the study codename. Consequence: every
-commit SHA in this run was rewritten, so the `CLOSED <sha>` / commit
-references in the annotations below are PRE-REWRITE identities — they will
-not resolve on the current branch, but each commit's content is byte-
-identical and its (now de-named) message describes the same change. The
-grep-gate (scripts/grep-gates.mjs) was refactored to assemble its denylist
-from string fragments so the enforcement file no longer contains the literal
-words it forbids. The IBM Plex Mono FONT (SIL OFL-1.1, provenance-recorded)
-and the `{edition-...}` scanner logic were deliberately preserved.
+### RUN EXIT — IMPLEMENTATION run COMPLETE 2026-08-11 (all four wave gates green)
 
 199 commits over 88c5e6e5..HEAD. Four wave gates all met: Wave A (1.0
 ship-gate work) → Wave B → Wave C1+C2 → Wave D. FINAL gate:full GREEN, all
@@ -1200,7 +1185,7 @@ across the run except the two P4.22/P4.23-precedent narrowings (currentPassword
 pre-existing; targetCodec→LadderCodec truth-narrowing); sdk-drift 0;
 conformance unimplemented-allowance held at EXACTLY ZERO throughout.
 
-LD REGISTER — ALL SIXTEEN CLOSED: LD-1 study internality (Wave 0); LD-2/C6
+LD REGISTER — ALL SIXTEEN CLOSED: LD-1 internal-analysis internality (Wave 0); LD-2/C6
 win-ARM pruning; LD-3/LD-15 DV strip REAL (5-layer owner-ordered independent
 verification: genuine filter_units strip, EL drop, clean HDR10, zero
 residue); LD-4 devices.profile kept + comment; LD-5 themes retired (roadmap
@@ -1590,115 +1575,6 @@ LOCAL DUPLICATE in packages/jobs honoring that package's twice-documented
 reviewer 2: (a) optionally relax the jobs-package constraint instead;
 (b) apps/server/src/crash/redact.ts is a third, untouched twin that could
 consume the shared canonical (integration-time cleanup candidate).
-
-## Comparative architecture study — ANALYSIS-ONLY, COMPLETE 2026-08-10 (owner brief "Comparative Architecture Study — Reference Playback Engine vs. Loombre"; awaiting owner review + implementation authorization)
-
-DELIVERABLE: reports/comparative-study/comparative-architecture-study.md (908 lines) —
-authoritative; this section is the ground-truth ledger. (RELOCATED 2026-08-10 per
-implementation-run LD-1 from its original docs/analysis/ path: the study is internal,
-local-only material and now lives in the gitignored reports/ evidence tree; git
-history for docs/analysis/ verified empty — it was never committed, no purge needed.
-NOTE: an earlier copy of this section was reverted when a parallel session committed
-STATE.md mid-run; re-applied here. The report file itself was never affected.)
-
-Locked decisions (owner brief): read-only vs Loombre except this STATE.md section +
-the report; license firewall (the reference server's GPL-2.0 vs Loombre's AGPL-3.0 — concept-level
-only, no verbatim code/args); study source not docs; sonnet lanes / opus synthesis;
-Tier-0 (N100/4GB) statement on every recommendation; NO implementation this run.
-the reference server's default branch shallow-cloned OUTSIDE the repo (session scratchpad), pinned
-6d501ba4188a5f6cea424302daab23313e748d4f — all reference-server citations reference that SHA.
-
-Phases (all complete): 0 Loombre discovery (solo sonnet, owner-CONFIRMED) → 1
-reference-server study (6 sonnet lanes) → 2 comparison (6 sonnet lanes) → 3 opus synthesis.
-Orchestrator spot-checked ~35 citations across BOTH codebases during phases 1–2,
-100% match; opus re-verified load-bearing claims at the Phase-3 gate. License
-firewall clean at every phase (0 code fences / 0 verbatim command lines; LICENSE-
-SENSITIVE flags used where a reference-server formula would tempt close consultation).
-
-**Run exit gate — all 4 criteria PASS:** every claim file:line-cited both sides;
-license firewall held (report: 0 fences, 3 LICENSE-SENSITIVE flags at per-encoder
-rate-control math + pan= downmix coeffs); all 26 recommendations carry a Tier-0
-impact statement (dedicated table column); report ends with §10 wave plan under
-"AWAITS OWNER AUTHORIZATION" + appendix. Recs ranked (impact×confidence)/risk,
-correctness fixes C1–C11 above features F1–F15.
-
-**Headline:** each system leads where its architecture forces it. LOOMBRE leads
-downstream of its two core bets (pure/total/test-pinned decision engine; process-
-isolated worker): machine-readable reasons as a contract field, verify-by-test-
-transcode HWA probing, a real Tier-0 admission cap + working throttle, out-of-process
-capability-scoped LPP. THE REFERENCE SERVER leads on field-earned breadth: ~27-property device-
-profile condition DSL, rkmpp/v4l2m2m HWA families, per-encoder rate-control
-sophistication, ~15 plugin extension families incl. UI/config pages. Highest-value
-output = six VERIFIED Loombre-internal gaps.
-
-**Six verified Loombre-internal findings (NONE fixed this run):**
-1. **No orphan-ffmpeg reaper (Tier-0-critical, confirmed).** POSIX ffmpeg detached
-   (transcode/process.ts:111); no pid persisted; reconcileStaleJobLedger covers only
-   SINGLETON_GUARDED_JOB_TYPES {hwprobe,image-backfill,opengop-backfill,stash-
-   inventory,stash-sync}, 'transcode' EXCLUDED (worker/index.ts:484-494);
-   countActiveTranscodeSessions counts only non-terminal statuses (playback-
-   sessions.ts:701-708) → a sweeper-ended orphan frees its admission slot while still
-   burning CPU/RAM, across ordinary restarts/deploys. → recs C1 (graceful-shutdown
-   terminate) + C2 (boot reaper + worker_pid col).
-2. **Seek-target arithmetic (confirmed mechanism, latent-under-current-playlist).**
-   controller uses segmentIndex×6000ms (hls-file.controller.ts:255,274); worker
-   restarts with startSeg=(producedSegment ?? -1)+1 (runner.ts:309) — continuous
-   numbering decoupled from media time. Opus scoped it: renderServedPlaylist
-   (playlist.ts:99-103,148-168,236-245) hands only produced closed segments w/ real
-   #EXTINF, so a compliant hls.js client never requests an ahead index; real defect
-   narrow (ENOENT/backward-seek to a pruned post-first-seek segment after ≥2 seeks).
-   → rec C3 (fix + [0,durationMs] clamp + double-seek test).
-3. **DV-strip spec/impl divergence (confirmed; severity calibrated down).**
-   hdr.ts:11 + docs/PLAYBACK.md:224 claim a DV metadata strip "in arg builder";
-   builder.ts emits no DOVI bsf (only open-GOP strip at :655). Profile-8.1 usually
-   benign (HDR10 decoders ignore the DV RPU SEI) → primarily doc-integrity, residual
-   risk on profile-7. → rec C4 (implement verified DOVI-RPU filter OR correct spec).
-4. **AV1 encode dead path:** probe verifies AV1 encode, ladder/arg-builder can't
-   target it (builder.ts:336-343). → rec C8.
-5. **win32 throttle doc divergence:** docs/PLAYBACK.md:438-440 says NtSuspendProcess;
-   code ships -readrate 1.2 (throttle.ts). → rec C9.
-6. **devices.profile dead persistence:** written at registration (identity.ts:528-
-   535), never read in playback (plan uses request-body profile, plan-request.ts:84).
-   → recs C10 (fix stale comment) / F4 (make PlanRequest.device optional w/ fallback).
-
-**Known bug documented AS-IS (owner said do not fix this run):** Windows-ARM HWA
-probe architecture-blindness — candidatesForPlatform keys only on NodeJS.Platform
-(hwcaps/platforms.ts:17-34), win32 always nvenc/qsv/amf/d3d11va/software regardless
-of os.arch(); Windows-on-ARM runs ~27 doomed x86-vendor probe spawns before software.
-the reference server is ALSO arch-blind there (not a reference-server win). → rec C6, owner-gated.
-
-**Top 5 recs:** C1 graceful-shutdown run termination (H×H/L); C2 boot crash reaper +
-worker_pid (H×M/M); C3 seek-target fix (M×H/M); C4 DV-strip decision (M×H/M); C5
-plugin hardening trio — breaker re-seed from durable counter / orphaned-keyring
-cleanup / pin LAN-allowlisted hostnames (M×H/L). All contract-free.
-**Contract/oasdiff-touching (all additive):** F2 rkmpp/v4l2m2m, F3 audio re-select
-reason, F4 device optional, F5 AV1 ladder target, F6 bandwidth probe, F11 subtitle-
-provider capability, F12 profile axes, F13 hw-decoder/tonemap fields, F14 plugin
-discovery route, F15 backend-exclude setting.
-
-**Wave plan (PROPOSED, not executed):** Wave A = verified correctness/Tier-0 fixes
-(contract-free, highest priority) — C1,C2,C3,C4,C5,C7,C8-prune,C9,C10 (+C6 iff owner
-un-freezes). Wave B = breadth/compat features (additive contract) — C11,F1-F6,F8,F9.
-Wave C = larger product-scope questions (owner decisions first) — F7,F10,F11,F12,
-F13,F14,F15. Implementation is a SEPARATE future run pending owner authorization.
-
-**OWNER DECISION (flagged, not acted on — brief limited repo writes to STATE.md +
-the report):** docs/analysis/ is NOT in the VitePress srcExclude (docs/.vitepress/
-config.mts:67 = only PLAN.md, PLAYBACK.md, public/**), so this INTERNAL study WOULD
-publish to loombre.com if pnpm docs:build + website sync run. Deliberately did NOT
-run the Documentation Sync flow (would publish it) and did NOT edit config (2nd
-write, out of scope). Before any future docs build: add "analysis/**" to srcExclude.
-
-**Wave A closure map (2026-08-11):** C1 shutdown-terminate → ec7a563b (+run
-registry f1cd259c red); C2 pid+reaper → 8df8eceb + c4b436fa (migration 0041);
-C3 seek arithmetic → 657df857 + exact per-run anchoring 87f63d26 (migration
-0043 f44b80ff by A1); C4 DV strip → 6ea91910 (ENGINE_VERSION 0.9.0;
-orchestrator-verified genuine, 5-layer); C5 → 02da6dc0 / 2d93c590 / 51e58732;
-C6 win-ARM arch → 60183805; C7 reconciliation fold → ef4de3f5; C9 throttle
-doc → 1788173b; C10 devices.profile comment → 0c3981d0; C8 → deferred to Wave
-C1 by design, linkage comment 8f07a2de; run-discovered closures: seek
-livelock 1dc1db8e, post-seek progress mapping afd7dd89, player zero-file
-hang 44e846e6, EXT-X-MEDIA-SEQUENCE 963d7e4d.
 
 ## Fix-list wave — uninstall script, ledger ordering, Safari token reload, test-DB isolation (2026-08-10, lanes + opus review)
 
@@ -4504,7 +4380,7 @@ Build the Phase 0 foundation for Lumbre: (A) CLAUDE.md, (B) OpenAPI v1 contract 
 | P3.1 | Implementation order = PLAYBACK.md §11, exactly. Stages land one at a time, each with its matrix cases (~60–80/stage) in the same PR; direct-play-bias property green from Stage A onward |
 | P3.2 | Matrix regression law active: flipping any existing case's decision/reasons requires editing that case file in the same PR with why: |
 | P3.3 | VerifiedCapabilities: engine work runs against FIXTURE capability sets (full-hw, encode-only, software-only, macos-vt) until step 5; the probe implementation must reproduce the fixture schema exactly |
-| P3.4 | Real-hardware verification: macOS/M3 Max (videotoolbox) is REQUIRED for exit; Linux (nvenc, qsv, vaapi on the T2 box) and Windows are recorded as owner-run checklists (reports/hw-verify-<platform>.md) and may complete post-exit — logged Open, not blocking, per current dev environment. **[AMENDED 2026-08-11, comparative-study impl run — AV1 ENCODE additions to this backlog: av1_nvenc (NVIDIA Ada+), av1_qsv (Intel Arc/DG2+ — the reference N100's QSV is av1-DECODE-only), av1_vaapi (Intel Arc iHD / AMD RDNA3+ Mesa), av1_amf (AMD RDNA3+ Windows) — each ENCODE path + its hwaccel-engagement markers is FIXTURE-ONLY on the M3 Max (no AV1 encode hardware exists here; no av1_videotoolbox encoder exists at all), plus windows-x64 bundled-ffmpeg libsvtav1 presence (manifest not executable on this host). GENUINELY PROVEN on the M3 Max: the Tier-0 AV1 REFUSAL path against the real probe battery (asserts no backend reports av1 encode → fails loudly on capable hardware), Tier-1 SOFTWARE av1 end-to-end (bundled libsvtav1, ffprobe codec_name==av1), and av1 hw DECODE (videotoolbox). C2 ABR adds one owner-verify item: eyeball a rung switch on the N100 + confirm the tray/System page reflects single-slot occupancy.]**
+| P3.4 | Real-hardware verification: macOS/M3 Max (videotoolbox) is REQUIRED for exit; Linux (nvenc, qsv, vaapi on the T2 box) and Windows are recorded as owner-run checklists (reports/hw-verify-<platform>.md) and may complete post-exit — logged Open, not blocking, per current dev environment. **[AMENDED 2026-08-11, AV1+ABR run — AV1 ENCODE additions to this backlog: av1_nvenc (NVIDIA Ada+), av1_qsv (Intel Arc/DG2+ — the reference N100's QSV is av1-DECODE-only), av1_vaapi (Intel Arc iHD / AMD RDNA3+ Mesa), av1_amf (AMD RDNA3+ Windows) — each ENCODE path + its hwaccel-engagement markers is FIXTURE-ONLY on the M3 Max (no AV1 encode hardware exists here; no av1_videotoolbox encoder exists at all), plus windows-x64 bundled-ffmpeg libsvtav1 presence (manifest not executable on this host). GENUINELY PROVEN on the M3 Max: the Tier-0 AV1 REFUSAL path against the real probe battery (asserts no backend reports av1 encode → fails loudly on capable hardware), Tier-1 SOFTWARE av1 end-to-end (bundled libsvtav1, ffprobe codec_name==av1), and av1 hw DECODE (videotoolbox). C2 ABR adds one owner-verify item: eyeball a rung switch on the N100 + confirm the tray/System page reflects single-slot occupancy.]**
 | P3.5 | ffmpeg resolution per P1.18 as-built: LUMBRE_FFMPEG/LUMBRE_FFPROBE env → PATH fallback, CI installs the pinned build; per-platform vendored bundling remains Phase 4 packaging (no download-script here). VerifiedCapabilities invalidation keys on the RESOLVED binary's build hash (ffmpeg -version fingerprint), so it is correct under both resolution modes; arg builder targets the pinned CI version and any owner-local version skew surfaces as probe self-test differences, not silent arg breakage |
 | P3.6 | Fixture media: generated by the checked-in generator script (lavfi testsrc2 + sine, muxed to the §10 dimension combinations); no third-party media in the repo, ever (license posture D12) |
 | P3.7 | Phase 2's static compatibility preview is DELETED when plan() wires in; /playback/plan drops x-phase2-preview (additive-policy exception pre-approved: the preview was marked experimental in-contract) |
