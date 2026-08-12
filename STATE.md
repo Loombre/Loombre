@@ -1174,6 +1174,20 @@ audience; severity MED).
 
 ### RUN EXIT — Comparative-study IMPLEMENTATION run COMPLETE 2026-08-11 (all four wave gates green)
 
+**NAMING-SCRUB NOTE (owner-directed, 2026-08-11, post-run):** all competitor
+product names (the two denylisted media-server names + the proprietary
+streaming server) were removed from every tracked file, and the run's
+commit MESSAGES were rewritten (git filter-branch over the unpushed
+88c5e6e5..HEAD range) to strip the study codename. Consequence: every
+commit SHA in this run was rewritten, so the `CLOSED <sha>` / commit
+references in the annotations below are PRE-REWRITE identities — they will
+not resolve on the current branch, but each commit's content is byte-
+identical and its (now de-named) message describes the same change. The
+grep-gate (scripts/grep-gates.mjs) was refactored to assemble its denylist
+from string fragments so the enforcement file no longer contains the literal
+words it forbids. The IBM Plex Mono FONT (SIL OFL-1.1, provenance-recorded)
+and the `{edition-...}` scanner logic were deliberately preserved.
+
 199 commits over 88c5e6e5..HEAD. Four wave gates all met: Wave A (1.0
 ship-gate work) → Wave B → Wave C1+C2 → Wave D. FINAL gate:full GREEN, all
 16 steps, on the settled tree (web bundle 170.6 KB gz / 200 budget; one
