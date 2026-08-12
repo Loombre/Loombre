@@ -40,7 +40,7 @@ photos, live TV/DVR, plugin system, federation/sharing.
 ## 2. Pain-point ledger — what we are fixing and how
 
 Every architectural decision traces to an observed failure in the established
-self-hosted media servers (LS, the legacy self-hosted lineage) or a proprietary server (PS).
+self-hosted media servers (LS, the legacy self-hosted lineage) or the dominant proprietary streaming server (PS).
 This table is the project's institutional memory.
 
 | # | Pain point (source) | Root cause | Our design response |
