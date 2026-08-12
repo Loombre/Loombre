@@ -101,7 +101,7 @@ const NOISE_TOKEN_SOURCE = `(?<=^|${SEP_CLASS})(${ALL_NOISE_TOKENS.map(escapeReg
 const NOISE_TOKEN_REGEX = new RegExp(NOISE_TOKEN_SOURCE, "gi");
 
 /**
- * Bracketed `[...]`/`(...)`/`{...}` chunks that are not a a proprietary server `{edition-...}`
+ * Bracketed `[...]`/`(...)`/`{...}` chunks that are not an `{edition-...}`
  * marker. Parens are included here (not just square brackets) because some
  * release groups wrap quality tags in parens (e.g. "Show - 245 (1080p)");
  * this never collides with movie year extraction, which slices the chosen

@@ -22,8 +22,9 @@
  *  4. Still no year → the whole (noise-stripped) string is the title, year
  *     is null, confidence is "low".
  *
- * Edition: a a proprietary server-style `{edition-...}` brace wins if present anywhere in
- * the source string (checked first, independent of the year split). Else,
+ * Edition: a `{edition-...}` brace (a common media-server edition-tag
+ * convention) wins if present anywhere in the source string (checked first,
+ * independent of the year split). Else,
  * whatever remains after year/part/noise/group stripping is checked against
  * a closed list of edition keywords ("Title (Year) - Director's Cut" style)
  * — an unrecognized trailing phrase is deliberately NOT treated as an
@@ -172,7 +173,7 @@ export function parseMoviePath(relPath: string): MovieGuess | null {
 
   const reasons: string[] = [];
 
-  // a proprietary server `{edition-...}` braces are stripped from whichever source string
+  // `{edition-...}` braces are stripped from whichever source string
   // supplies the year (stem, or the parent directory on fallback) BEFORE
   // that string is split into title/year — the brace can land on either
   // side of the year ("Title {edition-X} (Year)" or "Title (Year) {edition-X}"),
