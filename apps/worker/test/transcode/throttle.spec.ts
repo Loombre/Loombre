@@ -156,3 +156,78 @@ describe("reconcileThrottle — mechanism='suspend', currently throttle-suspende
     expect(action).toEqual({ kind: "rewrite-suspended-only" });
   });
 });
+
+describe("reconcileThrottle — V8 currentRunStartSegment floor (docs/PLAYBACK.md §9 throttle 'Lead arithmetic'; STATE.md 'Seek model V8')", () => {
+  it("D-C pin (backward seek): requested pinned below the fresh run's start is a numbering artifact, not encoder lead — produced=200, requested=3, startSegment=201 -> none, never suspend", () => {
+    // Pre-V8 this read ahead = 200 - 3 = 197 > 10 and SIGSTOPped the
+    // seek-spawned run before its first segment; the resume condition
+    // (ahead <= 5) was then arithmetically unreachable ("buffers
+    // forever", QA 2026-08-12). With the floor: 200 - max(3, 201) = -1.
+    const action = reconcileThrottle({
+      mechanism: "suspend",
+      producedSegment: 200,
+      requestedSegment: 3,
+      currentRunStartSegment: 201,
+      rowStatus: "active",
+      suspendedByThrottle: false,
+      processStopped: false,
+    });
+    expect(action).toEqual({ kind: "none" });
+  });
+
+  it("A3 pin (PURE rung switch, no seek anywhere): the §9.1.4 handoff run at produced+1 with requested still on the old rung's tail must not be suspended pre-first-segment", () => {
+    // Old rung produced through 42; handoff run starts at 43; the client
+    // is draining the old rung's buffered tail so requested sits at 40.
+    // Raw arithmetic (42 - 40 = 2) happens to be safe HERE, but the
+    // deadlock fires as soon as the tail is long (e.g. paused viewer):
+    const paused = reconcileThrottle({
+      mechanism: "suspend",
+      producedSegment: 55, // old rung raced ahead before the switch
+      requestedSegment: 40,
+      currentRunStartSegment: 56, // handoff run: produced+1
+      rowStatus: "active",
+      suspendedByThrottle: false,
+      processStopped: false,
+    });
+    expect(paused).toEqual({ kind: "none" });
+  });
+
+  it("deadlock breaker: throttle-suspended with requested below the current run's start resumes (floored ahead <= resume threshold)", () => {
+    const action = reconcileThrottle({
+      mechanism: "suspend",
+      producedSegment: 200,
+      requestedSegment: 3,
+      currentRunStartSegment: 201,
+      rowStatus: "suspended",
+      suspendedByThrottle: true,
+      processStopped: true,
+    });
+    expect(action).toEqual({ kind: "resume-for-throttle" });
+  });
+
+  it("floor is a no-op in steady state (requested >= startSegment): decisions identical with and without it", () => {
+    const base = {
+      mechanism: "suspend" as const,
+      producedSegment: 30,
+      requestedSegment: 12,
+      rowStatus: "active" as const,
+      suspendedByThrottle: false,
+      processStopped: false,
+    };
+    expect(reconcileThrottle({ ...base, currentRunStartSegment: 5 })).toEqual(reconcileThrottle(base));
+    expect(reconcileThrottle({ ...base, currentRunStartSegment: 5 })).toEqual({ kind: "suspend-for-throttle" });
+  });
+
+  it("floor never manufactures suspension: requested above startSegment stays authoritative (real lead 2 -> resume while throttle-suspended)", () => {
+    const action = reconcileThrottle({
+      mechanism: "suspend",
+      producedSegment: 20,
+      requestedSegment: 18,
+      currentRunStartSegment: 10,
+      rowStatus: "suspended",
+      suspendedByThrottle: true,
+      processStopped: true,
+    });
+    expect(action).toEqual({ kind: "resume-for-throttle" });
+  });
+});

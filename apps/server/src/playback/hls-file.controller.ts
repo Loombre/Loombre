@@ -31,8 +31,13 @@
 // Either condition calls `requestSeek` (packages/db's seam-contract
 // function, already implemented by Lane A) and responds 503 + Retry-After
 // (hls.js-compatible: it already retries a 503 GET), never 404 — a 404
-// would make hls.js treat the segment as permanently gone rather than
-// "coming soon after a restart".
+// fatals the fragment immediately, while 503 keeps the client polling
+// until its playlist refresh shows the new run. NOTE (V8, D-B): the
+// requested URI itself NEVER comes back — forward-only numbering means the
+// restarted run writes `run{N+1}/` at `produced + 1` and higher, so the
+// retried filename is permanently gone. This path is DEMOTED to defense
+// (native clients, mid-prune races); the primary seek channel is
+// POST /playback/sessions/{id}/seek (sessions.controller.ts).
 //
 // SEEK-TARGET DERIVATION (docs/PLAYBACK.md §9 "Seek", C3): the millisecond
 // value handed to `requestSeek` is derived from the REAL durations the
@@ -105,6 +110,7 @@ import {
   type MasterVideoFacts,
 } from "../common/master-playlist.js";
 import { resolveViewer } from "./viewer.js";
+import { storedDecision, storedLadder } from "./stored-plan-facts.js";
 
 const MANIFEST_POLL_TIMEOUT_MS = 8_000;
 const MANIFEST_POLL_INTERVAL_MS = 250;
@@ -165,27 +171,8 @@ function parseSegmentFile(fileRelativePath: string): ParsedSegmentFile | undefin
   return { runIndex, segmentIndex: undefined, extension: "mp4" };
 }
 
-/** The rungs of the session's STORED plan — the single authority on which
- *  variants exist (§7.5: "the master playlist advertises `plan.ladder` —
- *  nothing else, and all of it"). Read defensively: `plan` is JSONB and a
- *  malformed blob must degrade to "no ladder", never throw on a media
- *  path. */
-function storedLadder(plan: Record<string, unknown> | null): MasterPlaylistRung[] {
-  const ladder = plan && typeof plan === "object" ? (plan as { ladder?: unknown }).ladder : undefined;
-  if (!Array.isArray(ladder)) return [];
-  return ladder.filter(
-    (r): r is MasterPlaylistRung =>
-      typeof r === "object" &&
-      r !== null &&
-      typeof (r as MasterPlaylistRung).heightPx === "number" &&
-      typeof (r as MasterPlaylistRung).videoBitrateBps === "number",
-  );
-}
-
-function storedDecision(plan: Record<string, unknown> | null): string | undefined {
-  const decision = plan && typeof plan === "object" ? (plan as { decision?: unknown }).decision : undefined;
-  return typeof decision === "string" ? decision : undefined;
-}
+// storedLadder/storedDecision moved to ./stored-plan-facts.ts (V8) — the
+// seek endpoint reads the same facts through the same guards.
 
 const CONTENT_TYPE_BY_EXTENSION: Record<"m4s" | "ts" | "mp4", string> = {
   m4s: "video/iso.segment",
@@ -687,7 +674,8 @@ export class PlaybackHlsFileController {
       type: "urn:loombre:problem:hls-segment-not-ready",
       title: "HLS segment not ready",
       status: 503,
-      detail: "The requested segment is outside the produced window; a seek restart has been requested.",
+      detail:
+        "The requested segment is outside the produced window; a restart has been requested — re-read the playlist for the new run.",
       instance,
       code: "hls-segment-not-ready",
     });

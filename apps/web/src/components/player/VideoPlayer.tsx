@@ -44,7 +44,18 @@ import { findPlayableFallback, decisionLabel, type FallbackCandidate } from "../
 import { findProgressForItem, isWorthResuming } from "../../lib/progress-lookup.js";
 import { HeartbeatScheduler, type HeartbeatSnapshot, type ProgressState } from "../../lib/heartbeat.js";
 import { reportProgressOnUnload } from "../../lib/progress-report.js";
-import { apiGet, apiPut } from "../../lib/api-client.js";
+import { apiGet, apiPost, apiPut } from "../../lib/api-client.js";
+import {
+  armLandingWatch,
+  bufferedRangesToSource,
+  findLandingFragment,
+  hasSourceClock,
+  HARD_SEEK_LANDING_TIMEOUT_MS,
+  presentationToSourceMs,
+  sourceToPresentationSec,
+  type LandingWatch,
+  type ListedFragment,
+} from "../../lib/source-time.js";
 import { useToast } from "../ui/Toast.js";
 import { AmbientBackdrop } from "./AmbientBackdrop.js";
 import { UnavailableScreen } from "./UnavailableScreen.js";
@@ -118,6 +129,34 @@ function readBuffered(video: HTMLVideoElement): BufferedRange[] {
     ranges.push({ startMs: video.buffered.start(i) * 1000, endMs: video.buffered.end(i) * 1000 });
   }
   return ranges;
+}
+
+/** Safari's native-HLS surface for §9.1.5 rule 7's PROGRAM-DATE-TIME: the
+ *  wall-clock date of presentation zero — under the V8 source-clock
+ *  convention, source ms at presentation 0. `null` anywhere the API is
+ *  absent (every non-WebKit browser) or the playlist carries no PDT
+ *  (`getStartDate()` returns an Invalid Date). */
+function nativeSourceAnchorMs(video: HTMLVideoElement): number | null {
+  try {
+    const date = (video as HTMLVideoElement & { getStartDate?: () => Date }).getStartDate?.();
+    const t = date?.getTime();
+    return typeof t === "number" && Number.isFinite(t) ? t : null;
+  } catch {
+    return null;
+  }
+}
+
+function isInSeekable(video: HTMLVideoElement, sec: number): boolean {
+  const s = video.seekable;
+  for (let i = 0; i < s.length; i++) {
+    if (sec >= s.start(i) && sec <= s.end(i)) return true;
+  }
+  return false;
+}
+
+function seekableEndSec(video: HTMLVideoElement | null): number | null {
+  const s = video?.seekable;
+  return s && s.length > 0 ? s.end(s.length - 1) : null;
 }
 
 export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: VideoPlayerProps): React.JSX.Element {
@@ -218,6 +257,53 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
   // the element's own `playing` event — a stretch that reaches real
   // playback again earns a fresh budget.
   const recoveryAttemptsRef = useRef(0);
+  // ── V8 hard-seek state (docs/PLAYBACK.md §9.1.9) ─────────────────────────
+  // `relocating` renders the pinned-scrubber + spinner state while the
+  // worker restarts at the POSTed target; the watch/timer refs drive the
+  // landing (LEVEL_UPDATED fragment match) and the bounded timeout. The
+  // mirrored ref lets the [phase]-keyed event-wiring effect read the LIVE
+  // value (same staleness rationale as isDirectPlayRef above).
+  const [relocating, setRelocating] = useState<{ targetMs: number } | null>(null);
+  const relocatingRef = useRef<{ targetMs: number } | null>(null);
+  const landingWatchRef = useRef<LandingWatch | null>(null);
+  const landingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Native-HLS coarse landing (V8 v1 scope, ruled — §9.1.10 item 5): no
+  // hls.js instance means no LEVEL_UPDATED, so the landing is a seekable-
+  // end poll instead of a fragment match.
+  const coarsePollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  /** The CURRENT LEVEL DETAILS as structural fragments (A2: the LISTED
+   *  window — buffer state deliberately plays no part). `null` off the
+   *  hls.js path or before the first playlist parse. Reads hlsRef live, so
+   *  a stale closure identity is harmless. */
+  const listedFragments = useCallback((): ListedFragment[] | null => {
+    const hls = hlsRef.current;
+    if (!hls) return null;
+    const levelIndex = hls.currentLevel >= 0 ? hls.currentLevel : hls.levels.length > 0 ? 0 : -1;
+    const details = levelIndex >= 0 ? hls.levels[levelIndex]?.details : undefined;
+    const frags = details?.fragments;
+    if (!frags || frags.length === 0) return null;
+    return frags.map((f) => ({
+      programDateTimeMs: typeof f.programDateTime === "number" ? f.programDateTime : null,
+      startSec: f.start,
+      durationSec: f.duration,
+      relurl: f.relurl ?? null,
+    }));
+  }, []);
+
+  const clearLandingWatch = useCallback((): void => {
+    landingWatchRef.current = null;
+    relocatingRef.current = null;
+    if (landingTimerRef.current) {
+      clearTimeout(landingTimerRef.current);
+      landingTimerRef.current = null;
+    }
+    if (coarsePollRef.current) {
+      clearInterval(coarsePollRef.current);
+      coarsePollRef.current = null;
+    }
+    setRelocating(null);
+  }, []);
 
   const serverUrl = getAuthStore().getSnapshot().serverUrl;
 
@@ -716,6 +802,25 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
       hls.on(HlsCtor.Events.MANIFEST_PARSED, syncLevels);
       hls.on(HlsCtor.Events.LEVEL_SWITCHED, syncLevels);
 
+      // V8 hard-seek landing watch (§9.1.9): every playlist refresh tries
+      // to land a pending hard seek. The match requires BOTH the runN
+      // prefix (strictly newer than the watch's floor) AND the PDT window
+      // — see source-time.ts's findLandingFragment.
+      hls.on(HlsCtor.Events.LEVEL_UPDATED, () => {
+        const watch = landingWatchRef.current;
+        if (!watch) return;
+        const frags = listedFragments();
+        if (!frags) return;
+        const landing = findLandingFragment(frags, watch);
+        if (!landing) return;
+        const targetMs = watch.clampedTargetMs;
+        clearLandingWatch();
+        video.currentTime = landing.startSec;
+        positionRef.current = targetMs;
+        setPositionMs(targetMs);
+        heartbeatRef.current?.flushNow();
+      });
+
       // hls.js's own documented fatal-error recovery pattern: retry a
       // network error in place, attempt MSE recovery for a media error,
       // and give up (destroy) for anything else.
@@ -754,10 +859,13 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
     return () => {
       cancelled = true;
       if (onLoaded) video.removeEventListener("loadedmetadata", onLoaded);
+      // V8: a pending hard seek dies with its session/instance — the watch
+      // must never land against a different attach's fragments.
+      clearLandingWatch();
       hls?.destroy(); // deliverable 5: no leaked MediaSource on unmount/session change.
       if (hlsRef.current === hls) hlsRef.current = null;
     };
-  }, [attachStrategy, videoEl, session?.id, serverUrl]);
+  }, [attachStrategy, videoEl, session?.id, serverUrl, listedFragments, clearLandingWatch]);
 
   // ── Subtitles: the hls-vtt side-track (Phase 3 Step 6c, deliverable 3) ──
   // burn-in needs nothing (already baked into the video frames); embed/none
@@ -847,10 +955,22 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
     if (!video) return;
 
     const onTimeUpdate = (): void => {
-      const ms = video.currentTime * 1000;
+      // V8 (§9.1.9): while relocating, the display stays frozen at the
+      // hard-seek target — the element's own position is meaningless until
+      // the landing.
+      if (relocatingRef.current) return;
+      // Displayed position is PDT-derived SOURCE time when the source
+      // clock exists; raw presentation otherwise (direct-play; pre-V8
+      // server) — where the two axes coincide anyway. positionRef then
+      // feeds the heartbeat, so reported positionMs is source-derived too.
+      const frags = listedFragments();
+      const withClock = frags !== null && hasSourceClock(frags);
+      const sourceMs = withClock ? presentationToSourceMs(frags, video.currentTime) : null;
+      const ms = sourceMs ?? video.currentTime * 1000;
       positionRef.current = ms;
       setPositionMs(ms);
-      setBuffered(readBuffered(video));
+      const rawBuffered = readBuffered(video);
+      setBuffered(withClock ? bufferedRangesToSource(frags, rawBuffered) : rawBuffered);
     };
     // The element's own duration is authoritative only when it EXTENDS
     // what the session already told us. For an in-progress HLS transcode
@@ -905,6 +1025,12 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
     };
     const onWaiting = (): void => setBuffering(true);
     const onPlaying = (): void => setBuffering(false);
+    // V8 (§9.1.9, QA 2026-08-12): a PAUSED element never fires `playing`,
+    // so `playing` as the only clearer latched the spinner forever on any
+    // seek-while-paused — even when the data had long since arrived.
+    // `seeked` and `canplay` both mean "the position is displayable now".
+    const onSeeked = (): void => setBuffering(false);
+    const onCanPlay = (): void => setBuffering(false);
     const onVolumeChange = (): void => {
       setVolume(video.volume);
       setMuted(video.muted);
@@ -918,6 +1044,8 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
     video.addEventListener("ended", onEnded);
     video.addEventListener("waiting", onWaiting);
     video.addEventListener("playing", onPlaying);
+    video.addEventListener("seeked", onSeeked);
+    video.addEventListener("canplay", onCanPlay);
     video.addEventListener("volumechange", onVolumeChange);
     return () => {
       video.removeEventListener("timeupdate", onTimeUpdate);
@@ -928,9 +1056,11 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
       video.removeEventListener("ended", onEnded);
       video.removeEventListener("waiting", onWaiting);
       video.removeEventListener("playing", onPlaying);
+      video.removeEventListener("seeked", onSeeked);
+      video.removeEventListener("canplay", onCanPlay);
       video.removeEventListener("volumechange", onVolumeChange);
     };
-  }, [phase]);
+  }, [phase, listedFragments]);
 
   // ── Fullscreen ───────────────────────────────────────────────────────────
   useEffect(() => {
@@ -970,20 +1100,138 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
     else video.pause();
   }, []);
 
-  const seek = useCallback((ms: number) => {
-    const video = videoRef.current;
-    if (!video) return;
-    video.currentTime = Math.max(0, ms / 1000);
-    positionRef.current = ms;
-    setPositionMs(ms);
-    heartbeatRef.current?.flushNow();
-  }, []);
+  // ── V8 seek algorithm (docs/PLAYBACK.md §9.1.9) ──────────────────────────
+  // `ms` is SOURCE time (the scrubber's axis). SOFT when a LISTED fragment
+  // covers it (A2 — buffered or not: hls.js fetches listed fragments
+  // locally); HARD (endpoint + landing watch) when it is outside the
+  // window; the pre-V8 bare assignment survives only as the no-source-clock
+  // fallback (direct-play; a pre-V8 server), where presentation == source.
+  const hardSeek = useCallback(
+    (targetMs: number): void => {
+      const sessionId = session?.id;
+      if (!sessionId) return;
+      const hls = hlsRef.current;
+      // §9.1.7: carry the quality selector's pinned rung, if any — one
+      // write, one restart. `nextLevel` only differs from -1 under a
+      // manual pin.
+      const pinnedRung = hls && !hls.autoLevelEnabled && hls.nextLevel >= 0 ? hls.nextLevel : undefined;
+      void apiPost("/playback/sessions/{id}/seek", {
+        params: { path: { id: sessionId } },
+        body: { targetMs: Math.max(0, Math.round(targetMs)), ...(pinnedRung !== undefined ? { rungIndex: pinnedRung } : {}) },
+      })
+        .then((accepted) => {
+          const clamped = accepted.targetMs;
+          // Arm/re-arm the landing watch against the CURRENT window — a
+          // re-seek before landing replaces the watch, and the newest
+          // clamped target wins (earlier seek runs are dead runs).
+          landingWatchRef.current = armLandingWatch(listedFragments(), clamped, Date.now());
+          relocatingRef.current = { targetMs: clamped };
+          setRelocating({ targetMs: clamped });
+          positionRef.current = clamped;
+          setPositionMs(clamped);
+          if (landingTimerRef.current) clearTimeout(landingTimerRef.current);
+          landingTimerRef.current = setTimeout(() => {
+            // Bounded, never an indefinite spinner (§9.1.9): leave
+            // relocating and surface a retryable error.
+            clearLandingWatch();
+            showToast("Seek timed out — the transcoder did not restart in time. Try seeking again.");
+          }, HARD_SEEK_LANDING_TIMEOUT_MS);
+          // A1 (design-pinned): after ENDLIST hls.js stops polling the
+          // playlist, so the landing watch below could never fire — the
+          // POST lands, the playlist un-ends, and nobody re-reads it.
+          // Entering relocating on an ENDLIST-seen session MUST restart
+          // playlist loading.
+          const levelIndex = hls && hls.currentLevel >= 0 ? hls.currentLevel : 0;
+          const details = hls?.levels[levelIndex]?.details;
+          if (hls && details && details.live === false) {
+            hls.startLoad();
+          }
+          // Native-HLS coarse landing (no hls.js instance to watch): land
+          // at the seekable end once it moves past its armed extent —
+          // the restarted run's segments are the only thing that can grow
+          // it. Precise landing: loombre-apple follow-up (§9.1.10 item 5).
+          if (!hls) {
+            const armedEnd = seekableEndSec(videoRef.current);
+            coarsePollRef.current = setInterval(() => {
+              const v = videoRef.current;
+              if (!v) return;
+              const end = seekableEndSec(v);
+              if (end !== null && (armedEnd === null || end > armedEnd + 1)) {
+                clearLandingWatch();
+                v.currentTime = Math.max(0, end - 0.25);
+                heartbeatRef.current?.flushNow();
+              }
+            }, 500);
+          }
+        })
+        .catch(() => {
+          clearLandingWatch();
+          showToast("Seek failed — check the connection and try again.");
+        });
+    },
+    [session?.id, listedFragments, clearLandingWatch, showToast],
+  );
+
+  const seek = useCallback(
+    (ms: number) => {
+      const video = videoRef.current;
+      if (!video) return;
+      // Pin the user's intent for any re-attach (V8): recovery restores
+      // the last seek target, not the session's original resume point.
+      pendingSeekMsRef.current = ms;
+      const frags = listedFragments();
+      if (frags && hasSourceClock(frags)) {
+        const presentationSec = sourceToPresentationSec(frags, ms);
+        if (presentationSec !== null) {
+          // SOFT — listed (A2), served from disk; no server round-trip.
+          clearLandingWatch();
+          video.currentTime = presentationSec;
+          positionRef.current = ms;
+          setPositionMs(ms);
+          heartbeatRef.current?.flushNow();
+          return;
+        }
+        hardSeek(ms);
+        return;
+      }
+      // Native-HLS transcode sessions (iOS Safari — MSE-less, so no hls.js
+      // instance): the V8 v1 COARSE path (ruled). Safari surfaces §9.1.5
+      // rule 7's PDT as `getStartDate()`, anchoring the same source clock.
+      if (attachStrategy === "native-hls" && session && !isDirectPlayRef.current) {
+        const anchorMs = nativeSourceAnchorMs(video);
+        if (anchorMs !== null) {
+          const presentationSec = (ms - anchorMs) / 1000;
+          if (isInSeekable(video, presentationSec)) {
+            clearLandingWatch();
+            video.currentTime = presentationSec;
+            positionRef.current = ms;
+            setPositionMs(ms);
+            heartbeatRef.current?.flushNow();
+            return;
+          }
+          hardSeek(ms);
+          return;
+        }
+      }
+      // No source clock (direct-play; native path without PDT; a pre-V8
+      // server): presentation == source for these sessions — the pre-V8
+      // bare assignment is exactly right.
+      video.currentTime = Math.max(0, ms / 1000);
+      positionRef.current = ms;
+      setPositionMs(ms);
+      heartbeatRef.current?.flushNow();
+    },
+    [listedFragments, hardSeek, clearLandingWatch, attachStrategy, session],
+  );
 
   const seekRelative = useCallback(
     (deltaMs: number) => {
       const video = videoRef.current;
       if (!video) return;
-      seek(Math.max(0, video.currentTime * 1000 + deltaMs));
+      // positionRef holds SOURCE ms (PDT-derived on the hls.js path) —
+      // the pre-V8 `video.currentTime * 1000` here was presentation time,
+      // wrong on the source axis after any restart.
+      seek(Math.max(0, positionRef.current + deltaMs));
     },
     [seek],
   );
@@ -1203,7 +1451,7 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
             volume={volume}
             muted={muted}
             isFullscreen={isFullscreen}
-            buffering={buffering}
+            buffering={buffering || relocating !== null}
             audioStreams={session?.media?.audio ?? []}
             subtitleStreams={session?.media?.subtitle ?? []}
             selectedAudioIndex={selectedAudioIndex}

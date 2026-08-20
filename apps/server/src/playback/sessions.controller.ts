@@ -43,9 +43,11 @@ import {
   getMediaInfoAssembly,
   getPlaybackSessionForUser,
   getUserSettings,
+  requestSeek,
+  requestSeekWithRungSwitch,
 } from "@loombre/db";
 import { nowMs as clockNowMs } from "@loombre/shared";
-import { notFound, unprocessableEntity } from "../gateway/problem.exception.js";
+import { conflict, notFound, unprocessableEntity } from "../gateway/problem.exception.js";
 import { requireUuidParam } from "../gateway/require-uuid-param.js";
 import type { AuthenticatedRequest } from "../gateway/auth.guard.js";
 import { DbProvider } from "../common/db.provider.js";
@@ -53,8 +55,11 @@ import { ViewerContextProvider } from "../common/viewer-context.provider.js";
 import { DeviceProfileValidatorService } from "../common/device-profile-validator.js";
 import { JobQueueProvider } from "../common/job-queue.provider.js";
 import { SettingsService } from "../settings/settings.service.js";
+import { clampSeekTargetMs } from "../common/served-playlist.js";
 import { resolveViewer } from "./viewer.js";
 import { parsePlanRequestBody } from "./plan-request.js";
+import { parseSeekRequestBody } from "./seek-request.js";
+import { storedDecision, storedLadder } from "./stored-plan-facts.js";
 import { assemblePlanInput } from "./plan-assembly.js";
 import { UnplayableMediaException } from "./unplayable-media.exception.js";
 import { TranscodeSlotsExhaustedException } from "./transcode-slots-exhausted.exception.js";
@@ -193,6 +198,77 @@ export class PlaybackSessionsController {
         : undefined;
 
     return toContractPlaybackSession(session, assembly?.media as unknown as Record<string, unknown> | undefined);
+  }
+
+  // POST /playback/sessions/{id}/seek — the V8 hard-seek control channel
+  // (docs/PLAYBACK.md §9 "The seek control channel is the contract call";
+  // contract requestPlaybackSeek). A thin, contract-visible alias of the
+  // segment-GET side effect: same `seek_target_ms` column, same
+  // last-write-wins absorption, same §9.1.7 single-statement write when
+  // `rungIndex` rides along. Exists because hls.js only requests URIs the
+  // playlist lists and the UA clamps `currentTime` to `video.seekable`,
+  // so an out-of-window target could never reach the segment-GET trigger
+  // at all — the restart machinery was unreachable (QA 2026-08-12).
+  //
+  // ORDERING: 404 walls first (existence is never leaked), then the 409
+  // direct-play wall (a category fact independent of the body), then body
+  // parse — which needs the stored ladder anyway for the rungIndex range
+  // check.
+  @Post("playback/sessions/:id/seek")
+  @HttpCode(202)
+  async requestSessionSeek(
+    @Param("id") id: string,
+    @Body() rawBody: unknown,
+    @Req() req: AuthenticatedRequest,
+  ): Promise<{ targetMs: number }> {
+    requireUuidParam(id, "Playback session not found.", req.originalUrl);
+    const ctx = await resolveViewer(this.viewerContextProvider, req);
+    const session = await getPlaybackSessionForUser(this.dbProvider.db, ctx, id);
+    if (!session || session.status === "ended" || session.status === "failed") {
+      throw notFound("Playback session not found.", req.originalUrl);
+    }
+    if (storedDecision(session.plan) === "direct-play") {
+      throw conflict(
+        "Direct-play sessions seek natively; there is no transcode pipeline to restart.",
+        req.originalUrl,
+        "not-a-transcode-session",
+      );
+    }
+
+    const ladder = storedLadder(session.plan);
+    const parsed = parseSeekRequestBody(rawBody, ladder.length);
+    if (!parsed.ok) {
+      throw unprocessableEntity(parsed.detail, req.originalUrl);
+    }
+
+    // Clamp to [0, durationMs] — the §9 clamp rule, owned by whoever
+    // decides the target (an unclamped value becomes an ffmpeg -ss past
+    // EOF: a restart that produces nothing, forever). Every failure
+    // degrades to the lower bound only, same as resolveSeekTargetMs.
+    let durationMs: number | null = null;
+    if (session.fileId) {
+      try {
+        const assembly = await getMediaInfoAssembly(this.dbProvider.db, ctx, {
+          fileId: session.fileId,
+          ...(session.itemId ? { itemId: session.itemId } : {}),
+        });
+        durationMs = assembly?.media.durationMs ?? null;
+      } catch {
+        // Unprobed/vanished file — keep the lower bound only.
+      }
+    }
+    const targetMs = clampSeekTargetMs(parsed.value.targetMs, durationMs);
+
+    const now = clockNowMs();
+    const updated =
+      parsed.value.rungIndex !== undefined
+        ? await requestSeekWithRungSwitch(this.dbProvider.db, ctx, id, targetMs, parsed.value.rungIndex, now)
+        : await requestSeek(this.dbProvider.db, ctx, id, targetMs, now);
+    if (!updated) {
+      // Raced a concurrent close between the read above and the write.
+      throw notFound("Playback session not found.", req.originalUrl);
+    }
+    return { targetMs };
   }
 
   @Delete("playback/sessions/:id")

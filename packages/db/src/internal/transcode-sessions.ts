@@ -30,7 +30,7 @@
 // session already been closed out by someone else" (the status guard),
 // never "am I racing my own other write".
 
-import type { Selectable, Transaction } from 'kysely';
+import { sql, type Selectable, type Transaction } from 'kysely';
 import type { DB, PlaybackSessionStatus } from '../types.js';
 import type { DbOrTx } from './tx.js';
 import { withTransaction } from './tx.js';
@@ -146,6 +146,48 @@ export async function setThrottleSuspended(
     .where('status', 'in', ['active', 'suspended'] satisfies PlaybackSessionStatus[])
     .returningAll()
     .executeTakeFirst();
+}
+
+/**
+ * V8 restart hygiene (docs/PLAYBACK.md §9 throttle block "Restart
+ * hygiene"): a restart spawns a FRESH process, which is by definition not
+ * throttle-stopped, so the throttle's OWN suspension must not survive onto
+ * the new run — in either column. Two coupled effects, one statement:
+ *
+ *   - `suspended_by_throttle` -> false, always (a stale flag routed the
+ *     reconciler into its "we are the reason" branch against a process
+ *     that was never stopped);
+ *   - a throttle-caused `status = 'suspended'` -> 'active' (leaving it
+ *     would flip the row's MEANING under the cleared flag: "suspended +
+ *     flag false" reads as a heartbeat-cause suspension, and the
+ *     reconciler would honor it by stopping the fresh handoff run before
+ *     its first segment — the A3 deadlock wearing a new hat). A seek
+ *     restart is unaffected (consumeSeekTarget already moved it to
+ *     'seeking', which the CASE leaves alone), and a GENUINE
+ *     heartbeat-cause suspension (flag false) never matches the WHERE at
+ *     all — it stays suspended, honored.
+ *
+ * setThrottleSuspended above remains the only writer of
+ * `suspended_by_throttle = true`; this second writer clears only, and only
+ * from the restart path (apps/worker runner.ts `restartAt`).
+ */
+export async function clearThrottleSuspendedOnRestart(db: DbOrTx, sessionId: string, nowMs: number): Promise<void> {
+  await db
+    .updateTable('playback_sessions')
+    .set((eb) => ({
+      suspended_by_throttle: false,
+      status: eb
+        .case()
+        .when('status', '=', 'suspended')
+        .then(sql.lit('active').$castTo<PlaybackSessionStatus>())
+        .else(eb.ref('status'))
+        .end(),
+      updated_at_ms: nowMs,
+    }))
+    .where('id', '=', sessionId)
+    .where('suspended_by_throttle', '=', true)
+    .where('status', 'in', NON_TERMINAL_STATUSES)
+    .execute();
 }
 
 export interface ConsumedSeekTarget {

@@ -982,6 +982,30 @@ State machine: `created → starting → active ⇄ suspended → seeking → ac
   when ahead > 10 segments (60 s), suspend encode (SIGSTOP on the ffmpeg
   process group; resume with SIGCONT at ahead ≤ 5). Throttling is mandatory
   — a T0 box must never spend CPU racing ahead of a paused viewer.
+  - **Lead arithmetic (V8):
+    `ahead = produced − max(requested, currentRun.startSegment)`.** A
+    `requested_segment` below the current run's `start_segment` is a
+    numbering artifact of a pre-restart request, not encoder lead: global
+    numbering only moves forward, so after ANY restart the client's last
+    requested index can sit far below the new run's start while the encoder
+    has produced nothing. Raw `produced − requested` reads that as a huge
+    lead and SIGSTOPs the fresh run before its first segment, with the
+    resume condition (ahead ≤ 5) arithmetically unreachable — a hard
+    deadlock (QA 2026-08-12, "buffers forever"). The floor closes BOTH
+    triggers: the backward-seek case AND the latent pure-rung-switch case
+    (a §9.1.4 handoff run spawns at `produced + 1` while requested pins at
+    the old run's index — no seek anywhere). Both are design-pinned in
+    `seek-rung-switch.integration.spec.ts`, not QA discoveries.
+  - **Restart hygiene (V8):** a restart voids the throttle's OWN
+    suspension in one statement — `suspended_by_throttle` -> false AND a
+    throttle-caused `status='suspended'` -> 'active' (a fresh process is
+    by definition not throttle-stopped, and leaving the status under a
+    cleared flag flips the row's MEANING to "heartbeat-suspended", which
+    the reconciler honors by stopping the fresh run — the A3 deadlock
+    wearing a new hat). A genuine heartbeat-cause suspension (flag already
+    false) is untouched and stays honored; a seek restart is unaffected
+    (its status is 'seeking'). And throttle reconciliation runs EVERY
+    tick; an absorbed seek must not `continue` past it.
   - **POSIX (darwin/linux):** the above, literally — real SIGSTOP/SIGCONT
     (`apps/worker/src/transcode/process.ts`), the session row carrying
     `suspended_by_throttle = true` while stopped.
@@ -1004,12 +1028,34 @@ State machine: `created → starting → active ⇄ suspended → seeking → ac
   restart with `{SEEK_SECONDS}=target` and `{START_SEG}` continuing the
   numbering, playlist gains `EXT-X-DISCONTINUITY`. Old segments beyond a
   retention window (120 s behind live edge) are deleted.
-  - **"Outside" is decided per segment GET** (apps/server's
+  - **The seek control channel is the contract call (V8):**
+    `POST /playback/sessions/{id}/seek { targetMs, rungIndex? }` → 202
+    carrying the CLAMPED target. A thin, contract-visible alias of the
+    segment-GET side effect — same `seek_target_ms` column, same
+    absorption, and when `rungIndex` rides along, the same §9.1.7
+    single-statement write (`requestSeekWithRungSwitch`). Standard bearer
+    auth (NOT the `?token` media-GET family — §9.1.9's zero-new-auth-
+    surface stance holds: one new route on an existing guard, no new token
+    surface). Direct-play sessions answer 409
+    (`urn:loombre:problem:not-a-transcode-session`). WHY a first-class
+    call: hls.js only requests URIs the playlist lists, and the UA clamps
+    `currentTime` writes to `video.seekable`, so an out-of-window target
+    could never reach the segment-GET trigger at all — the restart
+    machinery below existed but was unreachable (QA 2026-08-12), which
+    surfaced as "rewind skips forward".
+  - **"Outside" decided per segment GET is DEMOTED to defense** (native
+    clients, mid-prune races), unchanged mechanics (apps/server's
     `hls-file.controller.ts`): the requested index is more than 3 ahead of
     `produced_segment`, OR the file is simply not on disk (a run that has
     not reached that number yet, or a retention-pruned one). Either way the
-    response is 503 + `Retry-After`, never 404 — a 404 makes hls.js treat
-    the segment as permanently gone instead of "coming after a restart".
+    response is 503 + `Retry-After`, never 404 (a 404 would fatal hls.js's
+    fragment immediately; 503 keeps it polling until its playlist refresh
+    shows the new run). The 503 detail must NOT promise the requested URI
+    will appear — forward-only numbering guarantees the retried filename
+    never exists again (the new run writes `run{N+1}/` at `produced + 1`
+    and higher); the honest detail is that a restart was requested and the
+    playlist should be re-read. The pre-V8 "coming soon after a restart"
+    wording documented an unkeepable contract.
   - **Seek-target derivation (MANDATORY — never nominal arithmetic).** The
     ms value written to `seek_target_ms` is derived from the durations the
     session ACTUALLY produced: the `#EXTINF` values in the served
@@ -1432,12 +1478,16 @@ construction (§9.1.1 — one playlist):
    (duration resolves, the media element fires `ended`).
 5. **A post-ENDLIST seek/switch un-ends the playlist** (new run → tag
    gone, discontinuity, pruning resumes). RFC-wise that is "a new
-   playlist"; client-wise hls.js has stopped polling after ENDLIST, so
-   recovery rides the EXISTING fatal-network path: pruned/unproduced
-   segment GET → 503 ×8 → fatal → `startLoad()` re-reads the (now
-   live-again) playlist. Bounded-latency (≤ ~8 s), honest, pinned by a
-   test — and NOT a C2 regression, since pre-C2 behavior in this corner
-   was strictly worse (EVENT + prune + no ENDLIST).
+   playlist"; client-wise hls.js has stopped polling after ENDLIST — so
+   (V8, amendment A1) the CLIENT re-arms: a post-ENDLIST hard seek is the
+   normal §9.1.9 hard-seek procedure with playlist loading explicitly
+   restarted (`startLoad()` or equivalent) as part of ENTERING the
+   relocating state. Without that re-arm the landing watch can never fire
+   — the POST lands, the playlist un-ends, and nobody re-reads it: the
+   infinite spinner rebuilt on the exact path this rule exists to fix.
+   Design-pinned by a Wave 3 test. The old fatal-network ride
+   (pruned-segment GET → 503 ×8 → fatal → `startLoad()`) is demoted to
+   generic network recovery; it is no longer a seek mechanism.
 6. **The live-edge-jump hazard moves client-side and is closed there.**
    Dropping EVENT makes the stream look live; hls.js's default
    `startPosition: -1` would then start at the live edge — which for
@@ -1447,6 +1497,23 @@ construction (§9.1.1 — one playlist):
    loadedmetadata seek stays as belt-and-braces. No
    `liveMaxLatencyDuration*` is ever set (defaults = no forced live-edge
    chasing), so nothing yanks a paused/seeking viewer forward.
+7. **`EXT-X-PROGRAM-DATE-TIME` on EVERY segment (V8) — the source clock,
+   in-band.** Above each segment line the worker's renderer emits
+   `#EXT-X-PROGRAM-DATE-TIME:<ISO8601 of (Unix epoch + the segment's
+   SOURCE start in ms)>` — source time 0 IS `1970-01-01T00:00:00.000Z`
+   (ruled: the 1970 wall-clock cosmetic is not a supported audience;
+   session URLs are token-gated). Value =
+   `run.sourceOriginMs + Σ(that run's own prior #EXTINF)`, computed from
+   the runner's in-memory run registry (`RunState` carries
+   `sourceOriginMs`) — no serve-time DB read. Emission is PER SEGMENT,
+   not per run: head-pruning then needs no "first listed segment of the
+   run" bookkeeping, at ≈ 45 bytes × ~20 listed segments. Within a run
+   the mapping is exact (§9.1.6's rate argument); the one bound is input
+   `-ss` keyframe snap — a seek run's first frames may predate its
+   recorded origin by ≤ one GOP, one-time per run, non-compounding, the
+   same bound the §9 progress mapping already accepts. Clients read it as
+   `frag.programDateTime` (hls.js — the value IS source ms) or
+   `video.getStartDate()` (Safari native).
 
 **Scope guard — this model governs the SERVED playlist only.** ffmpeg's
 own per-run playlist KEEPS §6's `-hls_playlist_type event`: within one
@@ -1493,6 +1560,14 @@ rate-equivalence argument is rung-independent (re-encoding at a different
 bitrate/height never changes the time rate). The build pins this with a
 progress-across-switch test rather than new code.
 
+**PDT does not reopen this decision (V8).** §9.1.5 rule 7's
+`EXT-X-PROGRAM-DATE-TIME` is playlist METADATA rendered by the worker
+from the run map — media timestamps stay per-run zero-based, `-copyts`
+stays out, and zero ffmpeg arguments change. It is the same
+`transcode_runs` bridge this section already names as the sole timeline
+bridge, published in-band so clients can consume it directly. A future
+lane must not read PDT as re-litigating V4.
+
 #### 9.1.7 Seek ⨯ switch composition
 
 - **One restart serves both.** The worker's restart block reads BOTH
@@ -1503,6 +1578,12 @@ progress-across-switch test rather than new code.
   arriving during an in-progress handoff simply lands on the next tick
   (the handoff is within-tick); a switch arriving during a pending seek
   folds into the seek's restart. Never two restarts.
+- **The endpoint carries the coincident pair (V8).** `POST …/seek`
+  accepts optional `rungIndex` and records
+  `{seek_target_ms, pending_rung_index}` via the same single statement
+  the URL path-signal uses (`requestSeekWithRungSwitch`) — one write, one
+  restart, exactly as above. The client sends `rungIndex` when its
+  quality selector holds a pin to a non-active rung at hard-seek time.
 - **Absorption narrows under a pending switch.** The §9 seek-absorption
   rule (target inside the live run's `[origin, origin+produced]` window)
   gains one conjunct: absorb ONLY when `pending_rung_index` is unset or
@@ -1595,7 +1676,61 @@ machine totals, not per-session multipliers.
   heartbeating; the handoff window (seconds) is two orders of magnitude
   inside the 90 s suspend cutoff. Progress PUTs keep flowing through the
   §9 server-side mapping, which is switch-correct with zero changes
-  (§9.1.6).
+  (§9.1.6). (V8 refines the reported VALUE for PDT-capable clients — see
+  the seek-algorithm block below; the server-side mapping remains for
+  every reporter without the PDT model.)
+- **Seek algorithm (V8).** The client holds the two-timeline model in a
+  pure module (`apps/web/src/lib/source-time.ts`) built from the CURRENT
+  LEVEL DETAILS — every LISTED fragment with its §9.1.5 rule 7 PDT. The
+  soft/hard boundary is the LISTED playlist window, never buffer state
+  (amendment A2): an in-window-but-unbuffered target is a SOFT seek —
+  hls.js fetches listed fragments locally, and classifying it hard would
+  burn a Tier-0 ffmpeg restart for a position already on disk.
+  Design-pinned by a listed-but-unbuffered unit case.
+  - SOFT (target covered by a listed fragment):
+    `currentTime = frag.start + (targetMs − frag.programDateTime)/1000`.
+    Local; no server round-trip; both directions within the window.
+  - HARD (outside the listed window): `POST …/seek {targetMs, rungIndex?}`
+    → enter a `relocating` state (scrubber pins at the target, displayed
+    position frozen there). IF the session has seen ENDLIST, restart
+    playlist loading (`startLoad()` or equivalent) as part of ENTERING
+    relocating (amendment A1 — hls.js stops polling after ENDLIST;
+    without the re-arm the landing watch below can never fire). Watch
+    `LEVEL_UPDATED` for fragments whose `runN/` URI prefix EXCEEDS the
+    highest run index yet seen AND whose PDT falls within
+    `[clampedTarget − one GOP, clampedTarget + ε]` — both conditions
+    required (the prefix alone could be a §9.1.4 handoff run; the PDT
+    alone could false-positive on in-window content). Land at that
+    fragment's `start`. A re-seek before landing re-arms the watch with
+    the newest clamped target; earlier seek runs are dead runs the client
+    never lands on (server-side absorption already de-duplicates).
+  - Timeout: `HARD_SEEK_LANDING_TIMEOUT_MS = 20_000` — a NAMED CONSTANT,
+    not runtime config (ruled). Sizing rationale, kept beside the
+    constant: the observed 4–6 s cold restart is the dev box, NOT the
+    sizing case; the sizing case is an N100-class host transcoding 4K
+    input, which gets the headroom. On expiry: leave `relocating` and
+    surface the existing typed player-error path with a retry affordance.
+    Never an indefinite spinner.
+- **Displayed position is PDT-derived source time (V8):** current
+  fragment's PDT + intra-fragment offset, every timeupdate. Sessions
+  without PDT (direct-play; a stale server) fall back to raw
+  `currentTime` — exactly pre-V8 behavior, which keeps the client correct
+  against an unupgraded server. Heartbeat `positionMs` reports the same
+  source-derived value whenever the mapping exists.
+- **Scrubber commits ONE seek on pointerup (V8);** dragging is preview
+  only — the pre-V8 per-pointermove commit issued dozens of seeks and
+  progress PUTs per drag. The `buffering` flag clears on
+  `seeked`/`canplay` as well as `playing` (a paused element never fires
+  `playing`; pre-V8 this latched the spinner forever on any
+  seek-while-paused). The last seek target updates the re-attach
+  `startPosition` pin, so recovery restores the user's intent, not the
+  session's original resume point.
+- **Native-HLS seeks (V8 v1 scope, ruled):** soft seeks map through
+  `video.getStartDate()`; hard seeks call the endpoint and land COARSELY
+  at the seekable end once it moves (no fragment-level watch on this
+  path). The precise-landing follow-up is filed against the loombre-apple
+  first-playback milestone — the iOS app rides this path; it is not
+  optional polish.
 
 #### 9.1.10 Known limitations (stated, bounded, accepted — owner-decision V7)
 
@@ -1609,14 +1744,32 @@ machine totals, not per-session multipliers.
    (at most one run owns a segment index) that every Wave A consumer
    relies on. A future replace-tail mode is possible but is a spec change
    with its own review, not a build-time judgment call.
-2. **Post-ENDLIST backward seek pays the fatal-recovery path** (§9.1.5
-   rule 5): ≤ ~8 s to resume. Strictly better than pre-C2 (which had no
-   ENDLIST at all), pinned by a test so it cannot silently regress.
+2. **Post-ENDLIST hard seek needs the client re-arm** (§9.1.5 rule 5 as
+   amended by V8/A1): the endpoint records the seek, but hls.js has
+   stopped polling — the client restarts playlist loading on entering
+   `relocating`, so the un-ended playlist is re-read immediately. The
+   pre-V8 fatal-recovery ride (≤ ~8 s of 503s before `startLoad()`) is
+   demoted to generic network recovery. Pinned by a Wave 3 test.
 3. **Advertised ≠ instantly available.** A variant is a right to REQUEST
    the slot, not a parallel stream; two clients cannot watch two rungs of
    one session (they are one session — one slot, one pipeline; a second
    viewer is a second session and meets the admission gate). This is
    LD-16's intent, stated as a property rather than apologized for.
+4. **A restart can permanently skip segment indices (V8).** The next
+   run's start is
+   `max((producedSegment ?? −1) + 1, currentRun.startSegment + 1)`,
+   closing the duplicate-start collision (a seek consumed before run 0
+   flushed anything used to spawn run 1 also at index 0 — two
+   `transcode_runs` rows claiming one index makes
+   `getTranscodeRunForSegment`'s `ORDER BY start_segment DESC`
+   nondeterministic and emits duplicate media-sequence numbers across a
+   discontinuity, which hls.js discards). An index skipped by the floor
+   is never produced by any run; `EXT-X-MEDIA-SEQUENCE` (rule 2) already
+   makes a playlist starting above 0 well-formed. At-most-one-owner
+   becomes structural.
+5. **Native-HLS hard-seek landing is coarse in v1 (V8, ruled):**
+   seekable-end landing, no fragment-level watch. Precise landing is
+   filed against the loombre-apple first-playback milestone.
 
 #### 9.1.11 Owner decisions requested at the C2 stop (each reversible by a text edit here)
 
@@ -1670,6 +1823,48 @@ machine totals, not per-session multipliers.
   (media-sequence / discontinuity-sequence / ENDLIST freeze); engine
   matrix per §10's C2 classes; hls-js-config unit tests for both pins;
   the Safari token-hop verification item (§9.1.9).
+
+#### 9.1.13 Seek model V8 (owner-decision, signed 2026-08-12; amendments A1–A3 folded into the sections above)
+
+Closes the QA-confirmed scrubber defects (2026-08-12, vs `d6f378e`):
+out-of-window seeks unreachable (UA seekable clamp + live semantics made
+the segment-GET trigger unreachable); the unkeepable 503 "coming soon"
+promise; the throttle restart deadlock INCLUDING its latent
+pure-rung-switch variant (A3); no client source-time model. Decision
+record + rulings: STATE.md "Seek model V8" section. Numbering note: the
+design circulated as "V6"; recorded as V8 (V1–V7 were consumed by the C2
+sign-off, §9.1.11).
+
+Build-phase file map (waves ship in order; W1/W2 are dark until W3):
+
+- **W1 `apps/worker`** (client-agnostic): `transcode/throttle.ts` (the
+  startSegment floor, new pure input), `transcode/runner.ts` (floor
+  input; restart clears `suspended_by_throttle`; throttle reconciles
+  every tick; start-segment collision floor), `transcode/playlist.ts`
+  (§9.1.5 rule 7 PDT emission; `RunState.sourceOriginMs` threaded via
+  `applyRunUpdate` from the run registry). Tests: `throttle.spec.ts`
+  (floor cases incl. the pure-switch pin), `playlist.spec.ts` (PDT:
+  origin-0 run, multi-run non-monotonic origins, pruned head, ENDLIST),
+  `seek-rung-switch.integration.spec.ts` (seek-while-suspended,
+  switch-while-throttled, collision).
+- **W2 `packages/contract` + `apps/server`**: openapi.yaml
+  `POST /playback/sessions/{id}/seek` (202 clamped / 404 / 409
+  not-a-transcode-session / 422 / 429) + SDK regen atomic; seek handler
+  (clamp via `clampSeekTargetMs` + `getMediaInfoAssembly`;
+  `requestSeek`/`requestSeekWithRungSwitch` single statement);
+  `hls-file.controller.ts` 503 detail reword (no "coming soon"). Tests:
+  `playback-seek.e2e.spec.ts` (202+clamp incl. past-EOF, absorption,
+  coincident rung → one run, 404 foreign/terminal, 409 direct-play,
+  `transcode_runs` origin assertion), conformance walk.
+- **W3 `apps/web`**: `lib/source-time.ts` (pure listed-window model, A2);
+  `VideoPlayer.tsx` (soft/hard algorithm, `relocating` state, landing
+  watch, `HARD_SEEK_LANDING_TIMEOUT_MS = 20_000`, post-ENDLIST re-arm
+  (A1), re-attach pin update, buffering clears on `seeked`/`canplay`,
+  PDT-derived display + heartbeat value); `Scrubber.tsx`
+  (commit-on-pointerup). Tests: `source-time.test.ts` (incl.
+  listed-but-unbuffered soft case), `Scrubber.test.tsx`, VideoPlayer
+  hard-seek state machine incl. post-ENDLIST re-arm and
+  re-seek-before-landing.
 
 ## 10. Test matrix requirements (Phase 3 exit ≥ 500 cases)
 

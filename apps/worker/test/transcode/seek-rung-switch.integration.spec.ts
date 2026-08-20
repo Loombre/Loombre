@@ -955,5 +955,187 @@ describe.skipIf(!ffmpegAvailable || process.platform === "win32")(
         }
       },
     );
+
+    // ── V8 design pins (STATE.md "Seek model V8"; docs/PLAYBACK.md §9
+    // throttle "Lead arithmetic" + §9.1.10 item 4). Three scenarios the
+    // pre-V8 runtime deadlocked or corrupted, each pinned against the real
+    // process table. All three share the shape "requested_segment pinned
+    // BELOW the new run's start_segment" — the numbering artifact the
+    // throttle floor exists to see through.
+
+    async function waitForThrottleSuspended(sessionId: string, label: string): Promise<void> {
+      await waitFor(
+        async () => {
+          const { rows } = await raw.query<{ suspended_by_throttle: boolean }>(
+            `SELECT suspended_by_throttle FROM playback_sessions WHERE id = $1`,
+            [sessionId],
+          );
+          return rows[0]?.suspended_by_throttle === true;
+        },
+        { timeoutMs: 120_000 * TIME_SCALE, label },
+      );
+    }
+
+    it(
+      "V8/D-C: a HARD SEEK against a throttle-SUSPENDED session spawns a run that PRODUCES — never SIGSTOPped pre-first-segment by its own numbering artifact",
+      { timeout: 300_000 * TIME_SCALE },
+      async () => {
+        const sessionId = await createSession();
+        const sessionDir = join(stagingRoot, sessionId);
+
+        const runPromise = runTranscodeSession(
+          {
+            db,
+            stagingRoot,
+            pollIntervalMs: 150,
+            testReadrateMultiplier: 6,
+            onRunSpawned: (pid) => {
+              if (pid !== undefined) strayPids.push(pid);
+            },
+          },
+          sessionId,
+        );
+
+        try {
+          // A paused viewer: requested_segment never advances (stays null →
+          // treated as 0), so the encoder races ahead and the throttle
+          // SIGSTOPs it — by design.
+          await waitForRunProduced(sessionDir, 0, "run 0 produced");
+          await waitForThrottleSuspended(sessionId, "run 0 throttle-suspended (paused viewer)");
+
+          // The paused viewer now seeks FORWARD, out of the in-flight
+          // window (produced ≈ 11 segments ≈ 66 s; 100 s is beyond it but
+          // inside the 150 s fixture) — the restart path, from
+          // 'suspended'.
+          await requestSeek(db, ctx, sessionId, 100_000, Date.now());
+          await waitForRunCount(sessionId, 2, "seek run recorded from suspended state");
+
+          // THE PIN. Pre-V8: two ticks after the spawn the throttle read
+          // ahead = produced(≈11) − requested(0) = 11 > 10 and SIGSTOPped
+          // the fresh run BEFORE its first segment; with requested pinned
+          // and the run producing nothing, resume (ahead ≤ 5) was
+          // arithmetically unreachable — this wait timed out forever
+          // ("buffers forever", QA 2026-08-12). With the floor, floored
+          // ahead = produced − max(0, startSegment) ≤ 0 until the run is
+          // genuinely ahead of its OWN start.
+          await waitForRunProduced(sessionDir, 1, "the seek run's FIRST segment (the deadlock pin)");
+
+          // Restart hygiene: the fresh run must not still be wearing the
+          // old run's throttle flag.
+          const { rows } = await raw.query<{ suspended_by_throttle: boolean; status: string }>(
+            `SELECT suspended_by_throttle, status FROM playback_sessions WHERE id = $1`,
+            [sessionId],
+          );
+          expect(rows[0]!.suspended_by_throttle).toBe(false);
+          expect(rows[0]!.status).not.toBe("failed");
+
+          const runs = await listTranscodeRuns(db, sessionId);
+          expect(runs[1]!.sourceOriginMs).toBe(100_000);
+        } finally {
+          await raw.query(`UPDATE playback_sessions SET status = 'ended', updated_at_ms = $1 WHERE id = $2`, [Date.now(), sessionId]);
+          await runPromise.catch(() => undefined);
+        }
+      },
+    );
+
+    it(
+      "V8/A3: a PURE RUNG SWITCH against a throttle-SUSPENDED session — the handoff run produces; the same deadlock with NO seek anywhere (design-pinned, not a QA discovery)",
+      { timeout: 300_000 * TIME_SCALE },
+      async () => {
+        const sessionId = await createSession();
+        const sessionDir = join(stagingRoot, sessionId);
+
+        const runPromise = runTranscodeSession(
+          {
+            db,
+            stagingRoot,
+            pollIntervalMs: 150,
+            testReadrateMultiplier: 6,
+            onRunSpawned: (pid) => {
+              if (pid !== undefined) strayPids.push(pid);
+            },
+          },
+          sessionId,
+        );
+
+        try {
+          await waitForRunProduced(sessionDir, 0, "run 0 produced");
+          await waitForThrottleSuspended(sessionId, "run 0 throttle-suspended (paused viewer)");
+
+          // The paused viewer's client pins a different quality. The §9.1.4
+          // handoff spawns at produced+1 while requested_segment still sits
+          // at 0 — identical unreachable-resume arithmetic to the seek
+          // case, with no seek involved (amendment A3).
+          await requestRungSwitch(db, ctx, sessionId, 1, Date.now());
+          await waitForRunCount(sessionId, 2, "handoff run recorded from suspended state");
+          await waitForRunProduced(sessionDir, 1, "the handoff run's FIRST segment (the A3 pin)");
+
+          const { rows } = await raw.query<{ suspended_by_throttle: boolean; active_rung_index: number | null; status: string }>(
+            `SELECT suspended_by_throttle, active_rung_index, status FROM playback_sessions WHERE id = $1`,
+            [sessionId],
+          );
+          expect(rows[0]!.suspended_by_throttle).toBe(false);
+          expect(rows[0]!.active_rung_index).toBe(1);
+          // A pure switch never enters `seeking` (§9.1.4) — unchanged by V8.
+          expect(rows[0]!.status).not.toBe("seeking");
+        } finally {
+          await raw.query(`UPDATE playback_sessions SET status = 'ended', updated_at_ms = $1 WHERE id = $2`, [Date.now(), sessionId]);
+          await runPromise.catch(() => undefined);
+        }
+      },
+    );
+
+    it(
+      "V8/§9.1.10 item 4: a seek consumed BEFORE run 0 flushes anything must NOT spawn a second run at start_segment 0 — at-most-one-owner is structural",
+      { timeout: 300_000 * TIME_SCALE },
+      async () => {
+        const sessionId = await createSession();
+        const sessionDir = join(stagingRoot, sessionId);
+
+        const runPromise = runTranscodeSession(
+          {
+            db,
+            stagingRoot,
+            pollIntervalMs: 150,
+            testReadrateMultiplier: 6,
+            onRunSpawned: (pid) => {
+              if (pid !== undefined) strayPids.push(pid);
+            },
+          },
+          sessionId,
+        );
+
+        try {
+          // Write the seek target IMMEDIATELY — run 0's ffmpeg needs ~1 s+
+          // to open input and flush a first 6 s segment, while the 150 ms
+          // poll tick will consume this well before then, hitting the
+          // produced === undefined restart path.
+          await requestSeek(db, ctx, sessionId, 30_000, Date.now());
+
+          await waitForRunCount(sessionId, 2, "seek run recorded");
+          await waitForRunProduced(sessionDir, 1, "seek run produced");
+
+          const runs = await listTranscodeRuns(db, sessionId);
+          // Pre-V8: run 1 also started at 0 — two rows claiming index 0,
+          // ORDER BY start_segment DESC nondeterministic, duplicate
+          // media-sequence numbers across a discontinuity. The floor makes
+          // start_segment strictly increasing even when nothing was
+          // produced.
+          for (let i = 1; i < runs.length; i += 1) {
+            expect(runs[i]!.startSegment, `run ${i} start_segment strictly above run ${i - 1}'s`).toBeGreaterThan(
+              runs[i - 1]!.startSegment,
+            );
+          }
+          // Ownership at the skipped/boundary indices is deterministic.
+          const ownerOfZero = await getTranscodeRunForSegment(db, sessionId, 0);
+          expect(ownerOfZero?.runIndex).toBe(0);
+          const ownerAtRun1Start = await getTranscodeRunForSegment(db, sessionId, runs[1]!.startSegment);
+          expect(ownerAtRun1Start?.runIndex).toBe(1);
+        } finally {
+          await raw.query(`UPDATE playback_sessions SET status = 'ended', updated_at_ms = $1 WHERE id = $2`, [Date.now(), sessionId]);
+          await runPromise.catch(() => undefined);
+        }
+      },
+    );
   },
 );

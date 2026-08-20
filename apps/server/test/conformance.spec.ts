@@ -459,6 +459,8 @@ const IMPLEMENTED_NON_PUBLIC_EXPECTATIONS: Record<string, number> = {
   createPlaybackSession: 422, // bodyless -> same PlanRequest validation
   getPlaybackSession: 404, // placeholder session id never resolves
   endPlaybackSession: 404,
+  requestPlaybackSeek: 404, // V8 seek control channel — same placeholder-id wall
+
   getPlaybackSessionFile: 404, // placeholder session id never resolves
   getPlaybackHlsManifest: 404, // placeholder session id -> immediate 404, no poll wait
   // Wave C2 / §9.1.1. NEVER 503s (it is rendered from the stored plan, so

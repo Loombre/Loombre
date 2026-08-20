@@ -80,7 +80,7 @@ describe("segmentIndexFromUri", () => {
 describe("applyRunUpdate + renderServedPlaylist", () => {
   it("a single run renders with EXT-X-MAP and no discontinuity", () => {
     let state = emptyServedPlaylistState(6, true);
-    state = applyRunUpdate(state, 0, "run0", parseFfmpegPlaylist(FMP4_PLAYLIST));
+    state = applyRunUpdate(state, 0, "run0", parseFfmpegPlaylist(FMP4_PLAYLIST), 0);
     const rendered = renderServedPlaylist(state);
     expect(rendered).toContain("#EXT-X-MAP:URI=\"run0/init.mp4\"");
     expect(rendered).toContain("run0/s000000.m4s");
@@ -90,9 +90,9 @@ describe("applyRunUpdate + renderServedPlaylist", () => {
 
   it("a second run (post-seek) inserts EXT-X-DISCONTINUITY before its first segment", () => {
     let state = emptyServedPlaylistState(6, true);
-    state = applyRunUpdate(state, 0, "run0", parseFfmpegPlaylist(FMP4_PLAYLIST));
+    state = applyRunUpdate(state, 0, "run0", parseFfmpegPlaylist(FMP4_PLAYLIST), 0);
     const run1Playlist = `#EXTM3U\n#EXT-X-TARGETDURATION:6\n#EXT-X-MAP:URI="init.mp4"\n#EXTINF:6.000000,\ns000043.m4s\n`;
-    state = applyRunUpdate(state, 1, "run1", parseFfmpegPlaylist(run1Playlist));
+    state = applyRunUpdate(state, 1, "run1", parseFfmpegPlaylist(run1Playlist), 0);
     const rendered = renderServedPlaylist(state);
 
     const discontinuityIdx = rendered.indexOf("#EXT-X-DISCONTINUITY");
@@ -105,11 +105,94 @@ describe("applyRunUpdate + renderServedPlaylist", () => {
 
   it("updating an existing run REPLACES its segment list wholesale (ffmpeg's own file is authoritative)", () => {
     let state = emptyServedPlaylistState(6, true);
-    state = applyRunUpdate(state, 0, "run0", parseFfmpegPlaylist(FMP4_PLAYLIST));
+    state = applyRunUpdate(state, 0, "run0", parseFfmpegPlaylist(FMP4_PLAYLIST), 0);
     const grown = FMP4_PLAYLIST + "#EXTINF:6.000000,\ns000002.m4s\n";
-    state = applyRunUpdate(state, 0, "run0", parseFfmpegPlaylist(grown));
+    state = applyRunUpdate(state, 0, "run0", parseFfmpegPlaylist(grown), 0);
     expect(state.runs).toHaveLength(1);
     expect(state.runs[0]!.segments).toHaveLength(3);
+  });
+});
+
+describe("renderServedPlaylist: §9.1.5 rule 7 EXT-X-PROGRAM-DATE-TIME (V8 source clock)", () => {
+  // Source time IS the PDT epoch (owner ruling Q1): source 0 ==
+  // 1970-01-01T00:00:00.000Z, so a client's frag.programDateTime in ms IS
+  // the segment's source start. Values below are run.sourceOriginMs + the
+  // run's OWN cumulative prior #EXTINF — computed at fold time, so they
+  // survive head-pruning without any pruned-head bookkeeping.
+  const runPlaylist = (segs: [string, number][]): ReturnType<typeof parseFfmpegPlaylist> => ({
+    targetDurationSec: 6,
+    initUri: "init.mp4",
+    hasEndlist: false,
+    segments: segs.map(([uri, durationSec]) => ({ uri, durationSec })),
+  });
+
+  function pdtLineAbove(rendered: string, uriLine: string): string | undefined {
+    const lines = rendered.trimEnd().split("\n");
+    const idx = lines.indexOf(uriLine);
+    if (idx < 2) return undefined;
+    // Layout per segment is PDT, then #EXTINF, then the URI.
+    return lines[idx - 2];
+  }
+
+  it("origin-0 run: every segment carries PDT = epoch + cumulative prior EXTINF of its OWN run", () => {
+    let state = emptyServedPlaylistState(6, true);
+    state = applyRunUpdate(state, 0, "run0", runPlaylist([
+      ["s000000.m4s", 6.006],
+      ["s000001.m4s", 6.006],
+      ["s000002.m4s", 5.988],
+    ]), 0);
+    const rendered = renderServedPlaylist(state);
+    expect(pdtLineAbove(rendered, "run0/s000000.m4s")).toBe("#EXT-X-PROGRAM-DATE-TIME:1970-01-01T00:00:00.000Z");
+    expect(pdtLineAbove(rendered, "run0/s000001.m4s")).toBe("#EXT-X-PROGRAM-DATE-TIME:1970-01-01T00:00:06.006Z");
+    expect(pdtLineAbove(rendered, "run0/s000002.m4s")).toBe("#EXT-X-PROGRAM-DATE-TIME:1970-01-01T00:00:12.012Z");
+  });
+
+  it("multi-run: PDT restarts at each run's own origin, and origins are NON-monotonic across a backward seek", () => {
+    let state = emptyServedPlaylistState(6, true);
+    state = applyRunUpdate(state, 0, "run0", runPlaylist([["s000000.m4s", 6]]), 0);
+    state = applyRunUpdate(state, 1, "run1", runPlaylist([["s000001.m4s", 6]]), 60_000);
+    state = applyRunUpdate(state, 2, "run2", runPlaylist([["s000002.m4s", 6]]), 3_000); // backward seek
+    const rendered = renderServedPlaylist(state);
+    expect(pdtLineAbove(rendered, "run0/s000000.m4s")).toBe("#EXT-X-PROGRAM-DATE-TIME:1970-01-01T00:00:00.000Z");
+    expect(pdtLineAbove(rendered, "run1/s000001.m4s")).toBe("#EXT-X-PROGRAM-DATE-TIME:1970-01-01T00:01:00.000Z");
+    expect(pdtLineAbove(rendered, "run2/s000002.m4s")).toBe("#EXT-X-PROGRAM-DATE-TIME:1970-01-01T00:00:03.000Z");
+  });
+
+  it("pruned head: a surviving mid-run segment keeps its FULL within-run offset (fold-time offsets survive pruning)", () => {
+    let state = emptyServedPlaylistState(6, true);
+    state = applyRunUpdate(state, 0, "run0", runPlaylist([
+      ["s000000.m4s", 6],
+      ["s000001.m4s", 6],
+      ["s000002.m4s", 6],
+      ["s000003.m4s", 6],
+      ["s000004.m4s", 6],
+    ]), 0);
+    // Live edge 30s, retention 12s -> cutoff 18s: s0..s2 pruned.
+    const { nextState } = pruneRetention(state, 12, 0);
+    const rendered = renderServedPlaylist(nextState);
+    expect(rendered).not.toContain("run0/s000000.m4s");
+    expect(pdtLineAbove(rendered, "run0/s000003.m4s")).toBe("#EXT-X-PROGRAM-DATE-TIME:1970-01-01T00:00:18.000Z");
+    expect(pdtLineAbove(rendered, "run0/s000004.m4s")).toBe("#EXT-X-PROGRAM-DATE-TIME:1970-01-01T00:00:24.000Z");
+  });
+
+  it("an ENDLIST-bearing playlist keeps its PDTs and the terminal tag stays last", () => {
+    let state = emptyServedPlaylistState(6, true);
+    state = applyRunUpdate(state, 0, "run0", { ...runPlaylist([["s000000.m4s", 6]]), hasEndlist: true }, 0);
+    const rendered = renderServedPlaylist(state);
+    expect(pdtLineAbove(rendered, "run0/s000000.m4s")).toBe("#EXT-X-PROGRAM-DATE-TIME:1970-01-01T00:00:00.000Z");
+    expect(rendered.trimEnd().split("\n").at(-1)).toBe("#EXT-X-ENDLIST");
+  });
+
+  it("PDT precedes #EXTINF — the EXTINF->URI adjacency the serve-side parser relies on is never broken", () => {
+    let state = emptyServedPlaylistState(6, true);
+    state = applyRunUpdate(state, 0, "run0", runPlaylist([["s000000.m4s", 6], ["s000001.m4s", 6]]), 0);
+    state = applyRunUpdate(state, 1, "run1", runPlaylist([["s000002.m4s", 6]]), 12_000);
+    const lines = renderServedPlaylist(state).trimEnd().split("\n");
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i]!.startsWith("#EXTINF")) {
+        expect(lines[i + 1]!.startsWith("#")).toBe(false);
+      }
+    }
   });
 });
 
@@ -119,7 +202,7 @@ describe("highestProducedSegmentIndex", () => {
   });
   it("the max absolute index across all runs", () => {
     let state = emptyServedPlaylistState(6, true);
-    state = applyRunUpdate(state, 0, "run0", parseFfmpegPlaylist(FMP4_PLAYLIST));
+    state = applyRunUpdate(state, 0, "run0", parseFfmpegPlaylist(FMP4_PLAYLIST), 0);
     expect(highestProducedSegmentIndex(state)).toBe(1);
   });
 });
@@ -131,7 +214,7 @@ describe("pruneRetention", () => {
       uri: `s${String(i).padStart(6, "0")}.m4s`,
       durationSec,
     }));
-    state = applyRunUpdate(state, 0, "run0", { targetDurationSec: durationSec, initUri: "init.mp4", segments, hasEndlist: false });
+    state = applyRunUpdate(state, 0, "run0", { targetDurationSec: durationSec, initUri: "init.mp4", segments, hasEndlist: false }, 0);
     return state;
   }
 
@@ -165,14 +248,14 @@ describe("pruneRetention", () => {
       initUri: "init.mp4",
       segments: Array.from({ length: 5 }, (_, i) => ({ uri: `s${String(i).padStart(6, "0")}.m4s`, durationSec: 6 })),
       hasEndlist: false,
-    });
+    }, 0);
     // run1 (current): 25 fresh segments (150s) after the discontinuity.
     state = applyRunUpdate(state, 1, "run1", {
       targetDurationSec: 6,
       initUri: "init.mp4",
       segments: Array.from({ length: 25 }, (_, i) => ({ uri: `s${String(i + 5).padStart(6, "0")}.m4s`, durationSec: 6 })),
       hasEndlist: false,
-    });
+    }, 0);
 
     const result = pruneRetention(state, 120, 1);
     expect(result.runDirsToDelete).toEqual(["run0"]);
@@ -201,7 +284,7 @@ describe("pruneRetention", () => {
 describe("renderServedPlaylist: the §9.1.5 tag model", () => {
   function stateWith(hasEndlist: boolean): ReturnType<typeof emptyServedPlaylistState> {
     let state = emptyServedPlaylistState(6, true);
-    state = applyRunUpdate(state, 0, "run0", { ...parseFfmpegPlaylist(FMP4_PLAYLIST), hasEndlist });
+    state = applyRunUpdate(state, 0, "run0", { ...parseFfmpegPlaylist(FMP4_PLAYLIST), hasEndlist }, 0);
     return state;
   }
 
@@ -226,26 +309,26 @@ describe("renderServedPlaylist: the §9.1.5 tag model", () => {
     let state = emptyServedPlaylistState(6, true);
     // run0 ended (the seek killed it after ffmpeg wrote its ENDLIST);
     // run1 is the live one and is still producing.
-    state = applyRunUpdate(state, 0, "run0", { ...parseFfmpegPlaylist(FMP4_PLAYLIST), hasEndlist: true });
+    state = applyRunUpdate(state, 0, "run0", { ...parseFfmpegPlaylist(FMP4_PLAYLIST), hasEndlist: true }, 0);
     state = applyRunUpdate(state, 1, "run1", {
       targetDurationSec: 6,
       initUri: "init.mp4",
       segments: [{ uri: "s000043.m4s", durationSec: 6 }],
       hasEndlist: false,
-    });
+    }, 0);
     expect(renderServedPlaylist(state)).not.toContain("#EXT-X-ENDLIST");
   });
 
   it("a post-ENDLIST seek/switch UN-ends the playlist (rule 5 — the new run is live again)", () => {
     let state = emptyServedPlaylistState(6, true);
-    state = applyRunUpdate(state, 0, "run0", { ...parseFfmpegPlaylist(FMP4_PLAYLIST), hasEndlist: true });
+    state = applyRunUpdate(state, 0, "run0", { ...parseFfmpegPlaylist(FMP4_PLAYLIST), hasEndlist: true }, 0);
     expect(renderServedPlaylist(state)).toContain("#EXT-X-ENDLIST");
     state = applyRunUpdate(state, 1, "run1", {
       targetDurationSec: 6,
       initUri: "init.mp4",
       segments: [{ uri: "s000043.m4s", durationSec: 6 }],
       hasEndlist: false,
-    });
+    }, 0);
     expect(renderServedPlaylist(state)).not.toContain("#EXT-X-ENDLIST");
   });
 
@@ -258,11 +341,11 @@ describe("renderServedPlaylist: the §9.1.5 tag model", () => {
 describe("servedPlaylistHasEnded (the §9.1.5 rule-4 PRUNE-FREEZE predicate)", () => {
   it("is true exactly when the current run has ended", () => {
     let live = emptyServedPlaylistState(6, true);
-    live = applyRunUpdate(live, 0, "run0", parseFfmpegPlaylist(FMP4_PLAYLIST));
+    live = applyRunUpdate(live, 0, "run0", parseFfmpegPlaylist(FMP4_PLAYLIST), 0);
     expect(servedPlaylistHasEnded(live)).toBe(false);
 
     let ended = emptyServedPlaylistState(6, true);
-    ended = applyRunUpdate(ended, 0, "run0", { ...parseFfmpegPlaylist(FMP4_PLAYLIST), hasEndlist: true });
+    ended = applyRunUpdate(ended, 0, "run0", { ...parseFfmpegPlaylist(FMP4_PLAYLIST), hasEndlist: true }, 0);
     expect(servedPlaylistHasEnded(ended)).toBe(true);
   });
 
@@ -280,7 +363,7 @@ describe("servedPlaylistHasEnded (the §9.1.5 rule-4 PRUNE-FREEZE predicate)", (
       initUri: "init.mp4",
       segments: Array.from({ length: 30 }, (_, i) => ({ uri: `s${String(i).padStart(6, "0")}.m4s`, durationSec: 6 })),
       hasEndlist: true,
-    });
+    }, 0);
     // The predicate is what the runtime gates pruneRetention on; pruning
     // this state WOULD drop 10 segments, which is exactly what must not
     // happen after the playlist has ended.

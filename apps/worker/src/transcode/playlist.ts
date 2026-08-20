@@ -106,6 +106,15 @@ export function segmentIndexFromUri(uri: string): number | undefined {
   return Number.parseInt(m[1], 10);
 }
 
+/** A RunState segment: the parsed pair PLUS its start offset within its
+ *  OWN run's output, computed at fold time (`applyRunUpdate`) from the
+ *  complete per-run ffmpeg playlist — which §6 keeps append-only, so the
+ *  cumulative sum is exact and, once computed, survives head-pruning
+ *  without any pruned-head bookkeeping (§9.1.5 rule 7). */
+export interface RunSegment extends ParsedSegment {
+  startOffsetSec: number;
+}
+
 export interface RunState {
   runIndex: number;
   /** Whether THIS run's own ffmpeg playlist carried `#EXT-X-ENDLIST` —
@@ -121,8 +130,16 @@ export interface RunState {
    *  join (this module's own header + this step's report documents the
    *  convention for Lane B). */
   runDirName: string;
+  /** Where this run starts on the SOURCE timeline (V8, §9.1.5 rule 7) —
+   *  0 for run 0, the consumed seek target for a seek run, the §9.1.4
+   *  continuation origin for a handoff run. Supplied by the runner from
+   *  its own run registry (it spawned the run and wrote the
+   *  transcode_runs row); NON-monotonic across runs (a backward seek
+   *  starts a later run at an earlier origin). Feeds the per-segment
+   *  `EXT-X-PROGRAM-DATE-TIME` emission in `renderServedPlaylist`. */
+  sourceOriginMs: number;
   initUri: string | undefined;
-  segments: ParsedSegment[];
+  segments: RunSegment[];
 }
 
 export interface ServedPlaylistState {
@@ -141,13 +158,31 @@ export function emptyServedPlaylistState(targetDurationSec: number, isFmp4: bool
  *  writing — this is the ENTIRE point of never trusting a second, stale
  *  snapshot). Runs are appended to `state.runs` in increasing `runIndex`
  *  order the first time they're seen; an update to an existing run
- *  replaces it in place. */
-export function applyRunUpdate(state: ServedPlaylistState, runIndex: number, runDirName: string, parsed: ParsedFfmpegPlaylist): ServedPlaylistState {
+ *  replaces it in place.
+ *
+ *  `sourceOriginMs` (V8, §9.1.5 rule 7): the run's source origin, from the
+ *  runner's registry. Within-run segment offsets are computed HERE, from
+ *  the complete (append-only) per-run playlist, so they stay exact after
+ *  head-pruning removes earlier entries from the served state. */
+export function applyRunUpdate(
+  state: ServedPlaylistState,
+  runIndex: number,
+  runDirName: string,
+  parsed: ParsedFfmpegPlaylist,
+  sourceOriginMs: number,
+): ServedPlaylistState {
+  let cumulativeSec = 0;
+  const segments: RunSegment[] = parsed.segments.map((seg) => {
+    const enriched: RunSegment = { ...seg, startOffsetSec: cumulativeSec };
+    cumulativeSec += seg.durationSec;
+    return enriched;
+  });
   const nextRun: RunState = {
     runIndex,
     runDirName,
+    sourceOriginMs,
     initUri: parsed.initUri,
-    segments: parsed.segments,
+    segments,
     hasEndlist: parsed.hasEndlist,
   };
   const existingIdx = state.runs.findIndex((r) => r.runIndex === runIndex);
@@ -220,6 +255,14 @@ export function renderServedPlaylist(state: ServedPlaylistState): string {
       lines.push(`#EXT-X-MAP:URI="${run.runDirName}/${run.initUri}"`);
     }
     for (const seg of run.segments) {
+      // §9.1.5 rule 7 (V8): the source clock, in-band. Source time 0 IS
+      // the Unix epoch (owner ruling Q1), so a client's
+      // frag.programDateTime in ms IS the segment's source start. Emitted
+      // per SEGMENT (not per run) so head-pruning needs no
+      // first-listed-segment bookkeeping; placed BEFORE #EXTINF so the
+      // EXTINF->URI adjacency serve-side parsers rely on is untouched.
+      const sourceStartMs = Math.round(run.sourceOriginMs + seg.startOffsetSec * 1000);
+      lines.push(`#EXT-X-PROGRAM-DATE-TIME:${new Date(sourceStartMs).toISOString()}`);
       lines.push(`#EXTINF:${seg.durationSec},`);
       lines.push(`${run.runDirName}/${seg.uri}`);
     }
@@ -267,7 +310,7 @@ export function pruneRetention(state: ServedPlaylistState, retentionSec: number,
   const nextRuns: RunState[] = [];
   let runningEnd = 0;
   for (const run of state.runs) {
-    const survivors: ParsedSegment[] = [];
+    const survivors: RunSegment[] = [];
     for (const seg of run.segments) {
       runningEnd += seg.durationSec;
       if (runningEnd <= cutoffSec) {

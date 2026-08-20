@@ -1786,9 +1786,12 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '503':
           description: >-
-            The requested segment is outside the produced window; a seek
-            restart has been requested. Client should retry
-            (Retry-After header set).
+            The requested segment is outside the produced window; a restart
+            has been requested (V8: the requested URI itself never returns —
+            forward-only numbering — so clients should re-read the playlist
+            for the new run rather than retry this URI indefinitely;
+            Retry-After header set). Secondary/defensive path — the primary
+            seek channel is POST /playback/sessions/{id}/seek.
           headers:
             Retry-After:
               schema: { type: integer }
@@ -1896,6 +1899,52 @@ paths:
         '204': { description: Ended }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
+        default: { $ref: '#/components/responses/Problem' }
+
+  /playback/sessions/{id}/seek:
+    parameters:
+      - $ref: '#/components/parameters/IdPathParam'
+    post:
+      operationId: requestPlaybackSeek
+      tags: [playback]
+      summary: >-
+        Record a hard-seek intent for a transcode session (docs/PLAYBACK.md
+        §9, owner-decision V8). A thin, contract-visible alias of the
+        segment-GET side effect: writes the same `seek_target_ms` column
+        with the same last-write-wins absorption, and — when `rungIndex`
+        rides along — the same single-statement coincident-pair write
+        (§9.1.7). The worker kills the live pipeline and restarts at the
+        clamped target; the new run appears at the served playlist's tail
+        under the next `runN/` prefix with `EXT-X-PROGRAM-DATE-TIME`
+        carrying its source position, which is what the client's landing
+        watch keys on. Clients seek locally ("soft") for any target the
+        playlist still lists; this call is for targets OUTSIDE that window,
+        which hls.js can never request on its own.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SeekRequest' }
+      responses:
+        '202':
+          description: >-
+            Seek recorded. The body carries the CLAMPED target actually
+            written — `[0, durationMs]`, never past EOF — which the client
+            keys its landing match on.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SeekAccepted' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: >-
+            Not a transcode session — direct-play seeks natively via byte
+            ranges; there is no pipeline to restart. The problem `code` is
+            `not-a-transcode-session`.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
         default: { $ref: '#/components/responses/Problem' }
 
   /playback/sessions/{id}/file:
@@ -6494,6 +6543,43 @@ components:
         network: { $ref: '#/components/schemas/NetworkConditions' }
         mode: { type: string, enum: [stream, download] }
         selection: { $ref: '#/components/schemas/TrackSelection' }
+
+    SeekRequest:
+      type: object
+      additionalProperties: false
+      required: [targetMs]
+      properties:
+        targetMs:
+          type: integer
+          format: int64
+          minimum: 0
+          description: >-
+            SOURCE-timeline target, in milliseconds (invariant 5). Clamped
+            server-side to `[0, durationMs]`; the 202 body echoes the
+            clamped value.
+        rungIndex:
+          type: integer
+          minimum: 0
+          description: >-
+            Optional coincident quality switch (docs/PLAYBACK.md §9.1.7):
+            the ladder rung the client's quality selector holds pinned at
+            hard-seek time. Must name a rung of the session's stored
+            ladder (422 otherwise). Naming the already-active rung absorbs
+            the switch half only — the seek half always lands.
+
+    SeekAccepted:
+      type: object
+      additionalProperties: false
+      required: [targetMs]
+      properties:
+        targetMs:
+          type: integer
+          format: int64
+          description: >-
+            The CLAMPED target actually recorded — what the restarted
+            run's `source_origin_ms` (and its first segments'
+            `EXT-X-PROGRAM-DATE-TIME`) will carry, modulo the input-seek
+            keyframe snap (≤ one GOP, §9.1.5 rule 7).
 
     PlanReasonCode:
       description: >-

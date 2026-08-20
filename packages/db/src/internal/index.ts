@@ -188,6 +188,7 @@ export {
   markSessionActive,
   updateProducedSegment,
   setThrottleSuspended,
+  clearThrottleSuspendedOnRestart,
   consumeSeekTarget,
   markSessionFailed,
   ensureSessionStagingDir,

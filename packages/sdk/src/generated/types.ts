@@ -1149,6 +1149,25 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/playback/sessions/{id}/seek": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["IdPathParam"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Record a hard-seek intent for a transcode session (docs/PLAYBACK.md §9, owner-decision V8). A thin, contract-visible alias of the segment-GET side effect: writes the same `seek_target_ms` column with the same last-write-wins absorption, and — when `rungIndex` rides along — the same single-statement coincident-pair write (§9.1.7). The worker kills the live pipeline and restarts at the clamped target; the new run appears at the served playlist's tail under the next `runN/` prefix with `EXT-X-PROGRAM-DATE-TIME` carrying its source position, which is what the client's landing watch keys on. Clients seek locally ("soft") for any target the playlist still lists; this call is for targets OUTSIDE that window, which hls.js can never request on its own. */
+        post: operations["requestPlaybackSeek"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/playback/sessions/{id}/file": {
         parameters: {
             query?: never;
@@ -3745,6 +3764,22 @@ export interface components {
             /** @enum {string} */
             mode: "stream" | "download";
             selection?: components["schemas"]["TrackSelection"];
+        };
+        SeekRequest: {
+            /**
+             * Format: int64
+             * @description SOURCE-timeline target, in milliseconds (invariant 5). Clamped server-side to `[0, durationMs]`; the 202 body echoes the clamped value.
+             */
+            targetMs: number;
+            /** @description Optional coincident quality switch (docs/PLAYBACK.md §9.1.7): the ladder rung the client's quality selector holds pinned at hard-seek time. Must name a rung of the session's stored ladder (422 otherwise). Naming the already-active rung absorbs the switch half only — the seek half always lands. */
+            rungIndex?: number;
+        };
+        SeekAccepted: {
+            /**
+             * Format: int64
+             * @description The CLAMPED target actually recorded — what the restarted run's `source_origin_ms` (and its first segments' `EXT-X-PROGRAM-DATE-TIME`) will carry, modulo the input-seek keyframe snap (≤ one GOP, §9.1.5 rule 7).
+             */
+            targetMs: number;
         };
         /** @description Closed enum plus two pattern-typed families (docs/PLAYBACK.md §4). Additions to the fixed list are contract PRs. */
         PlanReasonCode: ("container-not-direct-playable" | "video-codec-unsupported" | "video-profile-unsupported" | "video-level-exceeds-device" | "video-bitdepth-unsupported" | "video-resolution-exceeds-device" | "video-framerate-exceeds-device" | "video-interlaced" | "hdr-tone-map-required" | "dv-profile5-requires-tonemap" | "tone-map-refused-by-policy" | "audio-codec-unsupported" | "audio-channels-exceed-device" | "audio-passthrough-unsupported" | "subtitle-format-requires-burn-in" | "subtitle-burn-in-for-styling" | "video-transcode-for-subtitle-burn-in" | "bitrate-exceeds-network" | "subtitle-codec-unknown" | "transcode-disabled-by-policy" | "dv-stripped-to-hdr10" | "subtitle-styling-lost" | "audio-atmos-lost" | "gapless-degraded" | "open-gop-leading-pictures-stripped" | "av1-rung-demoted" | "ladder-variant-capped") | string;
@@ -6897,7 +6932,7 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
-            /** @description The requested segment is outside the produced window; a seek restart has been requested. Client should retry (Retry-After header set). */
+            /** @description The requested segment is outside the produced window; a restart has been requested (V8: the requested URI itself never returns — forward-only numbering — so clients should re-read the playlist for the new run rather than retry this URI indefinitely; Retry-After header set). Secondary/defensive path — the primary seek channel is POST /playback/sessions/{id}/seek. */
             503: {
                 headers: {
                     "Retry-After"?: number;
@@ -7026,6 +7061,45 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    requestPlaybackSeek: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["IdPathParam"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SeekRequest"];
+            };
+        };
+        responses: {
+            /** @description Seek recorded. The body carries the CLAMPED target actually written — `[0, durationMs]`, never past EOF — which the client keys its landing match on. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SeekAccepted"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            /** @description Not a transcode session — direct-play seeks natively via byte ranges; there is no pipeline to restart. The problem `code` is `not-a-transcode-session`. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            422: components["responses"]["UnprocessableEntity"];
             default: components["responses"]["Problem"];
         };
     };

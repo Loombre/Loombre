@@ -1,5 +1,114 @@
 # STATE.md — Lumbre Phase 4 (Phases 0–2 complete; Phase 3 automated exit met, owner review items Open)
 
+## Seek model V8 — PDT source-clock bridge + seek endpoint + client landing (2026-08-12, BUILT — gate:full ALL GREEN; owner live-QA pending)
+
+**OWNER SIGN-OFF (2026-08-12) of the seek-model design (owner-decision V8 —
+NOTE: drafted as "V6", renumbered V8 on recording; V1–V7 were consumed by the
+2026-08-11 multi-variant sign-off above), with amendments A1–A3 and all five
+open questions ruled.** Design doc: session scratchpad `seek-model-design.md`
+(artifact f32343a3); content lands as PLAYBACK.md §9 amendments this run.
+Root defects (QA 2026-08-12 vs d6f378e): D-A out-of-window seeks unreachable
+(UA seekable clamp + hls.js live semantics; server seek machinery only
+triggerable by a segment GET hls.js can't issue); D-B 503 "coming soon" is
+unkeepable (forward-only numbering: the retried URI can never exist); D-C
+throttle deadlock (ahead = produced − requested with requested pinned below
+the new run's start; fresh run SIGSTOPped pre-first-segment, resume
+unreachable); D-D client has no source-time model (scrubber writes
+presentation seconds on a source axis).
+
+Pillars: (1) per-segment `EXT-X-PROGRAM-DATE-TIME` = source time as epoch
+(worker renderServedPlaylist; RunState gains sourceOriginMs; V4/-copyts
+explicitly preserved — playlist metadata only, zero ffmpeg-arg changes);
+(2) `POST /playback/sessions/{id}/seek {targetMs, rungIndex?}` → 202
+clamped-target (thin alias of the segment-GET side effect; same absorption;
+bearer auth, not the ?token family); (3) client soft/hard seek on the LISTED
+window (A2) with landing watch (runN prefix + PDT match),
+`HARD_SEEK_LANDING_TIMEOUT_MS = 20_000` named constant (N100+4K sizing case),
+post-ENDLIST `startLoad()` re-arm on entering relocating (A1); worker repairs
+ship first (throttle floor `max(requested, currentRun.startSegment)` — ALSO
+closes the latent pure-rung-switch deadlock, A3, design-pinned; restart
+clears suspended_by_throttle; throttle reconciles every tick; start-segment
+collision `max(produced+1, currentRun.startSegment+1)`).
+
+Rulings: Q1 source-time-as-epoch LOCKED; Q2 POST /seek action subresource
+LOCKED; Q3 20 s named constant (not config) with sizing rationale in spec;
+Q4 coarse native-HLS landing ships v1, precise-landing follow-up FILED tied
+to loombre-apple first-playback milestone (see Open below); Q5
+presentationToSourceMs window-anchoring defect FILED separately (see Open).
+
+Waves: W1 worker (RED→GREEN, ships dark) → W2 contract+server (ships dark)
+→ W3 web (activates). Every wave `pnpm gate`; `gate:full` before push.
+
+### Seek model V8 build record (2026-08-12, single session, RED→GREEN per wave; gate:full ALL GREEN, web budget 170.7/200 KB gz)
+
+- **W1 worker** — throttle floor `max(requested, currentRun.startSegment)`
+  (throttle.ts, new pure input; CurrentRun tracks startSegment); restart
+  hygiene = ONE statement (`clearThrottleSuspendedOnRestart`, packages/db
+  internal): flag→false AND throttle-caused 'suspended'→'active' — the A3
+  integration pin CAUGHT the flag-only first version (status left
+  'suspended' under a cleared flag reads as heartbeat-cause; the reconciler
+  dutifully SIGSTOPped the fresh handoff run — same deadlock, new hat);
+  absorbed seek falls through to throttle reconciliation (no `continue`);
+  collision floor `max(produced+1, currentRun.startSegment+1)` at both
+  restart call sites; per-segment PDT in renderServedPlaylist (RunState
+  gains sourceOriginMs via applyRunUpdate's new 5th arg;
+  RunSegment.startOffsetSec computed at fold time so offsets survive head
+  pruning). Tests: throttle.spec +5, playlist.spec +5 PDT,
+  seek-rung-switch.integration +3 REAL-ffmpeg pins (seek-while-suspended,
+  PURE-switch-while-throttled (A3), start-segment collision) — 8/8.
+  GOTCHA for future lanes: @loombre/db/internal resolves to dist/ — a new
+  internal export needs `pnpm --filter @loombre/db build` before worker
+  integration sees it (a missing export imports as undefined → TypeError
+  inside restartAt's try → markSessionFailed → a 6-suite cascade that
+  cosplays a product bug).
+- **W2 contract+server** — POST /playback/sessions/{id}/seek
+  (requestPlaybackSeek; SeekRequest{targetMs, rungIndex?} → 202
+  SeekAccepted{targetMs = clamped}; 404 / 409 not-a-transcode-session /
+  422; NO rate-limit family — matches the sibling session lifecycle
+  routes, absorption kills storms); handler in sessions.controller.ts
+  (404 wall → 409 wall → parse (needs the ladder) → clampSeekTargetMs via
+  getMediaInfoAssembly → requestSeek/requestSeekWithRungSwitch single
+  statement); storedLadder/storedDecision extracted to
+  playback/stored-plan-facts.ts; 503 detail reworded (D-B, no "coming
+  soon") + contract description; conformance expectations +
+  requestPlaybackSeek: 404. playback-seek.e2e.spec.ts 7 cases RED→GREEN.
+  NOTE: sdk-drift = `git diff --exit-code -- packages/sdk`, so the
+  regenerated SDK must be STAGED with the contract edit for the gate.
+- **W3 web** — lib/source-time.ts (pure; LISTED-window model per A2;
+  HARD_SEEK_LANDING_TIMEOUT_MS = 20_000 named constant w/ the N100+4K
+  sizing note; landing = runN prefix STRICTLY newer AND
+  PDT ∈ [target−6s, +1s]); VideoPlayer: soft/hard seek, hardSeek POST +
+  landing watch + A1 post-ENDLIST `startLoad()` re-arm + bounded
+  timeout→toast, LEVEL_UPDATED landing listener, relocating freezes the
+  display at the target, PDT-derived positionMs/buffered (heartbeat now
+  reports source time on the primary path), buffering clears on
+  seeked/canplay (the paused-latch fix), pendingSeekMsRef pins last
+  intent, seekRelative reads the source-axis positionRef, native-HLS
+  coarse path (getStartDate soft + seekable-end poll); Scrubber
+  commit-on-pointerup (drag = preview; pointercancel discards). Tests:
+  source-time.test 18 (A2 pin, handoff-never-lands, keyframe-snap
+  tolerance, re-arm semantics), Scrubber +4, VideoPlayer buffering pins
+  +2; web 1608/1608.
+- Numbering: drafted as "V6", recorded as V8 (V1–V7 = the C2 sign-off).
+- Owner live-QA script (the two original repros + the V8 additions):
+  mid-playback rewind to 0:00 lands at 0:00 with the scrubber reading
+  0:0x; pause → seek both directions → resumes, no spinner lock;
+  post-ENDLIST rewind (A1); rewind combined with a pinned quality (§9.1.7
+  one restart); long post-seek playback (§6 open-GOP note's standing QA
+  item rides along).
+
+### Seek model V8 Open
+- **presentationToSourceMs window-anchoring (Q5, filed 2026-08-12):** the
+  legacy heartbeat conversion walks the CURRENT playlist window from its
+  first listed entry, but a continuously-attached client reports
+  attach-anchored presentation time — the two diverge once retention prunes.
+  Post-V8 the primary path reports PDT-derived source time; this defect only
+  degrades legacy/native reporters (falls back to verbatim, which is wrong
+  after seeks). Owner = next dispatch touching progress ingestion.
+- **Native-HLS precise landing (Q4 follow-up, NOT optional polish):** iOS
+  app rides the native path; coarse seekable-end landing ships in web v1.
+  Tied to the loombre-apple first-playback milestone.
+
 ## 0.9.0-rc polish pass — UI polish, IA restructure, scanner/probe fix (2026-08-07, IN PROGRESS)
 
 Driven by owner's annotated screenshots from real Windows 11 ARM VM (Parallels) +
@@ -4334,6 +4443,7 @@ Build the Phase 0 foundation for Lumbre: (A) CLAUDE.md, (B) OpenAPI v1 contract 
 | D22 | Matrix failing wall: `pnpm test:matrix` is genuinely RED in Phase 0 (10 cases fail not-implemented, each printing expected decision+reasons); `pnpm gate`'s test step excludes the matrix project but includes a meta-test asserting plan() throws NotImplementedError, exactly 10 cases exist, and every expected reason code is from the closed PLAYBACK.md §4 enum — the wall is verified without being green-washed |
 | D23 | Pre-release contract-correction policy: until Phase 2 (daily-drivable), deliberate breaking contract edits are permitted when fixing spec bugs, but each must be logged here with its oasdiff classification and committed atomically with the regenerated SDK. First use: 2026-07-22 wave-3 fixes — 25 × response-property-became-nullable (runtimeMs/durationMs/trackNumber/Series.status made nullable to match scan reality). The additive-only policy (plan §4.1) binds unconditionally from public launch |
 | D24 | Scan-derived vs provider-derived nullability rule: fields knowable at scan time (seasonNumber, episodeNumber) are NOT NULL in schema + non-nullable required in contract; probe/tag/provider-derived fields (runtimeMs, durationMs, trackNumber, Series.status) are nullable in both |
+| D25 | Seek model V8 (2026-08-12): per-segment EXT-X-PROGRAM-DATE-TIME carries SOURCE time as epoch (playlist metadata; V4/-copyts untouched) and is the one presentation↔source bridge clients consume; out-of-window ("hard") seeks are a first-class contract action `POST /playback/sessions/{id}/seek` (202, clamped, absorbed) with the segment-GET side effect demoted to defense; soft/hard classification is the LISTED playlist window, never buffer state; throttle lead is measured against the current run's start_segment floor |
 | P1.1 | Identity: xxHash3 of first 4 MiB + last 4 MiB + sizeBytes. Hash match relinks (emit file.relocated, preserve progress); path match with changed hash = re-encoded file → re-probe same item. Never delete-and-readd on rename |
 | P1.2 | Missing files: missing_since_ms set, item hidden from queries, hard cascade only after 72 h grace; mount-drop safe |
 | P1.3 | Scanner: chokidar with polling fallback auto-enabled for network mounts; full scans are resumable checkpointed jobs; concurrency caps from tier |

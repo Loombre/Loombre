@@ -91,13 +91,28 @@ export type ThrottleAction =
 
 export interface ThrottleInputs {
   mechanism: ThrottleMechanism;
-  /** Highest segment index THIS run has produced so far; `undefined` if
-   *  nothing has been produced yet (never throttles before any output). */
+  /** Highest segment index produced across the SESSION's surviving
+   *  segments (the served state's max, runner.ts's
+   *  `highestProducedSegmentIndex` — NOT per-run); `undefined` if nothing
+   *  has been produced yet (never throttles before any output). Session-
+   *  wide is exactly why `currentRunStartSegment` below exists: after a
+   *  restart this value still reflects the PREVIOUS run's tail. */
   producedSegment: number | undefined;
   /** The row's `requested_segment` — `null` (no request yet) is treated as
    *  0, never as "unbounded ahead is fine" (migrations/
    *  0012_transcode_sessions.sql's column comment). */
   requestedSegment: number | null;
+  /** V8 (docs/PLAYBACK.md §9 throttle "Lead arithmetic"): the CURRENT
+   *  run's `start_segment`, used as a floor under `requestedSegment`. A
+   *  requested index below the current run's start is a numbering artifact
+   *  of a pre-restart request — global numbering only moves forward, so
+   *  after any restart (seek OR §9.1.4 handoff) the client's last
+   *  requested index can sit far below the new run's start while the
+   *  encoder has produced nothing. Read raw, that looks like a huge lead
+   *  and SIGSTOPs the fresh run before its first segment, with resume
+   *  arithmetically unreachable (QA 2026-08-12, "buffers forever").
+   *  Omitted/0 preserves pre-V8 arithmetic exactly. */
+  currentRunStartSegment?: number;
   /** The row's CURRENT `status` — this function is only ever meaningfully
    *  consulted while it is `'active'` or `'suspended'` (the runner's main
    *  loop handles starting/seeking transitions through dedicated code, not
@@ -138,7 +153,11 @@ export function reconcileThrottle(input: ThrottleInputs): ThrottleAction {
 
   const suspendAheadThreshold = input.suspendAheadThreshold ?? THROTTLE_SUSPEND_AHEAD;
   const resumeAheadThreshold = input.resumeAheadThreshold ?? THROTTLE_RESUME_AHEAD;
-  const requested = input.requestedSegment ?? 0;
+  // V8 floor: lead is measured against the CURRENT run, never against a
+  // requested index that predates it (see currentRunStartSegment's doc
+  // comment — the pre-restart numbering artifact, both seek and pure-switch
+  // shapes).
+  const requested = Math.max(input.requestedSegment ?? 0, input.currentRunStartSegment ?? 0);
   const ahead = input.producedSegment !== undefined ? input.producedSegment - requested : Number.NEGATIVE_INFINITY;
 
   if (!input.suspendedByThrottle) {

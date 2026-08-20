@@ -61,10 +61,18 @@ export function Scrubber({
 }: ScrubberProps): React.JSX.Element {
   const trackRef = useRef<HTMLDivElement>(null);
   const [dragging, setDragging] = useState(false);
+  // V8 (docs/PLAYBACK.md §9.1.9 "Scrubber commits ONE seek on pointerup"):
+  // dragging updates this PREVIEW position only — the played bar, handle
+  // and aria values track it live — and exactly one onSeek fires on
+  // release. The pre-V8 per-pointermove commit issued dozens of seeks (and
+  // heartbeat flushes) per drag; under the hard-seek model each one could
+  // be a server round-trip.
+  const [dragMs, setDragMs] = useState<number | null>(null);
   const [hoverX, setHoverX] = useState<number | null>(null);
 
   const duration = durationMs ?? 0;
-  const playedPercent = duration > 0 ? Math.min(100, (positionMs / duration) * 100) : 0;
+  const shownMs = dragMs ?? positionMs;
+  const playedPercent = duration > 0 ? Math.min(100, (shownMs / duration) * 100) : 0;
 
   const msAtClientX = useCallback(
     (clientX: number): number => {
@@ -80,20 +88,28 @@ export function Scrubber({
     if (duration <= 0) return;
     (event.target as Element).setPointerCapture(event.pointerId);
     setDragging(true);
-    onSeek(msAtClientX(event.clientX));
+    setDragMs(msAtClientX(event.clientX));
   }
 
   function handlePointerMove(event: React.PointerEvent<HTMLDivElement>): void {
     const rect = trackRef.current?.getBoundingClientRect();
     if (rect) setHoverX(Math.min(rect.width, Math.max(0, event.clientX - rect.left)));
-    if (dragging) onSeek(msAtClientX(event.clientX));
+    if (dragging) setDragMs(msAtClientX(event.clientX));
   }
 
   function handlePointerUp(event: React.PointerEvent<HTMLDivElement>): void {
     if (dragging) {
       onSeek(msAtClientX(event.clientX));
       setDragging(false);
+      setDragMs(null);
     }
+  }
+
+  function handlePointerCancel(): void {
+    // A cancelled drag (capture lost, touch interrupted) commits nothing —
+    // the preview snaps back to the real position.
+    setDragging(false);
+    setDragMs(null);
   }
 
   const hoverMs = hoverX !== null && trackRef.current ? (hoverX / trackRef.current.getBoundingClientRect().width) * duration : null;
@@ -108,11 +124,12 @@ export function Scrubber({
       aria-label="Seek"
       aria-valuemin={0}
       aria-valuemax={duration}
-      aria-valuenow={positionMs}
-      aria-valuetext={formatTime(positionMs)}
+      aria-valuenow={shownMs}
+      aria-valuetext={formatTime(shownMs)}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
+      onPointerCancel={handlePointerCancel}
       onPointerLeave={() => setHoverX(null)}
       onKeyDown={(e) => {
         if (e.key === "ArrowRight") onSeek(Math.min(duration, positionMs + 5000));

@@ -425,6 +425,48 @@ describe("VideoPlayer", () => {
     expect(apiPut.mock.calls[0]?.[1]).toMatchObject({ body: { positionMs: 42_000 } });
   });
 
+  // ── V8 design pins (docs/PLAYBACK.md §9.1.9; QA 2026-08-12) ─────────────
+  // Pre-V8, `playing` was the ONLY clearer of the buffering flag — an event
+  // a PAUSED element never fires. Any seek-while-paused latched the spinner
+  // forever even after the data arrived ("buffers forever", symptom 2's
+  // client half).
+  function bufferingSpinner(v: TestRender): Element | null {
+    return v.container.querySelector('[class*="buffering"]');
+  }
+
+  it("V8: `seeked` clears the buffering spinner while PAUSED (the seek-while-paused latch)", async () => {
+    const v = (view = await renderReady());
+    const video = videoEl(v);
+    expect(video.paused).toBe(true);
+
+    await act(async () => {
+      video.dispatchEvent(new Event("waiting"));
+    });
+    expect(bufferingSpinner(v), "waiting must raise the spinner").not.toBeNull();
+
+    // The element completes the seek while still paused — `playing` will
+    // never fire here.
+    await act(async () => {
+      video.dispatchEvent(new Event("seeked"));
+    });
+    expect(bufferingSpinner(v), "seeked must clear it — a paused element never fires playing").toBeNull();
+  });
+
+  it("V8: `canplay` clears the buffering spinner while PAUSED", async () => {
+    const v = (view = await renderReady());
+    const video = videoEl(v);
+
+    await act(async () => {
+      video.dispatchEvent(new Event("waiting"));
+    });
+    expect(bufferingSpinner(v)).not.toBeNull();
+
+    await act(async () => {
+      video.dispatchEvent(new Event("canplay"));
+    });
+    expect(bufferingSpinner(v)).toBeNull();
+  });
+
   it("never lets the element's SMALLER duration clobber the session's ffprobe duration (non-direct-play only)", async () => {
     // Field bug (2026-08-08 owner QA): for an in-progress HLS transcode the
     // element's own `duration` is only the EVENT playlist's current extent

@@ -123,6 +123,7 @@ export const API_OPERATIONS = [
   { path: "/playback/sessions/{id}/hls/master.m3u8", method: "get", operationId: "getPlaybackHlsMasterPlaylist" },
   { path: "/playback/sessions/{id}/hls/media.m3u8", method: "get", operationId: "getPlaybackHlsManifest" },
   { path: "/playback/sessions/{id}/hls/{file}", method: "get", operationId: "getPlaybackHlsFile" },
+  { path: "/playback/sessions/{id}/seek", method: "post", operationId: "requestPlaybackSeek" },
   { path: "/playback/sessions/{id}/subtitles/media.m3u8", method: "get", operationId: "getPlaybackSubtitleManifest" },
   { path: "/playback/sessions/{id}/subtitles/{file}", method: "get", operationId: "getPlaybackSubtitleFile" },
   { path: "/probe/{token}", method: "get", operationId: "getProbePage" },

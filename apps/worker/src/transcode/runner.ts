@@ -16,6 +16,7 @@ import { join } from "node:path";
 import type { DbOrTx } from "@loombre/db/internal";
 import {
   absorbSeekTarget,
+  clearThrottleSuspendedOnRestart,
   consumePendingRungIndex,
   consumeSeekTarget,
   getMediaFileById,
@@ -111,6 +112,11 @@ interface CurrentRun {
   handle: FfmpegRunHandle;
   exited: boolean;
   exitInfo?: { exitCode: number | null; killedByUs: boolean; stderrTail: string };
+  /** Where this run starts on the GLOBAL segment counter (V8) — feeds the
+   *  throttle's requested-segment floor (docs/PLAYBACK.md §9 "Lead
+   *  arithmetic") and the next restart's collision floor (§9.1.10 item 4).
+   *  Mirrors the transcode_runs row spawnRun records. */
+  startSegment: number;
   /** Where this run starts in SOURCE time: 0 for run 0, the consumed seek
    *  target for every seek-restart. The de-dup rule below compares an
    *  incoming seek target against this, and migration 0043 persists it
@@ -334,6 +340,7 @@ export async function runTranscodeSession(deps: RunSessionDeps, sessionId: strin
       exited: false,
       processStopped: false,
       unregister,
+      startSegment: startSeg,
       sourceOriginMs: seekTargetMs ?? 0,
       producedMs: 0,
       headPruned: false,
@@ -381,6 +388,13 @@ export async function runTranscodeSession(deps: RunSessionDeps, sessionId: strin
         ...(ladderRungIndex !== undefined ? { ladderRungIndex } : {}),
       });
       currentRun = await spawnRun(nextIndex, startSeg, args, originMs, ladderRungIndex);
+      // V8 restart hygiene (docs/PLAYBACK.md §9): the fresh process is by
+      // definition not throttle-stopped — a stale flag would route the
+      // reconciler into its "we are the reason" branch against a process
+      // that was never stopped. Best-effort like the other spawn-side
+      // writes: a failure here self-heals via the reconciler's own
+      // resume path on a later tick.
+      await clearThrottleSuspendedOnRestart(db, sessionId, now()).catch(() => undefined);
       return true;
     } catch (err) {
       // A restart that cannot even regenerate args (e.g. the device/file
@@ -462,7 +476,9 @@ export async function runTranscodeSession(deps: RunSessionDeps, sessionId: strin
     const runPlaylistText = playlistFrozen ? undefined : await readRunPlaylist(currentRun.dir);
     if (runPlaylistText !== undefined) {
       const parsed = parseFfmpegPlaylist(runPlaylistText);
-      servedState = applyRunUpdate(servedState, currentRun.index, `run${currentRun.index}`, parsed);
+      // The run's source origin rides into the fold (V8, §9.1.5 rule 7) —
+      // it is what anchors the per-segment PROGRAM-DATE-TIME emission.
+      servedState = applyRunUpdate(servedState, currentRun.index, `run${currentRun.index}`, parsed, currentRun.sourceOriginMs);
       // Source-time extent of what THIS run has produced so far, read from
       // ffmpeg's own per-run playlist (authoritative, and monotonic while
       // the run lives). Feeds the seek de-dup rule below; deliberately
@@ -617,25 +633,37 @@ export async function runTranscodeSession(deps: RunSessionDeps, sessionId: strin
         // nothing restarted. Guarded on the exact value we just read, so a
         // DIFFERENT target written in the meantime is never swallowed; it
         // simply survives to the next tick and restarts properly.
+        //
+        // V8 restart hygiene: absorption FALLS THROUGH to the rest of the
+        // tick — no `continue`. A 503-storming client writes a target
+        // every ~1 s, and an absorb-per-tick used to starve throttle
+        // reconciliation entirely (docs/PLAYBACK.md §9 "Restart hygiene":
+        // the throttle block runs EVERY tick). Absorption never restarts
+        // anything, so nothing below is invalidated: `switchPending` is
+        // false here by the conjunct above, and the throttle block reads
+        // the same tick-start row every other path does.
         await absorbSeekTarget(db, sessionId, row.seek_target_ms, now());
-        continue;
-      }
-
-      const consumed = await consumeSeekTarget(db, sessionId, now());
-      if (consumed) {
-        // §9.1.7: this seek restart ALSO carries any pending rung. Consumed
-        // in the SAME tick so the coincident pair produces exactly one
-        // spawned run rather than a seek restart immediately followed by a
-        // handoff restart.
-        const coincidentRung = switchPending ? await consumePendingRungIndex(db, sessionId, now()) : undefined;
-        const restarted = await restartAt(
-          currentRun.index + 1,
-          (producedSegment ?? -1) + 1,
-          consumed.seekTargetMs,
-          coincidentRung ?? currentRun.ladderRungIndex,
-        );
-        if (!restarted) return;
-        continue;
+      } else {
+        const consumed = await consumeSeekTarget(db, sessionId, now());
+        if (consumed) {
+          // §9.1.7: this seek restart ALSO carries any pending rung. Consumed
+          // in the SAME tick so the coincident pair produces exactly one
+          // spawned run rather than a seek restart immediately followed by a
+          // handoff restart.
+          const coincidentRung = switchPending ? await consumePendingRungIndex(db, sessionId, now()) : undefined;
+          const restarted = await restartAt(
+            currentRun.index + 1,
+            // V8 collision floor (§9.1.10 item 4): a seek consumed before
+            // run 0 flushed anything must not spawn a second run at
+            // start_segment 0 — at-most-one-owner is structural, and an
+            // index the floor skips is simply never produced by any run.
+            Math.max((producedSegment ?? -1) + 1, currentRun.startSegment + 1),
+            consumed.seekTargetMs,
+            coincidentRung ?? currentRun.ladderRungIndex,
+          );
+          if (!restarted) return;
+          continue;
+        }
       }
     }
 
@@ -666,7 +694,8 @@ export async function runTranscodeSession(deps: RunSessionDeps, sessionId: strin
       if (consumedRung !== undefined && consumedRung !== currentRun.ladderRungIndex) {
         const restarted = await restartAt(
           currentRun.index + 1,
-          (producedSegment ?? -1) + 1,
+          // V8 collision floor — same rule as the seek restart above.
+          Math.max((producedSegment ?? -1) + 1, currentRun.startSegment + 1),
           currentRun.sourceOriginMs + currentRun.producedMs,
           consumedRung,
         );
@@ -682,6 +711,10 @@ export async function runTranscodeSession(deps: RunSessionDeps, sessionId: strin
         mechanism,
         producedSegment,
         requestedSegment: row.requested_segment,
+        // V8 (docs/PLAYBACK.md §9 "Lead arithmetic"): lead is measured
+        // against the CURRENT run — a requested index below its start is a
+        // pre-restart numbering artifact, not encoder lead.
+        currentRunStartSegment: currentRun.startSegment,
         rowStatus: row.status,
         suspendedByThrottle: row.suspended_by_throttle,
         processStopped: currentRun.processStopped,
