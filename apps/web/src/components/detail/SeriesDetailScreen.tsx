@@ -200,6 +200,7 @@ export function SeriesDetailScreen({
           title={series.title}
           dominantColor={hero.dominantColor}
           entityId={series.id}
+          libraryId={series.libraryId}
           backdropKind={hero.kind}
           desktopHeight={320}
           overlay={bannerOverlay}

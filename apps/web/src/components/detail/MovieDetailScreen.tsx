@@ -147,6 +147,7 @@ export function MovieDetailScreen({
           title={movie.title}
           dominantColor={hero.dominantColor}
           entityId={movie.id}
+          libraryId={movie.libraryId}
           backdropKind={hero.kind}
           desktopHeight={340}
         />

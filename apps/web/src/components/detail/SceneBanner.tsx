@@ -63,6 +63,13 @@ export interface SceneBannerProps {
   entityType: string;
   entityId: string;
   backdropKind: string;
+  /** The item's own library (CatalogItemBase.libraryId, always present on
+   *  movie/series responses) — routes the "← LIBRARY" pill to THIS item's
+   *  library (browser-items-F8: a hard-coded /browse used to land on
+   *  Browse's LAST-selected library, which can be a different, unrelated
+   *  one). Optional only so existing call sites/tests that predate this
+   *  prop keep compiling; every real caller has the id and should pass it. */
+  libraryId?: string;
   /** 340 (movie) / 320 (series) per the prototype. This component renders
    *  the DESKTOP treatment only (CSS-hidden below the 767.98px breakpoint,
    *  same coexist-in-DOM/CSS-swap convention as AppShell's sidebar/mobile
@@ -93,6 +100,7 @@ export function SceneBanner({
   entityId,
   backdropKind,
   desktopHeight,
+  libraryId,
   title,
   dominantColor,
   overlay,
@@ -117,7 +125,7 @@ export function SceneBanner({
       )}
       <div className={styles.scanlines} data-scanlines={scanlines ? "on" : "off"} aria-hidden="true" />
       <div className={styles.scrim} aria-hidden="true" />
-      <a href="/browse" className={styles.backPill}>
+      <a href={libraryId ? `/browse?library=${libraryId}` : "/browse"} className={styles.backPill}>
         ← LIBRARY
       </a>
       {overlay && <div className={styles.overlay}>{overlay}</div>}

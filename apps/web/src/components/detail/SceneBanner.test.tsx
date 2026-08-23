@@ -80,6 +80,22 @@ describe("SceneBanner", () => {
     expect(banner.style.getPropertyValue("--banner-glow")).toBe("#336699");
   });
 
+  it("browser-items-F8 REGRESSION GUARD: the '← LIBRARY' pill links back to THIS item's own library, not a hard-coded /browse", () => {
+    view = renderIntoBody(
+      <SceneBanner
+        serverUrl="https://example.test"
+        accessToken="tok"
+        entityType="movie"
+        entityId="m1"
+        backdropKind="backdrop"
+        desktopHeight={340}
+        libraryId="lib-42"
+      />,
+    );
+    const pill = view.container.querySelector("a") as HTMLAnchorElement;
+    expect(pill.getAttribute("href")).toBe("/browse?library=lib-42");
+  });
+
   it("still renders the '← LIBRARY' back pill and overlay content in the fallback state", () => {
     view = renderIntoBody(
       <SceneBanner
