@@ -20,6 +20,7 @@ import { act } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { components } from "@loombre/sdk";
 import { LoombreApiError } from "@loombre/sdk";
+import { HARD_SEEK_LANDING_TIMEOUT_MS } from "../../lib/source-time.js";
 import { VideoPlayer } from "./VideoPlayer.js";
 import { ToastProvider } from "../ui/Toast.js";
 import { renderIntoBody, type TestRender } from "../ui/test-render.js";
@@ -106,6 +107,7 @@ interface MockHlsInstance {
   calls: string[];
   on(event: string, cb: (...args: unknown[]) => void): void;
   off(event: string, cb?: (...args: unknown[]) => void): void;
+  emit(event: string, ...args: unknown[]): void;
   loadSource(url: string): void;
   attachMedia(el: HTMLMediaElement): void;
   detachMedia(): void;
@@ -202,6 +204,12 @@ interface FakeMediaState {
   volume: number;
   muted: boolean;
   audioTracks: { id: string; enabled: boolean }[];
+  /** W3C HTMLMediaElement.readyState — 0 (HAVE_NOTHING) by default, the
+   *  same as a real element that never got data for its position. The
+   *  browser-player-F4 landing-lifecycle tests raise it to simulate the
+   *  landed position actually becoming displayable. */
+  readyState: number;
+  ended: boolean;
 }
 
 const mediaStates = new WeakMap<HTMLMediaElement, FakeMediaState>();
@@ -218,6 +226,8 @@ function mediaState(el: HTMLMediaElement): FakeMediaState {
         { id: "0", enabled: true },
         { id: "1", enabled: false },
       ],
+      readyState: 0,
+      ended: false,
     };
     mediaStates.set(el, state);
   }
@@ -280,6 +290,8 @@ function installMediaStubs(): void {
     set(this: HTMLMediaElement, value: number) { mediaState(this).currentTime = value; },
   });
   define("duration", { get: () => 600 });
+  define("readyState", { get(this: HTMLMediaElement) { return mediaState(this).readyState; } });
+  define("ended", { get(this: HTMLMediaElement) { return mediaState(this).ended; } });
   define("buffered", { get: () => ({ length: 0, start: () => 0, end: () => 0 }) });
   define("audioTracks", { get(this: HTMLMediaElement) { return mediaState(this).audioTracks; } });
   define("volume", {
@@ -1319,6 +1331,97 @@ describe("VideoPlayer", () => {
         slider.getAttribute("aria-valuenow"),
         "the stale FIRST 202 re-armed the landing watch — the newest hard seek must supersede regardless of response order",
       ).toBe("222222");
+    });
+
+    // ── browser-player-F4: the EOF-seek wedge ─────────────────────────────
+    // QA 2026-08-20/21 (P1): a hard seek to/at durationMs landed (the
+    // seek-spawned run showed up and matched the watch), the LEVEL_UPDATED
+    // handler cleared the 20 s timer, and the element then stalled FOREVER
+    // at a position no data ever arrived for — indefinite pin, no toast,
+    // player unrecoverable. The timeout must bound the FULL seek lifecycle:
+    // it runs until the landed position actually becomes displayable
+    // (resume evidence), not merely until the playlist lists the run.
+    describe("EOF-seek wedge (browser-player-F4): the landing must not consume the lifecycle timeout", () => {
+      /** Arms a hard seek (202 target 10 000) and lands it: the seek-spawned
+       *  run1 fragment (PDT == clamped target) appears in the listed window
+       *  and LEVEL_UPDATED fires, so the landing handler seeks the element
+       *  to the run's presentation start (6 s). Fake timers must already be
+       *  installed so the 20 s lifecycle timer is controllable. */
+      async function armAndLand(v: TestRender, hls: MockHlsInstance): Promise<HTMLVideoElement> {
+        const details = { live: true, fragments: [farListedFragment()] };
+        hls.levels = [{ details }];
+        apiPost.mockResolvedValueOnce({ targetMs: 10_000 });
+        await act(async () => button(v, "Forward 10 seconds").click());
+        expect(apiPost).toHaveBeenCalledTimes(1);
+        details.fragments = [farListedFragment(), { programDateTime: 10_000, start: 6, duration: 6, relurl: "run1/s000001.m4s" }];
+        await act(async () => {
+          hls.emit("hlsLevelUpdated");
+        });
+        const video = videoEl(v);
+        expect(video.currentTime, "the landing never seeked the element to the run's start").toBe(6);
+        return video;
+      }
+
+      it("a landed seek whose position never becomes displayable still toasts at 20s (the EOF wedge is bounded)", async () => {
+        const { v, hls } = await renderHlsReady();
+        view = v;
+        vi.useFakeTimers();
+        await armAndLand(v, hls);
+        // No data ever arrives at the landed position (readyState stays
+        // HAVE_NOTHING, no seeked/canplay/playing/timeupdate) — exactly the
+        // live wedge: an at-EOF run produced nothing displayable.
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(HARD_SEEK_LANDING_TIMEOUT_MS + 500);
+        });
+        expect(
+          document.body.textContent,
+          "the landing consumed the 20 s timer — nothing bounds the post-landing stall (browser-player-F4)",
+        ).toContain("Seek timed out");
+      });
+
+      it("a seeked BELOW the landed start (UA clamped the landing on an ended stream) is NOT resume evidence — still toasts", async () => {
+        const { v, hls } = await renderHlsReady();
+        view = v;
+        vi.useFakeTimers();
+        const video = await armAndLand(v, hls);
+        // The element had already consumed endOfStream at a shorter
+        // duration: the landing's currentTime assignment gets clamped BELOW
+        // the run's start, and the seek "completes" on old data.
+        mediaState(video).readyState = 4;
+        video.currentTime = 3;
+        await act(async () => {
+          video.dispatchEvent(new Event("seeked"));
+        });
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(HARD_SEEK_LANDING_TIMEOUT_MS + 500);
+        });
+        expect(
+          document.body.textContent,
+          "a clamped seek that never reached the landed run counted as resume evidence — the wedge would be silent again",
+        ).toContain("Seek timed out");
+      });
+
+      it("real resume evidence (seeked at the landed start with displayable data) ends the lifecycle: no toast, display unfrozen", async () => {
+        const { v, hls } = await renderHlsReady();
+        view = v;
+        vi.useFakeTimers();
+        const video = await armAndLand(v, hls);
+        mediaState(video).readyState = 4; // the landed position is displayable now
+        await act(async () => {
+          video.dispatchEvent(new Event("seeked"));
+        });
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(HARD_SEEK_LANDING_TIMEOUT_MS + 5_000);
+        });
+        expect(document.body.textContent).not.toContain("Seek timed out");
+        // Display unfrozen: timeupdate maps through the landed run's PDT.
+        await act(async () => {
+          video.currentTime = 6.5;
+          video.dispatchEvent(new Event("timeupdate"));
+        });
+        const slider = v.container.querySelector('[role="slider"]');
+        expect(slider?.getAttribute("aria-valuenow")).toBe("10500");
+      });
     });
   });
 });

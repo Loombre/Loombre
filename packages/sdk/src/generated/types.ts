@@ -7079,7 +7079,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Seek recorded. The body carries the CLAMPED target actually written — `[0, durationMs]`, never past EOF — which the client keys its landing match on. */
+            /** @description Seek recorded. The body carries the CLAMPED target actually written — `[0, max(0, durationMs − one nominal segment)]`: never past EOF, and never AT it either (a restart at `durationMs` spawns a run with nothing displayable in it — the ceiling backs off one nominal segment so a seek to the very end lands on the file's final frames and ends cleanly). The client keys its landing match on the returned value. */
             202: {
                 headers: {
                     [name: string]: unknown;

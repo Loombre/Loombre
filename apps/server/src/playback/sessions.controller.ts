@@ -55,7 +55,7 @@ import { ViewerContextProvider } from "../common/viewer-context.provider.js";
 import { DeviceProfileValidatorService } from "../common/device-profile-validator.js";
 import { JobQueueProvider } from "../common/job-queue.provider.js";
 import { SettingsService } from "../settings/settings.service.js";
-import { clampSeekTargetMs } from "../common/served-playlist.js";
+import { clampSeekTargetToPlayableMs } from "./seek-target.js";
 import { resolveViewer } from "./viewer.js";
 import { parsePlanRequestBody } from "./plan-request.js";
 import { parseSeekRequestBody } from "./seek-request.js";
@@ -241,9 +241,11 @@ export class PlaybackSessionsController {
       throw unprocessableEntity(parsed.detail, req.originalUrl);
     }
 
-    // Clamp to [0, durationMs] — the §9 clamp rule, owned by whoever
-    // decides the target (an unclamped value becomes an ffmpeg -ss past
-    // EOF: a restart that produces nothing, forever). Every failure
+    // Clamp to the PLAYABLE ceiling — [0, durationMs − one nominal
+    // segment] (seek-target.ts; the §9 clamp rule as amended for
+    // browser-player-F4): an unclamped value becomes an ffmpeg -ss past
+    // EOF, and durationMs ITSELF becomes an -ss AT EOF — either way a
+    // restart that produces nothing displayable, forever. Every failure
     // degrades to the lower bound only, same as resolveSeekTargetMs.
     let durationMs: number | null = null;
     if (session.fileId) {
@@ -257,7 +259,7 @@ export class PlaybackSessionsController {
         // Unprobed/vanished file — keep the lower bound only.
       }
     }
-    const targetMs = clampSeekTargetMs(parsed.value.targetMs, durationMs);
+    const targetMs = clampSeekTargetToPlayableMs(parsed.value.targetMs, durationMs);
 
     const now = clockNowMs();
     const updated =

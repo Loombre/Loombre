@@ -96,13 +96,13 @@ import { ViewerContextProvider } from "../common/viewer-context.provider.js";
 import { RateLimit, SurfaceRateLimitGuard } from "../common/rate-limit.guard.js";
 import { RateLimitExceptionFilter } from "../common/rate-limit-exception.filter.js";
 import {
-  clampSeekTargetMs,
   deriveSegmentStartMs,
   parseServedSegmentDurations,
   withPlaylistSequenceTags,
   type RunAnchor,
   type ServedSegmentEntry,
 } from "../common/served-playlist.js";
+import { clampSeekTargetToPlayableMs } from "./seek-target.js";
 import {
   renderMasterPlaylist,
   type MasterAudioFacts,
@@ -663,7 +663,10 @@ export class PlaybackHlsFileController {
         // Unprobed/vanished file — clamp with the lower bound only.
       }
     }
-    return clampSeekTargetMs(derivedMs, durationMs);
+    // browser-player-F4: the derived target rides the same PLAYABLE
+    // ceiling as the contract endpoint (seek-target.ts) — a derived
+    // at-EOF restart wedges identically.
+    return clampSeekTargetToPlayableMs(derivedMs, durationMs);
   }
 
   private respondSeekRetry(res: Response, instance: string): void {

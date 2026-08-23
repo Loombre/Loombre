@@ -706,7 +706,7 @@ describe("GET /playback/sessions/{id}/hls/{file} — segment/init serving", () =
     expect(await readSeekTargetMs(sessionId)).toBe(120_120);
   }, 20_000);
 
-  it("DOUBLE SEEK back-then-forward: the derived target is clamped to [0, durationMs]", async () => {
+  it("DOUBLE SEEK back-then-forward: the derived target is clamped to the playable ceiling (durationMs − one nominal segment)", async () => {
     const { sessionId, sessionDir } = await createSimulatedTranscodeSession();
     const durationMs = await readSessionDurationMs(sessionId);
     expect(durationMs).toBeGreaterThan(0);
@@ -737,10 +737,13 @@ describe("GET /playback/sessions/{id}/hls/{file} — segment/init serving", () =
     // express. Un-clamped, ANY derivation puts it hours past the end of a
     // 108-minute file, and the worker would hand ffmpeg an `-ss` beyond
     // EOF: the restart produces nothing, forever. The clamp is what makes
-    // that impossible.
+    // that impossible — and since browser-player-F4 the ceiling is one
+    // nominal segment BEFORE durationMs (seek-target.ts): durationMs
+    // itself is an `-ss` AT EOF, a run with nothing displayable that
+    // wedged the client's landing.
     const forward = await admin().get(`/playback/sessions/${sessionId}/hls/run0/s999999.m4s`);
     expect(forward.status).toBe(503);
-    expect(await readSeekTargetMs(sessionId)).toBe(durationMs);
+    expect(await readSeekTargetMs(sessionId)).toBe(durationMs - 6_000);
   }, 20_000);
 
   it("filename pattern guard: rejects anything not matching runN/sNNNNNN.{m4s,ts}|init.mp4 -> 404", async () => {

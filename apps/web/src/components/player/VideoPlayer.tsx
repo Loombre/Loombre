@@ -51,6 +51,7 @@ import {
   findLandingFragment,
   hasSourceClock,
   HARD_SEEK_LANDING_TIMEOUT_MS,
+  isLandingResumeEvidence,
   presentationToSourceMs,
   sourceToPresentationSec,
   type LandingWatch,
@@ -268,6 +269,16 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
   const relocatingRef = useRef<{ targetMs: number } | null>(null);
   const landingWatchRef = useRef<LandingWatch | null>(null);
   const landingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // browser-player-F4: the landed-but-not-yet-watchable half of the hard-
+  // seek lifecycle. Set by the LEVEL_UPDATED landing (and the native
+  // coarse landing) INSTEAD of tearing the whole relocation state down —
+  // the fragment match only proves the run EXISTS, not that the element
+  // can display it (a seek at/near EOF can land on a run with nothing
+  // displayable: the QA 2026-08-20/21 EOF wedge). While set, the 20 s
+  // timer armed at the 202 keeps running and the display stays pinned;
+  // resume evidence (see maybeCompleteLanding in the event-wiring effect)
+  // or the timeout ends the lifecycle — never silence.
+  const landedAwaitingResumeRef = useRef<{ startSec: number; targetMs: number } | null>(null);
   // Native-HLS coarse landing (V8 v1 scope, ruled — §9.1.10 item 5): no
   // hls.js instance means no LEVEL_UPDATED, so the landing is a seekable-
   // end poll instead of a fragment match.
@@ -310,6 +321,7 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
     // response arriving later must not resurrect the relocating state.
     seekEpochRef.current += 1;
     landingWatchRef.current = null;
+    landedAwaitingResumeRef.current = null;
     relocatingRef.current = null;
     if (landingTimerRef.current) {
       clearTimeout(landingTimerRef.current);
@@ -835,7 +847,20 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
         const landing = findLandingFragment(frags, watch);
         if (!landing) return;
         const targetMs = watch.clampedTargetMs;
-        clearLandingWatch();
+        // browser-player-F4: the fragment match ends run DISCOVERY only,
+        // never the seek. Stop the watch and the nudge (a nudge past this
+        // point aborts the very fragment loads the landing needs), but the
+        // 20 s lifecycle timer and the relocating pin both SURVIVE the
+        // landing: the seek is over when the landed position is actually
+        // displayable (resume evidence in the event-wiring effect) or when
+        // the timeout toasts — an at-EOF run with nothing displayable in
+        // it used to consume the timer here and wedge the player forever.
+        landingWatchRef.current = null;
+        if (nudgeStopRef.current) {
+          nudgeStopRef.current();
+          nudgeStopRef.current = null;
+        }
+        landedAwaitingResumeRef.current = { startSec: landing.startSec, targetMs };
         video.currentTime = landing.startSec;
         positionRef.current = targetMs;
         setPositionMs(targetMs);
@@ -975,10 +1000,29 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
     const video = videoRef.current;
     if (!video) return;
 
+    // browser-player-F4: resume evidence — the LANDED hard seek's position
+    // became displayable, showing content from the TARGET's own source
+    // region. This is the deliberate second half of the landing the
+    // LEVEL_UPDATED handler leaves open: until evidence fires, the 20 s
+    // timer armed at the 202 is still running and will surface the
+    // timeout toast, so an at-EOF landing whose run has nothing
+    // displayable can never wedge the player silently again. The
+    // source-axis check (isLandingResumeEvidence, lib/source-time.ts)
+    // keeps a seek the UA CLAMPED onto the OLD content's tail — `seeked`
+    // fired, old data under the playhead, presentation position within
+    // ms of the run's start — from counting as success.
+    const maybeCompleteLanding = (): void => {
+      const landed = landedAwaitingResumeRef.current;
+      if (!landed) return;
+      if (isLandingResumeEvidence(landed, video.currentTime, video.readyState, listedFragments())) {
+        clearLandingWatch();
+      }
+    };
     const onTimeUpdate = (): void => {
+      maybeCompleteLanding();
       // V8 (§9.1.9): while relocating, the display stays frozen at the
       // hard-seek target — the element's own position is meaningless until
-      // the landing.
+      // the landing completes (run discovered AND displayable).
       if (relocatingRef.current) return;
       // Displayed position is PDT-derived SOURCE time when the source
       // clock exists; raw presentation otherwise (direct-play; pre-V8
@@ -1040,18 +1084,33 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
       heartbeatRef.current?.flushNow();
     };
     const onEnded = (): void => {
+      // A landed at/near-EOF seek that plays out its final segment ends
+      // here — the mapped end position sits within the resume window, so
+      // the same evidence predicate completes the lifecycle. (An `ended`
+      // reached on OLD content while a landing is still pending is NOT
+      // completion — the predicate rejects it and the timeout stays.)
+      maybeCompleteLanding();
       progressStateRef.current = "played";
       heartbeatRef.current?.flushNow();
       heartbeatRef.current?.stop();
     };
     const onWaiting = (): void => setBuffering(true);
-    const onPlaying = (): void => setBuffering(false);
+    const onPlaying = (): void => {
+      maybeCompleteLanding();
+      setBuffering(false);
+    };
     // V8 (§9.1.9, QA 2026-08-12): a PAUSED element never fires `playing`,
     // so `playing` as the only clearer latched the spinner forever on any
     // seek-while-paused — even when the data had long since arrived.
     // `seeked` and `canplay` both mean "the position is displayable now".
-    const onSeeked = (): void => setBuffering(false);
-    const onCanPlay = (): void => setBuffering(false);
+    const onSeeked = (): void => {
+      maybeCompleteLanding();
+      setBuffering(false);
+    };
+    const onCanPlay = (): void => {
+      maybeCompleteLanding();
+      setBuffering(false);
+    };
     const onVolumeChange = (): void => {
       setVolume(video.volume);
       setMuted(video.muted);
@@ -1081,7 +1140,7 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
       video.removeEventListener("canplay", onCanPlay);
       video.removeEventListener("volumechange", onVolumeChange);
     };
-  }, [phase, listedFragments]);
+  }, [phase, listedFragments, clearLandingWatch]);
 
   // ── Fullscreen ───────────────────────────────────────────────────────────
   useEffect(() => {
@@ -1165,7 +1224,10 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
           const clamped = accepted.targetMs;
           // Arm/re-arm the landing watch against the CURRENT window — a
           // re-seek before landing replaces the watch, and the newest
-          // clamped target wins (earlier seek runs are dead runs).
+          // clamped target wins (earlier seek runs are dead runs). A
+          // predecessor stuck landed-but-unresumed (browser-player-F4) is
+          // superseded the same way.
+          landedAwaitingResumeRef.current = null;
           landingWatchRef.current = armLandingWatch(listedFragments(), clamped, Date.now());
           relocatingRef.current = { targetMs: clamped };
           setRelocating({ targetMs: clamped });
@@ -1219,8 +1281,16 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
               if (!v) return;
               const end = seekableEndSec(v);
               if (end !== null && (armedEnd === null || end > armedEnd + 1)) {
-                clearLandingWatch();
-                v.currentTime = Math.max(0, end - 0.25);
+                // browser-player-F4: same partial transition as the hls.js
+                // landing — stop the poll but keep the 20 s timer and the
+                // pin until the landed position is actually displayable.
+                if (coarsePollRef.current) {
+                  clearInterval(coarsePollRef.current);
+                  coarsePollRef.current = null;
+                }
+                const startSec = Math.max(0, end - 0.25);
+                landedAwaitingResumeRef.current = { startSec, targetMs: clamped };
+                v.currentTime = startSec;
                 heartbeatRef.current?.flushNow();
               }
             }, 500);

@@ -217,13 +217,41 @@ describe("POST /playback/sessions/{id}/seek — the V8 seek control channel", ()
     await authed().delete(`/playback/sessions/${session.id}`);
   });
 
-  it("202: a past-EOF target clamps to the probed duration (never an ffmpeg -ss past EOF)", async () => {
+  it("202: a past-EOF target clamps to a PLAYABLE position — one nominal segment before the probed duration, never durationMs verbatim", async () => {
+    // browser-player-F4 (QA 2026-08-20/21, P1): the old ceiling was
+    // durationMs itself, and an accepted targetMs == durationMs became an
+    // ffmpeg -ss at EOF — a restart whose run has (essentially) nothing
+    // displayable, which the client then wedged on forever after landing.
+    // The ceiling now backs off one nominal §9.1.5 segment (6 s) so the
+    // seek-spawned run always carries real final frames to land on.
     const session = await createTranscodeSession();
     const res = await authed().post(`/playback/sessions/${session.id}/seek`).send({ targetMs: 99_999_999_999 });
     expect(res.status, JSON.stringify(res.body)).toBe(202);
-    expect(res.body.targetMs).toBe(HARBOR_LIGHTS_DURATION_MS);
+    expect(res.body.targetMs).toBe(HARBOR_LIGHTS_DURATION_MS - 6_000);
     const row = await seekTargetOf(session.id);
-    expect(row.seek_target_ms).toBe(HARBOR_LIGHTS_DURATION_MS);
+    expect(row.seek_target_ms).toBe(HARBOR_LIGHTS_DURATION_MS - 6_000);
+    await authed().delete(`/playback/sessions/${session.id}`);
+  });
+
+  it("202: targetMs == durationMs (the scrubber dragged to the very end) clamps to the same playable ceiling", async () => {
+    const session = await createTranscodeSession();
+    const res = await authed().post(`/playback/sessions/${session.id}/seek`).send({ targetMs: HARBOR_LIGHTS_DURATION_MS });
+    expect(res.status, JSON.stringify(res.body)).toBe(202);
+    expect(
+      res.body.targetMs,
+      "an at-EOF target was recorded verbatim — the restart produces nothing displayable and the client wedges (browser-player-F4)",
+    ).toBe(HARBOR_LIGHTS_DURATION_MS - 6_000);
+    const row = await seekTargetOf(session.id);
+    expect(row.seek_target_ms).toBe(HARBOR_LIGHTS_DURATION_MS - 6_000);
+    await authed().delete(`/playback/sessions/${session.id}`);
+  });
+
+  it("202: a target already at/below the playable ceiling is untouched by the EOF back-off", async () => {
+    const session = await createTranscodeSession();
+    const atCeiling = HARBOR_LIGHTS_DURATION_MS - 6_000;
+    const res = await authed().post(`/playback/sessions/${session.id}/seek`).send({ targetMs: atCeiling });
+    expect(res.status, JSON.stringify(res.body)).toBe(202);
+    expect(res.body.targetMs).toBe(atCeiling);
     await authed().delete(`/playback/sessions/${session.id}`);
   });
 

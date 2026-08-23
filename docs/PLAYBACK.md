@@ -1122,13 +1122,20 @@ State machine: `created → starting → active ⇄ suspended → seeking → ac
     surviving segment's own index IS the media sequence number — the server
     adds `#EXT-X-MEDIA-SEQUENCE:<firstIndex>` when, and only when,
     `firstIndex > 0`. An unpruned playlist stays byte-identical.
-  - **Clamp:** the derived target is clamped to `[0, durationMs]` at the
+  - **Clamp:** the derived target is clamped to the PLAYABLE ceiling —
+    `[0, max(0, durationMs − one nominal segment)]`
+    (`clampSeekTargetToPlayableMs`, playback/seek-target.ts) — at the
     controller before `requestSeek`. `requestSeek` itself writes
     `seek_target_ms` verbatim by design (it never re-derives a decision its
     caller made), so the clamp belongs to whoever decides the target. An
-    unclamped value becomes an ffmpeg `-ss` past EOF: a restart that
-    produces nothing, forever. An unprobed file (no `durationMs`) keeps the
-    lower bound only.
+    unclamped value becomes an ffmpeg `-ss` past EOF — a restart that
+    produces nothing, forever — and `durationMs` ITSELF is an `-ss` AT EOF:
+    a run with nothing displayable that the client's landing watch matches
+    anyway and then stalls on (the 2026-08-20/21 QA EOF-seek wedge,
+    browser-player-F4). Backing the ceiling off one nominal segment means a
+    seek to the very end lands on the file's real final frames and plays
+    out to a clean `ended`. A clip shorter than one segment clamps to 0.
+    An unprobed file (no `durationMs`) keeps the lower bound only.
 - **Heartbeat:** client progress PUT doubles as heartbeat; no heartbeat for
   90 s → suspend; 15 min → end session, delete dir, emit `playback.ended`.
   - **Reported positions are PRESENTATION time; stored positions are SOURCE
@@ -1720,9 +1727,22 @@ machine totals, not per-session multipliers.
     `[clampedTarget − one GOP, clampedTarget + ε]` — both conditions
     required (the prefix alone could be a §9.1.4 handoff run; the PDT
     alone could false-positive on in-window content). Land at that
-    fragment's `start`. A re-seek before landing re-arms the watch with
-    the newest clamped target; earlier seek runs are dead runs the client
-    never lands on (server-side absorption already de-duplicates).
+    fragment's `start`. The fragment match ends run DISCOVERY, not the
+    seek (browser-player-F4 amendment, 2026-08-23): `relocating` and the
+    timeout below both SURVIVE the landing until RESUME EVIDENCE — a
+    displayable frame (`readyState ≥ HAVE_CURRENT_DATA`) whose
+    source-mapped position falls in
+    `[clampedTarget − one GOP, clampedTarget + 30 s]`
+    (`isLandingResumeEvidence`, lib/source-time.ts, checked on
+    `seeked`/`canplay`/`playing`/`timeupdate`/`ended`). The check runs on
+    the SOURCE axis because the failure it rejects — a landing
+    `currentTime` assignment the UA CLAMPED onto the old content's tail
+    (endOfStream truncated the media duration) — sits within
+    milliseconds of the run's start in PRESENTATION time but thousands of
+    seconds away in source time. A re-seek before landing re-arms the
+    watch with the newest clamped target; earlier seek runs are dead runs
+    the client never lands on (server-side absorption already
+    de-duplicates).
   - DISCOVERY NUDGE (live-QA fix, 2026-08-20): while `relocating`, the
     client forces a playlist re-read once per second
     (`HARD_SEEK_REFRESH_NUDGE_MS = 1_000`,
@@ -1735,7 +1755,8 @@ machine totals, not per-session multipliers.
     own targetduration cadence — up to ~6 s of pure discovery latency,
     which live QA measured as the bulk of the observed seek-to-play time.
     The nudge never fires synchronously (the run cannot be listed at 202
-    time), goes quiet the moment the landing clears `relocating`, and
+    time), goes quiet at the FRAGMENT MATCH (not at resume — nudging past
+    the match would abort the very fragment loads the landing needs), and
     aborting an in-flight fragment load mid-relocation costs nothing (the
     pre-seek position's buffer is already abandoned). Native-HLS sessions
     keep their 500 ms seekable-end poll instead (the UA owns playlist
@@ -1744,9 +1765,13 @@ machine totals, not per-session multipliers.
     not runtime config (ruled). Sizing rationale, kept beside the
     constant: the observed 4–6 s cold restart is the dev box, NOT the
     sizing case; the sizing case is an N100-class host transcoding 4K
-    input, which gets the headroom. On expiry: leave `relocating` and
-    surface the existing typed player-error path with a retry affordance.
-    Never an indefinite spinner.
+    input, which gets the headroom. The timer bounds the FULL seek
+    lifecycle — armed at the 202, cleared only by resume evidence
+    (browser-player-F4 amendment; the fragment match alone must never
+    consume it, or a landing on a run with nothing displayable stalls
+    unbounded). On expiry: leave `relocating` and surface the existing
+    typed player-error path with a retry affordance. Never an indefinite
+    spinner — and never a SILENT drop either.
 - **Displayed position is PDT-derived source time (V8):** current
   fragment's PDT + intra-fragment offset, every timeupdate. Sessions
   without PDT (direct-play; a stale server) fall back to raw

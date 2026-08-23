@@ -198,3 +198,69 @@ export function findLandingFragment(fragments: readonly ListedFragment[], watch:
 export function landingWatchExpired(watch: LandingWatch, nowMs: number, timeoutMs = HARD_SEEK_LANDING_TIMEOUT_MS): boolean {
   return nowMs - watch.armedAtMs >= timeoutMs;
 }
+
+// ── Post-landing resume evidence (browser-player-F4) ─────────────────────
+// The LEVEL_UPDATED fragment match ends run DISCOVERY, not the seek: the
+// element still has to fetch/append data at the landed position before
+// anything is watchable, and a seek at/near EOF can land on a run with
+// nothing displayable in it (the QA 2026-08-20/21 wedge). The hard-seek
+// lifecycle therefore stays open — timer running, position pinned — until
+// one of the events that can mean "the landed position is displayable"
+// (`seeked`/`canplay`/`playing`/`timeupdate`) passes this predicate, or
+// `ended` fires, or the 20 s timeout surfaces the toast.
+
+/** W3C HAVE_CURRENT_DATA — the `readyState` floor at which the element can
+ *  actually display its current position. A literal, not the global
+ *  `HTMLMediaElement.HAVE_CURRENT_DATA`, for the same jsdom reason as
+ *  VideoPlayer's MEDIA_ERR_* literals (the test environment defines no
+ *  media constants). */
+const HAVE_CURRENT_DATA = 2;
+
+/** Backward tolerance on the landed presentation position for the
+ *  NO-SOURCE-CLOCK fallback below (the native coarse path) — float slop
+ *  only: the landing ASSIGNS currentTime, and the seek algorithm reports
+ *  the set position back exactly. */
+export const LANDING_RESUME_EPSILON_SEC = 0.01;
+
+/** How far PAST the landed target the source-mapped position may already
+ *  be and still count as this seek's own resume (the element can play a
+ *  little of the landed run between the data arriving and the next
+ *  `timeupdate`/`canplay` we observe — and the clean at-EOF playout ends
+ *  within one clamped-back nominal segment of the target). Generous is
+ *  fine: the failure this predicate rejects sits THOUSANDS of seconds
+ *  away on the source axis, not tens. */
+export const LANDING_RESUME_FORWARD_TOLERANCE_MS = 30_000;
+
+/**
+ * Whether the element state proves the LANDED hard seek actually became
+ * watchable — a displayable frame (`readyState`) showing content from the
+ * TARGET's own source region.
+ *
+ * The comparison runs on the SOURCE axis whenever the window carries the
+ * V8 clock: presentation positions cannot discriminate here, because the
+ * failure shape (browser-player-F4 live QA) is a seek the UA CLAMPED onto
+ * the OLD content's tail — a presentation position within MILLISECONDS of
+ * the landed run's start (the gap is only nominal-EXTINF-vs-real-media
+ * slop) whose source position is thousands of seconds from the target.
+ * Mapping `currentTime` through the listed window answers the real
+ * question — "is the viewer looking at what they seeked to?" — with the
+ * same behind-window the landing match itself uses. Without a source
+ * clock (native coarse landing) the presentation fallback stands.
+ */
+export function isLandingResumeEvidence(
+  landed: { startSec: number; targetMs: number },
+  currentTimeSec: number,
+  readyState: number,
+  fragments: readonly ListedFragment[] | null,
+): boolean {
+  if (readyState < HAVE_CURRENT_DATA) return false;
+  if (fragments && hasSourceClock(fragments)) {
+    const mappedMs = presentationToSourceMs(fragments, currentTimeSec);
+    return (
+      mappedMs !== null &&
+      mappedMs >= landed.targetMs - LANDING_WINDOW_BEHIND_MS &&
+      mappedMs <= landed.targetMs + LANDING_RESUME_FORWARD_TOLERANCE_MS
+    );
+  }
+  return currentTimeSec >= landed.startSec - LANDING_RESUME_EPSILON_SEC;
+}

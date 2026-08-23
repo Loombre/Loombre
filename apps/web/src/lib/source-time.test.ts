@@ -17,6 +17,8 @@ import {
   HARD_SEEK_LANDING_TIMEOUT_MS,
   maxListedRunIndex,
   presentationToSourceMs,
+  isLandingResumeEvidence,
+  LANDING_RESUME_EPSILON_SEC,
   runIndexOfRelurl,
   sourceToPresentationSec,
   type ListedFragment,
@@ -168,5 +170,49 @@ describe("landing watch (hard seek, §9.1.9)", () => {
     const watch = armLandingWatch(WINDOW, 12_000, 10_000);
     expect(landingWatchExpired(watch, 10_000 + HARD_SEEK_LANDING_TIMEOUT_MS - 1)).toBe(false);
     expect(landingWatchExpired(watch, 10_000 + HARD_SEEK_LANDING_TIMEOUT_MS)).toBe(true);
+  });
+});
+
+// browser-player-F4: the post-landing half of the hard-seek lifecycle —
+// the fragment match proves the run EXISTS; only this predicate proves the
+// element is actually SHOWING it. See VideoPlayer's maybeCompleteLanding.
+describe("isLandingResumeEvidence (browser-player-F4)", () => {
+  // A landed run at presentation [90, 96) whose source origin is the
+  // clamped target 12_000 — appended after an old run tail whose SOURCE
+  // position is hours away (7_124_000) but whose PRESENTATION tail sits
+  // milliseconds before the landed start: the live-QA clamp shape.
+  const landed = { startSec: 90, targetMs: 12_000 };
+  const window: ListedFragment[] = [
+    frag("run0/s000014.m4s", 84, 6, 7_118_000),
+    frag("run2/s000015.m4s", 90, 6, 12_000),
+  ];
+
+  it("a displayable frame mapping into the target's source region is evidence", () => {
+    expect(isLandingResumeEvidence(landed, 90, 2, window)).toBe(true);
+    expect(isLandingResumeEvidence(landed, 95.5, 4, window)).toBe(true);
+  });
+
+  it("a position the UA CLAMPED onto the old tail is NOT evidence — presentation-adjacent, source-remote (the silent-wedge shape)", () => {
+    // 89.995 is 5 ms before the landed start — a presentation epsilon can
+    // never reject this — but it maps to source ~7_123_995, thousands of
+    // seconds from the 12_000 target.
+    expect(isLandingResumeEvidence(landed, 89.995, 4, window)).toBe(false);
+    expect(isLandingResumeEvidence(landed, 89.5, 4, window)).toBe(false);
+  });
+
+  it("readyState below HAVE_CURRENT_DATA is NOT evidence — nothing at the position is displayable yet", () => {
+    expect(isLandingResumeEvidence(landed, 90, 0, window)).toBe(false);
+    expect(isLandingResumeEvidence(landed, 90, 1, window)).toBe(false);
+  });
+
+  it("forward tolerance is bounded: content far past the target is some OTHER position, not this seek's resume", () => {
+    const longRun: ListedFragment[] = [frag("run2/s000015.m4s", 90, 120, 12_000)];
+    expect(isLandingResumeEvidence(landed, 90 + 31, 4, longRun)).toBe(false);
+  });
+
+  it("without a source clock (native coarse landing) the presentation fallback stands, epsilon included", () => {
+    expect(isLandingResumeEvidence(landed, 90, 4, null)).toBe(true);
+    expect(isLandingResumeEvidence(landed, 90 - LANDING_RESUME_EPSILON_SEC, 4, null)).toBe(true);
+    expect(isLandingResumeEvidence(landed, 89.5, 4, null)).toBe(false);
   });
 });
