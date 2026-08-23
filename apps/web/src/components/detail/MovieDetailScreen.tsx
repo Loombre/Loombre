@@ -167,6 +167,7 @@ export function MovieDetailScreen({
             title={movie.title}
             blurhash={posterImage?.blurhash ?? null}
             dominantColor={hero.dominantColor}
+            hasImage={posterImage !== undefined}
           />
           <div className={styles.metaColumn}>
             <div className={styles.eyebrowRow}>

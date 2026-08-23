@@ -33,6 +33,13 @@ export interface DetailPosterProps {
   title: string;
   blurhash: string | null;
   dominantColor: string | null;
+  /** browser-items-F13: default true (every pre-existing caller keeps
+   *  fetching, same as before this prop existed). Pass false when the
+   *  item's own `images[]` already says there's no poster to fetch (an
+   *  un-scanned/no-metadata-provider item) — skips the doomed network
+   *  request entirely and renders the fallback immediately, instead of
+   *  firing a GET guaranteed to 404/ORB-block and waiting on its onError. */
+  hasImage?: boolean;
 }
 
 export function DetailPoster({
@@ -43,8 +50,10 @@ export function DetailPoster({
   title,
   blurhash,
   dominantColor,
+  hasImage = true,
 }: DetailPosterProps): React.JSX.Element {
   const [failed, setFailed] = useState(false);
+  const showFallback = failed || !hasImage;
   const placeholderUri = useMemo(() => (blurhash ? blurhashToDataUri(blurhash) : null), [blurhash]);
   const src = buildImageUrl({ serverUrl, accessToken, entityType, entityId, kind: "poster", width: 440 });
   const initial = title.trim().charAt(0).toUpperCase() || "?";
@@ -53,9 +62,9 @@ export function DetailPoster({
     <div
       className={styles.poster}
       style={{ "--poster-glow": dominantColor ?? undefined, viewTransitionName: posterTransitionName(entityId) } as React.CSSProperties}
-      data-fallback={failed}
+      data-fallback={showFallback}
     >
-      {failed ? (
+      {showFallback ? (
         <>
           <span className={styles.initial} aria-hidden="true">
             {initial}
