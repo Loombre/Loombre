@@ -2,23 +2,24 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 /**
  * Ordered CI gate runner (CLAUDE.md: `pnpm gate` / `pnpm gate:full`):
- *   codegen -> sdk-drift -> oasdiff -> depcruise -> runtime-imports
- *   -> license-check -> go-licenses-check -> dep-audit -> lint -> typecheck
- *   -> test -> installers-test -> db:migrate-check -> grep-gates
- *   -> docs-build -> [gate:full only] web-build-budget
+ *   codegen -> sdk-drift -> version-stamp -> oasdiff -> depcruise
+ *   -> runtime-imports -> license-check -> go-licenses-check -> dep-audit
+ *   -> lint -> typecheck -> test -> installers-test -> db:migrate-check
+ *   -> grep-gates -> docs-build -> [gate:full only] web-build-budget
  *
  * Modes (L4, STATE.md ledger item "consider adding the web production
  * build ... to `pnpm gate`" — closed by adding a mode instead of changing
  * the default):
  *   `node scripts/gate.mjs`      (no arg — FAST, the CLAUDE.md inner-loop
- *     default): the 15 steps above, unchanged behavior and unchanged speed.
- *     The `steps` array below is exactly what it was before this mode
- *     argument existed — full mode APPENDS to it rather than editing it in
- *     place, specifically so a reviewer can diff the array itself and see
- *     no step was silently lost or reordered.
+ *     default): the 16 steps above, unchanged behavior and unchanged speed.
+ *     Full mode APPENDS to the `steps` array below rather than editing it
+ *     in place, specifically so a reviewer can diff the array itself and
+ *     see no step was silently lost or reordered. (Prose elsewhere may
+ *     still say "15 steps" — that count predates `version-stamp`, added
+ *     for QA report browser-admin-F8; the array below is the truth.)
  *   `node scripts/gate.mjs full` (FULL — what CI's `pnpm gate:full` runs,
  *     and what CLAUDE.md's working agreements call for before any
- *     push/PR): the same 15 steps, plus a 16th, `web-build-budget`
+ *     push/PR): the same 16 steps, plus a final `web-build-budget`
  *     (`pnpm run perf:web-budget`) — builds apps/web's workspace
  *     dependency closure, builds apps/web itself for production, boots it,
  *     and asserts the /browse route's first-load JS gzip size against the
@@ -35,6 +36,23 @@
  *     8f11000).
  *   Any other argument is a usage error: prints usage to stderr, exits 1,
  *     runs nothing.
+ *
+ * version-stamp (QA report browser-admin-F8): `node scripts/release/
+ * stamp-version.mjs --check` — packages/shared/src/version.ts is a
+ * COMMITTED GENERATED file (STATE.md P4.11 single-source stamping), and
+ * nothing re-stamped it across seven release-candidate bumps of root
+ * package.json. The result was three different version strings on one
+ * admin screen: the sidebar reads package.json (0.9.0-rc.7), /system/info
+ * read the stale LOOMBRE_VERSION_FULL, and the Updates card read the
+ * staler bare LOOMBRE_VERSION — which also feeds update-check's
+ * compareSemver, so `updateAvailable` was computed against the wrong
+ * version. Only .github/workflows/release.yml ever re-stamped, so release
+ * artifacts self-healed while the committed tree and every dev build went
+ * silently stale. Placed IMMEDIATELY after sdk-drift because it is the
+ * same class of check — "a generated file drifted from the source it is
+ * generated from" — just over a different generated artifact, and just as
+ * cheap (two file reads). Short-hash freshness is deliberately not gated;
+ * see scripts/release/lib/version-stamp.mjs's header.
  *
  * runtime-imports (Phase 4 Wave 3, lane STRUCT, STATE.md Phase 4 Open item
  * "Runtime-TS packaging defects (I2 findings)"): scripts/check-runtime-
@@ -122,12 +140,14 @@ if (MODE_ARG !== undefined && MODE_ARG !== "full") {
 }
 const FULL = MODE_ARG === "full";
 
-// FAST STEPS — byte-identical to the array before gate:full existed.
-// Full mode appends to this array below rather than editing it in place,
-// so a step-loss regression is a one-line diff to catch on review.
+// FAST STEPS — the canonical, ordered list (`version-stamp` is the only
+// entry added since gate:full's mode argument landed). Full mode appends
+// to this array below rather than editing it in place, so a step-loss
+// regression is a one-line diff to catch on review.
 const steps = [
   { name: "codegen", run: runCodegen },
   { name: "sdk-drift", run: runSdkDrift },
+  { name: "version-stamp", run: () => runCommand("node", ["scripts/release/stamp-version.mjs", "--check"]) },
   { name: "oasdiff", run: runOasdiff },
   { name: "depcruise", run: runDepcruise },
   { name: "runtime-imports", run: () => runCommand("node", ["scripts/check-runtime-imports.mjs"]) },

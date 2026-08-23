@@ -59,7 +59,14 @@ describe("runCli — --version", () => {
 
   it("printed version matches the shape `Loombre <semver>[-dev+<hash>]` (rename R6)", async () => {
     const result = await runCli({ argv: ["--version"], env: BASE_ENV, nodePlatform: "linux", doctorDeps: OK_DOCTOR_DEPS, adminDeps: THROWING_ADMIN_DEPS });
-    expect(result.stdout[0]).toMatch(/^Loombre \d+\.\d+\.\d+(-dev\+[0-9a-f]+|-dev\+unknown)?$/);
+    // The optional PRERELEASE group is not decoration: root package.json is
+    // on a release-candidate line (0.9.0-rc.7) and LOOMBRE_VERSION_FULL is
+    // stamped from it, so both a release build ("0.9.0-rc.7") and a dev
+    // build ("0.9.0-rc.7-dev+<hash>") carry it. Without it this assertion
+    // failed the moment the stamp was refreshed (browser-admin-F8).
+    expect(result.stdout[0]).toMatch(
+      /^Loombre \d+\.\d+\.\d+(?:-(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*)?(?:-dev\+(?:[0-9a-f]+|unknown))?$/,
+    );
   });
 });
 
