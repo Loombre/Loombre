@@ -363,6 +363,42 @@ describe("ComposeNoticeCard — LD-4 (owner QA, 2026-08-10)", () => {
 // canonical ui/Input primitive) — consolidated onto TextInput so there's
 // ONE text-input styling system, not two independently-maintained ones
 // that each need their own copy of the inset-focus-ring fix.
+// browser-restricted-settings-F4 (P3): an invalid custom Takes-effect
+// minutes value (e.g. 0) must surface the field's OWN range error — never
+// the stale cross-field "must not be after the expiry" message left behind
+// by an earlier submit attempt. Root cause: the <form> had no `noValidate`,
+// so the number input's native `min={1}` blocked the submit EVENT itself
+// (browser's own bubble, handlePublishClick never runs) — the prior
+// nextErrors state (from the earlier cross-field violation) was never
+// replaced. jsdom enforces the same native constraint-validation gate on a
+// real button.click(), so this reproduces in-process, no browser needed.
+describe("ComposeNoticeCard — browser-restricted-settings-F4: invalid custom Takes-effect minutes", () => {
+  it("shows the field's own range error (not the stale cross-field error) for Takes-effect minutes=0", async () => {
+    await render(null);
+    await typeMessage("A brand new notice");
+
+    // First produce the cross-field error: effective (60min) after expiry (30min).
+    await selectOption(selectContainingOption("In 60 minutes"), "In 60 minutes");
+    await selectOption(selectContainingOption("30 minutes"), "30 minutes");
+    await click("Publish notice");
+    expect(textOf()).toContain("The takes-effect time must not be after the expiry.");
+    expect(apiPostMock).not.toHaveBeenCalled();
+
+    // Now switch Takes effect to a custom, out-of-range value (0) and
+    // resubmit — the stale cross error must be replaced by the field's own
+    // range message, not linger alongside/instead of it.
+    await selectOption(selectContainingOption("In 60 minutes"), "Custom minutes…");
+    await act(async () => {
+      setNativeValue(numberInputs()[0]!, "0");
+    });
+    await click("Publish notice");
+
+    expect(textOf()).toContain("Enter a whole number of minutes (1 to 525600 — a year).");
+    expect(textOf()).not.toContain("The takes-effect time must not be after the expiry.");
+    expect(apiPostMock).not.toHaveBeenCalled();
+  });
+});
+
 describe("ComposeNoticeCard — custom-minutes fields consolidated onto ui/Input (item 2)", () => {
   it("both custom-minutes fields still render as functioning number inputs with the right constraints", async () => {
     await render(null);

@@ -347,6 +347,14 @@ export function ComposeNoticeCard({
       ) : (
         <form
           className={sharedStyles.form}
+          // browser-restricted-settings-F4: the custom-minutes fields carry
+          // native `min={1}` (kept for spinner/keyboard UX) but a native
+          // out-of-range value otherwise blocks the submit EVENT itself —
+          // handlePublishClick/validate() never runs, so a stale error from
+          // an earlier attempt (e.g. the cross-field message) is never
+          // replaced by the field's own range message. noValidate hands all
+          // validation to validate() so it always owns what's on screen.
+          noValidate
           onSubmit={(e) => {
             e.preventDefault();
             handlePublishClick();
