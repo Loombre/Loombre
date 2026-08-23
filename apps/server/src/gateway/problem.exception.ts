@@ -52,6 +52,34 @@ export class ProblemException extends HttpException {
   }
 }
 
+/**
+ * RFC 9457 400, adi-F4 (QA 2026-08-21). NO controller in this server throws
+ * a 400 — every client-input rejection it raises itself is a 422
+ * (`unprocessableEntity`, schema/business-rule validation). A 400 can only
+ * come from the FRAMEWORK, out of @nestjs/core's
+ * `RoutesResolver.mapExternalException`, which rewrites two express-level
+ * failures into a bare `new BadRequestException(err.message)`:
+ *   - body-parser's `SyntaxError` (the request entity is not valid JSON), and
+ *   - a `URIError` from a path param with invalid percent-encoding.
+ * Both of those messages are raw internal parser text that QUOTES THE
+ * OFFENDING CLIENT INPUT back (V8's "Unexpected token" form embeds a verbatim
+ * fragment of the submitted body — potentially a credential), so
+ * ProblemJsonExceptionFilter converts them here instead of letting them reach
+ * `title`. `detail` is therefore always one of a fixed set of strings; it is
+ * never built from request content. Same no-echo posture as the filter's
+ * `MalformedCursorError` branch and its generic 500.
+ */
+export function badRequest(detail: string, instance: string, code?: string): ProblemException {
+  return new ProblemException({
+    status: HttpStatus.BAD_REQUEST,
+    type: "urn:loombre:problem:malformed-request",
+    title: "Bad Request",
+    detail,
+    instance,
+    ...(code !== undefined ? { code } : {}),
+  });
+}
+
 export function unprocessableEntity(detail: string, instance: string, code?: string): ProblemException {
   return new ProblemException({
     status: HttpStatus.UNPROCESSABLE_ENTITY,
