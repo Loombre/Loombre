@@ -70,6 +70,12 @@ const MOVIE = {
   images: [],
 };
 
+/** browser-casual-F1: the screen resolves the viewer's admin flag once
+ *  (useIsAdmin -> GET /users/me) and passes it to BOTH MetadataCards
+ *  (desktop + mobile trees coexist in the DOM). Tests set this before
+ *  rendering. */
+let meResponse: unknown = { isAdmin: false };
+
 /** Only `/movies/{id}` is under test here — WatchlistToggle's
  *  useWatchlistIds() (lib/watchlist-sync.ts) also fires its own /watchlist
  *  fetch once the movie loads and the action row mounts, so that path
@@ -80,8 +86,13 @@ function installApiGetMock(fetchMovie: () => Promise<unknown>): void {
   apiGetMock.mockImplementation((path: string) => {
     if (path === "/movies/{id}") return fetchMovie();
     if (path === "/watchlist") return Promise.resolve({ items: [], nextCursor: null });
+    if (path === "/users/me") return Promise.resolve(meResponse);
     return Promise.reject(new Error(`unexpected apiGet(${path})`));
   });
+}
+
+function fixMatchButtons(view: TestRender): HTMLButtonElement[] {
+  return Array.from(view.container.querySelectorAll("button")).filter((b) => b.textContent === "FIX MATCH");
 }
 
 async function flush(): Promise<void> {
@@ -107,6 +118,7 @@ describe("MovieDetailScreen", () => {
     view?.unmount();
     view = null;
     apiGetMock.mockReset();
+    meResponse = { isAdmin: false };
     vi.unstubAllGlobals();
   });
 
@@ -145,5 +157,51 @@ describe("MovieDetailScreen", () => {
 
     expect(view.container.textContent).toContain("Night Circuit");
     expect(view.container.textContent).not.toContain("not found");
+  });
+
+  it("REGRESSION GUARD (browser-casual-F1): renders no FIX MATCH action for a non-admin viewer", async () => {
+    installMatchMedia();
+    meResponse = { isAdmin: false };
+    installApiGetMock(() => Promise.resolve(MOVIE));
+    view = renderScreen();
+    await flush();
+
+    expect(view.container.textContent).toContain("Night Circuit");
+    expect(fixMatchButtons(view)).toHaveLength(0);
+  });
+
+  it("REGRESSION GUARD (browser-casual-F1): renders no FIX MATCH while GET /users/me is still in flight (no flash of admin chrome)", async () => {
+    installMatchMedia();
+    apiGetMock.mockImplementation((path: string) => {
+      if (path === "/movies/{id}") return Promise.resolve(MOVIE);
+      if (path === "/watchlist") return Promise.resolve({ items: [], nextCursor: null });
+      if (path === "/users/me") return new Promise(() => {}); // never resolves
+      return Promise.reject(new Error(`unexpected apiGet(${path})`));
+    });
+    view = renderScreen();
+    await flush();
+
+    expect(view.container.textContent).toContain("Night Circuit");
+    expect(fixMatchButtons(view)).toHaveLength(0);
+  });
+
+  it("plumbs isAdmin through to BOTH MetadataCards (desktop + mobile trees) for an admin viewer", async () => {
+    installMatchMedia();
+    meResponse = { isAdmin: true };
+    installApiGetMock(() => Promise.resolve(MOVIE));
+    view = renderScreen();
+    await flush();
+
+    expect(fixMatchButtons(view)).toHaveLength(2);
+  });
+
+  it("resolves the admin flag with ONE GET /users/me even though MetadataCard renders twice", async () => {
+    installMatchMedia();
+    meResponse = { isAdmin: true };
+    installApiGetMock(() => Promise.resolve(MOVIE));
+    view = renderScreen();
+    await flush();
+
+    expect(apiGetMock.mock.calls.filter((call) => call[0] === "/users/me")).toHaveLength(1);
   });
 });

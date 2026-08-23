@@ -34,6 +34,23 @@
 // FIX MATCH: L2's real component, swapped in at Wave-2 landing per the
 // stub's documented contract (the former FixMatchStub is deleted). The
 // card owns the open/close state; FixMatch renders SheetOrModal itself.
+//
+// FIX MATCH is ADMIN-ONLY (QA 2026-08-21 browser-casual-F1, P2): both
+// endpoints behind it are /admin/* and requireAdmin-guarded server-side
+// (apps/server/src/catalog/admin.controller.ts), so for a non-admin the
+// button used to open a sheet that immediately dead-ended on the 403's
+// bare "Forbidden". The card now takes `isAdmin` and renders neither the
+// button nor the FixMatch mount without it — the affordance simply is not
+// there, matching the sidebar's SYSTEM group and the command palette. The
+// caller resolves the flag (lib/use-is-admin.ts); this component stays
+// presentational, like every other card in this directory. The gate is UX
+// only — the server-side check remains the real boundary.
+//
+// EDIT is deliberately left as-is (rendered, permanently disabled, with
+// the tooltip above): it is a dead affordance for EVERYONE, admin
+// included, because no item-update endpoint exists at all — so it is not
+// an admin-visibility leak and hiding it for non-admins alone would
+// misrepresent why it is unavailable.
 
 import { useState } from "react";
 import type { components } from "@loombre/sdk";
@@ -47,12 +64,17 @@ type MediaFileSummary = components["schemas"]["MediaFileSummary"];
 export interface MetadataCardProps {
   itemId: string;
   itemTitle: string;
+  /** Whether the VIEWER is an admin. Gates FIX MATCH (an /admin/* flow) —
+   *  pass `false` while the answer is still unknown, never `true`
+   *  optimistically, so no admin-only chrome flashes. UX only; the server
+   *  is still the boundary. */
+  isAdmin: boolean;
   people: PersonCredit[] | undefined;
   defaultFile: MediaFileSummary | undefined;
   addedAtMs: number;
 }
 
-export function MetadataCard({ itemId, itemTitle, people, defaultFile, addedAtMs }: MetadataCardProps): React.JSX.Element {
+export function MetadataCard({ itemId, itemTitle, isAdmin, people, defaultFile, addedAtMs }: MetadataCardProps): React.JSX.Element {
   const [fixMatchOpen, setFixMatchOpen] = useState(false);
   return (
     <div className={styles.card}>
@@ -67,16 +89,20 @@ export function MetadataCard({ itemId, itemTitle, people, defaultFile, addedAtMs
           >
             EDIT
           </button>
-          <button type="button" className={styles.actionPill} onClick={() => setFixMatchOpen(true)}>
-            FIX MATCH
-          </button>
-          <FixMatch
-            itemId={itemId}
-            itemTitle={itemTitle}
-            open={fixMatchOpen}
-            onClose={() => setFixMatchOpen(false)}
-            onApplied={() => setFixMatchOpen(false)}
-          />
+          {isAdmin && (
+            <>
+              <button type="button" className={styles.actionPill} onClick={() => setFixMatchOpen(true)}>
+                FIX MATCH
+              </button>
+              <FixMatch
+                itemId={itemId}
+                itemTitle={itemTitle}
+                open={fixMatchOpen}
+                onClose={() => setFixMatchOpen(false)}
+                onApplied={() => setFixMatchOpen(false)}
+              />
+            </>
+          )}
         </div>
       </div>
       <dl className={styles.rows}>

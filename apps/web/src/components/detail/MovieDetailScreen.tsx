@@ -30,7 +30,10 @@
 //     field (Match confidence + Studio are OMITTED, nothing backs them).
 //   - Mark watched: real, PUT /progress/{itemId} — MarkWatchedButton.tsx.
 //   - EDIT: disabled-with-tooltip — no item-update endpoint exists.
-//   - FIX MATCH: L2's real FixMatch (swapped in at Wave-2 landing).
+//   - FIX MATCH: L2's real FixMatch (swapped in at Wave-2 landing), and
+//     ADMIN-ONLY — both endpoints behind it are /admin/*, so this screen
+//     resolves the viewer's admin flag once and MetadataCard renders the
+//     action only for an admin (QA browser-casual-F1; see MetadataCard.tsx).
 //
 // Watchlist slot (sibling lane L3's component lands in the marked spot
 // below — do not build a watchlist button here, per this lane's
@@ -40,6 +43,7 @@ import type { components } from "@loombre/sdk";
 import { apiGet } from "../../lib/api-client.js";
 import { pickHeroImage } from "../../lib/pick-hero-image.js";
 import { useWatchedState } from "../../lib/use-watched-state.js";
+import { useIsAdmin } from "../../lib/use-is-admin.js";
 import { useDetailFetch } from "./useDetailFetch.js";
 import { DetailNotFound, DetailLoadError } from "./DetailFetchStatus.js";
 import { PlayLink } from "./PlayLink.js";
@@ -100,6 +104,16 @@ export function MovieDetailScreen({
   // (they coexist in the DOM), so the real GET /progress/{itemId} fires
   // exactly once per page load, not twice.
   const watched = useWatchedState(movie?.id ?? null, movie?.runtimeMs ?? null);
+
+  // browser-casual-F1: the METADATA card's FIX MATCH action is an /admin/*
+  // flow (requireAdmin server-side), so it must not be offered to a
+  // non-admin at all. Resolved ONCE here — both MetadataCards below
+  // (desktop + mobile trees coexist in the DOM) share this single
+  // GET /users/me, exactly like the useWatchedState call above shares one
+  // GET /progress/{itemId}. `null` (still in flight) collapses to false:
+  // fail closed, no flash of admin-only chrome. UX only — see
+  // lib/use-is-admin.ts's header for the security posture.
+  const isAdmin = useIsAdmin() === true;
 
   if (notFound) return <DetailNotFound label="Movie" />;
   if (error) return <DetailLoadError message={error} onRetry={retry} />;
@@ -183,7 +197,7 @@ export function MovieDetailScreen({
                   </>
                 )}
               </div>
-              <MetadataCard itemId={movie.id} itemTitle={movie.title} people={people} defaultFile={defaultFile} addedAtMs={movie.addedAtMs} />
+              <MetadataCard itemId={movie.id} itemTitle={movie.title} isAdmin={isAdmin} people={people} defaultFile={defaultFile} addedAtMs={movie.addedAtMs} />
             </div>
           </div>
         </div>
@@ -224,7 +238,7 @@ export function MovieDetailScreen({
             </div>
           </>
         )}
-        <MetadataCard itemId={movie.id} itemTitle={movie.title} people={people} defaultFile={defaultFile} addedAtMs={movie.addedAtMs} />
+        <MetadataCard itemId={movie.id} itemTitle={movie.title} isAdmin={isAdmin} people={people} defaultFile={defaultFile} addedAtMs={movie.addedAtMs} />
       </div>
     </div>
   );
