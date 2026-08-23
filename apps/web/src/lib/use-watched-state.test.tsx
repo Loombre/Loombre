@@ -47,6 +47,21 @@ async function flush(): Promise<void> {
   });
 }
 
+// gap-F11: the finding claimed a failed PUT reverts with NO error feedback
+// at all. Scout disputed that at HEAD — the hook's catch already calls
+// showToast(message, {variant:"danger"}) — but the existing test above only
+// ever asserted the state revert, never the toast itself (its own comment
+// says so), so that half of the contract had no regression check. These two
+// helpers read the real <ToastProvider> tree the same way
+// components/ui/Toast.test.tsx does.
+function getLiveRegion(container: HTMLElement): HTMLElement {
+  return container.querySelector('[aria-live="polite"]') as HTMLElement;
+}
+
+function getToastVariant(container: HTMLElement): string | null {
+  return container.querySelector("[data-variant]")?.getAttribute("data-variant") ?? null;
+}
+
 describe("useWatchedState", () => {
   let view: TestRender | null = null;
 
@@ -118,7 +133,7 @@ describe("useWatchedState", () => {
     });
   });
 
-  it("reverts the optimistic update when the PUT fails", async () => {
+  it("reverts the optimistic update when the PUT fails, and shows a danger toast with the error text", async () => {
     findProgressForItemMock.mockResolvedValue(null);
     apiPutMock.mockRejectedValue(new Error("network down"));
     view = render("item-1");
@@ -131,6 +146,27 @@ describe("useWatchedState", () => {
     expect(latestHook!.state).toBe("watched"); // optimistic
     await flush();
     expect(latestHook!.state).toBe("unwatched"); // reverted
+
+    // gap-F11: the write failure must be visibly reported, not silent.
+    // "network down" is a plain Error (not the mocked LoombreApiError), so
+    // this also pins the fallback copy the hook uses in that case.
+    expect(getLiveRegion(view.container).textContent).toBe("Could not update watched status");
+    expect(getToastVariant(view.container)).toBe("danger");
+  });
+
+  it("shows the LoombreApiError's own message in the danger toast when the PUT rejects with one", async () => {
+    findProgressForItemMock.mockResolvedValue(null);
+    apiPutMock.mockRejectedValue(new FakeLoombreApiError("Segment ahead target is out of range."));
+    view = render("item-1");
+    await flush();
+
+    act(() => {
+      latestHook!.toggle();
+    });
+    await flush();
+
+    expect(getLiveRegion(view.container).textContent).toBe("Segment ahead target is out of range.");
+    expect(getToastVariant(view.container)).toBe("danger");
   });
 
   it("ignores a toggle while a previous one is still in flight", async () => {
