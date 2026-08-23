@@ -10,11 +10,42 @@
 // href); the receiving half — that the param actually reaches the session
 // request — is guarded by app/watch/[itemId]/page.test.tsx (video) and
 // components/music/MusicPlayerProvider.test.tsx (audio).
+//
+// The row is also a /watch ENTRY POINT, so it carries the same client-side
+// navigation obligation as PlayLink (QA browser-items-F1) — see
+// PlayLink.test.tsx's header for why a raw <a href> breaks the route, and
+// for what the next/link stub below models.
 
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { components } from "@loombre/sdk";
-import { VersionRow } from "./VersionRow.js";
 import { renderIntoBody, type TestRender } from "../ui/test-render.js";
+
+const clientNav = vi.hoisted(() => ({ pushes: [] as string[] }));
+
+vi.mock("next/link", () => ({
+  default: ({
+    href,
+    children,
+    ...rest
+  }: {
+    href: string;
+    children?: React.ReactNode;
+  } & React.AnchorHTMLAttributes<HTMLAnchorElement>): React.JSX.Element => (
+    <a
+      href={href}
+      {...rest}
+      onClick={(e) => {
+        if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
+        e.preventDefault();
+        clientNav.pushes.push(href);
+      }}
+    >
+      {children}
+    </a>
+  ),
+}));
+
+const { VersionRow } = await import("./VersionRow.js");
 
 type MediaFileSummary = components["schemas"]["MediaFileSummary"];
 
@@ -33,6 +64,10 @@ function makeFile(overrides: Partial<MediaFileSummary> = {}): MediaFileSummary {
 
 describe("VersionRow", () => {
   let view: TestRender | null = null;
+
+  beforeEach(() => {
+    clientNav.pushes.length = 0;
+  });
 
   afterEach(() => {
     view?.unmount();
@@ -77,5 +112,17 @@ describe("VersionRow", () => {
     const file = makeFile({ versionLabel: null });
     view = renderIntoBody(<VersionRow itemId="99999999-9999-9999-9999-999999999999" file={file} />);
     expect(view.container.textContent).toContain("Original");
+  });
+
+  it("starts a CLIENT-SIDE navigation to /watch, not a full document load", () => {
+    const itemId = "99999999-9999-9999-9999-999999999999";
+    const file = makeFile({ id: "22222222-2222-2222-2222-222222222222" });
+    view = renderIntoBody(<VersionRow itemId={itemId} file={file} />);
+
+    const event = new MouseEvent("click", { bubbles: true, cancelable: true, button: 0 });
+    view.container.querySelector("a")?.dispatchEvent(event);
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(clientNav.pushes).toEqual([`/watch/${itemId}?mediaFileId=${file.id}`]);
   });
 });

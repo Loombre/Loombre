@@ -14,6 +14,7 @@
 // already does for the general catalog.
 
 import { use, useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { components } from "@loombre/sdk";
 import { AppShell } from "../../../../components/shell/AppShell.js";
@@ -176,10 +177,14 @@ function SceneContent({ id }: { id: string }): React.JSX.Element | null {
             <ol className={styles.markerList}>
               {scene.markers.map((marker) => (
                 <li key={marker.id}>
-                  <a href={`/watch/${scene.id}?t=${Math.floor(marker.startMs / 1000)}`} className={styles.markerRow}>
+                  {/* next/link, never a raw <a href> — see
+                      components/detail/PlayLink.tsx's header (QA
+                      browser-items-F1): every /watch entry is client-side
+                      so the route mounts and unmounts inside one document. */}
+                  <Link href={`/watch/${scene.id}?t=${Math.floor(marker.startMs / 1000)}`} className={styles.markerRow}>
                     <span className={styles.markerTime}>{formatMarkerTime(marker.startMs)}</span>
                     <span className={styles.markerTitle}>{marker.title}</span>
-                  </a>
+                  </Link>
                 </li>
               ))}
             </ol>

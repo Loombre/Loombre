@@ -15,9 +15,14 @@
 // which pins the real session request to that file. Guarded at both ends —
 // VersionRow.test.tsx for the href, app/watch/[itemId]/page.test.tsx and
 // components/music/MusicPlayerProvider.test.tsx for the session request.
+//
+// next/link, never a raw <a href> (QA browser-items-F1): a full document
+// navigation to /watch breaks the track handoff outright (see
+// PlayLink.tsx's header) and makes /watch's unmount path unreal for video.
 
 "use client";
 
+import Link from "next/link";
 import type { components } from "@loombre/sdk";
 import { Icon } from "../icon/Icon.js";
 import { formatFileSize, formatResolution, formatRuntime } from "./format.js";
@@ -36,12 +41,12 @@ export function VersionRow({ itemId, file }: { itemId: string; file: MediaFileSu
     .join(" · ");
 
   return (
-    <a href={`/watch/${itemId}?mediaFileId=${encodeURIComponent(file.id)}`} className={styles.row}>
+    <Link href={`/watch/${itemId}?mediaFileId=${encodeURIComponent(file.id)}`} className={styles.row}>
       <span className={styles.info}>
         <span className={styles.title}>{file.versionLabel ?? "Original"}</span>
         <span className={styles.meta}>{meta || "Not yet probed"}</span>
       </span>
       <Icon icon="play" size="dense" className={styles.playIcon ?? ""} />
-    </a>
+    </Link>
   );
 }
