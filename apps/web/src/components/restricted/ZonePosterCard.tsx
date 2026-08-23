@@ -24,6 +24,18 @@
 // a plain un-virtualized list): the tile is just a normal, always-focusable
 // anchor.
 //
+// next/link, never a raw <a href> (QA browser-restricted-settings-F1): this
+// tile IS the zone's navigation — the /restricted/browse wall, a studio's
+// Catalog, a performer's Filmography and the zone home rails all render it.
+// A raw anchor makes every poster click a full document load, and
+// RestrictedProvider re-initializes to locked=true on each load with no way
+// to rehydrate the still-live server-side unlock window (it has no GET that
+// returns it), so the scene detail came up as the PIN gate every time — and
+// each re-unlock spent one of the 5 attempts/min the server allows. The
+// nested play button keeps its own router.push (it has a DIFFERENT
+// destination, playHref) and stops propagation so the tile link never
+// fires. Guarded by ZonePosterCard.test.tsx.
+//
 // Lane E additions (zone home rails, S9): `aspectRatio`/`progressPercent`/
 // `playHref` — the SAME optional trio components/home/PosterCard.tsx uses
 // for its own Continue Watching rail, added here rather than duplicating
@@ -34,6 +46,7 @@
 // colour", same law this file's border/ring already follows.
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Play } from "lucide-react";
 import { Icon } from "../icon/Icon.js";
@@ -108,7 +121,7 @@ export function ZonePosterCard({
   }
 
   return (
-    <a
+    <Link
       ref={cellRef}
       href={href}
       className={styles.tile}
@@ -154,6 +167,6 @@ export function ZonePosterCard({
       </div>
       <span className={styles.title}>{title}</span>
       {subtitle && <span className={styles.subtitle}>{subtitle}</span>}
-    </a>
+    </Link>
   );
 }

@@ -133,10 +133,14 @@ function SceneContent({ id }: { id: string }): React.JSX.Element | null {
 
         <h1 className={styles.title}>{scene.title}</h1>
 
+        {/* next/link, never a raw <a href> (QA browser-restricted-settings-F1):
+            a full document load restarts RestrictedProvider at locked=true and
+            nothing rehydrates the live server-side unlock, so a document
+            navigation inside the zone lands on the PIN gate. */}
         {scene.studio && (
-          <a href={`/restricted/studios/${scene.studio.id}`} className={styles.studioLink}>
+          <Link href={`/restricted/studios/${scene.studio.id}`} className={styles.studioLink}>
             {scene.studio.name}
-          </a>
+          </Link>
         )}
 
         {scene.overview && <p className={styles.overview}>{scene.overview}</p>}
@@ -150,9 +154,9 @@ function SceneContent({ id }: { id: string }): React.JSX.Element | null {
             <h2 className={styles.sectionHeading}>Performers</h2>
             <div className={styles.chipRow}>
               {scene.performers.map((p) => (
-                <a key={p.id} href={`/restricted/performers/${p.id}`} className={styles.chip}>
+                <Link key={p.id} href={`/restricted/performers/${p.id}`} className={styles.chip}>
                   {p.name}
-                </a>
+                </Link>
               ))}
             </div>
           </section>
