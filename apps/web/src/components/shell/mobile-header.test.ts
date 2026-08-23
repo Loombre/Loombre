@@ -153,21 +153,29 @@ describe("resolveMobileHeader", () => {
   });
 
   it("falls back to a generic Home-back mapping for unmapped/NEW routes, including the legacy /settings/account redirect stub (D-6: 'account' is no longer a SETTINGS_SECTIONS key)", () => {
-    expect(resolveMobileHeader("/watchlist", null, null, null)).toEqual({
-      mode: "back",
-      title: "",
-      backLabel: "Home",
-      backHref: "/home",
-    });
-    expect(resolveMobileHeader("/people/abc", null, null, null)).toEqual({
-      mode: "back",
-      title: "",
-      backLabel: "Home",
-      backHref: "/home",
-    });
     expect(resolveMobileHeader("/settings/account", null, null, null)).toEqual({
       mode: "back",
       title: "",
+      backLabel: "Home",
+      backHref: "/home",
+    });
+  });
+
+  // browser-shell-browse-F5 (2026-08-20/21 QA): /watchlist and /people/[id]
+  // used to fall through to the generic empty-title Home-back default
+  // above (this test used to pin exactly that, with a comment claiming
+  // there was "nothing routable to map them to" — stale since W2 L3
+  // actually landed both routes). Neither gets a lit tab either way (the
+  // mobile 6-tab bar has no Watchlist/Person slot — see tab-items.ts) —
+  // only the title was ever the real defect.
+  it("titles /watchlist as a top-level destination, not a back-mode detail page (it isn't one level below anything — same shape as /profile)", () => {
+    expect(resolveMobileHeader("/watchlist", null, null, null)).toEqual({ mode: "title", title: "Watchlist" });
+  });
+
+  it("maps person detail (no dedicated tab, reached outside /items/) back to Home, same shape as artist/album/track", () => {
+    expect(resolveMobileHeader("/people/abc", null, null, null)).toEqual({
+      mode: "back",
+      title: "Person",
       backLabel: "Home",
       backHref: "/home",
     });

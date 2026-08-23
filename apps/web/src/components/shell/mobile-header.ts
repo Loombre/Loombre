@@ -30,10 +30,21 @@
 // exactly the fixture-string mistake U9 exists to catch. Logged in this
 // lane's freeze report as a deliberate deferral, not an oversight.
 //
-// New routes with no owning lane yet (README route table: /watchlist,
-// /people/[id] are NEW, land with W2 L3) fall through to the generic
-// Home-back default below rather than a hardcoded mapping — there is
-// nothing routable to map them to today.
+// browser-shell-browse-F5 (2026-08-20/21 QA): /watchlist and /people/[id]
+// (README route table: both NEW, landed with W2 L3) used to fall through
+// to the generic Home-back default below with this comment claiming
+// "there is nothing routable to map them to today" — stale the moment W2
+// L3 actually landed both routes. Watchlist has its own LIBRARY_NAV_ITEMS
+// entry (nav-items.ts) and is reached straight from the sidebar, same
+// "top-level destination, not one level below anything" shape /profile
+// already gets title-mode for — titled below rather than backed. Person
+// detail has no owning tab (same as artist/album/track under
+// ITEM_DETAIL_RE — Home is the least-wrong back target for all of them);
+// unlike those, it isn't under /items/ at all, so it needs its own
+// pathname check rather than falling inside ITEM_DETAIL_RE. Neither gets a
+// LIT tab either way — mobile's 6-tab bar (tab-items.ts) has no Watchlist
+// or Person slot, so "no tab lit" on these two routes is correct, not part
+// of this fix; only the empty TITLE was the actual defect.
 //
 // Wave 2 lane L1 (Settings IA): every `/settings/<key>` drill-down route
 // (section-registry.ts) maps back to the owning "Settings" tab, titled
@@ -122,6 +133,14 @@ export function resolveMobileHeader(
     return { mode: "title", title: "Profile" };
   }
 
+  // browser-shell-browse-F5: Watchlist is a top-level LIBRARY_NAV_ITEMS
+  // destination (nav-items.ts), reached straight from the sidebar — same
+  // "not one level below anything" shape as /profile above, not a detail
+  // page that pops back to an owning tab.
+  if (pathname === "/watchlist") {
+    return { mode: "title", title: "Watchlist" };
+  }
+
   if (pathname.startsWith("/restricted")) {
     return { mode: "zone-back", title: "Restricted", backLabel: "Back" };
   }
@@ -185,6 +204,14 @@ export function resolveMobileHeader(
       const title = kind.charAt(0).toUpperCase() + kind.slice(1);
       return { mode: "back", title, backLabel: "Home", backHref: "/home" };
     }
+  }
+
+  // browser-shell-browse-F5: person detail — same "no dedicated tab, Home
+  // is the least-wrong back target" shape as artist/album/track just
+  // above, but reached at /people/<id> rather than /items/person/<id>, so
+  // it needs its own check outside ITEM_DETAIL_RE.
+  if (pathname.startsWith("/people/")) {
+    return { mode: "back", title: "Person", backLabel: "Home", backHref: "/home" };
   }
 
   // Unmapped route (a NEW screen with no owning lane yet, or anything this
