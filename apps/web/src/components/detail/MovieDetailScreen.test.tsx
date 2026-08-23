@@ -204,4 +204,18 @@ describe("MovieDetailScreen", () => {
 
     expect(apiGetMock.mock.calls.filter((call) => call[0] === "/users/me")).toHaveLength(1);
   });
+
+  it("browser-items-F10 REGRESSION GUARD: a non-actor credit (performer/guest) still renders in CAST, not just 'actor'", async () => {
+    installMatchMedia();
+    const withPerformer = {
+      ...MOVIE,
+      people: [{ id: "person-1", name: "Restricted Performer One", role: "performer", credit: "Featured", order: 0 }],
+    };
+    installApiGetMock(() => Promise.resolve(withPerformer));
+    view = renderScreen();
+    await flush();
+
+    expect(view.container.textContent).toContain("Restricted Performer One");
+    expect(view.container.textContent).toContain("CAST");
+  });
 });

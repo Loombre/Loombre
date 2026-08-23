@@ -131,7 +131,14 @@ export function MovieDetailScreen({
   const hero = pickHeroImage(movie.images);
   const posterImage = movie.images?.find((img) => img.kind === "poster");
   const people = movie.people;
-  const cast = (people ?? []).filter((p) => p.role === "actor");
+  // browser-items-F10: CAST is every on-screen-appearance credit, not just
+  // 'actor' — 'performer'/'guest' are the same concept for restricted/scene
+  // content (PersonCard.tsx's ROLE_LABEL already has real labels for both,
+  // they just never reached this filter). 'director'/'writer' stay excluded
+  // — MetadataCard.tsx already surfaces Director separately, and 'artist'/
+  // 'album_artist' are music-only roles that never appear on a movie.
+  const CAST_ROLES = new Set(["actor", "performer", "guest"]);
+  const cast = (people ?? []).filter((p) => CAST_ROLES.has(p.role));
   const files = movie.mediaFiles ?? [];
   const defaultFile = files.find((f) => f.isDefault) ?? files[0];
   const restricted = movie.contentClass === "restricted";
