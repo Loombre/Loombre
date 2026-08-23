@@ -30,9 +30,12 @@ overrides:
   postcss: ">=8.5.23"
   next>postcss: ">=8.5.23"
   next>sharp: ">=0.35.0"
-  # ^3.3.17: GHSA-2v37-7h3g-55p8 (high) fix floor; stay on 3.x — postcss
-  # requires nanoid via CJS and nanoid >=4 is ESM-only
-  postcss>nanoid: "^3.3.17"
+  # ^3.3.18: GHSA-2v37-7h3g-55p8 (high) fix floor — the advisory's actual
+  # patched version on the 3.x line is 3.3.18 (vulnerable range "< 3.3.18";
+  # the earlier ^3.3.17 floor here predated/misread that and dep-audit
+  # re-flagged it 2026-08-20). Stay on 3.x — postcss requires nanoid via
+  # CJS and nanoid >=4 is ESM-only.
+  postcss>nanoid: "^3.3.18"
   # AUD-W6-004: pg-boss@12.26.3 pins cron-parser@5.6.2, whose published
   # tarball the registry itself flags `deprecated` — "built from a stale
   # dist/ ... missing the fixes from #414 and #415 ... effectively v5.6.1
