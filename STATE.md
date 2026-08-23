@@ -1,6 +1,6 @@
 # STATE.md — Lumbre Phase 4 (Phases 0–2 complete; Phase 3 automated exit met, owner review items Open)
 
-## Seek model V8 — PDT source-clock bridge + seek endpoint + client landing (2026-08-12, BUILT — gate:full ALL GREEN; owner live-QA pending)
+## Seek model V8 — PDT source-clock bridge + seek endpoint + client landing (2026-08-12, BUILT; 2026-08-20 live-QA fix pass below — owner re-QA pending)
 
 **OWNER SIGN-OFF (2026-08-12) of the seek-model design (owner-decision V8 —
 NOTE: drafted as "V6", renumbered V8 on recording; V1–V7 were consumed by the
@@ -97,7 +97,89 @@ Waves: W1 worker (RED→GREEN, ships dark) → W2 contract+server (ships dark)
   one restart); long post-seek playback (§6 open-GOP note's standing QA
   item rides along).
 
+### Seek model V8 live-QA fix pass (2026-08-20 — owner QA found 2 defects; both fixed, RED→GREEN)
+
+Owner live QA (fresh instance, own library: 4K HEVC Main10 closed-GOP +
+EAC3 5.1, plan = video COPY + audio→opus 2ch): seeks now WORK but (a) take
+several seconds to load+play and (b) audio/video desync after landing.
+Diagnosis was media-forensic, not speculative — the QA session's staging
+dir was still on disk (12 runs), and the seek-restart was reproduced
+byte-identically (same EXTINF sequence) from the same source + args.
+
+- **D-E — mixed copy/transcode accurate-seek A/V hole (the desync).** A
+  seek-restart's `-ss` accurate seek trims DECODED streams at the exact
+  target, but copied video can only start at the preceding keyframe →
+  run11's first segment carried video from pts 0.083 but first audio
+  packet at pts 0.638 — a 555 ms leading audio hole (target 6177.232 s,
+  prev keyframe 6176.670 s; ~1 s GOP). Container-internally the tracks
+  are mutually ALIGNED — the defect is the hole, which stalls Chrome's
+  MSE landing and skews the A/V clock by the hole's width. FIX
+  (engine, §6 interpretation N): `-noaccurate_seek` immediately before
+  `-ss` when withSeek AND any selected stream is copied while another
+  transcodes (ffmpeg-verified: audio 0.078 vs video 0.083 after — ≤5 ms).
+  Both-transcode keeps accurate seek (exact-target trim + exact PDT
+  origin is strictly better). Goldens 25/33/36/42 gain the flag; NEW
+  golden 43 pins the QA shape; 4 builder.spec cases (present ×2 mixes,
+  absent both-transcode, absent withSeek:false). Engine 482/482;
+  seek-rung-switch integration 8/8 (real ffmpeg through rebuild-args).
+- **D-F — hard-seek discovery latency (the several-second load).** The
+  server half is fast — measured: video-copy restart writes its first
+  segment in ~0.13 s, worker control loop ticks at 250 ms, so the
+  restarted run is in the served playlist <1 s after the 202. The client
+  half waited for hls.js's own live-refresh cadence (~targetduration, up
+  to ~6 s) to DISCOVER it, then stalled again on D-E's hole. FIX (web,
+  §9.1.9 discovery nudge): while `relocating`, force a playlist re-read
+  once per second via stopLoad()/startLoad(-1) (hls.js's own reload
+  lever; never synchronous; stops on landing/timeout/re-seek/unmount).
+  NEW `apps/web/src/lib/relocation-nudge.ts` +
+  `HARD_SEEK_REFRESH_NUDGE_MS = 1_000` + 4 unit cases (fake timers);
+  wired in hardSeek (after the A1 branch) and torn down in
+  clearLandingWatch. Native-HLS keeps its 500 ms coarse poll (Q4).
+
+GOTCHA (repeat of the dist class): the worker resolves
+`@loombre/playback-engine` from `dist/` — the builder change needs
+`pnpm --filter @loombre/playback-engine build` before integration
+tests/dev worker see it. Also: a fresh compose volume has no
+`loombre_test` DB — integration specs fail at setup until
+`CREATE DATABASE loombre_test OWNER loombre` (they migrate it
+themselves).
+
+Expected PDT side effect, in-spec: with -noaccurate_seek a mixed-copy
+run's claimed origin (the target) sits ≤1 GOP after the actual content
+start — inside §9.1.5 rule 7's documented keyframe-snap bound; the
+landing window is claimed-PDT-based so landing is unaffected.
+
+Coincidental gate catch, fixed in the same pass: dep-audit re-flagged
+GHSA-2v37-7h3g-55p8 (nanoid, HIGH) — the existing pnpm-workspace.yaml
+override floor `postcss>nanoid: ^3.3.17` was BELOW the advisory's actual
+3.x patched version (vulnerable range "< 3.3.18"); floor bumped to
+^3.3.18, lockfile resolves 3.3.18. Also recreated `loombre_test` (fresh
+compose volume, see GOTCHA above).
+
+Verdict: `pnpm gate:full` ALL 16 STEPS PASSED (web budget 170.7/200 KB
+gz). Docs synced to the website workspace per the standing rule.
+
+Owner re-QA script: seek forward/back while playing → lands ≈1–2 s, audio
+in sync from the first frame; pause + seek both directions → no stall, no
+spinner lock; rewind-to-0:00; sync holds over minutes after a seek (also
+covers §6's open-GOP standing item on other files).
+
 ### Seek model V8 Open
+- **QA-sweep follow-up cluster (2026-08-21, all evidence in the QA report
+  artifact; owner = next playback dispatch):** (a) gap-F4 P1 — re-seek
+  before landing sends ONE POST not two (newest-wins re-arm broken live)
+  and post-ENDLIST out-of-window seek sends NONE; suspect hardSeek's
+  silent `if (!sessionId) return` under session churn (incl. StrictMode
+  twin cleanup). (b) player-F4 P1 — seek at/near EOF wedges permanently;
+  the 20 s timeout is cleared AT landing so the post-landing wedge is
+  unbounded. (c) gap-F6 P1 intermittent — fresh session self-relocated
+  run0→run7 with no user seeks (segment-GET restart trigger churning on
+  far-ahead probes) + phantom progress writes. (d) player-F9 P1 — ?t=
+  deep link rides the presentation axis, no-ops on transcode sessions.
+  (e) gap-F7 P2 — pause/ended progress flushes write PRESENTATION-axis ms
+  (interval flush correct) — Q5's defect now corrupts resume points.
+  (f) gap-F5 P2 — "Seek failed" toast never renders. (g) player-F6 P2 —
+  transient 20–50 min displayed-clock desync post-seek/resume.
 - **presentationToSourceMs window-anchoring (Q5, filed 2026-08-12):** the
   legacy heartbeat conversion walks the CURRENT playlist window from its
   first listed entry, but a continuously-attached client reports
@@ -108,6 +190,59 @@ Waves: W1 worker (RED→GREEN, ships dark) → W2 contract+server (ships dark)
 - **Native-HLS precise landing (Q4 follow-up, NOT optional polish):** iOS
   app rides the native path; coarse seekable-end landing ships in web v1.
   Tied to the loombre-apple first-playback milestone.
+
+## Full-app QA sweep (2026-08-20/21, owner-directed "every feature, every screen, every setting, every module"; agent-driven via Playwright MCP — COMPLETE, report delivered)
+
+Owner away; sweep executed autonomously per explicit brief. Scale: 612-case
+inventory (6 readers) → 12 execution lanes (~1,430 checks; 5 API/security
+parallel + 6 sequential real-Chrome browser lanes + settings round-trip of
+every ui-scope key incl. the ≥18 majority-age floor) → 38 deduped P1/P2
+units ADVERSARIALLY re-verified (32 confirmed / 5 partial / 1 refuted, root
+causes pinned to file:line) → completeness critic → 60-case gap-closure
+lane. All agents on claude-fable-5 (owner directive mid-run; an early fleet
+launched on opus-4.8 via a `agentType:` workflow gotcha was stopped,
+archived, re-run — see memory/subagent-model-policy.md). Report artifact:
+claude.ai/code/artifact/70189362-7842-432d-bf20-ffe1e9b7d82b. Raw lane +
+verdict JSON: session scratchpad qa/; screenshots .playwright-mcp/
+qa-evidence/ (git-ignored).
+
+VERDICT: 0 P0 — restricted-content isolation, cross-user/library permission
+walls, and admin auth gates held under 692 targeted probes (zero leaks).
+17 P1 + 23 P2 confirmed, 40 P3. Headline P1 clusters:
+- Playback lifecycle: no failure surface on mid-session transcode failure
+  (infinite 404 retry, VideoPlayer.tsx:836-849 fatal handler has no
+  unavailable route); sessions never DELETEd on Back/unmount (leak until
+  15-min sweeper); dev StrictMode double session-create per /watch mount
+  (self-429 at slots=1); hevc_videotoolbox kVTSessionMalfunctionErr crash
+  on real 4K HDR (bounded-retry gap).
+- V8 follow-ups (see Open below).
+- API validation: plugins module has ZERO requireUuidParam (15 routes 500
+  on non-UUID id); duplicate-username create 500 (no 23505 catch,
+  users.controller.ts:230-239); birthDate string reaches PG date cast
+  (500); hand-rolled admin bodies accept unknown keys/wrong types against
+  additionalProperties:false contracts (silent null-coercion data damage);
+  CreateUser email:null 422s against its own contract (null vs undefined,
+  users.controller.ts:205-207) — UI user-create with blank email always
+  fails.
+- Admin UX: /admin/* redirect stubs dead (router.replace dropped under
+  deferred AdminLayout mount); throttle-'suspended' sessions invisible on
+  every admin monitoring surface (admin.ts:777 status filter — which is
+  most of a watched session's lifetime); cross-type pagination contract
+  unimplemented (cursor dropped, nextCursor:null hardcoded,
+  cross-type.controller.ts:90/111).
+- Restricted zone: poster cards/chips are raw <a> — every click full-
+  reloads and RELOCKS the zone mid-browse (ZonePosterCard.tsx:111).
+REFUTED (not a bug): "scrubber commits swallowed" — 10/10 real-input drags
+each fired exactly one POST; artifact of synthetic pointer dispatch
+(setPointerCapture NotFoundError before setDragging).
+
+Instance changes (owner-visible, deliberate): seed fixtures present
+(admin/casual users + 4 seed libraries incl. Restricted); restricted.enabled
+now TRUE; seed admin+casual granted on the owner's real Movies library; QA
+device rows in device lists. Settings audited back to pre-QA values
+(maxSimultaneousTranscodes=1 — mid-run lane tug-of-war resolved by the
+pre-QA 429 evidence); zero qa- fixtures, zero live sessions, zero stray
+ffmpeg. Owner's testing account + real files untouched.
 
 ## 0.9.0-rc polish pass — UI polish, IA restructure, scanner/probe fix (2026-08-07, IN PROGRESS)
 
