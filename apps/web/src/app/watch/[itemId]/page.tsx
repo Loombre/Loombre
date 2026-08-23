@@ -30,12 +30,26 @@
 // replacing rather than pushing keeps /watch out of the history stack so
 // a later Back doesn't bounce through here and restart the track.
 
+// QA gap-F9 — why this route has a `.catch` and an "unavailable" state:
+// /watch/{an id this viewer cannot see} (restricted content the query
+// guard filters out, a deleted item, a mistyped id) makes every kind probe
+// in lib/item-lookup.ts 404, so `fetchItemSummary` rejects with
+// ItemLookupError. With no error handling that rejection was silent:
+// `routed` never left "pending" and this component returned `null`
+// forever — a completely blank page with no text and no control, escapable
+// only with the browser's own Back. The containment itself is correct (the
+// reported repro leaked no title/chapter data and still doesn't); the user
+// just must not be stranded by it, so the failure now renders the same
+// UnavailableScreen the player uses, with a Back that always leads
+// somewhere.
+
 import { useEffect, useRef, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { VideoPlayer } from "../../../components/player/VideoPlayer.js";
+import { UnavailableScreen } from "../../../components/player/UnavailableScreen.js";
 import { useMusicPlayer } from "../../../components/music/MusicPlayerProvider.js";
-import { fetchItemSummary } from "../../../lib/item-lookup.js";
-import { apiGet } from "../../../lib/api-client.js";
+import { fetchItemSummary, ItemLookupError } from "../../../lib/item-lookup.js";
+import { apiGet, LoombreApiError } from "../../../lib/api-client.js";
 import { getAuthStore } from "../../../lib/auth-store.js";
 
 export default function WatchPage(): React.JSX.Element | null {
@@ -43,7 +57,12 @@ export default function WatchPage(): React.JSX.Element | null {
   const searchParams = useSearchParams();
   const router = useRouter();
   const musicPlayer = useMusicPlayer();
-  const [routed, setRouted] = useState<"video" | "pending">("pending");
+  const [routed, setRouted] = useState<"video" | "pending" | "unavailable">("pending");
+  /** The real HTTP status behind the failure, when there is one — 404 for
+   *  "every kind probe missed" (ItemLookupError carries no status of its
+   *  own), the server's status for any other API failure, `undefined` when
+   *  the throw wasn't an HTTP one at all. Never a fabricated code. */
+  const [unavailableStatus, setUnavailableStatus] = useState<number | undefined>(undefined);
   const startedRef = useRef(false);
 
   const itemId = params.itemId;
@@ -100,6 +119,14 @@ export default function WatchPage(): React.JSX.Element | null {
       // of opening a link to an album with nothing in it.
       if (queue.length > 0) musicPlayer.playQueue(queue);
       router.replace(`/items/album/${item.id}`);
+    }).catch((err: unknown) => {
+      // Covers the whole chain above, not just the lookup: the album
+      // branch's own GET /albums/{id}/tracks rejects into here too, and
+      // must not be able to strand the route either.
+      setUnavailableStatus(
+        err instanceof ItemLookupError ? 404 : err instanceof LoombreApiError ? err.status : undefined,
+      );
+      setRouted("unavailable");
     });
     // `musicPlayer.playTrack`/`playQueue` are useCallback-stabilized
     // (MusicPlayerProvider), so only the primitives below need to be
@@ -107,14 +134,50 @@ export default function WatchPage(): React.JSX.Element | null {
     // this on every position tick while something else is playing.
   }, [itemId, hintType, mediaFileId, router, musicPlayer.playTrack, musicPlayer.playQueue]);
 
+  // Every Back affordance this route owns. `router.back()` alone is a
+  // NO-OP when /watch is this document's first history entry (bookmark,
+  // typed URL, new tab — the arrival shape gap-F8/gap-F9 were both reported
+  // against), which is the same stranding as having no Back at all, so that
+  // case lands on the signed-in root instead of doing nothing.
+  function leaveWatch(): void {
+    if (typeof window !== "undefined" && window.history.length > 1) {
+      router.back();
+      return;
+    }
+    router.replace("/home");
+  }
+
   if (routed === "video") {
     return (
       <VideoPlayer
         itemId={itemId}
-        onBack={() => router.back()}
+        onBack={leaveWatch}
         {...(hintType ? { hintType } : {})}
         {...(mediaFileId ? { mediaFileId } : {})}
         {...(startMs !== undefined ? { startMs } : {})}
+      />
+    );
+  }
+  if (routed === "unavailable") {
+    return (
+      <UnavailableScreen
+        // The item was never resolved, so there is no title, artwork or
+        // dominant colour to show — and deliberately so: for a restricted
+        // or ungranted id this screen must reveal nothing about it.
+        // "This item" is VideoPlayer.tsx's own fallback copy for the same
+        // situation. `reasons` stays empty (no plan was ever made, and the
+        // screen renders "No specific reason was reported." for that) —
+        // never a synthesized reason code the server didn't send.
+        title="This item"
+        backdropUrl={null}
+        dominantColor={null}
+        reasons={[]}
+        statusCode={unavailableStatus}
+        fallback={null}
+        // Unreachable with `fallback={null}` (the screen only calls this
+        // from the fallback block's own button, which isn't rendered).
+        onAcceptFallback={() => undefined}
+        onBack={leaveWatch}
       />
     );
   }

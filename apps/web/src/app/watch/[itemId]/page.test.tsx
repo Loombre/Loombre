@@ -37,8 +37,31 @@ const playQueue = vi.fn();
 const routerBack = vi.fn();
 const routerReplace = vi.fn();
 
+// gap-F9: the route branches on `err instanceof ItemLookupError` /
+// `instanceof LoombreApiError`, so the two mocked modules below must export
+// real classes the tests can construct — `vi.hoisted` makes them available
+// inside the hoisted `vi.mock` factories. Same shape as the real ones
+// (lib/item-lookup.ts's `itemId`, lib/api-client.ts's `status`).
+const { FakeItemLookupError, FakeLoombreApiError } = vi.hoisted(() => {
+  class FakeItemLookupError extends Error {
+    constructor(public readonly itemId: string) {
+      super(`No playable item found for id ${itemId} (tried movie/episode/track/album)`);
+      this.name = "ItemLookupError";
+    }
+  }
+  class FakeLoombreApiError extends Error {
+    constructor(public readonly status: number) {
+      super(`HTTP ${status}`);
+      this.name = "LoombreApiError";
+    }
+  }
+  return { FakeItemLookupError, FakeLoombreApiError };
+});
+
 let searchParams = new URLSearchParams();
 let summary: ItemSummary = movieSummary();
+/** When set, `fetchItemSummary` rejects with it instead of resolving. */
+let lookupError: Error | null = null;
 
 const router = { back: routerBack, replace: routerReplace };
 
@@ -76,7 +99,11 @@ vi.mock("../../../lib/playback-session.js", () => ({
 }));
 
 vi.mock("../../../lib/item-lookup.js", () => ({
-  fetchItemSummary: async () => summary,
+  fetchItemSummary: async () => {
+    if (lookupError) throw lookupError;
+    return summary;
+  },
+  ItemLookupError: FakeItemLookupError,
   backdropImage: () => null,
 }));
 
@@ -104,6 +131,7 @@ vi.mock("../../../lib/api-client.js", () => ({
   apiPut: vi.fn(),
   apiPatch: vi.fn(),
   apiDelete: vi.fn(),
+  LoombreApiError: FakeLoombreApiError,
 }));
 
 vi.mock("../../../lib/auth-store.js", () => ({
@@ -227,6 +255,22 @@ function directPlaySession(): PlaybackSession {
   };
 }
 
+/** jsdom's `window.history.length` is always 1 and read-only; the route
+ *  reads it to tell "there IS a previous entry to go back to" from "this
+ *  document is the first entry" (bookmark / typed URL / new tab). Defined
+ *  on the instance so `afterEach` can delete it back to the real getter. */
+function setHistoryLength(length: number): void {
+  Object.defineProperty(window.history, "length", { configurable: true, get: () => length });
+}
+
+function restoreHistoryLength(): void {
+  Reflect.deleteProperty(window.history, "length");
+}
+
+function backButton(view: TestRender): HTMLButtonElement | undefined {
+  return Array.from(view.container.querySelectorAll("button")).find((b) => b.textContent?.trim() === "Back");
+}
+
 /** Renders the route and settles its chained lookups (item summary, then —
  *  for video — session create and the progress lookup). */
 async function renderRoute(): Promise<TestRender> {
@@ -250,6 +294,7 @@ describe("WatchPage", () => {
     installMatchMedia();
     searchParams = new URLSearchParams();
     summary = movieSummary();
+    lookupError = null;
     createPlaybackSession.mockReset().mockResolvedValue({ ok: true, session: directPlaySession() });
     endPlaybackSession.mockReset().mockResolvedValue(undefined);
     findProgressForItem.mockReset().mockResolvedValue(null);
@@ -263,6 +308,7 @@ describe("WatchPage", () => {
   afterEach(() => {
     view?.unmount();
     view = null;
+    restoreHistoryLength();
     vi.unstubAllGlobals();
   });
 
@@ -365,6 +411,84 @@ describe("WatchPage", () => {
 
       expect(playQueue).not.toHaveBeenCalled();
       expect(routerReplace).toHaveBeenCalledWith(`/items/album/${ITEM_ID}`);
+    });
+  });
+
+  // gap-F9: /watch/{an id this viewer cannot see} — restricted content the
+  // guard filters out, a deleted item, a mistyped id. Every kind probe 404s,
+  // so lib/item-lookup.ts's `fetchItemSummary` rejects with ItemLookupError.
+  // The route used to have NO error handling on that promise at all: the
+  // rejection became a silent unhandled rejection, `routed` never left
+  // "pending", and the route rendered `null` FOREVER — a completely blank
+  // black page with no text and no control (QA: innerText length 0 after
+  // 15s; only the browser's own Back escapes). Containment is correct and
+  // stays correct (nothing about the item is revealed) — the user must just
+  // not be stranded.
+  describe("unresolvable item (gap-F9)", () => {
+    it("renders the unavailable screen instead of a permanent blank page when every kind probe 404s", async () => {
+      lookupError = new FakeItemLookupError(ITEM_ID);
+      view = await renderRoute();
+
+      expect(view.container.textContent).not.toBe("");
+      // VideoPlayer's own fallback copy for a title-less item, per the
+      // report's `expected` (VideoPlayer.tsx's `item?.title ?? "This item"`).
+      expect(view.container.textContent).toContain("This item");
+      expect(backButton(view)).toBeDefined();
+      // Nothing about the item leaked into the render, and no session was
+      // ever attempted for an id the viewer cannot see.
+      expect(createPlaybackSession).not.toHaveBeenCalled();
+    });
+
+    it("Back goes back when this document has a previous history entry", async () => {
+      setHistoryLength(3);
+      lookupError = new FakeItemLookupError(ITEM_ID);
+      view = await renderRoute();
+
+      await act(async () => {
+        backButton(view!)?.click();
+      });
+      expect(routerBack).toHaveBeenCalledTimes(1);
+      expect(routerReplace).not.toHaveBeenCalled();
+    });
+
+    // Reached by a bookmark / typed URL / new tab there is no previous entry
+    // and `router.back()` is a NO-OP — a Back button that does nothing is
+    // the same stranding this finding is about (gap-F8's note, same route).
+    it("Back lands on /home when /watch is this document's first history entry", async () => {
+      setHistoryLength(1);
+      lookupError = new FakeItemLookupError(ITEM_ID);
+      view = await renderRoute();
+
+      await act(async () => {
+        backButton(view!)?.click();
+      });
+      expect(routerReplace).toHaveBeenCalledWith("/home");
+      expect(routerBack).not.toHaveBeenCalled();
+    });
+
+    // A non-404 failure (server down, 500 on one of the probe endpoints)
+    // rejects the same promise and produced the same blank page.
+    it("renders the unavailable screen for a non-404 lookup failure too", async () => {
+      lookupError = new FakeLoombreApiError(500);
+      view = await renderRoute();
+
+      expect(view.container.textContent).toContain("This item");
+      expect(view.container.textContent).toContain("HTTP 500");
+      expect(backButton(view)).toBeDefined();
+    });
+
+    // The album branch's own `GET /albums/{id}/tracks` is inside the same
+    // promise chain — it must not be able to strand the route either.
+    it("renders the unavailable screen when the album's track fetch fails", async () => {
+      summary = albumSummary();
+      apiGet.mockImplementation(async (path: unknown) => {
+        if (path === "/albums/{id}/tracks") throw new FakeLoombreApiError(503);
+        return { items: [] };
+      });
+      view = await renderRoute();
+
+      expect(view.container.textContent).toContain("This item");
+      expect(backButton(view)).toBeDefined();
     });
   });
 });
