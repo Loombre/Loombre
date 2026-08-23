@@ -36,6 +36,18 @@
 // AdminPluginDto-returning route still calls toAdminPluginDto with its
 // deliveryStatus argument omitted (-> null) — see admin-plugin-dto.ts's
 // header for why that is intentional, not an oversight.
+//
+// api-validation-F1: every :id handler below now opens with
+// requireUuidParam — the FIRST-statement policy
+// apps/server/src/gateway/require-uuid-param.ts's header states and the
+// other twenty controller files in this app already follow. Without it a
+// syntactically-invalid uuid reached a uuid-column comparison, Postgres
+// raised 22P02 inside the driver, and ProblemJsonExceptionFilter's
+// catch-all could only render that client input mistake as a generic 500
+// (packages/db/src/query/cursor.ts:66-67: "Client input is never a 500").
+// The detail strings match this module's own notFound() calls for the
+// nonexistent-id case, so malformed and merely-absent ids are
+// indistinguishable (STATE.md's invisible == nonexistent posture).
 
 import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Post, Put, Req } from "@nestjs/common";
 import { nowMs as clockNowMs } from "@loombre/shared";
@@ -43,6 +55,7 @@ import { getDeliveryCursor, getPluginById, getPluginEventGrants, listPlugins } f
 import { DbProvider } from "../common/db.provider.js";
 import type { AuthenticatedRequest } from "../gateway/auth.guard.js";
 import { notFound } from "../gateway/problem.exception.js";
+import { requireUuidParam } from "../gateway/require-uuid-param.js";
 import { requireLiveAdmin } from "../common/require-live-admin.js";
 import { PluginLifecycleService } from "./plugin-lifecycle.service.js";
 import { PluginRegistrationService } from "./plugin-registration.service.js";
@@ -134,12 +147,14 @@ export class AdminPluginsController {
 
   @Get(":id")
   async get(@Param("id") id: string, @Req() req: AuthenticatedRequest): Promise<AdminPluginDto> {
+    requireUuidParam(id, "Plugin not found.", req.originalUrl);
     return this.toDto(id, req.user!.userId);
   }
 
   @Delete(":id")
   @HttpCode(HttpStatus.NO_CONTENT)
   async remove(@Param("id") id: string, @Req() req: AuthenticatedRequest): Promise<void> {
+    requireUuidParam(id, "Plugin not found.", req.originalUrl);
     await this.lifecycleService.removePlugin(id, req.user!.userId, clockNowMs());
   }
 
@@ -149,6 +164,7 @@ export class AdminPluginsController {
     @Body() rawBody: Record<string, unknown> | undefined,
     @Req() req: AuthenticatedRequest,
   ): Promise<AdminPluginDto> {
+    requireUuidParam(id, "Plugin not found.", req.originalUrl);
     const body = rawBody ?? {};
     const config = (body["config"] as Record<string, unknown> | undefined) ?? {};
     const plugin = await this.lifecycleService.updateConfig(id, config, req.user!.userId, clockNowMs());
@@ -162,6 +178,7 @@ export class AdminPluginsController {
     @Body() rawBody: Record<string, unknown> | undefined,
     @Req() req: AuthenticatedRequest,
   ): Promise<AdminPluginDto> {
+    requireUuidParam(id, "Plugin not found.", req.originalUrl);
     const body = rawBody ?? {};
     const eventTypeGrants = Array.isArray(body["eventTypeGrants"]) ? (body["eventTypeGrants"] as string[]) : [];
     const plugin = await this.grantsService.setEventGrants(id, eventTypeGrants, req.user!.userId, clockNowMs());
@@ -175,6 +192,7 @@ export class AdminPluginsController {
     @Body() rawBody: Record<string, unknown> | undefined,
     @Req() req: AuthenticatedRequest,
   ): Promise<AdminPluginDto> {
+    requireUuidParam(id, "Plugin not found.", req.originalUrl);
     const body = rawBody ?? {};
     const plugin = await this.pseudonymizationService.setPseudonymization(id, body["enabled"], req.user!.userId, clockNowMs());
     const eventGrants = await getPluginEventGrants(this.dbProvider.db, id);
@@ -184,6 +202,7 @@ export class AdminPluginsController {
   @Post(":id/enable")
   @HttpCode(HttpStatus.OK)
   async enable(@Param("id") id: string, @Req() req: AuthenticatedRequest): Promise<AdminPluginDto> {
+    requireUuidParam(id, "Plugin not found.", req.originalUrl);
     const plugin = await this.lifecycleService.setEnabled(id, true, req.user!.userId, clockNowMs());
     const eventGrants = await getPluginEventGrants(this.dbProvider.db, id);
     return toAdminPluginDto(plugin, eventGrants);
@@ -192,6 +211,7 @@ export class AdminPluginsController {
   @Post(":id/disable")
   @HttpCode(HttpStatus.OK)
   async disable(@Param("id") id: string, @Req() req: AuthenticatedRequest): Promise<AdminPluginDto> {
+    requireUuidParam(id, "Plugin not found.", req.originalUrl);
     const plugin = await this.lifecycleService.setEnabled(id, false, req.user!.userId, clockNowMs());
     const eventGrants = await getPluginEventGrants(this.dbProvider.db, id);
     return toAdminPluginDto(plugin, eventGrants);
@@ -200,6 +220,7 @@ export class AdminPluginsController {
   @Post(":id/refresh")
   @HttpCode(HttpStatus.OK)
   async refresh(@Param("id") id: string, @Req() req: AuthenticatedRequest): Promise<RefreshPluginResponseDto> {
+    requireUuidParam(id, "Plugin not found.", req.originalUrl);
     const outcome = await this.registrationService.refreshPlugin(id, req.user!.userId, clockNowMs());
     const eventGrants = await getPluginEventGrants(this.dbProvider.db, id);
     return {
@@ -216,6 +237,7 @@ export class AdminPluginsController {
     @Body() rawBody: Record<string, unknown> | undefined,
     @Req() req: AuthenticatedRequest,
   ): Promise<AdminPluginDto> {
+    requireUuidParam(id, "Plugin not found.", req.originalUrl);
     const body = rawBody ?? {};
     const plugin = await this.registrationService.reapprovePlugin(
       id,
@@ -234,6 +256,7 @@ export class AdminPluginsController {
   @Post(":id/rotate-hmac")
   @HttpCode(HttpStatus.OK)
   async rotateHmac(@Param("id") id: string, @Req() req: AuthenticatedRequest): Promise<RotatePluginHmacResponseDto> {
+    requireUuidParam(id, "Plugin not found.", req.originalUrl);
     const hmacSecret = await this.lifecycleService.rotateHmac(id, req.user!.userId, clockNowMs());
     return { hmacSecret };
   }
