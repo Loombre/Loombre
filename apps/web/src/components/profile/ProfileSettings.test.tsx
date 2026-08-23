@@ -251,6 +251,17 @@ describe("ProfileSettings", () => {
     expect(options.body["birthDate"]).toBe(null);
   });
 
+  it("browser-restricted-settings-F10 REGRESSION GUARD: a typed future birth date is reverted on blur, matching the popover's own today-cap", async () => {
+    await render();
+    const input = birthDateInput();
+    act(() => input.focus());
+    setNativeValue(input, "2030-01-01");
+    expect(input.value).toBe("2030-01-01");
+    await act(async () => input.blur());
+    // ME.birthDate is "1990-01-01" — the last real committed value.
+    expect(input.value).toBe("1990-01-01");
+  });
+
   // ── G10: dirty-fields-only submission + the conditional currentPassword
   //    field (STATE.md "Current-password re-auth on self-changes") ───────
   describe("dirty-fields-only submission + currentPassword (G10)", () => {
