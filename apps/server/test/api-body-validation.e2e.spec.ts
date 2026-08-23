@@ -248,13 +248,22 @@ describe("POST /users body validation (CreateUserRequest additionalProperties:fa
     expect(res.body.isAdmin).toBe(true);
   }, 20_000);
 
-  // NOT asserted here, on purpose: `email: null` currently 422s
-  // ("email must be a non-empty string when present.", the M1 check) even
-  // though CreateUserRequest types it `[string,'null']` and AddUserSheet
-  // sends exactly that for a blank field. That is OVER-rejection, the
-  // opposite of this finding, and it is logged separately rather than
-  // pinned — a pin here would make the eventual fix look like a
-  // regression.
+  // The over-rejection this suite left unpinned on purpose — `email: null`
+  // 422'd even though CreateUserRequest types it `[string,'null']` and
+  // AddUserSheet sends exactly that for a blank field — was fixed as
+  // browser-admin-F3. Its own suite
+  // (users-create-email-null.e2e.spec.ts) carries the full matrix; this
+  // one cell lives here so the F5 allowlist and the F3 acceptance can
+  // never drift apart unnoticed.
+  it("accepts an explicit email: null on a nullable member (browser-admin-F3)", async () => {
+    const res = await admin().post("/users", {
+      username: "f5-email-null",
+      password: "pw123456",
+      email: null,
+    });
+    expect(res.status, JSON.stringify(res.body)).toBe(201);
+    expect(res.body.email).toBeNull();
+  }, 20_000);
 });
 
 // ────────────────────────────── PATCH /users/{id} ───────────────────────────

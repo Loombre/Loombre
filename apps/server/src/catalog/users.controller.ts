@@ -71,6 +71,16 @@
 // present-but-wrong-typed nullable member — api-validation-F3 pinned that
 // cell on purpose (users-birthdate-validation.e2e.spec.ts) and F5's fix
 // direction names createUser/updateUser only.
+//
+// browser-admin-F3 (same run, P1): createUser's M1 email check was the one
+// place left that rejected an EXPLICIT `null` — the opposite failure to
+// F5's, over-rejection of a contract-valid body. CreateUserRequest.email is
+// `[string, 'null']` and PATCH /users/{id} has always taken null as
+// null-to-clear, but POST 422'd it, which made the E4/M1 email-less user
+// impossible to create from the admin UI (its Add-user sheet sends
+// `email: email || null` for a blank field). POST now reads null as "no
+// email", exactly like an omitted member. Regression net:
+// apps/server/test/users-create-email-null.e2e.spec.ts.
 
 import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post, Put, Query, Req, UseFilters } from "@nestjs/common";
 import {
@@ -289,8 +299,26 @@ export class UsersController {
     // M1: email is optional now (CreateUserRequest no longer requires it)
     // — a present-but-non-string/empty value still 422s, matching every
     // other field's "present but wrong shape" posture.
-    if (body["email"] !== undefined && (typeof body["email"] !== "string" || body["email"].length === 0)) {
-      throw unprocessableEntity("email must be a non-empty string when present.", instance);
+    //
+    // browser-admin-F3 (QA 2026-08-21, P1): an EXPLICIT `null` is NOT
+    // "wrong shape" — it is how a caller says "no email", and it must be
+    // accepted exactly as an omitted member is. CreateUserRequest.email is
+    // `type: [string, 'null']` (packages/contract/openapi.yaml), and this
+    // same controller's PATCH /users/{id} has always read explicit null as
+    // null-to-clear, so the old `!== undefined` test contradicted both the
+    // contract and the file's own convention. Its practical cost: the
+    // E4/M1 email-less-user feature was UNREACHABLE from the admin UI,
+    // whose Add-user sheet sends `email: email || null` for a blank field
+    // (apps/web/.../AddUserSheet.tsx, citing that contract) — every blank-
+    // email submit 422'd. `null` is the ONLY non-string value accepted;
+    // wrong types and empty strings still 422 (api-validation-F5), and a
+    // whitespace-only string still fails the format check below.
+    if (
+      body["email"] !== undefined &&
+      body["email"] !== null &&
+      (typeof body["email"] !== "string" || body["email"].length === 0)
+    ) {
+      throw unprocessableEntity("email must be a non-empty string or null.", instance);
     }
     // R-F4 (opus adversarial review, fix wave): trim first — a
     // whitespace-padded address normalizes to the same string a clean
@@ -312,8 +340,8 @@ export class UsersController {
     // failing. CreateUserRequest types them `boolean` and
     // `[string, 'null']`, so explicit `null` still means "no value" and
     // everything else 422s. (`email`'s own present-but-wrong-shape 422 is
-    // the M1 check above; it is deliberately stricter than the contract's
-    // nullable type and stays as it is.)
+    // the M1 check above, which browser-admin-F3 brought into line with the
+    // same rule: null accepted, everything else non-string refused.)
     if (body["isAdmin"] !== undefined && typeof body["isAdmin"] !== "boolean") {
       throw unprocessableEntity("isAdmin must be a boolean.", instance);
     }
