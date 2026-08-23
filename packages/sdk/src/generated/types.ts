@@ -5572,6 +5572,15 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+            /** @description The `username`, or the `email` if one was supplied, already belongs to another account. Both are compared case-insensitively (CITEXT), so a case-only variant of a taken value conflicts too. The `detail` names which of the two collided; nothing else about the existing account is disclosed. This endpoint is admin-only and admins already enumerate every account via `GET /users`, so a truthful conflict here reveals nothing they could not already read. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
             422: components["responses"]["UnprocessableEntity"];
             default: components["responses"]["Problem"];
         };

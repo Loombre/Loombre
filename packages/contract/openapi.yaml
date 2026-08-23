@@ -679,6 +679,19 @@ paths:
               schema: { $ref: '#/components/schemas/User' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
+        '409':
+          description: >-
+            The `username`, or the `email` if one was supplied, already
+            belongs to another account. Both are compared
+            case-insensitively (CITEXT), so a case-only variant of a taken
+            value conflicts too. The `detail` names which of the two
+            collided; nothing else about the existing account is
+            disclosed. This endpoint is admin-only and admins already
+            enumerate every account via `GET /users`, so a truthful
+            conflict here reveals nothing they could not already read.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
         '422': { $ref: '#/components/responses/UnprocessableEntity' }
         default: { $ref: '#/components/responses/Problem' }
 

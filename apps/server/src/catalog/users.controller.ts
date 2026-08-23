@@ -34,6 +34,12 @@
 // R-F5/LOW-8 (the email-in-use notice's post-commit block) and R-F6 (the
 // email-collision 23505 backstop) are fixed in packages/db/src/query/
 // admin.ts and email-collision-notice.ts — see those files' own headers.
+//
+// api-validation-F2 (QA 2026-08-21 remediation): createUser gets G9's
+// treatment at last — a duplicate username OR email on POST /users used to
+// be an uncaught 23505 rendered as a generic 500; both constraints are
+// classified and answered 409 now (see uniqueViolationConstraint below and
+// apps/server/test/users-duplicate-conflict.e2e.spec.ts).
 
 import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post, Put, Query, Req, UseFilters } from "@nestjs/common";
 import {
@@ -157,6 +163,33 @@ const SETTINGS_BODY_KEYS = new Set([
   "updatedAtMs",
 ]);
 
+// api-validation-F2 (QA 2026-08-21, P1): `users` carries TWO unique
+// constraints — `users_username_key` and `users_email_key` (both CITEXT,
+// migrations/0001; email loosened to NULLable by 0023, still unique when
+// present). createUser below had neither a duplicate pre-check nor a
+// unique-violation catch, so either constraint's 23505 travelled uncaught
+// out of createUserAdminAndEmit's INSERT and ProblemJsonExceptionFilter's
+// generic `@Catch()` rendered `urn:loombre:problem:internal` 500 for
+// ordinary, user-typo-level input. Mapped to a real 409 now — the same
+// treatment G9 gave the PATCH path (updateUser, further down this file).
+//
+// Matched by CONSTRAINT NAME, never by `code` alone: that transaction also
+// writes the `user.created` outbox row, and a unique violation from THERE
+// must stay an internal error rather than a misleading "already exists"
+// (plugin-registration.service.ts's isBaseUrlUniqueViolation carries the
+// identical rationale). The error's own `constraint` field is what's read
+// — never `detail`, which echoes the conflicting VALUE back
+// (packages/db/src/query/invites.ts documents that leak).
+const USERS_USERNAME_UNIQUE_CONSTRAINT = "users_username_key";
+const USERS_EMAIL_UNIQUE_CONSTRAINT = "users_email_key";
+
+function uniqueViolationConstraint(err: unknown): string | undefined {
+  if (typeof err !== "object" || err === null) return undefined;
+  const candidate = err as { code?: unknown; constraint?: unknown };
+  if (candidate.code !== "23505") return undefined;
+  return typeof candidate.constraint === "string" ? candidate.constraint : undefined;
+}
+
 // L2 (pre-public hardening): claim fast-fail, then a FRESH DB re-read via
 // requireLiveAdmin — the JWT isAdmin claim alone can be stale for up to the
 // access token's 15-minute lifetime after a demotion.
@@ -227,16 +260,41 @@ export class UsersController {
     // attributed to the newly created user instead of its creator
     // (@loombre/db CreateUserAdminAndEmitInput's documented fallback, which
     // exists for first-run onboarding only).
-    const created = await createUserAdminAndEmit(this.dbProvider.db, {
-      username: body["username"],
-      email,
-      passwordHash,
-      isAdmin: body["isAdmin"] === true,
-      maxContentRating: typeof body["maxContentRating"] === "string" ? body["maxContentRating"] : null,
-      displayName: typeof body["displayName"] === "string" ? body["displayName"] : null,
-      nowMs: clockNowMs(),
-      actorUserId: req.user!.userId,
-    });
+    //
+    // api-validation-F2: the INSERT, not a pre-check, is the arbiter of
+    // "taken" — a SELECT-then-INSERT pair would still lose the race two
+    // concurrent creates of the same username can produce, and would have
+    // to answer 500 when it did. Catching the constraint the database
+    // actually raised is correct for BOTH the ordinary case and the race.
+    // Both constraints are distinguished so a free username never surfaces
+    // as a (false) username conflict when it was the email that collided.
+    let created: AdminUserRow;
+    try {
+      created = await createUserAdminAndEmit(this.dbProvider.db, {
+        username: body["username"],
+        email,
+        passwordHash,
+        isAdmin: body["isAdmin"] === true,
+        maxContentRating: typeof body["maxContentRating"] === "string" ? body["maxContentRating"] : null,
+        displayName: typeof body["displayName"] === "string" ? body["displayName"] : null,
+        nowMs: clockNowMs(),
+        actorUserId: req.user!.userId,
+      });
+    } catch (err) {
+      // Truthful wording is safe here for the same reason G9's 409 is:
+      // this endpoint is admin-only and admins already enumerate every
+      // account via GET /users, so there is no enumeration channel to
+      // protect (unlike the self-serve invite-claim path, which keeps its
+      // silent email drop — packages/db/src/query/invites.ts).
+      const constraintName = uniqueViolationConstraint(err);
+      if (constraintName === USERS_USERNAME_UNIQUE_CONSTRAINT) {
+        throw conflict("A user with this username already exists.", instance);
+      }
+      if (constraintName === USERS_EMAIL_UNIQUE_CONSTRAINT) {
+        throw conflict("A user with this email address already exists.", instance);
+      }
+      throw err;
+    }
     return mapUser(created);
   }
 
