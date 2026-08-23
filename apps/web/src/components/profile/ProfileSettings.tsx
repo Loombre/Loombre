@@ -76,16 +76,38 @@ import { PIN_LENGTH, isPinComplete, sanitizePinInput, stripPinDigits } from "../
 // broke perf-lighthouse/perf-web-budget on the first 3-OS dispatch of the
 // audit-residue run). language-codes is pure data + pure functions, safe
 // for the client chunk; the subpath keeps the barrel out of the graph.
-import { LANGUAGE_CODES } from "@loombre/shared/language-codes";
+import { LANGUAGE_CODES, LANGUAGE_EQUIVALENCE_PAIRS } from "@loombre/shared/language-codes";
 import type { components } from "@loombre/sdk";
 import styles from "./ProfileSettings.module.css";
 
 type User = components["schemas"]["User"];
 type UserSettings = components["schemas"]["UserSettings"];
 
+// browser-restricted-settings-F6: ~20 ISO 639-2 languages have TWO valid
+// stored codes (a bibliographic "B" and terminologic "T" code sharing one
+// display name — LANGUAGE_EQUIVALENCE_PAIRS' own header). Rendering both as
+// separate <option>s gave a user two identical-looking, indistinguishable
+// choices. LANGUAGE_CODES itself stays untouched (packages/shared is also
+// the server's validation source, and both codes remain independently
+// valid STORED values) — this only dedupes what the PICKER offers, keeping
+// the terminologic (T) code as the one canonical option per duplicate name.
+const BIBLIOGRAPHIC_TO_TERMINOLOGIC: ReadonlyMap<string, string> = new Map(LANGUAGE_EQUIVALENCE_PAIRS);
+
+/** Maps an already-stored bibliographic (B) code to its terminologic (T)
+ *  pair (the one the picker now offers); any other code, including "", is
+ *  returned unchanged. Keeps a pre-existing "fre"-flavored preference
+ *  landing on its real "fra" option instead of an unselected blank. */
+function toCanonicalLanguageCode(code: string): string {
+  return BIBLIOGRAPHIC_TO_TERMINOLOGIC.get(code) ?? code;
+}
+
 // Sorted once at module load, not per render — LANGUAGE_CODES is a fixed,
 // immutable module-level constant (packages/shared/src/language-codes.ts).
-const SORTED_LANGUAGE_OPTIONS = [...LANGUAGE_CODES].sort((a, b) => a.name.localeCompare(b.name));
+// Bibliographic-code entries are dropped here (their terminologic pair
+// carries the same name, see BIBLIOGRAPHIC_TO_TERMINOLOGIC above).
+const SORTED_LANGUAGE_OPTIONS = LANGUAGE_CODES.filter((l) => !BIBLIOGRAPHIC_TO_TERMINOLOGIC.has(l.code)).sort((a, b) =>
+  a.name.localeCompare(b.name),
+);
 
 // W5: components/ui/Select.tsx's `options` shape (value/label pairs) — built
 // once alongside SORTED_LANGUAGE_OPTIONS above rather than re-mapped on
@@ -565,8 +587,8 @@ function PlaybackPrefsSection(): React.JSX.Element {
   useEffect(() => {
     void apiGet("/users/me/settings").then((s) => {
       setSettings(s);
-      setAudioLang(s.audioPreferredLanguage ?? "");
-      setSubtitleLang(s.subtitlePreferredLanguage ?? "");
+      setAudioLang(toCanonicalLanguageCode(s.audioPreferredLanguage ?? ""));
+      setSubtitleLang(toCanonicalLanguageCode(s.subtitlePreferredLanguage ?? ""));
     });
   }, []);
 
@@ -598,8 +620,8 @@ function PlaybackPrefsSection(): React.JSX.Element {
       // lying-save bug this whole section exists to not repeat: see this
       // file's header, cleanup 3).
       setSettings(updated);
-      setAudioLang(updated.audioPreferredLanguage ?? "");
-      setSubtitleLang(updated.subtitlePreferredLanguage ?? "");
+      setAudioLang(toCanonicalLanguageCode(updated.audioPreferredLanguage ?? ""));
+      setSubtitleLang(toCanonicalLanguageCode(updated.subtitlePreferredLanguage ?? ""));
       setStatus("saved");
     } catch (err) {
       setStatus("error");

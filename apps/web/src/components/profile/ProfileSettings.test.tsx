@@ -437,6 +437,29 @@ describe("ProfileSettings", () => {
       expect(options.body["audioPreferredLanguage"]).toBeNull();
     });
 
+    it("browser-restricted-settings-F6 REGRESSION GUARD: each language name appears as exactly ONE option, not a B/T-code duplicate pair", async () => {
+      await render();
+      const options = Array.from(selectFor("Preferred audio language").querySelectorAll("option"));
+      const albanian = options.filter((o) => o.textContent === "Albanian");
+      expect(albanian).toHaveLength(1);
+      const french = options.filter((o) => o.textContent === "French");
+      expect(french).toHaveLength(1);
+      // The de-dupe keeps the terminologic (T) code as the one option, not
+      // the bibliographic (B) code — "fra" stays selectable, "fre" doesn't.
+      expect(french[0]!.getAttribute("value")).toBe("fra");
+    });
+
+    it("a stored bibliographic (B) code still pre-selects correctly once the picker only offers its terminologic (T) pair", async () => {
+      apiGetMock.mockImplementation((path: string) => {
+        if (path === "/users/me") return Promise.resolve({ ...ME });
+        return Promise.resolve({ ...SETTINGS_DEFAULT, audioPreferredLanguage: "fre" });
+      });
+      await render();
+      // "fre" (French B code) no longer has its own <option> — the picker
+      // must land on its "fra" (T code) equivalent, not a blank selection.
+      expect(selectFor("Preferred audio language").value).toBe("fra");
+    });
+
     it("a rejected PUT shows the error state and never 'Saved' — the lying-save bug this restores from", async () => {
       await render();
       apiPutMock.mockImplementation((path: string) => {
