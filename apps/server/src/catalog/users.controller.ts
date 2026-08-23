@@ -81,6 +81,24 @@
 // `email: email || null` for a blank field). POST now reads null as "no
 // email", exactly like an omitted member. Regression net:
 // apps/server/test/users-create-email-null.e2e.spec.ts.
+//
+// api-validation-F4 (same run, P2): the LAST of the three user-email write
+// paths to catch up with R-F4. updateUser (admin PATCH /users/{id}) stored
+// the caller's string verbatim — no trim, no isValidEmailFormat — so
+// `{"email":"not-an-email"}` answered 200 and the literal word became the
+// account's address, against a member the contract declares `format: email`
+// on an operation that already declares 422. F5 had added the TYPE check
+// here and explicitly left the FORMAT gap open as a separate finding; this
+// closes it with updateMe's exact trim-then-validate block, so all three
+// paths (createUser / updateMe / updateUser) now agree. Two consequences
+// worth knowing: a padded address is normalized BEFORE the unique index
+// sees it, so a padded duplicate still reaches G9's 409 instead of becoming
+// a second visually-identical row; and a control character in the string
+// (`\0`) used to reach Postgres and 500 with 22021 "invalid byte sequence
+// for encoding UTF8" — z.email() has no character class that admits one, so
+// that 500 is closed by the same check. Explicit `null` still clears (the
+// null-to-clear convention every nullable member here uses). Regression
+// net: apps/server/test/users-admin-email-format.e2e.spec.ts.
 
 import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post, Put, Query, Req, UseFilters } from "@nestjs/common";
 import {
@@ -736,11 +754,35 @@ export class UsersController {
       throw unprocessableEntity("displayName must be a string or null.", req.originalUrl);
     }
 
+    // api-validation-F4 (QA 2026-08-21, P2): updateMe's R-F4 block, verbatim
+    // — trim, THEN validate the format — applied to the admin path, which
+    // was the one user-email writer still storing the caller's string as-is
+    // (`"not-an-email"` -> 200, persisted). Order matters both ways: the
+    // trim normalizes a padded address into the SAME string
+    // `users_email_key` compares, so a padded duplicate still reaches the
+    // 409 below rather than being stored a second time; and the format
+    // check runs before Postgres sees the value, which is also what keeps a
+    // control character out of a CITEXT column (a `\0` used to surface as a
+    // 22021 500). Explicit `null` bypasses the check entirely — null-to-
+    // clear, the convention every nullable member here follows.
+    let emailInput: string | null | undefined;
+    if (body["email"] !== undefined) {
+      if (typeof body["email"] === "string") {
+        const trimmed = body["email"].trim();
+        if (!isValidEmailFormat(trimmed)) {
+          throw unprocessableEntity("email must be a valid email address.", req.originalUrl);
+        }
+        emailInput = trimmed;
+      } else {
+        emailInput = null;
+      }
+    }
+
     const result = await updateUserAdmin(this.dbProvider.db, id, {
       // M1: UpdateUserRequest.email is `[string, 'null']` now — present-but-
       // not-a-string clears it (same null-to-clear convention as
       // maxContentRating below).
-      ...(body["email"] !== undefined ? { email: typeof body["email"] === "string" ? body["email"] : null } : {}),
+      ...(emailInput !== undefined ? { email: emailInput } : {}),
       ...(typeof body["isAdmin"] === "boolean" ? { isAdmin: body["isAdmin"] } : {}),
       ...(body["maxContentRating"] !== undefined
         ? { maxContentRating: typeof body["maxContentRating"] === "string" ? body["maxContentRating"] : null }
