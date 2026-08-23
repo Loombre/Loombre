@@ -5,6 +5,7 @@
     "-loglevel",
     "warning",
     "-nostdin",
+    "-noaccurate_seek",
     "-ss",
     "{SEEK_SECONDS}",
     "-i",

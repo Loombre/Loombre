@@ -300,6 +300,74 @@ describe("buildFfmpegArgs: token closure (every '{' arg matches the closed five-
   });
 });
 
+describe("buildFfmpegArgs: -noaccurate_seek on mixed copy/transcode seek-restarts (V8 live-QA fix, 2026-08-20)", () => {
+  // ffmpeg's accurate input seek trims DECODED (transcoded) streams at the
+  // exact -ss target while a COPIED stream can only start at the preceding
+  // keyframe — so a mixed copy/transcode restart opens with a leading hole
+  // in whichever track was trimmed (up to a full GOP), which stalls MSE
+  // playback at the hard-seek landing and skews A/V by the hole's width
+  // (ffmpeg-verified 2026-08-20: audio pts 0.638 vs video pts 0.083 on a
+  // video-copy + audio-opus 6177.232s seek). `-noaccurate_seek` makes every
+  // stream start together at the demuxer's keyframe snap point (within
+  // ≤1 audio frame), inside the §9.1.5 rule 7 ≤1-GOP PDT bound.
+
+  const H264_DEVICE = makeDevice([
+    { codec: "h264", maxProfile: "high", maxLevel: null, maxBitDepth: 8, maxWidth: 3840, maxHeight: 2160, maxFrameRate: 60, maxBitrateBps: null },
+  ]);
+
+  function expectFlagImmediatelyBeforeSs(args: string[]): void {
+    const at = args.indexOf("-noaccurate_seek");
+    expect(at, "flag present").toBeGreaterThan(-1);
+    expect(args[at + 1], "immediately before -ss").toBe("-ss");
+    expect(args[at + 2]).toBe("{SEEK_SECONDS}");
+  }
+
+  it("video COPY + audio TRANSCODE, withSeek: flag present immediately before -ss (the QA shape — golden 43)", () => {
+    const planShape: FfmpegPlanShape = {
+      container: "fmp4-hls",
+      video: { action: "copy" },
+      audio: { action: "transcode", targetCodec: "opus", targetBitrateBps: 120000, targetChannels: 2 },
+      subtitle: { strategy: "none" },
+    };
+    expectFlagImmediatelyBeforeSs(buildFfmpegArgs(makeInput(), planShape, { withSeek: true }));
+  });
+
+  it("video TRANSCODE + audio COPY, withSeek: flag present (the mirror hole — copied audio starts at the keyframe while trimmed video starts at the target)", () => {
+    const planShape: FfmpegPlanShape = {
+      container: "fmp4-hls",
+      video: { action: "transcode", targetCodec: "h264", encoder: "software" },
+      audio: { action: "copy" },
+      subtitle: { strategy: "none" },
+      rung: RUNG_1080P_H264,
+    };
+    expectFlagImmediatelyBeforeSs(buildFfmpegArgs(makeInput({ device: H264_DEVICE }), planShape, { withSeek: true }));
+  });
+
+  it("BOTH transcode, withSeek: flag ABSENT — accurate trim aligns both tracks at the exact target (and keeps the run's PDT origin exact)", () => {
+    const planShape: FfmpegPlanShape = {
+      container: "fmp4-hls",
+      video: { action: "transcode", targetCodec: "h264", encoder: "software" },
+      audio: { action: "transcode", targetCodec: "opus", targetBitrateBps: 120000, targetChannels: 2 },
+      subtitle: { strategy: "none" },
+      rung: RUNG_1080P_H264,
+    };
+    const args = buildFfmpegArgs(makeInput({ device: H264_DEVICE }), planShape, { withSeek: true });
+    expect(args).not.toContain("-noaccurate_seek");
+  });
+
+  it("withSeek false: flag never emitted, copies or not (a fresh run has no -ss to modify)", () => {
+    const planShape: FfmpegPlanShape = {
+      container: "fmp4-hls",
+      video: { action: "copy" },
+      audio: { action: "transcode", targetCodec: "opus", targetBitrateBps: 120000, targetChannels: 2 },
+      subtitle: { strategy: "none" },
+    };
+    const args = buildFfmpegArgs(makeInput(), planShape, { withSeek: false });
+    expect(args).not.toContain("-noaccurate_seek");
+    expect(args).not.toContain("-ss");
+  });
+});
+
 describe("buildFfmpegArgs: canonical segment ORDER (docs/PLAYBACK.md §6, literal 1-9)", () => {
   it("global flags always come first, in the exact order", () => {
     const planShape: FfmpegPlanShape = {

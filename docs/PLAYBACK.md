@@ -416,7 +416,26 @@ LD-7-authorized `VideoAction` touch).
 **Canonical segment order (never varies):**
 1. Global: `-hide_banner -loglevel warning -nostdin`
 2. Input decode accel (backend-specific, §8.3 table)
-3. Seek: `-ss {SEEK_SECONDS}` BEFORE `-i` (fast keyframe seek) when present
+3. Seek: `-ss {SEEK_SECONDS}` BEFORE `-i` (fast keyframe seek) when present.
+   **Interpretation N — `-noaccurate_seek` on mixed copy/transcode
+   seek-restarts (V8 live-QA fix, ffmpeg-verified 2026-08-20).** When
+   `withSeek` is true AND at least one selected stream is COPIED while
+   another is TRANSCODED, `-noaccurate_seek` immediately precedes `-ss`.
+   Why: ffmpeg's accurate input seek trims DECODED (transcoded) streams at
+   the exact target, but a copied stream can only begin at the preceding
+   keyframe — so a mixed restart otherwise opens with a leading HOLE in
+   the trimmed track, up to a full GOP wide (measured 555 ms on the live-QA
+   file: 4K HEVC copy + eac3→opus, seek 6177.232 s → first audio pts 0.638
+   vs first video pts 0.083). The hole stalls MSE playback at the
+   hard-seek landing and skews A/V by its width for the rest of the run.
+   With the flag, every stream starts together at the demuxer's keyframe
+   snap point (measured ≤5 ms apart) — inside §9.1.5 rule 7's documented
+   ≤1-GOP PDT keyframe-snap bound, so no other part of V8 moves. When BOTH
+   tracks transcode the flag is OMITTED: accurate trim aligns both at the
+   exact target AND keeps the run's PDT origin exact — strictly better.
+   All-copy restarts emit it harmlessly (copy never trims), keeping the
+   rule a plain "any copied stream". Goldens 25/33/36/42 carry the flag;
+   golden 43 pins the live-QA shape itself.
 4. `-i {INPUT}` (+ second `-i {SUBTITLE_SIDECAR}` when external burn-in)
 5. Mapping: `-map 0:v:{n}` `-map 0:a:{n}` (+ sub map for embed)
 6. Filtergraph (single `-filter_complex` when any of: deinterlace → scale →
@@ -1704,6 +1723,23 @@ machine totals, not per-session multipliers.
     fragment's `start`. A re-seek before landing re-arms the watch with
     the newest clamped target; earlier seek runs are dead runs the client
     never lands on (server-side absorption already de-duplicates).
+  - DISCOVERY NUDGE (live-QA fix, 2026-08-20): while `relocating`, the
+    client forces a playlist re-read once per second
+    (`HARD_SEEK_REFRESH_NUDGE_MS = 1_000`,
+    `apps/web/src/lib/relocation-nudge.ts`) via hls.js's own
+    stopLoad()/startLoad(-1) reload lever — the pair its fatal-network
+    recovery uses. Rationale: the server side of a hard seek is fast (the
+    worker's 250 ms control loop + ~0.2 s to a video-copy run's first
+    segment puts the restarted run in the served playlist well under a
+    second after the 202), but hls.js re-reads a live playlist only on its
+    own targetduration cadence — up to ~6 s of pure discovery latency,
+    which live QA measured as the bulk of the observed seek-to-play time.
+    The nudge never fires synchronously (the run cannot be listed at 202
+    time), goes quiet the moment the landing clears `relocating`, and
+    aborting an in-flight fragment load mid-relocation costs nothing (the
+    pre-seek position's buffer is already abandoned). Native-HLS sessions
+    keep their 500 ms seekable-end poll instead (the UA owns playlist
+    refresh there — the Q4 follow-up's territory).
   - Timeout: `HARD_SEEK_LANDING_TIMEOUT_MS = 20_000` — a NAMED CONSTANT,
     not runtime config (ruled). Sizing rationale, kept beside the
     constant: the observed 4–6 s cold restart is the dev box, NOT the

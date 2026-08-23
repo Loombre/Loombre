@@ -46,9 +46,9 @@ function loadSnapshot(id: string): GoldenSnapshot {
   return JSON.parse(raw) as GoldenSnapshot;
 }
 
-describe("ffmpeg arg builder goldens (docs/PLAYBACK.md §6, exactly 42 scenarios)", () => {
-  it("exactly 42 scenarios are defined (step 4's 25 + step 7b F4's two vaapi burn-in goldens + the VT tone-map hybrid golden + interpretation D's four backend-agnostic hw tone-map goldens + interpretation K's open-GOP seek-restart strip pair + interpretation L's four Dolby Vision strip goldens + interpretation M's three AV1 encode-target goldens + Wave C2's §9.1.4 mixed-codec rung-switch golden)", () => {
-    expect(GOLDEN_SCENARIOS).toHaveLength(42);
+describe("ffmpeg arg builder goldens (docs/PLAYBACK.md §6, exactly 43 scenarios)", () => {
+  it("exactly 43 scenarios are defined (step 4's 25 + step 7b F4's two vaapi burn-in goldens + the VT tone-map hybrid golden + interpretation D's four backend-agnostic hw tone-map goldens + interpretation K's open-GOP seek-restart strip pair + interpretation L's four Dolby Vision strip goldens + interpretation M's three AV1 encode-target goldens + Wave C2's §9.1.4 mixed-codec rung-switch golden + the V8 live-QA mixed copy/transcode -noaccurate_seek golden)", () => {
+    expect(GOLDEN_SCENARIOS).toHaveLength(43);
   });
 
   it("every scenario id is unique", () => {

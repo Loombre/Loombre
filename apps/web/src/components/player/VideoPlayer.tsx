@@ -56,6 +56,7 @@ import {
   type LandingWatch,
   type ListedFragment,
 } from "../../lib/source-time.js";
+import { startRelocationNudge } from "../../lib/relocation-nudge.js";
 import { useToast } from "../ui/Toast.js";
 import { AmbientBackdrop } from "./AmbientBackdrop.js";
 import { UnavailableScreen } from "./UnavailableScreen.js";
@@ -271,6 +272,10 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
   // hls.js instance means no LEVEL_UPDATED, so the landing is a seekable-
   // end poll instead of a fragment match.
   const coarsePollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // V8 discovery-latency fix (2026-08-20): while relocating, force a
+  // playlist re-read once per second (lib/relocation-nudge.ts) instead of
+  // waiting out hls.js's own live-refresh cadence. Holds the stop fn.
+  const nudgeStopRef = useRef<(() => void) | null>(null);
 
   /** The CURRENT LEVEL DETAILS as structural fragments (A2: the LISTED
    *  window — buffer state deliberately plays no part). `null` off the
@@ -301,6 +306,10 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
     if (coarsePollRef.current) {
       clearInterval(coarsePollRef.current);
       coarsePollRef.current = null;
+    }
+    if (nudgeStopRef.current) {
+      nudgeStopRef.current();
+      nudgeStopRef.current = null;
     }
     setRelocating(null);
   }, []);
@@ -1145,6 +1154,19 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
           const details = hls?.levels[levelIndex]?.details;
           if (hls && details && details.live === false) {
             hls.startLoad();
+          }
+          // Discovery-latency fix (2026-08-20): the worker folds the
+          // restarted run's first segment into the served playlist well
+          // under a second after this 202, but hls.js re-reads a live
+          // playlist only on its own targetduration cadence (up to ~6 s).
+          // Nudge a re-read once per second while relocating; the landing
+          // listener's clearLandingWatch stops it.
+          if (hls) {
+            nudgeStopRef.current?.();
+            nudgeStopRef.current = startRelocationNudge(
+              () => hlsRef.current,
+              () => relocatingRef.current !== null,
+            );
           }
           // Native-HLS coarse landing (no hls.js instance to watch): land
           // at the seekable end once it moves past its armed extent —

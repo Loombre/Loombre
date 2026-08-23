@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 /**
- * The 41 canonical golden scenarios for src/args/builder.ts (docs/PLAYBACK.md
+ * The 43 canonical golden scenarios for src/args/builder.ts (docs/PLAYBACK.md
  * §6, Phase 3 §11 step 4's 25 + step 7b fix F4's two vaapi burn-in
  * scenarios, 26/27, + the step-7 owner-smoke VT tone-map real-execution
  * fix's hybrid-deinterlace scenario, 28, + the four scenarios that landed
@@ -47,8 +47,16 @@
  * (hevc top / av1 sub-rungs, matrix case 536) targeting the av1 mid rung —
  * it must name `av1_qsv`, the RUNG's encoder, never the plan's stored hevc
  * targetCodec, which is the one thing a handoff can silently get wrong —
- * 42 files total (golden discipline: each graph change landed with its
- * goldens in the same PR).
+ * 42 files total. The V8 live-QA seek fix (2026-08-20) changes every
+ * withSeek scenario that copies at least one stream (25/33/36/42 gain
+ * `-noaccurate_seek` before `-ss`) and adds 43, the QA shape itself
+ * (video COPY + audio TRANSCODE): ffmpeg's accurate seek trims decoded
+ * streams at the exact target while a copied stream can only start at
+ * the preceding keyframe, so a mixed copy/transcode seek-restart opened
+ * with a video-leading audio hole up to a full GOP — an MSE landing
+ * stall plus an A/V skew of the hole's width (ffmpeg-verified
+ * 2026-08-20). 43 files total (golden discipline: each graph change
+ * landed with its goldens in the same PR).
  */
 import type {
   AudioStream,
@@ -875,6 +883,23 @@ export const GOLDEN_SCENARIOS: GoldenScenario[] = [
       audio: { action: "copy" },
       subtitle: { strategy: "none" },
       rung: RUNG_1080P_AV1,
+    },
+    options: { withSeek: true },
+  },
+  {
+    id: "43-seek-copy-video-transcode-audio-noaccurate",
+    scenario:
+      "V8 seek-restart on a video-COPY plan with a TRANSCODED audio track (the 2026-08-20 QA shape: 4K HEVC copy + eac3→opus 2ch) — `-noaccurate_seek` MUST precede `-ss {SEEK_SECONDS}`: accurate seek trims decoded (transcoded) streams at the exact target while a copied stream can only start at the preceding keyframe, so a mixed copy/transcode restart otherwise opens with a video-leading audio HOLE up to a full GOP (ffmpeg-verified 2026-08-20: first audio pts 0.638 vs first video pts 0.083 on a real 6177.232s seek) — the hole stalls MSE playback at the landing and skews A/V by the hole's width. With the flag, every stream starts together at the demuxer's keyframe snap point (verified: 5 ms apart).",
+    input: input({
+      media: media({ video: [videoStream({ codec: "hevc", bitDepth: 10 })] }),
+      device: device([HEVC_DEVICE_ENTRY]),
+      selection: SEL_V0_A1,
+    }),
+    planShape: {
+      container: "fmp4-hls",
+      video: { action: "copy" },
+      audio: { action: "transcode", targetCodec: "opus", targetBitrateBps: 120000, targetChannels: 2 },
+      subtitle: { strategy: "none" },
     },
     options: { withSeek: true },
   },

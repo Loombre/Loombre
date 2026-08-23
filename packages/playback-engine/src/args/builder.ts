@@ -664,7 +664,28 @@ export function buildFfmpegArgs(input: PlanInput, planShape: FfmpegPlanShape, op
 
   // Segment 3 — seek, BEFORE -i, only when the caller asked for it
   // (options.withSeek — this step's instruction 2).
+  //
+  // Interpretation N (V8 live-QA fix, 2026-08-20, ffmpeg-verified): when
+  // the restart COPIES at least one selected stream while another is
+  // TRANSCODED, `-noaccurate_seek` precedes `-ss`. ffmpeg's accurate input
+  // seek trims DECODED (transcoded) streams at the exact target, but a
+  // copied stream can only begin at the preceding keyframe — so a mixed
+  // copy/transcode seek-restart otherwise opens with a leading hole in the
+  // trimmed track (up to a full GOP; measured 555 ms on a real 4K
+  // HEVC-copy + eac3→opus seek: first audio pts 0.638 vs first video pts
+  // 0.083). That hole stalls MSE playback at the hard-seek landing and
+  // skews A/V by its width. With the flag, every stream starts together at
+  // the demuxer's keyframe snap point (measured ≤5 ms apart) — inside the
+  // §9.1.5 rule 7 ≤1-GOP PDT keyframe-snap bound the spec already
+  // documents. When BOTH tracks transcode, accurate seek is strictly
+  // better (both trimmed to the exact target, PDT origin exact), so the
+  // flag is omitted; an all-copy restart gains nothing from accurate seek
+  // (copy never trims), so emitting the flag there is harmless and keeps
+  // the rule a plain "any copied stream".
   if (withSeek) {
+    const anyCopiedStream =
+      (hasVideo && video.action === "copy") || (audioStream !== undefined && audio.action === "copy");
+    if (anyCopiedStream) args.push("-noaccurate_seek");
     args.push("-ss", "{SEEK_SECONDS}");
   }
 
