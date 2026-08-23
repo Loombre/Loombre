@@ -47,7 +47,11 @@ export function InterviewStage({ onComplete }: InterviewStageProps): React.JSX.E
   const [needsPubliclyShareableUrl, setNeedsPubliclyShareableUrl] = useState<"yes" | "no" | null>(null);
   const [comfortableWithRouterSettings, setComfortableWithRouterSettings] = useState<"yes" | "no" | null>(null);
 
-  const groupLabel = audience === "just-me" ? "you" : "everyone who needs access";
+  // browser-admin-F12: "you" takes "Are", "everyone who needs access"
+  // takes "Is" — a shared noun-only `groupLabel` interpolated into one
+  // fixed "Is <label> willing..." template can't agree with both, so the
+  // whole verb+subject phrase is chosen per branch instead.
+  const installQuestionSubject = audience === "just-me" ? "Are you" : "Is everyone who needs access";
   const canContinue = everyoneWillingToInstallApp !== null && needsPubliclyShareableUrl !== null && comfortableWithRouterSettings !== null;
 
   function handleContinue(): void {
@@ -67,7 +71,7 @@ export function InterviewStage({ onComplete }: InterviewStageProps): React.JSX.E
       <ChoiceCardGroup legend="Who needs access?" options={AUDIENCE_OPTIONS} value={audience} onChange={setAudience} />
 
       <ChoiceCardGroup
-        legend={`Is ${groupLabel} willing to install a small app (like WireGuard) on each device?`}
+        legend={`${installQuestionSubject} willing to install a small app (like WireGuard) on each device?`}
         options={YES_NO_OPTIONS}
         value={everyoneWillingToInstallApp}
         onChange={setEveryoneWillingToInstallApp}
