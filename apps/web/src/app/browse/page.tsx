@@ -43,10 +43,18 @@ interface BrowseCard {
   blurhash: string | null;
   href: string;
   entityType: string;
+  hasPoster: boolean;
 }
 
 function posterBlurhash(images: ImageDescriptor[] | undefined): string | null {
   return images?.find((img) => img.kind === "poster")?.blurhash ?? null;
+}
+
+// browser-shell-browse-F3: PosterCell must not fire a doomed poster
+// request when the item's own list-payload `images` already says there's
+// no poster to fetch (the decision is free — it's already in hand).
+function hasPosterImage(images: ImageDescriptor[] | undefined): boolean {
+  return images?.some((img) => img.kind === "poster") ?? false;
 }
 
 const PAGE_LIMIT = 100;
@@ -64,6 +72,7 @@ async function fetchLibraryPage(library: Library, cursor: string | null, sort: S
         blurhash: posterBlurhash(m.images),
         href: `/items/movie/${m.id}`,
         entityType: "movie",
+        hasPoster: hasPosterImage(m.images),
       })),
       nextCursor: page.nextCursor,
     };
@@ -79,6 +88,7 @@ async function fetchLibraryPage(library: Library, cursor: string | null, sort: S
         blurhash: posterBlurhash(s.images),
         href: `/items/series/${s.id}`,
         entityType: "series",
+        hasPoster: hasPosterImage(s.images),
       })),
       nextCursor: page.nextCursor,
     };
@@ -93,6 +103,7 @@ async function fetchLibraryPage(library: Library, cursor: string | null, sort: S
       blurhash: posterBlurhash(a.images),
       href: `/items/artist/${a.id}`,
       entityType: "artist",
+      hasPoster: hasPosterImage(a.images),
     })),
     nextCursor: page.nextCursor,
   };
@@ -209,6 +220,7 @@ function BrowseContent(): React.JSX.Element {
                 cellRef={handlers.cellRef}
                 onFocus={handlers.onFocus}
                 nowPlaying={nowPlayingIds.has(item.id)}
+                hasPoster={item.hasPoster}
               />
             )}
           />

@@ -40,12 +40,20 @@ interface WatchlistCard {
   blurhash: string | null;
   href: string;
   entityType: string;
+  hasPoster: boolean;
 }
 
 const PAGE_LIMIT = 100;
 
 function posterBlurhash(images: ImageDescriptor[] | undefined): string | null {
   return images?.find((img) => img.kind === "poster")?.blurhash ?? null;
+}
+
+// browser-casual-F4: WatchlistPosterCard is "the PosterCell shape" (its own
+// header's words) — same doomed-request gap as browser-shell-browse-F3,
+// same fix.
+function hasPosterImage(images: ImageDescriptor[] | undefined): boolean {
+  return images?.some((img) => img.kind === "poster") ?? false;
 }
 
 function toCard(entry: WatchlistEntry): WatchlistCard {
@@ -57,6 +65,7 @@ function toCard(entry: WatchlistEntry): WatchlistCard {
     blurhash: posterBlurhash(item.images),
     href: `/items/${entry.itemType}/${item.id}`,
     entityType: entry.itemType,
+    hasPoster: hasPosterImage(item.images),
   };
 }
 
@@ -143,6 +152,7 @@ function WatchlistContent(): React.JSX.Element {
                   title={item.title}
                   subtitle={item.subtitle}
                   blurhash={item.blurhash}
+                  hasPoster={item.hasPoster}
                   onRemove={() => handleRemove(item.id)}
                 />
               </div>

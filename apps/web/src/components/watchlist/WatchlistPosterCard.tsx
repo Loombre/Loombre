@@ -31,6 +31,14 @@ export interface WatchlistPosterCardProps {
   title: string;
   subtitle?: string | undefined;
   blurhash: string | null;
+  /** browser-casual-F4: whether the item's own `images` payload declares a
+   *  "poster" entry at all. Defaults to `true` (old behavior — always
+   *  attempt the fetch) for callers that haven't been threaded through
+   *  yet. `false` skips the network `<img>` outright instead of firing a
+   *  request this component already knows is doomed — see
+   *  components/browse/PosterCell.tsx's identical prop of the same name
+   *  (this file's header already calls this "the PosterCell shape"). */
+  hasPoster?: boolean | undefined;
   /** Runs the actual DELETE /watchlist/{itemId} + local-state update; this
    *  component only owns the button's own pending/disabled affordance
    *  while it awaits. */
@@ -46,6 +54,7 @@ export function WatchlistPosterCard({
   title,
   subtitle,
   blurhash,
+  hasPoster = true,
   onRemove,
 }: WatchlistPosterCardProps): React.JSX.Element {
   const router = useRouter();
@@ -88,16 +97,18 @@ export function WatchlistPosterCard({
         {placeholderUri && (
           <img className={styles.placeholder} data-loaded={loaded} src={placeholderUri} alt="" aria-hidden="true" />
         )}
-        <img
-          className={styles.image}
-          data-loaded={loaded}
-          src={src}
-          srcSet={srcSet}
-          sizes={defaultImageSizes()}
-          alt=""
-          loading="lazy"
-          onLoad={() => setLoaded(true)}
-        />
+        {hasPoster && (
+          <img
+            className={styles.image}
+            data-loaded={loaded}
+            src={src}
+            srcSet={srcSet}
+            sizes={defaultImageSizes()}
+            alt=""
+            loading="lazy"
+            onLoad={() => setLoaded(true)}
+          />
+        )}
         <button
           type="button"
           className={styles.removeButton}

@@ -81,6 +81,13 @@ function posterBlurhash(images: ImageDescriptor[] | undefined): string | null {
   return images?.find((img) => img.kind === "poster")?.blurhash ?? null;
 }
 
+// browser-casual-F4: WatchlistPosterCard is "the PosterCell shape" (its own
+// header's words) — same doomed-request gap as browser-shell-browse-F3,
+// same fix.
+function hasPosterImage(images: ImageDescriptor[] | undefined): boolean {
+  return images?.some((img) => img.kind === "poster") ?? false;
+}
+
 const POOL_CANDIDATE_FETCH_LIMIT = 25;
 const FEATURED_POOL_MAX = 5;
 
@@ -368,6 +375,7 @@ export function HomeContent(): React.JSX.Element {
                     href={`/items/${entry.itemType}/${entry.item.id}`}
                     title={entry.item.title}
                     blurhash={posterBlurhash(entry.item.images)}
+                    hasPoster={hasPosterImage(entry.item.images)}
                     onRemove={() => handleWatchlistRemove(entry.item.id)}
                   />
                 </div>

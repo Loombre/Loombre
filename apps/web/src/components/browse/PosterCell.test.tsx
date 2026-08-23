@@ -52,6 +52,54 @@ describe("PosterCell — real anchor semantics", () => {
   });
 });
 
+describe("PosterCell — browser-shell-browse-F3: skips the doomed poster request when the item has none", () => {
+  let view: TestRender | null = null;
+
+  afterEach(() => {
+    view?.unmount();
+    view = null;
+  });
+
+  it("does not render a network <img> when hasPoster=false", () => {
+    view = renderIntoBody(
+      <PosterCell
+        serverUrl="https://loombre.local"
+        accessToken="tok"
+        entityType="movie"
+        entityId="m1"
+        href="/items/movie/m1"
+        title="Test Movie"
+        blurhash={null}
+        tabIndex={0}
+        cellRef={() => {}}
+        onFocus={() => {}}
+        hasPoster={false}
+      />,
+    );
+    const images = view.container.querySelectorAll("img");
+    expect(images.length).toBe(0);
+  });
+
+  it("still renders the poster <img> when hasPoster is omitted (default true, back-compat)", () => {
+    view = renderIntoBody(
+      <PosterCell
+        serverUrl="https://loombre.local"
+        accessToken="tok"
+        entityType="movie"
+        entityId="m1"
+        href="/items/movie/m1"
+        title="Test Movie"
+        blurhash={null}
+        tabIndex={0}
+        cellRef={() => {}}
+        onFocus={() => {}}
+      />,
+    );
+    const images = view.container.querySelectorAll("img");
+    expect(images.length).toBe(1);
+  });
+});
+
 describe("PosterCell.module.css — focus ring survives a scrolling-viewport ancestor (item 6)", () => {
   const css = readFileSync(path.join(__dirname, "PosterCell.module.css"), "utf8");
 

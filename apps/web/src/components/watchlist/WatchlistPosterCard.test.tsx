@@ -47,6 +47,50 @@ describe("WatchlistPosterCard — real anchor semantics", () => {
   });
 });
 
+describe("WatchlistPosterCard — browser-casual-F4: skips the doomed poster request when the item has none", () => {
+  let view: TestRender | null = null;
+
+  afterEach(() => {
+    view?.unmount();
+    view = null;
+  });
+
+  it("does not render a network <img> when hasPoster=false", () => {
+    view = renderIntoBody(
+      <WatchlistPosterCard
+        serverUrl="https://loombre.local"
+        accessToken="tok"
+        entityType="movie"
+        entityId="m1"
+        href="/items/movie/m1"
+        title="Test Movie"
+        blurhash={null}
+        hasPoster={false}
+        onRemove={async () => {}}
+      />,
+    );
+    const images = view.container.querySelectorAll("img");
+    expect(images.length).toBe(0);
+  });
+
+  it("still renders the poster <img> when hasPoster is omitted (default true, back-compat)", () => {
+    view = renderIntoBody(
+      <WatchlistPosterCard
+        serverUrl="https://loombre.local"
+        accessToken="tok"
+        entityType="movie"
+        entityId="m1"
+        href="/items/movie/m1"
+        title="Test Movie"
+        blurhash={null}
+        onRemove={async () => {}}
+      />,
+    );
+    const images = view.container.querySelectorAll("img");
+    expect(images.length).toBe(1);
+  });
+});
+
 describe("WatchlistPosterCard.module.css — focus ring survives a scrolling-rail ancestor (item 6)", () => {
   const css = readFileSync(path.join(__dirname, "WatchlistPosterCard.module.css"), "utf8");
 

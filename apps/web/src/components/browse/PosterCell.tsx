@@ -34,6 +34,15 @@ export interface PosterCellProps {
   /** P2.11 now-playing pulse — see PosterCard.tsx's prop of the same name
    *  (same recipe, this component's own CSS module per its header). */
   nowPlaying?: boolean | undefined;
+  /** browser-shell-browse-F3: whether the item's own `images` payload
+   *  declares a "poster" entry at all. Defaults to `true` (old behavior —
+   *  always attempt the fetch) for callers that haven't been threaded
+   *  through yet. `false` skips the network `<img>` outright instead of
+   *  firing a request this component already knows is doomed — the same
+   *  presence check PosterCard.tsx's `image ? … : artFallback` branch
+   *  already does; the background + in-artwork title below still carry
+   *  the tile's fallback look either way. */
+  hasPoster?: boolean | undefined;
 }
 
 export function PosterCell({
@@ -49,6 +58,7 @@ export function PosterCell({
   cellRef,
   onFocus,
   nowPlaying,
+  hasPoster = true,
 }: PosterCellProps): React.JSX.Element {
   const router = useRouter();
   const [loaded, setLoaded] = useState(false);
@@ -81,16 +91,18 @@ export function PosterCell({
         {placeholderUri && (
           <img className={styles.placeholder} data-loaded={loaded} src={placeholderUri} alt="" aria-hidden="true" />
         )}
-        <img
-          className={styles.image}
-          data-loaded={loaded}
-          src={src}
-          srcSet={srcSet}
-          sizes={defaultImageSizes()}
-          alt=""
-          loading="lazy"
-          onLoad={() => setLoaded(true)}
-        />
+        {hasPoster && (
+          <img
+            className={styles.image}
+            data-loaded={loaded}
+            src={src}
+            srcSet={srcSet}
+            sizes={defaultImageSizes()}
+            alt=""
+            loading="lazy"
+            onLoad={() => setLoaded(true)}
+          />
+        )}
         {/* S7 poster signature: in-artwork title, additional to the
             below-caption title span below (dc:274-284 renders both). */}
         <span className={styles.artTitle} aria-hidden="true">
