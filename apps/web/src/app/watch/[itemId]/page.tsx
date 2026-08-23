@@ -11,8 +11,24 @@
 // Handles both video (movie/episode) and audio (track/album) item ids so a
 // single /watch/{itemId} link works everywhere: video renders inline here;
 // audio hands off to the persistent music mini player (components/music/)
-// and returns to wherever the user came from, since audio keeps playing
-// across navigation by design (see AppProviders.tsx's header).
+// and lands the user on the item's own detail page, since audio keeps
+// playing across navigation by design (see AppProviders.tsx's header).
+//
+// QA gap-F8 — why the audio branch ends in `router.replace(itemHref)` and
+// NOT `router.back()`: the MusicPlayerProvider that receives the queue is
+// mounted ABOVE this route by the root layout, so the handoff only
+// survives if the browser stays in THIS document. A history traversal
+// cannot promise that. Reached by a typed URL / bookmark / new tab (the
+// reported repro) the previous history entry is a different DOCUMENT:
+// going back to it tears the provider down — queue included — before it
+// ever reaches POST /playback/sessions, which is exactly the reported
+// "fetches the item, then nothing: no session, no mini player, no error".
+// With no previous entry at all, `back()` does nothing and the user is
+// stranded on a route whose own render is `null`. `replace()` to the
+// item's page is a client-side navigation in every arrival case (so the
+// provider, the queue and the <audio> elements all live on), and
+// replacing rather than pushing keeps /watch out of the history stack so
+// a later Back doesn't bounce through here and restart the track.
 
 import { useEffect, useRef, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
@@ -72,15 +88,18 @@ export default function WatchPage(): React.JSX.Element | null {
           durationMs: item.durationMs,
           ...(mediaFileId ? { mediaFileId } : {}),
         });
-        router.back();
+        router.replace(`/items/track/${item.id}`);
         return;
       }
       // album: enqueue every track in album order.
       const tracks = await apiGet("/albums/{id}/tracks", { params: { path: { id: item.id }, query: { limit: 200 } } });
-      musicPlayer.playQueue(
-        tracks.items.map((t) => ({ itemId: t.id, title: t.title, subtitle: t.trackNumber ? `Track ${t.trackNumber}` : null, durationMs: t.durationMs, albumId: t.albumId })),
-      );
-      router.back();
+      const queue = tracks.items.map((t) => ({ itemId: t.id, title: t.title, subtitle: t.trackNumber ? `Track ${t.trackNumber}` : null, durationMs: t.durationMs, albumId: t.albumId }));
+      // An empty album must not reach playQueue: SET_QUEUE with no tracks
+      // resets lib/queue.ts to `{ items: [], currentIndex: null }`, i.e. it
+      // would STOP whatever the user is currently listening to as the price
+      // of opening a link to an album with nothing in it.
+      if (queue.length > 0) musicPlayer.playQueue(queue);
+      router.replace(`/items/album/${item.id}`);
     });
     // `musicPlayer.playTrack`/`playQueue` are useCallback-stabilized
     // (MusicPlayerProvider), so only the primitives below need to be

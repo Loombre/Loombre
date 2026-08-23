@@ -181,6 +181,26 @@ function trackSummary(): ItemSummary {
   };
 }
 
+function albumSummary(): ItemSummary {
+  return {
+    id: ITEM_ID,
+    itemType: "album",
+    title: "Ashenwood",
+    subtitle: "2019",
+    images: [],
+    durationMs: null,
+    mediaFiles: [],
+  };
+}
+
+/** GET /albums/{id}/tracks rows, in album order. */
+function albumTracks(): Array<{ id: string; title: string; trackNumber: number; durationMs: number; albumId: string }> {
+  return [
+    { id: "01890000-0000-7000-8000-00000000e001", title: "Lanternfly", trackNumber: 1, durationMs: 191_000, albumId: ITEM_ID },
+    { id: "01890000-0000-7000-8000-00000000e002", title: "Ashenwood", trackNumber: 2, durationMs: 246_000, albumId: ITEM_ID },
+  ];
+}
+
 function directPlaySession(): PlaybackSession {
   return {
     id: SESSION_ID,
@@ -297,5 +317,54 @@ describe("WatchPage", () => {
     searchParams = new URLSearchParams({ t: "not-a-number" });
     view = await renderRoute();
     expect(createPlaybackSession).toHaveBeenCalledWith(ITEM_ID, "stream", undefined);
+  });
+
+  // gap-F8: the music handoff used to end in an unconditional
+  // `router.back()`. The MusicPlayerProvider that just received the queue
+  // lives ABOVE this route (AppProviders, mounted by the root layout), so
+  // the handoff only survives if the browser stays in THIS document. A
+  // history traversal cannot promise that: reached by a direct URL /
+  // bookmark / new tab (the reported repro) the previous entry is another
+  // DOCUMENT, and going back to it tears down the provider — and with it
+  // the queue — before it ever created a playback session; with no
+  // previous entry at all `back()` does nothing and the user is stranded
+  // on a route that renders null. Landing on the item's own page is a
+  // same-document client navigation, so it holds in every arrival case.
+  describe("music handoff (gap-F8)", () => {
+    it("hands a track to the persistent player and lands on the track's own page, never a history traversal", async () => {
+      summary = trackSummary();
+      view = await renderRoute();
+
+      expect(playTrack).toHaveBeenCalledWith(expect.objectContaining({ itemId: ITEM_ID, title: "Heliotrope" }));
+      expect(routerReplace).toHaveBeenCalledWith(`/items/track/${ITEM_ID}`);
+      expect(routerBack).not.toHaveBeenCalled();
+    });
+
+    it("queues a whole album in album order and lands on the album's own page", async () => {
+      summary = albumSummary();
+      apiGet.mockImplementation(async (path: unknown) =>
+        path === "/albums/{id}/tracks" ? { items: albumTracks() } : { items: [] },
+      );
+      view = await renderRoute();
+
+      expect(playQueue).toHaveBeenCalledWith([
+        expect.objectContaining({ itemId: "01890000-0000-7000-8000-00000000e001", title: "Lanternfly" }),
+        expect.objectContaining({ itemId: "01890000-0000-7000-8000-00000000e002", title: "Ashenwood" }),
+      ]);
+      expect(routerReplace).toHaveBeenCalledWith(`/items/album/${ITEM_ID}`);
+      expect(routerBack).not.toHaveBeenCalled();
+    });
+
+    // playQueue([]) is SET_QUEUE with no tracks, which lib/queue.ts's
+    // reducer answers with `{ items: [], currentIndex: null }` — i.e. it
+    // STOPS whatever the user is currently listening to. An album with
+    // nothing playable in it must not do that.
+    it("leaves a playing queue alone when the album has no tracks", async () => {
+      summary = albumSummary();
+      view = await renderRoute();
+
+      expect(playQueue).not.toHaveBeenCalled();
+      expect(routerReplace).toHaveBeenCalledWith(`/items/album/${ITEM_ID}`);
+    });
   });
 });
