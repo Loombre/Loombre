@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-"use client";
 
 // Loombre :: apps/web/src/app/admin/plugins/page.tsx
 //
@@ -9,17 +8,16 @@
 // /settings/plugins alongside metadata provider keys) — the admin
 // Dashboard's separate "Plugins" tab is retired (components/admin/
 // AdminNav.tsx no longer links here). This route stays live as a
-// redirect-only stub — same pattern app/admin/libraries/page.tsx already
-// uses for /admin/libraries -> /settings/libraries — so any existing
-// bookmark/link to /admin/plugins keeps working.
+// redirect-only stub so any existing bookmark/link to /admin/plugins keeps
+// working.
+//
+// browser-admin-F1 (P1): server-side `redirect()`, never a mount-time
+// effect — see ../libraries/page.tsx's header for the deferred-mount
+// defect that ate the old `useEffect(() => router.replace(...))`. Pinned
+// by ../redirect-stubs.test.ts.
 
-import { useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { redirect } from "next/navigation";
 
-export default function AdminPluginsRedirectPage(): null {
-  const router = useRouter();
-  useEffect(() => {
-    router.replace("/settings/plugins");
-  }, [router]);
-  return null;
+export default function AdminPluginsRedirectPage(): never {
+  redirect("/settings/plugins");
 }

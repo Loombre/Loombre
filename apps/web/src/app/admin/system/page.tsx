@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-"use client";
 
 // Loombre :: apps/web/src/app/admin/system/page.tsx
 //
@@ -12,17 +11,16 @@
 // CrashFilesCard, LogsTailCard) moved to components/admin/system/*.tsx and
 // are now composed directly on app/admin/page.tsx, which absorbed
 // everything this page had that the Dashboard lacked. This route stays live
-// as a redirect-only stub — same pattern app/admin/libraries/page.tsx
-// already uses for /admin/libraries -> /settings/libraries — so any
-// existing bookmark/link to /admin/system keeps working.
+// as a redirect-only stub back there so any existing bookmark/link to
+// /admin/system keeps working.
+//
+// browser-admin-F1 (P1): server-side `redirect()`, never a mount-time
+// effect — see ../libraries/page.tsx's header for the deferred-mount
+// defect that ate the old `useEffect(() => router.replace(...))`. Pinned
+// by ../redirect-stubs.test.ts.
 
-import { useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { redirect } from "next/navigation";
 
-export default function AdminSystemRedirectPage(): null {
-  const router = useRouter();
-  useEffect(() => {
-    router.replace("/admin");
-  }, [router]);
-  return null;
+export default function AdminSystemRedirectPage(): never {
+  redirect("/admin");
 }

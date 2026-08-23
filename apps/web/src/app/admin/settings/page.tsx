@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-"use client";
 
 // Loombre :: apps/web/src/app/admin/settings/page.tsx
 //
@@ -10,20 +9,19 @@
 // (components/settings/sections/PluginsSection.tsx) — same real endpoints
 // (GET/PUT /admin/settings*, GET/PUT/DELETE /admin/provider-keys/{provider}),
 // restyled per design/phosphor/README.md's 8-tab prototype. This route
-// stays live as a redirect-only stub (same pattern app/admin/page.tsx
-// already uses for /admin -> /admin/jobs) so any existing bookmark/link to
+// stays live as a redirect-only stub so any existing bookmark/link to
 // /admin/settings keeps working, per this lane's brief: "map existing
 // capability into the prototype's tab structure WITHOUT breaking existing
 // routes." (The API routes /admin/settings, /admin/settings/schema, etc.
 // are untouched — this redirect is only about the Next.js PAGE route.)
+//
+// browser-admin-F1 (P1): server-side `redirect()`, never a mount-time
+// effect — see ../libraries/page.tsx's header for the deferred-mount
+// defect that ate the old `useEffect(() => router.replace(...))`. Pinned
+// by ../redirect-stubs.test.ts.
 
-import { useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { redirect } from "next/navigation";
 
-export default function AdminSettingsRedirectPage(): null {
-  const router = useRouter();
-  useEffect(() => {
-    router.replace("/settings/advanced");
-  }, [router]);
-  return null;
+export default function AdminSettingsRedirectPage(): never {
+  redirect("/settings/advanced");
 }
