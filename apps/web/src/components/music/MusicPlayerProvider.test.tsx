@@ -32,6 +32,9 @@ const SESSION_ID = "01890000-0000-7000-8000-0000000000ab";
  *  test below (AUD-A3g-001). */
 const TRACK_2_ID = "01890000-0000-7000-8000-000000000032";
 const SESSION_2_ID = "01890000-0000-7000-8000-0000000000ac";
+/** A third queued track, so a reorder/removal can shift the CURRENT index
+ *  without the current row being first or last (browser-player-F11). */
+const TRACK_3_ID = "01890000-0000-7000-8000-000000000033";
 /** A NON-default media_files row for the same track — the alternate
  *  (lossless/remaster) version a user picks out of its Versions list. */
 const ALT_FILE_ID = "01890000-0000-7000-8000-0000000000d8";
@@ -44,8 +47,11 @@ vi.mock("../../lib/playback-session.js", () => ({
   endPlaybackSession: (...args: unknown[]) => endPlaybackSession(...args),
 }));
 
+// Resolves (not `vi.fn()` bare): the provider's heartbeat `send` does
+// `void apiPut(...).catch(...)`, and `stopHeartbeat(true)` flushes one on
+// every `ended` — an undefined return would throw there.
 vi.mock("../../lib/api-client.js", () => ({
-  apiPut: vi.fn(),
+  apiPut: vi.fn(async () => undefined),
 }));
 
 vi.mock("../../lib/progress-report.js", () => ({
@@ -354,6 +360,137 @@ describe("MusicPlayerProvider", () => {
       // the failure will be surfaced (once) if track 2 ever becomes current.
       expect(toastText(view!.container)).toBe("");
       expect(capturedCtx!.current?.itemId).toBe(TRACK_ID);
+    });
+  });
+
+  // browser-player-F11: the "current track changed" effect keyed itself on
+  // [queueState.currentIndex, queueState.items.length], but REORDER/REMOVE
+  // (lib/queue.ts) deliberately MOVE currentIndex so it keeps following the
+  // same entry — so every queue edit that shifts the current row re-ran the
+  // effect for a track that never changed, and its only guard
+  // (`gaplessState.loaded[active] === track.itemId`) is not yet true while
+  // the session create is still in flight, nor ever true for a load that
+  // failed. Result: a duplicate POST /playback/sessions (and a fresh
+  // el.src + el.load()) for the already-playing entry, per edit.
+  describe("queue edits that shift the current index (browser-player-F11)", () => {
+    const THREE_TRACKS: PlayableTrackInput[] = [
+      { itemId: TRACK_ID, title: "Low Water" },
+      { itemId: TRACK_2_ID, title: "Second Sun" },
+      { itemId: TRACK_3_ID, title: "Third Rail" },
+    ];
+
+    /** Starts the 3-track queue at `startIndex` with the current track's
+     *  session create left IN FLIGHT — the window in which a re-fired
+     *  effect is observable as a second create for the same entry. */
+    async function playQueueMidLoad(startIndex: number): Promise<TestRender> {
+      createDirectPlaySession.mockReset().mockImplementation(
+        () =>
+          new Promise(() => {
+            /* never settles: the load stays in flight for the whole test */
+          }),
+      );
+      capturedCtx = null;
+      let rendered: TestRender | null = null;
+      await act(async () => {
+        rendered = renderPlayer(<CaptureContext />);
+      });
+      await act(async () => {
+        capturedCtx!.playQueue(THREE_TRACKS, startIndex);
+      });
+      await flush();
+      if (!rendered) throw new Error("render produced nothing");
+      return rendered;
+    }
+
+    it("does not re-create the current track's session when the current row is moved up", async () => {
+      view = await playQueueMidLoad(2);
+      expect(createDirectPlaySession).toHaveBeenCalledTimes(1);
+      const currentEntryId = capturedCtx!.current!.entryId;
+
+      await act(async () => {
+        capturedCtx!.reorderQueue(2, 1);
+      });
+      await flush();
+
+      // Pure reorder: same entry, new index, NO second session create.
+      expect(capturedCtx!.current?.entryId).toBe(currentEntryId);
+      expect(capturedCtx!.queueState.currentIndex).toBe(1);
+      expect(createDirectPlaySession).toHaveBeenCalledTimes(1);
+    });
+
+    it("does not re-create the current track's session when an earlier row is removed", async () => {
+      view = await playQueueMidLoad(2);
+      const currentEntryId = capturedCtx!.current!.entryId;
+      const firstEntryId = capturedCtx!.queueState.items[0]!.entryId;
+
+      await act(async () => {
+        capturedCtx!.removeFromQueue(firstEntryId);
+      });
+      await flush();
+
+      expect(capturedCtx!.current?.entryId).toBe(currentEntryId);
+      expect(capturedCtx!.queueState.currentIndex).toBe(1);
+      expect(createDirectPlaySession).toHaveBeenCalledTimes(1);
+    });
+
+    it("still loads the new current track when the current row itself is removed", async () => {
+      view = await playQueueMidLoad(1);
+      expect(createDirectPlaySession).toHaveBeenNthCalledWith(1, TRACK_2_ID, "stream", undefined);
+
+      await act(async () => {
+        capturedCtx!.removeFromQueue(capturedCtx!.current!.entryId);
+      });
+      await flush();
+
+      // A DIFFERENT entry is current now — that must still load.
+      expect(capturedCtx!.current?.itemId).toBe(TRACK_3_ID);
+      expect(createDirectPlaySession).toHaveBeenNthCalledWith(2, TRACK_3_ID, "stream", undefined);
+    });
+
+    it("leaves a PLAYING track's element untouched across a reorder and a removal", async () => {
+      view = await playQueueAndSettle(THREE_TRACKS.map((t) => ({ ...t })));
+      const active = view.container.querySelectorAll("audio")[0]!;
+      const srcBefore = active.src;
+      expect(srcBefore).not.toBe("");
+
+      await act(async () => {
+        capturedCtx!.enqueue({ itemId: TRACK_3_ID, title: "Third Rail (again)" });
+      });
+      await act(async () => {
+        capturedCtx!.reorderQueue(0, 2);
+      });
+      await act(async () => {
+        capturedCtx!.removeFromQueue(capturedCtx!.queueState.items[0]!.entryId);
+      });
+      await flush();
+
+      // Same element, same src: nothing restarted the playing track.
+      expect(active.src).toBe(srcBefore);
+      expect(createDirectPlaySession).toHaveBeenCalledTimes(1);
+    });
+
+    // The same identity rule, seen from the other side: the OLD guard
+    // compared itemIds, so the same track queued twice in a row looked
+    // "already loaded" in the active slot and the second entry never
+    // played — the queue advanced and then sat silent.
+    it("loads the second queue entry for a repeated track instead of assuming the slot holds it", async () => {
+      createDirectPlaySession.mockReset().mockResolvedValue({ ok: true, session: directPlaySession() });
+      view = await playQueueAndSettle([
+        { itemId: TRACK_ID, title: "Low Water" },
+        { itemId: TRACK_ID, title: "Low Water" },
+      ]);
+      expect(createDirectPlaySession).toHaveBeenCalledTimes(1);
+
+      // `ended` with nothing preloaded: advance only, and let the effect do
+      // a fresh (non-gapless) load in the SAME slot.
+      const active = view.container.querySelectorAll("audio")[0]!;
+      await act(async () => {
+        active.dispatchEvent(new Event("ended"));
+      });
+      await flush();
+
+      expect(capturedCtx!.queueState.currentIndex).toBe(1);
+      expect(createDirectPlaySession).toHaveBeenCalledTimes(2);
     });
   });
 });

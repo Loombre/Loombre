@@ -162,6 +162,14 @@ export function MusicPlayerProvider({ children }: { children: ReactNode }): Reac
   queueStateRef.current = queueState;
 
   const sessionsRef = useRef<Map<Slot, { sessionId: string; itemId: string }>>(new Map());
+  /** Which queue ENTRY (lib/queue.ts's per-entry id — NOT the itemId) each
+   *  <audio> slot has been given, claimed the moment a load STARTS rather
+   *  than when it finishes. This is the provider's "what is already where"
+   *  record, at the same granularity the queue itself uses; gaplessState's
+   *  `loaded` map stays itemId-keyed because the gapless handoff only cares
+   *  which MEDIA is primed. See the current-track effect below for why the
+   *  distinction matters (browser-player-F11). */
+  const slotEntryRef = useRef<Partial<Record<Slot, string>>>({});
   const loadTokenRef = useRef(0);
   const heartbeatRef = useRef<HeartbeatScheduler | null>(null);
   const positionRef = useRef(0);
@@ -242,6 +250,12 @@ export function MusicPlayerProvider({ children }: { children: ReactNode }): Reac
   const loadIntoSlot = useCallback(
     async (slot: Slot, track: QueueTrack, opts: { autoplay: boolean; preloadOnly?: boolean }) => {
       const myToken = ++loadTokenRef.current;
+      // Claim the slot for this ENTRY before the first await, so the slot
+      // counts as "this entry's" for the whole in-flight window and for a
+      // load that never completes at all (browser-player-F11): a create
+      // that throws or is refused never records a gapless `loaded` entry,
+      // and re-attempting it on every queue edit is a 404 storm, not a fix.
+      slotEntryRef.current[slot] = track.entryId;
       // Music-scoped interim shim (Phase 3 Step 6c): direct-play only —
       // see lib/playback-session.ts's createDirectPlaySession header for
       // the "music HLS transcode playback" open item. `mediaFileId` pins
@@ -319,19 +333,31 @@ export function MusicPlayerProvider({ children }: { children: ReactNode }): Reac
     }
   }, [refs, volume, muted]);
 
-  // When the queue's current track changes and the active slot doesn't
+  // When the queue's current ENTRY changes and the active slot doesn't
   // already hold it (gapless handoff not applicable), load it fresh.
+  //
+  // browser-player-F11 — keyed on the entry's IDENTITY, never on its
+  // position: REORDER/REMOVE (lib/queue.ts) deliberately move currentIndex
+  // so it keeps following the SAME entry, so an index/length trigger fired
+  // this effect on every queue edit for a track that had not changed. The
+  // itemId guard hid that only once a load had SUCCEEDED — mid-flight, or
+  // after a failed create, each edit re-fired POST /playback/sessions and
+  // re-`load()`ed the element under the user. Same reason the guard now
+  // compares entry ids: the same track queued twice is two entries, and
+  // advancing from one to the other really does need a fresh load.
+  const currentEntryId = currentTrack(queueState)?.entryId ?? null;
   useEffect(() => {
-    const track = currentTrack(queueState);
+    const track = currentTrack(queueStateRef.current);
     if (!track) {
       activeAudio()?.pause();
       setIsPlaying(false);
       stopHeartbeat(true);
       return;
     }
-    if (gaplessState.loaded[gaplessState.active] === track.itemId) return; // already there (gapless handoff already placed it)
-    void loadIntoSlot(gaplessState.active, track, { autoplay: true });
-  }, [queueState.currentIndex, queueState.items.length]);
+    const slot = gaplessStateRef.current.active;
+    if (slotEntryRef.current[slot] === track.entryId) return; // already there (or already loading)
+    void loadIntoSlot(slot, track, { autoplay: true });
+  }, [currentEntryId]);
 
   // Per-element event wiring (timeupdate for preload trigger + position,
   // loadedmetadata for duration, ended for gapless handoff / advance).
@@ -470,12 +496,17 @@ export function MusicPlayerProvider({ children }: { children: ReactNode }): Reac
   const setVolume = useCallback((v: number) => setVolumeState(Math.min(1, Math.max(0, v))), []);
   const toggleMute = useCallback(() => setMuted((m) => !m), []);
 
+  // Both RESET the gapless machine, so both clear the per-slot entry record
+  // with it — the two are one mirror (slotEntryRef is the entry-granular
+  // half of gaplessState.loaded) and must never drift apart.
   const playTrack = useCallback((track: PlayableTrackInput) => {
     dispatchQueue({ type: "SET_QUEUE", tracks: [toQueueTrack(track)], startIndex: 0 });
+    slotEntryRef.current = {};
     dispatchGapless({ type: "RESET" });
   }, []);
   const playQueue = useCallback((tracks: PlayableTrackInput[], startIndex = 0) => {
     dispatchQueue({ type: "SET_QUEUE", tracks: tracks.map(toQueueTrack), startIndex });
+    slotEntryRef.current = {};
     dispatchGapless({ type: "RESET" });
   }, []);
   const enqueue = useCallback((track: PlayableTrackInput) => dispatchQueue({ type: "ENQUEUE", track: toQueueTrack(track) }), []);
