@@ -40,6 +40,18 @@ import {
   resolveTranscodePollIntervalMs,
   resolveTranscodeStagingRoot,
 } from "./config.js";
+import {
+  classifyFfmpegExit,
+  TRANSCODE_ERROR_CODE_ENCODER_MALFUNCTION,
+  TRANSCODE_ERROR_CODE_FAILED,
+  type FfmpegExitClassifier,
+} from "./exit-classify.js";
+import {
+  newEncoderRecoveryState,
+  planEncoderRecovery,
+  softwareFallbackAvailable,
+  softwareFallbackPlan,
+} from "./encoder-recovery.js";
 import { InvalidStoredPlanError, parseStoredPlan, topRungOf, type StoredPlan } from "./plan-shape.js";
 import {
   applyRunUpdate,
@@ -81,6 +93,13 @@ export interface RunSessionDeps {
   /** Overrides the platform-derived throttle mechanism (tests only —
    *  never set in production wiring, consumer.ts). */
   mechanismOverride?: ThrottleMechanism;
+  /** Decides what an unexpected ffmpeg exit MEANS (exit-classify.ts).
+   *  Injectable and pure by design: the hardware-encode-session recovery
+   *  below is driven entirely by this function's answer, so a CI runner
+   *  with no macOS and no GPU exercises the VideoToolbox path exactly as a
+   *  Mac does. Defaults to `classifyFfmpegExit`; consumer.ts never sets
+   *  it. */
+  classifyExit?: FfmpegExitClassifier;
   /** TEST-ONLY pacing aid (args.ts's header explains why a test needs
    *  this and why it is orthogonal to the throttle mechanism under test).
    *  Never set by consumer.ts's production wiring. */
@@ -185,6 +204,12 @@ export async function runTranscodeSession(deps: RunSessionDeps, sessionId: strin
   const stagingRoot = deps.stagingRoot ?? resolveTranscodeStagingRoot();
   const pollIntervalMs = deps.pollIntervalMs ?? resolveTranscodePollIntervalMs();
   const mechanism = deps.mechanismOverride ?? throttleMechanismForPlatform(process.platform);
+  const classifyExit = deps.classifyExit ?? classifyFfmpegExit;
+  /** Per-session hardware-encoder recovery budget (encoder-recovery.ts).
+   *  Lives for exactly this session, in this closure — a worker restart
+   *  re-admits the session with a fresh one, which is right: a new process
+   *  is a new set of compression sessions. */
+  const encoderRecovery = newEncoderRecoveryState();
   // Node's uptime is the only in-process source for "when did THIS process
   // start" that needs no plumbing; consumer.ts passes index.ts's own
   // WORKER_STARTED_AT_MS, which is the authoritative value.
@@ -206,7 +231,7 @@ export async function runTranscodeSession(deps: RunSessionDeps, sessionId: strin
   if (!ffmpegPath) {
     const resolved = resolveFfmpeg();
     if (!resolved.ok) {
-      await markSessionFailed(db, sessionId, { errorCode: "transcode-failed", stderrTail: resolved.error.message, nowMs: now() });
+      await markSessionFailed(db, sessionId, { errorCode: TRANSCODE_ERROR_CODE_FAILED, stderrTail: resolved.error.message, nowMs: now() });
       return;
     }
     ffmpegPath = resolved.binary.path;
@@ -221,17 +246,17 @@ export async function runTranscodeSession(deps: RunSessionDeps, sessionId: strin
     plan = parseStoredPlan(sessionRow.plan);
   } catch (err) {
     const message = err instanceof InvalidStoredPlanError ? err.message : String(err);
-    await markSessionFailed(db, sessionId, { errorCode: "transcode-failed", stderrTail: message, nowMs: now() });
+    await markSessionFailed(db, sessionId, { errorCode: TRANSCODE_ERROR_CODE_FAILED, stderrTail: message, nowMs: now() });
     return;
   }
 
   if (!sessionRow.file_id) {
-    await markSessionFailed(db, sessionId, { errorCode: "transcode-failed", stderrTail: "session has no file_id", nowMs: now() });
+    await markSessionFailed(db, sessionId, { errorCode: TRANSCODE_ERROR_CODE_FAILED, stderrTail: "session has no file_id", nowMs: now() });
     return;
   }
   const file = await getMediaFileById(db, sessionRow.file_id);
   if (!file) {
-    await markSessionFailed(db, sessionId, { errorCode: "transcode-failed", stderrTail: `media file ${sessionRow.file_id} not found`, nowMs: now() });
+    await markSessionFailed(db, sessionId, { errorCode: TRANSCODE_ERROR_CODE_FAILED, stderrTail: `media file ${sessionRow.file_id} not found`, nowMs: now() });
     return;
   }
 
@@ -405,7 +430,7 @@ export async function runTranscodeSession(deps: RunSessionDeps, sessionId: strin
       // frees only via that terminal status, and the client's existing
       // fatal path surfaces it.
       await markSessionFailed(db, sessionId, {
-        errorCode: "transcode-failed",
+        errorCode: TRANSCODE_ERROR_CODE_FAILED,
         stderrTail: err instanceof Error ? err.message : String(err),
         nowMs: now(),
       });
@@ -426,18 +451,6 @@ export async function runTranscodeSession(deps: RunSessionDeps, sessionId: strin
     const row: TranscodeSessionRow | undefined = await getTranscodeSessionRow(db, sessionId);
     if (!row || row.status === "ended" || row.status === "failed") {
       await teardown();
-      return;
-    }
-
-    // Unexpected ffmpeg exit (not our own kill) — a real failure
-    // (binding constraint 7).
-    if (currentRun.exited && currentRun.exitInfo && !currentRun.exitInfo.killedByUs && currentRun.exitInfo.exitCode !== 0) {
-      await markSessionFailed(db, sessionId, {
-        errorCode: "transcode-failed",
-        stderrTail: currentRun.exitInfo.stderrTail,
-        nowMs: now(),
-      });
-      await deleteSessionDir(stagingRoot, sessionDir).catch(() => undefined);
       return;
     }
 
@@ -555,6 +568,74 @@ export async function runTranscodeSession(deps: RunSessionDeps, sessionId: strin
         await writeFile(playlistTmpPath, renderServedPlaylist(servedState), "utf8");
         await rename(playlistTmpPath, playlistPath);
       }
+    }
+
+    // ── UNEXPECTED FFMPEG EXIT (not our own kill) ────────────────────────
+    //
+    // Binding constraint 7 called every non-zero exit terminal, and this
+    // block used to do exactly that. QA finding browser-player-F2 (P1) is
+    // the case where that is wrong: `hevc_videotoolbox` died mid-watch with
+    // OSStatus -17691 (`kVTSessionMalfunctionErr`), which says the
+    // out-of-process VideoToolbox SESSION malfunctioned — not that the
+    // frame, the file or the plan is bad. exit-classify.ts's header has the
+    // full diagnosis; encoder-recovery.ts's has the ladder (bounded
+    // fresh-session retries -> software encoder -> terminal). Everything
+    // that is NOT a recognised hardware-session death still fails on the
+    // first exit, with the same `transcode-failed` code as always.
+    //
+    // ORDERING (this block runs AFTER the fold, not before it — it used to
+    // be the first thing in the tick). Two reasons, both about the restart
+    // this block can now issue:
+    //   * `currentRun.producedMs` is read from ffmpeg's OWN append-only
+    //     per-run playlist during the fold, and the recovery restart's
+    //     origin is `sourceOriginMs + producedMs` — the exact source
+    //     instant after the dead run's last segment. Deciding before the
+    //     fold would use a tick-stale extent and re-encode source time the
+    //     session already served (the §9.1.4 handoff origin's argument,
+    //     verbatim).
+    //   * the dead run's final segments make it into the served playlist
+    //     before anything else happens, so a client mid-buffer keeps every
+    //     byte the encoder actually got out.
+    // A terminal failure pays one extra fold + playlist rewrite for that,
+    // which is a rounding error against tearing the session down.
+    if (currentRun.exited && currentRun.exitInfo && !currentRun.exitInfo.killedByUs && currentRun.exitInfo.exitCode !== 0) {
+      const exitClass = classifyExit(currentRun.exitInfo);
+      const recovery =
+        exitClass.kind === "encoder-malfunction"
+          ? planEncoderRecovery(encoderRecovery, { softwareFallbackAvailable: softwareFallbackAvailable(plan) })
+          : ({ kind: "give-up" } as const);
+
+      if (recovery.kind !== "give-up") {
+        if (recovery.kind === "fall-back-to-software") {
+          // The stored plan re-expressed for the software encoder. THE ROW
+          // IS NOT REWRITTEN: `playback_sessions.plan` records what this
+          // session was admitted as, and a runtime fallback is not a
+          // re-planning event (the same rule §9.1.4's failed-handoff path
+          // already follows). Only this closure's copy moves, and only
+          // `restartAt` -> `rebuildSeekArgs` reads it.
+          plan = softwareFallbackPlan(plan);
+          encoderRecovery.softwareFallbackActive = true;
+        } else {
+          encoderRecovery.hardwareRetriesUsed = recovery.attempt;
+        }
+        const restarted = await restartAt(
+          currentRun.index + 1,
+          // Same V8 collision floor as every other restart (§9.1.10 item 4).
+          Math.max((producedSegment ?? -1) + 1, currentRun.startSegment + 1),
+          currentRun.sourceOriginMs + currentRun.producedMs,
+          currentRun.ladderRungIndex,
+        );
+        if (!restarted) return;
+        continue;
+      }
+
+      await markSessionFailed(db, sessionId, {
+        errorCode: exitClass.kind === "encoder-malfunction" ? TRANSCODE_ERROR_CODE_ENCODER_MALFUNCTION : TRANSCODE_ERROR_CODE_FAILED,
+        stderrTail: currentRun.exitInfo.stderrTail,
+        nowMs: now(),
+      });
+      await deleteSessionDir(stagingRoot, sessionDir).catch(() => undefined);
+      return;
     }
 
     // ── RESTART BLOCK (§9.1.7's SINGLE-RESTART RULE) ─────────────────────
