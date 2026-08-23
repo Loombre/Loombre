@@ -93,7 +93,7 @@ import { BlazeMark } from "../../components/brand/BlazeMark.js";
 import blazeIdle from "../../components/brand/BlazeIdle.module.css";
 import { buildDeviceProfile } from "../../lib/device-profile.js";
 import { getAuthStore } from "../../lib/auth-store.js";
-import { defaultServerUrlGuess, describeServerUrl } from "../../lib/server-url.js";
+import { describeServerUrl } from "../../lib/server-url.js";
 // apiPatch (not a plain LoombreClient call): mustChangePassword's PATCH
 // happens AFTER a real TokenPair is already stored (M14 — "the current
 // session is valid"), so it goes through the same authenticated,
@@ -107,10 +107,17 @@ import { apiPatch } from "../../lib/api-client.js";
 // value is attacker-supplied by construction), so `?? "/home"` below is
 // both the no-parameter default AND the refusal path.
 import { readReturnPathFromLocation } from "../../lib/auth-return-path.js";
+// browser-shell-browse-F2: the sign-in screen's remembered server URL is a
+// UI preference, NOT the auth store's `serverUrl` (which now records only
+// the server an auth actually succeeded against — see handleSubmit). That
+// module's header carries the full rationale; the public pages resolve
+// through its resolvePublicServerUrl().
+import {
+  rememberPreferredServerUrl,
+  resolvePublicServerUrl,
+} from "../../lib/server-url-preference.js";
 import { ServerIndicator } from "./ServerIndicator.js";
 import styles from "./page.module.css";
-
-const SERVER_URL_KEY = "loombre.onboarding.serverUrl";
 
 // G10 (STATE.md "Current-password re-auth on self-changes") — same check as
 // AccountSection.tsx's isCurrentPasswordInvalid: a wrong `currentPassword`
@@ -160,8 +167,7 @@ export default function LoginPage(): React.JSX.Element {
       router.replace(readReturnPathFromLocation() ?? "/home");
       return;
     }
-    const remembered = window.localStorage.getItem(SERVER_URL_KEY);
-    const resolved = remembered ?? (store.getSnapshot().serverUrl || defaultServerUrlGuess());
+    const resolved = resolvePublicServerUrl(store.getSnapshot().serverUrl);
     setServerUrl(resolved);
     if (!describeServerUrl(resolved)) setShowServerField(true);
 
@@ -183,9 +189,12 @@ export default function LoginPage(): React.JSX.Element {
     setSubmitting(true);
 
     try {
-      window.localStorage.setItem(SERVER_URL_KEY, serverUrl);
+      // browser-shell-browse-F2: remember the CHOICE (what the pill shows
+      // next time), never the auth store's serverUrl — that one is written
+      // below, only once this request has actually succeeded. A wrong URL
+      // typed here must stay recoverable from this same screen.
+      rememberPreferredServerUrl(serverUrl);
       const store = getAuthStore();
-      store.setServerUrl(serverUrl);
 
       const deviceProfile = await buildDeviceProfile();
       const existingDeviceId = store.getSnapshot().deviceId ?? undefined;
@@ -208,6 +217,11 @@ export default function LoginPage(): React.JSX.Element {
         },
       });
 
+      // browser-shell-browse-F2: NOW the URL is proven — a TokenPair came
+      // back from it. Written before applyTokenPair so the store never
+      // holds tokens without the server they belong to (the must-change
+      // PATCH below goes through apiPatch, which reads exactly this).
+      store.setServerUrl(serverUrl);
       store.applyTokenPair(pair);
       // M14: the session is valid either way — a pending temporary-password
       // change routes to the must-change step INSTEAD of /home, it never
@@ -356,7 +370,15 @@ export default function LoginPage(): React.JSX.Element {
           serverUrl={serverUrl}
           showField={showServerField}
           onShowField={() => setShowServerField(true)}
-          onHideField={() => setShowServerField(false)}
+          // Done is the viewer COMMITTING a server choice — the QA repro's
+          // "switch the pill back to :3001" step (browser-shell-browse-F2).
+          // Persisting here is what lets /forgot (and this page after a
+          // reload) honour the correction without a successful sign-in
+          // first; before, it only moved React state.
+          onHideField={() => {
+            rememberPreferredServerUrl(serverUrl);
+            setShowServerField(false);
+          }}
           onChangeServerUrl={setServerUrl}
         />
       </div>

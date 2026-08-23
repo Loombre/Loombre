@@ -12,15 +12,27 @@ import { act } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { LoombreClient, LoombreApiError } from "@loombre/sdk";
 import { renderIntoBody, type TestRender } from "../../components/ui/test-render.js";
+import { getAuthStore } from "../../lib/auth-store.js";
 
 const routerPush = vi.fn();
 const routerReplace = vi.fn();
 
+// A STABLE router object, not a fresh literal per call (login/page.test.tsx
+// says why at length): LoginPage's mount effect depends on `[router]`, and a
+// new object per render re-fires it after every keystroke — which re-reads
+// the remembered server URL and silently reverts the field under the test.
+const router = { push: routerPush, replace: routerReplace };
+
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ push: routerPush, replace: routerReplace }),
+  useRouter: () => router,
 }));
 
 const { default: ForgotPasswordPage } = await import("./page.js");
+// browser-shell-browse-F2 drives the real sign-in screen too (the defect
+// spans both pages); LoginPage pulls in api-client.js, which is NOT mocked
+// here — importing it has no side effects, and nothing in these tests takes
+// an authenticated path through it.
+const { default: LoginPage } = await import("../login/page.js");
 
 describe("ForgotPasswordPage — E3b/E8 constant-copy anti-enumeration", () => {
   let view: TestRender | null = null;
@@ -119,5 +131,152 @@ describe("ForgotPasswordPage — E3b/E8 constant-copy anti-enumeration", () => {
 
     const link = Array.from(view.container.querySelectorAll("a")).find((a) => a.textContent === "Back to sign in");
     expect(link?.getAttribute("href")).toBe("/login");
+  });
+});
+
+// ── browser-shell-browse-F2 (2026-08-20/21 QA, P2): WHICH server this page
+//    posts to. The reported sequence was: a failed sign-in against
+//    http://localhost:9 poisoned the auth store's serverUrl, the login pill
+//    was corrected back to :3001, and /forgot still POSTed to :9 — across a
+//    full reload — because it resolved the auth store rather than the value
+//    the sign-in screen shows. Unlike the describe above these tests drive
+//    the REAL LoombreClient against a stubbed global fetch, so what they
+//    assert is the actual request URL, not a spy on the wrapper. ─────────
+describe("ForgotPasswordPage — which server it reaches (browser-shell-browse-F2)", () => {
+  let view: TestRender | null = null;
+  let fetchMock: ReturnType<typeof vi.fn>;
+
+  const PREFERENCE_KEY = "loombre.onboarding.serverUrl";
+
+  beforeEach(() => {
+    routerPush.mockReset();
+    routerReplace.mockReset();
+    window.localStorage.clear();
+    getAuthStore().clear();
+    getAuthStore().setServerUrl("");
+    // Anything on :9 is unreachable (the QA repro's ERR_UNSAFE_PORT);
+    // anything else answers the server's real 202.
+    fetchMock = vi.fn(async (url: unknown) => {
+      if (String(url).includes("localhost:9/")) throw new TypeError("Failed to fetch");
+      return new Response(null, { status: 202 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+  });
+
+  afterEach(() => {
+    view?.unmount();
+    view = null;
+    vi.unstubAllGlobals();
+    window.localStorage.clear();
+    getAuthStore().clear();
+    getAuthStore().setServerUrl("");
+  });
+
+  function setNativeValue(el: HTMLInputElement, value: string): void {
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+    setter.call(el, value);
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+  }
+
+  async function submitForgot(identifier: string): Promise<void> {
+    const input = Array.from(view!.container.querySelectorAll("label"))
+      .find((l) => (l.textContent ?? "").startsWith("Username or email"))!
+      .querySelector("input")!;
+    setNativeValue(input, identifier);
+    const button = Array.from(view!.container.querySelectorAll("button")).find(
+      (b) => (b.textContent ?? "").trim() === "Send reset link",
+    )!;
+    await act(async () => {
+      button.click();
+    });
+  }
+
+  function requestedUrls(): string[] {
+    return fetchMock.mock.calls.map((call) => String(call[0]));
+  }
+
+  it("posts to the server the sign-in screen shows, not a stale auth-store value", async () => {
+    window.localStorage.setItem(PREFERENCE_KEY, "http://localhost:3001");
+    getAuthStore().setServerUrl("http://localhost:9");
+
+    view = renderIntoBody(<ForgotPasswordPage />);
+    await submitForgot("june");
+
+    expect(requestedUrls()).toEqual(["http://localhost:3001/auth/forgot-password"]);
+    expect(view.container.textContent).toMatch(/if that account has an email on file/i);
+  });
+
+  it("falls back to the established session's server when the sign-in screen remembers nothing", async () => {
+    getAuthStore().setServerUrl("http://localhost:3001");
+
+    view = renderIntoBody(<ForgotPasswordPage />);
+    await submitForgot("june");
+
+    expect(requestedUrls()).toEqual(["http://localhost:3001/auth/forgot-password"]);
+  });
+
+  it("names the server it could not reach instead of blaming the viewer's connection", async () => {
+    window.localStorage.setItem(PREFERENCE_KEY, "http://localhost:9");
+
+    view = renderIntoBody(<ForgotPasswordPage />);
+    await submitForgot("june");
+
+    expect(view.container.textContent).toMatch(/localhost:9/);
+    expect(view.container.textContent).not.toMatch(/if that account has an email on file/i);
+  });
+
+  it("the full reported sequence: a failed sign-in against a wrong URL, the pill corrected, then /forgot", async () => {
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn().mockImplementation((query: string) => ({
+        matches: false,
+        media: query,
+        addEventListener: () => {},
+        removeEventListener: () => {},
+        addListener: () => {},
+        removeListener: () => {},
+        dispatchEvent: () => true,
+      })),
+    );
+    getAuthStore().setServerUrl("http://localhost:3001");
+
+    const login = renderIntoBody(<LoginPage />);
+    await act(async () => {});
+    const clickIn = async (root: HTMLElement, text: string): Promise<void> => {
+      const button = Array.from(root.querySelectorAll("button")).find((b) => (b.textContent ?? "").trim() === text)!;
+      await act(async () => {
+        button.click();
+      });
+    };
+    // Switch server URL to the unreachable one, submit, watch it fail.
+    await clickIn(login.container, "Switch ▾");
+    await act(async () => {
+      setNativeValue(login.container.querySelector<HTMLInputElement>("#serverUrl")!, "http://localhost:9");
+    });
+    for (const [labelText, value] of [
+      ["Username or email", "june"],
+      ["Password", "correct horse battery"],
+    ]) {
+      const field = Array.from(login.container.querySelectorAll("label"))
+        .find((l) => (l.textContent ?? "").startsWith(labelText!))!
+        .querySelector("input")!;
+      setNativeValue(field, value!);
+    }
+    await clickIn(login.container, "Sign in");
+    expect(login.container.textContent).toMatch(/could not reach the server/i);
+
+    // Correct the pill back and confirm it with Done.
+    await act(async () => {
+      setNativeValue(login.container.querySelector<HTMLInputElement>("#serverUrl")!, "http://localhost:3001");
+    });
+    await clickIn(login.container, "Done");
+    expect(login.container.textContent).toMatch(/localhost:3001 · NO TLS/);
+    login.unmount();
+
+    fetchMock.mockClear();
+    view = renderIntoBody(<ForgotPasswordPage />);
+    await submitForgot("june");
+
+    expect(requestedUrls()).toEqual(["http://localhost:3001/auth/forgot-password"]);
   });
 });

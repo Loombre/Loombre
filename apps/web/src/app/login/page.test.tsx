@@ -426,3 +426,135 @@ describe("LoginPage — return path (browser-shell-browse-F1)", () => {
     expect(routerReplace).toHaveBeenCalledWith("/watchlist");
   });
 });
+
+// ── browser-shell-browse-F2 (2026-08-20/21 QA, P2): serverUrl poisoning.
+//    handleSubmit used to write the typed URL into the AUTH STORE
+//    (loombre.auth.v1) *before* the login request, so one failed attempt
+//    against a wrong URL replaced the working one for the whole app —
+//    surviving reloads, and taking /forgot (which resolves the same value)
+//    down with it. The store now records only the server an auth actually
+//    succeeded against; the login screen's own pill is remembered
+//    separately, under lib/server-url-preference.ts's key. ───────────────
+describe("LoginPage — server URL persistence (browser-shell-browse-F2)", () => {
+  let view: TestRender | null = null;
+  let getSpy: ReturnType<typeof vi.spyOn>;
+  let postSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    routerPush.mockReset();
+    routerReplace.mockReset();
+    apiPatchMock.mockReset();
+    stubMatchMedia();
+    window.localStorage.clear();
+    getAuthStore().clear();
+    getSpy = vi.spyOn(LoombreClient.prototype, "get").mockResolvedValue(CAPABILITIES_RESET_UNAVAILABLE);
+    postSpy = vi.spyOn(LoombreClient.prototype, "post");
+  });
+
+  afterEach(() => {
+    view?.unmount();
+    view = null;
+    getSpy.mockRestore();
+    postSpy.mockRestore();
+    vi.unstubAllGlobals();
+    getAuthStore().clear();
+    getAuthStore().setServerUrl("");
+  });
+
+  function buttonFor(text: string): HTMLButtonElement {
+    const button = Array.from(view!.container.querySelectorAll("button")).find(
+      (b) => (b.textContent ?? "").trim() === text,
+    );
+    if (!button) throw new Error(`no button labelled "${text}"`);
+    return button as HTMLButtonElement;
+  }
+
+  function setNativeValue(el: HTMLInputElement, value: string): void {
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+    setter.call(el, value);
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+  }
+
+  async function click(button: HTMLButtonElement): Promise<void> {
+    await act(async () => {
+      button.click();
+    });
+  }
+
+  // The server field is labelled by a `<span id="serverUrl-label">` +
+  // aria-labelledby (ServerIndicator.tsx), not a <label> element, so the
+  // other describes' inputFor() helper can't find it.
+  function serverInput(): HTMLInputElement {
+    const input = view!.container.querySelector<HTMLInputElement>("#serverUrl");
+    if (!input) throw new Error("server URL field is not disclosed");
+    return input;
+  }
+
+  async function switchServerTo(url: string): Promise<void> {
+    await click(buttonFor("Switch ▾"));
+    await act(async () => {
+      setNativeValue(serverInput(), url);
+    });
+  }
+
+  async function signIn(): Promise<void> {
+    const field = (labelText: string): HTMLInputElement =>
+      Array.from(view!.container.querySelectorAll("label"))
+        .find((l) => (l.textContent ?? "").startsWith(labelText))!
+        .querySelector("input")!;
+    setNativeValue(field("Username or email"), "june");
+    setNativeValue(field("Password"), "correct horse battery");
+    await click(buttonFor("Sign in"));
+  }
+
+  it("a FAILED sign-in against a wrong URL never overwrites the stored server URL", async () => {
+    getAuthStore().setServerUrl("http://localhost:3001");
+    postSpy.mockRejectedValue(new TypeError("Failed to fetch"));
+    view = renderIntoBody(<LoginPage />);
+    await act(async () => {});
+
+    await switchServerTo("http://localhost:9");
+    await signIn();
+
+    expect(view.container.textContent).toMatch(/could not reach the server/i);
+    expect(getAuthStore().getSnapshot().serverUrl).toBe("http://localhost:3001");
+  });
+
+  it("a failed sign-in on a never-authenticated browser leaves the store's server URL unset", async () => {
+    getAuthStore().setServerUrl("");
+    postSpy.mockRejectedValue(new LoombreApiError(401, {}));
+    view = renderIntoBody(<LoginPage />);
+    await act(async () => {});
+
+    await switchServerTo("http://localhost:9");
+    await signIn();
+
+    expect(getAuthStore().getSnapshot().serverUrl).toBe("");
+  });
+
+  it("a SUCCESSFUL sign-in persists the server it authenticated against", async () => {
+    getAuthStore().setServerUrl("");
+    postSpy.mockResolvedValue(tokenPair(false));
+    view = renderIntoBody(<LoginPage />);
+    await act(async () => {});
+
+    await switchServerTo("http://localhost:3001");
+    await signIn();
+
+    expect(getAuthStore().getSnapshot().serverUrl).toBe("http://localhost:3001");
+    expect(routerReplace).toHaveBeenCalledWith("/home");
+  });
+
+  it("correcting the pill (Switch ▾ → Done) persists the corrected value for the public auth pages", async () => {
+    window.localStorage.setItem("loombre.onboarding.serverUrl", "http://localhost:9");
+    view = renderIntoBody(<LoginPage />);
+    await act(async () => {});
+    expect(view.container.textContent).toMatch(/localhost:9/);
+
+    await switchServerTo("http://localhost:3001");
+    await click(buttonFor("Done"));
+
+    expect(view.container.textContent).toMatch(/localhost:3001 · NO TLS/);
+    expect(window.localStorage.getItem("loombre.onboarding.serverUrl")).toBe("http://localhost:3001");
+  });
+});

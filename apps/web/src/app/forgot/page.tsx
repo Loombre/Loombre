@@ -29,7 +29,8 @@ import { AuthScreen } from "../../components/auth/AuthScreen.js";
 import { Button } from "../../components/ui/Button.js";
 import { TextInput } from "../../components/ui/Input.js";
 import { getAuthStore } from "../../lib/auth-store.js";
-import { defaultServerUrlGuess } from "../../lib/server-url.js";
+import { describeServerUrl } from "../../lib/server-url.js";
+import { resolvePublicServerUrl } from "../../lib/server-url-preference.js";
 import styles from "../../components/auth/AuthScreen.module.css";
 
 const CONFIRMATION_COPY =
@@ -45,9 +46,14 @@ export default function ForgotPasswordPage(): React.JSX.Element {
     event.preventDefault();
     setError(null);
     setSubmitting(true);
+    // browser-shell-browse-F2: the sign-in screen's committed choice FIRST,
+    // the established session's server second. Reading only the auth store
+    // used to send this POST at whatever URL the last login ATTEMPT typed —
+    // including a failed one — with no way to correct it from the pill this
+    // page sends people back to. Resolved OUTSIDE the try so the failure
+    // copy below can name the address it actually tried.
+    const serverUrl = resolvePublicServerUrl(getAuthStore().getSnapshot().serverUrl);
     try {
-      const store = getAuthStore();
-      const serverUrl = store.getSnapshot().serverUrl || defaultServerUrlGuess();
       const client = new LoombreClient({ baseUrl: serverUrl.replace(/\/$/, ""), getAccessToken: () => null });
       await client.post("/auth/forgot-password", { body: { identifier } });
       // Reached ONLY after a genuine 2xx — never set proactively, so an
@@ -57,7 +63,13 @@ export default function ForgotPasswordPage(): React.JSX.Element {
       if (err instanceof LoombreApiError) {
         setError(err.message);
       } else {
-        setError("Could not reach the server. Check your connection and try again.");
+        // Name the server we actually tried (browser-shell-browse-F2: the
+        // old copy blamed the viewer's connection for what was really the
+        // wrong URL, and never said which one). Honest either way — an
+        // offline viewer still reads "could not reach", now with the
+        // address to check against the pill on the sign-in screen.
+        const label = describeServerUrl(serverUrl)?.host ?? serverUrl;
+        setError(`Could not reach the server at ${label}. Check the server URL on the sign-in screen and try again.`);
       }
     } finally {
       setSubmitting(false);

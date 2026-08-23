@@ -107,6 +107,27 @@ export class AuthStore {
     for (const listener of this.listeners) listener();
   }
 
+  /**
+   * The server this device is AUTHENTICATED against — not "the server
+   * somebody typed". It is persisted, survives reloads, and every
+   * authenticated path (api-client.ts, events-socket.ts, media URLs) sends
+   * the tokens in this same store to it, so writing an unproven URL here
+   * points a live session at a server its credentials mean nothing on.
+   *
+   * INVARIANT (browser-shell-browse-F2, 2026-08-20/21 QA): call this only
+   * once an auth has SUCCEEDED against `serverUrl` — login/page.tsx does it
+   * on the TokenPair, not before the request. It used to write on submit,
+   * so one failed attempt against a wrong URL poisoned the value for the
+   * whole app (including the public /forgot page) until the next successful
+   * sign-in. A server URL a user is merely CHOOSING belongs in
+   * lib/server-url-preference.ts instead.
+   *
+   * KNOWN residual: app/setup/_components/WelcomeStep.tsx still writes an
+   * unproven address here on its Next button (the wizard has no session to
+   * prove anything with yet). Narrower blast radius — an unprovisioned
+   * instance, no tokens in the store — but the same shape; logged as a
+   * follow-up rather than fixed under this finding.
+   */
   setServerUrl(serverUrl: string): void {
     this.setState({ serverUrl });
   }
