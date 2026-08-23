@@ -190,3 +190,78 @@ describe('listActiveSessionsAdmin (STATE.md P2.8/deliverable E)', () => {
     expect(JSON.stringify(unclearedRow)).not.toContain('After Hours Redline');
   });
 });
+
+// ---------------------------------------------------------------------------
+// browser-admin-F2 (QA 2026-08-20/21, P1): listActiveSessionsAdmin used to
+// hard-filter `status IN ('created','active')`, so the moment the
+// segment-ahead throttle flipped a steady-state transcode to `suspended`
+// (apps/worker/src/transcode/throttle.ts, ~30s into a real 4K stream) the
+// row vanished from BOTH admin monitoring surfaces while the viewer was
+// still watching. `suspended`/`starting`/`seeking` are live states, not
+// terminal ones — the only genuinely-over statuses are `ended`/`failed`.
+// ---------------------------------------------------------------------------
+describe('listActiveSessionsAdmin — live (non-terminal) statuses (browser-admin-F2)', () => {
+  async function setStatus(sessionId: string, status: string, byThrottle = false): Promise<void> {
+    await rawClient.query('UPDATE playback_sessions SET status = $2, suspended_by_throttle = $3 WHERE id = $1', [
+      sessionId,
+      status,
+      byThrottle,
+    ]);
+  }
+
+  async function seedSession(): Promise<string> {
+    const session = await createPlaybackSession(db, adminClearedCtx, {
+      itemId: harborLightsItemId,
+      fileId: harborLightsFileId,
+      deviceId: adminDeviceId,
+      plan: { decision: 'transcode', reasons: [] },
+      engineVersion: 'phase3-engine-1.0.0',
+      nowMs: Date.now(),
+    });
+    expect(session).toBeDefined();
+    return session!.id;
+  }
+
+  it('keeps a THROTTLE-suspended session listed, with status suspended (the row an admin must still see while the viewer watches)', async () => {
+    const id = await seedSession();
+    await setStatus(id, 'suspended', true);
+
+    const page = await listActiveSessionsAdmin(db, adminClearedCtx);
+    const row = page.rows.find((r) => r.id === id);
+    expect(row).toBeDefined();
+    expect(row!.status).toBe('suspended');
+    // Still fully rendered — the suspend changes nothing about redaction.
+    expect(row!.itemTitle).toBe('Harbor Lights');
+    expect(row!.plan).toEqual({ decision: 'transcode', reasons: [] });
+  });
+
+  it('keeps a HEARTBEAT-suspended session listed too (same enum value, server-authored cause)', async () => {
+    const id = await seedSession();
+    await setStatus(id, 'suspended', false);
+
+    const page = await listActiveSessionsAdmin(db, adminClearedCtx);
+    expect(page.rows.find((r) => r.id === id)?.status).toBe('suspended');
+  });
+
+  it('lists starting and seeking sessions (both mid-flight, neither terminal)', async () => {
+    const startingId = await seedSession();
+    await setStatus(startingId, 'starting');
+    const seekingId = await seedSession();
+    await setStatus(seekingId, 'seeking');
+
+    const page = await listActiveSessionsAdmin(db, adminClearedCtx);
+    expect(page.rows.find((r) => r.id === startingId)?.status).toBe('starting');
+    expect(page.rows.find((r) => r.id === seekingId)?.status).toBe('seeking');
+  });
+
+  it('still excludes the terminal statuses (ended/failed) — this is a now-playing feed, not a history', async () => {
+    const endedId = await seedSession();
+    await setStatus(endedId, 'ended');
+    const failedId = await seedSession();
+    await setStatus(failedId, 'failed');
+
+    const page = await listActiveSessionsAdmin(db, adminClearedCtx, { limit: 200 });
+    expect(page.rows.find((r) => r.id === endedId)).toBeUndefined();
+    expect(page.rows.find((r) => r.id === failedId)).toBeUndefined();
+  });
+});

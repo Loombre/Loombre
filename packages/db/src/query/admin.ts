@@ -745,11 +745,39 @@ function mapAdminSessionRow(row: RawAdminSessionRow): AdminSessionRow {
   };
 }
 
+/** Every NON-TERMINAL playback session status — i.e. "a viewer is on the
+ *  other end of this row right now". `ended`/`failed` are the only two
+ *  statuses that mean the stream is over.
+ *
+ *  KEEP IN SYNC with NON_TERMINAL_STATUSES in
+ *  src/internal/transcode-sessions.ts (the worker-facing writers guard on
+ *  the same set; this module is a query-layer read and deliberately does
+ *  not import from internal/). */
+const LIVE_SESSION_STATUSES: readonly PlaybackSessionStatus[] = [
+  'created',
+  'starting',
+  'active',
+  'suspended',
+  'seeking',
+];
+
 /**
- * Active (status IN created/active) playback sessions across ALL users,
+ * LIVE (non-terminal status) playback sessions across ALL users,
  * newest-started first, keyset-paginated on (startedAtMs, id) both
  * descending — for GET /admin/sessions (isAdmin-authorized at the
  * apps/server controller layer, see this file's header addendum).
+ *
+ * browser-admin-F2 (QA 2026-08-20/21, P1): this used to filter
+ * `status IN ('created','active')`, which quietly made the whole feature
+ * useless for its main case — a real transcode. The segment-ahead throttle
+ * (docs/PLAYBACK.md §9, apps/worker/src/transcode/throttle.ts) parks a
+ * healthy steady-state transcode at `suspended` for most of its life
+ * (SIGSTOP at ahead > 10 segments, SIGCONT at ahead <= 5), and a seek moves
+ * it through `seeking`, so an admin watching /admin during real playback
+ * saw "Active streams · 0" while the video played. Presence is about
+ * whether someone is WATCHING, not about whether ffmpeg happens to be
+ * running this second; the status column carries that nuance to the client,
+ * which renders it as a pill (apps/web/src/lib/admin-status.ts).
  *
  * Item display fields (itemId/itemTitle/contentHidden) are resolved
  * through the REQUESTING ADMIN'S OWN `ctx`, via the exact same
@@ -774,7 +802,7 @@ export async function listActiveSessionsAdmin(
     .leftJoin('devices', 'devices.id', 'playback_sessions.device_id')
     .leftJoin('media_files', 'media_files.id', 'playback_sessions.file_id')
     .leftJoin('catalog_items', 'catalog_items.id', 'media_files.item_id')
-    .where('playback_sessions.status', 'in', ['created', 'active']);
+    .where('playback_sessions.status', 'in', LIVE_SESSION_STATUSES);
 
   if (params.cursor) {
     const { startedAtMs, id } = decodeCursor(params.cursor, isAdminSessionCursorPayload);

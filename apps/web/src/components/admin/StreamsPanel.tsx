@@ -22,7 +22,7 @@
 //
 // Live refresh: subscribes to playback.started/playback.ended over the
 // SAME shared events socket JobsPanel/LibrariesPanel already ride (no
-// second connection, no poll loop) and refetches on either — never a local
+// second connection) and refetches on either — never a local
 // merge, unlike those two. playback.started/.ended (packages/contract/
 // event-schemas/) carry only {sessionId, itemId, deviceId, ...}; they have
 // no username/deviceName/plan/contentHidden, so merging one into a row
@@ -33,12 +33,23 @@
 // restricted item never receives that item's start/end event, so this
 // live refresh is best-effort for restricted sessions; a row that DOES get
 // refetched some other way still renders correctly redacted regardless.
+//
+// browser-admin-F2: the socket alone is not enough, because a session's
+// STATUS changes several times inside one uninterrupted stream (the
+// segment-ahead throttle flips a transcode suspended <-> active, a seek
+// moves it through `seeking`) and none of those transitions emits an
+// event. A periodic refetch (lib/admin-live-refresh.ts — see it for the
+// cadence rationale) sits underneath the subscription and keeps every
+// row's status pill honest; the socket stays as the low-latency path for
+// the start/end transitions it does cover.
 
 import { useCallback, useEffect, useState } from "react";
 import type { components } from "@loombre/sdk";
 import { EmptyState } from "./EmptyState.js";
 import { ReasonsPanel } from "./ReasonsPanel.js";
+import { StatusPill } from "./StatusPill.js";
 import { Skeleton } from "../skeleton/Skeleton.js";
+import { ADMIN_SESSIONS_REFRESH_MS } from "../../lib/admin-live-refresh.js";
 import { describeSessionStatus } from "../../lib/admin-status.js";
 import { apiGet, LoombreApiError } from "../../lib/api-client.js";
 import { debounce } from "../../lib/debounce.js";
@@ -66,6 +77,13 @@ function StreamRow({ session }: { session: AdminSessionWithPlan }): React.JSX.El
         ) : (
           <span className={styles.itemTitle}>{session.itemTitle ?? "—"}</span>
         )}
+        {/* browser-admin-F2: the mode badge describes the PLAN (what was
+            decided); this pill describes the session's live STATE. A
+            throttle-suspended transcode is both TRANSCODE and Suspended —
+            before this, the panel could only say the former, so the
+            /admin/sessions page's identical pill was the only place an
+            admin could learn a stream was parked. */}
+        <StatusPill label={info.label} tone={info.tone} />
       </div>
       <div className={styles.meta}>
         <span>{session.username}</span>
@@ -109,6 +127,13 @@ export function StreamsPanel(): React.JSX.Element {
       unsubStarted();
       unsubEnded();
     };
+  }, [refresh]);
+
+  // Status-transition floor (browser-admin-F2): suspended <-> active <->
+  // seeking flips emit no event, so nothing above would ever notice them.
+  useEffect(() => {
+    const timer = setInterval(refresh, ADMIN_SESSIONS_REFRESH_MS);
+    return () => clearInterval(timer);
   }, [refresh]);
 
   return (

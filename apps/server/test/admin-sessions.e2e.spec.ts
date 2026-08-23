@@ -195,4 +195,67 @@ describe("GET /admin/sessions (STATE.md P2.8/deliverable E)", () => {
     });
     expect(rowAfter.engineVersion).toBe("phase3-engine-1.0.0");
   });
+
+  // browser-admin-F2 (QA 2026-08-20/21, P1): the QA repro was literally
+  // `curl /admin/sessions` returning 0 items while a 4K stream played,
+  // because the segment-ahead throttle had parked the transcode at
+  // status='suspended' and the query filtered it out. The query-layer
+  // proof lives in packages/db/test/admin-sessions.spec.ts; this is the
+  // wire-level half — the row reaches the client, carrying the status the
+  // pill renders.
+  it("lists a throttle-suspended session, with status suspended on the wire (browser-admin-F2)", async () => {
+    const adminLogin = await request(app.getHttpServer()).post("/auth/login").send({
+      username: "admin",
+      password: "loombre-seed-admin",
+      deviceName: "admin-sessions-test-suspended",
+      deviceProfile: buildDeviceProfile("admin-sessions-test-suspended"),
+    });
+    expect(adminLogin.status, JSON.stringify(adminLogin.body)).toBe(200);
+    const adminToken: string = adminLogin.body.accessToken;
+    const adminDeviceId: string = adminLogin.body.deviceId;
+    const adminUserId: string = JSON.parse(
+      Buffer.from(adminToken.split(".")[1]!, "base64url").toString("utf8"),
+    ).sub;
+
+    const db = createDb(databaseUrl);
+    let suspendedSessionId: string;
+    try {
+      const item = await db
+        .selectFrom("catalog_items")
+        .select("id")
+        .where("title", "=", "Harbor Lights")
+        .executeTakeFirstOrThrow();
+      const file = await db.selectFrom("media_files").select("id").where("item_id", "=", item.id).executeTakeFirstOrThrow();
+      const allLibraryIds = (await db.selectFrom("libraries").select("id").execute()).map((r) => r.id);
+      const seedingCtx: ViewerContext = { userId: adminUserId, allowedLibraryIds: allLibraryIds, restrictedCleared: true };
+
+      const session = await createPlaybackSession(db, seedingCtx, {
+        itemId: item.id,
+        fileId: file.id,
+        deviceId: adminDeviceId,
+        plan: { decision: "transcode", reasons: [] },
+        engineVersion: "phase3-engine-1.0.0",
+        nowMs: Date.now(),
+      });
+      expect(session).toBeDefined();
+      suspendedSessionId = session!.id;
+
+      // What apps/worker/src/transcode/throttle.ts's SIGSTOP branch writes
+      // (packages/db/src/internal/transcode-sessions.ts setThrottleSuspended).
+      await db
+        .updateTable("playback_sessions")
+        .set({ status: "suspended", suspended_by_throttle: true, updated_at_ms: Date.now() })
+        .where("id", "=", suspendedSessionId)
+        .execute();
+    } finally {
+      await db.destroy();
+    }
+
+    const res = await request(app.getHttpServer()).get("/admin/sessions").set("Authorization", `Bearer ${adminToken}`);
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+    const row = res.body.items.find((r: { id: string }) => r.id === suspendedSessionId);
+    expect(row, JSON.stringify(res.body.items)).toBeDefined();
+    expect(row.status).toBe("suspended");
+    expect(row.itemTitle).toBe("Harbor Lights");
+  });
 });

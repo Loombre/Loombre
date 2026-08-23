@@ -21,8 +21,14 @@
 // the fields a row needs and only the server applies the P2.8 redaction
 // contract). Silent — it does not flip `loading`, so an admin watching
 // this page never sees the skeleton re-flash for a background nudge.
+//
+// browser-admin-F2: the same silent refetch also runs on a periodic tick
+// (lib/admin-live-refresh.ts), because the status transitions this page
+// exists to show — the segment-ahead throttle's suspended <-> active flip,
+// `seeking` during a seek — emit no event at all, so a socket-only page
+// froze on whatever status was true at mount.
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Video } from "lucide-react";
 import type { components } from "@loombre/sdk";
 import { Card } from "../../../components/ui/Card.js";
@@ -31,6 +37,7 @@ import { Skeleton } from "../../../components/skeleton/Skeleton.js";
 import { EmptyState } from "../../../components/admin/EmptyState.js";
 import { StatusPill } from "../../../components/admin/StatusPill.js";
 import { ReasonsPanel } from "../../../components/admin/ReasonsPanel.js";
+import { ADMIN_SESSIONS_REFRESH_MS } from "../../../lib/admin-live-refresh.js";
 import { describeSessionStatus } from "../../../lib/admin-status.js";
 import { apiGet, LoombreApiError } from "../../../lib/api-client.js";
 import { debounce } from "../../../lib/debounce.js";
@@ -114,26 +121,28 @@ export default function AdminSessionsPage(): React.JSX.Element {
     load(true);
   }, []);
 
+  // A silent page-1 refetch, distinct from `load` (which flips `loading`
+  // and would re-show the full skeleton on every session start/end).
+  // Resets cursor/hasMore to page 1's, same as `load(true)` — any extra
+  // "Load more" pages an admin had open are discarded, matching a manual
+  // reload's behavior. Shared by the socket subscription and the periodic
+  // tick below (browser-admin-F2).
+  const refreshFirstPageSilently = useCallback((): void => {
+    apiGet("/admin/sessions", { params: { query: { limit: PAGE_LIMIT } } })
+      .then((page) => {
+        const items = page.items as AdminSessionWithPlan[];
+        setSessions(items);
+        setCursor(page.nextCursor);
+        setHasMore(page.nextCursor !== null);
+      })
+      .catch(() => {
+        // A live nudge failing silently is fine — the page already has a
+        // committed snapshot on screen; an error banner here would be
+        // noisier than useful for a background refresh.
+      });
+  }, []);
+
   useEffect(() => {
-    // A silent page-1 refetch, distinct from `load` (which flips `loading`
-    // and would re-show the full skeleton on every session start/end).
-    // Resets cursor/hasMore to page 1's, same as `load(true)` — any extra
-    // "Load more" pages an admin had open are discarded, matching a manual
-    // reload's behavior.
-    const refreshFirstPageSilently = (): void => {
-      apiGet("/admin/sessions", { params: { query: { limit: PAGE_LIMIT } } })
-        .then((page) => {
-          const items = page.items as AdminSessionWithPlan[];
-          setSessions(items);
-          setCursor(page.nextCursor);
-          setHasMore(page.nextCursor !== null);
-        })
-        .catch(() => {
-          // A live nudge failing silently is fine — the page already has a
-          // committed snapshot on screen; an error banner here would be
-          // noisier than useful for a background refresh.
-        });
-    };
     const socket = getEventsSocket();
     const debouncedRefresh = debounce(refreshFirstPageSilently, 500);
     const unsubStarted = socket.subscribe("playback.started", () => debouncedRefresh());
@@ -143,7 +152,14 @@ export default function AdminSessionsPage(): React.JSX.Element {
       unsubStarted();
       unsubEnded();
     };
-  }, []);
+  }, [refreshFirstPageSilently]);
+
+  // Status-transition floor (browser-admin-F2): suspended <-> active <->
+  // seeking flips emit no event, so the subscription above never sees them.
+  useEffect(() => {
+    const timer = setInterval(refreshFirstPageSilently, ADMIN_SESSIONS_REFRESH_MS);
+    return () => clearInterval(timer);
+  }, [refreshFirstPageSilently]);
 
   return (
     <Card>

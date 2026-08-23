@@ -27,8 +27,9 @@ vi.mock("../../lib/events-socket.js", () => ({
 }));
 
 const { StreamsPanel } = await import("./StreamsPanel.js");
+const { ADMIN_SESSIONS_REFRESH_MS } = await import("../../lib/admin-live-refresh.js");
 
-function session(id: string) {
+function session(id: string, overrides: Record<string, unknown> = {}) {
   return {
     id,
     userId: "22222222-2222-7222-8222-222222222222",
@@ -43,6 +44,7 @@ function session(id: string) {
     updatedAtMs: 0,
     lastHeartbeatMs: 0,
     plan: { decision: "direct-play" },
+    ...overrides,
   };
 }
 
@@ -100,5 +102,83 @@ describe("StreamsPanel — live refresh (confirmed[32])", () => {
 
     expect(apiGetMock).toHaveBeenCalledTimes(2);
     expect(view.container.textContent).toContain("Active streams · 2");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// browser-admin-F2 (QA 2026-08-20/21, P1): while the segment-ahead throttle
+// held a real transcode suspended (most of a steady-state 4K stream), this
+// panel showed "Active streams · 0" — and once the query started returning
+// those rows, the panel still had no way to SAY a stream is suspended, nor
+// any way to notice the suspended->active flip (the throttle emits no
+// event, so the socket subscription above never fires for it).
+// ---------------------------------------------------------------------------
+describe("StreamsPanel — suspended streams (browser-admin-F2)", () => {
+  let view: TestRender | null = null;
+
+  beforeEach(() => {
+    apiGetMock.mockReset();
+    subscribeMock.mockReset();
+    subscribeMock.mockReturnValue(() => {});
+  });
+
+  afterEach(() => {
+    view?.unmount();
+    view = null;
+    vi.useRealTimers();
+  });
+
+  it("renders the session status alongside the mode badge, so a throttle-suspended transcode reads as Suspended (not as a missing row)", async () => {
+    apiGetMock.mockResolvedValue({
+      items: [session("s1", { status: "suspended", plan: { decision: "transcode" } })],
+      nextCursor: null,
+    });
+    view = renderIntoBody(<StreamsPanel />);
+    await act(async () => {});
+
+    expect(view.container.textContent).toContain("Active streams · 1");
+    expect(view.container.textContent).toContain("TRANSCODE");
+    expect(view.container.textContent).toContain("Suspended");
+  });
+
+  it("refetches on a periodic tick with NO socket event, so a suspended->active transition stops being invisible until a manual reload", async () => {
+    vi.useFakeTimers();
+    apiGetMock.mockResolvedValue({
+      items: [session("s1", { status: "suspended", plan: { decision: "transcode" } })],
+      nextCursor: null,
+    });
+    view = renderIntoBody(<StreamsPanel />);
+    await act(async () => {});
+    expect(apiGetMock).toHaveBeenCalledTimes(1);
+    expect(view.container.textContent).toContain("Suspended");
+
+    apiGetMock.mockResolvedValue({
+      items: [session("s1", { status: "active", plan: { decision: "transcode" } })],
+      nextCursor: null,
+    });
+    act(() => {
+      vi.advanceTimersByTime(ADMIN_SESSIONS_REFRESH_MS);
+    });
+    await act(async () => {});
+
+    expect(apiGetMock).toHaveBeenCalledTimes(2);
+    expect(view.container.textContent).toContain("Active");
+    expect(view.container.textContent).not.toContain("Suspended");
+  });
+
+  it("stops the periodic tick on unmount", async () => {
+    vi.useFakeTimers();
+    apiGetMock.mockResolvedValue({ items: [session("s1")], nextCursor: null });
+    view = renderIntoBody(<StreamsPanel />);
+    await act(async () => {});
+    expect(apiGetMock).toHaveBeenCalledTimes(1);
+
+    view.unmount();
+    view = null;
+    act(() => {
+      vi.advanceTimersByTime(ADMIN_SESSIONS_REFRESH_MS * 3);
+    });
+    await act(async () => {});
+    expect(apiGetMock).toHaveBeenCalledTimes(1);
   });
 });

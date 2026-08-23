@@ -28,8 +28,9 @@ vi.mock("../../../lib/events-socket.js", () => ({
 }));
 
 const { default: AdminSessionsPage } = await import("./page.js");
+const { ADMIN_SESSIONS_REFRESH_MS } = await import("../../../lib/admin-live-refresh.js");
 
-function session(id: string) {
+function session(id: string, overrides: Record<string, unknown> = {}) {
   return {
     id,
     userId: "22222222-2222-7222-8222-222222222222",
@@ -44,6 +45,7 @@ function session(id: string) {
     updatedAtMs: 0,
     lastHeartbeatMs: 0,
     plan: { decision: "direct-play" },
+    ...overrides,
   };
 }
 
@@ -101,5 +103,80 @@ describe("AdminSessionsPage — live refresh (confirmed[32])", () => {
 
     expect(apiGetMock).toHaveBeenCalledTimes(2);
     expect(view.container.textContent).toContain("No active sessions");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// browser-admin-F2 (QA 2026-08-20/21, P1): the segment-ahead throttle flips
+// a live transcode between `suspended` and `active` every few tens of
+// seconds and emits NO event, so this page's socket-only refresh left an
+// open tab showing a status that stopped being true minutes ago (and, with
+// the old query filter, showed "No active sessions" throughout).
+// ---------------------------------------------------------------------------
+describe("AdminSessionsPage — suspended sessions (browser-admin-F2)", () => {
+  let view: TestRender | null = null;
+
+  beforeEach(() => {
+    apiGetMock.mockReset();
+    subscribeMock.mockReset();
+    subscribeMock.mockReturnValue(() => {});
+  });
+
+  afterEach(() => {
+    view?.unmount();
+    view = null;
+    vi.useRealTimers();
+  });
+
+  it("renders the Suspended status pill for a throttle-suspended session", async () => {
+    apiGetMock.mockResolvedValue({
+      items: [session("s1", { status: "suspended", plan: { decision: "transcode" } })],
+      nextCursor: null,
+    });
+    view = renderIntoBody(<AdminSessionsPage />);
+    await act(async () => {});
+
+    expect(view.container.textContent).toContain("Arrival");
+    expect(view.container.textContent).toContain("Suspended");
+  });
+
+  it("refetches page 1 on a periodic tick with NO socket event, so a suspended->active flip surfaces without a reload", async () => {
+    vi.useFakeTimers();
+    apiGetMock.mockResolvedValue({
+      items: [session("s1", { status: "suspended", plan: { decision: "transcode" } })],
+      nextCursor: null,
+    });
+    view = renderIntoBody(<AdminSessionsPage />);
+    await act(async () => {});
+    expect(apiGetMock).toHaveBeenCalledTimes(1);
+    expect(view.container.textContent).toContain("Suspended");
+
+    apiGetMock.mockResolvedValue({
+      items: [session("s1", { status: "active", plan: { decision: "transcode" } })],
+      nextCursor: null,
+    });
+    act(() => {
+      vi.advanceTimersByTime(ADMIN_SESSIONS_REFRESH_MS);
+    });
+    await act(async () => {});
+
+    expect(apiGetMock).toHaveBeenCalledTimes(2);
+    expect(view.container.textContent).not.toContain("Suspended");
+  });
+
+  it("stops the periodic tick on unmount", async () => {
+    vi.useFakeTimers();
+    apiGetMock.mockResolvedValue({ items: [session("s1")], nextCursor: null });
+    view = renderIntoBody(<AdminSessionsPage />);
+    await act(async () => {});
+    expect(apiGetMock).toHaveBeenCalledTimes(1);
+
+    view.unmount();
+    view = null;
+    act(() => {
+      vi.advanceTimersByTime(ADMIN_SESSIONS_REFRESH_MS * 3);
+    });
+    await act(async () => {});
+    expect(apiGetMock).toHaveBeenCalledTimes(1);
   });
 });
