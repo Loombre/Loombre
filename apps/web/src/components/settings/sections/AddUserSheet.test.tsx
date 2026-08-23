@@ -15,6 +15,8 @@ const apiPostMock = vi.fn();
 
 class FakeApiError extends Error {}
 
+const USERNAME_TAKEN_DETAIL = "A user with the username \"newperson\" already exists.";
+
 vi.mock("../../../lib/api-client.js", () => ({
   apiPost: (...args: unknown[]) => apiPostMock(...args),
   LoombreApiError: FakeApiError,
@@ -148,5 +150,30 @@ describe("AddUserSheet — E4/M1 optional email", () => {
 
     const [, options] = apiPostMock.mock.calls[0] as [string, { body: Record<string, unknown> }];
     expect(options.body["email"]).toBe("new@example.com");
+  });
+
+  // browser-admin-F5: the sheet rendered `err.message`, built by the SDK
+  // from the RFC 9457 problem TITLE alone — an admin saw the bare word
+  // "Conflict" with no hint of WHICH field collided.
+  it("browser-admin-F5: renders the server's problem detail, never the bare status title", async () => {
+    apiPostMock.mockRejectedValue(
+      Object.assign(new FakeApiError("Conflict"), {
+        problem: { type: "about:blank", title: "Conflict", status: 409, detail: USERNAME_TAKEN_DETAIL },
+      }),
+    );
+    view = renderIntoBody(
+      <ToastProvider>
+        <AddUserSheet open onClose={() => {}} onCreated={() => {}} />
+      </ToastProvider>,
+    );
+    setNativeValue(inputFor("Name"), "New Person");
+    setNativeValue(inputFor("Username"), "newperson");
+    setNativeValue(inputFor("Password"), "correct horse battery");
+    await click(buttonFor("Create user"));
+    await act(async () => {});
+
+    const text = view.container.textContent ?? "";
+    expect(text).toContain(USERNAME_TAKEN_DETAIL);
+    expect(text).not.toContain("Conflict");
   });
 });

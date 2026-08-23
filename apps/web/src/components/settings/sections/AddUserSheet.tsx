@@ -47,7 +47,11 @@ import { TextInput } from "../../ui/Input.js";
 import { Button } from "../../ui/Button.js";
 import { SegmentedControl } from "../../ui/SegmentedControl.js";
 import { useToast } from "../../ui/Toast.js";
-import { apiPost, LoombreApiError } from "../../../lib/api-client.js";
+import { apiPost } from "../../../lib/api-client.js";
+// browser-admin-F5: error surfaces route through apiErrorMessage, never
+// a bare `err.message` — the RFC 9457 `detail` is the half that says
+// what actually went wrong (see that module's header).
+import { apiErrorMessage } from "../../../lib/api-error-message.js";
 import type { components } from "@loombre/sdk";
 import styles from "./shared.module.css";
 
@@ -105,7 +109,7 @@ export function AddUserSheet({
       reset();
       onClose();
     } catch (err) {
-      setError(err instanceof LoombreApiError ? err.message : "Failed to create user.");
+      setError(apiErrorMessage(err, "Failed to create user."));
       setSubmitting(false);
     }
   }

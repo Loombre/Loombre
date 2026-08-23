@@ -15,6 +15,8 @@ const apiPostMock = vi.fn();
 
 class FakeApiError extends Error {}
 
+const EXPIRY_DETAIL = "expiresInMs must be between 1 hour and 30 days.";
+
 vi.mock("../../../lib/api-client.js", () => ({
   apiGet: (...args: unknown[]) => apiGetMock(...args),
   apiPost: (...args: unknown[]) => apiPostMock(...args),
@@ -162,6 +164,26 @@ describe("CreateInviteSheet — E2 create -> reveal -> copy", () => {
 
     const [, options] = apiPostMock.mock.calls[0] as [string, { body: Record<string, unknown> }];
     expect(options.body["libraryIds"]).toEqual(["lib-1"]);
+  });
+
+  // browser-admin-F5: the sheet rendered `err.message`, built by the SDK
+  // from the RFC 9457 problem TITLE alone, so a 422 read "Unprocessable
+  // Entity" and the server's explanation was dropped on the floor.
+  it("browser-admin-F5: renders the server's problem detail, never the bare status title", async () => {
+    apiPostMock.mockRejectedValue(
+      Object.assign(new FakeApiError("Unprocessable Entity"), {
+        problem: { type: "about:blank", title: "Unprocessable Entity", status: 422, detail: EXPIRY_DETAIL },
+      }),
+    );
+    view = renderIntoBody(<CreateInviteSheet open onClose={() => {}} onCreated={() => {}} />);
+    await act(async () => {});
+
+    await click(buttonFor("Create invite"));
+    await act(async () => {});
+
+    const text = view.container.textContent ?? "";
+    expect(text).toContain(EXPIRY_DETAIL);
+    expect(text).not.toContain("Unprocessable Entity");
   });
 
   it("surfaces a server error inline and stays on the form", async () => {

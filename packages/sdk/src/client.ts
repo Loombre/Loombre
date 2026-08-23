@@ -111,11 +111,27 @@ export class LoombreApiError extends Error {
   readonly problem: unknown;
 
   constructor(status: number, problem: unknown) {
-    const title =
-      typeof problem === "object" && problem !== null && "title" in problem
-        ? String((problem as { title?: unknown }).title)
-        : `Request failed with status ${status}`;
-    super(title);
+    // RFC 9457 splits the two halves deliberately: `title` is the generic,
+    // status-shaped summary of the problem TYPE ("Conflict", "Unprocessable
+    // Entity"), while `detail` is the sentence written about THIS
+    // occurrence ("A user with this email address already exists."). Every
+    // UI surface renders `err.message`, so building the message from the
+    // title alone threw away the only actionable half of the document and
+    // left modals and fields showing a bare status word (browser-admin-F5).
+    // Detail first, title as the fallback, status sentence when the body is
+    // not a problem document at all.
+    const doc =
+      typeof problem === "object" && problem !== null
+        ? (problem as { title?: unknown; detail?: unknown })
+        : null;
+    const detail = doc?.detail;
+    const message =
+      typeof detail === "string" && detail.length > 0
+        ? detail
+        : doc !== null && "title" in doc
+          ? String(doc.title)
+          : `Request failed with status ${status}`;
+    super(message);
     this.name = "LoombreApiError";
     this.status = status;
     this.problem = problem;

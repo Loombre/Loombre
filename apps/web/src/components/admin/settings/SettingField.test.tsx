@@ -104,6 +104,9 @@ const apiPutMock = vi.fn();
 
 class FakeApiError extends Error {}
 
+const RESUME_THRESHOLD_DETAIL =
+  "transcode.segmentAheadResumeThreshold must be below transcode.segmentAheadTarget (currently 8).";
+
 vi.mock("../../../lib/api-client.js", () => ({
   apiPut: (...args: unknown[]) => apiPutMock(...args),
   LoombreApiError: FakeApiError,
@@ -700,6 +703,41 @@ describe("SettingField — Phosphor registry card fidelity", () => {
       // prop (standing in for that refetch) must reach the control again.
       view.rerender(<SettingField entry={MAX_TRANSCODES_ENTRY} value={7} source="database" onChanged={noop} />);
       expect((view.container.querySelector('input[type="number"]') as HTMLInputElement).value).toBe("7");
+    });
+  });
+
+  // browser-admin-F5: a rejected save rendered `err.message`, built by the
+  // SDK from the RFC 9457 problem TITLE alone, so the cross-field
+  // explanation settings.service.ts writes into `detail` never reached the
+  // admin — the field just said "Unprocessable Entity".
+  describe("browser-admin-F5 — the server's problem detail reaches the field error", () => {
+    it("renders the 422 detail sentence, never the bare status title", async () => {
+      apiPutMock.mockRejectedValue(
+        Object.assign(new FakeApiError("Unprocessable Entity"), {
+          problem: {
+            type: "about:blank",
+            title: "Unprocessable Entity",
+            status: 422,
+            detail: RESUME_THRESHOLD_DETAIL,
+          },
+        }),
+      );
+
+      view = renderIntoBody(<SettingField entry={MAX_TRANSCODES_ENTRY} value={4} source="database" onChanged={noop} />);
+      const input = view.container.querySelector('input[type="number"]') as HTMLInputElement;
+      act(() => setNativeValue(input, "10"));
+
+      const save = Array.from(view.container.querySelectorAll("button")).find((b) =>
+        (b.textContent ?? "").includes("Save"),
+      )!;
+      await act(async () => {
+        save.click();
+      });
+      await act(async () => {});
+
+      const text = view.container.textContent ?? "";
+      expect(text).toContain(RESUME_THRESHOLD_DETAIL);
+      expect(text).not.toContain("Unprocessable Entity");
     });
   });
 });

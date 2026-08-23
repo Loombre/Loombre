@@ -82,7 +82,11 @@ import {
   validateAgainstJsonSchema,
   type JsonSchemaLike,
 } from "../../../lib/settings-schema-widget.js";
-import { apiPut, LoombreApiError } from "../../../lib/api-client.js";
+import { apiPut } from "../../../lib/api-client.js";
+// browser-admin-F5: error surfaces route through apiErrorMessage, never
+// a bare `err.message` — the RFC 9457 `detail` is the half that says
+// what actually went wrong (see that module's header).
+import { apiErrorMessage } from "../../../lib/api-error-message.js";
 import type { components } from "@loombre/sdk";
 import styles from "./SettingField.module.css";
 
@@ -248,7 +252,7 @@ export function SettingField({ entry, value, source, onChanged, technicalDetails
       onChanged(result);
       return true;
     } catch (err) {
-      setError(err instanceof LoombreApiError ? err.message : "Failed to save this setting.");
+      setError(apiErrorMessage(err, "Failed to save this setting."));
       return false;
     } finally {
       setSaving(false);

@@ -66,7 +66,11 @@ import { RowMenu } from "../RowMenu.js";
 import { AddUserSheet } from "./AddUserSheet.js";
 import { ResetPasswordDialog } from "./ResetPasswordDialog.js";
 import { InvitesPanel } from "./InvitesPanel.js";
-import { apiDelete, apiGet, apiPatch, apiPut, LoombreApiError } from "../../../lib/api-client.js";
+import { apiDelete, apiGet, apiPatch, apiPut } from "../../../lib/api-client.js";
+// browser-admin-F5: error surfaces route through apiErrorMessage, never
+// a bare `err.message` — the RFC 9457 `detail` is the half that says
+// what actually went wrong (see that module's header).
+import { apiErrorMessage } from "../../../lib/api-error-message.js";
 import { enumLabel, MEDIA_KIND_LABEL, USER_ROLE_LABEL } from "../../../lib/enum-labels.js";
 import styles from "./shared.module.css";
 
@@ -92,7 +96,7 @@ function EditUserModal({ user, onClose, onUpdated }: { user: User; onClose: () =
       onUpdated(updated);
       onClose();
     } catch (err) {
-      setError(err instanceof LoombreApiError ? err.message : "Failed to update user.");
+      setError(apiErrorMessage(err, "Failed to update user."));
       setSubmitting(false);
     }
   }
@@ -143,7 +147,7 @@ function LibraryAccessModal({ user, onClose }: { user: User; onClose: () => void
         });
         setGranted(grantedIds);
       })
-      .catch((err) => setError(err instanceof LoombreApiError ? err.message : "Failed to load library access."));
+      .catch((err) => setError(apiErrorMessage(err, "Failed to load library access.")));
   }, [user.id]);
 
   async function toggle(lib: Library): Promise<void> {
@@ -162,7 +166,7 @@ function LibraryAccessModal({ user, onClose }: { user: User; onClose: () => void
         return next;
       });
     } catch (err) {
-      setError(err instanceof LoombreApiError ? err.message : "Failed to update access.");
+      setError(apiErrorMessage(err, "Failed to update access."));
     } finally {
       setSaving((prev) => {
         const next = new Set(prev);
@@ -273,7 +277,7 @@ export function UsersSection({ heading }: { heading: string | null }): React.JSX
   function reload(): void {
     apiGet("/users", { params: { query: { limit: 200 } } })
       .then((page) => setUsers(page.items))
-      .catch((err) => setError(err instanceof LoombreApiError ? err.message : "Failed to load users."));
+      .catch((err) => setError(apiErrorMessage(err, "Failed to load users.")));
   }
 
   useEffect(reload, []);
@@ -289,7 +293,7 @@ export function UsersSection({ heading }: { heading: string | null }): React.JSX
       await apiDelete("/users/{id}", { params: { path: { id: user.id } } });
       setUsers((prev) => (prev ? prev.filter((u) => u.id !== user.id) : prev));
     } catch (err) {
-      setError(err instanceof LoombreApiError ? err.message : "Failed to delete user.");
+      setError(apiErrorMessage(err, "Failed to delete user."));
     }
   }
 

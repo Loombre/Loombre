@@ -36,7 +36,11 @@ import { Button } from "../../ui/Button.js";
 import { SecretReveal } from "../../ui/SecretReveal.js";
 import { Select } from "../../ui/Select.js";
 import { Tag } from "../../ui/Chip.js";
-import { apiGet, apiPost, LoombreApiError } from "../../../lib/api-client.js";
+import { apiGet, apiPost } from "../../../lib/api-client.js";
+// browser-admin-F5: error surfaces route through apiErrorMessage, never
+// a bare `err.message` — the RFC 9457 `detail` is the half that says
+// what actually went wrong (see that module's header).
+import { apiErrorMessage } from "../../../lib/api-error-message.js";
 import { MEDIA_KIND_LABEL, enumLabel } from "../../../lib/enum-labels.js";
 import styles from "./shared.module.css";
 
@@ -141,7 +145,7 @@ export function CreateInviteSheet({
       setReveal({ invite: res.invite, link });
       onCreated(res.invite);
     } catch (err) {
-      setError(err instanceof LoombreApiError ? err.message : "Failed to create invite.");
+      setError(apiErrorMessage(err, "Failed to create invite."));
     } finally {
       setSubmitting(false);
     }

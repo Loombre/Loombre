@@ -21,6 +21,9 @@ const apiDeleteMock = vi.fn();
 
 class FakeApiError extends Error {}
 
+const EMAIL_CONFLICT_DETAIL = "A user with this email address already exists.";
+const GRANT_CONFLICT_DETAIL = "That library was removed while this modal was open.";
+
 vi.mock("../../../lib/api-client.js", () => ({
   apiGet: (...args: unknown[]) => apiGetMock(...args),
   apiPost: (...args: unknown[]) => apiPostMock(...args),
@@ -174,5 +177,71 @@ describe("UsersSection — Lane D additions", () => {
     await render();
     const heading = view!.container.querySelector("h2");
     expect(heading?.textContent).toBe("Active Users · 2");
+  });
+
+  // browser-admin-F5: the modal used to render `err.message`, which the
+  // SDK built from the RFC 9457 problem TITLE alone — an admin who typed a
+  // taken address saw the literal word "Conflict" and nothing about which
+  // field was wrong or why. The server's `detail` is the only actionable
+  // half of the document, so it is what the surface must show.
+  it("browser-admin-F5: EditUserModal renders the server's 409 detail sentence, never the bare problem title", async () => {
+    apiPatchMock.mockRejectedValue(
+      Object.assign(new FakeApiError("Conflict"), {
+        problem: { type: "about:blank", title: "Conflict", status: 409, detail: EMAIL_CONFLICT_DETAIL },
+      }),
+    );
+    await render();
+    await click(rowMenuTriggers().find((b) => b.getAttribute("aria-label") === "Manage june")!);
+    const editAction = Array.from(view!.container.querySelectorAll('[role="menuitem"]')).find(
+      (el) => (el.textContent ?? "").trim() === "Edit",
+    ) as HTMLButtonElement;
+    await click(editAction);
+
+    const save = Array.from(view!.container.querySelectorAll("button")).find(
+      (b) => (b.textContent ?? "").trim() === "Save",
+    ) as HTMLButtonElement;
+    await click(save);
+    await act(async () => {});
+
+    const text = view!.container.textContent ?? "";
+    expect(text).toContain(EMAIL_CONFLICT_DETAIL);
+    expect(text).not.toContain("Conflict");
+  });
+
+  it("browser-admin-F5: the library-access modal surfaces the detail of a failed grant too", async () => {
+    apiGetMock.mockImplementation((path: string) => {
+      if (path === "/users") return Promise.resolve({ items: [ADMIN, NO_EMAIL_USER], nextCursor: null });
+      if (path === "/users/me") return Promise.resolve(ADMIN);
+      if (path === "/invites") return Promise.resolve({ items: [], nextCursor: null });
+      if (path === "/libraries")
+        return Promise.resolve({
+          items: [{ id: "lib-1", name: "Movies", mediaKind: "movie", contentClass: "general" }],
+          nextCursor: null,
+        });
+      if (path === "/libraries/{id}/permissions") return Promise.resolve({ permissions: [] });
+      return Promise.reject(new Error(`unexpected GET ${path}`));
+    });
+    apiPutMock.mockRejectedValue(
+      Object.assign(new FakeApiError("Conflict"), {
+        problem: { title: "Conflict", status: 409, detail: GRANT_CONFLICT_DETAIL },
+      }),
+    );
+    await render();
+    await click(rowMenuTriggers().find((b) => b.getAttribute("aria-label") === "Manage june")!);
+    const accessAction = Array.from(view!.container.querySelectorAll('[role="menuitem"]')).find((el) =>
+      (el.textContent ?? "").trim().startsWith("Library access"),
+    ) as HTMLButtonElement;
+    await click(accessAction);
+    await act(async () => {});
+
+    const row = Array.from(view!.container.querySelectorAll("label")).find((l) =>
+      (l.textContent ?? "").includes("Movies"),
+    )!;
+    await click(row.querySelector('input[type="checkbox"]') as HTMLInputElement);
+    await act(async () => {});
+
+    const text = view!.container.textContent ?? "";
+    expect(text).toContain(GRANT_CONFLICT_DETAIL);
+    expect(text).not.toContain("Conflict");
   });
 });
