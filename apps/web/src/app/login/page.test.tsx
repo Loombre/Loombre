@@ -300,3 +300,129 @@ describe("LoginPage — M8 forgot-link gating + M14 must-change routing", () => 
     expect(getAuthStore().isAuthenticated()).toBe(false);
   });
 });
+
+// ── browser-shell-browse-F1 (2026-08-20/21 QA, P2): the other end of the
+//    auth-loss redirect. AppShell now sends a viewer whose session died on
+//    /browse?library=… to `/login?next=%2Fbrowse%3Flibrary%3Dabc`; this
+//    page has to honour that (and refuse to be an open redirect while it
+//    does — the parameter is attacker-supplied by construction, anyone can
+//    mail a /login?next=… link). lib/auth-return-path.test.ts owns the full
+//    sanitizer table; these tests are the wiring. ─────────────────────────
+describe("LoginPage — return path (browser-shell-browse-F1)", () => {
+  let view: TestRender | null = null;
+  let getSpy: ReturnType<typeof vi.spyOn>;
+  let postSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    routerPush.mockReset();
+    routerReplace.mockReset();
+    apiPatchMock.mockReset();
+    stubMatchMedia();
+    window.localStorage.clear();
+    getAuthStore().clear();
+    getAuthStore().setServerUrl("https://loombre.example.com");
+    getSpy = vi.spyOn(LoombreClient.prototype, "get").mockResolvedValue(CAPABILITIES_RESET_UNAVAILABLE);
+    postSpy = vi.spyOn(LoombreClient.prototype, "post");
+    window.history.replaceState({}, "", "/login");
+  });
+
+  afterEach(() => {
+    view?.unmount();
+    view = null;
+    getSpy.mockRestore();
+    postSpy.mockRestore();
+    vi.unstubAllGlobals();
+    getAuthStore().clear();
+    window.history.replaceState({}, "", "/");
+  });
+
+  async function signInOn(url: string): Promise<void> {
+    window.history.replaceState({}, "", url);
+    view = renderIntoBody(<LoginPage />);
+    await act(async () => {});
+    const label = Array.from(view.container.querySelectorAll("label")).find((l) =>
+      (l.textContent ?? "").startsWith("Username or email"),
+    )!;
+    const password = Array.from(view.container.querySelectorAll("label")).find((l) =>
+      (l.textContent ?? "").startsWith("Password"),
+    )!;
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+    for (const [field, value] of [
+      [label.querySelector("input")!, "june"],
+      [password.querySelector("input")!, "correct horse battery"],
+    ] as Array<[HTMLInputElement, string]>) {
+      setter.call(field, value);
+      field.dispatchEvent(new Event("input", { bubbles: true }));
+    }
+    const button = Array.from(view.container.querySelectorAll("button")).find(
+      (b) => (b.textContent ?? "").trim() === "Sign in",
+    )!;
+    await act(async () => {
+      button.click();
+    });
+  }
+
+  it("returns the viewer to where their session died instead of /home", async () => {
+    postSpy.mockResolvedValue(tokenPair(false));
+    await signInOn("/login?next=%2Fbrowse%3Flibrary%3Dabc");
+
+    expect(routerReplace).toHaveBeenCalledWith("/browse?library=abc");
+    expect(routerReplace).not.toHaveBeenCalledWith("/home");
+  });
+
+  it("still goes to /home when there is no return path", async () => {
+    postSpy.mockResolvedValue(tokenPair(false));
+    await signInOn("/login");
+
+    expect(routerReplace).toHaveBeenCalledWith("/home");
+  });
+
+  it("refuses an off-origin return path (open-redirect guard)", async () => {
+    postSpy.mockResolvedValue(tokenPair(false));
+    await signInOn("/login?next=https%3A%2F%2Fevil.example.com%2F");
+
+    expect(routerReplace).toHaveBeenCalledWith("/home");
+    for (const call of routerReplace.mock.calls) expect(String(call[0])).not.toContain("evil.example.com");
+  });
+
+  it("honours the return path after the must-change-password step too", async () => {
+    postSpy.mockResolvedValue(tokenPair(true));
+    apiPatchMock.mockResolvedValue({});
+    await signInOn("/login?next=%2Fwatchlist");
+
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+    for (const [labelText, value] of [
+      ["Temporary password", "correct horse battery"],
+      ["New password", "a brand new password"],
+      ["Confirm new password", "a brand new password"],
+    ]) {
+      const field = Array.from(view!.container.querySelectorAll("label"))
+        .find((l) => (l.textContent ?? "").startsWith(labelText!))!
+        .querySelector("input")!;
+      setter.call(field, value);
+      field.dispatchEvent(new Event("input", { bubbles: true }));
+    }
+    const button = Array.from(view!.container.querySelectorAll("button")).find(
+      (b) => (b.textContent ?? "").trim() === "Continue",
+    )!;
+    await act(async () => {
+      button.click();
+    });
+
+    expect(routerReplace).toHaveBeenCalledWith("/watchlist");
+  });
+
+  it("an already-signed-in viewer landing on /login?next=… is sent to the return path", async () => {
+    getAuthStore().applyTokenPair({
+      accessToken: "access-1",
+      refreshToken: "refresh-1",
+      accessTokenExpiresAtMs: 9_999_999_999_999,
+      deviceId: "device-1",
+    });
+    window.history.replaceState({}, "", "/login?next=%2Fwatchlist");
+    view = renderIntoBody(<LoginPage />);
+    await act(async () => {});
+
+    expect(routerReplace).toHaveBeenCalledWith("/watchlist");
+  });
+});

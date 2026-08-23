@@ -1,0 +1,71 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+
+/* Loombre :: apps/web/src/components/shell/SessionEndedNotice.module.css
+ *
+ * Its own module rather than a reach into AuthScreen.module.css or
+ * AppShell.module.css — the same directory-ownership convention
+ * RestrictedLockControl.module.css states in its own header. Only the
+ * three shapes this notice adds live here; the page/brand/wordmark
+ * chrome around them is AuthScreen's.
+ *
+ * .heading mirrors AuthScreen's own `.formHeading` recipe (mono, 0.18em,
+ * uppercase, muted) so the notice sits at the same optical level as the
+ * "Sign in to this server" heading it replaces; .action mirrors
+ * ui/Button.module.css's `.button` + `.primary` (pill, 44px touch-target
+ * floor, accent fill, currentcolor inset focus ring) because it IS that
+ * control — an anchor only because it must survive a stalled router (see
+ * SessionEndedNotice.tsx's header).
+ */
+
+.notice {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-sm);
+  text-align: center;
+}
+
+.heading {
+  font-family: var(--font-mono);
+  font-size: var(--mono-md);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.body {
+  margin: 0;
+  font-size: var(--text-sm);
+  line-height: var(--leading-normal);
+  color: var(--color-text-secondary);
+}
+
+.action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: var(--space-xs) var(--space-lg);
+  border: 1px solid transparent;
+  border-radius: var(--radius-pill);
+  background: var(--color-accent);
+  color: var(--color-accent-text);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  text-decoration: none;
+  transition:
+    transform var(--motion-fast) var(--ease-out),
+    background-color var(--motion-fast) var(--ease-out);
+}
+
+.action:active {
+  transform: scale(0.97);
+  transition-duration: calc(var(--motion-fast) / 2);
+}
+
+/* Filled control: the ring is currentcolor, never the amber --color-focus
+   (which measures ~1.1:1 on the accent fill) — ui/Button.module.css's
+   W3-R invariant, restated because this anchor can't inherit it. */
+.action:focus-visible {
+  box-shadow: inset 0 0 0 3px currentcolor;
+}

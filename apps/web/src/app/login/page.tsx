@@ -101,6 +101,12 @@ import { defaultServerUrlGuess, describeServerUrl } from "../../lib/server-url.j
 // public client. LoombreApiError here is the identical class api-client.js
 // re-exports from @loombre/sdk — one import above already brought it in.
 import { apiPatch } from "../../lib/api-client.js";
+// browser-shell-browse-F1: AppShell sends a viewer whose session died on
+// /browse?library=… here as `/login?next=%2Fbrowse%3Flibrary%3Dabc`. The
+// reader sanitizes before returning anything (open-redirect guard — this
+// value is attacker-supplied by construction), so `?? "/home"` below is
+// both the no-parameter default AND the refusal path.
+import { readReturnPathFromLocation } from "../../lib/auth-return-path.js";
 import { ServerIndicator } from "./ServerIndicator.js";
 import styles from "./page.module.css";
 
@@ -151,7 +157,7 @@ export default function LoginPage(): React.JSX.Element {
   useEffect(() => {
     const store = getAuthStore();
     if (store.isAuthenticated()) {
-      router.replace("/home");
+      router.replace(readReturnPathFromLocation() ?? "/home");
       return;
     }
     const remembered = window.localStorage.getItem(SERVER_URL_KEY);
@@ -209,7 +215,7 @@ export default function LoginPage(): React.JSX.Element {
       if (pair.mustChangePassword) {
         setMustChange(true);
       } else {
-        router.replace("/home");
+        router.replace(readReturnPathFromLocation() ?? "/home");
       }
     } catch (err) {
       if (err instanceof LoombreApiError) {
@@ -238,7 +244,9 @@ export default function LoginPage(): React.JSX.Element {
       // file's import comment). G10: currentPassword rides along, proving
       // the temporary password the user just signed in with.
       await apiPatch("/users/me", { body: { password: newPassword, currentPassword: tempPassword } });
-      router.replace("/home");
+      // Same destination the ordinary path takes — a forced password change
+      // is a step in this sign-in, not a different one.
+      router.replace(readReturnPathFromLocation() ?? "/home");
     } catch (err) {
       if (isCurrentPasswordInvalid(err)) {
         setTempPasswordError(err instanceof LoombreApiError ? err.message : "Current password is incorrect.");
