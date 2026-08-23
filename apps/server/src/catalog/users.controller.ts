@@ -40,6 +40,17 @@
 // be an uncaught 23505 rendered as a generic 500; both constraints are
 // classified and answered 409 now (see uniqueViolationConstraint below and
 // apps/server/test/users-duplicate-conflict.e2e.spec.ts).
+//
+// api-validation-F3 (same run): updateMe's birthDate gets R-F4's treatment
+// too — `typeof === "string"` was the whole check, so a malformed date
+// reached the Postgres `date` cast and 500'd, and a LOOSELY-parseable one
+// ("now()", "03/14/1988") was stored as a date the caller never sent. It
+// is format-checked against the contract's `format: date` now (common/
+// iso-date.ts, apps/server/test/users-birthdate-validation.e2e.spec.ts).
+// PATCH /users/me is the ONLY request path in this server that accepts a
+// birthDate (updateUserAdmin/createUser take no such member, and
+// UpdateMeRequest is the only request schema in openapi.yaml declaring
+// one) — if you ever add a second, route it through isValidIsoDate.
 
 import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post, Put, Query, Req, UseFilters } from "@nestjs/common";
 import {
@@ -66,6 +77,7 @@ import { HashService } from "../common/hash.service.js";
 import { AnomalyLogService } from "../common/anomaly-log.service.js";
 import { CurrentPasswordRateLimiterService } from "../common/current-password-rate-limiter.service.js";
 import { requireCurrentPassword } from "../common/require-current-password.js";
+import { isValidIsoDate } from "../common/iso-date.js";
 import { RateLimitExceptionFilter } from "../common/rate-limit-exception.filter.js";
 import { MailDispatchService } from "../mail/mail-dispatch.service.js";
 import { MailConfigService } from "../mail/mail-config.service.js";
@@ -396,14 +408,43 @@ export class UsersController {
       }
     }
 
+    // api-validation-F3 (QA 2026-08-21, P1): birthDate gets email's R-F4
+    // treatment at last. `typeof === "string"` used to be the WHOLE check
+    // here, so any string travelled verbatim into updateUserSelf and the
+    // Postgres `date` column — where it either blew up (22007/22008 out of
+    // the driver, uncaught, rendered `urn:loombre:problem:internal` **500**
+    // for a plain client typo: the cited defect) or, worse, was quietly
+    // ACCEPTED by Postgres' deliberately-loose date input and stored as a
+    // value the caller never sent (`now()` -> today's date; `03/14/1988`
+    // read per DateStyle). The second half matters more than it looks:
+    // birth_date is resolve-clearance.ts's gate 2, so a silently-wrong
+    // date moves a user across the age boundary that unlocks restricted
+    // content. Both are closed by validating the caller's own string
+    // BEFORE the cast, against the exact shape the contract declares
+    // (`UpdateMeRequest.birthDate: { type: [string,'null'], format: date }`
+    // — an RFC 3339 full-date), and 422ing on anything else (a response
+    // this operation already declares). Present-but-not-a-string still
+    // clears, unchanged: that is this file's null-to-clear convention for
+    // every nullable member (email/displayName/maxContentRating), not part
+    // of the format gap.
+    let birthDateInput: string | null | undefined;
+    if (body["birthDate"] !== undefined) {
+      if (typeof body["birthDate"] === "string") {
+        if (!isValidIsoDate(body["birthDate"])) {
+          throw unprocessableEntity("birthDate must be a calendar date in YYYY-MM-DD form.", instance);
+        }
+        birthDateInput = body["birthDate"];
+      } else {
+        birthDateInput = null;
+      }
+    }
+
     const result = await updateUserSelf(this.dbProvider.db, userId, {
       // M1: UpdateMeRequest's email is now `[string, 'null']` — present-but-
       // not-a-string (i.e. explicit `null`) clears it, matching birthDate's
       // own established null-to-clear convention below.
       ...(emailInput !== undefined ? { email: emailInput } : {}),
-      ...(body["birthDate"] !== undefined
-        ? { birthDate: typeof body["birthDate"] === "string" ? body["birthDate"] : null }
-        : {}),
+      ...(birthDateInput !== undefined ? { birthDate: birthDateInput } : {}),
       ...(body["displayName"] !== undefined
         ? { displayName: typeof body["displayName"] === "string" ? body["displayName"] : null }
         : {}),
