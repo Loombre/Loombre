@@ -4,8 +4,13 @@
 // Topbar search-as-you-type: same debounced GET /search + GET /people flow
 // as the full /search page (components/browse/SearchPanel.tsx), rendered
 // in a glass popover so search is reachable from any authenticated route,
-// not just the dedicated page. Enter with no result highlighted falls
-// through to the full page (?q=...); Escape/outside-click closes.
+// not just the dedicated page. Enter activates whichever result is
+// currently highlighted (SearchPanel.tsx's activeIndex, index 0 by default
+// the instant any results exist — arrow keys move it, no press required
+// first, same auto-highlight-first-result convention other command
+// palettes/search UIs use); it falls through to the full page (?q=...)
+// only when there is nothing to activate at all (zero results, or an empty
+// query). Escape/outside-click closes.
 //
 // Wave 2 L7 (⌘K polish, README "Interactions → Keyboard"): this file had
 // NO keyboard shortcut at all before this lane — opening it required

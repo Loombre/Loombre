@@ -20,6 +20,12 @@
 // hasRestrictedZoneEntitlement predicate from restricted-zone-count.js is
 // left untouched via importActual, so this test exercises the actual
 // fail-closed predicate, not a stand-in for it.
+//
+// `accessTokenState.value` defaults to null (the token most of this file's
+// describe blocks want: instant local screen/action matches only, never the
+// debounced catalog SearchPanel, which requires a non-null token to mount)
+// — the browser-shell-browse-F4 describe block below sets it to a real
+// token for its one catalog-Enter-key case, reset to null in its afterEach.
 
 import { act } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -31,13 +37,17 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: pushMock, replace: replaceMock }),
 }));
 
+const accessTokenState = vi.hoisted(() => ({ value: null as string | null }));
+const apiGetMock = vi.hoisted(() => vi.fn());
+
+vi.mock("../../lib/api-client.js", () => ({
+  apiGet: (...args: unknown[]) => apiGetMock(...args),
+}));
+
 vi.mock("../../lib/auth-store.js", () => ({
   getAuthStore: () => ({
     getSnapshot: () => ({ serverUrl: "https://loombre.local" }),
-    // Resolves to null and stays null: this test only exercises the
-    // instant local screen/action match list, never the debounced
-    // catalog SearchPanel (which requires a non-null token to mount).
-    getAccessToken: () => Promise.resolve(null),
+    getAccessToken: () => Promise.resolve(accessTokenState.value),
     logout: () => Promise.resolve(),
   }),
 }));
@@ -173,5 +183,73 @@ describe("QuickSearch — Restricted palette entry entitlement wiring", () => {
     // the ungated Sign out action still works for everyone
     await typeQuery(view, "sign");
     expect(actionEntryLabels(view)).toContain("Sign out");
+  });
+});
+
+// browser-shell-browse-F4 (P3 QA lead): this file's OWN header comment said
+// "Enter with no result highlighted falls through to the full page" — but
+// SearchPanel's activeIndex has defaulted to 0 (and been reset to 0 on every
+// fresh result set) since this file's very first commit, so a highlight
+// always exists the instant results do; Enter has never actually needed an
+// arrow-key press first. That's the SAME auto-highlight-first-result
+// convention command palettes/search UIs commonly use (VS Code's Cmd+K,
+// Spotlight) — a real UX choice, not a bug — so the fix here is the doc,
+// not the behavior: this locks in the real contract (Enter activates
+// whatever is highlighted, index 0 by default, only falling through to
+// /search when there are zero results) so the header comment can't drift
+// from it silently again.
+const MOVIE = {
+  itemType: "movie" as const,
+  item: {
+    id: "movie-1",
+    libraryId: "lib-1",
+    itemType: "movie" as const,
+    title: "Low Orbit",
+    sortTitle: "Low Orbit",
+    year: 2025,
+    communityRating: null,
+    contentClass: "general" as const,
+    addedAtMs: 0,
+    updatedAtMs: 0,
+    contentRating: "R",
+    runtimeMs: 6_600_000,
+    overview: null,
+    genres: [],
+    images: [],
+  },
+};
+
+describe("QuickSearch — browser-shell-browse-F4: Enter activates the default-highlighted result", () => {
+  let view: TestRender | null = null;
+
+  beforeEach(() => {
+    pushMock.mockReset();
+    apiGetMock.mockReset();
+    apiGetMock.mockImplementation((path: string) => {
+      if (path === "/search") return Promise.resolve({ items: [MOVIE], nextCursor: null });
+      if (path === "/people") return Promise.resolve({ items: [], nextCursor: null });
+      return Promise.reject(new Error(`unexpected apiGet(${path})`));
+    });
+    accessTokenState.value = "tok";
+  });
+
+  afterEach(() => {
+    view?.unmount();
+    view = null;
+    accessTokenState.value = null;
+  });
+
+  it("navigates to the first (default-highlighted) catalog result on Enter, with no arrow-key press first", async () => {
+    restrictedZoneCountMock.mockReturnValue({ count: null, loading: false });
+    view = renderIntoBody(<QuickSearch isAdmin={false} />);
+    await typeQuery(view, "low orbit");
+    // Let the 250ms debounce fire + the /search+/people fetch resolve.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 260));
+    });
+
+    fieldInput(view).dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+
+    expect(pushMock).toHaveBeenCalledWith("/items/movie/movie-1");
   });
 });
