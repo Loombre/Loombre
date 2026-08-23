@@ -4,6 +4,12 @@
 // Wires the generated @loombre/sdk LoombreClient to the AuthStore: token
 // injection via getAccessToken, plus a reactive 401 retry (the store's
 // handleUnauthorized() is itself single-flight — see auth-store.ts).
+//
+// The retry is NOT unconditional: credential-validation endpoints answer
+// 401 to mean "the secret you just sent is wrong", where refreshing and
+// resending is useless and harmful. shouldRetryAfterUnauthorized()
+// (./credential-endpoints.ts — its own module because api-client.ts is
+// vi.mock()'d wholesale by dozens of component tests) owns that call.
 
 import {
   LoombreApiError,
@@ -15,6 +21,7 @@ import {
   type SuccessResponseFor,
 } from "@loombre/sdk";
 import { getAuthStore } from "./auth-store.js";
+import { shouldRetryAfterUnauthorized } from "./credential-endpoints.js";
 
 // NOTE: packages/contract/openapi.yaml declares `servers: [{ url: "/v1" }]`,
 // but the actual NestJS app (apps/server/src/main.ts) never calls
@@ -58,7 +65,11 @@ export async function apiGet<P extends PathsWithMethod<"get">>(
   try {
     return await getClient().get(path, options);
   } catch (error) {
-    if (error instanceof LoombreApiError && error.status === 401) {
+    if (
+      error instanceof LoombreApiError &&
+      error.status === 401 &&
+      shouldRetryAfterUnauthorized("GET", path, error)
+    ) {
       const token = await store.handleUnauthorized();
       if (!token) throw error;
       return getClient().get(path, options);
@@ -78,7 +89,11 @@ export async function apiPost<P extends PathsWithMethod<"post">>(
   try {
     return await getClient().post(path, options);
   } catch (error) {
-    if (error instanceof LoombreApiError && error.status === 401) {
+    if (
+      error instanceof LoombreApiError &&
+      error.status === 401 &&
+      shouldRetryAfterUnauthorized("POST", path, error)
+    ) {
       const token = await store.handleUnauthorized();
       if (!token) throw error;
       return getClient().post(path, options);
@@ -96,7 +111,11 @@ export async function apiPut<P extends PathsWithMethod<"put">>(
   try {
     return await getClient().put(path, options);
   } catch (error) {
-    if (error instanceof LoombreApiError && error.status === 401) {
+    if (
+      error instanceof LoombreApiError &&
+      error.status === 401 &&
+      shouldRetryAfterUnauthorized("PUT", path, error)
+    ) {
       const token = await store.handleUnauthorized();
       if (!token) throw error;
       return getClient().put(path, options);
@@ -114,7 +133,11 @@ export async function apiPatch<P extends PathsWithMethod<"patch">>(
   try {
     return await getClient().patch(path, options);
   } catch (error) {
-    if (error instanceof LoombreApiError && error.status === 401) {
+    if (
+      error instanceof LoombreApiError &&
+      error.status === 401 &&
+      shouldRetryAfterUnauthorized("PATCH", path, error)
+    ) {
       const token = await store.handleUnauthorized();
       if (!token) throw error;
       return getClient().patch(path, options);
@@ -132,7 +155,11 @@ export async function apiDelete<P extends PathsWithMethod<"delete">>(
   try {
     return await getClient().delete(path, options);
   } catch (error) {
-    if (error instanceof LoombreApiError && error.status === 401) {
+    if (
+      error instanceof LoombreApiError &&
+      error.status === 401 &&
+      shouldRetryAfterUnauthorized("DELETE", path, error)
+    ) {
       const token = await store.handleUnauthorized();
       if (!token) throw error;
       return getClient().delete(path, options);
