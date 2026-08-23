@@ -61,6 +61,8 @@ import { blurhashToDataUri } from "../../lib/blurhash-canvas.js";
 import { tracksToPlayableQueue } from "../../lib/play-queue.js";
 import { AlbumArt } from "./AlbumArt.js";
 import { useMusicPlayer } from "./MusicPlayerProvider.js";
+import { useDetailFetch } from "../detail/useDetailFetch.js";
+import { DetailLoadError, DetailNotFound } from "../detail/DetailFetchStatus.js";
 import { MusicPlayButton } from "../detail/MusicPlayButton.js";
 import { WatchlistToggle } from "../detail/WatchlistToggle.js";
 import { TrackRow } from "../detail/TrackRow.js";
@@ -129,38 +131,74 @@ export function AlbumDetailScreen({
   accessToken: string;
 }): React.JSX.Element {
   const musicPlayer = useMusicPlayer();
-  const [album, setAlbum] = useState<Album | null>(null);
+
+  // browser-items-F4: the album fetch used to be a bare `.then()` whose
+  // only render gate was `album === null`, so a 404'd id (deleted,
+  // mistyped, or a stale deep link) left the three skeletons below pulsing
+  // forever and its rejection went unhandled. This screen now uses the
+  // same detail/useDetailFetch.ts hook as every OTHER item type
+  // (movie/series/episode/artist/track), so a not-found album reads
+  // "Album not found." here exactly as it does there.
+  const {
+    entity: album,
+    notFound,
+    error,
+    retry,
+  } = useDetailFetch<Album>(() => apiGet("/albums/{id}", { params: { path: { id } } }), id);
+
   const [artist, setArtist] = useState<Artist | null>(null);
   const [tracks, setTracks] = useState<Track[] | null>(null);
+  const [tracksFailed, setTracksFailed] = useState(false);
   const [otherAlbums, setOtherAlbums] = useState<Album[] | null>(null);
 
+  // Artist-derived fetches, keyed on the artist the loaded album names —
+  // previously nested inside the album `.then()`, which is what made that
+  // outer promise's missing `.catch()` swallow-nothing so easy to miss.
+  const artistId = album?.artistId ?? null;
+  useEffect(() => {
+    setArtist(null);
+    setOtherAlbums(null);
+    if (artistId === null) return;
+    let cancelled = false;
+    apiGet("/artists/{id}", { params: { path: { id: artistId } } })
+      .then((ar) => {
+        if (!cancelled) setArtist(ar);
+      })
+      .catch(() => undefined);
+    apiGet("/artists/{id}/albums", { params: { path: { id: artistId }, query: { limit: 100 } } })
+      .then((page) => {
+        if (!cancelled) setOtherAlbums(page.items.filter((other) => other.id !== id));
+      })
+      .catch(() => {
+        if (!cancelled) setOtherAlbums([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [artistId, id]);
+
+  // Fired in parallel with the album fetch (not after it) — one round trip
+  // saved on the happy path. Its own `.catch` keeps a failed track list
+  // from pulsing forever, and keeps the rejection off the console when the
+  // id 404s and BOTH requests fail.
   useEffect(() => {
     let cancelled = false;
-    apiGet("/albums/{id}", { params: { path: { id } } }).then((a) => {
-      if (cancelled) return;
-      setAlbum(a);
-      apiGet("/artists/{id}", { params: { path: { id: a.artistId } } })
-        .then((ar) => {
-          if (cancelled) return;
-          setArtist(ar);
-        })
-        .catch(() => undefined);
-      apiGet("/artists/{id}/albums", { params: { path: { id: a.artistId }, query: { limit: 100 } } })
-        .then((page) => {
-          if (cancelled) return;
-          setOtherAlbums(page.items.filter((other) => other.id !== id));
-        })
-        .catch(() => {
-          if (!cancelled) setOtherAlbums([]);
-        });
-    });
-    apiGet("/albums/{id}/tracks", { params: { path: { id }, query: { limit: 200 } } }).then((page) => {
-      if (!cancelled) setTracks(page.items);
-    });
+    setTracks(null);
+    setTracksFailed(false);
+    apiGet("/albums/{id}/tracks", { params: { path: { id }, query: { limit: 200 } } })
+      .then((page) => {
+        if (!cancelled) setTracks(page.items);
+      })
+      .catch(() => {
+        if (!cancelled) setTracksFailed(true);
+      });
     return () => {
       cancelled = true;
     };
   }, [id]);
+
+  if (notFound) return <DetailNotFound label="Album" />;
+  if (error) return <DetailLoadError message={error} onRetry={retry} />;
 
   if (!album) {
     return (
@@ -177,6 +215,25 @@ export function AlbumDetailScreen({
   const isThisAlbumPlaying = musicPlayer.current?.albumId === album.id && musicPlayer.isPlaying;
   const hasOtherAlbums = (otherAlbums?.length ?? 0) > 0;
   const hasQueue = musicPlayer.queueState.items.length > 0;
+
+  // One element, rendered in BOTH the desktop and mobile trees (they
+  // coexist in the DOM, CSS-swapped) so the two can never drift apart.
+  const trackSection =
+    tracks === null ? (
+      tracksFailed ? (
+        <div className={styles.emptyNote}>Failed to load tracks.</div>
+      ) : (
+        <Skeleton radius="md" height={200} />
+      )
+    ) : sortedTracks.length === 0 ? (
+      <div className={styles.emptyNote}>No tracks found.</div>
+    ) : (
+      <div className={styles.trackList}>
+        {sortedTracks.map((track, index) => (
+          <TrackRow key={track.id} track={track} albumTracks={sortedTracks} index={index} />
+        ))}
+      </div>
+    );
 
   return (
     <div className={styles.page}>
@@ -210,17 +267,7 @@ export function AlbumDetailScreen({
         <div className={styles.body} data-has-more-albums={hasOtherAlbums}>
           <div>
             <div className={styles.sectionEyebrow}>TRACKS</div>
-            {tracks === null ? (
-              <Skeleton radius="md" height={200} />
-            ) : sortedTracks.length === 0 ? (
-              <div className={styles.emptyNote}>No tracks found.</div>
-            ) : (
-              <div className={styles.trackList}>
-                {sortedTracks.map((track, index) => (
-                  <TrackRow key={track.id} track={track} albumTracks={sortedTracks} index={index} />
-                ))}
-              </div>
-            )}
+            {trackSection}
           </div>
           {hasOtherAlbums && (
             <div>
@@ -268,17 +315,7 @@ export function AlbumDetailScreen({
             <span className={styles.upNextCount}>{musicPlayer.queueState.items.length}</span>
           </button>
         )}
-        {tracks === null ? (
-          <Skeleton radius="md" height={200} />
-        ) : sortedTracks.length === 0 ? (
-          <div className={styles.emptyNote}>No tracks found.</div>
-        ) : (
-          <div className={styles.trackList}>
-            {sortedTracks.map((track, index) => (
-              <TrackRow key={track.id} track={track} albumTracks={sortedTracks} index={index} />
-            ))}
-          </div>
-        )}
+        {trackSection}
       </div>
     </div>
   );

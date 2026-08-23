@@ -12,9 +12,32 @@ import { renderIntoBody, type TestRender } from "../ui/test-render.js";
 // use-watched-state.test.tsx's established apiGet-mocking convention.
 const apiGetMock = vi.fn();
 
-vi.mock("../../lib/api-client.js", () => ({
-  apiGet: (...args: unknown[]) => apiGetMock(...args),
-}));
+// Same FakeLoombreApiError convention as detail/MovieDetailScreen.test.tsx:
+// mocking the module's own LoombreApiError export keeps the `instanceof`
+// check inside detail/useDetailFetch.ts (imported against this same mocked
+// module) working against a class the test itself controls. The class is
+// declared INSIDE the factory, unlike that file: this spec statically
+// imports MusicPlayerProvider, whose module graph pulls lib/api-client.js
+// while the imports are still being evaluated, so the hoisted factory runs
+// BEFORE a top-level `class` binding is initialized ("Cannot access
+// 'FakeLoombreApiError' before initialization"). It is read back off the
+// mocked module below.
+vi.mock("../../lib/api-client.js", () => {
+  class FakeLoombreApiError extends Error {
+    readonly status: number;
+    constructor(status: number, message = "Request failed") {
+      super(message);
+      this.status = status;
+    }
+  }
+  return {
+    apiGet: (...args: unknown[]) => apiGetMock(...args),
+    LoombreApiError: FakeLoombreApiError,
+  };
+});
+
+const { LoombreApiError } = await import("../../lib/api-client.js");
+const FakeLoombreApiError = LoombreApiError as unknown as new (status: number, message?: string) => Error;
 
 // Imported AFTER the mock so the module under test picks it up (same
 // convention as use-watched-state.test.tsx).
@@ -75,11 +98,18 @@ function makeTrack(id: string, trackNumber: number, title: string) {
 
 const OTHER_ALBUM = { ...ALBUM, id: "album-2", title: "Marrow" };
 
-function installApiGetMock(opts: { otherAlbums?: unknown[] } = {}): void {
+function installApiGetMock(
+  opts: {
+    otherAlbums?: unknown[];
+    album?: () => Promise<unknown>;
+    tracks?: () => Promise<unknown>;
+  } = {},
+): void {
   apiGetMock.mockImplementation((path: string) => {
-    if (path === "/albums/{id}") return Promise.resolve(ALBUM);
+    if (path === "/albums/{id}") return opts.album ? opts.album() : Promise.resolve(ALBUM);
     if (path === "/artists/{id}") return Promise.resolve(ARTIST);
     if (path === "/albums/{id}/tracks") {
+      if (opts.tracks) return opts.tracks();
       return Promise.resolve({ items: [makeTrack("t3", 3, "Tunnel Light"), makeTrack("t1", 1, "Sodium Glow")], nextCursor: null });
     }
     if (path === "/artists/{id}/albums") {
@@ -226,5 +256,74 @@ describe("AlbumDetailScreen", () => {
     // "Sodium Glow" is trackNumber 1, "Tunnel Light" is trackNumber 3 — the
     // fetch returned them out of order, this asserts the real sort.
     expect(titles[0]).toContain("Sodium Glow");
+  });
+
+  it("REGRESSION GUARD (browser-items-F4): renders 'Album not found.' instead of an infinite skeleton on a 404", async () => {
+    installApiGetMock({
+      album: () => Promise.reject(new FakeLoombreApiError(404, "Not Found")),
+      tracks: () => Promise.reject(new FakeLoombreApiError(404, "Not Found")),
+    });
+    view = renderScreen(makePlayer());
+    await flush();
+
+    expect(view.container.textContent).toContain("Album not found.");
+    // The three loading skeletons must be GONE, not merely joined by the copy.
+    expect(view.container.querySelectorAll('[class*="skeleton"]')).toHaveLength(0);
+  });
+
+  it("REGRESSION GUARD (browser-items-F4): a 404 on both album fetches leaves no unhandled promise rejection", async () => {
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown): void => {
+      unhandled.push(reason);
+    };
+    process.on("unhandledRejection", onUnhandled);
+    try {
+      installApiGetMock({
+        album: () => Promise.reject(new FakeLoombreApiError(404, "Not Found")),
+        tracks: () => Promise.reject(new FakeLoombreApiError(404, "Not Found")),
+      });
+      view = renderScreen(makePlayer());
+      await flush();
+      // Node emits unhandledRejection on the macrotask turn after the
+      // microtask queue drains — give it that turn.
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+    } finally {
+      process.off("unhandledRejection", onUnhandled);
+    }
+
+    expect(unhandled).toHaveLength(0);
+  });
+
+  it("REGRESSION GUARD (browser-items-F4): on a non-404 album failure, renders an error message with a working Retry", async () => {
+    let succeed = false;
+    installApiGetMock({ album: () => (succeed ? Promise.resolve(ALBUM) : Promise.reject(new Error("network down"))) });
+    view = renderScreen(makePlayer());
+    await flush();
+
+    const retryButton = Array.from(view.container.querySelectorAll("button")).find((b) => b.textContent === "Retry");
+    expect(retryButton).toBeDefined();
+    expect(view.container.textContent).not.toContain("not found");
+
+    succeed = true;
+    act(() => {
+      retryButton!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await flush();
+
+    expect(view.container.textContent).toContain("Night Drive Tapes");
+  });
+
+  it("REGRESSION GUARD (browser-items-F4): a failing tracks fetch never leaves the track list skeleton up forever", async () => {
+    installApiGetMock({ tracks: () => Promise.reject(new Error("network down")) });
+    view = renderScreen(makePlayer());
+    await flush();
+
+    // The album itself still renders...
+    expect(view.container.textContent).toContain("Night Drive Tapes");
+    // ...and the track column says so instead of pulsing forever.
+    expect(view.container.textContent).toContain("Failed to load tracks.");
+    expect(view.container.querySelectorAll('[class*="skeleton"]')).toHaveLength(0);
   });
 });
