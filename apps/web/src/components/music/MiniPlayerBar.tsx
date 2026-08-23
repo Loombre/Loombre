@@ -36,6 +36,15 @@ export function MiniPlayerBar(): React.JSX.Element | null {
   const track = player.current;
   if (!track) return null;
 
+  // browser-player-F12: player.durationMs is the provider's confirmed
+  // value, only populated after the active slot's async session-creation
+  // round-trip resolves (MusicPlayerProvider.tsx's loadIntoSlot) — the
+  // queue ENTRY itself already knows its own durationMs synchronously the
+  // instant it becomes current (QueueDrawer's "· 3:24" meta reads the same
+  // field). Prefer the confirmed value once it exists; fall back to the
+  // entry's advertised one instead of "–:–" while the network catches up.
+  const durationMs = player.durationMs ?? track.durationMs ?? null;
+
   const serverUrl = getAuthStore().getSnapshot().serverUrl;
   const coverSrc = accessToken
     ? buildImageUrl({ serverUrl, accessToken, entityType: "track", entityId: track.itemId, kind: "poster", width: 88 })
@@ -73,8 +82,8 @@ export function MiniPlayerBar(): React.JSX.Element | null {
 
       <div className={styles.scrubberArea}>
         <span className={styles.time}>{defaultFormatTime(player.positionMs)}</span>
-        <Scrubber positionMs={player.positionMs} durationMs={player.durationMs} onSeek={player.seekTo} />
-        <span className={styles.time}>{player.durationMs !== null ? defaultFormatTime(player.durationMs) : "–:–"}</span>
+        <Scrubber positionMs={player.positionMs} durationMs={durationMs} onSeek={player.seekTo} />
+        <span className={styles.time}>{durationMs !== null ? defaultFormatTime(durationMs) : "–:–"}</span>
       </div>
 
       <div className={styles.rightControls}>
