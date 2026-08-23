@@ -56,7 +56,7 @@ import {
   type LandingWatch,
   type ListedFragment,
 } from "../../lib/source-time.js";
-import { startRelocationNudge } from "../../lib/relocation-nudge.js";
+import { reopenEndedLevels, startRelocationNudge } from "../../lib/relocation-nudge.js";
 import { useToast } from "../ui/Toast.js";
 import { AmbientBackdrop } from "./AmbientBackdrop.js";
 import { UnavailableScreen } from "./UnavailableScreen.js";
@@ -276,6 +276,14 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
   // playlist re-read once per second (lib/relocation-nudge.ts) instead of
   // waiting out hls.js's own live-refresh cadence. Holds the stop fn.
   const nudgeStopRef = useRef<(() => void) | null>(null);
+  // gap-F4: hard-seek supersession epoch. Each hardSeek() takes a fresh
+  // epoch BEFORE its POST, and only the response whose epoch is still
+  // current may arm the landing watch — "newest wins" must hold on SEEK
+  // order, not 202 ARRIVAL order (two rapid hard seeks whose responses
+  // arrive out of order used to pin the scrubber at the OLDER dead
+  // target). clearLandingWatch() also bumps it, so a soft seek / unmount /
+  // timeout invalidates any still-in-flight arm.
+  const seekEpochRef = useRef(0);
 
   /** The CURRENT LEVEL DETAILS as structural fragments (A2: the LISTED
    *  window — buffer state deliberately plays no part). `null` off the
@@ -297,6 +305,10 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
   }, []);
 
   const clearLandingWatch = useCallback((): void => {
+    // Invalidate any in-flight hard-seek 202 (gap-F4): whatever cleared
+    // the watch — a landing, the timeout, a soft seek, unmount — a stale
+    // response arriving later must not resurrect the relocating state.
+    seekEpochRef.current += 1;
     landingWatchRef.current = null;
     relocatingRef.current = null;
     if (landingTimerRef.current) {
@@ -1118,7 +1130,23 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
   const hardSeek = useCallback(
     (targetMs: number): void => {
       const sessionId = session?.id;
-      if (!sessionId) return;
+      if (!sessionId) {
+        // gap-F4: NEVER a silent drop. No session means nothing can POST
+        // yet (only reachable before the create resolves) — the intent is
+        // already queued in pendingSeekMsRef (seek() pins it before every
+        // dispatch; the attach path replays it), so reflect it in the UI
+        // instead of leaving the scrubber wherever the drag started.
+        const queued = Math.max(0, Math.round(targetMs));
+        pendingSeekMsRef.current = queued;
+        positionRef.current = queued;
+        setPositionMs(queued);
+        return;
+      }
+      // Take the supersession epoch BEFORE the POST: if another hard seek
+      // (or anything that clears the watch) happens while this request is
+      // in flight, this response is stale and must not arm.
+      seekEpochRef.current += 1;
+      const epoch = seekEpochRef.current;
       const hls = hlsRef.current;
       // §9.1.7: carry the quality selector's pinned rung, if any — one
       // write, one restart. `nextLevel` only differs from -1 under a
@@ -1129,6 +1157,11 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
         body: { targetMs: Math.max(0, Math.round(targetMs)), ...(pinnedRung !== undefined ? { rungIndex: pinnedRung } : {}) },
       })
         .then((accepted) => {
+          // gap-F4: superseded while in flight (a newer hard seek took the
+          // epoch, or a soft seek / teardown cleared the watch) — the
+          // newer owner of the relocating state wins; arming here would
+          // pin the scrubber at a DEAD target.
+          if (seekEpochRef.current !== epoch) return;
           const clamped = accepted.targetMs;
           // Arm/re-arm the landing watch against the CURRENT window — a
           // re-seek before landing replaces the watch, and the newest
@@ -1149,10 +1182,13 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
           // playlist, so the landing watch below could never fire — the
           // POST lands, the playlist un-ends, and nobody re-reads it.
           // Entering relocating on an ENDLIST-seen session MUST restart
-          // playlist loading.
-          const levelIndex = hls && hls.currentLevel >= 0 ? hls.currentLevel : 0;
-          const details = hls?.levels[levelIndex]?.details;
-          if (hls && details && details.live === false) {
+          // playlist loading. gap-F4: `startLoad()` ALONE was inert here —
+          // hls.js's shouldLoadPlaylist refuses to reload a VOD
+          // (`details.live === false`) level — so the frozen level(s) must
+          // be re-opened first (reopenEndedLevels, lib/relocation-nudge.ts;
+          // the nudge below repeats it per tick, covering the re-read that
+          // races the worker restart and comes back still-ENDLIST).
+          if (hls && reopenEndedLevels(hls)) {
             hls.startLoad();
           }
           // Discovery-latency fix (2026-08-20): the worker folds the
@@ -1173,6 +1209,10 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
           // the restarted run's segments are the only thing that can grow
           // it. Precise landing: loombre-apple follow-up (§9.1.10 item 5).
           if (!hls) {
+            // gap-F4: a re-seek must SUPERSEDE the previous coarse poll,
+            // not stack a second interval beside it (the overwritten id
+            // leaked and the dead seek could still land).
+            if (coarsePollRef.current) clearInterval(coarsePollRef.current);
             const armedEnd = seekableEndSec(videoRef.current);
             coarsePollRef.current = setInterval(() => {
               const v = videoRef.current;
@@ -1187,6 +1227,10 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
           }
         })
         .catch(() => {
+          // gap-F4: a superseded request's failure is not THIS seek's
+          // failure — clearing here would tear down the NEWER seek's
+          // watch and toast over a seek the user no longer cares about.
+          if (seekEpochRef.current !== epoch) return;
           clearLandingWatch();
           showToast("Seek failed — check the connection and try again.");
         });

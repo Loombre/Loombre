@@ -75,13 +75,92 @@ vi.mock("../../lib/progress-report.js", () => ({
   reportProgressOnUnload: (...args: unknown[]) => reportProgressOnUnload(...args),
 }));
 
+// gap-F4: POST …/seek (the V8 hard-seek endpoint) goes through apiPost —
+// hoisted like the others so the hard-seek tests below can control the 202
+// responses (and their ORDER — the newest-wins re-arm race needs two
+// deferred responses resolved out of order).
+const apiPost = vi.fn();
+
 vi.mock("../../lib/api-client.js", () => ({
   apiGet: (...args: unknown[]) => apiGet(...args),
-  apiPost: vi.fn(),
+  apiPost: (...args: unknown[]) => apiPost(...args),
   apiPut: (...args: unknown[]) => apiPut(...args),
   apiPatch: vi.fn(),
   apiDelete: vi.fn(),
 }));
+
+// ── hls.js mock (gap-F4 hard-seek tests) ─────────────────────────────────
+// VideoPlayer imports hls.js DYNAMICALLY inside the 'hlsjs' attach effect;
+// vitest intercepts that import with this factory. The mock records the
+// calls the V8 hard-seek path drives (startLoad/stopLoad) and exposes
+// `levels`/`currentLevel` so lib/source-time's listedFragments mapping and
+// the §9.1.5 rule 5 (post-ENDLIST) lever have a real surface to act on.
+// Instances register on `hlsInstances` so tests can reach the one the
+// attach effect created.
+interface MockHlsInstance {
+  levels: { details?: { live: boolean; fragments: unknown[] } }[];
+  currentLevel: number;
+  nextLevel: number;
+  autoLevelEnabled: boolean;
+  listeners: Map<string, ((...args: unknown[]) => void)[]>;
+  calls: string[];
+  on(event: string, cb: (...args: unknown[]) => void): void;
+  off(event: string, cb?: (...args: unknown[]) => void): void;
+  loadSource(url: string): void;
+  attachMedia(el: HTMLMediaElement): void;
+  detachMedia(): void;
+  startLoad(pos?: number): void;
+  stopLoad(): void;
+  destroy(): void;
+}
+const hlsInstances: MockHlsInstance[] = [];
+vi.mock("hls.js", () => {
+  class MockHls implements MockHlsInstance {
+    static isSupported = (): boolean => true;
+    static Events = {
+      MANIFEST_PARSED: "hlsManifestParsed",
+      LEVEL_SWITCHED: "hlsLevelSwitched",
+      LEVEL_UPDATED: "hlsLevelUpdated",
+      ERROR: "hlsError",
+    };
+    static ErrorTypes = { NETWORK_ERROR: "networkError", MEDIA_ERROR: "mediaError" };
+    levels: { details?: { live: boolean; fragments: unknown[] } }[] = [];
+    currentLevel = -1;
+    nextLevel = -1;
+    autoLevelEnabled = true;
+    listeners = new Map<string, ((...args: unknown[]) => void)[]>();
+    calls: string[] = [];
+    constructor() {
+      hlsInstances.push(this);
+    }
+    on(event: string, cb: (...args: unknown[]) => void): void {
+      const list = this.listeners.get(event) ?? [];
+      list.push(cb);
+      this.listeners.set(event, list);
+    }
+    off(): void {}
+    emit(event: string, ...args: unknown[]): void {
+      for (const cb of this.listeners.get(event) ?? []) cb(...args);
+    }
+    loadSource(): void {
+      this.calls.push("loadSource");
+    }
+    attachMedia(): void {
+      this.calls.push("attachMedia");
+    }
+    detachMedia(): void {}
+    startLoad(pos?: number): void {
+      this.calls.push(`startLoad(${pos})`);
+    }
+    stopLoad(): void {
+      this.calls.push("stopLoad");
+    }
+    destroy(): void {
+      this.calls.push("destroy");
+    }
+  }
+  return { default: MockHls };
+});
 
 // This file is about playback mechanics, not system notices — the strip's
 // own rendering rules (severity, dismiss, countdown) get their own
@@ -347,6 +426,8 @@ describe("VideoPlayer", () => {
     reportProgressOnUnload.mockReset();
     apiPut.mockReset().mockResolvedValue(undefined);
     apiGet.mockReset().mockResolvedValue({ items: [] });
+    apiPost.mockReset().mockResolvedValue({ targetMs: 0 });
+    hlsInstances.length = 0;
     noticeMockValue = { notice: null, severity: null, serverOffsetMs: 0, dismissed: false, dismiss: vi.fn(), bannerVisible: false };
     mockAccessToken = "test-access-token";
   });
@@ -1154,5 +1235,90 @@ describe("VideoPlayer", () => {
     });
     view = v;
     expect(v!.container.textContent).toContain("Playback failed in this browser");
+  });
+
+  // ── gap-F4: V8 hard seeks must never be silently swallowed ─────────────
+  // Live QA (2026-08-20/21) caught two swallow shapes on the hls.js path:
+  // (1) a post-ENDLIST out-of-window seek POSTs but the client never
+  // re-reads the un-ended playlist (hls.js refuses to reload a VOD level —
+  // BasePlaylistController.shouldLoadPlaylist requires `!details ||
+  // details.live`), so the landing watch can never fire and the seek dies
+  // into the 20 s timeout; (2) a re-seek before landing re-arms on 202
+  // RESPONSE order, not seek order, so out-of-order responses pin the
+  // scrubber at the OLDER dead target. These tests drive the real seek()/
+  // hardSeek() wiring against the mocked hls.js instance above.
+  describe("V8 hard seek (gap-F4)", () => {
+    /** One listed fragment far from source 0, so a small seek target is
+     *  outside the listed window -> classified HARD (POST /seek). PDT is
+     *  the V8 source clock (source ms == programDateTime ms). */
+    function farListedFragment(): unknown {
+      return { programDateTime: 3_600_000, start: 0, duration: 6, relurl: "run0/s000000.m4s" };
+    }
+
+    async function renderHlsReady(): Promise<{ v: TestRender; hls: MockHlsInstance }> {
+      createPlaybackSession.mockReset().mockResolvedValue({ ok: true, session: hlsTranscodeSession() });
+      const v = await renderReady();
+      // The hlsjs attach effect is async (token await + dynamic import) —
+      // one more macro/microtask flush lets it construct the mock instance.
+      await act(async () => {});
+      const hls = hlsInstances[hlsInstances.length - 1];
+      if (!hls) throw new Error("the hlsjs attach effect never constructed an hls.js instance");
+      hls.currentLevel = 0;
+      return { v, hls };
+    }
+
+    it("a post-ENDLIST out-of-window seek POSTs /seek AND re-opens the ENDLIST-frozen level so the reload lever works", async () => {
+      const { v, hls } = await renderHlsReady();
+      view = v;
+      const details = { live: false, fragments: [farListedFragment()] };
+      hls.levels = [{ details }];
+      apiPost.mockResolvedValueOnce({ targetMs: 10_000 });
+
+      await act(async () => button(v, "Forward 10 seconds").click());
+
+      expect(apiPost).toHaveBeenCalledTimes(1);
+      expect(apiPost).toHaveBeenCalledWith(
+        "/playback/sessions/{id}/seek",
+        expect.objectContaining({ body: { targetMs: 10_000 } }),
+      );
+      // §9.1.5 rule 5 / A1: entering relocating on an ENDLIST-seen session
+      // MUST make the playlist reload lever functional again. startLoad()
+      // alone is inert — hls.js's shouldLoadPlaylist refuses VOD levels —
+      // so the level must be re-opened (details.live -> true) first.
+      expect(
+        details.live,
+        "the ENDLIST-frozen level was never re-opened — startLoad()/the nudge reload nothing and the landing watch can never fire",
+      ).toBe(true);
+      expect(hls.calls).toContain("startLoad(undefined)");
+    });
+
+    it("a second hard seek before landing POSTs again and wins even when the 202s arrive out of order (newest-wins re-arm)", async () => {
+      const { v, hls } = await renderHlsReady();
+      view = v;
+      hls.levels = [{ details: { live: true, fragments: [farListedFragment()] } }];
+
+      let resolveFirst: ((r: { targetMs: number }) => void) | null = null;
+      let resolveSecond: ((r: { targetMs: number }) => void) | null = null;
+      apiPost
+        .mockImplementationOnce(() => new Promise((r) => { resolveFirst = r; }))
+        .mockImplementationOnce(() => new Promise((r) => { resolveSecond = r; }));
+
+      await act(async () => button(v, "Forward 10 seconds").click());
+      await act(async () => button(v, "Forward 10 seconds").click());
+      // The owner-pinned contract: a re-seek while relocating issues its
+      // OWN POST — the first swallow shape was "one POST, not two".
+      expect(apiPost).toHaveBeenCalledTimes(2);
+
+      // Out-of-order arrival: the SECOND seek's 202 lands first.
+      await act(async () => { resolveSecond?.({ targetMs: 222_222 }); });
+      await act(async () => { resolveFirst?.({ targetMs: 111_111 }); });
+
+      const slider = v.container.querySelector('[role="slider"]');
+      if (!slider) throw new Error("no scrubber rendered");
+      expect(
+        slider.getAttribute("aria-valuenow"),
+        "the stale FIRST 202 re-armed the landing watch — the newest hard seek must supersede regardless of response order",
+      ).toBe("222222");
+    });
   });
 });
