@@ -37,6 +37,22 @@ export async function getItemById(
 
 export interface ListItemsParams {
   itemType?: ItemType;
+  /**
+   * Remediation adi-F2: restrict the page to this SET of item types — the
+   * many-valued sibling of `itemType` above, for callers (today:
+   * getRecentlyAdded, via apps/server's GET /home/recently-added) whose
+   * response schema only admits a SUBSET of ItemType. It exists because a
+   * caller that filters the returned page itself gets short — often EMPTY —
+   * pages with a non-null `nextCursor`, since the keyset LIMIT was already
+   * spent on rows it then threw away. Filtering here makes `limit` mean
+   * "up to N rows you can actually use".
+   *
+   * An EMPTY array means "no type can match" (kysely renders `eb.or([])` as
+   * `1 = 0`), never "no filter" — a caller computing the set dynamically
+   * must not silently fall back to every type. Omit the key for "no filter".
+   * Combines with `itemType` by AND if both are given; no caller does.
+   */
+  itemTypes?: readonly ItemType[];
   /** Opaque cursor from a previous page's `nextCursor`. Omit for page 1. */
   cursor?: string;
   /** Page size. Defaults to 50. */
@@ -95,6 +111,11 @@ export async function listItems(
     query = query.where('item_type', '=', params.itemType);
   }
 
+  if (params.itemTypes) {
+    const itemTypes = params.itemTypes;
+    query = query.where((eb) => eb.or(itemTypes.map((t) => eb('item_type', '=', t))));
+  }
+
   if (params.cursor) {
     const { addedAtMs, id } = decodeCursor(params.cursor, isItemsCursorPayload);
     query = query.where((eb) =>
@@ -123,6 +144,10 @@ export async function listItems(
 export interface GetRecentlyAddedParams {
   cursor?: string;
   limit?: number;
+  /** See ListItemsParams.itemTypes (remediation adi-F2). The HTTP caller's
+   *  RecentlyAddedEntry schema admits movie/series/album only, so it passes
+   *  exactly those and gets full pages of them. */
+  itemTypes?: readonly ItemType[];
 }
 
 /**

@@ -82,6 +82,18 @@ export interface SearchCatalogParams {
   q: string;
   cursor?: string;
   limit?: number;
+  /**
+   * Remediation adi-F2: restrict the page to this SET of item types. The
+   * HTTP caller's SearchResult schema admits movie/series/artist/album/
+   * track only (no season/episode), and filtering the page AFTER it was cut
+   * spends the keyset LIMIT on rows that are then thrown away — short, and
+   * at limit=1 routinely EMPTY, pages carrying a non-null `nextCursor`.
+   * Applied below with the cursor predicate, i.e. BEFORE ORDER BY/LIMIT.
+   *
+   * An EMPTY array means "no type can match" (kysely renders `eb.or([])` as
+   * `1 = 0`), never "no filter". Omit the key for "no filter".
+   */
+  itemTypes?: readonly ItemType[];
 }
 
 export interface SearchResultRow {
@@ -229,6 +241,23 @@ export async function searchCatalog(
   const ranked = tsvBranch.union(peopleBranch).union(tagsBranch);
 
   let outer = db.selectFrom(ranked.as('ranked_items')).selectAll();
+
+  // adi-F2: the eligible-type filter sits HERE, next to the cursor
+  // predicate and above ORDER BY/LIMIT, rather than being repeated in each
+  // UNION branch — one call site instead of three, on a plain output column
+  // Postgres can push down into the set operation (the predicate is
+  // immutable and references only a subquery output column, so
+  // subquery_is_pushdown_safe admits it), and it cannot perturb the
+  // branches' byte-identical tuples that UNION's DISTINCT collapses.
+  // Verified, not assumed: EXPLAIN of this shape shows the predicate
+  // recheck INSIDE both Append branches, index-driven off
+  // catalog_items_type_sort_title_idx — the module header's UNION-perf
+  // rationale is preserved (the filter narrows each branch, never
+  // materializes the union first).
+  if (params.itemTypes) {
+    const itemTypes = params.itemTypes;
+    outer = outer.where((eb) => eb.or(itemTypes.map((t) => eb('itemType', '=', t))));
+  }
 
   if (params.cursor) {
     const { rank, id } = decodeCursor(params.cursor, isSearchCursorPayload);
