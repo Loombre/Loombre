@@ -14,6 +14,14 @@
 // from one sort+order pair is only valid under that same pair (contract
 // doc on listMovies etc.), so switching sort always restarts the feed from
 // cursor null rather than reusing a stale cursor.
+//
+// browser-shell-browse-F6: `sort` also round-trips through `?sort=<value>`
+// (same URL-is-truth pattern as `?library=`) — the state initializer reads
+// it once at mount (isSortValue guards an unrecognized/missing param back
+// to the "recently-added" default) and every SortControl change writes it
+// back via router.replace, so a sorted view survives a reload/share/back-
+// button, not just the "recently-added" default the plain useState left it
+// pinned to before.
 
 "use client";
 
@@ -24,7 +32,7 @@ import { AppShell } from "../../components/shell/AppShell.js";
 import { VirtualPosterGrid } from "../../components/browse/VirtualPosterGrid.js";
 import { PosterCell } from "../../components/browse/PosterCell.js";
 import { LibraryPills } from "../../components/browse/LibraryPills.js";
-import { SortControl, SORT_PARAMS, type SortValue } from "../../components/browse/SortControl.js";
+import { SortControl, SORT_PARAMS, isSortValue, type SortValue } from "../../components/browse/SortControl.js";
 import { useCursorFeed, type CursorPage } from "../../components/browse/useCursorFeed.js";
 import { Skeleton } from "../../components/skeleton/Skeleton.js";
 import { RestrictedZoneBrowseChip } from "../../components/restricted/RestrictedZoneBrowseChip.js";
@@ -115,8 +123,20 @@ function BrowseContent(): React.JSX.Element {
   const [libraries, setLibraries] = useState<Library[] | null>(null);
   const [serverUrl] = useState(() => getAuthStore().getSnapshot().serverUrl);
   const [accessToken, setAccessToken] = useState<string | null>(null);
-  const [sort, setSort] = useState<SortValue>("recently-added");
+  // browser-shell-browse-F6: seed from ?sort= at mount so a shared/
+  // bookmarked/reloaded URL lands on the same sort, not always the default.
+  const [sort, setSort] = useState<SortValue>(() => {
+    const fromUrl = searchParams.get("sort");
+    return isSortValue(fromUrl) ? fromUrl : "recently-added";
+  });
   const nowPlayingIds = useNowPlayingItemIds();
+
+  function handleSortChange(next: SortValue): void {
+    setSort(next);
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("sort", next);
+    router.replace(`/browse?${params.toString()}`);
+  }
 
   useEffect(() => {
     getAuthStore()
@@ -169,10 +189,14 @@ function BrowseContent(): React.JSX.Element {
           <LibraryPills
             options={libraries.map((l) => ({ id: l.id, name: l.name }))}
             activeId={activeLibrary?.id ?? null}
-            onSelect={(id) => router.replace(`/browse?library=${id}`)}
+            onSelect={(id) => {
+              const params = new URLSearchParams(searchParams.toString());
+              params.set("library", id);
+              router.replace(`/browse?${params.toString()}`);
+            }}
           />
         ) : null}
-        <SortControl active={sort} onChange={setSort} />
+        <SortControl active={sort} onChange={handleSortChange} />
       </div>
 
       {/* Wave 2 (lane L8): amber "N restricted · PIN-gated zone ->" chip,

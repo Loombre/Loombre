@@ -25,6 +25,14 @@ export const SORT_OPTIONS = [
 
 export type SortValue = (typeof SORT_OPTIONS)[number]["value"];
 
+/** browser-shell-browse-F6: type guard for restoring `sort` from the URL
+ *  (`?sort=<SortValue>`) — narrows an arbitrary search-param string down to
+ *  a real SortValue, `null`/unrecognized fall through to the caller's own
+ *  default. */
+export function isSortValue(value: string | null): value is SortValue {
+  return SORT_OPTIONS.some((option) => option.value === value);
+}
+
 /** Maps this control's UI values to the contract's `sort` parameter — order
  *  is omitted so each sort takes the contract's documented default. */
 export const SORT_PARAMS: Record<SortValue, components["parameters"]["Sort"]> = {
