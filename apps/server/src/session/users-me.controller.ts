@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Loombre :: apps/server/src/session/users-me.controller.ts
 //
-// PUT /users/me/restricted (task spec, docs/PLAN.md §6.4 gate 3): SELF
-// opt-in + PIN management. There is no admin path here by construction —
+// GET + PUT /users/me/restricted (task spec, docs/PLAN.md §6.4 gate 3):
+// SELF opt-in + PIN management, and (browser-restricted-settings-F3) the
+// matching read of that same state for a freshly-loaded client — see
+// getRestricted's own comment below. There is no admin path here by construction —
 // the route has no user-id param, it always acts on the caller from the
 // AuthGuard-attached `req.user`. Still true over HTTP after H2: a user who
 // forgets their PIN entirely (nothing to prove via `currentPin` below) has
@@ -29,7 +31,7 @@
 // currentPin logic below is UNCHANGED (F4: currentPassword is additional,
 // never a PIN-verification replacement).
 
-import { Body, Controller, Put, Req, UseFilters } from "@nestjs/common";
+import { Body, Controller, Get, Put, Req, UseFilters } from "@nestjs/common";
 import { getUserSettings, updateRestrictedSettings } from "@loombre/db";
 import { nowMs as clockNowMs } from "@loombre/shared";
 import { unprocessableEntity } from "../gateway/problem.exception.js";
@@ -74,6 +76,38 @@ export class UsersMeController {
     private readonly anomalyLog: AnomalyLogService,
     private readonly currentPasswordRateLimiter: CurrentPasswordRateLimiterService,
   ) {}
+
+  // GET /users/me/restricted (browser-restricted-settings-F3 /
+  // browser-items-F3, 2026-08-21 QA): the READ side of the state the PUT
+  // below returns. Until this existed a web client could only learn its own
+  // {optIn, hasPin, unlockedUntilMs} as the RESULT OF A MUTATION, so a fresh
+  // page load had to guess — it showed first-time-opt-in UI to a PIN holder
+  // (hasPin unknown) and a "locked" indicator while the server was still
+  // serving the zone from a live unlock window.
+  //
+  // Self-scoped by construction, exactly like the PUT: no user-id param,
+  // always the AuthGuard-attached caller. No currentPassword re-auth and no
+  // rate-limit budget — this reads nothing an authenticated caller cannot
+  // already infer about their OWN account, and it verifies no secret (the
+  // G3/G4 re-auth rule covers account-critical WRITES). The PIN itself is
+  // never returned in any form; `hasPin` is a boolean.
+  @Get("restricted")
+  async getRestricted(@Req() req: AuthenticatedRequest): Promise<RestrictedSettingsResponse> {
+    const userId = req.user!.userId;
+    const settings = await getUserSettings(this.dbProvider.db, userId);
+    const unlockedUntilMs = settings?.restricted_unlocked_until_ms ?? null;
+    return {
+      optIn: settings?.restricted_opt_in ?? false,
+      hasPin: settings?.restricted_pin_hash != null,
+      // An ELAPSED window reads as null, never as a stale past timestamp:
+      // gate 5 is `unlockedUntilMs > now` server-side
+      // (common/resolve-clearance.ts), so this is the same lock state the
+      // server itself would apply to the very next request — the whole
+      // point of the endpoint is that a client can mirror it rather than
+      // re-derive it.
+      unlockedUntilMs: unlockedUntilMs !== null && unlockedUntilMs > clockNowMs() ? unlockedUntilMs : null,
+    };
+  }
 
   @Put("restricted")
   async putRestricted(

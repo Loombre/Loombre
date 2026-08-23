@@ -859,6 +859,30 @@ paths:
         default: { $ref: '#/components/responses/Problem' }
 
   /users/me/restricted:
+    get:
+      operationId: getMyRestrictedSettings
+      tags: [restricted]
+      summary: >-
+        Read the caller's OWN restricted-content state — opt-in, whether a
+        PIN is set, and the live unlock window's expiry.
+      description: >-
+        The read side of PUT /users/me/restricted, for clients that need
+        this state without mutating it (a fresh page load). `hasPin` is a
+        boolean only — the PIN itself is never returned in any form.
+        `unlockedUntilMs` is gate 5 as the server itself re-verifies it on
+        every request (user_settings.restricted_unlocked_until_ms); an
+        already-elapsed window reads as `null`, so a client can mirror the
+        server's lock state exactly instead of guessing. Self-scoped by
+        construction (no user-id param) — there is no admin path to another
+        user's restricted state.
+      responses:
+        '200':
+          description: The caller's restricted-content state
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RestrictedSettings' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        default: { $ref: '#/components/responses/Problem' }
     put:
       operationId: putMyRestrictedSettings
       tags: [restricted]

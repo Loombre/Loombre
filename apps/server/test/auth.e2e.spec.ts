@@ -603,3 +603,80 @@ describe("POST /restricted/unlock + /restricted/lock (gate 5)", () => {
     await setRestrictedEnabled(undefined);
   });
 });
+
+// browser-restricted-settings-F3 / browser-items-F3 (2026-08-21 QA): the
+// web client had NO way to learn its own restricted state on a fresh page
+// load — PUT /users/me/restricted returns {optIn, hasPin, unlockedUntilMs}
+// but only as the result of a mutation, and POST /restricted/unlock only
+// returns the new expiry. So a reloaded client showed first-time-opt-in UI
+// to a PIN holder and a "locked" header indicator while the server was
+// still serving the zone (gate 5 is re-verified from
+// user_settings.restricted_unlocked_until_ms on every request —
+// common/viewer-context.provider.ts). This GET is the read side of that
+// same state: same RestrictedSettings shape as the PUT response, no
+// mutation, no rate-limit budget, no currentPassword.
+describe("GET /users/me/restricted (bootstrap state for a fresh page load)", () => {
+  it("without a Bearer token -> 401", async () => {
+    const res = await request(app.getHttpServer()).get("/users/me/restricted");
+    expect(res.status).toBe(401);
+  });
+
+  it("reports stored opt-in + PIN presence with NO unlock this session", async () => {
+    await setRestrictedEnabled("true");
+    const admin = await loginAs("admin", "loombre-seed-admin");
+    // Force the known "not unlocked" starting state (this file shares one
+    // live DB across every case — see resetCasualRestrictedSettings).
+    await request(app.getHttpServer())
+      .post("/restricted/lock")
+      .set("Authorization", `Bearer ${admin.accessToken}`)
+      .send();
+
+    const res = await request(app.getHttpServer())
+      .get("/users/me/restricted")
+      .set("Authorization", `Bearer ${admin.accessToken}`);
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ optIn: true, hasPin: true, unlockedUntilMs: null });
+
+    await setRestrictedEnabled(undefined);
+  });
+
+  it("reports the LIVE unlock window (a reload inside it is still unlocked), and null again after lock", async () => {
+    await setRestrictedEnabled("true");
+    const admin = await loginAs("admin", "loombre-seed-admin");
+
+    const unlock = await request(app.getHttpServer())
+      .post("/restricted/unlock")
+      .set("Authorization", `Bearer ${admin.accessToken}`)
+      .send({ pin: "0000" });
+    expect(unlock.status).toBe(200);
+
+    const during = await request(app.getHttpServer())
+      .get("/users/me/restricted")
+      .set("Authorization", `Bearer ${admin.accessToken}`);
+    expect(during.status).toBe(200);
+    expect(during.body.unlockedUntilMs).toBe(unlock.body.unlockedUntilMs);
+
+    await request(app.getHttpServer())
+      .post("/restricted/lock")
+      .set("Authorization", `Bearer ${admin.accessToken}`)
+      .send();
+    const after = await request(app.getHttpServer())
+      .get("/users/me/restricted")
+      .set("Authorization", `Bearer ${admin.accessToken}`);
+    expect(after.status).toBe(200);
+    expect(after.body.unlockedUntilMs).toBeNull();
+
+    await setRestrictedEnabled(undefined);
+  });
+
+  it("a user with no opt-in and no PIN reads back all-false/null", async () => {
+    await resetCasualRestrictedSettings();
+    const casual = await loginAs("casual", CASUAL_PASSWORD);
+
+    const res = await request(app.getHttpServer())
+      .get("/users/me/restricted")
+      .set("Authorization", `Bearer ${casual.accessToken}`);
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ optIn: false, hasPin: false, unlockedUntilMs: null });
+  });
+});

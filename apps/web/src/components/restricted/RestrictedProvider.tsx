@@ -8,15 +8,22 @@
 // file per lane ownership) and the PIN modal stay in sync with each other
 // and with the websocket instantly.
 //
-// Lock-state honesty note: the contract has NO GET endpoint that returns
-// {optIn, hasPin, unlockedUntilMs} — only PUT /users/me/restricted (mutates
-// AND returns it) and POST /restricted/unlock (returns unlockedUntilMs
-// only). This is a genuine spec gap (documented in the wave report). This
-// provider works around it correctly rather than around it badly: gate 5
-// "unlock state never persists across logins" (openapi.yaml's
-// /restricted/unlock description) means LOCKED is the server-verified truth
-// immediately after every fresh auth — so defaulting to locked on mount is
-// not a guess, it is the actual state. From there:
+// Lock-state honesty note (REWRITTEN — browser-restricted-settings-F3 /
+// browser-items-F3, 2026-08-21 QA): this file used to note that the
+// contract had NO GET returning {optIn, hasPin, unlockedUntilMs} and
+// defaulted to locked/hasPin-unknown on every mount, arguing that gate 5
+// "never persists across logins" made locked the server-verified truth.
+// That premise did not survive contact with the server: gate 5 is
+// re-verified on EVERY request from user_settings.restricted_unlocked_
+// until_ms (apps/server/src/common/viewer-context.provider.ts), a row that
+// a full-page reload does not touch — so a reload inside a live unlock
+// window showed a "locked" header indicator while the zone kept rendering,
+// and a PIN holder who had not unlocked in THIS page session got
+// first-time-opt-in UI at /profile (hasPin null hides the Current PIN field
+// and blocks a blank "keep current PIN" save). The spec gap is now closed:
+// GET /users/me/restricted returns exactly that triple, and the bootstrap
+// below hydrates from it. Defaults stay locked/unknown until it answers —
+// a failed or in-flight bootstrap never fails open. From there:
 //   - a successful POST /restricted/unlock gives an exact unlockedUntilMs
 //     (self-timed locally, no polling needed)
 //   - explicit POST /restricted/lock flips to locked immediately
@@ -47,7 +54,12 @@ const SELF_EXPIRY_CHECK_INTERVAL_MS = 5_000;
 export interface RestrictedState {
   loading: boolean;
   optIn: boolean;
-  /** null = unknown (never learned from a PUT response yet in this session). */
+  /** null = unknown — only before the mount bootstrap below has answered
+   *  (or after it failed / while signed out). Consumers that offer a
+   *  PIN-holder-only affordance MUST treat null as "not yet known", never
+   *  as false: components/profile/ProfileSettings.tsx's Restricted card
+   *  keys its Current-PIN field and its blank-PIN "keep current" save on
+   *  this exact value. */
   hasPin: boolean | null;
   unlockedUntilMs: number | null;
   locked: boolean;
@@ -99,28 +111,47 @@ export function RestrictedProvider({ children }: { children: ReactNode }): React
     });
   }, []);
 
-  // Load restrictedOptIn (the one field a GET endpoint actually exposes —
-  // UserSettings.restrictedOptIn) once authenticated. Never blocks the UI on
-  // failure — restricted defaults to locked/opted-out either way.
+  // Bootstrap: hydrate the WHOLE restricted triple (opt-in, PIN presence,
+  // live unlock expiry) from GET /users/me/restricted once authenticated,
+  // and again on every auth-store change (sign-in/out, token refresh).
+  // Never blocks the UI on failure — restricted stays locked/opted-out/
+  // hasPin-unknown, i.e. fail closed, exactly as before this endpoint
+  // existed.
+  //
+  // Deliberately does NOT emitCatalogInvalidation() when the hydrate flips
+  // the client to unlocked: the server never consulted the client's flag in
+  // the first place (gate 5 is re-verified per request), so everything
+  // fetched during this same mount is already correct — invalidating here
+  // would re-fetch every mounted list on every page load inside an unlock
+  // window for no new data. The unlock()/lock()/websocket paths below still
+  // invalidate, because those are real state TRANSITIONS.
   useEffect(() => {
     let cancelled = false;
     const store = getAuthStore();
 
-    async function loadOptIn(): Promise<void> {
+    async function loadRestricted(): Promise<void> {
       if (!store.isAuthenticated()) {
         if (!cancelled) patch({ loading: false });
         return;
       }
       try {
-        const settings = await apiGet("/users/me/settings");
-        if (!cancelled) patch({ optIn: settings.restrictedOptIn, loading: false });
+        const restricted = await apiGet("/users/me/restricted");
+        if (cancelled) return;
+        patch({
+          optIn: restricted.optIn,
+          hasPin: restricted.hasPin,
+          // Already null-ed server-side when elapsed; patch() re-derives
+          // `locked` from it against the local clock regardless.
+          unlockedUntilMs: restricted.unlockedUntilMs,
+          loading: false,
+        });
       } catch {
         if (!cancelled) patch({ loading: false });
       }
     }
 
-    void loadOptIn();
-    const unsubAuth = store.subscribe(() => void loadOptIn());
+    void loadRestricted();
+    const unsubAuth = store.subscribe(() => void loadRestricted());
     return () => {
       cancelled = true;
       unsubAuth();

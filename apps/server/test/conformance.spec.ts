@@ -252,6 +252,12 @@ const IMPLEMENTED_NON_PUBLIC_EXPECTATIONS: Record<string, number> = {
   // route must never be reachable without a token, since enumerating a
   // server's directory tree is reconnaissance.)
   browseDirectories: 200,
+  // browser-restricted-settings-F3 / browser-items-F3: the read side of
+  // the same state — self-scoped, no body, no params, so always 200 (even
+  // for a caller with no opt-in and no PIN, whose honest answer is
+  // all-false/null; unlike the ZONE ops below there is nothing to hide
+  // here — the caller already knows their own settings).
+  getMyRestrictedSettings: 200,
   putMyRestrictedSettings: 422, // bodyless -> "optIn is required"
   unlockRestricted: 422, // bodyless -> "pin is required"
   lockRestricted: 204,

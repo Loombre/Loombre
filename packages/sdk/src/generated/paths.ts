@@ -164,6 +164,7 @@ export const API_OPERATIONS = [
   { path: "/users", method: "post", operationId: "createUser" },
   { path: "/users/me", method: "get", operationId: "getMe" },
   { path: "/users/me", method: "patch", operationId: "updateMe" },
+  { path: "/users/me/restricted", method: "get", operationId: "getMyRestrictedSettings" },
   { path: "/users/me/restricted", method: "put", operationId: "putMyRestrictedSettings" },
   { path: "/users/me/settings", method: "get", operationId: "getMySettings" },
   { path: "/users/me/settings", method: "put", operationId: "putMySettings" },
