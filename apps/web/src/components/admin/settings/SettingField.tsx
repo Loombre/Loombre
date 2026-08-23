@@ -285,8 +285,19 @@ export function SettingField({ entry, value, source, onChanged, technicalDetails
 
   function handleBoolToggle(): void {
     if (!editable) return;
-    setBoolDraft(!boolDraft);
-    setDirty(true);
+    const next = !boolDraft;
+    setBoolDraft(next);
+    // browser-restricted-settings-F8: unlike a keystroke on the number/
+    // string/JSON editors (where "back to the original text" is rare and
+    // ambiguous to detect losslessly — e.g. re-typing the same number with
+    // different formatting), a boolean has exactly two states, so
+    // "restored to the loaded value" is unambiguous and cheap to check.
+    // Recomputing `dirty` from that comparison (instead of latching it
+    // true on every click) keeps Save/Reset disabled at value parity,
+    // matching the untouched-at-default case above and avoiding a no-op
+    // write that would flip this setting's source pill from "default" to
+    // "database" for zero actual change.
+    setDirty(next !== Boolean(value));
   }
 
   function clampNumber(n: number): number {

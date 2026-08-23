@@ -339,6 +339,26 @@ describe("SettingField — Phosphor registry card fidelity", () => {
       expect(save.hasAttribute("disabled")).toBe(false);
     });
 
+    // browser-restricted-settings-F8 (P3, QA sweep 2026-08-20/21): unlike
+    // the untouched-at-default case above (Save starts disabled), toggling
+    // OFF then back ON set `dirty` unconditionally on every click and never
+    // re-checked it against the loaded value — so Save/Reset stayed
+    // enabled at value PARITY (boolDraft === value), inviting a no-op
+    // write that would flip the setting's source pill from "default" to
+    // "database" for zero actual change.
+    it("boolean widget: toggling back to the loaded value re-disables Save (no no-op write at value parity)", () => {
+      view = renderIntoBody(<SettingField entry={HEVC_ENTRY} value={true} source="default" onChanged={noop} />);
+      const checkbox = view.container.querySelector('input[type="checkbox"]') as HTMLInputElement;
+      const save = (): HTMLButtonElement => Array.from(view!.container.querySelectorAll("button")).find((b) => b.textContent === "Save")!;
+
+      act(() => checkbox.click()); // true -> false
+      expect(save().hasAttribute("disabled")).toBe(false);
+
+      act(() => checkbox.click()); // false -> true, back to the loaded value
+      expect(checkbox.checked).toBe(true);
+      expect(save().hasAttribute("disabled")).toBe(true);
+    });
+
     it("boolean widget: clicking the ON/OFF label text also toggles, via its OWN onClick — not a row-level handler it bubbles up to", () => {
       // LD-13 hardening: the ON/OFF <span> now carries its own onClick
       // directly (SettingField.tsx) rather than relying on the wrapping
