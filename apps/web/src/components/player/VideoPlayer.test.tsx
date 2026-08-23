@@ -1429,6 +1429,94 @@ describe("VideoPlayer", () => {
     });
   });
 
+  // ── browser-player-F9: deep-link ?t= on transcode sessions ──────────────
+  // QA 2026-08-20/21 (P1): /watch/{item}?t=600 on a transcode session
+  // started playback at 0:00. The prompt-skip half worked (no progress
+  // lookup, no resume prompt), but the offset itself only ever rode
+  // `pendingSeekMsRef` into the hls.js attach as a PRESENTATION-axis
+  // position (the config's `startPositionSec` + the loadedmetadata
+  // `currentTime` assignment) — which can only land inside the served
+  // playlist window. A fresh transcode session serves ~the first run's few
+  // segments, so an out-of-window target was silently clamped by hls.js/
+  // MSE and no V8 hard seek (POST /seek) was ever issued: nothing
+  // restarted the transcoder at the target. Restricted-scene chapter links
+  // share this exact path.
+  describe("deep-link startMs on transcode sessions (browser-player-F9)", () => {
+    /** run0's listed window: source 0–12 s (PDT ms == source ms, §9.1.5
+     *  rule 7) — the extent a fresh transcode session's served playlist
+     *  actually covers right after create. */
+    function run0Window(): { live: boolean; fragments: unknown[] } {
+      return {
+        live: true,
+        fragments: [
+          { programDateTime: 0, start: 0, duration: 6, relurl: "run0/s000000.m4s" },
+          { programDateTime: 6_000, start: 6, duration: 6, relurl: "run0/s000001.m4s" },
+        ],
+      };
+    }
+
+    async function renderHlsReadyWithStart(startMs: number): Promise<{ v: TestRender; hls: MockHlsInstance }> {
+      createPlaybackSession.mockReset().mockResolvedValue({ ok: true, session: hlsTranscodeSession() });
+      const v = await renderReady(vi.fn(), undefined, startMs);
+      // The hlsjs attach effect is async (token await + dynamic import) —
+      // one more macro/microtask flush lets it construct the mock instance.
+      await act(async () => {});
+      const hls = hlsInstances[hlsInstances.length - 1];
+      if (!hls) throw new Error("the hlsjs attach effect never constructed an hls.js instance");
+      hls.currentLevel = 0;
+      return { v, hls };
+    }
+
+    it("an out-of-window startMs issues the V8 hard seek (POST /seek at the source target) and lands on the seek-spawned run", async () => {
+      apiPost.mockResolvedValue({ targetMs: 600_000 });
+      const { v, hls } = await renderHlsReadyWithStart(600_000);
+      view = v;
+      const details = run0Window();
+      hls.levels = [{ details }];
+      // The first playlist read — the first moment the served window is
+      // knowable, and therefore the first moment the axis decision can run.
+      await act(async () => {
+        hls.emit("hlsLevelUpdated");
+      });
+
+      expect(
+        apiPost,
+        "?t= on a transcode session must become a V8 hard seek — the presentation-axis startPosition/currentTime clamp starts playback at 0 instead (browser-player-F9)",
+      ).toHaveBeenCalledWith("/playback/sessions/{id}/seek", expect.objectContaining({ body: { targetMs: 600_000 } }));
+
+      // The display pins at the deep-link target while the worker restarts.
+      const slider = v.container.querySelector('[role="slider"]');
+      expect(slider?.getAttribute("aria-valuenow")).toBe("600000");
+
+      // loadedmetadata must NOT drag the element to presentation 600 s —
+      // that axis is the very bug: the target only exists in SOURCE time.
+      const video = videoEl(v);
+      await act(async () => {
+        video.dispatchEvent(new Event("loadedmetadata"));
+      });
+      expect(video.currentTime, "the routed-hard start must suppress the presentation-axis loadedmetadata assignment").toBe(0);
+
+      // The seek-spawned run appears in the served window: the landing
+      // watch armed by the deep-link hard seek completes exactly like a
+      // scrubber hard seek's.
+      details.fragments = [...details.fragments, { programDateTime: 600_000, start: 12, duration: 6, relurl: "run1/s000000.m4s" }];
+      await act(async () => {
+        hls.emit("hlsLevelUpdated");
+      });
+      expect(video.currentTime, "the landing never seeked the element to the seek-spawned run's start").toBe(12);
+    });
+
+    it("an in-window startMs stays on the presentation axis — no POST /seek, no needless transcoder restart (A2)", async () => {
+      const { v, hls } = await renderHlsReadyWithStart(6_500);
+      view = v;
+      hls.levels = [{ details: run0Window() }];
+      await act(async () => {
+        hls.emit("hlsLevelUpdated");
+      });
+      expect(apiPost).not.toHaveBeenCalledWith("/playback/sessions/{id}/seek", expect.anything());
+    });
+  });
+
   // ── browser-player-F1: hls.js fatal-error recovery ───────────────────────
   // QA 2026-08-20/21 (P1, + three verified duplicates): when the worker's
   // transcode died mid-session (session status -> 'failed', playlists 404),

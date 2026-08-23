@@ -299,6 +299,14 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
   // target). clearLandingWatch() also bumps it, so a soft seek / unmount /
   // timeout invalidates any still-in-flight arm.
   const seekEpochRef = useRef(0);
+  // browser-player-F9: lets the hls.js attach effect (which sits ABOVE the
+  // `hardSeek` callback in this file) route a queued deep-link start
+  // through the V8 hard-seek path without listing the callback in its
+  // dependency array — the effect only needs the LATEST identity at the
+  // moment its LEVEL_UPDATED handler actually fires. Assigned during
+  // render right after `hardSeek`'s declaration (the same render-time
+  // idiom as `flushProgressRef` below).
+  const hardSeekRef = useRef<(targetMs: number) => void>(() => undefined);
 
   /** The CURRENT LEVEL DETAILS as structural fragments (A2: the LISTED
    *  window — buffer state deliberately plays no part). `null` off the
@@ -906,6 +914,45 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
         heartbeatRef.current?.flushNow();
       });
 
+      // ── Queued-start routing (browser-player-F9) ──────────────────────
+      // `pendingSeekMsRef` rides the PRESENTATION axis into this attach —
+      // the config's `startPositionSec` above and the loadedmetadata
+      // assignment below — which is only correct while the target sits
+      // inside the served window (where a fresh session's presentation and
+      // source axes coincide). A transcode session's playlist covers only
+      // what the worker has produced so far, so a ?t= deep-link/chapter
+      // target beyond it was silently clamped by hls.js/MSE and playback
+      // started at 0 with no POST /seek — the offset must instead be a V8
+      // HARD seek at the SOURCE-axis target, exactly as if the user had
+      // dragged the scrubber there (QA 2026-08-20/21). Decided ONCE, on
+      // the first LEVEL_UPDATED that exposes a readable window — the
+      // earliest moment the soft/hard classification is answerable at all;
+      // every later seek goes through seek()/hardSeek() as always.
+      let pendingStartRouted = false;
+      // Read by the loadedmetadata handler below: a routed-hard start must
+      // suppress the presentation-axis `currentTime` assignment — the
+      // target exists only in SOURCE time, and the landing (or its 20 s
+      // timeout) owns the element's position from the 202 on.
+      let pendingStartRoutedHard = false;
+      const routePendingStart = (): void => {
+        if (pendingStartRouted) return;
+        const frags = listedFragments();
+        if (!frags) return; // window not readable yet — try the next refresh
+        pendingStartRouted = true;
+        const pending = pendingSeekMsRef.current;
+        if (pending === null) return;
+        // No source clock (a pre-V8 server): presentation == source, the
+        // startPosition path is exactly right — keep it.
+        if (!hasSourceClock(frags)) return;
+        // Listed (A2 — the soft boundary is the LISTED window): the
+        // presentation-axis startPosition/loadedmetadata path lands it
+        // without burning a transcoder restart.
+        if (sourceToPresentationSec(frags, pending) !== null) return;
+        pendingStartRoutedHard = true;
+        hardSeekRef.current(pending);
+      };
+      hls.on(HlsCtor.Events.LEVEL_UPDATED, routePendingStart);
+
       // Fatal-error recovery (browser-player-F1). hls.js's documented
       // in-place levers — `startLoad()` for a network error,
       // `recoverMediaError()` for a media error — used to run here
@@ -970,7 +1017,10 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
       // false and autoplay is governed purely by the resume-choice gate.
       const resumeAt = (pendingSeekMsRef.current ?? 0) / 1000;
       onLoaded = (): void => {
-        video.currentTime = resumeAt;
+        // browser-player-F9: a queued start that was routed through the V8
+        // hard-seek path must NOT also run the presentation-axis
+        // assignment — see routePendingStart above.
+        if (!pendingStartRoutedHard) video.currentTime = resumeAt;
         if (!awaitingResumeChoiceRef.current) void video.play().catch(() => undefined);
         if (onLoaded) video.removeEventListener("loadedmetadata", onLoaded);
       };
@@ -1393,6 +1443,7 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
     },
     [session?.id, listedFragments, clearLandingWatch, showToast],
   );
+  hardSeekRef.current = hardSeek;
 
   const seek = useCallback(
     (ms: number) => {
