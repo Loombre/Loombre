@@ -16,11 +16,12 @@
 // ones the test drives. Every test file gets its own jsdom, so the
 // prototype patch is installed once at module scope and never restored.
 
-import { act } from "react";
+import { act, StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { components } from "@loombre/sdk";
 import { LoombreApiError } from "@loombre/sdk";
 import { HARD_SEEK_LANDING_TIMEOUT_MS } from "../../lib/source-time.js";
+import { resetPlaybackSessionLeases } from "../../lib/playback-session-lease.js";
 import { VideoPlayer } from "./VideoPlayer.js";
 import { ToastProvider } from "../ui/Toast.js";
 import { renderIntoBody, type TestRender } from "../ui/test-render.js";
@@ -436,6 +437,10 @@ describe("VideoPlayer", () => {
 
   beforeEach(() => {
     installMatchMedia();
+    // gap-F1: the lease pool is module-scope by design (it has to outlive
+    // any one component instance) — disown anything a previous test left
+    // in flight so a stale settle can never join, or end into, this test.
+    resetPlaybackSessionLeases();
     createPlaybackSession.mockReset().mockResolvedValue({ ok: true, session: directPlaySession() });
     endPlaybackSession.mockReset().mockResolvedValue(undefined);
     findProgressForItem.mockReset().mockResolvedValue(null);
@@ -1181,6 +1186,93 @@ describe("VideoPlayer", () => {
     v.unmount();
     view = null;
     expect(endPlaybackSession).toHaveBeenCalledWith(SECOND_SESSION_ID);
+  });
+
+  // gap-F1: React dev StrictMode double-invokes the session-create effect
+  // (setup #1 → cleanup #1 → setup #2, all before either POST can settle).
+  // Pre-fix, that raced TWO concurrent POST /playback/sessions per mount:
+  // with maxSimultaneousTranscodes=1 the twins fought over the household's
+  // only slot (one 201, one 429 — the surviving invocation rendered "at
+  // capacity" while the cancelled twin DELETEd the winning 201 session),
+  // and with slots>=2 the extra 201 leaked whenever churn re-ordered the
+  // settle. The twins must SHARE one create (a lease on the same in-flight
+  // POST) and the cancelled twin's cleanup must never end the session the
+  // survivor keeps.
+  describe("dev StrictMode twin session create (gap-F1)", () => {
+    // React 19's `act` warns ("environment is not configured to support
+    // act") on the StrictMode double-invoke flush unless this global is
+    // set. Scoped to this describe (set before, deleted after) so the
+    // rest of the file keeps its exact pre-existing warning behavior —
+    // both tests below unmount INSIDE the test body while the flag is
+    // still up, so the outer afterEach's unmount has nothing to flush.
+    beforeEach(() => {
+      (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    });
+    afterEach(() => {
+      delete (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT;
+    });
+
+    function renderStrict(): TestRender {
+      return renderIntoBody(
+        <StrictMode>
+          <ToastProvider>
+            <VideoPlayer itemId={ITEM_ID} onBack={vi.fn()} />
+          </ToastProvider>
+        </StrictMode>,
+      );
+    }
+
+    it("fires exactly ONE POST per StrictMode mount and the twin's cleanup never deletes the survivor's session", async () => {
+      let resolveCreate: (r: unknown) => void = () => undefined;
+      createPlaybackSession.mockImplementation(
+        () =>
+          new Promise((res) => {
+            resolveCreate = res;
+          }),
+      );
+      await act(async () => {
+        view = renderStrict();
+      });
+      // Both effect invocations are live-then-cancelled before the POST
+      // settles — they must have JOINED one create, not raced two.
+      expect(createPlaybackSession).toHaveBeenCalledTimes(1);
+      await act(async () => {
+        resolveCreate({ ok: true, session: directPlaySession() });
+      });
+      // The surviving invocation adopted the 201; the cancelled twin's
+      // cleanup must not have ended it out from under the player.
+      expect(endPlaybackSession).not.toHaveBeenCalled();
+      expect(view?.container.querySelector("video")).not.toBeNull();
+      // Unmount while IS_REACT_ACT_ENVIRONMENT is still scoped up; the
+      // real unmount ends the adopted session exactly once.
+      view?.unmount();
+      view = null;
+      expect(endPlaybackSession).toHaveBeenCalledTimes(1);
+      expect(endPlaybackSession).toHaveBeenCalledWith(SESSION_ID);
+    });
+
+    it("still ends the session exactly once when the whole player unmounts before the create settles", async () => {
+      let resolveCreate: (r: unknown) => void = () => undefined;
+      createPlaybackSession.mockImplementation(
+        () =>
+          new Promise((res) => {
+            resolveCreate = res;
+          }),
+      );
+      await act(async () => {
+        view = renderStrict();
+      });
+      view?.unmount();
+      view = null;
+      expect(endPlaybackSession).not.toHaveBeenCalled();
+      await act(async () => {
+        resolveCreate({ ok: true, session: directPlaySession() });
+      });
+      // AUD-A4v4-003 still holds under StrictMode: the orphaned create's
+      // session is ended — once, not once per twin.
+      expect(endPlaybackSession).toHaveBeenCalledTimes(1);
+      expect(endPlaybackSession).toHaveBeenCalledWith(SESSION_ID);
+    });
   });
 
   // N3's player review checkpoint (STATE.md NG9): NoticeOverlayStrip must

@@ -27,6 +27,7 @@ import { fetchItemSummary, backdropImage, type ItemSummary } from "../../lib/ite
 import { buildImageUrl } from "../../lib/image-url.js";
 import { getAuthStore } from "../../lib/auth-store.js";
 import { createPlaybackSession, endPlaybackSession } from "../../lib/playback-session.js";
+import { acquirePlaybackSessionLease, playbackSessionLeaseKey } from "../../lib/playback-session-lease.js";
 import {
   appendTokenParam,
   buildHlsMasterUrl,
@@ -448,11 +449,26 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
   // chosen Resume at that offset", not a second code path.
   useEffect(() => {
     let cancelled = false;
+    // gap-F1: dev StrictMode double-invokes this effect (setup #1 →
+    // cleanup #1 → setup #2, all synchronous — long before either POST
+    // could settle), so a bare createPlaybackSession() here raced TWO
+    // concurrent creates per mount: under the shipped
+    // maxSimultaneousTranscodes = 1 the twins fought over the household's
+    // only slot (201 + 429 — "Server is at capacity" with zero real load,
+    // while the cancelled twin's cleanup DELETEd the winning session), and
+    // with more slots the extra 201 leaked under churn. The lease pool
+    // (lib/playback-session-lease.ts) joins the twins onto ONE in-flight
+    // POST and owns the orphan cleanup that the per-invocation `cancelled`
+    // flag used to do — see AUD-A4v4-003 notes at the lease module and at
+    // the `cancelled` check below.
+    const lease = acquirePlaybackSessionLease(playbackSessionLeaseKey(itemId, mediaFileId), () =>
+      createPlaybackSession(itemId, "stream", mediaFileId),
+    );
 
     async function run(): Promise<void> {
       let result: Awaited<ReturnType<typeof createPlaybackSession>>;
       try {
-        result = await createPlaybackSession(itemId, "stream", mediaFileId);
+        result = await lease.promise;
       } catch {
         if (cancelled) return;
         // AUD-W6-001 (server repro: a real catalog_items row with zero
@@ -481,13 +497,14 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
       if (cancelled) {
         // AUD-A4v4-003: this invocation was superseded (itemId/mediaFileId/
         // startMs changed) or the player unmounted while the POST was in
-        // flight — but the server row already exists. It never reaches
+        // flight — but the server row may already exist and never reach
         // `session` state, so the sibling unmount cleanup below can never
-        // end it; end it HERE, or with the shipped default
-        // maxSimultaneousTranscodes = 1 a single orphan holds the
-        // household's only transcode slot until the 15-minute idle sweeper
-        // (docs/PLAYBACK.md §9).
-        if (result.ok) void endPlaybackSession(result.session.id);
+        // end it. The LEASE owns that cleanup now (this invocation's
+        // release() in the effect cleanup marks it; the pool ends the
+        // session iff no other invocation — a StrictMode twin — adopted
+        // it). Ending it here directly is exactly the gap-F1 bug: this
+        // `cancelled` is true for twin #1 regardless of which twin's
+        // session survived.
         return;
       }
       if (!result.ok) {
@@ -496,6 +513,7 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
         setPhase("unavailable");
         return;
       }
+      lease.adopt();
       setSession(result.session);
       setDurationMs(result.session.media?.durationMs ?? null);
       durationRef.current = result.session.media?.durationMs ?? null;
@@ -522,6 +540,7 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
     void run();
     return () => {
       cancelled = true;
+      lease.release();
     };
   }, [itemId, mediaFileId, startMs]);
 
