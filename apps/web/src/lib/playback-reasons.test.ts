@@ -101,6 +101,12 @@ const FIXED_INFORMATIONAL_REASON_CODES = [
   "audio-atmos-lost",
   "gapless-degraded",
   "open-gop-leading-pictures-stripped",
+  // browser-admin-F11 (P3, QA sweep 2026-08-20/21): this map had no entry
+  // for `ladder-variant-capped` (docs/PLAYBACK.md §4/§7.5's Tier-0
+  // advertised-variant cap reason), so the admin ReasonsPanel fell through
+  // to the generic "unrecognized code" fallback and printed the raw code
+  // as the title.
+  "ladder-variant-capped",
 ] as const;
 
 // docs/PLAYBACK.md §8.2's closed backend candidate list, matching
@@ -121,10 +127,10 @@ const CLOSED_REASON_ENUM = [
 ];
 
 describe("describeReasonCode exhaustiveness over the closed docs/PLAYBACK.md §4 enum", () => {
-  it("the mirrored enum has exactly 35 members (20 blocking + 5 fixed-informational + 7 hw-encoder-selected + 3 software-fallback)", () => {
+  it("the mirrored enum has exactly 36 members (20 blocking + 6 fixed-informational + 7 hw-encoder-selected + 3 software-fallback)", () => {
     expect(BLOCKING_REASON_CODES).toHaveLength(20);
-    expect(CLOSED_REASON_ENUM).toHaveLength(35);
-    expect(new Set(CLOSED_REASON_ENUM).size).toBe(35); // no accidental duplicates
+    expect(CLOSED_REASON_ENUM).toHaveLength(36);
+    expect(new Set(CLOSED_REASON_ENUM).size).toBe(36); // no accidental duplicates
   });
 
   for (const code of CLOSED_REASON_ENUM) {
