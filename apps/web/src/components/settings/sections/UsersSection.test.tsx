@@ -215,7 +215,7 @@ describe("UsersSection — Lane D additions", () => {
       if (path === "/invites") return Promise.resolve({ items: [], nextCursor: null });
       if (path === "/libraries")
         return Promise.resolve({
-          items: [{ id: "lib-1", name: "Movies", mediaKind: "movie", contentClass: "general" }],
+          items: [{ id: "lib-1", name: "Movies", mediaKind: "movie", contentClass: "general", paths: ["/mnt/movies"] }],
           nextCursor: null,
         });
       if (path === "/libraries/{id}/permissions") return Promise.resolve({ permissions: [] });
@@ -243,5 +243,61 @@ describe("UsersSection — Lane D additions", () => {
     const text = view!.container.textContent ?? "";
     expect(text).toContain(GRANT_CONFLICT_DETAIL);
     expect(text).not.toContain("Conflict");
+  });
+
+  // browser-admin-F9: the shape that made this a P2 — the owner's real 4K
+  // library and a seed fixture BOTH named "Movies". Granting the wrong one
+  // was a coin flip; /settings/libraries already disambiguates by path.
+  const DUPLICATE_NAME_LIBRARIES = [
+    { id: "lib-real", name: "Movies", mediaKind: "movie", contentClass: "general", paths: ["/Users/ozzy/Desktop/Movies"] },
+    { id: "lib-seed", name: "Movies", mediaKind: "movie", contentClass: "general", paths: ["/data/movies"] },
+  ];
+
+  function mockLibraries(items: unknown[]): void {
+    apiGetMock.mockImplementation((path: string) => {
+      if (path === "/users") return Promise.resolve({ items: [ADMIN, NO_EMAIL_USER], nextCursor: null });
+      if (path === "/users/me") return Promise.resolve(ADMIN);
+      if (path === "/invites") return Promise.resolve({ items: [], nextCursor: null });
+      if (path === "/libraries") return Promise.resolve({ items, nextCursor: null });
+      if (path === "/libraries/{id}/permissions") return Promise.resolve({ permissions: [] });
+      return Promise.reject(new Error(`unexpected GET ${path}`));
+    });
+  }
+
+  async function openLibraryAccess(): Promise<void> {
+    await render();
+    await click(rowMenuTriggers().find((b) => b.getAttribute("aria-label") === "Manage june")!);
+    const accessAction = Array.from(view!.container.querySelectorAll('[role="menuitem"]')).find((el) =>
+      (el.textContent ?? "").trim().startsWith("Library access"),
+    ) as HTMLButtonElement;
+    await click(accessAction);
+    await act(async () => {});
+  }
+
+  it("browser-admin-F9: two libraries named 'Movies' are told apart by a library-path sub-line", async () => {
+    mockLibraries(DUPLICATE_NAME_LIBRARIES);
+    await openLibraryAccess();
+
+    const rows = Array.from(view!.container.querySelectorAll("label")).filter((l) =>
+      (l.textContent ?? "").includes("Movies"),
+    );
+    expect(rows).toHaveLength(2);
+    expect(rows[0]!.textContent).toContain("/Users/ozzy/Desktop/Movies");
+    expect(rows[1]!.textContent).toContain("/data/movies");
+    expect(rows[0]!.textContent).not.toBe(rows[1]!.textContent);
+  });
+
+  it("browser-admin-F9: a multi-path library lists every root, and a path-less row renders no junk sub-line", async () => {
+    mockLibraries([
+      { id: "lib-multi", name: "Movies", mediaKind: "movie", contentClass: "general", paths: ["/mnt/a", "/mnt/b"] },
+      { id: "lib-none", name: "Shows", mediaKind: "tv", contentClass: "general", paths: [] },
+    ]);
+    await openLibraryAccess();
+
+    const rows = Array.from(view!.container.querySelectorAll("label"));
+    expect(rows.find((l) => (l.textContent ?? "").includes("Movies"))!.textContent).toContain("/mnt/a, /mnt/b");
+    const none = rows.find((l) => (l.textContent ?? "").includes("Shows"))!;
+    expect(none.textContent).not.toContain("undefined");
+    expect(none.textContent).not.toContain("null");
   });
 });

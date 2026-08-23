@@ -311,6 +311,30 @@
   background: var(--color-surface-hover);
 }
 
+/* browser-admin-F9: a checklist row is a GRANT decision, and library names
+   are not unique — the root path is the only disambiguator an admin can
+   act on, so the name gets a path sub-line here exactly as it already has
+   on /settings/libraries (.rowText/.rowSub above; same 2px/text-xs/muted
+   treatment, kept as its own pair because the row also holds a checkbox
+   and trailing tags). flex: 1 lets the text column absorb the free space
+   so the tags stay right of it, and min-width: 0 is what lets a long
+   absolute path ellipsize instead of widening the modal. */
+.checklistText {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.checklistSub {
+  font-size: var(--text-xs);
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 @media (width <= 767.98px) {
   .addTile,
   .row {

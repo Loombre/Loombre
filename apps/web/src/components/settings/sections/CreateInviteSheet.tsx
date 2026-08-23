@@ -42,6 +42,7 @@ import { apiGet, apiPost } from "../../../lib/api-client.js";
 // what actually went wrong (see that module's header).
 import { apiErrorMessage } from "../../../lib/api-error-message.js";
 import { MEDIA_KIND_LABEL, enumLabel } from "../../../lib/enum-labels.js";
+import { libraryPathLabel } from "./library-path-label.js";
 import styles from "./shared.module.css";
 
 type Invite = components["schemas"]["Invite"];
@@ -207,17 +208,32 @@ export function CreateInviteSheet({
               <p className={styles.errorText}>No non-restricted libraries exist yet.</p>
             ) : (
               <div className={styles.userChecklist}>
-                {libraries.map((lib) => (
-                  <label key={lib.id} className={styles.checklistRow}>
-                    <input
-                      type="checkbox"
-                      checked={selectedLibraryIds.has(lib.id)}
-                      onChange={() => toggleLibrary(lib.id)}
-                    />
-                    <span>{lib.name}</span>
-                    <Tag>{enumLabel(MEDIA_KIND_LABEL, lib.mediaKind)}</Tag>
-                  </label>
-                ))}
+                {libraries.map((lib) => {
+                  // browser-admin-F9: name OVER its root path(s) — two
+                  // libraries can legitimately share a name, and an invite
+                  // grant is unrevokable once claimed, so "which Movies is
+                  // this?" must not be a guess. Same sub-line
+                  // /settings/libraries has always shown.
+                  const pathLabel = libraryPathLabel(lib.paths);
+                  return (
+                    <label key={lib.id} className={styles.checklistRow}>
+                      <input
+                        type="checkbox"
+                        checked={selectedLibraryIds.has(lib.id)}
+                        onChange={() => toggleLibrary(lib.id)}
+                      />
+                      <span className={styles.checklistText}>
+                        <span>{lib.name}</span>
+                        {pathLabel !== null && (
+                          <span className={styles.checklistSub} title={pathLabel}>
+                            {pathLabel}
+                          </span>
+                        )}
+                      </span>
+                      <Tag>{enumLabel(MEDIA_KIND_LABEL, lib.mediaKind)}</Tag>
+                    </label>
+                  );
+                })}
               </div>
             )}
           </div>

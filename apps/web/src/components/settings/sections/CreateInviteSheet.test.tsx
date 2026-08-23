@@ -45,8 +45,27 @@ function installMatchMedia(initialMatches: boolean): void {
   );
 }
 
-const NON_RESTRICTED_LIBRARY = { id: "lib-1", name: "Movies", mediaKind: "movie", contentClass: "general" };
-const RESTRICTED_LIBRARY = { id: "lib-2", name: "Adult", mediaKind: "movie", contentClass: "restricted" };
+const NON_RESTRICTED_LIBRARY = {
+  id: "lib-1",
+  name: "Movies",
+  mediaKind: "movie",
+  contentClass: "general",
+  paths: ["/mnt/movies"],
+};
+const RESTRICTED_LIBRARY = {
+  id: "lib-2",
+  name: "Adult",
+  mediaKind: "movie",
+  contentClass: "restricted",
+  paths: ["/mnt/private"],
+};
+
+// browser-admin-F9: the real-world shape that made this finding a P2 —
+// the owner's own 4K library and a seed fixture BOTH named "Movies".
+const DUPLICATE_NAME_LIBRARIES = [
+  { id: "lib-real", name: "Movies", mediaKind: "movie", contentClass: "general", paths: ["/Users/ozzy/Desktop/Movies"] },
+  { id: "lib-seed", name: "Movies", mediaKind: "movie", contentClass: "general", paths: ["/data/movies"] },
+];
 
 const CREATED_INVITE = {
   id: "inv-1",
@@ -184,6 +203,45 @@ describe("CreateInviteSheet — E2 create -> reveal -> copy", () => {
     const text = view.container.textContent ?? "";
     expect(text).toContain(EXPIRY_DETAIL);
     expect(text).not.toContain("Unprocessable Entity");
+  });
+
+  // browser-admin-F9: an invite grant is unrevokable once claimed, so
+  // picking the WRONG "Movies" here is not a recoverable mistake. The
+  // /settings/libraries screen disambiguates with a path sub-line; this
+  // grant surface must too.
+  it("browser-admin-F9: two libraries named 'Movies' are told apart by a library-path sub-line", async () => {
+    apiGetMock.mockResolvedValue({ items: DUPLICATE_NAME_LIBRARIES, nextCursor: null });
+    view = renderIntoBody(<CreateInviteSheet open onClose={() => {}} onCreated={() => {}} />);
+    await act(async () => {});
+
+    const rows = Array.from(view.container.querySelectorAll("label")).filter((l) =>
+      (l.textContent ?? "").includes("Movies"),
+    );
+    expect(rows).toHaveLength(2);
+    expect(rows[0]!.textContent).toContain("/Users/ozzy/Desktop/Movies");
+    expect(rows[1]!.textContent).toContain("/data/movies");
+    expect(rows[0]!.textContent).not.toBe(rows[1]!.textContent);
+  });
+
+  it("browser-admin-F9: a multi-path library lists every root, and no row renders an empty sub-line", async () => {
+    apiGetMock.mockResolvedValue({
+      items: [
+        { id: "lib-multi", name: "Movies", mediaKind: "movie", contentClass: "general", paths: ["/mnt/a", "/mnt/b"] },
+        { id: "lib-none", name: "Shows", mediaKind: "tv", contentClass: "general", paths: [] },
+      ],
+      nextCursor: null,
+    });
+    view = renderIntoBody(<CreateInviteSheet open onClose={() => {}} onCreated={() => {}} />);
+    await act(async () => {});
+
+    const multi = Array.from(view.container.querySelectorAll("label")).find((l) =>
+      (l.textContent ?? "").includes("Movies"),
+    )!;
+    expect(multi.textContent).toContain("/mnt/a, /mnt/b");
+    const none = Array.from(view.container.querySelectorAll("label")).find((l) =>
+      (l.textContent ?? "").includes("Shows"),
+    )!;
+    expect(none.textContent).not.toContain("undefined");
   });
 
   it("surfaces a server error inline and stays on the form", async () => {

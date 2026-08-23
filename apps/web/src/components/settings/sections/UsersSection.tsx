@@ -66,6 +66,7 @@ import { RowMenu } from "../RowMenu.js";
 import { AddUserSheet } from "./AddUserSheet.js";
 import { ResetPasswordDialog } from "./ResetPasswordDialog.js";
 import { InvitesPanel } from "./InvitesPanel.js";
+import { libraryPathLabel } from "./library-path-label.js";
 import { apiDelete, apiGet, apiPatch, apiPut } from "../../../lib/api-client.js";
 // browser-admin-F5: error surfaces route through apiErrorMessage, never
 // a bare `err.message` — the RFC 9457 `detail` is the half that says
@@ -197,14 +198,29 @@ function LibraryAccessModal({ user, onClose }: { user: User; onClose: () => void
         </div>
       ) : (
         <div className={styles.userChecklist}>
-          {libraries.map((lib) => (
-            <label key={lib.id} className={styles.checklistRow}>
-              <input type="checkbox" checked={granted.has(lib.id)} disabled={saving.has(lib.id)} onChange={() => void toggle(lib)} />
-              <span>{lib.name}</span>
-              <Tag>{enumLabel(MEDIA_KIND_LABEL, lib.mediaKind)}</Tag>
-              {lib.contentClass === "restricted" && <Tag>restricted</Tag>}
-            </label>
-          ))}
+          {libraries.map((lib) => {
+            // browser-admin-F9: name OVER its root path(s). Two libraries
+            // may share a name (nothing forbids it, and a seeded fixture
+            // beside a real library makes it the common case) — without
+            // the path an admin grants access to one of two
+            // identical-looking rows by coin flip.
+            const pathLabel = libraryPathLabel(lib.paths);
+            return (
+              <label key={lib.id} className={styles.checklistRow}>
+                <input type="checkbox" checked={granted.has(lib.id)} disabled={saving.has(lib.id)} onChange={() => void toggle(lib)} />
+                <span className={styles.checklistText}>
+                  <span>{lib.name}</span>
+                  {pathLabel !== null && (
+                    <span className={styles.checklistSub} title={pathLabel}>
+                      {pathLabel}
+                    </span>
+                  )}
+                </span>
+                <Tag>{enumLabel(MEDIA_KIND_LABEL, lib.mediaKind)}</Tag>
+                {lib.contentClass === "restricted" && <Tag>restricted</Tag>}
+              </label>
+            );
+          })}
         </div>
       )}
       <div className={styles.actions}>
