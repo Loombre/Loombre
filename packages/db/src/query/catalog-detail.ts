@@ -53,7 +53,7 @@ import type { ViewerContext } from '../context.js';
 import { applyContentClassFilter, applyGuard } from './guard.js';
 import { getItemById, type CatalogItemRow } from './items.js';
 import { decodeCursor, encodeCursor, isCursorRowId } from './cursor.js';
-import { toAudioCodec, toBitDepth, toHdr, toSubtitleCodec, toVideoCodec } from './media-info.js';
+import { deriveHdrForDisplay, toAudioCodec, toBitDepth, toSubtitleCodec, toVideoCodec } from './media-info.js';
 
 export interface ImageDescriptor {
   kind: string;
@@ -431,6 +431,10 @@ async function fetchMediaFilesBatch(db: Kysely<DB>, ids: string[]): Promise<Map<
       'codec',
       'bit_depth',
       'hdr',
+      // browser-items-F6: deriveHdrForDisplay() (media-info.ts) needs the
+      // raw color_transfer to fall back on when hdr itself is NULL — see
+      // its doc comment for why this can't just re-trust `hdr`.
+      'color_transfer',
       'channels',
       'language',
       'is_default',
@@ -446,6 +450,7 @@ async function fetchMediaFilesBatch(db: Kysely<DB>, ids: string[]): Promise<Map<
     codec: string | null;
     bitDepth: number | null;
     hdr: string | null;
+    colorTransfer: string | null;
   }
   const videoByFile = new Map<string, PrimaryVideo>();
   const audioByFile = new Map<string, MediaFileAudioTrackSummary[]>();
@@ -457,7 +462,14 @@ async function fetchMediaFilesBatch(db: Kysely<DB>, ids: string[]): Promise<Map<
       // same "first non-missing/first-seen" tiebreak the old width/height-
       // only version of this loop used.
       if (!videoByFile.has(s.file_id)) {
-        videoByFile.set(s.file_id, { width: s.width, height: s.height, codec: s.codec, bitDepth: s.bit_depth, hdr: s.hdr });
+        videoByFile.set(s.file_id, {
+          width: s.width,
+          height: s.height,
+          codec: s.codec,
+          bitDepth: s.bit_depth,
+          hdr: s.hdr,
+          colorTransfer: s.color_transfer,
+        });
       }
     } else if (s.stream_type === 'audio') {
       const arr = audioByFile.get(s.file_id) ?? [];
@@ -502,7 +514,11 @@ async function fetchMediaFilesBatch(db: Kysely<DB>, ids: string[]): Promise<Map<
       isDefault: defaultFileIdByItem.get(f.item_id) === f.id,
       videoCodec: video ? toVideoCodec(video.codec) : null,
       bitDepth: video ? toBitDepth(video.bitDepth) : null,
-      hdr: video ? toHdr(video.hdr) : null,
+      // browser-items-F6: deriveHdrForDisplay (not toHdr) — falls back to
+      // color_transfer when the stored hdr column is NULL, so an
+      // unset-but-probed-PQ stream renders "HDR10" instead of a
+      // fabricated-confident "SDR". See its doc comment (media-info.ts).
+      hdr: video ? deriveHdrForDisplay(video.hdr, video.colorTransfer) : null,
       audioTracks: audioByFile.get(f.id) ?? [],
       subtitleTracks: subtitleByFile.get(f.id) ?? [],
     });

@@ -190,15 +190,18 @@ describe('getCatalogDetail', () => {
         durationMs: 108 * 60_000,
         // Phosphor W2 L4 additive fields (movie-detail VERSIONS/METADATA
         // cards) — real seed.mjs media_streams rows: one HEVC/10-bit video
-        // stream (seed never populates media_streams.hdr, so it reads back
-        // 'none' via toHdr()'s null-fallback, not a fabricated HDR10 claim)
-        // and one default 5.1 EAC3/eng audio stream; no subtitle streams
-        // are seeded for movies at all.
+        // stream and one default 5.1 EAC3/eng audio stream; no subtitle
+        // streams are seeded for movies at all. browser-items-F6: seed.mjs
+        // sets color_transfer='smpte2084' on this row but never populates
+        // media_streams.hdr, so the raw column reads back NULL — hdr
+        // 'hdr10' here is deriveHdrForDisplay() reading that PQ transfer
+        // (media-info.ts), not a fabricated claim; see deriveHdrForDisplay's
+        // own unit tests (media-info.spec.ts) for the mapping table.
         path: '/data/movies/Harbor.Lights.mkv',
         isDefault: true,
         videoCodec: 'hevc',
         bitDepth: 10,
-        hdr: 'none',
+        hdr: 'hdr10',
         audioTracks: [{ codec: 'eac3', channels: 6, language: 'eng', isDefault: true }],
         subtitleTracks: [],
       }),

@@ -39,7 +39,15 @@ const VIDEO_CODEC_LABEL: Record<string, string> = {
 };
 
 function hdrLabel(hdr: MediaFileSummary["hdr"]): string | null {
-  if (!hdr || hdr === "none") return "SDR";
+  // browser-items-F6: `null` and the enum member `"none"` are NOT the same
+  // claim. `"none"` is a positive probed verdict (packages/db's
+  // deriveHdrForDisplay / toHdr, catalog-detail.ts) — "SDR" is correct.
+  // `null` means no confident HDR signal was derivable at all (unset hdr
+  // column + a color_transfer that doesn't indicate HDR either) — asserting
+  // "SDR" there would be exactly the misleading claim this finding is
+  // about, so it's omitted from the specs line instead (specsLine's
+  // `.filter(Boolean)` below drops it).
+  if (hdr === "none") return "SDR";
   if (hdr === "hdr10") return "HDR10";
   if (hdr === "hlg") return "HLG";
   if (hdr === "dv") return "Dolby Vision";

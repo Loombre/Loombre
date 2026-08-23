@@ -196,6 +196,48 @@ export function toSubtitleCodec(v: string | null): AssembledSubtitleCodec {
 export function toHdr(v: string | null): AssembledHdr {
   return v !== null && HDR_KINDS.has(v) ? (v as AssembledHdr) : 'none';
 }
+
+/** browser-items-F6 (P3, movie-detail VERSIONS card display hardening):
+ *  toHdr() above is the untrusted-COLUMN defense (an invalid/junk hdr
+ *  string coerces to 'none') but it can't tell "hdr column genuinely
+ *  unset" apart from "hdr column confirms no HDR" — both are NULL/'none'
+ *  by the time they reach it, and catalog-detail.ts's VersionCard consumer
+ *  used to render either as a confident "SDR". In production a probed
+ *  video stream's hdr is never actually NULL (apps/worker/src/probe/
+ *  extract.ts's resolveHdr() and consumer.ts write hdr + color_transfer
+ *  from the SAME probe run, always together, via
+ *  src/internal/files.ts's replaceFileStreams — the only production
+ *  writer), but packages/db/seed/seed.mjs's movie fixture sets
+ *  color_transfer='smpte2084' while never touching the hdr column at all
+ *  (leaving it NULL) — exactly the gap this closes.
+ *
+ *  Only consulted when hdr itself is NULL: a genuine stored value (even an
+ *  invalid one) is trusted as-is via toHdr() and never second-guessed
+ *  against color_transfer, since both come from the same write. Mirrors
+ *  resolveHdr()'s own color_transfer table (smpte2084 -> hdr10,
+ *  arib-std-b67 -> hlg) but deliberately CANNOT derive 'dv': a DV
+ *  profile-8 stream carries that same HDR10-compatible smpte2084
+ *  transfer (resolveHdr's own comment), so Dolby Vision is only ever
+ *  knowable from the DOVI side-data signal at probe time — there is no
+ *  separate media_streams column to reconstruct it from at read time.
+ *  Returns null (VersionCard.tsx's hdrLabel then omits the row entirely)
+ *  rather than falling back to 'none' when color_transfer gives no HDR
+ *  signal either — an actually-unknown verdict must not read as a
+ *  confident "SDR" claim.
+ *
+ *  Movie-detail VERSIONS card (catalog-detail.ts's fetchMediaFilesBatch)
+ *  only — media-info.ts's own MediaInfo assembly for
+ *  @loombre/playback-engine keeps calling toHdr() unchanged above; this is
+ *  a display-layer hardening, not a playback-decision change. */
+const HDR_TRANSFER_FALLBACK: Readonly<Record<string, 'hdr10' | 'hlg'>> = {
+  smpte2084: 'hdr10',
+  'arib-std-b67': 'hlg',
+};
+export function deriveHdrForDisplay(hdr: string | null, colorTransfer: string | null): AssembledHdr | null {
+  if (hdr !== null) return toHdr(hdr);
+  return (colorTransfer !== null ? HDR_TRANSFER_FALLBACK[colorTransfer] : undefined) ?? null;
+}
+
 export function toBitDepth(v: number | null): 8 | 10 | 12 {
   return v === 10 ? 10 : v === 12 ? 12 : 8;
 }
