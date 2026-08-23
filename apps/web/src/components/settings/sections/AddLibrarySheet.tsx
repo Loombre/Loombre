@@ -26,6 +26,23 @@
 //     /libraries followed immediately by POST /libraries/{id}/scan
 //     (full: false), chaining two existing endpoints. A create failure
 //     never attempts the scan call.
+//
+// browser-admin-F7 (QA 2026-08-21, P2) — the RESTRICTED tail of that
+// flow. Creating a content_class='restricted' library deliberately does
+// NOT grant its creator anything: packages/db/src/query/libraries.ts
+// skips the creator auto-grant for exactly that class (§6.4 gate 4,
+// "default-deny, including for admins"), and GET /libraries is
+// viewer-scoped, so the new library is invisible to the admin who just
+// made it. That server design stays. What was broken was this dialog
+// pretending otherwise — it closed on success exactly like a general
+// library, the caller spliced the POST response into the list, and the
+// next reload deleted the row with no explanation and no way back: the
+// permissions editor is fed by the same viewer-scoped list, so an
+// ungranted restricted library could not be reached from anywhere in the
+// UI. It now stops on an explicit next-step panel that names both
+// remaining gates and can issue the PUT /libraries/{id}/permissions the
+// design itself calls for (an existence-scoped admin route — it works
+// fine on a library the caller cannot yet see).
 
 import { useState } from "react";
 import { SheetOrModal } from "../../ui/SheetOrModal.js";
@@ -34,7 +51,7 @@ import { TextInput } from "../../ui/Input.js";
 import { Button } from "../../ui/Button.js";
 import { SegmentedControl } from "../../ui/SegmentedControl.js";
 import { useToast } from "../../ui/Toast.js";
-import { apiPost, LoombreApiError } from "../../../lib/api-client.js";
+import { apiGet, apiPost, apiPut, LoombreApiError } from "../../../lib/api-client.js";
 import type { components } from "@loombre/sdk";
 import styles from "./shared.module.css";
 
@@ -69,6 +86,12 @@ export function AddLibrarySheet({
   const [pickerOpen, setPickerOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  // browser-admin-F7: set only for a restricted creation — the dialog then
+  // renders the grant step instead of closing.
+  const [created, setCreated] = useState<Library | null>(null);
+  const [granting, setGranting] = useState(false);
+  const [granted, setGranted] = useState(false);
+  const [grantError, setGrantError] = useState<string | null>(null);
 
   const paths = pathsText
     .split("\n")
@@ -84,6 +107,10 @@ export function AddLibrarySheet({
     setPickerOpen(false);
     setError(null);
     setSubmitting(false);
+    setCreated(null);
+    setGranting(false);
+    setGranted(false);
+    setGrantError(null);
   }
 
   async function handleSubmit(e: React.FormEvent): Promise<void> {
@@ -105,12 +132,50 @@ export function AddLibrarySheet({
       } catch {
         showToast(`LIBRARY CREATED — ${lib.name.toUpperCase()}`);
       }
+      // The caller re-reads GET /libraries off this callback — it is a
+      // "the server changed, go look" signal, never the row itself.
       onCreated(lib);
+      if (lib.contentClass === "restricted") {
+        // Stop here: this library is NOT in the list the caller just
+        // re-read, and saying so (with the grant action attached) is the
+        // whole fix. Closing would reproduce the appear-then-vanish trap.
+        setCreated(lib);
+        setSubmitting(false);
+        return;
+      }
       reset();
       onClose();
     } catch (err) {
       setError(err instanceof LoombreApiError ? err.message : "Failed to create library.");
       setSubmitting(false);
+    }
+  }
+
+  /** browser-admin-F7: the grant the server's default-deny requires next.
+   *  PUT /libraries/{id}/permissions replaces grants only for the userIds
+   *  it names (packages/db putLibraryPermissionsAdmin), so submitting the
+   *  single self entry cannot disturb anyone else's access — and unlike
+   *  GET /libraries it is existence-scoped admin CRUD, so it reaches a
+   *  library this admin cannot yet see. */
+  async function handleGrantSelf(): Promise<void> {
+    if (!created) return;
+    setGranting(true);
+    setGrantError(null);
+    try {
+      const me = await apiGet("/users/me");
+      await apiPut("/libraries/{id}/permissions", {
+        params: { path: { id: created.id } },
+        body: { libraryId: created.id, permissions: [{ userId: me.id, granted: true }] },
+      });
+      setGranted(true);
+      // Tell the caller to look again: with gate 4 satisfied the library
+      // appears in its list the moment gate 5 (the live unlock) is too.
+      onCreated(created);
+      showToast(`ACCESS GRANTED — ${created.name.toUpperCase()}`);
+    } catch (err) {
+      setGrantError(err instanceof LoombreApiError ? err.message : "Failed to grant access.");
+    } finally {
+      setGranting(false);
     }
   }
 
@@ -121,91 +186,131 @@ export function AddLibrarySheet({
         reset();
         onClose();
       }}
-      title="Add library"
-      sub="Loombre only reads these paths — scanning never renames, moves, or modifies your source files."
+      title={created ? "One more step" : "Add library"}
+      sub={
+        created
+          ? `“${created.name}” exists, but restricted libraries stay hidden until you grant yourself access.`
+          : "Loombre only reads these paths — scanning never renames, moves, or modifies your source files."
+      }
     >
-      <form className={styles.form} onSubmit={(e) => void handleSubmit(e)}>
-        <label className={styles.field}>
-          <span className={styles.label}>Name</span>
-          <TextInput value={name} onChange={(e) => setName(e.target.value)} required />
-        </label>
-        <label className={styles.field}>
-          <span className={styles.label}>Kind</span>
-          <SegmentedControl
-            options={Object.keys(MEDIA_KIND_LABELS)}
-            defaultValue="Movie"
-            onChange={(v) => setMediaKind(MEDIA_KIND_LABELS[v] ?? "movie")}
-          />
-        </label>
-        <div className={styles.field}>
-          <div className={styles.pathsHeader}>
-            <span className={styles.label} id="library-paths-label">
-              Paths (one per line)
-            </span>
-            {/* Browse ADDS to the textarea rather than replacing it. A
-                headless install, a path that only exists inside a
-                container, or a mount this browser's host cannot see all
-                still need typing — see DirectoryPicker's header for why an
-                OS file dialog cannot serve this at all. */}
-            <Button type="button" variant="ghost" onClick={() => setPickerOpen(true)}>
-              Browse…
-            </Button>
-          </div>
-          <textarea
-            className={styles.textarea}
-            aria-labelledby="library-paths-label"
-            value={pathsText}
-            onChange={(e) => setPathsText(e.target.value)}
-            // Platform-neutral: the old "/data/movies" is wrong on the
-            // Windows install this dialog is most often used on, and a
-            // placeholder that cannot be right everywhere should not
-            // pretend to be an example.
-            placeholder={"One folder per line, e.g.\nD:\\Media\\Movies"}
-            rows={3}
-            required
-          />
-        </div>
-        <div className={styles.formRow}>
-          <span className={styles.label}>Restricted content</span>
-          <SegmentedControl options={["General", "Restricted"]} defaultValue="General" onChange={(v) => setRestricted(v === "Restricted")} />
-        </div>
-        {restricted && (
+      {created ? (
+        <div className={styles.form}>
           <p className={styles.note}>
-            Restricted just marks the library — visibility still requires the server capability to be enabled,
-            explicit per-user grants, and each user&apos;s own age/opt-in/PIN and live unlock. Requires
-            LOOMBRE_RESTRICTED_ENABLED on this instance.
+            Restricted libraries are default-deny — including for the admin who created them. “{created.name}”
+            will not appear in your Libraries list until <strong>both</strong> of these are true: you hold an
+            explicit grant on it, and restricted content is unlocked on this device (the lock in the header).
           </p>
-        )}
-        {error && <p className={styles.errorText}>{error}</p>}
-        <div className={styles.actions}>
-          <Button
-            type="button"
-            variant="ghost"
-            onClick={() => {
-              reset();
-              onClose();
-            }}
-          >
-            Cancel
-          </Button>
-          <Button type="submit" variant="primary" disabled={!canSubmit || submitting}>
-            {submitting ? "Creating…" : "Create & scan"}
-          </Button>
+          {granted ? (
+            <p className={styles.note}>
+              Access granted. Unlock restricted content to see and manage “{created.name}” here — scanning and
+              its other admin actions live on its row once it is visible.
+            </p>
+          ) : null}
+          {grantError && <p className={styles.errorText}>{grantError}</p>}
+          <div className={styles.actions}>
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => {
+                reset();
+                onClose();
+              }}
+            >
+              Close
+            </Button>
+            {!granted && (
+              <Button type="button" variant="primary" onClick={() => void handleGrantSelf()} disabled={granting}>
+                {granting ? "Granting…" : "Grant yourself access"}
+              </Button>
+            )}
+          </div>
         </div>
-      </form>
-      <DirectoryPicker
-        open={pickerOpen}
-        onClose={() => setPickerOpen(false)}
-        onSelect={(picked) => {
-          // Append as a new line, de-duplicating: a library with the same
-          // path twice would have the scanner walk it twice for nothing.
-          setPathsText((prev) => {
-            const lines = prev.split("\n").map((l) => l.trim()).filter(Boolean);
-            if (lines.includes(picked)) return prev;
-            return [...lines, picked].join("\n");
-          });
-        }}
-      />
+      ) : (
+        <>
+          <form className={styles.form} onSubmit={(e) => void handleSubmit(e)}>
+            <label className={styles.field}>
+              <span className={styles.label}>Name</span>
+              <TextInput value={name} onChange={(e) => setName(e.target.value)} required />
+            </label>
+            <label className={styles.field}>
+              <span className={styles.label}>Kind</span>
+              <SegmentedControl
+                options={Object.keys(MEDIA_KIND_LABELS)}
+                defaultValue="Movie"
+                onChange={(v) => setMediaKind(MEDIA_KIND_LABELS[v] ?? "movie")}
+              />
+            </label>
+            <div className={styles.field}>
+              <div className={styles.pathsHeader}>
+                <span className={styles.label} id="library-paths-label">
+                  Paths (one per line)
+                </span>
+                {/* Browse ADDS to the textarea rather than replacing it. A
+                    headless install, a path that only exists inside a
+                    container, or a mount this browser's host cannot see all
+                    still need typing — see DirectoryPicker's header for why an
+                    OS file dialog cannot serve this at all. */}
+                <Button type="button" variant="ghost" onClick={() => setPickerOpen(true)}>
+                  Browse…
+                </Button>
+              </div>
+              <textarea
+                className={styles.textarea}
+                aria-labelledby="library-paths-label"
+                value={pathsText}
+                onChange={(e) => setPathsText(e.target.value)}
+                // Platform-neutral: the old "/data/movies" is wrong on the
+                // Windows install this dialog is most often used on, and a
+                // placeholder that cannot be right everywhere should not
+                // pretend to be an example.
+                placeholder={"One folder per line, e.g.\nD:\\Media\\Movies"}
+                rows={3}
+                required
+              />
+            </div>
+            <div className={styles.formRow}>
+              <span className={styles.label}>Restricted content</span>
+              <SegmentedControl options={["General", "Restricted"]} defaultValue="General" onChange={(v) => setRestricted(v === "Restricted")} />
+            </div>
+            {restricted && (
+              <p className={styles.note}>
+                Restricted just marks the library — visibility still requires the server capability to be enabled,
+                explicit per-user grants, and each user&apos;s own age/opt-in/PIN and live unlock. Requires
+                LOOMBRE_RESTRICTED_ENABLED on this instance.
+              </p>
+            )}
+            {error && <p className={styles.errorText}>{error}</p>}
+            <div className={styles.actions}>
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => {
+                  reset();
+                  onClose();
+                }}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" variant="primary" disabled={!canSubmit || submitting}>
+                {submitting ? "Creating…" : "Create & scan"}
+              </Button>
+            </div>
+          </form>
+          <DirectoryPicker
+            open={pickerOpen}
+            onClose={() => setPickerOpen(false)}
+            onSelect={(picked) => {
+              // Append as a new line, de-duplicating: a library with the same
+              // path twice would have the scanner walk it twice for nothing.
+              setPathsText((prev) => {
+                const lines = prev.split("\n").map((l) => l.trim()).filter(Boolean);
+                if (lines.includes(picked)) return prev;
+                return [...lines, picked].join("\n");
+              });
+            }}
+          />
+        </>
+      )}
     </SheetOrModal>
   );
 }

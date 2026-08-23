@@ -8,6 +8,17 @@
 // the contract: the rendered labels are title-case, AND the value that
 // actually reaches the API (mediaKind on the POST /libraries body) stays
 // the lowercase enum untouched.
+//
+// browser-admin-F7 (QA 2026-08-21, P2): the second describe pins the
+// restricted-library creation flow. The server deliberately does NOT
+// auto-grant the creating admin permission on a content_class='restricted'
+// library (packages/db/src/query/libraries.ts — "default-deny, including
+// for admins"), and GET /libraries is viewer-scoped, so the created
+// library is invisible to its own creator until they hold a grant AND
+// restricted content is unlocked. The UI used to hide that entirely: it
+// closed the sheet and left the caller to insert a row that a reload
+// silently dropped, with no surface anywhere that could issue the
+// PUT /libraries/{id}/permissions the design requires next.
 
 import { act } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -16,12 +27,14 @@ import { ToastProvider } from "../../ui/Toast.js";
 
 const apiPostMock = vi.fn();
 const apiGetMock = vi.fn();
+const apiPutMock = vi.fn();
 
 class FakeApiError extends Error {}
 
 vi.mock("../../../lib/api-client.js", () => ({
   apiPost: (...args: unknown[]) => apiPostMock(...args),
   apiGet: (...args: unknown[]) => apiGetMock(...args),
+  apiPut: (...args: unknown[]) => apiPutMock(...args),
   LoombreApiError: FakeApiError,
 }));
 
@@ -37,77 +50,103 @@ const CREATED_LIBRARY = {
   updatedAtMs: 0,
 };
 
+const RESTRICTED_LIBRARY = {
+  id: "lib-r",
+  name: "qa-restricted",
+  mediaKind: "movie",
+  paths: ["/mnt/restricted"],
+  contentClass: "restricted",
+  createdAtMs: 0,
+  updatedAtMs: 0,
+};
+
+const ME = {
+  id: "admin-1",
+  username: "admin",
+  email: null,
+  isAdmin: true,
+  birthDate: null,
+  maxContentRating: null,
+  createdAtMs: 0,
+  updatedAtMs: 0,
+};
+
+let view: TestRender | null = null;
+
+beforeEach(() => {
+  apiPostMock.mockReset();
+  apiGetMock.mockReset();
+  apiPutMock.mockReset();
+  // SheetOrModal -> useMediaQuery calls matchMedia unconditionally on
+  // every render — jsdom has no real implementation (same stub
+  // AddUserSheet.test.tsx already needs for the identical reason).
+  vi.stubGlobal(
+    "matchMedia",
+    vi.fn().mockImplementation((query: string) => ({
+      matches: false,
+      media: query,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      addListener: () => {},
+      removeListener: () => {},
+      dispatchEvent: () => true,
+    })),
+  );
+});
+
+afterEach(() => {
+  view?.unmount();
+  view = null;
+  vi.unstubAllGlobals();
+});
+
+function radiogroup(): HTMLElement {
+  return view!.container.querySelector('[role="radiogroup"]') as HTMLElement;
+}
+
+function kindSegments(): HTMLButtonElement[] {
+  return Array.from(radiogroup().querySelectorAll('button[role="radio"]'));
+}
+
+function inputFor(labelText: string): HTMLInputElement {
+  const label = Array.from(view!.container.querySelectorAll("label")).find((l) =>
+    (l.textContent ?? "").startsWith(labelText),
+  );
+  if (!label) throw new Error(`no field labelled "${labelText}"`);
+  return label.querySelector("input")!;
+}
+
+function setNativeInputValue(el: HTMLInputElement, value: string): void {
+  const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+  setter.call(el, value);
+  el.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
+function setTextareaValue(el: HTMLTextAreaElement, value: string): void {
+  const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!;
+  setter.call(el, value);
+  el.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
+function findButton(text: string): HTMLButtonElement | undefined {
+  return Array.from(view!.container.querySelectorAll("button")).find(
+    (b) => (b.textContent ?? "").trim() === text,
+  ) as HTMLButtonElement | undefined;
+}
+
+function buttonFor(text: string): HTMLButtonElement {
+  const button = findButton(text);
+  if (!button) throw new Error(`no button labelled "${text}"`);
+  return button;
+}
+
+async function click(button: HTMLButtonElement): Promise<void> {
+  await act(async () => {
+    button.click();
+  });
+}
+
 describe("AddLibrarySheet — Kind control (D-3 label-casing)", () => {
-  let view: TestRender | null = null;
-
-  beforeEach(() => {
-    apiPostMock.mockReset();
-    apiGetMock.mockReset();
-    // SheetOrModal -> useMediaQuery calls matchMedia unconditionally on
-    // every render — jsdom has no real implementation (same stub
-    // AddUserSheet.test.tsx already needs for the identical reason).
-    vi.stubGlobal(
-      "matchMedia",
-      vi.fn().mockImplementation((query: string) => ({
-        matches: false,
-        media: query,
-        addEventListener: () => {},
-        removeEventListener: () => {},
-        addListener: () => {},
-        removeListener: () => {},
-        dispatchEvent: () => true,
-      })),
-    );
-  });
-
-  afterEach(() => {
-    view?.unmount();
-    view = null;
-    vi.unstubAllGlobals();
-  });
-
-  function radiogroup(): HTMLElement {
-    return view!.container.querySelector('[role="radiogroup"]') as HTMLElement;
-  }
-
-  function kindSegments(): HTMLButtonElement[] {
-    return Array.from(radiogroup().querySelectorAll('button[role="radio"]'));
-  }
-
-  function inputFor(labelText: string): HTMLInputElement {
-    const label = Array.from(view!.container.querySelectorAll("label")).find((l) =>
-      (l.textContent ?? "").startsWith(labelText),
-    );
-    if (!label) throw new Error(`no field labelled "${labelText}"`);
-    return label.querySelector("input")!;
-  }
-
-  function setNativeInputValue(el: HTMLInputElement, value: string): void {
-    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
-    setter.call(el, value);
-    el.dispatchEvent(new Event("input", { bubbles: true }));
-  }
-
-  function setTextareaValue(el: HTMLTextAreaElement, value: string): void {
-    const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!;
-    setter.call(el, value);
-    el.dispatchEvent(new Event("input", { bubbles: true }));
-  }
-
-  function buttonFor(text: string): HTMLButtonElement {
-    const button = Array.from(view!.container.querySelectorAll("button")).find(
-      (b) => (b.textContent ?? "").trim() === text,
-    );
-    if (!button) throw new Error(`no button labelled "${text}"`);
-    return button as HTMLButtonElement;
-  }
-
-  async function click(button: HTMLButtonElement): Promise<void> {
-    await act(async () => {
-      button.click();
-    });
-  }
-
   it("renders title-case Kind labels, never the raw lowercase enum", () => {
     view = renderIntoBody(
       <ToastProvider>
@@ -161,5 +200,73 @@ describe("AddLibrarySheet — Kind control (D-3 label-casing)", () => {
 
     const [, options] = apiPostMock.mock.calls[0] as [string, { body: Record<string, unknown> }];
     expect(options.body["mediaKind"]).toBe("movie");
+  });
+});
+
+describe("AddLibrarySheet — browser-admin-F7: restricted creation must not be a dead end", () => {
+  async function createRestricted(handlers: { onClose?: () => void; onCreated?: (lib: unknown) => void } = {}): Promise<void> {
+    apiPostMock.mockResolvedValueOnce(RESTRICTED_LIBRARY).mockResolvedValueOnce({});
+    view = renderIntoBody(
+      <ToastProvider>
+        <AddLibrarySheet open onClose={handlers.onClose ?? (() => {})} onCreated={handlers.onCreated ?? (() => {})} />
+      </ToastProvider>,
+    );
+    setNativeInputValue(inputFor("Name"), "qa-restricted");
+    const pathsField = view.container.querySelector("textarea") as HTMLTextAreaElement;
+    setTextareaValue(pathsField, "/mnt/restricted");
+    await click(buttonFor("Restricted"));
+    await click(buttonFor("Create & scan"));
+  }
+
+  it("keeps the sheet open on a next-step panel that says the library is not visible yet", async () => {
+    const onClose = vi.fn();
+    await createRestricted({ onClose });
+
+    // The trap: the sheet used to close on success exactly like a general
+    // library, so the only feedback was a row the next reload deleted.
+    expect(onClose).not.toHaveBeenCalled();
+    expect(view!.container.textContent).toMatch(/will not appear/i);
+    expect(findButton("Grant yourself access")).toBeTruthy();
+  });
+
+  it("'Grant yourself access' PUTs the creating admin into the new library's permissions", async () => {
+    apiGetMock.mockImplementation((path: string) => {
+      if (path === "/users/me") return Promise.resolve(ME);
+      return Promise.reject(new Error(`unexpected apiGet(${path})`));
+    });
+    await createRestricted();
+
+    await click(buttonFor("Grant yourself access"));
+
+    expect(apiPutMock).toHaveBeenCalledTimes(1);
+    const [path, options] = apiPutMock.mock.calls[0] as [
+      string,
+      { params: { path: { id: string } }; body: { libraryId: string; permissions: { userId: string; granted: boolean }[] } },
+    ];
+    expect(path).toBe("/libraries/{id}/permissions");
+    expect(options.params.path.id).toBe("lib-r");
+    expect(options.body.libraryId).toBe("lib-r");
+    expect(options.body.permissions).toEqual([{ userId: "admin-1", granted: true }]);
+    // Grant is gate 4 only — the panel must not claim the library is now
+    // browsable (gate 5, the live unlock, is still owed).
+    expect(view!.container.textContent).toMatch(/unlock restricted content/i);
+  });
+
+  it("a general library still closes the sheet immediately — no grant step", async () => {
+    const onClose = vi.fn();
+    apiPostMock.mockResolvedValueOnce(CREATED_LIBRARY).mockResolvedValueOnce({});
+    view = renderIntoBody(
+      <ToastProvider>
+        <AddLibrarySheet open onClose={onClose} onCreated={() => {}} />
+      </ToastProvider>,
+    );
+    setNativeInputValue(inputFor("Name"), "Test Library");
+    const pathsField = view.container.querySelector("textarea") as HTMLTextAreaElement;
+    setTextareaValue(pathsField, "/mnt/tv");
+    await click(buttonFor("Create & scan"));
+
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(findButton("Grant yourself access")).toBeUndefined();
+    expect(apiPutMock).not.toHaveBeenCalled();
   });
 });

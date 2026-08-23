@@ -20,6 +20,13 @@
 //     /libraries fetch this pane already makes, recomputed on every
 //     render; never cached in a second piece of state (the prototype's
 //     stale-subtitle lesson, README "State management").
+// Restricted libraries (browser-admin-F7): this pane lists exactly what
+// GET /libraries returns for the signed-in admin — a restricted library
+// they hold no grant on, or hold one but have not unlocked, is ABSENT
+// here, and that is the server's answer, not a bug to paper over
+// client-side. AddLibrarySheet's post-create step is where an admin
+// grants themselves access to one they just made.
+//
 //   - "state"/"last scan" — Library carries neither field (ground-truthed:
 //     packages/contract/openapi.yaml's Library schema has no scan-state/
 //     timestamp). use-library-scan-status.ts derives both LIVE from the
@@ -344,7 +351,16 @@ export function LibrariesSection({ heading }: { heading: string | null }): React
         + Add library
       </button>
 
-      <AddLibrarySheet open={adding} onClose={() => setAdding(false)} onCreated={(lib) => setLibraries((prev) => (prev ? [lib, ...prev] : [lib]))} />
+      {/* browser-admin-F7 (QA 2026-08-21): onCreated used to splice the
+          POST /libraries response straight into this state. For a
+          restricted library that row is a LIE — GET /libraries is
+          viewer-scoped and the creating admin gets no auto-grant by design
+          (packages/db/src/query/libraries.ts, §6.4 gate 4), so the row
+          appeared for one render and the next reload silently deleted it.
+          The callback is now a "go look again" signal: this list only ever
+          shows what the server says it shows, and AddLibrarySheet owns
+          explaining what a restricted creation still needs. */}
+      <AddLibrarySheet open={adding} onClose={() => setAdding(false)} onCreated={reload} />
 
       {editing && (
         <EditLibraryModal
