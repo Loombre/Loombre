@@ -71,6 +71,7 @@ export { addToWatchlistAndEmit, listWatchlist, removeFromWatchlistAndEmit } from
 export type {
   ContinueWatchingRow,
   GetContinueWatchingParams,
+  GetContinueWatchingResult,
   ListProgressParams,
   ListProgressResult,
   ProgressRow,

@@ -508,11 +508,14 @@ describe('restricted-content leak impossibility', () => {
     // 5. continue-watching
     // ------------------------------------------------------------------
     it('getContinueWatching: restricted in-progress rows are excluded for uncleared viewers, included for cleared', async () => {
-      const uncleared = await getContinueWatching(db, adminClearedButNotUnlocked);
+      // adi-F1: getContinueWatching returns a keyset PAGE ({rows,
+      // nextCursor}) now, like every other list surface here — the guard
+      // assertion below is unchanged, it just reads `.rows`.
+      const { rows: uncleared } = await getContinueWatching(db, adminClearedButNotUnlocked);
       expect(uncleared.map((r) => r.itemId)).not.toContain(afterHoursRedlineItemId);
       expect(uncleared.every((r) => r.itemId !== afterHoursRedlineItemId)).toBe(true);
 
-      const cleared = await getContinueWatching(db, adminCleared);
+      const { rows: cleared } = await getContinueWatching(db, adminCleared);
       expect(cleared.map((r) => r.itemId)).toContain(afterHoursRedlineItemId);
       expect(cleared.length).toBeGreaterThan(uncleared.length);
     });
@@ -1486,7 +1489,7 @@ describe('restricted-content leak impossibility', () => {
 
       expect((await listItems(db, emptyLibsCleared, { limit: 50 })).rows).toHaveLength(0);
       expect((await searchCatalog(db, emptyLibsCleared, { q: 'Harbor' })).rows).toHaveLength(0);
-      expect(await getContinueWatching(db, emptyLibsCleared)).toHaveLength(0);
+      expect((await getContinueWatching(db, emptyLibsCleared)).rows).toHaveLength(0);
       expect((await listProgress(db, emptyLibsCleared, { limit: 50 })).rows).toHaveLength(0);
       expect((await listPeople(db, emptyLibsCleared, { limit: 50 })).rows).toHaveLength(0);
       expect((await listTags(db, emptyLibsCleared, { limit: 50 })).rows).toHaveLength(0);

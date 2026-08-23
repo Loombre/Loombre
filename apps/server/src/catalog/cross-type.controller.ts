@@ -87,10 +87,13 @@ export class CrossTypeController {
   @Get("home/continue-watching")
   async continueWatching(@Query() query: Record<string, unknown>, @Req() req: AuthenticatedRequest) {
     const ctx = await resolveViewer(this.viewerContextProvider, req);
-    const { limit } = parseListQuery(query);
-    const rows = await getContinueWatching(this.dbProvider.db, ctx, limit !== undefined ? { limit } : {});
+    const { cursor, limit } = parseListQuery(query);
+    const page = await getContinueWatching(this.dbProvider.db, ctx, {
+      ...(cursor !== undefined ? { cursor } : {}),
+      ...(limit !== undefined ? { limit } : {}),
+    });
 
-    const eligible = rows.filter((r) => (["movie", "episode", "track"] as ItemType[]).includes(r.itemType));
+    const eligible = page.rows.filter((r) => (["movie", "episode", "track"] as ItemType[]).includes(r.itemType));
     const details = await Promise.all(eligible.map((r) => getCatalogDetail(this.dbProvider.db, ctx, r.itemId)));
 
     const items = eligible
@@ -108,7 +111,15 @@ export class CrossTypeController {
         },
       }));
 
-    return { items, nextCursor: null };
+    // Remediation adi-F1: `nextCursor` is the QUERY page's cursor, never
+    // one derived from `items` — the itemType/detail filtering above can
+    // shrink a page, and pagination must keep advancing over the rows the
+    // database actually returned (exactly what search/recentlyAdded either
+    // side of this handler do). Before this fix the handler destructured
+    // only `{ limit }` and returned a hardcoded `nextCursor: null`, so
+    // `?limit=1` made every later entry unreachable and `?cursor=…` was
+    // silently ignored instead of 422'ing via MalformedCursorError.
+    return { items, nextCursor: page.nextCursor };
   }
 
   @Get("home/recently-added")

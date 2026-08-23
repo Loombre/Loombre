@@ -551,6 +551,60 @@ describe("seeded conformance: cross-type", () => {
     }
   });
 
+  // ── Remediation adi-F1 ────────────────────────────────────────────────
+  // openapi.yaml's `getContinueWatching` declares
+  // #/components/parameters/Cursor + Limit and a ContinueWatchingPage whose
+  // `nextCursor` is REQUIRED — this rail is a keyset-paginated page like
+  // /search and /home/recently-added, not a bounded array with a hardcoded
+  // null. The controller destructured only `{ limit }` from parseListQuery
+  // and returned `{ items, nextCursor: null }` unconditionally, so any
+  // limit below the row count silently dropped every later entry (an SDK
+  // consumer walking nextCursor never saw them) and a supplied cursor was
+  // never read — which also meant a garbage cursor answered 200 instead of
+  // the 422 every other list op gives (MalformedCursorError ->
+  // ProblemJsonExceptionFilter).
+  it("GET /home/continue-watching pages: a limit=1 walk over nextCursor reaches EVERY entry (adi-F1)", async () => {
+    // seed.mjs leaves admin with a small number of in-progress rows; add a
+    // few more so a page boundary genuinely exists at limit=1. Written as
+    // ADMIN deliberately — the casual caller's progress rows are fixtures
+    // other tests in this file depend on being absent.
+    const movies = await admin().get("/movies?limit=200");
+    for (const title of ["Glass Orchard", "Last Ferry Out", "Neon Static"]) {
+      const movie = movies.body.items.find((m: any) => m.title === title);
+      expect(movie, title).toBeTruthy();
+      const put = await admin().put(`/progress/${movie.id}`).send({ positionMs: 4_000, state: "in-progress" });
+      expect(put.status, JSON.stringify(put.body)).toBe(200);
+    }
+
+    const all = await admin().get("/home/continue-watching?limit=200");
+    expect(all.status).toBe(200);
+    expect(all.body.items.length).toBeGreaterThan(1);
+    expect(all.body.nextCursor).toBeNull();
+    const allIds = all.body.items.map((e: any) => e.progress.itemId);
+
+    const walked: string[] = [];
+    let cursor: string | null = null;
+    for (let hop = 0; hop < 50; hop += 1) {
+      const url =
+        cursor === null
+          ? "/home/continue-watching?limit=1"
+          : `/home/continue-watching?limit=1&cursor=${encodeURIComponent(cursor)}`;
+      const page = await admin().get(url);
+      expect(page.status, JSON.stringify(page.body)).toBe(200);
+      walked.push(...page.body.items.map((e: any) => e.progress.itemId));
+      if (page.body.nextCursor === null) break;
+      cursor = page.body.nextCursor;
+    }
+    expect(walked).toEqual(allIds);
+  });
+
+  it("GET /home/continue-watching?cursor=<garbage> is 422 problem+json, never a silent page 1 (adi-F1)", async () => {
+    const res = await admin().get("/home/continue-watching?cursor=%40%40%40");
+    expect(res.status, JSON.stringify(res.body)).toBe(422);
+    expect(res.headers["content-type"]).toContain("application/problem+json");
+    expect(res.body.type).toBe("urn:loombre:problem:validation");
+  });
+
   it("GET /home/recently-added is Ajv-shape-valid and non-empty for casual", async () => {
     const res = await casual().get("/home/recently-added?limit=200");
     expect(res.status).toBe(200);
