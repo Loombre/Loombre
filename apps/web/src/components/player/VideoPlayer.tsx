@@ -58,6 +58,7 @@ import {
   type ListedFragment,
 } from "../../lib/source-time.js";
 import { reopenEndedLevels, startRelocationNudge } from "../../lib/relocation-nudge.js";
+import { decideRecovery, sessionFailureReasons } from "../../lib/playback-recovery.js";
 import { useToast } from "../ui/Toast.js";
 import { AmbientBackdrop } from "./AmbientBackdrop.js";
 import { UnavailableScreen } from "./UnavailableScreen.js";
@@ -82,17 +83,20 @@ type Phase = "loading" | "unavailable" | "ready";
 
 const IDLE_HIDE_MS = 3000;
 // Task #6 (2026-08-08/10 HLS-stall recon; redesigned 2026-08-10 opus review
-// findings 1/2): the direct-play/native-HLS attach effect's bounded
+// findings 1/2; browser-player-F1 extracted it to lib/playback-recovery.ts
+// so the hls.js attach effect shares the identical policy): the bounded
 // recovery path — shared by a fatal `error` event AND the stall watchdog
-// below. RECOVERY_MIN_INTERVAL_MS is a per-attempt COOLDOWN, DEFERRED via
-// setTimeout when hit (never dropped — see `scheduleRecoveryAttach`), not a
-// suppression window: a stretch of genuinely-failing attaches gets at most
+// below on the direct-play/native-HLS side, and by fatal NETWORK/MEDIA
+// hls.js errors on the hls.js side. The cooldown is a per-attempt COOLDOWN,
+// DEFERRED via setTimeout when hit (never dropped), not a suppression
+// window: a stretch of genuinely-failing retries gets at most
 // MAX_RECOVERY_ATTEMPTS tries, no faster than one every
 // RECOVERY_MIN_INTERVAL_MS, before falling through to the same
-// fatal-unavailable path an unrecoverable decode/src-not-supported error
-// already uses (`clientPlaybackErrorReasons`, lib/playback-reasons.ts).
-const RECOVERY_MIN_INTERVAL_MS = 4000;
-const MAX_RECOVERY_ATTEMPTS = 3;
+// fatal-unavailable path (`goFatal`) an unrecoverable decode/
+// src-not-supported error already uses — which now inspects the session
+// server-side first (status 'failed' -> the session's errorCode copy,
+// lib/playback-recovery.ts; anything else -> clientPlaybackErrorReasons,
+// lib/playback-reasons.ts).
 // How long a stall (`waiting`/`stalled` while playing, no fatal `error`
 // event at all) must sit with a KNOWN-stale attached token — a fresher one
 // already exists, see `onStallSignal` — before it's treated as Safari's
@@ -339,6 +343,43 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
   }, []);
 
   const serverUrl = getAuthStore().getSnapshot().serverUrl;
+
+  // ── Fatal-unavailable destination (browser-player-F1) ───────────────────
+  // The ONE place every exhausted/unrecoverable client-side playback
+  // failure lands, whichever attach mode raised it (the direct-play/
+  // native-HLS effect's bounded recovery AND the hls.js ERROR handler's).
+  // Before rendering the generic client-synthesized reason, ask the server
+  // what IT thinks of the session: a worker that died mid-session marks
+  // the row status 'failed' with an errorCode (apps/worker/src/transcode/
+  // exit-classify.ts), and that code carries strictly more information
+  // than "your browser couldn't play this" — so a confirmed server-side
+  // failure renders the session's own errorCode copy
+  // (lib/playback-recovery.ts) instead. Any inspect failure (network gone,
+  // 404 after an idle sweep, no session yet) falls back to the client
+  // reason — this path must never hang on a GET to render SOMETHING.
+  const goFatal = useCallback((): void => {
+    const sessionId = session?.id;
+    const clientFallback = (): void => {
+      setUnavailableReasons(clientPlaybackErrorReasons());
+      setUnavailableStatus(undefined);
+      setPhase("unavailable");
+    };
+    if (!sessionId) {
+      clientFallback();
+      return;
+    }
+    apiGet("/playback/sessions/{id}", { params: { path: { id: sessionId } } })
+      .then((current) => {
+        if (current.status === "failed") {
+          setUnavailableReasons(sessionFailureReasons(current.errorCode));
+          setUnavailableStatus(undefined);
+          setPhase("unavailable");
+          return;
+        }
+        clientFallback();
+      })
+      .catch(clientFallback);
+  }, [session?.id]);
 
   // ── Step 1: item metadata + ambient imagery ────────────────────────────
   useEffect(() => {
@@ -629,20 +670,12 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
     // the no-op branch above).
     let recoveryTimeoutHandle: ReturnType<typeof setTimeout> | null = null;
 
-    function goFatal(): void {
-      // No reattach can fix this — either the browser already refused to
-      // decode/support the source, or every bounded retry in this stretch
-      // already failed identically. Route to the SAME fatal-unavailable
-      // screen a refused createPlaybackSession already renders (`phase`,
-      // UnavailableScreen below) instead of inventing new UI;
-      // `clientPlaybackErrorReasons` (lib/playback-reasons.ts) follows the
-      // exact precedent `TRANSCODE_SLOTS_EXHAUSTED_CODE` already set there
-      // for a client-synthesized reason with no server HTTP status behind
-      // it.
-      setUnavailableReasons(clientPlaybackErrorReasons());
-      setUnavailableStatus(undefined);
-      setPhase("unavailable");
-    }
+    // No reattach can fix an exhausted stretch — either the browser
+    // already refused to decode/support the source, or every bounded retry
+    // already failed identically. `goFatal` (component scope,
+    // browser-player-F1) routes to the SAME fatal-unavailable screen a
+    // refused createPlaybackSession already renders, inspecting the
+    // session server-side first for a real errorCode.
 
     function runRecoveryAttach(): void {
       recoveryStampRef.current = Date.now();
@@ -651,29 +684,29 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
     }
 
     function scheduleRecoveryAttach(): void {
-      if (recoveryAttemptsRef.current >= MAX_RECOVERY_ATTEMPTS) {
+      // decideRecovery (lib/playback-recovery.ts, browser-player-F1): the
+      // SAME bounded policy the hls.js attach effect consults — budget
+      // exhausted -> fatal; inside the cooldown -> DEFER the retry to when
+      // it expires instead of dropping it. (The old bare in-cooldown
+      // `return` silently killed an initial attach that failed fast — or
+      // any retry landing inside another retry's own cooldown — with no
+      // further trigger ever coming, leaving the player permanently and
+      // silently dead. One pending timer at a time; a second signal
+      // arriving before it fires changes nothing.)
+      const decision = decideRecovery(recoveryAttemptsRef.current, recoveryStampRef.current, Date.now());
+      if (decision.action === "fatal") {
         goFatal();
         return;
       }
-      const elapsed = Date.now() - recoveryStampRef.current;
-      if (elapsed >= RECOVERY_MIN_INTERVAL_MS) {
+      if (decision.delayMs === 0) {
         runRecoveryAttach();
         return;
       }
-      // Inside the cooldown: DEFER the retry to when it expires instead of
-      // dropping it. The old bare `return` here silently killed an initial
-      // attach that failed fast (nothing had ever stamped the cooldown
-      // ref, so `Date.now() - 0` should have cleared it — but the OLD code
-      // stamped on every attach, including that very initial one) — or any
-      // retry that landed inside another retry's own cooldown — with no
-      // further trigger ever coming, leaving the player permanently and
-      // silently dead. One pending timer at a time; a second signal
-      // arriving before it fires changes nothing.
       if (recoveryTimeoutHandle) return;
       recoveryTimeoutHandle = setTimeout(() => {
         recoveryTimeoutHandle = null;
         runRecoveryAttach();
-      }, RECOVERY_MIN_INTERVAL_MS - elapsed);
+      }, decision.delayMs);
     }
 
     const onError = (): void => {
@@ -763,7 +796,9 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
     // Depends on `videoEl` (STATE, not the ref) so this re-runs the moment the
     // element mounts — activeSrcUrl frequently resolves a tick before the
     // <video> attaches, and a ref-only dependency would miss that mount.
-  }, [activeSrcUrl, videoEl, awaitingResumeChoice]);
+    // `goFatal` only changes identity with `session?.id`, which always
+    // changes `activeSrcUrl` too — no extra re-runs.
+  }, [activeSrcUrl, videoEl, awaitingResumeChoice, goFatal]);
 
   // ── Media attach: hls.js (Phase 3 Step 6c) ──────────────────────────────
   // Dynamically imported — this is the ONLY place hls.js is ever imported
@@ -779,6 +814,10 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
     let cancelled = false;
     let hls: HlsInstance | null = null;
     let onLoaded: (() => void) | null = null;
+    // browser-player-F1: the hls.js side of the shared bounded-recovery
+    // policy's deferred-retry timer — effect-scoped (cleared on cleanup)
+    // exactly like the native attach effect's `recoveryTimeoutHandle`.
+    let recoveryTimerHandle: ReturnType<typeof setTimeout> | null = null;
 
     void (async () => {
       const initialToken = await getAuthStore().getAccessToken();
@@ -867,20 +906,60 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
         heartbeatRef.current?.flushNow();
       });
 
-      // hls.js's own documented fatal-error recovery pattern: retry a
-      // network error in place, attempt MSE recovery for a media error,
-      // and give up (destroy) for anything else.
+      // Fatal-error recovery (browser-player-F1). hls.js's documented
+      // in-place levers — `startLoad()` for a network error,
+      // `recoverMediaError()` for a media error — used to run here
+      // UNBOUNDED and blind: a worker whose transcode died mid-session
+      // (session status 'failed', playlists 404) spun an endless ~1/s
+      // retry loop behind an indefinite spinner, with no failure surface
+      // and the session's server-side status never consulted. Both levers
+      // now consume the SAME bounded budget the direct-play/native-HLS
+      // attach effect uses (decideRecovery, lib/playback-recovery.ts —
+      // shared refs, shared constants; the event-wiring effect's `playing`
+      // listener resets the budget for both modes), and exhaustion — or an
+      // OTHER-typed fatal, which has no in-place lever at all — routes to
+      // the shared `goFatal` destination: inspect the session, then
+      // UnavailableScreen with the session's errorCode when the server
+      // marked it failed. `stopLoad()` before `goFatal()` quiets the
+      // request loop while the inspect resolves; the instance itself is
+      // destroyed by this effect's cleanup when the phase flip unmounts
+      // the <video>.
+      const runHlsRecovery = (retry: () => void): void => {
+        recoveryStampRef.current = Date.now();
+        recoveryAttemptsRef.current += 1;
+        retry();
+      };
+      const scheduleHlsRecovery = (retry: () => void): void => {
+        const decision = decideRecovery(recoveryAttemptsRef.current, recoveryStampRef.current, Date.now());
+        if (decision.action === "fatal") {
+          hls?.stopLoad();
+          goFatal();
+          return;
+        }
+        if (decision.delayMs === 0) {
+          runHlsRecovery(retry);
+          return;
+        }
+        // Inside the cooldown: defer, never drop — one pending timer at a
+        // time, same as the native path.
+        if (recoveryTimerHandle) return;
+        recoveryTimerHandle = setTimeout(() => {
+          recoveryTimerHandle = null;
+          runHlsRecovery(retry);
+        }, decision.delayMs);
+      };
       hls.on(HlsCtor.Events.ERROR, (_event, data) => {
         if (!data.fatal) return;
         switch (data.type) {
           case HlsCtor.ErrorTypes.NETWORK_ERROR:
-            hls?.startLoad();
+            scheduleHlsRecovery(() => hls?.startLoad());
             break;
           case HlsCtor.ErrorTypes.MEDIA_ERROR:
-            hls?.recoverMediaError();
+            scheduleHlsRecovery(() => hls?.recoverMediaError());
             break;
           default:
-            hls?.destroy();
+            hls?.stopLoad();
+            goFatal();
             break;
         }
       });
@@ -905,13 +984,14 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
     return () => {
       cancelled = true;
       if (onLoaded) video.removeEventListener("loadedmetadata", onLoaded);
+      if (recoveryTimerHandle) clearTimeout(recoveryTimerHandle);
       // V8: a pending hard seek dies with its session/instance — the watch
       // must never land against a different attach's fragments.
       clearLandingWatch();
       hls?.destroy(); // deliverable 5: no leaked MediaSource on unmount/session change.
       if (hlsRef.current === hls) hlsRef.current = null;
     };
-  }, [attachStrategy, videoEl, session?.id, serverUrl, listedFragments, clearLandingWatch]);
+  }, [attachStrategy, videoEl, session?.id, serverUrl, listedFragments, clearLandingWatch, goFatal]);
 
   // ── Subtitles: the hls-vtt side-track (Phase 3 Step 6c, deliverable 3) ──
   // burn-in needs nothing (already baked into the video frames); embed/none
@@ -1098,6 +1178,12 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
     const onPlaying = (): void => {
       maybeCompleteLanding();
       setBuffering(false);
+      // browser-player-F1: a stretch that reaches real playback again
+      // earns a fresh recovery budget. The direct-play/native-HLS attach
+      // effect has its own `playing` listener doing this, but that effect
+      // never runs on the hls.js path (activeSrcUrl is null there) — this
+      // is the reset BOTH attach modes actually share.
+      recoveryAttemptsRef.current = 0;
     };
     // V8 (§9.1.9, QA 2026-08-12): a PAUSED element never fires `playing`,
     // so `playing` as the only clearer latched the spinner forever on any

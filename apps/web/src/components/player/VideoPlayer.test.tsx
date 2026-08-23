@@ -113,6 +113,7 @@ interface MockHlsInstance {
   detachMedia(): void;
   startLoad(pos?: number): void;
   stopLoad(): void;
+  recoverMediaError(): void;
   destroy(): void;
 }
 const hlsInstances: MockHlsInstance[] = [];
@@ -156,6 +157,9 @@ vi.mock("hls.js", () => {
     }
     stopLoad(): void {
       this.calls.push("stopLoad");
+    }
+    recoverMediaError(): void {
+      this.calls.push("recoverMediaError");
     }
     destroy(): void {
       this.calls.push("destroy");
@@ -1422,6 +1426,147 @@ describe("VideoPlayer", () => {
         const slider = v.container.querySelector('[role="slider"]');
         expect(slider?.getAttribute("aria-valuenow")).toBe("10500");
       });
+    });
+  });
+
+  // ── browser-player-F1: hls.js fatal-error recovery ───────────────────────
+  // QA 2026-08-20/21 (P1, + three verified duplicates): when the worker's
+  // transcode died mid-session (session status -> 'failed', playlists 404),
+  // the hls.js ERROR handler retried NETWORK_ERROR fatals with
+  // `hls.startLoad()` UNBOUNDEDLY — an endless ~1/s media.m3u8 404 loop
+  // behind an indefinite spinner, no UnavailableScreen, no toast, and the
+  // session's server-side failed status was never consulted. The native
+  // attach effect already had bounded recovery + a fatal-unavailable path;
+  // the hls.js path must share the SAME policy: bounded retries, then
+  // inspect the session and render UnavailableScreen with the session's
+  // errorCode when the server marked it failed.
+  describe("hls.js fatal-error recovery (browser-player-F1)", () => {
+    async function renderHlsReady(): Promise<{ v: TestRender; hls: MockHlsInstance }> {
+      createPlaybackSession.mockReset().mockResolvedValue({ ok: true, session: hlsTranscodeSession() });
+      const v = await renderReady();
+      // The hlsjs attach effect is async (token await + dynamic import) —
+      // one more macro/microtask flush lets it construct the mock instance.
+      await act(async () => {});
+      const hls = hlsInstances[hlsInstances.length - 1];
+      if (!hls) throw new Error("the hlsjs attach effect never constructed an hls.js instance");
+      hls.currentLevel = 0;
+      return { v, hls };
+    }
+
+    /** Routes the component's session-inspect GET (goFatal's
+     *  `/playback/sessions/{id}`) while keeping the chapters GET happy. */
+    function routeSessionGet(sessionBody: PlaybackSession): void {
+      apiGet.mockImplementation((path: unknown) =>
+        path === "/playback/sessions/{id}" ? Promise.resolve(sessionBody) : Promise.resolve({ items: [] }),
+      );
+    }
+
+    function retryCount(hls: MockHlsInstance, call: string): number {
+      return hls.calls.filter((c) => c.startsWith(call)).length;
+    }
+
+    /** Emits fatal hls.js errors with enough clock between them that every
+     *  retry the bounded policy is willing to run actually runs (the same
+     *  4s cooldown the native attach path uses). */
+    async function emitFatals(hls: MockHlsInstance, type: string, count: number): Promise<void> {
+      for (let i = 0; i < count; i++) {
+        await act(async () => {
+          hls.emit("hlsError", "hlsError", { fatal: true, type });
+        });
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(4_100);
+        });
+      }
+    }
+
+    it("a FAILED session's playlist-404 fatal loop is bounded, then UnavailableScreen renders the session's errorCode copy", async () => {
+      const { v, hls } = await renderHlsReady();
+      view = v;
+      routeSessionGet({ ...hlsTranscodeSession(), status: "failed", errorCode: "transcode-failed" });
+      vi.useFakeTimers();
+
+      await emitFatals(hls, "networkError", 6);
+
+      expect(
+        retryCount(hls, "startLoad"),
+        "hls.js network-fatal retries must be bounded (3, like the native attach path) — unbounded startLoad() is the endless 404 loop",
+      ).toBeLessThanOrEqual(3);
+      expect(
+        document.body.textContent,
+        "exhausted retries on a server-side FAILED session must surface UnavailableScreen with the errorCode's copy",
+      ).toContain("Transcoding failed");
+      expect(document.body.textContent).toContain("transcode-failed");
+    });
+
+    it("Cluster F's encoder-malfunction errorCode renders its own distinct copy", async () => {
+      const { v, hls } = await renderHlsReady();
+      view = v;
+      routeSessionGet({ ...hlsTranscodeSession(), status: "failed", errorCode: "transcode-encoder-malfunction" });
+      vi.useFakeTimers();
+
+      await emitFatals(hls, "networkError", 5);
+
+      expect(document.body.textContent).toContain("encoder");
+      expect(document.body.textContent).toContain("transcode-encoder-malfunction");
+    });
+
+    it("exhaustion with a session the server does NOT report failed falls back to the client-synthesized reason", async () => {
+      const { v, hls } = await renderHlsReady();
+      view = v;
+      routeSessionGet(hlsTranscodeSession()); // status 'created' — a transient network failure, not a dead session
+      vi.useFakeTimers();
+
+      await emitFatals(hls, "networkError", 5);
+
+      expect(document.body.textContent).toContain("Playback failed in this browser");
+    });
+
+    it("fatal MEDIA_ERROR shares the same bounded budget via recoverMediaError()", async () => {
+      const { v, hls } = await renderHlsReady();
+      view = v;
+      routeSessionGet({ ...hlsTranscodeSession(), status: "failed", errorCode: "transcode-failed" });
+      vi.useFakeTimers();
+
+      await emitFatals(hls, "mediaError", 6);
+
+      expect(
+        retryCount(hls, "recoverMediaError"),
+        "hls.js media-fatal retries must consume the same bounded budget",
+      ).toBeLessThanOrEqual(3);
+      expect(document.body.textContent).toContain("Transcoding failed");
+    });
+
+    it("an OTHER-typed fatal (no in-place lever exists) goes straight to the unavailable path, never a silent destroy", async () => {
+      const { v, hls } = await renderHlsReady();
+      view = v;
+      routeSessionGet({ ...hlsTranscodeSession(), status: "failed", errorCode: "transcode-failed" });
+      vi.useFakeTimers();
+
+      await emitFatals(hls, "otherError", 1);
+
+      expect(document.body.textContent).toContain("Transcoding failed");
+    });
+
+    it("the element's 'playing' event resets the hls.js retry budget — a recovered stretch earns a fresh 3", async () => {
+      const { v, hls } = await renderHlsReady();
+      view = v;
+      routeSessionGet(hlsTranscodeSession());
+      vi.useFakeTimers();
+
+      await emitFatals(hls, "networkError", 3); // budget consumed
+      expect(retryCount(hls, "startLoad")).toBe(3);
+
+      const video = videoEl(v);
+      await act(async () => {
+        video.dispatchEvent(new Event("playing")); // real playback again
+      });
+
+      await emitFatals(hls, "networkError", 1);
+      expect(
+        retryCount(hls, "startLoad"),
+        "a stretch that reached real playback again must retry, not go fatal on its first new failure",
+      ).toBe(4);
+      expect(document.body.textContent).not.toContain("Playback failed in this browser");
     });
   });
 });

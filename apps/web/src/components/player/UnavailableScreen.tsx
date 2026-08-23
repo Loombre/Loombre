@@ -62,6 +62,7 @@ import { Button } from "../ui/Button.js";
 import { BottomSheet } from "../ui/BottomSheet.js";
 import { useMediaQuery } from "../ui/use-media-query.js";
 import { describeReasonCode } from "../../lib/playback-reasons.js";
+import { describeSessionFailureCode } from "../../lib/playback-recovery.js";
 import type { FallbackCandidate } from "../../lib/playback-fallback.js";
 import { AmbientBackdrop } from "./AmbientBackdrop.js";
 import styles from "./UnavailableScreen.module.css";
@@ -110,7 +111,14 @@ export function UnavailableScreen({ title, backdropUrl, dominantColor, reasons, 
         </div>
       ) : (
         reasons.map((reason, i) => {
-          const copy = describeReasonCode(reason.code);
+          // browser-player-F1: a session the SERVER marked failed
+          // mid-playback reaches this screen carrying its
+          // playback_sessions.error_code (goFatal in VideoPlayer.tsx,
+          // sessionFailureReasons in lib/playback-recovery.ts) — those are
+          // runtime session-death codes, not §4 PlanReasonCodes, so they
+          // get their own copy map first; every plan reason falls through
+          // to describeReasonCode exactly as before.
+          const copy = describeSessionFailureCode(reason.code) ?? describeReasonCode(reason.code);
           return (
             <div className={styles.reasonRow} key={`${reason.code}-${i}`}>
               <span className={styles.reasonHeading}>
