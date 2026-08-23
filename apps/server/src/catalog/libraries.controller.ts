@@ -15,6 +15,20 @@
 // POST /libraries is refused. The mission text says "409/403 per contract"
 // but POST /libraries only documents 401/403/422/default (no 409) — 403 is
 // used, matching what's actually in packages/contract/openapi.yaml.
+//
+// api-validation-F5 (QA 2026-08-21 remediation, P1): this file used to run
+// ZERO unknown-key checks, while CreateLibraryRequest, UpdateLibraryRequest
+// and ScanLibraryRequest all declare `additionalProperties: false`. Three
+// consequences, all silent: POST /libraries with a stray key answered 201
+// and created the library; PATCH /libraries/{id} with one answered 200,
+// wrote nothing, and still bumped updated_at; and scanLibrary read only
+// `(rawBody ?? {})["full"] === true`, so `{"full":"yes"}` enqueued a real
+// INCREMENTAL scan — a caller who asked for a full rescan silently got the
+// other kind. All three run the *_BODY_KEYS allowlist loop this house
+// already uses everywhere else now (users.controller.ts's
+// UPDATE_ME_BODY_KEYS is the reference), and `full` must be an actual
+// boolean. Nothing is enqueued or written on a rejected request.
+// Regression net: apps/server/test/api-body-validation.e2e.spec.ts.
 
 import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post, Put, Query, Req } from "@nestjs/common";
 import {
@@ -117,6 +131,21 @@ async function requireAdmin(db: LoombreDb, req: AuthenticatedRequest): Promise<v
 const VALID_MEDIA_KINDS = new Set(["movie", "tv", "music"]);
 const VALID_CONTENT_CLASSES = new Set(["general", "restricted"]);
 
+/** CreateLibraryRequest's full property set (additionalProperties:false,
+ *  api-validation-F5) — same allowlist pattern users.controller.ts's
+ *  UPDATE_ME_BODY_KEYS established. */
+const CREATE_LIBRARY_BODY_KEYS = new Set(["name", "mediaKind", "paths", "contentClass"]);
+
+/** UpdateLibraryRequest's full property set (additionalProperties:false,
+ *  api-validation-F5). Deliberately narrower than CREATE_LIBRARY_BODY_KEYS:
+ *  `mediaKind` and `contentClass` are create-only in the contract, so an
+ *  attempt to PATCH either is an unknown property here, not a silent no-op. */
+const UPDATE_LIBRARY_BODY_KEYS = new Set(["name", "paths"]);
+
+/** ScanLibraryRequest's full property set (additionalProperties:false,
+ *  api-validation-F5). */
+const SCAN_LIBRARY_BODY_KEYS = new Set(["full"]);
+
 @Controller()
 export class LibrariesController {
   constructor(
@@ -143,6 +172,12 @@ export class LibrariesController {
     await requireAdmin(this.dbProvider.db, req);
     const body = rawBody ?? {};
     const instance = req.originalUrl;
+
+    for (const key of Object.keys(body)) {
+      if (!CREATE_LIBRARY_BODY_KEYS.has(key)) {
+        throw unprocessableEntity(`Unknown property "${key}".`, instance);
+      }
+    }
 
     if (typeof body["name"] !== "string" || body["name"].length === 0) {
       throw unprocessableEntity("name is required.", instance);
@@ -203,6 +238,12 @@ export class LibrariesController {
     const body = rawBody ?? {};
     const instance = req.originalUrl;
 
+    for (const key of Object.keys(body)) {
+      if (!UPDATE_LIBRARY_BODY_KEYS.has(key)) {
+        throw unprocessableEntity(`Unknown property "${key}".`, instance);
+      }
+    }
+
     if (body["name"] !== undefined && (typeof body["name"] !== "string" || body["name"].length === 0)) {
       throw unprocessableEntity("name must be a non-empty string.", instance);
     }
@@ -251,11 +292,33 @@ export class LibrariesController {
   ) {
     await requireAdmin(this.dbProvider.db, req);
     requireUuidParam(id, "Library not found.", req.originalUrl);
+
+    // api-validation-F5: body shape is checked BEFORE the existence lookup
+    // — same ordering users.controller.ts's resetUserPassword uses (its
+    // RESET_PASSWORD_BODY_KEYS loop runs ahead of getUserById), and it
+    // leaks nothing about the id: a 422 here is a statement about the
+    // caller's own body, not about the library.
+    const body = rawBody ?? {};
+    const instance = req.originalUrl;
+    for (const key of Object.keys(body)) {
+      if (!SCAN_LIBRARY_BODY_KEYS.has(key)) {
+        throw unprocessableEntity(`Unknown property "${key}".`, instance);
+      }
+    }
+    // `=== true` used to be the whole check, so every non-boolean — the
+    // string "yes" included — quietly meant `full: false` and the caller
+    // got an incremental scan they never asked for. ScanLibraryRequest
+    // types `full` as a non-nullable boolean defaulting to false, so
+    // absent means false and anything that is not a boolean is a 422.
+    if (body["full"] !== undefined && typeof body["full"] !== "boolean") {
+      throw unprocessableEntity("full must be a boolean.", instance);
+    }
+    const full = body["full"] === true;
+
     const existing = await getLibraryByIdAdmin(this.dbProvider.db, id);
     if (!existing) {
       throw notFound("Library not found.", req.originalUrl);
     }
-    const full = (rawBody ?? {})["full"] === true;
     const jobId = await this.jobQueueProvider.queue.enqueue("scan", { libraryId: id, full }, { subjectItemId: null });
     return { jobId };
   }

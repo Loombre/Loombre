@@ -51,6 +51,26 @@
 // birthDate (updateUserAdmin/createUser take no such member, and
 // UpdateMeRequest is the only request schema in openapi.yaml declaring
 // one) — if you ever add a second, route it through isValidIsoDate.
+//
+// api-validation-F5 (same run): the hand-rolled body validation this house
+// uses instead of class-validator/zod was applied UNEVENLY. updateMe,
+// resetUserPassword and putMySettings each ran an allowlist loop; createUser
+// and updateUser ran none, so an unknown key answered 201/200 and performed
+// the mutation anyway, against request schemas that both declare
+// `additionalProperties: false`. Worse, their nullable members used
+// `typeof x === "string" ? x : null`, so a WRONG-TYPED value silently
+// CLEARED the stored value (`PATCH /users/{id} {"email":42}` wiped the
+// address) and `isAdmin: "yes"` fell through `=== true` to a silently
+// ignored `false`. Both handlers now run CREATE_USER_BODY_KEYS /
+// UPDATE_USER_BODY_KEYS and refuse wrong-typed values with the 422 their
+// operations already declare; an explicit `null` still clears, which is
+// what the contract's `[string, 'null']` members mean. Regression net:
+// apps/server/test/api-body-validation.e2e.spec.ts.
+//
+// UNCHANGED, deliberately: updateMe's own null-to-clear coercion for a
+// present-but-wrong-typed nullable member — api-validation-F3 pinned that
+// cell on purpose (users-birthdate-validation.e2e.spec.ts) and F5's fix
+// direction names createUser/updateUser only.
 
 import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post, Put, Query, Req, UseFilters } from "@nestjs/common";
 import {
@@ -162,6 +182,17 @@ const UPDATE_ME_BODY_KEYS = new Set(["displayName", "email", "birthDate", "passw
  *  R-F3 fix wave) — same allowlist pattern as UPDATE_ME_BODY_KEYS above. */
 const RESET_PASSWORD_BODY_KEYS = new Set(["currentPassword"]);
 
+/** CreateUserRequest's full property set (additionalProperties:false,
+ *  api-validation-F5) — createUser used to run NO allowlist at all, so an
+ *  unknown key answered 201 and created the row. */
+const CREATE_USER_BODY_KEYS = new Set(["username", "email", "password", "displayName", "isAdmin", "maxContentRating"]);
+
+/** UpdateUserRequest's full property set (additionalProperties:false,
+ *  api-validation-F5). Deliberately NARROWER than UPDATE_ME_BODY_KEYS: an
+ *  admin PATCH cannot set a password (POST /users/{id}/reset-password is
+ *  that path) and carries no birthDate member. */
+const UPDATE_USER_BODY_KEYS = new Set(["email", "displayName", "isAdmin", "maxContentRating"]);
+
 /** UserSettings' full property set (additionalProperties:false) — putMySettings
  *  422s on any OTHER key so an unknown property is rejected rather than
  *  silently ignored. */
@@ -241,6 +272,17 @@ export class UsersController {
     const body = rawBody ?? {};
     const instance = req.originalUrl;
 
+    // api-validation-F5: CreateUserRequest declares additionalProperties:
+    // false, and this is where that is enforced — the same loop updateMe/
+    // putMySettings/resetUserPassword have always run. Before it, a POST
+    // /users carrying `bogus: true` (or a misspelled `admin` for `isAdmin`)
+    // answered 201 AND created the row, silently dropping the key.
+    for (const key of Object.keys(body)) {
+      if (!CREATE_USER_BODY_KEYS.has(key)) {
+        throw unprocessableEntity(`Unknown property "${key}".`, instance);
+      }
+    }
+
     if (typeof body["username"] !== "string" || body["username"].length === 0) {
       throw unprocessableEntity("username is required.", instance);
     }
@@ -262,6 +304,28 @@ export class UsersController {
     }
     if (typeof body["password"] !== "string" || body["password"].length === 0) {
       throw unprocessableEntity("password is required.", instance);
+    }
+    // api-validation-F5: wrong-typed values are REFUSED, never coerced.
+    // `isAdmin: "yes"` used to fall through `=== true` to a silently
+    // ignored `false`, and a non-string displayName/maxContentRating was
+    // coerced to null — a type mistake that CLEARED the field instead of
+    // failing. CreateUserRequest types them `boolean` and
+    // `[string, 'null']`, so explicit `null` still means "no value" and
+    // everything else 422s. (`email`'s own present-but-wrong-shape 422 is
+    // the M1 check above; it is deliberately stricter than the contract's
+    // nullable type and stays as it is.)
+    if (body["isAdmin"] !== undefined && typeof body["isAdmin"] !== "boolean") {
+      throw unprocessableEntity("isAdmin must be a boolean.", instance);
+    }
+    if (
+      body["maxContentRating"] !== undefined &&
+      body["maxContentRating"] !== null &&
+      typeof body["maxContentRating"] !== "string"
+    ) {
+      throw unprocessableEntity("maxContentRating must be a string or null.", instance);
+    }
+    if (body["displayName"] !== undefined && body["displayName"] !== null && typeof body["displayName"] !== "string") {
+      throw unprocessableEntity("displayName must be a string or null.", instance);
     }
 
     const passwordHash = await this.hashService.hash(body["password"]);
@@ -610,6 +674,40 @@ export class UsersController {
     await requireAdmin(this.dbProvider.db, req);
     requireUuidParam(id, "User not found.", req.originalUrl);
     const body = rawBody ?? {};
+
+    // api-validation-F5: UpdateUserRequest declares additionalProperties:
+    // false and types every member; neither was enforced. An unknown key
+    // (or a member that belongs to a DIFFERENT schema — `password`,
+    // `birthDate`, `username`) answered 200, wrote nothing, and still
+    // bumped updated_at; a wrong-typed value did worse, taking the
+    // `: null` branch below and CLEARING the stored email/displayName/
+    // maxContentRating the caller never meant to touch. Both 422 now (a
+    // response this operation already declares), and nothing is written
+    // on either path. Explicit `null` still clears — that is what the
+    // contract's `[string, 'null']` members mean, and the null-to-clear
+    // convention this file has always used.
+    for (const key of Object.keys(body)) {
+      if (!UPDATE_USER_BODY_KEYS.has(key)) {
+        throw unprocessableEntity(`Unknown property "${key}".`, req.originalUrl);
+      }
+    }
+    if (body["email"] !== undefined && body["email"] !== null && typeof body["email"] !== "string") {
+      throw unprocessableEntity("email must be a string or null.", req.originalUrl);
+    }
+    if (body["isAdmin"] !== undefined && typeof body["isAdmin"] !== "boolean") {
+      throw unprocessableEntity("isAdmin must be a boolean.", req.originalUrl);
+    }
+    if (
+      body["maxContentRating"] !== undefined &&
+      body["maxContentRating"] !== null &&
+      typeof body["maxContentRating"] !== "string"
+    ) {
+      throw unprocessableEntity("maxContentRating must be a string or null.", req.originalUrl);
+    }
+    if (body["displayName"] !== undefined && body["displayName"] !== null && typeof body["displayName"] !== "string") {
+      throw unprocessableEntity("displayName must be a string or null.", req.originalUrl);
+    }
+
     const result = await updateUserAdmin(this.dbProvider.db, id, {
       // M1: UpdateUserRequest.email is `[string, 'null']` now — present-but-
       // not-a-string clears it (same null-to-clear convention as

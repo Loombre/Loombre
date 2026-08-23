@@ -1090,6 +1090,13 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+        # api-validation-F5: ScanLibraryRequest is additionalProperties:false
+        # and types `full` as a boolean, but this operation never declared
+        # the response those constraints imply — so the server accepted an
+        # unknown key, and read a non-boolean `full` as false (a silently
+        # incremental scan for a caller who asked for a full one). Both are
+        # 422 now; adding the response is additive (oasdiff-clean).
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
         default: { $ref: '#/components/responses/Problem' }
 
   /libraries/{id}/permissions:
