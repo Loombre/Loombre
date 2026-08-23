@@ -13,6 +13,7 @@
 import { useEffect, useRef, useState } from "react";
 import { MoreVertical } from "lucide-react";
 import { Icon } from "../icon/Icon.js";
+import { useEscapeKey } from "../ui/overlay-hooks.js";
 import menuStyles from "../ui/Overlay.module.css";
 import styles from "./RowMenu.module.css";
 
@@ -33,6 +34,8 @@ export function RowMenu({ actions, label }: { actions: RowMenuAction[]; label: s
     document.addEventListener("mousedown", onClickOutside);
     return () => document.removeEventListener("mousedown", onClickOutside);
   }, []);
+
+  useEscapeKey(open, () => setOpen(false));
 
   return (
     <div ref={ref} className={styles.wrap}>
