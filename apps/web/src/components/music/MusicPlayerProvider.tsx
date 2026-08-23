@@ -51,12 +51,21 @@ import {
   type QueueTrack,
 } from "../../lib/queue.js";
 import { gaplessReducer, initialGaplessState, otherSlot, shouldPreload, type Slot } from "../../lib/gapless.js";
-import { createDirectPlaySession, endPlaybackSession } from "../../lib/playback-session.js";
+import {
+  createDirectPlaySession,
+  endPlaybackSession,
+  type CreateSessionResult,
+  type CreateSessionUnavailable,
+} from "../../lib/playback-session.js";
 import { buildSessionFileUrl } from "../../lib/media-session-url.js";
 import { getAuthStore } from "../../lib/auth-store.js";
 import { HeartbeatScheduler, type HeartbeatSnapshot, type ProgressState } from "../../lib/heartbeat.js";
 import { reportProgressOnUnload } from "../../lib/progress-report.js";
 import { apiPut } from "../../lib/api-client.js";
+import { apiErrorMessage } from "../../lib/api-error-message.js";
+import { trackLoadFailureMessage } from "../../lib/track-load-failure.js";
+import { describeReasonCode, resolveUnavailableReasons } from "../../lib/playback-reasons.js";
+import { useToast } from "../ui/Toast.js";
 
 export interface PlayableTrackInput {
   itemId: string;
@@ -69,6 +78,16 @@ export interface PlayableTrackInput {
   albumId?: string | null;
   durationMs?: number | null;
   blurhash?: string | null;
+}
+
+/** Shortest honest "why" for a plan refusal: the first reason's own copy
+ *  (lib/playback-reasons.ts owns the code -> title map, including the
+ *  client-synthesized "Server is at capacity" a 429 has no real reason
+ *  for), or null when the server sent no reasons at all — in which case
+ *  the toast simply drops its reason clause. */
+function refusalReason(result: CreateSessionUnavailable): string | null {
+  const [first] = resolveUnavailableReasons(result.status, result.wouldBeReasons);
+  return first === undefined ? null : describeReasonCode(first.code).title;
 }
 
 function toQueueTrack(input: PlayableTrackInput): QueueTrack {
@@ -119,6 +138,11 @@ export interface MusicPlayerContextValue {
 export const MusicPlayerContext = createContext<MusicPlayerContextValue | null>(null);
 
 export function MusicPlayerProvider({ children }: { children: ReactNode }): React.JSX.Element {
+  // components/providers/AppProviders.tsx mounts <ToastProvider> outermost
+  // precisely so the things beside {children} — this provider's mini-player
+  // included — can toast; see that file's header. Anything that renders
+  // this provider (tests included) must supply one.
+  const { showToast } = useToast();
   const [queueState, dispatchQueue] = useReducer(queueReducer, initialQueueState);
   const [gaplessState, dispatchGapless] = useReducer(gaplessReducer, initialGaplessState);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -184,6 +208,34 @@ export function MusicPlayerProvider({ children }: { children: ReactNode }): Reac
     heartbeatRef.current.start();
   }, [stopHeartbeat]);
 
+  /** The ONE exit both of `loadIntoSlot`'s failure shapes take — a THROWN
+   *  session create (404 for a file that's gone, any 5xx, a network drop:
+   *  lib/playback-session.ts's createPlaybackSession re-throws every status
+   *  that isn't 409/422/429) and a plan REFUSAL (`ok: false`). Music has no
+   *  dedicated unavailable-state surface (that's the video player's
+   *  deliverable 2), so the surface is the app-wide toast plus a skip.
+   *
+   *  BOUNDED BY CONSTRUCTION: the only advance here is queueReducer's NEXT,
+   *  which walks `currentIndex` monotonically forward and parks it at null
+   *  past the end (lib/queue.ts) — a queue whose every track fails attempts
+   *  each track exactly once, toasts once per attempt (single-slot toast,
+   *  so the last one stands), and then stops. It cannot loop.
+   *
+   *  A failed PRELOAD stays silent: nothing user-visible has happened yet
+   *  (that track hasn't started; the current one is still playing), and the
+   *  fresh load that runs if it ever becomes current surfaces it then —
+   *  once, not twice. */
+  const failTrackLoad = useCallback(
+    (slot: Slot, track: QueueTrack, preloadOnly: boolean, reason: string | null) => {
+      endSlotSession(slot);
+      if (preloadOnly) return;
+      const hasNext = peekNextTrack(queueStateRef.current) !== null;
+      showToast(trackLoadFailureMessage({ title: track.title, reason, hasNext }), { variant: "danger" });
+      dispatchQueue({ type: "NEXT" });
+    },
+    [endSlotSession, showToast],
+  );
+
   /** Loads `track` fresh into `slot` (creates a new session), optionally
    *  autoplaying once ready. Used for: first play, manual skip/prev/jump,
    *  and the non-gapless fallback when a preload wasn't ready in time. */
@@ -194,7 +246,19 @@ export function MusicPlayerProvider({ children }: { children: ReactNode }): Reac
       // see lib/playback-session.ts's createDirectPlaySession header for
       // the "music HLS transcode playback" open item. `mediaFileId` pins
       // the session to the version the user picked, when they picked one.
-      const result = await createDirectPlaySession(track.itemId, "stream", track.mediaFileId ?? undefined);
+      let result: CreateSessionResult;
+      try {
+        result = await createDirectPlaySession(track.itemId, "stream", track.mediaFileId ?? undefined);
+      } catch (err) {
+        // browser-player-F10: both call sites are fire-and-forget
+        // `void loadIntoSlot(…)`, so before this catch existed a thrown
+        // create was an UNHANDLED rejection — no toast, no skip, the mini
+        // player parked at 0:00 with only a console stack to show for it.
+        if (myToken !== loadTokenRef.current) return; // superseded: the newer load owns the UI
+        console.warn(`[music] session create failed for track ${track.itemId}`, err);
+        failTrackLoad(slot, track, opts.preloadOnly === true, apiErrorMessage(err, "The server couldn't start playback."));
+        return;
+      }
       if (myToken !== loadTokenRef.current) {
         // Superseded by a later load. AUD-A3g-001: a session created here
         // was never recorded in sessionsRef, so neither slot reuse
@@ -209,11 +273,8 @@ export function MusicPlayerProvider({ children }: { children: ReactNode }): Reac
       }
 
       if (!result.ok) {
-        // Music has no dedicated unavailable-state surface (that's the
-        // video player's deliverable 2); best-effort: skip this track.
         console.warn(`[music] track ${track.itemId} unavailable for direct-play, skipping`, result.wouldBeReasons);
-        endSlotSession(slot);
-        if (!opts.preloadOnly) dispatchQueue({ type: "NEXT" });
+        failTrackLoad(slot, track, opts.preloadOnly === true, refusalReason(result));
         return;
       }
 
@@ -244,7 +305,7 @@ export function MusicPlayerProvider({ children }: { children: ReactNode }): Reac
         el.play().then(() => setIsPlaying(true)).catch(() => setIsPlaying(false));
       }
     },
-    [refs, endSlotSession, startHeartbeatFor],
+    [refs, endSlotSession, startHeartbeatFor, failTrackLoad],
   );
 
   // Keep both elements' volume/muted in sync regardless of which is active.

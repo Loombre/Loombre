@@ -17,10 +17,11 @@
 // touches is stubbed on the prototype — same approach as
 // components/player/VideoPlayer.test.tsx.
 
-import { act, useEffect } from "react";
+import { act, useEffect, type ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { components } from "@loombre/sdk";
 import { renderIntoBody, type TestRender } from "../ui/test-render.js";
+import { ToastProvider } from "../ui/Toast.js";
 
 type PlaybackSession = components["schemas"]["PlaybackSession"];
 
@@ -120,18 +121,88 @@ function CaptureContext(): null {
   return null;
 }
 
+/** The provider ALWAYS renders under a <ToastProvider> in the real app
+ *  (components/providers/AppProviders.tsx mounts ToastProvider outermost,
+ *  explicitly so "mini-player actions" can toast) and calls useToast(), so
+ *  every render here supplies one — same convention as
+ *  settings/sections/UsersSection.test.tsx. */
+function renderPlayer(children: ReactNode): TestRender {
+  return renderIntoBody(
+    <ToastProvider>
+      <MusicPlayerProvider>{children}</MusicPlayerProvider>
+    </ToastProvider>,
+  );
+}
+
+/** Text of the toast viewport's aria-live region (components/ui/Toast.tsx —
+ *  permanently mounted, empty string when nothing is showing). */
+function toastText(container: HTMLElement): string {
+  return container.querySelector('[aria-live="polite"]')?.textContent ?? "";
+}
+
+/** Drains the promise/effect cascade a queue advance sets off: create
+ *  rejects -> catch -> dispatch NEXT -> effect -> next create -> … */
+async function flush(times = 6): Promise<void> {
+  for (let i = 0; i < times; i += 1) {
+    await act(async () => undefined);
+  }
+}
+
 async function playAndSettle(track: PlayableTrackInput): Promise<TestRender> {
   let view: TestRender | null = null;
   await act(async () => {
-    view = renderIntoBody(
-      <MusicPlayerProvider>
-        <PlayOnMount track={track} />
-      </MusicPlayerProvider>,
-    );
+    view = renderPlayer(<PlayOnMount track={track} />);
   });
   await act(async () => undefined);
   if (!view) throw new Error("render produced nothing");
   return view;
+}
+
+/** Renders the provider, captures its context, and starts `tracks` playing. */
+async function playQueueAndSettle(tracks: PlayableTrackInput[]): Promise<TestRender> {
+  capturedCtx = null;
+  let view: TestRender | null = null;
+  await act(async () => {
+    view = renderPlayer(<CaptureContext />);
+  });
+  await act(async () => {
+    capturedCtx!.playQueue(tracks, 0);
+  });
+  await flush();
+  if (!view) throw new Error("render produced nothing");
+  return view;
+}
+
+/** A caught API error shaped exactly like the one lib/api-client.ts's
+ *  LoombreApiError delivers to a catch — an Error carrying the RFC 9457
+ *  problem body. Duck-typed rather than the real class (this file mocks
+ *  api-client.js wholesale, and lib/api-error-message.ts reads `.problem`
+ *  structurally). */
+function apiError(status: number, title: string, detail?: string): Error {
+  return Object.assign(new Error(title), {
+    status,
+    problem: { type: "about:blank", title, status, ...(detail === undefined ? {} : { detail }) },
+  });
+}
+
+/** Runs `body` with an unhandledRejection listener installed, and gives node
+ *  the macrotask turn it needs to emit (it only fires AFTER the microtask
+ *  queue drains) before reporting what it caught. */
+async function captureUnhandledRejections(body: () => Promise<void>): Promise<unknown[]> {
+  const unhandled: unknown[] = [];
+  const onUnhandled = (reason: unknown): void => {
+    unhandled.push(reason);
+  };
+  process.on("unhandledRejection", onUnhandled);
+  try {
+    await body();
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+  } finally {
+    process.off("unhandledRejection", onUnhandled);
+  }
+  return unhandled;
 }
 
 describe("MusicPlayerProvider", () => {
@@ -177,11 +248,7 @@ describe("MusicPlayerProvider", () => {
 
     capturedCtx = null;
     await act(async () => {
-      view = renderIntoBody(
-        <MusicPlayerProvider>
-          <CaptureContext />
-        </MusicPlayerProvider>,
-      );
+      view = renderPlayer(<CaptureContext />);
     });
     await act(async () => {
       capturedCtx!.playQueue(
@@ -203,5 +270,90 @@ describe("MusicPlayerProvider", () => {
     expect(endPlaybackSession).toHaveBeenCalledWith(SESSION_ID);
     // The winning (track 2) session is live, not ended.
     expect(endPlaybackSession).not.toHaveBeenCalledWith(SESSION_2_ID);
+  });
+
+  // browser-player-F10: POST /playback/sessions 404s for a track whose file
+  // is gone (a seed fixture, or real media deleted under the server).
+  // createPlaybackSession re-throws anything that isn't 409/422/429, and
+  // loadIntoSlot awaited it with no try/catch from two fire-and-forget
+  // `void loadIntoSlot(…)` call sites — so the rejection was unhandled, the
+  // mini player sat dead at 0:00, and the `!result.ok` warn-and-skip path
+  // below it could never run for this failure shape.
+  describe("track load failure (browser-player-F10)", () => {
+    const TWO_TRACKS: PlayableTrackInput[] = [
+      { itemId: TRACK_ID, title: "Low Water" },
+      { itemId: TRACK_2_ID, title: "Second Sun" },
+    ];
+
+    it("toasts the failure and skips to the next track when the session create throws", async () => {
+      createDirectPlaySession
+        .mockReset()
+        .mockRejectedValueOnce(apiError(404, "Not Found", "The file for this track is missing."))
+        .mockResolvedValue({ ok: true, session: { ...directPlaySession(), id: SESSION_2_ID, itemId: TRACK_2_ID } });
+
+      view = await playQueueAndSettle(TWO_TRACKS);
+
+      expect(createDirectPlaySession).toHaveBeenCalledTimes(2);
+      expect(createDirectPlaySession).toHaveBeenNthCalledWith(2, TRACK_2_ID, "stream", undefined);
+      expect(capturedCtx!.current?.itemId).toBe(TRACK_2_ID);
+
+      const toast = toastText(view.container);
+      expect(toast).toContain("Low Water");
+      expect(toast).toContain("The file for this track is missing.");
+      expect(view.container.querySelector('[data-variant="danger"]')).not.toBeNull();
+    });
+
+    it("leaves no unhandled rejection behind when the session create throws", async () => {
+      createDirectPlaySession.mockReset().mockRejectedValue(apiError(404, "Not Found"));
+
+      const unhandled = await captureUnhandledRejections(async () => {
+        view = await playQueueAndSettle(TWO_TRACKS);
+      });
+
+      expect(unhandled).toHaveLength(0);
+    });
+
+    it("stops once the queue is exhausted instead of skipping forever", async () => {
+      createDirectPlaySession.mockReset().mockRejectedValue(apiError(500, "Internal Server Error"));
+
+      view = await playQueueAndSettle(TWO_TRACKS);
+
+      // Exactly one attempt per queued track — the skip is bounded by the
+      // queue, and parking at currentIndex: null ends it.
+      expect(createDirectPlaySession).toHaveBeenCalledTimes(2);
+      expect(capturedCtx!.current).toBeNull();
+      expect(capturedCtx!.isPlaying).toBe(false);
+
+      const toast = toastText(view.container);
+      expect(toast).toContain("Second Sun");
+      expect(toast).toMatch(/nothing else in the queue/i);
+    });
+
+    it("keeps a failed PRELOAD silent: no toast, no skip, the current track plays on", async () => {
+      createDirectPlaySession
+        .mockReset()
+        .mockResolvedValueOnce({ ok: true, session: directPlaySession() })
+        .mockRejectedValue(apiError(404, "Not Found"));
+
+      const unhandled = await captureUnhandledRejections(async () => {
+        view = await playQueueAndSettle([{ ...TWO_TRACKS[0]!, durationMs: 200_000 }, TWO_TRACKS[1]!]);
+
+        // Cross the near-end threshold on the ACTIVE element (slot A) so the
+        // gapless machine asks for a preload of track 2 into slot B.
+        const active = view.container.querySelectorAll("audio")[0]!;
+        Object.defineProperty(active, "currentTime", { configurable: true, get: () => 199 });
+        await act(async () => {
+          active.dispatchEvent(new Event("timeupdate"));
+        });
+        await flush();
+      });
+
+      expect(createDirectPlaySession).toHaveBeenCalledTimes(2);
+      expect(unhandled).toHaveLength(0);
+      // Nothing user-visible has failed yet — track 1 is still playing, and
+      // the failure will be surfaced (once) if track 2 ever becomes current.
+      expect(toastText(view!.container)).toBe("");
+      expect(capturedCtx!.current?.itemId).toBe(TRACK_ID);
+    });
   });
 });
