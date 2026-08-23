@@ -61,9 +61,19 @@ function PersonContent({ id }: { id: string }): React.JSX.Element {
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [person, setPerson] = useState<Person | null>(null);
   const [personNotFound, setPersonNotFound] = useState(false);
+  // browser-shell-browse-F7: the .catch below used to handle ONLY 404 —
+  // any other failure (a transient 5xx, a network error) left `person`
+  // null forever with `personNotFound` also false, so the render fell
+  // into the `!person` skeleton branch below permanently: no error, no
+  // retry, indistinguishable from "still loading". Same error+retry-key
+  // shape as HomeContent.tsx's/browse's own fix for the identical class
+  // of bug (confirmed[16]).
+  const [personError, setPersonError] = useState<string | null>(null);
+  const [personRetryKey, setPersonRetryKey] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
+    setPersonError(null);
     getAuthStore()
       .getAccessToken()
       .then((token) => {
@@ -75,12 +85,16 @@ function PersonContent({ id }: { id: string }): React.JSX.Element {
       })
       .catch((err: unknown) => {
         if (cancelled) return;
-        if (err instanceof LoombreApiError && err.status === 404) setPersonNotFound(true);
+        if (err instanceof LoombreApiError && err.status === 404) {
+          setPersonNotFound(true);
+        } else {
+          setPersonError(err instanceof LoombreApiError ? err.message : "Failed to load this person.");
+        }
       });
     return () => {
       cancelled = true;
     };
-  }, [id]);
+  }, [id, personRetryKey]);
 
   const fetchFilmographyPage = useCallback(
     async (cursor: string | null): Promise<CursorPage<FilmographyCard>> => {
@@ -103,6 +117,17 @@ function PersonContent({ id }: { id: string }): React.JSX.Element {
 
   if (personNotFound) {
     return <div className={styles.notFound}>Person not found.</div>;
+  }
+
+  if (personError) {
+    return (
+      <div className={styles.loadMoreError}>
+        {personError}
+        <button type="button" className={styles.loadMore} onClick={() => setPersonRetryKey((k) => k + 1)}>
+          Retry
+        </button>
+      </div>
+    );
   }
 
   if (!person || accessToken === null) {

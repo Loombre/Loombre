@@ -36,7 +36,7 @@ import { SortControl, SORT_PARAMS, isSortValue, type SortValue } from "../../com
 import { useCursorFeed, type CursorPage } from "../../components/browse/useCursorFeed.js";
 import { Skeleton } from "../../components/skeleton/Skeleton.js";
 import { RestrictedZoneBrowseChip } from "../../components/restricted/RestrictedZoneBrowseChip.js";
-import { apiGet } from "../../lib/api-client.js";
+import { apiGet, LoombreApiError } from "../../lib/api-client.js";
 import { getAuthStore } from "../../lib/auth-store.js";
 import { useNowPlayingItemIds } from "../../lib/now-playing.js";
 import styles from "./page.module.css";
@@ -121,6 +121,14 @@ function BrowseContent(): React.JSX.Element {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [libraries, setLibraries] = useState<Library[] | null>(null);
+  // browser-shell-browse-F7: GET /libraries had no .catch — a transient
+  // 5xx/network failure left `libraries` null forever (the toolbar's pills
+  // skeleton, and the grid's own "still loading" branch below, both gate on
+  // exactly that), with no feedback and no way to recover short of a full
+  // reload. Same `error` + retry-key shape as HomeContent.tsx's own fix for
+  // the identical class of bug (confirmed[16]).
+  const [librariesError, setLibrariesError] = useState<string | null>(null);
+  const [librariesRetryKey, setLibrariesRetryKey] = useState(0);
   const [serverUrl] = useState(() => getAuthStore().getSnapshot().serverUrl);
   const [accessToken, setAccessToken] = useState<string | null>(null);
   // browser-shell-browse-F6: seed from ?sort= at mount so a shared/
@@ -146,13 +154,18 @@ function BrowseContent(): React.JSX.Element {
 
   useEffect(() => {
     let cancelled = false;
-    apiGet("/libraries", { params: { query: { limit: 100 } } }).then((page) => {
-      if (!cancelled) setLibraries(page.items);
-    });
+    setLibrariesError(null);
+    apiGet("/libraries", { params: { query: { limit: 100 } } })
+      .then((page) => {
+        if (!cancelled) setLibraries(page.items);
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) setLibrariesError(err instanceof LoombreApiError ? err.message : "Failed to load libraries.");
+      });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [librariesRetryKey]);
 
   const requestedId = searchParams.get("library");
   const activeLibrary = useMemo(
@@ -183,9 +196,9 @@ function BrowseContent(): React.JSX.Element {
     <div className={styles.page}>
       <div className={styles.toolbar}>
         <h1 className={styles.title}>Browse</h1>
-        {libraries === null ? (
+        {libraries === null && librariesError === null ? (
           <Skeleton radius="pill" width={240} height={36} />
-        ) : libraries.length > 0 ? (
+        ) : libraries && libraries.length > 0 ? (
           <LibraryPills
             options={libraries.map((l) => ({ id: l.id, name: l.name }))}
             activeId={activeLibrary?.id ?? null}
@@ -203,7 +216,14 @@ function BrowseContent(): React.JSX.Element {
           above the grid — entitlement-gated, hidden entirely otherwise. */}
       <RestrictedZoneBrowseChip />
 
-      {libraries !== null && libraries.length === 0 ? (
+      {librariesError ? (
+        <div className={styles.loadMoreError}>
+          {librariesError}
+          <button type="button" className={styles.retryButton} onClick={() => setLibrariesRetryKey((k) => k + 1)}>
+            Retry
+          </button>
+        </div>
+      ) : libraries !== null && libraries.length === 0 ? (
         <div className={styles.emptyLibraries}>No libraries yet — ask an admin to create one.</div>
       ) : error ? (
         <div className={styles.emptyLibraries}>{error}</div>

@@ -269,9 +269,20 @@ export function HomeContent(): React.JSX.Element {
       recentlyAdded.map((e) => e.item.id),
       watchlist.map((e) => e.item.id),
     );
-    fetchFeaturedCandidates(excluded).then((pool) => {
-      if (!cancelled) setFeaturedPool(pool);
-    });
+    fetchFeaturedCandidates(excluded)
+      .then((pool) => {
+        if (!cancelled) setFeaturedPool(pool);
+      })
+      // browser-shell-browse-F7: had no .catch — the banner is optional
+      // (rendered only when `featuredPool.length > 0`, see below) and this
+      // effect's own deps never re-fire on their own once the two rails
+      // above have resolved, so a failure here has no user-facing retry
+      // path either way. Degrade to "no banner" (an empty pool already
+      // renders nothing — this is the SAME outcome, not a new state) rather
+      // than leaving an unhandled rejection.
+      .catch(() => {
+        if (!cancelled) setFeaturedPool([]);
+      });
     return () => {
       cancelled = true;
     };

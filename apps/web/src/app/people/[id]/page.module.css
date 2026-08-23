@@ -61,6 +61,10 @@
 }
 
 .loadMoreError {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-md);
   border-radius: var(--radius-sm);
   background: color-mix(in srgb, var(--color-danger) 12%, transparent);
   color: var(--color-danger);

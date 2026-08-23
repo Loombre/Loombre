@@ -21,8 +21,17 @@ vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(nav.search),
 }));
 
+class FakeLoombreApiError extends Error {
+  readonly status: number;
+  constructor(status: number, message = "Request failed") {
+    super(message);
+    this.status = status;
+  }
+}
+
 vi.mock("../../lib/api-client.js", () => ({
   apiGet: (...args: unknown[]) => apiGetMock(...args),
+  LoombreApiError: FakeLoombreApiError,
 }));
 
 vi.mock("../../lib/auth-store.js", () => ({
@@ -115,5 +124,43 @@ describe("BrowsePage — browser-shell-browse-F6: sort round-trips through the U
 
     expect(nav.replace).toHaveBeenCalledWith(expect.stringContaining("sort=title"));
     expect(nav.replace).toHaveBeenCalledWith(expect.stringContaining("library=lib1"));
+  });
+});
+
+describe("BrowsePage — browser-shell-browse-F7: a failed GET /libraries shows an error with Retry, not an infinite skeleton", () => {
+  let view: TestRender | null = null;
+
+  afterEach(() => {
+    view?.unmount();
+    view = null;
+    apiGetMock.mockReset();
+    nav.replace.mockReset();
+    nav.search = "";
+  });
+
+  it("renders the error + Retry instead of the pills skeleton, and a successful retry recovers", async () => {
+    let succeed = false;
+    apiGetMock.mockImplementation((path: string) => {
+      if (path === "/libraries") {
+        return succeed ? Promise.resolve({ items: [LIBRARY] }) : Promise.reject(new FakeLoombreApiError(500, "Server error"));
+      }
+      if (path === "/movies") return emptyPage();
+      return Promise.reject(new Error(`unexpected apiGet(${path})`));
+    });
+    view = renderIntoBody(<BrowsePage />);
+    await flush();
+
+    const retryButton = Array.from(view.container.querySelectorAll("button")).find((b) => b.textContent?.includes("Retry"));
+    expect(retryButton, "expected a Retry control instead of a stuck skeleton").toBeDefined();
+    expect(view.container.textContent).toContain("Server error");
+
+    succeed = true;
+    await act(async () => {
+      retryButton!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await flush();
+
+    expect(view.container.querySelector('[role="radiogroup"]')?.textContent).toContain("Movies");
+    expect(Array.from(view.container.querySelectorAll("button")).some((b) => b.textContent?.includes("Retry"))).toBe(false);
   });
 });

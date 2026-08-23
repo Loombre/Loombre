@@ -59,11 +59,13 @@ function emptyPage(): Promise<{ items: unknown[]; nextCursor: null }> {
 function installApiGetMock(overrides: {
   continueWatching?: () => Promise<unknown>;
   recentlyAdded?: () => Promise<unknown>;
+  movies?: () => Promise<unknown>;
 }): void {
   apiGetMock.mockImplementation((path: string) => {
     if (path === "/home/continue-watching") return (overrides.continueWatching ?? emptyPage)();
     if (path === "/home/recently-added") return (overrides.recentlyAdded ?? emptyPage)();
-    if (path === "/watchlist" || path === "/movies" || path === "/series") return emptyPage();
+    if (path === "/movies") return (overrides.movies ?? emptyPage)();
+    if (path === "/watchlist" || path === "/series") return emptyPage();
     return Promise.reject(new Error(`unexpected apiGet(${path})`));
   });
 }
@@ -131,5 +133,21 @@ describe("HomeContent", () => {
     expect(findRetryButton(view)).toBeUndefined();
     expect(view.container.textContent).toContain("Nothing in progress");
     expect(view.container.textContent).toContain("Nothing added yet");
+  });
+
+  // browser-shell-browse-F7: the featured-pool's /movies+/series over-fetch
+  // (fetchFeaturedCandidates, run after both rails resolve) had no .catch
+  // at all — a failure there was an unhandled promise rejection (vitest
+  // reports these as a run-level "Errors" failure independent of any
+  // individual test's own assertions, so this case is a real RED/GREEN
+  // signal even though the banner's own render output is identical either
+  // way — null and [] both fail the `featuredPool.length > 0` gate).
+  it("REGRESSION GUARD: a failed featured-pool fetch degrades to no banner instead of an unhandled rejection", async () => {
+    installApiGetMock({ movies: () => Promise.reject(new Error("pool fetch down")) });
+    view = renderIntoBody(<HomeContent />);
+    await flush();
+
+    expect(findRetryButton(view)).toBeUndefined();
+    expect(view.container.textContent).toContain("Nothing in progress");
   });
 });
