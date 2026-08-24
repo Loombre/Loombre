@@ -165,21 +165,13 @@ spinner lock; rewind-to-0:00; sync holds over minutes after a seek (also
 covers §6's open-GOP standing item on other files).
 
 ### Seek model V8 Open
-- **QA-sweep follow-up cluster (2026-08-21, all evidence in the QA report
-  artifact; owner = next playback dispatch):** (a) gap-F4 P1 — re-seek
-  before landing sends ONE POST not two (newest-wins re-arm broken live)
-  and post-ENDLIST out-of-window seek sends NONE; suspect hardSeek's
-  silent `if (!sessionId) return` under session churn (incl. StrictMode
-  twin cleanup). (b) player-F4 P1 — seek at/near EOF wedges permanently;
-  the 20 s timeout is cleared AT landing so the post-landing wedge is
-  unbounded. (c) gap-F6 P1 intermittent — fresh session self-relocated
-  run0→run7 with no user seeks (segment-GET restart trigger churning on
-  far-ahead probes) + phantom progress writes. (d) player-F9 P1 — ?t=
-  deep link rides the presentation axis, no-ops on transcode sessions.
-  (e) gap-F7 P2 — pause/ended progress flushes write PRESENTATION-axis ms
-  (interval flush correct) — Q5's defect now corrupts resume points.
-  (f) gap-F5 P2 — "Seek failed" toast never renders. (g) player-F6 P2 —
-  transient 20–50 min displayed-clock desync post-seek/resume.
+- **QA-sweep follow-up cluster (2026-08-21) — CLOSED 2026-08-23/24 by the
+  remediation run (see "QA remediation" section below): all seven items
+  (gap-F4, player-F4, gap-F6, player-F9, gap-F7, gap-F5, player-F6) fixed
+  on main and independently re-verified in the live browser; gap-F6 took a
+  second round (prune-race implicit restarts — backward-jump evidence +
+  3-seg hysteresis, epoch-keyed already-answered, phantom-progress gate;
+  3d843d1).**
 - **presentationToSourceMs window-anchoring (Q5, filed 2026-08-12):** the
   legacy heartbeat conversion walks the CURRENT playlist window from its
   first listed entry, but a continuously-attached client reports
@@ -243,6 +235,81 @@ device rows in device lists. Settings audited back to pre-QA values
 (maxSimultaneousTranscodes=1 — mid-run lane tug-of-war resolved by the
 pre-QA 429 evidence); zero qa- fixtures, zero live sessions, zero stray
 ffmpeg. Owner's testing account + real files untouched.
+
+## QA remediation — full fix pass over the 2026-08-20/21 report (2026-08-23/24, owner-directed dynamic workflow — COMPLETE, all findings verified)
+
+Owner brief: fix all 17 P1 + 23 P2 + 6 verified P3, triage the 34 P3 leads;
+feedback-loop-first, exclusive file ownership, serialized browser, atomic
+commits, no V8 regression. Executed as Phase 0 (4 scouts: 44/46 root causes
+CONFIRMED-AS-CITED at HEAD, 2 mechanism refinements; baseline gate green) →
+Phase 1 (56 agents, 0 errors: Cluster A sequential in the primary checkout
+under a workflow-level browser/primary mutex on claude-fable-5; clusters B–G
+in worktrees rem/b..rem/g on opus/sonnet with per-lane test DBs
+loombre_lane_<x>; per-finding RED→GREEN→commit; integrators rebased each
+lane onto main ff-only behind `pnpm gate`) → Phase 2 (independent
+adversarial verifiers re-ran every ORIGINAL repro: 17 P1 individually, 23
+P2 + 4 P3 in cluster batches; reopen→refix loop) → closing gates.
+
+RESULT — every report finding closed:
+- P1 17/17 and P2 23/23 fixed + independently VERIFIED (live browser/API
+  re-runs of the original repro + edge variants). Two findings needed a
+  second round after real refutations: gap-F6 (above) and browser-admin-F1
+  (server-component redirect() ships as a client-replayed flight error
+  under the ssr:false BootSplash bailout — final fix is next.config
+  redirects(): real HTTP 307s, stubs deleted; 943482f). One finding needed
+  a follow-up within round 1: api-validation-F5 (updateMe wrong-typed
+  nullable members 200-coerced; 56907a8 adds the 422s).
+- P3: 4 fixed+verified; gap-F11 verified NOT-a-bug at HEAD (revert+toast
+  already present; test-only regression coverage added); adi-F3 DEFERRED
+  by design (enriching the bare-404 envelope would break the documented
+  byte-identity between unknown-route and restricted-zone 404s).
+- 34 P3 leads triaged: 15 fixed (RowMenu Escape, reason-code title,
+  interview grammar, SettingField dirty parity, doomed poster/artwork
+  requests ×3 surfaces, sort-in-URL, QuickSearch doc comment, mobile
+  header titles, browse/home fetch retry, SceneBanner library pill,
+  ISO-639 B/T dedupe, non-actor credits, mini-player duration fallback);
+  19 deferred/not-a-bug with one-line assessments (ledger).
+- 65 commits b766e74..e1dd694 on main (one per finding + follow-ups +
+  perf stamps; three pre-run baseline commits landed the previous
+  session's verified seek fix a072156, nanoid floor acbaa7f, docs b766e74).
+- Gates at close: `pnpm gate:full` ALL PASS (17 steps incl. the NEW
+  version-stamp drift check from browser-admin-F8; bundle 174.6 KB gz vs
+  200 KB budget); V8 qualification PASS API half (copy shape: run visible
+  0.29–0.57 s, argv -noaccurate_seek -ss 6177.232, PDT exact, A/V 5 ms)
+  + browser half (1 POST per drag 5/5, clocks land, 1 session POST per
+  mount, DELETE on Back); plugins auth matrix 20 :id routes × 3 identities
+  = 60 probes, zero violations; 12-station smoke pass (11 PASS, 1
+  BLOCKED-DATA: seed tracks have no media_files rows so the mini player
+  can't be exercised — the F10 failure toast path verified instead).
+
+Infrastructure (reusable): `.remediation/` in-repo (git-ignored) —
+status.py per-finding ledger renders REMEDIATION-STATE.md; v8-qual.sh is
+the deterministic V8 API-half qualification; qa-ledger.json carries the
+full report dataset; auth-matrix-final.json; gate/flake logs. Worktrees
+pruned + rem/* branches deleted + loombre_lane_* DBs dropped at close
+(their duplicate spec collections were the documented mid-suite-401 flake
+trigger). Two non-reproducing gate flakes recorded with logs
+(.remediation/gate-final2-attempt*.log, gate-final3-attempt1-flake.log);
+one carries an unexplained Anthropic-shaped 401 envelope in a supertest
+response — proxy-env-leak hypothesis logged; flag if it recurs.
+
+NEW_FINDINGS for the next dispatch (not fixed, logged in
+REMEDIATION-STATE.md): (1) absorbed POST /seek 202 (target inside the
+current run, e.g. Start-over to 0) never spawns a run so the landing watch
+pins the scrubber ~20 s — treat absorbed 202 as landed-on-element-seek
+(UX wart, verified benign after gap-F6 round 3 shrank its window);
+(2) the 19 triage-deferred P3 leads (ledger has per-item assessments —
+notably watchlist request-hygiene singleton cache, WatchlistToggle mobile
+parity, ZoneFilterBar overlay, featured-banner dataset logic,
+job.updated attempts field, /system/capabilities restricted disclosure
+(owner decision), ApplyMatchRequest provider enum).
+
+Instance state after the run: unchanged from the QA sweep's deliberate
+leftovers (fixture users/libraries, restricted.enabled TRUE, grants, QA
+device rows); dev stack left RUNNING for owner re-QA
+(DATABASE_URL=postgres://loombre:loombre@localhost:5442/loombre); zero live
+sessions, zero stray ffmpeg, no qa- fixtures. Docs synced to the website
+tree (70 routes, build+CSP green; deploy NOT run, stays manual).
 
 ## 0.9.0-rc polish pass — UI polish, IA restructure, scanner/probe fix (2026-08-07, IN PROGRESS)
 
