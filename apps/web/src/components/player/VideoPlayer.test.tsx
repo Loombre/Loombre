@@ -1978,4 +1978,138 @@ describe("VideoPlayer", () => {
       ).toMatchObject({ body: { state: "played", positionMs: 571_000 } });
     });
   });
+
+  // ── browser-player-F6: displayed source-clock desync after hard seeks ───
+  // QA 2026-08-20/21 (P2): after a hard-seek landing the displayed clock
+  // transiently rode the WRONG AXIS for 5-40 s — either the raw
+  // presentation axis (listedFragments() unreadable while an ABR switch's
+  // level details refresh: the silent `sourceMs ?? currentTime * 1000`
+  // fallback) or the OLD timeline (a stale pre-seek window still covering
+  // the position with pre-restart PDTs). Live repro at HEAD: label showed
+  // 2:54 (presentation) for ~12 s where the source truth was ~59:40. The
+  // source-time mapping must be AUTHORITATIVE from the landing on: the
+  // landed run's PDT/run origin anchors the clock, a window listing no run
+  // at/after the landed run is untrusted, and when no trustworthy mapping
+  // exists the clock HOLDS the last source-axis value — it never shows a
+  // presentation-axis number on a source-clocked session.
+  describe("displayed source-clock desync (browser-player-F6)", () => {
+    /** run0's listed window — NON-zero source origin (3_600_000) so the
+     *  presentation and source axes are visibly distinct everywhere. */
+    function run0Fragment(): unknown {
+      return { programDateTime: 3_600_000, start: 0, duration: 6, relurl: "run0/s000000.m4s" };
+    }
+    /** The seek-spawned run: PDT == the clamped target (10_000). */
+    function run1Fragment(): unknown {
+      return { programDateTime: 10_000, start: 6, duration: 6, relurl: "run1/s000001.m4s" };
+    }
+
+    async function renderHlsReady(): Promise<{ v: TestRender; hls: MockHlsInstance }> {
+      createPlaybackSession.mockReset().mockResolvedValue({ ok: true, session: hlsTranscodeSession() });
+      const v = await renderReady();
+      await act(async () => {});
+      const hls = hlsInstances[hlsInstances.length - 1];
+      if (!hls) throw new Error("the hlsjs attach effect never constructed an hls.js instance");
+      hls.currentLevel = 0;
+      return { v, hls };
+    }
+
+    /** Drives a full hard seek (202 target 10_000) through landing AND
+     *  resume evidence, leaving the clock advancing on the landed run's
+     *  source axis. Last authoritative mapping: presentation 6.5 s ->
+     *  source 10_500 (through run1's PDT). */
+    async function landAndResume(v: TestRender, hls: MockHlsInstance): Promise<HTMLVideoElement> {
+      const details = { live: true, fragments: [run0Fragment()] };
+      hls.levels = [{ details }];
+      apiPost.mockResolvedValueOnce({ targetMs: 10_000 });
+      await act(async () => button(v, "Forward 10 seconds").click());
+      expect(apiPost).toHaveBeenCalledTimes(1);
+      details.fragments = [run0Fragment(), run1Fragment()];
+      await act(async () => {
+        hls.emit("hlsLevelUpdated");
+      });
+      const video = videoEl(v);
+      expect(video.currentTime, "the landing never seeked the element to the run's start").toBe(6);
+      mediaState(video).readyState = 4;
+      await act(async () => {
+        await video.play();
+      });
+      await act(async () => {
+        video.currentTime = 6.5;
+        video.dispatchEvent(new Event("timeupdate"));
+      });
+      const slider = v.container.querySelector('[role="slider"]');
+      expect(slider?.getAttribute("aria-valuenow"), "sanity: the landed clock maps through run1's PDT").toBe("10500");
+      return video;
+    }
+
+    it("holds the source axis when an ABR switch exposes a level with no details yet — never the raw presentation axis", async () => {
+      const { v, hls } = await renderHlsReady();
+      view = v;
+      const video = await landAndResume(v, hls);
+      // ABR switches to a rung whose level details have not refreshed yet —
+      // the post-restart window where listedFragments() is unreadable.
+      hls.levels = [{ details: { live: true, fragments: [run0Fragment(), run1Fragment()] } }, {}];
+      hls.currentLevel = 1;
+      await act(async () => {
+        video.currentTime = 7.5;
+        video.dispatchEvent(new Event("timeupdate"));
+      });
+      const slider = v.container.querySelector('[role="slider"]');
+      expect(
+        slider?.getAttribute("aria-valuenow"),
+        "the displayed clock fell back to the raw presentation axis (7500) while the switched-to level's details refreshed — it must stay on the landed run's source axis",
+      ).toBe("11500");
+    });
+
+    it("rejects a mapping through a STALE window (no run at/after the landed run) — the old timeline must not repossess the clock", async () => {
+      const { v, hls } = await renderHlsReady();
+      view = v;
+      const video = await landAndResume(v, hls);
+      // The switched-to level's details were last fetched BEFORE the seek
+      // restart: they still list ONLY run0, whose old-timeline PDT covers
+      // presentation 7.5 s.
+      hls.levels = [
+        { details: { live: true, fragments: [run0Fragment(), run1Fragment()] } },
+        { details: { live: true, fragments: [{ programDateTime: 3_600_000, start: 0, duration: 12, relurl: "run0/s000000.m4s" }] } },
+      ];
+      hls.currentLevel = 1;
+      await act(async () => {
+        video.currentTime = 7.5;
+        video.dispatchEvent(new Event("timeupdate"));
+      });
+      const slider = v.container.querySelector('[role="slider"]');
+      expect(
+        slider?.getAttribute("aria-valuenow"),
+        "the displayed clock mapped through a stale pre-seek window onto the OLD timeline (3_607_500) — a window listing no run at/after the landed run is not trustworthy",
+      ).toBe("11500");
+    });
+
+    it("a pause flush during the desync window persists the source axis, never the presentation axis", async () => {
+      const { v, hls } = await renderHlsReady();
+      view = v;
+      const video = await landAndResume(v, hls);
+      hls.levels = [{ details: { live: true, fragments: [run0Fragment(), run1Fragment()] } }, {}];
+      hls.currentLevel = 1;
+      // Two consecutive close samples = real advancement. At HEAD the
+      // second sample's presentation-axis value (7500) also passes the
+      // gap-F6 source-continuity gate (|7500 - 10000| <= 10 s, watched ==
+      // the 202 target) and becomes the WATCHED position — the wrong axis
+      // a heartbeat/pause flush then PERSISTS (the ledger's sub-claim c).
+      await act(async () => {
+        video.currentTime = 7;
+        video.dispatchEvent(new Event("timeupdate"));
+        video.currentTime = 7.5;
+        video.dispatchEvent(new Event("timeupdate"));
+      });
+      apiPut.mockClear();
+      await act(async () => {
+        video.pause();
+      });
+      expect(apiPut).toHaveBeenCalledTimes(1);
+      expect(
+        apiPut.mock.calls[0]?.[1],
+        "the pause flush persisted the presentation axis — a desync-window flush corrupts the resume point by the full axis gap",
+      ).toMatchObject({ body: { positionMs: 11_500 } });
+    });
+  });
 });

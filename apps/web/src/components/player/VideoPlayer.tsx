@@ -55,11 +55,17 @@ import {
   hasSourceClock,
   HARD_SEEK_LANDING_TIMEOUT_MS,
   isLandingResumeEvidence,
-  presentationToSourceMs,
   sourceToPresentationSec,
   type LandingWatch,
   type ListedFragment,
 } from "../../lib/source-time.js";
+import {
+  anchorAtExplicitPosition,
+  anchorAtLanding,
+  initialSourceClockState,
+  resolveDisplayedSourceMs,
+  type SourceClockState,
+} from "../../lib/source-clock.js";
 import { reopenEndedLevels, startRelocationNudge } from "../../lib/relocation-nudge.js";
 import { decideRecovery, sessionFailureReasons } from "../../lib/playback-recovery.js";
 import { useToast } from "../ui/Toast.js";
@@ -249,6 +255,12 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
    *  first accepted advancement must be near where the viewer actually
    *  started, never near a relocated origin. */
   const intendedStartMsRef = useRef<number>(startMs ?? 0);
+  /** browser-player-F6: the source-clock authority state (sticky clock
+   *  flag + run floor + last authoritative axis anchor) that the
+   *  displayed-position resolver threads through every `timeupdate` —
+   *  see lib/source-clock.ts. Reset at the same two session-established
+   *  sites `durationRef.current` resets at. */
+  const sourceClockRef = useRef<SourceClockState>(initialSourceClockState());
   const durationRef = useRef<number | null>(null);
   // Opus review Finding F (2026-08-10): the event-wiring effect below
   // (`adoptElementDuration`) needs "is this session direct-play"
@@ -553,6 +565,7 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
       setDurationMs(result.session.media?.durationMs ?? null);
       durationRef.current = result.session.media?.durationMs ?? null;
       isDirectPlayRef.current = result.session.manifestUrl === null;
+      sourceClockRef.current = initialSourceClockState();
       const defaultAudio = result.session.media?.audio.find((a) => a.isDefault) ?? result.session.media?.audio[0];
       if (defaultAudio) setSelectedAudioIndex(defaultAudio.index);
 
@@ -962,6 +975,11 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
           nudgeStopRef.current = null;
         }
         landedAwaitingResumeRef.current = { startSec: landing.startSec, targetMs };
+        // browser-player-F6: the landing names the seek-spawned run and
+        // its origin — from here the source mapping is AUTHORITATIVE: the
+        // landed fragment's own PDT anchors the displayed clock and its
+        // run index invalidates every pre-seek window (lib/source-clock.ts).
+        sourceClockRef.current = anchorAtLanding(sourceClockRef.current, landing);
         video.currentTime = landing.startSec;
         positionRef.current = targetMs;
         setPositionMs(targetMs);
@@ -1230,15 +1248,23 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
       // hard-seek target — the element's own position is meaningless until
       // the landing completes (run discovered AND displayable).
       if (relocatingRef.current) return;
-      // Displayed position is PDT-derived SOURCE time when the source
-      // clock exists; raw presentation otherwise (direct-play; pre-V8
-      // server) — where the two axes coincide anyway. positionRef then
-      // feeds the scrubber; the heartbeat reads watchedPositionRef, which
-      // only real advancement (here) or an explicit user seek may set.
+      // browser-player-F6: the displayed position comes from ONE resolver
+      // (lib/source-clock.ts), in authority order — a TRUSTED listed
+      // window (PDT mapping; refreshes the anchor), the presentation axis
+      // only while this session has never shown a source clock
+      // (direct-play; pre-V8 server — the axes coincide there), then the
+      // landed-run/soft-seek anchor extrapolated 1:1. A null resolution
+      // HOLDS the last displayed value: an unreadable or stale
+      // (pre-landing) window must never put a wrong-axis number on the
+      // clock — or, through the advancement gate below, into a progress
+      // write. positionRef feeds the scrubber; the heartbeat reads
+      // watchedPositionRef, which only real advancement (here) or an
+      // explicit user seek may set.
       const frags = listedFragments();
-      const withClock = frags !== null && hasSourceClock(frags);
-      const sourceMs = withClock ? presentationToSourceMs(frags, video.currentTime) : null;
-      const ms = sourceMs ?? video.currentTime * 1000;
+      const resolved = resolveDisplayedSourceMs(sourceClockRef.current, frags, video.currentTime);
+      sourceClockRef.current = resolved.state;
+      if (resolved.ms === null) return;
+      const ms = resolved.ms;
       positionRef.current = ms;
       setPositionMs(ms);
       if (
@@ -1247,8 +1273,16 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
       ) {
         watchedPositionRef.current = ms;
       }
-      const rawBuffered = readBuffered(video);
-      setBuffered(withClock ? bufferedRangesToSource(frags, rawBuffered) : rawBuffered);
+      // Buffered bars only from an authoritative mapping: the trusted
+      // window maps them exactly; raw ranges are exact wherever the
+      // presentation axis applies at all; an anchored/held tick keeps the
+      // previous bars rather than mapping ranges through an untrusted
+      // window (a wrong bar is worse than a briefly-stale one).
+      if (resolved.axis === "source-window" && frags) {
+        setBuffered(bufferedRangesToSource(frags, readBuffered(video)));
+      } else if (resolved.axis === "presentation") {
+        setBuffered(readBuffered(video));
+      }
     };
     // The element's own duration is authoritative only when it EXTENDS
     // what the session already told us. For an in-progress HLS transcode
@@ -1548,6 +1582,10 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
           video.currentTime = presentationSec;
           positionRef.current = ms;
           watchedPositionRef.current = ms; // gap-F6: explicit user intent
+          // browser-player-F6: a soft-seek commit is an exact axis pair —
+          // re-anchor so a mapping outage right after the jump holds/
+          // extrapolates from HERE, not from the pre-seek position.
+          sourceClockRef.current = anchorAtExplicitPosition(sourceClockRef.current, presentationSec, ms);
           setPositionMs(ms);
           heartbeatRef.current?.flushNow();
           return;
@@ -1726,6 +1764,7 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
     setDurationMs(result.session.media?.durationMs ?? null);
     durationRef.current = result.session.media?.durationMs ?? null;
     isDirectPlayRef.current = result.session.manifestUrl === null;
+    sourceClockRef.current = initialSourceClockState();
     const defaultAudio = result.session.media?.audio.find((a) => a.isDefault) ?? result.session.media?.audio[0];
     if (defaultAudio) setSelectedAudioIndex(defaultAudio.index);
     setAwaitingResumeChoice(false);
