@@ -36,12 +36,29 @@
 
 /* Wave C2 (docs/PLAYBACK.md §9.1.9): the quality selector's dock. Sits
    above the control bar, clear of the scrubber, and is only mounted while
-   the controls are visible. `pointer-events: auto` because the overlay
-   layers around it are click-through. */
+   the controls are visible.
+
+   browser-player-F8: the dock was born clear of a pre-capability-chips
+   control bar and rotted when the bar grew — at 1280x800 the bar is
+   ~132px tall (bottom offset 24px, top edge ~156px above the viewport
+   bottom), so the old 88px clearance parked the radios inside the bar's
+   full-width scrubberRow band, and z-index 3 (under the bar's 5) meant a
+   center click on a level hit the Seek track instead (accidental seek to
+   ~90%). Three-part contract, pinned by controls-overlay-stacking.test.ts:
+   clearance beats the tallest bar + a breathing gap; the dock stacks
+   ABOVE the bar (6 > 5, same slot NoticeOverlayStrip uses over the top
+   bar) so radios win any residual overlap (chip wrap on narrow
+   viewports); and the container is click-through — only the radio
+   buttons take pointer events, so an overlap never shields the
+   scrubber/controls beneath the dock's padding. */
 .qualityDock {
   position: absolute;
   right: var(--space-md);
-  bottom: calc(var(--space-3xl) + var(--space-lg));
-  z-index: 3;
+  bottom: calc(var(--space-lg) + 132px + var(--space-xs));
+  z-index: 6;
+  pointer-events: none;
+}
+
+.qualityDock button {
   pointer-events: auto;
 }
