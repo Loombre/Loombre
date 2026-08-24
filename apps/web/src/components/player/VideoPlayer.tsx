@@ -1658,6 +1658,14 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
   useEffect(() => {
     if (phase !== "ready") return undefined;
     function onKeyDown(e: KeyboardEvent): void {
+      // browser-player-F7: while the resume prompt is open the MODAL owns
+      // the keyboard (it holds focus; Escape/Tab are its own concern) —
+      // a Space landing on its focused Close button must never bubble into
+      // togglePlay() and start playback behind the still-open dialog, and
+      // arrows must not seek+flush under it. Read via the ref (mirrored at
+      // render, same idiom as the hls.js attach effect) so the choice flip
+      // doesn't tear down and re-subscribe this window listener.
+      if (awaitingResumeChoiceRef.current) return;
       const target = e.target as HTMLElement | null;
       if (target && ["INPUT", "TEXTAREA"].includes(target.tagName)) return;
       switch (e.key) {

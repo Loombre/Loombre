@@ -1136,6 +1136,78 @@ describe("VideoPlayer", () => {
     expect(v.container.textContent).not.toContain("You stopped at");
   });
 
+  // browser-player-F7: the window-level shortcut handler was gated only on
+  // phase === 'ready', so with the resume prompt open (focus held on the
+  // modal's Close button) a Space bubbled up to the window listener and
+  // togglePlay() started playback BEHIND the still-open dialog — whose
+  // "Resume from X" offer then re-seeks over already-advanced playback.
+  // Arrows leaked the same way (seek + an immediate progress flush). The
+  // keydown handler must be inert while a resume choice is pending; the
+  // modal keeps focus and owns the keyboard until a choice is made.
+  describe("resume-prompt keyboard gate (browser-player-F7)", () => {
+    /** The prompt's own controls are plain-text Buttons (no aria-label) —
+     *  find one inside the open dialog by its visible label. */
+    function dialogButton(v: TestRender, label: string): HTMLButtonElement {
+      const dialog = v.container.querySelector('[role="dialog"]');
+      if (!dialog) throw new Error("no open dialog");
+      const el = [...dialog.querySelectorAll("button")].find((b) => b.textContent === label);
+      if (!el) throw new Error(`no dialog button labelled "${label}"`);
+      return el;
+    }
+
+    /** Real-world shape: the modal holds focus, so the key lands on one of
+     *  its buttons and BUBBLES to VideoPlayer's window-level listener. */
+    async function pressKeyOnDialog(v: TestRender, key: string): Promise<void> {
+      const target = dialogButton(v, "Close");
+      target.focus();
+      await act(async () => {
+        target.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }));
+      });
+    }
+
+    async function renderWithPromptOpen(): Promise<TestRender> {
+      findProgressForItem.mockResolvedValue({ itemId: ITEM_ID, positionMs: 120_000, state: "in-progress" });
+      const v = await renderReady();
+      expect(v.container.querySelector('[role="dialog"]')).toBeTruthy();
+      return v;
+    }
+
+    it("Space while the resume prompt is open never reaches the player — nothing plays behind the modal", async () => {
+      const v = (view = await renderWithPromptOpen());
+      const video = videoEl(v);
+      expect(video.paused).toBe(true);
+
+      await pressKeyOnDialog(v, " ");
+
+      expect(video.paused, "Space leaked through the open resume prompt and started playback behind the modal").toBe(true);
+      expect(v.container.querySelector('[role="dialog"]'), "the prompt must stay open until a choice is made").toBeTruthy();
+    });
+
+    it("arrow keys while the resume prompt is open never seek or flush progress", async () => {
+      const v = (view = await renderWithPromptOpen());
+      const video = videoEl(v);
+
+      await pressKeyOnDialog(v, "ArrowRight");
+
+      expect(video.currentTime, "ArrowRight leaked through the open resume prompt and seeked the element").toBe(0);
+      expect(apiPut, "the leaked seek even flushed a progress write while the prompt was still open").not.toHaveBeenCalled();
+    });
+
+    it("after a choice is made the same keys work again — the gate is the pending choice, not the player", async () => {
+      const v = (view = await renderWithPromptOpen());
+      const video = videoEl(v);
+
+      await act(async () => dialogButton(v, "Start over").click());
+      expect(v.container.querySelector('[role="dialog"]')).toBeNull();
+      expect(video.paused).toBe(false);
+
+      await act(async () => {
+        window.dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true, cancelable: true }));
+      });
+      expect(video.paused, "Space must reach the player again once the resume choice is resolved").toBe(true);
+    });
+  });
+
   // AUD-A4v4-003 regression guards: a createPlaybackSession call that
   // resolves AFTER its effect invocation was cancelled (unmount, or an
   // itemId/mediaFileId/startMs change re-running the effect) creates a real
