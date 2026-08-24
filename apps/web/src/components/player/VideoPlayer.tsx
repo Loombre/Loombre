@@ -26,7 +26,7 @@ import type { components } from "@loombre/sdk";
 import { fetchItemSummary, backdropImage, type ItemSummary } from "../../lib/item-lookup.js";
 import { buildImageUrl } from "../../lib/image-url.js";
 import { getAuthStore } from "../../lib/auth-store.js";
-import { createPlaybackSession, endPlaybackSession } from "../../lib/playback-session.js";
+import { createPlaybackSession, endPlaybackSession, endPlaybackSessionOnUnload } from "../../lib/playback-session.js";
 import { acquirePlaybackSessionLease, playbackSessionLeaseKey } from "../../lib/playback-session-lease.js";
 import {
   appendTokenParam,
@@ -593,9 +593,15 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
   }, [itemId, mediaFileId, startMs]);
 
   // ── Session end on unmount ──────────────────────────────────────────────
+  // browser-player-F5: session ids the pagehide teardown path (below) has
+  // already ended on the keepalive DELETE — this cleanup must skip them so
+  // the two end paths can never double-DELETE one session. (On a real
+  // full-document teardown this cleanup never runs at all; the overlap is
+  // jsdom/dev-shaped, but the guard makes the invariant unconditional.)
+  const unloadEndedSessionIdsRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     return () => {
-      if (session) void endPlaybackSession(session.id);
+      if (session && !unloadEndedSessionIdsRef.current.has(session.id)) void endPlaybackSession(session.id);
     };
   }, [session?.id]);
 
@@ -1201,9 +1207,32 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
     );
   };
 
+  // browser-player-F5: a genuine full-document teardown (real navigation,
+  // tab close — every /watch exit that is NOT the in-app router.back())
+  // destroys the document without running React unmount cleanups, so the
+  // "session end on unmount" effect above never fires and the session
+  // lingered 'active'/'suspended', holding its transcode slot for the
+  // 15-minute sweeper window. End it from the same pagehide that flushes
+  // progress, on the keepalive path (lib/playback-session.ts's DELETE twin
+  // of reportProgressOnUnload — the PUT and DELETE may arrive in either
+  // order; the server's progress write treats sessionId as best-effort, so
+  // ordering is safe). A `persisted` pagehide (bfcache) is NOT a teardown:
+  // the document may come back alive and resume this exact session, so it
+  // keeps the session and the sweeper stays the fallback if it never
+  // returns. Marking the id in unloadEndedSessionIdsRef is what keeps the
+  // unmount cleanup above from ever issuing a second DELETE.
+  const endSessionOnTeardownRef = useRef<() => void>(() => undefined);
+  endSessionOnTeardownRef.current = (): void => {
+    if (!session || unloadEndedSessionIdsRef.current.has(session.id)) return;
+    if (endPlaybackSessionOnUnload(serverUrl, session.id)) {
+      unloadEndedSessionIdsRef.current.add(session.id);
+    }
+  };
+
   useEffect(() => {
-    function onPageHide(): void {
+    function onPageHide(event: PageTransitionEvent): void {
       flushProgressRef.current();
+      if (!event.persisted) endSessionOnTeardownRef.current();
     }
     window.addEventListener("pagehide", onPageHide);
     return () => window.removeEventListener("pagehide", onPageHide);

@@ -11,7 +11,7 @@
 
 import { describe, expect, it } from "vitest";
 import type { components } from "@loombre/sdk";
-import { applyDirectPlayOnlyGuard, type CreateSessionResult } from "./playback-session.js";
+import { applyDirectPlayOnlyGuard, endPlaybackSessionOnUnload, type CreateSessionResult } from "./playback-session.js";
 
 type PlaybackSession = components["schemas"]["PlaybackSession"];
 
@@ -64,5 +64,59 @@ describe("applyDirectPlayOnlyGuard", () => {
   it("passes an already-unavailable result through unchanged", () => {
     const result: CreateSessionResult = { ok: false, wouldBeReasons: [], status: 429 };
     expect(applyDirectPlayOnlyGuard(result)).toBe(result);
+  });
+});
+
+// browser-player-F5: the keepalive-DELETE unload sender. Impure edges
+// (AuthStore token, global fetch) are injected per this file's header;
+// the component-level wiring (which pagehide fires it, the double-DELETE
+// guard against the unmount path) lives in VideoPlayer.test.tsx.
+describe("endPlaybackSessionOnUnload", () => {
+  function captureFetch(): { calls: { url: string; init: RequestInit | undefined }[]; fetchFn: typeof fetch } {
+    const calls: { url: string; init: RequestInit | undefined }[] = [];
+    const fetchFn = ((url: string | URL | Request, init?: RequestInit) => {
+      calls.push({ url: String(url), init });
+      return Promise.resolve(new Response(null, { status: 204 }));
+    }) as typeof fetch;
+    return { calls, fetchFn };
+  }
+
+  it("dispatches a keepalive DELETE with the Bearer token, tolerating a trailing serverUrl slash", () => {
+    const { calls, fetchFn } = captureFetch();
+    const dispatched = endPlaybackSessionOnUnload("http://server:3001/", "session-1", {
+      accessToken: "tok-1",
+      fetchFn,
+    });
+    expect(dispatched).toBe(true);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.url).toBe("http://server:3001/playback/sessions/session-1");
+    expect(calls[0]?.init).toMatchObject({
+      method: "DELETE",
+      keepalive: true,
+      headers: { Authorization: "Bearer tok-1" },
+    });
+  });
+
+  it("dispatches nothing without an access token, reporting it so the caller keeps unmount-DELETE duty", () => {
+    const { calls, fetchFn } = captureFetch();
+    expect(endPlaybackSessionOnUnload("http://server:3001", "session-1", { accessToken: null, fetchFn })).toBe(false);
+    expect(calls).toHaveLength(0);
+  });
+
+  it("never throws when the send itself throws synchronously, and reports the non-dispatch", () => {
+    const fetchFn = (() => {
+      throw new Error("document already tearing down");
+    }) as unknown as typeof fetch;
+    expect(endPlaybackSessionOnUnload("http://server:3001", "session-1", { accessToken: "tok-1", fetchFn })).toBe(
+      false,
+    );
+  });
+
+  it("swallows an async network rejection (nothing is left to catch it on unload)", async () => {
+    const fetchFn = (() => Promise.reject(new Error("net down"))) as typeof fetch;
+    expect(endPlaybackSessionOnUnload("http://server:3001", "session-1", { accessToken: "tok-1", fetchFn })).toBe(true);
+    // Settle the microtask queue — an unhandled rejection here would fail
+    // the run via vitest's unhandled-error reporter.
+    await new Promise((resolve) => setTimeout(resolve, 0));
   });
 });

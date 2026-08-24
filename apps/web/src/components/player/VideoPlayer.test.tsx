@@ -41,6 +41,10 @@ const ALT_FILE_ID = "01890000-0000-7000-8000-0000000000d9";
 
 const createPlaybackSession = vi.fn();
 const endPlaybackSession = vi.fn();
+// browser-player-F5: the keepalive DELETE twin of reportProgressOnUnload —
+// the ONLY session-end path that survives a genuine full-document teardown
+// (real navigation / tab close), where React unmount cleanups never run.
+const endPlaybackSessionOnUnload = vi.fn();
 const findProgressForItem = vi.fn();
 const reportProgressOnUnload = vi.fn();
 const apiPut = vi.fn();
@@ -53,6 +57,7 @@ const apiGet = vi.fn();
 vi.mock("../../lib/playback-session.js", () => ({
   createPlaybackSession: (...args: unknown[]) => createPlaybackSession(...args),
   endPlaybackSession: (...args: unknown[]) => endPlaybackSession(...args),
+  endPlaybackSessionOnUnload: (...args: unknown[]) => endPlaybackSessionOnUnload(...args),
 }));
 
 vi.mock("../../lib/item-lookup.js", () => ({
@@ -462,6 +467,7 @@ describe("VideoPlayer", () => {
     resetPlaybackSessionLeases();
     createPlaybackSession.mockReset().mockResolvedValue({ ok: true, session: directPlaySession() });
     endPlaybackSession.mockReset().mockResolvedValue(undefined);
+    endPlaybackSessionOnUnload.mockReset().mockReturnValue(true);
     findProgressForItem.mockReset().mockResolvedValue(null);
     reportProgressOnUnload.mockReset();
     apiPut.mockReset().mockResolvedValue(undefined);
@@ -2312,6 +2318,75 @@ describe("VideoPlayer", () => {
         apiPut.mock.calls[0]?.[1],
         "the pause flush persisted the presentation axis — a desync-window flush corrupts the resume point by the full axis gap",
       ).toMatchObject({ body: { positionMs: 11_500 } });
+    });
+  });
+
+  // ── browser-player-F5: session end on full-document teardown ───────────
+  // On a genuine full navigation / tab close the document is destroyed and
+  // React unmount cleanups NEVER run — the "session end on unmount" effect
+  // is unreachable, so the session lingered 'active'/'suspended' holding
+  // its transcode slot for the 15-minute sweeper window (live repro:
+  // suspended row + running ffmpeg 10s after goto-away). The only unload
+  // path that fires is `pagehide`, which flushed progress but never ended
+  // the session. Contract: a non-persisted pagehide also DELETEs the
+  // session on the keepalive path; a persisted (bfcache) pagehide keeps it
+  // (the document may come back alive and resume it); and the normal
+  // in-app unmount path stays exactly one DELETE — never two.
+  describe("session end on full-document teardown (browser-player-F5)", () => {
+    it("a genuine pagehide ends the session on the keepalive path, alongside the progress flush", async () => {
+      const v = (view = await renderReady());
+      await simulateWatchedTo(videoEl(v), 12);
+
+      window.dispatchEvent(new Event("pagehide"));
+      expect(reportProgressOnUnload).toHaveBeenCalledTimes(1);
+      expect(
+        endPlaybackSessionOnUnload,
+        "pagehide flushed progress but never ended the session — a full navigation orphans it until the sweeper",
+      ).toHaveBeenCalledTimes(1);
+      expect(endPlaybackSessionOnUnload).toHaveBeenCalledWith(SERVER_URL, SESSION_ID);
+    });
+
+    it("ends the session even when nothing ever played (no progress to flush)", async () => {
+      view = await renderReady();
+
+      window.dispatchEvent(new Event("pagehide"));
+      expect(reportProgressOnUnload).not.toHaveBeenCalled();
+      expect(endPlaybackSessionOnUnload).toHaveBeenCalledTimes(1);
+      expect(endPlaybackSessionOnUnload).toHaveBeenCalledWith(SERVER_URL, SESSION_ID);
+    });
+
+    it("a bfcache pagehide (persisted) keeps the session alive for a possible restore", async () => {
+      view = await renderReady();
+
+      const persistedHide = new Event("pagehide");
+      Object.defineProperty(persistedHide, "persisted", { value: true });
+      window.dispatchEvent(persistedHide);
+      expect(endPlaybackSessionOnUnload).not.toHaveBeenCalled();
+    });
+
+    it("the in-app unmount path stays exactly one DELETE, with no unload-path DELETE", async () => {
+      const v = (view = await renderReady());
+      await simulateWatchedTo(videoEl(v), 8);
+
+      v.unmount();
+      view = null;
+      expect(endPlaybackSession).toHaveBeenCalledTimes(1);
+      expect(endPlaybackSession).toHaveBeenCalledWith(SESSION_ID);
+      expect(endPlaybackSessionOnUnload).not.toHaveBeenCalled();
+    });
+
+    it("an unmount after the unload path already ended the session never DELETEs twice", async () => {
+      const v = (view = await renderReady());
+
+      window.dispatchEvent(new Event("pagehide"));
+      expect(endPlaybackSessionOnUnload).toHaveBeenCalledTimes(1);
+
+      v.unmount();
+      view = null;
+      expect(
+        endPlaybackSession,
+        "the unmount cleanup re-DELETEd a session the unload path already ended",
+      ).not.toHaveBeenCalled();
     });
   });
 });

@@ -142,6 +142,52 @@ export async function endPlaybackSession(sessionId: string): Promise<void> {
   }
 }
 
+/** Injectable seams for `endPlaybackSessionOnUnload` — tests supply both;
+ *  production callers omit them and get the real AuthStore token + global
+ *  fetch (same "inject the impure edges" pattern as device-profile.ts's
+ *  ProbeEnv). */
+export interface EndSessionOnUnloadDeps {
+  accessToken?: string | null;
+  fetchFn?: typeof fetch;
+}
+
+/**
+ * Best-effort session end for page unload (browser-player-F5) — the DELETE
+ * twin of lib/progress-report.ts's `reportProgressOnUnload`, and the ONLY
+ * session-end path that can run on a genuine full-document teardown (real
+ * navigation, tab close), where React unmount cleanups never execute and
+ * `endPlaybackSession` above is unreachable. Same transport reasoning as
+ * the progress sender: `navigator.sendBeacon` can't carry a Bearer header
+ * (the endpoint is auth-required), so `fetch(…, { keepalive: true })` is
+ * the one option browsers keep alive past teardown that can still set
+ * Authorization. Never throws (nothing is left to catch it on unload);
+ * returns whether a request was actually dispatched, so the caller can
+ * mark the session ended only when one was (a missing token dispatches
+ * nothing — the 15-minute sweeper stays the fallback).
+ */
+export function endPlaybackSessionOnUnload(
+  serverUrl: string,
+  sessionId: string,
+  deps: EndSessionOnUnloadDeps = {},
+): boolean {
+  const accessToken = "accessToken" in deps ? (deps.accessToken ?? null) : getAuthStore().getSnapshot().accessToken;
+  if (!accessToken) return false;
+  const fetchFn = deps.fetchFn ?? fetch;
+  const url = `${serverUrl.replace(/\/$/, "")}/playback/sessions/${encodeURIComponent(sessionId)}`;
+  try {
+    void fetchFn(url, {
+      method: "DELETE",
+      keepalive: true,
+      headers: { Authorization: `Bearer ${accessToken}` },
+    }).catch(() => {
+      // Best-effort — the sweeper reaps a session this send fails to end.
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function getPlaybackSession(sessionId: string): Promise<PlaybackSession> {
   return apiGet("/playback/sessions/{id}", { params: { path: { id: sessionId } } });
 }
