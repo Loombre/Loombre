@@ -67,10 +67,18 @@
 // what the contract's `[string, 'null']` members mean. Regression net:
 // apps/server/test/api-body-validation.e2e.spec.ts.
 //
-// UNCHANGED, deliberately: updateMe's own null-to-clear coercion for a
-// present-but-wrong-typed nullable member — api-validation-F3 pinned that
-// cell on purpose (users-birthdate-validation.e2e.spec.ts) and F5's fix
-// direction names createUser/updateUser only.
+// api-validation-F5 ROUND 2 (verifier verdict PARTIAL): the first F5 fix
+// left updateMe's `typeof x === "string" ? x : null` coercion in place on
+// the theory that api-validation-F3 had pinned it — but `PATCH /users/me
+// {"displayName":123} -> 200` is one of F5's own repro steps, and the
+// coercion meant a wrong-typed displayName/birthDate/email silently
+// CLEARED the caller's stored value. updateMe's three nullable members now
+// 422 on a present-but-wrong-typed value with the same messages updateUser
+// uses; an EXPLICIT `null` still clears — that, and only that, is what the
+// contract's `[string,'null']` null-to-clear convention means. The F3 spec
+// case that asserted the old clearing as intended was flipped in the same
+// commit (users-birthdate-validation.e2e.spec.ts), and the wrong-type
+// matrix lives in api-body-validation.e2e.spec.ts.
 //
 // browser-admin-F3 (same run, P1): createUser's M1 email check was the one
 // place left that rejected an EXPLICIT `null` — the opposite failure to
@@ -504,7 +512,12 @@ export class UsersController {
     // (target-agnostic — a syntax check on the caller's OWN submitted
     // string reveals nothing about any other account, E8-safe). Explicit
     // `null` (clear) bypasses this entirely, matching the null-to-clear
-    // convention every other nullable field here already uses.
+    // convention every other nullable field here already uses. F5 round 2:
+    // anything else — a number, a boolean, an object — 422s like
+    // updateUser's email does; it used to coerce to null and CLEAR the
+    // stored address. This shape check, like the format check, throws
+    // without the G8 floor: it is computed from the caller's own input
+    // alone, before any DB read, so it carries no collision timing signal.
     let emailInput: string | null | undefined;
     if (body["email"] !== undefined) {
       if (typeof body["email"] === "string") {
@@ -513,8 +526,10 @@ export class UsersController {
           throw unprocessableEntity("email must be a valid email address.", instance);
         }
         emailInput = trimmed;
-      } else {
+      } else if (body["email"] === null) {
         emailInput = null;
+      } else {
+        throw unprocessableEntity("email must be a string or null.", instance);
       }
     }
 
@@ -533,10 +548,12 @@ export class UsersController {
     // BEFORE the cast, against the exact shape the contract declares
     // (`UpdateMeRequest.birthDate: { type: [string,'null'], format: date }`
     // — an RFC 3339 full-date), and 422ing on anything else (a response
-    // this operation already declares). Present-but-not-a-string still
-    // clears, unchanged: that is this file's null-to-clear convention for
-    // every nullable member (email/displayName/maxContentRating), not part
-    // of the format gap.
+    // this operation already declares). F5 round 2: present-but-not-a-
+    // string used to clear; only an EXPLICIT `null` does now — a numeric
+    // `19880314` wiped the stored date (and birth_date is resolve-
+    // clearance.ts's gate 2, so that silent wipe moved the caller across
+    // the restricted-content age gate), so a wrong-typed value 422s
+    // instead.
     let birthDateInput: string | null | undefined;
     if (body["birthDate"] !== undefined) {
       if (typeof body["birthDate"] === "string") {
@@ -544,20 +561,34 @@ export class UsersController {
           throw unprocessableEntity("birthDate must be a calendar date in YYYY-MM-DD form.", instance);
         }
         birthDateInput = body["birthDate"];
-      } else {
+      } else if (body["birthDate"] === null) {
         birthDateInput = null;
+      } else {
+        throw unprocessableEntity("birthDate must be a string or null.", instance);
+      }
+    }
+
+    // F5 round 2: displayName gets the same string-or-null shape check as
+    // email/birthDate above — the inline `typeof === "string" ? x : null`
+    // coercion this used to run turned a type mistake into a field CLEAR.
+    let displayNameInput: string | null | undefined;
+    if (body["displayName"] !== undefined) {
+      if (typeof body["displayName"] === "string") {
+        displayNameInput = body["displayName"];
+      } else if (body["displayName"] === null) {
+        displayNameInput = null;
+      } else {
+        throw unprocessableEntity("displayName must be a string or null.", instance);
       }
     }
 
     const result = await updateUserSelf(this.dbProvider.db, userId, {
-      // M1: UpdateMeRequest's email is now `[string, 'null']` — present-but-
-      // not-a-string (i.e. explicit `null`) clears it, matching birthDate's
-      // own established null-to-clear convention below.
+      // M1: UpdateMeRequest's email is `[string, 'null']` — an explicit
+      // `null` clears it, matching birthDate's own established
+      // null-to-clear convention below.
       ...(emailInput !== undefined ? { email: emailInput } : {}),
       ...(birthDateInput !== undefined ? { birthDate: birthDateInput } : {}),
-      ...(body["displayName"] !== undefined
-        ? { displayName: typeof body["displayName"] === "string" ? body["displayName"] : null }
-        : {}),
+      ...(displayNameInput !== undefined ? { displayName: displayNameInput } : {}),
       ...(passwordHash !== undefined ? { passwordHash } : {}),
       // F5: only consulted when passwordHash is present (see
       // updateUserSelf's own doc comment) — the caller's OWN device, from

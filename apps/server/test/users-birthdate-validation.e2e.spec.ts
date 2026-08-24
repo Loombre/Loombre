@@ -17,9 +17,15 @@
 // well-formed-but-nonexistent calendar dates (2024-02-30, 1900-02-29),
 // unpadded components, a date-TIME, and Postgres' non-existent year zero
 // all 422 with problem+json — and never 5xx — while every value the
-// column actually accepts still round-trips, `null` still clears, and the
-// file-wide null-to-clear convention for a present-but-not-a-string value
-// is unchanged.
+// column actually accepts still round-trips and `null` still clears.
+//
+// api-validation-F5 round 2: this file originally ALSO pinned the
+// null-to-clear coercion for a present-but-not-a-string value
+// (`birthDate: 42` -> 200, cleared) as intended. That directly contradicts
+// F5's expected outcome ("422 for every case … UpdateMeRequest",
+// `birthDate` is `[string,'null']`) and let a type mistake silently WIPE
+// the stored date, so that case now asserts the 422 — see
+// api-body-validation.e2e.spec.ts for the full wrong-type matrix.
 //
 // Base connection: DATABASE_URL env var, default
 //   postgres://loombre:loombre@localhost:5442/loombre
@@ -210,17 +216,18 @@ describe("api-validation-F3: every value the column really accepts still round-t
     expect(restored.body.birthDate).toBe(SEEDED_BIRTH_DATE);
   });
 
-  it("a present-but-not-a-string value keeps clearing, exactly as before (unchanged convention)", async () => {
+  it("a present-but-not-a-string value 422s and does NOT clear (api-validation-F5 round 2)", async () => {
     const restored = await patchMe({ birthDate: SEEDED_BIRTH_DATE });
     expect(restored.status).toBe(200);
 
-    const cleared = await patchMe({ birthDate: 42 });
-    expect(cleared.status, `body: ${JSON.stringify(cleared.body)}`).toBe(200);
-    expect(cleared.body.birthDate).toBeNull();
+    const rejected = await patchMe({ birthDate: 42 });
+    expect(rejected.status, `body: ${JSON.stringify(rejected.body)}`).toBe(422);
+    expect(rejected.body.type).toBe("urn:loombre:problem:validation");
+    expect(String(rejected.body.detail)).toContain("birthDate");
 
-    const back = await patchMe({ birthDate: SEEDED_BIRTH_DATE });
-    expect(back.status).toBe(200);
-    expect(back.body.birthDate).toBe(SEEDED_BIRTH_DATE);
+    const after = await request(app.getHttpServer()).get("/users/me").set("Authorization", `Bearer ${adminToken}`);
+    expect(after.status).toBe(200);
+    expect(after.body.birthDate).toBe(SEEDED_BIRTH_DATE);
   });
 
   it("omitting birthDate entirely leaves it untouched", async () => {

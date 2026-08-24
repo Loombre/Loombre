@@ -29,10 +29,20 @@
 // updated_at bump, no job enqueued). Every well-typed request — explicit
 // `null` on a nullable member included — must still succeed unchanged.
 //
-// DELIBERATELY NOT COVERED (a sibling finding's pinned behaviour):
-// `PATCH /users/me`'s own null-to-clear coercion for a present-but-wrong-
-// typed nullable member is unchanged and stays pinned by
-// users-birthdate-validation.e2e.spec.ts (api-validation-F3).
+// ROUND 2 (verifier verdict PARTIAL on the first fix): that fix scoped the
+// type checks to createUser/updateUser and the libraries handlers and left
+// `PATCH /users/me`'s `typeof x === "string" ? x : null` coercion alone,
+// claiming api-validation-F3 had pinned it — but this finding's OWN repro
+// list carries `PATCH /users/me {"displayName":123} -> 200` and its
+// expected outcome is "422 for every case … UpdateMeRequest". A wrong-typed
+// displayName/birthDate/email on /users/me silently CLEARED the caller's
+// stored value (verified live: it wiped a just-set displayName, and a
+// numeric birthDate wiped the stored date). updateMe now refuses a
+// present-but-wrong-typed nullable member with the same 422 updateUser
+// uses; an explicit `null` still clears (that is what the contract's
+// `[string,'null']` means). The one F3 case that asserted the old clearing
+// as intended (users-birthdate-validation.e2e.spec.ts) was flipped in the
+// same commit.
 //
 // Base connection: DATABASE_URL env var, default
 //   postgres://loombre:loombre@localhost:5442/loombre
@@ -408,6 +418,96 @@ describe("POST /libraries/{id}/scan body validation (ScanLibraryRequest addition
     const res = await admin().post(`/libraries/${targetLibraryId}/scan`);
     expect(res.status, JSON.stringify(res.body)).toBe(202);
     expect(typeof res.body.jobId).toBe("string");
+  }, 20_000);
+});
+
+// ────────────────────────────── PATCH /users/me ─────────────────────────────
+// UpdateMeRequest: displayName/email/birthDate are all `[string,'null']`.
+// Round 2 of this finding: a present-but-wrong-typed value must 422 and
+// leave the stored value AND updatedAtMs untouched — the old coercion
+// CLEARED the stored value instead. Explicit `null` still clears. The
+// caller here is the seeded admin acting on their own profile (seed state:
+// displayName null, email admin@loombre.local, birthDate 1988-03-14).
+describe("PATCH /users/me body validation (UpdateMeRequest wrong-typed nullable members)", () => {
+  const ADMIN_PASSWORD = "loombre-seed-admin";
+  const SEEDED_EMAIL = "admin@loombre.local";
+  const SEEDED_BIRTH_DATE = "1988-03-14";
+
+  async function getMe(): Promise<Record<string, unknown>> {
+    const res = await admin().get("/users/me");
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+    return res.body as Record<string, unknown>;
+  }
+
+  it("422s on displayName as a number — the verifier's live repro — and does NOT clear a just-set value", async () => {
+    const set = await admin().patch("/users/me", { displayName: "QA Verify Admin" });
+    expect(set.status, JSON.stringify(set.body)).toBe(200);
+    const before = await getMe();
+    expect(before["displayName"]).toBe("QA Verify Admin");
+
+    const res = await admin().patch("/users/me", { displayName: 123 });
+    expectValidationProblem(res);
+    expect(res.body["detail"]).toBe("displayName must be a string or null.");
+    expect(res.body["instance"]).toBe("/users/me");
+
+    const after = await getMe();
+    expect(after["displayName"]).toBe("QA Verify Admin");
+    expect(after["updatedAtMs"]).toBe(before["updatedAtMs"]);
+
+    const restore = await admin().patch("/users/me", { displayName: null });
+    expect(restore.status, JSON.stringify(restore.body)).toBe(200);
+    expect(restore.body.displayName).toBeNull();
+  }, 20_000);
+
+  it("422s on displayName as a boolean", async () => {
+    const res = await admin().patch("/users/me", { displayName: true });
+    expectValidationProblem(res);
+    expect(res.body["detail"]).toBe("displayName must be a string or null.");
+  }, 20_000);
+
+  it("422s on birthDate as a number — the sibling clear — and keeps the stored date", async () => {
+    const before = await getMe();
+    expect(before["birthDate"]).toBe(SEEDED_BIRTH_DATE);
+
+    const res = await admin().patch("/users/me", { birthDate: 19880314 });
+    expectValidationProblem(res);
+    expect(res.body["detail"]).toBe("birthDate must be a string or null.");
+
+    const after = await getMe();
+    expect(after["birthDate"]).toBe(SEEDED_BIRTH_DATE);
+    expect(after["updatedAtMs"]).toBe(before["updatedAtMs"]);
+  }, 20_000);
+
+  it("422s on email as a number even with a CORRECT currentPassword, and does not clear the stored address", async () => {
+    const before = await getMe();
+    expect(before["email"]).toBe(SEEDED_EMAIL);
+
+    const res = await admin().patch("/users/me", { email: 42, currentPassword: ADMIN_PASSWORD });
+    expectValidationProblem(res);
+    expect(res.body["detail"]).toBe("email must be a string or null.");
+
+    const after = await getMe();
+    expect(after["email"]).toBe(SEEDED_EMAIL);
+    expect(after["updatedAtMs"]).toBe(before["updatedAtMs"]);
+  }, 20_000);
+
+  it("explicit null still clears displayName — null-to-clear is for null, not for type mistakes", async () => {
+    const set = await admin().patch("/users/me", { displayName: "Clear Me" });
+    expect(set.status, JSON.stringify(set.body)).toBe(200);
+
+    const cleared = await admin().patch("/users/me", { displayName: null });
+    expect(cleared.status, JSON.stringify(cleared.body)).toBe(200);
+    expect(cleared.body.displayName).toBeNull();
+  }, 20_000);
+
+  it("explicit null (with currentPassword) still clears email, and a well-typed value restores it", async () => {
+    const cleared = await admin().patch("/users/me", { email: null, currentPassword: ADMIN_PASSWORD });
+    expect(cleared.status, JSON.stringify(cleared.body)).toBe(200);
+    expect(cleared.body.email).toBeNull();
+
+    const restored = await admin().patch("/users/me", { email: SEEDED_EMAIL, currentPassword: ADMIN_PASSWORD });
+    expect(restored.status, JSON.stringify(restored.body)).toBe(200);
+    expect(restored.body.email).toBe(SEEDED_EMAIL);
   }, 20_000);
 });
 
