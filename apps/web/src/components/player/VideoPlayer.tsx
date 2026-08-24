@@ -45,6 +45,7 @@ import { findPlayableFallback, decisionLabel, type FallbackCandidate } from "../
 import { findProgressForItem, isWorthResuming } from "../../lib/progress-lookup.js";
 import { HeartbeatScheduler, type HeartbeatSnapshot, type ProgressState } from "../../lib/heartbeat.js";
 import { isRealPlaybackAdvancement, isSourceContinuous } from "../../lib/watched-progress.js";
+import { createProgressWriteQueue } from "../../lib/progress-write-queue.js";
 import { reportProgressOnUnload } from "../../lib/progress-report.js";
 import { apiGet, apiPost, apiPut } from "../../lib/api-client.js";
 import {
@@ -214,6 +215,18 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
   const stageRef = useRef<HTMLDivElement>(null);
   const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const heartbeatRef = useRef<HeartbeatScheduler | null>(null);
+  // gap-F7: ONE strictly-ordered lane for every apiPut /progress write
+  // (interval heartbeat, pause flush, ended flush, seek flushes). At a
+  // natural EOF `pause` fires before `ended` and each used to dispatch
+  // its own concurrent PUT — the stale 'in-progress' write could persist
+  // AFTER the 'played' write (the last-write race in the QA report). A
+  // write now dispatches only after the previous one settles, so the
+  // last-issued write is always the last the server processes. Component-
+  // lifetime scope (outlives session swaps) so a fallback re-session's
+  // first write still queues behind the old session's tail. The pagehide/
+  // unmount path stays on reportProgressOnUnload's keepalive fetch — a
+  // teardown-time send cannot await a lane.
+  const progressWriteQueueRef = useRef(createProgressWriteQueue());
   const positionRef = useRef(0);
   // gap-F6: the WATCHED position — the last source-ms position backed by
   // real playback advancement (lib/watched-progress.ts's predicate over
@@ -1124,15 +1137,22 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
         // gap-F6: nothing was ever really watched (no advancement, no
         // user seek) — write NOTHING, not a phantom row.
         if (watchedPositionRef.current === null) return;
-        void apiPut("/progress/{itemId}", {
-          params: { path: { itemId } },
-          body: {
-            positionMs: Math.round(snapshot.positionMs),
-            durationMs: snapshot.durationMs,
-            state: snapshot.state,
-            sessionId: session.id,
-          },
-        }).catch(() => undefined);
+        // gap-F7: the body is captured NOW (flush-time snapshot,
+        // unchanged), but the PUT dispatches through the FIFO lane — a
+        // flush issued while an earlier write is still in flight (the
+        // EOF pause→ended pair; an interval tick racing any flush) waits
+        // for it to settle, so the server always persists writes in the
+        // order the player issued them and the 'played' state can never
+        // lose to a stale 'in-progress' write.
+        const body = {
+          positionMs: Math.round(snapshot.positionMs),
+          durationMs: snapshot.durationMs,
+          state: snapshot.state,
+          sessionId: session.id,
+        };
+        void progressWriteQueueRef.current.enqueue(() =>
+          apiPut("/progress/{itemId}", { params: { path: { itemId } }, body }),
+        );
       },
     });
     return () => heartbeatRef.current?.stop();

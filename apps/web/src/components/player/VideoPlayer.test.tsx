@@ -1868,4 +1868,114 @@ describe("VideoPlayer", () => {
       expect(apiPut.mock.calls[0]?.[1]).toMatchObject({ body: { positionMs: 10_000 } });
     });
   });
+
+  // gap-F7 (QA 2026-08-20/21, P2): at a natural EOF the element fires
+  // `pause` first, then `ended` (WHATWG media event order). Each handler
+  // flushed its own fire-and-forget PUT /progress — two CONCURRENT HTTP
+  // requests with no ordering guarantee — so the stale 'in-progress'
+  // flush could persist AFTER the 'played' flush, leaving the final row
+  // {state: 'in-progress', positionMs == durationMs, playCount unbumped}
+  // (observed live: QA run 1 of the direct-play EOF repro). The fix
+  // routes every apiPut progress write through ONE FIFO lane
+  // (lib/progress-write-queue.ts): a write dispatches only after the
+  // previous write settles, so the last-issued write is always the last
+  // the server processes.
+  describe("EOF progress-flush serialization (gap-F7)", () => {
+    it("holds the ended 'played' flush until the in-flight pause 'in-progress' flush settles", async () => {
+      const v = (view = await renderReady());
+      const video = videoEl(v);
+      await simulateWatchedTo(video, 599);
+      apiPut.mockClear();
+      // The pause flush's PUT hangs in flight.
+      let releaseInProgressWrite: (() => void) | null = null;
+      apiPut.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            releaseInProgressWrite = () => resolve(undefined);
+          }),
+      );
+      await act(async () => {
+        // Natural EOF: pause fires, then ended.
+        mediaState(video).ended = true;
+        video.pause();
+        video.dispatchEvent(new Event("ended"));
+      });
+      expect(
+        apiPut,
+        "the 'played' flush must WAIT for the in-flight 'in-progress' flush — concurrent PUTs let the stale in-progress write persist last and eat the played state",
+      ).toHaveBeenCalledTimes(1);
+      expect(apiPut.mock.calls[0]?.[1]).toMatchObject({ body: { state: "in-progress", positionMs: 599_000 } });
+
+      await act(async () => {
+        releaseInProgressWrite?.();
+      });
+      expect(apiPut).toHaveBeenCalledTimes(2);
+      expect(apiPut.mock.calls[1]?.[1]).toMatchObject({ body: { state: "played", positionMs: 599_000 } });
+    });
+
+    it("a failed in-progress flush does not swallow the queued played flush", async () => {
+      const v = (view = await renderReady());
+      const video = videoEl(v);
+      await simulateWatchedTo(video, 599);
+      apiPut.mockClear();
+      apiPut.mockImplementationOnce(() => Promise.reject(new Error("network drop")));
+      await act(async () => {
+        mediaState(video).ended = true;
+        video.pause();
+        video.dispatchEvent(new Event("ended"));
+      });
+      expect(apiPut).toHaveBeenCalledTimes(2);
+      expect(apiPut.mock.calls.at(-1)?.[1]).toMatchObject({ body: { state: "played", positionMs: 599_000 } });
+    });
+
+    // The finding's other half — REGRESSION GUARD, closed by gap-F6's
+    // watched-position gate: on an HLS run whose PDT origin > 0 the
+    // pause/ended flushes used to send RAW ELEMENT TIME (presentation
+    // axis, e.g. 122242 for a true source position of 568791), corrupting
+    // the resume point. Every flush now reports the source-axis WATCHED
+    // position. The pre-existing pause/ended tests above only cover the
+    // direct-play fixture, where the two axes coincide and the bug was
+    // invisible — this one pins the non-zero-origin case.
+    it("pause and ended flushes report SOURCE-axis ms on a non-zero-origin run, never raw element time", async () => {
+      createPlaybackSession.mockReset().mockResolvedValue({ ok: true, session: hlsTranscodeSession() });
+      // Deep-link intent at 566s — the resume/relocation shape: the run's
+      // fragments start at source 566_000 while presentation starts at 0.
+      const v = (view = await renderReady(vi.fn(), undefined, 566_000));
+      await act(async () => {});
+      const hls = hlsInstances[hlsInstances.length - 1];
+      if (!hls) throw new Error("the hlsjs attach effect never constructed an hls.js instance");
+      hls.currentLevel = 0;
+      hls.levels = [
+        { details: { live: true, fragments: [{ programDateTime: 566_000, start: 0, duration: 30, relurl: "run1/s000094.m4s" }] } },
+      ];
+      const video = videoEl(v);
+      await act(async () => button(v, "Play").click());
+      await act(async () => {
+        mediaState(video).readyState = 4;
+        // Real advancement: presentation 0 → 5s maps to source 566_000 → 571_000.
+        for (let t = 0; t <= 5; t += 2.5) {
+          video.currentTime = t;
+          video.dispatchEvent(new Event("timeupdate"));
+        }
+      });
+      apiPut.mockClear();
+      await act(async () => {
+        video.pause();
+      });
+      expect(apiPut).toHaveBeenCalledTimes(1);
+      expect(
+        apiPut.mock.calls[0]?.[1],
+        "the pause flush must carry the SOURCE-axis position (571_000), not raw element time (5_000)",
+      ).toMatchObject({ body: { state: "in-progress", positionMs: 571_000 } });
+
+      await act(async () => {
+        mediaState(video).ended = true;
+        video.dispatchEvent(new Event("ended"));
+      });
+      expect(
+        apiPut.mock.calls.at(-1)?.[1],
+        "the ended flush must carry the SOURCE-axis position (571_000), not raw element time (5_000)",
+      ).toMatchObject({ body: { state: "played", positionMs: 571_000 } });
+    });
+  });
 });
