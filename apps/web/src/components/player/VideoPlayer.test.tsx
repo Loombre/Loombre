@@ -1532,6 +1532,136 @@ describe("VideoPlayer", () => {
     });
   });
 
+  // ── gap-F5: POST /seek network-failure surface ───────────────────────────
+  // QA 2026-08-20/21 (P2): a network-layer /seek failure reportedly rendered
+  // NO toast and left the scrubber pinned at the failed target. NOT
+  // reproducible at HEAD (2026-08-23 live repro, Playwright route
+  // abort/500/429 against the real stack: exactly one POST per drag, toast
+  // rendered, scrubber back on the live clock) — the QA-era seek lifecycle
+  // was rewritten wholesale by gap-F4's supersession-epoch model. These pin
+  // the owner's contract so it cannot regress silently: EVERY network-shaped
+  // failure of the current seek (fetch rejection / 5xx / 429) surfaces the
+  // "Seek failed" toast, and the scrubber always returns to the live
+  // position — never a stale pin at a dead target.
+  describe("hard-seek failure surface (gap-F5)", () => {
+    const SEEK_FAILED = "Seek failed — check the connection and try again.";
+
+    /** One listed fragment far from source 0 (PDT ms == source ms), so a
+     *  small target is outside the listed window -> classified HARD. */
+    function farWindow(): { live: boolean; fragments: unknown[] } {
+      return {
+        live: true,
+        fragments: [{ programDateTime: 3_600_000, start: 0, duration: 6, relurl: "run0/s000000.m4s" }],
+      };
+    }
+
+    async function renderHlsReady(): Promise<{ v: TestRender; hls: MockHlsInstance }> {
+      createPlaybackSession.mockReset().mockResolvedValue({ ok: true, session: hlsTranscodeSession() });
+      const v = await renderReady();
+      await act(async () => {});
+      const hls = hlsInstances[hlsInstances.length - 1];
+      if (!hls) throw new Error("the hlsjs attach effect never constructed an hls.js instance");
+      hls.currentLevel = 0;
+      hls.levels = [{ details: farWindow() }];
+      return { v, hls };
+    }
+
+    function sliderNow(v: TestRender): string | null {
+      const slider = v.container.querySelector('[role="slider"]');
+      if (!slider) throw new Error("no scrubber rendered");
+      return slider.getAttribute("aria-valuenow");
+    }
+
+    /** One live-mapped timeupdate at presentation 1 s: unless something left
+     *  the display pinned, the scrubber follows the window's PDT mapping to
+     *  source 3 601 000. */
+    async function liveTick(v: TestRender): Promise<void> {
+      const video = videoEl(v);
+      await act(async () => {
+        video.currentTime = 1;
+        video.dispatchEvent(new Event("timeupdate"));
+      });
+    }
+
+    it("a network-layer fetch rejection on POST /seek toasts and the scrubber returns to the live clock", async () => {
+      const { v } = await renderHlsReady();
+      view = v;
+      apiPost.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+
+      await act(async () => button(v, "Forward 10 seconds").click());
+
+      expect(apiPost).toHaveBeenCalledTimes(1);
+      expect(
+        document.body.textContent,
+        "the hard-seek .catch never surfaced the failure — a silent seek loss",
+      ).toContain(SEEK_FAILED);
+      // No stale pin: the failed target must not freeze the display — the
+      // next timeupdate maps through the live window again.
+      await liveTick(v);
+      expect(sliderNow(v)).toBe("3601000");
+    });
+
+    it("an HTTP 5xx problem response toasts the same failure", async () => {
+      const { v } = await renderHlsReady();
+      view = v;
+      apiPost.mockRejectedValueOnce(
+        new LoombreApiError(500, {
+          type: "urn:loombre:problem:internal",
+          title: "Internal Server Error",
+          status: 500,
+          detail: "transcoder configuration write failed",
+        }),
+      );
+
+      await act(async () => button(v, "Forward 10 seconds").click());
+
+      expect(document.body.textContent).toContain(SEEK_FAILED);
+      await liveTick(v);
+      expect(sliderNow(v)).toBe("3601000");
+    });
+
+    it("a 429 toasts too — only 401s are retried; every other status is THIS seek's failure", async () => {
+      const { v } = await renderHlsReady();
+      view = v;
+      apiPost.mockRejectedValueOnce(
+        new LoombreApiError(429, {
+          type: "urn:loombre:problem:too-many-requests",
+          title: "Too Many Requests",
+          status: 429,
+          detail: "Seek rate limit exceeded.",
+        }),
+      );
+
+      await act(async () => button(v, "Forward 10 seconds").click());
+
+      expect(document.body.textContent).toContain(SEEK_FAILED);
+      await liveTick(v);
+      expect(sliderNow(v)).toBe("3601000");
+    });
+
+    it("a failed re-seek UNPINS a predecessor's relocating scrubber — no stale pin at either target", async () => {
+      const { v } = await renderHlsReady();
+      view = v;
+      // Seek #1 succeeds: the 202 pins the scrubber at the clamped target
+      // and freezes the display while relocating.
+      apiPost.mockResolvedValueOnce({ targetMs: 111_111 });
+      await act(async () => button(v, "Forward 10 seconds").click());
+      expect(sliderNow(v)).toBe("111111");
+      await liveTick(v);
+      expect(sliderNow(v)).toBe("111111");
+
+      // Seek #2 (the newest epoch owner) fails at the network layer.
+      apiPost.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+      await act(async () => button(v, "Forward 10 seconds").click());
+
+      expect(document.body.textContent).toContain(SEEK_FAILED);
+      // The failure releases the pin: the live clock repossesses the
+      // scrubber instead of a dead target (111 111 or 121 111) holding it.
+      await liveTick(v);
+      expect(sliderNow(v)).toBe("3601000");
+    });
+  });
+
   // ── browser-player-F9: deep-link ?t= on transcode sessions ──────────────
   // QA 2026-08-20/21 (P1): /watch/{item}?t=600 on a transcode session
   // started playback at 0:00. The prompt-skip half worked (no progress
