@@ -69,6 +69,48 @@ const nextConfig = {
     return config;
   },
 
+  // browser-admin-F1 (P1, ROUND 2) — legacy /admin/* routes redirect at
+  // the ROUTING layer, before any React render is consulted. History of
+  // why it must live here and nowhere lower:
+  //   round 0: each route was a "use client" stub whose whole body was
+  //     `useEffect(() => router.replace(target))` — dropped on 6 of 7
+  //     hard loads (the stub mounts as a DEFERRED child of
+  //     app/admin/layout.tsx, which renders {children} only after
+  //     useAdminGuard's async GET /users/me; the late replace() fetched
+  //     the target's RSC payload but never committed).
+  //   round 1: server components calling next/navigation redirect() —
+  //     REFUTED on the live stack: AppShell statically imports
+  //     BootSplashLazy (next/dynamic ssr:false), so every admin document
+  //     render hits BAILOUT_TO_CLIENT_SIDE_RENDERING and the redirect
+  //     ships as a flight-ERROR row (digest NEXT_REDIRECT;replace;…;307;)
+  //     that Next replays CLIENT-side via RedirectBoundary's effect —
+  //     inside the SAME deferred {children}. Document response: 200, URL
+  //     never changed, hard loads stuck 14/17 trials.
+  // redirects() is resolved by the Next server before the filesystem
+  // routes (and before proxy.ts): the document request itself gets a real
+  // HTTP 307 + Location, client-side navigations get the same redirect on
+  // their RSC fetch, and no component tree, guard, or CSR bailout can
+  // defer it. The six stub page.tsx files are deleted — behind these
+  // rules they were unreachable dead code. permanent: false => 307
+  // (temporary; never a cached 308 — the map may still change).
+  // Sources are EXACT paths (plus one :id segment) on purpose: /admin,
+  // /admin/jobs and /admin/sessions are live pages and must not match.
+  // Pinned by src/app/admin/redirect-stubs.test.ts; targets documented in
+  // the sections that absorbed each screen (Wave 2 L1, D-5, LD-8).
+  async redirects() {
+    return [
+      { source: "/admin/libraries", destination: "/settings/libraries", permanent: false },
+      { source: "/admin/users", destination: "/settings/users", permanent: false },
+      { source: "/admin/settings", destination: "/settings/advanced", permanent: false },
+      { source: "/admin/system", destination: "/admin", permanent: false },
+      { source: "/admin/plugins", destination: "/settings/plugins", permanent: false },
+      // :id (path-to-regexp) — preserves the already-percent-encoded id
+      // segment verbatim; a slash inside an id is a different path by
+      // definition, so no re-encoding is needed or possible here.
+      { source: "/admin/plugins/:id", destination: "/settings/plugins/:id", permanent: false },
+    ];
+  },
+
   async headers() {
     return [
       {

@@ -1,150 +1,107 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Loombre :: apps/web/src/app/admin/redirect-stubs.test.ts
 //
-// browser-admin-F1 (P1) regression pin for EVERY /admin/* redirect-only
-// stub. These routes exist for one reason: an old bookmark to
-// /admin/<thing> must still land on its /settings/... replacement. They
-// used to do that from a client `useEffect(() => router.replace(...))`,
-// which the QA run caught silently dropping 6 of 7 hard loads: the stub
-// mounts as a DEFERRED child of app/admin/layout.tsx (that layout renders
-// {children} only after useAdminGuard's async GET /users/me flips
-// `isAdmin` to true), and a replace() fired from that late mount fetched
-// the target's RSC payload but never committed the navigation — the user
-// sat on an empty admin shell.
+// browser-admin-F1 (P1, ROUND 2) regression pin for every legacy /admin/*
+// redirect route. These redirects exist for one reason: an old bookmark to
+// /admin/<thing> must still land on its /settings/... replacement.
 //
-// The fix is structural, so the check is structural: the redirect must be
-// issued by the SERVER render of the page (next/navigation `redirect()`,
-// which throws a NEXT_REDIRECT digest the framework turns into a real
-// 307), never by an effect that only runs if and when the component
-// mounts. So each stub is asserted twice — it must not be a client
-// component wired to useRouter/useEffect, and calling its default export
-// must redirect to the documented target.
+// Round 1 made each stub page a server component calling next/navigation
+// redirect(), and this file asserted the NEXT_REDIRECT digest each module
+// threw. The verifier REFUTED that fix on the live stack: AppShell
+// statically imports BootSplashLazy (next/dynamic ssr:false), so every
+// admin document render hits BAILOUT_TO_CLIENT_SIDE_RENDERING and the
+// redirect() digest ships as a flight-ERROR row that Next replays
+// CLIENT-side (RedirectBoundary's effect) inside admin/layout.tsx's
+// deferred {children} — the exact late mount that ate the original
+// useEffect router.replace. Hard loads stuck 14/17 trials; the document
+// response was HTTP 200, never the claimed 307.
 //
-// Supersedes the two per-route client-router pins this replaced
-// (plugins/page.test.tsx + plugins/[id]/page.test.tsx from LD-8): both
-// asserted the router.replace shape that is exactly the defect.
+// Round 2 therefore moves the redirect to a layer React CANNOT defer:
+// `redirects()` in apps/web/next.config.mjs. Those are resolved by the
+// Next server's routing layer BEFORE any filesystem route or render is
+// consulted — the document request itself gets a real HTTP 307 +
+// Location, and client-side navigations get the same redirect on their
+// RSC fetch. No component tree, layout guard, or CSR bailout is in the
+// path. The six stub page files are DELETED: with the config redirect
+// matching first they were unreachable dead code, and their absence
+// removes the admin-shell-swallows-the-nav surface entirely.
+//
+// What a unit test CAN honestly pin is the map itself — that is what this
+// file asserts (import the config, inspect the redirects() array). What
+// it CANNOT see is the running server actually honoring the map on a
+// hard load; that end-to-end check (curl -sI => 307 + Location, browser
+// hard loads landing with the URL changed) is the live-stack re-verify
+// agent's job, recorded in the remediation ledger.
 
-import { readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+
+import nextConfig from "../../../next.config.mjs";
 
 // jsdom's global URL rejects `new URL(rel, import.meta.url)` ("The URL
 // must be of scheme file") — take the string form and join from there.
 const HERE = dirname(fileURLToPath(import.meta.url));
 
-/** Drop comments so the header prose describing the OLD defect (which
- * necessarily names useEffect/router.replace) can't satisfy the code
- * assertions below. */
-function stripComments(source: string): string {
-  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^[ \t]*\/\/.*$/gm, "");
+interface RedirectEntry {
+  source: string;
+  destination: string;
+  permanent?: boolean;
+  statusCode?: number;
 }
 
-interface RedirectInfo {
-  url: string;
-  type: string;
-  status: number;
-}
-
-/** Decode next/navigation's `NEXT_REDIRECT;<type>;<url>;<status>;` digest. */
-function parseRedirect(err: unknown): RedirectInfo | null {
-  const digest: unknown = (err as { digest?: unknown } | null)?.digest;
-  if (typeof digest !== "string" || !digest.startsWith("NEXT_REDIRECT;")) return null;
-  const parts = digest.split(";");
-  return {
-    type: parts[1] ?? "",
-    url: parts.slice(2, -2).join(";"),
-    status: Number(parts[parts.length - 2]),
-  };
-}
-
-async function redirectFrom(run: () => unknown): Promise<RedirectInfo> {
-  let returned: unknown;
-  try {
-    returned = await run();
-  } catch (err) {
-    const info = parseRedirect(err);
-    if (info) return info;
-    throw new Error(`expected a server-side NEXT_REDIRECT, got a different throw: ${String(err)}`, {
-      cause: err,
-    });
-  }
-  throw new Error(
-    `expected a server-side NEXT_REDIRECT, but the page returned ${String(returned)} without redirecting`,
-  );
-}
-
-interface Stub {
-  route: string;
-  file: string;
-  load: () => Promise<{ default: (props: never) => unknown }>;
-  target: string;
-}
-
-const STUBS: Stub[] = [
-  {
-    route: "/admin/libraries",
-    file: "libraries/page.tsx",
-    load: () => import("./libraries/page.js"),
-    target: "/settings/libraries",
-  },
-  {
-    route: "/admin/users",
-    file: "users/page.tsx",
-    load: () => import("./users/page.js"),
-    target: "/settings/users",
-  },
-  {
-    route: "/admin/settings",
-    file: "settings/page.tsx",
-    load: () => import("./settings/page.js"),
-    target: "/settings/advanced",
-  },
-  {
-    route: "/admin/system",
-    file: "system/page.tsx",
-    load: () => import("./system/page.js"),
-    target: "/admin",
-  },
-  {
-    route: "/admin/plugins",
-    file: "plugins/page.tsx",
-    load: () => import("./plugins/page.js"),
-    target: "/settings/plugins",
-  },
-  {
-    route: "/admin/plugins/[id]",
-    file: "plugins/[id]/page.tsx",
-    load: () => import("./plugins/[id]/page.js"),
-    target: "/settings/plugins/abc-123",
-  },
+/** Every legacy /admin/* route and its documented replacement. */
+const LEGACY: Array<{ source: string; destination: string; deletedStub: string }> = [
+  { source: "/admin/libraries", destination: "/settings/libraries", deletedStub: "libraries/page.tsx" },
+  { source: "/admin/users", destination: "/settings/users", deletedStub: "users/page.tsx" },
+  { source: "/admin/settings", destination: "/settings/advanced", deletedStub: "settings/page.tsx" },
+  { source: "/admin/system", destination: "/admin", deletedStub: "system/page.tsx" },
+  { source: "/admin/plugins", destination: "/settings/plugins", deletedStub: "plugins/page.tsx" },
+  // path-to-regexp `:id` — preserves the (already percent-encoded) id
+  // segment verbatim on the HTTP layer; a slash inside an id is a
+  // different path by definition, so no encodeURIComponent is involved.
+  { source: "/admin/plugins/:id", destination: "/settings/plugins/:id", deletedStub: "plugins/[id]/page.tsx" },
 ];
 
-describe("/admin/* redirect stubs (browser-admin-F1)", () => {
-  it.each(STUBS)("$route redirects server-side, not from an effect", async (stub) => {
-    const source = stripComments(readFileSync(join(HERE, stub.file), "utf8"));
+async function loadRedirects(): Promise<RedirectEntry[]> {
+  const fn = (nextConfig as { redirects?: () => Promise<RedirectEntry[]> }).redirects;
+  expect(fn, "next.config.mjs must define redirects()").toBeTypeOf("function");
+  const entries = await fn!();
+  expect(Array.isArray(entries)).toBe(true);
+  return entries;
+}
 
-    // A stub that needs to MOUNT to redirect is the defect: under
-    // app/admin/layout.tsx's deferred children the mount is late and the
-    // replace() is dropped.
-    expect(source, `${stub.file} must not be a client component`).not.toMatch(/^\s*["']use client["'];?\s*$/m);
-    expect(source, `${stub.file} must not redirect from a hook/effect`).not.toMatch(/\buseRouter\b|\buseEffect\b/);
-
-    const mod = await stub.load();
-    const props = stub.route.endsWith("[id]")
-      ? ({ params: Promise.resolve({ id: "abc-123" }) } as never)
-      : (undefined as never);
-
-    const info = await redirectFrom(() => mod.default(props));
-    expect(info.url).toBe(stub.target);
-    expect(info.status).toBe(307);
+describe("legacy /admin/* HTTP redirects (browser-admin-F1 round 2)", () => {
+  it.each(LEGACY)("$source is redirected to $destination by next.config, status 307", async (legacy) => {
+    const entries = await loadRedirects();
+    const matches = entries.filter((e) => e.source === legacy.source);
+    expect(matches, `exactly one redirects() entry for ${legacy.source}`).toHaveLength(1);
+    const entry = matches[0]!;
+    expect(entry.destination).toBe(legacy.destination);
+    // permanent: false => Next serves 307 (Temporary Redirect). Never a
+    // cacheable 308 for these, and no statusCode override sneaking in a
+    // 301/302 that could downgrade the method.
+    expect(entry.permanent).toBe(false);
+    expect(entry.statusCode).toBeUndefined();
   });
 
-  it("percent-encodes the preserved plugin id segment", async () => {
-    const mod = await import("./plugins/[id]/page.js");
-    const info = await redirectFrom(() =>
-      (mod.default as (p: never) => unknown)({ params: Promise.resolve({ id: "a b/c" }) } as never),
-    );
-    expect(info.url).toBe("/settings/plugins/a%20b%2Fc");
+  it("covers ONLY the six legacy routes — live /admin pages stay reachable", async () => {
+    const entries = await loadRedirects();
+    const adminSources = entries.map((e) => e.source).filter((s) => s === "/admin" || s.startsWith("/admin/"));
+    // An over-broad pattern (e.g. "/admin/:path*") would also swallow the
+    // real /admin dashboard, /admin/jobs and /admin/sessions.
+    expect(adminSources.sort()).toEqual(LEGACY.map((l) => l.source).sort());
+  });
+
+  it.each(LEGACY)("the $source stub page file stays deleted", (legacy) => {
+    // With the config redirect matching first, a page file at the legacy
+    // route is unreachable dead code — and round 1 proved a page-level
+    // redirect can be silently deferred by the CSR bailout. Keep the
+    // filesystem route gone.
+    expect(
+      existsSync(join(HERE, legacy.deletedStub)),
+      `${legacy.deletedStub} must not exist — the redirect lives in next.config.mjs`,
+    ).toBe(false);
   });
 });
