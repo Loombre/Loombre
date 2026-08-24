@@ -199,6 +199,38 @@ export function landingWatchExpired(watch: LandingWatch, nowMs: number, timeoutM
   return nowMs - watch.armedAtMs >= timeoutMs;
 }
 
+/**
+ * gap-F6 round 3 — the landing `findLandingFragment` can never see: the
+ * seek-spawned run EXISTS (fragments strictly newer than the watch's
+ * floor are listed) but its coverage has already moved PAST the clamped
+ * target — on a fast-completing file the restarted run races to ENDLIST
+ * and retention prunes its head before any playlist refresh lists the
+ * target's own fragment (live verify refutation: Start-over to 0 froze
+ * for the full 20 s while run1's survivors started at ~7:34). The closest
+ * position that still exists is the new run's EARLIEST surviving listed
+ * fragment; landing there is the same honesty as the tail-only fresh
+ * mount, and strictly better than a frozen scrubber and a timeout toast.
+ *
+ * Returns that earliest fragment ONLY when the relocation has provably
+ * overshot: every new-run fragment's PDT starts past the target's own
+ * landing window (`> clampedTarget + LANDING_WINDOW_AHEAD_MS`). While any
+ * new-run fragment could still BE the landing, or the run's forward
+ * growth has not reached a forward target yet, it returns `null` and the
+ * watch keeps waiting (a backward-restarted run growing TOWARD a forward
+ * target must not land early at its origin).
+ */
+export function findRelocatedLandingStart(fragments: readonly ListedFragment[], watch: LandingWatch): ListedFragment | null {
+  let earliest: ListedFragment | null = null;
+  for (const f of fragments) {
+    const runIdx = runIndexOfRelurl(f.relurl);
+    if (runIdx === undefined || runIdx <= watch.minRunIndexExclusive) continue;
+    if (f.programDateTimeMs === null) continue;
+    if (f.programDateTimeMs <= watch.clampedTargetMs + LANDING_WINDOW_AHEAD_MS) return null;
+    if (earliest === null || f.startSec < earliest.startSec) earliest = f;
+  }
+  return earliest;
+}
+
 // ── Post-landing resume evidence (browser-player-F4) ─────────────────────
 // The LEVEL_UPDATED fragment match ends run DISCOVERY, not the seek: the
 // element still has to fetch/append data at the landed position before

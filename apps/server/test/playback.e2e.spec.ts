@@ -808,20 +808,22 @@ describe("PUT /progress/{itemId} with sessionId heartbeats the session (docs/PLA
     expect(put.status, JSON.stringify(put.body)).toBe(200);
   });
 
-  // ── Post-seek progress is PRESENTATION time, not source time ──────────
+  // ── Reported positions are SOURCE time; stored VERBATIM (gap-F6 r3) ───
   //
-  // A player reports `video.currentTime`, which is its position in the
-  // SERVED PLAYLIST's timeline: the playlist is one continuous run of
-  // #EXTINF durations regardless of the EXT-X-DISCONTINUITY between runs.
-  // But every seek run is spawned with `-ss` and no `-copyts`, so its own
-  // output timestamps restart at zero. Presentation and source therefore
-  // diverge by exactly the accumulated seek offsets, and a resume point
-  // stored from a post-seek heartbeat sends the viewer to the wrong place
-  // in the FILE — the further into a seek-heavy session, the wronger.
-  //
-  // The server has everything needed to fix this without touching the
-  // client: transcode_runs (migration 0043) plus the served playlist it
-  // already reads. These cases pin the conversion at the ingestion point.
+  // The V8 client reports SOURCE-axis positions: §9.1.5 rule 7 stamps
+  // every served segment with a PROGRAM-DATE-TIME whose epoch IS source
+  // time, the player's watched/displayed positions are mapped through it
+  // (apps/web lib/source-clock.ts, lib/watched-progress.ts), and its seek
+  // targets are source-ms by definition. The old ingestion conversion
+  // (presentation -> source through the CURRENT served playlist) assumed a
+  // `video.currentTime` reporter — and double-mapped every V8 report on a
+  // multi-run session. Live 2026-08-24 (gap-F6 verify refutation): an
+  // honest watched position of 23_880 (0:23.9) PUT against a 3-run session
+  // was stored as 522_280 (8:42) — the phantom resume point for content
+  // never watched. The conversion was also unsound on its own terms: the
+  // client's presentation axis is anchored at ITS first playlist load,
+  // while the server walked the CURRENT (head-pruned) playlist — the two
+  // agree only while nothing has pruned. These cases pin verbatim storage.
   async function createTranscodeSessionWithRuns(): Promise<{ sessionId: string; sessionDir: string }> {
     const created = await admin()
       .post("/playback/sessions")
@@ -884,28 +886,24 @@ describe("PUT /progress/{itemId} with sessionId heartbeats the session (docs/PLA
     return Number(res.body.positionMs);
   }
 
-  it("a post-seek heartbeat persists the SOURCE position, not the player's presentation time", async () => {
+  it("a multi-run heartbeat stores the client's SOURCE position VERBATIM — no ingestion re-mapping (gap-F6 round 3)", async () => {
     const { sessionId } = await createTranscodeSessionWithRuns();
 
-    // The player is 66_066 ms into the playlist: past run 0's ten segments
-    // (60_060 ms) and 6_006 ms into run 1's FIRST segment. In source terms
-    // that is run 1's origin (600_000) plus 6_006 = 606_006 ms — ten
-    // minutes and six seconds in, which is where the viewer actually is.
-    // Stored verbatim it would claim 66 seconds, off by nine and a half
-    // minutes, and the next resume prompt would offer that.
+    // The viewer has WATCHED to source 66_066 ms (the client's watched
+    // position is source-axis by construction). The old conversion read
+    // this as presentation time, walked the playlist into run 1, and
+    // stored 606_006 — a resume point 9 minutes past anything the viewer
+    // ever saw (the live phantom's exact mechanism).
     const put = await admin()
       .put(`/progress/${harborLightsItemId}`)
       .send({ positionMs: 66_066, durationMs: 6_480_000, state: "in-progress", sessionId });
     expect(put.status, JSON.stringify(put.body)).toBe(200);
 
-    expect(await readStoredPositionMs()).toBe(606_006);
+    expect(await readStoredPositionMs()).toBe(66_066);
   });
 
-  it("a position inside run 0 is unchanged — presentation IS source before the first seek", async () => {
+  it("a position inside run 0 of a multi-run session is stored verbatim too (identity either way)", async () => {
     const { sessionId } = await createTranscodeSessionWithRuns();
-    // 30_030 ms lands in run 0, whose origin is 0, so the mapping is the
-    // identity. This is the guard that stops the conversion from mangling
-    // the overwhelmingly common single-run case.
     const put = await admin()
       .put(`/progress/${harborLightsItemId}`)
       .send({ positionMs: 30_030, durationMs: 6_480_000, state: "in-progress", sessionId });

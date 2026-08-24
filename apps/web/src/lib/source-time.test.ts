@@ -12,6 +12,7 @@ import {
   armLandingWatch,
   bufferedRangesToSource,
   findLandingFragment,
+  findRelocatedLandingStart,
   hasSourceClock,
   landingWatchExpired,
   HARD_SEEK_LANDING_TIMEOUT_MS,
@@ -170,6 +171,54 @@ describe("landing watch (hard seek, §9.1.9)", () => {
     const watch = armLandingWatch(WINDOW, 12_000, 10_000);
     expect(landingWatchExpired(watch, 10_000 + HARD_SEEK_LANDING_TIMEOUT_MS - 1)).toBe(false);
     expect(landingWatchExpired(watch, 10_000 + HARD_SEEK_LANDING_TIMEOUT_MS)).toBe(true);
+  });
+});
+
+// gap-F6 round 3: the landing findLandingFragment can never see — the
+// seek-spawned run raced to ENDLIST and retention pruned its head PAST the
+// clamped target before any refresh listed it (live: Start-over to 0 on a
+// fast-completing short froze the full 20 s while run1's survivors started
+// at ~7:34). The earliest surviving new-run fragment is the closest
+// position that still exists.
+describe("findRelocatedLandingStart (gap-F6 round 3)", () => {
+  it("lands at the new run's EARLIEST survivor when every new-run fragment starts past the target's landing window", () => {
+    const watch = armLandingWatch(WINDOW, 0, 1_000); // Start-over to source 0
+    const overshot = [
+      frag("run2/s000020.m4s", 90, 6, 460_000),
+      frag("run2/s000021.m4s", 96, 6, 466_000),
+    ];
+    const landed = findRelocatedLandingStart(overshot, watch);
+    expect(landed?.relurl).toBe("run2/s000020.m4s");
+    expect(landed?.programDateTimeMs).toBe(460_000);
+  });
+
+  it("never fires while a new-run fragment could still BE the landing (PDT inside the match window)", () => {
+    const watch = armLandingWatch(WINDOW, 12_000, 1_000);
+    const containsLanding = [
+      frag("run2/s000020.m4s", 90, 6, 12_000),
+      frag("run2/s000021.m4s", 96, 6, 18_000),
+    ];
+    expect(findRelocatedLandingStart(containsLanding, watch)).toBeNull();
+  });
+
+  it("never fires while the new run is still growing TOWARD a forward target (fragments behind the target)", () => {
+    const watch = armLandingWatch(WINDOW, 300_000, 1_000);
+    const growing = [
+      frag("run2/s000020.m4s", 90, 6, 240_000),
+      frag("run2/s000021.m4s", 96, 6, 246_000),
+    ];
+    expect(findRelocatedLandingStart(growing, watch)).toBeNull();
+  });
+
+  it("ignores fragments at or below the watch's floor (old runs are not the seek's answer)", () => {
+    const watch = armLandingWatch(WINDOW, 0, 1_000); // floor = run1
+    // Only OLD-run fragments past the target — no new run at all.
+    expect(findRelocatedLandingStart(WINDOW, watch)).toBeNull();
+  });
+
+  it("ignores PDT-less fragments (nothing to land a source-axis target on)", () => {
+    const watch = armLandingWatch(WINDOW, 0, 1_000);
+    expect(findRelocatedLandingStart([frag("run2/s000020.m4s", 90, 6, null)], watch)).toBeNull();
   });
 });
 

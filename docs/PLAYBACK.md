@@ -1068,18 +1068,33 @@ State machine: `created → starting → active ⇄ suspended → seeking → ac
     (a) an index more than one full live window — 20 segments, the same
     120s the retention window keeps — ahead of `produced_segment`, or
     (b) an ENOENT at/behind `produced_segment` in the run that OWNS that
-    index (genuinely pruned / before run-start). Two look-alikes are
-    explicitly NOT seeks and answer a plain 503 + `Retry-After` with no
-    control-channel write: an index ahead but WITHIN the live window (the
-    worker is already producing toward it — the segment GET's
-    `requested_segment` write un-throttles it), and any URI naming a run
-    OLDER than the one that owns its index (a stale retry of a
-    pre-restart URI, which forward-only numbering guarantees can never be
-    served and never represents a new intention). A third guard absorbs
-    the pruned-history retry storm the stale-run rule cannot see (the
-    pruned index stays OWNED by the old run): when a later run already
-    sits within one nominal segment of the derived target, that restart
-    already answered this exact request — 503, no new write. The old
+    index (genuinely pruned / before run-start), reached by a BACKWARD
+    JUMP — an index more than a small out-of-order hysteresis (3
+    segments) BELOW the session's own recorded `requested_segment`
+    progression. Three look-alikes are explicitly NOT seeks and answer a
+    plain 503 + `Retry-After` with no control-channel write: an index
+    ahead but WITHIN the live window (the worker is already producing
+    toward it — the segment GET's `requested_segment` write un-throttles
+    it); any URI naming a run OLDER than the one that owns its index (a
+    stale retry of a pre-restart URI, which forward-only numbering
+    guarantees can never be served and never represents a new intention);
+    and — gap-F6 round 3 — a pruned index the client was heading toward
+    ANYWAY (at/above the progression minus the hysteresis, or before any
+    progression exists): that is the retention prune RACING a client on a
+    fast-completing file, never a seek — on the live repro the whole
+    copy-shape encode landed in under a second, pruned its head while the
+    client fetched its first segments, and every raced index spawned its
+    own restart (run1/run2 0.8 s apart, origins 92.8 s apart, on an
+    untouched mount). A real backward seek that reaches the ENOENT path
+    at all targets pruned history — necessarily >120 s behind the live
+    edge, far beyond the hysteresis; anything nearer is still on disk. A
+    final guard absorbs the pruned-history retry storm the stale-run rule
+    cannot see (the pruned index stays OWNED by the old run): when a
+    later run already sits within three nominal segments of the derived
+    target (round 3 widened this from one — neighbouring raced indexes
+    derive targets a segment or three apart, 8.8 s in the live
+    refutation, and each spawned another restart), a restart already
+    answered this request's region — 503, no new write. The old
     >3-lookahead
     trigger read hls.js's ordinary forward-buffering as seeks and each
     retry of the resulting dead URI as ANOTHER seek — a fresh, untouched
@@ -1171,32 +1186,28 @@ State machine: `created → starting → active ⇄ suspended → seeking → ac
     An unprobed file (no `durationMs`) keeps the lower bound only.
 - **Heartbeat:** client progress PUT doubles as heartbeat; no heartbeat for
   90 s → suspend; 15 min → end session, delete dir, emit `playback.ended`.
-  - **Reported positions are PRESENTATION time; stored positions are SOURCE
-    time.** A player reports `video.currentTime`, its position in the served
-    playlist's timeline — which runs continuously across every
-    `EXT-X-DISCONTINUITY`. Each seek run is spawned with `-ss` and no
-    `-copyts`, so its own output timestamps restart at zero, and the two
-    timelines diverge by exactly the accumulated seek offsets. Progress,
-    resume points and `positionMs` everywhere else in this system are
-    source-timeline values, so a post-seek heartbeat stored verbatim points
-    at the wrong place in the file.
-  - **The conversion is server-side, at ingestion** (`PUT /progress/{itemId}`
-    when it carries a `sessionId`). The client is left alone: it reports
-    what its media element knows, and only the server holds the run map
-    (`transcode_runs`) and the served playlist needed to reconcile them.
-    The mapping walks the playlist to find the segment containing the
-    reported position, then re-expresses it in that segment's OWN run:
-    `source = owningRun.source_origin_ms + (offset of the segment within
-    its run) + (how far into the segment the position sits)`. The
-    within-segment remainder carries through unchanged for the same reason
-    the offsets do — inside a run, presentation and source advance at the
-    same rate.
-  - **It never guesses.** No sessionId, no staging dir, no runs, an
-    unreadable playlist, or a position past the playlist's end all keep the
-    client's value exactly as sent. That value is already correct for every
-    direct-play session and every transcode session that has not seeked, so
-    declining to map is always safe; a wrong guess would silently corrupt a
-    resume point.
+  - **Reported positions are SOURCE time; stored VERBATIM (gap-F6 round
+    3).** Under V8, §9.1.5 rule 7 stamps every served segment with a
+    `PROGRAM-DATE-TIME` whose epoch IS source time, and the web player's
+    positions — the watched position that feeds every `/progress` write
+    (`lib/watched-progress.ts`), the displayed clock
+    (`lib/source-clock.ts`), and every seek target — are source-axis
+    values by construction. `PUT /progress/{itemId}` stores `positionMs`
+    exactly as sent, `sessionId` present or not.
+  - **The old presentation→source ingestion conversion is REMOVED.** It
+    assumed a `video.currentTime` reporter and walked the CURRENT served
+    playlist to re-express the position in its owning run. Post-V8 it
+    DOUBLE-MAPPED the client's source-axis reports on any multi-run
+    session — live 2026-08-24, an honest watched position of 23.9 s PUT
+    against a 3-run session was stored as 8:42, the phantom resume point
+    of the gap-F6 verify refutation. It was also unsound even for a
+    presentation reporter once any head segment had been pruned: the
+    client's presentation axis is anchored at ITS OWN first playlist
+    load, while the walk started at the current (post-prune) head — the
+    two agree only while nothing has pruned, which is exactly when the
+    mapping was the identity anyway. Any future client that cannot read
+    the PDT source clock must do its own mapping before reporting; the
+    server never guesses.
 - **Concurrency:** global semaphore = `maxSimultaneousTranscodes`; admission
   beyond it fails the session create with a typed 429 (`transcode-slots-
   exhausted`) — clients fall back to a lower-bitrate direct attempt or queue.
@@ -1570,7 +1581,9 @@ construction (§9.1.1 — one playlist):
    the mapping is exact (§9.1.6's rate argument); the one bound is input
    `-ss` keyframe snap — a seek run's first frames may predate its
    recorded origin by ≤ one GOP, one-time per run, non-compounding, the
-   same bound the §9 progress mapping already accepts. Clients read it as
+   same bound the client's hard-seek landing window already accepts
+   (`LANDING_WINDOW_BEHIND_MS`, apps/web `lib/source-time.ts`). Clients
+   read it as
    `frag.programDateTime` (hls.js — the value IS source ms) or
    `video.getStartDate()` (Safari native).
 
@@ -1613,11 +1626,11 @@ seek-spawned run's origin remains the consumed (clamped) seek target,
 exactly as before. Composition of run origins across an arbitrary
 seek/switch history therefore needs no new rules: each run's row is
 self-contained, ownership follows the segment counter, and the §9
-progress mapping (`presentationToSourceMs`) is UNCHANGED and correct for
-multi-variant sessions by construction — its within-run 1:1
+seek-target derivation (`deriveSegmentStartMs`) is UNCHANGED and correct
+for multi-variant sessions by construction — its within-run 1:1
 rate-equivalence argument is rung-independent (re-encoding at a different
 bitrate/height never changes the time rate). The build pins this with a
-progress-across-switch test rather than new code.
+cross-switch derivation test rather than new code.
 
 **PDT does not reopen this decision (V8).** §9.1.5 rule 7's
 `EXT-X-PROGRAM-DATE-TIME` is playlist METADATA rendered by the worker
@@ -1775,7 +1788,23 @@ machine totals, not per-session multipliers.
     seconds away in source time. A re-seek before landing re-arms the
     watch with the newest clamped target; earlier seek runs are dead runs
     the client never lands on (server-side absorption already
-    de-duplicates).
+    de-duplicates). TWO MORE ACCEPTANCES (gap-F6 round 3) cover the
+    landings the fragment match can never see, both of which pinned the
+    scrubber for the full 20 s: (1) ABSORBED 202 — the server absorbed
+    the seek into the CURRENT run (target just ahead of the produced
+    edge, or a Start-over the run still covers), so no new run will ever
+    appear; the moment the window LISTS the target, seek the element
+    there (`sourceToPresentationSec`) — "landed when the element seeks";
+    safe because a hard classification means the target was NOT listed at
+    seek time and a sliding window only adds coverage the current run
+    just produced. (2) RELOCATED PAST THE TARGET — new-run fragments are
+    listed but ALL start past the target's landing window (a
+    fast-completing file's restart raced to ENDLIST and pruned its head
+    before any refresh listed the target): land at the new run's earliest
+    SURVIVING fragment at that fragment's OWN source position
+    (`findRelocatedLandingStart`) — the same honesty as the tail-only
+    fresh mount, strictly better than a frozen pin and a timeout toast.
+    Both acceptances hand off to the same resume-evidence half.
   - DISCOVERY NUDGE (live-QA fix, 2026-08-20): while `relocating`, the
     client forces a playlist re-read once per second
     (`HARD_SEEK_REFRESH_NUDGE_MS = 1_000`,

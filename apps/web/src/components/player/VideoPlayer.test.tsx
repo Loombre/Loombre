@@ -2527,4 +2527,161 @@ describe("VideoPlayer", () => {
       expect(videoEl(v).paused).toBe(false);
     });
   });
+
+  // ── gap-F6 round 3: landings the run-discovery match can never see ──────
+  // Two hard-seek outcomes leave findLandingFragment with nothing to match,
+  // and both pinned the scrubber at the dead target until the 20 s timeout:
+  //  1. ABSORBED 202 (NEW_FINDINGS A13, live v8-requal): the target is
+  //     inside the CURRENT run (e.g. just ahead of the produced edge, or
+  //     Start-over to 0 while run0 still covers it) — the server absorbs,
+  //     NO new run ever appears, and the only honest landing is the moment
+  //     the current window LISTS the target: seek the element there.
+  //  2. RELOCATED PAST THE TARGET (the verify-refutation's Start-over on
+  //     the fast-completing short): the seek-spawned run raced to ENDLIST
+  //     and retention pruned its head PAST the target before any refresh
+  //     listed it — the run's earliest SURVIVING fragment is the closest
+  //     position that still exists; land there (same honesty as the
+  //     tail-only fresh mount) instead of freezing for 20 s.
+  describe("absorbed / relocated hard-seek landings (gap-F6 round 3)", () => {
+    async function renderHlsReadyLocal(): Promise<{ v: TestRender; hls: MockHlsInstance }> {
+      createPlaybackSession.mockReset().mockResolvedValue({ ok: true, session: hlsTranscodeSession() });
+      const v = await renderReady();
+      await act(async () => {});
+      const hls = hlsInstances[hlsInstances.length - 1];
+      if (!hls) throw new Error("the hlsjs attach effect never constructed an hls.js instance");
+      hls.currentLevel = 0;
+      return { v, hls };
+    }
+
+    it("an ABSORBED 202 (no new run) lands the moment the current window lists the target — element seeks, no 20s pin", async () => {
+      const { v, hls } = await renderHlsReadyLocal();
+      view = v;
+      vi.useFakeTimers();
+      const video = videoEl(v);
+      // The window covers source 100.0–106.0s; the viewer sits at 100.5s.
+      const details = {
+        live: true,
+        fragments: [{ programDateTime: 100_000, start: 0, duration: 6, relurl: "run0/s000016.m4s" }],
+      };
+      hls.levels = [{ details }];
+      // First refresh consumes the one-shot queued-start router
+      // (browser-player-F9), as on a real session.
+      await act(async () => {
+        hls.emit("hlsLevelUpdated");
+      });
+      await act(async () => {
+        video.currentTime = 0.5;
+        video.dispatchEvent(new Event("timeupdate"));
+      });
+      // Forward 10s -> target 110_500: NOT listed (just ahead of the
+      // produced edge) -> HARD. The server absorbs it into run0 (202, no
+      // restart) and simply produces on toward it.
+      apiPost.mockResolvedValueOnce({ targetMs: 110_500 });
+      await act(async () => button(v, "Forward 10 seconds").click());
+      expect(apiPost).toHaveBeenCalledTimes(1);
+
+      // Next refresh: run0 itself now lists the target — no run1 ever will.
+      details.fragments = [
+        { programDateTime: 100_000, start: 0, duration: 6, relurl: "run0/s000016.m4s" },
+        { programDateTime: 106_000, start: 6, duration: 6.006, relurl: "run0/s000017.m4s" },
+      ];
+      await act(async () => {
+        hls.emit("hlsLevelUpdated");
+      });
+      expect(
+        video.currentTime,
+        "the absorbed 202 never landed — the watch keeps waiting for a run that will never exist",
+      ).toBeCloseTo(10.5, 3);
+
+      // Resume evidence completes the lifecycle: no timeout toast, display live.
+      mediaState(video).readyState = 4;
+      await act(async () => {
+        video.dispatchEvent(new Event("seeked"));
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(HARD_SEEK_LANDING_TIMEOUT_MS + 500);
+      });
+      expect(
+        document.body.textContent,
+        "an absorbed in-window 202 rode the pin into the 20 s timeout toast",
+      ).not.toContain("Seek timed out");
+      const slider = v.container.querySelector('[role="slider"]');
+      expect(slider?.getAttribute("aria-valuenow")).toBe("110500");
+    });
+
+    it("a seek-spawned run that already pruned PAST the target lands at its earliest surviving fragment — not a 20s freeze", async () => {
+      const { v, hls } = await renderHlsReadyLocal();
+      view = v;
+      vi.useFakeTimers();
+      const video = videoEl(v);
+      const details = {
+        live: true,
+        fragments: [{ programDateTime: 3_600_000, start: 0, duration: 6, relurl: "run0/s000096.m4s" }],
+      };
+      hls.levels = [{ details }];
+      // First refresh consumes the one-shot queued-start router
+      // (browser-player-F9) exactly as a real session's first playlist
+      // refresh does — the landing emit below must not be the first.
+      await act(async () => {
+        hls.emit("hlsLevelUpdated");
+      });
+      // Hard seek to 10s (Start-over-adjacent shape on the fast short).
+      apiPost.mockResolvedValueOnce({ targetMs: 10_000 });
+      await act(async () => button(v, "Forward 10 seconds").click());
+      expect(apiPost).toHaveBeenCalledTimes(1);
+
+      // The refresh that finally shows run1: it re-encoded from ~0, raced
+      // to ENDLIST and pruned its head — the earliest survivor starts at
+      // source 460.0s. The target (10s) is gone forever.
+      details.fragments = [
+        { programDateTime: 460_000, start: 6, duration: 6, relurl: "run1/s000112.m4s" },
+        { programDateTime: 466_000, start: 12, duration: 6, relurl: "run1/s000113.m4s" },
+      ];
+      await act(async () => {
+        hls.emit("hlsLevelUpdated");
+      });
+      expect(
+        video.currentTime,
+        "the relocated-past-target run never landed — the watch holds out for pruned content and freezes into the timeout",
+      ).toBe(6);
+
+      mediaState(video).readyState = 4;
+      await act(async () => {
+        video.dispatchEvent(new Event("seeked"));
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(HARD_SEEK_LANDING_TIMEOUT_MS + 500);
+      });
+      expect(document.body.textContent).not.toContain("Seek timed out");
+      const slider = v.container.querySelector('[role="slider"]');
+      expect(slider?.getAttribute("aria-valuenow")).toBe("460000");
+    });
+
+    it("a source-clock HLS session never adopts the element's inflated presentation extent as its duration", async () => {
+      // The churned-playlist symptom (verify refutation): re-encoded tail
+      // runs push the playlist's cumulative EXTINF extent PAST the real
+      // file duration (9:34 -> 18:18) and growth-only adoption took it.
+      // Once the session displays the SOURCE axis, the element's
+      // presentation extent is the wrong axis for the scrubber ceiling by
+      // construction — the probed session duration governs.
+      const { v, hls } = await renderHlsReadyLocal();
+      view = v;
+      const video = videoEl(v);
+      hls.levels = [{ details: { live: true, fragments: [{ programDateTime: 0, start: 0, duration: 6, relurl: "run0/s000000.m4s" }] } }];
+      // One mapped timeupdate: the session has SHOWN a source clock.
+      await act(async () => {
+        video.currentTime = 0.5;
+        video.dispatchEvent(new Event("timeupdate"));
+      });
+      Object.defineProperty(video, "duration", { get: () => 1_098.081, configurable: true });
+      await act(async () => {
+        video.dispatchEvent(new Event("durationchange"));
+      });
+      const slider = v.container.querySelector('[role="slider"]');
+      expect(
+        slider?.getAttribute("aria-valuemax"),
+        "the churned playlist's presentation extent replaced the probed source duration",
+      ).toBe("600000");
+    });
+  });
 });

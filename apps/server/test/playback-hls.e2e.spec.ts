@@ -526,17 +526,121 @@ describe("GET /playback/sessions/{id}/hls/{file} — segment/init serving", () =
     expect(await readSeekTargetMs(sessionId)).toBeNull();
   }, 15_000);
 
-  it("a segment that passes the ahead-check but doesn't exist on disk (pruned/before run-start) -> 503 + seek requested", async () => {
-    const { sessionId } = await setupWithSegments(2); // s000000..s000002 exist; s000001 within lookahead but let's request one that was never written
-    // Overwrite produced_segment upward without writing the file, to land
-    // "within lookahead" yet ENOENT (simulates a pruned/not-yet-flushed
-    // segment — module header's BIND part (b)).
-    const db = createDb(process.env["DATABASE_URL"]!);
-    try {
-      await db.updateTable("playback_sessions").set({ produced_segment: 4 }).where("id", "=", sessionId).execute();
-    } finally {
-      await db.destroy();
-    }
+  // ── gap-F6 ROUND 3 (verify refuted abe0daf, live re-repro 2026-08-24) ──
+  // A fast-completing copy-shape file races retention past the client: the
+  // whole encode lands in <1s, the head is pruned while the client is
+  // still fetching its FIRST segments, and every pruned-index GET the
+  // client was heading toward anyway spawned a fresh restart with a fresh
+  // derived target (live: run1 origin 430_084 for s74, then run2 origin
+  // 522_896 for s90 — 92.8s apart, unreachable by any ms tolerance). The
+  // race is the WORKER's prune bug (F/prune-race); this route's job is to
+  // never mistake it for a seek: an implicit ENOENT restart now requires
+  // BACKWARD-JUMP EVIDENCE (an index at least BACKWARD_JUMP_HYSTERESIS
+  // segments below the session's own requested_segment progression) — a
+  // client playing forward is never seeking backward.
+
+  it("gap-F6 round 3: a pruned index reached by the session's own FORWARD progression never restarts (the prune race is not a seek)", async () => {
+    const { sessionId, sessionDir } = await setupWithSegments(24);
+    // The client's own progression: s000008 served normally writes
+    // requested_segment = 8.
+    const served = await admin().get(`/playback/sessions/${sessionId}/hls/run0/s000008.m4s`);
+    expect(served.status).toBe(200);
+    // Retention prunes s000010 while the client is still heading toward
+    // it (the live 1/1 repro shape: first indexed GET s74 of a window the
+    // playlist listed moments earlier).
+    rmSync(path.join(sessionDir, "run0", "s000010.m4s"));
+
+    const res = await admin().get(`/playback/sessions/${sessionId}/hls/run0/s000010.m4s`);
+    expect(res.status).toBe(503);
+    expect(res.headers["retry-after"]).toBe("1");
+    expect(
+      await readSeekTargetMs(sessionId),
+      "a forward-progression pruned GET restarted the run — the untouched-mount churn trigger",
+    ).toBeNull();
+  }, 15_000);
+
+  it("gap-F6 round 3: the very FIRST indexed GET of a session (no progression yet) hitting a pruned index never restarts", async () => {
+    // Live 1/1: hls.js's first indexed request (live-sync start s74,
+    // requested_segment still NULL) hit a pruned file and spawned run1 —
+    // on a completely untouched mount. No progression = no backward
+    // intent = no seek.
+    const { sessionId, sessionDir } = await setupWithSegments(24);
+    rmSync(path.join(sessionDir, "run0", "s000018.m4s"));
+
+    const res = await admin().get(`/playback/sessions/${sessionId}/hls/run0/s000018.m4s`);
+    expect(res.status).toBe(503);
+    expect(
+      await readSeekTargetMs(sessionId),
+      "a first-touch pruned GET restarted the run with zero seek evidence",
+    ).toBeNull();
+  }, 15_000);
+
+  it("gap-F6 round 3: a backward-jump retry whose derived target sits NEAR (but >1 segment from) a later run's origin never restarts again", async () => {
+    // The 8.8s-spacing escape: the first pruned-history relocation
+    // recorded run1 at the target derived for s74 (444_444 here, nominal
+    // durations); a later out-of-order request for s72 derives 432_432 —
+    // 12_012ms away, past the old one-nominal-segment (6_006ms) tolerance,
+    // and the session restarted AGAIN (live: run2/run3 origins 8_810ms
+    // apart, 0.8s after each other). Adjacency within a few segments of an
+    // already-performed relocation is a stale/racing derivation, never a
+    // fresh user intention.
+    const { sessionId, sessionDir } = await createSimulatedTranscodeSession();
+    await recordRuns(sessionId, [
+      { runIndex: 0, startSegment: 0, sourceOriginMs: 0 },
+      { runIndex: 1, startSegment: 96, sourceOriginMs: 444_444 },
+    ]);
+    const run0Survivors: ServedRun = { runDirName: "run0", segments: Array.from({ length: 20 }, (_, i) => ({ index: 76 + i, durationMs: 6006 })) };
+    const run1: ServedRun = { runDirName: "run1", segments: Array.from({ length: 15 }, (_, i) => ({ index: 96 + i, durationMs: 6006 })) };
+    writeRunSegmentFiles(sessionDir, run0Survivors);
+    writeRunSegmentFiles(sessionDir, run1);
+    writeServedPlaylist(sessionDir, [run0Survivors, run1]);
+    await markSessionActiveWithProducedSegment(sessionId, sessionDir, 110);
+
+    // Progression high (a served run1 segment), then the out-of-order
+    // backward retry for pruned run0 history.
+    const served = await admin().get(`/playback/sessions/${sessionId}/hls/run1/s000100.m4s`);
+    expect(served.status).toBe(200);
+    const res = await admin().get(`/playback/sessions/${sessionId}/hls/run0/s000072.m4s`);
+    expect(res.status).toBe(503);
+    expect(
+      await readSeekTargetMs(sessionId),
+      "a near-miss derived target (12_012ms from run1's origin) restarted the run AGAIN — the 8.8s-spacing churn",
+    ).toBeNull();
+  }, 15_000);
+
+  it("gap-F6 round 3: a GENUINE backward jump far from every recorded origin still restarts (the recovery path survives the new guards)", async () => {
+    const { sessionId, sessionDir } = await createSimulatedTranscodeSession();
+    await recordRuns(sessionId, [
+      { runIndex: 0, startSegment: 0, sourceOriginMs: 0 },
+      { runIndex: 1, startSegment: 96, sourceOriginMs: 444_444 },
+    ]);
+    const run0Survivors: ServedRun = { runDirName: "run0", segments: Array.from({ length: 20 }, (_, i) => ({ index: 76 + i, durationMs: 6006 })) };
+    const run1: ServedRun = { runDirName: "run1", segments: Array.from({ length: 15 }, (_, i) => ({ index: 96 + i, durationMs: 6006 })) };
+    writeRunSegmentFiles(sessionDir, run0Survivors);
+    writeRunSegmentFiles(sessionDir, run1);
+    writeServedPlaylist(sessionDir, [run0Survivors, run1]);
+    await markSessionActiveWithProducedSegment(sessionId, sessionDir, 110);
+
+    const served = await admin().get(`/playback/sessions/${sessionId}/hls/run1/s000100.m4s`);
+    expect(served.status).toBe(200);
+    // s000020: 80 segments below the progression, target ~120s — nowhere
+    // near either origin. A native client's real backward seek.
+    const res = await admin().get(`/playback/sessions/${sessionId}/hls/run0/s000020.m4s`);
+    expect(res.status).toBe(503);
+    const target = await readSeekTargetMs(sessionId);
+    expect(target, "the genuine backward-seek recovery was suppressed by the round-3 guards").not.toBeNull();
+    expect(target).toBeLessThan(200_000);
+  }, 15_000);
+
+  it("a BACKWARD jump to a pruned segment (BIND part (b), with round-3 backward-jump evidence) -> 503 + seek requested", async () => {
+    // gap-F6 round 3: the ENOENT-behind restart now requires backward-jump
+    // evidence — an index more than the hysteresis below the session's own
+    // recorded progression. Establish the progression first (a served GET
+    // high in the window), then jump back to a pruned index.
+    const { sessionId, sessionDir } = await setupWithSegments(24);
+    const served = await admin().get(`/playback/sessions/${sessionId}/hls/run0/s000024.m4s`);
+    expect(served.status).toBe(200);
+    rmSync(path.join(sessionDir, "run0", "s000003.m4s"));
 
     const res = await admin().get(`/playback/sessions/${sessionId}/hls/run0/s000003.m4s`);
     expect(res.status).toBe(503);
@@ -784,7 +888,11 @@ describe("GET /playback/sessions/{id}/hls/{file} — segment/init serving", () =
 
     // ── SEEK 3: into run 2, the BACKWARD-seek run — the ordering pin ────
     // Segment 25 is listed but not on disk (the worker rewrote the playlist
-    // before the segment was flushed): the ENOENT path again.
+    // before the segment was flushed): the ENOENT path again. Round 3:
+    // re-establish forward progression above the target first (SEEK 2 left
+    // requested_segment at 2), so this reads as a genuine backward jump.
+    const progressed = await admin().get(`/playback/sessions/${sessionId}/hls/run2/s000029.m4s`);
+    expect(progressed.status).toBe(200);
     rmSync(path.join(sessionDir, "run2", "s000025.m4s"));
     const midRun = await admin().get(`/playback/sessions/${sessionId}/hls/run2/s000025.m4s`);
     expect(midRun.status).toBe(503);
@@ -826,6 +934,10 @@ describe("GET /playback/sessions/{id}/hls/{file} — segment/init serving", () =
     await markSessionActiveWithProducedSegment(sessionId, sessionDir, 9);
 
     // ── SEEK 1 (backward, into the pruned window) ──────────────────────
+    // Round 3: establish the forward progression first so the pruned-head
+    // GET carries backward-jump evidence.
+    const progressed = await admin().get(`/playback/sessions/${sessionId}/hls/run0/s000009.m4s`);
+    expect(progressed.status).toBe(200);
     const backward = await admin().get(`/playback/sessions/${sessionId}/hls/run0/s000001.m4s`);
     expect(backward.status).toBe(503);
     // mean = 9_009 ms, so index 1 is 9_009 ms in — not 6_000.

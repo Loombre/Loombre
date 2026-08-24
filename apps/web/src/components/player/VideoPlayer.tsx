@@ -52,6 +52,7 @@ import {
   armLandingWatch,
   bufferedRangesToSource,
   findLandingFragment,
+  findRelocatedLandingStart,
   hasSourceClock,
   HARD_SEEK_LANDING_TIMEOUT_MS,
   isLandingResumeEvidence,
@@ -965,28 +966,68 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
         const frags = listedFragments();
         if (!frags) return;
         const landing = findLandingFragment(frags, watch);
-        if (!landing) return;
+        // gap-F6 round 3, second acceptance: the seek-spawned run exists
+        // but already retention-pruned PAST the target (a fast-completing
+        // file races to ENDLIST in ~1s) — land at its earliest SURVIVING
+        // fragment, at that fragment's OWN source position, instead of
+        // freezing into the 20 s timeout (findRelocatedLandingStart's
+        // doc comment; the live Start-over-on-the-short shape).
+        const relocated = landing === null ? findRelocatedLandingStart(frags, watch) : null;
+        const landedAt = landing ?? relocated;
+        if (landedAt !== null) {
+          // The exact-match landing resumes at the CLAMPED target; the
+          // relocated landing resumes at the closest surviving position —
+          // its fragment's own PDT (non-null by both finders' contracts).
+          const targetMs = landing !== null ? watch.clampedTargetMs : (landedAt.programDateTimeMs ?? watch.clampedTargetMs);
+          // browser-player-F4: the fragment match ends run DISCOVERY only,
+          // never the seek. Stop the watch and the nudge (a nudge past this
+          // point aborts the very fragment loads the landing needs), but the
+          // 20 s lifecycle timer and the relocating pin both SURVIVE the
+          // landing: the seek is over when the landed position is actually
+          // displayable (resume evidence in the event-wiring effect) or when
+          // the timeout toasts — an at-EOF run with nothing displayable in
+          // it used to consume the timer here and wedge the player forever.
+          landingWatchRef.current = null;
+          if (nudgeStopRef.current) {
+            nudgeStopRef.current();
+            nudgeStopRef.current = null;
+          }
+          landedAwaitingResumeRef.current = { startSec: landedAt.startSec, targetMs };
+          // browser-player-F6: the landing names the seek-spawned run and
+          // its origin — from here the source mapping is AUTHORITATIVE: the
+          // landed fragment's own PDT anchors the displayed clock and its
+          // run index invalidates every pre-seek window (lib/source-clock.ts).
+          sourceClockRef.current = anchorAtLanding(sourceClockRef.current, landedAt);
+          video.currentTime = landedAt.startSec;
+          positionRef.current = targetMs;
+          setPositionMs(targetMs);
+          heartbeatRef.current?.flushNow();
+          return;
+        }
+        // gap-F6 round 3, third acceptance — the ABSORBED 202
+        // (NEW_FINDINGS A13): the server absorbed the seek into the
+        // CURRENT run (target just ahead of the produced edge, or a
+        // Start-over the run still covers) — no new run will EVER appear,
+        // and the moment the window LISTS the target is the landing: seek
+        // the element there and let the ordinary resume-evidence half
+        // finish the lifecycle ("landed when the element seeks"). Safe
+        // against false fires: a hard classification means the target was
+        // NOT listed at seek time, and a sliding window only ever adds
+        // coverage the current run just produced.
+        const softSec = sourceToPresentationSec(frags, watch.clampedTargetMs);
+        if (softSec === null) return;
         const targetMs = watch.clampedTargetMs;
-        // browser-player-F4: the fragment match ends run DISCOVERY only,
-        // never the seek. Stop the watch and the nudge (a nudge past this
-        // point aborts the very fragment loads the landing needs), but the
-        // 20 s lifecycle timer and the relocating pin both SURVIVE the
-        // landing: the seek is over when the landed position is actually
-        // displayable (resume evidence in the event-wiring effect) or when
-        // the timeout toasts — an at-EOF run with nothing displayable in
-        // it used to consume the timer here and wedge the player forever.
         landingWatchRef.current = null;
         if (nudgeStopRef.current) {
           nudgeStopRef.current();
           nudgeStopRef.current = null;
         }
-        landedAwaitingResumeRef.current = { startSec: landing.startSec, targetMs };
-        // browser-player-F6: the landing names the seek-spawned run and
-        // its origin — from here the source mapping is AUTHORITATIVE: the
-        // landed fragment's own PDT anchors the displayed clock and its
-        // run index invalidates every pre-seek window (lib/source-clock.ts).
-        sourceClockRef.current = anchorAtLanding(sourceClockRef.current, landing);
-        video.currentTime = landing.startSec;
+        landedAwaitingResumeRef.current = { startSec: softSec, targetMs };
+        // An in-window landing is an exact axis pair the CURRENT run
+        // serves — an explicit-position anchor, not a new-run landing
+        // (the run floor must not move: no restart happened).
+        sourceClockRef.current = anchorAtExplicitPosition(sourceClockRef.current, softSec, targetMs);
+        video.currentTime = softSec;
         positionRef.current = targetMs;
         setPositionMs(targetMs);
         heartbeatRef.current?.flushNow();
@@ -1342,6 +1383,18 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
         setDurationMs(candidateMs);
         return;
       }
+      // gap-F6 round 3: once this HLS session has shown the V8 SOURCE
+      // clock, the element's duration is the served playlist's cumulative
+      // PRESENTATION extent — the wrong axis for a source-axis scrubber by
+      // construction. A restarted run re-encoding tail content pushes that
+      // extent PAST the real file duration (live: 9:34 -> 11:19 -> 18:18
+      // as churn appended runs) and growth-only adoption took it, so the
+      // timeline ceiling and every written duration_ms inflated. The
+      // probed session duration governs; growth adoption survives only
+      // for the pre-source-clock shapes it was built for (a pre-V8
+      // server's event playlist extending; metadata beating a stale
+      // probe on the presentation axis, where the axes coincide).
+      if (sourceClockRef.current.sawSourceClock) return;
       if (durationRef.current === null || candidateMs > durationRef.current) {
         durationRef.current = candidateMs;
         setDurationMs(candidateMs);

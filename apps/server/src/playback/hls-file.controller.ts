@@ -34,9 +34,9 @@
 // — a 404 fatals the fragment immediately, while 503 keeps the client
 // polling until its playlist refresh shows the new run.
 //
-// TWO conditions that look similar but are NOT seeks (gap-F6 — the old
-// >3-lookahead trigger read both as seeks and churned a fresh, untouched
-// session run0→run7, compounding the relocation each time):
+// THREE conditions that look similar but are NOT seeks (gap-F6 — the old
+// >3-lookahead trigger read the first two as seeks and churned a fresh,
+// untouched session run0→run7; the round-3 refutation added the third):
 //   1. NOT-YET-PRODUCED: an index ahead of `produced_segment` but within
 //      the live window. The worker is already producing toward it — the
 //      `updateRequestedSegment` write above un-throttles it — so the
@@ -51,6 +51,22 @@
 //      a request already answered with a restart — recording another seek
 //      for it is exactly the run0→run7 loop. Plain 503, no write; the
 //      client's playlist refresh re-syncs it.
+//   3. PRUNED UNDERFOOT (round 3, live 2026-08-24): an ENOENT at/behind
+//      `produced_segment` that the session's OWN forward progression was
+//      heading toward anyway (index at or above `requested_segment` minus
+//      a small out-of-order hysteresis — or no progression recorded yet).
+//      On a fast-completing copy-shape file the whole encode lands in
+//      under a second and retention prunes the head while the client is
+//      still fetching its FIRST segments; every such GET is the prune
+//      RACING the client, never a backward seek — the old code spawned a
+//      fresh restart per raced index (live: run1 origin 430_084 for s74,
+//      run2 origin 522_896 for s90, 0.8s apart on an untouched mount) and
+//      wedged the session. An implicit ENOENT restart now requires
+//      BACKWARD-JUMP EVIDENCE: an index more than the hysteresis BELOW
+//      the recorded progression. A position a client could reach by
+//      playing forward is never a seek; a real backward seek into pruned
+//      history (necessarily >120s behind the live edge — anything nearer
+//      is still retained on disk) clears the hysteresis by construction.
 // This path stays DEMOTED to defense (native clients, mid-prune races);
 // the primary seek channel is POST /playback/sessions/{id}/seek
 // (sessions.controller.ts), and the web client additionally caps its
@@ -142,6 +158,28 @@ const SEGMENT_DURATION_SEC = 6;
  *  trip an implicit seek. */
 const LIVE_WINDOW_SEGMENTS = 20;
 
+/** gap-F6 round 3: how far BELOW the session's recorded forward
+ *  progression (`requested_segment`) an ENOENT index must sit before it
+ *  counts as backward-jump evidence (module header condition 3). hls.js
+ *  issues parallel/retried fragment loads a segment or two out of order
+ *  (live: s000182 requested after s000184 — 0.8s apart — spawned the
+ *  8.8s-spacing churn pair), so a small backward wobble is progression,
+ *  not a seek. A REAL backward seek that reaches the ENOENT path at all
+ *  targets pruned history — necessarily more than the whole 120s
+ *  retention window behind the live edge, far beyond this hysteresis;
+ *  anything within it is still on disk and never gets here. */
+const BACKWARD_JUMP_HYSTERESIS_SEGMENTS = 3;
+
+/** gap-F6 round 3: how close a derived target may sit to a LATER run's
+ *  recorded `source_origin_ms` and still count as "this relocation was
+ *  already performed". The original one-nominal-segment (6s) tolerance
+ *  only absorbed exact-index retries; neighbouring raced indexes derive
+ *  targets a segment or three apart (live: run2/run3 origins 8_810ms
+ *  apart, spawned 0.8s apart) and each spawned another restart. Three
+ *  nominal segments matches the backward-jump hysteresis above — the
+ *  same "adjacent is a race, distant is intent" boundary on the ms axis. */
+const ALREADY_ANSWERED_TOLERANCE_MS = BACKWARD_JUMP_HYSTERESIS_SEGMENTS * SEGMENT_DURATION_SEC * 1000;
+
 /** 503 details (same problem code for all three — the distinction is
  *  advisory for humans/logs; clients key off 503 + Retry-After alone).
  *  The restart detail must NOT promise the requested URI will appear —
@@ -156,6 +194,8 @@ const STALE_RUN_DETAIL =
   "The requested segment names a superseded run and will never be produced again; re-read the playlist for the current run.";
 const ALREADY_RELOCATED_DETAIL =
   "A restart already relocated this session at the requested position; re-read the playlist for the current run.";
+const PRUNED_UNDERFOOT_DETAIL =
+  "The requested segment was retention-pruned while production raced ahead and will never be produced again; re-read the playlist for the surviving window.";
 
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
@@ -541,7 +581,7 @@ export class PlaybackHlsFileController {
     try {
       sizeBytes = (await stat(absolutePath)).size;
     } catch {
-      // ENOENT. gap-F6 splits this three ways for a real segment index:
+      // ENOENT. gap-F6 splits this four ways for a real segment index:
       //   - AHEAD of produced (necessarily within the live window — the
       //     beyond-window case already returned above): NOT YET PRODUCED.
       //     The worker is producing toward it; plain 503, no seek write.
@@ -549,9 +589,14 @@ export class PlaybackHlsFileController {
       //     of a pre-restart URI (permanently gone by forward-only
       //     numbering) — plain 503, no seek write, or every retry would
       //     restart the run again (the observed churn loop).
-      //   - at/behind produced in the OWNING run: genuinely pruned /
-      //     before run-start — module header's BIND part (b), the one
-      //     ENOENT that IS a seek.
+      //   - at/behind produced in the OWNING run with NO backward-jump
+      //     evidence (module header condition 3): the retention prune
+      //     RACED the client's own forward progression — plain 503, no
+      //     seek write; restarting for it was the round-3 untouched-mount
+      //     churn (runs spawned 0.8s apart with 8.8-92.8s-apart origins).
+      //   - at/behind produced in the OWNING run, reached by a genuine
+      //     BACKWARD jump: pruned history / before run-start — module
+      //     header's BIND part (b), the one ENOENT that IS a seek.
       // For init.mp4 (no index), just ask the client to retry shortly.
       // Either way, one write: a seek folds any switch in with it; the
       // no-seek exits record only the switch.
@@ -564,6 +609,21 @@ export class PlaybackHlsFileController {
         if (await this.isStaleRunRequest(session.id, parsed.runIndex, parsed.segmentIndex)) {
           await recordSwitchOnly();
           this.respondSeekRetry(res, sanitizeInstancePath(req), STALE_RUN_DETAIL);
+          return;
+        }
+        // `session` was read BEFORE this request's own
+        // `updateRequestedSegment` write above, so `requestedSegment` here
+        // is the PREVIOUS progression — exactly the baseline the
+        // backward-jump test needs. No progression at all (a session's
+        // very first indexed GET — live: hls.js's live-sync start s74 on a
+        // completely untouched mount) carries no backward intent either.
+        const previousRequested = session.requestedSegment;
+        if (
+          previousRequested === null ||
+          parsed.segmentIndex >= previousRequested - BACKWARD_JUMP_HYSTERESIS_SEGMENTS
+        ) {
+          await recordSwitchOnly();
+          this.respondSeekRetry(res, sanitizeInstancePath(req), PRUNED_UNDERFOOT_DETAIL);
           return;
         }
         const targetMs = await this.resolveSeekTargetMs(ctx, session, parsed.segmentIndex);
@@ -779,15 +839,17 @@ export class PlaybackHlsFileController {
   }
 
   /**
-   * gap-F6: was this exact relocation already performed? True when a run
-   * with `start_segment > segmentIndex` (i.e. spawned AFTER the requested
-   * index was left behind) sits within one nominal segment of the derived
-   * target — which is precisely what the first seek for this index
-   * recorded as that run's `source_origin_ms`. The tolerance absorbs the
-   * derivation drift between "derived against N runs" and "derived
-   * against N+1 runs" (~real-vs-mean duration error, well under one
-   * segment). Fails OPEN (`false`) on any read error — a degraded read
-   * must never suppress the seek-restart recovery path.
+   * gap-F6: was this relocation already performed? True when a run with
+   * `start_segment > segmentIndex` (i.e. spawned AFTER the requested
+   * index was left behind) sits within `ALREADY_ANSWERED_TOLERANCE_MS` of
+   * the derived target — which is (within a few raced segments) what the
+   * first seek for this REGION recorded as that run's `source_origin_ms`.
+   * Round 3 widened the tolerance from one nominal segment to three: the
+   * original bound only absorbed exact-index retries, while the observed
+   * escape was NEIGHBOURING raced indexes deriving targets 8_810ms apart
+   * and restarting once each (see ALREADY_ANSWERED_TOLERANCE_MS). Fails
+   * OPEN (`false`) on any read error — a degraded read must never
+   * suppress the seek-restart recovery path.
    */
   private async isAlreadyAnsweredByRestart(sessionId: string, segmentIndex: number, targetMs: number): Promise<boolean> {
     let runs: RunAnchor[];
@@ -797,7 +859,7 @@ export class PlaybackHlsFileController {
       return false;
     }
     return runs.some(
-      (run) => run.startSegment > segmentIndex && Math.abs(run.sourceOriginMs - targetMs) <= SEGMENT_DURATION_SEC * 1000,
+      (run) => run.startSegment > segmentIndex && Math.abs(run.sourceOriginMs - targetMs) <= ALREADY_ANSWERED_TOLERANCE_MS,
     );
   }
 
