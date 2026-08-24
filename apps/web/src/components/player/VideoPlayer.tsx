@@ -44,6 +44,7 @@ import { clientPlaybackErrorReasons, resolveUnavailableReasons } from "../../lib
 import { findPlayableFallback, decisionLabel, type FallbackCandidate } from "../../lib/playback-fallback.js";
 import { findProgressForItem, isWorthResuming } from "../../lib/progress-lookup.js";
 import { HeartbeatScheduler, type HeartbeatSnapshot, type ProgressState } from "../../lib/heartbeat.js";
+import { isRealPlaybackAdvancement, isSourceContinuous } from "../../lib/watched-progress.js";
 import { reportProgressOnUnload } from "../../lib/progress-report.js";
 import { apiGet, apiPost, apiPut } from "../../lib/api-client.js";
 import {
@@ -214,6 +215,27 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
   const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const heartbeatRef = useRef<HeartbeatScheduler | null>(null);
   const positionRef = useRef(0);
+  // gap-F6: the WATCHED position — the last source-ms position backed by
+  // real playback advancement (lib/watched-progress.ts's predicate over
+  // consecutive timeupdate samples) or by an explicit user seek. It is the
+  // ONLY position /progress writes ever report; `positionRef` (above)
+  // stays the DISPLAYED position and legitimately tracks the mapped
+  // element position at all times. `null` = nothing watched yet — every
+  // progress write (heartbeat, pause/seek flush, unmount/pagehide flush)
+  // is suppressed, so a session that never really played (e.g. the
+  // run0→run7 self-relocation wedge, where presentation 0 mapped through
+  // a relocated PDT origin to source ~7:31) writes NOTHING.
+  const watchedPositionRef = useRef<number | null>(null);
+  /** The previous `timeupdate` presentation-seconds sample — the baseline
+   *  the advancement predicate compares against. */
+  const advancementProbeSecRef = useRef<number | null>(null);
+  /** gap-F6: where this mount INTENDS playback to start on the source axis
+   *  (deep-link ?t= offset or 0; a chosen resume point re-anchors through
+   *  watchedPositionRef in handleResume) — the bootstrap anchor for the
+   *  source-continuity half of the watched-position gate, so the very
+   *  first accepted advancement must be near where the viewer actually
+   *  started, never near a relocated origin. */
+  const intendedStartMsRef = useRef<number>(startMs ?? 0);
   const durationRef = useRef<number | null>(null);
   // Opus review Finding F (2026-08-10): the event-wiring effect below
   // (`adoptElementDuration`) needs "is this session direct-play"
@@ -1091,12 +1113,17 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
   useEffect(() => {
     if (!session) return;
     heartbeatRef.current = new HeartbeatScheduler({
+      // gap-F6: the snapshot reports the WATCHED position, never the
+      // displayed one — a relocated origin must not become progress.
       getSnapshot: (): HeartbeatSnapshot => ({
-        positionMs: positionRef.current,
+        positionMs: watchedPositionRef.current ?? 0,
         durationMs: durationRef.current,
         state: progressStateRef.current,
       }),
       send: (snapshot) => {
+        // gap-F6: nothing was ever really watched (no advancement, no
+        // user seek) — write NOTHING, not a phantom row.
+        if (watchedPositionRef.current === null) return;
         void apiPut("/progress/{itemId}", {
           params: { path: { itemId } },
           body: {
@@ -1125,10 +1152,14 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
   flushProgressRef.current = (): void => {
     // Nothing ever played (abandoned load, or a fallback re-session that
     // never started) — a zero-position row would be a lie, not a save.
-    if (!session || positionRef.current <= 0) return;
+    // gap-F6: "played" means the WATCHED position — real advancement or an
+    // explicit user seek — never the displayed one, which can be a
+    // relocated origin the viewer never saw a frame of.
+    const watched = watchedPositionRef.current;
+    if (!session || watched === null || watched <= 0) return;
     reportProgressOnUnload(
       { serverUrl, itemId, sessionId: session.id },
-      { positionMs: positionRef.current, durationMs: durationRef.current, state: progressStateRef.current },
+      { positionMs: watched, durationMs: durationRef.current, state: progressStateRef.current },
     );
   };
 
@@ -1169,6 +1200,12 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
     };
     const onTimeUpdate = (): void => {
       maybeCompleteLanding();
+      // gap-F6: consecutive-sample advancement probe. The baseline updates
+      // on EVERY timeupdate (a jump both resets the baseline and is itself
+      // rejected as advancement), including while relocating, so stale
+      // pre-relocation baselines can never pair with post-landing samples.
+      const previousProbeSec = advancementProbeSecRef.current;
+      advancementProbeSecRef.current = video.currentTime;
       // V8 (§9.1.9): while relocating, the display stays frozen at the
       // hard-seek target — the element's own position is meaningless until
       // the landing completes (run discovered AND displayable).
@@ -1176,13 +1213,20 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
       // Displayed position is PDT-derived SOURCE time when the source
       // clock exists; raw presentation otherwise (direct-play; pre-V8
       // server) — where the two axes coincide anyway. positionRef then
-      // feeds the heartbeat, so reported positionMs is source-derived too.
+      // feeds the scrubber; the heartbeat reads watchedPositionRef, which
+      // only real advancement (here) or an explicit user seek may set.
       const frags = listedFragments();
       const withClock = frags !== null && hasSourceClock(frags);
       const sourceMs = withClock ? presentationToSourceMs(frags, video.currentTime) : null;
       const ms = sourceMs ?? video.currentTime * 1000;
       positionRef.current = ms;
       setPositionMs(ms);
+      if (
+        isRealPlaybackAdvancement(previousProbeSec, video.currentTime, video.readyState, video.paused) &&
+        isSourceContinuous(watchedPositionRef.current, ms, intendedStartMsRef.current)
+      ) {
+        watchedPositionRef.current = ms;
+      }
       const rawBuffered = readBuffered(video);
       setBuffered(withClock ? bufferedRangesToSource(frags, rawBuffered) : rawBuffered);
     };
@@ -1387,6 +1431,10 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
           relocatingRef.current = { targetMs: clamped };
           setRelocating({ targetMs: clamped });
           positionRef.current = clamped;
+          // gap-F6: a HARD seek is explicit user intent too — the clamped
+          // 202 target is the viewer's chosen resume point even if they
+          // pause/leave before the landing completes.
+          watchedPositionRef.current = clamped;
           setPositionMs(clamped);
           if (landingTimerRef.current) clearTimeout(landingTimerRef.current);
           landingTimerRef.current = setTimeout(() => {
@@ -1479,6 +1527,7 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
           clearLandingWatch();
           video.currentTime = presentationSec;
           positionRef.current = ms;
+          watchedPositionRef.current = ms; // gap-F6: explicit user intent
           setPositionMs(ms);
           heartbeatRef.current?.flushNow();
           return;
@@ -1497,6 +1546,7 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
             clearLandingWatch();
             video.currentTime = presentationSec;
             positionRef.current = ms;
+            watchedPositionRef.current = ms; // gap-F6: explicit user intent
             setPositionMs(ms);
             heartbeatRef.current?.flushNow();
             return;
@@ -1510,6 +1560,7 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
       // bare assignment is exactly right.
       video.currentTime = Math.max(0, ms / 1000);
       positionRef.current = ms;
+      watchedPositionRef.current = ms; // gap-F6: explicit user intent
       setPositionMs(ms);
       heartbeatRef.current?.flushNow();
     },
@@ -1615,6 +1666,11 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
     if (videoRef.current && resumeCandidateMs !== null) {
       videoRef.current.currentTime = resumeCandidateMs / 1000;
     }
+    // gap-F6: choosing Resume IS choosing that position — record it as the
+    // watched anchor so post-resume advancement passes source continuity
+    // (and a resume-then-leave keeps reporting the same resume point, as
+    // it always did).
+    if (resumeCandidateMs !== null) watchedPositionRef.current = resumeCandidateMs;
     pendingSeekMsRef.current = resumeCandidateMs;
     setAwaitingResumeChoice(false);
     void videoRef.current?.play().catch(() => undefined);

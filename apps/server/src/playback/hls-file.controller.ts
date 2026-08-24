@@ -19,25 +19,42 @@
 // controller re-joins with "/" before validating against the strict
 // filename pattern below.
 //
-// SEEK BIND (reported, docs/PLAYBACK.md §9's "outside produced range"
-// language does not by itself define "outside" precisely for a segment
-// GET): a requested segment index is treated as outside the produced
-// window when EITHER (a) it is more than SEEK_LOOKAHEAD_SEGMENTS ahead of
-// `produced_segment` (an explicit forward-seek/ABR-jump), OR (b) the file
-// simply does not exist on disk yet (ENOENT) despite passing check (a) —
-// covering "before the current run's start" (a segment from a run that
-// hasn't been (re)started at that number yet, or one already pruned by
-// retention, apps/worker/src/transcode/playlist.ts's `pruneRetention`).
-// Either condition calls `requestSeek` (packages/db's seam-contract
-// function, already implemented by Lane A) and responds 503 + Retry-After
-// (hls.js-compatible: it already retries a 503 GET), never 404 — a 404
-// fatals the fragment immediately, while 503 keeps the client polling
-// until its playlist refresh shows the new run. NOTE (V8, D-B): the
-// requested URI itself NEVER comes back — forward-only numbering means the
-// restarted run writes `run{N+1}/` at `produced + 1` and higher, so the
-// retried filename is permanently gone. This path is DEMOTED to defense
-// (native clients, mid-prune races); the primary seek channel is
-// POST /playback/sessions/{id}/seek (sessions.controller.ts).
+// SEEK BIND (reported; re-bound by gap-F6, QA 2026-08-20/21 — docs/
+// PLAYBACK.md §9's "outside produced range" language does not by itself
+// define "outside" precisely for a segment GET): a requested segment
+// index is treated as outside the produced window when EITHER (a) it is
+// more than LIVE_WINDOW_SEGMENTS ahead of `produced_segment` — a full
+// 120s retention window (the same window that bounds what exists BEHIND
+// the live edge bounds what "in reach" means ahead of it) — OR (b) the
+// file does not exist on disk (ENOENT) at an index AT OR BEHIND
+// `produced_segment`, covering "before the current run's start" (a run
+// that never reached that number) and retention-pruned history
+// (apps/worker/src/transcode/playlist.ts's `pruneRetention`). Either
+// condition calls `requestSeek` and responds 503 + Retry-After, never 404
+// — a 404 fatals the fragment immediately, while 503 keeps the client
+// polling until its playlist refresh shows the new run.
+//
+// TWO conditions that look similar but are NOT seeks (gap-F6 — the old
+// >3-lookahead trigger read both as seeks and churned a fresh, untouched
+// session run0→run7, compounding the relocation each time):
+//   1. NOT-YET-PRODUCED: an index ahead of `produced_segment` but within
+//      the live window. The worker is already producing toward it — the
+//      `updateRequestedSegment` write above un-throttles it — so the
+//      answer is a plain 503 + Retry-After with NO seek write; the URI
+//      will genuinely exist shortly. hls.js's ordinary forward-buffering
+//      lands here, and restarting the run for it is pure churn.
+//   2. STALE-RUN RETRY: a URI whose `runN/` prefix names a run OLDER than
+//      the run that OWNS that segment index now (`getTranscodeRunForSegment`
+//      — ownership follows `start_segment`). Forward-only numbering means
+//      a post-restart run writes `run{N+1}/` at `produced + 1` and higher,
+//      so a pre-restart URI is permanently gone AND can only be a retry of
+//      a request already answered with a restart — recording another seek
+//      for it is exactly the run0→run7 loop. Plain 503, no write; the
+//      client's playlist refresh re-syncs it.
+// This path stays DEMOTED to defense (native clients, mid-prune races);
+// the primary seek channel is POST /playback/sessions/{id}/seek
+// (sessions.controller.ts), and the web client additionally caps its
+// forward buffer inside the live window (apps/web/src/lib/hls-js-config.ts).
 //
 // SEEK-TARGET DERIVATION (docs/PLAYBACK.md §9 "Seek", C3): the millisecond
 // value handed to `requestSeek` is derived from the REAL durations the
@@ -79,6 +96,7 @@ import {
   getMediaInfoAssembly,
   getPlaybackSessionForUser,
   getTranscodeRunForSegment,
+  listTranscodeRuns,
   requestRungSwitch,
   requestSeek,
   requestSeekWithRungSwitch,
@@ -115,7 +133,29 @@ import { storedDecision, storedLadder } from "./stored-plan-facts.js";
 const MANIFEST_POLL_TIMEOUT_MS = 8_000;
 const MANIFEST_POLL_INTERVAL_MS = 250;
 const SEGMENT_DURATION_SEC = 6;
-const SEEK_LOOKAHEAD_SEGMENTS = 3;
+/** gap-F6: the implicit-seek threshold — one full live window ahead of
+ *  `produced_segment` (worker `SEGMENT_RETENTION_SEC` 120s / 6s segments).
+ *  Anything within it is "not yet produced, but in reach": the worker is
+ *  producing toward it and a restart would be churn. It deliberately sits
+ *  ABOVE the web client's forward-buffer ceiling (90s = 15 segments,
+ *  apps/web/src/lib/hls-js-config.ts), so ordinary buffering can never
+ *  trip an implicit seek. */
+const LIVE_WINDOW_SEGMENTS = 20;
+
+/** 503 details (same problem code for all three — the distinction is
+ *  advisory for humans/logs; clients key off 503 + Retry-After alone).
+ *  The restart detail must NOT promise the requested URI will appear —
+ *  forward-only numbering guarantees the retried filename never exists
+ *  again (docs/PLAYBACK.md §9). The not-yet-produced detail MAY promise
+ *  it: no restart happened, and the current run's numbering is heading
+ *  straight for it. */
+const SEEK_RESTART_DETAIL =
+  "The requested segment is outside the produced window; a restart has been requested — re-read the playlist for the new run.";
+const NOT_YET_PRODUCED_DETAIL = "The requested segment has not been produced yet; retry shortly.";
+const STALE_RUN_DETAIL =
+  "The requested segment names a superseded run and will never be produced again; re-read the playlist for the current run.";
+const ALREADY_RELOCATED_DETAIL =
+  "A restart already relocated this session at the requested position; re-read the playlist for the current run.";
 
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
@@ -466,15 +506,26 @@ export class PlaybackHlsFileController {
     // Seek detection (module header's BIND) — checked BEFORE ever
     // touching the filesystem for a numeric segment index (init.mp4 has
     // no index to seek to; a missing init.mp4 falls through to the plain
-    // ENOENT->503 path below instead).
-    if (parsed.segmentIndex !== undefined) {
-      const ahead = session.producedSegment === null ? Number.POSITIVE_INFINITY : parsed.segmentIndex - session.producedSegment;
-      if (ahead > SEEK_LOOKAHEAD_SEGMENTS) {
-        const targetMs = await this.resolveSeekTargetMs(ctx, session, parsed.segmentIndex);
-        await recordSeek(targetMs);
-        this.respondSeekRetry(res, sanitizeInstancePath(req));
+    // ENOENT->503 path below instead). gap-F6: only a request GENUINELY
+    // out of the live window may restart, and never one naming a
+    // superseded run (a stale retry of a request already answered with a
+    // restart — the run0→run7 churn loop).
+    const aheadOfProduced =
+      parsed.segmentIndex === undefined
+        ? null
+        : session.producedSegment === null
+          ? Number.POSITIVE_INFINITY
+          : parsed.segmentIndex - session.producedSegment;
+    if (parsed.segmentIndex !== undefined && aheadOfProduced !== null && aheadOfProduced > LIVE_WINDOW_SEGMENTS) {
+      if (await this.isStaleRunRequest(session.id, parsed.runIndex, parsed.segmentIndex)) {
+        await recordSwitchOnly();
+        this.respondSeekRetry(res, sanitizeInstancePath(req), STALE_RUN_DETAIL);
         return;
       }
+      const targetMs = await this.resolveSeekTargetMs(ctx, session, parsed.segmentIndex);
+      await recordSeek(targetMs);
+      this.respondSeekRetry(res, sanitizeInstancePath(req), SEEK_RESTART_DETAIL);
+      return;
     }
 
     // The PREFIX-STRIPPED path — the on-disk layout has no `v{K}` level,
@@ -490,18 +541,52 @@ export class PlaybackHlsFileController {
     try {
       sizeBytes = (await stat(absolutePath)).size;
     } catch {
-      // "Before run-start" / already-pruned — module header's BIND part
-      // (b): also a seek-worthy condition for a real segment index; for
-      // init.mp4 (no index), just ask the client to retry shortly. Either
-      // way, one write: the seek folds any switch in with it, and without
-      // an index there is only the switch to record.
-      if (parsed.segmentIndex !== undefined) {
+      // ENOENT. gap-F6 splits this three ways for a real segment index:
+      //   - AHEAD of produced (necessarily within the live window — the
+      //     beyond-window case already returned above): NOT YET PRODUCED.
+      //     The worker is producing toward it; plain 503, no seek write.
+      //   - at/behind produced but naming a SUPERSEDED run: a stale retry
+      //     of a pre-restart URI (permanently gone by forward-only
+      //     numbering) — plain 503, no seek write, or every retry would
+      //     restart the run again (the observed churn loop).
+      //   - at/behind produced in the OWNING run: genuinely pruned /
+      //     before run-start — module header's BIND part (b), the one
+      //     ENOENT that IS a seek.
+      // For init.mp4 (no index), just ask the client to retry shortly.
+      // Either way, one write: a seek folds any switch in with it; the
+      // no-seek exits record only the switch.
+      if (parsed.segmentIndex !== undefined && aheadOfProduced !== null) {
+        if (aheadOfProduced > 0) {
+          await recordSwitchOnly();
+          this.respondSeekRetry(res, sanitizeInstancePath(req), NOT_YET_PRODUCED_DETAIL);
+          return;
+        }
+        if (await this.isStaleRunRequest(session.id, parsed.runIndex, parsed.segmentIndex)) {
+          await recordSwitchOnly();
+          this.respondSeekRetry(res, sanitizeInstancePath(req), STALE_RUN_DETAIL);
+          return;
+        }
         const targetMs = await this.resolveSeekTargetMs(ctx, session, parsed.segmentIndex);
+        // gap-F6, second churn arm (observed live on a fast-completing
+        // file whose head retention pruned within seconds): the FIRST GET
+        // of a pruned index legitimately relocates, but the stale-run
+        // guard cannot catch its retries — the pruned index is still
+        // OWNED by the old run (the restart continued numbering far past
+        // it). A later run already sitting at the derived target IS the
+        // answer to this exact request: recording another seek would
+        // restart the run once per retry, re-encoding the same tail
+        // forever (runs 2..7 sharing one origin in the live repro).
+        if (await this.isAlreadyAnsweredByRestart(session.id, parsed.segmentIndex, targetMs)) {
+          await recordSwitchOnly();
+          this.respondSeekRetry(res, sanitizeInstancePath(req), ALREADY_RELOCATED_DETAIL);
+          return;
+        }
         await recordSeek(targetMs);
-      } else {
-        await recordSwitchOnly();
+        this.respondSeekRetry(res, sanitizeInstancePath(req), SEEK_RESTART_DETAIL);
+        return;
       }
-      this.respondSeekRetry(res, sanitizeInstancePath(req));
+      await recordSwitchOnly();
+      this.respondSeekRetry(res, sanitizeInstancePath(req), NOT_YET_PRODUCED_DETAIL);
       return;
     }
 
@@ -669,7 +754,54 @@ export class PlaybackHlsFileController {
     return clampSeekTargetToPlayableMs(derivedMs, durationMs);
   }
 
-  private respondSeekRetry(res: Response, instance: string): void {
+  /**
+   * gap-F6: is this URI a retry of a PRE-RESTART request? True when the
+   * `runN/` prefix names a run strictly OLDER than the run that owns the
+   * segment index now (`getTranscodeRunForSegment` — ownership follows
+   * `start_segment`, the only monotonic key). A current playlist can never
+   * produce such a URI, and forward-only numbering guarantees the file can
+   * never exist — so it is never a NEW client intention, and recording a
+   * seek for it would restart the run once per retry (the churn loop).
+   *
+   * Fails OPEN (`false`, i.e. "not stale") on a missing run map or a read
+   * error: a session with no recorded runs cannot have a superseded one,
+   * and a degraded read must never suppress the seek-restart recovery path
+   * for a genuinely out-of-window client.
+   */
+  private async isStaleRunRequest(sessionId: string, uriRunIndex: number, segmentIndex: number): Promise<boolean> {
+    let owningRun: RunAnchor | undefined;
+    try {
+      owningRun = await getTranscodeRunForSegment(this.dbProvider.db, sessionId, segmentIndex);
+    } catch {
+      return false;
+    }
+    return owningRun !== undefined && uriRunIndex < owningRun.runIndex;
+  }
+
+  /**
+   * gap-F6: was this exact relocation already performed? True when a run
+   * with `start_segment > segmentIndex` (i.e. spawned AFTER the requested
+   * index was left behind) sits within one nominal segment of the derived
+   * target — which is precisely what the first seek for this index
+   * recorded as that run's `source_origin_ms`. The tolerance absorbs the
+   * derivation drift between "derived against N runs" and "derived
+   * against N+1 runs" (~real-vs-mean duration error, well under one
+   * segment). Fails OPEN (`false`) on any read error — a degraded read
+   * must never suppress the seek-restart recovery path.
+   */
+  private async isAlreadyAnsweredByRestart(sessionId: string, segmentIndex: number, targetMs: number): Promise<boolean> {
+    let runs: RunAnchor[];
+    try {
+      runs = await listTranscodeRuns(this.dbProvider.db, sessionId);
+    } catch {
+      return false;
+    }
+    return runs.some(
+      (run) => run.startSegment > segmentIndex && Math.abs(run.sourceOriginMs - targetMs) <= SEGMENT_DURATION_SEC * 1000,
+    );
+  }
+
+  private respondSeekRetry(res: Response, instance: string, detail: string): void {
     res.status(503);
     res.setHeader("Retry-After", "1");
     res.setHeader("Content-Type", "application/problem+json");
@@ -677,8 +809,7 @@ export class PlaybackHlsFileController {
       type: "urn:loombre:problem:hls-segment-not-ready",
       title: "HLS segment not ready",
       status: 503,
-      detail:
-        "The requested segment is outside the produced window; a restart has been requested — re-read the playlist for the new run.",
+      detail,
       instance,
       code: "hls-segment-not-ready",
     });

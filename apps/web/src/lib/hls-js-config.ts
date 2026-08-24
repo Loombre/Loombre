@@ -66,6 +66,12 @@ export interface HlsJsConfigLike {
   startPosition: number;
   /** Index into hls.js's own level list. See `resolveStartLevel`. */
   startLevel: number;
+  /** Seconds of forward buffer hls.js targets. See the gap-F6 note on
+   *  `FORWARD_BUFFER_TARGET_SEC`. */
+  maxBufferLength: number;
+  /** Seconds — the hard ceiling the target may grow to. See the gap-F6
+   *  note on `FORWARD_BUFFER_CEILING_SEC`. */
+  maxMaxBufferLength: number;
   xhrSetup: (xhr: XMLHttpRequest, url: string) => Promise<void>;
 }
 
@@ -113,6 +119,28 @@ export function resolveStartLevel(ladder: readonly StartLevelRung[]): number {
   const sorted = [...ladder].sort((a, b) => bandwidth(a) - bandwidth(b));
   return sorted.indexOf(top);
 }
+
+/**
+ * FORWARD-BUFFER CAPS (gap-F6, QA 2026-08-20/21). hls.js's defaults are
+ * `maxBufferLength: 30` growing toward `maxMaxBufferLength: 600` — ten
+ * MINUTES of forward buffer. This server is not a CDN: the worker produces
+ * segments just ahead of the viewer (segment-ahead throttle, docs/
+ * PLAYBACK.md §9) and retention keeps only ~120s behind the live edge
+ * (worker `SEGMENT_RETENTION_SEC`), and the DEMOTED segment-GET seek
+ * trigger (apps/server/src/playback/hls-file.controller.ts) reads a GET
+ * far enough ahead of `produced_segment` as an implicit seek and RESTARTS
+ * the run. With no caps, ordinary forward-buffering on a short file could
+ * probe far-ahead indices with ZERO user seeks involved — observed live as
+ * a fresh, untouched session churning run0→run7, wedged at 0:00 with a
+ * doubled duration label. The ceiling therefore sits strictly INSIDE the
+ * 120s live window (90s = 15 six-second segments, well under the server's
+ * out-of-window threshold), so nothing hls.js does on its own can ever
+ * look like an out-of-window jump. The target stays at hls.js's own 30 —
+ * pinned explicitly so a future hls.js default bump cannot silently
+ * reopen the gap.
+ */
+const FORWARD_BUFFER_TARGET_SEC = 30;
+const FORWARD_BUFFER_CEILING_SEC = 90;
 
 /** Matches the server's constant `Retry-After: 1` (docs/PLAYBACK.md §9) —
  *  linear backoff at exactly this delay, never growing. */
@@ -187,6 +215,8 @@ export function buildHlsJsConfig(options: HlsJsConfigOptions): HlsJsConfigLike {
   return {
     startPosition: safeStartPosition(options.startPositionSec),
     startLevel: options.startLevel ?? -1,
+    maxBufferLength: FORWARD_BUFFER_TARGET_SEC,
+    maxMaxBufferLength: FORWARD_BUFFER_CEILING_SEC,
     // Deliberately NO `liveMaxLatencyDuration`/`liveMaxLatencyDurationCount`
     // and no `liveSyncDuration*` (§9.1.5 rule 6): hls.js's defaults do no
     // forced live-edge chasing, and setting any of them would let the

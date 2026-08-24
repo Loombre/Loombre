@@ -410,20 +410,121 @@ describe("GET /playback/sessions/{id}/hls/{file} — segment/init serving", () =
     }
   });
 
-  it("a segment far AHEAD of produced_segment (>3 lookahead) -> 503 + Retry-After, and writes seek_target_ms", async () => {
+  it("a segment BEYOND the live window (> 20 segments ahead of produced_segment) -> 503 + Retry-After, and writes seek_target_ms", async () => {
     const { sessionId } = await setupWithSegments(0);
-    const res = await admin().get(`/playback/sessions/${sessionId}/hls/run0/s000010.m4s`);
+    // gap-F6 widened the implicit-seek threshold from 3 segments to one
+    // full 120s live window (20 segments) — index 30 is genuinely out of
+    // window and still restarts.
+    const res = await admin().get(`/playback/sessions/${sessionId}/hls/run0/s000030.m4s`);
     expect(res.status).toBe(503);
     expect(res.headers["retry-after"]).toBe("1");
 
     const db = createDb(process.env["DATABASE_URL"]!);
     try {
       const row = await db.selectFrom("playback_sessions").select(["seek_target_ms"]).where("id", "=", sessionId).executeTakeFirstOrThrow();
-      expect(row.seek_target_ms).toBe(10 * 6 * 1000); // segmentIndex * segmentDurationSec(6) * 1000
+      expect(row.seek_target_ms).toBe(30 * 6 * 1000); // segmentIndex * segmentDurationSec(6) * 1000
     } finally {
       await db.destroy();
     }
   });
+
+  // ── gap-F6: the implicit-seek trigger must not churn runs ─────────────
+  // QA 2026-08-20/21 (P1): hls.js's ordinary forward-buffering (no caps
+  // were set client-side) probed segments a handful ahead of
+  // produced_segment on a fresh, untouched session; the old >3-lookahead
+  // trigger read EVERY such probe as a seek and restarted the run — and
+  // because forward-only numbering means a restarted run can never serve
+  // the retried URI, each hls.js retry of the SAME dead URI restarted the
+  // run AGAIN (run0→run7, compounding relocation, phantom progress).
+  // "Outside the produced window" now means outside the 120s LIVE WINDOW
+  // (SEGMENT_RETENTION_SEC / 6s = 20 segments), and a URI naming a
+  // SUPERSEDED run is a stale retry by construction — never a new seek.
+
+  it("gap-F6: a not-yet-produced segment WITHIN the live window -> 503 + Retry-After, and does NOT write seek_target_ms", async () => {
+    const { sessionId } = await setupWithSegments(0);
+    // ahead = 10 — exactly the kind of probe hls.js's forward buffer
+    // legitimately issues; the worker is already producing toward it
+    // (requested_segment above unthrottles it), so a restart is churn.
+    const res = await admin().get(`/playback/sessions/${sessionId}/hls/run0/s000010.m4s`);
+    expect(res.status).toBe(503);
+    expect(res.headers["retry-after"]).toBe("1");
+    expect(await readSeekTargetMs(sessionId)).toBeNull();
+  }, 15_000);
+
+  it("gap-F6: a retry of a DEAD pre-restart URI (stale run prefix, ENOENT path) never writes another seek", async () => {
+    const { sessionId, sessionDir } = await createSimulatedTranscodeSession();
+    // The live-repro shape: an implicit seek already restarted the session
+    // once (run1 at start_segment 16), and production has moved past the
+    // originally-probed index. run0/s000020 never existed and never will.
+    await recordRuns(sessionId, [
+      { runIndex: 0, startSegment: 0, sourceOriginMs: 0 },
+      { runIndex: 1, startSegment: 16, sourceOriginMs: 121_215 },
+    ]);
+    const run0: ServedRun = { runDirName: "run0", segments: Array.from({ length: 16 }, (_, i) => ({ index: i, durationMs: 6006 })) };
+    const run1: ServedRun = { runDirName: "run1", segments: Array.from({ length: 16 }, (_, i) => ({ index: 16 + i, durationMs: 6006 })) };
+    writeRunSegmentFiles(sessionDir, run0);
+    writeRunSegmentFiles(sessionDir, run1);
+    writeServedPlaylist(sessionDir, [run0, run1]);
+    await markSessionActiveWithProducedSegment(sessionId, sessionDir, 31);
+
+    const res = await admin().get(`/playback/sessions/${sessionId}/hls/run0/s000020.m4s`);
+    expect(res.status).toBe(503);
+    expect(res.headers["retry-after"]).toBe("1");
+    expect(await readSeekTargetMs(sessionId), "a stale-run retry restarted the run AGAIN — the churn loop").toBeNull();
+  }, 15_000);
+
+  it("gap-F6: a retry of a PRUNED-history URI already ANSWERED by a restart at that target never writes another seek", async () => {
+    // The second churn arm, observed live: a fast-completing file races to
+    // ENDLIST in seconds and retention prunes the head; the client's first
+    // GET of a pruned index legitimately relocates (run1 spawned AT the
+    // derived target), but every hls.js RETRY of the same dead URI derives
+    // the SAME target again — the old code restarted the run once per
+    // retry (runs 2..7 all sharing one source_origin_ms, re-encoding the
+    // same tail). A later run already sitting (within one nominal segment)
+    // at the derived target IS the answer to this request — 503, no write.
+    const { sessionId, sessionDir } = await createSimulatedTranscodeSession();
+    await recordRuns(sessionId, [
+      { runIndex: 0, startSegment: 0, sourceOriginMs: 0 },
+      // Exactly what the FIRST (legitimate) pruned-history relocation
+      // recorded: origin == the target derived for s000070 (70 x 6_006).
+      { runIndex: 1, startSegment: 96, sourceOriginMs: 420_420 },
+    ]);
+    const run0Survivors: ServedRun = { runDirName: "run0", segments: Array.from({ length: 21 }, (_, i) => ({ index: 75 + i, durationMs: 6006 })) };
+    const run1: ServedRun = { runDirName: "run1", segments: Array.from({ length: 15 }, (_, i) => ({ index: 96 + i, durationMs: 6006 })) };
+    writeRunSegmentFiles(sessionDir, run0Survivors);
+    writeRunSegmentFiles(sessionDir, run1);
+    writeServedPlaylist(sessionDir, [run0Survivors, run1]);
+    await markSessionActiveWithProducedSegment(sessionId, sessionDir, 110);
+
+    // run0/s000070 is pruned (never on disk here) and OWNED by run0, so
+    // the stale-run guard alone cannot catch it — only the already-
+    // answered-by-restart guard can.
+    const res = await admin().get(`/playback/sessions/${sessionId}/hls/run0/s000070.m4s`);
+    expect(res.status).toBe(503);
+    expect(res.headers["retry-after"]).toBe("1");
+    expect(await readSeekTargetMs(sessionId), "a pruned-history retry restarted the run AGAIN — the second churn loop").toBeNull();
+  }, 15_000);
+
+  it("gap-F6: a beyond-window request naming a SUPERSEDED run (ahead path) is a stale retry — 503, no seek", async () => {
+    const { sessionId, sessionDir } = await createSimulatedTranscodeSession();
+    await recordRuns(sessionId, [
+      { runIndex: 0, startSegment: 0, sourceOriginMs: 0 },
+      { runIndex: 1, startSegment: 16, sourceOriginMs: 121_215 },
+    ]);
+    const run0: ServedRun = { runDirName: "run0", segments: Array.from({ length: 16 }, (_, i) => ({ index: i, durationMs: 6006 })) };
+    const run1: ServedRun = { runDirName: "run1", segments: Array.from({ length: 5 }, (_, i) => ({ index: 16 + i, durationMs: 6006 })) };
+    writeRunSegmentFiles(sessionDir, run0);
+    writeRunSegmentFiles(sessionDir, run1);
+    writeServedPlaylist(sessionDir, [run0, run1]);
+    await markSessionActiveWithProducedSegment(sessionId, sessionDir, 20);
+
+    // s000060 is 40 ahead (beyond the 20-segment window) but names run0,
+    // which no longer owns segment 60 — run1 does. A CURRENT playlist
+    // could never have produced this URI: it is a pre-restart retry.
+    const res = await admin().get(`/playback/sessions/${sessionId}/hls/run0/s000060.m4s`);
+    expect(res.status).toBe(503);
+    expect(await readSeekTargetMs(sessionId)).toBeNull();
+  }, 15_000);
 
   it("a segment that passes the ahead-check but doesn't exist on disk (pruned/before run-start) -> 503 + seek requested", async () => {
     const { sessionId } = await setupWithSegments(2); // s000000..s000002 exist; s000001 within lookahead but let's request one that was never written
@@ -551,16 +652,18 @@ describe("GET /playback/sessions/{id}/hls/{file} — segment/init serving", () =
     await markSessionActiveWithProducedSegment(sessionId, sessionDir, 9);
 
     // ── SEEK 1 (forward, past the produced window) ──────────────────────
-    const forward = await admin().get(`/playback/sessions/${sessionId}/hls/run0/s000020.m4s`);
+    // (index 30: beyond the gap-F6 live-window threshold of produced+20,
+    // so the implicit-seek trigger genuinely fires.)
+    const forward = await admin().get(`/playback/sessions/${sessionId}/hls/run0/s000030.m4s`);
     expect(forward.status).toBe(503);
     expect(forward.headers["retry-after"]).toBe("1");
 
     // The whole listed window is exact (67_066 ms of real content for
     // indices 0..9); indices past its end extrapolate at the MEASURED mean
-    // (6_706.6 ms), never the nominal 6_000: 67_066 + (20 - 9 - 1) *
-    // 6_706.6 = 134_132 ms. The nominal answer, 120_000 ms, is 14 seconds
+    // (6_706.6 ms), never the nominal 6_000: 67_066 + (30 - 9 - 1) *
+    // 6_706.6 = 201_198 ms. The nominal answer, 180_000 ms, is 21 seconds
     // of content early — and that error only grows with the index.
-    expect(await readSeekTargetMs(sessionId)).toBe(134_132);
+    expect(await readSeekTargetMs(sessionId)).toBe(201_198);
 
     // ── the worker restarts, produces run1, retention prunes run0's head ─
     const run1: ServedRun = {
@@ -660,13 +763,15 @@ describe("GET /playback/sessions/{id}/hls/{file} — segment/init serving", () =
     await markSessionActiveWithProducedSegment(sessionId, sessionDir, 29);
 
     // ── SEEK 1: forward, past the produced window, inside run 2 ─────────
-    const forward = await admin().get(`/playback/sessions/${sessionId}/hls/run2/s000035.m4s`);
+    // (index 50: beyond the gap-F6 live-window threshold of produced+20 —
+    // and named under run2, the OWNING run, so it is not a stale retry.)
+    const forward = await admin().get(`/playback/sessions/${sessionId}/hls/run2/s000050.m4s`);
     expect(forward.status).toBe(503);
-    // Owner is run 2 (startSegment 20 <= 35), anchor 120_000. Its listed
-    // segments 20..29 contribute 10 x 7_007 = 70_070; the five not yet
-    // produced (30..34) extrapolate at run 2's OWN measured mean, 7_007,
-    // for 35_035 more. 120_000 + 105_105 = 225_105.
-    expect(await readSeekTargetMs(sessionId)).toBe(225_105);
+    // Owner is run 2 (startSegment 20 <= 50), anchor 120_000. Its listed
+    // segments 20..29 contribute 10 x 7_007 = 70_070; the twenty not yet
+    // produced (30..49) extrapolate at run 2's OWN measured mean, 7_007,
+    // for 140_140 more. 120_000 + 210_210 = 330_210.
+    expect(await readSeekTargetMs(sessionId)).toBe(330_210);
 
     // ── SEEK 2: backward across runs, into run 0's PRUNED head ──────────
     // ahead is negative, so this is the ENOENT path, and the owning run is
@@ -699,11 +804,13 @@ describe("GET /playback/sessions/{id}/hls/{file} — segment/init serving", () =
     writeServedPlaylist(sessionDir, [run0]);
     await markSessionActiveWithProducedSegment(sessionId, sessionDir, 9);
 
-    const res = await admin().get(`/playback/sessions/${sessionId}/hls/run0/s000020.m4s`);
+    const res = await admin().get(`/playback/sessions/${sessionId}/hls/run0/s000030.m4s`);
     expect(res.status).toBe(503);
     // Playlist-only derivation, unchanged: 10 listed x 6_006 = 60_060, plus
-    // ten unproduced at the measured mean 6_006 = 120_120.
-    expect(await readSeekTargetMs(sessionId)).toBe(120_120);
+    // twenty unproduced at the measured mean 6_006 = 180_180. (Index 30 —
+    // beyond the gap-F6 live-window threshold, so the trigger fires; no
+    // run rows exist, so nothing can be a stale-run retry.)
+    expect(await readSeekTargetMs(sessionId)).toBe(180_180);
   }, 20_000);
 
   it("DOUBLE SEEK back-then-forward: the derived target is clamped to the playable ceiling (durationMs − one nominal segment)", async () => {

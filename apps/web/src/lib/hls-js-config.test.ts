@@ -207,3 +207,26 @@ describe("resolveStartLevel (§9.1.9) — start on the rung the server is ALREAD
     expect(config.startLevel).toBe(ladder.length - 1);
   });
 });
+
+describe("buildHlsJsConfig forward-buffer caps (gap-F6)", () => {
+  const config = buildHlsJsConfig({ getToken: () => "unused", appendToken: (url) => url });
+
+  it("caps maxBufferLength/maxMaxBufferLength well inside the server's 120s live window", () => {
+    // gap-F6: with NO caps, hls.js's defaults (30s growing toward
+    // maxMaxBufferLength 600s) let ordinary forward-buffering probe
+    // segments far ahead of what the worker has produced. The server's
+    // demoted segment-GET seek trigger reads a far-enough-ahead GET as an
+    // implicit seek and RESTARTS the run — on a short file this churned a
+    // fresh, untouched session to run7 (QA 2026-08-20/21). The ceiling
+    // must sit strictly inside the 120s retention/live window so ordinary
+    // buffering can never look like an out-of-window jump.
+    expect(config.maxBufferLength).toBe(30);
+    expect(config.maxMaxBufferLength).toBe(90);
+  });
+
+  it("keeps the ceiling under the 120s live window (the relation, not just the literal)", () => {
+    const liveWindowSec = 120; // worker SEGMENT_RETENTION_SEC
+    expect(config.maxMaxBufferLength).toBeLessThan(liveWindowSec);
+    expect(config.maxBufferLength).toBeLessThanOrEqual(config.maxMaxBufferLength);
+  });
+});

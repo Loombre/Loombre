@@ -412,6 +412,25 @@ function button(view: TestRender, label: string): HTMLButtonElement {
   return el;
 }
 
+/** gap-F6: progress writes need REAL playback advancement, so a test that
+ *  means "the viewer watched up to `seconds`" must simulate a faithfully
+ *  playing element — displayable data (readyState 4) and a continuous walk
+ *  of close `timeupdate` samples from 0 — rather than one teleport jump,
+ *  which the watched-position gate rightly ignores as a discontinuity
+ *  (both on the presentation axis and on the source axis). */
+async function simulateWatchedTo(video: HTMLVideoElement, seconds: number): Promise<void> {
+  await act(async () => {
+    if (video.paused) await video.play();
+    mediaState(video).readyState = 4;
+    for (let t = 0; t < seconds; t += 2.5) {
+      video.currentTime = t;
+      video.dispatchEvent(new Event("timeupdate"));
+    }
+    video.currentTime = seconds;
+    video.dispatchEvent(new Event("timeupdate"));
+  });
+}
+
 /** Renders and settles the two awaited lookups (session create, then the
  *  progress lookup) so the component reaches phase 'ready'. */
 async function renderReady(onBack = vi.fn(), mediaFileId?: string, startMs?: number): Promise<TestRender> {
@@ -518,9 +537,8 @@ describe("VideoPlayer", () => {
 
     await act(async () => button(v, "Play").click());
     apiPut.mockClear();
+    await simulateWatchedTo(video, 42);
     await act(async () => {
-      video.currentTime = 42;
-      video.dispatchEvent(new Event("timeupdate"));
       video.pause();
     });
     expect(apiPut).toHaveBeenCalledTimes(1);
@@ -627,9 +645,8 @@ describe("VideoPlayer", () => {
     const v = (view = await renderReady());
     const video = videoEl(v);
 
+    await simulateWatchedTo(video, 599);
     await act(async () => {
-      video.currentTime = 599;
-      video.dispatchEvent(new Event("timeupdate"));
       video.dispatchEvent(new Event("ended"));
     });
     expect(apiPut.mock.calls.at(-1)?.[1]).toMatchObject({ body: { state: "played", positionMs: 599_000 } });
@@ -639,10 +656,7 @@ describe("VideoPlayer", () => {
     const v = (view = await renderReady());
     const video = videoEl(v);
 
-    await act(async () => {
-      video.currentTime = 73;
-      video.dispatchEvent(new Event("timeupdate"));
-    });
+    await simulateWatchedTo(video, 73);
     expect(reportProgressOnUnload).not.toHaveBeenCalled();
 
     v.unmount();
@@ -661,10 +675,7 @@ describe("VideoPlayer", () => {
     const v = (view = await renderReady());
     const video = videoEl(v);
 
-    await act(async () => {
-      video.currentTime = 12;
-      video.dispatchEvent(new Event("timeupdate"));
-    });
+    await simulateWatchedTo(video, 12);
     window.dispatchEvent(new Event("pagehide"));
     expect(reportProgressOnUnload).toHaveBeenCalledTimes(1);
     expect(reportProgressOnUnload.mock.calls[0]?.[1]).toMatchObject({ positionMs: 12_000 });
@@ -1747,6 +1758,114 @@ describe("VideoPlayer", () => {
         "a stretch that reached real playback again must retry, not go fatal on its first new failure",
       ).toBe(4);
       expect(document.body.textContent).not.toContain("Playback failed in this browser");
+    });
+  });
+
+  // ── gap-F6: phantom heartbeat progress ──────────────────────────────────
+  // QA 2026-08-20/21 (P1): a fresh, untouched direct-stream session
+  // self-relocated run0→run7 (server-side implicit-seek churn), the element
+  // wedged at vt 0 / readyState 1, and the heartbeat STILL wrote progress
+  // ~7:31 — presentation 0 mapped through the RELOCATED run's PDT origin —
+  // for content never watched. That phantom row then silently seeded the
+  // next session's resume point. Progress writes need REAL playback
+  // advancement (or an explicit user seek), never a relocated origin.
+  describe("phantom heartbeat progress (gap-F6)", () => {
+    async function renderHlsReady(): Promise<{ v: TestRender; hls: MockHlsInstance }> {
+      createPlaybackSession.mockReset().mockResolvedValue({ ok: true, session: hlsTranscodeSession() });
+      const v = await renderReady();
+      await act(async () => {});
+      const hls = hlsInstances[hlsInstances.length - 1];
+      if (!hls) throw new Error("the hlsjs attach effect never constructed an hls.js instance");
+      hls.currentLevel = 0;
+      return { v, hls };
+    }
+
+    it("a relocated source origin with NO real playback advancement never writes progress", async () => {
+      const { v, hls } = await renderHlsReady();
+      view = v;
+      // The wedge shape: the playlist has churned to a late run whose PDT
+      // origin is ~7:31 into the source, while the element never displayed
+      // a single frame (vt 0, readyState 1 = HAVE_METADATA).
+      hls.levels = [{ details: { live: true, fragments: [{ programDateTime: 451_000, start: 0, duration: 6, relurl: "run7/s000237.m4s" }] } }];
+      const video = videoEl(v);
+
+      await act(async () => button(v, "Play").click()); // heartbeat armed
+      await act(async () => {
+        mediaState(video).readyState = 1;
+        video.dispatchEvent(new Event("timeupdate")); // vt 0 → maps to source 451_000
+        video.pause(); // pause flush — wrote 451_000 pre-fix
+      });
+      expect(apiPut, "phantom progress was written for content never watched").not.toHaveBeenCalled();
+
+      // The unmount flush must not report it either.
+      v.unmount();
+      view = null;
+      expect(reportProgressOnUnload).not.toHaveBeenCalled();
+    });
+
+    it("after REAL advancement, a relocated-origin jump does not overwrite the watched position", async () => {
+      const { v, hls } = await renderHlsReady();
+      view = v;
+      const details = {
+        live: true,
+        fragments: [
+          { programDateTime: 0, start: 0, duration: 6, relurl: "run0/s000000.m4s" },
+          { programDateTime: 6_000, start: 6, duration: 6, relurl: "run0/s000001.m4s" },
+        ],
+      };
+      hls.levels = [{ details }];
+      const video = videoEl(v);
+
+      await act(async () => button(v, "Play").click());
+      await act(async () => {
+        mediaState(video).readyState = 4;
+        video.currentTime = 5.75;
+        video.dispatchEvent(new Event("timeupdate")); // baseline sample
+        video.currentTime = 6;
+        video.dispatchEvent(new Event("timeupdate")); // real advancement → watched 6_000
+      });
+
+      // The playlist relocates under the player (no user seek): vt 0 now
+      // maps to source 451_000. The jump is not advancement.
+      details.fragments = [{ programDateTime: 451_000, start: 0, duration: 6, relurl: "run7/s000237.m4s" }];
+      await act(async () => {
+        video.currentTime = 0;
+        video.dispatchEvent(new Event("timeupdate"));
+        video.pause();
+      });
+
+      const lastBody = (apiPut.mock.calls.at(-1)?.[1] as { body?: { positionMs?: number } } | undefined)?.body;
+      expect(lastBody?.positionMs, "the flush must report the last WATCHED position, not the relocated origin").toBe(6_000);
+    });
+
+    it("GENUINE advancement under a relocated MAPPING does not launder the mapped position into progress", async () => {
+      // Observed live: the element really was playing (its buffered
+      // pre-relocation content), but the playlist had churned underneath
+      // it, so presentation ~12s mapped through the relocated run's PDT
+      // origin to source ~412s — and that mapped lie was written.
+      const { v, hls } = await renderHlsReady();
+      view = v;
+      hls.levels = [{ details: { live: true, fragments: [{ programDateTime: 400_000, start: 0, duration: 200, relurl: "run7/s000237.m4s" }] } }];
+      const video = videoEl(v);
+
+      await act(async () => button(v, "Play").click());
+      await act(async () => {
+        mediaState(video).readyState = 4;
+        // Real, smooth advancement — but every position maps ~400s ahead.
+        for (let t = 0; t < 12; t += 2.5) {
+          video.currentTime = t;
+          video.dispatchEvent(new Event("timeupdate"));
+        }
+        video.pause();
+      });
+      expect(apiPut, "a relocated mapping of genuinely-advancing positions was written as progress").not.toHaveBeenCalled();
+    });
+
+    it("an explicit user seek still writes progress immediately (no advancement required)", async () => {
+      const v = (view = await renderReady()); // direct-play default fixture
+      await act(async () => button(v, "Forward 10 seconds").click());
+      expect(apiPut).toHaveBeenCalledTimes(1);
+      expect(apiPut.mock.calls[0]?.[1]).toMatchObject({ body: { positionMs: 10_000 } });
     });
   });
 });

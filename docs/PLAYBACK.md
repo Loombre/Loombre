@@ -1063,18 +1063,51 @@ State machine: `created → starting → active ⇄ suspended → seeking → ac
     machinery below existed but was unreachable (QA 2026-08-12), which
     surfaced as "rewind skips forward".
   - **"Outside" decided per segment GET is DEMOTED to defense** (native
-    clients, mid-prune races), unchanged mechanics (apps/server's
-    `hls-file.controller.ts`): the requested index is more than 3 ahead of
-    `produced_segment`, OR the file is simply not on disk (a run that has
-    not reached that number yet, or a retention-pruned one). Either way the
-    response is 503 + `Retry-After`, never 404 (a 404 would fatal hls.js's
-    fragment immediately; 503 keeps it polling until its playlist refresh
-    shows the new run). The 503 detail must NOT promise the requested URI
-    will appear — forward-only numbering guarantees the retried filename
-    never exists again (the new run writes `run{N+1}/` at `produced + 1`
-    and higher); the honest detail is that a restart was requested and the
-    playlist should be re-read. The pre-V8 "coming soon after a restart"
-    wording documented an unkeepable contract.
+    clients, mid-prune races) — re-bound by gap-F6 (QA 2026-08-20/21,
+    apps/server's `hls-file.controller.ts`): a restart is recorded ONLY for
+    (a) an index more than one full live window — 20 segments, the same
+    120s the retention window keeps — ahead of `produced_segment`, or
+    (b) an ENOENT at/behind `produced_segment` in the run that OWNS that
+    index (genuinely pruned / before run-start). Two look-alikes are
+    explicitly NOT seeks and answer a plain 503 + `Retry-After` with no
+    control-channel write: an index ahead but WITHIN the live window (the
+    worker is already producing toward it — the segment GET's
+    `requested_segment` write un-throttles it), and any URI naming a run
+    OLDER than the one that owns its index (a stale retry of a
+    pre-restart URI, which forward-only numbering guarantees can never be
+    served and never represents a new intention). A third guard absorbs
+    the pruned-history retry storm the stale-run rule cannot see (the
+    pruned index stays OWNED by the old run): when a later run already
+    sits within one nominal segment of the derived target, that restart
+    already answered this exact request — 503, no new write. The old
+    >3-lookahead
+    trigger read hls.js's ordinary forward-buffering as seeks and each
+    retry of the resulting dead URI as ANOTHER seek — a fresh, untouched
+    session churned run0→run7, compounding the relocation to the clamp
+    ceiling. The web client additionally caps hls.js's forward buffer
+    inside the live window (`maxBufferLength` 30s / `maxMaxBufferLength`
+    90s, apps/web/src/lib/hls-js-config.ts) so ordinary buffering
+    structurally cannot reach the trigger. Responses stay 503, never 404
+    (a 404 would fatal hls.js's fragment immediately; 503 keeps it polling
+    until its playlist refresh shows the current run). The restart 503's
+    detail must NOT promise the requested URI will appear — forward-only
+    numbering guarantees the retried filename never exists again (the new
+    run writes `run{N+1}/` at `produced + 1` and higher); the honest
+    detail is that a restart was requested and the playlist should be
+    re-read. The within-window "not produced yet" 503 MAY promise it: no
+    restart happened and the current run's numbering is heading straight
+    for it. The pre-V8 "coming soon after a restart" wording documented an
+    unkeepable contract.
+  - **Progress writes need real playback advancement (gap-F6).** The web
+    player keeps a WATCHED position — the last source-ms position backed
+    by genuine element advancement between consecutive `timeupdate`
+    samples (`lib/watched-progress.ts`) or by an explicit user seek —
+    separate from the DISPLAYED position, and every `/progress` write
+    (heartbeat, pause/seek flush, unmount/pagehide flush) reports only the
+    watched position, suppressed entirely while it is null. Presentation 0
+    mapped through a RELOCATED run's PDT origin must never become a
+    progress row: the observed wedge wrote ~7:31 for content never
+    watched, which then silently seeded the next session's resume point.
   - **Seek-target derivation (MANDATORY — never nominal arithmetic).** The
     ms value written to `seek_target_ms` is derived from the durations the
     session ACTUALLY produced: the `#EXTINF` values in the served
