@@ -1642,6 +1642,18 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
           return;
         }
       }
+      // gap-F10: an hls.js transcode session with NO listed window at all
+      // (playlist not parsed yet, or details gone mid-switch) cannot
+      // classify the seek — and the bare presentation assignment below is
+      // exactly the resume-prompt wedge. The first-class hard seek is the
+      // safe route: the server clamps, and the landing watch owns the
+      // element from the 202 on. (A PDT-less LISTED window still falls
+      // through — that is a genuine pre-V8 server, where presentation ==
+      // source and the bare assignment is ruled correct.)
+      if (attachStrategy === "hlsjs" && session && !isDirectPlayRef.current && frags === null) {
+        hardSeek(ms);
+        return;
+      }
       // No source clock (direct-play; native path without PDT; a pre-V8
       // server): presentation == source for these sessions — the pre-V8
       // bare assignment is exactly right.
@@ -1758,19 +1770,29 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
   }, [item]);
 
   function handleResume(): void {
-    if (videoRef.current && resumeCandidateMs !== null) {
-      videoRef.current.currentTime = resumeCandidateMs / 1000;
+    // gap-F10: the saved position is SOURCE-axis (a progress row) — the
+    // old bare presentation-axis `currentTime` assignment is only correct
+    // for direct-play. On an HLS transcode session it wedged the element
+    // at a position no data ever arrives for (live: readyState 1 freeze
+    // while the server's implicit derived-seek fallback churned runs at
+    // the wrong origins). Route through the V8-classified seek(): soft
+    // when the listed window covers the target, the first-class
+    // POST /seek when it does not. The gap-F6 watched anchor and the
+    // immediate flush ride along inside seek() like every other explicit
+    // position choice (the hard path anchors on the 202's clamped target).
+    if (resumeCandidateMs !== null) {
+      pendingSeekMsRef.current = resumeCandidateMs;
+      seek(resumeCandidateMs);
     }
-    // gap-F6: choosing Resume IS choosing that position — record it as the
-    // watched anchor so post-resume advancement passes source continuity
-    // (and a resume-then-leave keeps reporting the same resume point, as
-    // it always did).
-    if (resumeCandidateMs !== null) watchedPositionRef.current = resumeCandidateMs;
-    pendingSeekMsRef.current = resumeCandidateMs;
     setAwaitingResumeChoice(false);
     void videoRef.current?.play().catch(() => undefined);
   }
   function handleStartOver(): void {
+    // gap-F10 (owner-directed): Start over = SOURCE-axis 0. On a window
+    // whose origin is 0 this is a local soft seek (no restart burned); on
+    // a reused/pruned-head window — where presentation 0 is NOT source
+    // 0 — it is a fresh run at the beginning via the first-class seek.
+    seek(0);
     setAwaitingResumeChoice(false);
     void videoRef.current?.play().catch(() => undefined);
   }

@@ -2389,4 +2389,142 @@ describe("VideoPlayer", () => {
       ).not.toHaveBeenCalled();
     });
   });
+
+  // ── gap-F10: the resume prompt's CHOICES on HLS transcode sessions ──────
+  // The prompt itself renders symmetrically (pinned below — the QA-era
+  // "opened silently at the position" was the gap-F6 phantom-progress /
+  // churn era), but both choice handlers acted on the PRESENTATION axis
+  // with a bare `currentTime` assignment. On an HLS transcode session that
+  // is wrong twice over: a not-yet-produced target wedges the element at a
+  // position no data ever arrives for (live repro: Resume→7:39 on run0's
+  // ~3:40-produced window froze at readyState 1 for 35s+ while the
+  // server's implicit derived-seek fallback churned runs 1..3 at the
+  // WRONG origins), and even a LISTED target lands wrong whenever the
+  // window's source origin is non-zero (presentation != source). Both
+  // choices must route through the V8-classified `seek()` on the SOURCE
+  // axis: soft when listed, the first-class POST /seek when not
+  // (Start over = source 0 / a fresh run at 0).
+  describe("resume choices on HLS transcode sessions (gap-F10)", () => {
+    function dialogButtonByPrefix(v: TestRender, prefix: string): HTMLButtonElement {
+      const dialog = v.container.querySelector('[role="dialog"]');
+      if (!dialog) throw new Error("no open dialog");
+      const el = [...dialog.querySelectorAll("button")].find((b) => b.textContent?.startsWith(prefix));
+      if (!el) throw new Error(`no dialog button starting with "${prefix}"`);
+      return el;
+    }
+
+    async function renderHlsWithPrompt(): Promise<{ v: TestRender; hls: MockHlsInstance }> {
+      createPlaybackSession.mockReset().mockResolvedValue({ ok: true, session: hlsTranscodeSession() });
+      findProgressForItem.mockResolvedValue({ itemId: ITEM_ID, positionMs: 120_000, state: "in-progress" });
+      const v = await renderReady();
+      // The hlsjs attach effect is async (token await + dynamic import) —
+      // one more flush lets it construct the mock instance.
+      await act(async () => {});
+      const hls = hlsInstances[hlsInstances.length - 1];
+      if (!hls) throw new Error("the hlsjs attach effect never constructed an hls.js instance");
+      hls.currentLevel = 0;
+      expect(v.container.querySelector('[role="dialog"]')).toBeTruthy();
+      return { v, hls };
+    }
+
+    it("shows the resume prompt for an HLS transcode session without auto-seeking or auto-playing (the scout's missing HLS variant)", async () => {
+      const { v } = await renderHlsWithPrompt();
+      view = v;
+      expect(v.container.textContent).toContain("You stopped at 2:00");
+      expect(videoEl(v).currentTime).toBe(0);
+      expect(videoEl(v).paused).toBe(true);
+    });
+
+    it("Resume with the target OUTSIDE the listed window POSTs the first-class /seek — never a presentation-axis clamp", async () => {
+      const { v, hls } = await renderHlsWithPrompt();
+      view = v;
+      // run0's produced window covers source [0, 6000) only — the 120 000
+      // resume target is unlisted, exactly the live wedge shape.
+      hls.levels = [{ details: { live: true, fragments: [{ programDateTime: 0, start: 0, duration: 6, relurl: "run0/s000000.m4s" }] } }];
+      apiPost.mockResolvedValueOnce({ targetMs: 120_000 });
+
+      await act(async () => dialogButtonByPrefix(v, "Resume from").click());
+
+      expect(
+        apiPost,
+        "Resume never issued the V8 hard seek — the old presentation-axis assignment wedges the element and leaves relocation to the server's implicit churn fallback",
+      ).toHaveBeenCalledWith("/playback/sessions/{id}/seek", expect.objectContaining({ body: { targetMs: 120_000 } }));
+      // The element must NOT be teleported to presentation 120s — the
+      // landing watch owns the element position from here.
+      expect(videoEl(v).currentTime).toBe(0);
+      // The scrubber pins at the 202 target (relocating) and the dialog is
+      // resolved.
+      const slider = v.container.querySelector('[role="slider"][aria-label="Seek"]');
+      expect(slider?.getAttribute("aria-valuenow")).toBe("120000");
+      expect(v.container.querySelector('[role="dialog"]')).toBeNull();
+    });
+
+    it("Resume with the target LISTED maps through the source clock — not a bare presentation assignment", async () => {
+      const { v, hls } = await renderHlsWithPrompt();
+      view = v;
+      // A post-restart window whose source origin is non-zero: source
+      // [118 000, 124 000) sits at presentation [18, 24) — the 120 000
+      // target maps to presentation 20 s, NOT 120 s.
+      hls.levels = [{ details: { live: true, fragments: [{ programDateTime: 118_000, start: 18, duration: 6, relurl: "run1/s000003.m4s" }] } }];
+
+      await act(async () => dialogButtonByPrefix(v, "Resume from").click());
+
+      expect(
+        videoEl(v).currentTime,
+        "Resume assigned the SOURCE position on the PRESENTATION axis — on a non-zero-origin window that is the wrong place entirely",
+      ).toBe(20);
+      expect(apiPost).not.toHaveBeenCalledWith("/playback/sessions/{id}/seek", expect.anything());
+      // Explicit user intent flushes progress at the chosen SOURCE position
+      // (gap-F6 semantics, same as every other seek commit).
+      expect(apiPut).toHaveBeenCalledWith(
+        "/progress/{itemId}",
+        expect.objectContaining({ body: expect.objectContaining({ positionMs: 120_000 }) }),
+      );
+    });
+
+    it("Resume before the first playlist parse hard-seeks instead of assigning presentation time", async () => {
+      const { v, hls } = await renderHlsWithPrompt();
+      view = v;
+      hls.levels = []; // nothing parsed yet — listedFragments() is null
+      apiPost.mockResolvedValueOnce({ targetMs: 120_000 });
+
+      await act(async () => dialogButtonByPrefix(v, "Resume from").click());
+
+      expect(
+        apiPost,
+        "a pre-parse Resume on an hls.js transcode session fell into the no-source-clock bare assignment — it must go through the first-class seek",
+      ).toHaveBeenCalledWith("/playback/sessions/{id}/seek", expect.objectContaining({ body: { targetMs: 120_000 } }));
+      expect(videoEl(v).currentTime).toBe(0);
+    });
+
+    it("Start over on a window that no longer lists source 0 seeks the source axis to 0 (fresh run via POST /seek)", async () => {
+      const { v, hls } = await renderHlsWithPrompt();
+      view = v;
+      // A reused/pruned-head window far from the start — presentation 0 is
+      // NOT source 0 here, so "start over" needs a fresh run at source 0.
+      hls.levels = [{ details: { live: true, fragments: [{ programDateTime: 3_600_000, start: 0, duration: 6, relurl: "run2/s000600.m4s" }] } }];
+      apiPost.mockResolvedValueOnce({ targetMs: 0 });
+
+      await act(async () => dialogButtonByPrefix(v, "Start over").click());
+
+      expect(
+        apiPost,
+        "Start over just dismissed the dialog — on a non-zero-origin window playback proceeds from the WRONG source position instead of the beginning",
+      ).toHaveBeenCalledWith("/playback/sessions/{id}/seek", expect.objectContaining({ body: { targetMs: 0 } }));
+      expect(videoEl(v).paused).toBe(false);
+      expect(v.container.querySelector('[role="dialog"]')).toBeNull();
+    });
+
+    it("Start over with source 0 LISTED stays a local soft seek — no transcoder restart burned", async () => {
+      const { v, hls } = await renderHlsWithPrompt();
+      view = v;
+      hls.levels = [{ details: { live: true, fragments: [{ programDateTime: 0, start: 0, duration: 6, relurl: "run0/s000000.m4s" }] } }];
+
+      await act(async () => dialogButtonByPrefix(v, "Start over").click());
+
+      expect(apiPost).not.toHaveBeenCalledWith("/playback/sessions/{id}/seek", expect.anything());
+      expect(videoEl(v).currentTime).toBe(0);
+      expect(videoEl(v).paused).toBe(false);
+    });
+  });
 });
