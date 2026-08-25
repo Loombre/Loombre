@@ -151,6 +151,18 @@ const FIXED_REASONS: Record<string, ReasonCopy> = {
     detail: "The bitrate ladder was trimmed to this server's advertised-variant limit; the highest rung(s) were dropped.",
     severity: "informational",
   },
+  // d3-aq4 (LD-7 / owner-decision D1, docs/PLAYBACK.md §4/§7.4): fires once
+  // per ladder rung whose configured av1 codec was demoted to hevc/h264 —
+  // no hardware AV1 encoder, an unverified software route, or a device that
+  // can't decode it. The rung still exists at the same height/bitrate, so
+  // this is informational: only the codec changed, never the quality level.
+  // (`detail` carries `cause=… demotedTo=… heightPx=…`, which the reason row
+  // already prints verbatim beside the code.)
+  "av1-rung-demoted": {
+    title: "A quality level isn't using AV1",
+    detail: "This quality level was encoded with HEVC or H.264 instead of AV1 — the same rung, a different codec, because no verified AV1 encode path was available.",
+    severity: "informational",
+  },
 };
 
 /** Phase 2 direct-play never emits these (they belong to Stage G hardware

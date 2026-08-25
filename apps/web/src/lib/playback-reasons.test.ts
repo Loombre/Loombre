@@ -107,6 +107,12 @@ const FIXED_INFORMATIONAL_REASON_CODES = [
   // to the generic "unrecognized code" fallback and printed the raw code
   // as the title.
   "ladder-variant-capped",
+  // d3-aq4 (G/av1-rung-demoted): the SAME gap one enum member over — this
+  // list, hand-mirrored from the contract, had never picked up LD-7's
+  // `av1-rung-demoted` either (packages/contract/openapi.yaml's
+  // PlanReasonCode, docs/PLAYBACK.md §4/§7.4), so both the unavailable
+  // screen and the admin ReasonsPanel printed the raw code as its title.
+  "av1-rung-demoted",
 ] as const;
 
 // docs/PLAYBACK.md §8.2's closed backend candidate list, matching
@@ -127,10 +133,11 @@ const CLOSED_REASON_ENUM = [
 ];
 
 describe("describeReasonCode exhaustiveness over the closed docs/PLAYBACK.md §4 enum", () => {
-  it("the mirrored enum has exactly 36 members (20 blocking + 6 fixed-informational + 7 hw-encoder-selected + 3 software-fallback)", () => {
+  it("the mirrored enum has exactly 37 members (20 blocking + 7 fixed-informational + 7 hw-encoder-selected + 3 software-fallback)", () => {
     expect(BLOCKING_REASON_CODES).toHaveLength(20);
-    expect(CLOSED_REASON_ENUM).toHaveLength(36);
-    expect(new Set(CLOSED_REASON_ENUM).size).toBe(36); // no accidental duplicates
+    expect(FIXED_INFORMATIONAL_REASON_CODES).toHaveLength(7);
+    expect(CLOSED_REASON_ENUM).toHaveLength(37);
+    expect(new Set(CLOSED_REASON_ENUM).size).toBe(37); // no accidental duplicates
   });
 
   for (const code of CLOSED_REASON_ENUM) {
