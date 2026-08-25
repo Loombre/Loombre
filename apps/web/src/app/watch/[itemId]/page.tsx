@@ -52,6 +52,7 @@ import { BlazeSpinner } from "../../../components/ui/BlazeSpinner.js";
 import { fetchItemSummary, ItemLookupError } from "../../../lib/item-lookup.js";
 import { apiGet, LoombreApiError } from "../../../lib/api-client.js";
 import { getAuthStore } from "../../../lib/auth-store.js";
+import { buildLoginHref, currentLocationPath } from "../../../lib/auth-return-path.js";
 import { itemUnavailableReasons } from "../../../lib/playback-reasons.js";
 import styles from "./page.module.css";
 
@@ -91,7 +92,12 @@ export default function WatchPage(): React.JSX.Element {
   useEffect(() => {
     const store = getAuthStore();
     if (!store.isAuthenticated()) {
-      router.replace("/login");
+      // d3-c6 (browser-shell-browse-F1's return-path rule, applied to this
+      // route): a shared /watch link opened in a signed-out browser used to
+      // land on a bare /login, so signing in dropped the viewer on /home
+      // with no trace of what they had clicked. buildLoginHref sanitizes the
+      // path first (never an absolute URL, never a cross-origin `//host`).
+      router.replace(buildLoginHref(currentLocationPath()));
       return;
     }
     if (startedRef.current) return;

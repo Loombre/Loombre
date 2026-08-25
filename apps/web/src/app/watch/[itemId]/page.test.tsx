@@ -140,9 +140,12 @@ vi.mock("../../../lib/api-client.js", () => ({
   LoombreApiError: FakeLoombreApiError,
 }));
 
+/** Flipped by the signed-out test below (d3-c6). */
+let authenticated = true;
+
 vi.mock("../../../lib/auth-store.js", () => ({
   getAuthStore: () => ({
-    isAuthenticated: () => true,
+    isAuthenticated: () => authenticated,
     getSnapshot: () => ({ serverUrl: SERVER_URL, accessToken: "test-access-token" }),
     getAccessToken: async () => "test-access-token",
   }),
@@ -302,6 +305,7 @@ describe("WatchPage", () => {
     summary = movieSummary();
     lookupError = null;
     lookupGate = null;
+    authenticated = true;
     createPlaybackSession.mockReset().mockResolvedValue({ ok: true, session: directPlaySession() });
     endPlaybackSession.mockReset().mockResolvedValue(undefined);
     findProgressForItem.mockReset().mockResolvedValue(null);
@@ -316,6 +320,9 @@ describe("WatchPage", () => {
     view?.unmount();
     view = null;
     restoreHistoryLength();
+    // pushState LEAKS across tests in a file (jsdom keeps the document's
+    // URL), and lib/auth-return-path.ts reads location — put it back.
+    window.history.pushState({}, "", "/");
     vi.unstubAllGlobals();
   });
 
@@ -560,6 +567,33 @@ describe("WatchPage", () => {
 
       expect(view.container.querySelector('[role="status"]')).toBeNull();
       expect(createPlaybackSession).toHaveBeenCalled();
+    });
+  });
+
+  // D/browser-shell-browse-F1 adjacent (d3-c6): a signed-out arrival at a
+  // /watch link — a shared link, a bookmark opened in a fresh browser — was
+  // sent to a bare /login, so signing in dropped the viewer on /home with no
+  // trace of what they had clicked. lib/auth-return-path.ts already owns the
+  // (open-redirect-safe) return-path encoding used by the rest of the shell.
+  describe("signed-out arrival keeps the destination (d3-c6)", () => {
+    it("REGRESSION GUARD: redirects to /login?next=<this watch url>, not a bare /login", async () => {
+      authenticated = false;
+      window.history.pushState({}, "", `/watch/${ITEM_ID}?type=movie`);
+
+      view = await renderRoute();
+
+      expect(routerReplace).toHaveBeenCalledWith(`/login?next=${encodeURIComponent(`/watch/${ITEM_ID}?type=movie`)}`);
+      // Nothing about the item is fetched for a viewer with no session.
+      expect(createPlaybackSession).not.toHaveBeenCalled();
+    });
+
+    it("still just goes to /login when there is no usable path to come back to", async () => {
+      authenticated = false;
+      window.history.pushState({}, "", "/login");
+
+      view = await renderRoute();
+
+      expect(routerReplace).toHaveBeenCalledWith("/login");
     });
   });
 });
