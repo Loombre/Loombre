@@ -22,6 +22,15 @@
 //      that member never has (packages/contract/openapi.yaml,
 //      SystemUpdateInfo.currentVersion: "a BARE semver ... which is why it
 //      carries no build metadata").
+//   4. The transcode-runtime knobs the SPEC owns (docs/PLAYBACK.md §9 and
+//      §9.1.7 vs apps/worker/src/transcode/config.ts — d4-doc1). Two rules
+//      shipped in dispatch 3 (d3-f3's bounded throttle suspend, d3-f5's
+//      post-seek rung cool-down) changed what §9 promises while §9 still
+//      described the throttle as suspend/resume-only and §9.1.4/§9.1.7 as
+//      restart-on-pending-rung with no cool-down. Neither knob is a
+//      settings-registry entry (deliberate — same class as
+//      SEGMENT_RETENTION_SEC), so prose is the ONLY place an operator can
+//      learn the value, which is exactly the kind of restatement that rots.
 //
 // scripts/ is not a pnpm workspace, so `turbo run test` (the gate's `test`
 // step) never reaches this file; CI runs it as `pnpm scripts:test`. Run it
@@ -84,6 +93,55 @@ const VERSION_RESTATEMENTS = [
     pattern: /Version ([0-9][0-9A-Za-z.+-]*), no release published yet/,
   },
 ];
+
+/**
+ * d4-doc1 (QA backlog #108): the transcode-runtime knobs whose ONLY
+ * operator-facing description is spec prose. Each entry names the spec
+ * section that OWNS the rule, the `apps/worker/src/transcode/config.ts`
+ * constant that is the truth, and the env var that overrides it; `action`
+ * (optional) is the `throttle.ts` `ThrottleAction` member the section must
+ * name, so a renamed action fails here instead of silently orphaning the
+ * paragraph that describes it.
+ */
+const TRANSCODE_KNOB_DOCS = [
+  {
+    constant: "THROTTLE_MAX_SUSPEND_MS",
+    env: "LOOMBRE_TRANSCODE_MAX_SUSPEND_MS",
+    file: "docs/PLAYBACK.md",
+    from: "## 9. Session execution layer",
+    to: "### 9.1 Multi-variant delivery",
+    action: "release-stopped-process",
+  },
+  {
+    constant: "RUNG_SWITCH_SEEK_COOLDOWN_MS",
+    env: "LOOMBRE_TRANSCODE_RUNG_SWITCH_COOLDOWN_MS",
+    file: "docs/PLAYBACK.md",
+    from: "#### 9.1.7",
+    to: "#### 9.1.8",
+  },
+];
+
+/** The shipped value of a `export const NAME = 1_234;` in the worker's
+ *  transcode config — the truth docs/PLAYBACK.md restates. */
+function workerConfigMs(constant) {
+  const src = read("apps/worker/src/transcode/config.ts");
+  const found = new RegExp(`export const ${constant} = ([0-9_]+);`).exec(src);
+  assert.ok(found, `apps/worker/src/transcode/config.ts: no \`export const ${constant} = <number>;\``);
+  return Number(found[1].replace(/_/g, ""));
+}
+
+/**
+ * One spec section, whitespace-collapsed so a restatement matches whether or
+ * not the 80-column wrap happens to fall inside it.
+ */
+function docSection(file, from, to) {
+  const text = read(file);
+  const start = text.indexOf(from);
+  assert.ok(start !== -1, `${file}: section heading "${from}" not found`);
+  const end = text.indexOf(to, start + 1);
+  assert.ok(end > start, `${file}: section end heading "${to}" not found after "${from}"`);
+  return text.slice(start, end).replace(/\s+/g, " ");
+}
 
 /** scripts/gate.mjs's own step list — the truth every doc restates. */
 function gateSteps() {
@@ -222,4 +280,59 @@ test("docs/ops/updating.md's GET /system/update example matches the contract", (
       "docs/ops/updating.md: example has latestVersion === currentVersion but claims an update",
     );
   }
+});
+
+test("docs/PLAYBACK.md documents each transcode knob with the value config.ts ships", () => {
+  for (const knob of TRANSCODE_KNOB_DOCS) {
+    const section = docSection(knob.file, knob.from, knob.to);
+    const ms = workerConfigMs(knob.constant);
+    assert.equal(ms % 1000, 0, `apps/worker/src/transcode/config.ts: ${knob.constant} is not a whole number of seconds`);
+
+    assert.ok(
+      section.includes(knob.env),
+      `${knob.file} "${knob.from}": does not name the env override ${knob.env}`,
+    );
+
+    const stated = new RegExp("`" + knob.constant + "` = (\\d+) s\\b").exec(section);
+    assert.ok(
+      stated,
+      `${knob.file} "${knob.from}": no \`${knob.constant}\` = <n> s restatement — the rule this section owns is undocumented`,
+    );
+    assert.equal(
+      Number(stated[1]),
+      ms / 1000,
+      `${knob.file} "${knob.from}": restated ${knob.constant} drifted from apps/worker/src/transcode/config.ts`,
+    );
+
+    if (knob.action) {
+      const throttle = read("apps/worker/src/transcode/throttle.ts");
+      assert.ok(
+        throttle.includes(`kind: "${knob.action}"`),
+        `apps/worker/src/transcode/throttle.ts: no ThrottleAction member "${knob.action}" (did the action move?)`,
+      );
+      assert.ok(
+        section.includes(knob.action),
+        `${knob.file} "${knob.from}": does not name the \`${knob.action}\` action it documents`,
+      );
+    }
+  }
+});
+
+test("STATE.md records the transcode knobs, and they are still env-only constants", () => {
+  const state = read("STATE.md");
+  for (const { constant } of TRANSCODE_KNOB_DOCS) {
+    assert.ok(state.includes(constant), `STATE.md: no decision record naming ${constant}`);
+  }
+
+  // What STATE.md records about BOTH knobs is "env constant in
+  // apps/worker/src/transcode/config.ts by design, not a settings-registry
+  // entry" (same class as SEGMENT_RETENTION_SEC). Promoting either to an
+  // admin-configurable setting makes that sentence false, so the registry is
+  // part of this assertion, not a separate concern.
+  const registry = read("packages/shared/src/settings-registry.ts");
+  assert.ok(
+    !/maxSuspend|rungSwitchCooldown/i.test(registry),
+    "packages/shared/src/settings-registry.ts: a transcode suspend-bound / rung-cool-down key now exists — " +
+      "STATE.md still records both knobs as env-only constants",
+  );
 });

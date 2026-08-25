@@ -395,6 +395,38 @@ Notable design decisions taken this dispatch:
   can no longer have its head pruned out from under the viewer, and seek
   absorption no longer fires on a pruned head (companion d3-f2: a
   first-touch backward seek is backward intent, not a prune race).
+- **Bounded throttle suspend** (d3-f3, 9b445ed): a SIGSTOP is now bounded in
+  TIME. Once a process has sat physically stopped for
+  `THROTTLE_MAX_SUSPEND_MS` = 120 s it is RELEASED (terminated — the
+  `release-stopped-process` action; no row write, staging untouched), and
+  the throttle's resume becomes ONE restart at the §9.1.4 continuation
+  origin on the same rung. Resume inside the bound still WINS (plain
+  SIGCONT, no restart), and the bound covers a heartbeat-cause stop too: the
+  hazard is the physically stopped process holding an out-of-process encode
+  session (the suspected `kVTSessionMalfunctionErr` trigger), not the reason
+  it was stopped. Spec'd in docs/PLAYBACK.md §9.
+- **Post-seek rung cool-down** (d3-f5, e4e0df0): a STANDALONE §9.1.4 rung
+  handoff is deferred for `RUNG_SWITCH_SEEK_COOLDOWN_MS` = 3 s after a seek
+  restart (a recovery restart that consumed a seek arms it too), so an
+  hls.js ABR flap FOLDS — `requestRungSwitch` absorbs a switch naming the
+  still-active rung, so 1→0→1 collapses to one pending value — instead of
+  costing 2–3 full restarts per seek (the live shape that reached 23 runs in
+  one session and raised a false "Seek timed out"). Seek absorption is
+  deliberately unchanged, and a coincident seek still folds the pending rung
+  into its own single restart. Spec'd in docs/PLAYBACK.md §9.1.7.
+- **Both transcode knobs stay ENV CONSTANTS** (d3-f lane's design intent,
+  recorded here by d4-doc1; reversible by an owner ruling that promotes
+  either one):
+  `THROTTLE_MAX_SUSPEND_MS` / `RUNG_SWITCH_SEEK_COOLDOWN_MS` live in
+  apps/worker/src/transcode/config.ts with
+  `LOOMBRE_TRANSCODE_MAX_SUSPEND_MS` / `LOOMBRE_TRANSCODE_RUNG_SWITCH_COOLDOWN_MS`
+  overrides — NOT packages/shared/src/settings-registry.ts entries. Same
+  class as `SEGMENT_RETENTION_SEC`: these are stability bounds on a hardware
+  resource, not a taste an admin should be invited to tune, and the ahead
+  thresholds (Addendum A) already give the surface its instance-configurable
+  axis. `scripts/docs-drift.test.mjs` pins the spec prose to config.ts's
+  actual values, and fails if either knob is ever promoted to a registry key
+  while this record still says otherwise.
 - **AppShell SSR restoration** (d3-s1, e9784bf): the boot splash no longer
   bails every route out of SSR; d3-s2 pins the deleted admin redirect
   stubs' failure class shut so the regression can't silently return.

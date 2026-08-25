@@ -1043,6 +1043,51 @@ State machine: `created → starting → active ⇄ suspended → seeking → ac
     real suspension helper in later changes only
     `throttleMechanismForPlatform`'s win32 branch; the reconciliation table
     is mechanism-agnostic and does not move.
+  - **The stop is BOUNDED IN TIME (d3-f3, QA 2026-08-24).** Everything
+    above decides WHETHER an encoder should be stopped; none of it bounded
+    HOW LONG. The resume condition (lead ≤ 5) never arrives for a PAUSED
+    viewer, so a stop lasted exactly as long as the pause did — minutes at
+    a time — and a SIGSTOPped process still owns every out-of-process
+    resource it opened. A VideoToolbox compression session held that way is
+    the leading suspected trigger for the `kVTSessionMalfunctionErr`
+    encoder death (QA browser-player-F2, whose recovery ladder handles the
+    death without removing the trigger). So the reconciler carries a fourth,
+    TIME dimension: once a process has been physically stopped for
+    `THROTTLE_MAX_SUSPEND_MS` = 120 s
+    (`apps/worker/src/transcode/config.ts`, env
+    `LOOMBRE_TRANSCODE_MAX_SUSPEND_MS`, resolved ONCE per session at the
+    same "per transcode admission" boundary as the ahead thresholds) it is
+    RELEASED — action `release-stopped-process`: terminate the process
+    group, at most once per stopped run, with NO row write and NO staging
+    change. What that buys and costs, stated:
+      1. the session stays `suspended` for whatever cause suspended it and
+         stays this throttle's to resume — a released run still reads as
+         "stopped" to every consumer of that flag, because nothing is
+         producing either way;
+      2. everything the run produced stays on disk and in the served
+         playlist — the lead the throttle built (> 60 s at the moment it
+         stopped the encoder, and still above the resume threshold at
+         release, or resume would have won) is precisely what the client is
+         about to play through, and it is what pays for the restart;
+      3. resume then has no process to SIGCONT, so it becomes ONE restart at
+         the §9.1.4 continuation origin (`sourceOriginMs + producedMs`) on
+         the SAME rung, under the V8 collision floor, with
+         `clearThrottleSuspendedOnRestart` (the restart-hygiene statement
+         above) taking the row out of 'suspended';
+      4. RESUME WINS OVER RELEASE — a viewer returning inside the bound gets
+         a plain SIGCONT and no restart at all. The bound covers a
+         heartbeat-cause stop as well: the hazard is the physically stopped
+         process, not the reason it was stopped.
+    120 s is deliberately well past any ordinary buffering pause (the
+    throttle only stops an encoder already > 60 s ahead, so an everyday
+    pause-and-resume never reaches the bound at all) while keeping the
+    dangerous state — a stopped encoder holding a hardware session — down to
+    minutes rather than to the length of the pause, which a client that
+    keeps heartbeating through it can extend indefinitely. It is an env
+    constant, NOT an instance setting (the same class as
+    `SEGMENT_RETENTION_SEC`; STATE.md records that call). On win32 the
+    mechanism is `-readrate` pacing, which never stops anything — the bound
+    is unreachable there by construction.
 - **Seek:** target inside produced range → serve. Outside → kill pipeline,
   restart with `{SEEK_SECONDS}=target` and `{START_SEG}` continuing the
   numbering, playlist gains `EXT-X-DISCONTINUITY`. Old segments beyond a
@@ -1445,6 +1490,9 @@ seek block):
 
 1. Tick reads `pending_rung_index = B ≠ active_rung_index` (compare-and-
    clear discipline; a concurrent different write survives to next tick).
+   A STANDALONE handoff additionally waits out the post-seek cool-down
+   (§9.1.7); a switch coincident with a seek is folded into that seek's
+   single restart regardless.
 2. `await currentRun.handle.terminate()` — SIGCONT-before-SIGTERM(-then-
    SIGKILL) exactly as for a seek, resolving only at OBSERVED exit (the
    same observed-exit discipline whose reaper-side form Wave A pinned as
@@ -1663,10 +1711,35 @@ lane must not read PDT as re-litigating V4.
   output must still restart when a switch is pending, because the client
   asked for different bytes, not the same ones. Switch-request absorption
   (§9.1.3) is handled at the write side.
+- **A rung-driven restart is DEFERRED just after a seek (d3-f5, QA
+  2026-08-24).** hls.js re-evaluates its ABR level the instant a seek
+  empties the buffer, and on a marginal link it FLAPS: one observed
+  `POST /seek` spawned runs 7 (rung 1) and 8 (rung 0) 0.9 s apart and the
+  session reached 23 runs — two to three full kill-and-respawns for ONE
+  viewer intention, each killing the previous run before it produced
+  anything, while the client 503'd on the abandoned runs' segments and
+  eventually raised a false "Seek timed out". So a STANDALONE §9.1.4 slot
+  handoff does not fire within `RUNG_SWITCH_SEEK_COOLDOWN_MS` = 3 s
+  (`apps/worker/src/transcode/config.ts`, env
+  `LOOMBRE_TRANSCODE_RUNG_SWITCH_COOLDOWN_MS`, resolved once per session)
+  of that session's last SEEK restart — including a recovery restart that
+  consumed a seek target, which triggers the same flap. Nothing is queued
+  and nothing is dropped: `pending_rung_index` simply keeps whatever the
+  client asked for last, and a switch that outlives the window restarts
+  normally. **Deferring is what makes a flap FOLD rather than accumulate:**
+  `requestRungSwitch` absorbs a switch naming the ACTIVE rung (§9.1.3), and
+  while nothing restarts the active rung does not move — so 1 → 0 → 1
+  collapses to the single pending value the window finally consumes. Seek
+  absorption is deliberately UNCHANGED by the cool-down (it still narrows
+  only on `pending_rung_index`, above), so a 503-storm target arriving
+  during a deferral is folded into one coincident restart carrying both
+  columns rather than looping — the livelock guard is intact, and a real
+  seek never waits behind a deferral.
 - **Ordering guarantee:** `requestSeek` and `requestRungSwitch` are
   independent columns; the worker's single-restart rule makes their
   interleaving commutative — whichever lands first, the spawned run is
-  (requested rung, requested origin).
+  (requested rung, requested origin). The cool-down above changes only
+  WHEN a standalone switch lands (up to 3 s later), never WHAT is spawned.
 - **The named build scenario (C3 triple-seek extension —
   `seek-rung-switch.integration.spec.ts`, real ffmpeg):**
   `forward seek → backward seek → rung switch → forward seek` producing
