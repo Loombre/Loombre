@@ -87,29 +87,36 @@ export function SegmentedControl({
     select(target.value);
   }
 
+  // d4-a2.94 (AQ/d3-aq2-adjacent): the keys handled here are CONSUMED —
+  // preventDefault alone left them propagating to window, where
+  // VideoPlayer's keydown shortcut (which only skips INPUT/TEXTAREA
+  // targets) ALSO seeked ±10 s per arrow press with the /watch quality
+  // dock focused — the same double-handler shape, and the same fix, as
+  // the Scrubber's d3-aq1: stop propagation for handled keys and ONLY
+  // those, so an unhandled key (Space/f/m) still reaches the player's
+  // window shortcuts.
   function handleKeyDown(event: React.KeyboardEvent<HTMLButtonElement>, index: number): void {
     switch (event.key) {
       case "ArrowRight":
       case "ArrowDown":
-        event.preventDefault();
         focusAndSelect((index + 1) % normalized.length);
         break;
       case "ArrowLeft":
       case "ArrowUp":
-        event.preventDefault();
         focusAndSelect((index - 1 + normalized.length) % normalized.length);
         break;
       case "Home":
-        event.preventDefault();
         focusAndSelect(0);
         break;
       case "End":
-        event.preventDefault();
         focusAndSelect(normalized.length - 1);
         break;
       default:
-        break;
+        // NOT handled: neither default nor propagation is touched.
+        return;
     }
+    event.preventDefault();
+    event.stopPropagation();
   }
 
   // Roving tabindex target: the checked segment when one matches, else the

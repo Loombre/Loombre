@@ -243,6 +243,55 @@ describe("SegmentedControl — radiogroup pattern + roving tabindex (item 1)", (
     expect(first!.getAttribute("aria-checked")).toBe("true");
   });
 
+  // d4-a2.94 (AQ/d3-aq2-adjacent): the handled keys preventDefault'ed but
+  // never stopped PROPAGATION — with the quality dock (or any radiogroup)
+  // focused inside /watch, one ArrowLeft/Right moved the selection AND hit
+  // VideoPlayer's window-level keydown shortcut, seeking ±10 s per keypress
+  // (live-reproduced 2026-08-25: Auto→1080p + 0:56→1:06 on a single
+  // ArrowRight). Same double-handler shape — and the same fix — as the
+  // Scrubber's d3-aq1: stop propagation for the keys handled HERE, and only
+  // those, so an unhandled key still reaches the player's Space/f/m
+  // shortcuts.
+  describe("handled keys never double-fire an outer shortcut (d4-a2.94)", () => {
+    function pressAndRecord(el: HTMLElement, key: string): string[] {
+      const reachedWindow: string[] = [];
+      const listener = (e: KeyboardEvent): void => {
+        reachedWindow.push(e.key);
+      };
+      window.addEventListener("keydown", listener);
+      try {
+        pressKey(el, key);
+      } finally {
+        window.removeEventListener("keydown", listener);
+      }
+      return reachedWindow;
+    }
+
+    it.each(["ArrowRight", "ArrowLeft", "ArrowUp", "ArrowDown", "Home", "End"])(
+      "%s is consumed by the radiogroup — it must not also reach a window-level keydown listener (VideoPlayer's seek shortcut)",
+      (key) => {
+        view = renderIntoBody(<SegmentedControl options={["A", "B", "C"]} defaultValue="B" />);
+        const [, b] = segments();
+        const reachedWindow = pressAndRecord(b!, key);
+        // The control DID handle the key (selection moved off B for every
+        // one of these keys, given defaultValue is the middle option)...
+        expect(b!.getAttribute("aria-checked")).toBe("false");
+        // ...so nothing may keep bubbling to the player's window shortcut.
+        expect(
+          reachedWindow,
+          `a handled ${key} kept propagating — the player's ±10s window shortcut double-fires (d4-a2.94)`,
+        ).toEqual([]);
+      },
+    );
+
+    it("an unhandled key still bubbles to the window — the player's Space/f/m shortcuts keep working with a segment focused", () => {
+      view = renderIntoBody(<SegmentedControl options={["A", "B"]} defaultValue="A" />);
+      const [a] = segments();
+      const reachedWindow = pressAndRecord(a!, "f");
+      expect(reachedWindow).toEqual(["f"]);
+    });
+  });
+
   it("controlled mode: an explicit `value` prop wins over internal state, and onChange is the only way selection moves", async () => {
     let controlledValue = "A";
     const handleChange = (v: string): void => {
