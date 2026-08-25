@@ -167,8 +167,9 @@ describe("renderServedPlaylist: §9.1.5 rule 7 EXT-X-PROGRAM-DATE-TIME (V8 sourc
       ["s000003.m4s", 6],
       ["s000004.m4s", 6],
     ]), 0);
-    // Live edge 30s, retention 12s -> cutoff 18s: s0..s2 pruned.
-    const { nextState } = pruneRetention(state, 12, 0);
+    // Live edge 30s, retention 12s -> cutoff 18s: s0..s2 pruned (the viewer
+    // is at the live edge, so nothing is held back by the d3-f1 floor).
+    const { nextState } = pruneRetention(state, 12, 0, 4);
     const rendered = renderServedPlaylist(nextState);
     expect(rendered).not.toContain("run0/s000000.m4s");
     expect(pdtLineAbove(rendered, "run0/s000003.m4s")).toBe("#EXT-X-PROGRAM-DATE-TIME:1970-01-01T00:00:18.000Z");
@@ -220,7 +221,7 @@ describe("pruneRetention", () => {
 
   it("keeps everything when total content is within the retention window", () => {
     const state = segState(5); // 30s of content, well under 120s
-    const result = pruneRetention(state, 120, 0);
+    const result = pruneRetention(state, 120, 0, 4);
     expect(result.segmentsToDelete).toEqual([]);
     expect(result.runDirsToDelete).toEqual([]);
     expect(result.nextState.runs[0]!.segments).toHaveLength(5);
@@ -231,8 +232,12 @@ describe("pruneRetention", () => {
     // cutoff 60 -> segments whose END time <= 60 (indices 0..9, ending at
     // 6..60) are pruned; index 9 ends exactly at 60 (<=60, pruned), index
     // 10 ends at 66 (> 60, survives).
+    //
+    // d3-f1: the viewer floor is the LIVE EDGE here (the client has
+    // consumed everything produced), which is the only state in which the
+    // pure retention-behind-live-edge arithmetic decides on its own.
     const state = segState(30);
-    const result = pruneRetention(state, 120, 0);
+    const result = pruneRetention(state, 120, 0, 29);
     expect(result.segmentsToDelete).toHaveLength(10);
     expect(result.segmentsToDelete[0]!.uri).toBe("s000000.m4s");
     expect(result.nextState.runs[0]!.segments).toHaveLength(20);
@@ -257,12 +262,89 @@ describe("pruneRetention", () => {
       hasEndlist: false,
     }, 0);
 
-    const result = pruneRetention(state, 120, 1);
+    const result = pruneRetention(state, 120, 1, 29);
     expect(result.runDirsToDelete).toEqual(["run0"]);
     expect(result.nextState.runs.find((r) => r.runDirName === "run0")).toBeUndefined();
     // run1 is current — even if some of its own early segments also aged
     // out, its directory is never in runDirsToDelete.
     expect(result.runDirsToDelete).not.toContain("run1");
+  });
+
+  // ── d3-f1: THE PRUNE FLOOR IS VIEWER EVIDENCE, NOT THE PRODUCED EDGE ──
+  //
+  // QA 2026-08-24 (P1, five merged observations): retention is defined
+  // relative to the LIVE EDGE, which on a copy-shape file races to the end
+  // of the film in under a second — so the "120s window" was 120s behind
+  // the END, not behind the viewer. A fresh mount's first playlist came
+  // back EXT-X-MEDIA-SEQUENCE 75 / PDT 00:07:31 (the head it needed had
+  // already been deleted), 'Start over' relocated to 7:40, and every seek's
+  // landing fragment was pruned before the client could fetch it. The fix
+  // is to make the prune floor the viewer's own evidenced position: a
+  // segment is prunable only when it is BOTH behind the retention horizon
+  // AND below the highest index the viewer has actually reached.
+  it("d3-f1: a fast-completing encode with NO viewer evidence yet keeps its whole head", () => {
+    // The gap-F6/gap-F10 shape: 180s produced inside one poll tick, client
+    // has not requested a single segment. Nothing may be deleted — the
+    // first thing that client will ask for is s000000.
+    const result = pruneRetention(segState(30), 120, 0, undefined);
+    expect(result.segmentsToDelete, "pruned the head before the viewer had fetched anything").toEqual([]);
+    expect(result.runDirsToDelete).toEqual([]);
+    expect(result.nextState.runs[0]!.segments[0]!.uri).toBe("s000000.m4s");
+  });
+
+  it("d3-f1: prunes only BELOW the viewer's evidenced position, never ahead of it", () => {
+    // Viewer at s000004 on the same 180s-in-one-tick encode: retention says
+    // indices 0..9 are stale, but 4..9 are content the viewer has not
+    // reached. Only 0..3 may go.
+    const result = pruneRetention(segState(30), 120, 0, 4);
+    expect(result.segmentsToDelete.map((s) => s.uri)).toEqual([
+      "s000000.m4s",
+      "s000001.m4s",
+      "s000002.m4s",
+      "s000003.m4s",
+    ]);
+    expect(result.nextState.runs[0]!.segments[0]!.uri).toBe("s000004.m4s");
+  });
+
+  it("d3-f1: a seek's landing run survives until the viewer has fetched it", () => {
+    // run0 = the pre-seek run (indices 0..20); run1 = the run a backward
+    // seek just spawned, numbered forward from the produced edge (21..25)
+    // and sitting at source origin 0. The viewer is still down at s000010
+    // — it has not re-read the playlist yet — so run1's head is exactly
+    // what it is about to ask for. Retention (12s behind a 156s live edge)
+    // would otherwise delete run0 entirely AND run1's first three
+    // segments: the landing fragment, gone before it was ever served.
+    let state = emptyServedPlaylistState(6, true);
+    state = applyRunUpdate(state, 0, "run0", {
+      targetDurationSec: 6,
+      initUri: "init.mp4",
+      segments: Array.from({ length: 21 }, (_, i) => ({ uri: `s${String(i).padStart(6, "0")}.m4s`, durationSec: 6 })),
+      hasEndlist: false,
+    }, 0);
+    state = applyRunUpdate(state, 1, "run1", {
+      targetDurationSec: 6,
+      initUri: "init.mp4",
+      segments: Array.from({ length: 5 }, (_, i) => ({ uri: `s${String(21 + i).padStart(6, "0")}.m4s`, durationSec: 6 })),
+      hasEndlist: false,
+    }, 0);
+
+    const result = pruneRetention(state, 12, 1, 10);
+    expect(result.nextState.runs.find((r) => r.runIndex === 1)!.segments, "the landing run was pruned before it was fetched").toHaveLength(5);
+    expect(result.segmentsToDelete.map((s) => s.uri)).toEqual(
+      Array.from({ length: 10 }, (_, i) => `s${String(i).padStart(6, "0")}.m4s`),
+    );
+    expect(result.segmentsToDelete.every((s) => s.runDirName === "run0")).toBe(true);
+  });
+
+  it("d3-f1: disk stays bounded on a genuinely long session — the window slides WITH the viewer", () => {
+    // 60 segments (360s) produced, viewer at s000050: everything more than
+    // one retention window behind the live edge AND below the viewer goes,
+    // so the residual is bounded by the retention window, not by the
+    // session's length.
+    const result = pruneRetention(segState(60), 120, 0, 50);
+    expect(result.segmentsToDelete).toHaveLength(40); // indices 0..39 (end <= 240)
+    expect(result.nextState.runs[0]!.segments).toHaveLength(20);
+    expect(result.nextState.runs[0]!.segments[0]!.uri).toBe("s000040.m4s");
   });
 });
 
@@ -368,6 +450,6 @@ describe("servedPlaylistHasEnded (the §9.1.5 rule-4 PRUNE-FREEZE predicate)", (
     // this state WOULD drop 10 segments, which is exactly what must not
     // happen after the playlist has ended.
     expect(servedPlaylistHasEnded(state)).toBe(true);
-    expect(pruneRetention(state, 120, 0).segmentsToDelete).toHaveLength(10);
+    expect(pruneRetention(state, 120, 0, 29).segmentsToDelete).toHaveLength(10);
   });
 });

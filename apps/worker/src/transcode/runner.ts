@@ -266,6 +266,28 @@ export async function runTranscodeSession(deps: RunSessionDeps, sessionId: strin
   const isFmp4 = plan.container === "fmp4-hls";
   let servedState: ServedPlaylistState = emptyServedPlaylistState(SEGMENT_DURATION_SEC, isFmp4);
 
+  /**
+   * THE VIEWER FLOOR (d3-f1): the highest segment index this session has
+   * evidence the CLIENT actually reached — a monotonic watermark over
+   * `playback_sessions.requested_segment` (apps/server writes it on every
+   * segment GET). `undefined` until the client has fetched anything, which
+   * is the state in which nothing may be pruned at all.
+   *
+   * MONOTONIC, and only advanced by a request the pipeline had ALREADY
+   * PRODUCED. Both qualifiers are load-bearing:
+   *   * monotonic, because global segment numbering only moves forward
+   *     (§9.1.10 item 4): a backward seek's restart numbers its output
+   *     ABOVE everything produced so far, so a watermark can never sit
+   *     above a landing fragment and prune it away, while `requested_
+   *     segment` itself moves backward on a backward seek and would;
+   *   * produced-bounded, because a far-AHEAD request (the implicit-seek
+   *     path writes `requested_segment` before answering 503) is a
+   *     position the client has not consumed — treating it as progress
+   *     would authorise deleting everything below an index nobody has
+   *     ever been served.
+   */
+  let viewerSegmentIndex: number | undefined;
+
   function applyPlatformPacing(args: string[]): string[] {
     if (deps.testReadrateMultiplier !== undefined) return injectReadrate(args, deps.testReadrateMultiplier);
     if (process.platform === "win32") return injectReadrate(args, WIN32_READRATE_MULTIPLIER);
@@ -501,6 +523,13 @@ export async function runTranscodeSession(deps: RunSessionDeps, sessionId: strin
     }
     const producedSegment = highestProducedSegmentIndex(servedState);
 
+    // Advance the viewer floor BEFORE this tick's prune decides anything —
+    // see its declaration above for why the watermark is monotonic and
+    // bounded by what has actually been produced.
+    if (row.requested_segment !== null && producedSegment !== undefined && row.requested_segment <= producedSegment) {
+      viewerSegmentIndex = Math.max(viewerSegmentIndex ?? 0, row.requested_segment);
+    }
+
     if (producedSegment !== undefined) {
       if (row.status === "starting" || row.status === "seeking") {
         await markSessionActive(db, sessionId, { producedSegment, nowMs: now() });
@@ -526,9 +555,14 @@ export async function runTranscodeSession(deps: RunSessionDeps, sessionId: strin
       // re-add of already-pruned segments survives into the frozen
       // playlist (the fold-resurrect defect; the predicate's own comment
       // above has the full story).
+      // d3-f1: retention is floored by VIEWER EVIDENCE, never by the
+      // produced edge alone (playlist.ts's `pruneRetention` header has the
+      // full diagnosis — a copy-shape remux reaches the end of the film in
+      // under a second, which turned "120s behind live" into "the last 20
+      // segments of the movie" and made 0:00 unreachable on a fresh mount).
       const pruned = playlistFrozen
         ? { nextState: servedState, segmentsToDelete: [], runDirsToDelete: [] }
-        : pruneRetention(servedState, SEGMENT_RETENTION_SEC, currentRun.index);
+        : pruneRetention(servedState, SEGMENT_RETENTION_SEC, currentRun.index, viewerSegmentIndex);
       servedState = pruned.nextState;
       // Once any of the CURRENT run's own segments has been pruned, its
       // produced window no longer starts at its origin — the head is gone
@@ -703,12 +737,26 @@ export async function runTranscodeSession(deps: RunSessionDeps, sessionId: strin
       // "bytes we already have" — unless the client has meanwhile asked for
       // different bytes, in which case those bytes are the OLD rung's and
       // re-serving them is not what was requested.
-      const inFlightWindowEndMs = currentRun.headPruned ? currentRun.sourceOriginMs : currentRun.sourceOriginMs + currentRun.producedMs;
+      //
+      // d3-f1 completes that pruned-head conjunct. It used to collapse the
+      // absorbable window to [origin, origin] rather than closing it, so a
+      // target AT the origin still absorbed — and 'Start over' (POST /seek
+      // {targetMs: 0}) on a run whose head retention had already reclaimed
+      // is exactly that target. The runner cleared the seek, restarted
+      // nothing, and the client waited for a PDT 0 fragment that no longer
+      // existed until its 20s "Seek timed out" toast fired. docs/
+      // PLAYBACK.md §9's rule is "absorb only while NOTHING of this run has
+      // been pruned"; past that the origin itself is off disk, so the seek
+      // is real. The livelock this rule exists to stop cannot come back
+      // through here: the restart spawns a FRESH run at that origin, whose
+      // head is by definition unpruned, so the storm's next repeat of the
+      // same target absorbs normally.
       const alreadyServing =
         !currentRun.exited &&
         !switchPending &&
+        !currentRun.headPruned &&
         row.seek_target_ms >= currentRun.sourceOriginMs &&
-        row.seek_target_ms <= inFlightWindowEndMs;
+        row.seek_target_ms <= currentRun.sourceOriginMs + currentRun.producedMs;
       if (alreadyServing) {
         // Clear it without bumping discontinuity_count or touching status —
         // nothing restarted. Guarded on the exact value we just read, so a

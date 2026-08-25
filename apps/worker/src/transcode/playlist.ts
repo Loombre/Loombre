@@ -287,12 +287,51 @@ export interface PruneResult {
 /**
  * Drops segments more than `retentionSec` behind the live edge (the END
  * time of the most recently produced segment across every run — docs/
- * PLAYBACK.md §9: "segments beyond 120s behind live edge deleted").
+ * PLAYBACK.md §9: "segments beyond 120s behind live edge deleted"), BUT
+ * never a segment the viewer has not reached yet.
  * `currentRunIndex` is never directory-deleted even if it ends up with
  * zero surviving segments (it is still the run ffmpeg is actively writing
  * into — only a PAST run can be fully retired).
+ *
+ * ── THE VIEWER FLOOR (d3-f1, QA 2026-08-24 P1) ────────────────────────
+ * `viewerSegmentIndex` is the highest ABSOLUTE segment index the session
+ * has evidence the viewer actually reached (runner.ts watermarks it from
+ * `playback_sessions.requested_segment`, which apps/server writes on every
+ * segment GET); `undefined` means "no evidence at all — the client has not
+ * fetched a single segment yet". A segment is prunable only when it is
+ * BOTH behind the retention horizon AND strictly below that floor.
+ *
+ * Why the live edge alone is not a window: "120s behind the live edge" is
+ * a sliding window AROUND THE VIEWER only while production runs at roughly
+ * realtime. A copy-shape file breaks that assumption completely — the
+ * remux reaches `#EXT-X-ENDLIST` in under a second, so the live edge IS
+ * the end of the film and the retention window is "the last 20 segments of
+ * the movie", nowhere near the viewer. Observed live, all on real media:
+ * a fresh mount's first `media.m3u8` came back EXT-X-MEDIA-SEQUENCE 75 /
+ * PDT 00:07:31 (playback could not start at 0:00 at all, and every GET of
+ * a pruned index read as an implicit seek); 'Start over' spawned a run at
+ * origin 0 whose head was deleted before the client re-read the playlist,
+ * landing the viewer at 7:40; a seek's landing fragment could vanish
+ * before it was ever fetched, so the client's landing watch never matched
+ * and it raised its 20s "Seek timed out" toast.
+ *
+ * Disk stays bounded exactly as before. Production itself is bounded
+ * ahead of the viewer by the segment-ahead throttle (throttle.ts: SIGSTOP
+ * at ahead > 10, and a NULL `requested_segment` counts as 0, never as
+ * "unbounded ahead is fine"), so the retained set is the retention window
+ * behind the viewer plus the throttle's lead ahead of it — a window that
+ * now slides WITH the viewer instead of with an edge the viewer may never
+ * have reached. The one case where production genuinely outruns the
+ * throttle — a whole file remuxed inside one poll interval — already kept
+ * its output to session teardown under the §9.1.5 rule-4 prune-freeze,
+ * which fires on the same tick.
  */
-export function pruneRetention(state: ServedPlaylistState, retentionSec: number, currentRunIndex: number): PruneResult {
+export function pruneRetention(
+  state: ServedPlaylistState,
+  retentionSec: number,
+  currentRunIndex: number,
+  viewerSegmentIndex: number | undefined,
+): PruneResult {
   const allSegmentsInOrder = state.runs.flatMap((run) =>
     run.segments.map((seg) => ({ run, seg, endSec: 0 })),
   );
@@ -313,7 +352,15 @@ export function pruneRetention(state: ServedPlaylistState, retentionSec: number,
     const survivors: RunSegment[] = [];
     for (const seg of run.segments) {
       runningEnd += seg.durationSec;
-      if (runningEnd <= cutoffSec) {
+      // The viewer floor (d3-f1, this function's header). A segment the
+      // viewer has not reached is never stale, however far behind the
+      // produced edge it sits — and with no evidence at all, nothing is:
+      // the very first thing that client will ask for is the head.
+      // A URI whose index cannot be parsed is treated as unreached rather
+      // than as reached — deleting it is the irreversible direction.
+      const segmentIndex = segmentIndexFromUri(seg.uri);
+      const belowViewer = viewerSegmentIndex !== undefined && segmentIndex !== undefined && segmentIndex < viewerSegmentIndex;
+      if (runningEnd <= cutoffSec && belowViewer) {
         segmentsToDelete.push({ runDirName: run.runDirName, uri: seg.uri });
       } else {
         survivors.push(seg);
