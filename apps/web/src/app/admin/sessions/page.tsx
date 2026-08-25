@@ -35,7 +35,7 @@
 // fields. The "heartbeat <time>" meta line below is the raw evidence behind
 // that pill and predates it.
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Video } from "lucide-react";
 import type { components } from "@loombre/sdk";
 import { Card } from "../../../components/ui/Card.js";
@@ -44,7 +44,8 @@ import { Skeleton } from "../../../components/skeleton/Skeleton.js";
 import { EmptyState } from "../../../components/admin/EmptyState.js";
 import { StatusPill } from "../../../components/admin/StatusPill.js";
 import { ReasonsPanel } from "../../../components/admin/ReasonsPanel.js";
-import { ADMIN_SESSIONS_REFRESH_MS } from "../../../lib/admin-live-refresh.js";
+import { startAdminSessionsRefresh } from "../../../lib/admin-live-refresh.js";
+import { mergeAdminSessionFirstPage } from "../../../lib/admin-session-merge.js";
 import { describeSessionPresence } from "../../../lib/admin-session-presence.js";
 import { apiGet } from "../../../lib/api-client.js";
 import { apiErrorMessage } from "../../../lib/api-error-message.js";
@@ -105,6 +106,13 @@ export default function AdminSessionsPage(): React.JSX.Element {
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // What is on screen RIGHT NOW, readable from the [] -deps silent refresh
+  // below without making `sessions` a dependency of it (which would tear
+  // down and re-arm the socket subscription and the tick on every list
+  // change). Assigned during render, so it is current at commit time.
+  const sessionsRef = useRef<AdminSessionWithPlan[]>([]);
+  sessionsRef.current = sessions;
+
   function load(reset: boolean): void {
     if (reset) setLoading(true);
     else setLoadingMore(true);
@@ -133,17 +141,31 @@ export default function AdminSessionsPage(): React.JSX.Element {
 
   // A silent page-1 refetch, distinct from `load` (which flips `loading`
   // and would re-show the full skeleton on every session start/end).
-  // Resets cursor/hasMore to page 1's, same as `load(true)` — any extra
-  // "Load more" pages an admin had open are discarded, matching a manual
-  // reload's behavior. Shared by the socket subscription and the periodic
-  // tick below (browser-admin-F2).
+  // Shared by the socket subscription and the periodic tick below
+  // (browser-admin-F2).
+  //
+  // d3-e4: it MERGES page 1 in rather than replacing the list. It used to
+  // `setSessions(page.items)` outright, which silently discarded every
+  // "Load more" page within one 10s tick whenever more than PAGE_LIMIT
+  // sessions were live. lib/admin-session-merge.ts owns the rule (page 1 is
+  // authoritative for its own keyset window and says nothing below it); the
+  // cursor is only re-adopted when nothing was kept beyond that window,
+  // because otherwise the existing cursor — which continues after the last
+  // row actually on screen — is the correct one.
   const refreshFirstPageSilently = useCallback((): void => {
     apiGet("/admin/sessions", { params: { query: { limit: PAGE_LIMIT } } })
       .then((page) => {
         const items = page.items as AdminSessionWithPlan[];
-        setSessions(items);
-        setCursor(page.nextCursor);
-        setHasMore(page.nextCursor !== null);
+        const merged = mergeAdminSessionFirstPage(sessionsRef.current, items, { complete: page.nextCursor === null });
+        setSessions(merged);
+        // Nothing survived beyond page 1's window, so page 1's own cursor
+        // is the one that continues the list. When rows WERE kept, the
+        // existing cursor already points past them and page 1's would
+        // re-fetch what is on screen.
+        if (merged.length === items.length) {
+          setCursor(page.nextCursor);
+          setHasMore(page.nextCursor !== null);
+        }
       })
       .catch(() => {
         // A live nudge failing silently is fine — the page already has a
@@ -166,10 +188,8 @@ export default function AdminSessionsPage(): React.JSX.Element {
 
   // Status-transition floor (browser-admin-F2): suspended <-> active <->
   // seeking flips emit no event, so the subscription above never sees them.
-  useEffect(() => {
-    const timer = setInterval(refreshFirstPageSilently, ADMIN_SESSIONS_REFRESH_MS);
-    return () => clearInterval(timer);
-  }, [refreshFirstPageSilently]);
+  // Paused while the tab is hidden, with one refresh on return (d3-e4).
+  useEffect(() => startAdminSessionsRefresh(refreshFirstPageSilently), [refreshFirstPageSilently]);
 
   return (
     <Card>

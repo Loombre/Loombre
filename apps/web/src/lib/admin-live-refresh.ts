@@ -23,3 +23,36 @@
 // is an admin-only keyset page read — no Tier-0 CPU work on the server
 // side (docs/PLAN.md §9).
 export const ADMIN_SESSIONS_REFRESH_MS = 10_000;
+
+/**
+ * Start the tick for one admin now-playing surface; returns its cleanup.
+ *
+ * d3-e4: the bare `setInterval` both surfaces used kept polling at the full
+ * cadence with the tab in the background (verified: exactly 10s while
+ * hidden) — a request every ten seconds, forever, for a screen nobody is
+ * looking at. A hidden tab now skips its ticks entirely and takes ONE
+ * refresh the moment it becomes visible again, so coming back to the tab
+ * shows current data immediately instead of up-to-a-tick-old data (which is
+ * what a plain pause, with no wake-up refresh, would have made worse).
+ *
+ * `document` is guarded because these modules are imported during Next's
+ * server render; the interval alone is still correct there (it simply never
+ * fires before the effect's cleanup runs).
+ */
+export function startAdminSessionsRefresh(refresh: () => void): () => void {
+  const timer = setInterval(() => {
+    if (typeof document !== "undefined" && document.hidden) return;
+    refresh();
+  }, ADMIN_SESSIONS_REFRESH_MS);
+
+  if (typeof document === "undefined") return () => clearInterval(timer);
+
+  const onVisibilityChange = (): void => {
+    if (!document.hidden) refresh();
+  };
+  document.addEventListener("visibilitychange", onVisibilityChange);
+  return () => {
+    clearInterval(timer);
+    document.removeEventListener("visibilitychange", onVisibilityChange);
+  };
+}

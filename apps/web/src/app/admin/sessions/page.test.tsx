@@ -182,6 +182,118 @@ describe("AdminSessionsPage — suspended sessions (browser-admin-F2)", () => {
 });
 
 // ---------------------------------------------------------------------------
+// d3-e4 (browser-admin-F2 follow-up, P3): refreshFirstPageSilently replaced
+// the whole list with page 1 on every 10s tick, so with more than PAGE_LIMIT
+// live rows every "Load more" page an admin opened was discarded within ten
+// seconds — and the tick kept firing at the same cadence while the tab was
+// in the background (verified backgrounded at exactly 10s).
+// ---------------------------------------------------------------------------
+describe("AdminSessionsPage — silent refresh vs pagination (d3-e4)", () => {
+  let view: TestRender | null = null;
+  let hidden = false;
+
+  beforeEach(() => {
+    apiGetMock.mockReset();
+    subscribeMock.mockReset();
+    subscribeMock.mockReturnValue(() => {});
+    hidden = false;
+    Object.defineProperty(document, "hidden", { configurable: true, get: () => hidden });
+  });
+
+  afterEach(() => {
+    view?.unmount();
+    view = null;
+    vi.useRealTimers();
+  });
+
+  /** 50 rows, newest first — exactly what a full page 1 looks like. */
+  function fullFirstPage(): ReturnType<typeof session>[] {
+    return Array.from({ length: 50 }, (_, i) => session(`s${i}`, { startedAtMs: 10_000 - i, itemTitle: `Movie ${i}` }));
+  }
+
+  function installPagedMock(): void {
+    apiGetMock.mockImplementation((_path: string, options: { params: { query: Record<string, unknown> } }) => {
+      if (options.params.query["cursor"] === undefined) {
+        return Promise.resolve({ items: fullFirstPage(), nextCursor: "cursor-page-2" });
+      }
+      return Promise.resolve({
+        items: [session("s90", { startedAtMs: 5_000, itemTitle: "Older Movie" })],
+        nextCursor: null,
+      });
+    });
+  }
+
+  it("keeps the pages an admin loaded — a tick patches page 1 in place instead of replacing the list", async () => {
+    vi.useFakeTimers();
+    installPagedMock();
+    view = renderIntoBody(<AdminSessionsPage />);
+    await act(async () => {});
+
+    const loadMore = Array.from(view.container.querySelectorAll("button")).find((b) => b.textContent?.includes("Load more"));
+    expect(loadMore).toBeTruthy();
+    await act(async () => {
+      loadMore!.click();
+    });
+    expect(view.container.textContent).toContain("Older Movie");
+
+    act(() => {
+      vi.advanceTimersByTime(ADMIN_SESSIONS_REFRESH_MS);
+    });
+    await act(async () => {});
+
+    // The page-2 row survives the tick, and page 1 is still there.
+    expect(view.container.textContent).toContain("Older Movie");
+    expect(view.container.textContent).toContain("Movie 0");
+    expect(view.container.textContent).toContain("Movie 49");
+  });
+
+  it("a session that ended between ticks disappears; one that started appears — page 1 is still authoritative for its own window", async () => {
+    vi.useFakeTimers();
+    apiGetMock.mockResolvedValue({
+      items: [session("s1", { startedAtMs: 200, itemTitle: "Leaving Soon" }), session("s2", { startedAtMs: 100 })],
+      nextCursor: null,
+    });
+    view = renderIntoBody(<AdminSessionsPage />);
+    await act(async () => {});
+    expect(view.container.textContent).toContain("Leaving Soon");
+
+    apiGetMock.mockResolvedValue({
+      items: [session("s3", { startedAtMs: 300, itemTitle: "Just Started" }), session("s2", { startedAtMs: 100 })],
+      nextCursor: null,
+    });
+    act(() => {
+      vi.advanceTimersByTime(ADMIN_SESSIONS_REFRESH_MS);
+    });
+    await act(async () => {});
+
+    expect(view.container.textContent).toContain("Just Started");
+    expect(view.container.textContent).not.toContain("Leaving Soon");
+  });
+
+  it("does not poll while the tab is hidden, and refreshes once as soon as it comes back", async () => {
+    vi.useFakeTimers();
+    apiGetMock.mockResolvedValue({ items: [session("s1")], nextCursor: null });
+    view = renderIntoBody(<AdminSessionsPage />);
+    await act(async () => {});
+    expect(apiGetMock).toHaveBeenCalledTimes(1);
+
+    hidden = true;
+    act(() => {
+      vi.advanceTimersByTime(ADMIN_SESSIONS_REFRESH_MS * 5);
+    });
+    await act(async () => {});
+    expect(apiGetMock).toHaveBeenCalledTimes(1);
+
+    hidden = false;
+    act(() => {
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    await act(async () => {});
+    expect(apiGetMock).toHaveBeenCalledTimes(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // d3-e3 (browser-admin-F2 follow-up, P2): `suspended` is one enum value with
 // two opposite meanings — see StreamsPanel.test.tsx's companion block and
 // lib/admin-session-presence.ts's header. This page renders the same pill.

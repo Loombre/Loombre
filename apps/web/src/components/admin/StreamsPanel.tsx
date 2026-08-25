@@ -58,7 +58,7 @@ import { EmptyState } from "./EmptyState.js";
 import { ReasonsPanel } from "./ReasonsPanel.js";
 import { StatusPill } from "./StatusPill.js";
 import { Skeleton } from "../skeleton/Skeleton.js";
-import { ADMIN_SESSIONS_REFRESH_MS } from "../../lib/admin-live-refresh.js";
+import { startAdminSessionsRefresh } from "../../lib/admin-live-refresh.js";
 import { countLiveSessions, describeSessionPresence } from "../../lib/admin-session-presence.js";
 import { apiGet } from "../../lib/api-client.js";
 import { apiErrorMessage } from "../../lib/api-error-message.js";
@@ -145,10 +145,10 @@ export function StreamsPanel(): React.JSX.Element {
 
   // Status-transition floor (browser-admin-F2): suspended <-> active <->
   // seeking flips emit no event, so nothing above would ever notice them.
-  useEffect(() => {
-    const timer = setInterval(refresh, ADMIN_SESSIONS_REFRESH_MS);
-    return () => clearInterval(timer);
-  }, [refresh]);
+  // Paused while the tab is hidden, with one refresh on return (d3-e4 —
+  // this panel shares the sessions page's tick helper so the two cannot
+  // drift apart on cadence or on visibility behaviour).
+  useEffect(() => startAdminSessionsRefresh(refresh), [refresh]);
 
   return (
     <div>
