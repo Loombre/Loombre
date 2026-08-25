@@ -65,6 +65,7 @@ import { apiDelete, apiGet, LoombreApiError } from "../../lib/api-client.js";
 import { getAuthStore } from "../../lib/auth-store.js";
 import { useNowPlayingItemIds } from "../../lib/now-playing.js";
 import { useWatchlistChangeSignal } from "../../lib/watchlist-sync.js";
+import { loadWatchlistRailPage, refetchWatchlistRailPage } from "../../lib/watchlist-rail.js";
 import { buildExclusionSet, selectFeaturedPool, visibleRailIds, type FeaturedPoolCandidate } from "../../lib/featured-pool.js";
 import { buildMovieCandidate, buildSeriesCandidate, initialLetter, type FeaturedCandidate } from "../../lib/featured-fields.js";
 import styles from "./page.module.css";
@@ -116,10 +117,11 @@ const DESKTOP_CONTENT_WIDTH_PX = 1920 - 210 - 32 * 2;
  *  which is the duplicate design/phosphor/README.md actually forbids. */
 const RECENTLY_ADDED_VISIBLE_CARDS = Math.ceil(DESKTOP_CONTENT_WIDTH_PX / RAIL_CARD_TRACK_PX);
 
-/** Bounded — Home's rail shows the most recently added handful, same
- *  posture as Continue Watching/Recently Added (L3's rail, wired into
- *  L9's page at Wave-2 landing per both lanes' documented seam). */
-const WATCHLIST_RAIL_LIMIT = 20;
+/* WATCHLIST_RAIL_LIMIT and this rail's two fetch entry points now live in
+   lib/watchlist-rail.ts — d4-w2: the bootstrap effect's `apiGet` fired
+   twice per mount under dev StrictMode (the `cancelled` flag suppresses the
+   first run's setState, not its request), so the seed request is shared
+   while in flight there. */
 
 interface MovieCandidateRow extends FeaturedPoolCandidate {
   kind: "movie";
@@ -228,7 +230,7 @@ export function HomeContent(): React.JSX.Element {
   const nowPlayingIds = useNowPlayingItemIds();
 
   const fetchWatchlist = useCallback(() => {
-    apiGet("/watchlist", { params: { query: { limit: WATCHLIST_RAIL_LIMIT } } }).then((page) => {
+    refetchWatchlistRailPage().then((page) => {
       setWatchlist(page.items);
     });
   }, []);
@@ -261,7 +263,7 @@ export function HomeContent(): React.JSX.Element {
     // render below) — degrade to an empty list on failure instead of
     // joining the two catches above, so a /watchlist-only outage doesn't
     // block the whole page behind the retry screen.
-    apiGet("/watchlist", { params: { query: { limit: WATCHLIST_RAIL_LIMIT } } })
+    loadWatchlistRailPage()
       .then((page) => {
         if (!cancelled) setWatchlist(page.items);
       })
@@ -302,9 +304,9 @@ export function HomeContent(): React.JSX.Element {
     let cancelled = false;
     // Continue Watching and the watchlist rail each fetch a page close to
     // what they render (the server's own continue-watching default of 20,
-    // WATCHLIST_RAIL_LIMIT). Recently Added does NOT — its fetch can dwarf
-    // the fold, so only its visible first page excludes
-    // (browser-shell-browse-F8).
+    // lib/watchlist-rail.ts's WATCHLIST_RAIL_LIMIT). Recently Added does
+    // NOT — its fetch can dwarf the fold, so only its visible first page
+    // excludes (browser-shell-browse-F8).
     const excluded = buildExclusionSet(
       continueWatching.map((e) => e.item.id),
       visibleRailIds(

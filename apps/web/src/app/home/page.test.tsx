@@ -7,7 +7,7 @@
 // failure left `loading` (and the skeleton it gates, lines ~277-284) stuck
 // forever, with no error state and no retry short of a full page reload.
 
-import { act } from "react";
+import { act, StrictMode } from "react";
 import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderIntoBody, type TestRender } from "../../components/ui/test-render.js";
@@ -67,6 +67,10 @@ const { HomeContent } = await import("./HomeContent.js");
 // FakeLoombreApiError class is initialized (a TDZ ReferenceError at collect).
 const { ToastProvider } = await import("../../components/ui/Toast.js");
 const { MusicPlayerProvider } = await import("../../components/music/MusicPlayerProvider.js");
+// d4-w2: the rail's seed request is SHARED while in flight (module state in
+// lib/watchlist-rail.ts) — dropped between cases so one test's unsettled
+// request can never be adopted by the next.
+const { __resetWatchlistRailForTests } = await import("../../lib/watchlist-rail.js");
 
 function emptyPage(): Promise<{ items: unknown[]; nextCursor: null }> {
   return Promise.resolve({ items: [], nextCursor: null });
@@ -161,6 +165,10 @@ function findRetryButton(view: TestRender): HTMLButtonElement | undefined {
   return Array.from(view.container.querySelectorAll("button")).find((b) => b.textContent === "Retry");
 }
 
+function callsTo(path: string): unknown[][] {
+  return apiGetMock.mock.calls.filter((call) => call[0] === path);
+}
+
 describe("HomeContent", () => {
   let view: TestRender | null = null;
 
@@ -168,6 +176,7 @@ describe("HomeContent", () => {
     view?.unmount();
     view = null;
     apiGetMock.mockReset();
+    __resetWatchlistRailForTests();
     vi.unstubAllGlobals();
   });
 
@@ -258,5 +267,36 @@ describe("HomeContent", () => {
       "Show featured title: Movie 13",
       "Show featured title: Movie 14",
     ]);
+  });
+
+  // d4-w2: browser-items-F9 coalesced the SHARED id fetch (limit=200,
+  // lib/watchlist-id-store.ts) but not this rail's own entry fetch
+  // (limit=20), which the bootstrap effect issued directly — so /home still
+  // fired two identical GET /watchlist per mount in dev, one per StrictMode
+  // effect invocation. The rail's page now goes through
+  // lib/watchlist-rail.ts, which shares the request while it is in flight.
+  it("d4-w2: the watchlist rail fires ONE GET /watchlist per Home mount under StrictMode's effect double-invoke", async () => {
+    installApiGetMock({});
+    view = renderIntoBody(
+      <StrictMode>
+        <HomeContent />
+      </StrictMode>,
+    );
+    await flush();
+
+    expect(callsTo("/watchlist")).toHaveLength(1);
+  });
+
+  it("d4-w2: a later Home mount re-seeds the rail (the in-flight share is not a cache)", async () => {
+    installApiGetMock({});
+    view = renderIntoBody(<HomeContent />);
+    await flush();
+    view.unmount();
+    view = null;
+
+    view = renderIntoBody(<HomeContent />);
+    await flush();
+
+    expect(callsTo("/watchlist")).toHaveLength(2);
   });
 });
