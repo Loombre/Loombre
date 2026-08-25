@@ -44,6 +44,21 @@
  * viewer's client happened to send a heartbeat before actually consuming
  * any more segments. The table below is exhaustive over
  * (suspendedByThrottle, rowStatus, ahead-vs-thresholds, processStopped).
+ *
+ * ---------------------------------------------------------------------------
+ * THE STOP IS BOUNDED IN TIME (d3-f3, QA 2026-08-24). Everything above
+ * decides WHETHER the encoder should be stopped; nothing in it bounded HOW
+ * LONG. For a paused viewer the resume condition (lead <= 5) never arrives,
+ * so a stopped process stayed stopped for the whole pause — minutes — and a
+ * stopped process still owns every out-of-process resource it opened. A
+ * VideoToolbox compression session held that way is the leading suspected
+ * trigger for browser-player-F2's `kVTSessionMalfunctionErr` death. So a
+ * fourth dimension joins the table: once `stoppedForMs >= maxStoppedMs` the
+ * process is RELEASED (`release-stopped-process` — terminate, no row write),
+ * at most once, and the caller restarts the pipeline at the §9.1.4
+ * continuation origin when the resume condition finally arrives. The
+ * ordinary cycle is untouched: resume takes priority over release, so a
+ * viewer returning inside the bound still gets a plain SIGCONT.
  */
 
 export type ThrottleMechanism = "suspend" | "readrate";
@@ -87,7 +102,17 @@ export type ThrottleAction =
    *  heartbeat flipped the row back to 'active' out from under a
    *  still-too-far-ahead throttle; correct the row back rather than let a
    *  stopped process sit under an 'active' status. */
-  | { kind: "rewrite-suspended-only" };
+  | { kind: "rewrite-suspended-only" }
+  /** d3-f3: TERMINATE the stopped process — it has now been SIGSTOPped for
+   *  `maxStoppedMs` and a stop that long is itself a hazard (see
+   *  `stoppedForMs` below). NO row write: the session stays suspended for
+   *  whatever cause suspended it, and stays this throttle's to resume; only
+   *  the physical encoder goes away. Everything it already produced remains
+   *  on disk and in the served playlist, and the caller restarts the
+   *  pipeline at the §9.1.4 continuation origin when the resume condition
+   *  finally arrives. Issued at most once per stopped run
+   *  (`processReleased`). */
+  | { kind: "release-stopped-process" };
 
 export interface ThrottleInputs {
   mechanism: ThrottleMechanism;
@@ -135,6 +160,24 @@ export interface ThrottleInputs {
   /** transcode.segmentAheadResumeThreshold — see suspendAheadThreshold's
    *  comment immediately above. Defaults to THROTTLE_RESUME_AHEAD (5). */
   resumeAheadThreshold?: number;
+  /** d3-f3: how long the process has been PHYSICALLY stopped, in ms
+   *  (`undefined`/0 when it is running or the caller does not track it).
+   *  The clock is an argument here for the same reason it is everywhere
+   *  else in this repo: this function stays pure and the whole rule is
+   *  testable as a table. */
+  stoppedForMs?: number;
+  /** d3-f3: the bound on `stoppedForMs` — past it the stopped process is
+   *  released rather than left SIGSTOPped (config.ts's
+   *  THROTTLE_MAX_SUSPEND_MS; runner.ts resolves it once per session).
+   *  OMITTED MEANS UNBOUNDED, i.e. exactly the pre-d3-f3 behaviour — a
+   *  caller that does not track stop duration cannot accidentally opt into
+   *  a bound it has no clock for. */
+  maxStoppedMs?: number;
+  /** d3-f3: this stopped process has already been released — the action is
+   *  issued at most once per run, and the run then sits terminated (but
+   *  still 'stopped' as far as this reconciler is concerned: nothing is
+   *  producing) until the resume condition arrives. */
+  processReleased?: boolean;
 }
 
 /**
@@ -159,6 +202,17 @@ export function reconcileThrottle(input: ThrottleInputs): ThrottleAction {
   // shapes).
   const requested = Math.max(input.requestedSegment ?? 0, input.currentRunStartSegment ?? 0);
   const ahead = input.producedSegment !== undefined ? input.producedSegment - requested : Number.NEGATIVE_INFINITY;
+  // d3-f3: a SIGSTOP is bounded in TIME, independently of what caused it —
+  // the hazard is the physically stopped process holding an out-of-process
+  // encode session, and a heartbeat-cause stop holds one exactly as long as
+  // a throttle-cause stop does. `maxStoppedMs` omitted = unbounded (see its
+  // doc comment), which is why every pre-d3-f3 caller/table case is
+  // unaffected.
+  const stoppedTooLong =
+    input.processStopped &&
+    input.processReleased !== true &&
+    input.maxStoppedMs !== undefined &&
+    (input.stoppedForMs ?? 0) >= input.maxStoppedMs;
 
   if (!input.suspendedByThrottle) {
     if (ahead > suspendAheadThreshold && !input.processStopped) {
@@ -175,12 +229,23 @@ export function reconcileThrottle(input: ThrottleInputs): ThrottleAction {
       // active).
       return { kind: "resume-for-throttle" };
     }
+    // Row-caused stop (heartbeat staleness) that has now lasted too long:
+    // the row keeps saying 'suspended' — nothing here disputes that — but
+    // the encoder itself does not get to sit stopped for it (d3-f3).
+    if (stoppedTooLong) {
+      return { kind: "release-stopped-process" };
+    }
     return { kind: "none" };
   }
 
   // suspendedByThrottle === true: WE are the reason this is stopped.
   if (ahead <= resumeAheadThreshold) {
+    // Resume WINS over release: a viewer who comes back inside the bound
+    // gets their still-live encoder SIGCONTed, with no restart at all.
     return { kind: "resume-for-throttle" };
+  }
+  if (stoppedTooLong) {
+    return { kind: "release-stopped-process" };
   }
   if (input.rowStatus === "active" && input.processStopped) {
     // A heartbeat resumed the ROW out from under a still-too-far-ahead

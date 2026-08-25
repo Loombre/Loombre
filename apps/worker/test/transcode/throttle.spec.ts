@@ -157,6 +157,63 @@ describe("reconcileThrottle — mechanism='suspend', currently throttle-suspende
   });
 });
 
+describe("reconcileThrottle — d3-f3: a SIGSTOP is bounded in time (the VT-death trigger)", () => {
+  // F/throttle-suspend-duration (QA 2026-08-24, P2): the darwin throttle
+  // SIGSTOPped the ffmpeg group for as long as the viewer stayed paused —
+  // minutes — which is the leading suspected trigger for the VideoToolbox
+  // session death of browser-player-F2. A stopped process is now RELEASED
+  // (terminated) once it has been stopped for `maxStoppedMs`; the runner
+  // restarts it cleanly at the continuation origin when the viewer resumes.
+  const stopped = {
+    mechanism: "suspend" as const,
+    producedSegment: 30,
+    requestedSegment: 0,
+    rowStatus: "suspended" as const,
+    suspendedByThrottle: true,
+    processStopped: true,
+    maxStoppedMs: 120_000,
+  };
+
+  it("omitting maxStoppedMs leaves the pre-d3-f3 behaviour exactly (unbounded stop, no release)", () => {
+    const { maxStoppedMs: _omitted, ...unbounded } = stopped;
+    expect(reconcileThrottle({ ...unbounded, stoppedForMs: 10 * 60_000 })).toEqual({ kind: "none" });
+  });
+
+  it("inside the bound -> none (steady state, the process stays stopped)", () => {
+    expect(reconcileThrottle({ ...stopped, stoppedForMs: 119_999 })).toEqual({ kind: "none" });
+  });
+
+  it("at the bound -> release-stopped-process (terminate rather than keep it SIGSTOPped)", () => {
+    expect(reconcileThrottle({ ...stopped, stoppedForMs: 120_000 })).toEqual({ kind: "release-stopped-process" });
+  });
+
+  it("already released -> never released twice", () => {
+    expect(reconcileThrottle({ ...stopped, stoppedForMs: 600_000, processReleased: true })).toEqual({ kind: "none" });
+  });
+
+  it("a RUNNING process is never released, however long the session has been going", () => {
+    expect(reconcileThrottle({ ...stopped, processStopped: false, stoppedForMs: 600_000 })).toEqual({ kind: "none" });
+  });
+
+  it("resume WINS over release: a viewer who comes back inside the bound gets a plain SIGCONT", () => {
+    expect(reconcileThrottle({ ...stopped, producedSegment: THROTTLE_RESUME_AHEAD, stoppedForMs: 600_000 })).toEqual({
+      kind: "resume-for-throttle",
+    });
+  });
+
+  it("the bound covers a HEARTBEAT-cause stop too (same physical SIGSTOP, same VT session)", () => {
+    expect(
+      reconcileThrottle({ ...stopped, suspendedByThrottle: false, stoppedForMs: 120_000 }),
+    ).toEqual({ kind: "release-stopped-process" });
+  });
+
+  it("a released process still gets its row corrected when a heartbeat flips it back to 'active'", () => {
+    expect(reconcileThrottle({ ...stopped, rowStatus: "active", stoppedForMs: 600_000, processReleased: true })).toEqual({
+      kind: "rewrite-suspended-only",
+    });
+  });
+});
+
 describe("reconcileThrottle — V8 currentRunStartSegment floor (docs/PLAYBACK.md §9 throttle 'Lead arithmetic'; STATE.md 'Seek model V8')", () => {
   it("D-C pin (backward seek): requested pinned below the fresh run's start is a numbering artifact, not encoder lead — produced=200, requested=3, startSegment=201 -> none, never suspend", () => {
     // Pre-V8 this read ahead = 200 - 3 = 197 > 10 and SIGSTOPped the

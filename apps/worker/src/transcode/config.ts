@@ -64,6 +64,36 @@ export function resolveTranscodePollIntervalMs(): number {
 // resumeAheadThreshold fields) so a future reader never finds two
 // definitions of "the" threshold and wonders which one is real.
 
+/**
+ * d3-f3 (QA 2026-08-24, F/throttle-suspend-duration): the LONGEST a
+ * segment-ahead throttle may leave an ffmpeg process group physically
+ * SIGSTOPped before the runtime releases it (terminates it cleanly, to be
+ * restarted at the §9.1.4 continuation origin when the viewer comes back).
+ *
+ * The throttle's resume condition is "the client's lead dropped to <= 5
+ * segments", which for a PAUSED viewer never happens — so the stop lasted
+ * as long as the pause did, minutes at a time. A stopped process still owns
+ * every out-of-process resource it opened, and a VideoToolbox compression
+ * session held that way is the leading suspected trigger for the encoder
+ * death of browser-player-F2 (`kVTSessionMalfunctionErr`); the recovery
+ * ladder added there handles the death but does not remove the trigger.
+ *
+ * Two minutes is deliberately WELL PAST any ordinary buffering pause (the
+ * throttle only stops an encoder that is already >60 s ahead, so an
+ * everyday pause-and-resume never reaches this at all) while keeping the
+ * dangerous state — a stopped encoder holding a hardware session — down to
+ * minutes rather than the whole heartbeat window. Releasing costs one
+ * ordinary restart against a client that is holding ~60 s of buffer.
+ */
+export const THROTTLE_MAX_SUSPEND_MS = 120_000;
+
+export function resolveTranscodeMaxSuspendMs(): number {
+  const raw = process.env["LOOMBRE_TRANSCODE_MAX_SUSPEND_MS"];
+  if (!raw) return THROTTLE_MAX_SUSPEND_MS;
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : THROTTLE_MAX_SUSPEND_MS;
+}
+
 /** Heartbeat thresholds (docs/PLAYBACK.md §9) — DOCUMENTATION ONLY, kept
  *  as the historical fixed numbers this step's spec named; the REAL
  *  effective values now live in packages/shared/src/settings-registry.ts's

@@ -37,6 +37,7 @@ import { substituteTokens, injectReadrate } from "./args.js";
 import {
   SEGMENT_DURATION_SEC,
   SEGMENT_RETENTION_SEC,
+  resolveTranscodeMaxSuspendMs,
   resolveTranscodePollIntervalMs,
   resolveTranscodeStagingRoot,
 } from "./config.js";
@@ -123,6 +124,11 @@ export interface RunSessionDeps {
    *  `deps.db` at session start, see runTranscodeSession's header. */
   suspendAheadThresholdOverride?: number;
   resumeAheadThresholdOverride?: number;
+  /** TEST-ONLY override for config.ts's THROTTLE_MAX_SUSPEND_MS (d3-f3) —
+   *  the real bound is minutes, which no test can wait out. Production
+   *  wiring (consumer.ts) never sets it; the value then comes from
+   *  `resolveTranscodeMaxSuspendMs()`. */
+  maxSuspendMsOverride?: number;
 }
 
 interface CurrentRun {
@@ -151,8 +157,19 @@ interface CurrentRun {
    *  narrows to exact-origin matching (see the seek block). */
   headPruned: boolean;
   /** This runtime's own tracked physical suspend state (process.ts's
-   *  header — there is no queryable "is this pid stopped" OS API). */
+   *  header — there is no queryable "is this pid stopped" OS API). Stays
+   *  TRUE after a d3-f3 release: nothing is producing either way, which is
+   *  exactly what every consumer of this flag means by it. */
   processStopped: boolean;
+  /** d3-f3: when this run's process was physically stopped (epoch ms),
+   *  `undefined` while it is running. The throttle's stop is bounded in
+   *  time, and this is the clock it is bounded against. */
+  stoppedSinceMs: number | undefined;
+  /** d3-f3: this run's stopped process has been RELEASED (terminated after
+   *  sitting stopped for `maxSuspendMs`). The run is over; the segments it
+   *  produced stay served, and the throttle's resume path restarts the
+   *  pipeline instead of SIGCONTing a process that is gone. */
+  released: boolean;
   /** Which rung of the stored plan's ladder this run is encoding (Wave C2,
    *  docs/PLAYBACK.md §9.1.3). `undefined` for a ladder-empty session,
    *  where no rung applies at all — never defaulted to 0, which is a real
@@ -214,6 +231,11 @@ export async function runTranscodeSession(deps: RunSessionDeps, sessionId: strin
   // start" that needs no plumbing; consumer.ts passes index.ts's own
   // WORKER_STARTED_AT_MS, which is the authoritative value.
   const workerStartedAtMs = deps.workerStartedAtMs ?? Math.round(Date.now() - process.uptime() * 1000);
+
+  /** d3-f3: the bound on how long this session's encoder may sit
+   *  physically SIGSTOPped. Resolved ONCE per session, at the same "per
+   *  transcode admission" boundary as the throttle thresholds above. */
+  const maxSuspendMs = deps.maxSuspendMsOverride ?? resolveTranscodeMaxSuspendMs();
 
   let suspendAheadThreshold = deps.suspendAheadThresholdOverride ?? THROTTLE_SUSPEND_AHEAD;
   let resumeAheadThreshold = deps.resumeAheadThresholdOverride ?? THROTTLE_RESUME_AHEAD;
@@ -386,6 +408,8 @@ export async function runTranscodeSession(deps: RunSessionDeps, sessionId: strin
       handle,
       exited: false,
       processStopped: false,
+      stoppedSinceMs: undefined,
+      released: false,
       unregister,
       startSegment: startSeg,
       sourceOriginMs: seekTargetMs ?? 0,
@@ -849,24 +873,65 @@ export async function runTranscodeSession(deps: RunSessionDeps, sessionId: strin
         processStopped: currentRun.processStopped,
         suspendAheadThreshold,
         resumeAheadThreshold,
+        // d3-f3: how long this run's process has been stopped, and the
+        // bound past which a stop stops being acceptable at all.
+        ...(currentRun.stoppedSinceMs !== undefined ? { stoppedForMs: now() - currentRun.stoppedSinceMs } : {}),
+        maxStoppedMs: maxSuspendMs,
+        processReleased: currentRun.released,
       });
       switch (action.kind) {
         case "suspend-for-throttle":
           currentRun.handle.suspend();
           currentRun.processStopped = true;
+          currentRun.stoppedSinceMs ??= now();
           await setThrottleSuspended(db, sessionId, { suspended: true, nowMs: now() });
           break;
         case "resume-for-throttle":
+          if (currentRun.released) {
+            // d3-f3: there is no process left to SIGCONT — this run was
+            // released after sitting stopped past the bound. Come back the
+            // §9.1.4 way: ONE restart at the exact source instant after the
+            // released run's last produced segment, on the same rung. The
+            // client is by construction holding the whole lead the throttle
+            // built (> the resume threshold of segments) while the new
+            // encoder spins up, and `clearThrottleSuspendedOnRestart`
+            // (inside restartAt) is what takes the row out of 'suspended'.
+            const restarted = await restartAt(
+              currentRun.index + 1,
+              // The V8 collision floor, same rule as every other restart
+              // (§9.1.10 item 4).
+              Math.max((producedSegment ?? -1) + 1, currentRun.startSegment + 1),
+              currentRun.sourceOriginMs + currentRun.producedMs,
+              currentRun.ladderRungIndex,
+            );
+            if (!restarted) return;
+            continue;
+          }
           currentRun.handle.resume();
           currentRun.processStopped = false;
+          currentRun.stoppedSinceMs = undefined;
           await setThrottleSuspended(db, sessionId, { suspended: false, nowMs: now() });
           break;
         case "stop-process-only":
           currentRun.handle.suspend();
           currentRun.processStopped = true;
+          currentRun.stoppedSinceMs ??= now();
           break;
         case "rewrite-suspended-only":
           await setThrottleSuspended(db, sessionId, { suspended: true, nowMs: now() });
+          break;
+        case "release-stopped-process":
+          // d3-f3: the stop has lasted past the bound. Terminate the
+          // encoder rather than leave a SIGSTOPped process holding a
+          // hardware compression session (throttle.ts's header). The ROW is
+          // deliberately untouched — the session stays suspended, and stays
+          // this throttle's to resume — and so is the staging directory:
+          // every segment this run produced is still on disk and still in
+          // the served playlist, which is precisely the buffer the client
+          // is about to play through.
+          await currentRun.handle.terminate().catch(() => undefined);
+          currentRun.unregister();
+          currentRun.released = true;
           break;
         case "none":
           break;
