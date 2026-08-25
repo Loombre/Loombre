@@ -17,6 +17,10 @@
  * (c) Forbids UPnP/NAT-PMP/PCP library import patterns anywhere in the
  *     repo's source files (STATE.md "Loombre Remote", RG14 — "no UPnP
  *     anywhere" is a hard line across all three remote-access paths).
+ * (d) Forbids a raw NUL byte in any scanned source file (d3-aq3): git's
+ *     `text=auto` binary detection turns such a file into an opaque blob —
+ *     no diff to review, no blame, invisible to `git grep` and to every
+ *     grep gate here, including (a)–(c).
  *
  * Exits non-zero and prints `file:line: reason` for every hit.
  */
@@ -51,6 +55,12 @@ const EXCLUDED_DIR_NAMES = new Set([
   // shipped code — the telemetry/naming ban is about SOURCE IMPORTS, not
   // prose that discusses them.
   "reports",
+  // Generated media/stash fixtures (.gitignore'd — `pnpm gen:media-fixtures`
+  // builds them; git tracks NOTHING under this tree). Their `.ts` files are
+  // MPEG-TS transport streams, not TypeScript: real binary that the (d) NUL
+  // pass below would otherwise report by the dozen, and that every other
+  // pass here was pointlessly reading as utf8.
+  "test-fixtures",
 ]);
 
 const EXCLUDED_FILES = new Set([
@@ -390,6 +400,23 @@ for (const { full, rel } of files) {
   const isInBrandAllowlist = BRAND_HYGIENE_ALLOWLIST.has(rel);
   const content = readFileSync(full, "utf8");
   const lines = content.split("\n");
+
+  // (d) d3-aq3 (verify/gap-F1): NO scanned source file may contain a raw
+  // NUL byte. `.gitattributes`' `* text=auto` binary-detects a file with a
+  // NUL near its head, and a binary file has NO reviewable diff, no blame,
+  // and is invisible to `git grep` — a 176-line module once landed that way
+  // over one `\x00` used as a map-key separator, permanently blinding every
+  // diff/grep gate to it. A separator that needs a control character is
+  // spelled with an ESCAPE (`"\u0000"`), never a literal byte.
+  const nulIndex = content.indexOf("\u0000");
+  if (nulIndex !== -1) {
+    violations.push({
+      rel,
+      lineNo: content.slice(0, nulIndex).split("\n").length,
+      code: "binary-source:nul-byte",
+      line: "raw NUL byte in tracked source (git treats this file as binary — no diff, no blame, no grep)",
+    });
+  }
 
   lines.forEach((line, idx) => {
     if (inNamingScope) {

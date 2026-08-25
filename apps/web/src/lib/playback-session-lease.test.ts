@@ -9,6 +9,7 @@
 // components/player/VideoPlayer.test.tsx's gap-F1 describe; here the same
 // call sequences run against the pool directly.
 
+import { existsSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { createSessionLeasePool, playbackSessionLeaseKey } from "./playback-session-lease.js";
 
@@ -204,5 +205,29 @@ describe("playbackSessionLeaseKey", () => {
     expect(playbackSessionLeaseKey("item-1")).not.toBe(playbackSessionLeaseKey("item-1", "file-a"));
     expect(playbackSessionLeaseKey("item-1", "file-a")).not.toBe(playbackSessionLeaseKey("item-1", "file-b"));
     expect(playbackSessionLeaseKey("item-1")).not.toBe(playbackSessionLeaseKey("item-2"));
+  });
+
+  // d3-aq3 (verify/gap-F1): the separator was written as a RAW NUL byte, so
+  // `.gitattributes`' `* text=auto` detected this module as BINARY — it
+  // landed with zero reviewable diff and is invisible to blame, `git grep`
+  // and every grep gate. The separator character is unchanged (a UUID can
+  // never contain it, so no two distinct pairs collide); only its spelling
+  // is, from a literal byte to an escape. scripts/grep-gates.mjs pass (d)
+  // enforces that repo-wide; this asserts it for the module that had it.
+  it("keeps a separator no UUID can contain, spelled as an escape so the file stays TEXT to git", () => {
+    const key = playbackSessionLeaseKey("01a01f7a-36d5-7e7c-9e30-c85c082a5de9", "01a01f7a-330e-7ac9-b2e5-5cd7bb6d4c47");
+    expect(key.split("\u0000")).toHaveLength(2);
+    // The classic collision this separator exists to prevent.
+    expect(playbackSessionLeaseKey("a", "b:c")).not.toBe(playbackSessionLeaseKey("a:b", "c"));
+
+    // Read from disk, not from the transformed module: the point is the
+    // literal BYTES git stores. (jsdom's import.meta.url is an http: URL,
+    // hence the cwd-relative lookup — vitest runs with the package as cwd,
+    // whether invoked directly or through turbo.)
+    const candidates = ["src/lib/playback-session-lease.ts", "apps/web/src/lib/playback-session-lease.ts"];
+    const found = candidates.find((candidate) => existsSync(candidate));
+    expect(found, `none of ${candidates.join(", ")} resolved from ${process.cwd()}`).toBeDefined();
+    const source = readFileSync(found!, "utf8");
+    expect(source.includes("\u0000"), "a raw NUL byte in tracked source makes the whole file binary to git").toBe(false);
   });
 });
