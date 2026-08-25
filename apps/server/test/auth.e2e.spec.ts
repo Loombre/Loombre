@@ -152,9 +152,17 @@ async function resetCasualRestrictedSettings(): Promise<void> {
 }
 
 describe("GET /system/capabilities (public)", () => {
+  // api-restricted-leak-F1 (owner ruling 2026-08-24): `restricted-content`
+  // is auth-scoped now — this case therefore reads it WITH a session. The
+  // anonymous shape (key absent entirely, byte-identical whether the
+  // setting is on or off) is pinned by the dedicated
+  // capabilities-auth-scoping.e2e.spec.ts.
   it("returns 200 with music=true, hls-ll=false, restricted-content reflecting LOOMBRE_RESTRICTED_ENABLED (unset -> off)", async () => {
     await setRestrictedEnabled(undefined);
-    const res = await request(app.getHttpServer()).get("/system/capabilities");
+    const session = await loginAs("admin", "loombre-seed-admin");
+    const res = await request(app.getHttpServer())
+      .get("/system/capabilities")
+      .set("Authorization", `Bearer ${session.accessToken}`);
     expect(res.status).toBe(200);
     expect(res.headers["content-type"]).toMatch(/^application\/json/);
 
@@ -166,6 +174,14 @@ describe("GET /system/capabilities (public)", () => {
     expect(restrictedDetail.enabled).toBe(false);
     expect(res.body.flags).toContain("music");
     expect(res.body.flags).not.toContain("restricted-content");
+  });
+
+  it("anonymously, the restricted-content entry is absent — never enabled:false (api-restricted-leak-F1)", async () => {
+    await setRestrictedEnabled("true");
+    const res = await request(app.getHttpServer()).get("/system/capabilities");
+    expect(res.status).toBe(200);
+    expect(Object.prototype.hasOwnProperty.call(res.body.details, "restricted-content")).toBe(false);
+    await setRestrictedEnabled(undefined);
   });
 
   it("requires no Authorization header at all", async () => {

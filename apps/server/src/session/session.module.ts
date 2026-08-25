@@ -11,6 +11,7 @@ import { MailModule } from "../mail/mail.module.js";
 import { TokenService } from "./token.service.js";
 import { RefreshTokenService } from "./refresh-token.service.js";
 import { AuthRateLimiterService } from "./auth-rate-limiter.service.js";
+import { OptionalAuthGuard } from "../gateway/optional-auth.guard.js";
 
 /**
  * Session module: users, devices, auth, progress, events (docs/PLAN.md §3,
@@ -70,10 +71,18 @@ import { AuthRateLimiterService } from "./auth-rate-limiter.service.js";
  * CatalogModule can import it directly for its own admin reset-password
  * action (users.controller.ts) without importing SessionModule (D2).
  */
+/**
+ * api-restricted-leak-F1 (owner ruling 2026-08-24): OptionalAuthGuard
+ * (gateway/optional-auth.guard.ts) is provided here — not exported —
+ * because SystemController is the only user and its dependency
+ * (TokenService) is this module's own provider. Registered explicitly
+ * rather than relying on enhancer auto-instantiation, matching how
+ * CommonSettingsModule registers SurfaceRateLimitGuard.
+ */
 @Module({
   imports: [CommonModule, CommonSettingsModule, MailModule],
   controllers: [AuthController, SystemController, UsersMeController, RestrictedController, RestrictedZoneController],
-  providers: [TokenService, RefreshTokenService, AuthRateLimiterService],
+  providers: [TokenService, RefreshTokenService, AuthRateLimiterService, OptionalAuthGuard],
   exports: [CommonModule, CommonSettingsModule, MailModule, TokenService],
 })
 export class SessionModule {}

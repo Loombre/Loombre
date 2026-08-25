@@ -203,7 +203,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Public feature-flag negotiation */
+        /**
+         * Feature-flag negotiation (public, with one auth-scoped entry)
+         * @description Reachable with no credentials, but the report is AUTH-SCOPED. An authenticated caller — any session, admin or not — gets an entry for every known CapabilityFlag. An unauthenticated caller gets the same report with `restricted-content` OMITTED from both `flags` and `details`: absent, never `enabled: false`, so the anonymous response is byte-identical whether or not this operator has switched restricted-content gating on (docs/PLAN.md 6.4 gate 1 — whether the zone exists on this instance is not an anonymous fact). An invalid or expired Bearer token is treated as unauthenticated; this operation never answers 401. Entitlement (gates 2-5) is unaffected: only gate 1's VISIBILITY is scoped here.
+         */
         get: operations["getSystemCapabilities"];
         put?: never;
         post?: never;
@@ -2884,8 +2887,9 @@ export interface components {
             description?: string | null;
         };
         Capabilities: {
+            /** @description The enabled subset of `details`, compacted. Auth-scoped the same way: `restricted-content` never appears here for an unauthenticated caller, whatever the instance's live setting is. */
             flags: components["schemas"]["CapabilityFlag"][];
-            /** @description Map of every known CapabilityFlag to its detail object. */
+            /** @description Map of CapabilityFlag to its detail object. Every known flag is present for an authenticated caller. `restricted-content` is OPTIONAL: it is omitted entirely for an unauthenticated caller (see the operation description), so a client must read a missing key as "not disclosed to me", never as "disabled". Every other flag is always present. */
             details: {
                 [key: string]: components["schemas"]["CapabilityDetail"];
             };
@@ -5290,7 +5294,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Capabilities this server build supports */
+            /** @description Capabilities this server offers the calling audience. Values are the instance's LIVE state, not build-time constants — every known flag for an authenticated caller, all but `restricted-content` for an anonymous one. */
             200: {
                 headers: {
                     [name: string]: unknown;

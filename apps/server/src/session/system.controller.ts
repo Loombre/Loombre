@@ -9,6 +9,16 @@
 // reported honestly as not-yet-implemented rather than hardcoded true
 // (decision beyond spec, see task report).
 //
+// api-restricted-leak-F1 (QA 2026-08-20/21, OWNER RULING 2026-08-24): the
+// `restricted-content` entry is AUTH-SCOPED — present for any authenticated
+// session, OMITTED ENTIRELY (both `details` and `flags`) for an anonymous
+// caller, so the anonymous body is byte-identical whether or not this
+// operator switched gate 1 on. The route itself stays public and still
+// never 401s: OptionalAuthGuard (gateway/optional-auth.guard.ts) attaches
+// `req.user` when a valid Bearer happens to be present and leaves it unset
+// otherwise. The rule lives in common/capabilities.ts
+// (resolveRestrictedCapabilityDetail) with the full rationale.
+//
 // STATE.md P4.15 (Phase 4 lane G1's rate-limit sweep): this is a PUBLIC,
 // UNAUTHENTICATED route (AuthGuard's PUBLIC_ROUTES) — the sweep explicitly
 // names it. per-IP, generous ceiling (SurfaceRateLimiterService.capabilities,
@@ -16,9 +26,11 @@
 // no I/O), so the limit exists purely for basic DoS-amplification hygiene
 // on an unauthenticated surface, not because the work is expensive.
 
-import { Controller, Get, UseFilters, UseGuards } from "@nestjs/common";
+import { Controller, Get, Req, UseFilters, UseGuards } from "@nestjs/common";
 import { loadTlsConfig } from "../tls/config.js";
-import { isRestrictedContentEnabled } from "../common/capabilities.js";
+import { resolveRestrictedCapabilityDetail } from "../common/capabilities.js";
+import type { AuthenticatedRequest } from "../gateway/auth.guard.js";
+import { OptionalAuthGuard } from "../gateway/optional-auth.guard.js";
 import { RateLimit, SurfaceRateLimitGuard } from "../common/rate-limit.guard.js";
 import { RateLimitExceptionFilter } from "../common/rate-limit-exception.filter.js";
 import { SettingsService } from "../settings/settings.service.js";
@@ -46,15 +58,18 @@ export class SystemController {
   ) {}
 
   @Get("capabilities")
-  @UseGuards(SurfaceRateLimitGuard)
+  @UseGuards(SurfaceRateLimitGuard, OptionalAuthGuard)
   @RateLimit("capabilities", "ip")
-  getCapabilities(): Capabilities {
+  getCapabilities(@Req() req: AuthenticatedRequest): Capabilities {
+    // api-restricted-leak-F1: `undefined` for an anonymous caller, and the
+    // conditional spread below then omits the key from `details` — which
+    // ALSO keeps it out of `flags`, since `flags` is derived from this map
+    // rather than listed separately. Spread IN PLACE (not appended) so the
+    // authenticated report keeps its original key order.
+    const restricted = resolveRestrictedCapabilityDetail(this.settingsService, req.user !== undefined);
     const details: Record<string, CapabilityDetail> = {
       music: { enabled: true, description: "Music library support." },
-      "restricted-content": {
-        enabled: isRestrictedContentEnabled(this.settingsService),
-        description: "Native adult/restricted-content gating (docs/PLAN.md §6.4). Off by default.",
-      },
+      ...(restricted ? { "restricted-content": restricted } : {}),
       // GENUINELY not implemented: `lowLatency` exists only as a
       // device-profile INPUT field (what a client claims it supports).
       // Nothing here emits EXT-X-PART or holds parts back. Left as-is, and

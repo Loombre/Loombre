@@ -41,3 +41,54 @@ export function resolveRestrictedMajorityAgeYears(settingsService: SettingsServi
 export function resolveRestrictedUnlockDurationMs(settingsService: SettingsService): number {
   return (settingsService.getEffective("restricted.defaultUnlockDurationMs")?.value as number | undefined) ?? 30 * 60 * 1000;
 }
+
+/** The `restricted-content` entry's description text in GET
+ *  /system/capabilities' `details` map. Lives here, next to the disclosure
+ *  rule below, so the flag's copy and its visibility rule cannot drift
+ *  apart. */
+export const RESTRICTED_CAPABILITY_DESCRIPTION =
+  "Native adult/restricted-content gating (docs/PLAN.md §6.4). Off by default.";
+
+/**
+ * api-restricted-leak-F1 (2026-08-20/21 QA sweep, OWNER RULING 2026-08-24):
+ * gate 1's VALUE is auth-only.
+ *
+ * GET /system/capabilities is public and stays public — but it used to
+ * report `restricted-content: { enabled: <the live restricted.enabled
+ * setting> }` to ANY anonymous caller, which let a passer-by detect whether
+ * this particular operator had switched adult-content gating on. Nothing
+ * user- or title-level leaked; the leak was instance CONFIGURATION, and it
+ * contradicted §6.4's own design principle that the zone is invisible
+ * unless every gate passes.
+ *
+ * The ruling: an authenticated session (ANY session — admin or not,
+ * entitled or not) gets the full report; an unauthenticated caller gets the
+ * report with this entry OMITTED — absent, never `enabled: false`. Absence
+ * is deliberately the LESS informative of the two shapes: `false` would
+ * still be an answer about this instance, and an operator who turns the
+ * setting on would flip an anonymously-observable bit. With omission, the
+ * anonymous response is byte-identical either way (pinned by
+ * apps/server/test/capabilities-auth-scoping.e2e.spec.ts).
+ *
+ * Entitlement is untouched: gates 2-5 (opt-in, age, PIN, unlock —
+ * resolveClearance/ViewerContextProvider) decide who may SEE restricted
+ * content, and they still run exactly as before. This function moves gate
+ * 1's visibility only, and it is the ONLY consumer of `isAuthenticated` in
+ * this file — `isRestrictedContentEnabled` above stays the unconditional
+ * server-side truth every gate keeps reading.
+ *
+ * Returns the detail object to publish, or `undefined` meaning "publish
+ * nothing for this flag" — the caller must then omit it from BOTH `details`
+ * and the compact `flags` list (a flag present in one and absent from the
+ * other would leak the same bit through the other channel).
+ */
+export function resolveRestrictedCapabilityDetail(
+  settingsService: SettingsService,
+  isAuthenticated: boolean,
+): { enabled: boolean; description: string } | undefined {
+  if (!isAuthenticated) return undefined;
+  return {
+    enabled: isRestrictedContentEnabled(settingsService),
+    description: RESTRICTED_CAPABILITY_DESCRIPTION,
+  };
+}

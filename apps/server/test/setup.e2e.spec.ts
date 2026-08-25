@@ -315,3 +315,34 @@ describe("POST /setup/first-admin (public until the first user, then permanently
     });
   });
 });
+
+describe("setup mode is unaffected by the auth-only gate-1 disclosure (api-restricted-leak-F1)", () => {
+  beforeEach(resetEmpty);
+
+  // The owner ruling (2026-08-24) moved GET /system/capabilities's
+  // `restricted-content` entry behind auth. The one pre-auth-looking web
+  // consumer is the wizard's RestrictedStep
+  // (apps/web/src/app/setup/_components/RestrictedStep.tsx), which reads the
+  // flag to decide between its "capability-off" copy and the opt-in form —
+  // but it mounts AFTER AdminStep applied the first-admin TokenPair to the
+  // auth store, so its read is authenticated and unchanged. This pins both
+  // halves of that claim against the real empty-instance flow.
+  it("before the first admin exists the anonymous report omits it; the wizard's own token still sees it", async () => {
+    const anonymous = await request(app.getHttpServer()).get("/system/capabilities");
+    expect(anonymous.status).toBe(200);
+    expect(Object.prototype.hasOwnProperty.call(anonymous.body.details, "restricted-content")).toBe(false);
+
+    const created = await request(app.getHttpServer()).post("/setup/first-admin").send({
+      username: "wizard-admin",
+      email: "wizard-admin@loombre.local",
+      password: "correct-horse-battery-staple",
+    });
+    expect(created.status).toBe(201);
+
+    const asWizard = await request(app.getHttpServer())
+      .get("/system/capabilities")
+      .set("Authorization", `Bearer ${created.body.tokens.accessToken}`);
+    expect(asWizard.status).toBe(200);
+    expect(typeof asWizard.body.details["restricted-content"].enabled).toBe("boolean");
+  });
+});

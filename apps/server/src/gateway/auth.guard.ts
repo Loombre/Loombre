@@ -112,7 +112,9 @@ function isPublicRoute(method: string, path: string): boolean {
   return PUBLIC_ROUTE_PATTERNS.some((entry) => entry.method === method && entry.pattern.test(path));
 }
 
-const BEARER_PATTERN = /^Bearer\s+(\S+)$/;
+/** Shared with optional-auth.guard.ts (the same header, parsed the same
+ *  way, on the one PUBLIC route whose response is auth-scoped). */
+export const BEARER_PATTERN = /^Bearer\s+(\S+)$/;
 
 /**
  * Global gateway auth guard (STATE.md D21 -> P1.14 upgrade, registered as
