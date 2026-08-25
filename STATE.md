@@ -367,6 +367,57 @@ deploy stays manual. Dev stack left RUNNING (one mid-run stack death —
 harness task exit 144 during a lane's web-server restart — was recovered
 by the lane itself; stack confirmed on the seeded compose DB).
 
+## QA remediation dispatch 3 — NEW_FINDINGS backlog burn-down (2026-08-24→25, COMPLETE, all verified)
+
+Third owner-directed remediation dispatch over the QA sweep's NEW_FINDINGS
+backlog (91 entries at dispatch-2 close). Baseline cc417c9 → HEAD 67ecba0,
+60 commits across 10 lanes: A (player seek-landing/MSE, d3-a1..a6),
+AQ (player quality/copy, d3-aq1..aq6), B (contract+server validation,
+d3-b1..b11), C (client-navigation honesty, d3-c1..c6), D (restricted/auth
+return-path, d3-d1..d10), DOC (d3-doc1..doc2), E (admin surfaces + domain
+events + SDK runtime tests, d3-e1..e7), F (worker transcode lifecycle,
+d3-f1..f5), M (music playback, d3-m1..m4), S (web shell/SSR, d3-s1..s2).
+
+**Outcome: 59/59 findings VERIFIED, 0 reopened, 0 blocked** (per-finding
+ledger: .remediation/status/d3-*.json — every id carries repro→fixed→
+committed→verified history with live re-probe notes at HEAD). Included in
+the 59: d3-b1/b2/b3 verified as already-fixed-at-d3-baseline by dispatch-1/2
+work — pinned with new e2e suites AND live-probed at HEAD (email:null 201,
+bad-email 422, nullable-member type 422); d3-d2 REFUTED at 3 of 4 sites
+(buildLoginHref('/setup')==='/login' is a sanitizer no-op; UserMenu/
+QuickSearch behavior deliberate) with the deferral ruling confirmed live
+(signed-out /settings → /login?next=%2Fsettings → returns; auth-expiry
+carries next= too).
+
+Notable design decisions taken this dispatch:
+- **Retention watermark** (d3-f1, f915dd7): worker retention pruning now
+  floors at the VIEWER watermark, not the produced edge — a served playlist
+  can no longer have its head pruned out from under the viewer, and seek
+  absorption no longer fires on a pruned head (companion d3-f2: a
+  first-touch backward seek is backward intent, not a prune race).
+- **AppShell SSR restoration** (d3-s1, e9784bf): the boot splash no longer
+  bails every route out of SSR; d3-s2 pins the deleted admin redirect
+  stubs' failure class shut so the regression can't silently return.
+- **Unlock-cleared-on-login** (d3-d1, 5318941): closes dispatch-2's
+  security-notable — POST /auth/logout + fresh login now clear
+  restricted_unlocked_until_ms; a restricted unlock never survives the
+  logout+login boundary (pinned server-side).
+- **Session-status event** (d3-e3/d3-e5, f96a885/ba0f869): contract gains
+  the playback.session-status-changed domain event and an abandoned session
+  is now distinguishable from a throttle-parked one; web sessions pane
+  ticks off it, merges page 1, and pauses when hidden (d3-e4).
+
+Close gates on the settled tree: `pnpm gate` ALL STEPS PASSED FIRST RUN
+(.remediation/gate-d3-final.log — the E-lane flaky specs from the
+integrator notes never fired, no isolate re-run needed); web production
+build + perf:web-budget within budget (/browse first-load 174.7 KB gz vs
+200 KB budget, result refreshed as 67ecba0); V8-QUAL PASS all 6 probes
+(plan copy/transcode, /seek 202 exact, run visible 0.57s,
+-noaccurate_seek argv, PDT exact, A/V gap 5.0ms). Website build from the
+DOC lane's docs sync re-confirmed green at close (70 routes merged,
+build+CSP checks pass; deploy stays manual). Still-open d3 ids: NONE.
+DO-NOT-PUSH honored — everything is local on main.
+
 ## 0.9.0-rc polish pass — UI polish, IA restructure, scanner/probe fix (2026-08-07, IN PROGRESS)
 
 Driven by owner's annotated screenshots from real Windows 11 ARM VM (Parallels) +
