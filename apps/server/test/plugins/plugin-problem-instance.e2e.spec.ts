@@ -27,6 +27,14 @@
 // (every assertion is about an id that resolves to no row), so unlike
 // admin-plugins.e2e.spec.ts it spawns no example plugins and touches no
 // keyring.
+//
+// Remediation d4-b4 (P3, backlog #100) extends it to the OTHER half of the
+// same defect: plugin-registration.service.ts's registerPlugin (`/plugins`)
+// / refreshPlugin / reapprovePlugin (`/plugins/{id}`), which d3-b7 left
+// alone because that file was outside its ownership. refresh and reapprove
+// join the `calls()` table above; register has no {id} and is asserted on
+// its own, through the 422 a rejected baseUrl raises — the same instance
+// path every other throw in that method carries.
 
 import "reflect-metadata";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -123,6 +131,12 @@ function calls(): Call[] {
     { label: "POST /admin/plugins/{id}/enable", send: (url) => auth(request(server()).post(url)) },
     { label: "POST /admin/plugins/{id}/disable", send: (url) => auth(request(server()).post(url)) },
     { label: "POST /admin/plugins/{id}/rotate-hmac", send: (url) => auth(request(server()).post(url)) },
+    // d4-b4: plugin-registration.service.ts's three methods, the half of
+    // this defect class d3-b7 could not fix (that file was outside its
+    // ownership). refreshPlugin/reapprovePlugin both 404 an unknown id from
+    // the service, naming `/plugins/{id}` — the same unmounted prefix.
+    { label: "POST /admin/plugins/{id}/refresh", send: (url) => auth(request(server()).post(url)) },
+    { label: "POST /admin/plugins/{id}/reapprove", send: (url) => auth(request(server()).post(url)).send({}) },
   ];
 }
 
@@ -151,6 +165,21 @@ describe("d3-b7: plugin problems name the path they actually happened on", () =>
       expect(res.status, `${call.label} ${JSON.stringify(res.body)}`).toBe(404);
       expect(res.body.instance, `${call.label} (non-uuid) instance`).toBe(url);
     }
+  });
+
+  // d4-b4: registerPlugin has no {id} at all — its instance path was the
+  // bare unmounted `/plugins`. Reachable with any rejected body: the 422
+  // validateBaseUrl raises carries the same path the 404s above do.
+  it("POST /admin/plugins -> 422 whose instance is the request path, not the unmounted /plugins", async () => {
+    const res = await request(app.getHttpServer())
+      .post("/admin/plugins")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ url: "not-an-absolute-url", grantedCapabilityTypes: ["metadata-provider"] });
+
+    expect(res.status, JSON.stringify(res.body)).toBe(422);
+    expect(res.headers["content-type"]).toContain("application/problem+json");
+    expect(res.body.detail).toBe("baseUrl must be an absolute URL.");
+    expect(res.body.instance).toBe("/admin/plugins");
   });
 
   // Not reachable over HTTP with an unknown id (registerPlugin has just

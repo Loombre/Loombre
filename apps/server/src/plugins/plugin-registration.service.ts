@@ -33,6 +33,23 @@
 // throwing 409/422/404 directly from the service layer, ahead of any
 // controller — W5's controllers just let these propagate through Nest's
 // existing exception filter).
+//
+// d4-b4 (QA 2026-08-24 backlog #100, P3): those rejections carried an RFC
+// 9457 `instance` of `/plugins` / `/plugins/{id}` — a path this server does
+// not mount at ANY prefix (the surface is `/admin/plugins/**`, LPP v1 Lane
+// W5). Exactly the defect d3-b7 fixed in plugin-lifecycle.service.ts and
+// plugin-health.service.ts; this file was outside that lane's ownership and
+// kept all three of its copies. Each method now names the FULL MOUNTED
+// ROUTE of the one controller action that calls it (admin-plugins.
+// controller.ts: `@Controller("admin/plugins")` + `@Post()` /
+// `@Post(":id/refresh")` / `@Post(":id/reapprove")`), the same convention
+// admin-library-provider-chain.service.ts's instancePath() and d3-b7 use.
+// Each of the three has exactly ONE caller, so a single request path is
+// truthful for all of their throws — unlike PluginHealthService.
+// runHealthCheck, which three callers reach and which therefore names the
+// plugin RESOURCE instead (see its own note and
+// test/plugins/plugin-problem-instance.e2e.spec.ts, which pins the
+// invariant for every one of these routes).
 
 import { Injectable } from "@nestjs/common";
 import { uuidv7 } from "@loombre/shared";
@@ -254,7 +271,9 @@ export class PluginRegistrationService {
   }
 
   async registerPlugin(input: RegisterPluginRequest, nowMs = Date.now()): Promise<RegisterPluginOutcome> {
-    const instancePath = "/plugins";
+    // d4-b4: the mounted route of its only caller, admin-plugins.controller
+    // .ts's `register` (`@Controller("admin/plugins")` + `@Post()`).
+    const instancePath = "/admin/plugins";
     await requireLiveAdmin(this.dbProvider.db, input.actorUserId, instancePath);
 
     const parsedUrl = validateBaseUrl(input.baseUrl, instancePath);
@@ -333,7 +352,13 @@ export class PluginRegistrationService {
   }
 
   async refreshPlugin(pluginId: string, actorUserId: string | null, nowMs = Date.now()): Promise<RefreshPluginOutcome> {
-    const instancePath = `/plugins/${pluginId}`;
+    // d4-b4: the mounted route of its only caller, admin-plugins.controller
+    // .ts's `refresh` (`@Post(":id/refresh")`). `actorUserId: null` is a
+    // reserved shape for a future non-request caller and has none today —
+    // if one ever appears, this path stops being universally truthful and
+    // should move to a caller-supplied argument, exactly as d3-b7 reasoned
+    // for runHealthCheck's three callers.
+    const instancePath = `/admin/plugins/${pluginId}/refresh`;
     if (actorUserId) await requireLiveAdmin(this.dbProvider.db, actorUserId, instancePath);
 
     const plugin = await getPluginById(this.dbProvider.db, pluginId);
@@ -399,7 +424,9 @@ export class PluginRegistrationService {
   }
 
   async reapprovePlugin(pluginId: string, grant: PluginGrantInput, actorUserId: string, nowMs = Date.now()): Promise<PluginRow> {
-    const instancePath = `/plugins/${pluginId}`;
+    // d4-b4: the mounted route of its only caller, admin-plugins.controller
+    // .ts's `reapprove` (`@Post(":id/reapprove")`).
+    const instancePath = `/admin/plugins/${pluginId}/reapprove`;
     await requireLiveAdmin(this.dbProvider.db, actorUserId, instancePath);
 
     const plugin = await getPluginById(this.dbProvider.db, pluginId);
