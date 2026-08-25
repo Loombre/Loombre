@@ -41,6 +41,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { components } from "@loombre/sdk";
 import { AmbientHero } from "../../../../components/detail/AmbientHero.js";
@@ -192,9 +193,9 @@ export function EpisodeDetail({ id, serverUrl, accessToken }: { id: string; serv
   return (
     <div className={styles.page}>
       {seriesTitle && (
-        <a className={styles.backLink} href={`/items/series/${episode.seriesId}`}>
+        <Link className={styles.backLink} href={`/items/series/${episode.seriesId}`}>
           ← {seriesTitle}
-        </a>
+        </Link>
       )}
       <AmbientHero
         serverUrl={serverUrl}
@@ -309,9 +310,9 @@ export function TrackDetail({ id, serverUrl, accessToken }: { id: string; server
   const hero = pickHeroImage(track.images);
   return (
     <div className={styles.page}>
-      <a className={styles.backLink} href={`/items/album/${track.albumId}`}>
+      <Link className={styles.backLink} href={`/items/album/${track.albumId}`}>
         ← Back to album
-      </a>
+      </Link>
       <AmbientHero
         serverUrl={serverUrl}
         accessToken={accessToken}

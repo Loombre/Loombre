@@ -8,10 +8,49 @@
 //        render nothing at all.
 
 import { act } from "react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { components } from "@loombre/sdk";
 import { EpisodeRow } from "./EpisodeRow.js";
 import { renderIntoBody, type TestRender } from "../ui/test-render.js";
+
+/** Records what a real next/link click would hand to the client router. */
+const clientNav = vi.hoisted(() => ({ pushes: [] as string[] }));
+
+// The next/link stub mirrors PlayLink.test.tsx's and the restricted-scene
+// guard's (same reason: vitest resolves the bare "next/link" specifier to
+// Next's PAGES build, so the shipped App Router Link cannot intercept
+// clicks under jsdom). It models what the real component does on an
+// unmodified primary click: preventDefault() then a client-side navigation.
+vi.mock("next/link", () => ({
+  default: ({
+    href,
+    children,
+    ...rest
+  }: {
+    href: string;
+    children?: React.ReactNode;
+  } & React.AnchorHTMLAttributes<HTMLAnchorElement>): React.JSX.Element => (
+    <a
+      href={href}
+      {...rest}
+      onClick={(e) => {
+        if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
+        e.preventDefault();
+        clientNav.pushes.push(href);
+      }}
+    >
+      {children}
+    </a>
+  ),
+}));
+
+function click(node: Element, init: MouseEventInit = {}): MouseEvent {
+  const event = new MouseEvent("click", { bubbles: true, cancelable: true, button: 0, ...init });
+  act(() => {
+    node.dispatchEvent(event);
+  });
+  return event;
+}
 
 type Episode = components["schemas"]["Episode"];
 type Progress = components["schemas"]["Progress"];
@@ -56,6 +95,7 @@ describe("EpisodeRow", () => {
   afterEach(() => {
     view?.unmount();
     view = null;
+    clientNav.pushes.length = 0;
   });
 
   it("renders the index, title, and runtime", () => {
@@ -149,5 +189,20 @@ describe("EpisodeRow", () => {
       const thumbWrap = view.container.querySelector('a[href$="/items/episode/11111111-1111-1111-1111-111111111111"] > span:nth-child(2)');
       expect(thumbWrap?.querySelector("svg")).not.toBeNull();
     });
+  });
+
+  // d4-w5 (C/detail-back-links-raw-anchor): every episode row on a series
+  // detail was a raw <a href>, i.e. a FULL DOCUMENT load of an app already
+  // loaded — and a re-lock when the series was reached from the unlocked
+  // restricted zone.
+  it("d4-w5: an episode row click is a CLIENT navigation, not a document load", () => {
+    const episode = makeEpisode();
+    view = renderIntoBody(<EpisodeRow episode={episode} serverUrl="https://example.test" accessToken="tok" />);
+    const row = view.container.querySelector("a") as Element;
+
+    const event = click(row);
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(clientNav.pushes).toEqual([`/items/episode/${episode.id}`]);
   });
 });

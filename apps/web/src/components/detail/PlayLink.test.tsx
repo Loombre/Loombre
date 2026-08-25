@@ -221,12 +221,11 @@ describe("PlayLink", () => {
      *  skipped, so the guard still catches every NEW offender and this list
      *  stays the follow-up's exact worklist. Remove an entry when it is
      *  converted to next/link. */
-    const KNOWN_REMAINING = new Map<string, string>([
-      ["app/items/[itemType]/[id]/DetailScreens.tsx", "C/detail-back-links-raw-anchor: the episode/track 'back to …' links."],
-      ["components/detail/EpisodeRow.tsx", "C/detail-back-links-raw-anchor: every episode row on a series detail."],
-      ["components/detail/SceneBanner.tsx", "C/detail-back-links-raw-anchor: the '← LIBRARY' back pill."],
-      ["components/music/AlbumDetailScreen.tsx", "C/detail-back-links-raw-anchor: the more-albums tiles and the artist links."],
-    ]);
+    /** EMPTY as of d4-w5 (the last six sites: the episode/track back links,
+     *  every episode row, the '← LIBRARY' pill, and the more-albums tiles +
+     *  artist links). A NEW entry here is a deliberate, justified deferral —
+     *  not a place to park an offender. */
+    const KNOWN_REMAINING = new Map<string, string>();
 
     // fileURLToPath on the STRING form: under the jsdom environment the
     // global URL is jsdom's, and node:url rejects its instances.

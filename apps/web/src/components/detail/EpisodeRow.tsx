@@ -35,6 +35,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import type { components } from "@loombre/sdk";
 import { Icon } from "../icon/Icon.js";
 import { buildImageUrl } from "../../lib/image-url.js";
@@ -92,7 +93,7 @@ export function EpisodeRow({
   const indexLabel = `E${String(episode.episodeNumber).padStart(2, "0")}`;
 
   return (
-    <a href={`/items/episode/${episode.id}`} className={styles.row}>
+    <Link href={`/items/episode/${episode.id}`} className={styles.row}>
       <span className={styles.index}>{indexLabel}</span>
       <span
         className={styles.thumbWrap}
@@ -124,6 +125,6 @@ export function EpisodeRow({
         <span className={styles.resumeBadge}>RESUME {formatResumeTime(progress.positionMs)}</span>
       )}
       {!watched && !inProgress && <span className={styles.unseenDot} aria-hidden="true" />}
-    </a>
+    </Link>
   );
 }

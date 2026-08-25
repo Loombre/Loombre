@@ -54,6 +54,7 @@
 // lane's freeze report, not silently left unfixed.
 
 import { useState, type ReactNode } from "react";
+import Link from "next/link";
 import { buildImageUrl } from "../../lib/image-url.js";
 import styles from "./SceneBanner.module.css";
 
@@ -125,9 +126,9 @@ export function SceneBanner({
       )}
       <div className={styles.scanlines} data-scanlines={scanlines ? "on" : "off"} aria-hidden="true" />
       <div className={styles.scrim} aria-hidden="true" />
-      <a href={libraryId ? `/browse?library=${libraryId}` : "/browse"} className={styles.backPill}>
+      <Link href={libraryId ? `/browse?library=${libraryId}` : "/browse"} className={styles.backPill}>
         ← LIBRARY
-      </a>
+      </Link>
       {overlay && <div className={styles.overlay}>{overlay}</div>}
     </div>
   );

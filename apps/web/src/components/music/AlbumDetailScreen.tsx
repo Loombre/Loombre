@@ -57,6 +57,7 @@
 //     mobile tree is otherwise feature-complete.
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import type { components } from "@loombre/sdk";
 import { apiGet } from "../../lib/api-client.js";
 import { buildImageUrl } from "../../lib/image-url.js";
@@ -107,7 +108,7 @@ function MoreAlbumTile({
   const src = buildImageUrl({ serverUrl, accessToken, entityType: "album", entityId: album.id, kind: "poster", width: 220 });
 
   return (
-    <a href={`/items/album/${album.id}`} className={styles.moreAlbumTile}>
+    <Link href={`/items/album/${album.id}`} className={styles.moreAlbumTile}>
       <div
         className={styles.moreAlbumArt}
         style={{ "--tile-glow": posterImage?.dominantColor ?? undefined } as React.CSSProperties}
@@ -120,7 +121,7 @@ function MoreAlbumTile({
         )}
       </div>
       <span className={styles.moreAlbumTitle}>{album.title}</span>
-    </a>
+    </Link>
   );
 }
 
@@ -257,9 +258,9 @@ export function AlbumDetailScreen({
             <div className={styles.eyebrow}>{eyebrowLine(album, sortedTracks.length)}</div>
             <h1 className={styles.title}>{album.title}</h1>
             {artist && (
-              <a href={`/items/artist/${album.artistId}`} className={styles.artist}>
+              <Link href={`/items/artist/${album.artistId}`} className={styles.artist}>
                 {artist.title}
-              </a>
+              </Link>
             )}
             <div className={styles.actionRow}>
               {sortedTracks.length > 0 && <MusicPlayButton queue={tracksToPlayableQueue(sortedTracks)} label="Play album" />}
@@ -302,9 +303,9 @@ export function AlbumDetailScreen({
           <div className={styles.mobileMetaColumn}>
             <div className={styles.mobileTitle}>{album.title}</div>
             {artist && (
-              <a href={`/items/artist/${album.artistId}`} className={styles.mobileArtist}>
+              <Link href={`/items/artist/${album.artistId}`} className={styles.mobileArtist}>
                 {artist.title}
-              </a>
+              </Link>
             )}
             <div className={styles.mobileMeta}>{eyebrowLine(album, sortedTracks.length)}</div>
           </div>
