@@ -1,13 +1,13 @@
 {
-  "recordedAtMs": 1787669772400,
+  "recordedAtMs": 1787696364363,
   "route": "/browse",
   "method": "gzip(level 9) of every external .js file the served /browse HTML references (script src + preload hints, noModule polyfills excluded), summed",
-  "totalGzipBytes": 178842,
-  "totalRawBytes": 578192,
+  "totalGzipBytes": 179100,
+  "totalRawBytes": 578947,
   "budgetGzipBytes": 204800,
   "breachedBudget": false,
   "attemptsGzipBytes": [
-    178842
+    179100
   ],
   "chunks": [
     {
@@ -16,9 +16,9 @@
       "gzipBytes": 61169
     },
     {
-      "file": "static/chunks/2230-241e204030d6268b.js",
-      "rawBytes": 52619,
-      "gzipBytes": 15947
+      "file": "static/chunks/2230-86525d1a836ff8d0.js",
+      "rawBytes": 52723,
+      "gzipBytes": 15979
     },
     {
       "file": "static/chunks/3721-0c78a4e0689d5a08.js",
@@ -31,14 +31,14 @@
       "gzipBytes": 62740
     },
     {
-      "file": "static/chunks/4277-36ee63cbd5f300dd.js",
-      "rawBytes": 19465,
-      "gzipBytes": 6761
+      "file": "static/chunks/4277-e16d3c69466e9e2a.js",
+      "rawBytes": 19486,
+      "gzipBytes": 6782
     },
     {
-      "file": "static/chunks/488-2554aa933d0b4b5b.js",
-      "rawBytes": 8182,
-      "gzipBytes": 3057
+      "file": "static/chunks/488-5fcaab52b2ee07f1.js",
+      "rawBytes": 8381,
+      "gzipBytes": 3116
     },
     {
       "file": "static/chunks/9368-901aa4dcaadbadcd.js",
@@ -56,9 +56,9 @@
       "gzipBytes": 3550
     },
     {
-      "file": "static/chunks/app/browse/page-f7684b0830ab1013.js",
-      "rawBytes": 18741,
-      "gzipBytes": 7338
+      "file": "static/chunks/app/browse/page-e71a26420a9cad12.js",
+      "rawBytes": 19191,
+      "gzipBytes": 7500
     },
     {
       "file": "static/chunks/app/layout-03eb26bca1a3c2c1.js",
@@ -76,9 +76,9 @@
       "gzipBytes": 233
     },
     {
-      "file": "static/chunks/webpack-a66113c72384dc3e.js",
-      "rawBytes": 5036,
-      "gzipBytes": 2463
+      "file": "static/chunks/webpack-897b93ab3f614e29.js",
+      "rawBytes": 5017,
+      "gzipBytes": 2447
     }
   ]
 }
