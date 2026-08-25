@@ -142,7 +142,14 @@ export function StreamsPanel(): React.JSX.Element {
 
   const refresh = useCallback(() => {
     apiGet("/admin/sessions", { params: { query: { limit: 50 } } })
-      .then((page) => setSessions(page.items as AdminSessionWithPlan[]))
+      .then((page) => {
+        setSessions(page.items as AdminSessionWithPlan[]);
+        // d4-e4: the banner describes the CURRENT fetch. Without this, one
+        // transient 503 left "Failed to load active streams." above a list
+        // that every later tick and socket event kept updating underneath it
+        // — permanently, until the admin reloaded the dashboard.
+        setError(null);
+      })
       .catch((err) => setError(apiErrorMessage(err, "Failed to load active streams.")));
   }, []);
 

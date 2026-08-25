@@ -294,6 +294,52 @@ describe("StreamsPanel — error copy (d3-e2)", () => {
 });
 
 // ---------------------------------------------------------------------------
+// d4-e4 (E/d3-e5-adjacent, backlog #109): refresh() set `error` on failure but
+// never cleared it on a later success, so ONE transient 503 pinned "Failed to
+// load active streams." above the panel forever — while the rows underneath
+// kept updating from every subsequent tick and socket event. The banner is a
+// statement about the CURRENT fetch, not a scar.
+// ---------------------------------------------------------------------------
+describe("StreamsPanel — transient failure recovery (d4-e4)", () => {
+  let view: TestRender | null = null;
+
+  beforeEach(() => {
+    apiGetMock.mockReset();
+    subscribeMock.mockReset();
+    subscribeMock.mockReturnValue(() => {});
+  });
+
+  afterEach(() => {
+    view?.unmount();
+    view = null;
+    vi.useRealTimers();
+  });
+
+  it("clears the error banner once a later refresh succeeds", async () => {
+    vi.useFakeTimers();
+    apiGetMock.mockRejectedValueOnce(
+      Object.assign(new FakeApiError("Service Unavailable"), {
+        status: 503,
+        problem: { type: "urn:loombre:problem:unavailable", title: "Service Unavailable", status: 503, detail: "Try again shortly." },
+      }),
+    );
+    view = renderIntoBody(<StreamsPanel />);
+    await act(async () => {});
+    expect(view.container.textContent).toContain("Try again shortly.");
+
+    apiGetMock.mockResolvedValue({ items: [session("s1")], nextCursor: null });
+    act(() => {
+      vi.advanceTimersByTime(ADMIN_SESSIONS_REFRESH_MS);
+    });
+    await act(async () => {});
+
+    expect(apiGetMock).toHaveBeenCalledTimes(2);
+    expect(view.container.textContent).toContain("Active streams · 1");
+    expect(view.container.textContent).not.toContain("Try again shortly.");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // d3-e5 (E/browser-admin-F2-followup): the periodic tick was the ONLY way
 // this panel learned about a suspend/resume/seek, because no domain event
 // existed for a playback session status transition. It does now
