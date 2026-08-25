@@ -67,6 +67,7 @@ import {
   permissionRemediation,
 } from "./admin-directories.js";
 import { tailLogFile } from "./admin-logs-tail.js";
+import { requireResolvableApplyMatchProvider } from "./apply-match-provider.js";
 import { computeStoragePool } from "./admin-storage-pool.js";
 import { parseListQuery, resolveViewer } from "./viewer.js";
 
@@ -511,6 +512,15 @@ export class AdminController {
     if (typeof body["externalId"] !== "string" || body["externalId"].length === 0) {
       throw unprocessableEntity("externalId is required.", instance);
     }
+    // api-validation-F11: the name must be one the worker's
+    // ProviderRegistry can actually resolve — a built-in, or `lpp:<pluginId>`
+    // for a registered+enabled plugin. Without this an unknown provider
+    // enqueued a 'metadata' job that the consumer's forced-match branch
+    // logged-and-skipped, completing green having changed nothing (see
+    // apply-match-provider.ts's header). Runs AFTER the item lookup (404
+    // still wins over 422) and BEFORE the enqueue (a rejected request
+    // leaves no jobs row).
+    await requireResolvableApplyMatchProvider(this.dbProvider.db, body["provider"], instance);
 
     // Rides the EXISTING 'metadata' job/consumer (forceRef, additive) —
     // never a bespoke apply-match pipeline; re-fetches provider details +

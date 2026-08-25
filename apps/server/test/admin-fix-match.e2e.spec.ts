@@ -20,7 +20,7 @@ import { fileURLToPath } from "node:url";
 import request from "supertest";
 import { NestFactory } from "@nestjs/core";
 import type { INestApplication } from "@nestjs/common";
-import { ensureTestDatabase } from "@loombre/db";
+import { createDb, ensureTestDatabase, getUserByUsername, insertPluginAndEmit, setPluginEnabledAndEmit } from "@loombre/db";
 import { AppModule } from "../src/app.module.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -54,10 +54,15 @@ function buildDeviceProfile(profileId: string) {
 
 let app: INestApplication;
 let databaseUrl: string;
+let rawDb: ReturnType<typeof createDb>;
 let adminToken: string;
 let moviesLibraryId: string;
 let harborLightsItemId: string;
 let episodeItemId: string; // not an enrichable type
+// api-validation-F11 fixtures: one enabled + one disabled LPP plugin, so
+// `lpp:<pluginId>` can be exercised in both states.
+let enabledPluginId: string;
+let disabledPluginId: string;
 
 beforeAll(async () => {
   process.env["LOOMBRE_JWT_SECRET"] = "admin-fix-match-e2e-test-secret-not-for-production";
@@ -99,10 +104,54 @@ beforeAll(async () => {
     .get(`/seasons/${seasonId}/episodes`)
     .set("Authorization", `Bearer ${adminToken}`);
   episodeItemId = episodes.body.items[0].id;
+
+  // api-validation-F11: raw handle for the "no job row was enqueued"
+  // assertions + the two plugin fixtures.
+  rawDb = createDb(databaseUrl);
+  const admin = await getUserByUsername(rawDb, "admin");
+  const adminId: string = admin!.id;
+  const nowMs = Date.now();
+  const manifest = { name: "fix-match-e2e", version: "0.1.0", protocolVersion: 1, capabilities: [{ type: "metadata-provider" }] };
+
+  enabledPluginId = "018f6f1e-0000-7000-8000-00000000f110";
+  await insertPluginAndEmit(rawDb, {
+    id: enabledPluginId,
+    name: "fix-match-e2e-enabled",
+    baseUrl: "http://127.0.0.1:59991",
+    version: "0.1.0",
+    protocolVersion: 1,
+    contentClass: "general",
+    grantedCapabilityTypes: ["metadata-provider"],
+    eventTypes: [],
+    lanAllowlist: ["127.0.0.1"],
+    manifest,
+    config: {},
+    actorUserId: adminId,
+    nowMs,
+  });
+
+  disabledPluginId = "018f6f1e-0000-7000-8000-00000000f111";
+  await insertPluginAndEmit(rawDb, {
+    id: disabledPluginId,
+    name: "fix-match-e2e-disabled",
+    baseUrl: "http://127.0.0.1:59992",
+    version: "0.1.0",
+    protocolVersion: 1,
+    contentClass: "general",
+    grantedCapabilityTypes: ["metadata-provider"],
+    eventTypes: [],
+    lanAllowlist: ["127.0.0.1"],
+    manifest,
+    config: {},
+    actorUserId: adminId,
+    nowMs,
+  });
+  await setPluginEnabledAndEmit(rawDb, { pluginId: disabledPluginId, enabled: false, reason: "admin", actorUserId: adminId, nowMs });
 }, 30_000);
 
 afterAll(async () => {
   await app.close();
+  await rawDb?.destroy();
 });
 
 describe("GET /admin/libraries/{id}/unmatched (Phosphor retheme Wave 2, Lane L2)", () => {
@@ -189,6 +238,97 @@ describe("POST /admin/items/{id}/apply-match (Phosphor retheme Wave 2, Lane L2)"
       .post("/admin/items/11111111-1111-4111-8111-111111111111/apply-match")
       .set("Authorization", `Bearer ${adminToken}`)
       .send({});
+    expect(res.status).toBe(404);
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────────
+// api-validation-F11: provider is validated against the REAL resolvable
+// set (built-in ProviderRegistry names + `lpp:<pluginId>` for a plugin
+// that EXISTS and is ENABLED). Before this, ANY string was accepted with
+// a 202 and the resulting 'metadata' job completed as a silent no-op
+// (apps/worker/src/metadata/consumer.ts:140-142 — `registry.get(name)`
+// misses, logs "not registered or disabled", skips), so the admin got a
+// success signal for a request that could never do anything.
+// ──────────────────────────────────────────────────────────────────────
+describe("POST /admin/items/{id}/apply-match — provider validation (api-validation-F11)", () => {
+  async function countMetadataJobsForHarborLights(): Promise<number> {
+    const row = await rawDb
+      .selectFrom("jobs")
+      .select((eb) => eb.fn.countAll<string>().as("n"))
+      .where("type", "=", "metadata")
+      .where("subject_item_id", "=", harborLightsItemId)
+      .executeTakeFirstOrThrow();
+    return Number(row.n);
+  }
+
+  async function applyMatch(provider: string) {
+    return request(app.getHttpServer())
+      .post(`/admin/items/${harborLightsItemId}/apply-match`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ provider, externalId: "603" });
+  }
+
+  it.each(["bogus-provider", "TMDB", "tmdb ", "lpp", "not-a-provider"])(
+    "422s an unresolvable provider %j, names the field, and enqueues NO job",
+    async (provider) => {
+      const before = await countMetadataJobsForHarborLights();
+      const res = await applyMatch(provider);
+      expect(res.status, JSON.stringify(res.body)).toBe(422);
+      expect(res.body.type).toBe("urn:loombre:problem:validation");
+      expect(res.body.detail).toContain("provider");
+      expect(await countMetadataJobsForHarborLights()).toBe(before);
+    },
+  );
+
+  it.each(["tmdb", "tvdb", "musicbrainz", "stash"])("still 202s built-in provider %j", async (provider) => {
+    const before = await countMetadataJobsForHarborLights();
+    const res = await applyMatch(provider);
+    expect(res.status, JSON.stringify(res.body)).toBe(202);
+    expect(typeof res.body.jobId).toBe("string");
+    expect(await countMetadataJobsForHarborLights()).toBe(before + 1);
+  });
+
+  it("202s an lpp:<pluginId> whose plugin exists and is enabled", async () => {
+    const before = await countMetadataJobsForHarborLights();
+    const res = await applyMatch(`lpp:${enabledPluginId}`);
+    expect(res.status, JSON.stringify(res.body)).toBe(202);
+    expect(await countMetadataJobsForHarborLights()).toBe(before + 1);
+  });
+
+  it("422s an lpp:<pluginId> whose plugin is DISABLED", async () => {
+    const before = await countMetadataJobsForHarborLights();
+    const res = await applyMatch(`lpp:${disabledPluginId}`);
+    expect(res.status, JSON.stringify(res.body)).toBe(422);
+    expect(res.body.detail).toContain("provider");
+    expect(await countMetadataJobsForHarborLights()).toBe(before);
+  });
+
+  it("422s an lpp:<pluginId> that does not exist", async () => {
+    const before = await countMetadataJobsForHarborLights();
+    const res = await applyMatch("lpp:11111111-1111-4111-8111-111111111111");
+    expect(res.status, JSON.stringify(res.body)).toBe(422);
+    expect(await countMetadataJobsForHarborLights()).toBe(before);
+  });
+
+  // A non-UUID plugin id must never reach the `plugins.id uuid` column —
+  // Postgres's implicit cast would throw and surface as a bare 500 (the
+  // exact failure mode require-uuid-param.ts exists to prevent).
+  it.each(["lpp:", "lpp:not-a-uuid", "lpp:../../etc/passwd"])(
+    "422s the malformed plugin ref %j (never a 500)",
+    async (provider) => {
+      const before = await countMetadataJobsForHarborLights();
+      const res = await applyMatch(provider);
+      expect(res.status, JSON.stringify(res.body)).toBe(422);
+      expect(await countMetadataJobsForHarborLights()).toBe(before);
+    },
+  );
+
+  it("checks the item's existence BEFORE the provider — 404 still wins over 422", async () => {
+    const res = await request(app.getHttpServer())
+      .post("/admin/items/11111111-1111-4111-8111-111111111111/apply-match")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ provider: "bogus-provider", externalId: "603" });
     expect(res.status).toBe(404);
   });
 });

@@ -3888,6 +3888,13 @@ paths:
         the same field-precedence engine every scan-triggered metadata job
         already uses (existing nfo/tag-sourced fields keep their precedence
         unchanged). Never touches the original media file.
+        `provider` is validated against the set this server can actually
+        resolve BEFORE anything is enqueued: an unknown built-in name, or
+        an `lpp:<pluginId>` whose plugin is missing or disabled, is a 422
+        naming the field and leaves NO job behind (previously any string
+        was accepted with a 202 and the resulting job completed having
+        changed nothing). Item existence is checked first, so a
+        nonexistent item 404s regardless of the body.
       requestBody:
         required: true
         content:
@@ -7606,7 +7613,24 @@ components:
       properties:
         provider:
           type: string
-          description: A metadata-provider name from the item's resolved provider chain (a built-in name, or the stable `lpp:<pluginId>` LPP adapter id — apps/worker/src/metadata/chain-resolution.ts).
+          description: >-
+            A metadata-provider name this server can actually resolve, in
+            one of exactly two forms (matched EXACTLY, case-sensitively —
+            the worker's ProviderRegistry lookup is a case-sensitive map,
+            so `TMDB` is a miss): a built-in provider name (`tmdb`, `tvdb`,
+            `musicbrainz`, `stash` — the names registered in
+            apps/worker/src/metadata/registry.ts; GET
+            /admin/libraries/{id}/provider-chain reports the same closed
+            set as `builtinProviderNames`), or the stable `lpp:<pluginId>`
+            LPP adapter id of a plugin that is REGISTERED on this server
+            and currently ENABLED
+            (apps/worker/src/metadata/plugin-provider.ts). Anything else is
+            a 422 naming this field —
+            it is deliberately NOT the `ProviderName` enum, which is a
+            different, smaller closed set (the providers with an
+            admin-manageable API key, A9). The name need not appear in this
+            item's own library provider chain: a forced ref bypasses chain
+            resolution by design.
         externalId:
           type: string
           description: That provider's own id for the chosen candidate (ProviderRef.externalId, apps/worker/src/metadata/provider.ts).
