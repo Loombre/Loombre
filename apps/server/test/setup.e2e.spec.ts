@@ -42,6 +42,10 @@ import { NestFactory } from "@nestjs/core";
 import type { INestApplication } from "@nestjs/common";
 import { ensureTestDatabase } from "@loombre/db";
 import { AppModule } from "../src/app.module.js";
+import {
+  expectSameNotFoundBodyApartFromInstance,
+  expectSharedNotFoundProblem,
+} from "./support/not-found-envelope.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DB_PKG_ROOT = path.resolve(__dirname, "../../../packages/db");
@@ -244,13 +248,21 @@ describe("POST /setup/first-admin (public until the first user, then permanently
       const unknownRoute = await request(app.getHttpServer())
         .get("/this-route-does-not-exist-at-all")
         .set("Authorization", `Bearer ${adminToken}`);
+      // adi-F3: the catch-all's 404 ON THIS SAME PATH is the comparison
+      // that carries the anti-enumeration meaning — the inert POST and an
+      // unrouted method at the identical URL, byte for byte, `instance`
+      // included. The cross-path probe above can only be identical apart
+      // from `instance` (which is the caller's own path, by design).
+      const sameRouteWrongMethod = await request(app.getHttpServer())
+        .get("/setup/first-admin")
+        .set("Authorization", `Bearer ${adminToken}`);
 
-      expect(secondCreate.status).toBe(404);
       expect(unknownRoute.status).toBe(404);
-      expect(secondCreate.headers["content-type"]).toBe(unknownRoute.headers["content-type"]);
+      expectSharedNotFoundProblem(secondCreate, "/setup/first-admin");
+      expect(secondCreate.headers["content-type"]).toBe(sameRouteWrongMethod.headers["content-type"]);
       // Literal byte-for-byte body equality — not just schema-valid shape.
-      expect(secondCreate.text).toBe(unknownRoute.text);
-      expect(JSON.parse(secondCreate.text)).toEqual({ type: "about:blank", title: "Not Found", status: 404 });
+      expect(secondCreate.text).toBe(sameRouteWrongMethod.text);
+      expectSameNotFoundBodyApartFromInstance(secondCreate, unknownRoute);
     });
 
     it("a bodyless POST after the instance is configured is STILL 404, never 422 (existence check wins first)", async () => {

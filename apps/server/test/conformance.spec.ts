@@ -42,6 +42,10 @@ import type { INestApplication } from "@nestjs/common";
 import { ensureTestDatabase } from "@loombre/db";
 import { API_OPERATIONS, type ApiOperation } from "@loombre/sdk";
 import { AppModule } from "../src/app.module.js";
+import {
+  expectSameNotFoundBodyApartFromInstance,
+  expectSharedNotFoundProblem,
+} from "./support/not-found-envelope.js";
 
 // Runs against a database PRIVATE to THIS suite
 // (ensureTestDatabase, "<base>_server_test_conformance") to avoid a
@@ -709,21 +713,29 @@ describe("contract conformance (STATE.md D17/D21)", () => {
       expect(res.body).toEqual({ needsSetup: false });
     });
 
-    it("POST /setup/first-admin -> 404 byte-identical to the catch-all unknown-route problem body (users already exist)", async () => {
+    it("POST /setup/first-admin -> 404 byte-identical to the catch-all's 404 ON THAT SAME PATH (users already exist)", async () => {
       const res = await request(app.getHttpServer()).post("/setup/first-admin").send({
         username: "conformance-second-admin",
         email: "conformance-second-admin@loombre.local",
         password: "irrelevant-because-inert",
       });
+      // adi-F3: the comparison that carries the anti-enumeration meaning is
+      // SAME PATH, both ways — the inert op vs the catch-all at the identical
+      // URL. `instance` is the request path, so it matches by construction
+      // and the bodies are byte-identical; a cross-path probe can only claim
+      // the weaker "identical apart from instance" (asserted after it).
+      const sameRouteWrongMethod = await request(app.getHttpServer())
+        .get("/setup/first-admin")
+        .set("Authorization", `Bearer ${adminAccessToken}`);
       const unknownRoute = await request(app.getHttpServer())
         .get("/this-route-does-not-exist-conformance")
         .set("Authorization", `Bearer ${adminAccessToken}`);
 
-      expect(res.status).toBe(404);
-      expect(unknownRoute.status).toBe(404);
-      expect(res.headers["content-type"]).toBe(unknownRoute.headers["content-type"]);
-      expect(res.text).toBe(unknownRoute.text);
-      expect(JSON.parse(res.text)).toEqual({ type: "about:blank", title: "Not Found", status: 404 });
+      expectSharedNotFoundProblem(res, "/setup/first-admin");
+      expect(sameRouteWrongMethod.status).toBe(404);
+      expect(res.headers["content-type"]).toBe(sameRouteWrongMethod.headers["content-type"]);
+      expect(res.text).toBe(sameRouteWrongMethod.text);
+      expectSameNotFoundBodyApartFromInstance(res, unknownRoute);
     });
 
     // STATE.md "Optional mail transport + invitation & reset flows" (E3b/M12,
@@ -739,19 +751,22 @@ describe("contract conformance (STATE.md D17/D21)", () => {
       expect(res.body).toEqual({});
     });
 
-    it("POST /auth/reset-password with an invalid token -> 404 byte-identical to the catch-all unknown-route problem body, unauthenticated", async () => {
+    it("POST /auth/reset-password with an invalid token -> 404 byte-identical to the catch-all's 404 ON THAT SAME PATH, unauthenticated", async () => {
       const res = await request(app.getHttpServer())
         .post("/auth/reset-password")
         .send({ token: "conformance-invalid-token", password: "irrelevant-conformance-password" });
+      const sameRouteWrongMethod = await request(app.getHttpServer())
+        .get("/auth/reset-password")
+        .set("Authorization", `Bearer ${adminAccessToken}`);
       const unknownRoute = await request(app.getHttpServer())
         .get("/this-route-does-not-exist-conformance-reset-password")
         .set("Authorization", `Bearer ${adminAccessToken}`);
 
-      expect(res.status).toBe(404);
-      expect(unknownRoute.status).toBe(404);
-      expect(res.headers["content-type"]).toBe(unknownRoute.headers["content-type"]);
-      expect(res.text).toBe(unknownRoute.text);
-      expect(JSON.parse(res.text)).toEqual({ type: "about:blank", title: "Not Found", status: 404 });
+      expectSharedNotFoundProblem(res, "/auth/reset-password");
+      expect(sameRouteWrongMethod.status).toBe(404);
+      expect(res.headers["content-type"]).toBe(sameRouteWrongMethod.headers["content-type"]);
+      expect(res.text).toBe(sameRouteWrongMethod.text);
+      expectSameNotFoundBodyApartFromInstance(res, unknownRoute);
     });
 
     // STATE.md "Loombre Remote — embedded WireGuard + three-path wizard +
@@ -760,17 +775,25 @@ describe("contract conformance (STATE.md D17/D21)", () => {
     // this fresh reseeded DB (the mint side is itself a 501 shell), so
     // EVERY token — well-formed or not — resolves to the same
     // byte-identical 404 as every other "invisible == nonexistent" surface.
-    it("GET /probe/{token} -> 404 byte-identical to the catch-all unknown-route problem body, unauthenticated, for any token shape", async () => {
+    it("GET /probe/{token} -> 404 byte-identical to the catch-all's 404 ON THAT SAME PATH, unauthenticated, for any token shape", async () => {
       const unknownRoute = await request(app.getHttpServer())
         .get("/this-route-does-not-exist-conformance-probe")
         .set("Authorization", `Bearer ${adminAccessToken}`);
 
       for (const token of ["conformance-invalid-token", "also-not-a-real-token"]) {
         const res = await request(app.getHttpServer()).get(`/probe/${token}`);
-        expect(res.status).toBe(404);
-        expect(res.headers["content-type"]).toBe(unknownRoute.headers["content-type"]);
-        expect(res.text).toBe(unknownRoute.text);
-        expect(JSON.parse(res.text)).toEqual({ type: "about:blank", title: "Not Found", status: 404 });
+        const sameRouteWrongMethod = await request(app.getHttpServer())
+          .post(`/probe/${token}`)
+          .set("Authorization", `Bearer ${adminAccessToken}`);
+        // `instance` is the route TEMPLATE here (the raw token is a path
+        // segment and must never ride back in the body), so every token
+        // shape produces the identical body — including across the two
+        // tokens this loop walks.
+        expectSharedNotFoundProblem(res, "/probe/{token}");
+        expect(res.headers["content-type"]).toBe(sameRouteWrongMethod.headers["content-type"]);
+        expect(res.text).toBe(sameRouteWrongMethod.text);
+        expect(res.text).not.toContain(token);
+        expectSameNotFoundBodyApartFromInstance(res, unknownRoute);
       }
     });
   });

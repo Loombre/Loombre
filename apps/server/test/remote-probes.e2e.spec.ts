@@ -33,6 +33,10 @@ import { NestFactory } from "@nestjs/core";
 import type { INestApplication } from "@nestjs/common";
 import { createDb, ensureTestDatabase, getUserByUsername, mintProbeToken } from "@loombre/db";
 import { AppModule } from "../src/app.module.js";
+import {
+  expectSameNotFoundBodyApartFromInstance,
+  expectSharedNotFoundProblem,
+} from "./support/not-found-envelope.js";
 import { applySecurityHeaders, disableXPoweredBy } from "../src/main.js";
 import { ConnectorHealthReaderService } from "../src/remote/connector-health.service.js";
 import { RemoteDnsResolverService } from "../src/remote/remote-dns-resolver.service.js";
@@ -217,12 +221,20 @@ describe("byte-identical 404 (unknown/expired/used tokens, and the catch-all)", 
       .get("/this-route-does-not-exist-remote-probes")
       .set("Authorization", `Bearer ${adminAccessToken}`);
     const res = await request(app.getHttpServer()).get("/probe/garbage-token-never-issued");
+    // adi-F3: `instance` is the route TEMPLATE (the token is a path
+    // segment and never rides back), so the probe 404 is byte-identical to
+    // an unrouted method at the same URL, and identical apart from
+    // `instance` to any unknown route.
+    const sameRouteWrongMethod = await request(app.getHttpServer())
+      .post("/probe/garbage-token-never-issued")
+      .set("Authorization", `Bearer ${adminAccessToken}`);
 
-    expect(res.status).toBe(404);
     expect(unknownRoute.status).toBe(404);
-    expect(res.headers["content-type"]).toBe(unknownRoute.headers["content-type"]);
-    expect(res.text).toBe(unknownRoute.text);
-    expect(JSON.parse(res.text)).toEqual({ type: "about:blank", title: "Not Found", status: 404 });
+    expectSharedNotFoundProblem(res, "/probe/{token}");
+    expect(res.text).not.toContain("garbage-token-never-issued");
+    expect(res.headers["content-type"]).toBe(sameRouteWrongMethod.headers["content-type"]);
+    expect(res.text).toBe(sameRouteWrongMethod.text);
+    expectSameNotFoundBodyApartFromInstance(res, unknownRoute);
   });
 
   it("expired, already-used, and garbage tokens are byte-identical to each other", async () => {

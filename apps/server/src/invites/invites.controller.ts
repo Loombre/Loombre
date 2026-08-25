@@ -25,12 +25,19 @@
 // Byte-identical 404 (M12): both claim routes throw a BARE
 // `NotFoundException()` for invalid/expired/claimed/revoked tokens — the
 // same call setup.controller.ts's createFirstAdmin makes once configured
-// — so ProblemJsonExceptionFilter serializes all of them to
-// `{"type":"about:blank","title":"Not Found","status":404}`, indistinguishable
-// from each other and from POST /setup/first-admin's own inert 404 (F11:
+// — so ProblemJsonExceptionFilter serializes all of them to the ONE
+// shared not-found problem, `{"type":"urn:loombre:problem:not-found",
+// "title":"Not Found","status":404,"detail":"Not found.","instance":
+// "/invites/claim/{token}"}` (adi-F3, owner ruling 2026-08-24). Still
+// indistinguishable from each other: the detail is fixed and `instance` is
+// this route's TEMPLATE — sanitize-instance.ts collapses it before the body
+// is built, so the submitted token never rides back and NOTHING in the body
+// varies with what was probed. Also still indistinguishable from POST
+// /setup/first-admin's own inert 404 in every member but `instance` (F11:
 // NOT from an unknown route — an unknown route is unauthenticated-401'd by
 // AuthGuard first; setup's post-configuration 404 is the true, verified
-// twin, since both are public routes an AuthGuard never touches).
+// twin, since both are public routes an AuthGuard never touches), and
+// byte-identical to the catch-all's own 404 on this very path.
 
 import { Body, Controller, Delete, Get, HttpCode, HttpStatus, NotFoundException, Param, Post, Query, Req, UseFilters, UseGuards } from "@nestjs/common";
 import type { Request } from "express";

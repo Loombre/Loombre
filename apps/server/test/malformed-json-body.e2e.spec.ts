@@ -21,15 +21,15 @@
 //      filter already takes deliberately for `MalformedCursorError`
 //      ("Malformed cursor.", payload never echoed) and for its generic 500.
 //
-// DELIBERATELY PINNED AS UNCHANGED (adi-F3, NOT fixed here): the bare-404
-// family — unknown route, wrong method, garbage invite token — keeps its
-// minimal `{type:"about:blank", title:"Not Found", status:404}` body. That
-// byte-identity is documented behaviour (packages/contract/openapi.yaml's
-// getClaimState description, invites.controller.ts, setup.controller.ts) and
-// is asserted by conformance.spec.ts / invites.e2e.spec.ts /
-// setup.e2e.spec.ts / password-recovery.e2e.spec.ts / remote-probes.e2e.spec.ts.
-// The final `describe` below is the guard that this finding's fix does not
-// widen into that family.
+// adi-F3 (owner ruling 2026-08-24) finished the job on the SIBLING family
+// this suite used to pin as deliberately-unchanged: the bare-404s (unknown
+// route, wrong method, garbage invite token) no longer answer the minimal
+// `{type:"about:blank", title:"Not Found", status:404}` — they carry the
+// same complete envelope, `urn:loombre:problem:not-found` + a fixed generic
+// detail + instance. The final `describe` below is now the cross-check that
+// the 400 and 404 conversions agree with each other (same no-echo rule, same
+// completeness); the family's own regression net is
+// apps/server/test/not-found-envelope.e2e.spec.ts.
 //
 // Base connection: DATABASE_URL env var, default
 //   postgres://loombre:loombre@localhost:5442/loombre
@@ -44,6 +44,10 @@ import { NestFactory } from "@nestjs/core";
 import type { INestApplication } from "@nestjs/common";
 import { ensureTestDatabase } from "@loombre/db";
 import { AppModule } from "../src/app.module.js";
+import {
+  expectSameNotFoundBodyApartFromInstance,
+  expectSharedNotFoundProblem,
+} from "./support/not-found-envelope.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DB_PKG_ROOT = path.resolve(__dirname, "../../../packages/db");
@@ -228,29 +232,42 @@ describe("adi-F4: a malformed JSON body answers a complete RFC 9457 problem", ()
   }, 20_000);
 });
 
-// adi-F3's territory — PINNED AS-IS so this finding's fix cannot widen into
-// it. See the file header.
-describe("adi-F3 posture preserved: the bare-404 family keeps its minimal body", () => {
-  const MINIMAL_404 = { type: "about:blank", title: "Not Found", status: 404 };
-
-  it("an unknown route still answers the minimal 404 body", async () => {
+// adi-F3's territory — the sibling conversion. See the file header; the
+// exhaustive per-surface proof is not-found-envelope.e2e.spec.ts.
+describe("adi-F3: the bare-404 family answers the same complete envelope this 400 does", () => {
+  it("an unknown route answers the complete not-found problem", async () => {
     const res = await request(app.getHttpServer())
       .get("/definitely/not/a/route")
       .set("Authorization", `Bearer ${adminToken}`);
-    expect(res.status).toBe(404);
-    expect(JSON.parse(res.text)).toEqual(MINIMAL_404);
+    expectSharedNotFoundProblem(res, "/definitely/not/a/route");
   }, 20_000);
 
-  it("a garbage invite token is still byte-identical to an unknown route's 404", async () => {
-    // The unknown-route probe is AUTHENTICATED for the same reason
+  it("a garbage invite token is byte-identical to the catch-all's 404 on that same path", async () => {
+    // The catch-all probe is AUTHENTICATED for the same reason
     // conformance.spec.ts's byte-identity assertions are: unauthenticated it
     // would be answered by the auth guard's 401, not the catch-all's 404.
+    const sameRouteWrongMethod = await request(app.getHttpServer())
+      .put("/invites/claim/garbage-token-xyz")
+      .set("Authorization", `Bearer ${adminToken}`);
     const unknownRoute = await request(app.getHttpServer())
       .get("/definitely/not/a/route-2")
       .set("Authorization", `Bearer ${adminToken}`);
     const claim = await request(app.getHttpServer()).get("/invites/claim/garbage-token-xyz");
-    expect(claim.status).toBe(404);
-    expect(claim.text).toBe(unknownRoute.text);
-    expect(JSON.parse(claim.text)).toEqual(MINIMAL_404);
+
+    expectSharedNotFoundProblem(claim, "/invites/claim/{token}");
+    expect(claim.text).toBe(sameRouteWrongMethod.text);
+    expectSameNotFoundBodyApartFromInstance(claim, unknownRoute);
+  }, 20_000);
+
+  it("both conversions obey the same no-echo rule: neither body says WHAT failed", async () => {
+    const notFound = await request(app.getHttpServer())
+      .get("/definitely/not/a/route")
+      .set("Authorization", `Bearer ${adminToken}`);
+    const badRequest = await postRaw("/auth/login", '{"username": broken');
+    for (const res of [notFound, badRequest]) {
+      const body = JSON.parse(res.text) as Record<string, unknown>;
+      expect(Object.keys(body).sort()).toEqual(["detail", "instance", "status", "title", "type"]);
+      expect(String(body["type"])).toMatch(/^urn:loombre:/);
+    }
   }, 20_000);
 });

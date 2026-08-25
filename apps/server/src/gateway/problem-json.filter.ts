@@ -3,7 +3,7 @@ import { ArgumentsHost, Catch, ExceptionFilter, HttpException, HttpStatus } from
 import type { Request, Response } from "express";
 import { MalformedCursorError } from "@loombre/db";
 import { sanitizeInstancePath } from "./sanitize-instance.js";
-import { badRequest, unprocessableEntity } from "./problem.exception.js";
+import { badRequest, notFound, unprocessableEntity } from "./problem.exception.js";
 
 /**
  * Stable URN identifying the RFC 9457 problem type for "the server hit an
@@ -20,6 +20,18 @@ export const INTERNAL_PROBLEM_TYPE = "urn:loombre:problem:internal";
  */
 export const MALFORMED_BODY_DETAIL = "The request body is not valid JSON.";
 export const UNPARSEABLE_REQUEST_DETAIL = "The request could not be parsed.";
+
+/**
+ * The ONE `detail` every framework-minted 404 carries (adi-F3, owner ruling
+ * 2026-08-24). Deliberately the SAME string the product's own generic
+ * not-found call sites already use (session/restricted-zone.controller.ts's
+ * twelve `notFound("Not found.", …)` calls), so an unknown route and a
+ * hidden resource on that route are byte-identical rather than merely
+ * similar. Fixed, never derived: it says nothing about WHAT was not found,
+ * because saying so is exactly the enumeration signal this family exists to
+ * withhold.
+ */
+export const NOT_FOUND_DETAIL = "Not found.";
 
 /** A body this filter can send straight through: it already carries the two
  *  RFC 9457 members the Problem schema declares `required`. */
@@ -40,6 +52,24 @@ function isFrameworkMintedBadRequest(exception: unknown): exception is HttpExcep
   return (
     exception instanceof HttpException &&
     exception.getStatus() === HttpStatus.BAD_REQUEST &&
+    !isProblemShaped(exception.getResponse())
+  );
+}
+
+/**
+ * adi-F3: a 404 raised as a BARE `NotFoundException()` — Nest's own
+ * unmatched-route/unmatched-method exception, plus the five deliberate
+ * hand-thrown ones (gateway/not-found.controller.ts's catch-all,
+ * setup.controller.ts's inert first-admin, invites.controller.ts's claim
+ * lookups, auth.controller.ts's password-reset lookup,
+ * remote/probe-page.controller.ts's probe lookup). Recognised by SHAPE for
+ * the same reason `isFrameworkMintedBadRequest` is: the rule must not
+ * depend on which class threw or what it said.
+ */
+function isBareNotFound(exception: unknown): exception is HttpException {
+  return (
+    exception instanceof HttpException &&
+    exception.getStatus() === HttpStatus.NOT_FOUND &&
     !isProblemShaped(exception.getResponse())
   );
 }
@@ -110,6 +140,30 @@ function malformedRequestDetail(req: Request | undefined): string {
  * fixed detail. This 400 is not declared per-operation in openapi.yaml (no
  * operation declares one); it rides `default: Problem`, same posture as the
  * 422 above.
+ *
+ * adi-F3 (QA 2026-08-21; OWNER RULING 2026-08-24): the last member of that
+ * family, the bare-404 one. Nest's unmatched-route/unmatched-method
+ * `NotFoundException`, and the five places this product throws a BARE
+ * `NotFoundException()` on purpose, all reached the fallback below and were
+ * serialized as the minimal `{type:"about:blank", title:"Not Found",
+ * status:404}` — a valid RFC 9457 body, but the ONLY 404 in the product
+ * without a `urn:loombre:*` type, a `detail`, or an `instance`, so the API's
+ * error surface disagreed with itself depending on which 404 you hit.
+ *
+ * They are now converted to the SAME complete `notFound()` problem every
+ * contract-governed 404 carries, with the fixed `NOT_FOUND_DETAIL`. The
+ * load-bearing part is that the enrichment is UNIFORM: the anti-enumeration
+ * posture those five sites exist for ("invisible == nonexistent" —
+ * docs/PLAN.md §6.4) is the rule that FOR ANY GIVEN REQUEST PATH, a
+ * hidden/unentitled resource and a nonexistent route answer byte-identical
+ * bodies. Enriching both sides with the same fixed members preserves it
+ * exactly, because `instance` reflects only the requester's OWN path and
+ * never anything about what was or wasn't there — and `sanitizeInstancePath`
+ * has already collapsed the token-bearing routes to their template, so a
+ * probed token cannot ride back either. Never give this branch a
+ * per-site or exception-derived detail: that is precisely the signal being
+ * withheld. Proof: apps/server/test/not-found-envelope.e2e.spec.ts (each
+ * surface compared byte-for-byte against the catch-all AT THE SAME PATH).
  */
 @Catch()
 export class ProblemJsonExceptionFilter implements ExceptionFilter {
@@ -127,20 +181,23 @@ export class ProblemJsonExceptionFilter implements ExceptionFilter {
         ? unprocessableEntity("Malformed cursor.", instance)
         : isFrameworkMintedBadRequest(rawException)
           ? badRequest(malformedRequestDetail(req), instance)
-          : rawException;
+          : isBareNotFound(rawException)
+            ? notFound(NOT_FOUND_DETAIL, instance)
+            : rawException;
 
     if (exception instanceof HttpException) {
       const status = exception.getStatus();
       const body: unknown = exception.getResponse();
 
-      // The remaining un-shaped HttpExceptions are the deliberately MINIMAL
-      // bare `NotFoundException()`s (unknown route, wrong method, invite
-      // claim, inert first-admin setup, probe page): their
-      // `{type:"about:blank", title:"Not Found", status:404}` body is
-      // load-bearing anti-enumeration behaviour — byte-identical across all
-      // of them, documented in openapi.yaml's getClaimState description and
-      // pinned by conformance.spec.ts. Do NOT "complete" it with a
-      // detail/instance without moving that documentation first (adi-F3).
+      // Nothing this product raises reaches the fallback any more: every
+      // problem-shaped exception passes through, and the three framework-
+      // minted shapes (422 cursor, 400 parse, 404 bare — adi-F4/adi-F3)
+      // were converted above. It stays as the last line of defence for an
+      // HttpException status neither branch anticipates (a dependency
+      // throwing its own `new HttpException(msg, 418)`), where RFC 9457's
+      // default `about:blank` + reason-phrase title is the correct answer.
+      // A new framework-minted status belongs in a conversion above, next
+      // to its siblings — never as a special case down here.
       const problem = isProblemShaped(body)
         ? body
         : { type: "about:blank", title: exception.message, status };

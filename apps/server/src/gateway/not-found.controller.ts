@@ -3,7 +3,12 @@ import { All, Controller, NotFoundException } from "@nestjs/common";
 
 /**
  * Explicit catch-all (STATE.md D21: "catch-all; no per-path controllers
- * yet"). AuthGuard is a NestJS CanActivate, which only runs in the context
+ * yet"). Its bare `NotFoundException()` is serialized by
+ * ProblemJsonExceptionFilter into the ONE shared not-found problem this
+ * whole family answers — `urn:loombre:problem:not-found` + fixed detail +
+ * `instance` (adi-F3). That is what lets a hidden resource and a
+ * nonexistent route stay byte-identical at any given path; see the
+ * filter's header and apps/server/test/not-found-envelope.e2e.spec.ts. AuthGuard is a NestJS CanActivate, which only runs in the context
  * of a matched route — without SOME route bound for arbitrary /v1 paths,
  * requests to not-yet-implemented endpoints would never reach the guard at
  * all (Express would 404 them before Nest's pipeline runs). This controller

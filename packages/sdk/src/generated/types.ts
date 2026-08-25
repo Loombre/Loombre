@@ -32,7 +32,7 @@ export interface paths {
         put?: never;
         /**
          * Create the instance's first admin account (first boot only)
-         * @description Succeeds ONLY while the users table is empty — the one-time escape from the admin-creates-users chicken-and-egg. Once ANY user exists this endpoint is permanently inert and returns a 404 byte-identical to an unknown route (an attacker probing a configured instance learns nothing — same posture as restricted-content 404s, docs/PLAN.md §6.4). Responds with the created admin plus a real token pair so the wizard proceeds authenticated without a second login round-trip.
+         * @description Succeeds ONLY while the users table is empty — the one-time escape from the admin-creates-users chicken-and-egg. Once ANY user exists this endpoint is permanently inert and answers the shared not-found problem — byte-identical to what an unknown route answers at this same path (an attacker probing a configured instance learns nothing — same posture as restricted-content 404s, docs/PLAN.md §6.4; see the `NotFound` response for the exact body). Responds with the created admin plus a real token pair so the wizard proceeds authenticated without a second login round-trip.
          */
         post: operations["createFirstAdmin"];
         delete?: never;
@@ -53,7 +53,7 @@ export interface paths {
         };
         /**
          * Resolve an invite token's presets, without claiming it
-         * @description Public (M12). Invalid, expired, already-claimed, or revoked tokens all resolve to a 404 BYTE-IDENTICAL to an unknown route's 404 (the same "invisible == nonexistent" posture as POST /setup/first-admin once configured) — the four cases are deliberately indistinguishable from the outside.
+         * @description Public (M12). Invalid, expired, already-claimed, or revoked tokens all resolve to the shared not-found problem (see the `NotFound` response): BYTE-IDENTICAL across the four cases, and BYTE-IDENTICAL to what an unknown route answers at this same path — `instance` is this route's TEMPLATE, never the submitted token, so nothing in the body varies with what was probed. Same "invisible == nonexistent" posture as POST /setup/first-admin once configured; the four cases are deliberately indistinguishable from the outside.
          */
         get: operations["getClaimState"];
         put?: never;
@@ -150,7 +150,7 @@ export interface paths {
         put?: never;
         /**
          * Complete a self-service password reset with a mailed token (E3b)
-         * @description PUBLIC, unauthenticated. Atomically consumes `token` (single-use; a concurrent second consume of the same token loses the race) and, on success, sets `password`, revokes every refresh token the account holds, and clears `mustChangePassword` if it was set — one transaction. An invalid, expired, already-used, or well-formed-but- unknown token all produce the IDENTICAL 404 this operation shares with an unknown route (bare, no `detail`/`instance` — M12/E8: none of those cases may be distinguishable from one another or from a malformed request to a nonexistent path). Rate-limited per `rateLimit.passwordReset` (shared with `authForgotPassword`).
+         * @description PUBLIC, unauthenticated. Atomically consumes `token` (single-use; a concurrent second consume of the same token loses the race) and, on success, sets `password`, revokes every refresh token the account holds, and clears `mustChangePassword` if it was set — one transaction. An invalid, expired, already-used, or well-formed-but- unknown token all produce the IDENTICAL 404 this operation shares with an unknown route at this same path (the shared not-found problem — a fixed generic `detail` and an `instance` that is the request path and nothing else; M12/E8: none of those cases may be distinguishable from one another or from a malformed request to a nonexistent path). Rate-limited per `rateLimit.passwordReset` (shared with `authForgotPassword`).
          */
         post: operations["authResetPassword"];
         delete?: never;
@@ -2689,7 +2689,7 @@ export interface paths {
         };
         /**
          * Reachability-proof arrival page — PUBLIC by necessity (R6/R9)
-         * @description R6/R9: one of only THREE new unauthenticated surfaces this subsystem introduces (alongside the WireGuard UDP listener itself and the tunnel connector's own inbound edge) — necessarily public because the whole point is an external phone-on-cellular request with no prior credentials. Rate-limited (`rateLimit.probe`, per-IP), token-gated, constant-time lookup (RG6's SHA-256 hash equality — same posture as invite-claim), and returns a STATIC success page with ZERO server info (no version, no instance name, nothing an unauthenticated prober could use for reconnaissance). Invalid, expired, already-consumed, or well-formed-but-unknown tokens ALL resolve to the SAME byte-identical 404 this operation shares with an unknown route (bare, no `detail`/`instance` — the same "invisible == nonexistent" posture as POST /setup/first-admin once configured and GET/POST /invites/claim/{token}) — the four cases are deliberately indistinguishable from the outside (enumeration-resistant). Wave 0: this shell IS the final behavior for every case except a genuinely-arrived probe (no probe tokens exist yet, so every request legitimately 404s); a later lane adds the real single-use lookup + arrival-marking without changing this response shape.
+         * @description R6/R9: one of only THREE new unauthenticated surfaces this subsystem introduces (alongside the WireGuard UDP listener itself and the tunnel connector's own inbound edge) — necessarily public because the whole point is an external phone-on-cellular request with no prior credentials. Rate-limited (`rateLimit.probe`, per-IP), token-gated, constant-time lookup (RG6's SHA-256 hash equality — same posture as invite-claim), and returns a STATIC success page with ZERO server info (no version, no instance name, nothing an unauthenticated prober could use for reconnaissance). Invalid, expired, already-consumed, or well-formed-but-unknown tokens ALL resolve to the SAME byte-identical 404 this operation shares with an unknown route at this same path (the shared not-found problem — a fixed generic `detail`, and an `instance` that is this route's TEMPLATE, never the submitted token — the same "invisible == nonexistent" posture as POST /setup/first-admin once configured and GET/POST /invites/claim/{token}) — the four cases are deliberately indistinguishable from the outside (enumeration-resistant). Wave 0: this shell IS the final behavior for every case except a genuinely-arrived probe (no probe tokens exist yet, so every request legitimately 404s); a later lane adds the real single-use lookup + arrival-marking without changing this response shape.
          */
         get: operations["getProbePage"];
         put?: never;
@@ -4870,7 +4870,7 @@ export interface components {
                 "application/problem+json": components["schemas"]["Problem"];
             };
         };
-        /** @description Resource not found (or not visible under the caller's ViewerContext) */
+        /** @description Resource not found (or not visible under the caller's ViewerContext). ALWAYS `urn:loombre:problem:not-found` with title `Not Found` and a FIXED `detail` — a per-entity-kind sentence on a contract-governed operation, one shared generic string on the enumeration-resistant family (unknown route, wrong method, and the deliberately opaque token/inert-endpoint lookups). `instance` is the request path (collapsed to the route template where the path carries a token) and is the ONLY member that varies with the request, so a hidden resource and a nonexistent route answer byte-identical bodies at any given path. */
         NotFound: {
             headers: {
                 [name: string]: unknown;

@@ -28,6 +28,10 @@ import { NestFactory } from "@nestjs/core";
 import type { INestApplication } from "@nestjs/common";
 import { createDb, ensureTestDatabase, getUserByUsername, issuePasswordResetToken } from "@loombre/db";
 import { AppModule } from "../src/app.module.js";
+import {
+  expectSameNotFoundBodyApartFromInstance,
+  expectSharedNotFoundProblem,
+} from "./support/not-found-envelope.js";
 import { MailDispatchService } from "../src/mail/mail-dispatch.service.js";
 import { MailConfigService } from "../src/mail/mail-config.service.js";
 import { MUST_CHANGE_PASSWORD_PROBLEM_TYPE } from "../src/gateway/must-change-password.exception.js";
@@ -322,12 +326,18 @@ describe("POST /auth/reset-password (E3b, PUBLIC, M12/E8)", () => {
     const unknownRoute = await request(app.getHttpServer())
       .get("/this-route-does-not-exist-password-recovery")
       .set("Authorization", `Bearer ${adminAccessToken}`);
+    // adi-F3: same path, both ways — the real op's 404 and the catch-all's
+    // at the identical URL — is the byte-for-byte comparison; across paths
+    // only `instance` (the caller's own path) may differ.
+    const sameRouteWrongMethod = await request(app.getHttpServer())
+      .get("/auth/reset-password")
+      .set("Authorization", `Bearer ${adminAccessToken}`);
 
-    expect(res.status).toBe(404);
     expect(unknownRoute.status).toBe(404);
-    expect(res.headers["content-type"]).toBe(unknownRoute.headers["content-type"]);
-    expect(res.text).toBe(unknownRoute.text);
-    expect(JSON.parse(res.text)).toEqual({ type: "about:blank", title: "Not Found", status: 404 });
+    expectSharedNotFoundProblem(res, "/auth/reset-password");
+    expect(res.headers["content-type"]).toBe(sameRouteWrongMethod.headers["content-type"]);
+    expect(res.text).toBe(sameRouteWrongMethod.text);
+    expectSameNotFoundBodyApartFromInstance(res, unknownRoute);
   });
 
   it("expired vs used vs garbage are byte-identical to each other (instance-stripped)", async () => {

@@ -24,6 +24,10 @@ import { NestFactory } from "@nestjs/core";
 import type { INestApplication } from "@nestjs/common";
 import { createDb, ensureTestDatabase } from "@loombre/db";
 import { AppModule } from "../src/app.module.js";
+import {
+  expectSameNotFoundBodyApartFromInstance,
+  expectSharedNotFoundProblem,
+} from "./support/not-found-envelope.js";
 import { MailConfigService } from "../src/mail/mail-config.service.js";
 import { MailDispatchService } from "../src/mail/mail-dispatch.service.js";
 
@@ -400,11 +404,22 @@ describe("GET /invites/claim/{token} (public, M12)", () => {
       .set("Authorization", `Bearer ${adminToken}`);
 
     for (const res of [garbage, revoked, claimed]) {
-      expect(res.status).toBe(404);
-      expect(res.headers["content-type"]).toBe(unknownRoute.headers["content-type"]);
-      expect(res.text).toBe(unknownRoute.text);
-      expect(JSON.parse(res.text)).toEqual({ type: "about:blank", title: "Not Found", status: 404 });
+      // adi-F3: the body is the complete not-found problem now, and
+      // `instance` is this route's TEMPLATE — the raw token is a path
+      // segment and must never ride back (sanitize-instance.ts). So the
+      // three cases stay byte-identical to EACH OTHER, and to an unrouted
+      // method at the same URL; a cross-path unknown route matches in
+      // every member but `instance`.
+      expectSharedNotFoundProblem(res, "/invites/claim/{token}");
+      expect(res.text).toBe(garbage.text);
+      expectSameNotFoundBodyApartFromInstance(res, unknownRoute);
     }
+
+    const sameRouteWrongMethod = await request(app.getHttpServer())
+      .put("/invites/claim/not-a-real-token-at-all")
+      .set("Authorization", `Bearer ${adminToken}`);
+    expect(garbage.headers["content-type"]).toBe(sameRouteWrongMethod.headers["content-type"]);
+    expect(garbage.text).toBe(sameRouteWrongMethod.text);
   });
 });
 

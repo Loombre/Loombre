@@ -25,8 +25,12 @@
 //      framing).
 //   4. anything else (unknown/expired/already-consumed token) -> the
 //      SAME bare `NotFoundException()` the shell always threw — byte-
-//      identical to the catch-all (conformance.spec.ts's dedicated test
-//      already pins this; unchanged by this lane).
+//      identical to the catch-all's own 404 on this same path
+//      (conformance.spec.ts's dedicated test already pins this; unchanged
+//      by this lane). Since adi-F3 that body is the complete shared
+//      not-found problem, whose `instance` is the route TEMPLATE
+//      `/probe/{token}` (sanitize-instance.ts) — so the probed token still
+//      never rides back and every token shape answers the same bytes.
 
 import { Controller, Get, NotFoundException, Param, Res, UseFilters, UseGuards } from "@nestjs/common";
 import type { Response } from "express";

@@ -24,6 +24,15 @@
 // into `new BadRequestException(<raw V8 parse error>)`, and that message
 // quotes a fragment of the submitted body back). Its HTTP-level proof lives
 // in apps/server/test/malformed-json-body.e2e.spec.ts.
+//
+// adi-F3 (owner ruling 2026-08-24) added the fourth: a BARE
+// `NotFoundException` — Nest's unmatched-route/unmatched-method exception
+// and the five deliberate hand-thrown ones — now converts to the same
+// complete not-found problem every contract-governed 404 carries, with a
+// FIXED detail and no message echo. Its HTTP-level proof (each surface
+// compared byte-for-byte against the catch-all at the SAME path, which is
+// what keeps "invisible == nonexistent" true) lives in
+// apps/server/test/not-found-envelope.e2e.spec.ts.
 
 import { describe, expect, it, vi, afterEach } from "vitest";
 import { BadRequestException, HttpException, HttpStatus, NotFoundException } from "@nestjs/common";
@@ -34,7 +43,14 @@ import {
   MALFORMED_BODY_DETAIL,
   UNPARSEABLE_REQUEST_DETAIL,
 } from "./problem-json.filter.js";
+import { notFound } from "./problem.exception.js";
 import { UnauthenticatedException } from "./unauthenticated.exception.js";
+
+/** The type + fixed detail every not-found problem in this product carries —
+ *  asserted as LITERALS here on purpose (importing them from the code under
+ *  test would make the assertions vacuous). */
+const NOT_FOUND_PROBLEM_TYPE = "urn:loombre:problem:not-found";
+const NOT_FOUND_DETAIL = "Not found.";
 
 function fakeHost(
   instance = "/movies/not-a-uuid",
@@ -77,7 +93,11 @@ describe("ProblemJsonExceptionFilter", () => {
     expect(body.status).toBe(401);
   });
 
-  it("still wraps a non-problem-shaped HttpException (e.g. NotFoundException) in a minimal envelope", () => {
+  // adi-F3 (QA 2026-08-21, owner ruling 2026-08-24): a bare
+  // `NotFoundException` used to be serialized as the minimal
+  // `{type:"about:blank", title:"Not Found", status:404}`. It now gets the
+  // SAME complete not-found problem every contract-governed 404 carries.
+  it("adi-F3: a bare NotFoundException becomes the complete not-found problem (urn + fixed detail + instance)", () => {
     const filter = new ProblemJsonExceptionFilter();
     const { host, res } = fakeHost("/nope");
     const exception = new NotFoundException();
@@ -85,10 +105,43 @@ describe("ProblemJsonExceptionFilter", () => {
     filter.catch(exception, host);
 
     expect(res.status).toHaveBeenCalledWith(404);
+    expect(res.setHeader).toHaveBeenCalledWith("Content-Type", "application/problem+json");
     const body = JSON.parse(res.send.mock.calls[0]![0] as string);
-    expect(body.type).toBe("about:blank");
+    expect(body.type).toBe(NOT_FOUND_PROBLEM_TYPE);
     expect(body.status).toBe(404);
     expect(body.title).toBe("Not Found");
+    expect(body.detail).toBe(NOT_FOUND_DETAIL);
+    expect(body.instance).toBe("/nope");
+  });
+
+  // The whole point of a FIXED detail: a message someone attached to the
+  // exception can never reach the wire, so two 404s on one path cannot
+  // become distinguishable by accident (the anti-probing posture).
+  it("adi-F3: a NotFoundException's own message is never promoted into the body", () => {
+    const filter = new ProblemJsonExceptionFilter();
+    const { host, res } = fakeHost("/invites/claim/garbage-token-xyz");
+
+    filter.catch(new NotFoundException("invite 7f3 was already claimed"), host);
+
+    const body = JSON.parse(res.send.mock.calls[0]![0] as string) as Record<string, unknown>;
+    expect(body["title"]).toBe("Not Found");
+    expect(body["detail"]).toBe(NOT_FOUND_DETAIL);
+    expect(JSON.stringify(body)).not.toContain("already claimed");
+    // instance is sanitized to the route template — the raw token never
+    // rides back in the body (sanitize-instance.ts's TOKEN_PATH_TEMPLATES).
+    expect(body["instance"]).toBe("/invites/claim/{token}");
+    expect(JSON.stringify(body)).not.toContain("garbage-token-xyz");
+  });
+
+  it("adi-F3: an ALREADY problem-shaped 404 is passed through untouched (the rule is shape, not status)", () => {
+    const filter = new ProblemJsonExceptionFilter();
+    const { host, res } = fakeHost("/movies/018f6f1e-0000-7000-8000-000000000001");
+
+    filter.catch(notFound("Movie not found.", "/movies/018f6f1e-0000-7000-8000-000000000001"), host);
+
+    const body = JSON.parse(res.send.mock.calls[0]![0] as string) as Record<string, unknown>;
+    expect(body["type"]).toBe(NOT_FOUND_PROBLEM_TYPE);
+    expect(body["detail"]).toBe("Movie not found.");
   });
 
   // adi-F4 (QA 2026-08-21, P2). @nestjs/core's

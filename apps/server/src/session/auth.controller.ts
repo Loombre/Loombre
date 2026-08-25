@@ -481,9 +481,12 @@ export class AuthController {
    * own inert 404 (F11: NOT an unknown route's 404 — an unknown route is
    * unauthenticated-401'd by AuthGuard first; setup's post-configuration
    * 404 is the true, verified twin, since both are public routes AuthGuard
-   * never touches — see setup.controller.ts's header): no `detail`/
-   * `instance`, so `{"type":"about:blank","title":"Not
-   * Found","status":404}` every time.
+   * never touches — see setup.controller.ts's header): adi-F3's filter
+   * conversion gives it the ONE shared not-found problem,
+   * `{"type":"urn:loombre:problem:not-found","title":"Not Found",
+   * "status":404,"detail":"Not found.","instance":"/auth/reset-password"}`,
+   * every time — a fixed detail and an `instance` that is this route's own
+   * path, so nothing in the body varies with which token was submitted.
    */
   @Post("reset-password")
   @HttpCode(HttpStatus.NO_CONTENT)

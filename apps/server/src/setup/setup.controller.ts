@@ -19,9 +19,13 @@
 // EVERY subsequent call throws a bare `NotFoundException()` — deliberately
 // the exact same call NotFoundController's `*splat` catch-all makes (see
 // that file), so ProblemJsonExceptionFilter serializes both to the
-// byte-identical body `{"type":"about:blank","title":"Not
-// Found","status":404}` (no `detail`/`instance` — this exception carries
-// neither). This is the P1 restricted-content-style "invisible is
+// byte-identical body `{"type":"urn:loombre:problem:not-found","title":"Not
+// Found","status":404,"detail":"Not found.","instance":"/setup/first-admin"}`
+// — one shared not-found problem whose only per-request member is
+// `instance`, the caller's own path, identical for both since both are the
+// same request path (adi-F3, owner ruling 2026-08-24; the filter's own
+// header explains why enriching both sides preserves the posture). This is
+// the P1 restricted-content-style "invisible is
 // indistinguishable from nonexistent" posture (docs/PLAN.md §6.4) applied
 // to the setup surface itself: a probe against a configured instance learns
 // nothing about whether first-boot setup ever happened.
@@ -191,9 +195,11 @@ export class SetupController {
 
     if (!created) {
       // STATE.md P4.10: permanently inert once ANY user exists. Bare
-      // NotFoundException() — no message override — so the response body
-      // is byte-identical to NotFoundController's catch-all (see this
-      // file's header); apps/server/test/setup.e2e.spec.ts asserts the
+      // NotFoundException() — no message override, and adi-F3's conversion
+      // in ProblemJsonExceptionFilter drops any message a future caller
+      // might add, so the response body stays byte-identical to
+      // NotFoundController's catch-all AT THIS SAME PATH (see this file's
+      // header); apps/server/test/setup.e2e.spec.ts asserts that
       // byte-identity directly against a live catch-all response.
       throw new NotFoundException();
     }
