@@ -28,6 +28,14 @@
 // mid-flight (all ordinary races in an async job queue) resolve to an
 // EMPTY candidates array delivered honestly, never a thrown error and
 // never a fabricated result (U9).
+//
+// d4-e1 (backlog #081): that empty array had two opposite meanings, and the
+// admin-facing sheet could only render one sentence for both — "no provider
+// returned a match", which on a keyless instance (every provider in the
+// chain disabled for want of an API key) described a search that never
+// happened. The payload now also carries `providersSearched`: who was
+// actually asked. Empty array = a chain was resolved and nobody was asked;
+// field absent = no search stage was reached at all (the races above).
 
 import { getLibraryById, withTransaction, writeEvent, type DbOrTx } from '@loombre/db/internal';
 import type { JobHandler } from '@loombre/jobs';
@@ -82,7 +90,18 @@ function toConfidence(score: number): number {
 
 async function emitMatchCandidates(
   db: DbOrTx,
-  input: { itemId: string; jobId: string; candidates: MatchCandidate[]; searchedAtMs: number }
+  input: {
+    itemId: string;
+    jobId: string;
+    candidates: MatchCandidate[];
+    searchedAtMs: number;
+    /** d4-e1: the providers this search actually asked, chain order. OMITTED
+     *  — deliberately not `[]` — on the early returns below, where no chain
+     *  was ever resolved: `[]` is a claim ("asked nobody", i.e. nothing in
+     *  the chain is enabled, the keyless instance) and a race is not that
+     *  claim. See the schema's own description. */
+    providersSearched?: string[];
+  }
 ): Promise<void> {
   await withTransaction(db, async (trx) => {
     await writeEvent(trx, {
@@ -92,6 +111,7 @@ async function emitMatchCandidates(
       payload: {
         itemId: input.itemId,
         jobId: input.jobId,
+        ...(input.providersSearched ? { providersSearched: input.providersSearched } : {}),
         candidates: input.candidates,
         searchedAtMs: input.searchedAtMs,
       },
@@ -141,9 +161,19 @@ export function metadataSearchConsumerHandler(deps: MetadataSearchConsumerDeps):
     });
 
     const scored: { provider: string; externalId: string; title: string; year: number | null; score: number }[] = [];
+    // d4-e1: what was ASKED, independent of what came back. A chain whose
+    // providers are all disabled (the shape of every keyless instance) leaves
+    // this empty, which is how the client tells "found nothing" apart from
+    // "looked at nothing" — the two states the old candidates[]-only payload
+    // collapsed into one sentence.
+    const providersSearched: string[] = [];
     for (const providerName of chain) {
       const provider = deps.registry.get(providerName);
       if (!provider || !provider.enabled) continue;
+      // Counted here, BEFORE the call: a provider that throws was still
+      // asked, and reporting it as unsearched would blame the admin's API
+      // keys for a provider outage.
+      providersSearched.push(providerName);
       try {
         const results = await deps.registry.search(providerName, item.contentClass, query);
         for (const result of results) {
@@ -172,6 +202,12 @@ export function metadataSearchConsumerHandler(deps: MetadataSearchConsumerDeps):
       isBest: i === 0,
     }));
 
-    await emitMatchCandidates(deps.db, { itemId: payload.itemId, jobId: meta.jobId, candidates, searchedAtMs: clock() });
+    await emitMatchCandidates(deps.db, {
+      itemId: payload.itemId,
+      jobId: meta.jobId,
+      candidates,
+      providersSearched,
+      searchedAtMs: clock(),
+    });
   };
 }

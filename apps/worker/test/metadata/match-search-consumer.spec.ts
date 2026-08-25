@@ -63,7 +63,9 @@ async function insertItem(
   return row.id;
 }
 
-async function latestMatchCandidatesEvent(itemId: string): Promise<{ candidates: MatchCandidate[]; jobId: string } | undefined> {
+async function latestMatchCandidatesEvent(
+  itemId: string
+): Promise<{ candidates: MatchCandidate[]; jobId: string; providersSearched?: string[] } | undefined> {
   const rows = await db
     .selectFrom('events')
     .select(['payload'])
@@ -71,7 +73,9 @@ async function latestMatchCandidatesEvent(itemId: string): Promise<{ candidates:
     .orderBy('id', 'desc')
     .execute();
   const match = rows.find((r) => (r.payload as { itemId: string }).itemId === itemId);
-  return match ? (match.payload as unknown as { candidates: MatchCandidate[]; jobId: string }) : undefined;
+  return match
+    ? (match.payload as unknown as { candidates: MatchCandidate[]; jobId: string; providersSearched?: string[] })
+    : undefined;
 }
 
 beforeAll(async () => {
@@ -190,6 +194,70 @@ describe('metadataSearchConsumerHandler (Phosphor retheme Wave 2, Lane L2 — Fi
     const result = await latestMatchCandidatesEvent(seasonId);
     expect(result).toBeDefined();
     expect(result!.candidates).toEqual([]);
+  });
+
+  // d4-e1 (M/browser-items-F13-adjacent, backlog #081): an empty
+  // candidates[] meant two opposite things — "every provider was asked and
+  // none matched" and "no provider was asked at all", the second being what
+  // a keyless instance ALWAYS looks like. Fix Match rendered the first
+  // sentence for both, so the one state an admin can act on read as the one
+  // they cannot. The payload now names the providers actually searched.
+  it('names the providers it actually searched, so a keyless instance is not reported as a genuine no-match', async () => {
+    const itemId = await insertItem('Searched By Someone', 2019, 'series', null, tvLibraryId);
+    const registry = new ProviderRegistry();
+    registry.register(makeFakeProvider({ name: 'tmdb', kinds: ['tv'], searchResults: [] }));
+    registry.register(makeFakeProvider({ name: 'tvdb', kinds: ['tv'], searchResults: [] }));
+
+    const handler = metadataSearchConsumerHandler({ db, registry, log: () => {} });
+    await handler({ itemId }, { jobId: 'search-job-providers-1' });
+
+    const result = await latestMatchCandidatesEvent(itemId);
+    expect(result!.candidates).toEqual([]);
+    expect(result!.providersSearched).toEqual(['tmdb', 'tvdb']);
+  });
+
+  it('reports providersSearched: [] when every provider in the chain is disabled (no API key)', async () => {
+    const itemId = await insertItem('Nothing Was Searched', 2019, 'series', null, tvLibraryId);
+    const registry = new ProviderRegistry();
+    registry.register(makeFakeProvider({ name: 'tmdb', kinds: ['tv'], enabled: false, disabledReason: 'no api key' }));
+    registry.register(makeFakeProvider({ name: 'tvdb', kinds: ['tv'], enabled: false, disabledReason: 'no api key' }));
+
+    const handler = metadataSearchConsumerHandler({ db, registry, log: () => {} });
+    await handler({ itemId }, { jobId: 'search-job-providers-2' });
+
+    const result = await latestMatchCandidatesEvent(itemId);
+    expect(result!.candidates).toEqual([]);
+    // The distinction the whole field exists for: an empty ARRAY, not an
+    // absent field — this search ran and asked nobody.
+    expect(result!.providersSearched).toEqual([]);
+  });
+
+  it('counts a provider that threw as searched — it was asked, it just failed', async () => {
+    const itemId = await insertItem('Asked And Broke', 2018, 'series', null, tvLibraryId);
+    const registry = new ProviderRegistry();
+    registry.register(makeFakeProvider({ name: 'tmdb', kinds: ['tv'], failSearch: true }));
+    registry.register(makeFakeProvider({ name: 'tvdb', kinds: ['tv'], searchResults: [] }));
+
+    const handler = metadataSearchConsumerHandler({ db, registry, log: () => {} });
+    await handler({ itemId }, { jobId: 'search-job-providers-3' });
+
+    const result = await latestMatchCandidatesEvent(itemId);
+    expect(result!.providersSearched).toEqual(['tmdb', 'tvdb']);
+  });
+
+  it('omits providersSearched entirely when no search stage was reached (the item vanished mid-flight)', async () => {
+    const registry = new ProviderRegistry();
+    registry.register(makeFakeProvider({ name: 'tmdb', kinds: ['movie'] }));
+    const handler = metadataSearchConsumerHandler({ db, registry, log: () => {} });
+
+    const missingItemId = '018f6f1e-0000-7000-8000-00000000beef';
+    await handler({ itemId: missingItemId }, { jobId: 'search-job-providers-4' });
+
+    const result = await latestMatchCandidatesEvent(missingItemId);
+    // Absent, not []: "[]" is a claim about a chain that was resolved and
+    // asked nobody. No chain was resolved here, and the client must fall
+    // back to its generic copy rather than blame missing API keys.
+    expect(result!.providersSearched).toBeUndefined();
   });
 
   // AUD-A7c-002: this handler's own per-provider catch block (line

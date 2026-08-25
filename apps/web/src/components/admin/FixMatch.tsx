@@ -47,9 +47,25 @@
 // scoring). Applying a candidate POSTs .../apply-match, which rides the
 // EXISTING 'metadata' job/consumer (never a bespoke pipeline, never inline
 // provider I/O) and never touches the original media file.
+//
+// ── Empty results are two different states (d4-e1, backlog #081) ────────
+// "Every provider was asked and none matched" and "no provider was asked"
+// are opposites — the second is what a keyless instance ALWAYS looks like,
+// and it is the only one an admin can act on — but the event carried just
+// candidates[], so this sheet rendered "No metadata provider in this item's
+// chain returned a match" for both, i.e. it described a search that never
+// ran. The payload now carries `providersSearched`; an EMPTY array means the
+// chain resolved and everything in it was disabled, and that state gets its
+// own copy plus the route to Settings → Plugins. The field being ABSENT
+// (older server, or a job that never reached the search stage) keeps the
+// original sentence — an unknown must not become an accusation.
+// The instance-wide hints (ProviderKeysNoticeCard on /admin, ProviderKeysCard
+// on /settings/plugins) still exist and are still right; this one lives where
+// the emptiness is actually noticed.
 
 import { useEffect, useRef, useState } from "react";
-import { CheckCircle2 } from "lucide-react";
+import Link from "next/link";
+import { CheckCircle2, KeyRound } from "lucide-react";
 import { SheetOrModal } from "../ui/SheetOrModal.js";
 import { Button } from "../ui/Button.js";
 import { ProgressBar } from "../ui/ProgressBar.js";
@@ -74,10 +90,17 @@ interface MatchCandidatesPayload {
   itemId: string;
   jobId: string;
   candidates: MatchCandidate[];
+  /** d4-e1: who the search actually asked (see this file's header). Absent
+   *  from an older server, and from a result where no search stage was
+   *  reached — both fall back to the generic empty-state copy. */
+  providersSearched?: string[];
   searchedAtMs: number;
 }
 
-type SearchState = { kind: "searching" } | { kind: "results"; candidates: MatchCandidate[] } | { kind: "error"; message: string };
+type SearchState =
+  | { kind: "searching" }
+  | { kind: "results"; candidates: MatchCandidate[]; providersSearched: string[] | undefined }
+  | { kind: "error"; message: string };
 
 export interface FixMatchProps {
   /** The catalog item to search/apply a match for. */
@@ -108,7 +131,7 @@ export function FixMatch({ itemId, itemTitle, open, onClose, onApplied }: FixMat
       "metadata.match-candidates",
       (event: EventEnvelope<MatchCandidatesPayload>) => {
         if (cancelledRef.current || event.payload.itemId !== itemId) return;
-        setState({ kind: "results", candidates: event.payload.candidates });
+        setState({ kind: "results", candidates: event.payload.candidates, providersSearched: event.payload.providersSearched });
       },
     );
 
@@ -152,7 +175,26 @@ export function FixMatch({ itemId, itemTitle, open, onClose, onApplied }: FixMat
           </div>
         )}
         {state.kind === "error" && <p className={styles.errorText}>{state.message}</p>}
-        {state.kind === "results" && state.candidates.length === 0 && (
+        {/* d4-e1: an empty result has two opposite causes and only one of
+            them is the admin's to fix. providersSearched === [] means the
+            chain was resolved and every provider in it was skipped as
+            disabled — the shape of a keyless instance — so nothing was
+            searched and the honest thing to show is where the key goes.
+            Absent (older server, or a result that never reached the search
+            stage) keeps the original sentence. */}
+        {state.kind === "results" && state.candidates.length === 0 && state.providersSearched?.length === 0 && (
+          <>
+            <EmptyState
+              icon={KeyRound}
+              title="Nothing was searched"
+              body="This item's provider chain has no enabled metadata provider — Fix Match cannot look for candidates until at least one provider key is set."
+            />
+            <Link href="/settings/plugins" className={styles.keysLink}>
+              Configure provider keys
+            </Link>
+          </>
+        )}
+        {state.kind === "results" && state.candidates.length === 0 && state.providersSearched?.length !== 0 && (
           <EmptyState
             icon={CheckCircle2}
             title="No candidates found"

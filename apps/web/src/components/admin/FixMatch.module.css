@@ -104,3 +104,12 @@
     width: 100%;
   }
 }
+
+/* d4-e1: the keyless empty state's way out — the same inline accent link
+   ProviderKeysNoticeCard uses for the identical destination. */
+.keysLink {
+  display: inline-block;
+  align-self: flex-start;
+  color: var(--color-accent);
+  font-size: var(--text-sm);
+}

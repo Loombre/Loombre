@@ -17,9 +17,14 @@
       "format": "uuid",
       "description": "The 'metadata-search' job that produced this result — lets a client that enqueued several searches match results back to the right item."
     },
+    "providersSearched": {
+      "type": "array",
+      "description": "ADDITIVE-OPTIONAL (d4-e1, backlog #081). The providers this search actually ran against, in the item's resolved chain order — a provider that was asked and THREW is still listed (it was asked). An EMPTY array is the load-bearing case: the chain was resolved and every provider in it was skipped as disabled, which is what a keyless instance always looks like, so an empty candidates[] means 'nothing was searched', not 'searched and found nothing'. The field is OMITTED (never []) when no search stage was reached at all — the item vanished mid-flight, was not an enrichable type, or its library was gone — because those are races, not a provider-configuration problem, and a client must fall back to its generic copy for them. An older server omits it everywhere; that degrades to exactly the pre-d4-e1 copy rather than to a wrong answer.",
+      "items": { "type": "string" }
+    },
     "candidates": {
       "type": "array",
-      "description": "Every result found across the item's resolved provider chain, ranked best-first (apps/worker/src/metadata/match.ts's title/year scoring, normalized 0-100). Empty when no provider in the chain returned any result.",
+      "description": "Every result found across the item's resolved provider chain, ranked best-first (apps/worker/src/metadata/match.ts's title/year scoring, normalized 0-100). Empty when no provider in the chain returned any result — or, indistinguishably before d4-e1, when no provider was searched at all; see providersSearched.",
       "items": {
         "type": "object",
         "additionalProperties": false,

@@ -304,6 +304,10 @@ describe("event-schemas (docs/PLAN.md §4.3)", () => {
       "metadata.match-candidates": {
         itemId: "018f6f1e-0000-7000-8000-000000000001",
         jobId: "018f6f1e-0000-7000-8000-000000000008",
+        // d4-e1: additive-optional; names the providers actually asked, so
+        // an empty candidates[] can be told apart from a chain with nothing
+        // enabled in it (a keyless instance).
+        providersSearched: ["tmdb"],
         candidates: [
           { provider: "tmdb", externalId: "603", title: "The Matrix", year: 1999, confidence: 97.5, isBest: true },
           { provider: "tmdb", externalId: "604", title: "The Matrix Reloaded", year: 2003, confidence: 41.2, isBest: false },
