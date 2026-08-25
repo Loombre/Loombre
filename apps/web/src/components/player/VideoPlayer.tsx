@@ -44,8 +44,10 @@ import { clientPlaybackErrorReasons, resolveUnavailableReasons } from "../../lib
 import { findPlayableFallback, decisionLabel, type FallbackCandidate } from "../../lib/playback-fallback.js";
 import { findProgressForItem, isWorthResuming } from "../../lib/progress-lookup.js";
 import { HeartbeatScheduler, type HeartbeatSnapshot, type ProgressState } from "../../lib/heartbeat.js";
-import { isRealPlaybackAdvancement, isSourceContinuous } from "../../lib/watched-progress.js";
+import { isAxisCommensurateStep, isRealPlaybackAdvancement, isSourceContinuous } from "../../lib/watched-progress.js";
 import { createProgressWriteQueue } from "../../lib/progress-write-queue.js";
+import { buildProgressBody } from "../../lib/progress-body.js";
+import { adoptableDurationMs } from "../../lib/duration-adoption.js";
 import { reportProgressOnUnload } from "../../lib/progress-report.js";
 import { apiGet, apiPost, apiPut } from "../../lib/api-client.js";
 import {
@@ -270,6 +272,13 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
   /** The previous `timeupdate` presentation-seconds sample — the baseline
    *  the advancement predicate compares against. */
   const advancementProbeSecRef = useRef<number | null>(null);
+  /** d3-a4: the previous `timeupdate` sample's RESOLVED source-ms — the
+   *  source-axis baseline for the axis-commensurate leg of the watched-
+   *  position gate (lib/watched-progress.ts). Nulled whenever a tick has
+   *  no resolved position (relocating, held resolution): a pair spanning
+   *  an unresolved gap cannot prove commensurate motion, so the next
+   *  resolved sample is a baseline, not an acceptance. */
+  const advancementProbeSourceMsRef = useRef<number | null>(null);
   /** gap-F6: where this mount INTENDS playback to start on the source axis
    *  (deep-link ?t= offset or 0; a chosen resume point re-anchors through
    *  watchedPositionRef in handleResume) — the bootstrap anchor for the
@@ -284,6 +293,13 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
    *  sites `durationRef.current` resets at. */
   const sourceClockRef = useRef<SourceClockState>(initialSourceClockState());
   const durationRef = useRef<number | null>(null);
+  /** d3-a4: the session's PROBED duration (session.media.durationMs) —
+   *  the item's known duration, kept apart from `durationRef` (which
+   *  element adoption may move) so the adoption plausibility bound
+   *  (lib/duration-adoption.ts) always compares against the probe, never
+   *  against a previously-adopted value. Same ref idiom and reset sites
+   *  as `durationRef`/`isDirectPlayRef` (see the Finding F note below). */
+  const probedDurationMsRef = useRef<number | null>(null);
   // Opus review Finding F (2026-08-10): the event-wiring effect below
   // (`adoptElementDuration`) needs "is this session direct-play"
   // (`session.manifestUrl === null`, hls-attach.ts's own discriminator) at
@@ -648,6 +664,7 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
       setSession(result.session);
       setDurationMs(result.session.media?.durationMs ?? null);
       durationRef.current = result.session.media?.durationMs ?? null;
+      probedDurationMsRef.current = result.session.media?.durationMs ?? null;
       isDirectPlayRef.current = result.session.manifestUrl === null;
       sourceClockRef.current = initialSourceClockState();
       const defaultAudio = result.session.media?.audio.find((a) => a.isDefault) ?? result.session.media?.audio[0];
@@ -1349,12 +1366,11 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
         // for it to settle, so the server always persists writes in the
         // order the player issued them and the 'played' state can never
         // lose to a stale 'in-progress' write.
-        const body = {
-          positionMs: Math.round(snapshot.positionMs),
-          durationMs: snapshot.durationMs,
-          state: snapshot.state,
-          sessionId: session.id,
-        };
+        // d3-a4 (verify/gap-F6): built by the SAME rounding builder the
+        // unload path uses — this send used to pass durationMs raw, and
+        // one adopted fractional element duration made the server 422
+        // every in-session write ('durationMs must be an integer').
+        const body = buildProgressBody(snapshot, session.id);
         void progressWriteQueueRef.current.enqueue(() =>
           apiPut("/progress/{itemId}", { params: { path: { itemId } }, body }),
         );
@@ -1457,10 +1473,17 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
       // pre-relocation baselines can never pair with post-landing samples.
       const previousProbeSec = advancementProbeSecRef.current;
       advancementProbeSecRef.current = video.currentTime;
+      // d3-a4: the source-axis twin of the baseline above — read the
+      // PREVIOUS tick's resolved source-ms before this tick overwrites
+      // (or, on an unresolved tick, nulls) it.
+      const previousProbeSourceMs = advancementProbeSourceMsRef.current;
       // V8 (§9.1.9): while relocating, the display stays frozen at the
       // hard-seek target — the element's own position is meaningless until
       // the landing completes (run discovered AND displayable).
-      if (relocatingRef.current) return;
+      if (relocatingRef.current) {
+        advancementProbeSourceMsRef.current = null;
+        return;
+      }
       // browser-player-F6: the displayed position comes from ONE resolver
       // (lib/source-clock.ts), in authority order — a TRUSTED listed
       // window (PDT mapping; refreshes the anchor), the presentation axis
@@ -1486,12 +1509,23 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
         hlsRef.current === null && !isDirectPlayRef.current ? nativeSourceAnchorMs(video) : null;
       const resolved = resolveDisplayedSourceMs(sourceClockRef.current, frags, video.currentTime, nativeAnchorMs);
       sourceClockRef.current = resolved.state;
-      if (resolved.ms === null) return;
+      if (resolved.ms === null) {
+        advancementProbeSourceMsRef.current = null;
+        return;
+      }
       const ms = resolved.ms;
+      advancementProbeSourceMsRef.current = ms;
       positionRef.current = ms;
       setPositionMs(ms);
+      // d3-a4 third leg (isAxisCommensurateStep): the continuity gate
+      // below bounds each candidate against the last ACCEPTED position,
+      // which still admits a SLOW mapped-drift walk (≤10s per step) when
+      // a relocated window's PDT origin creeps between refreshes. Real
+      // playback moves both axes together, so the per-tick source step
+      // must match the presentation step too.
       if (
         isRealPlaybackAdvancement(previousProbeSec, video.currentTime, video.readyState, video.paused) &&
+        isAxisCommensurateStep(previousProbeSec, video.currentTime, previousProbeSourceMs, ms) &&
         isSourceContinuous(watchedPositionRef.current, ms, intendedStartMsRef.current)
       ) {
         watchedPositionRef.current = ms;
@@ -1532,30 +1566,24 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
     // actual decodable stream). Adopted unconditionally in that case, growth
     // or shrinkage alike; every other session (HLS transcode/direct-stream)
     // keeps the growth-only rule above unchanged.
+    // d3-a4 (A/gap-F10-adjacent): the rule itself now lives pure in
+    // lib/duration-adoption.ts — direct-play unconditional (Finding F),
+    // source-axis authority (gap-F6 round 3, the sawSourceClock gate),
+    // growth-only, PLUS the two holes observed live: integer ms always
+    // (the adopted float 422'd every later heartbeat) and growth
+    // plausibility-bounded against the PROBED duration (a relocated
+    // playlist's presentation extent adopted 1810859ms on a 586s item
+    // and persisted it via PUT /progress).
     const adoptElementDuration = (): void => {
-      if (!Number.isFinite(video.duration)) return;
-      const candidateMs = video.duration * 1000;
-      if (isDirectPlayRef.current) {
-        durationRef.current = candidateMs;
-        setDurationMs(candidateMs);
-        return;
-      }
-      // gap-F6 round 3: once this HLS session has shown the V8 SOURCE
-      // clock, the element's duration is the served playlist's cumulative
-      // PRESENTATION extent — the wrong axis for a source-axis scrubber by
-      // construction. A restarted run re-encoding tail content pushes that
-      // extent PAST the real file duration (live: 9:34 -> 11:19 -> 18:18
-      // as churn appended runs) and growth-only adoption took it, so the
-      // timeline ceiling and every written duration_ms inflated. The
-      // probed session duration governs; growth adoption survives only
-      // for the pre-source-clock shapes it was built for (a pre-V8
-      // server's event playlist extending; metadata beating a stale
-      // probe on the presentation axis, where the axes coincide).
-      if (sourceClockRef.current.sawSourceClock) return;
-      if (durationRef.current === null || candidateMs > durationRef.current) {
-        durationRef.current = candidateMs;
-        setDurationMs(candidateMs);
-      }
+      const adopted = adoptableDurationMs(video.duration, {
+        currentMs: durationRef.current,
+        isDirectPlay: isDirectPlayRef.current,
+        sawSourceClock: sourceClockRef.current.sawSourceClock,
+        probedDurationMs: probedDurationMsRef.current,
+      });
+      if (adopted === null) return;
+      durationRef.current = adopted;
+      setDurationMs(adopted);
     };
     const onLoadedMetadata = adoptElementDuration;
     const onDurationChange = adoptElementDuration;
@@ -2151,6 +2179,7 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
     setSession(result.session);
     setDurationMs(result.session.media?.durationMs ?? null);
     durationRef.current = result.session.media?.durationMs ?? null;
+    probedDurationMsRef.current = result.session.media?.durationMs ?? null;
     isDirectPlayRef.current = result.session.manifestUrl === null;
     sourceClockRef.current = initialSourceClockState();
     const defaultAudio = result.session.media?.audio.find((a) => a.isDefault) ?? result.session.media?.audio[0];

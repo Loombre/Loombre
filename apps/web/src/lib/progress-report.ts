@@ -14,21 +14,13 @@
 //     Authorization.
 
 import { getAuthStore } from "./auth-store.js";
+import { buildProgressBody } from "./progress-body.js";
 import type { HeartbeatSnapshot } from "./heartbeat.js";
 
 export interface ProgressReportOptions {
   serverUrl: string;
   itemId: string;
   sessionId?: string;
-}
-
-function buildBody(snapshot: HeartbeatSnapshot, sessionId?: string): Record<string, unknown> {
-  return {
-    positionMs: Math.max(0, Math.round(snapshot.positionMs)),
-    durationMs: snapshot.durationMs === null ? null : Math.round(snapshot.durationMs),
-    state: snapshot.state,
-    ...(sessionId ? { sessionId } : {}),
-  };
 }
 
 /** Reliable best-effort send for page unload (`keepalive: true`); never
@@ -46,7 +38,7 @@ export function reportProgressOnUnload(options: ProgressReportOptions, snapshot:
         "Content-Type": "application/json",
         Authorization: `Bearer ${state.accessToken}`,
       },
-      body: JSON.stringify(buildBody(snapshot, options.sessionId)),
+      body: JSON.stringify(buildProgressBody(snapshot, options.sessionId)),
     });
   } catch {
     // best-effort — nothing else to do at unload time.

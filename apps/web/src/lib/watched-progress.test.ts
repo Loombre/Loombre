@@ -8,7 +8,14 @@
 // heartbeat progress (gap-F6)" describe.
 
 import { describe, expect, it } from "vitest";
-import { isRealPlaybackAdvancement, isSourceContinuous, MAX_REAL_ADVANCEMENT_STEP_SEC, MAX_SOURCE_STEP_MS } from "./watched-progress.js";
+import {
+  isAxisCommensurateStep,
+  isRealPlaybackAdvancement,
+  isSourceContinuous,
+  MAX_AXIS_DIVERGENCE_MS,
+  MAX_REAL_ADVANCEMENT_STEP_SEC,
+  MAX_SOURCE_STEP_MS,
+} from "./watched-progress.js";
 
 describe("isRealPlaybackAdvancement (gap-F6)", () => {
   it("a small forward step while playing with displayable data IS advancement", () => {
@@ -71,5 +78,45 @@ describe("isSourceContinuous (gap-F6, second phantom flavor)", () => {
     expect(isSourceContinuous(100_000, 100_000 + MAX_SOURCE_STEP_MS, 0)).toBe(true);
     expect(isSourceContinuous(100_000, 100_000 - MAX_SOURCE_STEP_MS, 0)).toBe(true);
     expect(isSourceContinuous(100_000, 100_000 + MAX_SOURCE_STEP_MS + 1, 0)).toBe(false);
+  });
+});
+
+// d3-a4 (A/watched-progress): the continuity gate alone admits a SLOW
+// mapped-drift walk — any candidate within 10s of the last accepted one
+// passes, so a relocated mapping whose PDT origin creeps between playlist
+// refreshes can walk the watched position arbitrarily far while the
+// element only plays milliseconds per sample. Real playback moves BOTH
+// axes together (§9.1.6): an accepted step must advance source and
+// presentation by the SAME amount, within quantization slop.
+describe("isAxisCommensurateStep (d3-a4, mapped-drift walk)", () => {
+  it("ordinary playback moves both axes together — commensurate", () => {
+    expect(isAxisCommensurateStep(5.75, 6.0, 5_750, 6_000)).toBe(true);
+  });
+
+  it("a throttled background tab (~1s samples) is still commensurate", () => {
+    expect(isAxisCommensurateStep(30, 31, 30_000, 31_000)).toBe(true);
+  });
+
+  it("small mapping quantization slop is tolerated", () => {
+    expect(isAxisCommensurateStep(30.0, 30.25, 30_000, 30_251)).toBe(true);
+  });
+
+  it("the drift walk — source hopping ~9s per ~250ms presentation step — is NOT commensurate", () => {
+    expect(isAxisCommensurateStep(30.0, 30.25, 30_000, 39_250)).toBe(false);
+  });
+
+  it("a backward-creeping mapping under forward playback is not commensurate either", () => {
+    expect(isAxisCommensurateStep(30.0, 30.25, 30_000, 21_250)).toBe(false);
+  });
+
+  it("both axis baselines are required — a tick with no prior resolved source sample can only be a baseline", () => {
+    expect(isAxisCommensurateStep(null, 6.0, 5_750, 6_000)).toBe(false);
+    expect(isAxisCommensurateStep(5.75, 6.0, null, 6_000)).toBe(false);
+  });
+
+  it("the bound is MAX_AXIS_DIVERGENCE_MS, inclusive, either direction", () => {
+    expect(isAxisCommensurateStep(30.0, 30.25, 30_000, 30_250 + MAX_AXIS_DIVERGENCE_MS)).toBe(true);
+    expect(isAxisCommensurateStep(30.0, 30.25, 30_000, 30_250 - MAX_AXIS_DIVERGENCE_MS)).toBe(true);
+    expect(isAxisCommensurateStep(30.0, 30.25, 30_000, 30_250 + MAX_AXIS_DIVERGENCE_MS + 1)).toBe(false);
   });
 });

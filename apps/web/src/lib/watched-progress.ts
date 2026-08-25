@@ -95,3 +95,41 @@ export function isSourceContinuous(watchedMs: number | null, candidateMs: number
   const anchorMs = watchedMs ?? intendedStartMs;
   return Math.abs(candidateMs - anchorMs) <= MAX_SOURCE_STEP_MS;
 }
+
+/**
+ * d3-a4 (A/watched-progress): how far the SOURCE-axis step between two
+ * consecutive `timeupdate` samples may diverge from the PRESENTATION-axis
+ * step over the same pair. Real playback advances both axes by the same
+ * amount (§9.1.6 — within a run they move 1:1, and the resolver's anchor
+ * extrapolation is 1:1 by construction), so legitimate divergence is only
+ * mapping quantization (PDT rounding, EXTINF-vs-real-media slop at a
+ * fragment boundary) — tens of ms. 500ms is generous headroom over that
+ * while still capping what a drift walk can launder per accepted sample
+ * to well under the continuity bound.
+ */
+export const MAX_AXIS_DIVERGENCE_MS = 500;
+
+/**
+ * Third leg of the watched-position gate. The continuity gate above
+ * bounds a candidate against the last ACCEPTED position (≤10s), which
+ * still admits a SLOW walk: a relocated mapping whose PDT origin creeps
+ * between playlist refreshes moves the mapped source position ~9s per
+ * ~250ms sample — each step continuous, none of them playback. Real
+ * advancement moves source and presentation TOGETHER, so an accepted
+ * step must be axis-commensurate: |sourceStep − presentationStep| within
+ * quantization slop. Either baseline missing (first resolved sample
+ * after attach, a held/unresolved previous tick, a relocation window)
+ * means the pair cannot prove commensurate motion — a baseline, never an
+ * acceptance; real playback re-qualifies one sample later.
+ */
+export function isAxisCommensurateStep(
+  previousPresentationSec: number | null,
+  currentPresentationSec: number,
+  previousSourceMs: number | null,
+  currentSourceMs: number,
+): boolean {
+  if (previousPresentationSec === null || previousSourceMs === null) return false;
+  const presentationStepMs = (currentPresentationSec - previousPresentationSec) * 1000;
+  const sourceStepMs = currentSourceMs - previousSourceMs;
+  return Math.abs(sourceStepMs - presentationStepMs) <= MAX_AXIS_DIVERGENCE_MS;
+}

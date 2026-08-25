@@ -2237,6 +2237,133 @@ describe("VideoPlayer", () => {
     });
   });
 
+  // ── d3-a4: progress-write correctness ───────────────────────────────────
+  // verify/gap-F6 (P2): every in-session heartbeat PUT /progress 422'd —
+  // 'durationMs must be an integer or null' — because the heartbeat send()
+  // rounded positionMs but passed the adopted element duration RAW, and an
+  // HLS element duration is fractional (observed live: 773347.5). Only the
+  // unload path (lib/progress-report.ts) rounded both, so progress writes
+  // silently stopped for the whole session (6x 422 in one live run).
+  // A/gap-F10-adjacent: duration adoption rides the PRESENTATION axis on
+  // relocated playlists (segment numbering continues past nominal EOF) —
+  // growth-only adopted 1810859ms on the 586s Idol and PERSISTED it via
+  // PUT /progress. The adoption guard needs a plausibility bound against
+  // the session's probed duration, and integer ms always.
+  describe("progress-write correctness (d3-a4)", () => {
+    async function renderHlsReady(): Promise<{ v: TestRender; hls: MockHlsInstance }> {
+      createPlaybackSession.mockReset().mockResolvedValue({ ok: true, session: hlsTranscodeSession() });
+      const v = await renderReady();
+      await act(async () => {});
+      const hls = hlsInstances[hlsInstances.length - 1];
+      if (!hls) throw new Error("the hlsjs attach effect never constructed an hls.js instance");
+      hls.currentLevel = 0;
+      return { v, hls };
+    }
+
+    it("the heartbeat flush body carries an INTEGER durationMs even when the element adopted a fractional duration", async () => {
+      // Direct-play adopts the element duration unconditionally — and real
+      // element durations are fractional. The pause-flush PUT must still
+      // send integer ms (the server 422s anything else, verify/gap-F6).
+      const v = (view = await renderReady());
+      const video = videoEl(v);
+      Object.defineProperty(video, "duration", { get: () => 600.5004, configurable: true });
+      await act(async () => {
+        video.dispatchEvent(new Event("durationchange"));
+      });
+      await act(async () => button(v, "Play").click());
+      apiPut.mockClear();
+      await simulateWatchedTo(video, 42);
+      await act(async () => {
+        video.pause();
+      });
+      expect(apiPut).toHaveBeenCalledTimes(1);
+      const body = (apiPut.mock.calls[0]?.[1] as { body?: { positionMs?: number; durationMs?: number | null } }).body;
+      expect(body?.durationMs, "fractional durationMs reaches the wire — the server rejects the whole write with 422").toBe(600_500);
+      expect(body?.positionMs).toBe(42_000);
+    });
+
+    it("an implausibly large presentation-axis duration on an HLS session (relocated playlist extent) is never adopted nor persisted", async () => {
+      // The gap-F10-adjacent live shape scaled to this fixture: probed
+      // duration 600s, relocated-playlist cumulative extent ~1810.859s
+      // (segment numbering continued past nominal EOF). Growth-only
+      // adoption took it; the probed session duration must govern.
+      const { v } = await renderHlsReady();
+      view = v;
+      const video = videoEl(v);
+      Object.defineProperty(video, "duration", { get: () => 1810.859, configurable: true });
+      await act(async () => {
+        video.dispatchEvent(new Event("durationchange"));
+      });
+      const slider = v.container.querySelector('[role="slider"]');
+      expect(
+        slider?.getAttribute("aria-valuemax"),
+        "the relocated playlist's presentation extent was adopted over the probed duration",
+      ).toBe("600000");
+
+      await act(async () => button(v, "Play").click());
+      apiPut.mockClear();
+      await simulateWatchedTo(video, 30);
+      await act(async () => {
+        video.pause();
+      });
+      const body = (apiPut.mock.calls.at(-1)?.[1] as { body?: { durationMs?: number | null } }).body;
+      expect(body?.durationMs, "the implausible adopted duration was persisted via PUT /progress").toBe(600_000);
+    });
+
+    it("plausible fractional HLS duration growth is adopted as INTEGER ms", async () => {
+      // The exact live 422 shape: the completed playlist's fractional
+      // extent tops the probe by under a second (773347.5 vs 773347) —
+      // legitimate growth, but the float poisoned every later heartbeat.
+      const { v } = await renderHlsReady();
+      view = v;
+      const video = videoEl(v);
+      Object.defineProperty(video, "duration", { get: () => 600.7503, configurable: true });
+      await act(async () => {
+        video.dispatchEvent(new Event("durationchange"));
+      });
+      const slider = v.container.querySelector('[role="slider"]');
+      expect(slider?.getAttribute("aria-valuemax"), "the adopted duration must be integer ms").toBe("600750");
+    });
+
+    it("a slow mapped-drift walk (source hopping ~9s per ~250ms sample) freezes the watched position instead of walking it", async () => {
+      // A/watched-progress: the source-continuity gate alone admits any
+      // drift ≤10s per accepted step — a relocated mapping whose PDT
+      // origin creeps between refreshes walks the watched position
+      // arbitrarily far while the element only plays milliseconds. Real
+      // playback moves BOTH axes together (§9.1.6), so an accepted step
+      // must be axis-commensurate too.
+      const { v, hls } = await renderHlsReady();
+      view = v;
+      const fragment = { programDateTime: 0, start: 0, duration: 600, relurl: "run0/s000000.m4s" };
+      hls.levels = [{ details: { live: true, fragments: [fragment] } }];
+      const video = videoEl(v);
+
+      await act(async () => button(v, "Play").click());
+      // Genuine playback to t=30 under a stable mapping (source == pres).
+      await simulateWatchedTo(video, 30);
+
+      // The mapping now drifts: each playlist refresh shifts the PDT
+      // origin +9s while the element advances 250ms — every step passes
+      // the 10s continuity bound, but no real playback looks like this.
+      await act(async () => {
+        for (let i = 1; i <= 5; i += 1) {
+          fragment.programDateTime = 9_000 * i;
+          video.currentTime = 30 + 0.25 * i;
+          video.dispatchEvent(new Event("timeupdate"));
+        }
+      });
+      apiPut.mockClear();
+      await act(async () => {
+        video.pause();
+      });
+      const body = (apiPut.mock.calls.at(-1)?.[1] as { body?: { positionMs?: number } }).body;
+      expect(
+        body?.positionMs,
+        "the drift walk laundered the mapped positions into the watched position (30_000 was the last real one)",
+      ).toBe(30_000);
+    });
+  });
+
   // gap-F7 (QA 2026-08-20/21, P2): at a natural EOF the element fires
   // `pause` first, then `ended` (WHATWG media event order). Each handler
   // flushed its own fire-and-forget PUT /progress — two CONCURRENT HTTP
