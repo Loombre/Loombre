@@ -62,6 +62,7 @@
 // stale rows still render (dimmed, "No heartbeat") but never inflate `n`.
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import type { components } from "@loombre/sdk";
 import { EmptyState } from "./EmptyState.js";
 import { ReasonsPanel } from "./ReasonsPanel.js";
@@ -82,6 +83,28 @@ import styles from "./StreamsPanel.module.css";
 
 type AdminSession = components["schemas"]["AdminSession"];
 type AdminSessionWithPlan = AdminSession;
+
+/** One keyset page of GET /admin/sessions — the same PAGE_LIMIT
+ *  app/admin/sessions uses, so the two surfaces walk the list in identical
+ *  strides and cannot disagree about where a page boundary falls. */
+const PAGE_LIMIT = 50;
+
+/** d4-e5: how many of those pages this panel will walk in one refresh.
+ *  A cap, not a target: the loop stops the moment nextCursor is null, so
+ *  every install with fewer than PAGE_LIMIT live sessions still costs
+ *  exactly ONE request per refresh, exactly as before. Past
+ *  PAGE_LIMIT * STREAMS_MAX_PAGES rows the count is rendered as a floor
+ *  ("· 173+"), never as fabricated precision (U9, the same posture
+ *  LibrariesPanel's truncated unmatched count takes). */
+export const STREAMS_MAX_PAGES = 4;
+
+/** How many rows this DASHBOARD CARD renders. Counting is not showing: the
+ *  count must cover every live session, but a card on the admin home is not
+ *  the place to render hundreds of rows — past this it links to
+ *  app/admin/sessions, which pages properly and is built for the list. At
+ *  PAGE_LIMIT this is a no-op for every install that fits in one page, i.e.
+ *  the rendering is byte-identical to pre-d4-e5 below 50 sessions. */
+export const STREAMS_VISIBLE_ROWS = PAGE_LIMIT;
 
 function StreamRow({ session }: { session: AdminSessionWithPlan }): React.JSX.Element {
   const [expanded, setExpanded] = useState(false);
@@ -132,6 +155,10 @@ function StreamRow({ session }: { session: AdminSessionWithPlan }): React.JSX.El
 export function StreamsPanel(): React.JSX.Element {
   const [sessions, setSessions] = useState<AdminSessionWithPlan[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // d4-e5: true when the walk below stopped at STREAMS_MAX_PAGES with rows
+  // still unread — the count becomes "n+" rather than a number the panel
+  // cannot stand behind.
+  const [truncated, setTruncated] = useState(false);
 
   // What is on screen right now, readable from the [] -deps status handler
   // below without making `sessions` a dependency of it (which would tear the
@@ -140,17 +167,52 @@ export function StreamsPanel(): React.JSX.Element {
   const sessionsRef = useRef<AdminSessionWithPlan[] | null>(null);
   sessionsRef.current = sessions;
 
+  // Bumped by every refresh (and by unmount), so a slow walk whose pages
+  // arrive after a newer refresh — or after this panel is gone — is dropped
+  // instead of overwriting fresher rows with older ones.
+  const runIdRef = useRef(0);
+  useEffect(() => () => void (runIdRef.current += 1), []);
+
+  // d4-e5: walk the keyset instead of reading one page. "Active streams · n"
+  // is the whole point of this panel, and a single limit=50 read made it a
+  // lie on any server with more than 50 live sessions — while
+  // app/admin/sessions, on the same screen's other route, paged properly and
+  // disagreed. Bounded: STREAMS_MAX_PAGES pages, then the count says "+".
   const refresh = useCallback(() => {
-    apiGet("/admin/sessions", { params: { query: { limit: 50 } } })
-      .then((page) => {
-        setSessions(page.items as AdminSessionWithPlan[]);
+    const runId = (runIdRef.current += 1);
+    void (async () => {
+      try {
+        const collected: AdminSessionWithPlan[] = [];
+        let cursor: string | null = null;
+        let more = false;
+        for (let page = 0; page < STREAMS_MAX_PAGES; page += 1) {
+          // Annotated (rather than inferred) because apiGet's result type is
+          // derived from its argument, and `cursor` is then assigned from
+          // that result — TS7022 circularity without a written type here.
+          const query: { limit: number; cursor?: string } =
+            cursor === null ? { limit: PAGE_LIMIT } : { limit: PAGE_LIMIT, cursor };
+          // Sequential on purpose: each request needs the previous page's
+          // cursor. The loop exits on the first null nextCursor, so the
+          // common (small install) case is one request, as it always was.
+          const result = await apiGet("/admin/sessions", { params: { query } });
+          if (runIdRef.current !== runId) return;
+          collected.push(...(result.items as AdminSessionWithPlan[]));
+          cursor = result.nextCursor;
+          more = cursor !== null;
+          if (!more) break;
+        }
+        setSessions(collected);
+        setTruncated(more);
         // d4-e4: the banner describes the CURRENT fetch. Without this, one
         // transient 503 left "Failed to load active streams." above a list
         // that every later tick and socket event kept updating underneath it
         // — permanently, until the admin reloaded the dashboard.
         setError(null);
-      })
-      .catch((err) => setError(apiErrorMessage(err, "Failed to load active streams.")));
+      } catch (err) {
+        if (runIdRef.current !== runId) return;
+        setError(apiErrorMessage(err, "Failed to load active streams."));
+      }
+    })();
   }, []);
 
   useEffect(refresh, [refresh]);
@@ -200,7 +262,9 @@ export function StreamsPanel(): React.JSX.Element {
             "No heartbeat" pill), because it exists and an admin may want to
             end it — but claiming it as an active stream is the exact lie
             this finding was filed for. */}
-        <h2 className={styles.title}>Active streams{sessions !== null ? ` · ${countLiveSessions(sessions)}` : ""}</h2>
+        <h2 className={styles.title}>
+          Active streams{sessions !== null ? ` · ${countLiveSessions(sessions)}${truncated ? "+" : ""}` : ""}
+        </h2>
       </div>
       {error && <p className={styles.empty}>{error}</p>}
       {sessions === null ? (
@@ -212,11 +276,25 @@ export function StreamsPanel(): React.JSX.Element {
       ) : sessions.length === 0 ? (
         <EmptyState icon={Video} title="No active sessions" body="Playback sessions from any user will show up here while they're live." />
       ) : (
-        <div className={styles.list} role="list" aria-label="Active streams">
-          {sessions.map((session) => (
-            <StreamRow key={session.id} session={session} />
-          ))}
-        </div>
+        <>
+          <div className={styles.list} role="list" aria-label="Active streams">
+            {sessions.slice(0, STREAMS_VISIBLE_ROWS).map((session) => (
+              <StreamRow key={session.id} session={session} />
+            ))}
+          </div>
+          {/* d4-e5: the card counts everything it walked but renders a
+              bounded slice of it — and says so, rather than quietly
+              dropping the rest. app/admin/sessions is the surface built to
+              page through them. */}
+          {sessions.length > STREAMS_VISIBLE_ROWS && (
+            <p className={styles.overflowNote}>
+              <Link href="/admin/sessions" className={styles.overflowLink}>
+                Showing {STREAMS_VISIBLE_ROWS} of {sessions.length}
+                {truncated ? "+" : ""} — see all sessions
+              </Link>
+            </p>
+          )}
+        </>
       )}
     </div>
   );

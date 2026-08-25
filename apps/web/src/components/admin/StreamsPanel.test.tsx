@@ -8,9 +8,19 @@
 // this can assert the subscription exists and that an event triggers a
 // refetch, without a real network call or WebSocket connection.
 
-import { act } from "react";
+import { act, type ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { renderIntoBody, type TestRender } from "../ui/test-render.js";
+
+// Same stub shape as not-found.test.tsx: the real App Router <Link> cannot
+// mount outside the Next runtime; the anchor is all these tests need.
+vi.mock("next/link", () => ({
+  default: ({ href, children, ...rest }: { href: string; children: ReactNode } & Record<string, unknown>) => (
+    <a href={href} {...rest}>
+      {children}
+    </a>
+  ),
+}));
 
 const apiGetMock = vi.fn();
 const subscribeMock = vi.fn();
@@ -26,7 +36,7 @@ vi.mock("../../lib/events-socket.js", () => ({
   getEventsSocket: () => ({ subscribe: subscribeMock }),
 }));
 
-const { StreamsPanel } = await import("./StreamsPanel.js");
+const { StreamsPanel, STREAMS_MAX_PAGES, STREAMS_VISIBLE_ROWS } = await import("./StreamsPanel.js");
 const { ADMIN_SESSIONS_REFRESH_MS } = await import("../../lib/admin-live-refresh.js");
 
 function session(id: string, overrides: Record<string, unknown> = {}) {
@@ -336,6 +346,79 @@ describe("StreamsPanel — transient failure recovery (d4-e4)", () => {
     expect(apiGetMock).toHaveBeenCalledTimes(2);
     expect(view.container.textContent).toContain("Active streams · 1");
     expect(view.container.textContent).not.toContain("Try again shortly.");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// d4-e5 (E/d3-e5-adjacent, backlog #110): the panel fetched ONE page of
+// limit=50 and never followed nextCursor, so "Active streams · n" silently
+// capped at 50 on a busy server — the dashboard under-reported, while
+// app/admin/sessions (which pages properly) disagreed with it on the same
+// screenful of data.
+// ---------------------------------------------------------------------------
+describe("StreamsPanel — paging the count (d4-e5)", () => {
+  let view: TestRender | null = null;
+
+  function rows(from: number, count: number, overrides: Record<string, unknown> = {}) {
+    return Array.from({ length: count }, (_, i) => session(`s${from + i}`, overrides));
+  }
+
+  beforeEach(() => {
+    apiGetMock.mockReset();
+    subscribeMock.mockReset();
+    subscribeMock.mockReturnValue(() => {});
+  });
+
+  afterEach(() => {
+    view?.unmount();
+    view = null;
+    vi.useRealTimers();
+  });
+
+  it("follows nextCursor so the count covers every live session, not just the first page", async () => {
+    apiGetMock
+      .mockResolvedValueOnce({ items: rows(1, 50), nextCursor: "cursor-page-2" })
+      .mockResolvedValueOnce({ items: rows(51, 20), nextCursor: null });
+    view = renderIntoBody(<StreamsPanel />);
+    await act(async () => {});
+
+    expect(apiGetMock).toHaveBeenCalledTimes(2);
+    expect(apiGetMock.mock.calls[1]?.[1]).toMatchObject({ params: { query: { cursor: "cursor-page-2" } } });
+    expect(view.container.textContent).toContain("Active streams · 70");
+  });
+
+  it("stops at the page cap and marks the count as a floor rather than fetching forever", async () => {
+    apiGetMock.mockResolvedValue({ items: rows(1, 50), nextCursor: "more" });
+    view = renderIntoBody(<StreamsPanel />);
+    await act(async () => {});
+
+    expect(apiGetMock).toHaveBeenCalledTimes(STREAMS_MAX_PAGES);
+    // Every page returns the same 50 ids, so the live count is those 50 —
+    // what matters is the "+": the panel says it did not see the whole set.
+    expect(view.container.textContent).toMatch(/Active streams · \d+\+/);
+  });
+
+  it("keeps the dashboard card bounded and points at the full sessions page when it holds more rows than it shows", async () => {
+    apiGetMock
+      .mockResolvedValueOnce({ items: rows(1, 50), nextCursor: "cursor-page-2" })
+      .mockResolvedValueOnce({ items: rows(51, 20), nextCursor: null });
+    view = renderIntoBody(<StreamsPanel />);
+    await act(async () => {});
+
+    expect(view.container.querySelectorAll('[role="listitem"], [role="list"] > div')).toHaveLength(STREAMS_VISIBLE_ROWS);
+    const link = view.container.querySelector('a[href="/admin/sessions"]');
+    expect(link).not.toBeNull();
+    expect(link!.textContent).toContain("70");
+  });
+
+  it("a single page that is the whole set still costs exactly one request", async () => {
+    apiGetMock.mockResolvedValue({ items: rows(1, 3), nextCursor: null });
+    view = renderIntoBody(<StreamsPanel />);
+    await act(async () => {});
+
+    expect(apiGetMock).toHaveBeenCalledTimes(1);
+    expect(view.container.textContent).toContain("Active streams · 3");
+    expect(view.container.querySelector('a[href="/admin/sessions"]')).toBeNull();
   });
 });
 

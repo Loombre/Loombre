@@ -116,6 +116,23 @@
   color: var(--muted);
 }
 
+/* d4-e5: "showing n of m — see all sessions", the card's own overflow
+   footer. Reads as meta, not as another row. */
+.overflowNote {
+  margin: var(--space-sm) 0 0;
+  font-size: var(--text-sm);
+  color: var(--muted);
+}
+
+.overflowLink {
+  color: inherit;
+  text-decoration: underline;
+}
+
+.overflowLink:hover {
+  color: var(--color-text);
+}
+
 @media (width <= 767.98px) {
   .whyToggle {
     min-height: 44px;
