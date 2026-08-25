@@ -38,7 +38,7 @@
 // render path opts out of SSR again (a `ssr: false` anywhere on that path
 // re-breaks every route at once, which is what makes this a P2).
 
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { renderToStaticMarkup, renderToString } from "react-dom/server";
@@ -143,5 +143,51 @@ describe("BootSplashLazy — document render path (d3-s1)", () => {
       offenders,
       "an `ssr: false` dynamic import on the document render path bails EVERY route out to CSR",
     ).toEqual([]);
+  });
+});
+
+/** Every non-test module under src/app. */
+function appModules(dir: string, out: string[] = []): string[] {
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) appModules(full, out);
+    else if (/\.tsx?$/.test(entry.name) && !entry.name.includes(".test.")) out.push(full);
+  }
+  return out;
+}
+
+// d3-s2 (P4) — the dev-only console TypeError QA saw on every /admin/*
+// load ("'AdminLibrariesRedirectPage' cannot have a negative time stamp",
+// thrown from react-server-dom-webpack's flushComponentPerformance) came
+// from round 1's SERVER-COMPONENT redirect stubs throwing NEXT_REDIRECT
+// while the surrounding render was bailing out to CSR. Both halves of that
+// combination are gone: the six stub files were deleted with the move to
+// next.config.mjs's redirects() (pinned by
+// src/app/admin/redirect-stubs.test.ts) and d3-s1 above removes the
+// bailout region itself. This test pins the first half from the other
+// direction — no server component anywhere under app/ hands its routing
+// decision to a thrown redirect. Legacy-path redirects belong in
+// next.config.mjs's redirects() (see its header for the two rounds of
+// evidence); client-side navigation belongs in an effect/handler.
+describe("no server-component NEXT_REDIRECT throw survives under app/ (d3-s2)", () => {
+  it("no server component under app/ imports next/navigation's redirect()", () => {
+    const modules = appModules(join(WEB_SRC, "app"));
+    expect(modules.length).toBeGreaterThan(10);
+
+    const offenders = modules
+      .filter((file) => {
+        const source = readFileSync(file, "utf8");
+        // A "use client" module never renders on the server, so its
+        // redirect() is an ordinary client navigation, not a throw inside
+        // a document render.
+        if (/^\s*["']use client["']/m.test(source)) return false;
+        const code = stripComments(source);
+        return /import\s*\{[^}]*\b(?:redirect|permanentRedirect)\b[^}]*\}\s*from\s*["']next\/navigation["']/.test(
+          code,
+        );
+      })
+      .map((file) => file.slice(WEB_SRC.length + 1));
+
+    expect(offenders, "server-component redirect() throws inside the document render").toEqual([]);
   });
 });
