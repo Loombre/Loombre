@@ -356,6 +356,97 @@ describe("UnavailableScreen rendering a server-side session failure (d3-aq5)", (
   });
 });
 
+// d3-aq6 (A/browser-player-F1). The pill was hard-wired to "SESSION
+// REFUSED · PLANNER REASONS, VERBATIM" for every path that reaches this
+// screen — including the two that were never refusals: a session the
+// SERVER killed mid-playback (it FAILED; its rows are runtime error codes,
+// not planner output) and an item that never resolved at all. The variant
+// selects the framing; nothing else about the screen changes, and the
+// DEFAULT is today's copy byte-for-byte so no existing call site moves.
+describe("UnavailableScreen status framing by variant (d3-aq6)", () => {
+  let view: TestRender | null = null;
+
+  afterEach(() => {
+    view?.unmount();
+    view = null;
+    vi.unstubAllGlobals();
+  });
+
+  function render(extra: { variant?: "refused" | "failed" | "unavailable"; statusCode?: number }): TestRender {
+    installMatchMedia(false);
+    return renderIntoBody(
+      <UnavailableScreen
+        title="Glass Orchard"
+        backdropUrl={null}
+        dominantColor={null}
+        reasons={sessionFailureReasons("transcode-failed")}
+        fallback={null}
+        onAcceptFallback={vi.fn()}
+        onBack={vi.fn()}
+        {...extra}
+      />,
+    );
+  }
+
+  function pillText(v: TestRender): string {
+    const pill = Array.from(v.container.querySelectorAll("span")).find((s) => /^(Session refused|Session failed|Unavailable)/.test(s.textContent ?? ""));
+    return pill?.textContent ?? "";
+  }
+
+  it("defaults to today's refusal copy exactly — omitting the prop changes nothing", () => {
+    view = render({ statusCode: 409 });
+    expect(pillText(view)).toBe("Session refused · HTTP 409");
+    const text = view.container.textContent ?? "";
+    expect(text).toContain("Planner reasons, verbatim");
+    expect(text).toContain("“Glass Orchard” can’t play on this device right now");
+    expect(text).toContain("Here’s exactly why:");
+  });
+
+  it("variant='refused' is that same default, spelled out", () => {
+    view = render({ variant: "refused", statusCode: 409 });
+    expect(pillText(view)).toBe("Session refused · HTTP 409");
+    expect(view.container.textContent).toContain("Planner reasons, verbatim");
+  });
+
+  it("variant='failed' says the session FAILED and stops calling its rows planner reasons", () => {
+    view = render({ variant: "failed" });
+    expect(pillText(view)).toBe("Session failed");
+    const text = view.container.textContent ?? "";
+    expect(text).not.toContain("Session refused");
+    expect(text).not.toContain("Planner reasons, verbatim");
+    expect(text).toContain("Server error codes, verbatim");
+    // The reason rows themselves are untouched by the framing.
+    expect(text).toContain("transcode-failed");
+  });
+
+  it("variant='unavailable' frames a never-resolved item as unavailable, not refused", () => {
+    view = render({ variant: "unavailable", statusCode: 404 });
+    expect(pillText(view)).toBe("Unavailable · HTTP 404");
+    const text = view.container.textContent ?? "";
+    expect(text).not.toContain("Session refused");
+    expect(text).not.toContain("Planner reasons, verbatim");
+    expect(text).not.toContain("can’t play on this device right now");
+  });
+
+  it("carries the framing into the phone sheet's own title too", () => {
+    installMatchMedia(true);
+    view = renderIntoBody(
+      <UnavailableScreen
+        title="Glass Orchard"
+        backdropUrl={null}
+        dominantColor={null}
+        reasons={sessionFailureReasons("transcode-failed")}
+        variant="failed"
+        fallback={null}
+        onAcceptFallback={vi.fn()}
+        onBack={vi.fn()}
+      />,
+    );
+    expect(view.container.querySelector('[role="dialog"]')).not.toBeNull();
+    expect(view.container.textContent).not.toContain("Can’t play this right now");
+  });
+});
+
 describe("UnavailableScreen rendering the real engine's refusal (phone sheet)", () => {
   let view: TestRender | null = null;
 

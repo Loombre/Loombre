@@ -74,6 +74,60 @@ type PlanReason = components["schemas"]["PlanReason"];
 // carries the identical JS-side matchMedia copy this file mirrors).
 const PHONE_QUERY = "(max-width: 767.98px)";
 
+/**
+ * d3-aq6 (A/browser-player-F1): which FRAMING this screen wears. Three
+ * paths reach it and only one of them is a refusal:
+ *  - `refused`     — the planner said no (a real 409/422/429, or the
+ *                    client-synthesized equivalents): rows are §4 planner
+ *                    reasons. THE DEFAULT, byte-for-byte the copy this
+ *                    screen has always shown.
+ *  - `failed`      — a session the SERVER killed mid-playback: rows are
+ *                    `playback_sessions.error_code` runtime codes, and
+ *                    nothing about it was "refused" — playback had
+ *                    already started.
+ *  - `unavailable` — /watch could never resolve the item at all (no
+ *                    session was ever planned, so there are no planner
+ *                    reasons to be verbatim about).
+ * The variant selects labels ONLY: reasons, fallback, backdrop and both
+ * layouts are identical across all three.
+ */
+export type UnavailableVariant = "refused" | "failed" | "unavailable";
+
+interface UnavailableCopy {
+  /** Status pill, before the ` · HTTP nnn` suffix. */
+  status: string;
+  /** The note beside the pill, naming what the rows below actually are. */
+  note: string;
+  heading: (title: string) => string;
+  subheading: string;
+  /** The phone BottomSheet's own title/accessible heading. */
+  sheetTitle: string;
+}
+
+const VARIANT_COPY: Record<UnavailableVariant, UnavailableCopy> = {
+  refused: {
+    status: "Session refused",
+    note: "Planner reasons, verbatim",
+    heading: (title) => `“${title}” can’t play on this device right now`,
+    subheading: "Here’s exactly why:",
+    sheetTitle: "Can’t play this right now",
+  },
+  failed: {
+    status: "Session failed",
+    note: "Server error codes, verbatim",
+    heading: (title) => `“${title}” stopped playing`,
+    subheading: "Here’s what the server reported:",
+    sheetTitle: "Playback stopped",
+  },
+  unavailable: {
+    status: "Unavailable",
+    note: "Details, verbatim",
+    heading: (title) => `“${title}” isn’t available right now`,
+    subheading: "Here’s what we know:",
+    sheetTitle: "This can’t be played",
+  },
+};
+
 export interface UnavailableScreenProps {
   title: string;
   backdropUrl: string | null;
@@ -93,6 +147,10 @@ export interface UnavailableScreenProps {
    * renders "Session refused" alone rather than a fabricated code.
    */
   statusCode?: number | undefined;
+  /** Which framing to wear (see `UnavailableVariant`). Optional and
+   *  defaulting to `"refused"`: every existing call site keeps the exact
+   *  copy it had before this prop existed. */
+  variant?: UnavailableVariant | undefined;
   /** A real alternate media file the engine does NOT refuse, or `null` when
    *  none exists / every one is also refused (lib/playback-fallback.ts). */
   fallback: FallbackCandidate | null;
@@ -100,8 +158,10 @@ export interface UnavailableScreenProps {
   onBack: () => void;
 }
 
-export function UnavailableScreen({ title, backdropUrl, dominantColor, reasons, statusCode, fallback, onAcceptFallback, onBack }: UnavailableScreenProps): React.JSX.Element {
+export function UnavailableScreen({ title, backdropUrl, dominantColor, reasons, statusCode, variant = "refused", fallback, onAcceptFallback, onBack }: UnavailableScreenProps): React.JSX.Element {
   const isPhone = useMediaQuery(PHONE_QUERY);
+  // Not `copy` — the reason rows below already bind that name per reason.
+  const framing = VARIANT_COPY[variant];
 
   const reasonList = (
     <div className={styles.reasonList}>
@@ -152,15 +212,18 @@ export function UnavailableScreen({ title, backdropUrl, dominantColor, reasons, 
   // below), never duplicated.
   const statusRow = (
     <div className={styles.statusRow}>
-      <span className={styles.statusPill}>Session refused{statusCode !== undefined ? ` · HTTP ${statusCode}` : ""}</span>
-      <span className={styles.statusNote}>Planner reasons, verbatim</span>
+      <span className={styles.statusPill}>
+        {framing.status}
+        {statusCode !== undefined ? ` · HTTP ${statusCode}` : ""}
+      </span>
+      <span className={styles.statusNote}>{framing.note}</span>
     </div>
   );
 
   const content = (
     <>
-      <h1 className={styles.title}>“{title}” can’t play on this device right now</h1>
-      <p className={styles.subtitle}>Here’s exactly why:</p>
+      <h1 className={styles.title}>{framing.heading(title)}</h1>
+      <p className={styles.subtitle}>{framing.subheading}</p>
       {reasonList}
       {fallbackBlock}
     </>
@@ -170,7 +233,7 @@ export function UnavailableScreen({ title, backdropUrl, dominantColor, reasons, 
     return (
       <div className={styles.wrap}>
         <AmbientBackdrop imageUrl={backdropUrl} dominantColor={dominantColor} />
-        <BottomSheet open onClose={onBack} title="Can’t play this right now" doneLabel="Back">
+        <BottomSheet open onClose={onBack} title={framing.sheetTitle} doneLabel="Back">
           <div className={styles.sheetBody}>
             {statusRow}
             {content}
