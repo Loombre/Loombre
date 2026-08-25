@@ -26,9 +26,45 @@
  */
 import { readFileSync } from "node:fs";
 import { readdirSync, statSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { join, relative, sep } from "node:path";
 
 const ROOT = process.cwd();
+
+/**
+ * The subset of `rels` that git IGNORES (one `git check-ignore` spawn, NUL-
+ * delimited both ways so paths with spaces/newlines survive).
+ *
+ * Only the (d) NUL pass consults this. Its whole rationale is git-shaped — an
+ * ignored path has no diff, no blame, and no `git grep` presence no matter
+ * what bytes it holds, and a CI checkout does not contain it at all, so
+ * scanning one makes the local gate red where CI is green (the same
+ * local-run == CI-run reasoning that put `reports`/`.build*` in
+ * EXCLUDED_DIR_NAMES, but resolved per-file because the ignore lives in a
+ * developer's `.git/info/exclude`). Untracked-but-NOT-ignored files stay in
+ * scope: a brand-new source file that has never been `git add`ed is exactly
+ * the case this gate has to catch BEFORE it lands as an opaque blob.
+ *
+ * check-ignore exits 1 when nothing matches (not an error) and 128 when git
+ * is unavailable or this is not a repo; both yield an empty set, which
+ * fails CLOSED — every file stays scanned, i.e. today's behaviour.
+ */
+function gitIgnoredSet(rels) {
+  if (rels.length === 0) return new Set();
+  try {
+    const out = execFileSync("git", ["check-ignore", "--stdin", "-z"], {
+      cwd: ROOT,
+      input: rels.join("\0") + "\0",
+      encoding: "utf8",
+      maxBuffer: 64 * 1024 * 1024,
+    });
+    return new Set(out.split("\0").filter(Boolean));
+  } catch (err) {
+    // Exit 1 = "no path was ignored": stdout is empty and that IS the answer.
+    if (err && err.status === 1) return new Set();
+    return new Set();
+  }
+}
 
 const EXCLUDED_DIR_NAMES = new Set([
   "node_modules",
@@ -394,6 +430,9 @@ const violations = [];
   });
 }
 
+// Consulted by the (d) NUL pass only — every other pass keeps its full scope.
+const ignoredFiles = gitIgnoredSet(files.map((f) => f.rel));
+
 for (const { full, rel } of files) {
   const inNamingScope = NAMING_SCOPE_PREFIXES.some((p) => rel.startsWith(p));
   const inBrandHygieneScope = rel.startsWith(BRAND_HYGIENE_SCOPE);
@@ -409,12 +448,15 @@ for (const { full, rel } of files) {
   // diff/grep gate to it. A separator that needs a control character is
   // spelled with an ESCAPE (`"\u0000"`), never a literal byte.
   const nulIndex = content.indexOf("\u0000");
-  if (nulIndex !== -1) {
+  // git-IGNORED paths are out of scope (see gitIgnoredSet): they carry no
+  // diff/blame/grep surface to protect and never exist in a CI checkout, so
+  // scanning one only makes a developer's gate red where CI is green.
+  if (nulIndex !== -1 && !ignoredFiles.has(rel)) {
     violations.push({
       rel,
       lineNo: content.slice(0, nulIndex).split("\n").length,
       code: "binary-source:nul-byte",
-      line: "raw NUL byte in tracked source (git treats this file as binary — no diff, no blame, no grep)",
+      line: "raw NUL byte in repo source (git would treat this file as binary — no diff, no blame, no grep)",
     });
   }
 
