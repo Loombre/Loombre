@@ -39,6 +39,29 @@ describe("buildProgressBody (d3-a4)", () => {
     expect(buildProgressBody({ positionMs: -3, durationMs: null, state: "unplayed" }).positionMs).toBe(0);
   });
 
+  // d4-a2.125 (A-core/d3-a4-adjacent): at the EOF edge the SOURCE-axis tail
+  // extent exceeds the ffprobe duration — the live Thor row persisted
+  // positionMs 7124766 against durationMs 7124493 (273 ms past the end).
+  // The one body builder clamps positionMs to durationMs so a progress row
+  // can never claim a position after the item ends.
+  it("clamps positionMs to durationMs at the EOF edge — the live 7124766/7124493 row", () => {
+    expect(buildProgressBody({ positionMs: 7_124_766, durationMs: 7_124_493, state: "played" })).toEqual({
+      positionMs: 7_124_493,
+      durationMs: 7_124_493,
+      state: "played",
+    });
+  });
+
+  it("clamps against the ROUNDED duration, so the persisted pair can never disagree by a fraction", () => {
+    const body = buildProgressBody({ positionMs: 773_348.4, durationMs: 773_347.5, state: "in-progress" });
+    expect(body.durationMs).toBe(773_348);
+    expect(body.positionMs).toBe(773_348);
+  });
+
+  it("a null durationMs clamps nothing — there is no end to clamp to", () => {
+    expect(buildProgressBody({ positionMs: 9_999_999, durationMs: null, state: "in-progress" }).positionMs).toBe(9_999_999);
+  });
+
   it("includes sessionId only when given — additionalProperties:false rejects stray keys", () => {
     const withSession = buildProgressBody({ positionMs: 0, durationMs: null, state: "unplayed" }, "01890000-0000-7000-8000-0000000000aa");
     expect(withSession.sessionId).toBe("01890000-0000-7000-8000-0000000000aa");

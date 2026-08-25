@@ -23,9 +23,16 @@ export interface ProgressUpdateBody {
 }
 
 export function buildProgressBody(snapshot: HeartbeatSnapshot, sessionId?: string): ProgressUpdateBody {
+  const durationMs = snapshot.durationMs === null ? null : Math.round(snapshot.durationMs);
+  const positionMs = Math.max(0, Math.round(snapshot.positionMs));
   return {
-    positionMs: Math.max(0, Math.round(snapshot.positionMs)),
-    durationMs: snapshot.durationMs === null ? null : Math.round(snapshot.durationMs),
+    // d4-a2.125 (A-core/d3-a4-adjacent): clamped to the ROUNDED duration —
+    // at the EOF edge the source-axis tail extent runs past the ffprobe
+    // duration (observed live: positionMs 7124766 persisted against
+    // durationMs 7124493), and a progress row must never claim a position
+    // after the item ends. No duration (null) means no end to clamp to.
+    positionMs: durationMs === null ? positionMs : Math.min(positionMs, durationMs),
+    durationMs,
     state: snapshot.state,
     ...(sessionId ? { sessionId } : {}),
   };
