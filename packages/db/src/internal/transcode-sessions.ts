@@ -90,23 +90,31 @@ export async function getTranscodeSessionRow(db: DbOrTx, sessionId: string): Pro
 // just brevity.
 // ---------------------------------------------------------------------------
 
-/** Which worker-owned write moved the row (the payload's `reason` enum). */
-type SessionStatusChangeReason =
+/**
+ * Which write moved the row (the payload's `reason` enum). Every member but
+ * the last is worker-owned and emitted from this file; `heartbeat-stale`
+ * (d4-f5) belongs to apps/server's session sweeper and is emitted from
+ * src/query/playback-sessions.ts's suspendStalePlaybackSession — the type
+ * and the two helpers below are shared rather than duplicated so both
+ * emitters can never drift on the transition rule.
+ */
+export type SessionStatusChangeReason =
   | 'pipeline-starting'
   | 'pipeline-active'
   | 'throttle-suspend'
   | 'throttle-resume'
   | 'seek'
-  | 'restart';
+  | 'restart'
+  | 'heartbeat-stale';
 
-interface SessionStatusSnapshot {
+export interface SessionStatusSnapshot {
   status: PlaybackSessionStatus;
   suspended_by_throttle: boolean;
 }
 
 /** Reads the pair this event is about. Returns `undefined` when the session
  *  id does not exist at all (nothing to compare against, nothing to emit). */
-async function readSessionStatusSnapshot(
+export async function readSessionStatusSnapshot(
   trx: Transaction<DB>,
   sessionId: string
 ): Promise<SessionStatusSnapshot | undefined> {
@@ -118,7 +126,7 @@ async function readSessionStatusSnapshot(
 }
 
 /** Writes `playback.session-status-changed` iff the pair actually moved. */
-async function emitSessionStatusChanged(
+export async function emitSessionStatusChanged(
   trx: Transaction<DB>,
   sessionId: string,
   before: SessionStatusSnapshot | undefined,
@@ -129,9 +137,10 @@ async function emitSessionStatusChanged(
   if (!before || !after) return;
   if (before.status === after.status && before.suspended_by_throttle === after.suspended_by_throttle) return;
   await writeEvent(trx, {
-    // System-originated: every one of these is the worker's own pipeline
-    // bookkeeping, never a user action (the same posture scan.completed's
-    // null actor takes — envelope.schema.json's actorUserId description).
+    // System-originated: every one of these is background bookkeeping —
+    // the worker's own pipeline, or (d4-f5) the server's session sweeper —
+    // never a user action (the same posture scan.completed's null actor
+    // takes — envelope.schema.json's actorUserId description).
     type: 'playback.session-status-changed',
     tsMs: nowMs,
     actorUserId: null,

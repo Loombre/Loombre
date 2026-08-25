@@ -49,7 +49,7 @@ import { sql, type Kysely, type Transaction } from 'kysely';
 import type { DB, PlaybackSessionStatus } from '../types.js';
 import type { ViewerContext } from '../context.js';
 import { getItemById } from './items.js';
-import { withTransaction, writeEvent } from '../internal/index.js';
+import { emitSessionStatusChanged, readSessionStatusSnapshot, withTransaction, writeEvent } from '../internal/index.js';
 
 export interface PlaybackSessionRow {
   id: string;
@@ -903,21 +903,55 @@ export async function listHeartbeatStalePlaybackSessions(db: Kysely<DB>, cutoffM
  * explicitly set false here: this is never the worker's throttle cause.
  * Idempotent (a session already `suspended`/`ended`/`failed` is a no-op,
  * `WHERE status = 'active'` guards it) and does NOT touch
- * `last_heartbeat_ms`/emit any event — a suspend is not a session end, and
- * the NEXT real heartbeat (heartbeatPlaybackSession above) is what flips
- * status back to `active` unconditionally, exactly as it does today.
+ * `last_heartbeat_ms` — a suspend is not a session end, and the NEXT real
+ * heartbeat (heartbeatPlaybackSession above) is what flips status back to
+ * `active` unconditionally, exactly as it does today.
+ *
+ * d4-f5 (E/d3-e5 follow-up) — IT DOES EMIT NOW. d3-e5 gave every
+ * non-terminal status write a `playback.session-status-changed` event so
+ * the admin now-playing surfaces stop learning about transitions from a
+ * 30s poll; this write was left out only because it lives in apps/server's
+ * sweeper rather than the worker's pipeline, and it is the single most
+ * admin-visible transition of the lot (the abandoned-session shape d3-e3
+ * renders). `reason: 'heartbeat-stale'` plus `suspendedByThrottle: false`
+ * is what tells an admin surface this apart from the throttle's healthy
+ * park. Emitted through the SAME shared helper the worker's writes use
+ * (internal/transcode-sessions.ts), inside the same transaction as the
+ * UPDATE, and only when the pair actually moved — so the sweeper's
+ * per-tick re-read of its candidate set cannot produce a duplicate.
+ *
+ * The sweeper's OTHER pass (the 15-minute cutoff -> END) deliberately does
+ * NOT emit this: a terminal transition already emits playback.ended, and
+ * two events for one moment make an admin surface race itself (the schema's
+ * own rule).
+ *
+ * `heartbeatStale` on AdminSession stays per-request-derived regardless —
+ * whether a CLIENT is still there is not something this row records — so
+ * the fallback poll remains necessary; this only removes the up-to-30s lag
+ * on the STATUS pill.
  */
 export async function suspendStalePlaybackSession(db: Kysely<DB>, id: string, nowMs: number): Promise<PlaybackSessionRow | undefined> {
-  const row = await db
-    .updateTable('playback_sessions')
-    .set({ status: 'suspended', suspended_by_throttle: false, updated_at_ms: nowMs })
-    .where('id', '=', id)
-    .where('status', '=', 'active')
-    .returningAll()
-    .executeTakeFirst();
-  if (!row) return undefined;
-  const current = await baseSelect(db).where('playback_sessions.id', '=', id).executeTakeFirst();
-  return current ? mapRow(current) : undefined;
+  return withTransaction(db, async (trx) => {
+    const before = await readSessionStatusSnapshot(trx, id);
+    const row = await trx
+      .updateTable('playback_sessions')
+      .set({ status: 'suspended', suspended_by_throttle: false, updated_at_ms: nowMs })
+      .where('id', '=', id)
+      .where('status', '=', 'active')
+      .returningAll()
+      .executeTakeFirst();
+    if (!row) return undefined;
+    await emitSessionStatusChanged(
+      trx,
+      id,
+      before,
+      { status: row.status, suspended_by_throttle: row.suspended_by_throttle },
+      'heartbeat-stale',
+      nowMs
+    );
+    const current = await baseSelect(trx).where('playback_sessions.id', '=', id).executeTakeFirst();
+    return current ? mapRow(current) : undefined;
+  });
 }
 
 // ---------------------------------------------------------------------------

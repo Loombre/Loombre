@@ -181,8 +181,14 @@ export type {
   RecordSessionWorkerProcessInput,
   ReapableTranscodeSessionRow,
   RecordTranscodeRunInput,
+  // d4-f5: shared with src/query/playback-sessions.ts's heartbeat-stale
+  // suspend, the one status-changed emitter that is NOT worker-owned.
+  SessionStatusChangeReason,
+  SessionStatusSnapshot,
 } from './transcode-sessions.js';
 export {
+  emitSessionStatusChanged,
+  readSessionStatusSnapshot,
   getTranscodeSessionRow,
   markSessionStarting,
   markSessionActive,

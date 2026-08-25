@@ -560,7 +560,11 @@ describe("event-schemas (docs/PLAN.md §4.3)", () => {
 
     it("accepts every emitted reason", () => {
       const validate = compileStatusChanged();
-      for (const reason of ["pipeline-starting", "pipeline-active", "throttle-suspend", "throttle-resume", "seek", "restart"]) {
+      // 'heartbeat-stale' (d4-f5) is the one SERVER-owned reason: the
+      // sweeper's 90s no-heartbeat suspend, as opposed to the worker's own
+      // segment-ahead throttle park. Both land on status 'suspended', and
+      // `suspendedByThrottle` is what tells them apart on the wire.
+      for (const reason of ["pipeline-starting", "pipeline-active", "throttle-suspend", "throttle-resume", "seek", "restart", "heartbeat-stale"]) {
         expect(validate({ ...base, reason }), `${reason}: ${ajv.errorsText(validate.errors)}`).toBe(true);
       }
     });

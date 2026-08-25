@@ -944,7 +944,7 @@ describe('listStalePlaybackSessions widened for transcode states (P3 §11 step 6
 });
 
 describe('listHeartbeatStalePlaybackSessions / suspendStalePlaybackSession (90s heartbeat-stale suspend, docs/PLAYBACK.md §9)', () => {
-  it('finds an active session past the 90s cutoff and suspends it WITHOUT the throttle flag or an event', async () => {
+  it('finds an active session past the 90s cutoff and suspends it WITHOUT the throttle flag, WITHOUT playback.ended, but WITH a heartbeat-stale status-changed event (d4-f5)', async () => {
     const staleStartMs = Date.now() - 5 * 60_000;
     const session = await createPlaybackSession(db, adminCtx, {
       itemId: harborLightsItemId,
@@ -963,13 +963,40 @@ describe('listHeartbeatStalePlaybackSessions / suspendStalePlaybackSession (90s 
     const stale = await listHeartbeatStalePlaybackSessions(db, cutoffMs);
     expect(stale.some((s) => s.id === session!.id)).toBe(true);
 
-    const suspended = await suspendStalePlaybackSession(db, session!.id, Date.now());
+    const suspendedAtMs = Date.now();
+    const suspended = await suspendStalePlaybackSession(db, session!.id, suspendedAtMs);
     expect(suspended?.status).toBe('suspended');
     expect(suspended?.suspendedByThrottle).toBe(false);
+
+    // d4-f5 (E/d3-e5 follow-up): the transition IS an event. Without it the
+    // abandoned-session shape the admin now-playing surfaces render only
+    // ever arrived on the 30s fallback poll, because this is the ONE
+    // non-terminal status write in the system that had no emitter.
+    const statusEvent = await eventForSession('playback.session-status-changed', session!.id);
+    expect(statusEvent).toBeDefined();
+    expect(statusEvent!.payload).toMatchObject({
+      sessionId: session!.id,
+      previousStatus: 'active',
+      status: 'suspended',
+      // The disambiguator: this is NOT the worker's segment-ahead throttle.
+      suspendedByThrottle: false,
+      reason: 'heartbeat-stale',
+      changedAtMs: suspendedAtMs,
+    });
 
     // Idempotent: already suspended, not 'active' -> no-op.
     const again = await suspendStalePlaybackSession(db, session!.id, Date.now());
     expect(again).toBeUndefined();
+
+    // ...and the no-op writes NO second event — every sweeper tick re-reads
+    // its candidate set, so an emitter that fired on a no-op UPDATE would
+    // pour one duplicate per minute into the outbox for as long as the
+    // session lingers.
+    const { rows: statusRows } = await rawClient.query<{ count: string }>(
+      `SELECT count(*)::text AS count FROM events WHERE type = 'playback.session-status-changed' AND payload ->> 'sessionId' = $1`,
+      [session!.id],
+    );
+    expect(statusRows[0]!.count).toBe('1');
 
     // No playback.ended event — a suspend is not a session end.
     const event = await eventForSession('playback.ended', session!.id);
