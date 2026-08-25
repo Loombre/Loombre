@@ -601,6 +601,106 @@ describe("MusicPlayerProvider", () => {
     });
   });
 
+  // d3-m4 (browser-player-F11 adjacent): the "current track changed" effect
+  // only ever asked whether the ACTIVE slot already holds the new entry —
+  // never "does ANY slot hold it". So removing the CURRENT row while the
+  // next track was already preloaded into the other slot threw that primed
+  // session away and created a second one for the same track in the active
+  // slot: a wasted POST /playback/sessions, a leaked primed session, and a
+  // lost gapless handoff.
+  describe("removing the current row with the next track already primed (d3-m4)", () => {
+    beforeEach(() => {
+      (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    });
+    afterEach(() => {
+      delete (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT;
+    });
+
+    /** Plays track 1 and primes track 2 into the other slot, the way the
+     *  real near-end threshold does. */
+    async function playAndPrimeNext(): Promise<TestRender> {
+      createDirectPlaySession
+        .mockReset()
+        .mockResolvedValueOnce({ ok: true, session: directPlaySession() })
+        .mockResolvedValue({ ok: true, session: { ...directPlaySession(), id: SESSION_2_ID, itemId: TRACK_2_ID } });
+
+      const rendered = await playQueueAndSettle([
+        { itemId: TRACK_ID, title: "Low Water", durationMs: 200_000 },
+        { itemId: TRACK_2_ID, title: "Second Sun" },
+      ]);
+
+      const active = rendered.container.querySelectorAll("audio")[0]!;
+      Object.defineProperty(active, "currentTime", { configurable: true, get: () => 199 });
+      await act(async () => {
+        active.dispatchEvent(new Event("timeupdate"));
+      });
+      await flush();
+      expect(createDirectPlaySession).toHaveBeenCalledTimes(2);
+      return rendered;
+    }
+
+    it("promotes the primed slot instead of creating a second session for the same track", async () => {
+      view = await playAndPrimeNext();
+
+      await act(async () => {
+        capturedCtx!.removeFromQueue(capturedCtx!.current!.entryId);
+      });
+      await flush();
+
+      expect(capturedCtx!.current?.itemId).toBe(TRACK_2_ID);
+      // The whole point: no THIRD create for a track already primed.
+      expect(createDirectPlaySession).toHaveBeenCalledTimes(2);
+      // ...and the primed session is the one now playing, not a discard.
+      expect(endPlaybackSession).not.toHaveBeenCalledWith(SESSION_2_ID);
+      expect(capturedCtx!.isPlaying).toBe(true);
+      // The removed track's own session is released rather than left live.
+      expect(endPlaybackSession).toHaveBeenCalledWith(SESSION_ID);
+    });
+
+    it("plays the promoted slot's element, and leaves the removed track's element paused", async () => {
+      view = await playAndPrimeNext();
+      const [slotA, slotB] = [
+        view.container.querySelectorAll("audio")[0]!,
+        view.container.querySelectorAll("audio")[1]!,
+      ];
+      const playB = vi.spyOn(slotB, "play");
+      const pauseA = vi.spyOn(slotA, "pause");
+
+      await act(async () => {
+        capturedCtx!.removeFromQueue(capturedCtx!.current!.entryId);
+      });
+      await flush();
+
+      expect(playB).toHaveBeenCalled();
+      expect(pauseA).toHaveBeenCalled();
+      // Position resets to the top of the promoted track.
+      expect(capturedCtx!.positionMs).toBe(0);
+    });
+
+    it("still loads fresh when the removed row's successor is NOT the primed one", async () => {
+      view = await playAndPrimeNext();
+      // Queue the primed track away: enqueue a third track and jump the
+      // removal target so the new current entry is one no slot holds.
+      await act(async () => {
+        capturedCtx!.enqueue({ itemId: TRACK_3_ID, title: "Third Rail" });
+      });
+      await act(async () => {
+        // Remove the PRIMED entry first, then the current one, so the new
+        // current entry (Third Rail) was never loaded anywhere.
+        capturedCtx!.removeFromQueue(capturedCtx!.queueState.items[1]!.entryId);
+      });
+      await flush();
+      await act(async () => {
+        capturedCtx!.removeFromQueue(capturedCtx!.current!.entryId);
+      });
+      await flush();
+
+      expect(capturedCtx!.current?.itemId).toBe(TRACK_3_ID);
+      expect(createDirectPlaySession).toHaveBeenCalledTimes(3);
+      expect(createDirectPlaySession).toHaveBeenNthCalledWith(3, TRACK_3_ID, "stream", undefined);
+    });
+  });
+
   // browser-player-F11: the "current track changed" effect keyed itself on
   // [queueState.currentIndex, queueState.items.length], but REORDER/REMOVE
   // (lib/queue.ts) deliberately MOVE currentIndex so it keeps following the

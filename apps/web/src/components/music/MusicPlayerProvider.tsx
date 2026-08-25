@@ -363,8 +363,38 @@ export function MusicPlayerProvider({ children }: { children: ReactNode }): Reac
     }
   }, [refs, volume, muted]);
 
-  // When the queue's current ENTRY changes and the active slot doesn't
-  // already hold it (gapless handoff not applicable), load it fresh.
+  /** Give the OTHER slot — already holding exactly this entry, primed and
+   *  ready — the active role (d3-m4). The same flip the gapless `ended`
+   *  path performs, minus "the old track finished": here the old track was
+   *  REMOVED from the queue mid-play, so its element is paused and its
+   *  session ended right now rather than lingering until its slot is next
+   *  reused. */
+  const promotePreloadedSlot = useCallback(
+    (slot: Slot, track: QueueTrack) => {
+      const previous = gaplessStateRef.current.active;
+      stopHeartbeat(true);
+      refs[previous].current?.pause();
+      endSlotSession(previous);
+      delete slotEntryRef.current[previous];
+
+      dispatchGapless({ type: "TRACK_ENDED" }); // flips active to `slot`
+      durationRef.current = track.durationMs ?? null;
+      setDurationMsState(track.durationMs ?? null);
+      positionRef.current = 0;
+      setPositionMs(0);
+      progressStateRef.current = "in-progress";
+      const session = sessionsRef.current.get(slot);
+      if (session) startHeartbeatFor(track.itemId, session.sessionId);
+      refs[slot].current
+        ?.play()
+        .then(() => setIsPlaying(true))
+        .catch(() => setIsPlaying(false));
+    },
+    [refs, endSlotSession, stopHeartbeat, startHeartbeatFor],
+  );
+
+  // When the queue's current ENTRY changes and NO slot already holds it
+  // (gapless handoff not applicable), load it fresh.
   //
   // browser-player-F11 — keyed on the entry's IDENTITY, never on its
   // position: REORDER/REMOVE (lib/queue.ts) deliberately move currentIndex
@@ -386,6 +416,25 @@ export function MusicPlayerProvider({ children }: { children: ReactNode }): Reac
     }
     const slot = gaplessStateRef.current.active;
     if (slotEntryRef.current[slot] === track.entryId) return; // already there (or already loading)
+    // d3-m4: the guard above only ever asked about the ACTIVE slot, never
+    // "does ANY slot already hold this entry" — so removing the CURRENT row
+    // while the next track sat primed in the other slot discarded that
+    // primed session and created a SECOND one for the same track here.
+    const other = otherSlot(slot);
+    if (slotEntryRef.current[other] === track.entryId) {
+      if (gaplessStateRef.current.loaded[other] === track.itemId) {
+        promotePreloadedSlot(other, track);
+        return;
+      }
+      // Claimed but not primed yet: that in-flight load is preloadOnly, so
+      // it will never autoplay or dispatch LOAD_ACTIVE — waiting on it
+      // parks the player at 0:00 forever. Abandon it (bumping its slot's
+      // token routes its own invocation through loadIntoSlot's superseded
+      // branch, which ends the session it created) and load fresh here.
+      loadTokensRef.current[other] += 1;
+      delete slotEntryRef.current[other];
+      dispatchGapless({ type: "CLEAR_PRELOAD" });
+    }
     void loadIntoSlot(slot, track, { autoplay: true });
   }, [currentEntryId]);
 
