@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+"use client";
+
 // Loombre :: apps/web/src/components/detail/PlayLink.tsx
 //
 // Just a link to lane (ii)'s player route — this lane does not build the
@@ -16,12 +18,36 @@
 // video branch. Guarded by PlayLink.test.tsx.
 
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { Icon } from "../icon/Icon.js";
 import styles from "./PlayLink.module.css";
 
+/** The pages /watch's AUDIO branch lands on after the handoff (that route's
+ *  `router.replace(`/items/${kind}/${id}`)`). */
+function watchReturnsToThisPage(pathname: string | null, itemId: string): boolean {
+  return pathname === `/items/track/${itemId}` || pathname === `/items/album/${itemId}`;
+}
+
 export function PlayLink({ itemId }: { itemId: string }): React.JSX.Element {
+  const pathname = usePathname();
+
+  // QA verify/gap-F8 (P3), the dead Back entry: for a TRACK or ALBUM, /watch
+  // is a transient handoff — it hands the item to the persistent music player
+  // and immediately router.replace()s to /items/{kind}/{id}, which is the
+  // page this link was clicked on. Pushing /watch first therefore leaves two
+  // adjacent history entries for the SAME url, and the viewer's next Back
+  // does nothing visible. Replacing collapses the round trip to nothing.
+  //
+  // Derived from where the link is RENDERED rather than from a caller-passed
+  // kind on purpose: the condition that matters is "the handoff will land
+  // back on this exact page", which is a fact about this page, and every
+  // audio Play affordance in the app is rendered on the item's own detail
+  // page. Video must keep the push — /watch STAYS mounted there and the
+  // player's own Back is a history traversal home to the detail page.
+  const replace = watchReturnsToThisPage(pathname, itemId);
+
   return (
-    <Link href={`/watch/${itemId}`} className={styles.button}>
+    <Link href={`/watch/${itemId}`} replace={replace} className={styles.button}>
       <Icon icon="play" size="dense" aria-hidden />
       Play
     </Link>

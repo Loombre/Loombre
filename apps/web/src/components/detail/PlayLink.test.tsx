@@ -33,18 +33,29 @@ import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { renderIntoBody, type TestRender } from "../ui/test-render.js";
 
-/** Records what a real next/link click would hand to the client router.
- *  `vi.hoisted` so the (hoisted) vi.mock factory can close over it. */
-const clientNav = vi.hoisted(() => ({ pushes: [] as string[] }));
+/** Records what a real next/link click would hand to the client router —
+ *  including WHICH history operation it would use (`replace` vs the default
+ *  push), which is what verify/gap-F8 turns on. `vi.hoisted` so the
+ *  (hoisted) vi.mock factory can close over it. */
+const clientNav = vi.hoisted(() => ({ pushes: [] as string[], navigations: [] as Array<{ href: string; replace: boolean }> }));
+
+/** The page the link is rendered on. */
+const location = vi.hoisted(() => ({ pathname: "/" }));
+
+vi.mock("next/navigation", () => ({
+  usePathname: () => location.pathname,
+}));
 
 vi.mock("next/link", () => ({
   default: ({
     href,
     children,
+    replace = false,
     ...rest
   }: {
     href: string;
     children?: React.ReactNode;
+    replace?: boolean;
   } & React.AnchorHTMLAttributes<HTMLAnchorElement>): React.JSX.Element => (
     <a
       href={href}
@@ -56,6 +67,7 @@ vi.mock("next/link", () => ({
         if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
         e.preventDefault();
         clientNav.pushes.push(href);
+        clientNav.navigations.push({ href, replace });
       }}
     >
       {children}
@@ -78,6 +90,8 @@ describe("PlayLink", () => {
 
   beforeEach(() => {
     clientNav.pushes.length = 0;
+    clientNav.navigations.length = 0;
+    location.pathname = "/";
   });
 
   afterEach(() => {
@@ -109,6 +123,61 @@ describe("PlayLink", () => {
     const event = click(view.container.querySelector("a") as Element, { metaKey: true });
     expect(event.defaultPrevented).toBe(false);
     expect(clientNav.pushes).toEqual([]);
+  });
+
+  // QA verify/gap-F8 (P3): /watch's AUDIO branch hands the item to the
+  // persistent music player and immediately router.replace()s to
+  // /items/{track|album}/{id} — the very page this link is usually rendered
+  // on. Pushing /watch first therefore leaves TWO adjacent history entries
+  // for the SAME url (history.length 8 -> 9 in the repro), so the viewer's
+  // next Back visibly does nothing. Video must keep the push: /watch STAYS
+  // mounted there, and the player's own Back is a history traversal back to
+  // the detail page.
+  describe("history hygiene for the audio handoff (QA verify/gap-F8)", () => {
+    it("REGRESSION GUARD: replaces instead of pushing when /watch will land back on this very page (track)", () => {
+      location.pathname = `/items/track/${ITEM_ID}`;
+      view = renderIntoBody(<PlayLink itemId={ITEM_ID} />);
+
+      click(view.container.querySelector("a") as Element);
+
+      expect(clientNav.navigations).toEqual([{ href: `/watch/${ITEM_ID}`, replace: true }]);
+    });
+
+    it("does the same on an album's own page", () => {
+      location.pathname = `/items/album/${ITEM_ID}`;
+      view = renderIntoBody(<PlayLink itemId={ITEM_ID} />);
+
+      click(view.container.querySelector("a") as Element);
+
+      expect(clientNav.navigations).toEqual([{ href: `/watch/${ITEM_ID}`, replace: true }]);
+    });
+
+    it("keeps the PUSH for video, so the player's Back still returns to the detail page", () => {
+      location.pathname = `/items/movie/${ITEM_ID}`;
+      view = renderIntoBody(<PlayLink itemId={ITEM_ID} />);
+
+      click(view.container.querySelector("a") as Element);
+
+      expect(clientNav.navigations).toEqual([{ href: `/watch/${ITEM_ID}`, replace: false }]);
+    });
+
+    it("keeps the PUSH on a restricted scene page (a movie, i.e. the video branch)", () => {
+      location.pathname = `/restricted/scenes/${ITEM_ID}`;
+      view = renderIntoBody(<PlayLink itemId={ITEM_ID} />);
+
+      click(view.container.querySelector("a") as Element);
+
+      expect(clientNav.navigations).toEqual([{ href: `/watch/${ITEM_ID}`, replace: false }]);
+    });
+
+    it("keeps the PUSH for a DIFFERENT item's audio page (the link is not the reason we're here)", () => {
+      location.pathname = "/items/track/01a0216a-0000-0000-0000-000000000000";
+      view = renderIntoBody(<PlayLink itemId={ITEM_ID} />);
+
+      click(view.container.querySelector("a") as Element);
+
+      expect(clientNav.navigations).toEqual([{ href: `/watch/${ITEM_ID}`, replace: false }]);
+    });
   });
 
   // Whole-surface guard for the same defect: EVERY /watch entry point has

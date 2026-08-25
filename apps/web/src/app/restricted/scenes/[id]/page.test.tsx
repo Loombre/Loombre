@@ -65,6 +65,11 @@ vi.mock("next/link", () => ({
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), back: vi.fn() }),
+  // components/detail/PlayLink.tsx (rendered by this page) reads the current
+  // path to decide push-vs-replace for the /watch handoff (verify/gap-F8) —
+  // a scene is a movie, i.e. the video branch, so this pathname must keep it
+  // on the PUSH side.
+  usePathname: () => `/restricted/scenes/${SCENE_ID}`,
 }));
 
 // The shell mounts the sidebar/websocket/providers; this route's links are
