@@ -250,6 +250,7 @@ describe("event-schemas (docs/PLAN.md §4.3)", () => {
         jobType: "scan",
         status: "active",
         progress: { current: 150, total: 500, phase: "probe" },
+        attempts: 1,
         errorMessage: null,
         updatedAtMs: 1_753_300_000_000,
       },
@@ -462,5 +463,47 @@ describe("event-schemas (docs/PLAN.md §4.3)", () => {
         expect(payloadValid, ajv.errorsText(validatePayload.errors)).toBe(true);
       });
     }
+  });
+
+  // browser-admin-F13: `attempts` was added so a live-merged admin jobs row
+  // has the same anatomy as a fetched one (the REST Job resource has always
+  // carried it). Additive per README.md's evolution policy — hence OPTIONAL,
+  // which is also the semantics consumers rely on: absent means "this
+  // transition says nothing about the attempt count", not zero.
+  describe("job.updated attempts (browser-admin-F13)", () => {
+    function compileJobUpdated(): ReturnType<Ajv2020["compile"]> {
+      // Fresh instance: the module-level `ajv` caches compiled schemas by
+      // $id and throws "already exists" on a second compile of this file.
+      const freshAjv = new Ajv2020({ allErrors: true, strict: true });
+      registerAdminOnlyKeyword(freshAjv);
+      addFormats(freshAjv);
+      return freshAjv.compile(loadSchema("job.updated.schema.json"));
+    }
+
+    const base = {
+      jobId: "018f6f1e-0000-7000-8000-000000000006",
+      jobType: "scan",
+      status: "active",
+      updatedAtMs: 1_753_300_000_000,
+    };
+
+    it("declares attempts as a non-negative integer that is NOT required", () => {
+      const schema = loadSchema("job.updated.schema.json");
+      const properties = schema.properties as Record<string, Record<string, unknown>>;
+      expect(properties.attempts).toEqual({ type: "integer", minimum: 0 });
+      expect(schema.required as string[]).not.toContain("attempts");
+    });
+
+    it("accepts a payload carrying attempts, and one omitting it entirely (the reconciliation sweep's shape)", () => {
+      const validate = compileJobUpdated();
+      expect(validate({ ...base, attempts: 2 }), ajv.errorsText(validate.errors)).toBe(true);
+      expect(validate(base), ajv.errorsText(validate.errors)).toBe(true);
+    });
+
+    it("rejects a negative or non-integer attempts", () => {
+      const validate = compileJobUpdated();
+      expect(validate({ ...base, attempts: -1 })).toBe(false);
+      expect(validate({ ...base, attempts: 1.5 })).toBe(false);
+    });
   });
 });

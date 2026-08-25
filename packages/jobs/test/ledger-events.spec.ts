@@ -56,6 +56,7 @@ interface JobUpdatedEventRow {
     status: string;
     errorMessage: string | null;
     updatedAtMs: number;
+    attempts?: number;
     progress?: unknown;
   };
 }
@@ -220,6 +221,64 @@ describe('createLedger job.updated emission (P4.13)', () => {
 
     const events = await jobUpdatedEventsFor(jobId);
     expect(events.map((e) => e.payload.status)).toEqual(['queued', 'active', 'failed']);
+  });
+
+  // browser-admin-F13: the admin jobs surface renders an "N attempts" chip
+  // straight off `jobs.attempts` (apps/web/src/components/admin/
+  // JobsPanel.tsx's JobRow). Every fetched row carries it; a LIVE-merged
+  // row could not, because the payload never carried the field at all —
+  // apps/web/src/lib/admin-jobs-live.ts had nothing to merge and fell back
+  // to 0 for a synthesized row. `attempts` is now emitted from the ledger
+  // row the write itself RETURNS (returningAll()), so it is the committed
+  // column value by construction at every call site — never a caller-echoed
+  // argument that could drift from what was persisted, and free of an extra
+  // read.
+  describe('browser-admin-F13: every payload carries the row\'s attempts', () => {
+    it('recordQueued emits attempts 0 (the column default of a freshly inserted row)', async () => {
+      const jobId = '018f6f1e-0000-7000-8000-0000000000b1';
+      await ledger.recordQueued(jobId, 'scan', { subjectItemId: null });
+
+      const events = await jobUpdatedEventsFor(jobId);
+      expect(events[0]!.payload.attempts).toBe(0);
+    });
+
+    it('recordActive(attempts) emits the attempt number the driver is starting, and recordCompleted carries it forward from the row (not re-passed by the caller)', async () => {
+      const jobId = '018f6f1e-0000-7000-8000-0000000000b2';
+      await ledger.recordQueued(jobId, 'scan', { subjectItemId: null });
+      await ledger.recordActive(jobId, 1);
+      await ledger.recordCompleted(jobId);
+
+      const events = await jobUpdatedEventsFor(jobId);
+      expect(events.map((e) => e.payload.attempts)).toEqual([0, 1, 1]);
+
+      const jobRow = await readDb.selectFrom('jobs').selectAll().where('id', '=', jobId).executeTakeFirstOrThrow();
+      expect(events[2]!.payload.attempts).toBe(jobRow.attempts);
+    });
+
+    it('recordRetrying then a second recordActive walk the attempt counter, and recordFailed emits the final value', async () => {
+      const jobId = '018f6f1e-0000-7000-8000-0000000000b3';
+      await ledger.recordQueued(jobId, 'probe', { subjectItemId: null });
+      await ledger.recordActive(jobId, 1);
+      await ledger.recordRetrying(jobId, 'transient failure', 2);
+      await ledger.recordActive(jobId, 2);
+      await ledger.recordFailed(jobId, 'gave up');
+
+      const events = await jobUpdatedEventsFor(jobId);
+      expect(events.map((e) => e.payload.attempts)).toEqual([0, 1, 2, 2, 2]);
+    });
+
+    it("recordActive with NO attempts argument (a caller that doesn't dispatch through a retrying driver) emits the column's untouched value rather than omitting the field", async () => {
+      const jobId = '018f6f1e-0000-7000-8000-0000000000b4';
+      await ledger.recordQueued(jobId, 'pg-upgrade', { subjectItemId: null });
+      await ledger.recordActive(jobId);
+      await ledger.recordCompleted(jobId);
+
+      const events = await jobUpdatedEventsFor(jobId);
+      for (const event of events) {
+        expect(event.payload).toHaveProperty('attempts');
+        expect(event.payload.attempts).toBe(0);
+      }
+    });
   });
 
   // M-7 fix wave (second half, closes deferred LPP ledger-error-path

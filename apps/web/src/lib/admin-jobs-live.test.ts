@@ -110,6 +110,59 @@ describe("mergeJobUpdate", () => {
     expect(next[0]!.startedAtMs).toBe(8000);
   });
 
+  // browser-admin-F13: `attempts` is what JobsPanel's JobRow renders the
+  // "N attempts" chip from. Present in the payload => authoritative (it is
+  // the committed `jobs.attempts` the ledger write returned); ABSENT =>
+  // "this transition says nothing about attempts", so the prior value must
+  // survive rather than being reset to 0 — packages/db's abandoned-job
+  // reconciliation sweep emits exactly such a payload.
+  it("adopts the payload's attempts on an existing row, so the chip a fetched row shows survives a live transition", () => {
+    const jobs = [makeJob({ id: "job-a", status: "queued", attempts: 0 })];
+    const next = mergeJobUpdate(jobs, {
+      jobId: "job-a",
+      jobType: "scan",
+      status: "active",
+      attempts: 1,
+      updatedAtMs: 2000,
+    });
+    expect(next[0]!.attempts).toBe(1);
+  });
+
+  it("carries the payload's attempts onto a synthesized row for an unseen jobId (the reported defect: it was hardcoded to 0)", () => {
+    const next = mergeJobUpdate([], {
+      jobId: "job-new",
+      jobType: "scan",
+      status: "active",
+      attempts: 1,
+      updatedAtMs: 7000,
+    });
+    expect(next[0]!.attempts).toBe(1);
+  });
+
+  it("keeps the prior attempts when a transition carries none (absent means unchanged, never 0)", () => {
+    const jobs = [makeJob({ id: "job-a", status: "active", attempts: 3 })];
+    const next = mergeJobUpdate(jobs, {
+      jobId: "job-a",
+      jobType: "scan",
+      status: "failed",
+      errorMessage: "abandoned",
+      updatedAtMs: 8000,
+    });
+    expect(next[0]!.attempts).toBe(3);
+  });
+
+  it("accepts an explicit attempts of 0 (a queued transition) without falling back to the prior value", () => {
+    const jobs = [makeJob({ id: "job-a", status: "active", attempts: 2 })];
+    const next = mergeJobUpdate(jobs, {
+      jobId: "job-a",
+      jobType: "scan",
+      status: "queued",
+      attempts: 0,
+      updatedAtMs: 9000,
+    });
+    expect(next[0]!.attempts).toBe(0);
+  });
+
   it("does not mutate the input array (frozen array passed directly)", () => {
     const frozen: readonly Job[] = Object.freeze([makeJob({ id: "job-a" })]);
     expect(() =>

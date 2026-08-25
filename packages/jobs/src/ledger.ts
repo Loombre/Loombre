@@ -32,6 +32,18 @@
 // raw one to either place). See redact-paths.ts's own header for why this
 // is a deliberate LOCAL duplicate of packages/shared's implementation.
 // Narrow: only path components are touched, never the rest of the message.
+//
+// browser-admin-F13: every payload also carries `attempts` — the value the
+// ledger WRITE ITSELF RETURNED (insertJobLedgerRow/transitionJobLedgerRow
+// both `returningAll()`), never the caller's argument echoed back. That is
+// what makes it the committed column value by construction at every call
+// site, for free (no extra read): recordCompleted/recordFailed don't take
+// an attempts argument at all and would otherwise have nothing to send,
+// and recordActive's argument is optional (an omitted one leaves the column
+// untouched, so echoing it would emit `undefined` where the row still holds
+// a real count). apps/web's admin jobs surface renders its "N attempts"
+// chip straight off this, so a live-merged row now has the same anatomy as
+// a GET /admin/jobs one instead of waiting for a refetch.
 
 import { createDb } from '@loombre/db';
 import { insertJobLedgerRow, transitionJobLedgerRow, withTransaction, writeEvent } from '@loombre/db/internal';
@@ -42,6 +54,11 @@ interface EmitJobUpdatedInput {
   jobId: string;
   jobType: string;
   status: 'queued' | 'active' | 'completed' | 'failed';
+  /** The committed `jobs.attempts` value, read off the row the write
+   *  returned. The schema marks it optional (a consumer that sees it
+   *  absent must keep whatever count it already had) — this emitter
+   *  always sends it. */
+  attempts: number;
   errorMessage: string | null;
   updatedAtMs: number;
 }
@@ -59,6 +76,7 @@ function emitJobUpdated(trx: Parameters<typeof writeEvent>[0], input: EmitJobUpd
       jobId: input.jobId,
       jobType: input.jobType,
       status: input.status,
+      attempts: input.attempts,
       errorMessage: input.errorMessage,
       updatedAtMs: input.updatedAtMs,
     },
@@ -92,7 +110,7 @@ export function createLedger(connectionString: string): Ledger {
     async recordQueued(id, type, opts) {
       const now = Date.now();
       await withTransaction(db, async (trx) => {
-        await insertJobLedgerRow(trx, {
+        const row = await insertJobLedgerRow(trx, {
           id,
           type,
           status: 'queued',
@@ -101,7 +119,7 @@ export function createLedger(connectionString: string): Ledger {
           createdAtMs: now,
           updatedAtMs: now,
         });
-        await emitJobUpdated(trx, { jobId: id, jobType: type, status: 'queued', errorMessage: null, updatedAtMs: now });
+        await emitJobUpdated(trx, { jobId: id, jobType: type, status: 'queued', attempts: row.attempts, errorMessage: null, updatedAtMs: now });
       });
     },
 
@@ -119,7 +137,7 @@ export function createLedger(connectionString: string): Ledger {
           finishedAtMs: null,
           updatedAtMs: now,
         });
-        await emitJobUpdated(trx, { jobId: id, jobType: row.type, status: 'active', errorMessage: null, updatedAtMs: now });
+        await emitJobUpdated(trx, { jobId: id, jobType: row.type, status: 'active', attempts: row.attempts, errorMessage: null, updatedAtMs: now });
       });
     },
 
@@ -131,7 +149,7 @@ export function createLedger(connectionString: string): Ledger {
           finishedAtMs: now,
           updatedAtMs: now,
         });
-        await emitJobUpdated(trx, { jobId: id, jobType: row.type, status: 'completed', errorMessage: null, updatedAtMs: now });
+        await emitJobUpdated(trx, { jobId: id, jobType: row.type, status: 'completed', attempts: row.attempts, errorMessage: null, updatedAtMs: now });
       });
     },
 
@@ -148,7 +166,7 @@ export function createLedger(connectionString: string): Ledger {
           lastError: redactedErrorMessage,
           updatedAtMs: now,
         });
-        await emitJobUpdated(trx, { jobId: id, jobType: row.type, status: 'queued', errorMessage: redactedErrorMessage, updatedAtMs: now });
+        await emitJobUpdated(trx, { jobId: id, jobType: row.type, status: 'queued', attempts: row.attempts, errorMessage: redactedErrorMessage, updatedAtMs: now });
       });
     },
 
@@ -162,7 +180,7 @@ export function createLedger(connectionString: string): Ledger {
           finishedAtMs: now,
           updatedAtMs: now,
         });
-        await emitJobUpdated(trx, { jobId: id, jobType: row.type, status: 'failed', errorMessage: redactedErrorMessage, updatedAtMs: now });
+        await emitJobUpdated(trx, { jobId: id, jobType: row.type, status: 'failed', attempts: row.attempts, errorMessage: redactedErrorMessage, updatedAtMs: now });
       });
     },
 

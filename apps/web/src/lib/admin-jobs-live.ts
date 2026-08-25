@@ -30,6 +30,14 @@ export interface JobUpdatedPayload {
   jobType: string;
   status: JobUpdatedStatus;
   progress?: { current: number; total: number | null; phase: string | null } | null;
+  /** The committed `jobs.attempts` value at this transition — the same
+   *  field the REST Job resource carries, so a live row renders the
+   *  identical "N attempts" chip (components/admin/JobsPanel.tsx). Optional
+   *  in the schema, and the distinction matters: absent means the
+   *  transition says NOTHING about the attempt count (the server's
+   *  abandoned-job reconciliation sweep emits that shape), so the prior
+   *  value is kept — never reset to 0. */
+  attempts?: number;
   errorMessage?: string | null;
   updatedAtMs: number;
 }
@@ -47,6 +55,11 @@ export interface JobUpdatedPayload {
  * (the payload carries neither) — best-effort display data only, never
  * treated as authoritative (a later GET /admin/jobs page load or
  * GET /admin/jobs/{id} always wins on next fetch).
+ * `attempts`, by contrast, is NOT synthesized: the payload carries the
+ * committed column value when the transition knew it, and a payload
+ * without it leaves whatever the row already had alone (browser-admin-F13
+ * — a live row used to be stuck at the hardcoded 0 below, so it showed no
+ * attempts chip until a refetch, unlike every fetched row beside it).
  */
 export function mergeJobUpdate(jobs: readonly Job[], update: JobUpdatedPayload): Job[] {
   const idx = jobs.findIndex((j) => j.id === update.jobId);
@@ -57,7 +70,7 @@ export function mergeJobUpdate(jobs: readonly Job[], update: JobUpdatedPayload):
       type: update.jobType,
       status: update.status,
       priority: 0,
-      attempts: 0,
+      attempts: update.attempts ?? 0,
       lastError: update.errorMessage ?? null,
       subjectItemId: null,
       createdAtMs: update.updatedAtMs,
@@ -72,6 +85,7 @@ export function mergeJobUpdate(jobs: readonly Job[], update: JobUpdatedPayload):
   const updated: Job = {
     ...existing,
     status: update.status,
+    attempts: update.attempts ?? existing.attempts,
     lastError: update.errorMessage ?? existing.lastError,
     updatedAtMs: update.updatedAtMs,
     startedAtMs: existing.startedAtMs ?? (update.status === "active" ? update.updatedAtMs : null),
