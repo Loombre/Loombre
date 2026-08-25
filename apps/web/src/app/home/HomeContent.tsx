@@ -48,7 +48,8 @@
 //     consistency) is a real README ask this lane can't do client-side —
 //     logged as a follow-up, not this lane's to build. Until it exists the
 //     exclusion is scoped to what each rail actually SHOWS (see
-//     RECENTLY_ADDED_VISIBLE_CARDS below and lib/featured-pool.ts's header,
+//     RECENTLY_ADDED_VISIBLE_CARDS in lib/home-rail-geometry.ts and
+//     lib/featured-pool.ts's header,
 //     browser-shell-browse-F8): excluding Recently Added's whole fetch made
 //     the banner structurally unreachable on any library smaller than the
 //     candidate over-fetch.
@@ -67,6 +68,7 @@ import { useNowPlayingItemIds } from "../../lib/now-playing.js";
 import { useWatchlistChangeSignal } from "../../lib/watchlist-sync.js";
 import { loadWatchlistRailPage, refetchWatchlistRailPage } from "../../lib/watchlist-rail.js";
 import { buildExclusionSet, selectFeaturedPool, visibleRailIds, type FeaturedPoolCandidate } from "../../lib/featured-pool.js";
+import { RECENTLY_ADDED_VISIBLE_CARDS } from "../../lib/home-rail-geometry.js";
 import { buildMovieCandidate, buildSeriesCandidate, initialLetter, type FeaturedCandidate } from "../../lib/featured-fields.js";
 import styles from "./page.module.css";
 
@@ -98,24 +100,13 @@ const FEATURED_POOL_MAX = 5;
 /* Recently Added's VISIBLE FIRST PAGE — the only part of that rail the
    featured pool excludes (browser-shell-browse-F8, owner ruling
    2026-08-24; see lib/featured-pool.ts's header for the whole rule and
-   why excluding the rail's full fetch made the banner unreachable).
-   Derived from the rail's own geometry rather than picked, so a card/gap/
-   sidebar change moves it instead of leaving a stale literal behind. */
-
-/** One card of track in the rail's horizontal scroller: the 160px poster
- *  tile (components/home/PosterCard.module.css .tile) plus the scroller's
- *  --space-md gap (16px, styles/tokens.css). */
-const RAIL_CARD_TRACK_PX = 160 + 16;
-
-/** Content width of the desktop shell on a 1920px-wide display — viewport
- *  minus the 210px sidebar (components/shell/Sidebar.module.css) and
- *  .main's two --space-xl gutters (32px each, AppShell.module.css). */
-const DESKTOP_CONTENT_WIDTH_PX = 1920 - 210 - 32 * 2;
-
-/** = 10. Cards past this are behind a horizontal scroll at every desktop
- *  width the shell is built for, i.e. NOT in the same fold as the banner —
- *  which is the duplicate design/phosphor/README.md actually forbids. */
-const RECENTLY_ADDED_VISIBLE_CARDS = Math.ceil(DESKTOP_CONTENT_WIDTH_PX / RAIL_CARD_TRACK_PX);
+   why excluding the rail's full fetch made the banner unreachable) — now
+   lives in lib/home-rail-geometry.ts with the rest of the shell geometry
+   it is derived from. d4-w6: the count assumed a 1920px-wide display while
+   .main had no max-width, so a wider display put cards the exclusion had
+   never heard of in the banner's own fold (13 on screen at 2400x900). The
+   shell now caps .main at exactly that width, and that module's test holds
+   the stylesheet and the count together. */
 
 /* WATCHLIST_RAIL_LIMIT and this rail's two fetch entry points now live in
    lib/watchlist-rail.ts — d4-w2: the bootstrap effect's `apiGet` fired

@@ -63,10 +63,26 @@
   }
 }
 
+/* max-width (d4-w6, browser-shell-browse-F8-edge): the content column stops
+   growing at the display width Home's fold count is derived from. Home
+   excludes the Recently Added rail's VISIBLE FIRST PAGE from the featured
+   pool so the banner cannot duplicate a card in its own fold — a count
+   computed from a 1920px display (lib/home-rail-geometry.ts). Without a cap
+   here that count was a stale literal on anything wider: QA measured 13
+   cards on screen at 2400x900 with rail indices 10/11/12 still eligible
+   candidates. box-sizing is border-box (globals.css), so this INCLUDES the
+   padding that clears the sidebar and the two gutters, leaving the 1646px
+   content column that count assumes; lib/home-rail-geometry.test.ts reads
+   this rule and fails if the two ever disagree.
+   Deliberately NOT centred (`margin-inline: auto`): .main's left padding
+   exists to clear the position:fixed sidebar, and centring the padded box
+   would open a gap between the sidebar and the content it belongs to. The
+   column simply stops widening — every display up to 1920px is unchanged. */
 .main {
   padding: var(--space-xl);
   padding-left: calc(210px + var(--space-xl));
   padding-top: calc(64px + var(--space-xl));
+  max-width: 1920px;
   overflow-x: hidden;
 }
 
