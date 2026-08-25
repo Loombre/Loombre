@@ -34,14 +34,23 @@
 // live refresh is best-effort for restricted sessions; a row that DOES get
 // refetched some other way still renders correctly redacted regardless.
 //
-// browser-admin-F2: the socket alone is not enough, because a session's
+// browser-admin-F2: the socket alone was not enough, because a session's
 // STATUS changes several times inside one uninterrupted stream (the
 // segment-ahead throttle flips a transcode suspended <-> active, a seek
-// moves it through `seeking`) and none of those transitions emits an
-// event. A periodic refetch (lib/admin-live-refresh.ts — see it for the
-// cadence rationale) sits underneath the subscription and keeps every
-// row's status pill honest; the socket stays as the low-latency path for
-// the start/end transitions it does cover.
+// moves it through `seeking`) and none of those transitions emitted an
+// event. A periodic refetch (lib/admin-live-refresh.ts) sat underneath the
+// subscription and kept every row's status pill honest.
+//
+// d3-e5: those transitions now DO emit —
+// `playback.session-status-changed`, admin-only, subscribed below. Its
+// payload is transport-only (both sides of the move + suspendedByThrottle,
+// no itemId/userId/deviceId), which is what makes it the one event this
+// panel may fold into a row rather than refetch on: there is nothing
+// redaction-bearing in it to re-derive, and — unlike playback.started/.ended
+// — nothing ITEM_ONLY_TYPES could withhold from an admin who is not cleared
+// for the item, so the U9 gap noted above does not apply to status changes.
+// The tick stays as the fallback for what no transition can announce (see
+// lib/admin-live-refresh.ts for the relaxed cadence rationale).
 //
 // d3-e3: "· n" counts LIVE rows, not listed rows. Since browser-admin-F2
 // widened the query to every non-terminal status, a walked-away viewer's
@@ -52,7 +61,7 @@
 // heartbeatStale pair into the pill copy and the live/not-live decision;
 // stale rows still render (dimmed, "No heartbeat") but never inflate `n`.
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { components } from "@loombre/sdk";
 import { EmptyState } from "./EmptyState.js";
 import { ReasonsPanel } from "./ReasonsPanel.js";
@@ -60,6 +69,10 @@ import { StatusPill } from "./StatusPill.js";
 import { Skeleton } from "../skeleton/Skeleton.js";
 import { startAdminSessionsRefresh } from "../../lib/admin-live-refresh.js";
 import { countLiveSessions, describeSessionPresence } from "../../lib/admin-session-presence.js";
+import {
+  mergeSessionStatusChange,
+  type PlaybackSessionStatusChangedPayload,
+} from "../../lib/admin-session-status-live.js";
 import { apiGet } from "../../lib/api-client.js";
 import { apiErrorMessage } from "../../lib/api-error-message.js";
 import { debounce } from "../../lib/debounce.js";
@@ -120,6 +133,13 @@ export function StreamsPanel(): React.JSX.Element {
   const [sessions, setSessions] = useState<AdminSessionWithPlan[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // What is on screen right now, readable from the [] -deps status handler
+  // below without making `sessions` a dependency of it (which would tear the
+  // socket subscription down and re-arm it on every list change) — the same
+  // ref pattern app/admin/sessions/page.tsx uses for its silent refresh.
+  const sessionsRef = useRef<AdminSessionWithPlan[] | null>(null);
+  sessionsRef.current = sessions;
+
   const refresh = useCallback(() => {
     apiGet("/admin/sessions", { params: { query: { limit: 50 } } })
       .then((page) => setSessions(page.items as AdminSessionWithPlan[]))
@@ -136,18 +156,33 @@ export function StreamsPanel(): React.JSX.Element {
     const debouncedRefresh = debounce(refresh, 500);
     const unsubStarted = socket.subscribe("playback.started", () => debouncedRefresh());
     const unsubEnded = socket.subscribe("playback.ended", () => debouncedRefresh());
+    // d3-e5: a status transition is the ONE event whose payload carries
+    // everything a row needs to change (both sides of the move + the
+    // throttle flag, and nothing item-scoped), so it patches the row
+    // directly instead of refetching — see lib/admin-session-status-live.ts.
+    // A transition for a session this panel does not hold falls back to the
+    // same debounced refetch every other event uses.
+    const unsubStatus = socket.subscribe<PlaybackSessionStatusChangedPayload>("playback.session-status-changed", (event) => {
+      const current = sessionsRef.current;
+      const patched = current ? mergeSessionStatusChange(current, event.payload) : null;
+      if (patched) setSessions(patched);
+      else if (!current || !current.some((s) => s.id === event.payload.sessionId)) debouncedRefresh();
+    });
     return () => {
       debouncedRefresh.cancel();
       unsubStarted();
       unsubEnded();
+      unsubStatus();
     };
   }, [refresh]);
 
-  // Status-transition floor (browser-admin-F2): suspended <-> active <->
-  // seeking flips emit no event, so nothing above would ever notice them.
-  // Paused while the tab is hidden, with one refresh on return (d3-e4 —
-  // this panel shares the sessions page's tick helper so the two cannot
-  // drift apart on cadence or on visibility behaviour).
+  // Fallback cadence (browser-admin-F2, relaxed by d3-e5): the subscription
+  // above now carries every status transition, so this tick only has to
+  // bound how stale a heartbeat-derived fact — `heartbeatStale`, which no
+  // transition can announce — is allowed to get. Paused while the tab is
+  // hidden, with one refresh on return (d3-e4 — this panel shares the
+  // sessions page's tick helper so the two cannot drift apart on cadence or
+  // on visibility behaviour).
   useEffect(() => startAdminSessionsRefresh(refresh), [refresh]);
 
   return (

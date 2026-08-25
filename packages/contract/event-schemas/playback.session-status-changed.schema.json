@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://loombre.com/schemas/events/playback.session-status-changed.schema.json",
+  "title": "PlaybackSessionStatusChangedPayload",
+  "description": "Payload for envelope.type === 'playback.session-status-changed' (d3-e5, browser-admin-F2 follow-up). Emitted whenever a playback session's NON-TERMINAL status moves — the segment-ahead throttle parking/resuming a transcode (docs/PLAYBACK.md §9), a seek claiming its target, the worker's pipeline reaching starting/active, or a restart clearing a throttle park. The terminal transitions are NOT here: reaching ended/failed already emits playback.ended, and a second event for the same moment would make an admin surface race itself. ADMIN-ONLY delivery (packages/shared/src/admin-only-event-types.ts): a playback session's operational state is instance administration, and the only consumers are the two admin now-playing surfaces. Deliberately TRANSPORT-ONLY — no itemId, userId or deviceId — so there is nothing for a viewer-scoped visibility predicate to gate on (packages/db/src/query/events.ts): unlike playback.started/.ended (ITEM_ONLY_TYPES), an admin who is not cleared for a restricted item still receives this, and the row they patch with it was already correctly redacted by GET /admin/sessions. Emitted only when the (status, suspendedByThrottle) pair ACTUALLY moved — this marks a transition, never a call.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["sessionId", "previousStatus", "status", "suspendedByThrottle", "reason", "changedAtMs"],
+  "properties": {
+    "sessionId": { "type": "string", "format": "uuid" },
+    "previousStatus": {
+      "type": "string",
+      "enum": ["created", "starting", "active", "suspended", "seeking", "ended", "failed"],
+      "description": "The status the row carried immediately before this write. Mirrors PlaybackSessionStatus (packages/contract/openapi.yaml)."
+    },
+    "status": {
+      "type": "string",
+      "enum": ["created", "starting", "active", "suspended", "seeking", "ended", "failed"],
+      "description": "The status the row carries after this write."
+    },
+    "suspendedByThrottle": {
+      "type": "boolean",
+      "description": "The committed playback_sessions.suspended_by_throttle value at this transition — the same field AdminSession carries, and the one that tells the throttle's healthy park apart from a heartbeat-stale suspend. Always false while `status` is anything other than `suspended`."
+    },
+    "reason": {
+      "type": "string",
+      "enum": ["pipeline-starting", "pipeline-active", "throttle-suspend", "throttle-resume", "seek", "restart"],
+      "description": "Which worker-owned write moved the row: the pipeline claiming the session ('pipeline-starting') or reaching its first produced segment ('pipeline-active'), the segment-ahead throttle parking or resuming it, a seek target being claimed, or a restart clearing a throttle park (docs/PLAYBACK.md §9 'Restart hygiene')."
+    },
+    "changedAtMs": { "type": "integer", "minimum": 0 }
+  }
+}

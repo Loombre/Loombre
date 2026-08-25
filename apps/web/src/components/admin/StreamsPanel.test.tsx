@@ -292,3 +292,100 @@ describe("StreamsPanel — error copy (d3-e2)", () => {
     expect(view.container.textContent).toContain("Failed to load active streams.");
   });
 });
+
+// ---------------------------------------------------------------------------
+// d3-e5 (E/browser-admin-F2-followup): the periodic tick was the ONLY way
+// this panel learned about a suspend/resume/seek, because no domain event
+// existed for a playback session status transition. It does now
+// (packages/contract/event-schemas/playback.session-status-changed.schema.json,
+// admin-only delivery) — the tick stays underneath as a fallback, at a
+// relaxed cadence, but a live transition must reach the pill immediately and
+// WITHOUT a refetch.
+// ---------------------------------------------------------------------------
+describe("StreamsPanel — live status transitions (d3-e5)", () => {
+  let view: TestRender | null = null;
+
+  function statusHandler(): (event: unknown) => void {
+    const handler = subscribeMock.mock.calls.find(([type]) => type === "playback.session-status-changed")?.[1] as
+      | ((event: unknown) => void)
+      | undefined;
+    expect(handler).toBeTypeOf("function");
+    return handler!;
+  }
+
+  function envelope(payload: Record<string, unknown>): unknown {
+    return { id: "e9", type: "playback.session-status-changed", tsMs: 1, actorUserId: null, payload };
+  }
+
+  beforeEach(() => {
+    apiGetMock.mockReset();
+    subscribeMock.mockReset();
+    subscribeMock.mockReturnValue(() => {});
+    apiGetMock.mockResolvedValue({
+      items: [session("s1", { status: "active", plan: { decision: "transcode" } })],
+      nextCursor: null,
+    });
+  });
+
+  afterEach(() => {
+    view?.unmount();
+    view = null;
+    vi.useRealTimers();
+  });
+
+  it("subscribes to playback.session-status-changed on the shared events socket", async () => {
+    view = renderIntoBody(<StreamsPanel />);
+    await act(async () => {});
+    expect(subscribeMock.mock.calls.map(([type]) => type)).toContain("playback.session-status-changed");
+  });
+
+  it("patches the pill from the event alone — the throttle parking a stream needs no refetch", async () => {
+    view = renderIntoBody(<StreamsPanel />);
+    await act(async () => {});
+    expect(apiGetMock).toHaveBeenCalledTimes(1);
+    expect(view.container.textContent).toContain("Active streams · 1");
+
+    await act(async () => {
+      statusHandler()(
+        envelope({
+          sessionId: "s1",
+          previousStatus: "active",
+          status: "suspended",
+          suspendedByThrottle: true,
+          reason: "throttle-suspend",
+          changedAtMs: 1_700_000_060_000,
+        }),
+      );
+    });
+
+    expect(view.container.textContent).toContain("Buffered ahead");
+    expect(view.container.textContent).toContain("Active streams · 1");
+    expect(apiGetMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("refetches when the transition is for a session this panel has never seen", async () => {
+    vi.useFakeTimers();
+    view = renderIntoBody(<StreamsPanel />);
+    await act(async () => {});
+    expect(apiGetMock).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      statusHandler()(
+        envelope({
+          sessionId: "s-unknown",
+          previousStatus: "starting",
+          status: "active",
+          suspendedByThrottle: false,
+          reason: "pipeline-active",
+          changedAtMs: 2,
+        }),
+      );
+    });
+    act(() => {
+      vi.advanceTimersByTime(500);
+    });
+    await act(async () => {});
+
+    expect(apiGetMock).toHaveBeenCalledTimes(2);
+  });
+});

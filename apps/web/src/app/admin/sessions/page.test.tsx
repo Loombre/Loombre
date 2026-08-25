@@ -380,3 +380,103 @@ describe("AdminSessionsPage — error copy (d3-e2)", () => {
     expect(view.container.textContent).toContain("Failed to load sessions.");
   });
 });
+
+// ---------------------------------------------------------------------------
+// d3-e5 (E/browser-admin-F2-followup): status transitions now have their own
+// domain event (playback.session-status-changed, admin-only). A live suspend
+// must reach this page's pill immediately, patching the row in place — and,
+// critically, WITHOUT discarding the "Load more" pages a page-1 refetch
+// would (d3-e4's whole subject).
+// ---------------------------------------------------------------------------
+describe("AdminSessionsPage — live status transitions (d3-e5)", () => {
+  let view: TestRender | null = null;
+
+  function statusHandler(): (event: unknown) => void {
+    const handler = subscribeMock.mock.calls.find(([type]) => type === "playback.session-status-changed")?.[1] as
+      | ((event: unknown) => void)
+      | undefined;
+    expect(handler).toBeTypeOf("function");
+    return handler!;
+  }
+
+  function envelope(payload: Record<string, unknown>): unknown {
+    return { id: "e9", type: "playback.session-status-changed", tsMs: 1, actorUserId: null, payload };
+  }
+
+  beforeEach(() => {
+    apiGetMock.mockReset();
+    subscribeMock.mockReset();
+    subscribeMock.mockReturnValue(() => {});
+    apiGetMock.mockResolvedValue({
+      items: [session("s1", { startedAtMs: 500, status: "active" })],
+      nextCursor: null,
+    });
+  });
+
+  afterEach(() => {
+    view?.unmount();
+    view = null;
+    vi.useRealTimers();
+  });
+
+  it("subscribes to playback.session-status-changed on the shared events socket on mount", async () => {
+    view = renderIntoBody(<AdminSessionsPage />);
+    await act(async () => {});
+    expect(subscribeMock.mock.calls.map(([type]) => type)).toContain("playback.session-status-changed");
+  });
+
+  it("patches the row's pill from the event alone, with no refetch", async () => {
+    view = renderIntoBody(<AdminSessionsPage />);
+    await act(async () => {});
+    expect(apiGetMock).toHaveBeenCalledTimes(1);
+    expect(view.container.textContent).toContain("Active");
+
+    await act(async () => {
+      statusHandler()(
+        envelope({
+          sessionId: "s1",
+          previousStatus: "active",
+          status: "suspended",
+          suspendedByThrottle: true,
+          reason: "throttle-suspend",
+          changedAtMs: 1_700_000_060_000,
+        }),
+      );
+    });
+
+    expect(view.container.textContent).toContain("Buffered ahead");
+    expect(apiGetMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("patches a row the admin paged to with Load more, without collapsing the list", async () => {
+    apiGetMock.mockReset();
+    apiGetMock.mockResolvedValueOnce({ items: [session("s1", { startedAtMs: 500 })], nextCursor: "c1" });
+    view = renderIntoBody(<AdminSessionsPage />);
+    await act(async () => {});
+
+    apiGetMock.mockResolvedValueOnce({ items: [session("s2", { startedAtMs: 400, username: "grace" })], nextCursor: null });
+    const loadMore = Array.from(view.container.querySelectorAll("button")).find((b) => b.textContent?.includes("Load more"));
+    expect(loadMore).toBeTruthy();
+    await act(async () => {
+      loadMore!.click();
+    });
+    expect(view.container.textContent).toContain("grace");
+
+    await act(async () => {
+      statusHandler()(
+        envelope({
+          sessionId: "s2",
+          previousStatus: "active",
+          status: "suspended",
+          suspendedByThrottle: true,
+          reason: "throttle-suspend",
+          changedAtMs: 1_700_000_060_000,
+        }),
+      );
+    });
+
+    expect(view.container.textContent).toContain("grace");
+    expect(view.container.textContent).toContain("Buffered ahead");
+    expect(apiGetMock).toHaveBeenCalledTimes(2);
+  });
+});

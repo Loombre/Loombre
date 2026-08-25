@@ -24,6 +24,7 @@ import type { ViewerContext } from '../src/context.js';
 import { createPlaybackSession } from '../src/query/playback-sessions.js';
 import {
   absorbSeekTarget,
+  clearThrottleSuspendedOnRestart,
   consumePendingRungIndex,
   consumeSeekTarget,
   ensureSessionStagingDir,
@@ -918,5 +919,119 @@ describe('consumePendingRungIndex (compare-and-clear, §9.1.3)', () => {
     expect(row?.active_rung_index).toBe(0);
     expect(row?.status).toBe('active');
     expect(row?.discontinuity_count).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// d3-e5 (E/browser-admin-F2-followup): every worker-owned status write in
+// src/internal/transcode-sessions.ts moved the row SILENTLY — no domain
+// event existed for a playback session status transition at all, so the two
+// admin now-playing surfaces could only learn about a suspend/resume/seek by
+// re-polling GET /admin/sessions on a 10s timer. These emit
+// `playback.session-status-changed` in the SAME transaction as the write
+// (the outbox pattern this package uses everywhere else), and ONLY when the
+// (status, suspended_by_throttle) pair actually moved.
+// ---------------------------------------------------------------------------
+describe('playback.session-status-changed (d3-e5)', () => {
+  async function statusEvents(sessionId: string): Promise<Record<string, unknown>[]> {
+    const { rows } = await rawClient.query<{ payload: Record<string, unknown> }>(
+      `SELECT payload FROM events WHERE type = 'playback.session-status-changed' AND payload ->> 'sessionId' = $1 ORDER BY seq`,
+      [sessionId],
+    );
+    return rows.map((r) => r.payload);
+  }
+
+  it('setThrottleSuspended emits suspend then resume, carrying both sides of the transition', async () => {
+    const id = await newSession();
+    await markSessionStarting(db, id, { stagingDir: '/tmp/x', nowMs: Date.now() });
+    await markSessionActive(db, id, { producedSegment: 12, nowMs: Date.now() });
+
+    await setThrottleSuspended(db, id, { suspended: true, nowMs: 1_700_000_060_000 });
+    await setThrottleSuspended(db, id, { suspended: false, nowMs: 1_700_000_090_000 });
+
+    const events = await statusEvents(id);
+    expect(events.map((p) => p.reason)).toEqual([
+      'pipeline-starting',
+      'pipeline-active',
+      'throttle-suspend',
+      'throttle-resume',
+    ]);
+    expect(events[2]).toMatchObject({
+      sessionId: id,
+      previousStatus: 'active',
+      status: 'suspended',
+      suspendedByThrottle: true,
+      changedAtMs: 1_700_000_060_000,
+    });
+    expect(events[3]).toMatchObject({
+      previousStatus: 'suspended',
+      status: 'active',
+      suspendedByThrottle: false,
+      changedAtMs: 1_700_000_090_000,
+    });
+  });
+
+  it('a no-op write emits nothing — the event marks a TRANSITION, not a call', async () => {
+    const id = await newSession();
+    await markSessionStarting(db, id, { stagingDir: '/tmp/x', nowMs: Date.now() });
+    await markSessionActive(db, id, { producedSegment: 1, nowMs: Date.now() });
+    await setThrottleSuspended(db, id, { suspended: true, nowMs: Date.now() });
+    const before = (await statusEvents(id)).length;
+
+    // Already suspended by the throttle: same status, same flag.
+    await setThrottleSuspended(db, id, { suspended: true, nowMs: Date.now() });
+    // Already active earlier in the same session: markSessionActive is
+    // called on every poll tick that observes a new segment.
+    await markSessionStarting(db, id, { stagingDir: '/tmp/x', nowMs: Date.now() });
+
+    expect((await statusEvents(id)).length).toBe(before);
+  });
+
+  it('consumeSeekTarget emits a seek transition', async () => {
+    const id = await newSession();
+    await markSessionStarting(db, id, { stagingDir: '/tmp/x', nowMs: Date.now() });
+    await markSessionActive(db, id, { producedSegment: 3, nowMs: Date.now() });
+    await rawClient.query('UPDATE playback_sessions SET seek_target_ms = 65000 WHERE id = $1', [id]);
+
+    await consumeSeekTarget(db, id, 1_700_000_120_000);
+
+    const events = await statusEvents(id);
+    expect(events[events.length - 1]).toMatchObject({
+      sessionId: id,
+      previousStatus: 'active',
+      status: 'seeking',
+      reason: 'seek',
+      suspendedByThrottle: false,
+      changedAtMs: 1_700_000_120_000,
+    });
+  });
+
+  it('clearThrottleSuspendedOnRestart emits when the restart un-parks a throttle-suspended row', async () => {
+    const id = await newSession();
+    await markSessionStarting(db, id, { stagingDir: '/tmp/x', nowMs: Date.now() });
+    await markSessionActive(db, id, { producedSegment: 4, nowMs: Date.now() });
+    await setThrottleSuspended(db, id, { suspended: true, nowMs: Date.now() });
+
+    await clearThrottleSuspendedOnRestart(db, id, 1_700_000_150_000);
+
+    const events = await statusEvents(id);
+    expect(events[events.length - 1]).toMatchObject({
+      previousStatus: 'suspended',
+      status: 'active',
+      reason: 'restart',
+      suspendedByThrottle: false,
+      changedAtMs: 1_700_000_150_000,
+    });
+  });
+
+  it('a terminal session moves nothing and emits nothing', async () => {
+    const id = await newSession();
+    await markSessionFailed(db, id, { errorCode: 'transcode-failed', stderrTail: 'boom', nowMs: Date.now() });
+    const before = (await statusEvents(id)).length;
+
+    await markSessionActive(db, id, { producedSegment: 3, nowMs: Date.now() });
+    await setThrottleSuspended(db, id, { suspended: true, nowMs: Date.now() });
+
+    expect((await statusEvents(id)).length).toBe(before);
   });
 });

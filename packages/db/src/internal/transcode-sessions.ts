@@ -52,6 +52,100 @@ export async function getTranscodeSessionRow(db: DbOrTx, sessionId: string): Pro
   return db.selectFrom('playback_sessions').selectAll().where('id', '=', sessionId).executeTakeFirst();
 }
 
+// ---------------------------------------------------------------------------
+// d3-e5 (E/browser-admin-F2-followup) — the status-transition outbox event.
+//
+// Every write below moved `status` SILENTLY: packages/contract/
+// event-schemas/ carried playback.started/.ended/.progress and nothing for
+// the transitions in between, so the two admin now-playing surfaces could
+// only learn that the segment-ahead throttle had parked a stream (or that a
+// seek was in flight) by re-polling GET /admin/sessions on a 10s timer —
+// apps/web/src/lib/admin-live-refresh.ts's header records exactly that
+// reasoning, and this event is what it was waiting for.
+//
+// Three properties this seam commits to, all exercised by
+// packages/db/test/transcode-sessions.spec.ts:
+//
+//   1. SAME TRANSACTION as the write it describes — the outbox pattern the
+//      rest of this package already follows (src/internal/events.ts's
+//      writeEvent takes a Transaction<DB> precisely so this cannot be got
+//      wrong). Every function that emits therefore composes through
+//      withTransaction; a caller who already holds a transaction still gets
+//      one atomic unit (tx.ts).
+//   2. TRANSITIONS ONLY. The `before` snapshot is read inside the same
+//      transaction and compared against what the UPDATE actually returned:
+//      if neither `status` nor `suspended_by_throttle` moved, nothing is
+//      written. markSessionActive is called on every poll tick that observes
+//      a new segment and setThrottleSuspended re-asserts an already-true
+//      suspension ('rewrite-suspended-only'), so "one row per call" would
+//      have meant a steady stream of events saying nothing.
+//   3. NO TERMINAL TRANSITIONS. Reaching ended/failed already emits
+//      playback.ended (markSessionFailed below, and query/playback-sessions
+//      .ts's finalizeSession); a second event for the same moment would make
+//      an admin surface race itself over which one wins the row.
+//
+// The payload is deliberately transport-only — sessionId + both sides of
+// the transition + the throttle flag, no itemId/userId/deviceId. See the
+// schema file's `description` for why that is a visibility property and not
+// just brevity.
+// ---------------------------------------------------------------------------
+
+/** Which worker-owned write moved the row (the payload's `reason` enum). */
+type SessionStatusChangeReason =
+  | 'pipeline-starting'
+  | 'pipeline-active'
+  | 'throttle-suspend'
+  | 'throttle-resume'
+  | 'seek'
+  | 'restart';
+
+interface SessionStatusSnapshot {
+  status: PlaybackSessionStatus;
+  suspended_by_throttle: boolean;
+}
+
+/** Reads the pair this event is about. Returns `undefined` when the session
+ *  id does not exist at all (nothing to compare against, nothing to emit). */
+async function readSessionStatusSnapshot(
+  trx: Transaction<DB>,
+  sessionId: string
+): Promise<SessionStatusSnapshot | undefined> {
+  return trx
+    .selectFrom('playback_sessions')
+    .select(['status', 'suspended_by_throttle'])
+    .where('id', '=', sessionId)
+    .executeTakeFirst();
+}
+
+/** Writes `playback.session-status-changed` iff the pair actually moved. */
+async function emitSessionStatusChanged(
+  trx: Transaction<DB>,
+  sessionId: string,
+  before: SessionStatusSnapshot | undefined,
+  after: SessionStatusSnapshot | undefined,
+  reason: SessionStatusChangeReason,
+  nowMs: number
+): Promise<void> {
+  if (!before || !after) return;
+  if (before.status === after.status && before.suspended_by_throttle === after.suspended_by_throttle) return;
+  await writeEvent(trx, {
+    // System-originated: every one of these is the worker's own pipeline
+    // bookkeeping, never a user action (the same posture scan.completed's
+    // null actor takes — envelope.schema.json's actorUserId description).
+    type: 'playback.session-status-changed',
+    tsMs: nowMs,
+    actorUserId: null,
+    payload: {
+      sessionId,
+      previousStatus: before.status,
+      status: after.status,
+      suspendedByThrottle: after.suspended_by_throttle,
+      reason,
+      changedAtMs: nowMs,
+    },
+  });
+}
+
 /**
  * First worker-owned transition: `created` -> `starting`, recording the
  * staging directory. Idempotent/resumable by construction: the UPDATE only
@@ -67,13 +161,18 @@ export async function markSessionStarting(
   sessionId: string,
   input: { stagingDir: string; nowMs: number }
 ): Promise<TranscodeSessionRow | undefined> {
-  await db
-    .updateTable('playback_sessions')
-    .set({ status: 'starting', staging_dir: input.stagingDir, updated_at_ms: input.nowMs })
-    .where('id', '=', sessionId)
-    .where('status', '=', 'created')
-    .execute();
-  return getTranscodeSessionRow(db, sessionId);
+  return withTransaction(db, async (trx) => {
+    const before = await readSessionStatusSnapshot(trx, sessionId);
+    await trx
+      .updateTable('playback_sessions')
+      .set({ status: 'starting', staging_dir: input.stagingDir, updated_at_ms: input.nowMs })
+      .where('id', '=', sessionId)
+      .where('status', '=', 'created')
+      .execute();
+    const row = await getTranscodeSessionRow(trx, sessionId);
+    await emitSessionStatusChanged(trx, sessionId, before, row, 'pipeline-starting', input.nowMs);
+    return row;
+  });
 }
 
 /**
@@ -90,13 +189,18 @@ export async function markSessionActive(
   sessionId: string,
   input: { producedSegment: number; nowMs: number }
 ): Promise<TranscodeSessionRow | undefined> {
-  return db
-    .updateTable('playback_sessions')
-    .set({ status: 'active', produced_segment: input.producedSegment, updated_at_ms: input.nowMs })
-    .where('id', '=', sessionId)
-    .where('status', 'in', NON_TERMINAL_STATUSES)
-    .returningAll()
-    .executeTakeFirst();
+  return withTransaction(db, async (trx) => {
+    const before = await readSessionStatusSnapshot(trx, sessionId);
+    const row = await trx
+      .updateTable('playback_sessions')
+      .set({ status: 'active', produced_segment: input.producedSegment, updated_at_ms: input.nowMs })
+      .where('id', '=', sessionId)
+      .where('status', 'in', NON_TERMINAL_STATUSES)
+      .returningAll()
+      .executeTakeFirst();
+    await emitSessionStatusChanged(trx, sessionId, before, row, 'pipeline-active', input.nowMs);
+    return row;
+  });
 }
 
 /**
@@ -135,17 +239,33 @@ export async function setThrottleSuspended(
   sessionId: string,
   input: { suspended: boolean; nowMs: number }
 ): Promise<TranscodeSessionRow | undefined> {
-  return db
-    .updateTable('playback_sessions')
-    .set({
-      status: input.suspended ? 'suspended' : 'active',
-      suspended_by_throttle: input.suspended,
-      updated_at_ms: input.nowMs,
-    })
-    .where('id', '=', sessionId)
-    .where('status', 'in', ['active', 'suspended'] satisfies PlaybackSessionStatus[])
-    .returningAll()
-    .executeTakeFirst();
+  return withTransaction(db, async (trx) => {
+    const before = await readSessionStatusSnapshot(trx, sessionId);
+    const row = await trx
+      .updateTable('playback_sessions')
+      .set({
+        status: input.suspended ? 'suspended' : 'active',
+        suspended_by_throttle: input.suspended,
+        updated_at_ms: input.nowMs,
+      })
+      .where('id', '=', sessionId)
+      .where('status', 'in', ['active', 'suspended'] satisfies PlaybackSessionStatus[])
+      .returningAll()
+      .executeTakeFirst();
+    // d3-e5: the 'rewrite-suspended-only' throttle action re-asserts a
+    // suspension the row already carries in `status` but not in the flag —
+    // that IS a transition (the flag moved) and emits; re-asserting both
+    // is a no-op and does not.
+    await emitSessionStatusChanged(
+      trx,
+      sessionId,
+      before,
+      row,
+      input.suspended ? 'throttle-suspend' : 'throttle-resume',
+      input.nowMs
+    );
+    return row;
+  });
 }
 
 /**
@@ -172,22 +292,27 @@ export async function setThrottleSuspended(
  * from the restart path (apps/worker runner.ts `restartAt`).
  */
 export async function clearThrottleSuspendedOnRestart(db: DbOrTx, sessionId: string, nowMs: number): Promise<void> {
-  await db
-    .updateTable('playback_sessions')
-    .set((eb) => ({
-      suspended_by_throttle: false,
-      status: eb
-        .case()
-        .when('status', '=', 'suspended')
-        .then(sql.lit('active').$castTo<PlaybackSessionStatus>())
-        .else(eb.ref('status'))
-        .end(),
-      updated_at_ms: nowMs,
-    }))
-    .where('id', '=', sessionId)
-    .where('suspended_by_throttle', '=', true)
-    .where('status', 'in', NON_TERMINAL_STATUSES)
-    .execute();
+  await withTransaction(db, async (trx) => {
+    const before = await readSessionStatusSnapshot(trx, sessionId);
+    const row = await trx
+      .updateTable('playback_sessions')
+      .set((eb) => ({
+        suspended_by_throttle: false,
+        status: eb
+          .case()
+          .when('status', '=', 'suspended')
+          .then(sql.lit('active').$castTo<PlaybackSessionStatus>())
+          .else(eb.ref('status'))
+          .end(),
+        updated_at_ms: nowMs,
+      }))
+      .where('id', '=', sessionId)
+      .where('suspended_by_throttle', '=', true)
+      .where('status', 'in', NON_TERMINAL_STATUSES)
+      .returningAll()
+      .executeTakeFirst();
+    await emitSessionStatusChanged(trx, sessionId, before, row, 'restart', nowMs);
+  });
 }
 
 export interface ConsumedSeekTarget {
@@ -216,7 +341,10 @@ export async function consumeSeekTarget(db: DbOrTx, sessionId: string, nowMs: nu
   return withTransaction(db, async (trx: Transaction<DB>) => {
     const current = await trx
       .selectFrom('playback_sessions')
-      .select(['seek_target_ms', 'discontinuity_count'])
+      // d3-e5: `status`/`suspended_by_throttle` ride along purely so the
+      // transition event below can name both sides of the move; nothing
+      // about the claim itself reads them.
+      .select(['seek_target_ms', 'discontinuity_count', 'status', 'suspended_by_throttle'])
       .where('id', '=', sessionId)
       .where('status', 'in', NON_TERMINAL_STATUSES)
       .where('seek_target_ms', 'is not', null)
@@ -232,6 +360,15 @@ export async function consumeSeekTarget(db: DbOrTx, sessionId: string, nowMs: nu
       .where('status', 'in', NON_TERMINAL_STATUSES)
       .executeTakeFirst();
     if (updated.numUpdatedRows === 0n) return undefined;
+
+    await emitSessionStatusChanged(
+      trx,
+      sessionId,
+      { status: current.status, suspended_by_throttle: current.suspended_by_throttle },
+      { status: 'seeking', suspended_by_throttle: current.suspended_by_throttle },
+      'seek',
+      nowMs
+    );
 
     return { seekTargetMs: current.seek_target_ms, discontinuityCount: nextCount };
   });

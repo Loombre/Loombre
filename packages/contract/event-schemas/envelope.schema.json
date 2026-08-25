@@ -34,7 +34,8 @@
     "tunnel.connector.state",
     "posture.regressed",
     "posture.recovered",
-    "probe.arrived"
+    "probe.arrived",
+    "playback.session-status-changed"
   ],
   "type": "object",
   "additionalProperties": false,
@@ -95,7 +96,8 @@
         "tunnel.connector.state",
         "posture.regressed",
         "posture.recovered",
-        "probe.arrived"
+        "probe.arrived",
+        "playback.session-status-changed"
       ],
       "description": "Closed enum today; additions are additive contract PRs (new event types are always backward compatible for existing consumers)."
     },

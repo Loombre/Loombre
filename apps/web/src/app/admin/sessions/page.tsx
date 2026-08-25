@@ -22,11 +22,17 @@
 // contract). Silent — it does not flip `loading`, so an admin watching
 // this page never sees the skeleton re-flash for a background nudge.
 //
-// browser-admin-F2: the same silent refetch also runs on a periodic tick
+// browser-admin-F2: the same silent refetch also ran on a periodic tick
 // (lib/admin-live-refresh.ts), because the status transitions this page
 // exists to show — the segment-ahead throttle's suspended <-> active flip,
-// `seeking` during a seek — emit no event at all, so a socket-only page
+// `seeking` during a seek — emitted no event at all, so a socket-only page
 // froze on whatever status was true at mount.
+//
+// d3-e5: they emit now (`playback.session-status-changed`, admin-only), and
+// this page patches the affected row from the event's own payload —
+// including a row on a "Load more" page, which the page-1 refetch could
+// never have reached. The tick remains underneath at a relaxed cadence for
+// what an event cannot carry (see lib/admin-live-refresh.ts).
 //
 // d3-e3: each row's pill comes from lib/admin-session-presence.ts, which
 // splits the one `suspended` enum value into the throttle's healthy park
@@ -47,6 +53,10 @@ import { ReasonsPanel } from "../../../components/admin/ReasonsPanel.js";
 import { startAdminSessionsRefresh } from "../../../lib/admin-live-refresh.js";
 import { mergeAdminSessionFirstPage } from "../../../lib/admin-session-merge.js";
 import { describeSessionPresence } from "../../../lib/admin-session-presence.js";
+import {
+  mergeSessionStatusChange,
+  type PlaybackSessionStatusChangedPayload,
+} from "../../../lib/admin-session-status-live.js";
 import { apiGet } from "../../../lib/api-client.js";
 import { apiErrorMessage } from "../../../lib/api-error-message.js";
 import { debounce } from "../../../lib/debounce.js";
@@ -174,21 +184,41 @@ export default function AdminSessionsPage(): React.JSX.Element {
       });
   }, []);
 
+  // d3-e5: a status transition patches its row where it stands, from the
+  // event's own payload (lib/admin-session-status-live.ts) — never through
+  // the page-1 refetch above, which by construction says nothing about the
+  // rows "Load more" fetched. A transition for a session this page does not
+  // hold is the one case that still needs the server.
+  const applyStatusChange = useCallback((payload: PlaybackSessionStatusChangedPayload): boolean => {
+    const patched = mergeSessionStatusChange(sessionsRef.current, payload);
+    if (patched) {
+      setSessions(patched);
+      return true;
+    }
+    return sessionsRef.current.some((session) => session.id === payload.sessionId);
+  }, []);
+
   useEffect(() => {
     const socket = getEventsSocket();
     const debouncedRefresh = debounce(refreshFirstPageSilently, 500);
     const unsubStarted = socket.subscribe("playback.started", () => debouncedRefresh());
     const unsubEnded = socket.subscribe("playback.ended", () => debouncedRefresh());
+    const unsubStatus = socket.subscribe<PlaybackSessionStatusChangedPayload>("playback.session-status-changed", (event) => {
+      if (!applyStatusChange(event.payload)) debouncedRefresh();
+    });
     return () => {
       debouncedRefresh.cancel();
       unsubStarted();
       unsubEnded();
+      unsubStatus();
     };
-  }, [refreshFirstPageSilently]);
+  }, [refreshFirstPageSilently, applyStatusChange]);
 
-  // Status-transition floor (browser-admin-F2): suspended <-> active <->
-  // seeking flips emit no event, so the subscription above never sees them.
-  // Paused while the tab is hidden, with one refresh on return (d3-e4).
+  // Fallback cadence (browser-admin-F2, relaxed by d3-e5): the subscription
+  // above now covers every status transition, so this tick is left only with
+  // what no transition can announce — `heartbeatStale`, derived per request
+  // — plus anything a dropped socket missed. Paused while the tab is hidden,
+  // with one refresh on return (d3-e4).
   useEffect(() => startAdminSessionsRefresh(refreshFirstPageSilently), [refreshFirstPageSilently]);
 
   return (

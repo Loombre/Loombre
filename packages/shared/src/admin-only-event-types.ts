@@ -148,6 +148,21 @@
 //     necessarily the acting admin) but stay admin-only regardless — same
 //     posture as `user.invited` carrying an eventual claimant's preset
 //     username while remaining admin-only throughout.
+//   - `playback.session-status-changed` (d3-e5, browser-admin-F2 follow-up):
+//     a playback session's non-terminal status moving — the segment-ahead
+//     throttle parking/resuming a transcode, a seek claiming its target, the
+//     pipeline reaching starting/active. Instance-operational data whose
+//     only consumers are the two admin now-playing surfaces
+//     (apps/web/src/components/admin/StreamsPanel.tsx and
+//     apps/web/src/app/admin/sessions), which previously had to re-poll
+//     GET /admin/sessions on a 10s timer to see any of it. Note the
+//     contrast with its `playback.*` siblings, which are NOT admin-only:
+//     playback.started/.ended/.progress carry an itemId and are gated
+//     ITEM_ONLY_TYPES for every viewer (they drive the all-user
+//     now-playing pulse). This one carries NO item/user/device identifier
+//     at all — transport facts only — so it has nothing a viewer-scoped
+//     predicate could gate on, and admin-only is the classification that
+//     keeps another user's session state out of every non-admin socket.
 //
 // Dependency-free data only (no zod, no I/O) — importable from
 // apps/server, apps/worker, and (via the prose pointer above, not a real
@@ -199,6 +214,8 @@ export const ADMIN_ONLY_EVENT_TYPES: readonly string[] = [
   "posture.regressed",
   "posture.recovered",
   "probe.arrived",
+  // d3-e5 (E/browser-admin-F2-followup).
+  "playback.session-status-changed",
 ];
 
 // NOT added above, deliberately (STATE.md "Admin broadcast notifications —

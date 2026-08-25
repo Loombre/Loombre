@@ -207,6 +207,16 @@ export const ACTOR_FIELD_MAP: Record<string, readonly string[]> = {
   // deliberately excludes the caller's IP/token from this payload) —
   // empty for the same reason probe.failed's entry is.
   "probe.arrived": [],
+  // d3-e5: playback.session-status-changed DOES carry a `sessionId`, which
+  // this map pseudonymizes on its three playback.* siblings above — but
+  // this type is ADMIN_ONLY (never grantable to a plugin subscriber in the
+  // first place, see event-taxonomy.ts), and the entry is listed anyway,
+  // mapped exactly as those siblings map theirs, because this map tracks
+  // "does the schema carry a user-correlating field" rather than "is this
+  // type reachable by a plugin today" (this file's header) — leaving
+  // sessionId unmapped here would be the one place in the file where the
+  // same field name means two different things.
+  "playback.session-status-changed": ["sessionId"],
 };
 
 /**
