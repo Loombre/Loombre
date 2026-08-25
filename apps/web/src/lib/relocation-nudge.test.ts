@@ -15,7 +15,7 @@ function makeReloader(levels: { details?: { live: boolean } }[] = []): PlaylistR
     calls,
     levels,
     stopLoad: () => calls.push("stopLoad"),
-    startLoad: (pos?: number) => calls.push(`startLoad(${pos})`),
+    startLoad: (pos?: number, skip?: boolean) => calls.push(`startLoad(${pos},${skip})`),
   };
 }
 
@@ -23,14 +23,31 @@ describe("startRelocationNudge", () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());
 
-  it("nudges stopLoad-then-startLoad(-1) once per interval while relocating", () => {
+  it("nudges stopLoad-then-startLoad(-1, skipSeek) once per interval while relocating", () => {
     const hls = makeReloader();
     const stop = startRelocationNudge(() => hls, () => true);
     expect(hls.calls, "no synchronous nudge — the restarted run cannot exist yet at 202 time").toEqual([]);
     vi.advanceTimersByTime(HARD_SEEK_REFRESH_NUDGE_MS);
-    expect(hls.calls).toEqual(["stopLoad", "startLoad(-1)"]);
+    expect(hls.calls).toEqual(["stopLoad", "startLoad(-1,true)"]);
     vi.advanceTimersByTime(HARD_SEEK_REFRESH_NUDGE_MS * 2);
-    expect(hls.calls).toEqual(["stopLoad", "startLoad(-1)", "stopLoad", "startLoad(-1)", "stopLoad", "startLoad(-1)"]);
+    expect(hls.calls).toEqual(["stopLoad", "startLoad(-1,true)", "stopLoad", "startLoad(-1,true)", "stopLoad", "startLoad(-1,true)"]);
+    stop();
+  });
+
+  // d3-a2: skipSeekToStartPosition=true is load-bearing after the
+  // post-ENDLIST MSE rebuild (lib/post-endlist-rebuild.ts): a detach
+  // resets hls.js's `_hasEnoughToStart`, so a bare startLoad(-1) would
+  // override its start position with `lastCurrentTime` — the ABANDONED
+  // pre-seek presentation position — and seekToStartPos would yank
+  // `media.currentTime` there on the first append, fighting the landing.
+  // The nudge therefore always suppresses the media-seek side effect and
+  // names the reload position itself (the element's own position when the
+  // caller provides it, the live edge otherwise).
+  it("reloads from the caller-provided resume position (still with the media-seek side effect suppressed)", () => {
+    const hls = makeReloader();
+    const stop = startRelocationNudge(() => hls, () => true, () => 42.5);
+    vi.advanceTimersByTime(HARD_SEEK_REFRESH_NUDGE_MS);
+    expect(hls.calls).toEqual(["stopLoad", "startLoad(42.5,true)"]);
     stop();
   });
 
@@ -78,7 +95,7 @@ describe("startRelocationNudge", () => {
       details.live,
       "hls.js shouldLoadPlaylist refuses to reload a VOD (ENDLIST) level — the tick must re-open it or stopLoad/startLoad reload nothing",
     ).toBe(true);
-    expect(hls.calls).toEqual(["stopLoad", "startLoad(-1)"]);
+    expect(hls.calls).toEqual(["stopLoad", "startLoad(-1,true)"]);
     stop();
   });
 

@@ -70,6 +70,7 @@ import {
   type SourceClockState,
 } from "../../lib/source-clock.js";
 import { reopenEndedLevels, startRelocationNudge } from "../../lib/relocation-nudge.js";
+import { listedWindowEndSec, rebuildMsePipelineForHardSeek } from "../../lib/post-endlist-rebuild.js";
 import { decideRecovery, sessionFailureReasons } from "../../lib/playback-recovery.js";
 import { useToast } from "../ui/Toast.js";
 import { AmbientBackdrop } from "./AmbientBackdrop.js";
@@ -395,6 +396,24 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
   // demonstrably still working, not the seek failing). No-op outside a
   // lifecycle.
   const extendLandingTimerRef = useRef<() => void>(() => undefined);
+  // d3-a2: whether the CURRENT hls.js instance has parsed an ENDLIST
+  // playlist since its last MSE rebuild. An ENDLIST parse poisons hls.js
+  // state the app cannot reach (the endOfStream-truncated MediaSource and
+  // the FragmentTracker's stale endList entity — lib/post-endlist-rebuild
+  // .ts's header), so the NEXT hard seek must rebuild the media attach
+  // before its landing can play. Sticky across un-ended refreshes (the
+  // stale tracker entity survives them); consumed by the rebuild; reset
+  // with each attach-effect run (a fresh instance starts clean).
+  const endlistSeenRef = useRef(false);
+  // d3-a2: the rebuild's captured play intent, issued at LANDING-
+  // assignment time — a play() fired inside the rebuild is aborted by
+  // the fresh attach's own load request (observed live: the post-rebuild
+  // landing sat paused at the target), while by landing time the attach
+  // has settled. Consumed by whichever landing assigns the element
+  // (LEVEL_UPDATED or absorbed); cleared with the lifecycle
+  // (clearLandingWatch), so a timed-out seek never leaves a stale play
+  // armed for some future landing.
+  const resumePlayAfterRebuildRef = useRef(false);
 
   /** The CURRENT LEVEL DETAILS as structural fragments (A2: the LISTED
    *  window — buffer state deliberately plays no part). `null` off the
@@ -433,6 +452,11 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
       seekEpochRef.current += 1;
     }
     extendLandingTimerRef.current = () => undefined;
+    // d3-a2: a lifecycle ending un-landed (timeout, soft seek, unmount)
+    // drops any rebuild play intent with it — never a stale play() armed
+    // for some future landing. (A landing that DID assign consumed it
+    // already; completion's clear is then a no-op.)
+    resumePlayAfterRebuildRef.current = false;
     landingWatchRef.current = null;
     landedAwaitingResumeRef.current = null;
     relocatingRef.current = null;
@@ -1008,6 +1032,18 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
       hls.on(HlsCtor.Events.MANIFEST_PARSED, syncLevels);
       hls.on(HlsCtor.Events.LEVEL_SWITCHED, syncLevels);
 
+      // d3-a2: a refresh parsed with live:false IS the ENDLIST parse —
+      // from here the MSE pipeline is poisoned for any later hard seek
+      // (endOfStream truncation + the stale endList tracker entity; see
+      // lib/post-endlist-rebuild.ts) until hardSeek's rebuild consumes
+      // the flag. A fresh instance starts clean.
+      endlistSeenRef.current = false;
+      hls.on(HlsCtor.Events.LEVEL_UPDATED, (_event, data) => {
+        if ((data as { details?: { live?: boolean } } | undefined)?.details?.live === false) {
+          endlistSeenRef.current = true;
+        }
+      });
+
       // V8 hard-seek landing watch (§9.1.9): every playlist refresh tries
       // to land a pending hard seek. The match requires BOTH the runN
       // prefix (strictly newer than the watch's floor) AND the PDT window
@@ -1064,6 +1100,13 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
           // run index invalidates every pre-seek window (lib/source-clock.ts).
           sourceClockRef.current = anchorAtLanding(sourceClockRef.current, landedAt);
           video.currentTime = landedAt.startSec;
+          // d3-a2: the post-ENDLIST rebuild's captured play intent fires
+          // HERE — the attach has settled by landing time, so this play()
+          // pends until the landed position has data, then plays.
+          if (resumePlayAfterRebuildRef.current) {
+            resumePlayAfterRebuildRef.current = false;
+            void video.play().catch(() => undefined);
+          }
           positionRef.current = targetMs;
           setPositionMs(targetMs);
           heartbeatRef.current?.flushNow();
@@ -1630,6 +1673,12 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
       // (the run floor must not move: no restart happened).
       sourceClockRef.current = anchorAtExplicitPosition(sourceClockRef.current, softSec, targetMs);
       video.currentTime = softSec;
+      // d3-a2: an absorbed landing right after the post-ENDLIST rebuild
+      // consumes the same captured play intent as the new-run landing.
+      if (resumePlayAfterRebuildRef.current) {
+        resumePlayAfterRebuildRef.current = false;
+        void video.play().catch(() => undefined);
+      }
       positionRef.current = targetMs;
       setPositionMs(targetMs);
       heartbeatRef.current?.flushNow();
@@ -1714,6 +1763,25 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
             const delayMs = landingExtensionDelayMs(lifecycleStartedAtMs, Date.now());
             if (delayMs !== null) armLandingTimer(delayMs);
           };
+          // d3-a2: a hard seek on an ENDLIST-poisoned pipeline rebuilds
+          // the media attach FIRST — the endOfStream-truncated
+          // MediaSource clamps the landing's currentTime assignment short
+          // of the seek run (browser-player-F4-residual: requested stuck
+          // while produced grew; verify/gap-F4's instant-'ended' at
+          // 99.5%), and the FragmentTracker's stale endList entity ends a
+          // later completed seek run ONE segment in (verify/browser-
+          // player-F4: 6 s played of a 26.5 s tail). detach→attach is the
+          // one public lever that clears both (lib/post-endlist-rebuild
+          // .ts); once per poisoning — the flag re-arms only on the next
+          // ENDLIST parse. Runs before the absorbed-202 acceptance so an
+          // absorbed landing also plays against a fresh, open MediaSource
+          // (its assignment becomes the element's default start position;
+          // loading restarted inside the rebuild).
+          if (hls && videoRef.current && endlistSeenRef.current) {
+            endlistSeenRef.current = false;
+            const { resumePlay } = rebuildMsePipelineForHardSeek<HTMLVideoElement>(hls, videoRef.current, listedWindowEndSec(listedFragments()));
+            if (resumePlay) resumePlayAfterRebuildRef.current = true;
+          }
           // rem2-absorbed-seek: the ABSORBED 202, answered at RESPONSE
           // time. When the CURRENT window already lists the clamped
           // target, the server absorbed the seek into the in-flight run —
@@ -1755,6 +1823,12 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
             nudgeStopRef.current = startRelocationNudge(
               () => hlsRef.current,
               () => relocatingRef.current !== null,
+              // d3-a2: the nudge names its reload position (and suppresses
+              // hls.js's seekToStartPos side effect — see relocation-nudge
+              // .ts): after a post-ENDLIST rebuild the element's position
+              // is the parked window tail, and a bare startLoad(-1) would
+              // resurrect the ABANDONED pre-seek position instead.
+              () => videoRef.current?.currentTime ?? -1,
             );
           }
           // Native-HLS coarse landing (no hls.js instance to watch): land

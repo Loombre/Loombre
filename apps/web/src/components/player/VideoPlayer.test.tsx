@@ -122,7 +122,7 @@ interface MockHlsInstance {
   loadSource(url: string): void;
   attachMedia(el: HTMLMediaElement): void;
   detachMedia(): void;
-  startLoad(pos?: number): void;
+  startLoad(pos?: number, skipSeekToStartPosition?: boolean): void;
   stopLoad(): void;
   recoverMediaError(): void;
   destroy(): void;
@@ -164,9 +164,14 @@ vi.mock("hls.js", () => {
     attachMedia(): void {
       this.calls.push("attachMedia");
     }
-    detachMedia(): void {}
-    startLoad(pos?: number): void {
-      this.calls.push(`startLoad(${pos})`);
+    detachMedia(): void {
+      this.calls.push("detachMedia");
+    }
+    startLoad(pos?: number, skipSeekToStartPosition?: boolean): void {
+      // Two-arg calls (the d3-a2 rebuild + the relocation nudge) record the
+      // skip flag too — seekToStartPosition suppression is load-bearing
+      // there; legacy single-arg call sites keep their historical strings.
+      this.calls.push(skipSeekToStartPosition === undefined ? `startLoad(${pos})` : `startLoad(${pos},${skipSeekToStartPosition})`);
     }
     stopLoad(): void {
       this.calls.push("stopLoad");
@@ -1613,6 +1618,154 @@ describe("VideoPlayer", () => {
         });
         const slider = v.container.querySelector('[role="slider"]');
         expect(slider?.getAttribute("aria-valuenow")).toBe("10500");
+      });
+    });
+
+    // ── d3-a2: post-ENDLIST hard seeks rebuild the MSE pipeline ──────────
+    // Once a served playlist has carried ENDLIST, hls.js state the app
+    // cannot reach is poisoned for every later hard seek: endOfStream()
+    // truncated the MediaSource duration (the landing's currentTime
+    // assignment clamps short of the new run and the ENDED stream
+    // controller never fetches it — browser-player-F4-residual), and the
+    // FragmentTracker keeps the completed run's tail as its endList entity
+    // forever (a later seek run that also completes satisfies
+    // isEndListAppended via the STALE entity — one segment consumed,
+    // 'ended' ~20 s early, verify/browser-player-F4). The one public lever
+    // clearing both is a media re-attach (lib/post-endlist-rebuild.ts);
+    // these tests pin WHEN VideoPlayer pulls it.
+    describe("post-ENDLIST MSE rebuild (d3-a2)", () => {
+      /** What real hls.js does when a refresh parses ENDLIST: LEVEL_UPDATED
+       *  fires with `details.live === false`. The event payload is the
+       *  poison signal VideoPlayer tracks. */
+      function emitEndlistParse(hls: MockHlsInstance, fragments: unknown[]): void {
+        hls.emit("hlsLevelUpdated", "hlsLevelUpdated", { details: { live: false, fragments } });
+      }
+      function detachCount(hls: MockHlsInstance): number {
+        return hls.calls.filter((c) => c === "detachMedia").length;
+      }
+
+      it("a hard seek from the fully-ENDED stream rebuilds MSE (detach→attach→reload at the window tail) and resumes playback", async () => {
+        const { v, hls } = await renderHlsReady();
+        view = v;
+        const details = { live: false, fragments: [farListedFragment()] };
+        hls.levels = [{ details }];
+        await act(async () => emitEndlistParse(hls, details.fragments));
+        // Chrome's natural EOF: 'pause' fires before 'ended'.
+        const video = videoEl(v);
+        mediaState(video).paused = true;
+        mediaState(video).ended = true;
+        apiPost.mockResolvedValueOnce({ targetMs: 10_000 });
+
+        await act(async () => button(v, "Forward 10 seconds").click());
+
+        const detachAt = hls.calls.indexOf("detachMedia");
+        const attachAt = hls.calls.lastIndexOf("attachMedia");
+        expect(
+          detachAt,
+          "the ENDLIST-poisoned pipeline was never rebuilt — the truncated MediaSource duration clamps the landing and the seek can never play (browser-player-F4-residual)",
+        ).toBeGreaterThanOrEqual(0);
+        expect(attachAt).toBeGreaterThan(detachAt);
+        // Loading restarts at the listed window's tail (where the
+        // seek-spawned run appends) with seekToStartPosition suppressed —
+        // the landing owns the element's position from the 202 on.
+        expect(hls.calls).toContain("startLoad(6,true)");
+        // The ENDLIST-frozen level was re-opened inside the rebuild.
+        expect(details.live).toBe(true);
+        // Still paused at 202 time — a play() fired inside the rebuild is
+        // aborted by the fresh attach's own load request (observed live).
+        expect(mediaState(video).paused).toBe(true);
+
+        // The seek-spawned run lands…
+        const landedDetails = {
+          live: true,
+          fragments: [farListedFragment(), { programDateTime: 10_000, start: 6, duration: 6, relurl: "run1/s000001.m4s" }],
+        };
+        hls.levels = [{ details: landedDetails }];
+        await act(async () => {
+          hls.emit("hlsLevelUpdated", "hlsLevelUpdated", { details: landedDetails });
+        });
+        expect(video.currentTime, "the landing never seeked the element to the run's start").toBe(6);
+        // …and a seek from 'ended' must PLAY once it lands, not sit on a
+        // frozen frame — the family's acceptance. The rebuild's captured
+        // intent fires at landing-assignment time, when the attach has
+        // settled.
+        expect(mediaState(video).paused).toBe(false);
+      });
+
+      it("the poison is sticky across un-ended refreshes — a hard seek long after the playlist went live again still rebuilds", async () => {
+        const { v, hls } = await renderHlsReady();
+        view = v;
+        // Seek run #1 completed once upon a time (ENDLIST parsed)…
+        await act(async () => emitEndlistParse(hls, [farListedFragment()]));
+        // …then a later seek un-ended the playlist and refreshes are live
+        // again: the tracker's stale endList entity is STILL armed, so the
+        // next hard seek must still rebuild (the one-segment early-'ended'
+        // truncation of verify/browser-player-F4).
+        const liveDetails = { live: true, fragments: [farListedFragment()] };
+        hls.levels = [{ details: liveDetails }];
+        await act(async () => {
+          hls.emit("hlsLevelUpdated", "hlsLevelUpdated", { details: liveDetails });
+        });
+        apiPost.mockResolvedValueOnce({ targetMs: 10_000 });
+
+        await act(async () => button(v, "Forward 10 seconds").click());
+
+        expect(
+          detachCount(hls),
+          "an intermediate live refresh cleared the ENDLIST poison flag — the stale endList entity survives un-ending merges, so the rebuild must too",
+        ).toBe(1);
+      });
+
+      it("one rebuild per poisoning: the next hard seek on the rebuilt pipeline does not tear the buffer down again", async () => {
+        const { v, hls } = await renderHlsReady();
+        view = v;
+        hls.levels = [{ details: { live: true, fragments: [farListedFragment()] } }];
+        await act(async () => emitEndlistParse(hls, [farListedFragment()]));
+        apiPost.mockResolvedValueOnce({ targetMs: 10_000 });
+        await act(async () => button(v, "Forward 10 seconds").click());
+        expect(detachCount(hls)).toBe(1);
+
+        // No ENDLIST parse since the rebuild — a fresh MediaSource and a
+        // clean tracker have nothing to rebuild away from.
+        apiPost.mockResolvedValueOnce({ targetMs: 20_000 });
+        await act(async () => button(v, "Forward 10 seconds").click());
+        expect(detachCount(hls)).toBe(1);
+      });
+
+      it("a viewer who deliberately paused mid-stream is rebuilt but NOT force-played, even once the landing assigns", async () => {
+        const { v, hls } = await renderHlsReady();
+        view = v;
+        hls.levels = [{ details: { live: true, fragments: [farListedFragment()] } }];
+        await act(async () => emitEndlistParse(hls, [farListedFragment()]));
+        const video = videoEl(v);
+        mediaState(video).paused = true;
+        mediaState(video).ended = false;
+        apiPost.mockResolvedValueOnce({ targetMs: 10_000 });
+
+        await act(async () => button(v, "Forward 10 seconds").click());
+        expect(detachCount(hls)).toBe(1);
+
+        const landedDetails = {
+          live: true,
+          fragments: [farListedFragment(), { programDateTime: 10_000, start: 6, duration: 6, relurl: "run1/s000001.m4s" }],
+        };
+        hls.levels = [{ details: landedDetails }];
+        await act(async () => {
+          hls.emit("hlsLevelUpdated", "hlsLevelUpdated", { details: landedDetails });
+        });
+        expect(video.currentTime).toBe(6);
+        expect(mediaState(video).paused, "a rebuild must not override an explicit pause — same contract as a non-rebuilt hard seek").toBe(true);
+      });
+
+      it("a hard seek on a never-ENDLIST session does NOT rebuild — no buffer teardown on the ordinary hot path", async () => {
+        const { v, hls } = await renderHlsReady();
+        view = v;
+        hls.levels = [{ details: { live: true, fragments: [farListedFragment()] } }];
+        apiPost.mockResolvedValueOnce({ targetMs: 10_000 });
+
+        await act(async () => button(v, "Forward 10 seconds").click());
+
+        expect(detachCount(hls), "an un-poisoned hard seek paid a full MSE teardown — the rebuild must be gated on an actual ENDLIST parse").toBe(0);
       });
     });
   });

@@ -26,7 +26,7 @@
  *  list the gap-F4 ENDLIST re-open below acts on. */
 export interface PlaylistReloader {
   stopLoad(): void;
-  startLoad(startPosition?: number): void;
+  startLoad(startPosition?: number, skipSeekToStartPosition?: boolean): void;
   levels: ReloaderLevel[];
 }
 
@@ -76,10 +76,23 @@ export function reopenEndedLevels(hls: Pick<PlaylistReloader, "levels">): boolea
  *  landing timeout's worst case (docs/PLAYBACK.md §9.1.9). */
 export const HARD_SEEK_REFRESH_NUDGE_MS = 1_000;
 
-/** Starts the relocation nudge loop. Returns the stop function. */
+/** Starts the relocation nudge loop. Returns the stop function.
+ *
+ *  d3-a2: every reload passes `skipSeekToStartPosition` — after the
+ *  post-ENDLIST MSE rebuild (lib/post-endlist-rebuild.ts) hls.js's
+ *  `_hasEnoughToStart` is false again, so a bare `startLoad(-1)` would
+ *  override its start position with `lastCurrentTime` (the ABANDONED
+ *  pre-seek presentation position) and `seekToStartPos` would yank
+ *  `media.currentTime` there on the first append, fighting the landing's
+ *  own assignment. The nudge names the reload position itself instead:
+ *  the element's current position when the caller provides it (identical
+ *  load behavior to the old lastCurrentTime override on an untouched
+ *  attach), the live edge otherwise — and never the media-seek side
+ *  effect. */
 export function startRelocationNudge(
   getReloader: () => PlaylistReloader | null,
   isRelocating: () => boolean,
+  getResumePositionSec?: () => number,
   intervalMs: number = HARD_SEEK_REFRESH_NUDGE_MS,
 ): () => void {
   const timer = setInterval(() => {
@@ -91,7 +104,7 @@ export function startRelocationNudge(
     // level (parsed live:false) — see reopenEndedLevels above.
     reopenEndedLevels(hls);
     hls.stopLoad();
-    hls.startLoad(-1);
+    hls.startLoad(getResumePositionSec ? getResumePositionSec() : -1, true);
   }, intervalMs);
   return () => clearInterval(timer);
 }
