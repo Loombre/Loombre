@@ -19,7 +19,8 @@ import { Card } from "../../ui/Card.js";
 import { Button } from "../../ui/Button.js";
 import { Skeleton } from "../../skeleton/Skeleton.js";
 import { EmptyState } from "../EmptyState.js";
-import { apiGet, LoombreApiError } from "../../../lib/api-client.js";
+import { apiGet } from "../../../lib/api-client.js";
+import { apiErrorCopy } from "../../../lib/api-error-message.js";
 import styles from "./system-cards.module.css";
 import { FolderOpen } from "lucide-react";
 
@@ -34,7 +35,7 @@ export function CrashFilesCard(): React.JSX.Element {
   useEffect(() => {
     apiGet("/admin/crash-files")
       .then((res) => setFiles(res.items))
-      .catch((err) => setError(err instanceof LoombreApiError ? err.message : "Failed to load crash files."));
+      .catch((err) => setError(apiErrorCopy(err, "Failed to load crash files.")));
   }, []);
 
   function openFile(name: string): void {
@@ -42,7 +43,7 @@ export function CrashFilesCard(): React.JSX.Element {
     setContent(null);
     apiGet("/admin/crash-files/{name}", { params: { path: { name } } })
       .then((text) => setContent(text))
-      .catch((err) => setContent(`Failed to load: ${err instanceof LoombreApiError ? err.message : "unknown error"}`));
+      .catch((err) => setContent(`Failed to load: ${apiErrorCopy(err, "unknown error")}`));
   }
 
   function download(): void {

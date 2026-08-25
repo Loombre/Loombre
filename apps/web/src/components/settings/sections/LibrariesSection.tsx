@@ -64,7 +64,8 @@ import { diffPermissionsToSubmit } from "../../../lib/library-permissions.js";
 import { enumLabel, MEDIA_KIND_LABEL } from "../../../lib/enum-labels.js";
 import { useToast } from "../../ui/Toast.js";
 import { TextInput } from "../../ui/Input.js";
-import { apiDelete, apiGet, apiPatch, apiPost, apiPut, LoombreApiError } from "../../../lib/api-client.js";
+import { apiDelete, apiGet, apiPatch, apiPost, apiPut } from "../../../lib/api-client.js";
+import { apiErrorCopy } from "../../../lib/api-error-message.js";
 import styles from "./shared.module.css";
 
 type Library = components["schemas"]["Library"];
@@ -105,7 +106,7 @@ function EditLibraryModal({
       onUpdated(updated);
       onClose();
     } catch (err) {
-      setError(err instanceof LoombreApiError ? err.message : "Failed to update library.");
+      setError(apiErrorCopy(err, "Failed to update library."));
       setSubmitting(false);
     }
   }
@@ -156,7 +157,7 @@ function PermissionsModal({ library, onClose }: { library: Library; onClose: () 
         setOriginallyGranted(granted);
         setChecked(new Set(granted));
       })
-      .catch((err) => setError(err instanceof LoombreApiError ? err.message : "Failed to load permissions."));
+      .catch((err) => setError(apiErrorCopy(err, "Failed to load permissions.")));
   }, [library.id]);
 
   function toggle(userId: string): void {
@@ -176,7 +177,7 @@ function PermissionsModal({ library, onClose }: { library: Library; onClose: () 
       await apiPut("/libraries/{id}/permissions", { params: { path: { id: library.id } }, body: { libraryId: library.id, permissions: entries } });
       onClose();
     } catch (err) {
-      setError(err instanceof LoombreApiError ? err.message : "Failed to save permissions.");
+      setError(apiErrorCopy(err, "Failed to save permissions."));
       setSubmitting(false);
     }
   }
@@ -346,7 +347,7 @@ export function LibrariesSection({ heading }: { heading: string | null }): React
     // a non-admin is legitimately refused.
     apiGet("/libraries", { params: { query: { limit: 200 } } })
       .then((page) => setLibraries(page.items))
-      .catch((err) => setError(err instanceof LoombreApiError ? err.message : "Failed to load libraries."));
+      .catch((err) => setError(apiErrorCopy(err, "Failed to load libraries.")));
     apiGet("/libraries", { params: { query: { scope: "admin", limit: 200 } } })
       .then((page) => setHidden(page.items))
       .catch(() => setHidden(null));
@@ -398,7 +399,7 @@ export function LibrariesSection({ heading }: { heading: string | null }): React
       );
       reload();
     } catch (err) {
-      showToast(err instanceof LoombreApiError ? err.message : "Failed to grant access.", { variant: "danger" });
+      showToast(apiErrorCopy(err, "Failed to grant access."), { variant: "danger" });
     } finally {
       setGranting(null);
     }
@@ -409,7 +410,7 @@ export function LibrariesSection({ heading }: { heading: string | null }): React
       await apiPost("/libraries/{id}/scan", { params: { path: { id: lib.id } }, body: { full } });
       showToast(`${full ? "FULL RESCAN" : "SCAN"} STARTED — ${lib.name.toUpperCase()}`);
     } catch (err) {
-      showToast(err instanceof LoombreApiError ? err.message : "Failed to start scan.", { variant: "danger" });
+      showToast(apiErrorCopy(err, "Failed to start scan."), { variant: "danger" });
     }
   }
 
@@ -419,7 +420,7 @@ export function LibrariesSection({ heading }: { heading: string | null }): React
       await apiDelete("/libraries/{id}", { params: { path: { id: lib.id } } });
       setLibraries((prev) => (prev ? prev.filter((l) => l.id !== lib.id) : prev));
     } catch (err) {
-      setError(err instanceof LoombreApiError ? err.message : "Failed to delete library.");
+      setError(apiErrorCopy(err, "Failed to delete library."));
     }
   }
 

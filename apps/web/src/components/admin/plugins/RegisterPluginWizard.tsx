@@ -48,27 +48,20 @@ import {
   validatePluginUrl,
   type StepId,
 } from "../../../lib/plugin-wizard-state.js";
-import { apiDelete, apiPost, LoombreApiError } from "../../../lib/api-client.js";
+import { apiDelete, apiPost } from "../../../lib/api-client.js";
+import { apiErrorCopy } from "../../../lib/api-error-message.js";
 import styles from "./RegisterPluginWizard.module.css";
 
 type PluginManifestPreview = components["schemas"]["PluginManifestPreview"];
 type RegisterPluginResponse = components["schemas"]["RegisterPluginResponse"];
 
-/** RFC 9457's `detail` carries the useful, specific message (C2's "this
- *  Loombre doesn't support capability type 'X' yet", the SSRF rejection
- *  reason, ...) — LoombreApiError.message is only the generic `title`
- *  ("Unprocessable Entity"). Falls back to message/a generic string when
- *  the body isn't problem-shaped for some reason. */
-function errorDetail(err: unknown, fallback: string): string {
-  if (err instanceof LoombreApiError) {
-    const problem = err.problem;
-    if (typeof problem === "object" && problem !== null && "detail" in problem && typeof (problem as { detail?: unknown }).detail === "string") {
-      return (problem as { detail: string }).detail;
-    }
-    return err.message || fallback;
-  }
-  return fallback;
-}
+// d4-e6: this file used to carry its own local `errorDetail(err, fallback)` —
+// a hand-rolled copy of lib/api-error-message.ts's `apiErrorCopy`, written
+// for the same reason (RFC 9457's `detail` carries the specific message:
+// C2's "this Loombre doesn't support capability type 'X' yet", the SSRF
+// rejection reason) and gated on `err instanceof LoombreApiError`, which
+// threw the detail away for any error that was not that exact class. The
+// shared helper duck-types the shape instead; one copy, one behaviour.
 
 function parseLanAllowlist(text: string): string[] {
   return text
@@ -118,7 +111,7 @@ export function RegisterPluginWizard({
       setEventTypeGrants([]);
       setStep(nextStep("url"));
     } catch (err) {
-      setUrlError(errorDetail(err, "Could not read this plugin's manifest."));
+      setUrlError(apiErrorCopy(err, "Could not read this plugin's manifest."));
     } finally {
       setPreviewing(false);
     }
@@ -151,7 +144,7 @@ export function RegisterPluginWizard({
       setResult(res);
       setStep("result");
     } catch (err) {
-      setRegisterError(errorDetail(err, "Failed to register this plugin."));
+      setRegisterError(apiErrorCopy(err, "Failed to register this plugin."));
       setStep(needsGrantsStep(grantedCapabilityTypes) ? "grants" : "config");
     }
   }

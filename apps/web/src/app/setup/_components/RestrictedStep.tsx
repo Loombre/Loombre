@@ -20,7 +20,6 @@
 
 import { useEffect, useState, type FormEvent } from "react";
 import { ShieldCheck } from "lucide-react";
-import { LoombreApiError } from "@loombre/sdk";
 import { Icon } from "../../../components/icon/Icon.js";
 import { Button } from "../../../components/ui/Button.js";
 import { TextInput } from "../../../components/ui/Input.js";
@@ -28,6 +27,7 @@ import { SegmentedControl } from "../../../components/ui/SegmentedControl.js";
 import { apiGet, apiPut } from "../../../lib/api-client.js";
 import { PIN_LENGTH, isPinComplete, sanitizePinInput } from "../../../lib/pin-entry.js";
 import { deriveRestrictedViewState } from "../wizard-state.js";
+import { apiErrorCopy } from "../../../lib/api-error-message.js";
 import styles from "./steps.module.css";
 
 export interface RestrictedStepProps {
@@ -76,7 +76,7 @@ export function RestrictedStep({ adminPassword, onNext }: RestrictedStepProps): 
       await apiPut("/users/me/restricted", { body: { optIn: true, pin, currentPassword: adminPassword } });
       onNext();
     } catch (err) {
-      setError(err instanceof LoombreApiError ? err.message : "Could not reach the server.");
+      setError(apiErrorCopy(err, "Could not reach the server."));
     } finally {
       setSubmitting(false);
     }

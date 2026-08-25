@@ -25,8 +25,9 @@ import { StatusPill } from "./StatusPill.js";
 import { VirtualList } from "./VirtualList.js";
 import { describeJobStatus } from "../../lib/admin-status.js";
 import { mergeJobUpdate, type Job, type JobUpdatedPayload } from "../../lib/admin-jobs-live.js";
-import { apiGet, LoombreApiError } from "../../lib/api-client.js";
+import { apiGet } from "../../lib/api-client.js";
 import { getEventsSocket, type EventEnvelope } from "../../lib/events-socket.js";
+import { apiErrorCopy } from "../../lib/api-error-message.js";
 import styles from "./JobsPanel.module.css";
 
 const PAGE_LIMIT = 50;
@@ -111,7 +112,7 @@ export function JobsPanel({ maxHeight, showHeader = true }: JobsPanelProps): Rea
       })
       .catch((err) => {
         if (cancelled) return;
-        setError(err instanceof LoombreApiError ? err.message : "Failed to load jobs.");
+        setError(apiErrorCopy(err, "Failed to load jobs."));
         setLoading(false);
       });
     return () => {

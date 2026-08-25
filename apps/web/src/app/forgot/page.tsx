@@ -24,13 +24,14 @@
 
 import { useState, type FormEvent } from "react";
 import Link from "next/link";
-import { LoombreClient, LoombreApiError } from "@loombre/sdk";
+import { LoombreClient } from "@loombre/sdk";
 import { AuthScreen } from "../../components/auth/AuthScreen.js";
 import { Button } from "../../components/ui/Button.js";
 import { TextInput } from "../../components/ui/Input.js";
 import { getAuthStore } from "../../lib/auth-store.js";
 import { describeServerUrl } from "../../lib/server-url.js";
 import { resolvePublicServerUrl } from "../../lib/server-url-preference.js";
+import { apiErrorMessage, isApiProblem } from "../../lib/api-error-message.js";
 import styles from "../../components/auth/AuthScreen.module.css";
 
 const CONFIRMATION_COPY =
@@ -60,8 +61,8 @@ export default function ForgotPasswordPage(): React.JSX.Element {
       // error path below can never accidentally show the confirmation.
       setSubmitted(true);
     } catch (err) {
-      if (err instanceof LoombreApiError) {
-        setError(err.message);
+      if (isApiProblem(err)) {
+        setError(apiErrorMessage(err, "Could not send a reset link. Try again."));
       } else {
         // Name the server we actually tried (browser-shell-browse-F2: the
         // old copy blamed the viewer's connection for what was really the

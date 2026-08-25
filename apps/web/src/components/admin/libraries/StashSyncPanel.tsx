@@ -34,8 +34,9 @@ import { EmptyState } from "../EmptyState.js";
 import { Skeleton } from "../../skeleton/Skeleton.js";
 import { describeStashSyncReportStatus } from "../../../lib/admin-status.js";
 import { enumLabel, STASH_SYNC_MODE_LABEL } from "../../../lib/enum-labels.js";
-import { apiGet, apiPost, LoombreApiError } from "../../../lib/api-client.js";
+import { apiGet, apiPost } from "../../../lib/api-client.js";
 import { getEventsSocket, type EventEnvelope } from "../../../lib/events-socket.js";
+import { apiErrorCopy } from "../../../lib/api-error-message.js";
 import styles from "./StashSyncPanel.module.css";
 
 type AdminStashConnection = components["schemas"]["AdminStashConnection"];
@@ -150,7 +151,7 @@ export function StashSyncPanel({ libraryId, connection }: { libraryId: string; c
         setLoading(false);
       })
       .catch((err) => {
-        setLoadError(err instanceof LoombreApiError ? err.message : "Failed to load the sync report.");
+        setLoadError(apiErrorCopy(err, "Failed to load the sync report."));
         setLoading(false);
       });
   }
@@ -218,7 +219,7 @@ export function StashSyncPanel({ libraryId, connection }: { libraryId: string; c
       const res = await apiPost("/admin/libraries/{id}/stash-sync", { params: { path: { id: libraryId } }, body: { mode } });
       setLastTriggered({ jobId: res.jobId, mode, atMs: Date.now() });
     } catch (err) {
-      setTriggerError(err instanceof LoombreApiError ? err.message : "Failed to start this sync.");
+      setTriggerError(apiErrorCopy(err, "Failed to start this sync."));
     } finally {
       setTriggering(null);
     }

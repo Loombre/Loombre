@@ -36,9 +36,10 @@ import { Button } from "../../ui/Button.js";
 import { SegmentedControl } from "../../ui/SegmentedControl.js";
 import { Select } from "../../ui/Select.js";
 import { TextInput } from "../../ui/Input.js";
-import { apiPost, LoombreApiError } from "../../../lib/api-client.js";
+import { apiPost } from "../../../lib/api-client.js";
 import { truncateMessage } from "./notice-display.js";
 import sharedStyles from "./shared.module.css";
+import { apiErrorCopy } from "../../../lib/api-error-message.js";
 import styles from "./NoticesSection.module.css";
 
 type NoticeSeverity = components["schemas"]["NoticeSeverity"];
@@ -272,7 +273,7 @@ export function ComposeNoticeCard({
     } catch (err) {
       // InvitesPanel regression class: show the problem AND return to an
       // actionable form — never a stuck confirm/progress block.
-      setSubmitError(err instanceof LoombreApiError ? err.message : "Failed to publish notice.");
+      setSubmitError(apiErrorCopy(err, "Failed to publish notice."));
       setPhase("idle");
       setPendingBody(null);
     }

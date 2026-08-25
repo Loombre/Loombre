@@ -69,8 +69,9 @@ import { TextInput } from "../../ui/Input.js";
 import { Button } from "../../ui/Button.js";
 import { SegmentedControl } from "../../ui/SegmentedControl.js";
 import { useToast } from "../../ui/Toast.js";
-import { apiGet, apiPost, apiPut, LoombreApiError } from "../../../lib/api-client.js";
+import { apiGet, apiPost, apiPut } from "../../../lib/api-client.js";
 import type { components } from "@loombre/sdk";
+import { apiErrorCopy } from "../../../lib/api-error-message.js";
 import styles from "./shared.module.css";
 
 type Library = components["schemas"]["Library"];
@@ -156,7 +157,7 @@ export function AddLibrarySheet({
           await putSelfGrant(lib);
           grantIssued = true;
         } catch (err) {
-          grantFailure = err instanceof LoombreApiError ? err.message : "Failed to grant access.";
+          grantFailure = apiErrorCopy(err, "Failed to grant access.");
         }
       }
       // "Create & scan" — real chained behavior, not fabricated: a scan
@@ -186,7 +187,7 @@ export function AddLibrarySheet({
       reset();
       onClose();
     } catch (err) {
-      setError(err instanceof LoombreApiError ? err.message : "Failed to create library.");
+      setError(apiErrorCopy(err, "Failed to create library."));
       setSubmitting(false);
     }
   }
@@ -219,7 +220,7 @@ export function AddLibrarySheet({
       onCreated(created);
       showToast(`ACCESS GRANTED — ${created.name.toUpperCase()}`);
     } catch (err) {
-      setGrantError(err instanceof LoombreApiError ? err.message : "Failed to grant access.");
+      setGrantError(apiErrorCopy(err, "Failed to grant access."));
     } finally {
       setGranting(false);
     }

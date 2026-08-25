@@ -33,8 +33,9 @@ import { Icon } from "../../icon/Icon.js";
 import { Button } from "../../ui/Button.js";
 import { SettingField } from "./SettingField.js";
 import { isAtDefault, isEditable } from "../../../lib/settings-schema-widget.js";
-import { apiPut, LoombreApiError } from "../../../lib/api-client.js";
+import { apiPut } from "../../../lib/api-client.js";
 import type { components } from "@loombre/sdk";
+import { apiErrorCopy } from "../../../lib/api-error-message.js";
 import styles from "./SettingsCategoryCard.module.css";
 
 type AdminSettingSchemaEntry = components["schemas"]["AdminSettingSchemaEntry"];
@@ -123,7 +124,7 @@ export function SettingsCategoryCard({
       }
       onChanged();
     } catch (err) {
-      setError(err instanceof LoombreApiError ? err.message : "Failed to reset one or more settings in this category.");
+      setError(apiErrorCopy(err, "Failed to reset one or more settings in this category."));
     } finally {
       setResetting(false);
     }

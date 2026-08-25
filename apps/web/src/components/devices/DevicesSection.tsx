@@ -46,8 +46,9 @@ import { Card } from "../ui/Card.js";
 import { Button } from "../ui/Button.js";
 import { Skeleton } from "../skeleton/Skeleton.js";
 import { EmptyState } from "../admin/EmptyState.js";
-import { apiDelete, apiGet, LoombreApiError } from "../../lib/api-client.js";
+import { apiDelete, apiGet } from "../../lib/api-client.js";
 import { getAuthStore } from "../../lib/auth-store.js";
+import { apiErrorCopy } from "../../lib/api-error-message.js";
 import styles from "./DevicesSection.module.css";
 
 type Device = components["schemas"]["Device"];
@@ -122,7 +123,7 @@ export function DevicesSection({ heading }: { heading: string | null }): React.J
         setLoadingMore(false);
       })
       .catch((err) => {
-        setError(err instanceof LoombreApiError ? err.message : "Failed to load devices.");
+        setError(apiErrorCopy(err, "Failed to load devices."));
         setLoadingMore(false);
       });
   }
@@ -142,7 +143,7 @@ export function DevicesSection({ heading }: { heading: string | null }): React.J
       await apiDelete("/devices/{id}", { params: { path: { id: device.id } } });
       setDevices((prev) => (prev ? prev.filter((d) => d.id !== device.id) : prev));
     } catch (err) {
-      setError(err instanceof LoombreApiError ? err.message : "Failed to revoke device.");
+      setError(apiErrorCopy(err, "Failed to revoke device."));
     } finally {
       setRevokingId(null);
     }

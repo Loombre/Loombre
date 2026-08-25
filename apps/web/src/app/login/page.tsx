@@ -116,6 +116,7 @@ import {
   rememberPreferredServerUrl,
   resolvePublicServerUrl,
 } from "../../lib/server-url-preference.js";
+import { apiErrorCopy, apiErrorMessage, isApiProblem } from "../../lib/api-error-message.js";
 import { ServerIndicator } from "./ServerIndicator.js";
 import styles from "./page.module.css";
 
@@ -232,8 +233,8 @@ export default function LoginPage(): React.JSX.Element {
         router.replace(readReturnPathFromLocation() ?? "/home");
       }
     } catch (err) {
-      if (err instanceof LoombreApiError) {
-        setError(err.status === 401 ? "Invalid username or password." : err.message);
+      if (isApiProblem(err)) {
+        setError(err.status === 401 ? "Invalid username or password." : apiErrorMessage(err, "Could not sign you in."));
       } else {
         setError("Could not reach the server. Check the server URL and try again.");
       }
@@ -263,11 +264,11 @@ export default function LoginPage(): React.JSX.Element {
       router.replace(readReturnPathFromLocation() ?? "/home");
     } catch (err) {
       if (isCurrentPasswordInvalid(err)) {
-        setTempPasswordError(err instanceof LoombreApiError ? err.message : "Current password is incorrect.");
+        setTempPasswordError(apiErrorCopy(err, "Current password is incorrect."));
       } else if (err instanceof LoombreApiError && err.status === 429) {
         setMustChangeError("Too many attempts. Wait a moment and try again.");
       } else {
-        setMustChangeError(err instanceof LoombreApiError ? err.message : "Could not change your password. Try again.");
+        setMustChangeError(apiErrorCopy(err, "Could not change your password. Try again."));
       }
     } finally {
       setMustChangeSubmitting(false);

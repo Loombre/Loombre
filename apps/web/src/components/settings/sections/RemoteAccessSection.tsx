@@ -49,6 +49,7 @@ import { useAdminSettingsData } from "./use-admin-settings-data.js";
 import { RemoteWizard } from "../remote-wizard/RemoteWizard.js";
 import { HeroCard } from "../remote-wizard/HeroCard.js";
 import { PathManagementCard } from "../remote-wizard/PathManagementCard.js";
+import { apiErrorCopy } from "../../../lib/api-error-message.js";
 import styles from "./RemoteAccessSection.module.css";
 
 type RemoteState = components["schemas"]["RemoteState"];
@@ -99,7 +100,7 @@ function RemoteAccessSectionInner({ heading }: { heading: string | null }): Reac
         setStateUnavailable(true);
         setStateError(null);
       } else {
-        setStateError(err instanceof LoombreApiError ? err.message : "Failed to load remote-access status.");
+        setStateError(apiErrorCopy(err, "Failed to load remote-access status."));
       }
     } finally {
       setLoaded(true);

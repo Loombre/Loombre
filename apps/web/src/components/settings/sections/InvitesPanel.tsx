@@ -29,7 +29,8 @@ import { EmptyState } from "../../admin/EmptyState.js";
 import { Skeleton } from "../../skeleton/Skeleton.js";
 import { CreateInviteSheet } from "./CreateInviteSheet.js";
 import { describeInviteStatus } from "../../../lib/admin-status.js";
-import { apiDelete, apiGet, LoombreApiError } from "../../../lib/api-client.js";
+import { apiDelete, apiGet } from "../../../lib/api-client.js";
+import { apiErrorCopy } from "../../../lib/api-error-message.js";
 import styles from "./shared.module.css";
 import inviteStyles from "./InvitesPanel.module.css";
 
@@ -63,7 +64,7 @@ function InviteRow({ invite, onRevoked }: { invite: Invite; onRevoked: (id: stri
       setRevoking(false);
       onRevoked(invite.id);
     } catch (err) {
-      setError(err instanceof LoombreApiError ? err.message : "Failed to revoke invite.");
+      setError(apiErrorCopy(err, "Failed to revoke invite."));
       setRevoking(false);
       setConfirming(false);
     }
@@ -119,7 +120,7 @@ export function InvitesPanel(): React.JSX.Element {
   function reload(): void {
     apiGet("/invites", { params: { query: { limit: 200 } } })
       .then((page) => setInvites(page.items))
-      .catch((err) => setError(err instanceof LoombreApiError ? err.message : "Failed to load invites."));
+      .catch((err) => setError(apiErrorCopy(err, "Failed to load invites.")));
   }
 
   useEffect(reload, []);

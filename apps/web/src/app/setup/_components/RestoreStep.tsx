@@ -25,11 +25,12 @@
 
 import { useEffect, useRef, useState } from "react";
 import { UploadCloud } from "lucide-react";
-import { LoombreApiError, type components } from "@loombre/sdk";
+import type { components } from "@loombre/sdk";
 import { Icon } from "../../../components/icon/Icon.js";
 import { Button } from "../../../components/ui/Button.js";
 import { BlazeSpinner } from "../../../components/ui/BlazeSpinner.js";
 import { apiGet, apiPost } from "../../../lib/api-client.js";
+import { apiErrorMessage, isApiProblem } from "../../../lib/api-error-message.js";
 import { deriveRestoreViewState, isTerminalJobStatus, type JobStatus, type WizardFlags } from "../wizard-state.js";
 import styles from "./steps.module.css";
 
@@ -100,8 +101,15 @@ export function RestoreStep({ flags, onNext }: RestoreStepProps): React.JSX.Elem
       setJobId(ref.jobId);
       setJob({ status: "queued", lastError: null });
     } catch (err) {
-      if (err instanceof LoombreApiError) {
-        setFileError(err.message);
+      // Three branches, and all three still matter. The server's answer
+      // goes through the shared helper (RFC 9457 detail first, duck-typed
+      // rather than `instanceof` — d4-e6). A plain Error is NOT collapsed
+      // into the fallback: this catch also covers the JSON.parse failure
+      // thrown a few lines up, whose message is written for this admin to
+      // read ("That file isn't valid JSON — export archives are a single
+      // .json file.") and would be lost.
+      if (isApiProblem(err)) {
+        setFileError(apiErrorMessage(err, "Could not read or upload that file."));
       } else if (err instanceof Error) {
         setFileError(err.message);
       } else {

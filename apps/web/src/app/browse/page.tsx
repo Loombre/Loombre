@@ -36,9 +36,10 @@ import { SortControl, SORT_PARAMS, isSortValue, type SortValue } from "../../com
 import { useCursorFeed, type CursorPage } from "../../components/browse/useCursorFeed.js";
 import { Skeleton } from "../../components/skeleton/Skeleton.js";
 import { RestrictedZoneBrowseChip } from "../../components/restricted/RestrictedZoneBrowseChip.js";
-import { apiGet, LoombreApiError } from "../../lib/api-client.js";
+import { apiGet } from "../../lib/api-client.js";
 import { getAuthStore } from "../../lib/auth-store.js";
 import { useNowPlayingItemIds } from "../../lib/now-playing.js";
+import { apiErrorCopy } from "../../lib/api-error-message.js";
 import styles from "./page.module.css";
 
 type Library = components["schemas"]["Library"];
@@ -160,7 +161,7 @@ function BrowseContent(): React.JSX.Element {
         if (!cancelled) setLibraries(page.items);
       })
       .catch((err: unknown) => {
-        if (!cancelled) setLibrariesError(err instanceof LoombreApiError ? err.message : "Failed to load libraries.");
+        if (!cancelled) setLibrariesError(apiErrorCopy(err, "Failed to load libraries."));
       });
     return () => {
       cancelled = true;

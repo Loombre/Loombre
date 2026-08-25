@@ -20,12 +20,12 @@
 
 import { useState, type FormEvent } from "react";
 import { UserPlus } from "lucide-react";
-import { LoombreApiError } from "@loombre/sdk";
 import { Icon } from "../../../components/icon/Icon.js";
 import { Button } from "../../../components/ui/Button.js";
 import { TextInput } from "../../../components/ui/Input.js";
 import { getAuthStore } from "../../../lib/auth-store.js";
 import { getClient } from "../../../lib/api-client.js";
+import { apiErrorMessage, isApiProblem } from "../../../lib/api-error-message.js";
 import { validateAdminForm, type AdminFormErrors } from "../wizard-state.js";
 import styles from "./steps.module.css";
 
@@ -63,11 +63,11 @@ export function AdminStep({ onNext }: AdminStepProps): React.JSX.Element {
       getAuthStore().applyTokenPair(result.tokens);
       onNext(password);
     } catch (err) {
-      if (err instanceof LoombreApiError) {
+      if (isApiProblem(err)) {
         setSubmitError(
           err.status === 404
             ? "This instance is already set up — refresh the page to sign in instead."
-            : err.message,
+            : apiErrorMessage(err, "Could not create the administrator account."),
         );
       } else {
         setSubmitError("Could not reach the server. Check the server address and try again.");

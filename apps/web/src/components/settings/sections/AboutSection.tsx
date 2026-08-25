@@ -22,8 +22,9 @@ import { useEffect, useState } from "react";
 import type { components } from "@loombre/sdk";
 import { Card } from "../../ui/Card.js";
 import { Skeleton } from "../../skeleton/Skeleton.js";
-import { apiGet, LoombreApiError } from "../../../lib/api-client.js";
+import { apiGet } from "../../../lib/api-client.js";
 import { formatOsLabel } from "../../../lib/os-label.js";
+import { apiErrorCopy } from "../../../lib/api-error-message.js";
 import styles from "./AboutSection.module.css";
 
 type SystemInfo = components["schemas"]["SystemInfo"];
@@ -35,7 +36,7 @@ export function AboutSection({ heading }: { heading: string | null }): React.JSX
   useEffect(() => {
     apiGet("/system/info")
       .then(setInfo)
-      .catch((err) => setError(err instanceof LoombreApiError ? err.message : "Failed to load system info."));
+      .catch((err) => setError(apiErrorCopy(err, "Failed to load system info.")));
   }, []);
 
   return (

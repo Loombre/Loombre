@@ -26,8 +26,9 @@ import { KeyRound } from "lucide-react";
 import { Icon } from "../../icon/Icon.js";
 import { Button } from "../../ui/Button.js";
 import { TextInput } from "../../ui/Input.js";
-import { apiDelete, apiPut, LoombreApiError } from "../../../lib/api-client.js";
+import { apiDelete, apiPut } from "../../../lib/api-client.js";
 import type { components } from "@loombre/sdk";
+import { apiErrorCopy } from "../../../lib/api-error-message.js";
 import styles from "./MailCredentialsCard.module.css";
 
 type MailCredentialsStatus = components["schemas"]["MailCredentialsStatus"];
@@ -73,7 +74,7 @@ export function MailCredentialsCard({
       resetToIdle();
       onChanged();
     } catch (err) {
-      setError(err instanceof LoombreApiError ? err.message : "Failed to save credentials.");
+      setError(apiErrorCopy(err, "Failed to save credentials."));
     } finally {
       setSaving(false);
     }
@@ -87,7 +88,7 @@ export function MailCredentialsCard({
       resetToIdle();
       onChanged();
     } catch (err) {
-      setError(err instanceof LoombreApiError ? err.message : "Failed to clear credentials.");
+      setError(apiErrorCopy(err, "Failed to clear credentials."));
     } finally {
       setSaving(false);
     }

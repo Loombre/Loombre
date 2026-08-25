@@ -49,7 +49,8 @@ import {
   type MappingDraftRow,
   type MappingWireInput,
 } from "../../../lib/stash-path-mappings.js";
-import { apiGet, apiPost, apiPut, LoombreApiError } from "../../../lib/api-client.js";
+import { apiGet, apiPost, apiPut } from "../../../lib/api-client.js";
+import { apiErrorCopy } from "../../../lib/api-error-message.js";
 import styles from "./StashPathMappingsPanel.module.css";
 
 type AdminStashConnection = components["schemas"]["AdminStashConnection"];
@@ -82,7 +83,7 @@ export function StashPathMappingsPanel({
         setOriginal(draft);
         setRows(draft);
       })
-      .catch((err) => setLoadError(err instanceof LoombreApiError ? err.message : "Failed to load path mappings."));
+      .catch((err) => setLoadError(apiErrorCopy(err, "Failed to load path mappings.")));
   }, [libraryId]);
 
   const debouncedSetWire = useRef(debounce((wire: MappingWireInput[]) => setDebouncedWire(wire), PREVIEW_DEBOUNCE_MS)).current;
@@ -114,7 +115,7 @@ export function StashPathMappingsPanel({
       })
       .catch((err) => {
         if (cancelled) return;
-        setPreviewError(err instanceof LoombreApiError ? err.message : "Failed to preview these mappings.");
+        setPreviewError(apiErrorCopy(err, "Failed to preview these mappings."));
         setPreviewLoading(false);
       });
     return () => {
@@ -135,7 +136,7 @@ export function StashPathMappingsPanel({
       setOriginal(draft);
       setRows(draft);
     } catch (err) {
-      setSaveError(err instanceof LoombreApiError ? err.message : "Failed to save these path mappings.");
+      setSaveError(apiErrorCopy(err, "Failed to save these path mappings."));
     } finally {
       setSaving(false);
     }

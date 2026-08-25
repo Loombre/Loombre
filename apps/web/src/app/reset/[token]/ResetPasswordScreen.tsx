@@ -16,12 +16,13 @@
 
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { LoombreClient, LoombreApiError } from "@loombre/sdk";
+import { LoombreClient } from "@loombre/sdk";
 import { AuthScreen } from "../../../components/auth/AuthScreen.js";
 import { Button } from "../../../components/ui/Button.js";
 import { TextInput } from "../../../components/ui/Input.js";
 import { getAuthStore } from "../../../lib/auth-store.js";
 import { resolvePublicServerUrl } from "../../../lib/server-url-preference.js";
+import { apiErrorMessage, isApiProblem } from "../../../lib/api-error-message.js";
 import styles from "../../../components/auth/AuthScreen.module.css";
 
 type Phase = "form" | "submitting" | "success" | "invalid";
@@ -55,13 +56,13 @@ export function ResetPasswordScreen({ token }: { token: string }): React.JSX.Ele
       await client.post("/auth/reset-password", { body: { token, password } });
       setPhase("success");
     } catch (err) {
-      if (err instanceof LoombreApiError && err.status === 404) {
+      if (isApiProblem(err) && err.status === 404) {
         setPhase("invalid");
         return;
       }
       setPhase("form");
-      if (err instanceof LoombreApiError) {
-        setError(err.message);
+      if (isApiProblem(err)) {
+        setError(apiErrorMessage(err, "Could not reset your password. Try again."));
       } else {
         setError("Could not reach the server. Check your connection and try again.");
       }

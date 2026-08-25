@@ -40,6 +40,7 @@ import { TextInput } from "../../../components/ui/Input.js";
 import { buildDeviceProfile } from "../../../lib/device-profile.js";
 import { getAuthStore } from "../../../lib/auth-store.js";
 import { resolvePublicServerUrl } from "../../../lib/server-url-preference.js";
+import { apiErrorMessage, isApiProblem } from "../../../lib/api-error-message.js";
 import styles from "../../../components/auth/AuthScreen.module.css";
 
 type ClaimState = components["schemas"]["ClaimState"];
@@ -145,15 +146,15 @@ export function ClaimScreen({ token }: { token: string }): React.JSX.Element {
       }
       router.replace("/home");
     } catch (err) {
-      if (err instanceof LoombreApiError && err.status === 404) {
+      if (isApiProblem(err) && err.status === 404) {
         // The token was consumed/revoked/expired between the GET above and
         // this submit — same byte-identical-404 posture, same screen.
         setPhase("invalid");
         return;
       }
       setPhase("ready");
-      if (err instanceof LoombreApiError) {
-        setError(err.message);
+      if (isApiProblem(err)) {
+        setError(apiErrorMessage(err, "Could not claim this invite. Try again."));
       } else {
         setError("Could not reach the server. Check your connection and try again.");
       }

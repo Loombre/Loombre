@@ -22,7 +22,7 @@
 
 import { describe, expect, it } from "vitest";
 import { LoombreApiError } from "@loombre/sdk";
-import { apiErrorMessage } from "./api-error-message.js";
+import { apiErrorCopy, apiErrorMessage, isApiProblem } from "./api-error-message.js";
 
 const CONFLICT_DETAIL = "A user with this email address already exists.";
 
@@ -88,5 +88,96 @@ describe("LoombreApiError — Error.message carries the problem detail", () => {
     expect(apiErrorMessage(err, "Failed to save this setting.")).toBe(
       "Resume threshold must be below the segment-ahead target.",
     );
+  });
+});
+
+// d4-e6: the sweep of `err instanceof LoombreApiError ? err.message : …`
+// found a second family of that idiom — catch blocks that branch on the
+// class to choose between the server's sentence and "Could not reach the
+// server". Those must NOT collapse into a bare apiErrorMessage call: a
+// `fetch` rejection carries a browser string ("Failed to fetch") that
+// apiErrorMessage would happily render as user copy. `isApiProblem` keeps
+// the distinction and duck-types it.
+describe("isApiProblem — did the server answer at all", () => {
+  it("is true for a real LoombreApiError", () => {
+    expect(isApiProblem(new LoombreApiError(409, { title: "Conflict", detail: CONFLICT_DETAIL }))).toBe(true);
+  });
+
+  it("is true for a duck-typed problem error — the case instanceof gets wrong", () => {
+    const err = Object.assign(new Error("Conflict"), { status: 409, problem: { title: "Conflict" } });
+    expect(isApiProblem(err)).toBe(true);
+  });
+
+  it("is true for a problem document with no status alongside it — still an answer", () => {
+    expect(isApiProblem({ problem: { title: "Conflict", detail: CONFLICT_DETAIL } })).toBe(true);
+  });
+
+  it("is true for a status whose body was not a problem document (problem: null)", () => {
+    const err = new LoombreApiError(502, null);
+    expect(isApiProblem(err)).toBe(true);
+    expect(apiErrorMessage(err, "unused")).toBe("Request failed with status 502");
+  });
+
+  it("is FALSE for a transport failure — the whole reason the branch exists", () => {
+    // What `fetch` rejects with when the host is unreachable. Rendering its
+    // `.message` would tell the viewer "Failed to fetch".
+    expect(isApiProblem(new TypeError("Failed to fetch"))).toBe(false);
+    expect(isApiProblem(new Error("network down"))).toBe(false);
+  });
+
+  it("is FALSE for a thrown non-object and for null", () => {
+    expect(isApiProblem("boom")).toBe(false);
+    expect(isApiProblem(null)).toBe(false);
+    expect(isApiProblem(undefined)).toBe(false);
+  });
+});
+
+// The sweep's actual replacement for `instanceof LoombreApiError ?
+// err.message : fallback`. Same two branches as the idiom it replaces —
+// which is the point: routing those catches through `apiErrorMessage`
+// alone fixes the class check and silently breaks the copy, because a
+// `fetch` rejection's `.message` ("Failed to fetch") would become UI text
+// where the surface's own sentence belongs.
+describe("apiErrorCopy — the server's sentence, or the caller's", () => {
+  it("prefers the problem detail when the server answered", () => {
+    const err = new LoombreApiError(409, { title: "Conflict", detail: CONFLICT_DETAIL });
+    expect(apiErrorCopy(err, "Failed to update user.")).toBe(CONFLICT_DETAIL);
+  });
+
+  it("reaches the detail through a duck-typed error — what instanceof got wrong", () => {
+    const err = Object.assign(new Error("Conflict"), {
+      status: 409,
+      problem: { title: "Conflict", detail: CONFLICT_DETAIL },
+    });
+    expect(apiErrorCopy(err, "Failed to update user.")).toBe(CONFLICT_DETAIL);
+  });
+
+  it("uses the title when the server answered without a detail", () => {
+    expect(apiErrorCopy(new LoombreApiError(429, { title: "Too many attempts." }), "Failed.")).toBe(
+      "Too many attempts.",
+    );
+  });
+
+  it("returns the caller's sentence for a transport failure — never the raw fetch message", () => {
+    expect(apiErrorCopy(new TypeError("Failed to fetch"), "Failed to load jobs.")).toBe("Failed to load jobs.");
+    expect(apiErrorCopy(new Error("network down"), "Could not update watched status")).toBe(
+      "Could not update watched status",
+    );
+  });
+
+  it("returns the caller's sentence for a thrown non-error", () => {
+    expect(apiErrorCopy("boom", "Failed to load settings.")).toBe("Failed to load settings.");
+  });
+
+  it("matches the idiom it replaced, branch for branch, on a real LoombreApiError", () => {
+    // The old shape: `err instanceof LoombreApiError ? err.message : fallback`.
+    for (const err of [
+      new LoombreApiError(409, { title: "Conflict", detail: CONFLICT_DETAIL }),
+      new LoombreApiError(429, { title: "Too many attempts." }),
+      new LoombreApiError(502, null),
+    ]) {
+      expect(apiErrorCopy(err, "fallback")).toBe(err.message);
+    }
+    expect(apiErrorCopy(new Error("network down"), "fallback")).toBe("fallback");
   });
 });

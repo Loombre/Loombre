@@ -78,6 +78,7 @@ import { PIN_LENGTH, isPinComplete, sanitizePinInput, stripPinDigits } from "../
 // for the client chunk; the subpath keeps the barrel out of the graph.
 import { LANGUAGE_CODES, LANGUAGE_EQUIVALENCE_PAIRS } from "@loombre/shared/language-codes";
 import type { components } from "@loombre/sdk";
+import { apiErrorCopy } from "../../lib/api-error-message.js";
 import styles from "./ProfileSettings.module.css";
 
 type User = components["schemas"]["User"];
@@ -225,11 +226,11 @@ function ProfileSection(): React.JSX.Element {
     } catch (err) {
       setStatus("error");
       if (isCurrentPasswordInvalid(err)) {
-        setCurrentPasswordError(err instanceof LoombreApiError ? err.message : "Current password is incorrect.");
+        setCurrentPasswordError(apiErrorCopy(err, "Current password is incorrect."));
       } else if (err instanceof LoombreApiError && err.status === 429) {
         setError(RATE_LIMITED_MESSAGE);
       } else {
-        setError(err instanceof LoombreApiError ? err.message : "Network error");
+        setError(apiErrorCopy(err, "Network error"));
       }
     }
   }
@@ -388,11 +389,11 @@ function RestrictedSection(): React.JSX.Element {
     } catch (err) {
       setStatus("error");
       if (isCurrentPasswordInvalid(err)) {
-        setCurrentPasswordError(err instanceof LoombreApiError ? err.message : "Current password is incorrect.");
+        setCurrentPasswordError(apiErrorCopy(err, "Current password is incorrect."));
       } else if (err instanceof LoombreApiError && err.status === 429) {
         setError(RATE_LIMITED_MESSAGE);
       } else {
-        setError(err instanceof LoombreApiError ? err.message : "Network error");
+        setError(apiErrorCopy(err, "Network error"));
       }
     }
   }
@@ -510,11 +511,11 @@ function ChangePasswordSection(): React.JSX.Element {
     } catch (err) {
       setStatus("error");
       if (isCurrentPasswordInvalid(err)) {
-        setCurrentPasswordError(err instanceof LoombreApiError ? err.message : "Current password is incorrect.");
+        setCurrentPasswordError(apiErrorCopy(err, "Current password is incorrect."));
       } else if (err instanceof LoombreApiError && err.status === 429) {
         setError(RATE_LIMITED_MESSAGE);
       } else {
-        setError(err instanceof LoombreApiError ? err.message : "Network error");
+        setError(apiErrorCopy(err, "Network error"));
       }
     }
   }
@@ -625,7 +626,7 @@ function PlaybackPrefsSection(): React.JSX.Element {
       setStatus("saved");
     } catch (err) {
       setStatus("error");
-      setError(err instanceof LoombreApiError ? err.message : "Network error");
+      setError(apiErrorCopy(err, "Network error"));
     }
   }
 

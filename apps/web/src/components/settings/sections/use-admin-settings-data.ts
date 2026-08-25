@@ -16,8 +16,9 @@
 
 import { useCallback, useEffect, useState } from "react";
 import type { components } from "@loombre/sdk";
-import { apiGet, LoombreApiError } from "../../../lib/api-client.js";
+import { apiGet } from "../../../lib/api-client.js";
 import { getEventsSocket } from "../../../lib/events-socket.js";
+import { apiErrorCopy } from "../../../lib/api-error-message.js";
 
 type AdminSettingsSchemaResponse = components["schemas"]["AdminSettingsSchemaResponse"];
 type AdminSettingsResponse = components["schemas"]["AdminSettingsResponse"];
@@ -44,7 +45,7 @@ export function useAdminSettingsData(): AdminSettingsData {
   const refetch = useCallback(() => {
     apiGet("/admin/settings")
       .then(setSettings)
-      .catch((err) => setError(err instanceof LoombreApiError ? err.message : "Failed to load settings."));
+      .catch((err) => setError(apiErrorCopy(err, "Failed to load settings.")));
   }, []);
 
   const retry = useCallback(() => {
@@ -62,7 +63,7 @@ export function useAdminSettingsData(): AdminSettingsData {
       })
       .catch((err) => {
         if (cancelled) return;
-        setError(err instanceof LoombreApiError ? err.message : "Failed to load settings.");
+        setError(apiErrorCopy(err, "Failed to load settings."));
       });
     return () => {
       cancelled = true;

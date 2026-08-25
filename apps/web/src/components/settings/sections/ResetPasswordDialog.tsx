@@ -43,6 +43,7 @@ import { Button } from "../../ui/Button.js";
 import { TextInput } from "../../ui/Input.js";
 import { SecretReveal } from "../../ui/SecretReveal.js";
 import { apiPost, LoombreApiError } from "../../../lib/api-client.js";
+import { apiErrorCopy } from "../../../lib/api-error-message.js";
 import styles from "./shared.module.css";
 
 type User = components["schemas"]["User"];
@@ -90,9 +91,9 @@ export function ResetPasswordDialog({
       setPhase("done");
     } catch (err) {
       if (isCurrentPasswordInvalid(err)) {
-        setCurrentPasswordError(err instanceof LoombreApiError ? err.message : "Current password is incorrect.");
+        setCurrentPasswordError(apiErrorCopy(err, "Current password is incorrect."));
       } else {
-        setError(err instanceof LoombreApiError ? err.message : "Failed to reset password.");
+        setError(apiErrorCopy(err, "Failed to reset password."));
       }
     } finally {
       setSubmitting(false);

@@ -42,7 +42,8 @@ import { Card } from "../../ui/Card.js";
 import { SegmentedControl } from "../../ui/SegmentedControl.js";
 import { Skeleton } from "../../skeleton/Skeleton.js";
 import { EmptyState } from "../EmptyState.js";
-import { apiGet, LoombreApiError } from "../../../lib/api-client.js";
+import { apiGet } from "../../../lib/api-client.js";
+import { apiErrorCopy } from "../../../lib/api-error-message.js";
 import styles from "./system-cards.module.css";
 import { FolderOpen } from "lucide-react";
 
@@ -63,7 +64,7 @@ export function LogsTailCard(): React.JSX.Element {
         setSource(res.source);
         setLogLines(res.lines);
       })
-      .catch((err) => setError(err instanceof LoombreApiError ? err.message : "Failed to load logs."));
+      .catch((err) => setError(apiErrorCopy(err, "Failed to load logs.")));
   }
 
   useEffect(() => {

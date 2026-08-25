@@ -15,9 +15,10 @@
 // source of truth; MarkWatchedButton is a plain controlled component.
 
 import { useEffect, useState } from "react";
-import { apiPut, LoombreApiError } from "./api-client.js";
+import { apiPut } from "./api-client.js";
 import { findProgressForItem } from "./progress-lookup.js";
 import { useToast } from "../components/ui/Toast.js";
+import { apiErrorCopy } from "./api-error-message.js";
 
 export type WatchedState = "loading" | "unwatched" | "watched";
 
@@ -73,7 +74,7 @@ export function useWatchedState(itemId: string | null, runtimeMs: number | null)
       })
       .catch((err: unknown) => {
         setState(previous); // revert on failure — never leave the UI claiming an unconfirmed state
-        const message = err instanceof LoombreApiError ? err.message : "Could not update watched status";
+        const message = apiErrorCopy(err, "Could not update watched status");
         showToast(message, { variant: "danger" });
       })
       .finally(() => setBusy(false));

@@ -27,7 +27,16 @@ import type { Job, JobUpdatedPayload } from "../../lib/admin-jobs-live.js";
 const apiGetMock = vi.fn();
 const subscribeMock = vi.fn();
 
-class FakeApiError extends Error {}
+// d4-e6: the fake mirrors the real LoombreApiError's SHAPE, not just its
+// identity. Every error the SDK throws carries an HTTP `status`, and the
+// surfaces now read their copy through `apiErrorCopy` (lib/api-error-
+// message.ts), which duck-types that status instead of the class — so a
+// fake without one is not a stand-in for anything the app can receive, and
+// a test built on it would prove nothing about the real path. 422 is the
+// ordinary validation rejection; tests that need another Object.assign it.
+class FakeApiError extends Error {
+  status = 422;
+}
 
 class StubResizeObserver {
   observe(): void {}
@@ -166,6 +175,29 @@ describe("JobsPanel — the attempts chip on live rows (browser-admin-F13)", () 
     });
 
     expect(view!.container.textContent).toContain("2 attempts");
+  });
+
+  // d4-e6: the load failure's copy came from
+  // `err instanceof LoombreApiError ? err.message : "Failed to load jobs."`.
+  // The narrowing is the defect: an error that is structurally an RFC 9457
+  // problem response but is not that exact class — a re-thrown copy, a
+  // second copy of the SDK in the graph, or (right here) a mocked client
+  // whose error class is not the one the component imported — takes the
+  // `: fallback` branch and throws the server's own sentence away.
+  // `apiErrorMessage` duck-types the shape instead, so the admin reads what
+  // the server actually said.
+  it("surfaces the server's problem detail on a load failure, even when the error is not a LoombreApiError instance", async () => {
+    const detail = "The job queue is restarting; jobs will list again in a few seconds.";
+    apiGetMock.mockRejectedValue(
+      Object.assign(new Error("Service Unavailable"), {
+        problem: { type: "about:blank", title: "Service Unavailable", status: 503, detail },
+      }),
+    );
+    view = renderIntoBody(<JobsPanel />);
+    await act(async () => {});
+
+    expect(view!.container.textContent).toContain(detail);
+    expect(view!.container.textContent).not.toContain("Failed to load jobs.");
   });
 
   it("a transition carrying no attempts (the abandoned-job reconciliation sweep) leaves the chip alone", async () => {

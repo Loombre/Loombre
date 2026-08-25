@@ -39,7 +39,7 @@ import {
   validatePluginConfigDraft,
   type PluginConfigSchema,
 } from "../../../lib/plugin-manifest.js";
-import { LoombreApiError } from "../../../lib/api-client.js";
+import { apiErrorCopy } from "../../../lib/api-error-message.js";
 import styles from "./PluginConfigForm.module.css";
 
 export interface PluginConfigFormProps {
@@ -101,7 +101,7 @@ export function PluginConfigForm({
     try {
       await onSubmit(buildConfigSubmission(schema, draft, secretDrafts));
     } catch (err) {
-      setFormError(err instanceof LoombreApiError ? err.message : "Failed to save this configuration.");
+      setFormError(apiErrorCopy(err, "Failed to save this configuration."));
     } finally {
       setSubmitting(false);
     }

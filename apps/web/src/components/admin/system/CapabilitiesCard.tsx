@@ -18,7 +18,8 @@ import { EmptyState } from "../EmptyState.js";
 import { formatFfmpegHashPrefix, formatProbeAge } from "../../../lib/admin-capability-format.js";
 import { NO_ACCELERATION_COPY, hasNoAcceleratedCapabilities } from "../../../lib/capability-view.js";
 import { formatOsLabel } from "../../../lib/os-label.js";
-import { apiGet, LoombreApiError } from "../../../lib/api-client.js";
+import { apiGet } from "../../../lib/api-client.js";
+import { apiErrorCopy } from "../../../lib/api-error-message.js";
 import styles from "./system-cards.module.css";
 import { FolderOpen } from "lucide-react";
 
@@ -39,7 +40,7 @@ export function CapabilitiesCard(): React.JSX.Element {
   useEffect(() => {
     apiGet("/admin/capabilities")
       .then((res) => setEnvelope(res))
-      .catch((err) => setError(err instanceof LoombreApiError ? err.message : "Failed to load capabilities."));
+      .catch((err) => setError(apiErrorCopy(err, "Failed to load capabilities.")));
   }, []);
 
   const report = envelope?.report ?? null;

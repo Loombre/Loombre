@@ -27,6 +27,7 @@ import { EmptyState } from "../../admin/EmptyState.js";
 import { Skeleton } from "../../skeleton/Skeleton.js";
 import { apiPost, LoombreApiError } from "../../../lib/api-client.js";
 import { describeNoticeSeverity, formatAbsoluteWithRelative } from "./notice-display.js";
+import { apiErrorCopy } from "../../../lib/api-error-message.js";
 import styles from "./NoticesSection.module.css";
 
 type SystemNoticeAdmin = components["schemas"]["SystemNoticeAdmin"];
@@ -69,7 +70,7 @@ export function ActiveNoticeCard({
         onChanged();
         return;
       }
-      setError(err instanceof LoombreApiError ? err.message : "Failed to cancel notice.");
+      setError(apiErrorCopy(err, "Failed to cancel notice."));
     } finally {
       setCancelling(false);
     }

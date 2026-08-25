@@ -124,6 +124,32 @@ describe("ForgotPasswordPage — E3b/E8 constant-copy anti-enumeration", () => {
     expect(view.container.textContent).toContain("identifier must not be empty.");
   });
 
+  // d4-e6: the copy branch was `if (err instanceof LoombreApiError) {
+  // setError(err.message) } else { setError("Could not reach the server at
+  // …") }`. A server answer that is structurally a problem document but not
+  // that exact class fell into the ELSE branch — so the page blamed the
+  // viewer's network for a request the server had answered, and named a
+  // server URL that was working fine. `apiErrorMessage` reads the RFC 9457
+  // detail off the shape, and the honest network copy stays for the
+  // failures that really are network failures (the test above).
+  it("a rate-limit answer is reported as the server's own sentence, not as an unreachable server", async () => {
+    const detail = "Too many reset requests from this address — try again in 10 minutes.";
+    // Shaped exactly like a LoombreApiError (status + problem), but NOT an
+    // instance of the class this page imported — a re-thrown copy, or a
+    // second copy of the SDK in the graph.
+    postSpy.mockRejectedValue(
+      Object.assign(new Error("Too Many Requests"), {
+        status: 429,
+        problem: { type: "about:blank", title: "Too Many Requests", status: 429, detail },
+      }),
+    );
+    view = renderIntoBody(<ForgotPasswordPage />);
+    await submit("someone@example.com");
+
+    expect(view.container.textContent).toContain(detail);
+    expect(view.container.textContent).not.toMatch(/could not reach the server/i);
+  });
+
   it("the confirmation screen links back to /login", async () => {
     postSpy.mockResolvedValue({});
     view = renderIntoBody(<ForgotPasswordPage />);

@@ -28,11 +28,12 @@
 
 import { useCallback, useEffect, useState } from "react";
 import type { components } from "@loombre/sdk";
-import { apiGet, LoombreApiError } from "../../../lib/api-client.js";
+import { apiGet } from "../../../lib/api-client.js";
 import { getEventsSocket } from "../../../lib/events-socket.js";
 import { ActiveNoticeCard } from "./ActiveNoticeCard.js";
 import { ComposeNoticeCard } from "./ComposeNoticeCard.js";
 import { NoticeHistoryPanel } from "./NoticeHistoryPanel.js";
+import { apiErrorCopy } from "../../../lib/api-error-message.js";
 import styles from "./NoticesSection.module.css";
 
 type SystemNoticeAdmin = components["schemas"]["SystemNoticeAdmin"];
@@ -52,7 +53,7 @@ export function NoticesSection({ heading }: { heading: string | null }): React.J
         setNextCursor(page.nextCursor);
         setError(null);
       })
-      .catch((err: unknown) => setError(err instanceof LoombreApiError ? err.message : "Failed to load notices."));
+      .catch((err: unknown) => setError(apiErrorCopy(err, "Failed to load notices.")));
   }, []);
 
   useEffect(() => {
@@ -77,7 +78,7 @@ export function NoticesSection({ heading }: { heading: string | null }): React.J
         setItems((prev) => (prev ? [...prev, ...page.items] : page.items));
         setNextCursor(page.nextCursor);
       })
-      .catch((err: unknown) => setError(err instanceof LoombreApiError ? err.message : "Failed to load more notices."))
+      .catch((err: unknown) => setError(apiErrorCopy(err, "Failed to load more notices.")))
       .finally(() => setLoadingMore(false));
   }
 

@@ -14,7 +14,8 @@ import type { components } from "@loombre/sdk";
 import { Card } from "../../ui/Card.js";
 import { Skeleton } from "../../skeleton/Skeleton.js";
 import { describeUpdateVerification } from "../../../lib/admin-update-notice.js";
-import { apiGet, LoombreApiError } from "../../../lib/api-client.js";
+import { apiGet } from "../../../lib/api-client.js";
+import { apiErrorCopy } from "../../../lib/api-error-message.js";
 import styles from "./system-cards.module.css";
 
 type SystemUpdateInfo = components["schemas"]["SystemUpdateInfo"];
@@ -26,7 +27,7 @@ export function UpdateNoticeCard(): React.JSX.Element {
   useEffect(() => {
     apiGet("/system/update")
       .then(setInfo)
-      .catch((err) => setError(err instanceof LoombreApiError ? err.message : "Failed to load update status."));
+      .catch((err) => setError(apiErrorCopy(err, "Failed to load update status.")));
   }, []);
 
   return (

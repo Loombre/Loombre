@@ -32,7 +32,8 @@ import { Toggle } from "../../ui/Toggle.js";
 import { SegmentedControl } from "../../ui/SegmentedControl.js";
 import { StatusPill } from "../StatusPill.js";
 import { describeStashConnectionStatus } from "../../../lib/admin-status.js";
-import { apiPut, LoombreApiError } from "../../../lib/api-client.js";
+import { apiPut } from "../../../lib/api-client.js";
+import { apiErrorCopy } from "../../../lib/api-error-message.js";
 import styles from "./StashConnectionPanel.module.css";
 
 type AdminStashConnection = components["schemas"]["AdminStashConnection"];
@@ -85,7 +86,7 @@ export function StashConnectionPanel({
       });
       onSaved(saved);
     } catch (err) {
-      setError(err instanceof LoombreApiError ? err.message : "Failed to save the Stash connection.");
+      setError(apiErrorCopy(err, "Failed to save the Stash connection."));
     } finally {
       setSaving(false);
     }

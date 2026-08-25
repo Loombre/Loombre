@@ -50,8 +50,9 @@ import {
   toWireEntries,
   type ChainDraftEntry,
 } from "../../../lib/library-provider-chain.js";
-import { apiGet, apiPut, LoombreApiError } from "../../../lib/api-client.js";
+import { apiGet, apiPut } from "../../../lib/api-client.js";
 import { PROVIDER_KIND_LABEL, enumLabel } from "../../../lib/enum-labels.js";
+import { apiErrorCopy } from "../../../lib/api-error-message.js";
 import styles from "./ProviderChainEditor.module.css";
 
 type Library = components["schemas"]["Library"];
@@ -77,7 +78,7 @@ export function ProviderChainModal({ library, onClose }: { library: Library; onC
         setEntries(draft);
         setEditing(!res.isDefault);
       })
-      .catch((err) => setError(err instanceof LoombreApiError ? err.message : "Failed to load this library's provider chain."));
+      .catch((err) => setError(apiErrorCopy(err, "Failed to load this library's provider chain.")));
   }, [library.id]);
 
   function applyResponse(res: AdminLibraryProviderChain): void {
@@ -124,7 +125,7 @@ export function ProviderChainModal({ library, onClose }: { library: Library; onC
       });
       applyResponse(res);
     } catch (err) {
-      setError(err instanceof LoombreApiError ? err.message : "Failed to save this provider chain.");
+      setError(apiErrorCopy(err, "Failed to save this provider chain."));
     } finally {
       setSaving(false);
     }

@@ -72,9 +72,10 @@ import { ProgressBar } from "../ui/ProgressBar.js";
 import { Tag } from "../ui/Chip.js";
 import { Skeleton } from "../skeleton/Skeleton.js";
 import { EmptyState } from "./EmptyState.js";
-import { apiPost, LoombreApiError } from "../../lib/api-client.js";
+import { apiPost } from "../../lib/api-client.js";
 import { getEventsSocket, type EventEnvelope } from "../../lib/events-socket.js";
 import { useToast } from "../ui/Toast.js";
+import { apiErrorCopy } from "../../lib/api-error-message.js";
 import styles from "./FixMatch.module.css";
 
 interface MatchCandidate {
@@ -137,7 +138,7 @@ export function FixMatch({ itemId, itemTitle, open, onClose, onApplied }: FixMat
 
     apiPost("/admin/items/{id}/match-search", { params: { path: { id: itemId } } }).catch((err) => {
       if (cancelledRef.current) return;
-      setState({ kind: "error", message: err instanceof LoombreApiError ? err.message : "Failed to start the search." });
+      setState({ kind: "error", message: apiErrorCopy(err, "Failed to start the search.") });
     });
 
     return () => {
@@ -158,7 +159,7 @@ export function FixMatch({ itemId, itemTitle, open, onClose, onApplied }: FixMat
       onApplied();
       onClose();
     } catch (err) {
-      showToast(err instanceof LoombreApiError ? err.message : "Failed to apply match.", { variant: "danger" });
+      showToast(apiErrorCopy(err, "Failed to apply match."), { variant: "danger" });
     } finally {
       setApplyingKey(null);
     }

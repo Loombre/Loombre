@@ -21,13 +21,13 @@
 import { Card } from "../../ui/Card.js";
 import { Skeleton } from "../../skeleton/Skeleton.js";
 import { formatOsLabel } from "../../../lib/os-label.js";
-import { LoombreApiError } from "../../../lib/api-client.js";
 import { useSystemInfo } from "../../../lib/system-info.js";
+import { apiErrorCopy } from "../../../lib/api-error-message.js";
 import styles from "./system-cards.module.css";
 
 export function SystemInfoCard(): React.JSX.Element {
   const { info, error: rawError } = useSystemInfo();
-  const error = rawError ? (rawError instanceof LoombreApiError ? rawError.message : "Failed to load system info.") : null;
+  const error = rawError ? apiErrorCopy(rawError, "Failed to load system info.") : null;
 
   return (
     <Card>

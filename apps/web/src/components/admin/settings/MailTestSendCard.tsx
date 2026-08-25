@@ -30,6 +30,7 @@ import { describeJobStatus } from "../../../lib/admin-status.js";
 import { apiPost, LoombreApiError } from "../../../lib/api-client.js";
 import { getEventsSocket, type EventEnvelope } from "../../../lib/events-socket.js";
 import type { components } from "@loombre/sdk";
+import { apiErrorCopy } from "../../../lib/api-error-message.js";
 import styles from "./MailTestSendCard.module.css";
 
 type AdminSettingsResponse = components["schemas"]["AdminSettingsResponse"];
@@ -102,7 +103,7 @@ export function MailTestSendCard({ settings }: { settings: AdminSettingsResponse
       if (err instanceof LoombreApiError && err.status === 409) {
         setUnconfigured(missingPrerequisites(settings));
       } else {
-        setError(err instanceof LoombreApiError ? err.message : "Failed to send test email.");
+        setError(apiErrorCopy(err, "Failed to send test email."));
       }
     } finally {
       setSubmitting(false);

@@ -38,7 +38,8 @@ import { Skeleton } from "../../skeleton/Skeleton.js";
 import { StashConnectionPanel } from "./StashConnectionPanel.js";
 import { StashPathMappingsPanel } from "./StashPathMappingsPanel.js";
 import { StashSyncPanel } from "./StashSyncPanel.js";
-import { apiGet, LoombreApiError } from "../../../lib/api-client.js";
+import { apiGet } from "../../../lib/api-client.js";
+import { apiErrorCopy } from "../../../lib/api-error-message.js";
 import styles from "./StashModal.module.css";
 
 type Library = components["schemas"]["Library"];
@@ -55,7 +56,7 @@ export function StashModal({ library, onClose }: { library: Library; onClose: ()
   function reload(): void {
     apiGet("/admin/libraries/{id}/stash-connection", { params: { path: { id: library.id } } })
       .then(setConnection)
-      .catch((err) => setError(err instanceof LoombreApiError ? err.message : "Failed to load the Stash connection."));
+      .catch((err) => setError(apiErrorCopy(err, "Failed to load the Stash connection.")));
   }
 
   useEffect(reload, [library.id]);

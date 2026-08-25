@@ -39,8 +39,9 @@ import { EmptyState } from "./EmptyState.js";
 import { FixMatch } from "./FixMatch.js";
 import { Skeleton } from "../skeleton/Skeleton.js";
 import { getLibraryScanState, useLibraryScanState } from "../../lib/admin-dashboard-live.js";
-import { apiGet, apiPost, LoombreApiError } from "../../lib/api-client.js";
+import { apiGet, apiPost } from "../../lib/api-client.js";
 import { enumLabel, MEDIA_KIND_LABEL } from "../../lib/enum-labels.js";
+import { apiErrorCopy } from "../../lib/api-error-message.js";
 import styles from "./LibrariesPanel.module.css";
 
 type Library = components["schemas"]["Library"];
@@ -81,7 +82,7 @@ function LibraryDashboardRow({
       await apiPost("/libraries/{id}/scan", { params: { path: { id: library.id } }, body: { full: false } });
       setScanStatus("scan enqueued");
     } catch (err) {
-      setScanStatus(err instanceof LoombreApiError ? err.message : "failed to enqueue");
+      setScanStatus(apiErrorCopy(err, "failed to enqueue"));
     }
   }
 
@@ -196,7 +197,7 @@ export function LibrariesPanel(): React.JSX.Element {
   useEffect(() => {
     apiGet("/libraries", { params: { query: { limit: 200 } } })
       .then((page) => setLibraries(page.items))
-      .catch((err) => setError(err instanceof LoombreApiError ? err.message : "Failed to load libraries."));
+      .catch((err) => setError(apiErrorCopy(err, "Failed to load libraries.")));
   }, []);
 
   return (

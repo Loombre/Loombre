@@ -23,6 +23,7 @@
 import { useEffect, useRef, useState } from "react";
 import { LoombreApiError } from "../../lib/api-client.js";
 import { subscribeCatalogInvalidation } from "../../lib/catalog-invalidation.js";
+import { apiErrorCopy } from "../../lib/api-error-message.js";
 
 export interface DetailFetchResult<T> {
   entity: T | null;
@@ -62,7 +63,7 @@ export function useDetailFetch<T>(fetchEntity: () => Promise<T>, id: string): De
         if (err instanceof LoombreApiError && err.status === 404) {
           setNotFound(true);
         } else {
-          setError(err instanceof LoombreApiError ? err.message : "Failed to load.");
+          setError(apiErrorCopy(err, "Failed to load."));
         }
       });
     return () => {

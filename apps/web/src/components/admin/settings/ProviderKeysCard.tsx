@@ -35,8 +35,9 @@ import { KeyRound } from "lucide-react";
 import { Icon } from "../../icon/Icon.js";
 import { Button } from "../../ui/Button.js";
 import { TextInput } from "../../ui/Input.js";
-import { apiDelete, apiPut, LoombreApiError } from "../../../lib/api-client.js";
+import { apiDelete, apiPut } from "../../../lib/api-client.js";
 import type { components } from "@loombre/sdk";
+import { apiErrorCopy } from "../../../lib/api-error-message.js";
 import styles from "./ProviderKeysCard.module.css";
 
 type ProviderKeyStatus = components["schemas"]["ProviderKeyStatus"];
@@ -80,7 +81,7 @@ function ProviderKeyRow({ status, onChanged }: { status: ProviderKeyStatus; onCh
       resetToIdle();
       onChanged();
     } catch (err) {
-      setError(err instanceof LoombreApiError ? err.message : "Failed to set key.");
+      setError(apiErrorCopy(err, "Failed to set key."));
     } finally {
       setSaving(false);
     }
@@ -99,7 +100,7 @@ function ProviderKeyRow({ status, onChanged }: { status: ProviderKeyStatus; onCh
       resetToIdle();
       onChanged();
     } catch (err) {
-      setError(err instanceof LoombreApiError ? err.message : "Failed to remove key.");
+      setError(apiErrorCopy(err, "Failed to remove key."));
     } finally {
       setSaving(false);
     }

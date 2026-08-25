@@ -21,6 +21,9 @@
  *     `text=auto` binary detection turns such a file into an opaque blob —
  *     no diff to review, no blame, invisible to `git grep` and to every
  *     grep gate here, including (a)–(c).
+ * (e) Forbids reading user-facing error copy off a `LoombreApiError`
+ *     narrowing in apps/web (d4-e6) — `apiErrorCopy(err, fallback)` is the
+ *     one way to turn a caught API error into a sentence a person reads.
  *
  * Exits non-zero and prints `file:line: reason` for every hit.
  */
@@ -266,6 +269,70 @@ const CURSOR_ROW_ID_EXEMPT_FILES = new Set([
 const CURSOR_ROW_ID_ALLOW_MARKER = "grep-gates:allow-bare-cursor-row-id";
 
 // ---------------------------------------------------------------------------
+// API-ERROR-COPY gate (d4-e6, backlog #123 — the residue d3-e2 believed it
+// had finished): user-facing error copy in apps/web comes from
+// `apiErrorCopy(err, fallback)` (apps/web/src/lib/api-error-message.ts),
+// NEVER from a bare `err instanceof LoombreApiError ? err.message : fallback`.
+//
+// Two distinct defects live in the banned idiom, and only the second is
+// visible today:
+//   1. It reads the TITLE-level message. The helper prefers the RFC 9457
+//      `problem.detail` — the specific, actionable sentence the server
+//      wrote — and falls back to `.message` only when there is no detail.
+//      The two happen to agree right now ONLY because `LoombreApiError`'s
+//      constructor is detail-first (packages/sdk); that is a property of a
+//      generated client this app does not own, and the day it changes,
+//      ~67 catch blocks silently downgrade to "Unprocessable Entity".
+//   2. `instanceof` is the wrong test for a value that crossed a module
+//      boundary. Any error that is structurally a problem response but not
+//      that exact class — a re-thrown copy, a mocked/duck-typed error, a
+//      second copy of the SDK in the graph — takes the `: fallback` branch
+//      and throws the server's sentence away. The helper duck-types.
+// `instanceof LoombreApiError` remains CORRECT and is untouched here when it
+// discriminates on `err.status` (404 → not-found screen, 429 → rate-limit
+// copy, 501 → unsupported); this gate bans only reading COPY off it.
+//
+// Deliberately textual, in this file's house style, and IDENTIFIER-AWARE
+// rather than shape-aware: the defect wears at least three syntaxes —
+//   `setError(err instanceof LoombreApiError ? err.message : fallback)`
+//   `if (err instanceof LoombreApiError) { setError(err.message); } else …`
+//   `setError(err instanceof LoombreApiError ? (err.status === 404 ? … : err.message) : …)`
+// — and a rule written against any one of them leaves the others as an open
+// door for the class to regrow through, which is the whole point of the gate.
+// So: for each `X instanceof LoombreApiError`, a read of `X.message` within
+// the next few lines is the violation, whatever punctuation sits between.
+// `err.status` discrimination is untouched; so is `.message` on a value that
+// was NOT narrowed to LoombreApiError (a plain `err instanceof Error` branch
+// keeps its own identifier's message — different identifier, or the marker).
+const API_ERROR_COPY_SCOPE = "apps/web/src/";
+const API_ERROR_COPY_NARROWING = /([A-Za-z_$][\w$]*)\s+instanceof\s+LoombreApiError\b/g;
+/** Lines searched from (and including) the narrowing line — the wrapped ternary needs ~5. */
+const API_ERROR_COPY_WINDOW_LINES = 8;
+// Line-level escape hatch, same fails-closed posture as
+// CURSOR_ROW_ID_ALLOW_MARKER: the marker must sit on the flagged line or the
+// line directly above it. For the case where the title-level message really
+// is the right copy and the detail really is not.
+const API_ERROR_COPY_ALLOW_MARKER = "grep-gates:allow-api-error-message";
+// Test files are out of scope: the shape appears there as PROSE (comments
+// describing this very migration) and inside deliberately hand-built fake
+// errors. Nothing in a spec file reaches a viewer, so there is no copy to
+// protect there — and a guard test that could not name the idiom it guards
+// against would be the same self-defeating shape UPNP_ALLOWLIST documents.
+const API_ERROR_COPY_TEST_FILE = /\.(test|spec)\.[jt]sx?$/;
+/**
+ * Files that still hold the old shape, each with the reason it was not swept
+ * and who sweeps it. This map must SHRINK: an entry whose file no longer
+ * matches is itself reported, so a stale exemption cannot outlive the defect
+ * it excuses (the failure mode a plain allowlist has).
+ */
+const API_ERROR_COPY_KNOWN_REMAINING = new Map([
+  [
+    "apps/web/src/app/home/HomeContent.tsx",
+    "d4 lane W owns this file (watchlist id store + card-count derivation, same fetch effect as the two sites) — swept in the follow-up after lane W integrates; delete this entry with the fix",
+  ],
+]);
+
+// ---------------------------------------------------------------------------
 // BRAND-HYGIENE gate (STATE.md D6/G9 — Blaze logo rollout Lane D purge):
 // Legacy Loombre branding artifacts must not ship. Lanes A and B handle
 // dot-animation replacement in parallel; Lane C handles spinner replacement.
@@ -433,6 +500,9 @@ const violations = [];
 // Consulted by the (d) NUL pass only — every other pass keeps its full scope.
 const ignoredFiles = gitIgnoredSet(files.map((f) => f.rel));
 
+/** Files the API-ERROR-COPY pass actually flagged, for the stale-entry check. */
+const apiErrorCopyHitFiles = new Set();
+
 for (const { full, rel } of files) {
   const inNamingScope = NAMING_SCOPE_PREFIXES.some((p) => rel.startsWith(p));
   const inBrandHygieneScope = rel.startsWith(BRAND_HYGIENE_SCOPE);
@@ -457,6 +527,31 @@ for (const { full, rel } of files) {
       lineNo: content.slice(0, nulIndex).split("\n").length,
       code: "binary-source:nul-byte",
       line: "raw NUL byte in repo source (git would treat this file as binary — no diff, no blame, no grep)",
+    });
+  }
+
+  // (e) API-ERROR-COPY pass — windowed, so it must run over the line array
+  // rather than inside the single-line loop below.
+  if (rel.startsWith(API_ERROR_COPY_SCOPE) && !API_ERROR_COPY_TEST_FILE.test(rel)) {
+    lines.forEach((line, idx) => {
+      API_ERROR_COPY_NARROWING.lastIndex = 0;
+      for (let m = API_ERROR_COPY_NARROWING.exec(line); m; m = API_ERROR_COPY_NARROWING.exec(line)) {
+        const window = [
+          line.slice(m.index + m[0].length),
+          ...lines.slice(idx + 1, idx + API_ERROR_COPY_WINDOW_LINES),
+        ].join(" ");
+        if (!new RegExp(`\\b${escapeRegExp(m[1])}\\.message\\b`).test(window)) continue;
+        apiErrorCopyHitFiles.add(rel);
+        if (API_ERROR_COPY_KNOWN_REMAINING.has(rel)) continue;
+        if (line.includes(API_ERROR_COPY_ALLOW_MARKER)) continue;
+        if (idx > 0 && lines[idx - 1].includes(API_ERROR_COPY_ALLOW_MARKER)) continue;
+        violations.push({
+          rel,
+          lineNo: idx + 1,
+          code: "api-error-copy:bare-message",
+          line: `${line.trim().slice(0, 160)}  — reads \`${m[1]}.message\` off a LoombreApiError; use apiErrorCopy(${m[1]}, fallback) from lib/api-error-message`,
+        });
+      }
     });
   }
 
@@ -496,6 +591,20 @@ for (const { full, rel } of files) {
     ) {
       violations.push({ rel, lineNo: idx + 1, code: "cursor-validator:bare-string-row-id", line: line.trim() });
     }
+  });
+}
+
+// (e) API-ERROR-COPY stale-exemption check: the KNOWN_REMAINING map is a
+// to-do list, not an allowlist. When a listed file stops matching (swept, or
+// gone), its entry is the only thing left saying the defect is there —
+// report it so the entry is deleted with the fix.
+for (const [rel, reason] of API_ERROR_COPY_KNOWN_REMAINING) {
+  if (apiErrorCopyHitFiles.has(rel)) continue;
+  violations.push({
+    rel,
+    lineNo: 0,
+    code: "api-error-copy:stale-exemption",
+    line: `no longer holds the old shape — delete this API_ERROR_COPY_KNOWN_REMAINING entry (was: ${reason})`,
   });
 }
 

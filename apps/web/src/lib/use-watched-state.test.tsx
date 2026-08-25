@@ -11,7 +11,16 @@ vi.mock("./progress-lookup.js", () => ({
   findProgressForItem: (...args: unknown[]) => findProgressForItemMock(...args),
 }));
 
-class FakeLoombreApiError extends Error {}
+// d4-e6: the fake mirrors the real LoombreApiError's SHAPE, not just its
+// identity. Every error the SDK throws carries an HTTP `status`, and the
+// surfaces now read their copy through `apiErrorCopy` (lib/api-error-
+// message.ts), which duck-types that status instead of the class — so a
+// fake without one is not a stand-in for anything the app can receive, and
+// a test built on it would prove nothing about the real path. 422 is the
+// ordinary validation rejection; tests that need another Object.assign it.
+class FakeLoombreApiError extends Error {
+  status = 422;
+}
 
 vi.mock("./api-client.js", () => ({
   apiPut: (...args: unknown[]) => apiPutMock(...args),

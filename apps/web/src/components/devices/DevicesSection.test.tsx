@@ -24,7 +24,16 @@ import { renderIntoBody, type TestRender } from "../ui/test-render.js";
 const apiGetMock = vi.fn();
 const apiDeleteMock = vi.fn();
 
-class FakeApiError extends Error {}
+// d4-e6: the fake mirrors the real LoombreApiError's SHAPE, not just its
+// identity. Every error the SDK throws carries an HTTP `status`, and the
+// surfaces now read their copy through `apiErrorCopy` (lib/api-error-
+// message.ts), which duck-types that status instead of the class — so a
+// fake without one is not a stand-in for anything the app can receive, and
+// a test built on it would prove nothing about the real path. 422 is the
+// ordinary validation rejection; tests that need another Object.assign it.
+class FakeApiError extends Error {
+  status = 422;
+}
 
 vi.mock("../../lib/api-client.js", () => ({
   apiGet: (...args: unknown[]) => apiGetMock(...args),

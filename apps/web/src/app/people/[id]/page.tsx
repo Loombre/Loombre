@@ -23,6 +23,7 @@ import { useCursorFeed, type CursorPage } from "../../../components/browse/useCu
 import { apiGet, LoombreApiError } from "../../../lib/api-client.js";
 import { buildImageUrl } from "../../../lib/image-url.js";
 import { getAuthStore } from "../../../lib/auth-store.js";
+import { apiErrorCopy } from "../../../lib/api-error-message.js";
 import styles from "./page.module.css";
 
 type Person = components["schemas"]["Person"];
@@ -88,7 +89,7 @@ function PersonContent({ id }: { id: string }): React.JSX.Element {
         if (err instanceof LoombreApiError && err.status === 404) {
           setPersonNotFound(true);
         } else {
-          setPersonError(err instanceof LoombreApiError ? err.message : "Failed to load this person.");
+          setPersonError(apiErrorCopy(err, "Failed to load this person."));
         }
       });
     return () => {

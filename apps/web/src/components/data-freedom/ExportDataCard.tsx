@@ -29,6 +29,7 @@ import { useState } from "react";
 import { Button } from "../ui/Button.js";
 import { Card } from "../ui/Card.js";
 import { apiGet, LoombreApiError } from "../../lib/api-client.js";
+import { apiErrorCopy } from "../../lib/api-error-message.js";
 import styles from "./ExportDataCard.module.css";
 
 type Status = "idle" | "downloading" | "done" | "error";
@@ -62,13 +63,12 @@ export function ExportDataCard(): React.JSX.Element {
       // to 5/hour — a bare RFC 9457 title ("Too Many Requests") doesn't say
       // why or what to do about it, so this is the one status worth a
       // bespoke message (same convention as RestrictedProvider.tsx's own
-      // 429 case). Every other failure surfaces the server's own message.
+      // 429 case). Every other failure surfaces the server's own sentence
+      // when the server answered at all, and the line below when it did not.
       const message =
-        err instanceof LoombreApiError
-          ? err.status === 429
-            ? "Too many exports — you can download up to 5 per hour. Try again later."
-            : err.message
-          : "Could not download your data.";
+        err instanceof LoombreApiError && err.status === 429
+          ? "Too many exports — you can download up to 5 per hour. Try again later."
+          : apiErrorCopy(err, "Could not download your data.");
       setStatus("error");
       setError(message);
     }

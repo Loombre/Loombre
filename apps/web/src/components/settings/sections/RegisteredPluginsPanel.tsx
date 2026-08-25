@@ -48,8 +48,9 @@ import { EmptyState } from "../../admin/EmptyState.js";
 import { StatusPill } from "../../admin/StatusPill.js";
 import { RegisterPluginWizard } from "../../admin/plugins/RegisterPluginWizard.js";
 import { describePluginStatus } from "../../../lib/plugin-manifest.js";
-import { apiGet, LoombreApiError } from "../../../lib/api-client.js";
+import { apiGet } from "../../../lib/api-client.js";
 import { getEventsSocket } from "../../../lib/events-socket.js";
+import { apiErrorCopy } from "../../../lib/api-error-message.js";
 import styles from "./shared.module.css";
 import panelStyles from "./RegisteredPluginsPanel.module.css";
 
@@ -72,7 +73,7 @@ export function RegisteredPluginsPanel(): React.JSX.Element {
   const refetch = useCallback(() => {
     apiGet("/admin/plugins")
       .then((res) => setPlugins(res.items))
-      .catch((err) => setError(err instanceof LoombreApiError ? err.message : "Failed to load plugins."));
+      .catch((err) => setError(apiErrorCopy(err, "Failed to load plugins.")));
   }, []);
 
   useEffect(() => {
@@ -82,7 +83,7 @@ export function RegisteredPluginsPanel(): React.JSX.Element {
         if (!cancelled) setPlugins(res.items);
       })
       .catch((err) => {
-        if (!cancelled) setError(err instanceof LoombreApiError ? err.message : "Failed to load plugins.");
+        if (!cancelled) setError(apiErrorCopy(err, "Failed to load plugins."));
       });
     return () => {
       cancelled = true;
