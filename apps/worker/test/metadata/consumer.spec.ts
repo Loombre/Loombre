@@ -16,11 +16,13 @@
 
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { spawnSync } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createDb, ensureTestDatabase, resolveTestDatabaseUrl } from '@loombre/db';
 import { upsertMetadataProvenance } from '@loombre/db/internal';
-import { metadataConsumerHandler } from '../../src/metadata/consumer.js';
+import { ForcedMatchUnresolvableError, metadataConsumerHandler } from '../../src/metadata/consumer.js';
 import { ProviderFetchError } from '../../src/metadata/cache.js';
 import { ProviderRegistry } from '../../src/metadata/registry.js';
 import { makeFakeProvider } from '../../src/metadata/test-support.js';
@@ -100,7 +102,103 @@ beforeAll(async () => {
   libraryId = lib.id;
 });
 
+// ---------------------------------------------------------------------------
+// d4-f3 support: a REAL stub LPP plugin over an ephemeral port plus a real
+// `plugins` row, so the forced-ref branch can be exercised end to end
+// against the same adapter the chain would have built (pattern copied from
+// apps/worker/test/metadata/plugin-provider.spec.ts's own stub server).
+// ---------------------------------------------------------------------------
+const lppServers: Server[] = [];
+
+type RouteHandler = () => { status: number; body: unknown };
+
+function startStubLppServer(routes: Record<string, RouteHandler>): Promise<{ server: Server; baseUrl: string }> {
+  const server = createServer((req: IncomingMessage, res: ServerResponse) => {
+    req.on('data', () => {});
+    req.on('end', () => {
+      const handler = routes[`${req.method} ${req.url}`];
+      if (!handler) {
+        res.writeHead(404, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ error: 'no route' }));
+        return;
+      }
+      const { status, body } = handler();
+      res.writeHead(status, { 'content-type': 'application/json' });
+      res.end(JSON.stringify(body));
+    });
+  });
+  return new Promise((resolve) => {
+    server.listen(0, '127.0.0.1', () => {
+      const address = server.address();
+      const port = typeof address === 'object' && address ? address.port : 0;
+      lppServers.push(server);
+      resolve({ server, baseUrl: `http://127.0.0.1:${port}` });
+    });
+  });
+}
+
+const LPP_MOVIE_DETAILS = {
+  itemType: 'movie',
+  title: 'A Forced LPP Movie',
+  sortTitle: 'Forced LPP Movie, A',
+  year: 2019,
+  overview: 'Chosen by the admin, not by the chain.',
+  communityRating: 6.5,
+  contentRating: 'PG',
+  genres: ['Drama'],
+  tags: ['fixture'],
+  people: [],
+  providerIds: { fixture: '42' },
+  tagline: null,
+  runtimeMs: null,
+};
+
+/** Inserts a registered + approved plugin row directly (this suite has no
+ *  seeded admin user, and insertPluginAndEmit's outbox event needs one) —
+ *  the row is all chain-resolution/plugin-provider ever read. */
+async function insertLppPlugin(baseUrl: string, opts: { enabled?: boolean } = {}): Promise<string> {
+  const now = Date.now();
+  const row = await db
+    .insertInto('plugins')
+    .values({
+      name: `forced-ref-fixture-${randomUUID()}`,
+      base_url: baseUrl,
+      version: '0.1.0',
+      protocol_version: 1,
+      enabled: opts.enabled ?? true,
+      content_class: 'general',
+      granted_capability_types: ['metadata-provider'],
+      lan_allowlist: ['127.0.0.1'],
+      manifest: {
+        name: 'forced-ref-fixture-plugin',
+        version: '0.1.0',
+        protocolVersion: 1,
+        capabilities: [
+          {
+            type: 'metadata-provider',
+            mediaKinds: ['movie', 'tv'],
+            contentClass: 'general',
+            endpoints: { search: '/lpp/provider/search', details: '/lpp/provider/details', images: '/lpp/provider/images' },
+          },
+        ],
+        configSchema: { type: 'object', properties: {}, additionalProperties: false },
+        description: 'fixture',
+        publisher: 'Loombre',
+      },
+      config: {},
+      created_at_ms: now,
+      updated_at_ms: now,
+      approved_at_ms: now,
+    })
+    .returningAll()
+    .executeTakeFirstOrThrow();
+  return row.id;
+}
+
 afterAll(async () => {
+  for (const server of lppServers) {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
   await db?.destroy();
 });
 
@@ -374,7 +472,15 @@ describe('metadataConsumerHandler', () => {
     expect(providerIds).toEqual([{ provider: 'tmdb', external_id: '12345' }]);
   });
 
-  it('forceRef against an unregistered provider no-ops (never throws, never partially applies)', async () => {
+  // d4-f3 (backlog #084) SUPERSEDES the original "forceRef against an
+  // unregistered provider no-ops (never throws, never partially applies)".
+  // The no-op half is what the finding is ABOUT: the admin's explicit
+  // apply-match was reported back as a job that 'completed' with error
+  // null having changed nothing, so the one surface that could have told
+  // them (GET /admin/jobs/{id}) said everything went fine. "Never
+  // partially applies" is still pinned — the throw happens BEFORE any
+  // write — but the job now fails visibly instead of lying.
+  it('d4-f3: forceRef against a provider this worker cannot resolve FAILS the job (never partially applies)', async () => {
     const itemId = await insertItem('Some Movie', 2014);
     const registry = new ProviderRegistry(); // nothing registered
     const enqueueImageJob = vi.fn(async () => 'x');
@@ -385,8 +491,70 @@ describe('metadataConsumerHandler', () => {
         { itemId, mediaKind: 'movie', contentClass: 'general', forceRef: { provider: 'tmdb', externalId: '12345' } },
         { jobId: 'test-job-forceref-missing' }
       )
-    ).resolves.toBeUndefined();
+    ).rejects.toBeInstanceOf(ForcedMatchUnresolvableError);
     expect(enqueueImageJob).not.toHaveBeenCalled();
+
+    const item = await db.selectFrom('catalog_items').select(['title']).where('id', '=', itemId).executeTakeFirstOrThrow();
+    expect(item.title).toBe('Some Movie'); // untouched — the failure is before any write
+  });
+
+  // d4-f3 (backlog #084), THE REPORTED SHAPE: an `lpp:<pluginId>` forced
+  // ref for a registered+enabled plugin that NO library chain has attached
+  // in this worker process's lifetime. resolveForcedMatch only ever did
+  // registry.get(), and the registry is only ever populated by chain
+  // resolution — so this used to log-and-skip and complete with error null.
+  it('d4-f3: forceRef naming a registered+enabled LPP plugin constructs the adapter ON DEMAND (no chain attachment needed)', async () => {
+    const itemId = await insertItem('Chain-less Plugin Movie', 2019);
+    const { baseUrl } = await startStubLppServer({
+      'POST /lpp/provider/details': () => ({ status: 200, body: { details: LPP_MOVIE_DETAILS } }),
+      'POST /lpp/provider/images': () => ({ status: 200, body: { images: [] } }),
+    });
+    const pluginId = await insertLppPlugin(baseUrl);
+
+    // Deliberately EMPTY: no chain resolution has ever run in this
+    // "process", so nothing has registered an lpp:<pluginId> adapter.
+    const registry = new ProviderRegistry();
+    const enqueueImageJob = vi.fn(async () => 'x');
+    const logs: string[] = [];
+    const handler = metadataConsumerHandler({ db, registry, enqueueImageJob, log: (m) => logs.push(m) });
+
+    await handler(
+      { itemId, mediaKind: 'movie', contentClass: 'general', forceRef: { provider: `lpp:${pluginId}`, externalId: '42' } },
+      { jobId: 'test-job-forceref-lpp' }
+    );
+
+    const item = await db.selectFrom('catalog_items').select(['title']).where('id', '=', itemId).executeTakeFirstOrThrow();
+    expect(item.title).toBe('A Forced LPP Movie');
+
+    const providerIds = await db.selectFrom('provider_ids').select(['provider', 'external_id']).where('item_id', '=', itemId).execute();
+    expect(providerIds).toEqual([{ provider: 'fixture', external_id: '42' }]);
+
+    // The adapter is registered under its STABLE name, so a second forced
+    // ref in the same process reuses it via the ordinary registry lookup.
+    expect(registry.get(`lpp:${pluginId}`)).toBeDefined();
+    expect(logs.some((m) => m.includes('is not registered or disabled'))).toBe(false);
+  });
+
+  it('d4-f3: forceRef naming a DISABLED plugin fails the job rather than silently completing', async () => {
+    const itemId = await insertItem('Disabled Plugin Movie', 2019);
+    const { baseUrl } = await startStubLppServer({
+      'POST /lpp/provider/details': () => ({ status: 200, body: { details: LPP_MOVIE_DETAILS } }),
+    });
+    const pluginId = await insertLppPlugin(baseUrl, { enabled: false });
+
+    const registry = new ProviderRegistry();
+    const enqueueImageJob = vi.fn(async () => 'x');
+    const handler = metadataConsumerHandler({ db, registry, enqueueImageJob, log: () => {} });
+
+    await expect(
+      handler(
+        { itemId, mediaKind: 'movie', contentClass: 'general', forceRef: { provider: `lpp:${pluginId}`, externalId: '42' } },
+        { jobId: 'test-job-forceref-lpp-disabled' }
+      )
+    ).rejects.toBeInstanceOf(ForcedMatchUnresolvableError);
+
+    const item = await db.selectFrom('catalog_items').select(['title']).where('id', '=', itemId).executeTakeFirstOrThrow();
+    expect(item.title).toBe('Disabled Plugin Movie');
   });
 
   // AUD-A7c-002: a failed TMDB request's ProviderFetchError carries the raw

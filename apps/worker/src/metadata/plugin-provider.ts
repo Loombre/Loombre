@@ -131,6 +131,28 @@ export function lppProviderName(pluginId: string): string {
   return `lpp:${pluginId}`;
 }
 
+const LPP_PROVIDER_NAME_PREFIX = 'lpp:';
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * The exact inverse of `lppProviderName` (d4-f3): the plugin id inside an
+ * `lpp:<pluginId>` provider name, or `null` for anything else — a built-in
+ * name, or a prefixed name whose suffix is not a UUID.
+ *
+ * The UUID guard is load-bearing, not cosmetic: the only consumer feeds the
+ * result straight to `getPluginById`, and `plugins.id` is a `uuid` column —
+ * Postgres's implicit cast throws on garbage, which would turn a typo'd
+ * provider name into a bare 500/crashed job instead of the honest
+ * "unresolvable" outcome. apps/server's own
+ * catalog/apply-match-provider.ts does the identical check on the request
+ * path (documented duplication: apps/server may not import apps/worker).
+ */
+export function pluginIdFromLppProviderName(providerName: string): string | null {
+  if (!providerName.startsWith(LPP_PROVIDER_NAME_PREFIX)) return null;
+  const pluginId = providerName.slice(LPP_PROVIDER_NAME_PREFIX.length);
+  return UUID_RE.test(pluginId) ? pluginId : null;
+}
+
 export class LppProviderCallError extends Error {
   readonly pluginId: string;
   readonly endpoint: 'search' | 'details' | 'images';

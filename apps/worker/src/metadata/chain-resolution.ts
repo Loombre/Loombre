@@ -75,6 +75,76 @@ export interface ResolveProviderChainForLibraryDeps {
 }
 
 /**
+ * d4-f3 (backlog #084): construct — and REGISTER — the LPP adapter for ONE
+ * plugin id, returning the stable `lpp:<pluginId>` name it was registered
+ * under, or `null` when the plugin is gone / out of scope / ineligible
+ * (every branch logs its own reason first). Extracted verbatim from
+ * `resolveProviderChainForLibrary`'s plugin branch below, which is now its
+ * first caller; its SECOND caller is consumer.ts's forced-match branch,
+ * which bypasses chain resolution entirely and therefore used to have no
+ * way to reach a plugin adapter at all (`registry.get()` only ever sees
+ * what a chain resolution already registered in THIS process's lifetime).
+ *
+ * `logPrefix` names the calling context so the two callers' log lines stay
+ * self-describing ("chain-resolution: library "X" chain ..." vs "metadata
+ * consumer: forced-match ..."); everything after it is identical, C5
+ * STRICT layer 2 included — a forced ref is not an exemption from the
+ * content-class rule, it only skips the CHAIN.
+ */
+export async function resolveLppProviderForPlugin(
+  db: DbOrTx,
+  pluginId: string,
+  contentClass: ContentClass,
+  deps: ResolveProviderChainForLibraryDeps,
+  logPrefix: string
+): Promise<string | null> {
+  const plugin = await getPluginById(db, pluginId);
+  if (!plugin) {
+    deps.log(`${logPrefix} references plugin "${pluginId}" which no longer exists — skipping`);
+    return null;
+  }
+
+  // C5 STRICT, layer 2.
+  if (plugin.content_class !== contentClass) {
+    deps.log(
+      `${logPrefix} plugin "${pluginId}" has content_class="${plugin.content_class}" ` +
+        `!== target content_class="${contentClass}" — excluded (C5 STRICT, layer 2)`
+    );
+    return null;
+  }
+
+  const provider = createLppMetadataProvider(
+    {
+      id: plugin.id,
+      baseUrl: plugin.base_url,
+      enabled: plugin.enabled,
+      contentClass: plugin.content_class,
+      lanAllowlist: plugin.lan_allowlist,
+      grantedCapabilityTypes: plugin.granted_capability_types,
+      manifest: plugin.manifest,
+      config: plugin.config,
+    },
+    {
+      db,
+      // C5.1: seed from the row just read above, fresh this call.
+      breaker: deps.getBreaker(plugin.id, { consecutiveFailures: plugin.consecutive_failures, atMs: (deps.clock ?? Date.now)() }),
+      targetContentClass: contentClass,
+      log: deps.log,
+      // exactOptionalPropertyTypes: omit rather than pass `undefined`
+      // through for these optional pass-throughs.
+      ...(deps.fetchImpl !== undefined ? { fetchImpl: deps.fetchImpl } : {}),
+      ...(deps.clock !== undefined ? { clock: deps.clock } : {}),
+      ...(deps.env !== undefined ? { env: deps.env } : {}),
+    }
+  );
+
+  if (!provider) return null; // ineligible or C5-refused (layer 3) — already logged by plugin-provider.ts.
+
+  deps.registry.register(provider);
+  return provider.name;
+}
+
+/**
  * Resolves the ordered provider-name chain a metadata job should walk for
  * one (library, mediaKind, contentClass) — see file header. `db`,
  * `libraryId`, `mediaKind`, and `contentClass` normally come straight from
@@ -108,50 +178,8 @@ export async function resolveProviderChainForLibrary(
     const pluginId = row.plugin_id;
     if (!pluginId) continue; // unreachable under the migration's XOR CHECK — defensive only.
 
-    const plugin = await getPluginById(db, pluginId);
-    if (!plugin) {
-      deps.log(`chain-resolution: library "${libraryId}" chain references plugin "${pluginId}" which no longer exists — skipping`);
-      continue;
-    }
-
-    // C5 STRICT, layer 2.
-    if (plugin.content_class !== contentClass) {
-      deps.log(
-        `chain-resolution: library "${libraryId}" chain plugin "${pluginId}" has content_class="${plugin.content_class}" ` +
-          `!== target content_class="${contentClass}" — excluded (C5 STRICT, layer 2)`
-      );
-      continue;
-    }
-
-    const provider = createLppMetadataProvider(
-      {
-        id: plugin.id,
-        baseUrl: plugin.base_url,
-        enabled: plugin.enabled,
-        contentClass: plugin.content_class,
-        lanAllowlist: plugin.lan_allowlist,
-        grantedCapabilityTypes: plugin.granted_capability_types,
-        manifest: plugin.manifest,
-        config: plugin.config,
-      },
-      {
-        db,
-        // C5.1: seed from the row just read above, fresh this call.
-        breaker: deps.getBreaker(plugin.id, { consecutiveFailures: plugin.consecutive_failures, atMs: (deps.clock ?? Date.now)() }),
-        targetContentClass: contentClass,
-        log: deps.log,
-        // exactOptionalPropertyTypes: omit rather than pass `undefined`
-        // through for these optional pass-throughs.
-        ...(deps.fetchImpl !== undefined ? { fetchImpl: deps.fetchImpl } : {}),
-        ...(deps.clock !== undefined ? { clock: deps.clock } : {}),
-        ...(deps.env !== undefined ? { env: deps.env } : {}),
-      }
-    );
-
-    if (!provider) continue; // ineligible or C5-refused (layer 3) — already logged by plugin-provider.ts.
-
-    deps.registry.register(provider);
-    chain.push(provider.name);
+    const name = await resolveLppProviderForPlugin(db, pluginId, contentClass, deps, `chain-resolution: library "${libraryId}" chain`);
+    if (name) chain.push(name);
   }
 
   return chain;

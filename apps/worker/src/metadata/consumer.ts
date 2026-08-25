@@ -57,7 +57,8 @@ import { buildLayers, isEqual, toProvenanceMap } from './layers.js';
 import { pickBestMatch } from './match.js';
 import type { ProviderRegistry } from './registry.js';
 import type { ContentClass, MediaKind, PersonCredit, ProviderDetails, ProviderImageRef, ProviderRef } from './provider.js';
-import { resolveProviderChainForLibrary } from './chain-resolution.js';
+import { resolveLppProviderForPlugin, resolveProviderChainForLibrary, type ResolveProviderChainForLibraryDeps } from './chain-resolution.js';
+import { pluginIdFromLppProviderName } from './plugin-provider.js';
 import { createPluginBreakerRegistry, type PluginBreakerRegistry } from './plugin-breakers.js';
 import { redactSecretShapedValues } from '../crash/redact.js';
 
@@ -122,25 +123,74 @@ interface MatchedProvider {
 }
 
 /**
+ * d4-f3 (backlog #084): an apply-match whose provider this worker cannot
+ * resolve FAILS its job instead of completing with `error: null`. The
+ * admin picked one exact candidate on POST /admin/items/{id}/apply-match;
+ * "completed, changed nothing, no error" is the one answer GET
+ * /admin/jobs/{id} must never give for that. Thrown BEFORE any write, so
+ * the "never partially applies" half of the original contract is intact —
+ * only the silence is gone. 'metadata' carries retryLimit 2
+ * (packages/jobs/src/types.ts), so an unresolvable ref costs three cheap
+ * registry/DB lookups before the row reaches 'failed' with this message.
+ */
+export class ForcedMatchUnresolvableError extends Error {
+  readonly provider: string;
+
+  constructor(provider: string, reason: string) {
+    super(`forced-match provider "${provider}" could not be resolved by this worker (${reason}) — the chosen match was not applied`);
+    this.name = 'ForcedMatchUnresolvableError';
+    this.provider = provider;
+  }
+}
+
+/**
  * Phosphor retheme Wave 2 (Lane L2 — Fix Match's POST /admin/items/{id}/
  * apply-match): MetadataJobPayload.forceRef bypasses search/pickBestMatch
  * entirely and fetches details+images for EXACTLY the admin's chosen
- * candidate. A disabled/unregistered provider or a fetch failure resolves
- * to null (the job then no-ops, same as an ordinary "no match found" —
- * never throws, never partially applies).
+ * candidate.
+ *
+ * TWO WAYS TO REACH A PROVIDER, in order (d4-f3 added the second):
+ *   1. `registry.get(name)` — a built-in registered at worker startup
+ *      (apps/worker/src/index.ts), or an `lpp:<pluginId>` adapter some
+ *      earlier chain resolution in THIS process already registered.
+ *   2. For an `lpp:<pluginId>` name only: construct the adapter ON DEMAND
+ *      from the plugin row (chain-resolution.ts's resolveLppProviderForPlugin,
+ *      C5 STRICT layers 2+3 included). This is the fix for #084 — forceRef
+ *      deliberately skips chain resolution, so a registered+enabled plugin
+ *      that no library chain has attached in this worker's lifetime was
+ *      simply unreachable through (1), and a perfectly valid admin choice
+ *      log-and-skipped forever.
+ *
+ * An UNRESOLVABLE or administratively DISABLED provider throws
+ * (ForcedMatchUnresolvableError, above). A fetchDetails failure still
+ * resolves to null — that is a provider outage, not a misdirected job, and
+ * it is the same "no match found" no-op an ordinary chain walk produces.
  */
 async function resolveForcedMatch(
+  db: DbOrTx,
   registry: ProviderRegistry,
   contentClass: ContentClass,
   mediaKind: MediaKind,
   entityKind: 'artist' | 'album' | undefined,
   forceRef: { provider: string; externalId: string },
+  lppDeps: ResolveProviderChainForLibraryDeps,
   log: (message: string) => void
 ): Promise<MatchedProvider | null> {
-  const provider = registry.get(forceRef.provider);
-  if (!provider || !provider.enabled) {
-    log(`metadata consumer: forced-match provider "${forceRef.provider}" is not registered or disabled — skipping`);
-    return null;
+  let provider = registry.get(forceRef.provider);
+
+  if (!provider) {
+    const pluginId = pluginIdFromLppProviderName(forceRef.provider);
+    if (pluginId) {
+      const name = await resolveLppProviderForPlugin(db, pluginId, contentClass, lppDeps, 'metadata consumer: forced-match');
+      if (name) provider = registry.get(name);
+    }
+  }
+
+  if (!provider) {
+    throw new ForcedMatchUnresolvableError(forceRef.provider, 'no such registered built-in provider, and no eligible plugin adapter for it');
+  }
+  if (!provider.enabled) {
+    throw new ForcedMatchUnresolvableError(forceRef.provider, provider.disabledReason ?? 'administratively disabled');
   }
 
   const ref: ProviderRef = {
@@ -234,19 +284,26 @@ export function metadataConsumerHandler(deps: MetadataConsumerDeps): JobHandler<
     // list, so re-running the chain/search here would be wasted provider
     // I/O at best and could pick a DIFFERENT candidate than the one
     // approved at worst.
+    // d4-f3: the SAME dependency bundle both branches hand to LPP adapter
+    // construction — a forced ref reaches a plugin through
+    // resolveLppProviderForPlugin, a chain walk through
+    // resolveProviderChainForLibrary, and neither may get a different
+    // breaker registry or logger than the other.
+    const lppDeps: ResolveProviderChainForLibraryDeps = {
+      registry: deps.registry,
+      getBreaker: (pluginId, seed) => pluginBreakers.getBreaker(pluginId, seed), // C5.1: forward the seed
+      clock,
+      log,
+    };
+
     const matched = payload.forceRef
-      ? await resolveForcedMatch(deps.registry, item.contentClass, payload.mediaKind, entityKind, payload.forceRef, log)
+      ? await resolveForcedMatch(deps.db, deps.registry, item.contentClass, payload.mediaKind, entityKind, payload.forceRef, lppDeps, log)
       : await resolveViaProviderChain(
           deps.registry,
           // LPP v1 (Lane W3): per-library chain, resolved fresh every job —
           // see chain-resolution.ts's header. Zero library_provider_entries
           // rows resolves to PROVIDER_CHAIN[payload.mediaKind] verbatim.
-          await resolveProviderChainForLibrary(deps.db, item.libraryId, payload.mediaKind, item.contentClass, {
-            registry: deps.registry,
-            getBreaker: (pluginId, seed) => pluginBreakers.getBreaker(pluginId, seed), // C5.1: forward the seed
-            clock,
-            log,
-          }),
+          await resolveProviderChainForLibrary(deps.db, item.libraryId, payload.mediaKind, item.contentClass, lppDeps),
           payload.mediaKind,
           item.contentClass,
           item.title,
