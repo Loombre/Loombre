@@ -157,15 +157,21 @@ compromising all three simultaneously.
 
 ```jsonc
 {
-  "currentVersion": "0.9.0-dev+34979cb6",
+  "currentVersion": "0.9.0",      // always a BARE semver — see below
   "channel": "stable",
   "latestVersion": "0.9.0",       // null unless verification is "verified"
-  "updateAvailable": false,
-  "notesUrl": null,               // null unless verification is "verified"
+  "updateAvailable": false,       // true iff latestVersion sorts above currentVersion
+  "notesUrl": null,               // the latest release's notes URL, when the manifest carries one
   "checkedAtMs": 1753315200000,   // null only when verification is "disabled"
   "verification": "verified"      // "verified" | "signature-invalid" | "unreachable" | "disabled"
 }
 ```
+
+`currentVersion` is this build's version as a **bare semver**, because it is
+the string `latestVersion` is compared against. A development build's
+`GET /system/info` reports `version` as `<version>-dev+<git short hash>`
+instead; the two legitimately differ on such a build, and they are never
+meant to be diffed against each other. Show one or the other.
 
 `verification` tells you exactly how much to trust the rest of the
 payload:

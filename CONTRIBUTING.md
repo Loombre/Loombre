@@ -28,7 +28,8 @@ pnpm gate
 ```
 
 This runs the ordered sequence stopping at the first failure: `codegen` →
-`sdk-drift` → `oasdiff` → `depcruise` → `runtime-imports` →
+`sdk-drift` → `version-stamp` → `oasdiff` → `depcruise` →
+`runtime-imports` →
 `license-check` → `go-licenses-check` → `dep-audit` → `lint` → `typecheck` →
 `test` → `installers-test` → `db:migrate-check` → `grep-gates` →
 `docs-build`. See
@@ -40,11 +41,11 @@ pnpm gate:full
 ```
 
 `pnpm gate` is the fast inner-loop default — **it is a looser local path
-than CI now runs**, deliberately: a 16th step, `web-build-budget`
+than CI now runs**, deliberately: a 17th step, `web-build-budget`
 (builds `apps/web` for production and checks its bundle size against
 docs/PLAN.md §9.3), is expensive enough that folding it into the fast
 gate would slow down every inner-loop run. `pnpm gate:full` runs it —
-`pnpm gate`'s 15 steps plus that 16th. **CI runs `pnpm gate:full`, so
+`pnpm gate`'s 16 steps plus that 17th. **CI runs `pnpm gate:full`, so
 that's the real bar a PR is checked against** — run it before pushing or
 opening a PR. It's the only local path that catches a production-build-
 only failure class (e.g. a barrel import pulling a `node:`-scheme module
