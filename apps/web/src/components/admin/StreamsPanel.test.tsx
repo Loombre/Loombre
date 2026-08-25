@@ -182,3 +182,51 @@ describe("StreamsPanel — suspended streams (browser-admin-F2)", () => {
     expect(apiGetMock).toHaveBeenCalledTimes(1);
   });
 });
+
+// ---------------------------------------------------------------------------
+// d3-e2 (E/admin-error-surfaces): this panel was one of the last two surfaces
+// still deriving its user-facing text from `err instanceof LoombreApiError ?
+// err.message : fallback` instead of the shared apiErrorMessage() helper
+// (browser-admin-F5's house pattern). The real LoombreApiError is detail-first
+// since 73eed8e, so the rendered string happened to be right — but only
+// because of the SDK, and only for that one class: anything that merely
+// duck-types the problem shape (every fake in these specs, and any error the
+// SDK ever wraps) fell through to the generic fallback.
+// ---------------------------------------------------------------------------
+describe("StreamsPanel — error copy (d3-e2)", () => {
+  let view: TestRender | null = null;
+
+  beforeEach(() => {
+    apiGetMock.mockReset();
+    subscribeMock.mockReset();
+    subscribeMock.mockReturnValue(() => {});
+  });
+
+  afterEach(() => {
+    view?.unmount();
+    view = null;
+    vi.useRealTimers();
+  });
+
+  it("shows the RFC 9457 detail, not the status title, when GET /admin/sessions fails", async () => {
+    apiGetMock.mockRejectedValue(
+      Object.assign(new FakeApiError("Forbidden"), {
+        status: 403,
+        problem: { type: "urn:loombre:problem:forbidden", title: "Forbidden", status: 403, detail: "Your admin session expired — sign in again." },
+      }),
+    );
+    view = renderIntoBody(<StreamsPanel />);
+    await act(async () => {});
+
+    expect(view.container.textContent).toContain("Your admin session expired — sign in again.");
+    expect(view.container.textContent).not.toContain("Forbidden");
+  });
+
+  it("falls back to the panel's own copy when the error carries neither detail nor message", async () => {
+    apiGetMock.mockRejectedValue({});
+    view = renderIntoBody(<StreamsPanel />);
+    await act(async () => {});
+
+    expect(view.container.textContent).toContain("Failed to load active streams.");
+  });
+});

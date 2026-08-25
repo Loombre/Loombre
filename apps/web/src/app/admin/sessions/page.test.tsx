@@ -180,3 +180,46 @@ describe("AdminSessionsPage — suspended sessions (browser-admin-F2)", () => {
     expect(apiGetMock).toHaveBeenCalledTimes(1);
   });
 });
+
+// ---------------------------------------------------------------------------
+// d3-e2 (E/admin-error-surfaces): the last two surfaces still deriving their
+// user-facing text from `err instanceof LoombreApiError ? err.message :
+// fallback` — see StreamsPanel.test.tsx's companion block for the full note.
+// ---------------------------------------------------------------------------
+describe("AdminSessionsPage — error copy (d3-e2)", () => {
+  let view: TestRender | null = null;
+
+  beforeEach(() => {
+    apiGetMock.mockReset();
+    subscribeMock.mockReset();
+    subscribeMock.mockReturnValue(() => {});
+  });
+
+  afterEach(() => {
+    view?.unmount();
+    view = null;
+    vi.useRealTimers();
+  });
+
+  it("shows the RFC 9457 detail, not the status title, when the initial load fails", async () => {
+    apiGetMock.mockRejectedValue(
+      Object.assign(new FakeApiError("Forbidden"), {
+        status: 403,
+        problem: { type: "urn:loombre:problem:forbidden", title: "Forbidden", status: 403, detail: "Your admin session expired — sign in again." },
+      }),
+    );
+    view = renderIntoBody(<AdminSessionsPage />);
+    await act(async () => {});
+
+    expect(view.container.textContent).toContain("Your admin session expired — sign in again.");
+    expect(view.container.textContent).not.toContain("Forbidden");
+  });
+
+  it("falls back to the page's own copy when the error carries neither detail nor message", async () => {
+    apiGetMock.mockRejectedValue({});
+    view = renderIntoBody(<AdminSessionsPage />);
+    await act(async () => {});
+
+    expect(view.container.textContent).toContain("Failed to load sessions.");
+  });
+});

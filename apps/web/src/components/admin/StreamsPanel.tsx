@@ -51,7 +51,8 @@ import { StatusPill } from "./StatusPill.js";
 import { Skeleton } from "../skeleton/Skeleton.js";
 import { ADMIN_SESSIONS_REFRESH_MS } from "../../lib/admin-live-refresh.js";
 import { describeSessionStatus } from "../../lib/admin-status.js";
-import { apiGet, LoombreApiError } from "../../lib/api-client.js";
+import { apiGet } from "../../lib/api-client.js";
+import { apiErrorMessage } from "../../lib/api-error-message.js";
 import { debounce } from "../../lib/debounce.js";
 import { getEventsSocket } from "../../lib/events-socket.js";
 import { Video } from "lucide-react";
@@ -109,7 +110,7 @@ export function StreamsPanel(): React.JSX.Element {
   const refresh = useCallback(() => {
     apiGet("/admin/sessions", { params: { query: { limit: 50 } } })
       .then((page) => setSessions(page.items as AdminSessionWithPlan[]))
-      .catch((err) => setError(err instanceof LoombreApiError ? err.message : "Failed to load active streams."));
+      .catch((err) => setError(apiErrorMessage(err, "Failed to load active streams.")));
   }, []);
 
   useEffect(refresh, [refresh]);

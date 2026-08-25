@@ -39,7 +39,8 @@ import { StatusPill } from "../../../components/admin/StatusPill.js";
 import { ReasonsPanel } from "../../../components/admin/ReasonsPanel.js";
 import { ADMIN_SESSIONS_REFRESH_MS } from "../../../lib/admin-live-refresh.js";
 import { describeSessionStatus } from "../../../lib/admin-status.js";
-import { apiGet, LoombreApiError } from "../../../lib/api-client.js";
+import { apiGet } from "../../../lib/api-client.js";
+import { apiErrorMessage } from "../../../lib/api-error-message.js";
 import { debounce } from "../../../lib/debounce.js";
 import { getEventsSocket } from "../../../lib/events-socket.js";
 import styles from "./page.module.css";
@@ -108,7 +109,7 @@ export default function AdminSessionsPage(): React.JSX.Element {
         setLoadingMore(false);
       })
       .catch((err) => {
-        setError(err instanceof LoombreApiError ? err.message : "Failed to load sessions.");
+        setError(apiErrorMessage(err, "Failed to load sessions."));
         setLoading(false);
         setLoadingMore(false);
       });
