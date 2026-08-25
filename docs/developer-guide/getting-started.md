@@ -131,7 +131,8 @@ This is the fast inner-loop default, stopping at the first failing step:
 `codegen` → `sdk-drift` → `version-stamp` → `oasdiff` → `depcruise` →
 `runtime-imports` → `license-check` → `go-licenses-check` → `dep-audit` →
 `lint` → `typecheck` →
-`test` → `installers-test` → `db:migrate-check` → `grep-gates` →
+`test` → `installers-test` → `scripts-test` → `db:migrate-check` →
+`grep-gates` →
 `docs-build` (see `scripts/gate.mjs` for the exact step list and the
 reasoning behind each step's position — it's a short, heavily-commented
 file, worth reading once).
@@ -142,7 +143,7 @@ file, worth reading once).
 pnpm gate:full
 ```
 
-`pnpm gate:full` runs everything `pnpm gate` runs, plus a 17th step,
+`pnpm gate:full` runs everything `pnpm gate` runs, plus an 18th step,
 `web-build-budget`: a production build of `apps/web` and a check of its
 bundle size against the docs/PLAN.md §9.3 budget. This step is genuinely
 slow (a full Next.js production build), which is why it's not in the fast

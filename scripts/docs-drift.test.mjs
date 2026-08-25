@@ -169,10 +169,10 @@ test("contributor docs state the real gate step counts (fast, and fast + full)",
       );
     }
 
-    // "a 16th step" / "plus that 16th" / "+ a 16th" — the full-mode total.
+    // "an 18th step" / "plus that 18th" / "+ an 18th" — the full-mode total.
     const ordinals = [
       ...text.matchAll(/(\d+)(?:st|nd|rd|th) step\b/g),
-      ...text.matchAll(/steps? (?:plus|\+) (?:a |that )?(\d+)(?:st|nd|rd|th)/g),
+      ...text.matchAll(/steps? (?:plus|\+) (?:an? |that )?(\d+)(?:st|nd|rd|th)/g),
     ];
     for (const [match, n] of ordinals) {
       assert.equal(
