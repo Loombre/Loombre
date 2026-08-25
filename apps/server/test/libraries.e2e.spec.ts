@@ -62,9 +62,32 @@ let app: INestApplication;
 let databaseUrl: string;
 let adminToken: string;
 
+/** Fresh POST /auth/login calls this suite spends on its own identities
+ *  (1 admin + 9 casual; the two memoized helpers count once each). */
+const SUITE_LOGINS = 10;
+/** Fresh logins the guard at the bottom of this file spends on top of
+ *  SUITE_LOGINS to prove the budget is no longer the binding constraint. */
+const LOGIN_HEADROOM = 8;
+
+/** Capacity pinned into both login buckets for this suite (d4-i4) —
+ *  comfortably above SUITE_LOGINS + LOGIN_HEADROOM, and restored in
+ *  afterAll. */
+const PINNED_LOGIN_CAPACITY = 1000;
+const PINNED_RATE_ENV = ["LOOMBRE_RATE_LOGIN", "LOOMBRE_RATE_LOGIN_BY_IDENTIFIER"] as const;
+const ORIGINAL_RATE_ENV = new Map<string, string | undefined>(
+  PINNED_RATE_ENV.map((name) => [name, process.env[name]]),
+);
+
 beforeAll(async () => {
   process.env["LOOMBRE_RESTRICTED_ENABLED"] = "true";
   process.env["LOOMBRE_JWT_SECRET"] = "libraries-e2e-test-secret-not-for-production";
+  // d4-i4 (backlog #107): lift this suite off the login ceiling BEFORE the
+  // app boots — SettingsService resolves env-pinned registry values once, at
+  // bootstrap. Both buckets: per-source-IP (rateLimit.login, 10/min, the one
+  // this file sat exactly on) and per-submitted-identifier
+  // (rateLimit.loginByIdentifier, 20/min — 9 of the 10 logins here are
+  // "casual"). See the guard case at the bottom of the file.
+  for (const name of PINNED_RATE_ENV) process.env[name] = String(PINNED_LOGIN_CAPACITY);
 
   databaseUrl = await ensureTestDatabase(BASE_DATABASE_URL, "libraries_e2e_test");
   run(path.join(DB_PKG_ROOT, "scripts", "migrate.mjs"), ["reset"], databaseUrl);
@@ -86,17 +109,21 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await app.close();
+  for (const [name, original] of ORIGINAL_RATE_ENV) {
+    if (original === undefined) delete process.env[name];
+    else process.env[name] = original;
+  }
 });
 
-// POST /auth/login is rate-limited PER SOURCE IP (10/min, auth-rate-limiter.
-// service.ts) and every case in this file arrives from the same one — the
-// suite already sits on that ceiling (one admin + the R1 block's per-case
-// casual logins). Cases that only need "a signed-in viewer with no admin
-// rights" therefore share ONE memoized login instead of each minting
-// another the limiter would (correctly) 429 — the same reasoning the R1
-// block's own `sharedCasual` memo already applies further down. Adding a
-// fresh login here without a reason WILL start failing unrelated cases at
-// the bottom of the file.
+// POST /auth/login is rate-limited PER SOURCE IP (rateLimit.login, 10/min by
+// default, auth-rate-limiter.service.ts) and every case in this file arrives
+// from the same one. The suite spends SUITE_LOGINS on its own identities —
+// EXACTLY that default — so before d4-i4 pinned the budget in beforeAll, the
+// eleventh login in the file 429'd and took unrelated cases below it down
+// with it. Cases that only need "a signed-in viewer with no admin rights"
+// still share ONE memoized login rather than each minting another: the pin
+// is headroom for a case that genuinely needs its own identity, not licence
+// to mint one per assertion (every login runs a real argon2id verify).
 let sharedSeedCasual: string | undefined;
 async function seedCasualToken(): Promise<string> {
   if (sharedSeedCasual !== undefined) return sharedSeedCasual;
@@ -992,5 +1019,41 @@ describe("Restricted Content surface (STATE.md Stash run, S9)", () => {
     expect(generalSearch.body.items.length).toBeGreaterThan(0);
     expect(people.body.items.length).toBeGreaterThan(0);
     expect(tags.body.items.length).toBeGreaterThan(0);
+  });
+});
+
+// d4-i4 (backlog #107). This file used to sit EXACTLY on the per-source-IP
+// login budget: 10 fresh POST /auth/login calls (1 admin + 9 casual — the
+// memoized seedCasualToken/r1CasualToken pair counting once each) against
+// rateLimit.login's default capacity of 10/min. Every request in the suite
+// arrives from the same address, so the eleventh login 429s — meaning ANY
+// new case that needed its own identity broke five unrelated cases at the
+// bottom of the file instead of failing where it was added. d3-d5's
+// memoization held the total flat, but flat AT the ceiling is not headroom.
+//
+// beforeAll now pins the two login buckets through their registry env
+// overrides (the auth-account-rate-limit.e2e.spec.ts precedent), so the
+// budget is no longer a hidden constraint on adding a case here. Nothing is
+// lost: the login limiter's own behaviour is covered by
+// auth-account-rate-limit / auth-security / setup-rate-limit, never here.
+//
+// This case is the guard: it spends a block of fresh logins and asserts
+// every one still succeeds. It fails the moment this file goes back to
+// running on the stock budget.
+describe("login budget headroom (d4-i4)", () => {
+  it(`mints ${LOGIN_HEADROOM} further fresh logins with no 429 — a new case here cannot break the ones below it`, async () => {
+    for (let index = 0; index < LOGIN_HEADROOM; index += 1) {
+      const deviceName = `libraries-e2e-headroom-${index}`;
+      const login = await request(app.getHttpServer()).post("/auth/login").send({
+        username: "casual",
+        password: "loombre-seed-casual",
+        deviceName,
+        deviceProfile: buildDeviceProfile(deviceName),
+      });
+      expect(
+        login.status,
+        `headroom login ${index + 1}/${LOGIN_HEADROOM} (the suite already spent ${SUITE_LOGINS}): ${JSON.stringify(login.body)}`,
+      ).toBe(200);
+    }
   });
 });
