@@ -107,6 +107,11 @@ vi.mock("../../lib/api-client.js", () => ({
 interface MockHlsInstance {
   levels: { details?: { live: boolean; fragments: unknown[] } }[];
   currentLevel: number;
+  /** hls.js's "level whose playlist is being loaded" — what the player
+   *  falls back to before any frame has PLAYED (currentLevel still -1,
+   *  d3-a1: resolveStartLevel starts loading the TOP rung, so level 0's
+   *  details never exist at that point). */
+  loadLevel: number;
   nextLevel: number;
   autoLevelEnabled: boolean;
   listeners: Map<string, ((...args: unknown[]) => void)[]>;
@@ -128,6 +133,7 @@ vi.mock("hls.js", () => {
     static isSupported = (): boolean => true;
     static Events = {
       MANIFEST_PARSED: "hlsManifestParsed",
+      LEVEL_SWITCHING: "hlsLevelSwitching",
       LEVEL_SWITCHED: "hlsLevelSwitched",
       LEVEL_UPDATED: "hlsLevelUpdated",
       ERROR: "hlsError",
@@ -135,6 +141,7 @@ vi.mock("hls.js", () => {
     static ErrorTypes = { NETWORK_ERROR: "networkError", MEDIA_ERROR: "mediaError" };
     levels: { details?: { live: boolean; fragments: unknown[] } }[] = [];
     currentLevel = -1;
+    loadLevel = -1;
     nextLevel = -1;
     autoLevelEnabled = true;
     listeners = new Map<string, ((...args: unknown[]) => void)[]>();
@@ -2757,6 +2764,274 @@ describe("VideoPlayer", () => {
         slider?.getAttribute("aria-valuemax"),
         "the churned playlist's presentation extent replaced the probed source duration",
       ).toBe("600000");
+    });
+  });
+
+  // ── d3-a1: seek landing / supersession family ───────────────────────────
+  // Four residuals of the V8 landing lifecycle observed in the 2026-08-23/24
+  // requalification + verify passes: (1) the pre-first-frame absorbed 202
+  // (v8-requal Start-over: 20.1 s pinned at 0:00), (2) a completed previous
+  // landing cancelling an in-flight newer seek (gap-F5-adjacent, "newest
+  // wins" owner ruling), (3) the landing refresh arriving on a rung the
+  // player is not current on (verify-A ABR flap: FALSE 'Seek timed out'),
+  // and (4) rung churn needing a bounded landing-window extension.
+  describe("seek landing/supersession (d3-a1)", () => {
+    async function renderHlsSeekReady(): Promise<{ v: TestRender; hls: MockHlsInstance }> {
+      createPlaybackSession.mockReset().mockResolvedValue({ ok: true, session: hlsTranscodeSession() });
+      const v = await renderReady();
+      await act(async () => {});
+      const hls = hlsInstances[hlsInstances.length - 1];
+      if (!hls) throw new Error("the hlsjs attach effect never constructed an hls.js instance");
+      return { v, hls };
+    }
+
+    it("an ABSORBED 202 before any frame has played (currentLevel -1, only the start rung's playlist loaded) lands via the element — no 20 s pin", async () => {
+      const { v, hls } = await renderHlsSeekReady();
+      view = v;
+      vi.useFakeTimers();
+      const video = videoEl(v);
+      // resolveStartLevel starts hls.js loading the server's encoding rung
+      // — the TOP rung, never index 0 on a multi-rung ladder — so before
+      // the first frame plays, currentLevel is -1 and ONLY the loading
+      // level has details. The v8-requal Start-over pin (20.1 s at 0:00)
+      // is exactly this shape: the window was parsed and listed the
+      // target, but the player read the never-loaded level 0.
+      hls.currentLevel = -1;
+      hls.loadLevel = 1;
+      const details = { live: true, fragments: [{ programDateTime: 0, start: 0, duration: 6, relurl: "run0/s000000.m4s" }] };
+      hls.levels = [{}, { details }];
+      // First refresh consumes the one-shot queued-start router (F9).
+      await act(async () => {
+        hls.emit("hlsLevelUpdated");
+      });
+      await act(async () => {
+        video.currentTime = 0.5;
+        video.dispatchEvent(new Event("timeupdate"));
+      });
+      // Forward 10s -> a target ahead of the produced edge: HARD. Hold the
+      // 202 in flight while run0 produces past the target (absorbed — no
+      // new run will ever spawn, and no later refresh is guaranteed).
+      let resolve202: ((r: { targetMs: number }) => void) | null = null;
+      apiPost.mockImplementationOnce(() => new Promise((r) => { resolve202 = r; }));
+      await act(async () => button(v, "Forward 10 seconds").click());
+      expect(apiPost).toHaveBeenCalledTimes(1);
+      details.fragments = [
+        { programDateTime: 0, start: 0, duration: 6, relurl: "run0/s000000.m4s" },
+        { programDateTime: 6_000, start: 6, duration: 6.006, relurl: "run0/s000001.m4s" },
+      ];
+      await act(async () => {
+        resolve202?.({ targetMs: 10_500 });
+      });
+      expect(
+        video.currentTime,
+        "the pre-first-frame absorbed 202 never landed — listedFragments() read the never-loaded level 0 and the pin rides into the 20 s timeout (v8-requal: ~20.1 s pinned at 0:00 after Start over)",
+      ).toBeCloseTo(10.5, 3);
+      mediaState(video).readyState = 4;
+      await act(async () => {
+        video.dispatchEvent(new Event("seeked"));
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(HARD_SEEK_LANDING_TIMEOUT_MS + 500);
+      });
+      expect(document.body.textContent).not.toContain("Seek timed out");
+    });
+
+    it("completing a PREVIOUS landing's resume evidence never cancels an in-flight NEWER seek — newest wins (gap-F5-adjacent)", async () => {
+      const { v, hls } = await renderHlsSeekReady();
+      view = v;
+      vi.useFakeTimers();
+      const video = videoEl(v);
+      hls.currentLevel = 0;
+      const details = { live: true, fragments: [{ programDateTime: 3_600_000, start: 0, duration: 6, relurl: "run0/s000600.m4s" }] };
+      hls.levels = [{ details }];
+      await act(async () => {
+        hls.emit("hlsLevelUpdated");
+      });
+      await act(async () => {
+        video.currentTime = 0.5;
+        video.dispatchEvent(new Event("timeupdate"));
+      });
+      // Seek #1 lands (discovery) but its resume evidence is still pending.
+      apiPost.mockResolvedValueOnce({ targetMs: 3_610_500 });
+      await act(async () => button(v, "Forward 10 seconds").click());
+      details.fragments = [
+        { programDateTime: 3_600_000, start: 0, duration: 6, relurl: "run0/s000600.m4s" },
+        { programDateTime: 3_610_500, start: 6, duration: 6, relurl: "run1/s000601.m4s" },
+      ];
+      await act(async () => {
+        hls.emit("hlsLevelUpdated");
+      });
+      expect(video.currentTime, "seek #1's discovery landing never seeked the element").toBe(6);
+      // Seek #2 goes out while #1 awaits resume evidence — hold its 202.
+      let resolve202: ((r: { targetMs: number }) => void) | null = null;
+      apiPost.mockImplementationOnce(() => new Promise((r) => { resolve202 = r; }));
+      await act(async () => button(v, "Forward 10 seconds").click());
+      expect(apiPost).toHaveBeenCalledTimes(2);
+      // #1's landed position becomes displayable WHILE #2's 202 is in flight.
+      mediaState(video).readyState = 4;
+      await act(async () => {
+        video.dispatchEvent(new Event("seeked"));
+      });
+      // #2's 202 arrives — it must still arm: the pin sits at ITS target.
+      await act(async () => {
+        resolve202?.({ targetMs: 3_620_500 });
+      });
+      const slider = v.container.querySelector('[role="slider"]');
+      expect(
+        slider?.getAttribute("aria-valuenow"),
+        "the NEWEST seek's 202 was silently dropped — completing the previous landing bumped the supersession epoch and cancelled it",
+      ).toBe("3620500");
+      // And #2 then lands and completes like any hard seek.
+      details.fragments = [
+        ...details.fragments,
+        { programDateTime: 3_620_500, start: 12, duration: 6, relurl: "run2/s000602.m4s" },
+      ];
+      await act(async () => {
+        hls.emit("hlsLevelUpdated");
+      });
+      expect(video.currentTime).toBe(12);
+      await act(async () => {
+        video.dispatchEvent(new Event("seeked"));
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(HARD_SEEK_LANDING_TIMEOUT_MS + 500);
+      });
+      expect(document.body.textContent).not.toContain("Seek timed out");
+    });
+
+    it("a landing that appears on a rung the player is NOT current on still lands — the LEVEL_UPDATED event's own details drive the watch (verify-A ABR flap)", async () => {
+      const { v, hls } = await renderHlsSeekReady();
+      view = v;
+      vi.useFakeTimers();
+      const video = videoEl(v);
+      hls.currentLevel = 0;
+      const staleDetails = { live: true, fragments: [{ programDateTime: 3_600_000, start: 0, duration: 6, relurl: "run0/s000600.m4s" }] };
+      hls.levels = [{ details: staleDetails }, {}];
+      await act(async () => {
+        hls.emit("hlsLevelUpdated");
+      });
+      await act(async () => {
+        video.currentTime = 0.5;
+        video.dispatchEvent(new Event("timeupdate"));
+      });
+      apiPost.mockResolvedValueOnce({ targetMs: 3_610_500 });
+      await act(async () => button(v, "Forward 10 seconds").click());
+      expect(apiPost).toHaveBeenCalledTimes(1);
+      // ABR flapped mid-landing: the refresh that lists the seek-spawned
+      // run1 belongs to ANOTHER level; the current level's own details are
+      // stale and will not refresh again (its loader was abandoned by the
+      // switch). Live shape: FALSE 'Seek timed out' at +20 s, landing ~40 s
+      // late, 9x 503s on the abandoned old-run segment in between.
+      const freshDetails = {
+        live: true,
+        fragments: [
+          { programDateTime: 3_600_000, start: 0, duration: 6, relurl: "run0/s000600.m4s" },
+          { programDateTime: 3_610_500, start: 8, duration: 6, relurl: "run1/s000601.m4s" },
+        ],
+      };
+      hls.levels = [{ details: staleDetails }, { details: freshDetails }];
+      await act(async () => {
+        hls.emit("hlsLevelUpdated", "hlsLevelUpdated", { details: freshDetails, level: 1 });
+      });
+      expect(
+        video.currentTime,
+        "the landing refresh arrived on a non-current rung and was ignored — the watch misses the 20 s window and toasts a FALSE 'Seek timed out' (verify-A)",
+      ).toBe(8);
+      // The switch becomes effective; the landed position is displayable.
+      hls.currentLevel = 1;
+      mediaState(video).readyState = 4;
+      await act(async () => {
+        video.dispatchEvent(new Event("seeked"));
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(HARD_SEEK_LANDING_TIMEOUT_MS + 500);
+      });
+      expect(document.body.textContent).not.toContain("Seek timed out");
+    });
+
+    it("a rung switch mid-landing EXTENDS the landing window instead of failing while the session still progresses", async () => {
+      const { v, hls } = await renderHlsSeekReady();
+      view = v;
+      vi.useFakeTimers();
+      const video = videoEl(v);
+      hls.currentLevel = 0;
+      const details = { live: true, fragments: [{ programDateTime: 3_600_000, start: 0, duration: 6, relurl: "run0/s000600.m4s" }] };
+      hls.levels = [{ details }];
+      await act(async () => {
+        hls.emit("hlsLevelUpdated");
+      });
+      await act(async () => {
+        video.currentTime = 0.5;
+        video.dispatchEvent(new Event("timeupdate"));
+      });
+      apiPost.mockResolvedValueOnce({ targetMs: 3_610_500 });
+      await act(async () => button(v, "Forward 10 seconds").click());
+      // 15 s in, ABR switches rungs — the pipeline is demonstrably still
+      // working toward the target (lane F defers rung restarts post-seek;
+      // the client half must not fail the landing for the handoff).
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(15_000);
+      });
+      await act(async () => {
+        hls.emit("hlsLevelSwitching", "hlsLevelSwitching", { level: 1 });
+      });
+      // 25 s total: the un-extended timer would have toasted at 20 s.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(10_000);
+      });
+      expect(
+        document.body.textContent,
+        "a rung switch mid-landing did not extend the landing window — FALSE 'Seek timed out' while the seek was still in progress (verify-A)",
+      ).not.toContain("Seek timed out");
+      // The landing then completes normally.
+      details.fragments = [
+        ...details.fragments,
+        { programDateTime: 3_610_500, start: 6, duration: 6, relurl: "run1/s000601.m4s" },
+      ];
+      await act(async () => {
+        hls.emit("hlsLevelUpdated");
+      });
+      expect(video.currentTime).toBe(6);
+      mediaState(video).readyState = 4;
+      await act(async () => {
+        video.dispatchEvent(new Event("seeked"));
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(HARD_SEEK_LANDING_TIMEOUT_MS + 500);
+      });
+      expect(document.body.textContent).not.toContain("Seek timed out");
+    });
+
+    it("landing extensions are BOUNDED: rung churn cannot stretch the lifecycle past its hard cap — the toast still comes", async () => {
+      const { v, hls } = await renderHlsSeekReady();
+      view = v;
+      vi.useFakeTimers();
+      const video = videoEl(v);
+      hls.currentLevel = 0;
+      hls.levels = [{ details: { live: true, fragments: [{ programDateTime: 3_600_000, start: 0, duration: 6, relurl: "run0/s000600.m4s" }] } }];
+      await act(async () => {
+        hls.emit("hlsLevelUpdated");
+      });
+      await act(async () => {
+        video.currentTime = 0.5;
+        video.dispatchEvent(new Event("timeupdate"));
+      });
+      apiPost.mockResolvedValueOnce({ targetMs: 3_610_500 });
+      await act(async () => button(v, "Forward 10 seconds").click());
+      // A rung switch every 10 s, landing never arriving: the lifecycle
+      // must still be bounded — never an indefinite pin (§9.1.9).
+      for (let i = 0; i < 6; i += 1) {
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(10_000);
+        });
+        await act(async () => {
+          hls.emit("hlsLevelSwitching", "hlsLevelSwitching", { level: i % 2 });
+        });
+      }
+      expect(
+        document.body.textContent,
+        "rung churn stretched the landing lifecycle indefinitely — the bounded-timeout invariant (§9.1.9) is broken",
+      ).toContain("Seek timed out");
     });
   });
 });

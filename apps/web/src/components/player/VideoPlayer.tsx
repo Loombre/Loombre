@@ -54,8 +54,10 @@ import {
   findLandingFragment,
   findRelocatedLandingStart,
   hasSourceClock,
+  landingExtensionDelayMs,
   HARD_SEEK_LANDING_TIMEOUT_MS,
   isLandingResumeEvidence,
+  pickReadableLevelIndex,
   sourceToPresentationSec,
   type LandingWatch,
   type ListedFragment,
@@ -160,6 +162,24 @@ function nativeSourceAnchorMs(video: HTMLVideoElement): number | null {
   } catch {
     return null;
   }
+}
+
+/** hls.js Fragment -> the structural snapshot lib/source-time consumes.
+ *  Declared once so the current-level read (`listedFragments`) and the
+ *  LEVEL_UPDATED event-details read (d3-a1: the landing must follow
+ *  whichever level actually refreshed) can never drift apart. */
+function toListedFragment(f: {
+  programDateTime?: number | null;
+  start: number;
+  duration: number;
+  relurl?: string;
+}): ListedFragment {
+  return {
+    programDateTimeMs: typeof f.programDateTime === "number" ? f.programDateTime : null,
+    startSec: f.start,
+    durationSec: f.duration,
+    relurl: f.relurl ?? null,
+  };
 }
 
 function isInSeekable(video: HTMLVideoElement, sec: number): boolean {
@@ -361,32 +381,58 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
   // function (`landAbsorbedTarget`, declared beside `hardSeek` below)
   // shared by both moments it can become answerable, so the two call
   // sites can never drift apart.
-  const landAbsorbedTargetRef = useRef<(targetMs: number) => boolean>(() => false);
+  const landAbsorbedTargetRef = useRef<(targetMs: number, frags?: ListedFragment[] | null) => boolean>(() => false);
+  // d3-a1 (gap-F5-adjacent, owner ruling "newest seek wins"): the epoch
+  // the CURRENTLY-ARMED landing lifecycle belongs to. Completing THAT
+  // lifecycle (resume evidence) must invalidate only itself — an epoch
+  // bump scoped to it — never an in-flight newer seek's 202/failure,
+  // which the unconditional bump in clearLandingWatch used to cancel
+  // silently (no arm, no toast, sub-second window).
+  const landingEpochRef = useRef<number | null>(null);
+  // d3-a1 (verify-A): re-arms the landing timer within the lifecycle's
+  // hard cap — set by each hardSeek 202, invoked by the hls.js attach
+  // effect on a rung switch mid-landing (an ABR flap is the pipeline
+  // demonstrably still working, not the seek failing). No-op outside a
+  // lifecycle.
+  const extendLandingTimerRef = useRef<() => void>(() => undefined);
 
   /** The CURRENT LEVEL DETAILS as structural fragments (A2: the LISTED
    *  window — buffer state deliberately plays no part). `null` off the
    *  hls.js path or before the first playlist parse. Reads hlsRef live, so
-   *  a stale closure identity is harmless. */
+   *  a stale closure identity is harmless. d3-a1: before any frame has
+   *  PLAYED (`currentLevel` -1) the readable window is the level being
+   *  LOADED — resolveStartLevel starts on the TOP rung, so the old blind
+   *  level-0 fallback read a level whose details never load and the whole
+   *  pre-first-frame phase was unreadable (the v8-requal 20.1 s Start-over
+   *  pin). pickReadableLevelIndex (lib/source-time.ts) owns the rule. */
   const listedFragments = useCallback((): ListedFragment[] | null => {
     const hls = hlsRef.current;
     if (!hls) return null;
-    const levelIndex = hls.currentLevel >= 0 ? hls.currentLevel : hls.levels.length > 0 ? 0 : -1;
+    const levelIndex = pickReadableLevelIndex(
+      hls.currentLevel,
+      hls.loadLevel,
+      hls.levels.map((level) => level.details != null),
+    );
     const details = levelIndex >= 0 ? hls.levels[levelIndex]?.details : undefined;
     const frags = details?.fragments;
     if (!frags || frags.length === 0) return null;
-    return frags.map((f) => ({
-      programDateTimeMs: typeof f.programDateTime === "number" ? f.programDateTime : null,
-      startSec: f.start,
-      durationSec: f.duration,
-      relurl: f.relurl ?? null,
-    }));
+    return frags.map(toListedFragment);
   }, []);
 
-  const clearLandingWatch = useCallback((): void => {
+  const clearLandingWatch = useCallback((scopeEpoch?: number): void => {
     // Invalidate any in-flight hard-seek 202 (gap-F4): whatever cleared
     // the watch — a landing, the timeout, a soft seek, unmount — a stale
     // response arriving later must not resurrect the relocating state.
-    seekEpochRef.current += 1;
+    // d3-a1 (gap-F5-adjacent): SCOPED when the clear completes a specific
+    // lifecycle (`scopeEpoch`) — if a NEWER hard seek has since taken the
+    // epoch, its in-flight response is the newest intent and must still
+    // arm/toast, so only the lifecycle's own teardown happens and the
+    // bump is skipped. An unscoped clear (soft seek, unmount, session
+    // swap) supersedes everything, exactly as before.
+    if (scopeEpoch === undefined || scopeEpoch === seekEpochRef.current) {
+      seekEpochRef.current += 1;
+    }
+    extendLandingTimerRef.current = () => undefined;
     landingWatchRef.current = null;
     landedAwaitingResumeRef.current = null;
     relocatingRef.current = null;
@@ -966,10 +1012,23 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
       // to land a pending hard seek. The match requires BOTH the runN
       // prefix (strictly newer than the watch's floor) AND the PDT window
       // — see source-time.ts's findLandingFragment.
-      hls.on(HlsCtor.Events.LEVEL_UPDATED, () => {
+      //
+      // d3-a1 (verify-A): the refreshed playlist IS this event's payload,
+      // and mid-landing it can belong to a level the player is NOT
+      // current on — an ABR flap moves the LOADING level, its refreshes
+      // list the seek-spawned run, while `listedFragments()`'s current
+      // level went refresh-quiet the moment its loader was abandoned.
+      // Keying the watch on the current level alone missed the 20 s
+      // window (FALSE 'Seek timed out', landing ~40 s late, the client
+      // meanwhile hammering the abandoned old-run segment). The landing
+      // follows WHICHEVER level refreshed: the event's own details first,
+      // the current-level read as the fallback for a payload-less emit.
+      hls.on(HlsCtor.Events.LEVEL_UPDATED, (_event, data) => {
         const watch = landingWatchRef.current;
         if (!watch) return;
-        const frags = listedFragments();
+        const eventFrags = (data as { details?: { fragments?: Parameters<typeof toListedFragment>[0][] } } | undefined)
+          ?.details?.fragments;
+        const frags = eventFrags && eventFrags.length > 0 ? eventFrags.map(toListedFragment) : listedFragments();
         if (!frags) return;
         const landing = findLandingFragment(frags, watch);
         // gap-F6 round 3, second acceptance: the seek-spawned run exists
@@ -1023,9 +1082,23 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
         // the shared `landAbsorbedTarget` (rem2-absorbed-seek) — the 202
         // handler runs the same acceptance at RESPONSE time, because this
         // refresh listener alone missed every absorbed target the window
-        // listed BEFORE the watch was armed.
-        landAbsorbedTargetRef.current(watch.clampedTargetMs);
+        // listed BEFORE the watch was armed. Runs against the SAME window
+        // the landing match just used (d3-a1: the event's own details when
+        // the refresh belongs to a non-current level).
+        landAbsorbedTargetRef.current(watch.clampedTargetMs, frags);
       });
+
+      // d3-a1 (verify-A): a rung switch while a hard-seek lifecycle is
+      // open is the session demonstrably still working — the pipeline
+      // hands the slot across rungs and playlists refresh on the new
+      // rung's cadence — not the seek failing. Extend the landing timer
+      // (bounded by HARD_SEEK_LANDING_MAX_TOTAL_MS inside the extender)
+      // instead of letting the flat 20 s window fire a FALSE timeout.
+      const onRungSwitchDuringLanding = (): void => {
+        if (relocatingRef.current) extendLandingTimerRef.current();
+      };
+      hls.on(HlsCtor.Events.LEVEL_SWITCHING, onRungSwitchDuringLanding);
+      hls.on(HlsCtor.Events.LEVEL_SWITCHED, onRungSwitchDuringLanding);
 
       // ── Queued-start routing (browser-player-F9) ──────────────────────
       // `pendingSeekMsRef` rides the PRESENTATION axis into this attach —
@@ -1297,7 +1370,10 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
       const landed = landedAwaitingResumeRef.current;
       if (!landed) return;
       if (isLandingResumeEvidence(landed, video.currentTime, video.readyState, listedFragments())) {
-        clearLandingWatch();
+        // d3-a1 (gap-F5-adjacent): SCOPED to the lifecycle this evidence
+        // completes — a newer hard seek's in-flight 202 must survive the
+        // clear ("newest seek wins", owner ruling).
+        clearLandingWatch(landingEpochRef.current ?? undefined);
       }
     };
     const onTimeUpdate = (): void => {
@@ -1533,11 +1609,15 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
    *  the target was NOT listed at seek time, and a sliding window only
    *  ever adds coverage the current run just produced. */
   const landAbsorbedTarget = useCallback(
-    (targetMs: number): boolean => {
+    (targetMs: number, frags?: ListedFragment[] | null): boolean => {
       const video = videoRef.current;
-      const frags = listedFragments();
-      if (!video || !frags) return false;
-      const softSec = sourceToPresentationSec(frags, targetMs);
+      // d3-a1: the LEVEL_UPDATED acceptance passes the window it just
+      // matched against (the event's own details when the refresh belongs
+      // to a non-current level); the 202-time acceptance reads the
+      // current window as before.
+      const listed = frags ?? listedFragments();
+      if (!video || !listed) return false;
+      const softSec = sourceToPresentationSec(listed, targetMs);
       if (softSec === null) return false;
       landingWatchRef.current = null;
       if (nudgeStopRef.current) {
@@ -1606,13 +1686,34 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
           // pause/leave before the landing completes.
           watchedPositionRef.current = clamped;
           setPositionMs(clamped);
-          if (landingTimerRef.current) clearTimeout(landingTimerRef.current);
-          landingTimerRef.current = setTimeout(() => {
-            // Bounded, never an indefinite spinner (§9.1.9): leave
-            // relocating and surface a retryable error.
-            clearLandingWatch();
-            showToast("Seek timed out — the transcoder did not restart in time. Try seeking again.");
-          }, HARD_SEEK_LANDING_TIMEOUT_MS);
+          // d3-a1: this lifecycle's identity, for the SCOPED clear —
+          // completing it (resume evidence) must never cancel an
+          // in-flight newer seek's response (gap-F5-adjacent).
+          landingEpochRef.current = epoch;
+          const lifecycleStartedAtMs = Date.now();
+          const armLandingTimer = (delayMs: number): void => {
+            if (landingTimerRef.current) clearTimeout(landingTimerRef.current);
+            landingTimerRef.current = setTimeout(() => {
+              // Bounded, never an indefinite spinner (§9.1.9): leave
+              // relocating and surface a retryable error. Superseded
+              // mid-flight (a newer POST holds the epoch, its 202 not
+              // yet arrived): do nothing — the newer lifecycle owns the
+              // pin and its own 202/failure/timer governs (d3-a1).
+              if (seekEpochRef.current !== epoch) return;
+              clearLandingWatch();
+              showToast("Seek timed out — the transcoder did not restart in time. Try seeking again.");
+            }, delayMs);
+          };
+          armLandingTimer(HARD_SEEK_LANDING_TIMEOUT_MS);
+          // d3-a1 (verify-A): a rung switch mid-landing re-arms the timer
+          // — one more window, clipped to the lifecycle's hard cap
+          // (landingExtensionDelayMs, lib/source-time.ts) — instead of
+          // firing a FALSE timeout while the pipeline hands off rungs.
+          extendLandingTimerRef.current = (): void => {
+            if (seekEpochRef.current !== epoch) return;
+            const delayMs = landingExtensionDelayMs(lifecycleStartedAtMs, Date.now());
+            if (delayMs !== null) armLandingTimer(delayMs);
+          };
           // rem2-absorbed-seek: the ABSORBED 202, answered at RESPONSE
           // time. When the CURRENT window already lists the clamped
           // target, the server absorbed the seek into the in-flight run —

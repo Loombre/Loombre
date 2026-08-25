@@ -89,9 +89,22 @@ export function maxListedRunIndex(fragments: readonly ListedFragment[]): number 
  * or its fragment carries no PDT. Within a run, presentation and source
  * advance 1:1 (§9.1.6), so the intra-fragment remainder carries through
  * unchanged.
+ *
+ * d3-a1 (A/gap-F4) boundary preference: the scan runs BACKWARD, so a
+ * position covered by BOTH sides of a fragment boundary maps through the
+ * LATER fragment. Within a run the two candidates agree to within PDT
+ * quantization, but at a RUN boundary they are different timelines — and
+ * overlap genuinely happens there: once the old run's fragments have been
+ * buffered, hls.js corrects their start/duration from real media PTS
+ * while the seek-spawned run's parse-time values stay nominal, so the old
+ * tail's recorded end can overstep the new run's recorded start by the
+ * EXTINF-vs-real-media slop. A landed hard seek parks the element exactly
+ * on that boundary; mapping it through the OLD fragment put the previous
+ * run's tail on the paused clock (and, via the resolver, re-anchored the
+ * source clock there). The NEW run wins.
  */
 export function presentationToSourceMs(fragments: readonly ListedFragment[], presentationSec: number): number | null {
-  for (let i = 0; i < fragments.length; i += 1) {
+  for (let i = fragments.length - 1; i >= 0; i -= 1) {
     const f = fragments[i]!;
     const end = f.startSec + f.durationSec;
     const isLast = i === fragments.length - 1;
@@ -197,6 +210,64 @@ export function findLandingFragment(fragments: readonly ListedFragment[], watch:
 
 export function landingWatchExpired(watch: LandingWatch, nowMs: number, timeoutMs = HARD_SEEK_LANDING_TIMEOUT_MS): boolean {
   return nowMs - watch.armedAtMs >= timeoutMs;
+}
+
+/**
+ * d3-a1 (verify-A): the hard cap on a landing lifecycle that keeps
+ * EXTENDING its window across ABR rung switches. A switch mid-landing
+ * means the session is demonstrably still working — the pipeline hands
+ * off rungs, playlists refresh on the new rung's cadence — so failing the
+ * seek at the flat 20 s produced a FALSE 'Seek timed out' toast for a
+ * landing that then completed ~40 s in (live verify-A, Thor 4-rung
+ * ladder). Each switch re-arms one more timeout window, but never past
+ * this total: the §9.1.9 bounded-lifecycle invariant (never an indefinite
+ * pin) survives, it just tolerates handoffs.
+ */
+export const HARD_SEEK_LANDING_MAX_TOTAL_MS = 60_000;
+
+/**
+ * How long the re-armed landing timer may run from `nowMs`: one more full
+ * timeout window, clipped to whatever remains of the lifecycle's hard
+ * cap. `null` — no extension left — once the cap is spent; the caller
+ * leaves the currently-armed timer to fire.
+ */
+export function landingExtensionDelayMs(
+  lifecycleStartedAtMs: number,
+  nowMs: number,
+  timeoutMs: number = HARD_SEEK_LANDING_TIMEOUT_MS,
+  maxTotalMs: number = HARD_SEEK_LANDING_MAX_TOTAL_MS,
+): number | null {
+  const remaining = maxTotalMs - (nowMs - lifecycleStartedAtMs);
+  if (remaining <= 0) return null;
+  return Math.min(timeoutMs, remaining);
+}
+
+/**
+ * d3-a1 (A/v8-requal): which hls.js level index the player should read
+ * its LISTED WINDOW from. `currentLevel` (the level actually playing)
+ * stays authoritative whenever it exists — including when its details are
+ * momentarily missing, where callers HOLD rather than borrow another
+ * level's axis (browser-player-F6). But before any frame has PLAYED,
+ * `currentLevel` is -1 — and the old "fall back to level 0" read a level
+ * that never loads: `resolveStartLevel` (lib/hls-js-config.ts) starts
+ * hls.js on the server's encoding rung, the TOP of the ladder, so on any
+ * multi-rung session only THAT level has details until playback begins.
+ * Live consequence: a pre-first-frame hard seek (the v8-requal Start-over
+ * on the resume prompt) had a fully parsed window listing its absorbed
+ * target and could not read it — the clock pinned at the target for the
+ * full 20 s timeout. Fall back to the level being LOADED, then to any
+ * level whose details exist.
+ */
+export function pickReadableLevelIndex(
+  currentLevel: number,
+  loadLevel: number,
+  levelHasDetails: readonly boolean[],
+): number {
+  if (currentLevel >= 0) return currentLevel;
+  if (loadLevel >= 0 && levelHasDetails[loadLevel] === true) return loadLevel;
+  const firstWithDetails = levelHasDetails.indexOf(true);
+  if (firstWithDetails >= 0) return firstWithDetails;
+  return levelHasDetails.length > 0 ? 0 : -1;
 }
 
 /**

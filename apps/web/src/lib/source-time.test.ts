@@ -14,9 +14,12 @@ import {
   findLandingFragment,
   findRelocatedLandingStart,
   hasSourceClock,
+  landingExtensionDelayMs,
   landingWatchExpired,
+  HARD_SEEK_LANDING_MAX_TOTAL_MS,
   HARD_SEEK_LANDING_TIMEOUT_MS,
   maxListedRunIndex,
+  pickReadableLevelIndex,
   presentationToSourceMs,
   isLandingResumeEvidence,
   LANDING_RESUME_EPSILON_SEC,
@@ -74,6 +77,27 @@ describe("presentationToSourceMs (display + heartbeat mapping)", () => {
   });
   it("a fragment without PDT yields null (pre-V8 server)", () => {
     expect(presentationToSourceMs([frag("run0/s000000.m4s", 0, 6, null)], 3)).toBeNull();
+  });
+
+  // d3-a1 (A/gap-F4): once fragments of the OLD run have been buffered,
+  // hls.js corrects their start/duration from real media PTS while the
+  // seek-spawned run's parse-time values stay nominal — so the old run's
+  // recorded tail can OVERLAP the new run's recorded start by up to the
+  // EXTINF-vs-real-media slop. A landed hard seek parks the element exactly
+  // at the new run's start; mapping that position through the OLD fragment
+  // put the PREVIOUS run's tail source time on the paused clock (live:
+  // minutes-to-hours off until the next play/timeupdate self-corrected).
+  it("a position covered by BOTH sides of a run boundary (PTS-adjust overlap) maps through the NEW run, never the previous run's tail", () => {
+    const overlap: ListedFragment[] = [
+      frag("run0/s000012.m4s", 72, 6.4, 72_000), // real-PTS tail: ends at 78.4
+      frag("run1/s000013.m4s", 78, 6, 12_000), // seek-spawned run, nominal start 78
+    ];
+    // The landed element position — inside the overlap [78, 78.4).
+    expect(presentationToSourceMs(overlap, 78)).toBe(12_000);
+    expect(presentationToSourceMs(overlap, 78.25)).toBe(12_250);
+    // Outside the overlap both directions stay exact.
+    expect(presentationToSourceMs(overlap, 77)).toBe(77_000);
+    expect(presentationToSourceMs(overlap, 79)).toBe(13_000);
   });
 });
 
@@ -263,5 +287,35 @@ describe("isLandingResumeEvidence (browser-player-F4)", () => {
     expect(isLandingResumeEvidence(landed, 90, 4, null)).toBe(true);
     expect(isLandingResumeEvidence(landed, 90 - LANDING_RESUME_EPSILON_SEC, 4, null)).toBe(true);
     expect(isLandingResumeEvidence(landed, 89.5, 4, null)).toBe(false);
+  });
+});
+
+describe("pickReadableLevelIndex (d3-a1: the pre-first-frame window)", () => {
+  it("the playing level is authoritative whenever it exists — even with its details momentarily missing (F6 hold, never another level's axis)", () => {
+    expect(pickReadableLevelIndex(2, 1, [true, true, false])).toBe(2);
+    expect(pickReadableLevelIndex(0, 1, [true, true, true])).toBe(0);
+  });
+  it("before any frame has played, the level being LOADED is the readable window (resolveStartLevel starts on the TOP rung, so level 0 never loaded)", () => {
+    expect(pickReadableLevelIndex(-1, 2, [false, false, true])).toBe(2);
+  });
+  it("with no load level either, any level whose details exist beats the blind level-0 read", () => {
+    expect(pickReadableLevelIndex(-1, -1, [false, true, false])).toBe(1);
+  });
+  it("nothing readable: level 0 with levels present (callers yield null on missing details), -1 with none", () => {
+    expect(pickReadableLevelIndex(-1, -1, [false, false])).toBe(0);
+    expect(pickReadableLevelIndex(-1, -1, [])).toBe(-1);
+  });
+});
+
+describe("landingExtensionDelayMs (d3-a1: rung switches mid-landing)", () => {
+  it("early in the lifecycle a switch earns one more full timeout window", () => {
+    expect(landingExtensionDelayMs(0, 15_000)).toBe(HARD_SEEK_LANDING_TIMEOUT_MS);
+  });
+  it("near the hard cap the extension is clipped to what remains", () => {
+    expect(landingExtensionDelayMs(0, HARD_SEEK_LANDING_MAX_TOTAL_MS - 5_000)).toBe(5_000);
+  });
+  it("at or past the cap there is no extension — the bounded-lifecycle invariant survives rung churn", () => {
+    expect(landingExtensionDelayMs(0, HARD_SEEK_LANDING_MAX_TOTAL_MS)).toBeNull();
+    expect(landingExtensionDelayMs(0, HARD_SEEK_LANDING_MAX_TOTAL_MS + 1)).toBeNull();
   });
 });
