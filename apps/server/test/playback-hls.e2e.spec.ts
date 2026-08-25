@@ -559,19 +559,65 @@ describe("GET /playback/sessions/{id}/hls/{file} — segment/init serving", () =
     ).toBeNull();
   }, 15_000);
 
-  it("gap-F6 round 3: the very FIRST indexed GET of a session (no progression yet) hitting a pruned index never restarts", async () => {
-    // Live 1/1: hls.js's first indexed request (live-sync start s74,
+  it("gap-F6 round 3: the very FIRST indexed GET of a session racing the prune AT the live edge never restarts", async () => {
+    // Live 1/1: hls.js's first indexed request (live-sync start,
     // requested_segment still NULL) hit a pruned file and spawned run1 —
-    // on a completely untouched mount. No progression = no backward
-    // intent = no seek.
+    // on a completely untouched mount. An index the session's own
+    // production is still standing on is the prune RACING the client, not
+    // a backward seek.
+    //
+    // d3-f2 narrowed round 3's rule: "no progression recorded" is no
+    // longer read as "no backward intent" for ANY index, only for one
+    // within the hysteresis of the session's own production edge (this
+    // test). The blanket form wedged a first-touch backward seek on 503
+    // forever — see the d3-f2 test below.
     const { sessionId, sessionDir } = await setupWithSegments(24);
-    rmSync(path.join(sessionDir, "run0", "s000018.m4s"));
+    rmSync(path.join(sessionDir, "run0", "s000023.m4s"));
 
-    const res = await admin().get(`/playback/sessions/${sessionId}/hls/run0/s000018.m4s`);
+    const res = await admin().get(`/playback/sessions/${sessionId}/hls/run0/s000023.m4s`);
     expect(res.status).toBe(503);
     expect(
       await readSeekTargetMs(sessionId),
-      "a first-touch pruned GET restarted the run with zero seek evidence",
+      "a first-touch pruned GET at the live edge restarted the run with zero seek evidence",
+    ).toBeNull();
+  }, 15_000);
+
+  // ── d3-f2 (QA 2026-08-24, P2): FIRST-TOUCH BACKWARD SEEK WEDGES ───────
+  // The demoted-ENOENT path treated `requested_segment IS NULL` as "no
+  // backward intent" for every index, so a client whose FIRST indexed GET
+  // is a backward jump into pruned history got PRUNED_UNDERFOOT 503 with
+  // no restart — and `updateRequestedSegment` then PINNED requested_segment
+  // to that very index, so every retry sat inside the backward-jump
+  // hysteresis OF ITSELF and the implicit restart became unreachable
+  // forever (live: 15x GET run0/s000010.m4s -> 15x 503, runs stayed at 1;
+  // the same GET after one served high-index GET restarted correctly).
+  // With no progression recorded, the session's own produced edge is the
+  // only progression there is — and an index far below it cannot be
+  // reached by playing forward.
+
+  it("d3-f2: a FIRST-TOUCH backward jump into pruned history restarts exactly once", async () => {
+    const { sessionId, sessionDir } = await setupWithSegments(24);
+    // requested_segment IS NULL — this session has never served a segment.
+    rmSync(path.join(sessionDir, "run0", "s000003.m4s"));
+
+    const first = await admin().get(`/playback/sessions/${sessionId}/hls/run0/s000003.m4s`);
+    expect(first.status).toBe(503);
+    expect(first.headers["retry-after"]).toBe("1");
+    expect(
+      await readSeekTargetMs(sessionId),
+      "a first-touch backward jump never restarted — the 503-forever wedge",
+    ).toBe(3 * 6 * 1000);
+
+    // The worker consumes the seek (nulls the column) and relocates. The
+    // client, still on its old playlist, retries the same dead URI: the
+    // progression it pinned a moment ago is its OWN, so this must not
+    // restart again — one restart per intention, never one per retry.
+    await simulateWorkerConsumedSeekAndProduced(sessionId, 24);
+    const retry = await admin().get(`/playback/sessions/${sessionId}/hls/run0/s000003.m4s`);
+    expect(retry.status).toBe(503);
+    expect(
+      await readSeekTargetMs(sessionId),
+      "a retry of the same dead URI restarted the run AGAIN — the churn loop",
     ).toBeNull();
   }, 15_000);
 

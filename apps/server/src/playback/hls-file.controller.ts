@@ -54,7 +54,10 @@
 //   3. PRUNED UNDERFOOT (round 3, live 2026-08-24): an ENOENT at/behind
 //      `produced_segment` that the session's OWN forward progression was
 //      heading toward anyway (index at or above `requested_segment` minus
-//      a small out-of-order hysteresis — or no progression recorded yet).
+//      a small out-of-order hysteresis — or, with no progression recorded
+//      yet, at or above `produced_segment` minus that same hysteresis:
+//      d3-f2, see the ENOENT branch's own comment for why "no progression"
+//      cannot mean "never a backward jump").
 //      On a fast-completing copy-shape file the whole encode lands in
 //      under a second and retention prunes the head while the client is
 //      still fetching its FIRST segments; every such GET is the prune
@@ -614,13 +617,26 @@ export class PlaybackHlsFileController {
         // `session` was read BEFORE this request's own
         // `updateRequestedSegment` write above, so `requestedSegment` here
         // is the PREVIOUS progression — exactly the baseline the
-        // backward-jump test needs. No progression at all (a session's
-        // very first indexed GET — live: hls.js's live-sync start s74 on a
-        // completely untouched mount) carries no backward intent either.
-        const previousRequested = session.requestedSegment;
+        // backward-jump test needs.
+        //
+        // d3-f2: when there is no recorded progression at all, the
+        // session's own PRODUCED EDGE is the progression — not a licence to
+        // treat every index as a forward race. Round 3 read "no
+        // progression" as "no backward intent" for ANY index, which wedged
+        // a first-touch backward seek permanently: the 503 answered nothing
+        // and `updateRequestedSegment` above then pinned requested_segment
+        // to that same low index, so every retry sat inside the hysteresis
+        // OF ITSELF and the implicit restart was unreachable forever (live:
+        // 15x GET run0/s000010.m4s -> 15x 503, runs stayed 1; the same GET
+        // after one served high-index GET restarted correctly). A first
+        // touch NEAR the produced edge is still the prune racing the
+        // client's own forward progression (round 3's untouched-mount
+        // churn) and still gets a plain 503; one far below it is a position
+        // no amount of playing forward reaches.
+        const progressionBaseline = session.requestedSegment ?? session.producedSegment;
         if (
-          previousRequested === null ||
-          parsed.segmentIndex >= previousRequested - BACKWARD_JUMP_HYSTERESIS_SEGMENTS
+          progressionBaseline === null ||
+          parsed.segmentIndex >= progressionBaseline - BACKWARD_JUMP_HYSTERESIS_SEGMENTS
         ) {
           await recordSwitchOnly();
           this.respondSeekRetry(res, sanitizeInstancePath(req), PRUNED_UNDERFOOT_DETAIL);
