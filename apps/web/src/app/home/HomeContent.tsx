@@ -62,7 +62,8 @@ import { PosterCard } from "../../components/home/PosterCard.js";
 import { WatchlistPosterCard } from "../../components/watchlist/WatchlistPosterCard.js";
 import { Skeleton } from "../../components/skeleton/Skeleton.js";
 import { Button } from "../../components/ui/Button.js";
-import { apiDelete, apiGet, LoombreApiError } from "../../lib/api-client.js";
+import { apiDelete, apiGet } from "../../lib/api-client.js";
+import { apiErrorCopy } from "../../lib/api-error-message.js";
 import { getAuthStore } from "../../lib/auth-store.js";
 import { useNowPlayingItemIds } from "../../lib/now-playing.js";
 import { useWatchlistChangeSignal } from "../../lib/watchlist-sync.js";
@@ -241,14 +242,14 @@ export function HomeContent(): React.JSX.Element {
         if (!cancelled) setContinueWatching(page.items);
       })
       .catch((err: unknown) => {
-        if (!cancelled) setLoadError(err instanceof LoombreApiError ? err.message : "Failed to load Home.");
+        if (!cancelled) setLoadError(apiErrorCopy(err, "Failed to load Home."));
       });
     apiGet("/home/recently-added")
       .then((page) => {
         if (!cancelled) setRecentlyAdded(page.items);
       })
       .catch((err: unknown) => {
-        if (!cancelled) setLoadError(err instanceof LoombreApiError ? err.message : "Failed to load Home.");
+        if (!cancelled) setLoadError(apiErrorCopy(err, "Failed to load Home."));
       });
     // Watchlist is a secondary rail (hidden entirely when empty, see the
     // render below) — degrade to an empty list on failure instead of

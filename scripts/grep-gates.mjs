@@ -326,10 +326,8 @@ const API_ERROR_COPY_TEST_FILE = /\.(test|spec)\.[jt]sx?$/;
  * it excuses (the failure mode a plain allowlist has).
  */
 const API_ERROR_COPY_KNOWN_REMAINING = new Map([
-  [
-    "apps/web/src/app/home/HomeContent.tsx",
-    "d4 lane W owns this file (watchlist id store + card-count derivation, same fetch effect as the two sites) — swept in the follow-up after lane W integrates; delete this entry with the fix",
-  ],
+  // Empty since the d4-e6 follow-up swept HomeContent.tsx (the last entry).
+  // Add entries only with an owner and a deletion condition, as that one had.
 ]);
 
 // ---------------------------------------------------------------------------
