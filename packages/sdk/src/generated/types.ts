@@ -2934,7 +2934,7 @@ export interface components {
          */
         SystemUpdateVerification: "verified" | "signature-invalid" | "unreachable" | "disabled";
         SystemUpdateInfo: {
-            /** @description This server build's own version (matches SystemInfo.version). */
+            /** @description This server build's own version as a BARE semver — the string `latestVersion` is compared against, which is why it carries no build metadata. Identical to `SystemInfo.version` in a RELEASE build only (d3-b11): a dev build stamps `SystemInfo.version` as `<version>-dev+<shorthash>` while this member stays `<version>`, so the two legitimately differ (e.g. `0.9.0-rc.7-dev+abc1234` vs `0.9.0-rc.7`). Show one or the other, never diff them. */
             currentVersion: string;
             /** @description Release channel this server tracks (single member today: "stable"). */
             channel: string;
