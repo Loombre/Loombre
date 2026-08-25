@@ -6,7 +6,7 @@
 // file pins the formatting rules the two surfaces share.
 
 import { describe, expect, it } from "vitest";
-import { libraryPathLabel } from "./library-path-label.js";
+import { libraryNameWithPath, libraryPathLabel } from "./library-path-label.js";
 
 describe("libraryPathLabel", () => {
   it("renders a single root as-is", () => {
@@ -26,5 +26,23 @@ describe("libraryPathLabel", () => {
 
   it("drops blank entries but keeps the real ones", () => {
     expect(libraryPathLabel(["/mnt/a", "  ", "/mnt/b "])).toBe("/mnt/a, /mnt/b");
+  });
+});
+
+// d3-d9: the single-string form, for aria-labels and dialog titles.
+describe("libraryNameWithPath", () => {
+  it("appends the path so two libraries with the same name read differently", () => {
+    expect(libraryNameWithPath("Movies", ["/mnt/movies"])).toBe("Movies (/mnt/movies)");
+    expect(libraryNameWithPath("Movies", ["/srv/media/movies"])).toBe("Movies (/srv/media/movies)");
+  });
+
+  it("joins multiple roots exactly as the sub-line formatter does", () => {
+    expect(libraryNameWithPath("Movies", ["/mnt/a", "/mnt/b"])).toBe("Movies (/mnt/a, /mnt/b)");
+  });
+
+  it("falls back to the bare name rather than rendering an empty parenthesis", () => {
+    expect(libraryNameWithPath("Movies", [])).toBe("Movies");
+    expect(libraryNameWithPath("Movies", ["  "])).toBe("Movies");
+    expect(libraryNameWithPath("Movies", undefined)).toBe("Movies");
   });
 });

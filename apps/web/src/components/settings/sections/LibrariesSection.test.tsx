@@ -175,8 +175,9 @@ describe("LibrariesSection — browser-admin-F7: the list never shows a library 
     // The reported symptom: "Libraries · 6" for one render, then · 5 after
     // a reload. Server truth here is one library, before AND after.
     expect(view!.container.querySelector("h1")?.textContent).toBe("Libraries · 1");
-    expect(view!.container.querySelector('[aria-label="Manage qa-restricted"]')).toBeNull();
-    expect(view!.container.querySelector('[aria-label="Manage Movies"]')).not.toBeNull();
+    // Prefix match: d3-d9 appends the library's path to this label.
+    expect(view!.container.querySelector('[aria-label^="Manage qa-restricted"]')).toBeNull();
+    expect(view!.container.querySelector('[aria-label^="Manage Movies"]')).not.toBeNull();
     // …and the list was re-read rather than trusted to local state.
     // (Scope-qualified: d3-d5 added a SECOND GET /libraries per load, the
     // administration-scoped one — this assertion is about the viewer-scoped
@@ -285,5 +286,82 @@ describe("LibrariesSection — d3-d7: honours catalog invalidation", () => {
     });
 
     expect(viewerReads()).toHaveLength(1);
+  });
+});
+
+// d3-d9 (verify/browser-admin-F9 adjacent, QA 2026-08-21 remediation
+// dispatch 3, P3): library names are not unique, and this pane's own row
+// menu was named `Manage ${library.name}` — two libraries called "Movies"
+// gave assistive tech two buttons with the identical accessible name, and
+// the Edit/Permissions dialogs were titled the same way. Sighted users get
+// the path sub-line on the row; AT users got nothing. browser-admin-F9
+// already solved this for the GRANT surfaces with library-path-label.ts —
+// the same formatter belongs in all three places here.
+describe("LibrariesSection — d3-d9: duplicate library names stay distinguishable", () => {
+  const DUPLICATE_NAMES = [
+    { ...LIBRARIES[0]! },
+    {
+      id: "lib-2",
+      name: "Movies",
+      mediaKind: "movie",
+      paths: ["/srv/media/movies"],
+      contentClass: "general",
+      itemCount: 7,
+      createdAtMs: 0,
+      updatedAtMs: 0,
+    },
+  ];
+
+  beforeEach(() => {
+    apiGetMock.mockImplementation((path: string) => {
+      if (path === "/libraries") return Promise.resolve({ items: DUPLICATE_NAMES, nextCursor: null });
+      if (path === "/users") return Promise.resolve({ items: [], nextCursor: null });
+      if (path === "/libraries/{id}/permissions") return Promise.resolve({ libraryId: "lib-2", permissions: [] });
+      return Promise.reject(new Error(`unexpected apiGet(${path})`));
+    });
+  });
+
+  function menuLabels(): string[] {
+    return Array.from(view!.container.querySelectorAll("button[aria-label]"))
+      .map((b) => b.getAttribute("aria-label") ?? "")
+      .filter((l) => l.startsWith("Manage "));
+  }
+
+  async function openRowMenu(index: number): Promise<void> {
+    const triggers = Array.from(view!.container.querySelectorAll("button[aria-label^='Manage ']"));
+    await click(triggers[index] as HTMLButtonElement);
+  }
+
+  function dialogLabel(): string {
+    const dialog = view!.container.querySelector('[role="dialog"]');
+    if (!dialog) throw new Error("no dialog open");
+    return dialog.getAttribute("aria-label") ?? "";
+  }
+
+  it("names each row menu by name AND path — never two identical 'Manage Movies' buttons", async () => {
+    await render();
+
+    const labels = menuLabels();
+    expect(labels).toHaveLength(2);
+    expect(new Set(labels).size).toBe(2);
+    expect(labels[0]).toContain("/mnt/movies");
+    expect(labels[1]).toContain("/srv/media/movies");
+    expect(labels).not.toContain("Manage Movies");
+  });
+
+  it("titles the Edit dialog with the path, so the modal says WHICH 'Movies' is being edited", async () => {
+    await render();
+    await openRowMenu(1);
+    await click(buttonFor("Edit"));
+
+    expect(dialogLabel()).toContain("/srv/media/movies");
+  });
+
+  it("titles the Permissions dialog with the path too", async () => {
+    await render();
+    await openRowMenu(1);
+    await click(buttonFor("Permissions"));
+
+    expect(dialogLabel()).toContain("/srv/media/movies");
   });
 });

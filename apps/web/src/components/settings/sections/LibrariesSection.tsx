@@ -58,7 +58,7 @@ import { StashModal } from "../../admin/libraries/StashModal.js";
 import { RowMenu } from "../RowMenu.js";
 import { AddLibrarySheet } from "./AddLibrarySheet.js";
 import { useLibraryScanStatus } from "./use-library-scan-status.js";
-import { libraryPathLabel } from "./library-path-label.js";
+import { libraryNameWithPath, libraryPathLabel } from "./library-path-label.js";
 import { subscribeCatalogInvalidation } from "../../../lib/catalog-invalidation.js";
 import { diffPermissionsToSubmit } from "../../../lib/library-permissions.js";
 import { enumLabel, MEDIA_KIND_LABEL } from "../../../lib/enum-labels.js";
@@ -111,7 +111,10 @@ function EditLibraryModal({
   }
 
   return (
-    <Modal title={`Edit "${library.name}"`} onClose={onClose}>
+    // d3-d9: name AND path — "Edit Movies" is ambiguous the moment a second
+    // library is called Movies, and this dialog's title is its ONLY
+    // identifier (Modal puts it on both the h3 and the dialog's aria-label).
+    <Modal title={`Edit ${libraryNameWithPath(library.name, library.paths)}`} onClose={onClose}>
       <form className={styles.form} onSubmit={handleSubmit}>
         <label className={styles.field}>
           <span className={styles.label}>Name</span>
@@ -179,7 +182,7 @@ function PermissionsModal({ library, onClose }: { library: Library; onClose: () 
   }
 
   return (
-    <Modal title={`Permissions — ${library.name}`} onClose={onClose}>
+    <Modal title={`Permissions — ${libraryNameWithPath(library.name, library.paths)}`} onClose={onClose}>
       {library.contentClass === "restricted" && (
         <p className={styles.note}>
           This is a restricted library (docs/PLAN.md §6.4&apos;s five-gate model). Granting access below is gate 4
@@ -258,7 +261,10 @@ function LibraryRow({
           <span className={styles.rowSub}>Last scan {formatRelativeTime(scanStatus.lastCompletedAtMs, Date.now())}</span>
         ) : null}
         <RowMenu
-          label={`Manage ${library.name}`}
+          // d3-d9: the row's own path sub-line (two lines up) is what a
+          // sighted admin disambiguates two "Movies" rows by; this
+          // aria-label is the AT user's only copy of that information.
+          label={`Manage ${libraryNameWithPath(library.name, library.paths)}`}
           actions={[
             { label: "Scan", onSelect: () => onScan(false) },
             { label: "Full rescan", onSelect: () => onScan(true) },

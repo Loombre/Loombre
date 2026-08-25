@@ -26,3 +26,20 @@ export function libraryPathLabel(paths: readonly string[] | null | undefined): s
   const roots = paths.map((p) => p.trim()).filter((p) => p.length > 0);
   return roots.length > 0 ? roots.join(", ") : null;
 }
+
+/**
+ * d3-d9: the same disambiguator for surfaces that have only ONE STRING to
+ * work with — an `aria-label`, a dialog title — where the row's two-line
+ * name-over-path treatment above is not available. /settings/libraries had
+ * three: the row menu's `Manage <name>` (two libraries called "Movies"
+ * yielded two buttons with the identical accessible name, so an AT user
+ * picking between them was guessing where a sighted user reads the path
+ * sub-line), and the Edit/Permissions dialog titles.
+ *
+ * Falls back to the bare name when there is no path worth showing, so a
+ * defensive empty `paths` can never render "Movies ()".
+ */
+export function libraryNameWithPath(name: string, paths: readonly string[] | null | undefined): string {
+  const label = libraryPathLabel(paths);
+  return label === null ? name : `${name} (${label})`;
+}
