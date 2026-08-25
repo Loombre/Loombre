@@ -46,6 +46,26 @@ export interface ContinueWatchingRow {
 export interface GetContinueWatchingParams {
   cursor?: string;
   limit?: number;
+  /**
+   * Remediation d3-b9 (adi-F2's third caller): restrict the page to this
+   * SET of item types — the same parameter, with the same semantics, that
+   * listItems/searchCatalog already carry (see ListItemsParams.itemTypes).
+   * The caller here is apps/server's GET /home/continue-watching, whose
+   * `ContinueWatchingEntry.item` discriminator admits movie/episode/track
+   * only; it used to cut that subset out of the page the keyset LIMIT had
+   * already been spent on, so the rail came back short — EMPTY at
+   * ?limit=1 — with a non-null `nextCursor`.
+   *
+   * A `progress` row against an ineligible type is not hypothetical:
+   * PUT /progress/{itemId} accepted ANY visible item id until d3-b9's
+   * other half, and rows written before that are still in the table, so
+   * this filter is what protects the rail from history as well as from
+   * clients.
+   *
+   * An EMPTY array means "no type can match" (kysely renders `eb.or([])`
+   * as `1 = 0`), never "no filter" — omit the key for "no filter".
+   */
+  itemTypes?: readonly ItemType[];
 }
 
 export interface GetContinueWatchingResult {
@@ -110,6 +130,13 @@ export async function getContinueWatching(
     .where('progress.user_id', '=', ctx.userId)
     .where('progress.state', '=', 'in-progress')
     .where(applyGuardToJoined(ctx, 'progress.item_id'));
+
+  // d3-b9: BEFORE ORDER BY/LIMIT, so `limit` counts rows the caller can
+  // actually render (items.ts's own itemTypes block, verbatim shape).
+  if (params.itemTypes) {
+    const itemTypes = params.itemTypes;
+    query = query.where((eb) => eb.or(itemTypes.map((t) => eb('catalog_items.item_type', '=', t))));
+  }
 
   if (params.cursor) {
     const { updatedAtMs, itemId } = decodeCursor(params.cursor, isProgressCursorPayload);

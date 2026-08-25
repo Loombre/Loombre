@@ -30,15 +30,19 @@
 // convention truncated the rail at page 0). The eligible set is now a
 // query PARAMETER (`itemTypes`, packages/db/src/query/{items,search}.ts),
 // so the database pages over eligible rows only and `limit` means "up to N
-// items you can actually use". Keep the two constants below as the single
+// items you can actually use". Keep the three constants below as the single
 // source of that subset — if a contract discriminator gains a type, this
-// is the one place to widen. continue-watching is deliberately OUT of
-// adi-F2's scope (the finding names /search and /home/recently-added) and
-// still post-filters to movie/episode/track below: `progress` accepts a
-// row for ANY visible item id (progress.controller.ts's PUT does not check
-// item_type), so that rail can short-page the same way and is logged as a
-// separate finding — the fix shape there is this same `itemTypes` param on
-// getContinueWatching.
+// is the one place to widen.
+//
+// Remediation d3-b9 finishes the job on the THIRD rail. continue-watching
+// was out of adi-F2's own scope (that finding named /search and
+// /home/recently-added) and kept post-filtering to movie/episode/track,
+// which short-paged for exactly the same reason as soon as `progress` held
+// a row for an ineligible type — and it did, because PUT /progress
+// accepted any visible item id. Both halves are fixed now: the query takes
+// `itemTypes` (packages/db/src/query/progress.ts) and progress.controller.ts
+// refuses to write a container row. The query-side filter is not redundant
+// with the write-side check — rows written before it still exist.
 
 import { Controller, Get, Query, Req, UseFilters, UseGuards } from "@nestjs/common";
 import {
@@ -57,6 +61,7 @@ import { RateLimit, SurfaceRateLimitGuard } from "../common/rate-limit.guard.js"
 import { RateLimitExceptionFilter } from "../common/rate-limit-exception.filter.js";
 import { resolveViewer, parseListQuery } from "./viewer.js";
 import { mapByType } from "./mappers.js";
+import { PROGRESS_BEARING_ITEM_TYPES } from "./progress-item-types.js";
 
 /** The itemTypes packages/contract/openapi.yaml's `SearchResult.item`
  *  discriminator admits — passed INTO the query so pages are cut over
@@ -66,9 +71,12 @@ const SEARCH_ELIGIBLE_TYPES: readonly ItemType[] = ["movie", "series", "artist",
 /** Likewise for `RecentlyAddedEntry.item` (adi-F2). */
 const RECENTLY_ADDED_ELIGIBLE_TYPES: readonly ItemType[] = ["movie", "series", "album"];
 
-/** ContinueWatchingEntry.item's subset. NOT pushed into the query — see
- *  this file's header (adi-F2 scope note). */
-const CONTINUE_WATCHING_ELIGIBLE_TYPES: readonly ItemType[] = ["movie", "episode", "track"];
+/** Likewise for `ContinueWatchingEntry.item` (d3-b9). Shared with
+ *  progress.controller.ts's write-side check via
+ *  PROGRESS_BEARING_ITEM_TYPES — the rail's eligible set and the set of
+ *  types that may HOLD progress are the same statement about the same
+ *  contract discriminator, and must not drift apart. */
+const CONTINUE_WATCHING_ELIGIBLE_TYPES: readonly ItemType[] = PROGRESS_BEARING_ITEM_TYPES;
 
 @Controller()
 @UseFilters(RateLimitExceptionFilter)
@@ -122,16 +130,21 @@ export class CrossTypeController {
     const ctx = await resolveViewer(this.viewerContextProvider, req);
     const { cursor, limit } = parseListQuery(query);
     const page = await getContinueWatching(this.dbProvider.db, ctx, {
+      itemTypes: CONTINUE_WATCHING_ELIGIBLE_TYPES,
       ...(cursor !== undefined ? { cursor } : {}),
       ...(limit !== undefined ? { limit } : {}),
     });
 
-    const eligible = page.rows.filter((r) => CONTINUE_WATCHING_ELIGIBLE_TYPES.includes(r.itemType));
-    const details = await Promise.all(eligible.map((r) => getCatalogDetail(this.dbProvider.db, ctx, r.itemId)));
+    // d3-b9: no type filter here any more — `itemTypes` above did it
+    // before the page was cut. What remains is the detail-race filter the
+    // two sibling handlers also run (a row whose detail read came back
+    // undefined was deleted between the two reads).
+    const rows = page.rows;
+    const details = await Promise.all(rows.map((r) => getCatalogDetail(this.dbProvider.db, ctx, r.itemId)));
 
-    const items = eligible
+    const items = rows
       .map((r, i) => ({ row: r, detail: details[i] }))
-      .filter((x): x is { row: (typeof eligible)[number]; detail: CatalogDetail } => x.detail !== undefined)
+      .filter((x): x is { row: (typeof rows)[number]; detail: CatalogDetail } => x.detail !== undefined)
       .map(({ row, detail }) => ({
         itemType: row.itemType,
         item: mapByType(row.itemType, detail),

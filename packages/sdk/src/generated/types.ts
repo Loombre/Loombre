@@ -958,7 +958,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** In-progress items for the current user (computed per-viewer-context; never cached across users with different restricted-content clearance) */
+        /**
+         * In-progress items for the current user (computed per-viewer-context; never cached across users with different restricted-content clearance)
+         * @description Pages over the types `ContinueWatchingEntry.item` admits (movie/episode/track) — the eligibility filter is applied BEFORE the page is cut, so `limit` means "up to N entries you can render" and an empty page never ships with a non-null `nextCursor` (d3-b9; same rule as `getRecentlyAdded`/`search` after adi-F2). A progress row against any other item type — a container written before `putProgress` began refusing them — is skipped by the query, never by the response.
+         */
         get: operations["getContinueWatching"];
         put?: never;
         post?: never;
@@ -1211,7 +1214,10 @@ export interface paths {
          * @description Guarded like every other catalog-adjacent read: an item that doesn't exist and an item that exists but is invisible to the caller (not in an allowed library, or restricted without full gate clearance) are byte-identical 404s. No progress row for an otherwise-visible item is ALSO a 404 (there is nothing to return — this is a single-resource read, not a list).
          */
         get: operations["getProgress"];
-        /** Upsert watch/listen progress for an item (also serves as a session heartbeat) */
+        /**
+         * Upsert watch/listen progress for an item (also serves as a session heartbeat)
+         * @description Only PLAYABLE leaf items carry progress: `movie`, `episode`, `track` — the same three types `ContinueWatchingEntry.item` admits. A container (`series`, `season`, `artist`, `album`) is 422, even when the caller can see it: there is no playable position on a container, and a stored container row surfaces nowhere (it can only shorten the continue-watching rail, which pages over the playable types — d3-b9). Ordering is deliberate and unchanged otherwise: request-body validation first, then the guarded item lookup (an item that does not exist and one that is invisible to the caller are the same 404), and only then this type check — so the 422 is reachable only for an item the caller could already see, and reveals nothing new about the library.
+         */
         put: operations["putProgress"];
         post?: never;
         delete?: never;

@@ -5,6 +5,10 @@
 // writing progress against an invisible item is a 404, see
 // packages/db/src/query/progress-write.ts), GET /progress (listProgress).
 //
+// d3-b9: that visibility check is now followed by an item-TYPE check —
+// only movie/episode/track (progress-item-types.ts) may hold a progress
+// row. See putProgress below for the ordering and why it matters.
+//
 // P2.14/P2.18 additive: ProgressUpdate.sessionId is an OPTIONAL playback
 // session id — when present, this PUT ALSO heartbeats that session
 // (heartbeatPlaybackSession, @loombre/db), matching docs/PLAYBACK.md §9's
@@ -52,6 +56,7 @@
 
 import { Body, Controller, Get, Param, Put, Query, Req } from "@nestjs/common";
 import {
+  getItemById,
   getProgressForItem,
   heartbeatPlaybackSession,
   listProgress,
@@ -64,6 +69,7 @@ import type { AuthenticatedRequest } from "../gateway/auth.guard.js";
 import { DbProvider } from "../common/db.provider.js";
 import { ViewerContextProvider } from "../common/viewer-context.provider.js";
 import { resolveViewer, parseListQuery } from "./viewer.js";
+import { canCarryProgress, PROGRESS_BEARING_ITEM_TYPES } from "./progress-item-types.js";
 
 interface ProgressUpdateBody {
   positionMs?: unknown;
@@ -129,6 +135,36 @@ export class ProgressController {
 
     const ctx = await resolveViewer(this.viewerContextProvider, req);
     const nowMs = clockNowMs();
+
+    // Remediation d3-b9: only PLAYABLE LEAF types carry progress. This
+    // used to accept ANY visible item id, so a client could store a
+    // progress row against a series/season/artist/album — a position on
+    // something that has no playable position. Such a row surfaces
+    // nowhere useful and actively harmed one place: GET
+    // /home/continue-watching paged over every progress row and then
+    // dropped the ineligible ones, so a single container row could empty
+    // page 0 of the rail (that half is fixed in
+    // packages/db/src/query/progress.ts; this is the half that stops the
+    // rows being created).
+    //
+    // ORDERING IS THE ANTI-ENUMERATION POINT, and it is why this is a
+    // separate guarded read rather than a check on upsertProgress's
+    // result: the body is validated first (unchanged), then getItemById
+    // applies the SAME guard upsertProgress would — an item that does not
+    // exist and one the viewer cannot see are the same 404, exactly as
+    // before — and only an item the caller could already see can reach
+    // the 422 below. A type check derived from a write that already
+    // happened would also have had to undo it.
+    const item = await getItemById(this.dbProvider.db, ctx, itemId);
+    if (!item) {
+      throw notFound("Item not found.", req.originalUrl);
+    }
+    if (!canCarryProgress(item.item_type)) {
+      throw unprocessableEntity(
+        `Progress cannot be recorded against a ${item.item_type} — only ${PROGRESS_BEARING_ITEM_TYPES.join("/")} items carry a playback position.`,
+        req.originalUrl,
+      );
+    }
 
     // SOURCE-axis, stored verbatim (this file's header) — the same value
     // is persisted AND carried by the heartbeat's playback.progress

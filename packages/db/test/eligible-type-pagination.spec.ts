@@ -38,6 +38,7 @@ import { createDb } from '../src/db.js';
 import type { DB, ItemType } from '../src/types.js';
 import type { ViewerContext } from '../src/context.js';
 import { getRecentlyAdded, listItems } from '../src/query/items.js';
+import { getContinueWatching } from '../src/query/progress.js';
 import { searchCatalog } from '../src/query/search.js';
 import { resolveTestDatabaseUrl } from '../src/testing.js';
 
@@ -87,6 +88,34 @@ const FIXTURES: Array<{ title: string; itemType: ItemType }> = [
 /** Ids of the eligible fixtures, newest-added first — the exact order
  *  getRecentlyAdded must return them in. */
 let expectedEligible: string[] = [];
+
+/** d3-b9: ContinueWatchingEntry's own discriminator subset. */
+const CONTINUE_WATCHING_TYPES: readonly ItemType[] = ['movie', 'episode', 'track'];
+
+/** d3-b9 fixture: an 'in-progress' progress row per catalog item, ordered
+ *  by `updated_at_ms` INDEPENDENTLY of added_at_ms (progress order is when
+ *  the viewer last watched, not when the item was scanned) — newest FIRST
+ *  in this list. The three newest rows are a SEASON, an ALBUM and a SERIES,
+ *  all ineligible for the continue-watching rail: exactly the live shape
+ *  where post-filtering the already-cut page makes page 0 come back empty.
+ *
+ * Container rows like these are reachable today because PUT /progress
+ * accepts ANY visible item id; they also survive in the table once written,
+ * so the query-side filter is needed even after the write side rejects
+ * them (the two halves of d3-b9 are independent). */
+const PROGRESS_NEWEST_FIRST = [
+  'Golf Signal', // season    — ineligible
+  'Echo Signal', // album     — ineligible
+  'Charlie Signal', // series — ineligible
+  'Hotel Signal', // episode
+  'Delta Signal', // track
+  'Foxtrot Signal', // movie
+  'Bravo Signal', // episode
+  'Alpha Signal', // movie
+] as const;
+
+/** Ids of the continue-watching-eligible fixtures, newest-PROGRESS first. */
+let expectedContinueWatching: string[] = [];
 
 beforeAll(async () => {
   run(path.join(PKG_ROOT, 'scripts', 'migrate.mjs'), ['reset']);
@@ -142,6 +171,31 @@ beforeAll(async () => {
   expectedEligible = inserted
     .filter((r) => RECENTLY_ADDED_TYPES.includes(r.itemType))
     .sort((a, b) => b.addedAtMs - a.addedAtMs)
+    .map((r) => r.id);
+
+  // d3-b9: one in-progress row per item, newest-first per
+  // PROGRESS_NEWEST_FIRST (which is NOT the added_at order).
+  const byTitle = new Map(FIXTURES.map((f, i) => [f.title, inserted[i]!]));
+  const progressRows = PROGRESS_NEWEST_FIRST.map((title, rank) => {
+    const item = byTitle.get(title);
+    if (!item) throw new Error(`PROGRESS_NEWEST_FIRST names an unknown fixture: ${title}`);
+    return { ...item, updatedAtMs: BASE_MS + (PROGRESS_NEWEST_FIRST.length - rank) * 1000 };
+  });
+  for (const row of progressRows) {
+    await db
+      .insertInto('progress')
+      .values({
+        user_id: ctx.userId,
+        item_id: row.id,
+        position_ms: 60_000,
+        state: 'in-progress',
+        play_count: 0,
+        updated_at_ms: row.updatedAtMs,
+      })
+      .execute();
+  }
+  expectedContinueWatching = progressRows
+    .filter((r) => CONTINUE_WATCHING_TYPES.includes(r.itemType))
     .map((r) => r.id);
 });
 
@@ -247,5 +301,47 @@ describe('adi-F2: searchCatalog pages over the ELIGIBLE item types', () => {
     const all = await searchCatalog(db, ctx, { q: 'signal', itemTypes: [], limit: 100 });
     expect(all.rows).toEqual([]);
     expect(all.nextCursor).toBeNull();
+  });
+});
+
+// d3-b9 (B/adi-F2-followup): the third caller of this same pattern.
+// adi-F2 deliberately scoped itself to /search + /home/recently-added and
+// LOGGED continue-watching as unfinished; this is that follow-up.
+describe('d3-b9: getContinueWatching pages over the ELIGIBLE item types', () => {
+  it('page 0 at limit=1 carries an eligible row even though the three newest progress rows are a season/album/series', async () => {
+    const page = await getContinueWatching(db, ctx, { itemTypes: CONTINUE_WATCHING_TYPES, limit: 1 });
+    expect(page.rows).toHaveLength(1);
+    expect(page.rows[0]!.itemId).toBe(expectedContinueWatching[0]);
+  });
+
+  it('a limit=1 walk visits every eligible row in progress order, and no page that advertises more is short', async () => {
+    const { ids, pages } = await walk(
+      async (cursor) => {
+        const page = await getContinueWatching(db, ctx, {
+          itemTypes: CONTINUE_WATCHING_TYPES,
+          limit: 1,
+          ...(cursor !== undefined ? { cursor } : {}),
+        });
+        return { rows: page.rows.map((r) => ({ id: r.itemId })), nextCursor: page.nextCursor };
+      }
+    );
+    expect(ids).toEqual(expectedContinueWatching);
+    expect(shortWhileAdvertisingMore(pages, 1)).toEqual([]);
+  });
+
+  it('an ineligible type never appears, at any page size', async () => {
+    const page = await getContinueWatching(db, ctx, { itemTypes: CONTINUE_WATCHING_TYPES, limit: 100 });
+    expect(page.rows.map((r) => r.itemType).sort()).toEqual(['episode', 'episode', 'movie', 'movie', 'track']);
+  });
+
+  it('OMITTING itemTypes keeps the every-type behaviour (the pre-d3-b9 contract)', async () => {
+    const page = await getContinueWatching(db, ctx, { limit: 100 });
+    expect(page.rows).toHaveLength(FIXTURES.length);
+  });
+
+  it('an EMPTY itemTypes array matches nothing — never "no filter"', async () => {
+    const page = await getContinueWatching(db, ctx, { itemTypes: [], limit: 100 });
+    expect(page.rows).toEqual([]);
+    expect(page.nextCursor).toBeNull();
   });
 });
