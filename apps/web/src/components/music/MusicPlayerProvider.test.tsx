@@ -49,9 +49,13 @@ vi.mock("../../lib/playback-session.js", () => ({
 
 // Resolves (not `vi.fn()` bare): the provider's heartbeat `send` does
 // `void apiPut(...).catch(...)`, and `stopHeartbeat(true)` flushes one on
-// every `ended` — an undefined return would throw there.
+// every `ended` — an undefined return would throw there. Hoisted into a
+// named double (same wrapper convention as createDirectPlaySession above)
+// so d4-m1 can assert on the PUT /progress BODY the heartbeat sends.
+const apiPut = vi.fn(async (_path: string, _init: unknown) => undefined);
+
 vi.mock("../../lib/api-client.js", () => ({
-  apiPut: vi.fn(async () => undefined),
+  apiPut: (path: string, init: unknown) => apiPut(path, init),
 }));
 
 vi.mock("../../lib/progress-report.js", () => ({
@@ -146,6 +150,22 @@ function toastText(container: HTMLElement): string {
   return container.querySelector('[aria-live="polite"]')?.textContent ?? "";
 }
 
+/** The contract's ProgressUpdate (packages/contract/openapi.yaml): integer
+ *  positionMs, integer-or-null durationMs. */
+interface ProgressBody {
+  positionMs: number;
+  durationMs: number | null;
+  state: string;
+  sessionId?: string;
+}
+
+/** Body of the most recent PUT /progress/{itemId} the heartbeat sent. */
+function lastProgressBody(): ProgressBody {
+  const call = [...apiPut.mock.calls].reverse().find(([path]) => path === "/progress/{itemId}");
+  if (!call) throw new Error("no PUT /progress/{itemId} was sent");
+  return (call[1] as { body: ProgressBody }).body;
+}
+
 /** Drains the promise/effect cascade a queue advance sets off: create
  *  rejects -> catch -> dispatch NEXT -> effect -> next create -> … */
 async function flush(times = 6): Promise<void> {
@@ -217,6 +237,7 @@ describe("MusicPlayerProvider", () => {
   beforeEach(() => {
     createDirectPlaySession.mockReset().mockResolvedValue({ ok: true, session: directPlaySession() });
     endPlaybackSession.mockReset().mockResolvedValue(undefined);
+    apiPut.mockClear();
   });
 
   afterEach(() => {
@@ -829,6 +850,75 @@ describe("MusicPlayerProvider", () => {
 
       expect(capturedCtx!.queueState.currentIndex).toBe(1);
       expect(createDirectPlaySession).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  // d4-m1 (backlog #116, the exact twin of the video player's d3-a4/gap-F6):
+  // the contract's ProgressUpdate declares an INTEGER durationMs, and an
+  // <audio> element's `duration` is a float by nature. `onLoadedMetadata`
+  // adopted `el.duration * 1000` raw into durationRef, and the heartbeat
+  // `send` passed that straight through — so once a track reported a
+  // fractional duration EVERY music heartbeat 422'd
+  // ('durationMs must be an integer or null') and music progress silently
+  // stopped being written. Only the unload path was safe, because it alone
+  // went through lib/progress-body.ts's rounding builder.
+  describe("progress body integrity (d4-m1)", () => {
+    /** The live-observed gap-F6 shape: a fractional element duration. */
+    const FRACTIONAL_SECONDS = 773.3475;
+
+    function setElementClock(el: HTMLMediaElement, durationSeconds: number, currentSeconds: number): void {
+      Object.defineProperty(el, "duration", { configurable: true, get: () => durationSeconds });
+      Object.defineProperty(el, "currentTime", { configurable: true, get: () => currentSeconds });
+    }
+
+    it("rounds an adopted fractional element duration instead of 422ing every heartbeat", async () => {
+      createDirectPlaySession.mockReset().mockResolvedValue({ ok: true, session: directPlaySession() });
+      view = await playQueueAndSettle([{ itemId: TRACK_ID, title: "Low Water" }]);
+
+      const active = view.container.querySelectorAll("audio")[0]!;
+      setElementClock(active, FRACTIONAL_SECONDS, 12.3456);
+      await act(async () => {
+        active.dispatchEvent(new Event("loadedmetadata"));
+      });
+
+      // The adopted duration is what the mini player shows AND what every
+      // later heartbeat carries: integer ms at the point of adoption
+      // (773347.5 rounds up, exactly like every other ms in this app).
+      expect(capturedCtx!.durationMs).toBe(773_348);
+
+      apiPut.mockClear();
+      await act(async () => {
+        active.dispatchEvent(new Event("timeupdate"));
+      });
+      // `pause` flushes the heartbeat immediately (docs/PLAYBACK.md §9).
+      await act(async () => {
+        active.dispatchEvent(new Event("pause"));
+      });
+      await flush();
+
+      const body = lastProgressBody();
+      expect(Number.isInteger(body.durationMs)).toBe(true);
+      expect(body.durationMs).toBe(773_348);
+      expect(Number.isInteger(body.positionMs)).toBe(true);
+      expect(body.positionMs).toBe(12_346);
+      expect(body.sessionId).toBe(SESSION_ID);
+    });
+
+    it("keeps the queue's own integer durationMs when the element never reports one", async () => {
+      createDirectPlaySession.mockReset().mockResolvedValue({ ok: true, session: directPlaySession() });
+      view = await playQueueAndSettle([{ itemId: TRACK_ID, title: "Low Water", durationMs: 200_000 }]);
+
+      const active = view.container.querySelectorAll("audio")[0]!;
+      Object.defineProperty(active, "duration", { configurable: true, get: () => Number.NaN });
+      await act(async () => {
+        active.dispatchEvent(new Event("loadedmetadata"));
+        active.dispatchEvent(new Event("pause"));
+      });
+      await flush();
+
+      const body = lastProgressBody();
+      expect(body.durationMs).toBe(200_000);
+      expect(Number.isInteger(body.positionMs)).toBe(true);
     });
   });
 });

@@ -61,6 +61,7 @@ import { buildSessionFileUrl } from "../../lib/media-session-url.js";
 import { getAuthStore } from "../../lib/auth-store.js";
 import { HeartbeatScheduler, type HeartbeatSnapshot, type ProgressState } from "../../lib/heartbeat.js";
 import { reportProgressOnUnload } from "../../lib/progress-report.js";
+import { buildProgressBody } from "../../lib/progress-body.js";
 import { apiPut } from "../../lib/api-client.js";
 import { apiErrorMessage } from "../../lib/api-error-message.js";
 import { trackLoadFailureMessage } from "../../lib/track-load-failure.js";
@@ -235,9 +236,17 @@ export function MusicPlayerProvider({ children }: { children: ReactNode }): Reac
         state: progressStateRef.current,
       }),
       send: (snapshot) => {
+        // d4-m1 (#116, the exact twin of the video player's d3-a4/gap-F6):
+        // built by the SAME rounding builder the unload path uses
+        // (lib/progress-body.ts). This send used to round positionMs by
+        // hand and pass durationMs RAW, so one adopted fractional element
+        // duration made the server 422 every in-session write
+        // ('durationMs must be an integer or null') and music progress
+        // silently stopped being recorded — while the unload keepalive,
+        // which already went through the builder, kept working.
         void apiPut("/progress/{itemId}", {
           params: { path: { itemId } },
-          body: { positionMs: Math.round(snapshot.positionMs), durationMs: snapshot.durationMs, state: snapshot.state, sessionId },
+          body: buildProgressBody(snapshot, sessionId),
         }).catch(() => {
           /* best-effort heartbeat */
         });
@@ -466,8 +475,15 @@ export function MusicPlayerProvider({ children }: { children: ReactNode }): Reac
 
       const onLoadedMetadata = (): void => {
         if (gaplessStateRef.current.active !== slot || !Number.isFinite(el.duration)) return;
-        durationRef.current = el.duration * 1000;
-        setDurationMsState(el.duration * 1000);
+        // d4-m1: INTEGER ms at the point of adoption. An element's
+        // `duration` is a float by nature, the contract's ProgressUpdate
+        // declares `durationMs` as integer-or-null, and this ref is what
+        // every heartbeat snapshot reports — adopting the raw float made
+        // each one 422 (the video player learned the same lesson in
+        // d3-a4; lib/progress-body.ts is the send-side half of it).
+        const adoptedMs = Math.round(el.duration * 1000);
+        durationRef.current = adoptedMs;
+        setDurationMsState(adoptedMs);
       };
 
       const onEnded = (): void => {
