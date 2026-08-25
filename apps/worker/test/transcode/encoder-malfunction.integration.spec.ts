@@ -299,6 +299,21 @@ describe("hardware encode-session death recovery (browser-player-F2)", () => {
     };
   }
 
+  /** The same stored plan with a TWO-RUNG ladder — the only shape in which
+   *  a rung switch (and therefore §9.1.7's coincident pair) means anything.
+   *  d3-f4's rung half needs a real second rung for `pending_rung_index` to
+   *  name. */
+  function videotoolboxLadderStoredPlan(): Record<string, unknown> {
+    const base = videotoolboxStoredPlan();
+    return {
+      ...base,
+      ladder: [
+        { heightPx: 1080, videoBitrateBps: 8_000_000, audioBitrateBps: 384_000, codec: "hevc" },
+        { heightPx: 720, videoBitrateBps: 4_000_000, audioBitrateBps: 384_000, codec: "hevc" },
+      ],
+    };
+  }
+
   async function createSession(plan: Record<string, unknown> = videotoolboxStoredPlan()): Promise<string> {
     const session = await createPlaybackSession(db, ctx, { itemId, fileId, deviceId, plan, engineVersion: "test", nowMs: Date.now() });
     return session!.id;
@@ -392,6 +407,126 @@ describe("hardware encode-session death recovery (browser-player-F2)", () => {
 
       await raw.query(`UPDATE playback_sessions SET status = 'ended', updated_at_ms = $1 WHERE id = $2`, [Date.now(), sessionId]);
       await runPromise;
+    },
+  );
+
+  // ===========================================================================
+  // d3-f4 (QA 2026-08-24, P3): THE RECOVERY RESTART MUST CARRY A COINCIDENT
+  // SEEK / RUNG.
+  //
+  // The recovery block sits BEFORE the seek + slot-handoff blocks and
+  // `continue`s the poll loop. So a VT death on a tick where the client had
+  // ALSO asked for something spawned run N+1 at the live-edge continuation
+  // origin on the old rung, and the very next tick restarted AGAIN for the
+  // still-pending seek/switch: two full ffmpeg restarts ~one tick apart for
+  // ONE client intention, which is exactly the double-pay §9.1.7's
+  // single-restart rule merges everywhere else. The recovery branch now
+  // consumes both control columns itself and hands them to the same
+  // `restartAt` the seek block uses.
+  //
+  // The coincidence is made deterministic by a LONG poll interval: the
+  // control column is written and the crash delivered inside one tick's
+  // sleep, so the tick that observes the dead run provably observes the
+  // pending request too.
+  // ===========================================================================
+
+  it(
+    "d3-f4: a VT death coincident with a pending SEEK restarts ONCE — at the seek target, not the live edge",
+    { timeout: 60_000 * TIME_SCALE },
+    async () => {
+      installFakeProcessTable();
+      const sessionId = await createSession();
+      const runPromise = runTranscodeSession(
+        { db, stagingRoot, pollIntervalMs: 500, ffmpegPath: "/nonexistent/ffmpeg-never-executed", spawnFn: fakeSpawnFn() },
+        sessionId,
+      );
+
+      try {
+        await waitForSpawnCount(1, 10_000 * TIME_SCALE);
+        fabricateRunPlaylist(sessionId, 0, 3);
+        await waitForProducedSegment(sessionId, 2, 10_000 * TIME_SCALE);
+
+        // Inside ONE tick's sleep: the viewer drags the scrubber, and the
+        // encoder's VT session dies before the runner next looks at the row.
+        await raw.query(`UPDATE playback_sessions SET seek_target_ms = 45000, updated_at_ms = $1 WHERE id = $2`, [Date.now(), sessionId]);
+        spawns[0]!.child.crash(VT_MALFUNCTION_STDERR);
+
+        await waitForSpawnCount(2, 15_000 * TIME_SCALE);
+        // Several more ticks: the failure mode is a SECOND restart chasing
+        // the first, one tick later.
+        await new Promise((r) => setTimeout(r, 2_000 * TIME_SCALE));
+
+        expect(spawns.length, "one death + one seek is ONE restart, not two").toBe(2);
+        const runs = await readRuns(sessionId);
+        expect(runs.map((r) => r.run_index)).toEqual([0, 1]);
+        expect(runs[1]!.source_origin_ms, "the single restart lands where the CLIENT asked, not at the live edge").toBe(45_000);
+
+        const { rows } = await raw.query<{ seek_target_ms: number | null; discontinuity_count: number }>(
+          `SELECT seek_target_ms, discontinuity_count FROM playback_sessions WHERE id = $1`,
+          [sessionId],
+        );
+        expect(rows[0]!.seek_target_ms, "the seek was CONSUMED by the recovery restart").toBeNull();
+        expect(rows[0]!.discontinuity_count, "one restart, one discontinuity").toBe(1);
+        expect((await readRow(sessionId)).status).not.toBe("failed");
+      } finally {
+        await raw.query(`UPDATE playback_sessions SET status = 'ended', updated_at_ms = $1 WHERE id = $2 AND status NOT IN ('ended','failed')`, [
+          Date.now(),
+          sessionId,
+        ]);
+        await runPromise.catch(() => undefined);
+      }
+    },
+  );
+
+  it(
+    "d3-f4: a VT death coincident with a pending RUNG SWITCH restarts ONCE — on the requested rung",
+    { timeout: 60_000 * TIME_SCALE },
+    async () => {
+      installFakeProcessTable();
+      const sessionId = await createSession(videotoolboxLadderStoredPlan());
+      const runPromise = runTranscodeSession(
+        { db, stagingRoot, pollIntervalMs: 500, ffmpegPath: "/nonexistent/ffmpeg-never-executed", spawnFn: fakeSpawnFn() },
+        sessionId,
+      );
+
+      try {
+        await waitForSpawnCount(1, 10_000 * TIME_SCALE);
+        fabricateRunPlaylist(sessionId, 0, 3);
+        await waitForProducedSegment(sessionId, 2, 10_000 * TIME_SCALE);
+
+        await raw.query(`UPDATE playback_sessions SET pending_rung_index = 1, updated_at_ms = $1 WHERE id = $2`, [Date.now(), sessionId]);
+        spawns[0]!.child.crash(VT_MALFUNCTION_STDERR);
+
+        await waitForSpawnCount(2, 15_000 * TIME_SCALE);
+        await new Promise((r) => setTimeout(r, 2_000 * TIME_SCALE));
+
+        expect(spawns.length, "one death + one switch is ONE restart, not two").toBe(2);
+        const { rows } = await raw.query<{ run_index: number; ladder_rung_index: number | null }>(
+          `SELECT run_index, ladder_rung_index FROM transcode_runs WHERE session_id = $1 ORDER BY run_index`,
+          [sessionId],
+        );
+        expect(rows.map((r) => [r.run_index, r.ladder_rung_index])).toEqual([
+          [0, 0],
+          [1, 1],
+        ]);
+        // A pure switch continues the timeline (§9.1.4) — the recovery
+        // origin is the exact instant after run 0's last produced segment.
+        const runs = await readRuns(sessionId);
+        expect(runs[1]!.source_origin_ms).toBe(18_000);
+
+        const { rows: cols } = await raw.query<{ pending_rung_index: number | null; active_rung_index: number | null }>(
+          `SELECT pending_rung_index, active_rung_index FROM playback_sessions WHERE id = $1`,
+          [sessionId],
+        );
+        expect(cols[0]!.pending_rung_index).toBeNull();
+        expect(cols[0]!.active_rung_index).toBe(1);
+      } finally {
+        await raw.query(`UPDATE playback_sessions SET status = 'ended', updated_at_ms = $1 WHERE id = $2 AND status NOT IN ('ended','failed')`, [
+          Date.now(),
+          sessionId,
+        ]);
+        await runPromise.catch(() => undefined);
+      }
     },
   );
 

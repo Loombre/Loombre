@@ -676,12 +676,32 @@ export async function runTranscodeSession(deps: RunSessionDeps, sessionId: strin
         } else {
           encoderRecovery.hardwareRetriesUsed = recovery.attempt;
         }
+        // §9.1.7's SINGLE-RESTART RULE APPLIES HERE TOO (d3-f4). This block
+        // sits before the seek/handoff blocks and `continue`s, so a death on
+        // a tick where the client had ALSO asked for something used to spawn
+        // run N+1 at the live-edge continuation origin on the old rung and
+        // then restart AGAIN one tick later for the still-pending request:
+        // two full ffmpeg restarts for one intention, the exact double-pay
+        // the rule merges everywhere else. A restart is happening regardless
+        // — so it may as well be THE restart, carrying whatever the client
+        // asked for. Consumed here, in the same tick, exactly as the seek
+        // block consumes a coincident pair.
+        //
+        // No absorption check: the run being recovered is DEAD, so "the live
+        // run is already serving that position" cannot hold, and honoring
+        // the target now is strictly fewer restarts than letting the next
+        // tick discover it against the fresh run.
+        const recoverySeek = row.seek_target_ms !== null ? await consumeSeekTarget(db, sessionId, now()) : undefined;
+        const recoverySwitchPending = row.pending_rung_index !== null && row.pending_rung_index !== currentRun.ladderRungIndex;
+        const recoveryRung = recoverySwitchPending ? await consumePendingRungIndex(db, sessionId, now()) : undefined;
         const restarted = await restartAt(
           currentRun.index + 1,
           // Same V8 collision floor as every other restart (§9.1.10 item 4).
           Math.max((producedSegment ?? -1) + 1, currentRun.startSegment + 1),
-          currentRun.sourceOriginMs + currentRun.producedMs,
-          currentRun.ladderRungIndex,
+          // The seek target when the client asked for one; otherwise the
+          // exact source instant after the dead run's last produced segment.
+          recoverySeek ? recoverySeek.seekTargetMs : currentRun.sourceOriginMs + currentRun.producedMs,
+          recoveryRung ?? currentRun.ladderRungIndex,
         );
         if (!restarted) return;
         continue;
