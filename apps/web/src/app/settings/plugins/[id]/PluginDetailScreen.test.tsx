@@ -72,10 +72,15 @@ const PLUGIN = {
   lanAllowlist: [],
 };
 
+/** `"reject"` is a real SERVER failure (503), not a 401: since d4-w4 the
+ *  shared guard (lib/use-admin-guard.ts) reads a 401 as "not signed in" and
+ *  routes to /login rather than to the caller's non-admin landing, so a 401
+ *  no longer exercises the fail-closed path this helper's callers assert.
+ *  The 401 behaviour has its own case below. */
 function apiGetImpl(isAdmin: boolean | "reject"): (path: string, ...rest: unknown[]) => Promise<unknown> {
   return (path: string) => {
     if (path === "/users/me") {
-      return isAdmin === "reject" ? Promise.reject(new FakeApiError(401, {})) : Promise.resolve({ isAdmin });
+      return isAdmin === "reject" ? Promise.reject(new FakeApiError(503, {})) : Promise.resolve({ isAdmin });
     }
     if (path === "/admin/plugins/{id}") return Promise.resolve(PLUGIN);
     return Promise.reject(new Error(`unexpected path ${path}`));
@@ -129,6 +134,22 @@ describe("PluginDetailScreen — admin-only guard", () => {
     await act(async () => {});
 
     expect(routerReplace).toHaveBeenCalledWith("/profile");
+    expect(view.container.textContent).toBe("");
+  });
+
+  // d4-w4: a 401 is not "you are not an admin", it is "you are not signed
+  // in" — api-client.ts only lets one escape once its own refresh-and-retry
+  // has already failed. /profile is a second page such a viewer cannot see
+  // either; /login carrying where they were is the honest destination.
+  it("d4-w4: an UNAUTHENTICATED (401) GET /users/me sends the viewer to /login, not /profile", async () => {
+    apiGetMock.mockImplementation((path: string) =>
+      path === "/users/me" ? Promise.reject(new FakeApiError(401, {})) : Promise.resolve(PLUGIN),
+    );
+    view = renderIntoBody(<PluginDetailScreen id={PLUGIN.id} />);
+    await act(async () => {});
+
+    expect(routerReplace).toHaveBeenCalledWith(expect.stringContaining("/login"));
+    expect(routerReplace).not.toHaveBeenCalledWith("/profile");
     expect(view.container.textContent).toBe("");
   });
 

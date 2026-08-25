@@ -28,6 +28,19 @@ vi.mock("./api-client.js", () => ({
 }));
 
 const { useAdminGuard } = await import("./use-admin-guard.js");
+const { buildLoginHref, currentLocationPath } = await import("./auth-return-path.js");
+
+/** The shape api-client.ts throws: a status-carrying error. Duck-typed on
+ *  purpose — the hook reads `.status` rather than `instanceof
+ *  LoombreApiError` (see its header), so this stand-in is a faithful
+ *  stimulus. */
+class StatusError extends Error {
+  readonly status: number;
+  constructor(status: number) {
+    super(`status ${status}`);
+    this.status = status;
+  }
+}
 
 let latestIsAdmin: boolean | null = "pending" as unknown as boolean | null;
 
@@ -83,6 +96,40 @@ describe("useAdminGuard", () => {
     await flush();
     expect(latestIsAdmin).toBe(false);
     expect(routerReplace).toHaveBeenCalledWith("/home");
+  });
+
+  // d4-w4 (D/d3-d2 residual): a 401 is not "you are not an admin", it is
+  // "you are not signed in" — api-client.ts only lets a 401 escape after its
+  // own refresh-and-retry has already failed. Sending that viewer to
+  // /profile or /home shows them a second page they cannot see either; the
+  // honest destination is /login, carrying where they were.
+  it("d4-w4: a 401 sends the viewer to /login with a return path, not to the caller's non-admin landing", async () => {
+    apiGetMock.mockRejectedValue(new StatusError(401));
+    view = renderIntoBody(<Probe redirectTo="/profile" />);
+    await flush();
+
+    expect(routerReplace).toHaveBeenCalledWith(buildLoginHref(currentLocationPath()));
+    expect(routerReplace).not.toHaveBeenCalledWith("/profile");
+    // Still fails closed for the caller's own render branching: nothing
+    // admin-only may paint on the way out.
+    expect(latestIsAdmin).toBe(false);
+  });
+
+  it("d4-w4: exactly ONE redirect on a 401 (the login href, never also the redirectTo)", async () => {
+    apiGetMock.mockRejectedValue(new StatusError(401));
+    view = renderIntoBody(<Probe redirectTo="/home" />);
+    await flush();
+
+    expect(routerReplace.mock.calls).toEqual([[buildLoginHref(currentLocationPath())]]);
+  });
+
+  it("d4-w4: a 403 (signed in, not an admin) still lands on the caller's redirectTo", async () => {
+    apiGetMock.mockRejectedValue(new StatusError(403));
+    view = renderIntoBody(<Probe redirectTo="/profile" />);
+    await flush();
+
+    expect(routerReplace).toHaveBeenCalledWith("/profile");
+    expect(latestIsAdmin).toBe(false);
   });
 
   it("respects a different redirectTo per caller (e.g. /admin/* -> /home vs. /settings* -> /profile)", async () => {

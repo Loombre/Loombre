@@ -31,6 +31,25 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiGet } from "./api-client.js";
+import { buildLoginHref, currentLocationPath } from "./auth-return-path.js";
+
+/**
+ * A 401 out of GET /users/me is "no valid session", NOT "not an admin" —
+ * api-client.ts only lets a 401 escape after its own refresh-and-retry has
+ * already failed. Those two outcomes need different destinations: a
+ * non-admin belongs on the caller's landing page (/profile, /home), an
+ * unauthenticated viewer belongs on /login carrying where they were.
+ *
+ * Duck-typed on `status` rather than `instanceof LoombreApiError`, for the
+ * reason lib/api-error-message.ts's header spells out: api-client.ts is
+ * `vi.mock`'d wholesale by dozens of component tests, so importing one of
+ * its exports here would break every such mock that doesn't re-declare it —
+ * and this stays correct whether it sees a real LoombreApiError or a test's
+ * fake stand-in.
+ */
+function isUnauthenticated(error: unknown): boolean {
+  return typeof error === "object" && error !== null && (error as { status?: unknown }).status === 401;
+}
 
 export interface UseAdminGuardResult {
   /** `null` while GET /users/me is still resolving (nothing is known yet
@@ -38,8 +57,9 @@ export interface UseAdminGuardResult {
    *  never admin-only content). `true` once confirmed admin. `false` once
    *  confirmed NOT admin (including a GET /users/me failure, which fails
    *  closed the same way every one of the three call sites already did
-   *  independently) — by the time this is `false`, `router.replace
-   *  (redirectTo)` has already been called. */
+   *  independently) — by the time this is `false`, `router.replace` has
+   *  already been called: with `redirectTo`, or with the /login href when
+   *  the failure was a 401 (d4-w4 — see isUnauthenticated above). */
   isAdmin: boolean | null;
 }
 
@@ -54,6 +74,10 @@ export interface UseAdminGuardResult {
 export function useAdminGuard(redirectTo: string): UseAdminGuardResult {
   const router = useRouter();
   const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
+  /** Overrides `redirectTo` when the viewer turns out not to be signed in
+   *  at all (d4-w4) — captured at the moment of the failure, so the `?next=`
+   *  is the route they were actually on. Null in every other case. */
+  const [unauthenticatedHref, setUnauthenticatedHref] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -61,8 +85,12 @@ export function useAdminGuard(redirectTo: string): UseAdminGuardResult {
       .then((u) => {
         if (!cancelled) setIsAdmin(u.isAdmin === true);
       })
-      .catch(() => {
-        if (!cancelled) setIsAdmin(false);
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        // Both setStates land in ONE batched render, so the redirect effect
+        // below sees the pair together and fires exactly once.
+        if (isUnauthenticated(error)) setUnauthenticatedHref(buildLoginHref(currentLocationPath()));
+        setIsAdmin(false);
       });
     return () => {
       cancelled = true;
@@ -70,8 +98,8 @@ export function useAdminGuard(redirectTo: string): UseAdminGuardResult {
   }, []);
 
   useEffect(() => {
-    if (isAdmin === false) router.replace(redirectTo);
-  }, [isAdmin, router, redirectTo]);
+    if (isAdmin === false) router.replace(unauthenticatedHref ?? redirectTo);
+  }, [isAdmin, unauthenticatedHref, router, redirectTo]);
 
   return { isAdmin };
 }
