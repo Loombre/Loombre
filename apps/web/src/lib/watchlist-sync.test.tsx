@@ -207,6 +207,80 @@ describe("useWatchlistIds (shared id store / request coalescing)", () => {
     expect([...(results.get(0)?.ids ?? [])]).toEqual(["movie-2"]);
   });
 
+  it("d4-w1: a consumer arriving after a FAILED fetch retries it, even though nothing ever unmounted", async () => {
+    // The Sidebar's watchlist count is mounted for the whole session, so the
+    // listener set NEVER returns to 0 and the reset-on-last-unsubscribe path
+    // that normally re-seeds the store cannot run. Before the fix the store
+    // was therefore stuck on the failed (empty, not-loading) snapshot until a
+    // full document reload: every WatchlistToggle rendered "not watchlisted".
+    apiGetMock.mockRejectedValueOnce(new Error("network down"));
+    view = renderIntoBody(probes(1)); // the always-mounted sidebar consumer
+    await flush();
+
+    expect(watchlistCalls()).toHaveLength(1);
+    expect(results.get(0)?.ids.size).toBe(0);
+
+    apiGetMock.mockResolvedValue({ items: [{ item: { id: "movie-5" } }], nextCursor: null });
+    view.rerender(probes(2)); // a detail route mounts a WatchlistToggle
+    await flush();
+
+    expect(watchlistCalls()).toHaveLength(2);
+    for (const id of [0, 1]) {
+      expect([...(results.get(id)?.ids ?? [])]).toEqual(["movie-5"]);
+    }
+  });
+
+  it("d4-w1: the retry re-enters loading, so no consumer renders the failed snapshot as settled truth", async () => {
+    apiGetMock.mockRejectedValueOnce(new Error("network down"));
+    view = renderIntoBody(probes(1));
+    await flush();
+    expect(results.get(0)?.loading).toBe(false);
+
+    let resolvePage: ((page: unknown) => void) | null = null;
+    apiGetMock.mockReturnValue(
+      new Promise((resolve) => {
+        resolvePage = resolve;
+      }),
+    );
+    view.rerender(probes(2));
+
+    // Sidebar count blanks and both toggles stay disabled while the retry is
+    // in flight, rather than presenting the known-wrong empty set as fact.
+    expect(results.get(0)?.loading).toBe(true);
+    expect(results.get(1)?.loading).toBe(true);
+
+    await act(async () => {
+      resolvePage!({ items: [{ item: { id: "movie-5" } }], nextCursor: null });
+      await Promise.resolve();
+    });
+    await flush();
+
+    expect(results.get(0)?.loading).toBe(false);
+    expect([...(results.get(0)?.ids ?? [])]).toEqual(["movie-5"]);
+  });
+
+  it("d4-w1: several consumers arriving together after a failure share ONE retry", async () => {
+    apiGetMock.mockRejectedValueOnce(new Error("network down"));
+    view = renderIntoBody(probes(1));
+    await flush();
+
+    view.rerender(probes(3)); // two new consumers in the same commit
+    await flush();
+
+    expect(watchlistCalls()).toHaveLength(2);
+  });
+
+  it("d4-w1: a consumer arriving after a SUCCESSFUL fetch still reuses it (the retry is failure-only)", async () => {
+    view = renderIntoBody(probes(1));
+    await flush();
+    view.rerender(probes(2));
+    await flush();
+    view.rerender(probes(3));
+    await flush();
+
+    expect(watchlistCalls()).toHaveLength(1);
+  });
+
   it("a StrictMode-style teardown-then-resubscribe while the fetch is in flight adopts it instead of firing a second one", async () => {
     let resolvePage: ((page: unknown) => void) | null = null;
     apiGetMock.mockReturnValue(

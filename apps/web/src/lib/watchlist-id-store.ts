@@ -36,6 +36,12 @@
 // server rather than trusting a page of unknown age (a sign-out unmounts
 // the shell, so a user switch in the same tab can never inherit the
 // previous session's ids).
+//
+// A FAILED seed is not permanent (d4-w1). That reset is the store's only
+// re-seed trigger, and it needs the listener set to drain to 0 — which
+// never happens while the Sidebar's watchlist count is mounted, i.e. for
+// the whole session. So a rejected fetch is remembered (`lastLoadFailed`)
+// and the next consumer to subscribe retries it; see subscribeWatchlistIds.
 
 import { apiGet } from "./api-client.js";
 import { getEventsSocket, type EventEnvelope } from "./events-socket.js";
@@ -69,6 +75,13 @@ const listeners = new Set<() => void>();
  *  the old per-mount `cancelled` flag. */
 let fetchSeq = 0;
 let inFlight = false;
+/** True while the last settled attempt REJECTED (d4-w1). The failure is
+ *  fail-soft — see the catch below — but it must not be permanent: the
+ *  reset that normally re-seeds the store runs only when the listener set
+ *  drains to 0, and the Sidebar's watchlist count is mounted for the whole
+ *  session, so with it subscribed that never happens. Cleared by the next
+ *  successful load and by reset(). */
+let lastLoadFailed = false;
 let socketUnsubscribers: Array<() => void> = [];
 
 function emit(next: WatchlistIdsSnapshot): void {
@@ -79,16 +92,26 @@ function emit(next: WatchlistIdsSnapshot): void {
 function reset(): void {
   fetchSeq++;
   inFlight = false;
+  lastLoadFailed = false;
   snapshot = INITIAL;
 }
 
 function load(): void {
   const seq = ++fetchSeq;
   inFlight = true;
+  // A RETRY (the cold start is already `loading`): re-enter loading so no
+  // consumer presents the failed snapshot as settled truth while the second
+  // attempt is out — the Sidebar count blanks instead of rendering a wrong
+  // 0, and WatchlistToggle stays disabled instead of offering "Watchlist"
+  // for an item that may well already be on it.
+  if (!snapshot.loading) {
+    emit({ ids: snapshot.ids, loading: true, atCapacity: snapshot.atCapacity });
+  }
   apiGet("/watchlist", { params: { query: { limit: ID_FETCH_LIMIT } } })
     .then((page) => {
       if (seq !== fetchSeq) return;
       inFlight = false;
+      lastLoadFailed = false;
       // Landed after the last consumer went away (the remount never came):
       // discard it rather than keep a page nobody is watching live.
       if (listeners.size === 0) {
@@ -110,7 +133,9 @@ function load(): void {
       }
       // Same fail-soft as the per-mount version: stop loading, keep
       // whatever the set already held (an empty set on a cold start), so
-      // the toggle becomes usable instead of spinning forever.
+      // the toggle becomes usable instead of spinning forever. Flagged as
+      // failed so the next consumer to arrive retries (d4-w1).
+      lastLoadFailed = true;
       emit({ ids: snapshot.ids, loading: false, atCapacity: snapshot.atCapacity });
     });
 }
@@ -145,6 +170,16 @@ export function subscribeWatchlistIds(listener: () => void): () => void {
     // double-invoke, or a route swap that remounts the toggles) must never
     // become a second identical request.
     if (!inFlight && snapshot.loading) load();
+  } else if (lastLoadFailed && !inFlight) {
+    // d4-w1: the store is holding a FAILED snapshot and, because something
+    // stayed subscribed throughout, the drain-to-0 reset never ran. A newly
+    // arriving consumer is the retry trigger: it is user-driven (a route
+    // change, a detail screen mounting its toggles), it is exactly the
+    // moment the stale set becomes visible again, and it is naturally
+    // bounded — concurrent arrivals in one commit see `inFlight` and adopt
+    // the same retry rather than stacking requests. Success clears the flag,
+    // so this cannot become a poll on a healthy store.
+    load();
   }
   return () => {
     listeners.delete(listener);
