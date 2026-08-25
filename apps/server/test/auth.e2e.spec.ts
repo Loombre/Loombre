@@ -696,3 +696,98 @@ describe("GET /users/me/restricted (bootstrap state for a fresh page load)", () 
     expect(res.body).toEqual({ optIn: false, hasPin: false, unlockedUntilMs: null });
   });
 });
+
+// d3-d1 (2026-08-24 remediation, dispatch 3): openapi.yaml's
+// /restricted/unlock description promises "Unlock state never persists
+// across logins", and gate 5 is re-verified server-side from
+// user_settings.restricted_unlocked_until_ms on EVERY request
+// (common/viewer-context.provider.ts) — the login token's
+// `restrictedUnlocked: false` claim is advisory, so the promise can only be
+// kept by the ROW. Nothing pinned that end-to-end before: the login path's
+// unconditional setRestrictedUnlockUntil(db, user.id, null, nowMs)
+// (auth.controller.ts) was covered only at the packages/db unit level, and
+// the suites above prove lock/unlock/read-back WITHIN one session. These
+// cases cross the session boundary the contract sentence is about, using
+// the zone listing itself (GET /restricted/browse — empty page when gate 5
+// is shut, real items when it is open) as the gated read, so a regression
+// that only patched GET /users/me/restricted cannot pass them.
+describe("restricted unlock never survives a session boundary (d3-d1)", () => {
+  it("logout + a fresh login re-locks gate 5, even well inside the old 30-minute window", async () => {
+    await setRestrictedEnabled("true");
+    const first = await loginAs("admin", "loombre-seed-admin");
+
+    const unlock = await request(app.getHttpServer())
+      .post("/restricted/unlock")
+      .set("Authorization", `Bearer ${first.accessToken}`)
+      .send({ pin: "0000" });
+    expect(unlock.status, JSON.stringify(unlock.body)).toBe(200);
+    expect(unlock.body.unlockedUntilMs).toBeGreaterThan(Date.now() + 60_000);
+
+    // Control: gate 5 is genuinely OPEN right now, so the post-login
+    // assertions below cannot pass because the zone was empty all along.
+    const during = await request(app.getHttpServer())
+      .get("/restricted/browse")
+      .set("Authorization", `Bearer ${first.accessToken}`);
+    expect(during.status, JSON.stringify(during.body)).toBe(200);
+    expect(during.body.items.length).toBeGreaterThan(0);
+
+    const logout = await request(app.getHttpServer())
+      .post("/auth/logout")
+      .set("Authorization", `Bearer ${first.accessToken}`)
+      .send({ deviceId: first.deviceId });
+    expect(logout.status).toBe(204);
+
+    // Same user, same live 30-minute window, brand-new session.
+    const second = await loginAs("admin", "loombre-seed-admin");
+
+    const state = await request(app.getHttpServer())
+      .get("/users/me/restricted")
+      .set("Authorization", `Bearer ${second.accessToken}`);
+    expect(state.status).toBe(200);
+    expect(state.body).toEqual({ optIn: true, hasPin: true, unlockedUntilMs: null });
+
+    const gated = await request(app.getHttpServer())
+      .get("/restricted/browse")
+      .set("Authorization", `Bearer ${second.accessToken}`);
+    expect(gated.status, JSON.stringify(gated.body)).toBe(200);
+    expect(gated.body).toEqual({ items: [], nextCursor: null });
+
+    await setRestrictedEnabled(undefined);
+  });
+
+  it("the access token that outlived the logout cannot spend the window either", async () => {
+    await setRestrictedEnabled("true");
+    const session = await loginAs("admin", "loombre-seed-admin");
+
+    const unlock = await request(app.getHttpServer())
+      .post("/restricted/unlock")
+      .set("Authorization", `Bearer ${session.accessToken}`)
+      .send({ pin: "0000" });
+    expect(unlock.status, JSON.stringify(unlock.body)).toBe(200);
+
+    await request(app.getHttpServer())
+      .post("/auth/logout")
+      .set("Authorization", `Bearer ${session.accessToken}`)
+      .send({ deviceId: session.deviceId })
+      .expect(204);
+
+    // The unlock row may still be live (it is account-scoped, and this
+    // user's OTHER devices legitimately keep it) — the logged-out device's
+    // own bearer token must not be able to read the zone with it.
+    // AUD-A7b-001 kills the access token at logout; this pins that the two
+    // mechanisms compose, so "logged out" is never "still cleared".
+    const afterLogout = await request(app.getHttpServer())
+      .get("/restricted/browse")
+      .set("Authorization", `Bearer ${session.accessToken}`);
+    expect(afterLogout.status, JSON.stringify(afterLogout.body)).toBe(401);
+
+    // Leave the shared DB locked for whatever runs next.
+    const cleanup = await loginAs("admin", "loombre-seed-admin");
+    await request(app.getHttpServer())
+      .post("/restricted/lock")
+      .set("Authorization", `Bearer ${cleanup.accessToken}`)
+      .send();
+
+    await setRestrictedEnabled(undefined);
+  });
+});
