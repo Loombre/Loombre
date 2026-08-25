@@ -99,6 +99,27 @@ describe("SheetOrModal", () => {
     expect(view.container.querySelector('[aria-hidden="true"]')).not.toBeNull();
   });
 
+  // d4-e3: the header dismiss control is the primitive's, but its LABEL is
+  // the caller's — a flow whose dismiss costs something (AddLibrarySheet's
+  // ungranted restricted library) relabels it, and that must reach both
+  // branches. Pinned here so the forwarding cannot be dropped from one of
+  // them without a failing test.
+  it("both branches label their header dismiss control from doneLabel", () => {
+    for (const isPhone of [true, false]) {
+      installMatchMedia(isPhone);
+      const v = renderIntoBody(
+        <SheetOrModal open onClose={() => {}} title="T" doneLabel="Close without access">
+          <p>body</p>
+        </SheetOrModal>,
+      );
+      const buttons = Array.from(v.container.querySelectorAll("button"));
+      expect(buttons.map((b) => b.textContent?.trim())).toContain("Close without access");
+      expect(buttons.map((b) => b.textContent?.trim())).not.toContain("Done");
+      v.unmount();
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("both branches close on Escape", () => {
     for (const isPhone of [true, false]) {
       installMatchMedia(isPhone);

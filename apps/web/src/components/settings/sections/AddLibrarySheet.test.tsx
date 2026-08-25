@@ -414,3 +414,106 @@ describe("AddLibrarySheet — d3-d6: a restricted create can no longer orphan th
     expect(apiPutMock).not.toHaveBeenCalled();
   });
 });
+
+// d4-e3 (D/d3-d6-adjacent, backlog #106): d3-d6 relabelled the panel's own
+// dismiss button to "Close without access" — but SheetOrModal's HEADER
+// dismiss control (the shared primitive's Done button, present in both the
+// sheet and the dialog branch) ran the same plain onClose while still saying
+// "Done". An ungranted restricted library could be abandoned from a control
+// whose label claimed the flow was finished, with no warning at the click
+// itself. The sheet already OWNS that label — SheetOrModal takes doneLabel —
+// it simply never passed one.
+describe("AddLibrarySheet — d4-e3: the sheet's own header dismiss cannot claim 'Done'", () => {
+  function stubSelfGrant(): void {
+    apiGetMock.mockImplementation((path: string) => {
+      if (path === "/users/me") return Promise.resolve(ME);
+      return Promise.reject(new Error(`unexpected apiGet(${path})`));
+    });
+    apiPutMock.mockResolvedValue({ libraryId: "lib-r", permissions: [{ userId: "admin-1", granted: true }] });
+  }
+
+  function mount(onClose = () => {}): void {
+    view = renderIntoBody(
+      <ToastProvider>
+        <AddLibrarySheet open onClose={onClose} onCreated={() => {}} />
+      </ToastProvider>,
+    );
+  }
+
+  /** The dismiss control SheetOrModal renders itself — the first button in
+   *  whichever child of the dialog carries its title. Structural rather than
+   *  by class so it finds the same control in the phone (BottomSheet) and
+   *  desktop (dialog) branch alike. */
+  function headerDismiss(): HTMLButtonElement {
+    const dialog = view!.container.querySelector('[role="dialog"]');
+    if (!dialog) throw new Error("no dialog rendered");
+    const header = Array.from(dialog.children).find((child) => child.querySelector("h2"));
+    if (!header) throw new Error("no dialog header");
+    const button = header.querySelector("button");
+    if (!button) throw new Error("no header dismiss control");
+    return button as HTMLButtonElement;
+  }
+
+  async function createRestricted(optOut: boolean): Promise<void> {
+    apiPostMock.mockResolvedValueOnce(RESTRICTED_LIBRARY).mockResolvedValueOnce({});
+    setNativeInputValue(inputFor("Name"), "qa-restricted-header-dismiss");
+    setTextareaValue(view!.container.querySelector("textarea") as HTMLTextAreaElement, "/mnt/restricted");
+    await click(buttonFor("Restricted"));
+    if (optOut) {
+      const checkbox = Array.from(view!.container.querySelectorAll("label"))
+        .find((l) => /grant myself access/i.test(l.textContent ?? ""))!
+        .querySelector("input")!;
+      await act(async () => {
+        checkbox.click();
+      });
+    }
+    await click(buttonFor("Create & scan"));
+  }
+
+  it("relabels its header dismiss while a grant is still owed", async () => {
+    stubSelfGrant();
+    mount();
+    await createRestricted(true);
+
+    expect(headerDismiss().textContent?.trim()).toBe("Close without access");
+    // The exact regression: a control that says the flow finished, on a
+    // panel whose whole point is that it did not.
+    expect(findButton("Done")).toBeUndefined();
+  });
+
+  it("still dismisses — the relabel is a warning, never a trap", async () => {
+    const onClose = vi.fn();
+    stubSelfGrant();
+    mount(onClose);
+    await createRestricted(true);
+
+    await click(headerDismiss());
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("says 'Done' again once the grant landed, because then it really is done", async () => {
+    stubSelfGrant();
+    mount();
+    await createRestricted(false);
+
+    expect(apiPutMock).toHaveBeenCalledTimes(1);
+    expect(headerDismiss().textContent?.trim()).toBe("Done");
+  });
+
+  it("a failed grant gets the same warning label as an opted-out one", async () => {
+    apiGetMock.mockImplementation((path: string) => {
+      if (path === "/users/me") return Promise.resolve(ME);
+      return Promise.reject(new Error(`unexpected apiGet(${path})`));
+    });
+    apiPutMock.mockRejectedValue(new FakeApiError("Admin privileges are required."));
+    mount();
+    await createRestricted(false);
+
+    expect(headerDismiss().textContent?.trim()).toBe("Close without access");
+  });
+
+  it("the ordinary create form keeps the plain 'Done' header control", () => {
+    mount();
+    expect(headerDismiss().textContent?.trim()).toBe("Done");
+  });
+});

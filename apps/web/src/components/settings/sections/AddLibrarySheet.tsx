@@ -233,6 +233,13 @@ export function AddLibrarySheet({
         onClose();
       }}
       title={created ? "One more step" : "Add library"}
+      // d4-e3: SheetOrModal renders its OWN dismiss control (header "Done",
+      // in both the sheet and the dialog branch) wired to the same onClose
+      // above — so while d3-d6's relabel sat only on the panel's button, the
+      // primitive's control still said "Done" on a panel whose whole point is
+      // that the flow is NOT done. The label is the caller's to set; the two
+      // dismiss controls must never disagree about what the click costs.
+      doneLabel={created && !granted ? "Close without access" : "Done"}
       sub={
         created
           ? granted

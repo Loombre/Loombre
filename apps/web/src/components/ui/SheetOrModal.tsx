@@ -17,6 +17,16 @@
 // specifically; the desktop dialog matches the existing app convention of
 // unmounting immediately on close (same as Modal.tsx today).
 //
+// DISMISS LABEL (d4-e3): the header control below is this primitive's, but
+// `doneLabel` — what it SAYS — belongs to the caller, and a flow where
+// dismissing costs something must set it. AddLibrarySheet's ungranted
+// restricted-create panel is the case that proved it: its own body button
+// said "Close without access" while this control still said "Done" and ran
+// the same onClose, so the panel's two dismiss controls disagreed about what
+// the click meant. Escape and the scrim carry no label at all — a flow that
+// needs the user WARNED must therefore also warn in the body, as that one
+// does; the label is not a substitute for that.
+//
 // BREAKPOINT (reconciled at Wave-1 landing): matches W1a's shipped
 // sidebar ⇄ bottom-tab-bar swap exactly — sheets belong with the tab-bar
 // layout, modals with the sidebar layout. 767.98px is the same repeated
