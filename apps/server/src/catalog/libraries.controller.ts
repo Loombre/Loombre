@@ -37,6 +37,18 @@
 // UPDATE_ME_BODY_KEYS is the reference), and `full` must be an actual
 // boolean. Nothing is enqueued or written on a rejected request.
 // Regression net: apps/server/test/api-body-validation.e2e.spec.ts.
+//
+// d3-b5 (QA 2026-08-21 follow-up backlog, P3): F5's five endpoints all had
+// FLAT bodies, so its allowlist loop had only ever been written one level
+// deep. PUT /libraries/{id}/permissions is the one body in this controller
+// with a NESTED shape — LibraryPermissionSet {libraryId, permissions[]},
+// each entry a LibraryPermission {userId, granted}, both
+// `additionalProperties: false` — and NEITHER level was enforced. An
+// unknown key at the top or inside any entry answered 200 and performed the
+// grant/revoke, so a client typo looked like it worked. Both levels run the
+// allowlist now; entries are fully validated before any write, so a bad
+// entry rejects the whole request. `libraryId` stays accepted-and-ignored
+// (see PUT_PERMISSIONS_BODY_KEYS).
 
 import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post, Put, Query, Req } from "@nestjs/common";
 import {
@@ -154,6 +166,22 @@ const UPDATE_LIBRARY_BODY_KEYS = new Set(["name", "paths"]);
 /** ScanLibraryRequest's full property set (additionalProperties:false,
  *  api-validation-F5). */
 const SCAN_LIBRARY_BODY_KEYS = new Set(["full"]);
+
+/** LibraryPermissionSet's full property set (additionalProperties:false,
+ *  d3-b5). `libraryId` is ACCEPTED and then IGNORED: the contract lists it
+ *  as required, every web caller sends it (LibrariesSection.tsx,
+ *  AddLibrarySheet.tsx, UsersSection.tsx) — and the path parameter is what
+ *  this handler actually acts on, as it always has. Rejecting a body that
+ *  omits it, or 422ing on a body/path mismatch, would each be a NEW
+ *  narrowing this finding does not ask for; both are logged as separate
+ *  findings instead. */
+const PUT_PERMISSIONS_BODY_KEYS = new Set(["libraryId", "permissions"]);
+
+/** LibraryPermission's full property set (additionalProperties:false,
+ *  d3-b5) — the NESTED half, which is the part api-validation-F5 never
+ *  reached: its five endpoints all had flat bodies, so "reject unknown
+ *  keys" had only ever been implemented one level deep. */
+const LIBRARY_PERMISSION_ENTRY_KEYS = new Set(["userId", "granted"]);
 
 @Controller()
 export class LibrariesController {
@@ -379,23 +407,49 @@ export class LibrariesController {
     }
 
     const body = rawBody ?? {};
+    // d3-b5: the same allowlist loop the three handlers above run, applied
+    // at BOTH levels of this body. LibraryPermissionSet and
+    // LibraryPermission are each `additionalProperties: false`, and neither
+    // was enforced — an unknown key at the top, or inside any array entry,
+    // answered 200 and performed the grant/revoke anyway. That made a client
+    // typo indistinguishable from success at exactly the place it matters
+    // most: `{"userId": "…", "allowed": true}` used to reach the entry check
+    // and 422 with "requires userId and granted", never naming the key the
+    // caller actually got wrong, while `{"userId": "…", "granted": true,
+    // "bogus": 1}` was applied silently.
+    for (const key of Object.keys(body)) {
+      if (!PUT_PERMISSIONS_BODY_KEYS.has(key)) {
+        throw unprocessableEntity(`Unknown property "${key}".`, instance);
+      }
+    }
     if (!Array.isArray(body["permissions"])) {
       throw unprocessableEntity("permissions must be an array.", instance);
     }
     const entries: LibraryPermissionEntry[] = [];
-    for (const raw of body["permissions"] as unknown[]) {
-      if (
-        typeof raw !== "object" ||
-        raw === null ||
-        typeof (raw as Record<string, unknown>)["userId"] !== "string" ||
-        typeof (raw as Record<string, unknown>)["granted"] !== "boolean"
-      ) {
+    // Every entry is validated BEFORE putLibraryPermissionsAdmin runs, so a
+    // bad entry anywhere in the array writes none of the good ones — the
+    // same all-or-nothing posture the flat bodies get for free.
+    for (const [index, raw] of (body["permissions"] as unknown[]).entries()) {
+      if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
         throw unprocessableEntity("Each permission entry requires userId (string) and granted (boolean).", instance);
       }
-      entries.push({
-        userId: (raw as Record<string, unknown>)["userId"] as string,
-        granted: (raw as Record<string, unknown>)["granted"] as boolean,
-      });
+      const entry = raw as Record<string, unknown>;
+      // The unknown-key check runs BEFORE the required-member check on
+      // purpose: a misspelled member is BOTH an unknown key and a missing
+      // one, and "Unknown property "permissions[0].allowed"." tells the
+      // caller what to fix while the generic message does not. The
+      // `permissions[i].key` form is this file's only nested detail string;
+      // the flat `Unknown property "<key>".` wording is unchanged elsewhere
+      // (reauth-review-findings.e2e.spec.ts asserts it verbatim).
+      for (const key of Object.keys(entry)) {
+        if (!LIBRARY_PERMISSION_ENTRY_KEYS.has(key)) {
+          throw unprocessableEntity(`Unknown property "permissions[${index}].${key}".`, instance);
+        }
+      }
+      if (typeof entry["userId"] !== "string" || typeof entry["granted"] !== "boolean") {
+        throw unprocessableEntity("Each permission entry requires userId (string) and granted (boolean).", instance);
+      }
+      entries.push({ userId: entry["userId"], granted: entry["granted"] });
     }
 
     const permissions = await putLibraryPermissionsAdmin(this.dbProvider.db, id, entries, clockNowMs());

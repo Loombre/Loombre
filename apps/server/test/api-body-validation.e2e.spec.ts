@@ -104,6 +104,11 @@ function admin() {
         .patch(url)
         .set("Authorization", `Bearer ${adminToken}`)
         .send(body as object),
+    put: (url: string, body: unknown) =>
+      request(app.getHttpServer())
+        .put(url)
+        .set("Authorization", `Bearer ${adminToken}`)
+        .send(body as object),
   };
 }
 
@@ -539,5 +544,143 @@ describe("api-validation-F5 rejection details name the offending member", () => 
     expectValidationProblem(res);
     expect(res.body["detail"]).toBe("full must be a boolean.");
     expect(res.body["instance"]).toBe(`/libraries/${targetLibraryId}/scan`);
+  }, 20_000);
+});
+
+// ────────────────── PUT /libraries/{id}/permissions (d3-b5) ──────────────────
+// F5 enforced `additionalProperties: false` on the five endpoints its report
+// named — all of them FLAT bodies. This one was outside that list and is the
+// only request body in this controller with a NESTED shape: LibraryPermissionSet
+// is `additionalProperties:false` with `permissions` an array of
+// LibraryPermission, itself `additionalProperties:false` (userId, granted).
+// Neither level was enforced: an unknown key at the top OR inside any array
+// entry answered 200 and performed the grant/revoke anyway, so a client typo
+// (`user` for `userId`, `allowed` for `granted`) looked like it worked.
+//
+// The web's own callers send `{ libraryId, permissions: [{ userId, granted }] }`
+// (LibrariesSection.tsx:161, AddLibrarySheet.tsx:168, UsersSection.tsx:161), so
+// `libraryId` must stay ACCEPTED — the fix is an allowlist, not a narrowing.
+describe("PUT /libraries/{id}/permissions body validation (nested additionalProperties:false)", () => {
+  let permsLibraryId: string;
+
+  /** Its own library: putLibraryPermissionsAdmin applies a DELTA (grant the
+   *  listed userIds, revoke the ones sent `granted:false`), so a stray write
+   *  here would silently change what a later cell — or another describe in
+   *  this file — sees on targetLibraryId. */
+  beforeAll(async () => {
+    const created = await admin().post("/libraries", {
+      name: "d3-b5 Permissions Library",
+      mediaKind: "movie",
+      paths: ["/data/d3-b5-permissions"],
+    });
+    expect(created.status, JSON.stringify(created.body)).toBe(201);
+    permsLibraryId = created.body.id;
+  }, 30_000);
+
+  async function grantedUserIds(): Promise<string[]> {
+    const res = await admin().get(`/libraries/${permsLibraryId}/permissions`);
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+    return (res.body.permissions as Array<{ userId: string }>).map((p) => p.userId).sort();
+  }
+
+  it('422s on an unknown TOP-LEVEL key, and writes no grant', async () => {
+    const before = await grantedUserIds();
+
+    const res = await admin().put(`/libraries/${permsLibraryId}/permissions`, {
+      libraryId: permsLibraryId,
+      permissions: [{ userId: targetUserId, granted: true }],
+      bogus: true,
+    });
+    expectValidationProblem(res);
+    expect(res.body["detail"]).toBe('Unknown property "bogus".');
+    expect(res.body["instance"]).toBe(`/libraries/${permsLibraryId}/permissions`);
+
+    expect(await grantedUserIds()).toEqual(before);
+  }, 20_000);
+
+  it("422s on an unknown key INSIDE a permission entry, and writes no grant", async () => {
+    const before = await grantedUserIds();
+
+    const res = await admin().put(`/libraries/${permsLibraryId}/permissions`, {
+      libraryId: permsLibraryId,
+      permissions: [{ userId: targetUserId, granted: true, bogus: 1 }],
+    });
+    expectValidationProblem(res);
+    expect(res.body["detail"]).toBe('Unknown property "permissions[0].bogus".');
+
+    expect(await grantedUserIds()).toEqual(before);
+  }, 20_000);
+
+  it("422s on a misspelled entry member (the client-typo case) rather than silently dropping it", async () => {
+    const before = await grantedUserIds();
+
+    const res = await admin().put(`/libraries/${permsLibraryId}/permissions`, {
+      permissions: [{ userId: targetUserId, allowed: true }],
+    });
+    expectValidationProblem(res);
+    expect(res.body["detail"]).toBe('Unknown property "permissions[0].allowed".');
+
+    expect(await grantedUserIds()).toEqual(before);
+  }, 20_000);
+
+  it("rejects atomically: an unknown key on a LATER entry writes none of the earlier ones", async () => {
+    const before = await grantedUserIds();
+
+    const res = await admin().put(`/libraries/${permsLibraryId}/permissions`, {
+      libraryId: permsLibraryId,
+      permissions: [
+        { userId: targetUserId, granted: true },
+        { userId: targetUserId, granted: true, nope: "x" },
+      ],
+    });
+    expectValidationProblem(res);
+    expect(res.body["detail"]).toBe('Unknown property "permissions[1].nope".');
+
+    expect(await grantedUserIds()).toEqual(before);
+  }, 20_000);
+
+  it("still accepts the exact body shape the web sends, and the grant lands", async () => {
+    const res = await admin().put(`/libraries/${permsLibraryId}/permissions`, {
+      libraryId: permsLibraryId,
+      permissions: [{ userId: targetUserId, granted: true }],
+    });
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+    expect(await grantedUserIds()).toContain(targetUserId);
+
+    const revoke = await admin().put(`/libraries/${permsLibraryId}/permissions`, {
+      libraryId: permsLibraryId,
+      permissions: [{ userId: targetUserId, granted: false }],
+    });
+    expect(revoke.status, JSON.stringify(revoke.body)).toBe(200);
+    expect(await grantedUserIds()).not.toContain(targetUserId);
+  }, 20_000);
+
+  it("still accepts a body with no libraryId at all (the path is authoritative — unchanged posture)", async () => {
+    const res = await admin().put(`/libraries/${permsLibraryId}/permissions`, { permissions: [] });
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+  }, 20_000);
+
+  it("still 422s on a missing/non-array permissions member (guard, unchanged)", async () => {
+    const missing = await admin().put(`/libraries/${permsLibraryId}/permissions`, { libraryId: permsLibraryId });
+    expectValidationProblem(missing);
+    expect(missing.body["detail"]).toBe("permissions must be an array.");
+
+    const wrongType = await admin().put(`/libraries/${permsLibraryId}/permissions`, { permissions: "all" });
+    expectValidationProblem(wrongType);
+  }, 20_000);
+
+  it("still 422s on a wrong-typed entry member (guard, unchanged)", async () => {
+    const res = await admin().put(`/libraries/${permsLibraryId}/permissions`, {
+      permissions: [{ userId: targetUserId, granted: "yes" }],
+    });
+    expectValidationProblem(res);
+    expect(res.body["detail"]).toBe("Each permission entry requires userId (string) and granted (boolean).");
+  }, 20_000);
+
+  it("422s on an entry that is not an object at all (null / array / scalar)", async () => {
+    for (const entry of [null, [], "grant", 7] as unknown[]) {
+      const res = await admin().put(`/libraries/${permsLibraryId}/permissions`, { permissions: [entry] });
+      expectValidationProblem(res);
+    }
   }, 20_000);
 });
