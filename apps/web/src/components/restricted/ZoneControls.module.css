@@ -66,8 +66,29 @@
 
 /* ── Filter bar ── */
 
+/* The bar is a COLUMN: the toggle row, then the disclosure panel beneath
+   it, in flow (browser-restricted-settings-F7 — see .filterPanel below). */
 .filterBar {
-  position: relative;
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-sm);
+}
+
+/* Desktop toolbar row (page.module.css `.toolbar`: flex, space-between,
+   align-items:flex-start, flex-WRAP): a zero flex basis makes the bar's
+   contribution to that line independent of how wide its panel content
+   wants to be, so opening the panel can never bump the sort/density group
+   onto a second row — the bar only ever grows DOWNWARD. Below 768px the
+   toolbar is a stretched column and needs none of this. */
+@media (width >= 768px) {
+  .filterBar {
+    flex: 1 1 0;
+  }
+}
+
+.filterBarRow {
   display: flex;
   align-items: center;
   gap: var(--space-sm);
@@ -109,15 +130,28 @@
   color: var(--text);
 }
 
+/* IN FLOW, never floating (browser-restricted-settings-F7): the panel
+   pushes the grid/empty state down instead of covering them. As an
+   absolute (desktop) / fixed bottom-sheet (mobile) overlay it sat exactly
+   on top of RestrictedZoneEmptyState's `CLEAR SEARCH & FILTERS` remedy —
+   the one control a user whose filters just emptied the grid reaches for —
+   and swallowed the click. A disclosure that pushes has no such rect to
+   intercept with, needs no z-index, and keeps its raised surface (bg +
+   border + shadow) so it still reads as a layer above the toolbar.
+   It stays bounded (max-height + internal scroll) so a long facet list
+   cannot push the results off-screen. */
 .filterPanel {
-  position: absolute;
-  top: calc(100% + var(--space-xs));
-  left: 0;
-  z-index: 20;
   display: grid;
-  grid-template-columns: repeat(3, minmax(160px, 1fr));
+
+  /* auto-fit, not a hard `repeat(3, …)`: in flow the panel is only as wide
+     as the free space beside the sort/density group (a wide sort track on
+     a 1024px viewport leaves it well under 720px), so the facet columns
+     have to reflow 3 -> 2 -> 1 to that measured width instead of
+     overflowing it. `min(180px, 100%)` keeps the track from exceeding a
+     very narrow bar. */
+  grid-template-columns: repeat(auto-fit, minmax(min(180px, 100%), 1fr));
   gap: var(--space-md);
-  width: min(720px, 90vw);
+  width: min(720px, 100%);
   max-height: 60vh;
   overflow-y: auto;
   padding: var(--space-md);
@@ -207,15 +241,16 @@
   color: var(--color-text-subtle);
 }
 
+/* Phones get the same in-flow disclosure, one facet per row — NOT the
+   position:fixed bottom sheet this used to be. design/phosphor/README.md
+   enumerates the nine bottom sheets the phone build ships (account, queue,
+   PIN entry, resume prompt, playback-unavailable, add user, add library,
+   edit metadata, fix match); the zone filter panel is not one of them, and
+   it carried none of the sheet shell anyway (no scrim, no grab handle, no
+   Done, no focus trap) — it was a fixed panel that covered the results,
+   which is precisely the F7 defect. */
 @media (width <= 767.98px) {
   .filterPanel {
-    position: fixed;
-    inset: auto 0 0;
-    top: auto;
-    width: 100%;
-    max-height: 80vh;
-    border-top-left-radius: var(--radius-lg);
-    border-top-right-radius: var(--radius-lg);
     grid-template-columns: 1fr;
   }
 }

@@ -12,15 +12,28 @@
 // controls: the zone's filter surface is wide (7 independent facets) and
 // would otherwise dominate the toolbar on every viewport.
 //
+// browser-restricted-settings-F7 (QA 2026-08-20/21): the panel used to
+// FLOAT (position:absolute, z-index 20; a position:fixed bottom sheet
+// under 768px) and had exactly one way to close — the toggle. Floating
+// over the results meant that when the filters emptied the grid, the
+// panel's rect covered RestrictedZoneEmptyState's "Clear search &
+// filters" remedy and swallowed the click. It is now a true disclosure:
+// it sits IN FLOW under the toggle row and pushes the results down (see
+// ZoneControls.module.css `.filterPanel`), so it can never cover the
+// remedy at any viewport, and it dismisses on Escape or an outside press
+// like every other popover here (components/settings/RowMenu.tsx,
+// components/shell/UserMenu.tsx).
+//
 // Picker OPTIONS come from the caller (already-fetched performer/studio/
 // genre lists — see app/restricted/browse/page.tsx for where those come
 // from, including the genre list's GET /tags?kind=genre reuse, since there
 // is no dedicated "list zone genres" endpoint and the general tags read
 // already returns restricted-class rows to a cleared viewer).
 
-import { useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { SlidersHorizontal, X } from "lucide-react";
 import { Icon } from "../icon/Icon.js";
+import { useEscapeKey } from "../ui/overlay-hooks.js";
 import {
   ZONE_RESOLUTION_BANDS,
   type ZoneBrowseFilters,
@@ -98,28 +111,59 @@ export function ZoneFilterBar({
   genres,
 }: ZoneFilterBarProps): React.JSX.Element {
   const [open, setOpen] = useState(false);
+  const barRef = useRef<HTMLDivElement>(null);
+  const toggleRef = useRef<HTMLButtonElement>(null);
+  const panelId = useId();
+
+  // Escape returns focus to the toggle (the keyboard user is still "at"
+  // the filter bar); an outside press deliberately does not — the pointer
+  // is already somewhere else and stealing focus back would fight it.
+  const closeFromKeyboard = useCallback(() => {
+    setOpen(false);
+    toggleRef.current?.focus();
+  }, []);
+
+  useEscapeKey(open, closeFromKeyboard);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    // `pointerdown`, not `mousedown` (RowMenu/UserMenu's older choice):
+    // one listener covers mouse, touch and pen, so a TAP outside the panel
+    // dismisses it on phones too, where the panel is full-width and hides
+    // the most content.
+    function onPointerDownOutside(event: Event): void {
+      const bar = barRef.current;
+      if (bar && !bar.contains(event.target as Node)) setOpen(false);
+    }
+    document.addEventListener("pointerdown", onPointerDownOutside);
+    return () => document.removeEventListener("pointerdown", onPointerDownOutside);
+  }, [open]);
 
   return (
-    <div className={styles.filterBar}>
-      <button
-        type="button"
-        className={styles.filterToggle}
-        data-active={hasActiveFilters}
-        aria-expanded={open}
-        onClick={() => setOpen((v) => !v)}
-      >
-        <Icon icon={SlidersHorizontal} size="dense" />
-        Filters
-      </button>
-      {hasActiveFilters && (
-        <button type="button" className={styles.clearFiltersInline} onClick={onClear}>
-          <Icon icon={X} size="dense" />
-          Clear filters
+    <div className={styles.filterBar} ref={barRef}>
+      <div className={styles.filterBarRow}>
+        <button
+          type="button"
+          ref={toggleRef}
+          className={styles.filterToggle}
+          data-active={hasActiveFilters}
+          aria-expanded={open}
+          {...(open ? { "aria-controls": panelId } : {})}
+          onClick={() => setOpen((v) => !v)}
+        >
+          <Icon icon={SlidersHorizontal} size="dense" />
+          Filters
         </button>
-      )}
+        {hasActiveFilters && (
+          <button type="button" className={styles.clearFiltersInline} onClick={onClear}>
+            <Icon icon={X} size="dense" />
+            Clear filters
+          </button>
+        )}
+      </div>
 
       {open && (
-        <div className={styles.filterPanel}>
+        <div className={styles.filterPanel} id={panelId}>
           <OptionChecklist
             label="Performers"
             options={performers}
