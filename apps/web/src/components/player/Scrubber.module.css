@@ -9,6 +9,27 @@
   touch-action: none;
 }
 
+/* d3-a5 (A/gap-F4): invisible hit-area extension. The video player's
+   bottom bar show/hide transition rides `transform: translateY(8px)`
+   (PlayerControls.module.css `.bottomBar.hidden`), so mid-transition the
+   whole scrubber sits up to 8px from where the viewer just saw it — a
+   click at the track's former y landed on the plain scrubberRow flex box
+   and committed NOTHING. Pointer events on a pseudo-element dispatch to
+   the originating element, and every position this component computes
+   reads clientX only, so padding the target vertically changes which
+   clicks REACH the slider, never what they commit. Geometry is pinned by
+   scrubber-hit-target.test.ts: both extensions must cover the 8px shift,
+   and the downward one must not exceed the bottomBar's row gap (`.track`
+   is a positioned element — anything past the gap would hit-test above
+   the transport buttons beneath). Also spans the music MiniPlayerBar's
+   rail (horizontal neighbors only there — a vertical extension steals
+   nothing, it just makes a 4px rail honestly clickable). */
+.track::before {
+  content: "";
+  position: absolute;
+  inset: -10px 0 -8px;
+}
+
 .rail {
   position: relative;
   width: 100%;
