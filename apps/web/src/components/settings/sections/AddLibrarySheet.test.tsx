@@ -204,7 +204,13 @@ describe("AddLibrarySheet — Kind control (D-3 label-casing)", () => {
 });
 
 describe("AddLibrarySheet — browser-admin-F7: restricted creation must not be a dead end", () => {
-  async function createRestricted(handlers: { onClose?: () => void; onCreated?: (lib: unknown) => void } = {}): Promise<void> {
+  /** d3-d6 note: `optOut` turns OFF the "Grant myself access" checkbox the
+   *  restricted branch now carries (default ON), which is the only way to
+   *  reach the panel with the manual grant offer still owed — the state
+   *  these two cases were written against. */
+  async function createRestricted(
+    handlers: { onClose?: () => void; onCreated?: (lib: unknown) => void; optOut?: boolean } = {},
+  ): Promise<void> {
     apiPostMock.mockResolvedValueOnce(RESTRICTED_LIBRARY).mockResolvedValueOnce({});
     view = renderIntoBody(
       <ToastProvider>
@@ -215,12 +221,20 @@ describe("AddLibrarySheet — browser-admin-F7: restricted creation must not be 
     const pathsField = view.container.querySelector("textarea") as HTMLTextAreaElement;
     setTextareaValue(pathsField, "/mnt/restricted");
     await click(buttonFor("Restricted"));
+    if (handlers.optOut) {
+      const checkbox = Array.from(view.container.querySelectorAll("label"))
+        .find((l) => /grant myself access/i.test(l.textContent ?? ""))!
+        .querySelector("input")!;
+      await act(async () => {
+        checkbox.click();
+      });
+    }
     await click(buttonFor("Create & scan"));
   }
 
   it("keeps the sheet open on a next-step panel that says the library is not visible yet", async () => {
     const onClose = vi.fn();
-    await createRestricted({ onClose });
+    await createRestricted({ onClose, optOut: true });
 
     // The trap: the sheet used to close on success exactly like a general
     // library, so the only feedback was a row the next reload deleted.
@@ -234,7 +248,7 @@ describe("AddLibrarySheet — browser-admin-F7: restricted creation must not be 
       if (path === "/users/me") return Promise.resolve(ME);
       return Promise.reject(new Error(`unexpected apiGet(${path})`));
     });
-    await createRestricted();
+    await createRestricted({ optOut: true });
 
     await click(buttonFor("Grant yourself access"));
 
@@ -263,6 +277,136 @@ describe("AddLibrarySheet — browser-admin-F7: restricted creation must not be 
     setNativeInputValue(inputFor("Name"), "Test Library");
     const pathsField = view.container.querySelector("textarea") as HTMLTextAreaElement;
     setTextareaValue(pathsField, "/mnt/tv");
+    await click(buttonFor("Create & scan"));
+
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(findButton("Grant yourself access")).toBeUndefined();
+    expect(apiPutMock).not.toHaveBeenCalled();
+  });
+});
+
+// d3-d6 (verify/admin-F7-residual-close-without-grant, QA 2026-08-21
+// remediation dispatch 3, P2): the panel above explained the two remaining
+// gates and OFFERED the grant — but its Close button dismissed the whole
+// thing without one, reproduced live ("qa-restricted-orphan": zero
+// library_permissions rows, absent from every listing the UI had). One
+// click, and the original F7 trap was back. d3-d5 makes such a library
+// recoverable; this makes producing one by accident impossible: the grant
+// now rides along with the create by default, and opting out is an
+// explicit choice that says what it costs.
+describe("AddLibrarySheet — d3-d6: a restricted create can no longer orphan the library", () => {
+  function stubSelfGrant(): void {
+    apiGetMock.mockImplementation((path: string) => {
+      if (path === "/users/me") return Promise.resolve(ME);
+      return Promise.reject(new Error(`unexpected apiGet(${path})`));
+    });
+    apiPutMock.mockResolvedValue({ libraryId: "lib-r", permissions: [{ userId: "admin-1", granted: true }] });
+  }
+
+  function grantSelfCheckbox(): HTMLInputElement {
+    const label = Array.from(view!.container.querySelectorAll("label")).find((l) =>
+      /grant myself access/i.test(l.textContent ?? ""),
+    );
+    if (!label) throw new Error("no 'Grant myself access' checkbox");
+    return label.querySelector("input")!;
+  }
+
+  /** Fills the form and flips it to Restricted — stops before submitting so
+   *  a case can inspect or toggle the grant checkbox, which only exists in
+   *  the restricted branch. */
+  async function fillRestricted(): Promise<void> {
+    apiPostMock.mockResolvedValueOnce(RESTRICTED_LIBRARY).mockResolvedValueOnce({});
+    setNativeInputValue(inputFor("Name"), "qa-restricted-orphan");
+    setTextareaValue(view!.container.querySelector("textarea") as HTMLTextAreaElement, "/mnt/restricted");
+    await click(buttonFor("Restricted"));
+  }
+
+  async function submit(): Promise<void> {
+    await click(buttonFor("Create & scan"));
+  }
+
+  function mount(onClose = () => {}): void {
+    view = renderIntoBody(
+      <ToastProvider>
+        <AddLibrarySheet open onClose={onClose} onCreated={() => {}} />
+      </ToastProvider>,
+    );
+  }
+
+  it("issues the self-grant as part of the create, so dismissing the panel cannot leave an orphan", async () => {
+    stubSelfGrant();
+    mount();
+    await fillRestricted();
+    expect(grantSelfCheckbox().checked).toBe(true);
+    await submit();
+
+    expect(apiPutMock).toHaveBeenCalledTimes(1);
+    const [path, options] = apiPutMock.mock.calls[0] as [
+      string,
+      { params: { path: { id: string } }; body: { permissions: { userId: string; granted: boolean }[] } },
+    ];
+    expect(path).toBe("/libraries/{id}/permissions");
+    expect(options.params.path.id).toBe("lib-r");
+    expect(options.body.permissions).toEqual([{ userId: "admin-1", granted: true }]);
+
+    // Nothing is left owed but gate 5, so there is no grant offer and the
+    // dismiss button is an ordinary one.
+    expect(findButton("Grant yourself access")).toBeUndefined();
+    expect(findButton("Close without access")).toBeUndefined();
+    expect(view!.container.textContent).toMatch(/unlock restricted content/i);
+  });
+
+  it("opting out is explicit, and the dismiss button then says what it costs and where the library went", async () => {
+    stubSelfGrant();
+    mount();
+    await fillRestricted();
+    await act(async () => {
+      grantSelfCheckbox().click();
+    });
+    expect(grantSelfCheckbox().checked).toBe(false);
+    await submit();
+
+    expect(apiPutMock).not.toHaveBeenCalled();
+    expect(findButton("Grant yourself access")).toBeTruthy();
+    expect(buttonFor("Close without access")).toBeTruthy();
+    // The recovery route d3-d5 added, named at the moment it becomes the
+    // only way back.
+    expect(view!.container.textContent).toMatch(/not visible to you/i);
+  });
+
+  it("a failed grant is reported, never silently swallowed into a 'created' close", async () => {
+    apiGetMock.mockImplementation((path: string) => {
+      if (path === "/users/me") return Promise.resolve(ME);
+      return Promise.reject(new Error(`unexpected apiGet(${path})`));
+    });
+    apiPutMock.mockRejectedValue(new FakeApiError("Admin privileges are required."));
+    const onClose = vi.fn();
+    mount(onClose);
+    await fillRestricted();
+    await submit();
+
+    expect(onClose).not.toHaveBeenCalled();
+    expect(view!.container.textContent).toContain("Admin privileges are required.");
+    expect(findButton("Grant yourself access")).toBeTruthy();
+    expect(findButton("Close without access")).toBeTruthy();
+  });
+
+  it("the grant checkbox is restricted-only — a general library never shows it and never PUTs", async () => {
+    const onClose = vi.fn();
+    apiPostMock.mockResolvedValueOnce(CREATED_LIBRARY).mockResolvedValueOnce({});
+    view = renderIntoBody(
+      <ToastProvider>
+        <AddLibrarySheet open onClose={onClose} onCreated={() => {}} />
+      </ToastProvider>,
+    );
+    setNativeInputValue(inputFor("Name"), "Test Library");
+    const pathsField = view.container.querySelector("textarea") as HTMLTextAreaElement;
+    setTextareaValue(pathsField, "/mnt/tv");
+    // The checkbox belongs to the restricted branch only: a general
+    // library already auto-grants its creator server-side.
+    expect(
+      Array.from(view.container.querySelectorAll("label")).some((l) => /grant myself access/i.test(l.textContent ?? "")),
+    ).toBe(false);
     await click(buttonFor("Create & scan"));
 
     expect(onClose).toHaveBeenCalledTimes(1);

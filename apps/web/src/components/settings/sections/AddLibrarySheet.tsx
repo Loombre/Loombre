@@ -43,6 +43,24 @@
 // remaining gates and can issue the PUT /libraries/{id}/permissions the
 // design itself calls for (an existence-scoped admin route — it works
 // fine on a library the caller cannot yet see).
+//
+// d3-d6 (verify/admin-F7-residual-close-without-grant, QA 2026-08-21): that
+// panel OFFERED the grant but its Close dismissed the whole thing without
+// one — reproduced live, "qa-restricted-orphan" ended up with zero
+// library_permissions rows and no listing anywhere would return it. One
+// click and the original trap was back. So the grant now rides along with
+// the create: the restricted branch of the form carries a "Grant myself
+// access" checkbox, DEFAULT ON, and handleSubmit issues the PUT itself
+// before the panel is ever shown. The server's default-deny is untouched —
+// this is exactly the explicit PUT §6.4 gate 4 asks the creating admin to
+// make, made at the moment they ask for the library.
+//
+// Opting out stays possible (creating a restricted library FOR SOMEONE
+// ELSE is a real case, and forcing a grant the admin would then have to
+// revoke is worse), but it is now a deliberate click, and the panel that
+// follows says what it costs and names the recovery route d3-d5 added
+// (Settings -> Libraries -> "Not visible to you") instead of a bare
+// "Close".
 
 import { useState } from "react";
 import { SheetOrModal } from "../../ui/SheetOrModal.js";
@@ -82,6 +100,9 @@ export function AddLibrarySheet({
   const [name, setName] = useState("");
   const [mediaKind, setMediaKind] = useState<MediaKind>("movie");
   const [restricted, setRestricted] = useState(false);
+  // d3-d6: default ON — the accidental orphan the finding reproduced is
+  // only reachable by turning this off on purpose.
+  const [grantSelf, setGrantSelf] = useState(true);
   const [pathsText, setPathsText] = useState("");
   const [pickerOpen, setPickerOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -103,6 +124,7 @@ export function AddLibrarySheet({
     setName("");
     setMediaKind("movie");
     setRestricted(false);
+    setGrantSelf(true);
     setPathsText("");
     setPickerOpen(false);
     setError(null);
@@ -122,6 +144,21 @@ export function AddLibrarySheet({
       const lib = await apiPost("/libraries", {
         body: { name, mediaKind, paths, contentClass: restricted ? "restricted" : "general" },
       });
+      // d3-d6: the grant is part of the create, BEFORE the scan and before
+      // any panel is shown — there is no window in which the library exists
+      // ungranted because the admin clicked the wrong dismiss control. A
+      // failure here is surfaced on the panel (with the manual offer still
+      // attached), never swallowed into a "created" close.
+      let grantFailure: string | null = null;
+      let grantIssued = false;
+      if (lib.contentClass === "restricted" && grantSelf) {
+        try {
+          await putSelfGrant(lib);
+          grantIssued = true;
+        } catch (err) {
+          grantFailure = err instanceof LoombreApiError ? err.message : "Failed to grant access.";
+        }
+      }
       // "Create & scan" — real chained behavior, not fabricated: a scan
       // enqueue failure here doesn't undo the library create (same
       // best-effort posture the standalone Scan button always had), it
@@ -137,9 +174,12 @@ export function AddLibrarySheet({
       onCreated(lib);
       if (lib.contentClass === "restricted") {
         // Stop here: this library is NOT in the list the caller just
-        // re-read, and saying so (with the grant action attached) is the
-        // whole fix. Closing would reproduce the appear-then-vanish trap.
+        // re-read (gate 5, the live unlock, is still owed even when the
+        // grant landed), and saying so is the whole fix. Closing would
+        // reproduce the appear-then-vanish trap.
         setCreated(lib);
+        setGranted(grantIssued);
+        setGrantError(grantFailure);
         setSubmitting(false);
         return;
       }
@@ -149,6 +189,16 @@ export function AddLibrarySheet({
       setError(err instanceof LoombreApiError ? err.message : "Failed to create library.");
       setSubmitting(false);
     }
+  }
+
+  /** The one PUT both grant paths (create-time and the panel's manual
+   *  button) go through, so they can never drift apart. */
+  async function putSelfGrant(lib: Library): Promise<void> {
+    const me = await apiGet("/users/me");
+    await apiPut("/libraries/{id}/permissions", {
+      params: { path: { id: lib.id } },
+      body: { libraryId: lib.id, permissions: [{ userId: me.id, granted: true }] },
+    });
   }
 
   /** browser-admin-F7: the grant the server's default-deny requires next.
@@ -162,11 +212,7 @@ export function AddLibrarySheet({
     setGranting(true);
     setGrantError(null);
     try {
-      const me = await apiGet("/users/me");
-      await apiPut("/libraries/{id}/permissions", {
-        params: { path: { id: created.id } },
-        body: { libraryId: created.id, permissions: [{ userId: me.id, granted: true }] },
-      });
+      await putSelfGrant(created);
       setGranted(true);
       // Tell the caller to look again: with gate 4 satisfied the library
       // appears in its list the moment gate 5 (the live unlock) is too.
@@ -189,7 +235,9 @@ export function AddLibrarySheet({
       title={created ? "One more step" : "Add library"}
       sub={
         created
-          ? `“${created.name}” exists, but restricted libraries stay hidden until you grant yourself access.`
+          ? granted
+            ? `“${created.name}” is created and granted to you — restricted libraries stay hidden until this device is unlocked.`
+            : `“${created.name}” exists, but restricted libraries stay hidden until you grant yourself access.`
           : "Loombre only reads these paths — scanning never renames, moves, or modifies your source files."
       }
     >
@@ -205,7 +253,20 @@ export function AddLibrarySheet({
               Access granted. Unlock restricted content to see and manage “{created.name}” here — scanning and
               its other admin actions live on its row once it is visible.
             </p>
-          ) : null}
+          ) : (
+            // d3-d6: dismissing WITHOUT a grant is now an informed choice —
+            // it names the state the library will be in and the one place
+            // it can still be reached from (LibrariesSection's d3-d5 group).
+            // The two ungranted cases are NOT the same thing and must not
+            // read the same: one is a choice, the other is a failure.
+            <p className={styles.note}>
+              {grantError
+                ? `Granting access failed, so “${created.name}” has no grant yet.`
+                : "You chose not to grant yourself access."}{" "}
+              “{created.name}” will not be in your Libraries list; you can still reach it under Settings →
+              Libraries → “Not visible to you” and grant access there.
+            </p>
+          )}
           {grantError && <p className={styles.errorText}>{grantError}</p>}
           <div className={styles.actions}>
             <Button
@@ -216,7 +277,7 @@ export function AddLibrarySheet({
                 onClose();
               }}
             >
-              Close
+              {granted ? "Done" : "Close without access"}
             </Button>
             {!granted && (
               <Button type="button" variant="primary" onClick={() => void handleGrantSelf()} disabled={granting}>
@@ -273,11 +334,27 @@ export function AddLibrarySheet({
               <SegmentedControl options={["General", "Restricted"]} defaultValue="General" onChange={(v) => setRestricted(v === "Restricted")} />
             </div>
             {restricted && (
-              <p className={styles.note}>
-                Restricted just marks the library — visibility still requires the server capability to be enabled,
-                explicit per-user grants, and each user&apos;s own age/opt-in/PIN and live unlock. Requires
-                LOOMBRE_RESTRICTED_ENABLED on this instance.
-              </p>
+              <>
+                <p className={styles.note}>
+                  Restricted just marks the library — visibility still requires the server capability to be enabled,
+                  explicit per-user grants, and each user&apos;s own age/opt-in/PIN and live unlock. Requires
+                  LOOMBRE_RESTRICTED_ENABLED on this instance.
+                </p>
+                {/* d3-d6: the grant §6.4 gate 4 requires, issued with the
+                    create. Default ON — leaving it on is how an admin
+                    creating a library for THEMSELVES avoids the orphan;
+                    turning it off is how one created for someone else
+                    avoids a grant that would then need revoking. */}
+                <label className={styles.checklistRow}>
+                  <input type="checkbox" checked={grantSelf} onChange={(e) => setGrantSelf(e.target.checked)} />
+                  <span className={styles.checklistText}>
+                    Grant myself access to this library
+                    <span className={styles.checklistSub}>
+                      Without this, the library exists but nothing in your Libraries list will show it.
+                    </span>
+                  </span>
+                </label>
+              </>
             )}
             {error && <p className={styles.errorText}>{error}</p>}
             <div className={styles.actions}>
