@@ -38,6 +38,14 @@
 //   postgres://loombre:loombre@localhost:5442/loombre
 
 import pg from 'pg';
+import {
+  ensureSeedAudioFixtures,
+  SEED_AUDIO_BITRATE_BPS,
+  SEED_AUDIO_CHANNELS,
+  SEED_AUDIO_CODEC,
+  SEED_AUDIO_CONTAINER,
+  SEED_AUDIO_SAMPLE_RATE,
+} from './audio-fixtures.mjs';
 
 pg.types.setTypeParser(20, (v) => Number.parseInt(v, 10));
 
@@ -540,15 +548,40 @@ async function main() {
       albums.push(album);
     }
 
+    // [album, trackNumber, discNumber, title, fixtureSlug, frequencyHz]
+    //
+    // d3-m1: every track gets a REAL media_files row backed by a REAL (tiny)
+    // audio file, because rows alone are not enough — the music player's
+    // POST /playback/sessions needs the row (getMediaInfoAssembly returns
+    // undefined without one, which apps/server surfaces as 404) AND its file
+    // GET stat()s media_files.path. Before this, no seeded track could ever
+    // play: the mini player mounted and was skipped away within ~40 ms.
+    //
+    // Durations are the FILES' real durations (5-10 s, one per track so the
+    // six are distinguishable), and track_details.duration_ms is written
+    // from the same number — a catalog duration that disagrees with the
+    // media is its own confusing bug. Distinct frequencies make the tracks
+    // audibly distinct while listening to a handoff.
     const trackSpecs = [
-      [albums[0], 1, 1, 'Tideline'],
-      [albums[0], 2, 1, 'Salt & Static'],
-      [albums[0], 3, 1, 'Low Water'],
-      [albums[1], 1, 1, 'Departures'],
-      [albums[1], 2, 1, 'Coastal Drift'],
-      [albums[1], 3, 1, 'Harbor Hymn'],
+      [albums[0], 1, 1, 'Tideline', 'seed-01-tideline', 220],
+      [albums[0], 2, 1, 'Salt & Static', 'seed-02-salt-and-static', 247],
+      [albums[0], 3, 1, 'Low Water', 'seed-03-low-water', 262],
+      [albums[1], 1, 1, 'Departures', 'seed-04-departures', 294],
+      [albums[1], 2, 1, 'Coastal Drift', 'seed-05-coastal-drift', 330],
+      [albums[1], 3, 1, 'Harbor Hymn', 'seed-06-harbor-hymn', 349],
     ];
-    for (const [album, trackNum, discNum, title] of trackSpecs) {
+    // Idempotent + ffmpeg-optional: an existing non-empty fixture is reused,
+    // and a box without ffmpeg still gets the DB rows (with a loud console
+    // note), so the seeded catalog has ONE deterministic shape everywhere.
+    const audio = ensureSeedAudioFixtures(
+      trackSpecs.map(([, , , , slug, frequencyHz], i) => ({
+        slug,
+        frequencyHz,
+        durationMs: (5 + i) * 1000,
+      }))
+    );
+    for (const [i, [album, trackNum, discNum, title, slug]] of trackSpecs.entries()) {
+      const fixture = audio.files[i];
       const track = await insertCatalogItem({
         libraryId: libMusic.id,
         itemType: 'track',
@@ -558,7 +591,28 @@ async function main() {
       });
       await client.query(
         `INSERT INTO track_details (item_id, track_number, disc_number, duration_ms) VALUES ($1, $2, $3, $4)`,
-        [track.id, trackNum, discNum, (180 + trackNum * 12) * 1000]
+        [track.id, trackNum, discNum, fixture.durationMs]
+      );
+      const trackFile = await insertOne(
+        client,
+        `INSERT INTO media_files (item_id, path, content_hash, size_bytes, container, duration_ms, probe, probed_at_ms)
+         VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8)
+         RETURNING id`,
+        [
+          track.id,
+          fixture.path,
+          `xxh3-${slug}`,
+          fixture.sizeBytes,
+          SEED_AUDIO_CONTAINER,
+          fixture.durationMs,
+          JSON.stringify({ format: SEED_AUDIO_CONTAINER, probed: true }),
+          nextMs(),
+        ]
+      );
+      await client.query(
+        `INSERT INTO media_streams (file_id, stream_index, stream_type, codec, width, height, bit_depth, color_transfer, channels, sample_rate, bitrate_bps, frame_rate, language, is_default, is_forced)
+         VALUES ($1, 0, 'audio', $2, NULL, NULL, NULL, NULL, $3, $4, $5, NULL, NULL, TRUE, FALSE)`,
+        [trackFile.id, SEED_AUDIO_CODEC, SEED_AUDIO_CHANNELS, SEED_AUDIO_SAMPLE_RATE, SEED_AUDIO_BITRATE_BPS]
       );
     }
     await creditItem(artist.id, generalActors[1].id, 'album_artist', null, 0);
@@ -781,8 +835,11 @@ async function main() {
     // needs real decodable art has to seed its own blob files (matching
     // apps/worker/src/image/pipeline.ts's `<LOOMBRE_DATA_DIR ?? ./data>/
     // images/<entityType>/<entityId>/<kind>-<width>.<ext>` layout) and
-    // point file_path at them separately — out of scope for this
-    // deterministic, DB-only fixture script.
+    // point file_path at them separately — still out of scope here.
+    // (Contrast the MUSIC tracks above, which DO get real blobs via
+    // seed/audio-fixtures.mjs: nothing renders a missing poster as a hard
+    // failure, but a track with no file on disk cannot play at all — see
+    // d3-m1 and that module's header.)
     // ------------------------------------------------------------------
     await client.query(
       `INSERT INTO images (entity_type, entity_id, kind, source, width, height, blurhash, file_path, created_at_ms)
