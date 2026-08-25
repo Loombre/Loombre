@@ -11,7 +11,9 @@ import {
   describeSessionFailureCode,
   MAX_RECOVERY_ATTEMPTS,
   RECOVERY_MIN_INTERVAL_MS,
+  SESSION_ENDED_CODE,
   SESSION_FAILED_CODE,
+  sessionEndedReasons,
   sessionFailureReasons,
 } from "./playback-recovery.js";
 
@@ -71,5 +73,35 @@ describe("describeSessionFailureCode", () => {
     expect(describeSessionFailureCode("video-codec-unsupported")).toBeNull();
     expect(describeSessionFailureCode("transcode-slots-exhausted")).toBeNull();
     expect(describeSessionFailureCode("")).toBeNull();
+  });
+});
+
+// d3-a5 (verify/browser-player-F1): a session the SERVER closed mid-playback
+// (eviction, the idle sweep, another device taking the slot) is not a client
+// failure — goFatal used to fall through to clientPlaybackErrorReasons()
+// ("Playback failed in this browser") for every non-'failed' inspect result,
+// blaming the browser for a server-side session end.
+describe("session-ended copy (d3-a5)", () => {
+  it("synthesizes a session-ended reason DISTINCT from the session-failed one", () => {
+    expect(sessionEndedReasons()).toEqual([{ code: SESSION_ENDED_CODE, streamIndex: null, detail: null }]);
+    expect(SESSION_ENDED_CODE).not.toBe(SESSION_FAILED_CODE);
+  });
+
+  it("maps the session-ended code to copy that names the server's session end, never this browser", () => {
+    const copy = describeSessionFailureCode(SESSION_ENDED_CODE);
+    expect(copy?.severity).toBe("blocking");
+    expect(copy?.title.toLowerCase()).toContain("ended");
+    expect(copy?.detail.toLowerCase()).not.toContain("browser");
+  });
+
+  it("maps the idle sweeper's 'heartbeat-timeout' errorCode (the third code the system writes) to honest copy, not the raw-code fallback", () => {
+    // packages/db/src/query/playback-sessions.ts's sweep finalizes idle
+    // sessions with status 'failed' + errorCode 'heartbeat-timeout' — with
+    // no entry here the screen rendered the raw code plus "this build's
+    // reason copy map may be behind" (AQ handoff, new finding 2).
+    const copy = describeSessionFailureCode("heartbeat-timeout");
+    expect(copy).not.toBeNull();
+    expect(copy?.severity).toBe("blocking");
+    expect(copy?.title).not.toBe("heartbeat-timeout");
   });
 });

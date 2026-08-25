@@ -22,7 +22,10 @@
 // heartbeat/token-refresh -> DELETE the session on unmount.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { components } from "@loombre/sdk";
+// LoombreApiError comes from the SDK directly (not the lib/api-client
+// re-export) so the class identity survives VideoPlayer.test.tsx's
+// wholesale api-client mock — same reason the test file imports it there.
+import { LoombreApiError, type components } from "@loombre/sdk";
 import { fetchItemSummary, backdropImage, type ItemSummary } from "../../lib/item-lookup.js";
 import { buildImageUrl } from "../../lib/image-url.js";
 import { getAuthStore } from "../../lib/auth-store.js";
@@ -40,7 +43,7 @@ import { decideAttachStrategy, isMseAvailable, isNativeHlsSupported } from "../.
 import { buildHlsJsConfig, resolveStartLevel } from "../../lib/hls-js-config.js";
 import { QualitySelector, type QualityLevel } from "./QualitySelector.js";
 import { deriveSubtitleTrackInfo, type SubtitleTrackInfo } from "../../lib/subtitle-track.js";
-import { clientPlaybackErrorReasons, resolveUnavailableReasons } from "../../lib/playback-reasons.js";
+import { clientPlaybackErrorReasons, itemUnavailableReasons, resolveUnavailableReasons } from "../../lib/playback-reasons.js";
 import { findPlayableFallback, decisionLabel, type FallbackCandidate } from "../../lib/playback-fallback.js";
 import { findProgressForItem, isWorthResuming } from "../../lib/progress-lookup.js";
 import { HeartbeatScheduler, type HeartbeatSnapshot, type ProgressState } from "../../lib/heartbeat.js";
@@ -73,10 +76,10 @@ import {
 } from "../../lib/source-clock.js";
 import { reopenEndedLevels, startRelocationNudge } from "../../lib/relocation-nudge.js";
 import { listedWindowEndSec, rebuildMsePipelineForHardSeek } from "../../lib/post-endlist-rebuild.js";
-import { decideRecovery, sessionFailureReasons } from "../../lib/playback-recovery.js";
+import { decideRecovery, sessionEndedReasons, sessionFailureReasons } from "../../lib/playback-recovery.js";
 import { useToast } from "../ui/Toast.js";
 import { AmbientBackdrop } from "./AmbientBackdrop.js";
-import { UnavailableScreen } from "./UnavailableScreen.js";
+import { UnavailableScreen, type UnavailableVariant } from "./UnavailableScreen.js";
 import { ResumePrompt } from "./ResumePrompt.js";
 import { PlayerControls } from "./PlayerControls.js";
 import { NoticeOverlayStrip } from "./NoticeOverlayStrip.js";
@@ -209,6 +212,15 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
   const [chapters, setChapters] = useState<ChapterListEntry[]>([]);
   const [unavailableReasons, setUnavailableReasons] = useState<PlanReason[]>([]);
   const [unavailableStatus, setUnavailableStatus] = useState<number | undefined>(undefined);
+  // d3-a5: which FRAMING UnavailableScreen wears (AQ's d3-aq6 prop) —
+  // "refused" for a planner refusal (the create's 409/422/429 result),
+  // "failed" for every runtime fatal (goFatal: playback had already
+  // started, nothing was "refused"), "unavailable" for the create-404
+  // access/not-found path (no plan was ever made). EVERY entry to
+  // phase "unavailable" sets this explicitly — the state persists across a
+  // fallback-accept round trip, so relying on the default would let a
+  // previous framing leak into the next failure.
+  const [unavailableVariant, setUnavailableVariant] = useState<UnavailableVariant>("refused");
   const [fallback, setFallback] = useState<FallbackCandidate | null>(null);
   const [session, setSession] = useState<PlaybackSession | null>(null);
   const [resumeCandidateMs, setResumeCandidateMs] = useState<number | null>(null);
@@ -515,9 +527,14 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
   // reason — this path must never hang on a GET to render SOMETHING.
   const goFatal = useCallback((): void => {
     const sessionId = session?.id;
+    // d3-a5: every goFatal destination is a RUNTIME failure — playback had
+    // already started, so none of them is a planner refusal. All three
+    // branches wear AQ's "failed" framing (pill "Session failed", never
+    // "Session refused").
     const clientFallback = (): void => {
       setUnavailableReasons(clientPlaybackErrorReasons());
       setUnavailableStatus(undefined);
+      setUnavailableVariant("failed");
       setPhase("unavailable");
     };
     if (!sessionId) {
@@ -529,6 +546,21 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
         if (current.status === "failed") {
           setUnavailableReasons(sessionFailureReasons(current.errorCode));
           setUnavailableStatus(undefined);
+          setUnavailableVariant("failed");
+          setPhase("unavailable");
+          return;
+        }
+        // d3-a5 (verify/browser-player-F1): the server ENDED the session
+        // out from under a still-attached client (eviction, idle sweep,
+        // another device/tab, an admin DELETE) — the contract's one
+        // terminal non-failure status. Honest session-ended copy, not the
+        // client-blame fallback. (The enum has no 'expired'; 'ended' is
+        // the only terminal status besides 'failed' —
+        // packages/contract/openapi.yaml PlaybackSessionStatus.)
+        if (current.status === "ended") {
+          setUnavailableReasons(sessionEndedReasons());
+          setUnavailableStatus(undefined);
+          setUnavailableVariant("failed");
           setPhase("unavailable");
           return;
         }
@@ -616,7 +648,7 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
       let result: Awaited<ReturnType<typeof createPlaybackSession>>;
       try {
         result = await lease.promise;
-      } catch {
+      } catch (err) {
         if (cancelled) return;
         // AUD-W6-001 (server repro: a real catalog_items row with zero
         // media_files returns a clean 404 from POST /playback/sessions in
@@ -629,15 +661,33 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
         // below with no attached catch: an unhandled promise rejection
         // that left `phase` stuck at "loading" forever — the reported
         // /watch/<item> hang was always client-side, never a server hang.
-        // Route to the SAME fatal-unavailable path client-side DECODE/
-        // SRC_NOT_SUPPORTED already reaches (`goFatal()` in the attach
-        // effect below, clientPlaybackErrorReasons() from lib/playback-
-        // reasons.ts) — no server plan reasons exist for a failure this
-        // shape either, so this reuses that exact synthesized reason
-        // rather than inventing new UI or trying to interpret an arbitrary
-        // thrown error's shape.
+        // d3-a5 (verify/browser-player-F4 P3): a 404 from the create is an
+        // ACCESS/NOT-FOUND condition — the viewer can't reach the item's
+        // library, or the item has nothing playable (AUD-W6-001's zero-
+        // media-files shape). No plan was made and the browser never
+        // touched a stream, so neither the planner-refusal framing nor the
+        // client-blame reason is honest. Lane C's `item-unavailable`
+        // synthesized reason + AQ's `unavailable` framing say the true
+        // thing, with the REAL status; the copy deliberately reveals
+        // nothing about WHY (containment: an ungranted id must not be
+        // distinguishable from a deleted one).
+        if (err instanceof LoombreApiError && err.status === 404) {
+          setUnavailableReasons(itemUnavailableReasons());
+          setUnavailableStatus(404);
+          setUnavailableVariant("unavailable");
+          setPhase("unavailable");
+          return;
+        }
+        // Anything else routes to the SAME fatal-unavailable path
+        // client-side DECODE/SRC_NOT_SUPPORTED already reaches (`goFatal()`
+        // in the attach effect below, clientPlaybackErrorReasons() from
+        // lib/playback-reasons.ts) — no server plan reasons exist for a
+        // failure this shape either, so this reuses that exact synthesized
+        // reason rather than inventing new UI or trying to interpret an
+        // arbitrary thrown error's shape.
         setUnavailableReasons(clientPlaybackErrorReasons());
         setUnavailableStatus(undefined);
+        setUnavailableVariant("refused");
         setPhase("unavailable");
         return;
       }
@@ -657,6 +707,9 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
       if (!result.ok) {
         setUnavailableReasons(resolveUnavailableReasons(result.status, result.wouldBeReasons));
         setUnavailableStatus(result.status);
+        // A genuine planner refusal (409/422/429) — the one path that IS
+        // the default "refused" framing, set explicitly (d3-a5).
+        setUnavailableVariant("refused");
         setPhase("unavailable");
         return;
       }
@@ -1822,7 +1875,9 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
               // pin and its own 202/failure/timer governs (d3-a1).
               if (seekEpochRef.current !== epoch) return;
               clearLandingWatch();
-              showToast("Seek timed out — the transcoder did not restart in time. Try seeking again.");
+              // d3-a5 (verify-A): a failure toast — danger, like every
+              // other failure toast in the app, not the accent default.
+              showToast("Seek timed out — the transcoder did not restart in time. Try seeking again.", { variant: "danger" });
             }, delayMs);
           };
           armLandingTimer(HARD_SEEK_LANDING_TIMEOUT_MS);
@@ -1939,7 +1994,8 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
           // watch and toast over a seek the user no longer cares about.
           if (seekEpochRef.current !== epoch) return;
           clearLandingWatch();
-          showToast("Seek failed — check the connection and try again.");
+          // d3-a5 (verify-A): danger variant, same as the timeout above.
+          showToast("Seek failed — check the connection and try again.", { variant: "danger" });
         });
     },
     [session?.id, listedFragments, landAbsorbedTarget, clearLandingWatch, showToast],
@@ -2173,6 +2229,10 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
     if (!result.ok) {
       setUnavailableReasons(resolveUnavailableReasons(result.status, result.wouldBeReasons));
       setUnavailableStatus(result.status);
+      // d3-a5: the retry's own real refusal supersedes whatever framing
+      // brought the user here (a "failed" fatal could have) — these are
+      // fresh planner reasons.
+      setUnavailableVariant("refused");
       setFallback(null);
       return;
     }
@@ -2205,6 +2265,7 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
         dominantColor={dominantColor}
         reasons={unavailableReasons}
         statusCode={unavailableStatus}
+        variant={unavailableVariant}
         fallback={fallback}
         onAcceptFallback={(candidate) => void handleAcceptFallback(candidate)}
         onBack={onBack}

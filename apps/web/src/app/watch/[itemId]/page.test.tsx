@@ -508,6 +508,21 @@ describe("WatchPage", () => {
       expect(text).toContain(ITEM_UNAVAILABLE_CODE);
     });
 
+    // d3-a5 (lane C's own handoff: "consume `variant` here" — AQ's d3-aq6
+    // prop had not merged when lane C ran): an item that never resolved is
+    // not a REFUSED session — no plan was ever made, so "Session refused ·
+    // Planner reasons, verbatim" was a lie on this path. AQ's `unavailable`
+    // framing exists exactly for it.
+    it("wears the UNAVAILABLE framing — an unresolved item is not a refused session (d3-a5)", async () => {
+      lookupError = new FakeItemLookupError(ITEM_ID);
+      view = await renderRoute();
+
+      const text = view.container.textContent ?? "";
+      expect(text).toContain("Unavailable");
+      expect(text).not.toContain("Session refused");
+      expect(text).not.toContain("Planner reasons");
+    });
+
     // The album branch's own `GET /albums/{id}/tracks` is inside the same
     // promise chain — it must not be able to strand the route either.
     it("renders the unavailable screen when the album's track fetch fails", async () => {

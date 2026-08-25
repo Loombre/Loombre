@@ -61,6 +61,18 @@ export function decideRecovery(attemptsUsed: number, lastAttemptStampMs: number,
 export const SESSION_FAILED_CODE = "playback-session-failed";
 
 /**
+ * d3-a5 (verify/browser-player-F1): synthesized reason code for "the server
+ * ENDED this session while the client was still playing it" — eviction,
+ * the idle sweep racing a wedged client, another device/tab ending it, an
+ * admin DELETE. goFatal used to special-case only status 'failed', so an
+ * ended session fell through to the client-blame copy ("Playback failed in
+ * this browser") — a lie: the browser was fine, the server closed the
+ * session out from under it. Same out-of-contract-enum precedent as
+ * SESSION_FAILED_CODE above.
+ */
+export const SESSION_ENDED_CODE = "playback-session-ended";
+
+/**
  * Human copy for the `playback_sessions.error_code` values the worker
  * writes when it marks a session failed (apps/worker/src/transcode/
  * exit-classify.ts — a free-form TEXT column, deliberately NOT a contract
@@ -89,6 +101,23 @@ const SESSION_FAILURE_COPY: Record<string, ReasonCopy> = {
     detail: "The server reported this playback session as failed without a specific error code.",
     severity: "blocking",
   },
+  // d3-a5: the THIRD error_code the system writes (packages/db/src/query/
+  // playback-sessions.ts's idle sweep — finalizeSession with
+  // errorCode 'heartbeat-timeout'). Without an entry, an idle-swept
+  // session rendered the raw code plus the "copy map may be behind"
+  // fallback (AQ handoff, new finding 2).
+  "heartbeat-timeout": {
+    title: "The session timed out",
+    detail:
+      "The server stopped hearing from this player and closed the session as idle. Go back and press play to start a fresh one.",
+    severity: "blocking",
+  },
+  [SESSION_ENDED_CODE]: {
+    title: "The server ended this playback session",
+    detail:
+      "The session was closed on the server side — another device or tab may have taken over, or the server shut it down. Go back and press play to start a fresh one.",
+    severity: "blocking",
+  },
 };
 
 /** UnavailableScreen's first lookup — `null` for every code that is not a
@@ -106,4 +135,12 @@ export function describeSessionFailureCode(code: string): ReasonCopy | null {
  *  contract enum. */
 export function sessionFailureReasons(errorCode: string | null | undefined): PlanReason[] {
   return [{ code: errorCode ?? SESSION_FAILED_CODE, streamIndex: null, detail: null } as PlanReason];
+}
+
+/** The reasons array for a session the server ENDED (not failed) out from
+ *  under a still-attached client — always exactly the one synthesized
+ *  session-ended reason ('ended' rows never carry an errorCode:
+ *  finalizeSession picks 'failed' whenever one exists). */
+export function sessionEndedReasons(): PlanReason[] {
+  return [{ code: SESSION_ENDED_CODE, streamIndex: null, detail: null } as PlanReason];
 }

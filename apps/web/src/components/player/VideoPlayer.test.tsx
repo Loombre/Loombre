@@ -21,6 +21,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { components } from "@loombre/sdk";
 import { LoombreApiError } from "@loombre/sdk";
 import { HARD_SEEK_LANDING_TIMEOUT_MS } from "../../lib/source-time.js";
+import { describeSessionFailureCode, SESSION_ENDED_CODE } from "../../lib/playback-recovery.js";
 import { resetPlaybackSessionLeases } from "../../lib/playback-session-lease.js";
 import { VideoPlayer } from "./VideoPlayer.js";
 import { ToastProvider } from "../ui/Toast.js";
@@ -920,7 +921,10 @@ describe("VideoPlayer", () => {
       video.dispatchEvent(new Event("error")); // a 4th failure in this stretch
     });
     expect(loadSpy).toHaveBeenCalledTimes(3); // NOT retried again — a persistently-failing URL doesn't retry forever
-    expect(v.container.textContent).toContain("can’t play on this device right now");
+    // d3-a5: exhaustion is a RUNTIME failure — the screen wears the FAILED
+    // framing now ("stopped playing"), no longer the planner-refusal one
+    // ("can't play on this device right now").
+    expect(v.container.textContent).toContain("stopped playing");
     expect(v.container.textContent).toContain("Playback failed in this browser");
   });
 
@@ -1411,7 +1415,7 @@ describe("VideoPlayer", () => {
   // spinner never resolving — no UnavailableScreen, no thrown/visible error
   // either (only an unhandled-rejection console warning jsdom doesn't
   // surface as a test failure by itself, which is exactly how this bug hid).
-  it("a 404 from createPlaybackSession (e.g. an item with zero playable media files) surfaces UnavailableScreen — never an indefinite spinner", async () => {
+  it("a 404 from createPlaybackSession (no access / nothing playable) surfaces the item-unavailable copy under the Unavailable framing — never a planner-refusal page or client blame", async () => {
     createPlaybackSession.mockReset().mockRejectedValueOnce(
       new LoombreApiError(404, { type: "about:blank", title: "Not Found", status: 404, detail: "No playable media file for this item." }),
     );
@@ -1424,11 +1428,20 @@ describe("VideoPlayer", () => {
       );
     });
     view = v;
-    // The SAME fatal-unavailable path client-side DECODE/SRC_NOT_SUPPORTED
-    // already reaches (clientPlaybackErrorReasons(), lib/playback-reasons.ts)
-    // — no server plan reasons exist for a failure this shape either, so
-    // this reuses that exact synthesized copy rather than inventing new UI.
-    expect(v!.container.textContent).toContain("Playback failed in this browser");
+    // d3-a5 (verify/browser-player-F4 P3): a 404 here is an access/not-found
+    // condition — the viewer can't reach the item's library, or the item has
+    // nothing playable. Rendering it as a client playback error ("Playback
+    // failed in this browser") or a planner refusal ("Session refused ·
+    // planner reasons, verbatim") is a lie both ways: no plan was ever made
+    // and the browser never touched a stream. Lane C's client-synthesized
+    // `item-unavailable` reason (lib/playback-reasons.ts) says the honest
+    // thing, under AQ's `unavailable` framing, with the REAL status code.
+    const text = v!.container.textContent ?? "";
+    expect(text).toContain("This link didn't lead to anything playable");
+    expect(text).toContain("HTTP 404");
+    expect(text).toContain("Unavailable");
+    expect(text).not.toContain("Playback failed in this browser");
+    expect(text).not.toContain("Session refused");
     expect(v!.container.querySelector("video")).toBeNull();
   });
 
@@ -2126,6 +2139,133 @@ describe("VideoPlayer", () => {
         "a stretch that reached real playback again must retry, not go fatal on its first new failure",
       ).toBe(4);
       expect(document.body.textContent).not.toContain("Playback failed in this browser");
+    });
+  });
+
+  // ── d3-a5: player error/UX surfaces ─────────────────────────────────────
+  // Three honesty defects on the fatal/failure surfaces (QA 2026-08-20/21,
+  // P3): (1) goFatal only special-cased inspect status 'failed', so a
+  // session the SERVER ended mid-playback (eviction/idle sweep/another
+  // device) was blamed on the client ("Playback failed in this browser");
+  // (2) every fatal path rendered under the default REFUSED framing
+  // ("Session refused · planner reasons, verbatim") even though playback had
+  // already started — AQ's d3-aq6 `variant` prop exists exactly for this;
+  // (3) the two seek-failure toasts rode the default accent variant while
+  // every other failure toast in the app passes { variant: "danger" }.
+  describe("player error/UX surfaces (d3-a5)", () => {
+    /** One listed fragment far from source 0, so a small forward target is
+     *  outside the listed window -> classified HARD (same seam as the
+     *  gap-F5 failure-surface tests above). */
+    function farWindow(): { live: boolean; fragments: unknown[] } {
+      return {
+        live: true,
+        fragments: [{ programDateTime: 3_600_000, start: 0, duration: 6, relurl: "run0/s000000.m4s" }],
+      };
+    }
+
+    async function renderHlsReady(): Promise<{ v: TestRender; hls: MockHlsInstance }> {
+      createPlaybackSession.mockReset().mockResolvedValue({ ok: true, session: hlsTranscodeSession() });
+      const v = await renderReady();
+      await act(async () => {});
+      const hls = hlsInstances[hlsInstances.length - 1];
+      if (!hls) throw new Error("the hlsjs attach effect never constructed an hls.js instance");
+      hls.currentLevel = 0;
+      hls.levels = [{ details: farWindow() }];
+      return { v, hls };
+    }
+
+    /** Routes goFatal's session-inspect GET while keeping the chapters GET
+     *  happy (same helper shape as the browser-player-F1 describe). */
+    function routeSessionGet(sessionBody: PlaybackSession): void {
+      apiGet.mockImplementation((path: unknown) =>
+        path === "/playback/sessions/{id}" ? Promise.resolve(sessionBody) : Promise.resolve({ items: [] }),
+      );
+    }
+
+    async function emitFatals(hls: MockHlsInstance, type: string, count: number): Promise<void> {
+      for (let i = 0; i < count; i++) {
+        await act(async () => {
+          hls.emit("hlsError", "hlsError", { fatal: true, type });
+        });
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(4_100);
+        });
+      }
+    }
+
+    /** The toast's severity dot, only while a toast is actually visible. */
+    function visibleToastVariant(): string | null {
+      return document.querySelector('[data-visible="true"] [data-variant]')?.getAttribute("data-variant") ?? null;
+    }
+
+    it("a session the server ENDED mid-playback renders honest session-ended copy — never 'Playback failed in this browser'", async () => {
+      const { v, hls } = await renderHlsReady();
+      view = v;
+      routeSessionGet({ ...hlsTranscodeSession(), status: "ended", errorCode: null });
+      vi.useFakeTimers();
+
+      await emitFatals(hls, "networkError", 5);
+
+      const text = document.body.textContent ?? "";
+      expect(
+        text,
+        "an eviction/idle-sweep/other-device session end must not be blamed on this browser",
+      ).not.toContain("Playback failed in this browser");
+      expect(text).toContain(SESSION_ENDED_CODE);
+      expect(text).toContain(describeSessionFailureCode(SESSION_ENDED_CODE)?.title);
+    });
+
+    it("the fatal surfaces wear the FAILED framing — the pill must never read 'Session refused' for a runtime failure", async () => {
+      const { v, hls } = await renderHlsReady();
+      view = v;
+      routeSessionGet({ ...hlsTranscodeSession(), status: "failed", errorCode: "transcode-failed" });
+      vi.useFakeTimers();
+
+      await emitFatals(hls, "networkError", 5);
+
+      expect(document.body.textContent).toContain("Session failed");
+      expect(document.body.textContent).not.toContain("Session refused");
+    });
+
+    it("client-side exhaustion (server session still healthy) keeps the client-error reason but wears the FAILED framing too", async () => {
+      const { v, hls } = await renderHlsReady();
+      view = v;
+      routeSessionGet(hlsTranscodeSession()); // status 'created'
+      vi.useFakeTimers();
+
+      await emitFatals(hls, "networkError", 5);
+
+      expect(document.body.textContent).toContain("Playback failed in this browser");
+      expect(document.body.textContent).toContain("Session failed");
+      expect(document.body.textContent).not.toContain("Session refused");
+    });
+
+    it("the seek-FAILED toast is a danger toast, not the accent default", async () => {
+      const { v } = await renderHlsReady();
+      view = v;
+      apiPost.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+
+      await act(async () => button(v, "Forward 10 seconds").click());
+
+      expect(document.body.textContent).toContain("Seek failed");
+      expect(visibleToastVariant()).toBe("danger");
+    });
+
+    it("the seek-TIMED-OUT toast is a danger toast too", async () => {
+      const { v } = await renderHlsReady();
+      view = v;
+      vi.useFakeTimers();
+      apiPost.mockResolvedValueOnce({ targetMs: 10_000 });
+
+      await act(async () => button(v, "Forward 10 seconds").click());
+      // Nothing ever lands (no LEVEL_UPDATED with the seek run) — the 20 s
+      // lifecycle timer fires the timeout toast.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(HARD_SEEK_LANDING_TIMEOUT_MS + 500);
+      });
+
+      expect(document.body.textContent).toContain("Seek timed out");
+      expect(visibleToastVariant()).toBe("danger");
     });
   });
 

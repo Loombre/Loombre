@@ -189,6 +189,12 @@ export default function WatchPage(): React.JSX.Element {
         // still reveals nothing about the id itself.
         reasons={itemUnavailableReasons()}
         statusCode={unavailableStatus}
+        // d3-a5 (lane C's handoff: "consume `variant` here" — AQ's d3-aq6
+        // prop had not merged when lane C ran): nothing was REFUSED on this
+        // path — no plan was ever made — so the default "Session refused ·
+        // Planner reasons, verbatim" framing was a lie. The `unavailable`
+        // framing exists exactly for a never-resolved item.
+        variant="unavailable"
         fallback={null}
         // Unreachable with `fallback={null}` (the screen only calls this
         // from the fallback block's own button, which isn't rendered).
