@@ -221,9 +221,10 @@ describe("playbackSessionLeaseKey", () => {
     expect(playbackSessionLeaseKey("a", "b:c")).not.toBe(playbackSessionLeaseKey("a:b", "c"));
 
     // Read from disk, not from the transformed module: the point is the
-    // literal BYTES git stores. (jsdom's import.meta.url is an http: URL,
-    // hence the cwd-relative lookup — vitest runs with the package as cwd,
-    // whether invoked directly or through turbo.)
+    // literal BYTES git stores. Resolved from the cwd (vitest runs with the
+    // package as its root, directly or through turbo) rather than
+    // import.meta.url, which is not a file: URL when read from inside a
+    // test body here.
     const candidates = ["src/lib/playback-session-lease.ts", "apps/web/src/lib/playback-session-lease.ts"];
     const found = candidates.find((candidate) => existsSync(candidate));
     expect(found, `none of ${candidates.join(", ")} resolved from ${process.cwd()}`).toBeDefined();
