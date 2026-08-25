@@ -195,8 +195,16 @@ export function startRelocationNudge(
     // restart returns a still-ENDLIST playlist, which re-freezes the
     // level (parsed live:false) — see reopenEndedLevels above.
     reopenEndedLevels(hls);
-    hls.stopLoad();
-    hls.startLoad(getResumePositionSec ? getResumePositionSec() : -1, true);
+    // d4-a1.113: the playlist-only lever first — a stopLoad/startLoad
+    // tick aborts and re-kicks the fragment pipeline, re-requesting the
+    // fragment under the playhead once per second for the whole
+    // relocation (the at-EOF same-segment re-fetch loop, observed live
+    // at exactly this cadence; the verify-A 503 hammer). The fallback
+    // remains for reloaders without the trigger/uri surface.
+    if (!requestPlaylistOnlyReload(hls)) {
+      hls.stopLoad();
+      hls.startLoad(getResumePositionSec ? getResumePositionSec() : -1, true);
+    }
   }, intervalMs);
   return () => clearInterval(timer);
 }

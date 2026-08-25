@@ -106,7 +106,11 @@ vi.mock("../../lib/api-client.js", () => ({
 // Instances register on `hlsInstances` so tests can reach the one the
 // attach effect created.
 interface MockHlsInstance {
-  levels: { details?: { live: boolean; fragments: unknown[] } }[];
+  /** `uri` mirrors hls.js Level.uri — set by the d4-a1.113 tests so the
+   *  relocation nudge's playlist-only reload lever is addressable; tests
+   *  that omit it exercise the stopLoad/startLoad fallback exactly as
+   *  before. */
+  levels: { details?: { live: boolean; fragments: unknown[] }; uri?: string }[];
   currentLevel: number;
   /** hls.js's "level whose playlist is being loaded" — what the player
    *  falls back to before any frame has PLAYED (currentLevel still -1,
@@ -138,11 +142,12 @@ vi.mock("hls.js", () => {
       LEVEL_SWITCHING: "hlsLevelSwitching",
       LEVEL_SWITCHED: "hlsLevelSwitched",
       LEVEL_UPDATED: "hlsLevelUpdated",
+      LEVEL_LOADING: "hlsLevelLoading",
       BUFFER_EOS: "hlsBufferEos",
       ERROR: "hlsError",
     };
     static ErrorTypes = { NETWORK_ERROR: "networkError", MEDIA_ERROR: "mediaError" };
-    levels: { details?: { live: boolean; fragments: unknown[] } }[] = [];
+    levels: { details?: { live: boolean; fragments: unknown[] }; uri?: string }[] = [];
     currentLevel = -1;
     loadLevel = -1;
     nextLevel = -1;
@@ -1651,6 +1656,38 @@ describe("VideoPlayer", () => {
         const slider = v.container.querySelector('[role="slider"]');
         expect(slider?.getAttribute("aria-valuenow")).toBe("10500");
       });
+    });
+
+    // ── d4-a1.113: relocation must not re-kick the fragment pipeline ──────
+    // Live evidence (2026-08-25, Thor video-copy sessions): every nudge
+    // tick's stopLoad/startLoad pair aborted and re-requested the fragment
+    // under the playhead — the SAME tail segment fetched once per tick at
+    // exactly the 1000 ms cadence (the at-EOF ~8x re-fetch loop the d3-a2
+    // handoff logged; 200s when the run survives, the verify-A 503 hammer
+    // when it doesn't). Against a real hls.js instance the nudge now
+    // performs a playlist-only reload (LEVEL_LOADING trigger — d4-a1.112's
+    // lever); the stop/start pair remains only as the fallback for
+    // reloaders without that surface.
+    it("relocation nudge ticks are playlist-only reloads on a real-hls-shaped instance — no per-tick fragment re-kick (d4-a1.113)", async () => {
+      const { v, hls } = await renderHlsReady();
+      view = v;
+      vi.useFakeTimers();
+      hls.levels = [{ details: { live: true, fragments: [farListedFragment()] }, uri: "http://localhost:3001/hls/v0/media.m3u8" }];
+      apiPost.mockResolvedValueOnce({ targetMs: 10_000 });
+      await act(async () => button(v, "Forward 10 seconds").click());
+      const callsAtArm = hls.calls.length;
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2_100);
+      });
+      const nudgeCalls = hls.calls.slice(callsAtArm);
+      expect(
+        nudgeCalls.filter((c) => c === "trigger(hlsLevelLoading)"),
+        "the nudge stopped re-reading the playlist — discovery latency regresses to hls.js's own cadence",
+      ).toHaveLength(2);
+      expect(
+        nudgeCalls.filter((c) => c === "stopLoad" || c.startsWith("startLoad")),
+        "a nudge tick re-kicked the fragment pipeline — the at-EOF same-segment re-fetch loop returns (d4-a1.113)",
+      ).toEqual([]);
     });
 
     // ── d3-a2: post-ENDLIST hard seeks rebuild the MSE pipeline ──────────

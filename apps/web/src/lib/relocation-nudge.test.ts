@@ -127,6 +127,37 @@ describe("startRelocationNudge", () => {
     expect(live.live).toBe(true);
     stop();
   });
+
+  // ── d4-a1.113: the tick must not re-kick the fragment pipeline ─────────
+  // Every stopLoad/startLoad tick aborted the in-flight fragment load and
+  // re-requested the fragment under the playhead: live evidence shows the
+  // SAME tail segment fetched once per tick at exactly the 1000 ms nudge
+  // cadence (the at-EOF ~8x re-fetch loop; the verify-A 503 hammer on an
+  // abandoned run's tail). Against a real hls.js instance (trigger + level
+  // uri available) the tick must be a playlist-only reload instead.
+  it("prefers the playlist-only reload on a real-hls-shaped reloader — no stopLoad/startLoad fragment re-kick (d4-a1.113)", () => {
+    const details = { live: false };
+    const calls: string[] = [];
+    const hls: PlaylistReloader & { calls: string[] } = {
+      calls,
+      levels: [{ details, uri: "http://localhost:3001/hls/v0/media.m3u8" }],
+      loadLevel: 0,
+      currentLevel: 0,
+      stopLoad: () => calls.push("stopLoad"),
+      startLoad: (pos?: number, skip?: boolean) => calls.push(`startLoad(${pos},${skip})`),
+      trigger: (event: string) => calls.push(`trigger(${event})`),
+    };
+    const stop = startRelocationNudge(() => hls, () => true, () => 42.5);
+    vi.advanceTimersByTime(HARD_SEEK_REFRESH_NUDGE_MS * 2);
+    expect(calls, "each tick must re-read the playlist WITHOUT aborting/re-kicking fragment loads").toEqual([
+      `trigger(${LEVEL_LOADING_EVENT})`,
+      `trigger(${LEVEL_LOADING_EVENT})`,
+    ]);
+    // The ENDLIST re-open still applies first — the merge path must treat
+    // the refresh as live (gap-F4 / amendment A1), whichever lever fires.
+    expect(details.live).toBe(true);
+    stop();
+  });
 });
 
 // ── d4-a1.112: the playlist-only reload lever ────────────────────────────
