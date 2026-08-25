@@ -120,6 +120,7 @@ interface MockHlsInstance {
   on(event: string, cb: (...args: unknown[]) => void): void;
   off(event: string, cb?: (...args: unknown[]) => void): void;
   emit(event: string, ...args: unknown[]): void;
+  trigger(event: string, data?: unknown): void;
   loadSource(url: string): void;
   attachMedia(el: HTMLMediaElement): void;
   detachMedia(): void;
@@ -137,6 +138,7 @@ vi.mock("hls.js", () => {
       LEVEL_SWITCHING: "hlsLevelSwitching",
       LEVEL_SWITCHED: "hlsLevelSwitched",
       LEVEL_UPDATED: "hlsLevelUpdated",
+      BUFFER_EOS: "hlsBufferEos",
       ERROR: "hlsError",
     };
     static ErrorTypes = { NETWORK_ERROR: "networkError", MEDIA_ERROR: "mediaError" };
@@ -158,6 +160,13 @@ vi.mock("hls.js", () => {
     off(): void {}
     emit(event: string, ...args: unknown[]): void {
       for (const cb of this.listeners.get(event) ?? []) cb(...args);
+    }
+    /** Real hls.js's app-facing event injection (the d3-a2 second-ENDLIST
+     *  watch drives BUFFER_EOS through it) — recorded like the other
+     *  levers, and delivered to listeners like the real emitter. */
+    trigger(event: string, data?: unknown): void {
+      this.calls.push(`trigger(${event})`);
+      this.emit(event, event, data);
     }
     loadSource(): void {
       this.calls.push("loadSource");
@@ -233,6 +242,10 @@ interface FakeMediaState {
    *  landed position actually becoming displayable. */
   readyState: number;
   ended: boolean;
+  /** Element buffered ranges as [startSec, endSec] pairs — empty by
+   *  default (jsdom has no real TimeRanges). The d3-a2 second-ENDLIST
+   *  watch tests set them to simulate appended media. */
+  bufferedRanges: [number, number][];
 }
 
 const mediaStates = new WeakMap<HTMLMediaElement, FakeMediaState>();
@@ -251,6 +264,7 @@ function mediaState(el: HTMLMediaElement): FakeMediaState {
       ],
       readyState: 0,
       ended: false,
+      bufferedRanges: [],
     };
     mediaStates.set(el, state);
   }
@@ -315,7 +329,12 @@ function installMediaStubs(): void {
   define("duration", { get: () => 600 });
   define("readyState", { get(this: HTMLMediaElement) { return mediaState(this).readyState; } });
   define("ended", { get(this: HTMLMediaElement) { return mediaState(this).ended; } });
-  define("buffered", { get: () => ({ length: 0, start: () => 0, end: () => 0 }) });
+  define("buffered", {
+    get(this: HTMLMediaElement) {
+      const pairs = mediaState(this).bufferedRanges;
+      return { length: pairs.length, start: (i: number) => pairs[i]?.[0] ?? 0, end: (i: number) => pairs[i]?.[1] ?? 0 };
+    },
+  });
   define("audioTracks", { get(this: HTMLMediaElement) { return mediaState(this).audioTracks; } });
   define("volume", {
     get(this: HTMLMediaElement) { return mediaState(this).volume; },
@@ -1663,10 +1682,14 @@ describe("VideoPlayer", () => {
         const details = { live: false, fragments: [farListedFragment()] };
         hls.levels = [{ details }];
         await act(async () => emitEndlistParse(hls, details.fragments));
-        // Chrome's natural EOF: 'pause' fires before 'ended'.
+        // Chrome's natural EOF: 'pause' fires before 'ended', and the
+        // element sits AT the truncated duration (== the listed edge here
+        // — an honest end, so the d3-a2 round-1 watch has nothing to
+        // repair; the early-'ended' shapes get their own describe below).
         const video = videoEl(v);
         mediaState(video).paused = true;
         mediaState(video).ended = true;
+        mediaState(video).currentTime = 6;
         apiPost.mockResolvedValueOnce({ targetMs: 10_000 });
 
         await act(async () => button(v, "Forward 10 seconds").click());
@@ -1779,6 +1802,228 @@ describe("VideoPlayer", () => {
         await act(async () => button(v, "Forward 10 seconds").click());
 
         expect(detachCount(hls), "an un-poisoned hard seek paid a full MSE teardown — the rebuild must be gated on an actual ENDLIST parse").toBe(0);
+      });
+    });
+
+    // ── d3-a2 REOPEN round 1: the second-ENDLIST honest end ────────────────
+    // Even with the rebuild lever, a live→VOD transition can end
+    // dishonestly, because hls.js records "closing fragment appended" ONLY
+    // when the appended fragment carried `endList` at parse time
+    // (fragment-tracker.ts bufferedEnd): if the ENDLIST refresh parses
+    // AFTER the closing fragment buffered (a short post-rebuild seek run
+    // chasing the live edge), endOfStream is never issued and the element
+    // wedges "playing" at the EOF label with 'ended' never fired (verifier
+    // 2/2); if a post-rebuild relocation re-appended the OLD run's closing
+    // fragment from the still-ENDLIST playlist, the stale entity ends the
+    // NEW run early (live: ended 9.5s short, DB requested 58 < produced
+    // 62). VideoPlayer arms an observer watch at every ENDLIST parse:
+    // inject the missing BUFFER_EOS once the closing fragment is buffered,
+    // and rebuild-at-the-ended-position when 'ended' lands short of the
+    // listed edge.
+    describe("second-ENDLIST honest end (d3-a2 round 1)", () => {
+      function emitEndlistParse(hls: MockHlsInstance, fragments: unknown[]): void {
+        hls.emit("hlsLevelUpdated", "hlsLevelUpdated", { details: { live: false, fragments } });
+      }
+      function detachCount(hls: MockHlsInstance): number {
+        return hls.calls.filter((c) => c === "detachMedia").length;
+      }
+      function eosTriggerCount(hls: MockHlsInstance): number {
+        return hls.calls.filter((c) => c === "trigger(hlsBufferEos)").length;
+      }
+      /** A two-fragment ENDLIST window: edge 20s, closing fragment 6s
+       *  (midpoint 17, shortfall threshold 3). PDT = V8 source clock. */
+      function endedWindow(): unknown[] {
+        return [
+          { programDateTime: 3_600_000, start: 0, duration: 14, relurl: "run1/s000000.m4s" },
+          { programDateTime: 3_614_000, start: 14, duration: 6, relurl: "run1/s000001.m4s" },
+        ];
+      }
+
+      it("never-ended wedge: ENDLIST parsed with the closing fragment already buffered — the watch injects BUFFER_EOS", async () => {
+        const { v, hls } = await renderHlsReady();
+        view = v;
+        vi.useFakeTimers();
+        const video = videoEl(v);
+        mediaState(video).bufferedRanges = [[0, 19.93]]; // whole window appended, a hair short of the edge (the live 66ms shape)
+        hls.levels = [{ details: { live: false, fragments: endedWindow() } }];
+        await act(async () => emitEndlistParse(hls, endedWindow()));
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(600);
+        });
+        expect(
+          eosTriggerCount(hls),
+          "the never-ended wedge is unrepaired — hls.js cannot learn the closing fragment appended pre-ENDLIST, so nothing ever issues endOfStream and the element wedges 'playing' at the EOF label",
+        ).toBe(1);
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(1_000);
+        });
+        expect(eosTriggerCount(hls), "the injection must fire once per ENDLIST parse, not every tick").toBe(1);
+      });
+
+      it("does NOT inject while the closing fragment is still un-buffered (loading tail must not be truncated)", async () => {
+        const { v, hls } = await renderHlsReady();
+        view = v;
+        vi.useFakeTimers();
+        const video = videoEl(v);
+        mediaState(video).bufferedRanges = [[0, 12]]; // closing fragment absent
+        hls.levels = [{ details: { live: false, fragments: endedWindow() } }];
+        await act(async () => emitEndlistParse(hls, endedWindow()));
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(1_000);
+        });
+        expect(eosTriggerCount(hls)).toBe(0);
+      });
+
+      it("early-'ended' truncation: 'ended' short of the listed edge rebuilds at the ended position and resumes the real tail", async () => {
+        const { v, hls } = await renderHlsReady();
+        view = v;
+        vi.useFakeTimers();
+        const video = videoEl(v);
+        mediaState(video).bufferedRanges = [[0, 12]];
+        hls.levels = [{ details: { live: false, fragments: endedWindow() } }];
+        await act(async () => emitEndlistParse(hls, endedWindow()));
+        // hls.js EOS'd on the stale endList entity with only 12s of the
+        // 20s window buffered; the element played out and ended early.
+        mediaState(video).ended = true;
+        mediaState(video).paused = true;
+        mediaState(video).currentTime = 12;
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(600);
+        });
+        const detachAt = hls.calls.indexOf("detachMedia");
+        expect(
+          detachAt,
+          "the early-'ended' stream was never repaired — the viewer silently lost the tail (live: DB requested 58 < produced 62) and progress wrote 'played' at a lie",
+        ).toBeGreaterThanOrEqual(0);
+        expect(hls.calls.lastIndexOf("attachMedia")).toBeGreaterThan(detachAt);
+        // Loading resumes AT the ended position — the viewer keeps their
+        // place and the tail plays from where the lie cut in.
+        expect(hls.calls).toContain("startLoad(12,true)");
+        expect(video.currentTime).toBe(12);
+        // The captured intent (ended counts as playing) resumes once the
+        // fresh attach has data — not inside the rebuild, where the
+        // attach's own load request would abort it.
+        expect(mediaState(video).paused).toBe(true);
+        mediaState(video).ended = false; // the fresh attach reset the element
+        await act(async () => {
+          video.dispatchEvent(new Event("loadeddata"));
+        });
+        expect(mediaState(video).paused, "the recovered tail must PLAY — an ended viewer never chose to pause").toBe(false);
+      });
+
+      it("the tail-recovery rebuild is bounded: repeated dishonest ends stop repairing after the per-attach cap", async () => {
+        const { v, hls } = await renderHlsReady();
+        view = v;
+        vi.useFakeTimers();
+        const video = videoEl(v);
+        mediaState(video).bufferedRanges = [[0, 12]];
+        hls.levels = [{ details: { live: false, fragments: endedWindow() } }];
+        mediaState(video).ended = true;
+        mediaState(video).currentTime = 12;
+        for (let round = 0; round < 4; round++) {
+          await act(async () => emitEndlistParse(hls, endedWindow()));
+          await act(async () => {
+            await vi.advanceTimersByTimeAsync(600);
+          });
+        }
+        expect(
+          detachCount(hls),
+          "a pathological stream that keeps ending short must not rebuild-loop forever",
+        ).toBe(2);
+      });
+
+      it("the full live chain: honest end → hard seek rebuild → still-ENDLIST re-read re-arms (suppressed) → the landing still assigns and resumes play", async () => {
+        const { v, hls } = await renderHlsReady();
+        view = v;
+        vi.useFakeTimers();
+        const video = videoEl(v);
+        // ENDLIST #1, honestly ended at the edge (ct == edge 6) — the
+        // watch retires without acting.
+        const details = { live: false, fragments: [farListedFragment()] };
+        hls.levels = [{ details }];
+        await act(async () => emitEndlistParse(hls, [farListedFragment()]));
+        mediaState(video).bufferedRanges = [[0, 6]];
+        mediaState(video).paused = true;
+        mediaState(video).ended = true;
+        mediaState(video).currentTime = 6;
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(600);
+        });
+        expect(detachCount(hls), "an honest end must not be 'repaired'").toBe(0);
+        // Hard seek from the ENDED state: rebuild.
+        apiPost.mockResolvedValueOnce({ targetMs: 10_000 });
+        await act(async () => button(v, "Forward 10 seconds").click());
+        expect(detachCount(hls)).toBe(1);
+        // A nudge re-read raced the worker restart: still-ENDLIST. The
+        // re-armed watch sees an 'ended' element whose old edge midpoint
+        // is even buffered — and must do NOTHING while relocating.
+        await act(async () => emitEndlistParse(hls, [farListedFragment()]));
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(900);
+        });
+        expect(hls.calls.filter((c) => c === "trigger(hlsBufferEos)"), "the suppressed watch acted mid-relocation").toEqual([]);
+        expect(detachCount(hls), "the suppressed watch repaired mid-relocation").toBe(1);
+        // The seek-spawned run lands — the landing must still assign the
+        // element and consume the rebuild's play intent, exactly as
+        // before round 1 (the watch must never eat a landing).
+        const landedDetails = {
+          live: true,
+          fragments: [farListedFragment(), { programDateTime: 10_000, start: 6, duration: 6, relurl: "run1/s000001.m4s" }],
+        };
+        hls.levels = [{ details: landedDetails }];
+        await act(async () => {
+          hls.emit("hlsLevelUpdated", "hlsLevelUpdated", { details: landedDetails });
+        });
+        expect(video.currentTime, "the landing never seeked the element to the run's start").toBe(6);
+        expect(mediaState(video).paused, "the landing never resumed the seek-from-ended play intent").toBe(false);
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(900);
+        });
+        expect(hls.calls.filter((c) => c === "trigger(hlsBufferEos)"), "a stale watch outlived the landing's live refresh").toEqual([]);
+      });
+
+      it("a live (un-ended) refresh cancels the watch — no injection against a playlist that grew a new run", async () => {
+        const { v, hls } = await renderHlsReady();
+        view = v;
+        vi.useFakeTimers();
+        const video = videoEl(v);
+        mediaState(video).bufferedRanges = [[0, 19.93]];
+        hls.levels = [{ details: { live: false, fragments: endedWindow() } }];
+        await act(async () => emitEndlistParse(hls, endedWindow()));
+        // A later refresh un-ends the playlist (seek-spawned run appended)
+        // BEFORE any tick saw the buffered edge.
+        await act(async () => {
+          hls.emit("hlsLevelUpdated", "hlsLevelUpdated", { details: { live: true, fragments: endedWindow() } });
+        });
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(1_000);
+        });
+        expect(eosTriggerCount(hls), "the watch outlived the ENDLIST state it was armed for — an injection now would truncate the growing stream").toBe(0);
+      });
+
+      it("a hard seek's rebuild cancels the watch and relocation suppresses a re-armed one (no EOS against the fresh pipeline)", async () => {
+        const { v, hls } = await renderHlsReady();
+        view = v;
+        vi.useFakeTimers();
+        const video = videoEl(v);
+        mediaState(video).bufferedRanges = [[0, 19.93]];
+        const details = { live: false, fragments: endedWindow() };
+        hls.levels = [{ details }];
+        await act(async () => emitEndlistParse(hls, endedWindow()));
+        // Hard seek before any tick: the rebuild consumes the poisoning and
+        // must take the watch with it.
+        apiPost.mockResolvedValueOnce({ targetMs: 10_000 });
+        await act(async () => button(v, "Forward 10 seconds").click());
+        expect(detachCount(hls)).toBe(1);
+        // Mid-relocation, a nudge re-read raced the worker restart and came
+        // back still-ENDLIST — the watch re-arms but must stay suppressed:
+        // firing now would endOfStream the just-rebuilt pipeline at the OLD
+        // edge (the exact poisoning the rebuild cleared).
+        await act(async () => emitEndlistParse(hls, endedWindow()));
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(1_500);
+        });
+        expect(eosTriggerCount(hls), "the second-ENDLIST watch fired during a hard-seek relocation — that re-truncates the fresh MediaSource at the abandoned edge").toBe(0);
       });
     });
   });

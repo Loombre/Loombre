@@ -76,6 +76,7 @@ import {
 } from "../../lib/source-clock.js";
 import { reopenEndedLevels, startRelocationNudge } from "../../lib/relocation-nudge.js";
 import { listedWindowEndSec, rebuildMsePipelineForHardSeek } from "../../lib/post-endlist-rebuild.js";
+import { startEndlistEosWatch } from "../../lib/endlist-eos-watch.js";
 import { decideRecovery, sessionEndedReasons, sessionFailureReasons } from "../../lib/playback-recovery.js";
 import { useToast } from "../ui/Toast.js";
 import { AmbientBackdrop } from "./AmbientBackdrop.js";
@@ -449,6 +450,14 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
   // (clearLandingWatch), so a timed-out seek never leaves a stale play
   // armed for some future landing.
   const resumePlayAfterRebuildRef = useRef(false);
+  // d3-a2 round 1: the second-ENDLIST honest-end watch
+  // (lib/endlist-eos-watch.ts). Armed on every ENDLIST parse; cancelled
+  // by an un-ended refresh, the hard-seek rebuild, and teardown;
+  // suppressed (not cancelled) while a relocation owns the pipeline.
+  const eosWatchStopRef = useRef<(() => void) | null>(null);
+  // Polarity-E tail-recovery rebuilds are bounded per attach — a
+  // pathological stream that keeps ending short must not rebuild-loop.
+  const eosRepairCountRef = useRef(0);
 
   /** The CURRENT LEVEL DETAILS as structural fragments (A2: the LISTED
    *  window — buffer state deliberately plays no part). `null` off the
@@ -1138,9 +1147,83 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
       // lib/post-endlist-rebuild.ts) until hardSeek's rebuild consumes
       // the flag. A fresh instance starts clean.
       endlistSeenRef.current = false;
+      eosWatchStopRef.current?.();
+      eosWatchStopRef.current = null;
+      eosRepairCountRef.current = 0;
       hls.on(HlsCtor.Events.LEVEL_UPDATED, (_event, data) => {
-        if ((data as { details?: { live?: boolean } } | undefined)?.details?.live === false) {
+        const parsed = (data as { details?: { live?: boolean; fragments?: Parameters<typeof toListedFragment>[0][] } } | undefined)
+          ?.details;
+        if (parsed?.live === false) {
           endlistSeenRef.current = true;
+          // d3-a2 round 1: arm the second-ENDLIST honest-end watch. The
+          // rebuild lever above cannot make THIS transition honest —
+          // hls.js records "closing fragment appended" only when the
+          // append itself carried the parse-time endList bit, so a
+          // closing fragment buffered BEFORE this parse leaves
+          // endOfStream unissuable (the never-ended wedge: ct stalls a
+          // frame short of the buffered end, wedged 'playing' at the EOF
+          // label), while a stale entity re-learned mid-relocation ends
+          // the run EARLY (live: ended 9.5s short, requested 58 <
+          // produced 62). The watch observes the element and repairs
+          // whichever polarity manifests — see lib/endlist-eos-watch.ts
+          // for the hls.js line-level mechanism.
+          eosWatchStopRef.current?.();
+          eosWatchStopRef.current = null;
+          const parsedFrags = parsed.fragments;
+          const frags = parsedFrags && parsedFrags.length > 0 ? parsedFrags.map(toListedFragment) : null;
+          const edgeSec = listedWindowEndSec(frags);
+          const closing = frags ? frags[frags.length - 1] : undefined;
+          if (edgeSec !== null && closing) {
+            eosWatchStopRef.current = startEndlistEosWatch({
+              getMedia: () => videoRef.current,
+              // A still-ENDLIST re-read mid-relocation re-arms this watch;
+              // firing then would endOfStream the just-rebuilt pipeline at
+              // the ABANDONED edge — inert until the landing settles.
+              isSuppressed: () => relocatingRef.current !== null,
+              edgeSec,
+              closingFragmentDurationSec: closing.durationSec,
+              fireEos: () => {
+                // Polarity W: everything listed is appended and hls.js
+                // cannot conclude — inject the BUFFER_EOS its stream
+                // controller provably cannot produce. Idempotent against
+                // a healthy EOS (BufferController no-ops on an ended
+                // MediaSource).
+                hlsRef.current?.trigger(HlsCtor.Events.BUFFER_EOS, {});
+              },
+              repairShortfall: (endedAtSec) => {
+                // Polarity E: 'ended' landed short of the listed edge —
+                // the stream lied and the tail was never requested. The
+                // same rebuild lever the hard seek uses re-fetches it
+                // from the CURRENT details (whose closing fragment now
+                // carries endList), resuming at the ended position; the
+                // captured intent ('ended' counts as playing) fires once
+                // the fresh attach has data, not inside the rebuild where
+                // the attach's own load request would abort it.
+                const h = hlsRef.current;
+                const v = videoRef.current;
+                if (!h || !v || eosRepairCountRef.current >= 2) return;
+                eosRepairCountRef.current += 1;
+                endlistSeenRef.current = false;
+                const { resumePlay } = rebuildMsePipelineForHardSeek<HTMLVideoElement>(h, v, endedAtSec);
+                if (resumePlay) {
+                  v.addEventListener(
+                    "loadeddata",
+                    () => {
+                      void v.play().catch(() => undefined);
+                    },
+                    { once: true },
+                  );
+                }
+              },
+            });
+          }
+        } else if (parsed?.live === true) {
+          // The playlist grew a new run — the ENDLIST state this watch
+          // was armed for is gone (endlistSeenRef stays armed: the
+          // TRACKER poison survives un-ending merges, the buffered-edge
+          // observation does not).
+          eosWatchStopRef.current?.();
+          eosWatchStopRef.current = null;
         }
       });
 
@@ -1367,6 +1450,9 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
       // V8: a pending hard seek dies with its session/instance — the watch
       // must never land against a different attach's fragments.
       clearLandingWatch();
+      // d3-a2 round 1: the honest-end watch dies with its attach too.
+      eosWatchStopRef.current?.();
+      eosWatchStopRef.current = null;
       hls?.destroy(); // deliverable 5: no leaked MediaSource on unmount/session change.
       if (hlsRef.current === hls) hlsRef.current = null;
     };
@@ -1906,6 +1992,13 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
           // loading restarted inside the rebuild).
           if (hls && videoRef.current && endlistSeenRef.current) {
             endlistSeenRef.current = false;
+            // d3-a2 round 1: the honest-end watch dies with the pipeline
+            // it observed — a fire against the fresh attach would
+            // endOfStream it at the abandoned edge. (A still-ENDLIST
+            // re-read may re-arm it mid-relocation; the relocating
+            // suppression keeps that one inert until the landing.)
+            eosWatchStopRef.current?.();
+            eosWatchStopRef.current = null;
             const { resumePlay } = rebuildMsePipelineForHardSeek<HTMLVideoElement>(hls, videoRef.current, listedWindowEndSec(listedFragments()));
             if (resumePlay) resumePlayAfterRebuildRef.current = true;
           }
