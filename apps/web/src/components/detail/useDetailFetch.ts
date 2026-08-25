@@ -18,6 +18,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { LoombreApiError } from "../../lib/api-client.js";
+import { subscribeCatalogInvalidation } from "../../lib/catalog-invalidation.js";
 
 export interface DetailFetchResult<T> {
   entity: T | null;
@@ -64,6 +65,18 @@ export function useDetailFetch<T>(fetchEntity: () => Promise<T>, id: string): De
       cancelled = true;
     };
   }, [id, attempt]);
+
+  // d3-d8 (verify/restricted-lock-leaves-stale-content): tapping the header
+  // lock while unlocked answers 204 and flips the indicator, but a
+  // restricted detail already on screen kept rendering in full — the fetch
+  // above ran once per id and nothing told it the viewer's clearance had
+  // changed underneath it. RestrictedProvider emits catalog invalidation on
+  // every confirmed lock<->unlock transition; re-entering through the same
+  // `attempt` counter `retry()` uses means the effect's own reset runs too,
+  // so the stale entity is CLEARED first and the screen cannot keep showing
+  // content the server is about to 404. (The unlock direction matters as
+  // much: a detail that 404'd while locked becomes real without a reload.)
+  useEffect(() => subscribeCatalogInvalidation(() => setAttempt((a) => a + 1)), []);
 
   return { entity, notFound, error, retry: () => setAttempt((a) => a + 1) };
 }

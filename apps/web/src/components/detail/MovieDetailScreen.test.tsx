@@ -12,6 +12,7 @@ import { act } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ToastProvider } from "../ui/Toast.js";
 import { renderIntoBody, type TestRender } from "../ui/test-render.js";
+import { emitCatalogInvalidation } from "../../lib/catalog-invalidation.js";
 
 // MetadataCard (rendered once the movie loads) uses SheetOrModal ->
 // useMediaQuery -> window.matchMedia, which jsdom doesn't implement — same
@@ -230,5 +231,49 @@ describe("MovieDetailScreen", () => {
 
     expect(view.container.textContent).toContain("Restricted Performer One");
     expect(view.container.textContent).toContain("CAST");
+  });
+
+  // d3-d8 (verify/restricted-lock-leaves-stale-content, QA 2026-08-21
+  // remediation dispatch 3, P3): tapping the header lock while UNLOCKED
+  // fires POST /restricted/lock 204 and flips the indicator, but a
+  // restricted item detail already on screen kept rendering in full (3s+;
+  // only a reload replaced it with "Movie not found."). RestrictedProvider
+  // emits catalog invalidation on that transition — useDetailFetch now
+  // listens, so every detail screen re-asks the server and takes its 404.
+  it("REGRESSION GUARD (d3-d8): a restricted lock re-fetches, replacing a now-forbidden detail with 'Movie not found.'", async () => {
+    installMatchMedia();
+    let locked = false;
+    installApiGetMock(() =>
+      locked ? Promise.reject(new FakeLoombreApiError(404, "Not Found")) : Promise.resolve(MOVIE),
+    );
+    view = renderScreen();
+    await flush();
+    expect(view.container.textContent).toContain("Night Circuit");
+
+    // The lock lands: the server will now 404 this id for this viewer.
+    locked = true;
+    await act(async () => {
+      emitCatalogInvalidation();
+    });
+    await flush();
+
+    expect(view.container.textContent).toContain("Movie not found.");
+    expect(view.container.textContent).not.toContain("Night Circuit");
+    expect(apiGetMock.mock.calls.filter((call) => call[0] === "/movies/{id}")).toHaveLength(2);
+  });
+
+  it("REGRESSION GUARD (d3-d8): the invalidation listener is dropped on unmount", async () => {
+    installMatchMedia();
+    installApiGetMock(() => Promise.resolve(MOVIE));
+    view = renderScreen();
+    await flush();
+    view.unmount();
+    view = null;
+
+    await act(async () => {
+      emitCatalogInvalidation();
+    });
+
+    expect(apiGetMock.mock.calls.filter((call) => call[0] === "/movies/{id}")).toHaveLength(1);
   });
 });
