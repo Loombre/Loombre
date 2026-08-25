@@ -82,6 +82,10 @@ import {
   validateAgainstJsonSchema,
   type JsonSchemaLike,
 } from "../../../lib/settings-schema-widget.js";
+// d3-e7: every editor recomputes `dirty` from a kind-specific comparison
+// against the loaded value, instead of latching it true on each edit — see
+// that module's header for the per-kind rules.
+import { isSettingDraftAtValue } from "../../../lib/setting-draft-parity.js";
 import { apiPut } from "../../../lib/api-client.js";
 // browser-admin-F5: error surfaces route through apiErrorMessage, never
 // a bare `err.message` — the RFC 9457 `detail` is the half that says
@@ -283,21 +287,38 @@ export function SettingField({ entry, value, source, onChanged, technicalDetails
     });
   }
 
+  // browser-restricted-settings-F8 established the rule for the boolean
+  // editor: recompute `dirty` from a comparison against the loaded value
+  // instead of latching it true on every edit, so Save/Reset stay disabled
+  // at value parity — matching the untouched-at-default case above and
+  // avoiding a no-op write that would flip this setting's source pill from
+  // "default" to "database" for zero actual change.
+  //
+  // d3-e7 extends that rule to the four kinds F8 left behind (number,
+  // string, enum, structured JSON), each with the comparison its own value
+  // domain actually needs — lib/setting-draft-parity.ts owns those rules
+  // and the "when in doubt, say it IS dirty" safety posture behind them.
+  // These two helpers are the only places `setDirty(true)` used to live.
+  function syncDirtyFromText(nextText: string): void {
+    setRawText(nextText);
+    // `rawText` belongs to exactly three widgets, and only those three call
+    // this. The mapping is written as a narrowing rather than a cast so the
+    // unreachable case still lands somewhere honest: plain string
+    // comparison, the most conservative of the three.
+    const textKind = kind === "number" ? "number" : kind === "structured" ? "structured" : "string";
+    setDirty(!isSettingDraftAtValue({ kind: textKind, text: nextText }, value));
+  }
+
   function handleBoolToggle(): void {
     if (!editable) return;
     const next = !boolDraft;
     setBoolDraft(next);
-    // browser-restricted-settings-F8: unlike a keystroke on the number/
-    // string/JSON editors (where "back to the original text" is rare and
-    // ambiguous to detect losslessly — e.g. re-typing the same number with
-    // different formatting), a boolean has exactly two states, so
-    // "restored to the loaded value" is unambiguous and cheap to check.
-    // Recomputing `dirty` from that comparison (instead of latching it
-    // true on every click) keeps Save/Reset disabled at value parity,
-    // matching the untouched-at-default case above and avoiding a no-op
-    // write that would flip this setting's source pill from "default" to
-    // "database" for zero actual change.
-    setDirty(next !== Boolean(value));
+    setDirty(!isSettingDraftAtValue({ kind: "boolean", checked: next }, value));
+  }
+
+  function handleEnumSelect(next: string): void {
+    setEnumDraft(next);
+    setDirty(!isSettingDraftAtValue({ kind: "enum", selected: next }, value));
   }
 
   function clampNumber(n: number): number {
@@ -310,8 +331,10 @@ export function SettingField({ entry, value, source, onChanged, technicalDetails
   function handleStep(delta: number): void {
     const current = Number(rawText);
     const base = Number.isFinite(current) ? current : typeof value === "number" ? value : 0;
-    setRawText(String(clampNumber(base + delta)));
-    setDirty(true);
+    // A press the clamp swallows (stepping below the schema minimum, say)
+    // produces the SAME text and therefore no dirty state — the parity
+    // check makes that fall out rather than needing its own branch.
+    syncDirtyFromText(String(clampNumber(base + delta)));
   }
 
   // Only consulted by the editable-kind controls below (number/string/JSON)
@@ -402,10 +425,7 @@ export function SettingField({ entry, value, source, onChanged, technicalDetails
                 key={enumDraft}
                 options={enumOptions(schema)}
                 defaultValue={enumDraft}
-                onChange={(v) => {
-                  setEnumDraft(v);
-                  setDirty(true);
-                }}
+                onChange={handleEnumSelect}
               />
             )}
 
@@ -428,10 +448,7 @@ export function SettingField({ entry, value, source, onChanged, technicalDetails
                   min={numeric.min}
                   max={numeric.max}
                   step={numeric.integer ? 1 : "any"}
-                  onChange={(e) => {
-                    setRawText(e.target.value);
-                    setDirty(true);
-                  }}
+                  onChange={(e) => syncDirtyFromText(e.target.value)}
                 />
                 <button
                   type="button"
@@ -449,10 +466,7 @@ export function SettingField({ entry, value, source, onChanged, technicalDetails
                 className={styles.stringInput}
                 data-state={inputState}
                 value={rawText}
-                onChange={(e) => {
-                  setRawText(e.target.value);
-                  setDirty(true);
-                }}
+                onChange={(e) => syncDirtyFromText(e.target.value)}
               />
             )}
 
@@ -462,10 +476,7 @@ export function SettingField({ entry, value, source, onChanged, technicalDetails
                 data-state={inputState}
                 value={rawText}
                 spellCheck={false}
-                onChange={(e) => {
-                  setRawText(e.target.value);
-                  setDirty(true);
-                }}
+                onChange={(e) => syncDirtyFromText(e.target.value)}
               />
             )}
 

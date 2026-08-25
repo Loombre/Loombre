@@ -761,3 +761,142 @@ describe("SettingField — Phosphor registry card fidelity", () => {
     });
   });
 });
+
+// ---------------------------------------------------------------------------
+// d3-e7 (G/settingfield-dirty-nonbool, P3): browser-restricted-settings-F8
+// fixed the BOOLEAN editor only — every other kind still latched
+// `dirty = true` on each keystroke/segment click and never re-checked the
+// draft against the loaded value, so typing away and back left Save and
+// Reset enabled with nothing to write. Its own comment named the reason
+// ("back to the original text is rare and ambiguous to detect losslessly —
+// e.g. re-typing the same number with different formatting"); the parity
+// rules now live in lib/setting-draft-parity.ts, one per kind, and that
+// exact formatting case is the third test below.
+// ---------------------------------------------------------------------------
+describe("SettingField — dirty parity across every editable kind (d3-e7)", () => {
+  let view: TestRender | null = null;
+
+  const LADDER_ENTRY: AdminSettingSchemaEntry = {
+    key: "transcode.ladderRungs",
+    category: "transcode",
+    description: "Quality ladder rungs.",
+    scope: "ui",
+    requiresRestart: false,
+    default: [{ heightPx: 1080, codec: "h264" }],
+    valueSchema: valueSchema({ type: "array", minItems: 1 }),
+    locked: false,
+  };
+
+  const STAGING_ROOT_ENTRY: AdminSettingSchemaEntry = {
+    key: "transcode.stagingRoot",
+    category: "transcode",
+    description: "Where in-progress transcode segments are staged.",
+    scope: "ui",
+    requiresRestart: true,
+    default: "/var/lib/loombre/transcode",
+    valueSchema: valueSchema({ type: "string" }),
+    locked: false,
+  };
+
+  beforeEach(() => {
+    apiPutMock.mockReset();
+  });
+
+  afterEach(() => {
+    view?.unmount();
+    view = null;
+  });
+
+  function save(): HTMLButtonElement {
+    return Array.from(view!.container.querySelectorAll("button")).find((b) => b.textContent === "Save")!;
+  }
+  function resetButton(): HTMLButtonElement | undefined {
+    return Array.from(view!.container.querySelectorAll("button")).find((b) => (b.textContent ?? "").includes("Reset"));
+  }
+
+  it("number widget: editing away and back to the loaded value re-disables Save", () => {
+    view = renderIntoBody(<SettingField entry={MAX_TRANSCODES_ENTRY} value={1} source="default" onChanged={noop} />);
+    const input = view.container.querySelector('input[type="number"]') as HTMLInputElement;
+
+    act(() => setNativeValue(input, "4"));
+    expect(save().hasAttribute("disabled")).toBe(false);
+
+    act(() => setNativeValue(input, "1"));
+    expect(save().hasAttribute("disabled")).toBe(true);
+  });
+
+  it("number widget: the same number re-typed with different formatting is not a change (numeric compare, not string compare)", () => {
+    view = renderIntoBody(<SettingField entry={MAX_TRANSCODES_ENTRY} value={4} source="database" onChanged={noop} />);
+    const input = view.container.querySelector('input[type="number"]') as HTMLInputElement;
+
+    act(() => setNativeValue(input, "4.0"));
+    expect(save().hasAttribute("disabled")).toBe(true);
+  });
+
+  it("number widget: a clamped stepper press that cannot move the value leaves Save disabled", () => {
+    view = renderIntoBody(<SettingField entry={MAX_TRANSCODES_ENTRY} value={1} source="default" onChanged={noop} />);
+    const decrement = view.container.querySelector('button[aria-label="Decrease"]') as HTMLButtonElement;
+
+    act(() => decrement.click()); // clamped at the schema minimum of 1
+    expect((view.container.querySelector('input[type="number"]') as HTMLInputElement).value).toBe("1");
+    expect(save().hasAttribute("disabled")).toBe(true);
+  });
+
+  it("string widget: typing extra characters and deleting them again re-disables Save", () => {
+    view = renderIntoBody(
+      <SettingField entry={STAGING_ROOT_ENTRY} value="/var/lib/loombre/transcode" source="default" onChanged={noop} />,
+    );
+    const input = view.container.querySelector('input[type="text"], input:not([type])') as HTMLInputElement;
+
+    act(() => setNativeValue(input, "/var/lib/loombre/transcode2"));
+    expect(save().hasAttribute("disabled")).toBe(false);
+
+    act(() => setNativeValue(input, "/var/lib/loombre/transcode"));
+    expect(save().hasAttribute("disabled")).toBe(true);
+  });
+
+  it("enum widget: selecting another token and returning to the loaded one re-disables Save", () => {
+    view = renderIntoBody(<SettingField entry={TONE_MAP_ENTRY} value="tier-gated" source="default" onChanged={noop} />);
+    const segment = (label: string): HTMLButtonElement =>
+      Array.from(view!.container.querySelectorAll('button[role="radio"]')).find((b) => b.textContent === label) as HTMLButtonElement;
+
+    act(() => segment("always").click());
+    expect(save().hasAttribute("disabled")).toBe(false);
+
+    act(() => segment("tier-gated").click());
+    expect(save().hasAttribute("disabled")).toBe(true);
+  });
+
+  it("JSON widget: reformatting the same document (whitespace, key order) is not a change", () => {
+    view = renderIntoBody(<SettingField entry={LADDER_ENTRY} value={LADDER_ENTRY.default} source="default" onChanged={noop} />);
+    const textarea = view.container.querySelector("textarea") as HTMLTextAreaElement;
+
+    act(() => setNativeValue(textarea, '[{"heightPx":720,"codec":"h264"}]'));
+    expect(save().hasAttribute("disabled")).toBe(false);
+
+    act(() => setNativeValue(textarea, '[ { "codec" : "h264" , "heightPx" : 1080 } ]'));
+    expect(save().hasAttribute("disabled")).toBe(true);
+  });
+
+  it("a real edit still enables Save on every kind — parity must not swallow genuine changes", () => {
+    view = renderIntoBody(<SettingField entry={LADDER_ENTRY} value={LADDER_ENTRY.default} source="default" onChanged={noop} />);
+    const textarea = view.container.querySelector("textarea") as HTMLTextAreaElement;
+    act(() => setNativeValue(textarea, '[{"heightPx":1080,"codec":"hevc"}]'));
+    expect(save().hasAttribute("disabled")).toBe(false);
+  });
+
+  it("Reset withdraws itself again when a draft returns to a loaded value that is already the default", () => {
+    // canReset = !atDefault || dirty — with the loaded value AT its default,
+    // Reset is offered only because of the dirty draft, so clearing dirty
+    // must take the button away again (it did not, before this fix).
+    view = renderIntoBody(<SettingField entry={MAX_TRANSCODES_ENTRY} value={1} source="default" onChanged={noop} />);
+    const input = view.container.querySelector('input[type="number"]') as HTMLInputElement;
+    expect(resetButton()).toBeUndefined();
+
+    act(() => setNativeValue(input, "6"));
+    expect(resetButton()).toBeDefined();
+
+    act(() => setNativeValue(input, "1"));
+    expect(resetButton()).toBeUndefined();
+  });
+});
