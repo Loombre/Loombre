@@ -4,9 +4,13 @@
 // Loombre :: apps/web/src/components/detail/useDetailFetch.ts
 //
 // Shared not-found/load-error handling for the single-entity detail
-// screens (movie/series/episode/artist/track — components/music/
-// AlbumDetailScreen.tsx is a sibling lane's file and keeps its own copy of
-// this pattern). Before this hook, every one of these screens fetched its
+// screens: movie, series, episode, artist, track AND components/music/
+// AlbumDetailScreen.tsx — that last one was a sibling lane's file with its
+// own copy of this pattern when this header was written, and has called
+// this hook since fbeab3c ("browser-items-F4 'Album not found.' instead of
+// an infinite skeleton"). There is one implementation, and every detail
+// screen's behaviour (d3-d8's invalidation refetch included) comes from
+// here. Before this hook, every one of these screens fetched its
 // primary entity with a bare `.then()` and gated its only render branch on
 // `entity === null` — a 404'd id (deleted, mistyped, or restricted-
 // without-clearance, see STATE.md) or a dropped connection left the
