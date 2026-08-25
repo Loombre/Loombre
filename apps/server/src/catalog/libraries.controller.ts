@@ -63,6 +63,15 @@
 // existing precedent for a body-carried userId ("unknown keys -> field
 // validation -> 404 unknown user"). See putLibraryPermissions' inline notes
 // for the ordering and for why BOTH arms are validated identically.
+//
+// d4-b2 (QA 2026-08-24 backlog #093, P3): the same body's `libraryId` was
+// accepted and ignored, so a body/path MISMATCH answered 200 having written
+// the grant against the PATH id. The path is (and stays) authoritative — an
+// ABSENT libraryId is still accepted — but a PRESENT one must now agree with
+// it or the request is a 422. packages/contract/openapi.yaml's
+// LibraryPermissionSet.libraryId carries that rule now; before this it said
+// nothing, and "required member the server neither requires nor reads" was
+// documented nowhere at all.
 
 import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post, Put, Query, Req } from "@nestjs/common";
 import {
@@ -436,6 +445,21 @@ export class LibrariesController {
       if (!PUT_PERMISSIONS_BODY_KEYS.has(key)) {
         throw unprocessableEntity(`Unknown property "${key}".`, instance);
       }
+    }
+    // d4-b2: `libraryId` was accepted and IGNORED — LibraryPermissionSet
+    // declares it required, and the handler neither required nor cross-checked
+    // it, so `PUT /libraries/A/permissions {libraryId: B, …}` answered 200
+    // having written the grant against A. An admin editing one field of a
+    // copy-pasted body silently granted access to a library they were not
+    // looking at, and the 200 body — which echoes the PATH id — was the only
+    // hint. The PATH stays authoritative (it always was, and an absent
+    // libraryId is still accepted, unchanged: openapi.yaml now says so on
+    // LibraryPermissionSet.libraryId); what changes is that a PRESENT value
+    // must AGREE with it. Deliberately `!==` against the path id rather than
+    // a typeof-then-compare: any present value that is not exactly this
+    // library's id is the same mistake, whatever its type.
+    if (body["libraryId"] !== undefined && body["libraryId"] !== id) {
+      throw unprocessableEntity("libraryId must match the library in the path.", instance);
     }
     if (!Array.isArray(body["permissions"])) {
       throw unprocessableEntity("permissions must be an array.", instance);

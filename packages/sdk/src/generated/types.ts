@@ -3341,7 +3341,10 @@ export interface components {
             granted: boolean;
         };
         LibraryPermissionSet: {
-            /** Format: uuid */
+            /**
+             * Format: uuid
+             * @description The library these grants belong to. In a putLibraryPermissions REQUEST body the `{id}` path parameter is authoritative and this member is a cross-check: it may be omitted, but if present it MUST equal the path id — a mismatch is 422, and nothing is written. In a RESPONSE it is always the library that was read or written.
+             */
             libraryId: string;
             permissions: components["schemas"]["LibraryPermission"][];
         };

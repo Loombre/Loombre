@@ -50,9 +50,11 @@
 import "reflect-metadata";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import request from "supertest";
+import { parse as parseYaml } from "yaml";
 import { NestFactory } from "@nestjs/core";
 import type { INestApplication } from "@nestjs/common";
 import { ensureTestDatabase } from "@loombre/db";
@@ -60,6 +62,7 @@ import { AppModule } from "../src/app.module.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DB_PKG_ROOT = path.resolve(__dirname, "../../../packages/db");
+const CONTRACT_PATH = path.resolve(__dirname, "../../../packages/contract/openapi.yaml");
 const BASE_DATABASE_URL = process.env["DATABASE_URL"] ?? "postgres://loombre:loombre@localhost:5442/loombre";
 
 function run(script: string, args: string[], databaseUrl: string) {
@@ -815,4 +818,109 @@ describe("PUT /libraries/{id}/permissions entry userId validation (d4-b1)", () =
     expect(revoke.status, JSON.stringify(revoke.body)).toBe(200);
     expect(await grantedUserIds()).not.toContain(targetUserId);
   }, 20_000);
+});
+
+// ──────── PUT /libraries/{id}/permissions: path/body libraryId (d4-b2) ───────
+// LibraryPermissionSet declares `libraryId` REQUIRED, and the handler neither
+// required nor cross-checked it: a body naming a DIFFERENT library answered
+// 200 having written the grant against the PATH id — an admin who edited the
+// wrong field of a copy-pasted body silently granted access to a library they
+// were not looking at. The path stays authoritative (all three web callers
+// send the body member and every one of them sends the path id); a MISMATCH
+// is now a 422, and openapi.yaml says so.
+describe("PUT /libraries/{id}/permissions path/body libraryId agreement (d4-b2)", () => {
+  let permsLibraryId: string;
+  let otherLibraryId: string;
+
+  beforeAll(async () => {
+    const created = await admin().post("/libraries", {
+      name: "d4-b2 Permissions Library",
+      mediaKind: "movie",
+      paths: ["/data/d4-b2-permissions"],
+    });
+    expect(created.status, JSON.stringify(created.body)).toBe(201);
+    permsLibraryId = created.body.id;
+
+    const other = await admin().post("/libraries", {
+      name: "d4-b2 Other Library",
+      mediaKind: "movie",
+      paths: ["/data/d4-b2-other"],
+    });
+    expect(other.status, JSON.stringify(other.body)).toBe(201);
+    otherLibraryId = other.body.id;
+  }, 30_000);
+
+  async function grantedUserIds(libraryId: string): Promise<string[]> {
+    const res = await admin().get(`/libraries/${libraryId}/permissions`);
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+    return (res.body.permissions as Array<{ userId: string }>).map((p) => p.userId).sort();
+  }
+
+  it("422s when the body names a DIFFERENT library than the path", async () => {
+    const res = await admin().put(`/libraries/${permsLibraryId}/permissions`, {
+      libraryId: otherLibraryId,
+      permissions: [],
+    });
+    expectValidationProblem(res);
+    expect(res.body["detail"]).toBe("libraryId must match the library in the path.");
+    expect(res.body["instance"]).toBe(`/libraries/${permsLibraryId}/permissions`);
+  }, 20_000);
+
+  it("writes NOTHING on a mismatch — not to the path library, not to the body's", async () => {
+    const beforePath = await grantedUserIds(permsLibraryId);
+    const beforeOther = await grantedUserIds(otherLibraryId);
+
+    const res = await admin().put(`/libraries/${permsLibraryId}/permissions`, {
+      libraryId: otherLibraryId,
+      permissions: [{ userId: targetUserId, granted: true }],
+    });
+    expectValidationProblem(res);
+
+    expect(await grantedUserIds(permsLibraryId)).toEqual(beforePath);
+    expect(await grantedUserIds(otherLibraryId)).toEqual(beforeOther);
+  }, 20_000);
+
+  it("422s on a libraryId that is not even a string (any present value must equal the path id)", async () => {
+    for (const libraryId of [7, true, null, ["x"], { id: "x" }] as unknown[]) {
+      const res = await admin().put(`/libraries/${permsLibraryId}/permissions`, { libraryId, permissions: [] });
+      expectValidationProblem(res);
+      expect(res.body["detail"], JSON.stringify(libraryId)).toBe("libraryId must match the library in the path.");
+    }
+  }, 20_000);
+
+  it("an unknown TOP-LEVEL key still wins over the mismatch (allowlist first, unchanged)", async () => {
+    const res = await admin().put(`/libraries/${permsLibraryId}/permissions`, {
+      libraryId: otherLibraryId,
+      permissions: [],
+      bogus: true,
+    });
+    expectValidationProblem(res);
+    expect(res.body["detail"]).toBe('Unknown property "bogus".');
+  }, 20_000);
+
+  it("still accepts a MATCHING libraryId (the body shape all three web callers send)", async () => {
+    const res = await admin().put(`/libraries/${permsLibraryId}/permissions`, {
+      libraryId: permsLibraryId,
+      permissions: [{ userId: targetUserId, granted: true }],
+    });
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+    expect(res.body.libraryId).toBe(permsLibraryId);
+    expect(await grantedUserIds(permsLibraryId)).toContain(targetUserId);
+  }, 20_000);
+
+  it("still accepts an ABSENT libraryId (the path is authoritative — unchanged posture)", async () => {
+    const res = await admin().put(`/libraries/${permsLibraryId}/permissions`, {
+      permissions: [{ userId: targetUserId, granted: false }],
+    });
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+    expect(await grantedUserIds(permsLibraryId)).not.toContain(targetUserId);
+  }, 20_000);
+
+  it("openapi.yaml documents the rule the server now enforces", () => {
+    const doc = parseYaml(readFileSync(CONTRACT_PATH, "utf8")) as Record<string, any>;
+    const description = String(doc.components.schemas.LibraryPermissionSet.properties.libraryId.description ?? "");
+    expect(description).toMatch(/path/i);
+    expect(description).toMatch(/422/);
+    expect(doc.paths["/libraries/{id}/permissions"].put.responses["422"]).toBeDefined();
+  });
 });
