@@ -356,6 +356,12 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
   // render right after `hardSeek`'s declaration (the same render-time
   // idiom as `flushProgressRef` below).
   const hardSeekRef = useRef<(targetMs: number) => void>(() => undefined);
+  // rem2-absorbed-seek: same render-time ref idiom, for the attach
+  // effect's LEVEL_UPDATED handler — the absorbed-202 landing is ONE
+  // function (`landAbsorbedTarget`, declared beside `hardSeek` below)
+  // shared by both moments it can become answerable, so the two call
+  // sites can never drift apart.
+  const landAbsorbedTargetRef = useRef<(targetMs: number) => boolean>(() => false);
 
   /** The CURRENT LEVEL DETAILS as structural fragments (A2: the LISTED
    *  window — buffer state deliberately plays no part). `null` off the
@@ -1013,24 +1019,12 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
         // finish the lifecycle ("landed when the element seeks"). Safe
         // against false fires: a hard classification means the target was
         // NOT listed at seek time, and a sliding window only ever adds
-        // coverage the current run just produced.
-        const softSec = sourceToPresentationSec(frags, watch.clampedTargetMs);
-        if (softSec === null) return;
-        const targetMs = watch.clampedTargetMs;
-        landingWatchRef.current = null;
-        if (nudgeStopRef.current) {
-          nudgeStopRef.current();
-          nudgeStopRef.current = null;
-        }
-        landedAwaitingResumeRef.current = { startSec: softSec, targetMs };
-        // An in-window landing is an exact axis pair the CURRENT run
-        // serves — an explicit-position anchor, not a new-run landing
-        // (the run floor must not move: no restart happened).
-        sourceClockRef.current = anchorAtExplicitPosition(sourceClockRef.current, softSec, targetMs);
-        video.currentTime = softSec;
-        positionRef.current = targetMs;
-        setPositionMs(targetMs);
-        heartbeatRef.current?.flushNow();
+        // coverage the current run just produced. The landing itself is
+        // the shared `landAbsorbedTarget` (rem2-absorbed-seek) — the 202
+        // handler runs the same acceptance at RESPONSE time, because this
+        // refresh listener alone missed every absorbed target the window
+        // listed BEFORE the watch was armed.
+        landAbsorbedTargetRef.current(watch.clampedTargetMs);
       });
 
       // ── Queued-start routing (browser-player-F9) ──────────────────────
@@ -1521,6 +1515,50 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
   // locally); HARD (endpoint + landing watch) when it is outside the
   // window; the pre-V8 bare assignment survives only as the no-source-clock
   // fallback (direct-play; a pre-V8 server), where presentation == source.
+
+  /** The ABSORBED-202 landing (§9.1.9 acceptance (1); rem2-absorbed-seek):
+   *  the server absorbed the hard seek into the in-flight run — no new run
+   *  will ever appear, so the new-run playlist signature the landing watch
+   *  keys on can never fire. The landing is the ELEMENT seek to the mapped
+   *  presentation time ("landed when the element seeks"); the ordinary
+   *  resume-evidence half (seeked/canplay at the target) finishes the
+   *  lifecycle under the 20 s bound, exactly like a soft seek. Shared by
+   *  BOTH moments the absorption becomes visible client-side: at the 202
+   *  itself (the window already lists the clamped target — the listing
+   *  refresh raced the POST round trip, and no later refresh is
+   *  guaranteed) and on a later LEVEL_UPDATED (the window grows to list
+   *  it). Returns false — caller keeps/arms the new-run watch — while the
+   *  window does not map the target. Safe against false fires for the same
+   *  reason as the refresh-side acceptance: a hard classification means
+   *  the target was NOT listed at seek time, and a sliding window only
+   *  ever adds coverage the current run just produced. */
+  const landAbsorbedTarget = useCallback(
+    (targetMs: number): boolean => {
+      const video = videoRef.current;
+      const frags = listedFragments();
+      if (!video || !frags) return false;
+      const softSec = sourceToPresentationSec(frags, targetMs);
+      if (softSec === null) return false;
+      landingWatchRef.current = null;
+      if (nudgeStopRef.current) {
+        nudgeStopRef.current();
+        nudgeStopRef.current = null;
+      }
+      landedAwaitingResumeRef.current = { startSec: softSec, targetMs };
+      // An in-window landing is an exact axis pair the CURRENT run
+      // serves — an explicit-position anchor, not a new-run landing
+      // (the run floor must not move: no restart happened).
+      sourceClockRef.current = anchorAtExplicitPosition(sourceClockRef.current, softSec, targetMs);
+      video.currentTime = softSec;
+      positionRef.current = targetMs;
+      setPositionMs(targetMs);
+      heartbeatRef.current?.flushNow();
+      return true;
+    },
+    [listedFragments],
+  );
+  landAbsorbedTargetRef.current = landAbsorbedTarget;
+
   const hardSeek = useCallback(
     (targetMs: number): void => {
       const sessionId = session?.id;
@@ -1557,13 +1595,9 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
           // pin the scrubber at a DEAD target.
           if (seekEpochRef.current !== epoch) return;
           const clamped = accepted.targetMs;
-          // Arm/re-arm the landing watch against the CURRENT window — a
-          // re-seek before landing replaces the watch, and the newest
-          // clamped target wins (earlier seek runs are dead runs). A
-          // predecessor stuck landed-but-unresumed (browser-player-F4) is
-          // superseded the same way.
+          // A predecessor stuck landed-but-unresumed (browser-player-F4)
+          // is superseded — the newest clamped target wins.
           landedAwaitingResumeRef.current = null;
-          landingWatchRef.current = armLandingWatch(listedFragments(), clamped, Date.now());
           relocatingRef.current = { targetMs: clamped };
           setRelocating({ targetMs: clamped });
           positionRef.current = clamped;
@@ -1579,6 +1613,23 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
             clearLandingWatch();
             showToast("Seek timed out — the transcoder did not restart in time. Try seeking again.");
           }, HARD_SEEK_LANDING_TIMEOUT_MS);
+          // rem2-absorbed-seek: the ABSORBED 202, answered at RESPONSE
+          // time. When the CURRENT window already lists the clamped
+          // target, the server absorbed the seek into the in-flight run —
+          // no new run will ever appear and no further playlist refresh is
+          // guaranteed (the refresh-side acceptance in the LEVEL_UPDATED
+          // handler misses exactly this shape: it armed after the listing
+          // refresh, and the live Start-over rode the pin into the 20 s
+          // timeout). Land via the element now; resume evidence completes
+          // the lifecycle under the timer above. No watch, no reload
+          // lever, no nudge — a playlist reload has nothing to discover,
+          // and a nudge would abort the very fragment loads this landing
+          // needs.
+          if (landAbsorbedTarget(clamped)) return;
+          // Arm/re-arm the landing watch against the CURRENT window — a
+          // re-seek before landing replaces the watch, and the newest
+          // clamped target wins (earlier seek runs are dead runs).
+          landingWatchRef.current = armLandingWatch(listedFragments(), clamped, Date.now());
           // A1 (design-pinned): after ENDLIST hls.js stops polling the
           // playlist, so the landing watch below could never fire — the
           // POST lands, the playlist un-ends, and nobody re-reads it.
@@ -1644,7 +1695,7 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
           showToast("Seek failed — check the connection and try again.");
         });
     },
-    [session?.id, listedFragments, clearLandingWatch, showToast],
+    [session?.id, listedFragments, landAbsorbedTarget, clearLandingWatch, showToast],
   );
   hardSeekRef.current = hardSeek;
 

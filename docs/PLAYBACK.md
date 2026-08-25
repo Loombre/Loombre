@@ -1797,7 +1797,12 @@ machine totals, not per-session multipliers.
     there (`sourceToPresentationSec`) — "landed when the element seeks";
     safe because a hard classification means the target was NOT listed at
     seek time and a sliding window only adds coverage the current run
-    just produced. (2) RELOCATED PAST THE TARGET — new-run fragments are
+    just produced. Checked at BOTH moments the absorption can become
+    visible (rem2-absorbed-seek, one shared `landAbsorbedTarget`): at the
+    202 itself — the listing refresh can race the POST round trip, and no
+    later refresh is guaranteed to arrive while the watch is armed (the
+    V8-requal Start-over rode exactly that gap into the 20 s timeout) —
+    and on every later `LEVEL_UPDATED` refresh. (2) RELOCATED PAST THE TARGET — new-run fragments are
     listed but ALL start past the target's landing window (a
     fast-completing file's restart raced to ENDLIST and pruned its head
     before any refresh listed the target): land at the new run's earliest

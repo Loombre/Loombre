@@ -2609,6 +2609,81 @@ describe("VideoPlayer", () => {
       expect(slider?.getAttribute("aria-valuenow")).toBe("110500");
     });
 
+    // rem2-absorbed-seek (V8 requal NEW finding): the round-3 absorbed
+    // acceptance above lives ONLY in the LEVEL_UPDATED handler, so it
+    // needs one more playlist refresh AFTER the 202 arms the watch. When
+    // the window already lists the clamped target at 202-ARRIVAL time —
+    // the refresh listing it raced the POST round trip, or the pre-parse
+    // Start-over's first parse beat the 202 — and no later refresh comes
+    // (young windows can go refresh-quiet: ENDLIST, or hls.js's own
+    // cadence), the watch stays armed for a run that will never spawn and
+    // the scrubber rides the pin into the 20 s timeout toast (live: ~20.1 s
+    // pinned at 0:00 after Start-over). The absorbed landing must happen at
+    // the 202 itself: element seek to the mapped presentation time, resume
+    // evidence completes the lifecycle exactly like the acceptance above.
+    it("an ABSORBED 202 whose target is ALREADY listed at response time lands via the element at the 202 — no later refresh required, no 20 s pin", async () => {
+      const { v, hls } = await renderHlsReadyLocal();
+      view = v;
+      vi.useFakeTimers();
+      const video = videoEl(v);
+      // The window covers source 100.0–106.0s; the viewer sits at 100.5s.
+      const details = {
+        live: true,
+        fragments: [{ programDateTime: 100_000, start: 0, duration: 6, relurl: "run0/s000016.m4s" }],
+      };
+      hls.levels = [{ details }];
+      // First refresh consumes the one-shot queued-start router
+      // (browser-player-F9), as on a real session.
+      await act(async () => {
+        hls.emit("hlsLevelUpdated");
+      });
+      await act(async () => {
+        video.currentTime = 0.5;
+        video.dispatchEvent(new Event("timeupdate"));
+      });
+      // Forward 10s -> target 110_500: NOT listed at seek time -> HARD.
+      // Hold the 202 in flight.
+      let resolve202: ((r: { targetMs: number }) => void) | null = null;
+      apiPost.mockImplementationOnce(() => new Promise((r) => { resolve202 = r; }));
+      await act(async () => button(v, "Forward 10 seconds").click());
+      expect(apiPost).toHaveBeenCalledTimes(1);
+
+      // While the POST is in flight, run0 produces past the target and a
+      // refresh lists it — BEFORE the 202 arrives, so no watch is armed
+      // yet and the LEVEL_UPDATED absorbed acceptance sees nothing. The
+      // server absorbs the seek into run0 (202, no restart) and this is
+      // the LAST refresh the window ever gets.
+      details.fragments = [
+        { programDateTime: 100_000, start: 0, duration: 6, relurl: "run0/s000016.m4s" },
+        { programDateTime: 106_000, start: 6, duration: 6.006, relurl: "run0/s000017.m4s" },
+      ];
+      await act(async () => {
+        hls.emit("hlsLevelUpdated");
+      });
+      await act(async () => {
+        resolve202?.({ targetMs: 110_500 });
+      });
+      expect(
+        video.currentTime,
+        "the absorbed 202 never landed — its target was already listed when the 202 arrived, and with no later refresh the watch waits for a run that will never exist",
+      ).toBeCloseTo(10.5, 3);
+
+      // Resume evidence completes the lifecycle: no timeout toast, display live.
+      mediaState(video).readyState = 4;
+      await act(async () => {
+        video.dispatchEvent(new Event("seeked"));
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(HARD_SEEK_LANDING_TIMEOUT_MS + 500);
+      });
+      expect(
+        document.body.textContent,
+        "an absorbed 202 with the target listed at response time rode the pin into the 20 s timeout toast",
+      ).not.toContain("Seek timed out");
+      const slider = v.container.querySelector('[role="slider"]');
+      expect(slider?.getAttribute("aria-valuenow")).toBe("110500");
+    });
+
     it("a seek-spawned run that already pruned PAST the target lands at its earliest surviving fragment — not a 20s freeze", async () => {
       const { v, hls } = await renderHlsReadyLocal();
       view = v;
