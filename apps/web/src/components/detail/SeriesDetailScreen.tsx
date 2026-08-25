@@ -24,6 +24,7 @@
 // libraries never approach them.
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import type { components } from "@loombre/sdk";
 import { apiGet } from "../../lib/api-client.js";
 import { pickHeroImage } from "../../lib/pick-hero-image.js";
@@ -209,9 +210,15 @@ export function SeriesDetailScreen({
           {series.overview && <p className={styles.blurb}>{series.overview}</p>}
           <div className={styles.actionRow}>
             {primaryHref && (
-              <a href={primaryHref} className={styles.primaryButton}>
+              // next/link, never a raw <a href> (QA browser-items-F1 / d3-c3):
+              // this is a /watch entry (`/watch/${resumeTarget.episodeId}`), and
+              // a document navigation there breaks the same two things
+              // PlayLink.tsx's header describes — the music handoff's provider
+              // and /watch's own React unmount path. The variable href is
+              // exactly why the old whole-src guard never caught this one.
+              <Link href={primaryHref} className={styles.primaryButton}>
                 {primaryLabel}
-              </a>
+              </Link>
             )}
             <WatchlistToggle itemId={series.id} />
             {totalCount > 0 && (
@@ -267,9 +274,11 @@ export function SeriesDetailScreen({
             already kept its toggle in both trees). */}
         <div className={styles.mobileActionRow}>
           {primaryHref && (
-            <a href={primaryHref} className={styles.mobilePrimaryButton}>
+            // The mobile tree's twin of the desktop primary action above —
+            // same /watch entry, same next/link obligation.
+            <Link href={primaryHref} className={styles.mobilePrimaryButton}>
               {primaryLabel}
-            </a>
+            </Link>
           )}
           <WatchlistToggle itemId={series.id} />
         </div>

@@ -5,6 +5,35 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act } from "react";
+
+/** Records what a real next/link click would hand to the client router.
+ *  Same stub (and same reason) as PlayLink.test.tsx's: vitest resolves the
+ *  bare "next/link" specifier to Next's PAGES build, so the shipped App
+ *  Router Link cannot intercept a click under jsdom. */
+const clientNav = vi.hoisted(() => ({ pushes: [] as string[] }));
+
+vi.mock("next/link", () => ({
+  default: ({
+    href,
+    children,
+    ...rest
+  }: {
+    href: string;
+    children?: React.ReactNode;
+  } & React.AnchorHTMLAttributes<HTMLAnchorElement>): React.JSX.Element => (
+    <a
+      href={href}
+      {...rest}
+      onClick={(e) => {
+        if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
+        e.preventDefault();
+        clientNav.pushes.push(href);
+      }}
+    >
+      {children}
+    </a>
+  ),
+}));
 import { MusicPlayerProvider } from "../music/MusicPlayerProvider.js";
 import { FeaturedBanner } from "./FeaturedBanner.js";
 import type { ReactNode } from "react";
@@ -102,6 +131,31 @@ describe("FeaturedBanner", () => {
     const links = [...view.container.querySelectorAll("a")].map((a) => a.getAttribute("href"));
     expect(links).toContain("/watch/c1?type=movie");
     expect(links).toContain("/items/movie/c1");
+  });
+
+  // QA d3-c3: the Play pill's href is `candidate.playHref` — a VARIABLE, so
+  // the whole-src /watch guard in PlayLink.test.tsx never matched it — and it
+  // was a raw <a>, i.e. a full document navigation into /watch (live
+  // confirmed). Every /watch entry has to stay in one document; the title and
+  // Details links are the same defect one hop later.
+  it("REGRESSION GUARD: every banner link navigates INSIDE the document, never as a document load", () => {
+    installMatchMedia();
+    clientNav.pushes.length = 0;
+    view = renderBanner(
+      <MusicPlayerProvider>
+        <FeaturedBanner pool={[makeCandidate()]} serverUrl="https://example.test" accessToken="tok" />
+      </MusicPlayerProvider>,
+    );
+
+    const links = [...view.container.querySelectorAll("a")];
+    expect(links).toHaveLength(3); // title, Play, Details
+
+    for (const link of links) {
+      const event = new MouseEvent("click", { bubbles: true, cancelable: true, button: 0 });
+      link.dispatchEvent(event);
+      expect(event.defaultPrevented).toBe(true);
+    }
+    expect(clientNav.pushes).toEqual(["/items/movie/c1", "/watch/c1?type=movie", "/items/movie/c1"]);
   });
 
   it("renders the missing-artwork gradient+initial fallback when the candidate has no images", () => {

@@ -114,15 +114,60 @@ describe("PlayLink", () => {
   // Whole-surface guard for the same defect: EVERY /watch entry point has
   // to be client-side, not just this one. The two others the QA verifier
   // cited are components/detail/VersionRow.tsx (per-version rows) and
-  // app/restricted/scenes/[id]/page.tsx (chapter markers); this catches any
-  // new one too, including in files no component test covers.
-  it("REGRESSION GUARD: no raw <a href> anywhere in apps/web points at /watch", () => {
+  // app/restricted/scenes/[id]/page.tsx (chapter markers).
+  //
+  // d3-c3 widened WHAT counts as an offender. The original rule matched
+  // `<a … href={`/watch…` — a LITERAL href only — so the two biggest
+  // remaining /watch anchors were invisible to it:
+  // SeriesDetailScreen.tsx's `<a href={primaryHref}>` (primaryHref =
+  // `/watch/${resumeTarget.episodeId}`) and FeaturedBanner.tsx's
+  // `<a href={candidate.playHref}>` (built in lib/featured-fields.ts).
+  // Both were confirmed live as full document navigations. A regex cannot
+  // follow a variable to its value, so the rule is now the house rule it
+  // was always standing in for: in-app links are next/link, full stop —
+  // any raw `<a href>` in apps/web/src is an offender unless it is in one
+  // of the two tables below.
+  it("REGRESSION GUARD: no raw <a href> anywhere in apps/web (any href form)", () => {
+    /** Raw anchors that are CORRECT where they are, with the reason. */
+    const ALLOWED = new Map<string, string>([
+      [
+        "components/browse/PosterCell.tsx",
+        "raw <a> by design: its own onClick preventDefault()s and router.push()es inside a view transition — it already IS a client navigation; the href exists for middle-click/copy-link.",
+      ],
+      ["components/home/PosterCard.tsx", "same design as PosterCell.tsx: preventDefault() + runViewTransition(router.push(href))."],
+      ["components/watchlist/WatchlistPosterCard.tsx", "same design as PosterCell.tsx: preventDefault() + runViewTransition(router.push(href))."],
+      [
+        "components/shell/SessionEndedNotice.tsx",
+        "deliberate FULL document navigation: the always-available manual way out when the client router has stopped committing (lib/auth-return-path.ts).",
+      ],
+      [
+        "components/admin/system/LogsTailCard.tsx",
+        "external link (docs site) with target=_blank rel=noreferrer — next/link is for in-app routes.",
+      ],
+      ["components/admin/system/UpdateNoticeCard.tsx", "external link (release notes URL) with target=_blank rel=noreferrer."],
+      ["components/settings/remote-wizard/RemoteEnableStepBody.tsx", "external link (wireguard.com/install) with target=_blank rel=noreferrer."],
+    ]);
+
+    /** Same defect, files outside this lane's ownership — tracked, not
+     *  skipped, so the guard still catches every NEW offender and this list
+     *  stays the follow-up's exact worklist. Remove an entry when it is
+     *  converted to next/link. */
+    const KNOWN_REMAINING = new Map<string, string>([
+      ["app/items/[itemType]/[id]/DetailScreens.tsx", "C/detail-back-links-raw-anchor: the episode/track 'back to …' links."],
+      ["components/detail/EpisodeRow.tsx", "C/detail-back-links-raw-anchor: every episode row on a series detail."],
+      ["components/detail/SceneBanner.tsx", "C/detail-back-links-raw-anchor: the '← LIBRARY' back pill."],
+      ["components/music/AlbumDetailScreen.tsx", "C/detail-back-links-raw-anchor: the more-albums tiles and the artist links."],
+      ["components/browse/SearchMovieRow.tsx", "C/zone-search-result-raw-anchor: search overlay results."],
+      ["components/browse/SearchMusicGrid.tsx", "C/zone-search-result-raw-anchor: search overlay results."],
+    ]);
+
     // fileURLToPath on the STRING form: under the jsdom environment the
     // global URL is jsdom's, and node:url rejects its instances.
     const srcRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
-    // A plain `<a>` opening tag whose href targets /watch — `<Link href=…>`
-    // (the correct form) and prose mentions of the pattern don't match.
-    const rawWatchAnchor = /<a\b[^>]*href=\{?[`"]\/watch/;
+    // A plain `<a>` opening tag carrying an href, in ANY form: a literal, a
+    // template literal, or `{anyExpression}`. `<Link href=…>` (the correct
+    // form) and prose mentions of the pattern don't match.
+    const rawAnchorWithHref = /<a\s[^>]*href=/;
     const offenders: string[] = [];
 
     const walk = (dir: string): void => {
@@ -133,13 +178,13 @@ describe("PlayLink", () => {
           continue;
         }
         if (!/\.tsx?$/.test(entry.name) || /\.test\.tsx?$/.test(entry.name)) continue;
-        if (rawWatchAnchor.test(readFileSync(full, "utf8"))) {
+        if (rawAnchorWithHref.test(readFileSync(full, "utf8"))) {
           offenders.push(full.slice(srcRoot.length + 1));
         }
       }
     };
     walk(srcRoot);
 
-    expect(offenders).toEqual([]);
+    expect(offenders.filter((f) => !ALLOWED.has(f) && !KNOWN_REMAINING.has(f)).sort()).toEqual([]);
   });
 });

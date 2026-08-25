@@ -32,6 +32,37 @@ vi.mock("../../lib/api-client.js", () => ({
   LoombreApiError: FakeLoombreApiError,
 }));
 
+/** Records what a real next/link click would hand to the client router.
+ *  Same stub (and same reason) as PlayLink.test.tsx's: vitest resolves the
+ *  bare "next/link" specifier to Next's PAGES build, so the shipped App
+ *  Router Link cannot intercept a click under jsdom. It models what the real
+ *  component does on an unmodified primary click — preventDefault() then a
+ *  client-side router navigation. */
+const clientNav = vi.hoisted(() => ({ pushes: [] as string[] }));
+
+vi.mock("next/link", () => ({
+  default: ({
+    href,
+    children,
+    ...rest
+  }: {
+    href: string;
+    children?: React.ReactNode;
+  } & React.AnchorHTMLAttributes<HTMLAnchorElement>): React.JSX.Element => (
+    <a
+      href={href}
+      {...rest}
+      onClick={(e) => {
+        if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
+        e.preventDefault();
+        clientNav.pushes.push(href);
+      }}
+    >
+      {children}
+    </a>
+  ),
+}));
+
 // Imported AFTER the mock so the module under test picks it up.
 const { SeriesDetailScreen } = await import("./SeriesDetailScreen.js");
 
@@ -225,5 +256,43 @@ describe("SeriesDetailScreen", () => {
 
     expect(watchlistToggles(view.container)).toHaveLength(2);
     expect(apiGetMock.mock.calls.filter((call) => call[0] === "/watchlist")).toHaveLength(1);
+  });
+});
+
+// QA d3-c3 (verify/browser-items-F1 adjacent): the "Continue SxEy" primary
+// action — rendered once per responsive tree — is a /watch entry whose href
+// is a VARIABLE (`/watch/${resumeTarget.episodeId}`). It was a raw <a href>,
+// i.e. a FULL document navigation (live-confirmed: the pre-click window
+// token was gone and the navigation type was 'navigate'), and the whole-src
+// guard in PlayLink.test.tsx could not see it because that guard only
+// matched LITERAL /watch hrefs. Same obligation as every other /watch entry:
+// the document must survive the trip (PlayLink.tsx's header has the full
+// mechanism).
+describe("SeriesDetailScreen — the primary action is a client-side navigation (QA d3-c3)", () => {
+  let view: TestRender | null = null;
+
+  afterEach(() => {
+    view?.unmount();
+    view = null;
+    apiGetMock.mockReset();
+    clientNav.pushes.length = 0;
+  });
+
+  it("REGRESSION GUARD: clicking 'Continue …' navigates INSIDE the document", async () => {
+    installFullSeriesMock();
+    view = renderScreen();
+    await flushAll();
+
+    // ep-1 is played and ep-2 has no progress row, so ep-2 is the resume
+    // target in BOTH trees (desktop + mobile are one component tree, U2).
+    const actions = Array.from(view.container.querySelectorAll('a[href^="/watch/"]'));
+    expect(actions).toHaveLength(2);
+    expect(actions.map((a) => a.getAttribute("href"))).toEqual(["/watch/ep-2", "/watch/ep-2"]);
+
+    const event = new MouseEvent("click", { bubbles: true, cancelable: true, button: 0 });
+    (actions[0] as Element).dispatchEvent(event);
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(clientNav.pushes).toEqual(["/watch/ep-2"]);
   });
 });

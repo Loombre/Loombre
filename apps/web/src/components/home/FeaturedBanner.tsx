@@ -42,6 +42,7 @@
 // visible at all).
 
 import { useRef, useState } from "react";
+import Link from "next/link";
 import { ChevronLeft, ChevronRight, Play } from "lucide-react";
 import { Icon } from "../icon/Icon.js";
 import { blurhashToDataUri } from "../../lib/blurhash-canvas.js";
@@ -147,22 +148,29 @@ function BannerBody({
           <span className={styles.eyebrowDot} aria-hidden="true" />
           <span className={styles.eyebrowText}>FEATURED · {candidate.tag}</span>
         </div>
-        <a href={candidate.href} className={styles.title}>
+        {/* next/link for all three of this banner's links (QA d3-c3): the
+            Play pill's href is `candidate.playHref` — a /watch entry built in
+            lib/featured-fields.ts — so a raw <a> made it a FULL document
+            navigation, which is what browser-items-F1 is about (the /watch
+            audio handoff and the route's own unmount path both need the
+            document to survive). The title/Details links are the same defect
+            class one hop later: a full reload of an app already loaded. */}
+        <Link href={candidate.href} className={styles.title}>
           {candidate.title}
-        </a>
+        </Link>
         {candidate.specLine && <div className={styles.specLine}>{candidate.specLine}</div>}
         {candidate.blurb && <p className={styles.blurb}>{candidate.blurb}</p>}
         <div className={styles.pillRow}>
-          <a href={candidate.playHref} className={styles.pillPrimary}>
+          <Link href={candidate.playHref} className={styles.pillPrimary}>
             <Icon icon={Play} size="dense" aria-hidden />
             Play
-          </a>
+          </Link>
           {/* Desktop only (CSS-hidden on mobile — README §Mobile lists Play
               + watchlist pills only for the vertical form); the title link
               above is the mobile form's "open detail" affordance. */}
-          <a href={candidate.href} className={styles.pillSecondary}>
+          <Link href={candidate.href} className={styles.pillSecondary}>
             Details
-          </a>
+          </Link>
           {/* L3's real watchlist toggle in L9's reserved slot (Wave-2
               landing reconciliation). It ships its own pill styling in its
               own CSS module; this module styles only the Play/Details
