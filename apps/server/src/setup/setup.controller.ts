@@ -56,6 +56,16 @@
 // The 404-before-validation ordering above is UNCHANGED by that fix: the
 // emptiness check still wins over every body check, so a probe against a
 // configured instance still learns nothing from a malformed body.
+//
+// d4-b3 (QA 2026-08-24 backlog #096, P3): createFirstAdmin was also the
+// last body in this server running NO unknown-key allowlist, although
+// FirstAdminRequest is `additionalProperties: false` — an unknown key, or
+// a misspelled `displayName`, was dropped and the admin created anyway —
+// and its `displayName` still ran the pre-F5-round-2 coercion that turned
+// a wrong-typed value into a silent null. Both are closed inline below.
+// The 404-before-validation ordering is unchanged by them too, and
+// setup.e2e.spec.ts pins that directly: an unknown key on a CONFIGURED
+// instance is still 404, never 422.
 
 import { Body, Controller, Get, HttpCode, HttpStatus, NotFoundException, Post, Req, UseFilters, UseGuards } from "@nestjs/common";
 import type { Request } from "express";
@@ -109,6 +119,12 @@ interface FirstAdminResponse {
  *  see file header), so unlike POST /auth/login this is not device-
  *  specific. */
 const SETUP_DEVICE_NAME = "First-boot setup";
+
+/** d4-b3: FirstAdminRequest's own property set (packages/contract/openapi.
+ *  yaml), which declares `additionalProperties: false`. Same allowlist
+ *  mechanism api-validation-F5 put on every other body in this server —
+ *  users.controller.ts's CREATE_USER_BODY_KEYS is the reference. */
+const FIRST_ADMIN_BODY_KEYS = new Set(["username", "email", "password", "displayName"]);
 
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.length > 0;
@@ -175,6 +191,26 @@ export class SetupController {
     const body = rawBody ?? {};
     const instance = req.originalUrl;
 
+    // d4-b3 (QA 2026-08-24 backlog #096, P3): FirstAdminRequest declares
+    // `additionalProperties: false` and this handler ran NO allowlist — the
+    // one api-validation-F5 put on every other body in this server. An
+    // unknown key, or a misspelled `displayName`, was silently dropped and
+    // the admin was created ANYWAY: 201 with real tokens for a body the
+    // server only partly understood, on the one call an instance can never
+    // take back (the route goes permanently inert the moment it succeeds).
+    // Runs FIRST among the body checks, as it does everywhere else — an
+    // unknown key is a statement about the caller's body that does not
+    // depend on which required field is also missing. It stays strictly
+    // INSIDE the already-empty branch: the countUsers() 404 above still wins
+    // over every one of these, so a probe against a configured instance
+    // learns nothing from a malformed body (STATE.md P4.10 — the new checks
+    // are pinned against that in setup.e2e.spec.ts).
+    for (const key of Object.keys(body)) {
+      if (!FIRST_ADMIN_BODY_KEYS.has(key)) {
+        throw unprocessableEntity(`Unknown property "${key}".`, instance);
+      }
+    }
+
     if (!isNonEmptyString(body.username)) {
       throw unprocessableEntity("username is required.", instance);
     }
@@ -208,6 +244,16 @@ export class SetupController {
     if (!isNonEmptyString(body.password) || body.password.length < 8) {
       throw unprocessableEntity("password must be at least 8 characters.", instance);
     }
+    // d4-b3, second half: `displayName` still carried the pre-F5-round-2
+    // `typeof === "string" ? … : null` coercion, so a wrong-typed value was
+    // SILENTLY dropped — the admin was created with no display name and a
+    // 201 that said nothing about it. FirstAdminRequest types it
+    // `[string, 'null']`, so explicit null still means "none" and everything
+    // else 422s, with createUser/updateUser/updateMe's exact wording (four
+    // write paths for one member must not drift into four messages).
+    if (body.displayName !== undefined && body.displayName !== null && typeof body.displayName !== "string") {
+      throw unprocessableEntity("displayName must be a string or null.", instance);
+    }
 
     const passwordHash = await this.hashService.hash(body.password);
     const nowMs = clockNowMs();
@@ -216,6 +262,14 @@ export class SetupController {
       username: body.username,
       email,
       passwordHash,
+      // After the shape check above the only non-string values that reach
+      // here are `undefined` and an explicit `null`, both meaning "none".
+      // The `length > 0` clause therefore now decides ONE case, and is kept
+      // deliberately: `""` is contract-valid but there is no PATCH on this
+      // surface to correct it with, and an empty display_name would render
+      // as a blank name everywhere `display_name ?? username` is the
+      // fallback. Storing it as null is the honest reading of "no display
+      // name given" for this one-shot bootstrap call.
       displayName: typeof body.displayName === "string" && body.displayName.length > 0 ? body.displayName : null,
       nowMs,
     });

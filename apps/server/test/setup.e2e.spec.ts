@@ -297,6 +297,99 @@ describe("POST /setup/first-admin (public until the first user, then permanently
     });
   });
 
+  // d4-b3: FirstAdminRequest is `additionalProperties: false` and this
+  // handler ran NO allowlist — the api-validation-F5 loop every other body
+  // in this server runs. An unknown key (or a misspelled `displayName`) was
+  // silently dropped and the admin was created anyway: the wizard's one
+  // irreversible call, answering 201 for a body it only partly understood.
+  // The same round's second half: `displayName` used the pre-F5-round-2
+  // `typeof === "string" ? … : null` coercion, so a wrong-typed value became
+  // a SILENT null instead of a 422.
+  describe("unknown-key allowlist + displayName shape (FirstAdminRequest additionalProperties:false — d4-b3)", () => {
+    const VALID_BODY = {
+      username: "wizard-admin",
+      email: "wizard-admin@loombre.local",
+      password: "correct-horse-battery-staple",
+    };
+
+    async function stillNeedsSetup(): Promise<boolean> {
+      const state = await request(app.getHttpServer()).get("/setup/state");
+      expect(state.status).toBe(200);
+      return state.body.needsSetup === true;
+    }
+
+    it("422s on an unknown property and creates NO admin", async () => {
+      const res = await request(app.getHttpServer())
+        .post("/setup/first-admin")
+        .send({ ...VALID_BODY, bogus: true });
+      expect(res.status, JSON.stringify(res.body)).toBe(422);
+      expect(res.headers["content-type"]).toContain("application/problem+json");
+      expect(res.body.type).toBe("urn:loombre:problem:validation");
+      expect(res.body.detail).toBe('Unknown property "bogus".');
+      expect(res.body.instance).toBe("/setup/first-admin");
+      expect(await stillNeedsSetup()).toBe(true);
+    });
+
+    it("422s on a MISSPELLED displayName rather than dropping it and creating the admin anyway", async () => {
+      const res = await request(app.getHttpServer())
+        .post("/setup/first-admin")
+        .send({ ...VALID_BODY, displayname: "Wizard Admin" });
+      expect(res.status, JSON.stringify(res.body)).toBe(422);
+      expect(res.body.detail).toBe('Unknown property "displayname".');
+      expect(await stillNeedsSetup()).toBe(true);
+    });
+
+    it("the allowlist runs FIRST: an unknown key beats a missing required field", async () => {
+      const res = await request(app.getHttpServer()).post("/setup/first-admin").send({ bogus: true });
+      expect(res.status, JSON.stringify(res.body)).toBe(422);
+      expect(res.body.detail).toBe('Unknown property "bogus".');
+    });
+
+    it("422s on a wrong-typed displayName instead of coercing it to null (F5 round 2 parity)", async () => {
+      const res = await request(app.getHttpServer())
+        .post("/setup/first-admin")
+        .send({ ...VALID_BODY, displayName: 42 });
+      expect(res.status, JSON.stringify(res.body)).toBe(422);
+      // The exact wording createUser/updateUser/updateMe use — four write
+      // paths for the same member must not drift into four messages.
+      expect(res.body.detail).toBe("displayName must be a string or null.");
+      expect(await stillNeedsSetup()).toBe(true);
+    });
+
+    it("still accepts an explicit null displayName (FirstAdminRequest types it [string,'null'])", async () => {
+      const res = await request(app.getHttpServer())
+        .post("/setup/first-admin")
+        .send({ ...VALID_BODY, displayName: null });
+      expect(res.status, JSON.stringify(res.body)).toBe(201);
+      expect(res.body.user.displayName).toBeNull();
+    });
+
+    it("still accepts and stores a real displayName (guard, not a narrowing)", async () => {
+      const res = await request(app.getHttpServer())
+        .post("/setup/first-admin")
+        .send({ ...VALID_BODY, displayName: "Wizard Admin" });
+      expect(res.status, JSON.stringify(res.body)).toBe(201);
+      expect(res.body.user.displayName).toBe("Wizard Admin");
+    });
+
+    it("still accepts the wizard's own body, which sends no displayName at all", async () => {
+      const res = await request(app.getHttpServer()).post("/setup/first-admin").send(VALID_BODY);
+      expect(res.status, JSON.stringify(res.body)).toBe(201);
+      expect(res.body.user.displayName).toBeNull();
+    });
+
+    it("STATE.md P4.10 survives the new checks: an unknown key on a CONFIGURED instance is still 404, never 422", async () => {
+      const firstAdmin = await request(app.getHttpServer()).post("/setup/first-admin").send(VALID_BODY);
+      expect(firstAdmin.status, JSON.stringify(firstAdmin.body)).toBe(201);
+
+      const res = await request(app.getHttpServer())
+        .post("/setup/first-admin")
+        .send({ ...VALID_BODY, username: "someone-else", bogus: true });
+      expect(res.status, JSON.stringify(res.body)).toBe(404);
+      expectSharedNotFoundProblem(res, "/setup/first-admin");
+    });
+  });
+
   describe("byte-identical 404 once the instance is configured (P1 restricted-404 pattern)", () => {
     it("matches NotFoundController's *splat catch-all body EXACTLY, byte for byte", async () => {
       const firstAdmin = await request(app.getHttpServer()).post("/setup/first-admin").send({
