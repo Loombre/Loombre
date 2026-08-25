@@ -15,18 +15,26 @@
 // allowed here." Root ("/") already carries the correct signed-in-vs-not
 // boot-routing decision (decideBootRoute, app/page.tsx) so the recovery
 // link below points there rather than guessing a destination itself.
+//
+// NO CSS IMPORT here, deliberately (browser-player-F13): the App Router
+// preloads the root not-found boundary's CSS chunk in the head of EVERY
+// route, but this boundary only renders on an actual 404 — the preload
+// is never consumed, and Chromium re-warns about it after each
+// resource-load burst (unbounded on /watch under the HLS fetch cadence).
+// The styles live in globals.css under the `nf-` prefix instead (always
+// loaded via the root layout, always consumed). Pinned by
+// not-found.test.tsx.
 
 import Link from "next/link";
-import styles from "./not-found.module.css";
 
 export default function NotFound(): React.JSX.Element {
   return (
-    <main className={styles.page}>
-      <div className={styles.content}>
-        <span className={styles.code}>404</span>
-        <h1 className={styles.title}>Signal lost</h1>
-        <p className={styles.message}>This route doesn&apos;t exist on this server.</p>
-        <Link href="/" className={styles.homeLink}>
+    <main className="nf-page">
+      <div className="nf-content">
+        <span className="nf-code">404</span>
+        <h1 className="nf-title">Signal lost</h1>
+        <p className="nf-message">This route doesn&apos;t exist on this server.</p>
+        <Link href="/" className="nf-home-link">
           Back to Loombre
         </Link>
       </div>

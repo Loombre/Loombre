@@ -112,3 +112,78 @@ svg {
     );
   }
 }
+
+/* ── Root not-found boundary (browser-player-F13) ──
+   These are app/not-found.tsx's styles, moved verbatim from its former
+   not-found.module.css (Wave 1 W1a; original header comments preserved
+   there applied: body already sets background/color from tokens, .nf-page
+   just centers; no --scanlines/--vignette — opt-in-only, no preference
+   exists yet). They live HERE deliberately: any CSS imported by the root
+   not-found boundary becomes a per-boundary chunk that the App Router
+   <link rel="preload" as="style">s on EVERY route yet never consumes
+   (the boundary only renders on a real 404), and Chromium re-warns about
+   the unused preload after each resource-load burst — unbounded on
+   /watch, where HLS fetches land every few seconds. globals.css is
+   always loaded and always consumed, so no chunk, no preload, no
+   warnings. Guarded by not-found.test.tsx. */
+
+.nf-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-xl);
+  text-align: center;
+}
+
+.nf-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-sm);
+  max-width: 420px;
+}
+
+.nf-code {
+  font-family: var(--font-mono);
+  font-size: calc(var(--text-display) * 2.1);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--track-mono);
+  line-height: var(--leading-display);
+  color: var(--color-text-muted);
+}
+
+.nf-title {
+  margin: 0;
+  font-family: var(--font-sans);
+  font-stretch: var(--wdth-title);
+  font-weight: var(--weight-black);
+  font-size: var(--text-xl);
+  color: var(--text);
+}
+
+.nf-message {
+  margin: 0;
+  font-size: var(--text-base);
+  color: var(--muted);
+}
+
+.nf-home-link {
+  margin-top: var(--space-sm);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: var(--space-xs) var(--space-lg);
+  border-radius: var(--radius-pill);
+  background: var(--color-accent);
+  color: var(--color-accent-text);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  text-decoration: none;
+  transition: background-color var(--motion-fast) var(--ease-out);
+}
+
+.nf-home-link:hover {
+  background: var(--color-accent-hover);
+}
