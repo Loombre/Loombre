@@ -214,7 +214,12 @@ export async function reconcileAbandonedJobLedgerRows(
     for (const group of groups) {
       let query = trx
         .selectFrom('jobs')
-        .select(['id', 'type', 'status', 'updated_at_ms'])
+        // d4-f4: `attempts` is read here purely to be forwarded into the
+        // outbox payload below — this sweep never writes the column, so
+        // the value the FOR UPDATE-locked row carries at SELECT time is
+        // still the committed one when the event is written inside the
+        // same transaction.
+        .select(['id', 'type', 'status', 'updated_at_ms', 'attempts'])
         .where('type', 'in', [...group.types])
         .where((eb) =>
           eb.or([
@@ -255,6 +260,17 @@ export async function reconcileAbandonedJobLedgerRows(
             jobId: row.id,
             jobType: row.type,
             status: 'failed',
+            // d4-f4 (backlog #086, browser-admin-F13 adjacent): SEND it.
+            // The schema's optional `attempts` means "absent = this
+            // transition says nothing, keep what you had", which is
+            // correct only for a consumer that already holds the row. The
+            // admin jobs surface also SYNTHESIZES rows it has never seen
+            // straight from this payload, and an absent count there
+            // becomes 0 attempts / no chip for a job that really was tried
+            // three times. This sweep knows the number (the SELECT above
+            // reads it) and does not change it, so sending it is both free
+            // and authoritative.
+            attempts: row.attempts,
             errorMessage: RECONCILED_MESSAGE,
             updatedAtMs: input.nowMs,
           },

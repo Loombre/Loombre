@@ -32,6 +32,7 @@ import {
   hasQueuedOrActiveJobOfType,
   insertJobLedgerRow,
   reconcileAbandonedJobLedgerRows,
+  transitionJobLedgerRow,
 } from '../src/internal/index.js';
 import { resolveTestDatabaseUrl } from '../src/testing.js';
 
@@ -90,6 +91,15 @@ describe('reconcileAbandonedJobLedgerRows (W1: unwedge the singleton guards)', (
       status: 'active',
       createdAtMs: nowMs - 3 * HOUR_MS,
       updatedAtMs: nowMs - 2 * HOUR_MS, // before workerStartedAtMs -> orphaned
+    });
+    // d4-f4: the dead predecessor was on its THIRD attempt when it went
+    // away (pg-boss retryLimit 2 => attempts 1..3). The column keeps that
+    // count across this sweep — nothing here re-runs the job — so it is
+    // exactly the value a live consumer must end up holding.
+    await transitionJobLedgerRow(db, orphanedActiveStashId, {
+      status: 'active',
+      attempts: 3,
+      updatedAtMs: nowMs - 2 * HOUR_MS,
     });
     await insertJobLedgerRow(db, {
       id: crashRecentActiveHwprobeId,
@@ -186,6 +196,34 @@ describe('reconcileAbandonedJobLedgerRows (W1: unwedge the singleton guards)', (
     // No events for spared rows.
     const sparedIds = [crashRecentActiveHwprobeId, freshQueuedBackfillId, outOfScopeQueuedProbeId];
     expect(payloads.filter((p) => sparedIds.includes(p.jobId))).toHaveLength(0);
+  });
+
+  // d4-f4 (backlog #086, browser-admin-F13 adjacent). browser-admin-F13
+  // gave job.updated an optional `attempts` and taught packages/jobs's
+  // ledger to send the committed column value at every ordinary
+  // transition, so the admin jobs surface can render its "N attempts" chip
+  // off a live event. THIS emitter kept its own SELECT of
+  // id/type/status/updated_at_ms and sent no attempts at all. Absent is
+  // legal — "this transition says nothing, keep what you had" — and is
+  // right for a client that already holds the row. But the admin surface
+  // synthesizes a row it has never seen from the payload alone, and then
+  // shows 0 attempts / no chip for a job that really was tried three
+  // times. The sweep is not ignorant of the count; it just wasn't reading
+  // it.
+  it('d4-f4: the reconciled row’s job.updated carries the committed attempts count, not an absent field', async () => {
+    const events = await db.selectFrom('events').selectAll().where('type', '=', 'job.updated').execute();
+    const payloads = events.map((e) => e.payload as { jobId: string; attempts?: number });
+
+    const orphaned = payloads.find((p) => p.jobId === orphanedActiveStashId);
+    expect(orphaned?.attempts).toBe(3); // the predecessor's third attempt, untouched by the sweep
+
+    // A row that never reached a consumer at all is honestly 0 — present,
+    // not absent (absent is what the schema reserves for "unchanged").
+    const staleQueued = payloads.find((p) => p.jobId === staleQueuedHwprobeId);
+    expect(staleQueued?.attempts).toBe(0);
+
+    const row = await getJobLedgerRow(db, orphanedActiveStashId);
+    expect(row?.attempts).toBe(3); // ...and it matches the row it was read from
   });
 
   it('is idempotent: a second run finds nothing left to reconcile', async () => {
