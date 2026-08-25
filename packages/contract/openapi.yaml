@@ -753,6 +753,19 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: >-
+            The supplied `email` already belongs to another account (G9).
+            Compared case-insensitively (CITEXT) after trimming, so a
+            case-only or padded variant of a taken address conflicts too.
+            Only `email` can collide on this operation — `username` is not
+            updatable here. Same admin-only disclosure posture as
+            `createUser`'s 409: admins already enumerate every account via
+            `GET /users`, so a truthful conflict reveals nothing new, and
+            nothing else about the existing account is disclosed.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
         '422': { $ref: '#/components/responses/UnprocessableEntity' }
         default: { $ref: '#/components/responses/Problem' }
     delete:

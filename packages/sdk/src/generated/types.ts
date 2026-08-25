@@ -5671,6 +5671,15 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            /** @description The supplied `email` already belongs to another account (G9). Compared case-insensitively (CITEXT) after trimming, so a case-only or padded variant of a taken address conflicts too. Only `email` can collide on this operation — `username` is not updatable here. Same admin-only disclosure posture as `createUser`'s 409: admins already enumerate every account via `GET /users`, so a truthful conflict reveals nothing new, and nothing else about the existing account is disclosed. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
             422: components["responses"]["UnprocessableEntity"];
             default: components["responses"]["Problem"];
         };

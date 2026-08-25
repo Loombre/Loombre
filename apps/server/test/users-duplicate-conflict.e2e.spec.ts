@@ -26,13 +26,25 @@
 //
 // Self-sufficient (own ensureTestDatabase suffix, own reset+reseed), same
 // convention as every other apps/server e2e file in this package.
+//
+// d3-b6 EXTENSION (remediation dispatch 3, B/api-validation-F2-adjacent):
+// the contrast path this header describes — PATCH /users/{id}'s G9 409 —
+// was REAL in the server and UNDOCUMENTED in the contract: openapi.yaml's
+// updateUser listed 401/403/404/422/default only, so a generated client
+// (and every consumer reading the spec) saw an email conflict as an
+// undocumented `default` problem while POST /users, whose 409 shipped with
+// api-validation-F2, documented it properly. The final describe below pins
+// BOTH halves in one test — the live 409 and the contract entry that
+// describes it — because either half alone is what let them drift apart.
 
 import "reflect-metadata";
+import { readFileSync } from "node:fs";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import request from "supertest";
+import { parse as parseYaml } from "yaml";
 import { NestFactory } from "@nestjs/core";
 import type { INestApplication } from "@nestjs/common";
 import { createDb, ensureTestDatabase } from "@loombre/db";
@@ -197,5 +209,65 @@ describe("api-validation-F2: POST /users duplicate username -> 409, never 500", 
     });
     expect(created.status).toBe(201);
     expect(created.body.username).toBe("qa-val-dup-free");
+  });
+});
+
+// d3-b6 — the UPDATE side of the same conflict. Parses openapi.yaml
+// directly rather than the generated SDK: the SDK is generated FROM the
+// contract, so asserting against it would re-check codegen instead of the
+// source of truth (contract-reason-codes.spec.ts's own reasoning).
+const OPENAPI_PATH = path.resolve(__dirname, "../../../packages/contract/openapi.yaml");
+
+interface OpenApiResponses {
+  paths: Record<string, Record<string, { responses?: Record<string, unknown> }>>;
+}
+
+function updateUserResponses(): Record<string, unknown> {
+  const doc = parseYaml(readFileSync(OPENAPI_PATH, "utf8")) as OpenApiResponses;
+  const op = doc.paths["/users/{id}"]?.["patch"];
+  expect(op, "openapi.yaml has no PATCH /users/{id}").toBeTruthy();
+  return op!.responses ?? {};
+}
+
+describe("d3-b6: PATCH /users/{id} email conflict is a real 409 the contract documents", () => {
+  it("answers 409 problem+json when the new email already belongs to another account", async () => {
+    const holder = await createUser({
+      username: "qa-d3b6-holder",
+      email: "qa-d3b6-holder@example.test",
+      password: PASSWORD,
+    });
+    expect(holder.status).toBe(201);
+
+    const target = await createUser({ username: "qa-d3b6-target", password: PASSWORD });
+    expect(target.status).toBe(201);
+
+    const clash = await request(app.getHttpServer())
+      .patch(`/users/${target.body.id}`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .set("content-type", "application/json")
+      .send({ email: "qa-d3b6-holder@example.test" });
+
+    expect(clash.status).toBe(409);
+    expect(clash.headers["content-type"]).toContain("application/problem+json");
+    expect(clash.body).toMatchObject({
+      type: "urn:loombre:problem:conflict",
+      title: "Conflict",
+      status: 409,
+    });
+    expect(String(clash.body.detail)).toMatch(/email/i);
+  });
+
+  it("declares that 409 in openapi.yaml's updateUser (it did not — the client saw an undocumented `default`)", () => {
+    const responses = updateUserResponses();
+    expect(
+      Object.keys(responses).sort(),
+      "updateUser must document every status it can answer",
+    ).toContain("409");
+  });
+
+  it("keeps the rest of updateUser's documented statuses intact", () => {
+    expect(Object.keys(updateUserResponses()).sort()).toEqual(
+      ["200", "401", "403", "404", "409", "422", "default"].sort(),
+    );
   });
 });
