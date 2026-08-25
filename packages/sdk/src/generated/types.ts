@@ -3410,7 +3410,7 @@ export interface components {
             videoCodec?: components["schemas"]["VideoCodec"] | null;
             /** @enum {integer|null} */
             bitDepth?: 8 | 10 | 12 | null;
-            /** @description Null alongside videoCodec/bitDepth for the same files. */
+            /** @description Null in THREE cases, not two (d3-b10). The first two are videoCodec/bitDepth's: an audio-only file, and a file not yet probed. The third is browser-items-F6's — a file that HAS a probed video stream whose HDR verdict is genuinely UNKNOWN: the stored `hdr` column is null and `color_transfer` carries no HDR signal either (only smpte2084 -> hdr10 and arib-std-b67 -> hlg are derivable; Dolby Vision never is, since a DV profile-8 stream carries the same HDR10-compatible transfer). Such a file reports null rather than `none`, so an unknown verdict is never mistaken for a confident SDR claim — clients should omit the HDR row instead of rendering "SDR". `hdr: null` therefore does NOT imply `videoCodec: null`. */
             hdr?: components["schemas"]["HdrType"] | null;
             audioTracks?: components["schemas"]["MediaFileAudioTrack"][];
             subtitleTracks?: components["schemas"]["MediaFileSubtitleTrack"][];
