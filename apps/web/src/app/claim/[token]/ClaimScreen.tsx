@@ -39,7 +39,7 @@ import { Button } from "../../../components/ui/Button.js";
 import { TextInput } from "../../../components/ui/Input.js";
 import { buildDeviceProfile } from "../../../lib/device-profile.js";
 import { getAuthStore } from "../../../lib/auth-store.js";
-import { defaultServerUrlGuess } from "../../../lib/server-url.js";
+import { resolvePublicServerUrl } from "../../../lib/server-url-preference.js";
 import styles from "../../../components/auth/AuthScreen.module.css";
 
 type ClaimState = components["schemas"]["ClaimState"];
@@ -54,9 +54,15 @@ type ClaimState = components["schemas"]["ClaimState"];
 // this phase exists ONLY for the honest-signal case.
 type Phase = "loading" | "invalid" | "load-error" | "ready" | "submitting" | "claimed-email-dropped";
 
+// d3-d4 (browser-shell-browse-F2 spillover): resolvePublicServerUrl, not
+// `store.serverUrl || guess`. An invite link is opened on a browser that has
+// never authenticated — the case where the store is empty and the
+// same-origin guess is most likely to be wrong — and the viewer's ONE way to
+// say where their server is while signed out is the sign-in screen's pill,
+// which that chain ignored. Order (preference → established session → guess)
+// is the same one /login and /forgot resolve through.
 function publicClient(): LoombreClient {
-  const store = getAuthStore();
-  const serverUrl = store.getSnapshot().serverUrl || defaultServerUrlGuess();
+  const serverUrl = resolvePublicServerUrl(getAuthStore().getSnapshot().serverUrl);
   return new LoombreClient({ baseUrl: serverUrl.replace(/\/$/, ""), getAccessToken: () => null });
 }
 

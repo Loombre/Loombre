@@ -18,6 +18,7 @@ import { act } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { LoombreClient, LoombreApiError } from "@loombre/sdk";
 import { renderIntoBody, type TestRender } from "../../../components/ui/test-render.js";
+import { getAuthStore } from "../../../lib/auth-store.js";
 
 const routerPush = vi.fn();
 const routerReplace = vi.fn();
@@ -314,5 +315,72 @@ describe("ClaimScreen — E2/M12/M16", () => {
     await click(buttonFor("Create account"));
 
     expect(routerReplace).toHaveBeenCalledWith("/home");
+  });
+});
+
+// ── d3-d4 (browser-shell-browse-F2 spillover): the screen's publicClient()
+//    resolved the auth store alone, so it ignored a corrected sign-in pill
+//    and, on a never-authenticated browser — which is the ONLY kind of
+//    browser an invite link normally lands on — probed the same-origin
+//    GUESS instead of the address the viewer typed on /login.
+//    resolvePublicServerUrl() is the order every other public page uses.
+//
+//    Driven against a stubbed global fetch rather than the prototype spies
+//    the describes above use: the assertion IS the request URL, and a
+//    LoombreClient.prototype.get spy cannot see the baseUrl at all. ──────
+describe("ClaimScreen — which server it talks to (d3-d4)", () => {
+  let view: TestRender | null = null;
+  let fetchMock: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    routerPush.mockReset();
+    routerReplace.mockReset();
+    stubMatchMedia();
+    window.localStorage.clear();
+    getAuthStore().clear();
+    getAuthStore().setServerUrl("");
+    fetchMock = vi.fn(
+      async () =>
+        new Response(JSON.stringify(CLAIM_STATE_NO_PRESETS), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+  });
+
+  afterEach(() => {
+    view?.unmount();
+    view = null;
+    vi.unstubAllGlobals();
+    window.localStorage.clear();
+    getAuthStore().clear();
+    getAuthStore().setServerUrl("");
+  });
+
+  function requestedUrls(): string[] {
+    return fetchMock.mock.calls.map((call) => String(call[0]));
+  }
+
+  it("resolves the invite against the server the viewer chose, not the same-origin guess", async () => {
+    window.localStorage.setItem("loombre.onboarding.serverUrl", "http://corrected:3001");
+    view = renderIntoBody(<ClaimScreen token="tok-pref" />);
+    await act(async () => {});
+    expect(requestedUrls()).toEqual(["http://corrected:3001/invites/claim/tok-pref"]);
+  });
+
+  it("the corrected pill outranks a stale session's server URL", async () => {
+    getAuthStore().setServerUrl("http://stale:3001");
+    window.localStorage.setItem("loombre.onboarding.serverUrl", "http://corrected:3001");
+    view = renderIntoBody(<ClaimScreen token="tok-stale" />);
+    await act(async () => {});
+    expect(requestedUrls()).toEqual(["http://corrected:3001/invites/claim/tok-stale"]);
+  });
+
+  it("with nothing remembered it still uses the established session's server", async () => {
+    getAuthStore().setServerUrl("http://established:3001");
+    view = renderIntoBody(<ClaimScreen token="tok-established" />);
+    await act(async () => {});
+    expect(requestedUrls()).toEqual(["http://established:3001/invites/claim/tok-established"]);
   });
 });

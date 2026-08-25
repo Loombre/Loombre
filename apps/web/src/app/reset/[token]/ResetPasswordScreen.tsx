@@ -21,7 +21,7 @@ import { AuthScreen } from "../../../components/auth/AuthScreen.js";
 import { Button } from "../../../components/ui/Button.js";
 import { TextInput } from "../../../components/ui/Input.js";
 import { getAuthStore } from "../../../lib/auth-store.js";
-import { defaultServerUrlGuess } from "../../../lib/server-url.js";
+import { resolvePublicServerUrl } from "../../../lib/server-url-preference.js";
 import styles from "../../../components/auth/AuthScreen.module.css";
 
 type Phase = "form" | "submitting" | "success" | "invalid";
@@ -44,8 +44,13 @@ export function ResetPasswordScreen({ token }: { token: string }): React.JSX.Ele
 
     setPhase("submitting");
     try {
-      const store = getAuthStore();
-      const serverUrl = store.getSnapshot().serverUrl || defaultServerUrlGuess();
+      // d3-d4 (browser-shell-browse-F2 spillover): resolvePublicServerUrl,
+      // not `store.serverUrl || guess`. A reset link is opened on a browser
+      // with no session — exactly where the store is empty and the
+      // same-origin guess is most likely wrong — and the pill on /login is
+      // the only place a signed-out viewer can correct it. Same order
+      // /login and /forgot resolve through.
+      const serverUrl = resolvePublicServerUrl(getAuthStore().getSnapshot().serverUrl);
       const client = new LoombreClient({ baseUrl: serverUrl.replace(/\/$/, ""), getAccessToken: () => null });
       await client.post("/auth/reset-password", { body: { token, password } });
       setPhase("success");
