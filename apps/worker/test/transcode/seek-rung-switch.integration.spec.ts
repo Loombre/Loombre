@@ -890,15 +890,23 @@ describe.skipIf(!ffmpegAvailable || process.platform === "win32")(
           sessionId,
         );
 
-        // Stand in for a client that is actually WATCHING. Without a
-        // climbing `requested_segment` the segment-ahead throttle SIGSTOPs
-        // the encode at ahead > 10 and its resume condition (ahead <= 5)
-        // is unreachable forever — correct behaviour (a Tier-0 box must
-        // not race ahead of a paused viewer) and the exact reason this
-        // test has to simulate consumption rather than just wait.
+        // Stand in for a client that is actually WATCHING — i.e. one whose
+        // segment GETs are being ANSWERED. Without a climbing
+        // `requested_segment` the segment-ahead throttle SIGSTOPs the
+        // encode at ahead > 10 and its resume condition (ahead <= 5) is
+        // unreachable forever; without a climbing `highest_served_segment`
+        // (d4-f2) retention's viewer floor never rises and the head is
+        // never pruned. Both are what one served GET writes, so both move
+        // here, together.
         const consumer = setInterval(() => {
           void raw
-            .query(`UPDATE playback_sessions SET requested_segment = produced_segment WHERE id = $1`, [sessionId])
+            .query(
+              `UPDATE playback_sessions
+                  SET requested_segment = produced_segment,
+                      highest_served_segment = greatest(coalesce(highest_served_segment, produced_segment), produced_segment)
+                WHERE id = $1`,
+              [sessionId],
+            )
             .catch(() => undefined);
         }, 200);
 

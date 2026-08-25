@@ -66,7 +66,21 @@
  *                           already implemented by this lane for Lane B to
  *                           call). WORKER reads it every poll tick as
  *                           throttle input; NULL is treated as 0, never as
- *                           "no limit".
+ *                           "no limit". DEMAND, not progress — see the
+ *                           column below.
+ *   highest_served_segment  LANE B writes, ONLY when a segment GET is
+ *                           answered 200 with a real file body, under a
+ *                           SQL-side GREATEST (migration 0045 / d4-f2 —
+ *                           `recordServedSegment`). WORKER reads it every
+ *                           poll tick as the RETENTION PRUNE FLOOR (d3-f1:
+ *                           never delete a segment the viewer has not
+ *                           reached). It is a separate column from
+ *                           `requested_segment` because the two consumers
+ *                           want opposite things: the throttle must react
+ *                           to a far-ahead request (that IS the signal to
+ *                           un-suspend), retention must not (nobody has
+ *                           been handed those bytes). NULL means "never
+ *                           served a segment", and prunes NOTHING.
  *   produced_segment         WORKER writes (§1's observability + ongoing
  *                           throttle input). Lane B: read-only.
  *   seek_target_ms           LANE B writes when a client's requested

@@ -300,23 +300,28 @@ export async function runTranscodeSession(deps: RunSessionDeps, sessionId: strin
 
   /**
    * THE VIEWER FLOOR (d3-f1): the highest segment index this session has
-   * evidence the CLIENT actually reached — a monotonic watermark over
-   * `playback_sessions.requested_segment` (apps/server writes it on every
-   * segment GET). `undefined` until the client has fetched anything, which
-   * is the state in which nothing may be pruned at all.
+   * evidence the CLIENT actually reached. `undefined` until the client has
+   * been handed anything, which is the state in which nothing may be
+   * pruned at all.
    *
-   * MONOTONIC, and only advanced by a request the pipeline had ALREADY
-   * PRODUCED. Both qualifiers are load-bearing:
-   *   * monotonic, because global segment numbering only moves forward
-   *     (§9.1.10 item 4): a backward seek's restart numbers its output
-   *     ABOVE everything produced so far, so a watermark can never sit
-   *     above a landing fragment and prune it away, while `requested_
-   *     segment` itself moves backward on a backward seek and would;
-   *   * produced-bounded, because a far-AHEAD request (the implicit-seek
-   *     path writes `requested_segment` before answering 503) is a
-   *     position the client has not consumed — treating it as progress
-   *     would authorise deleting everything below an index nobody has
-   *     ever been served.
+   * d4-f2 (migration 0045) made that evidence EXACT. The floor now reads
+   * `playback_sessions.highest_served_segment` — written by apps/server on
+   * the success path of a segment GET only, i.e. when a real file body
+   * actually went out — instead of reconstructing progression from
+   * `requested_segment`, which records every GET including 503'd ones and
+   * hls.js's routine forward probes. d3-f1 bounded that column by the
+   * produced edge as an approximation of "has been consumed", but a probe
+   * that merely happens to sit below the produced edge is indistinguishable
+   * from consumption under that rule, and authorised deleting everything
+   * under an index nobody had ever been served. `requested_segment` is
+   * still read on this tick — by the THROTTLE, which wants exactly the
+   * demand signal this floor must ignore.
+   *
+   * Still MONOTONIC in this closure, on top of the column's own SQL-side
+   * GREATEST, because global segment numbering only moves forward (§9.1.10
+   * item 4): a backward seek's restart numbers its output ABOVE everything
+   * produced so far, so a watermark can never sit above a landing fragment
+   * and prune it away.
    */
   let viewerSegmentIndex: number | undefined;
 
@@ -558,10 +563,10 @@ export async function runTranscodeSession(deps: RunSessionDeps, sessionId: strin
     const producedSegment = highestProducedSegmentIndex(servedState);
 
     // Advance the viewer floor BEFORE this tick's prune decides anything —
-    // see its declaration above for why the watermark is monotonic and
-    // bounded by what has actually been produced.
-    if (row.requested_segment !== null && producedSegment !== undefined && row.requested_segment <= producedSegment) {
-      viewerSegmentIndex = Math.max(viewerSegmentIndex ?? 0, row.requested_segment);
+    // see its declaration above for why the watermark is what was SERVED
+    // (d4-f2) and why it is monotonic.
+    if (row.highest_served_segment !== null) {
+      viewerSegmentIndex = Math.max(viewerSegmentIndex ?? 0, row.highest_served_segment);
     }
 
     if (producedSegment !== undefined) {

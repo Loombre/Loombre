@@ -477,6 +477,14 @@ export interface PlaybackSessionsTable {
    *  the ladder's TOP rung. */
   active_rung_index: number | null;
   pending_rung_index: number | null;
+  /** migrations/0045_playback_session_served_watermark.sql (d4-f2) — the
+   *  highest segment index this session has ever SERVED (200 + a real file
+   *  body), written only on that success path and only upward. The
+   *  PROGRESS counterpart to `requested_segment`'s DEMAND: the retention
+   *  prune floor and the backward-jump gate read this one; the
+   *  segment-ahead throttle keeps reading the other. NULL means "never
+   *  served a segment", never index 0. */
+  highest_served_segment: number | null;
 }
 
 /** migrations/0043_transcode_runs.sql — one row per ffmpeg run spawned for

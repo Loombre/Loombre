@@ -296,10 +296,19 @@ export interface PruneResult {
  * ── THE VIEWER FLOOR (d3-f1, QA 2026-08-24 P1) ────────────────────────
  * `viewerSegmentIndex` is the highest ABSOLUTE segment index the session
  * has evidence the viewer actually reached (runner.ts watermarks it from
- * `playback_sessions.requested_segment`, which apps/server writes on every
- * segment GET); `undefined` means "no evidence at all — the client has not
- * fetched a single segment yet". A segment is prunable only when it is
- * BOTH behind the retention horizon AND strictly below that floor.
+ * `playback_sessions.highest_served_segment` — migration 0045 / d4-f2 —
+ * which apps/server writes ONLY when a segment GET is answered 200 with a
+ * real file body); `undefined` means "no evidence at all — the client has
+ * not been handed a single segment yet". A segment is prunable only when it
+ * is BOTH behind the retention horizon AND strictly below that floor.
+ *
+ * The evidence column is deliberately not `requested_segment`: that one
+ * records DEMAND (every GET, 503'd and speculative alike) because the
+ * segment-ahead throttle must react to demand. d3-f1 originally
+ * reconstructed progression from it, bounded by the produced edge, and a
+ * forward probe landing below that edge was then indistinguishable from
+ * consumption — enough to authorise deleting everything under an index
+ * nobody had ever been served (d4-f2).
  *
  * Why the live edge alone is not a window: "120s behind the live edge" is
  * a sliding window AROUND THE VIEWER only while production runs at roughly

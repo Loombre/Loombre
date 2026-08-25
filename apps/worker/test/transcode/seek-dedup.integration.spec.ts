@@ -703,9 +703,14 @@ describe("seek-restart de-duplication (continuation item 1: livelock)", () => {
       // d3-f1: retention is floored by VIEWER EVIDENCE, so a head only ages
       // out once the viewer has moved past it. This test's premise is
       // exactly that state — the client has played through to the live edge
-      // (`requested_segment`, written by apps/server on every segment GET)
-      // — so it is recorded explicitly rather than assumed.
-      await raw.query(`UPDATE playback_sessions SET requested_segment = 20, updated_at_ms = $2 WHERE id = $1`, [sessionId, Date.now()]);
+      // — so it is recorded explicitly rather than assumed. d4-f2: the
+      // evidence is `highest_served_segment` (apps/server writes it when a
+      // segment GET is answered 200); `requested_segment` moves alongside
+      // it exactly as a real served GET makes it.
+      await raw.query(
+        `UPDATE playback_sessions SET requested_segment = 20, highest_served_segment = 20, updated_at_ms = $2 WHERE id = $1`,
+        [sessionId, Date.now()],
+      );
 
       // 21 x 6 s = 126 s produced, which is 6 s PAST the 120 s retention
       // horizon: the prune drops s000000 (and only it), so run 0's window

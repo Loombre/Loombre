@@ -306,10 +306,26 @@ describe("d3-f1: retention pruning never outruns the viewer", () => {
     }
   }
 
-  /** The client's own progression, exactly as apps/server's segment GET
-   *  records it (`updateRequestedSegment`) — the ONLY evidence the runtime
-   *  has about where the viewer actually is. */
-  async function recordViewerProgress(sessionId: string, requestedSegment: number): Promise<void> {
+  /** A segment GET that apps/server ANSWERED 200, exactly as
+   *  hls-file.controller.ts records it: `requested_segment` (demand) AND
+   *  `highest_served_segment` (progress, migration 0045) both move. The
+   *  second is the ONLY evidence the runtime has about where the viewer
+   *  actually got to (d4-f2). */
+  async function recordViewerProgress(sessionId: string, servedSegment: number): Promise<void> {
+    await raw.query(
+      `UPDATE playback_sessions
+          SET requested_segment = $2,
+              highest_served_segment = greatest(coalesce(highest_served_segment, $2), $2),
+              updated_at_ms = $3
+        WHERE id = $1`,
+      [sessionId, servedSegment, Date.now()],
+    );
+  }
+
+  /** A segment GET apps/server did NOT answer with bytes — a forward probe
+   *  inside the live window, or any 503. Only `requested_segment` moves;
+   *  the served watermark does not (d4-f2 / migration 0045). */
+  async function recordViewerRequestOnly(sessionId: string, requestedSegment: number): Promise<void> {
     await raw.query(`UPDATE playback_sessions SET requested_segment = $2, updated_at_ms = $3 WHERE id = $1`, [sessionId, requestedSegment, Date.now()]);
   }
 
@@ -436,6 +452,62 @@ describe("d3-f1: retention pruning never outruns the viewer", () => {
       // And retention still reclaims what the viewer left behind: run 0's
       // head (everything below its recorded progression) is gone.
       expect(served).not.toContain("run0/s000000.m4s");
+
+      await endPlaybackSession(db, ctx, sessionId, Date.now());
+      await runPromise;
+    },
+  );
+
+  // ── d4-f2 (QA backlog #104, P4) ───────────────────────────────────────
+  // d3-f1 had to reconstruct the viewer floor from `requested_segment`,
+  // which apps/server writes on EVERY segment GET — 503'd ones and hls.js's
+  // routine forward probes included. The guard it used ("trust it only
+  // while it is at or below the produced edge") is an approximation, and it
+  // fails exactly where it matters: a probe that happens to land BELOW the
+  // produced edge is indistinguishable from consumption, and authorises
+  // deleting every segment under an index nobody has ever been handed.
+  // Migration 0045's `highest_served_segment` is the exact answer — written
+  // only when a 200 with real bytes goes out — and is now the floor.
+  it(
+    "a SPECULATIVE forward probe is not progress — the prune floor is what was SERVED",
+    { timeout: 60_000 * TIME_SCALE },
+    async () => {
+      installFakeProcessTable();
+      const sessionId = await createSession();
+      const runPromise = runTranscodeSession(
+        {
+          db,
+          stagingRoot,
+          pollIntervalMs: 25,
+          ffmpegPath: "/nonexistent/ffmpeg-never-executed",
+          spawnFn: fakeSpawnFn(),
+          suspendAheadThresholdOverride: 10_000,
+          resumeAheadThresholdOverride: 5_000,
+        },
+        sessionId,
+      );
+
+      await waitForSpawnCount(1, 10_000 * TIME_SCALE);
+
+      // The viewer has been SERVED up to s000002 and no further. Its
+      // player then probes ahead for s000025 — inside the live window, so
+      // apps/server answers a plain 503 (nothing produced there yet) while
+      // still recording the demand. Under the old floor that probe read as
+      // consumption the moment production passed it, and indices 0..9 (the
+      // whole 120s behind the 180s live edge) were deleted.
+      await recordViewerProgress(sessionId, 2);
+      await recordViewerRequestOnly(sessionId, 25);
+      fabricateRunPlaylist(sessionId, 0, 30);
+      await waitForProducedSegment(sessionId, 29, 15_000 * TIME_SCALE);
+
+      const served = await waitForServedPlaylist(sessionId, (t) => t.includes("run0/s000029.m4s"), 10_000 * TIME_SCALE);
+      expect(
+        served,
+        "a segment the viewer was never handed was pruned because it merely ASKED for a later index",
+      ).toContain("run0/s000002.m4s");
+      // Everything the viewer genuinely walked past is still reclaimed.
+      expect(served).not.toContain("run0/s000000.m4s");
+      expect(served).not.toContain("run0/s000001.m4s");
 
       await endPlaybackSession(db, ctx, sessionId, Date.now());
       await runPromise;

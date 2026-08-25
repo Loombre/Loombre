@@ -87,6 +87,11 @@ export interface PlaybackSessionRow {
   /** migrations/0044 — a requested rung switch awaiting the worker's next
    *  poll tick. */
   pendingRungIndex: number | null;
+  /** migrations/0045 (d4-f2) — the highest segment index this session has
+   *  ever SERVED (200 + real bytes), monotonic, written only on that
+   *  success path. PROGRESS, as opposed to `requestedSegment`'s DEMAND.
+   *  NULL means "never served a segment", never index 0. */
+  highestServedSegment: number | null;
 }
 
 interface RawSessionRow {
@@ -113,6 +118,7 @@ interface RawSessionRow {
   stderr_tail: string | null;
   active_rung_index: number | null;
   pending_rung_index: number | null;
+  highest_served_segment: number | null;
 }
 
 function mapRow(row: RawSessionRow): PlaybackSessionRow {
@@ -140,6 +146,7 @@ function mapRow(row: RawSessionRow): PlaybackSessionRow {
     stderrTail: row.stderr_tail,
     activeRungIndex: row.active_rung_index,
     pendingRungIndex: row.pending_rung_index,
+    highestServedSegment: row.highest_served_segment,
   };
 }
 
@@ -173,6 +180,7 @@ function baseSelect(db: Kysely<DB> | Transaction<DB>) {
       'playback_sessions.stderr_tail as stderr_tail',
       'playback_sessions.active_rung_index as active_rung_index',
       'playback_sessions.pending_rung_index as pending_rung_index',
+      'playback_sessions.highest_served_segment as highest_served_segment',
     ]);
 }
 
@@ -289,6 +297,7 @@ export async function createPlaybackSession(
       stderr_tail: inserted.stderr_tail,
       active_rung_index: inserted.active_rung_index,
       pending_rung_index: inserted.pending_rung_index,
+      highest_served_segment: inserted.highest_served_segment,
     });
   });
 }
@@ -653,6 +662,14 @@ async function warnOnOrphanSignature(trx: Transaction<DB>, sessionId: string): P
  * request). Worker throttle input (docs/PLAYBACK.md §9). A no-op (returns
  * undefined) for a nonexistent/foreign/already-terminal session — the
  * caller is expected to treat that as "nothing to steer", not an error.
+ *
+ * DEMAND, NOT PROGRESS (d4-f2 / migration 0045). This is written on EVERY
+ * segment GET, including ones answered 503 and ones naming an index far
+ * ahead of anything produced — deliberately, because that is exactly the
+ * signal the segment-ahead throttle must react to (a client asking for
+ * more is the reason to un-suspend an encoder). Consumers that need "how
+ * far has this client actually GOT" read `highest_served_segment` instead;
+ * see `recordServedSegment` below.
  */
 export async function updateRequestedSegment(
   db: Kysely<DB>,
@@ -671,6 +688,43 @@ export async function updateRequestedSegment(
     .executeTakeFirst();
   if (!row) return undefined;
   return getPlaybackSessionForUser(db, ctx, id);
+}
+
+/**
+ * d4-f2 (migration 0045): records that a segment index was actually SERVED
+ * — 200 with a real file body. The PROGRESS watermark, as opposed to
+ * `updateRequestedSegment`'s DEMAND.
+ *
+ * MONOTONIC IN SQL, not in the caller: the write is a `GREATEST` against
+ * the stored value, so concurrent/out-of-order fragment loads (hls.js
+ * issues parallel loads and retries a segment or two out of order as a
+ * matter of course) can never walk the watermark backward, and no caller
+ * has to read-then-write. `NULL` — never served anything — is the identity
+ * for that GREATEST, hence the COALESCE to the incoming index.
+ *
+ * Returns nothing and re-reads nothing: this runs on the hot segment-
+ * serving path (CLAUDE.md invariant 9), where `updateRequestedSegment`'s
+ * convenience re-read would be a second round trip for a value no caller
+ * wants. A no-op for a nonexistent/foreign/already-terminal session, the
+ * same "nothing to steer" contract as its sibling above.
+ */
+export async function recordServedSegment(
+  db: Kysely<DB>,
+  ctx: ViewerContext,
+  id: string,
+  servedSegment: number,
+  nowMs: number
+): Promise<void> {
+  await db
+    .updateTable('playback_sessions')
+    .set({
+      highest_served_segment: sql<number>`greatest(coalesce(highest_served_segment, ${servedSegment}), ${servedSegment})`,
+      updated_at_ms: nowMs,
+    })
+    .where('id', '=', id)
+    .where('user_id', '=', ctx.userId)
+    .where('status', 'not in', ['ended', 'failed'])
+    .execute();
 }
 
 /**

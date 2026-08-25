@@ -53,11 +53,14 @@
 //      client's playlist refresh re-syncs it.
 //   3. PRUNED UNDERFOOT (round 3, live 2026-08-24): an ENOENT at/behind
 //      `produced_segment` that the session's OWN forward progression was
-//      heading toward anyway (index at or above `requested_segment` minus
-//      a small out-of-order hysteresis — or, with no progression recorded
-//      yet, at or above `produced_segment` minus that same hysteresis:
-//      d3-f2, see the ENOENT branch's own comment for why "no progression"
-//      cannot mean "never a backward jump").
+//      heading toward anyway (index at or above `highest_served_segment`
+//      minus a small out-of-order hysteresis — d4-f2: progression is what
+//      the session actually SERVED, never `requested_segment`, which
+//      records every GET including 503'd and speculative far-ahead ones;
+//      falling back to `requested_segment` and then `produced_segment`
+//      when nothing has been served yet: d3-f2, see the ENOENT branch's
+//      own comment for why "no progression" cannot mean "never a backward
+//      jump").
 //      On a fast-completing copy-shape file the whole encode lands in
 //      under a second and retention prunes the head while the client is
 //      still fetching its FIRST segments; every such GET is the prune
@@ -116,6 +119,7 @@ import {
   getPlaybackSessionForUser,
   getTranscodeRunForSegment,
   listTranscodeRuns,
+  recordServedSegment,
   requestRungSwitch,
   requestSeek,
   requestSeekWithRungSwitch,
@@ -162,8 +166,9 @@ const SEGMENT_DURATION_SEC = 6;
 const LIVE_WINDOW_SEGMENTS = 20;
 
 /** gap-F6 round 3: how far BELOW the session's recorded forward
- *  progression (`requested_segment`) an ENOENT index must sit before it
- *  counts as backward-jump evidence (module header condition 3). hls.js
+ *  progression (`highest_served_segment`, d4-f2) an ENOENT index must sit
+ *  before it counts as backward-jump evidence (module header condition 3).
+ *  hls.js
  *  issues parallel/retried fragment loads a segment or two out of order
  *  (live: s000182 requested after s000184 — 0.8s apart — spawned the
  *  8.8s-spacing churn pair), so a small backward wobble is progression,
@@ -614,26 +619,38 @@ export class PlaybackHlsFileController {
           this.respondSeekRetry(res, sanitizeInstancePath(req), STALE_RUN_DETAIL);
           return;
         }
-        // `session` was read BEFORE this request's own
-        // `updateRequestedSegment` write above, so `requestedSegment` here
-        // is the PREVIOUS progression — exactly the baseline the
-        // backward-jump test needs.
+        // THE PROGRESSION BASELINE (d4-f2, migration 0045). "How far has
+        // this client actually got" is answered by
+        // `highest_served_segment` — the highest index this session ever
+        // answered 200 with real bytes, monotonic by construction. It is
+        // deliberately NOT `requested_segment`, which records DEMAND: every
+        // GET, including 503'd ones and the routine forward probes hls.js
+        // fires inside the live window. Reading demand as progression was
+        // wrong in both directions — a probe at produced+20 INFLATED the
+        // baseline, so the client's own next fragment, pruned out from
+        // under it, read as a backward jump and restarted the run; and a
+        // 503 PINNED the baseline to the index it had just refused, so the
+        // retry sat inside the hysteresis of itself.
         //
-        // d3-f2: when there is no recorded progression at all, the
-        // session's own PRODUCED EDGE is the progression — not a licence to
-        // treat every index as a forward race. Round 3 read "no
-        // progression" as "no backward intent" for ANY index, which wedged
-        // a first-touch backward seek permanently: the 503 answered nothing
-        // and `updateRequestedSegment` above then pinned requested_segment
-        // to that same low index, so every retry sat inside the hysteresis
-        // OF ITSELF and the implicit restart was unreachable forever (live:
-        // 15x GET run0/s000010.m4s -> 15x 503, runs stayed 1; the same GET
+        // d3-f2 stands unchanged underneath: with no served evidence at
+        // all, `requested_segment` is still consulted (a client whose only
+        // prior GETs were refused has still named where it is looking), and
+        // failing that the session's own PRODUCED EDGE is the progression —
+        // never a licence to treat every index as a forward race. Round 3
+        // read "no progression" as "no backward intent" for ANY index,
+        // which wedged a first-touch backward seek permanently (live: 15x
+        // GET run0/s000010.m4s -> 15x 503, runs stayed 1; the same GET
         // after one served high-index GET restarted correctly). A first
         // touch NEAR the produced edge is still the prune racing the
         // client's own forward progression (round 3's untouched-mount
         // churn) and still gets a plain 503; one far below it is a position
         // no amount of playing forward reaches.
-        const progressionBaseline = session.requestedSegment ?? session.producedSegment;
+        //
+        // `session` was read BEFORE this request's own writes above, so
+        // every value here is the PREVIOUS state — exactly the baseline the
+        // backward-jump test needs.
+        const progressionBaseline =
+          session.highestServedSegment ?? session.requestedSegment ?? session.producedSegment;
         if (
           progressionBaseline === null ||
           parsed.segmentIndex >= progressionBaseline - BACKWARD_JUMP_HYSTERESIS_SEGMENTS
@@ -668,6 +685,22 @@ export class PlaybackHlsFileController {
 
     // Served from disk: no seek, so the switch (if any) stands alone.
     await recordSwitchOnly();
+
+    // d4-f2 (migration 0045): THE ONLY PLACE the progression watermark is
+    // written — this line is reached exactly when a real segment file is
+    // about to be streamed, which is the only evidence anyone has that the
+    // viewer reached that index. `init.mp4` carries no index and is
+    // skipped. The write is a monotonic GREATEST server-side, so an
+    // out-of-order or repeated fragment load can never walk it backward;
+    // it is also skipped outright when this request cannot possibly move
+    // it, which is the common case (a re-fetch, or hls.js's out-of-order
+    // retries) and keeps the hot path at zero extra round trips.
+    if (
+      parsed.segmentIndex !== undefined &&
+      (session.highestServedSegment === null || parsed.segmentIndex > session.highestServedSegment)
+    ) {
+      await recordServedSegment(this.dbProvider.db, ctx, id, parsed.segmentIndex, now);
+    }
 
     res.status(200);
     res.setHeader("Content-Type", CONTENT_TYPE_BY_EXTENSION[parsed.extension]);

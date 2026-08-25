@@ -370,6 +370,10 @@ export {
   listStalePlaybackSessions,
   endStalePlaybackSession,
   updateRequestedSegment,
+  // migrations/0045 (d4-f2) — the PROGRESS half of the pair above:
+  // `updateRequestedSegment` records demand (every GET), this records what
+  // was actually served (200s only, monotonic).
+  recordServedSegment,
   requestSeek,
   // migrations/0044 (Wave C2, docs/PLAYBACK.md §9.1) — the server half of
   // the slot-handoff control channel; `requestSeek`'s exact counterpart.

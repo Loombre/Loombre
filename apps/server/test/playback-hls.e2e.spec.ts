@@ -621,6 +621,91 @@ describe("GET /playback/sessions/{id}/hls/{file} — segment/init serving", () =
     ).toBeNull();
   }, 15_000);
 
+  // ── d4-f2 (QA backlog #104, P4): THE PROGRESSION BASELINE IS A
+  // "LAST INDEX ASKED FOR" COLUMN ────────────────────────────────────────
+  // `requested_segment` is written verbatim on EVERY segment GET — 503'd,
+  // far-ahead and speculative ones included — so it answers "what was the
+  // last URI this client named", not "how far has this client actually
+  // got". The backward-jump gate needs the second question. hls.js probes
+  // ahead of the produced edge as a matter of course (it buffers up to 90s
+  // and the live window admits 20 segments), and every one of those probes
+  // used to raise the baseline: the client's OWN next fragment — pruned
+  // out from under it, round 3's prune race — then sat far below the
+  // inflated baseline and read as a backward seek, restarting the run for
+  // a position the viewer was walking straight into.
+  // `highest_served_segment` is written only on a 200, monotonically, so it
+  // is progression by construction.
+
+  it("d4-f2: a SPECULATIVE far-ahead fetch never makes the client's own forward position look like a backward jump", async () => {
+    const { sessionId, sessionDir } = await setupWithSegments(24);
+    // The client's REAL position: s000008, served 200. The only kind of
+    // request that is evidence the viewer reached an index.
+    const served = await admin().get(`/playback/sessions/${sessionId}/hls/run0/s000008.m4s`);
+    expect(served.status).toBe(200);
+
+    // hls.js buffers ahead: s000044 is exactly at the live-window ceiling
+    // (produced 24 + 20), so it is NOT an implicit seek — a plain
+    // not-yet-produced 503. It still writes requested_segment = 44.
+    const probe = await admin().get(`/playback/sessions/${sessionId}/hls/run0/s000044.m4s`);
+    expect(probe.status).toBe(503);
+    expect(
+      await readSeekTargetMs(sessionId),
+      "a within-window forward probe restarted the run — gap-F6's own rule",
+    ).toBeNull();
+
+    // Retention prunes the client's very next fragment. Nothing about this
+    // is a seek: s000010 is two segments ahead of what it was just served.
+    rmSync(path.join(sessionDir, "run0", "s000010.m4s"));
+    const res = await admin().get(`/playback/sessions/${sessionId}/hls/run0/s000010.m4s`);
+    expect(res.status).toBe(503);
+    expect(
+      await readSeekTargetMs(sessionId),
+      "a forward-probe-inflated baseline turned the client's own next fragment into a backward jump",
+    ).toBeNull();
+  }, 15_000);
+
+  it("d4-f2: the served watermark advances only on a 200, and only upward", async () => {
+    const { sessionId, sessionDir } = await setupWithSegments(24);
+    const readWatermark = async (): Promise<number | null> => {
+      const db = createDb(process.env["DATABASE_URL"]!);
+      try {
+        const row = await db
+          .selectFrom("playback_sessions")
+          .select(["highest_served_segment"])
+          .where("id", "=", sessionId)
+          .executeTakeFirstOrThrow();
+        return row.highest_served_segment === null ? null : Number(row.highest_served_segment);
+      } finally {
+        await db.destroy();
+      }
+    };
+
+    // Nothing served yet — NULL, never 0 (index 0 is a real segment).
+    expect(await readWatermark()).toBeNull();
+
+    expect((await admin().get(`/playback/sessions/${sessionId}/hls/run0/s000008.m4s`)).status).toBe(200);
+    expect(await readWatermark()).toBe(8);
+
+    // A 503 never moves it: a probe inside the live window, and a pruned
+    // index behind the produced edge.
+    expect((await admin().get(`/playback/sessions/${sessionId}/hls/run0/s000044.m4s`)).status).toBe(503);
+    rmSync(path.join(sessionDir, "run0", "s000012.m4s"));
+    expect((await admin().get(`/playback/sessions/${sessionId}/hls/run0/s000012.m4s`)).status).toBe(503);
+    expect(await readWatermark(), "a refused request moved the SERVED watermark").toBe(8);
+
+    // init.mp4 carries no segment index at all.
+    expect((await admin().get(`/playback/sessions/${sessionId}/hls/run0/init.mp4`)).status).toBe(200);
+    expect(await readWatermark()).toBe(8);
+
+    expect((await admin().get(`/playback/sessions/${sessionId}/hls/run0/s000014.m4s`)).status).toBe(200);
+    expect(await readWatermark()).toBe(14);
+
+    // hls.js issues parallel/out-of-order fragment loads as a matter of
+    // course; a served LOWER index must never walk the watermark back.
+    expect((await admin().get(`/playback/sessions/${sessionId}/hls/run0/s000009.m4s`)).status).toBe(200);
+    expect(await readWatermark(), "an out-of-order fragment load walked the watermark backward").toBe(14);
+  }, 15_000);
+
   it("gap-F6 round 3: a backward-jump retry whose derived target sits NEAR (but >1 segment from) a later run's origin never restarts again", async () => {
     // The 8.8s-spacing escape: the first pruned-history relocation
     // recorded run1 at the target derived for s74 (444_444 here, nominal
