@@ -22,7 +22,12 @@
 // ZoneControls.module.css `.filterPanel`), so it can never cover the
 // remedy at any viewport, and it dismisses on Escape or an outside press
 // like every other popover here (components/settings/RowMenu.tsx,
-// components/shell/UserMenu.tsx).
+// components/shell/UserMenu.tsx). Reopen follow-up (2026-08-24): the
+// outside press dismisses on its completed CLICK, never at pointerdown —
+// an in-flow panel collapsing at pointerdown reflows the page while the
+// press is still in flight, so the remedy below it jumped up under the
+// held pointer and the click retargeted to the shell (the same
+// user-visible symptom back through a new mechanism).
 //
 // Picker OPTIONS come from the caller (already-fetched performer/studio/
 // genre lists — see app/restricted/browse/page.tsx for where those come
@@ -127,16 +132,25 @@ export function ZoneFilterBar({
 
   useEffect(() => {
     if (!open) return undefined;
-    // `pointerdown`, not `mousedown` (RowMenu/UserMenu's older choice):
-    // one listener covers mouse, touch and pen, so a TAP outside the panel
-    // dismisses it on phones too, where the panel is full-width and hides
-    // the most content.
-    function onPointerDownOutside(event: Event): void {
+    // `click`, NOT `pointerdown` (RowMenu/UserMenu dismiss their FLOATING
+    // menus at press-start; those never reflow anything). This panel sits
+    // in flow, so collapsing it at pointerdown reflows the page while the
+    // user's press is still in flight: whatever sat below the panel — the
+    // filtered-empty state's "Clear search & filters" remedy in the F7
+    // repro — jumps up under the held pointer, pointerup + click retarget
+    // to the shell, and the intended activation never fires. `click`
+    // dispatches only once the press COMPLETES (mouse, touch tap and pen
+    // alike), with layout untouched throughout, so the pressed control's
+    // own handler runs first and the panel closes right after. Opening is
+    // safe from self-dismissal twice over: the toggle lives inside barRef,
+    // and this effect (hence the listener) attaches only after the opening
+    // click has finished dispatching.
+    function onClickOutside(event: Event): void {
       const bar = barRef.current;
       if (bar && !bar.contains(event.target as Node)) setOpen(false);
     }
-    document.addEventListener("pointerdown", onPointerDownOutside);
-    return () => document.removeEventListener("pointerdown", onPointerDownOutside);
+    document.addEventListener("click", onClickOutside);
+    return () => document.removeEventListener("click", onClickOutside);
   }, [open]);
 
   return (

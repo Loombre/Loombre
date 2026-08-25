@@ -102,13 +102,45 @@ describe("ZoneFilterBar — dismissing the filter disclosure (browser-restricted
     expect(document.activeElement).toBe(toggle());
   });
 
-  it("closes on an outside press (click or tap)", async () => {
+  // REOPEN follow-up (2026-08-24 verifier): the first fix dismissed on
+  // outside POINTERDOWN. With the panel laid out in flow that unmounts it
+  // while the user's press is still in flight — the page reflows, whatever
+  // sat below the panel (the empty state's "Clear search & filters" remedy
+  // in the QA repro) jumps ~380px UP under the still-held pointer, and the
+  // subsequent pointerup + click retarget to AppShell: the pressed
+  // control's own handler never runs. Dismissal must wait for the press to
+  // COMPLETE (its click), leaving layout untouched until then. jsdom has
+  // no layout, so these tests pin the mechanism instead: the panel stays
+  // mounted through pointerdown/pointerup and collapses only on click.
+
+  it("does not collapse at pointerdown — an outside press in flight must not reflow the page", async () => {
     renderBar();
     await open();
     await act(async () => {
       document.body.dispatchEvent(new Event("pointerdown", { bubbles: true }));
     });
-    expect(panel(), "expected an outside press to close the filter panel").toBeNull();
+    expect(
+      panel(),
+      "dismissing at pointerdown reflows the page under a press in flight (F7 reopen): the panel must stay mounted until the click completes",
+    ).not.toBeNull();
+    await act(async () => {
+      document.body.dispatchEvent(new Event("pointerup", { bubbles: true }));
+    });
+    expect(panel(), "pointerup alone must not collapse the panel — the click has not fired yet").not.toBeNull();
+    await act(async () => {
+      document.body.dispatchEvent(new Event("click", { bubbles: true }));
+    });
+    expect(panel(), "expected the completed outside press (its click) to close the filter panel").toBeNull();
+    expect(toggle().getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("closes on an outside click alone (keyboard/AT activation dispatches no pointer events)", async () => {
+    renderBar();
+    await open();
+    await act(async () => {
+      document.body.dispatchEvent(new Event("click", { bubbles: true }));
+    });
+    expect(panel(), "expected an outside click to close the filter panel").toBeNull();
     expect(toggle().getAttribute("aria-expanded")).toBe("false");
   });
 
@@ -118,6 +150,8 @@ describe("ZoneFilterBar — dismissing the filter disclosure (browser-restricted
     const checkbox = panel()!.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
     await act(async () => {
       checkbox.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+      checkbox.dispatchEvent(new Event("pointerup", { bubbles: true }));
+      checkbox.dispatchEvent(new Event("click", { bubbles: true }));
     });
     expect(panel(), "a press inside the panel must not dismiss it").not.toBeNull();
   });
@@ -128,11 +162,11 @@ describe("ZoneFilterBar — dismissing the filter disclosure (browser-restricted
     try {
       renderBar();
       await open();
-      expect(addSpy.mock.calls.some(([type]) => type === "pointerdown")).toBe(true);
+      expect(addSpy.mock.calls.some(([type]) => type === "click")).toBe(true);
       await act(async () => {
         toggle().click();
       });
-      expect(removeSpy.mock.calls.some(([type]) => type === "pointerdown")).toBe(true);
+      expect(removeSpy.mock.calls.some(([type]) => type === "click")).toBe(true);
     } finally {
       addSpy.mockRestore();
       removeSpy.mockRestore();
@@ -203,9 +237,30 @@ describe("ZoneFilterBar — the open panel never covers the empty state's remedy
     expect(panel.contains(remedy)).toBe(false);
     expect(panel.compareDocumentPosition(remedy) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 
+    // The press lifecycle exactly as a browser dispatches it. The panel
+    // must survive pointerdown + pointerup — collapsing early reflows the
+    // remedy out from under the still-held pointer and the click retargets
+    // to the shell (the reopened F7 failure) — so onClear fires from the
+    // COMPLETED click, which, being an outside press, then also dismisses
+    // the panel.
+    await act(async () => {
+      remedy.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    });
+    expect(
+      view.container.querySelector('[class*="filterPanel"]'),
+      "the panel collapsed at pointerdown — the remedy reflows out from under the press and the click is swallowed",
+    ).not.toBeNull();
+    await act(async () => {
+      remedy.dispatchEvent(new Event("pointerup", { bubbles: true }));
+    });
+    expect(view.container.querySelector('[class*="filterPanel"]')).not.toBeNull();
     await act(async () => {
       remedy.click();
     });
     expect(onClear).toHaveBeenCalledTimes(1);
+    expect(
+      view.container.querySelector('[class*="filterPanel"]'),
+      "the completed press on the remedy is an outside press — it should also dismiss the panel",
+    ).toBeNull();
   });
 });
