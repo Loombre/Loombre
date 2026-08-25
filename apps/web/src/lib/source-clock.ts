@@ -77,7 +77,7 @@ export function initialSourceClockState(): SourceClockState {
 export const ANCHOR_EXTRAPOLATION_LIMIT_SEC = 120;
 
 /** Which authority produced a resolved position. */
-export type SourceClockAxis = "source-window" | "source-anchor" | "presentation";
+export type SourceClockAxis = "source-window" | "native-anchor" | "source-anchor" | "presentation";
 
 export interface ResolvedDisplayPosition {
   state: SourceClockState;
@@ -123,16 +123,25 @@ export function anchorAtExplicitPosition(
  *  1. A TRUSTED listed window (carries the clock, tops out at/after
  *     `runFloor`) mapping the position — authoritative; refreshes the
  *     anchor and may raise the floor.
- *  2. The presentation axis — but ONLY while the session has never shown
- *     a source clock (direct-play, native path, pre-V8 server), where the
- *     axes coincide by construction.
- *  3. The anchor, extrapolated 1:1 (§9.1.6) within its limit.
- *  4. `null` — HOLD whatever is displayed; never a wrong-axis number.
+ *  2. The LIVE native anchor (`nativeAnchorMs` — Safari's `getStartDate()`
+ *     on the MSE-less coarse path, d3-a3: §9.1.5 rule 7's PDT read
+ *     straight off the element, so it is the same source clock a listed
+ *     window carries). Exact at any position (source = anchor +
+ *     presentation, §9.1.6); refreshes the anchor so a transient
+ *     getStartDate outage extrapolates instead of flipping axes. The
+ *     coarse path never has a listed window, so 1 and 2 cannot compete
+ *     in practice — the order just pins the hls.js path's authority.
+ *  3. The presentation axis — but ONLY while the session has never shown
+ *     a source clock (direct-play, PDT-less native path, pre-V8 server),
+ *     where the axes coincide by construction.
+ *  4. The anchor, extrapolated 1:1 (§9.1.6) within its limit.
+ *  5. `null` — HOLD whatever is displayed; never a wrong-axis number.
  */
 export function resolveDisplayedSourceMs(
   state: SourceClockState,
   fragments: readonly ListedFragment[] | null,
   presentationSec: number,
+  nativeAnchorMs: number | null = null,
 ): ResolvedDisplayPosition {
   const windowHasClock = fragments !== null && hasSourceClock(fragments);
   if (windowHasClock) {
@@ -151,6 +160,14 @@ export function resolveDisplayedSourceMs(
         };
       }
     }
+  }
+  if (nativeAnchorMs !== null) {
+    const mapped = Math.round(nativeAnchorMs + presentationSec * 1000);
+    return {
+      state: { ...state, sawSourceClock: true, anchor: { presentationSec, sourceMs: mapped } },
+      ms: mapped,
+      axis: "native-anchor",
+    };
   }
   if (!state.sawSourceClock && !windowHasClock) {
     return { state, ms: Math.round(presentationSec * 1000), axis: "presentation" };

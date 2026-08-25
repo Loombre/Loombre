@@ -114,6 +114,41 @@ describe("resolveDisplayedSourceMs", () => {
   });
 });
 
+// d3-a3 (A/browser-player-F6, native half): the coarse path has no listed
+// window at all (no hls.js instance), but Safari surfaces §9.1.5 rule 7's
+// PDT as `getStartDate()` — the SAME source clock, readable live on every
+// tick. The resolver consults it with window-grade authority, so the
+// displayed clock never rides the raw presentation axis after a restart
+// merely because the session is MSE-less.
+describe("native PDT anchor (d3-a3)", () => {
+  it("maps the coarse path's position through the LIVE native anchor — never the raw presentation axis", () => {
+    const r = resolveDisplayedSourceMs(initialSourceClockState(), null, 12, 120_000);
+    expect(r.ms).toBe(132_000);
+    expect(r.axis).toBe("native-anchor");
+    expect(r.state.sawSourceClock).toBe(true);
+    expect(r.state.anchor).toEqual({ presentationSec: 12, sourceMs: 132_000 });
+  });
+
+  it("a transient anchor outage extrapolates from the refreshed anchor instead of flipping back to presentation numbers", () => {
+    const anchored = resolveDisplayedSourceMs(initialSourceClockState(), null, 12, 120_000);
+    const outage = resolveDisplayedSourceMs(anchored.state, null, 13.5, null);
+    expect(outage.axis).toBe("source-anchor");
+    expect(outage.ms).toBe(133_500); // 132_000 + 1.5 s — monotonic, not presentation 13_500
+  });
+
+  it("a trusted listed window still outranks the native anchor — the hls.js authority order cannot regress", () => {
+    const r = resolveDisplayedSourceMs(initialSourceClockState(), LANDED_WINDOW, 13.5, 999_000_000);
+    expect(r.axis).toBe("source-window");
+    expect(r.ms).toBe(11_500);
+  });
+
+  it("no anchor on a clockless session keeps the presentation axis (direct-play / pre-V8 native, ruled: the axes coincide)", () => {
+    const r = resolveDisplayedSourceMs(initialSourceClockState(), null, 42.25, null);
+    expect(r.ms).toBe(42_250);
+    expect(r.axis).toBe("presentation");
+  });
+});
+
 describe("anchorAtLanding", () => {
   it("anchors the landed fragment's own PDT/run origin and raises the floor to its run index", () => {
     const s = anchorAtLanding(initialSourceClockState(), LANDING_FRAGMENT);

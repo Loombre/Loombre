@@ -2688,6 +2688,129 @@ describe("VideoPlayer", () => {
     });
   });
 
+  // ── d3-a3: native-HLS (MSE-less) source-axis routing ─────────────────────
+  // verify/browser-player-F9: the F9 queued-start routing lived ONLY in the
+  // hls.js attach effect — the direct-play/native-HLS attach still assigned
+  // `video.currentTime = pendingSeekMsRef / 1000` on the PRESENTATION axis
+  // for a queued deep-link/chapter start. On a native transcode session
+  // (iOS Safari) the target is SOURCE ms; the served window covers only what
+  // the worker has produced, so ?t=600 clamped and playback started at ~0
+  // with no POST /seek. The queued start must route through the same
+  // V8-classified seek() the scrubber uses (soft via the getStartDate PDT
+  // anchor when seekable covers it; the first-class hard seek when not;
+  // bare presentation only when no PDT exists — pre-V8, ruled).
+  // A/browser-player-F6 (native half): the coarse displayed clock consulted
+  // the anchor only inside seek() — every timeupdate rode the raw
+  // presentation axis after any restart. The resolver now consults the LIVE
+  // anchor per tick (lib/source-clock.ts "native-anchor" axis).
+  describe("native-HLS source-axis routing (d3-a3)", () => {
+    async function renderNativeReady(startMs?: number): Promise<{ v: TestRender; video: HTMLVideoElement }> {
+      // Claim native HLS support with jsdom's absent MediaSource so
+      // `decideAttachStrategy` resolves 'native-hls' (the same lever as the
+      // native-HLS recovery test above; afterEach restores it).
+      Object.defineProperty(HTMLMediaElement.prototype, "canPlayType", { configurable: true, value: () => "maybe" });
+      createPlaybackSession.mockReset().mockResolvedValue({ ok: true, session: hlsTranscodeSession() });
+      const v = await renderReady(vi.fn(), undefined, startMs);
+      const video = videoEl(v);
+      expect(video.src, "the native attach never assigned the manifest URL").toContain(SESSION_ID);
+      return { v, video };
+    }
+
+    /** Safari's native surface: §9.1.5 rule 7's PDT via getStartDate() and
+     *  the element's own seekable ranges. jsdom has neither. */
+    function stubNativeSurface(
+      video: HTMLVideoElement,
+      anchorMs: number | null,
+      seekable: [number, number][],
+    ): void {
+      Object.defineProperty(video, "getStartDate", {
+        configurable: true,
+        value: () => (anchorMs === null ? new Date(NaN) : new Date(anchorMs)),
+      });
+      Object.defineProperty(video, "seekable", {
+        configurable: true,
+        get: () => ({
+          length: seekable.length,
+          start: (i: number) => (seekable[i] as [number, number])[0],
+          end: (i: number) => (seekable[i] as [number, number])[1],
+        }),
+      });
+    }
+
+    it("a queued ?t= start OUTSIDE the native window issues the V8 hard seek — never a presentation-axis clamp", async () => {
+      apiPost.mockResolvedValue({ targetMs: 600_000 });
+      const { v, video } = await renderNativeReady(600_000);
+      view = v;
+      // run0 produced [0, 12) so far; PDT anchor 0 (fresh session).
+      stubNativeSurface(video, 0, [[0, 12]]);
+      await act(async () => {
+        video.dispatchEvent(new Event("loadedmetadata"));
+      });
+
+      expect(
+        apiPost,
+        "?t= on a native transcode session must become a V8 hard seek — the presentation-axis assignment clamps and playback starts at ~0 (verify/browser-player-F9)",
+      ).toHaveBeenCalledWith("/playback/sessions/{id}/seek", expect.objectContaining({ body: { targetMs: 600_000 } }));
+      // The element was NOT dragged to presentation 600 s — the coarse
+      // landing (§9.1.10 item 5, ruled) owns the element from the 202 on.
+      expect(video.currentTime, "the routed-hard start must suppress the presentation-axis assignment").toBe(0);
+      // The display pins at the deep-link target while the worker restarts.
+      const slider = v.container.querySelector('[role="slider"][aria-label="Seek"]');
+      expect(slider?.getAttribute("aria-valuenow")).toBe("600000");
+    });
+
+    it("a queued ?t= start INSIDE the native window maps through the PDT anchor onto the presentation axis — no restart burned", async () => {
+      const { v, video } = await renderNativeReady(480_000);
+      view = v;
+      // A relocated window: source 480_000 sits at presentation 6 s
+      // (anchor 474_000) — the bare assignment would seek presentation
+      // 480 s, entirely the wrong place.
+      stubNativeSurface(video, 474_000, [[0, 60]]);
+      await act(async () => {
+        video.dispatchEvent(new Event("loadedmetadata"));
+      });
+
+      expect(apiPost).not.toHaveBeenCalledWith("/playback/sessions/{id}/seek", expect.anything());
+      expect(
+        video.currentTime,
+        "the queued start assigned SOURCE ms on the PRESENTATION axis — on a non-zero-anchor window that is the wrong place entirely",
+      ).toBe(6);
+    });
+
+    it("a queued start with NO PDT anchor keeps the presentation axis (pre-V8 server, ruled: the axes coincide)", async () => {
+      const { v, video } = await renderNativeReady(30_000);
+      view = v;
+      stubNativeSurface(video, null, [[0, 600]]);
+      await act(async () => {
+        video.dispatchEvent(new Event("loadedmetadata"));
+      });
+
+      expect(apiPost).not.toHaveBeenCalledWith("/playback/sessions/{id}/seek", expect.anything());
+      expect(video.currentTime).toBe(30);
+    });
+
+    it("the coarse displayed clock consults the native PDT anchor on every timeupdate — never the raw presentation axis after a restart (browser-player-F6)", async () => {
+      const { v, video } = await renderNativeReady();
+      view = v;
+      // A post-restart playlist: presentation 0 is source 120_000.
+      stubNativeSurface(video, 120_000, [[0, 60]]);
+      await act(async () => {
+        video.dispatchEvent(new Event("loadedmetadata"));
+      });
+      await act(async () => {
+        mediaState(video).readyState = 4;
+        video.currentTime = 12;
+        video.dispatchEvent(new Event("timeupdate"));
+      });
+
+      const slider = v.container.querySelector('[role="slider"][aria-label="Seek"]');
+      expect(
+        slider?.getAttribute("aria-valuenow"),
+        "the native coarse clock rode the raw presentation axis — onTimeUpdate never consulted getStartDate()",
+      ).toBe("132000");
+    });
+  });
+
   // ── gap-F6 round 3: landings the run-discovery match can never see ──────
   // Two hard-seek outcomes leave findLandingFragment with nothing to match,
   // and both pinned the scrubber at the dead target until the 20 s timeout:

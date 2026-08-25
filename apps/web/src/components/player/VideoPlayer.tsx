@@ -377,6 +377,13 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
   // render right after `hardSeek`'s declaration (the same render-time
   // idiom as `flushProgressRef` below).
   const hardSeekRef = useRef<(targetMs: number) => void>(() => undefined);
+  // d3-a3 (verify/browser-player-F9): the direct-play/native-HLS attach
+  // effect's counterpart — its loadedmetadata handler routes a queued
+  // native deep-link/chapter start through the V8-classified seek()
+  // (source-axis soft/hard classification via the getStartDate PDT
+  // anchor) instead of the presentation-axis assignment. Same render-time
+  // ref idiom as hardSeekRef above.
+  const seekRef = useRef<(ms: number) => void>(() => undefined);
   // rem2-absorbed-seek: same render-time ref idiom, for the attach
   // effect's LEVEL_UPDATED handler — the absorbed-202 landing is ONE
   // function (`landAbsorbedTarget`, declared beside `hardSeek` below)
@@ -769,7 +776,28 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
       video.src = activeSrcUrl;
       video.load();
       onLoaded = (): void => {
-        video.currentTime = resumeAt;
+        // d3-a3 (verify/browser-player-F9, the native half of F9's queued-
+        // start routing): a FIRST attach's queued deep-link/chapter start
+        // rides `pendingSeekMsRef` on the SOURCE axis. On the native-HLS
+        // path (MSE-less Safari playing a transcode session) the bare
+        // assignment below put that source target on the PRESENTATION
+        // axis — the served window covers only what the worker has
+        // produced, so ?t=600 clamped and playback started at ~0 with no
+        // POST /seek. Route it through the V8-classified seek() instead
+        // (by loadedmetadata the playlist is parsed, so getStartDate()'s
+        // PDT anchor and the seekable ranges are answerable): soft on the
+        // presentation axis when the window covers it, the first-class
+        // hard seek when it does not, and seek()'s own no-PDT fallback IS
+        // the bare assignment for the pre-V8 shapes where the axes
+        // coincide. Re-attaches (`currentSrc` set — recovery, token swap)
+        // keep the presentation-axis position restore: the element's own
+        // currentTime is already presentation time.
+        const queuedStartMs = currentSrc ? null : pendingSeekMsRef.current;
+        if (queuedStartMs !== null && attachStrategy === "native-hls") {
+          seekRef.current(queuedStartMs);
+        } else {
+          video.currentTime = resumeAt;
+        }
         if (wasPlaying || (!currentSrc && !awaitingResumeChoice)) void video.play().catch(() => undefined);
         if (onLoaded) video.removeEventListener("loadedmetadata", onLoaded);
         onLoaded = null;
@@ -955,8 +983,10 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
     // element mounts — activeSrcUrl frequently resolves a tick before the
     // <video> attaches, and a ref-only dependency would miss that mount.
     // `goFatal` only changes identity with `session?.id`, which always
-    // changes `activeSrcUrl` too — no extra re-runs.
-  }, [activeSrcUrl, videoEl, awaitingResumeChoice, goFatal]);
+    // changes `activeSrcUrl` too — no extra re-runs. `attachStrategy`
+    // (d3-a3) likewise: the strategy picks WHICH hook feeds activeSrcUrl,
+    // so it can never change without the URL changing with it.
+  }, [activeSrcUrl, videoEl, awaitingResumeChoice, goFatal, attachStrategy]);
 
   // ── Media attach: hls.js (Phase 3 Step 6c) ──────────────────────────────
   // Dynamically imported — this is the ONLY place hls.js is ever imported
@@ -1444,7 +1474,17 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
       // watchedPositionRef, which only real advancement (here) or an
       // explicit user seek may set.
       const frags = listedFragments();
-      const resolved = resolveDisplayedSourceMs(sourceClockRef.current, frags, video.currentTime);
+      // d3-a3 (browser-player-F6, the native half): the MSE-less coarse
+      // path has no listed window at all, but Safari surfaces §9.1.5 rule
+      // 7's PDT LIVE as getStartDate() — the same source clock. Consult it
+      // per tick (only seek() did before, so the displayed clock rode the
+      // raw presentation axis after any restart until the next explicit
+      // seek). Direct-play is excluded: a container-authored timeline
+      // offset there is NOT the V8 source clock, and the axes already
+      // coincide by construction.
+      const nativeAnchorMs =
+        hlsRef.current === null && !isDirectPlayRef.current ? nativeSourceAnchorMs(video) : null;
+      const resolved = resolveDisplayedSourceMs(sourceClockRef.current, frags, video.currentTime, nativeAnchorMs);
       sourceClockRef.current = resolved.state;
       if (resolved.ms === null) return;
       const ms = resolved.ms;
@@ -1457,12 +1497,16 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
         watchedPositionRef.current = ms;
       }
       // Buffered bars only from an authoritative mapping: the trusted
-      // window maps them exactly; raw ranges are exact wherever the
-      // presentation axis applies at all; an anchored/held tick keeps the
-      // previous bars rather than mapping ranges through an untrusted
-      // window (a wrong bar is worse than a briefly-stale one).
+      // window maps them exactly; the native anchor shifts raw ranges by
+      // a constant (source = anchor + presentation, §9.1.6); raw ranges
+      // are exact wherever the presentation axis applies at all; an
+      // anchored/held tick keeps the previous bars rather than mapping
+      // ranges through an untrusted window (a wrong bar is worse than a
+      // briefly-stale one).
       if (resolved.axis === "source-window" && frags) {
         setBuffered(bufferedRangesToSource(frags, readBuffered(video)));
+      } else if (resolved.axis === "native-anchor" && nativeAnchorMs !== null) {
+        setBuffered(readBuffered(video).map((r) => ({ startMs: r.startMs + nativeAnchorMs, endMs: r.endMs + nativeAnchorMs })));
       } else if (resolved.axis === "presentation") {
         setBuffered(readBuffered(video));
       }
@@ -1913,6 +1957,11 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
             video.currentTime = presentationSec;
             positionRef.current = ms;
             watchedPositionRef.current = ms; // gap-F6: explicit user intent
+            // d3-a3: a native soft-seek commit is an exact axis pair too —
+            // anchored so an anchor outage right after the jump (the
+            // timeupdate resolver consults getStartDate() live each tick)
+            // extrapolates from HERE instead of flipping axes.
+            sourceClockRef.current = anchorAtExplicitPosition(sourceClockRef.current, presentationSec, ms);
             setPositionMs(ms);
             heartbeatRef.current?.flushNow();
             return;
@@ -1944,6 +1993,7 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
     },
     [listedFragments, hardSeek, clearLandingWatch, attachStrategy, session],
   );
+  seekRef.current = seek;
 
   const seekRelative = useCallback(
     (deltaMs: number) => {
