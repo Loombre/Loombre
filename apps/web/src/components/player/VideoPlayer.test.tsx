@@ -1469,18 +1469,58 @@ describe("VideoPlayer", () => {
     expect(v!.container.querySelector("video")).toBeNull();
   });
 
-  it("an unexpected error from createPlaybackSession (not just 404) also surfaces UnavailableScreen, never a silent hang", async () => {
-    createPlaybackSession.mockReset().mockRejectedValueOnce(new Error("network down"));
-    let v: TestRender | null = null;
-    await act(async () => {
-      v = renderIntoBody(
-        <ToastProvider>
-          <VideoPlayer itemId={ITEM_ID} onBack={vi.fn()} />
-        </ToastProvider>,
+  // d4-a2.117 (a5/d3-a5): a session-create failure that is NEITHER a plan
+  // refusal (409/422/429 -> result.ok false) NOR a 404 (item-unavailable)
+  // used to render the CLIENT-blame copy ("Your browser reported it can't
+  // play this stream") under the REFUSED framing ("Session refused ·
+  // Planner reasons, verbatim") — misframed both ways: no plan was ever
+  // answered and the browser never touched a stream (live-reproduced
+  // 2026-08-25 with a blocked POST /playback/sessions). It now carries its
+  // own synthesized reason (lib/playback-recovery.ts's
+  // playback-session-create-failed) under the UNAVAILABLE framing, with
+  // the real HTTP status when one exists.
+  describe("session-create 5xx/network failure framing (d4-a2.117)", () => {
+    async function renderWithCreateRejection(err: unknown): Promise<TestRender> {
+      createPlaybackSession.mockReset().mockRejectedValueOnce(err);
+      let v: TestRender | null = null;
+      await act(async () => {
+        v = renderIntoBody(
+          <ToastProvider>
+            <VideoPlayer itemId={ITEM_ID} onBack={vi.fn()} />
+          </ToastProvider>,
+        );
+      });
+      if (!v) throw new Error("render produced nothing");
+      return v;
+    }
+
+    it("a network-layer rejection surfaces the create-failed copy under the Unavailable framing — never client blame, never 'Session refused', never a silent hang", async () => {
+      view = await renderWithCreateRejection(new TypeError("Failed to fetch"));
+      const text = view.container.textContent ?? "";
+      expect(text).toContain("Couldn’t start a playback session");
+      expect(text).toContain("playback-session-create-failed");
+      expect(text).toContain("Unavailable");
+      expect(text, "the create failure was blamed on the browser — no stream was ever touched").not.toContain(
+        "Playback failed in this browser",
       );
+      expect(text, "the create failure wore the refusal framing — the planner never answered").not.toContain(
+        "Session refused",
+      );
+      // No status exists for a network failure — the pill must not
+      // fabricate one.
+      expect(text).not.toContain("HTTP");
     });
-    view = v;
-    expect(v!.container.textContent).toContain("Playback failed in this browser");
+
+    it("an HTTP 5xx problem rejection renders the same honest copy WITH the real status", async () => {
+      view = await renderWithCreateRejection(
+        new LoombreApiError(503, { type: "about:blank", title: "Service Unavailable", status: 503 }),
+      );
+      const text = view.container.textContent ?? "";
+      expect(text).toContain("Couldn’t start a playback session");
+      expect(text).toContain("HTTP 503");
+      expect(text).not.toContain("Playback failed in this browser");
+      expect(text).not.toContain("Session refused");
+    });
   });
 
   // ── gap-F4: V8 hard seeks must never be silently swallowed ─────────────

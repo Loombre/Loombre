@@ -79,7 +79,7 @@ import {
 import { reopenEndedLevels, startRelocationNudge } from "../../lib/relocation-nudge.js";
 import { listedWindowEndSec, rebuildMsePipelineForHardSeek } from "../../lib/post-endlist-rebuild.js";
 import { startEndlistEosWatch } from "../../lib/endlist-eos-watch.js";
-import { decideRecovery, sessionEndedReasons, sessionFailureReasons } from "../../lib/playback-recovery.js";
+import { decideRecovery, sessionCreateFailedReasons, sessionEndedReasons, sessionFailureReasons } from "../../lib/playback-recovery.js";
 import { useToast } from "../ui/Toast.js";
 import { AmbientBackdrop } from "./AmbientBackdrop.js";
 import { UnavailableScreen, type UnavailableVariant } from "./UnavailableScreen.js";
@@ -709,16 +709,20 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
           setPhase("unavailable");
           return;
         }
-        // Anything else routes to the SAME fatal-unavailable path
-        // client-side DECODE/SRC_NOT_SUPPORTED already reaches (`goFatal()`
-        // in the attach effect below, clientPlaybackErrorReasons() from
-        // lib/playback-reasons.ts) — no server plan reasons exist for a
-        // failure this shape either, so this reuses that exact synthesized
-        // reason rather than inventing new UI or trying to interpret an
-        // arbitrary thrown error's shape.
-        setUnavailableReasons(clientPlaybackErrorReasons());
-        setUnavailableStatus(undefined);
-        setUnavailableVariant("refused");
+        // d4-a2.117: anything else — a 5xx problem response or a
+        // network-layer rejection — is a CREATE failure: the planner never
+        // answered (so the "refused" framing would lie) and the browser
+        // never touched a stream (so clientPlaybackErrorReasons' "Your
+        // browser reported it can't play this stream" — which this branch
+        // used to render — blamed the wrong party). It carries its own
+        // synthesized reason (lib/playback-recovery.ts's
+        // playback-session-create-failed) under the UNAVAILABLE framing,
+        // with the REAL status when the server sent one (a LoombreApiError
+        // 5xx) and none fabricated for a network failure that has no
+        // status at all.
+        setUnavailableReasons(sessionCreateFailedReasons());
+        setUnavailableStatus(err instanceof LoombreApiError ? err.status : undefined);
+        setUnavailableVariant("unavailable");
         setPhase("unavailable");
         return;
       }

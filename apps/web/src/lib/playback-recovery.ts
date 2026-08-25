@@ -73,6 +73,21 @@ export const SESSION_FAILED_CODE = "playback-session-failed";
 export const SESSION_ENDED_CODE = "playback-session-ended";
 
 /**
+ * d4-a2.117: synthesized reason code for "the CREATE call itself failed
+ * before any session existed" — a 5xx problem response or a network-layer
+ * rejection from POST /playback/sessions. Not a plan refusal (the planner
+ * never answered: 409/422/429 fold into `result.ok === false` upstream),
+ * not a 404 (item-unavailable owns that), and not a client media failure
+ * (the browser never touched a stream) — so neither the "refused" framing
+ * nor CLIENT_PLAYBACK_ERROR_CODE's copy is honest for it. A CREATE-time
+ * failure rather than a session-death code, but it lives in this file's
+ * map because UnavailableScreen's first lookup (describeSessionFailureCode)
+ * is the seam that renders synthesized non-plan codes, and the same
+ * out-of-contract-enum precedent applies.
+ */
+export const SESSION_CREATE_FAILED_CODE = "playback-session-create-failed";
+
+/**
  * Human copy for the `playback_sessions.error_code` values the worker
  * writes when it marks a session failed (apps/worker/src/transcode/
  * exit-classify.ts — a free-form TEXT column, deliberately NOT a contract
@@ -118,6 +133,16 @@ const SESSION_FAILURE_COPY: Record<string, ReasonCopy> = {
       "The session was closed on the server side — another device or tab may have taken over, or the server shut it down. Go back and press play to start a fresh one.",
     severity: "blocking",
   },
+  // d4-a2.117 — see SESSION_CREATE_FAILED_CODE above. The copy blames
+  // neither the file nor the browser: nothing was planned and nothing was
+  // streamed, so the only honest statement is that the request itself
+  // didn't get through.
+  [SESSION_CREATE_FAILED_CODE]: {
+    title: "Couldn’t start a playback session",
+    detail:
+      "The server was unreachable or returned an unexpected error before playback could be planned — nothing was streamed, and nothing is wrong with this file or your browser. Check the connection and try again.",
+    severity: "blocking",
+  },
 };
 
 /** UnavailableScreen's first lookup — `null` for every code that is not a
@@ -143,4 +168,11 @@ export function sessionFailureReasons(errorCode: string | null | undefined): Pla
  *  finalizeSession picks 'failed' whenever one exists). */
 export function sessionEndedReasons(): PlanReason[] {
   return [{ code: SESSION_ENDED_CODE, streamIndex: null, detail: null } as PlanReason];
+}
+
+/** d4-a2.117: the reasons array for a create call that threw (5xx/network)
+ *  — always exactly the one synthesized create-failed reason: no session
+ *  exists to inspect and no server reasons were ever produced. */
+export function sessionCreateFailedReasons(): PlanReason[] {
+  return [{ code: SESSION_CREATE_FAILED_CODE, streamIndex: null, detail: null } as PlanReason];
 }
