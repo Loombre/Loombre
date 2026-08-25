@@ -56,6 +56,7 @@ import { apiGet, apiPost, apiPut } from "../../lib/api-client.js";
 import {
   armLandingWatch,
   bufferedRangesToSource,
+  EARLY_EOS_SHORTFALL_MS,
   findLandingFragment,
   findRelocatedLandingStart,
   hasSourceClock,
@@ -63,6 +64,7 @@ import {
   HARD_SEEK_LANDING_TIMEOUT_MS,
   isLandingResumeEvidence,
   pickReadableLevelIndex,
+  presentationToSourceMs,
   sourceToPresentationSec,
   type LandingWatch,
   type ListedFragment,
@@ -458,6 +460,26 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
   // Polarity-E tail-recovery rebuilds are bounded per attach — a
   // pathological stream that keeps ending short must not rebuild-loop.
   const eosRepairCountRef = useRef(0);
+  // d4-a1.126: EOS-wedged landing repairs, bounded PER LIFECYCLE (reset at
+  // each hard-seek 202). Live-reproduced 2026-08-25 (2 of 4 identical
+  // 50%-from-fully-ENDED re-seeks): mid-relocation, the still-ENDLIST
+  // re-read re-appends the OLD closing fragment, re-arming the stale
+  // endList tracker entity the rebuild had just cleared; the un-ending
+  // merge cancels the d3-a2-r1 eos-watch (correctly — its edge data is
+  // stale), and hls.js then EOSes the moment everything listed is
+  // appended: MediaSource truncated, playhead jumped to the edge, a
+  // spurious pause+'ended' pair, and — because onMediaSeeking is the
+  // stream controller's ONLY app-reachable exit from State.ENDED — a
+  // landing assignment that clamps to the truncated duration revives
+  // nothing. The repair (repairWedgedLanding, declared beside
+  // landAbsorbedTarget) re-runs the SAME detach→attach rebuild at the
+  // LANDED run's start, deferring play to the fresh attach's loadeddata.
+  const eosLandingRepairCountRef = useRef(0);
+  // Render-time ref, same idiom as landAbsorbedTargetRef above: the attach
+  // effect's LEVEL_UPDATED landing handler and the event-wiring effect's
+  // 'ended' handler both consult the ONE repair function so the two
+  // detectors can never drift apart.
+  const repairWedgedLandingRef = useRef<(landedStartSec: number) => boolean>(() => false);
 
   /** The CURRENT LEVEL DETAILS as structural fragments (A2: the LISTED
    *  window — buffer state deliberately plays no part). `null` off the
@@ -1282,13 +1304,27 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
           // landed fragment's own PDT anchors the displayed clock and its
           // run index invalidates every pre-seek window (lib/source-clock.ts).
           sourceClockRef.current = anchorAtLanding(sourceClockRef.current, landedAt);
-          video.currentTime = landedAt.startSec;
-          // d3-a2: the post-ENDLIST rebuild's captured play intent fires
-          // HERE — the attach has settled by landing time, so this play()
-          // pends until the landed position has data, then plays.
-          if (resumePlayAfterRebuildRef.current) {
-            resumePlayAfterRebuildRef.current = false;
-            void video.play().catch(() => undefined);
+          // d4-a1.126 detector A: an element already 'ended' here means
+          // the pipeline EOS'd mid-relocation (a still-ENDLIST re-read
+          // re-armed the stale endList entity) and its MediaSource
+          // duration is truncated AT the parked position — the assignment
+          // below would clamp to the same position, fire no 'seeking',
+          // and the stream controller would never leave State.ENDED (the
+          // original backlog #126: "the landing never assigned/played
+          // within 20s"). Rebuild at the landed start instead; the
+          // rebuild parks the element there and the repair's deferred
+          // play resumes it.
+          if (video.ended && repairWedgedLandingRef.current(landedAt.startSec)) {
+            resumePlayAfterRebuildRef.current = false; // the repair defers its own play
+          } else {
+            video.currentTime = landedAt.startSec;
+            // d3-a2: the post-ENDLIST rebuild's captured play intent fires
+            // HERE — the attach has settled by landing time, so this play()
+            // pends until the landed position has data, then plays.
+            if (resumePlayAfterRebuildRef.current) {
+              resumePlayAfterRebuildRef.current = false;
+              void video.play().catch(() => undefined);
+            }
           }
           positionRef.current = targetMs;
           setPositionMs(targetMs);
@@ -1743,6 +1779,51 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
       // reached on OLD content while a landing is still pending is NOT
       // completion — the predicate rejects it and the timeout stays.)
       maybeCompleteLanding();
+      // d4-a1.126 detector B: the lifecycle is still open after the
+      // predicate ran — this 'ended' is a LIE (the stale-endList EOS
+      // truncating the MediaSource and jumping the playhead to the
+      // appended edge, live 2026-08-25: ct leapt ~48s past the target
+      // 150ms after the landing played). Repair the pipeline at the
+      // landed start and skip the 'played' progress write — the viewer
+      // watched nothing. When the repair is unavailable (native path, or
+      // budget spent), fall through to today's behavior so the end state
+      // is never worse than before.
+      const landedAwaiting = landedAwaitingResumeRef.current;
+      if (landedAwaiting) {
+        console.warn(
+          `[player] 'ended' fired mid-hard-seek-lifecycle at ${video.currentTime.toFixed(3)}s, outside the landed target's evidence window — spurious EOS (d4-a1.126)`,
+        );
+        if (repairWedgedLandingRef.current(landedAwaiting.startSec)) return;
+      }
+      // d4-a1.126 detector C: the same stale-entity EOS can strike a beat
+      // LATER — the element advances a few frames past the run boundary
+      // first, resume evidence completes the lifecycle, and only then
+      // does Chrome jump the playhead to the truncated edge and fire
+      // pause+'ended' (live AFTER-run 2026-08-25: evidence at 162.5s,
+      // jump to 205.2s — source ≈ target + 42 s of a 118-minute item —
+      // 144 ms later). Whatever the lifecycle state, an hls.js 'ended'
+      // whose SOURCE-mapped position falls a full EARLY_EOS_SHORTFALL_MS
+      // short of the known duration is a lie: an honest end lands within
+      // probe slop of durationMs, and the endlist-eos-watch repairs the
+      // precise listed-edge shortfalls when armed (it is cancelled by the
+      // un-ending merge in exactly this window). Repair at the viewer's
+      // honest position — watchedPositionRef is gate-protected (the
+      // continuity/axis gates reject the jump), unlike the display
+      // position a stray timeupdate at the jumped edge can pollute.
+      if (hlsRef.current) {
+        const endedFrags = listedFragments();
+        const endedSourceMs =
+          endedFrags && hasSourceClock(endedFrags) ? presentationToSourceMs(endedFrags, video.currentTime) : null;
+        const knownDurationMs = durationRef.current;
+        if (endedSourceMs !== null && knownDurationMs !== null && knownDurationMs - endedSourceMs > EARLY_EOS_SHORTFALL_MS) {
+          console.warn(
+            `[player] 'ended' maps to source ${Math.round(endedSourceMs)}ms, ${Math.round(knownDurationMs - endedSourceMs)}ms short of the known duration — early EOS lie (d4-a1.126)`,
+          );
+          const watchedMs = watchedPositionRef.current;
+          const resumeAtSec = endedFrags && watchedMs !== null ? sourceToPresentationSec(endedFrags, watchedMs) : null;
+          if (repairWedgedLandingRef.current(resumeAtSec ?? video.currentTime)) return;
+        }
+      }
       progressStateRef.current = "played";
       heartbeatRef.current?.flushNow();
       heartbeatRef.current?.stop();
@@ -1899,6 +1980,65 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
   );
   landAbsorbedTargetRef.current = landAbsorbedTarget;
 
+  /** d4-a1.126: revive an EOS-wedged hard-seek landing. Called from the
+   *  two moments the wedge is observable — the LEVEL_UPDATED landing that
+   *  finds the element already 'ended' (the assignment would clamp to the
+   *  truncated duration: position unchanged, no 'seeking' event, and the
+   *  stream controller never leaves State.ENDED), and an 'ended' that
+   *  fires while a landed lifecycle still awaits resume evidence (the
+   *  stale-entity EOS jumping the playhead to the appended edge, live
+   *  2026-08-25). The ONE lever that revives the pipeline is the same
+   *  detach→attach rebuild the hard seek itself uses, re-run at the
+   *  LANDED run's start; play is deferred to the fresh attach's
+   *  loadeddata (a play() inside the rebuild is aborted by the attach's
+   *  own load request — the d3-a2 lesson), epoch-guarded so a
+   *  superseding seek never inherits a stray play. Bounded per lifecycle;
+   *  returns false (callers keep today's behavior) when the budget is
+   *  spent or there is no hls.js pipeline to rebuild. The console.warn
+   *  breadcrumbs are the field diagnostic for this intermittent — local
+   *  only, D14. */
+  const repairWedgedLanding = useCallback((landedStartSec: number): boolean => {
+    const hls = hlsRef.current;
+    const video = videoRef.current;
+    if (!hls || !video || eosLandingRepairCountRef.current >= 2) return false;
+    eosLandingRepairCountRef.current += 1;
+    console.warn(
+      `[player] hard-seek landing found the pipeline EOS-wedged (repair ${eosLandingRepairCountRef.current}/2) — rebuilding at the landed run start ${landedStartSec.toFixed(3)}s (d4-a1.126)`,
+    );
+    // The rebuild consumes the poison state and kills the watch observing
+    // the pipeline it tears down — the same bookkeeping as the hard-seek
+    // rebuild site.
+    endlistSeenRef.current = false;
+    eosWatchStopRef.current?.();
+    eosWatchStopRef.current = null;
+    rebuildMsePipelineForHardSeek<HTMLVideoElement>(hls, video, landedStartSec);
+    // A wedge only forms on an 'ended' element, and ended counts as play
+    // intent (the d3-a2 ruling: a seek from the fully-ENDED state PLAYS)
+    // — issue it ourselves once the fresh attach has data; the landing
+    // that already consumed resumePlayAfterRebuildRef will not run again.
+    // Deliberately UNGUARDED, same as the endlist-eos-watch's polarity-E
+    // repair: the park-seek's own 'seeked' can complete resume evidence
+    // (a SCOPED epoch bump) before 'loadeddata' arrives, and an epoch
+    // guard here left the repaired element PAUSED at the landed position
+    // (observed live 2026-08-25, first AFTER verification round). The
+    // once-listener dies with the element on unmount, and a stray play()
+    // against a superseding seek's attach is harmless — an ended-origin
+    // landing wants play anyway.
+    video.addEventListener(
+      "loadeddata",
+      () => {
+        void video.play().catch(() => undefined);
+      },
+      { once: true },
+    );
+    // The repair is the pipeline demonstrably progressing again — one
+    // more landing-timer window, clipped to the lifecycle's hard cap
+    // (same rationale as the d3-a1 rung-switch extension).
+    extendLandingTimerRef.current();
+    return true;
+  }, []);
+  repairWedgedLandingRef.current = repairWedgedLanding;
+
   const hardSeek = useCallback(
     (targetMs: number): void => {
       const sessionId = session?.id;
@@ -1950,6 +2090,8 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
           // completing it (resume evidence) must never cancel an
           // in-flight newer seek's response (gap-F5-adjacent).
           landingEpochRef.current = epoch;
+          // d4-a1.126: a fresh lifecycle earns a fresh wedge-repair budget.
+          eosLandingRepairCountRef.current = 0;
           const lifecycleStartedAtMs = Date.now();
           const armLandingTimer = (delayMs: number): void => {
             if (landingTimerRef.current) clearTimeout(landingTimerRef.current);

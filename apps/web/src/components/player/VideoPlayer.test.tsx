@@ -1748,7 +1748,11 @@ describe("VideoPlayer", () => {
         // aborted by the fresh attach's own load request (observed live).
         expect(mediaState(video).paused).toBe(true);
 
-        // The seek-spawned run lands…
+        // The seek-spawned run lands… (the fresh attach reset the
+        // element's ended flag, as a real detach's load() does — an
+        // element still 'ended' at landing time is the d4-a1.126 wedge,
+        // pinned in its own describe)
+        mediaState(video).ended = false;
         const landedDetails = {
           live: true,
           fragments: [farListedFragment(), { programDateTime: 10_000, start: 6, duration: 6, relurl: "run1/s000001.m4s" }],
@@ -2002,7 +2006,10 @@ describe("VideoPlayer", () => {
         expect(detachCount(hls), "the suppressed watch repaired mid-relocation").toBe(1);
         // The seek-spawned run lands — the landing must still assign the
         // element and consume the rebuild's play intent, exactly as
-        // before round 1 (the watch must never eat a landing).
+        // before round 1 (the watch must never eat a landing). The fresh
+        // attach reset the element's ended flag (a still-'ended' landing
+        // is the d4-a1.126 wedge, pinned in its own describe).
+        mediaState(video).ended = false;
         const landedDetails = {
           live: true,
           fragments: [farListedFragment(), { programDateTime: 10_000, start: 6, duration: 6, relurl: "run1/s000001.m4s" }],
@@ -2061,6 +2068,248 @@ describe("VideoPlayer", () => {
           await vi.advanceTimersByTimeAsync(1_500);
         });
         expect(eosTriggerCount(hls), "the second-ENDLIST watch fired during a hard-seek relocation — that re-truncates the fresh MediaSource at the abandoned edge").toBe(0);
+      });
+    });
+
+    // ── d4-a1.126: the EOS-wedged landing must repair itself ─────────────
+    // Live-reproduced 2026-08-25 (2 of 4 identical 50%-from-fully-ENDED
+    // re-seeks, instrumented event log rem-d4-a1-126-qalog-before-full
+    // .json): after the hard-seek rebuild, the nudge's still-ENDLIST
+    // re-read re-appends the OLD closing fragment (endList bit fresh from
+    // the parse), re-arming the stale tracker entity the rebuild had just
+    // cleared. The un-ending merge then CANCELS the d3-a2-r1 eos-watch
+    // (correctly — its edge data is gone), the landing assigns and plays…
+    // and ~150 ms later hls.js finishes appending everything listed,
+    // `isEndListAppended` passes via the STALE entity, BUFFER_EOS →
+    // endOfStream truncates the MediaSource at the appended edge, and
+    // Chrome jumps the playhead there firing a spurious pause+'ended'
+    // pair: element wedged paused+ended far past the target, scrubber
+    // pinned, timeout toast auto-dismissed unseen. The same EOS can also
+    // land BEFORE the landing (the element re-asserts 'ended' at the
+    // parked tail; the landing's assignment then clamps to the truncated
+    // duration — position unchanged, NO 'seeking' event, and hls.js's
+    // stream controller never leaves State.ENDED: onMediaSeeking is its
+    // only app-reachable exit). Either way the ONE lever that revives the
+    // pipeline is the same detach→attach rebuild, re-run AT the landed
+    // run's start, with play deferred to the fresh attach's loadeddata.
+    describe("EOS-wedged landing repair (d4-a1.126)", () => {
+      function emitEndlistParse(hls: MockHlsInstance, fragments: unknown[]): void {
+        hls.emit("hlsLevelUpdated", "hlsLevelUpdated", { details: { live: false, fragments } });
+      }
+      function detachCount(hls: MockHlsInstance): number {
+        return hls.calls.filter((c) => c === "detachMedia").length;
+      }
+      /** The landed window: the pre-seek run0 fragment plus the
+       *  seek-spawned run1 whose 50 s extent puts the spurious EOS jump
+       *  (ct -> appended edge 56, source 60 000) far outside the landing
+       *  evidence tolerance — the live failing shape (~48 s past the
+       *  target). */
+      function landedDetails(): { live: boolean; fragments: unknown[] } {
+        return {
+          live: true,
+          fragments: [farListedFragment(), { programDateTime: 10_000, start: 6, duration: 50, relurl: "run1/s000001.m4s" }],
+        };
+      }
+      /** Fully-ENDED pre-seek state + a hard seek that rebuilds: the
+       *  d3-a2 flow every wedge shape starts from. */
+      async function seekFromEnded(v: TestRender, hls: MockHlsInstance): Promise<HTMLVideoElement> {
+        const details = { live: false, fragments: [farListedFragment()] };
+        hls.levels = [{ details }];
+        await act(async () => emitEndlistParse(hls, details.fragments));
+        const video = videoEl(v);
+        mediaState(video).paused = true;
+        mediaState(video).ended = true;
+        mediaState(video).currentTime = 6;
+        apiPost.mockResolvedValueOnce({ targetMs: 10_000 });
+        await act(async () => button(v, "Forward 10 seconds").click());
+        expect(detachCount(hls), "precondition: the hard seek from ENDED rebuilt once").toBe(1);
+        return video;
+      }
+
+      it("post-landing spurious 'ended' (the live 2-of-4 chain) rebuilds at the landed run and resumes on loadeddata — no 'played' lie", async () => {
+        const { v, hls } = await renderHlsReady();
+        view = v;
+        vi.useFakeTimers();
+        const video = await seekFromEnded(v, hls);
+        mediaState(video).ended = false; // the fresh attach reset the element
+        hls.levels = [{ details: landedDetails() }];
+        await act(async () => {
+          hls.emit("hlsLevelUpdated", "hlsLevelUpdated", { details: landedDetails() });
+        });
+        expect(video.currentTime, "precondition: the landing assigned").toBe(6);
+        expect(mediaState(video).paused, "precondition: the landing resumed the seek-from-ended play intent").toBe(false);
+        // The stale-entity EOS: duration truncates at the appended edge
+        // and Chrome jumps the playhead there — pause + 'ended', 56 s on
+        // an element whose target maps to 10 000 (source 60 000 > target
+        // + 30 000, so this can never read as resume evidence).
+        mediaState(video).ended = true;
+        mediaState(video).paused = true;
+        mediaState(video).currentTime = 56;
+        mediaState(video).readyState = 4;
+        await act(async () => {
+          video.dispatchEvent(new Event("pause"));
+          video.dispatchEvent(new Event("ended"));
+        });
+        expect(
+          detachCount(hls),
+          "the spurious mid-lifecycle 'ended' was never repaired — element left paused+ended past the target, scrubber pinned, toast auto-dismissed unseen (live sessions 01a0393d/2026-08-25)",
+        ).toBe(2);
+        expect(
+          hls.calls.filter((c) => c === "startLoad(6,true)"),
+          "the repair must reload at the LANDED run's start (the viewer's chosen position), like every rebuild: skipSeekToStartPosition, park at the landed start",
+        ).toHaveLength(2);
+        expect(video.currentTime, "the repair parks the element at the landed start").toBe(6);
+        // Play resumes only once the fresh attach has data — a play()
+        // inside the rebuild is aborted by the attach's own load request
+        // (the d3-a2 lesson).
+        expect(mediaState(video).paused).toBe(true);
+        mediaState(video).ended = false;
+        await act(async () => {
+          video.dispatchEvent(new Event("loadeddata"));
+        });
+        expect(mediaState(video).paused, "the repaired landing must PLAY — the viewer sought from 'ended', never chose to pause").toBe(false);
+      });
+
+      it("pre-landing EOS re-assert: a landing that finds the element 'ended' rebuilds INSTEAD of assigning into the dead pipeline", async () => {
+        const { v, hls } = await renderHlsReady();
+        view = v;
+        vi.useFakeTimers();
+        const video = await seekFromEnded(v, hls);
+        // Before the run folds in, the still-ENDLIST re-read re-appended
+        // the old closing fragment and hls.js EOS'd: the element
+        // re-asserts ended at the parked tail, duration truncated there.
+        // A plain currentTime assignment now clamps to the SAME position
+        // — no 'seeking' event, stream controller parked in State.ENDED
+        // forever (the original backlog #126 shape: 'the landing never
+        // assigned/played within 20s').
+        mediaState(video).ended = true;
+        mediaState(video).paused = true;
+        hls.levels = [{ details: landedDetails() }];
+        await act(async () => {
+          hls.emit("hlsLevelUpdated", "hlsLevelUpdated", { details: landedDetails() });
+        });
+        expect(
+          detachCount(hls),
+          "the landing assigned into an EOS-truncated pipeline — the clamped no-op fires no 'seeking' and nothing ever leaves State.ENDED",
+        ).toBe(2);
+        expect(hls.calls.filter((c) => c === "startLoad(6,true)")).toHaveLength(2);
+        expect(mediaState(video).paused, "play waits for the fresh attach's data").toBe(true);
+        mediaState(video).ended = false;
+        await act(async () => {
+          video.dispatchEvent(new Event("loadeddata"));
+        });
+        expect(mediaState(video).paused).toBe(false);
+      });
+
+      it("repairs are bounded per lifecycle: a pipeline that keeps EOS-wedging stops rebuilding after the cap", async () => {
+        const { v, hls } = await renderHlsReady();
+        view = v;
+        vi.useFakeTimers();
+        const video = await seekFromEnded(v, hls);
+        mediaState(video).ended = false;
+        hls.levels = [{ details: landedDetails() }];
+        await act(async () => {
+          hls.emit("hlsLevelUpdated", "hlsLevelUpdated", { details: landedDetails() });
+        });
+        for (let round = 0; round < 3; round++) {
+          mediaState(video).ended = true;
+          mediaState(video).paused = true;
+          mediaState(video).currentTime = 56;
+          await act(async () => {
+            video.dispatchEvent(new Event("pause"));
+            video.dispatchEvent(new Event("ended"));
+          });
+          mediaState(video).ended = false;
+        }
+        expect(
+          detachCount(hls),
+          "the wedge repair must be bounded (1 seek rebuild + at most 2 repairs), never a rebuild loop",
+        ).toBe(3);
+      });
+
+      it("post-evidence EOS jump (the live AFTER variant): a mid-film 'ended' far short of the item duration repairs at the viewer's honest clock position", async () => {
+        const { v, hls } = await renderHlsReady();
+        view = v;
+        vi.useFakeTimers();
+        const video = await seekFromEnded(v, hls);
+        mediaState(video).ended = false;
+        hls.levels = [{ details: landedDetails() }];
+        await act(async () => {
+          hls.emit("hlsLevelUpdated", "hlsLevelUpdated", { details: landedDetails() });
+        });
+        // The element advances a few frames past the run boundary before
+        // the EOS strikes — resume evidence COMPLETES the lifecycle
+        // (live 2026-08-25 AFTER-run: playing 162.496 → jump 144 ms
+        // later), so the landed-lifecycle detector alone cannot see the
+        // wedge that follows.
+        mediaState(video).readyState = 4;
+        mediaState(video).currentTime = 6.6;
+        await act(async () => {
+          video.dispatchEvent(new Event("timeupdate"));
+        });
+        // The stale-entity EOS truncates at the appended edge and Chrome
+        // jumps the playhead there: pause + 'ended' at source 60 000 of a
+        // 600 000 ms item — a lie by 540 s.
+        mediaState(video).ended = true;
+        mediaState(video).paused = true;
+        mediaState(video).currentTime = 56;
+        await act(async () => {
+          video.dispatchEvent(new Event("pause"));
+          video.dispatchEvent(new Event("ended"));
+        });
+        expect(
+          detachCount(hls),
+          "an hls.js 'ended' mapping 540 s short of the known duration was believed — the viewer is wedged paused+ended mid-film with progress marked played",
+        ).toBe(2);
+        expect(video.currentTime, "the repair must park at the viewer's honest (gate-protected) position, never the jumped edge").toBeLessThan(7);
+        expect(mediaState(video).paused).toBe(true);
+        mediaState(video).ended = false;
+        await act(async () => {
+          video.dispatchEvent(new Event("loadeddata"));
+        });
+        expect(mediaState(video).paused).toBe(false);
+      });
+
+      it("an HONEST at-EOF landing playout ('ended' within probe slop of the duration) completes the lifecycle with NO repair rebuild", async () => {
+        const { v, hls } = await renderHlsReady();
+        view = v;
+        vi.useFakeTimers();
+        // Live window, no ENDLIST anywhere: an ordinary near-EOF hard
+        // seek — the target sits by the 600 000 ms item duration, and the
+        // playout ends within slop of it.
+        const details = { live: true, fragments: [farListedFragment()] };
+        hls.levels = [{ details }];
+        apiPost.mockResolvedValueOnce({ targetMs: 595_000 });
+        await act(async () => {
+          // Drive hardSeek via the scrubber path: Forward 10 seconds POSTs
+          // whatever the server clamps — the mock's 202 names the target.
+          button(v, "Forward 10 seconds").click();
+        });
+        const landed = {
+          live: true,
+          fragments: [farListedFragment(), { programDateTime: 595_000, start: 6, duration: 5, relurl: "run1/s000001.m4s" }],
+        };
+        hls.levels = [{ details: landed }];
+        await act(async () => {
+          hls.emit("hlsLevelUpdated", "hlsLevelUpdated", { details: landed });
+        });
+        const video = videoEl(v);
+        // The tail plays out and ends 4.9 s past the target, 100 ms short
+        // of the duration — inside the resume-evidence window, an honest
+        // end on both axes.
+        mediaState(video).readyState = 4;
+        mediaState(video).ended = true;
+        mediaState(video).paused = true;
+        mediaState(video).currentTime = 10.9;
+        await act(async () => {
+          video.dispatchEvent(new Event("pause"));
+          video.dispatchEvent(new Event("ended"));
+        });
+        expect(detachCount(hls), "an honest at-EOF playout must never be 'repaired'").toBe(0);
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(HARD_SEEK_LANDING_TIMEOUT_MS + 5_000);
+        });
+        expect(document.body.textContent, "the honest end completed the lifecycle — no false timeout").not.toContain("Seek timed out");
       });
     });
   });

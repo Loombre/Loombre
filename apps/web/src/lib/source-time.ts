@@ -334,6 +334,18 @@ export const LANDING_RESUME_EPSILON_SEC = 0.01;
  *  away on the source axis, not tens. */
 export const LANDING_RESUME_FORWARD_TOLERANCE_MS = 30_000;
 
+/** d4-a1.126 detector C: how far short of the KNOWN item duration an
+ *  hls.js 'ended' may map on the source axis and still be believed. An
+ *  honest end lands within probe slop of the duration (≤273 ms observed
+ *  live; one nominal segment at worst), and the endlist-eos-watch already
+ *  repairs precise listed-edge shortfalls when it is armed — this bound
+ *  only has to separate those from the stale-endList EOS lie, which parks
+ *  'ended' MID-FILM (live 2026-08-25: source ≈ target + 42 s of a
+ *  118-minute item, millions of ms short). A full minute keeps every
+ *  plausible probe-vs-stream slop honest while catching the lie by three
+ *  orders of magnitude. */
+export const EARLY_EOS_SHORTFALL_MS = 60_000;
+
 /**
  * Whether the element state proves the LANDED hard seek actually became
  * watchable — a displayable frame (`readyState`) showing content from the
