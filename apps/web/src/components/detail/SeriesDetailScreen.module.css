@@ -95,10 +95,36 @@
 
 .mobilePrimaryButton {
   composes: button primary from "../ui/Button.module.css";
-  width: 100%;
   min-height: 48px;
   text-decoration: none;
+}
+
+/* browser-items-F11: the mobile counterpart of `.actionRow` above, shaped
+   like MovieDetailScreen's own `.mobileActionRow` (equal-flex split, 48px
+   touch targets) — the watchlist toggle the desktop tree has now sits
+   beside the Continue/Play button here instead of being absent on phones.
+   The primary button's own width/margin moved onto this row, which is now
+   its only parent. */
+.mobileActionRow {
+  display: flex;
+  gap: var(--space-xs);
   margin-bottom: var(--space-sm);
+}
+
+.mobileActionRow > * {
+  flex: 1;
+  min-height: 48px;
+}
+
+/* Same readout as desktop's `.syncReadout`, laid out as its own block row
+   rather than an inline trailer (nothing sits beside it on a phone). */
+.mobileSyncReadout {
+  display: block;
+  margin-bottom: var(--space-sm);
+  font-family: var(--font-mono);
+  font-size: var(--mono-sm);
+  letter-spacing: var(--track-mono);
+  color: var(--color-text-muted);
 }
 
 .mobileSeasonRow {

@@ -52,6 +52,9 @@
 //     persistent MiniPlayerBar's own queue toggle already covers desktop.
 //   - Watchlist toggle: pre-existing real capability on this exact screen,
 //     kept as-is (not a prototype fixture — WatchlistToggle.tsx, Wave 2 L3).
+//     browser-items-F11: it now renders in BOTH trees. It was desktop-only,
+//     which silently made the toggle a desktop privilege on a screen whose
+//     mobile tree is otherwise feature-complete.
 
 import { useEffect, useMemo, useState } from "react";
 import type { components } from "@loombre/sdk";
@@ -306,9 +309,16 @@ export function AlbumDetailScreen({
             <div className={styles.mobileMeta}>{eyebrowLine(album, sortedTracks.length)}</div>
           </div>
         </div>
-        {sortedTracks.length > 0 && (
-          <MusicPlayButton queue={tracksToPlayableQueue(sortedTracks)} label="Play album" />
-        )}
+        {/* browser-items-F11: the same watchlist toggle the desktop tree
+            renders — the mobile tree used to omit it, so a phone viewer of
+            an album lost a capability desktop viewers have (movie detail
+            already kept its toggle in both trees). */}
+        <div className={styles.mobileActionRow}>
+          {sortedTracks.length > 0 && (
+            <MusicPlayButton queue={tracksToPlayableQueue(sortedTracks)} label="Play album" />
+          )}
+          <WatchlistToggle itemId={album.id} />
+        </div>
         {hasQueue && (
           <button type="button" className={styles.upNextRow} onClick={musicPlayer.openQueueDrawer}>
             <span className={styles.upNextLabel}>Up next</span>

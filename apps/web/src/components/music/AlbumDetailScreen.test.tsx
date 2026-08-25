@@ -120,6 +120,11 @@ function installApiGetMock(
   });
 }
 
+/** The watchlist control, wherever it sits in a given responsive tree. */
+function watchlistToggles(root: ParentNode): HTMLButtonElement[] {
+  return Array.from(root.querySelectorAll("button")).filter((b) => (b.textContent ?? "").includes("Watchlist"));
+}
+
 function makePlayer(overrides: Partial<MusicPlayerContextValue> = {}): MusicPlayerContextValue {
   return {
     queueState: initialQueueState,
@@ -256,6 +261,27 @@ describe("AlbumDetailScreen", () => {
     // "Sodium Glow" is trackNumber 1, "Tunnel Light" is trackNumber 3 — the
     // fetch returned them out of order, this asserts the real sort.
     expect(titles[0]).toContain("Sodium Glow");
+  });
+
+  it("browser-items-F11 REGRESSION GUARD: the MOBILE tree carries the watchlist toggle, not just desktop", async () => {
+    installApiGetMock();
+    view = renderScreen(makePlayer());
+    await flush();
+
+    const desktop = view.container.querySelector('[class*="desktopOnly"]');
+    const mobile = view.container.querySelector('[class*="mobileOnly"]');
+    expect(desktop).not.toBeNull();
+    expect(mobile).not.toBeNull();
+
+    // Desktop already had it; the mobile tree used to render none at all,
+    // so a phone viewer lost a capability desktop viewers of the same
+    // album have.
+    expect(watchlistToggles(desktop!)).toHaveLength(1);
+    expect(watchlistToggles(mobile!)).toHaveLength(1);
+
+    // ...and it joins the ONE shared GET /watchlist (browser-items-F9's
+    // lib/watchlist-id-store.ts), rather than adding a second fetch.
+    expect(apiGetMock.mock.calls.filter((call) => call[0] === "/watchlist")).toHaveLength(1);
   });
 
   it("REGRESSION GUARD (browser-items-F4): renders 'Album not found.' instead of an infinite skeleton on a 404", async () => {

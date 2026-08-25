@@ -260,10 +260,23 @@ export function SeriesDetailScreen({
           metaLine={eyebrowLine(series)}
         />
         {restricted && <RestrictedZoneChip />}
-        {primaryHref && (
-          <a href={primaryHref} className={styles.mobilePrimaryButton}>
-            {primaryLabel}
-          </a>
+        {/* browser-items-F11: the watchlist toggle and the watch-state
+            readout are the SAME controls the desktop tree renders above —
+            the mobile tree used to omit both, so a phone viewer of a
+            series lost a capability desktop viewers have (movie detail
+            already kept its toggle in both trees). */}
+        <div className={styles.mobileActionRow}>
+          {primaryHref && (
+            <a href={primaryHref} className={styles.mobilePrimaryButton}>
+              {primaryLabel}
+            </a>
+          )}
+          <WatchlistToggle itemId={series.id} />
+        </div>
+        {totalCount > 0 && (
+          <span className={styles.mobileSyncReadout}>
+            WATCH STATE SYNCED · {watchedCount} OF {totalCount} SEEN
+          </span>
         )}
         <div className={styles.mobileSeasonRow}>
           <SeasonPillTabs seasons={seasons} selectedSeasonId={selectedSeason?.id ?? ""} onSelect={setSelectedSeasonId} />

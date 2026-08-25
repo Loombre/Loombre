@@ -199,6 +199,20 @@
   color: var(--color-text-muted);
 }
 
+/* browser-items-F11: the mobile counterpart of `.actionRow` above, shaped
+   like MovieDetailScreen's own `.mobileActionRow` (equal-flex split, 48px
+   touch targets) — the watchlist toggle the desktop tree has now sits
+   beside "Play album" here instead of being absent on phones. */
+.mobileActionRow {
+  display: flex;
+  gap: var(--space-xs);
+}
+
+.mobileActionRow > * {
+  flex: 1;
+  min-height: 48px;
+}
+
 .upNextRow {
   display: flex;
   align-items: center;

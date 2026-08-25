@@ -49,6 +49,73 @@ const SERIES = {
   status: "ended" as const,
 };
 
+const SEASON = {
+  id: "season-1",
+  libraryId: "lib-1",
+  itemType: "season" as const,
+  title: "Season 1",
+  sortTitle: "Season 1",
+  year: 2021,
+  communityRating: null,
+  contentClass: "general" as const,
+  addedAtMs: 0,
+  updatedAtMs: 0,
+  seriesId: "series-1",
+  seasonNumber: 1,
+  episodeCount: 2,
+  images: [],
+};
+
+function makeEpisode(id: string, episodeNumber: number, title: string) {
+  return {
+    id,
+    libraryId: "lib-1",
+    itemType: "episode" as const,
+    title,
+    sortTitle: title,
+    year: 2021,
+    communityRating: null,
+    contentClass: "general" as const,
+    addedAtMs: 0,
+    updatedAtMs: 0,
+    seasonId: "season-1",
+    seriesId: "series-1",
+    episodeNumber,
+    runtimeMs: 42 * 60_000,
+    overview: null,
+    images: [],
+  };
+}
+
+const EPISODES = [makeEpisode("ep-1", 1, "Cold Open"), makeEpisode("ep-2", 2, "Second Pass")];
+
+/** browser-items-F11: the fully-loaded shape (seasons + episodes + one
+ *  played episode's Progress) — the only state in which the screen has
+ *  both a resume target AND a non-empty "N OF M SEEN" readout to render,
+ *  which is what makes the desktop/mobile parity assertion meaningful. */
+function installFullSeriesMock(): void {
+  apiGetMock.mockImplementation((path: string, options?: { params?: { path?: { itemId?: string } } }) => {
+    if (path === "/series/{id}") return Promise.resolve(SERIES);
+    if (path === "/series/{id}/seasons") return Promise.resolve({ items: [SEASON], nextCursor: null });
+    if (path === "/seasons/{id}/episodes") return Promise.resolve({ items: EPISODES, nextCursor: null });
+    if (path === "/progress/{itemId}") {
+      const itemId = options?.params?.path?.itemId;
+      // ep-1 watched, ep-2 has no progress row at all (a real 404 —
+      // lib/progress-lookup.ts maps that to null without a list walk).
+      return itemId === "ep-1"
+        ? Promise.resolve({ itemId, positionMs: 0, durationMs: null, state: "played", playCount: 1, updatedAtMs: 1 })
+        : Promise.reject(new FakeLoombreApiError(404, "Not Found"));
+    }
+    if (path === "/watchlist") return Promise.resolve({ items: [], nextCursor: null });
+    return Promise.reject(new Error(`unexpected apiGet(${path})`));
+  });
+}
+
+/** The watchlist control, wherever it sits in a given responsive tree. */
+function watchlistToggles(root: ParentNode): HTMLButtonElement[] {
+  return Array.from(root.querySelectorAll("button")).filter((b) => (b.textContent ?? "").includes("Watchlist"));
+}
+
 /** WatchlistToggle's useWatchlistIds() and the sibling seasons effect each
  *  fire their own apiGet calls independent of the primary /series/{id}
  *  fetch under test — path-switching mirrors AlbumDetailScreen.test.tsx's
@@ -68,6 +135,17 @@ async function flush(): Promise<void> {
     await Promise.resolve();
     await Promise.resolve();
   });
+}
+
+/** The seasons effect is a 3-deep await chain (seasons -> per-season
+ *  episodes -> per-episode progress); microtask-only flushing lands
+ *  mid-chain, so the fully-loaded assertions need real macrotask turns. */
+async function flushAll(): Promise<void> {
+  for (let i = 0; i < 6; i++) {
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+  }
 }
 
 function renderScreen(): TestRender {
@@ -120,5 +198,32 @@ describe("SeriesDetailScreen", () => {
 
     expect(view.container.textContent).toContain("Marrow Line");
     expect(view.container.textContent).not.toContain("not found");
+  });
+
+  it("browser-items-F11 REGRESSION GUARD: the MOBILE tree carries the watchlist toggle AND the 'N OF M SEEN' readout, not just desktop", async () => {
+    installFullSeriesMock();
+    view = renderScreen();
+    await flushAll();
+
+    const desktop = view.container.querySelector('[class*="desktopOnly"]');
+    const mobile = view.container.querySelector('[class*="mobileOnly"]');
+    expect(desktop).not.toBeNull();
+    expect(mobile).not.toBeNull();
+
+    // Desktop already had both; mobile used to render neither, so a phone
+    // viewer lost a capability a desktop viewer of the same series has.
+    expect(watchlistToggles(desktop!)).toHaveLength(1);
+    expect(watchlistToggles(mobile!)).toHaveLength(1);
+    expect(desktop!.textContent).toContain("1 OF 2 SEEN");
+    expect(mobile!.textContent).toContain("1 OF 2 SEEN");
+  });
+
+  it("browser-items-F11: the mobile toggle joins the ONE shared GET /watchlist (browser-items-F9 store), it does not add a fetch", async () => {
+    installFullSeriesMock();
+    view = renderScreen();
+    await flushAll();
+
+    expect(watchlistToggles(view.container)).toHaveLength(2);
+    expect(apiGetMock.mock.calls.filter((call) => call[0] === "/watchlist")).toHaveLength(1);
   });
 });
