@@ -39,7 +39,7 @@
 
 import type { components } from "@loombre/sdk";
 import { apiPost } from "./api-client.js";
-import { buildDeviceProfile } from "./device-profile.js";
+import { resolveSessionDeviceProfile } from "./device-profile-override.js";
 import { buildNetworkConditions } from "./network-conditions.js";
 import { getAuthStore } from "./auth-store.js";
 
@@ -106,7 +106,10 @@ export function fallbackLabel(file: MediaFileSummary): string {
 export async function findPlayableFallback(itemId: string, mediaFiles: readonly MediaFileSummary[]): Promise<FallbackCandidate | null> {
   if (mediaFiles.length === 0) return null;
   const serverUrl = getAuthStore().getSnapshot().serverUrl;
-  const device = await buildDeviceProfile();
+  // d3-a6: same effective profile as createPlaybackSession — a fallback
+  // probe must judge candidates with the profile the real session will be
+  // planned with, override included (lib/device-profile-override.ts).
+  const device = await resolveSessionDeviceProfile();
   const network = buildNetworkConditions(serverUrl);
 
   for (const file of mediaFiles) {

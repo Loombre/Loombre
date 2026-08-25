@@ -24,7 +24,7 @@
 
 import type { components } from "@loombre/sdk";
 import { apiDelete, apiGet, apiPost, LoombreApiError } from "./api-client.js";
-import { buildDeviceProfile } from "./device-profile.js";
+import { resolveSessionDeviceProfile } from "./device-profile-override.js";
 import { buildNetworkConditions } from "./network-conditions.js";
 import { getAuthStore } from "./auth-store.js";
 
@@ -73,7 +73,10 @@ export async function createPlaybackSession(
   mediaFileId?: string,
 ): Promise<CreateSessionResult> {
   const serverUrl = getAuthStore().getSnapshot().serverUrl;
-  const device = await buildDeviceProfile();
+  // d3-a6: the live capability probe, with the deliberate per-browser
+  // override (localStorage, QA/dev lever) merged above it when one is set —
+  // see lib/device-profile-override.ts's header for the recorded decision.
+  const device = await resolveSessionDeviceProfile();
   const network = buildNetworkConditions(serverUrl);
   try {
     const body = mediaFileId ? { itemId, mediaFileId, device, network, mode } : { itemId, device, network, mode };
