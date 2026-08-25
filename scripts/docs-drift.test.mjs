@@ -64,6 +64,15 @@ const GATE_CHAIN_DOCS = [
 ];
 
 /**
+ * d4-i5 (QA backlog #118): scripts/gate.mjs's OWN header restates its step
+ * counts too, and was the last copy in the tree still saying "15" — it even
+ * carried a disclaimer that prose elsewhere might disagree. A file is not
+ * exempt from a drift gate for being the source: the header is prose about
+ * the array, and drifts from it exactly the way a doc does.
+ */
+const GATE_COUNT_SOURCES = [...GATE_CHAIN_DOCS, { file: "scripts/gate.mjs" }];
+
+/**
  * Docs that restate root package.json's `version`. Each pattern must
  * capture the version string itself, so the assertion names the exact
  * sentence that drifted rather than "somewhere in this file".
@@ -121,13 +130,38 @@ test("contributor docs list scripts/gate.mjs's real fast-step chain, in order", 
   }
 });
 
+test("scripts/gate.mjs's own header lists its real step chain, fast then full", () => {
+  const { fast, fullExtra } = gateSteps();
+  const src = read("scripts/gate.mjs");
+
+  // The header spells the chain with "->" (the docs use "→") and ends on
+  // the full-mode step, tagged "[gate:full only]".
+  const start = src.indexOf("codegen");
+  const end = src.indexOf(fullExtra.at(-1), start);
+  assert.ok(start !== -1 && end !== -1, "scripts/gate.mjs: no header step chain found");
+  const chain = src
+    .slice(start, end + fullExtra.at(-1).length)
+    .split("->")
+    .map((token) => token.replace(/\[[^\]]*\]/g, "").replace(/[\s*`]+/g, ""))
+    .filter(Boolean);
+
+  assert.deepEqual(
+    chain,
+    [...fast, ...fullExtra],
+    "scripts/gate.mjs: the header's own chain drifted from the `steps` array below it",
+  );
+});
+
 test("contributor docs state the real gate step counts (fast, and fast + full)", () => {
   const { fast, total } = gateSteps();
-  for (const { file, optional } of GATE_CHAIN_DOCS) {
+  for (const { file, optional } of GATE_COUNT_SOURCES) {
     const text = optional ? readOptional(file) : read(file);
     if (text === null) continue;
 
-    for (const [match, n] of text.matchAll(/(\d+) steps\b/g)) {
+    // "16 steps", and the "15 fixed steps"/"those 15 steps" shapes
+    // gate.mjs's header uses — every count claim spells the word `steps`
+    // so ONE pattern pins them all (keep it that way when editing prose).
+    for (const [match, n] of text.matchAll(/(\d+) (?:[a-z]+ )?steps\b/g)) {
       assert.equal(
         Number(n),
         fast.length,

@@ -14,9 +14,11 @@
  *     default): the 16 steps above, unchanged behavior and unchanged speed.
  *     Full mode APPENDS to the `steps` array below rather than editing it
  *     in place, specifically so a reviewer can diff the array itself and
- *     see no step was silently lost or reordered. (Prose elsewhere may
- *     still say "15 steps" — that count predates `version-stamp`, added
- *     for QA report browser-admin-F8; the array below is the truth.)
+ *     see no step was silently lost or reordered. The array is the truth,
+ *     and every count/chain restatement of it — this header's included —
+ *     is pinned against it by scripts/docs-drift.test.mjs, so an added or
+ *     reordered step fails the gate until the prose catches up. Spell each
+ *     count as "N steps" so that check keeps seeing it.
  *   `node scripts/gate.mjs full` (FULL — what CI's `pnpm gate:full` runs,
  *     and what CLAUDE.md's working agreements call for before any
  *     push/PR): the same 16 steps, plus a final `web-build-budget`
@@ -103,9 +105,9 @@
  *
  * docs-build (Addendum A, lane D1, STATE.md "## Addendum A" deliverable
  * 10): `node scripts/docs/build.mjs` — VitePress site build + the
- * `redocly build-docs` API reference, wired as the LAST of the 15 fixed
+ * `redocly build-docs` API reference, wired as the LAST of the 16 fixed
  * steps (full mode's web-build-budget, when present, runs after it).
- * Deliberately last among those 15: it's cheapest to reach only once
+ * Deliberately last among those 16 steps: it's cheapest to reach only once
  * everything earlier (codegen through grep-gates) has already confirmed
  * the rest of the repo is consistent, and a docs-only PR still gets full
  * gate coverage before this step runs. A broken docs build (bad Markdown
