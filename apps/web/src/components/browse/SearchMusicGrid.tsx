@@ -28,8 +28,15 @@
 // + "artist · meta" combined onto one line, no chevron — the fixture never
 // draws one here). Both trees render, CSS-swapped at 767.98px (same
 // convention as SearchMovieRow.tsx).
+//
+// Both trees link with next/link, not raw <a> (d4-w3): the search overlay
+// is mounted by AppShell on EVERY route, the restricted zone included, and
+// RestrictedProvider re-initializes to locked on every document load — so a
+// raw anchor here re-locked the zone the result was clicked from (the
+// browser-restricted-settings-F1 mechanism).
 
 import { useState } from "react";
+import Link from "next/link";
 import type { components } from "@loombre/sdk";
 import { buildImageUrl } from "../../lib/image-url.js";
 import { blurhashToDataUri } from "../../lib/blurhash-canvas.js";
@@ -100,7 +107,7 @@ export function SearchMusicGrid({
           });
           const subtitle = subtitleFor(result, artistNames);
           return (
-            <a
+            <Link
               key={result.item.id}
               href={hrefFor(result)}
               className={styles.cell}
@@ -114,7 +121,7 @@ export function SearchMusicGrid({
               </span>
               <span className={styles.title}>{result.item.title}</span>
               {subtitle && <span className={styles.subtitle}>{subtitle}</span>}
-            </a>
+            </Link>
           );
         })}
       </div>
@@ -133,7 +140,7 @@ export function SearchMusicGrid({
           const subtitle = subtitleFor(result, artistNames);
           const metaLine = [subtitle, result.item.year ? String(result.item.year) : null].filter(Boolean).join(" · ");
           return (
-            <a
+            <Link
               key={result.item.id}
               href={hrefFor(result)}
               className={styles.mobileRow}
@@ -149,7 +156,7 @@ export function SearchMusicGrid({
                 <span className={styles.mobileTitle}>{result.item.title}</span>
                 {metaLine && <span className={styles.mobileMeta}>{metaLine}</span>}
               </span>
-            </a>
+            </Link>
           );
         })}
       </div>

@@ -271,14 +271,10 @@ describe("restricted zone — no raw <a href> navigation (QA browser-restricted-
 
   /** Same defect, files this lane does not own — tracked, not skipped, so
    *  the guard still catches every NEW offender and this list stays the
-   *  follow-up's exact worklist. Remove an entry when it is converted. */
-  const KNOWN_REMAINING = new Map<string, string>([
-    [
-      "components/browse/SearchMovieRow.tsx",
-      "C/zone-search-result-raw-anchor: the search overlay is mounted by AppShell, so a result clicked from inside the zone re-locks it.",
-    ],
-    ["components/browse/SearchMusicGrid.tsx", "C/zone-search-result-raw-anchor (same overlay, music results)."],
-  ]);
+   *  follow-up's exact worklist. Remove an entry when it is converted.
+   *  EMPTY as of d4-w3: the search overlay's movie and music results are
+   *  next/link now, so every module the zone can render is clean. */
+  const KNOWN_REMAINING = new Map<string, string>();
 
   /** Every module the zone can render: the two zone directories plus the
    *  transitive closure of their RELATIVE imports (bare specifiers are

@@ -226,8 +226,6 @@ describe("PlayLink", () => {
       ["components/detail/EpisodeRow.tsx", "C/detail-back-links-raw-anchor: every episode row on a series detail."],
       ["components/detail/SceneBanner.tsx", "C/detail-back-links-raw-anchor: the '← LIBRARY' back pill."],
       ["components/music/AlbumDetailScreen.tsx", "C/detail-back-links-raw-anchor: the more-albums tiles and the artist links."],
-      ["components/browse/SearchMovieRow.tsx", "C/zone-search-result-raw-anchor: search overlay results."],
-      ["components/browse/SearchMusicGrid.tsx", "C/zone-search-result-raw-anchor: search overlay results."],
     ]);
 
     // fileURLToPath on the STRING form: under the jsdom environment the

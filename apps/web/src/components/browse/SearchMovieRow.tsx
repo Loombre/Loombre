@@ -22,7 +22,16 @@
 // swapped at 767.98px, the AppShell/MovieDetailScreen convention), not a
 // second component — U2's "one responsive tree", same call this lane made
 // for AlbumDetailScreen/MovieDetailScreen already establish.
+//
+// The mobile row is a next/link, not a raw <a> (d4-w3): the search overlay
+// is mounted by AppShell on EVERY route, the restricted zone included, and
+// RestrictedProvider re-initializes to locked on every document load — so a
+// raw anchor here re-locked the zone the result was clicked from (the
+// browser-restricted-settings-F1 mechanism). The DESKTOP tree needs no such
+// change: PosterCell already intercepts its own click into a
+// router.push inside a view transition.
 
+import Link from "next/link";
 import { ChevronRight } from "lucide-react";
 import type { components } from "@loombre/sdk";
 import { Icon } from "../icon/Icon.js";
@@ -86,7 +95,7 @@ export function SearchMovieRow({
           const placeholderUri = posterImage?.blurhash ? blurhashToDataUri(posterImage.blurhash) : null;
           const src = buildImageUrl({ serverUrl, accessToken, entityType: "movie", entityId: movie.id, kind: "poster", width: 88 });
           return (
-            <a
+            <Link
               key={movie.id}
               href={`/items/movie/${movie.id}`}
               className={styles.mobileRow}
@@ -103,7 +112,7 @@ export function SearchMovieRow({
                 <span className={styles.mobileMeta}>{movie.year ? String(movie.year) : ""}</span>
               </span>
               <Icon icon={ChevronRight} size="dense" className={styles.mobileChevron ?? ""} />
-            </a>
+            </Link>
           );
         })}
       </div>

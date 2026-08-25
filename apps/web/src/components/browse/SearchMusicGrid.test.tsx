@@ -1,9 +1,40 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { act } from "react";
-import { describe, expect, it, afterEach } from "vitest";
+import { describe, expect, it, afterEach, vi } from "vitest";
 import type { components } from "@loombre/sdk";
 import { SearchMusicGrid } from "./SearchMusicGrid.js";
 import { renderIntoBody, type TestRender } from "../ui/test-render.js";
+
+/** Records what a real next/link click would hand to the client router. */
+const clientNav = vi.hoisted(() => ({ pushes: [] as string[] }));
+
+// The next/link stub mirrors PlayLink.test.tsx's and the restricted-scene
+// guard's (same reason: vitest resolves the bare "next/link" specifier to
+// Next's PAGES build, so the shipped App Router Link cannot intercept
+// clicks under jsdom). It models what the real component does on an
+// unmodified primary click: preventDefault() then a client-side navigation.
+vi.mock("next/link", () => ({
+  default: ({
+    href,
+    children,
+    ...rest
+  }: {
+    href: string;
+    children?: React.ReactNode;
+  } & React.AnchorHTMLAttributes<HTMLAnchorElement>): React.JSX.Element => (
+    <a
+      href={href}
+      {...rest}
+      onClick={(e) => {
+        if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
+        e.preventDefault();
+        clientNav.pushes.push(href);
+      }}
+    >
+      {children}
+    </a>
+  ),
+}));
 
 type SearchResult = components["schemas"]["SearchResult"];
 
@@ -46,12 +77,21 @@ const ARTIST_RESULT: SearchResult = {
   },
 } as SearchResult;
 
+function click(node: Element, init: MouseEventInit = {}): MouseEvent {
+  const event = new MouseEvent("click", { bubbles: true, cancelable: true, button: 0, ...init });
+  act(() => {
+    node.dispatchEvent(event);
+  });
+  return event;
+}
+
 describe("SearchMusicGrid", () => {
   let view: TestRender | null = null;
 
   afterEach(() => {
     view?.unmount();
     view = null;
+    clientNav.pushes.length = 0;
   });
 
   it("shows the real looked-up artist name for an album tile, not a fabricated label", () => {
@@ -111,5 +151,41 @@ describe("SearchMusicGrid", () => {
     );
     const matches = view.container.querySelectorAll('[data-search-id="album-1"]');
     expect(matches.length).toBe(2); // desktop .cell + mobile .mobileRow
+  });
+
+  // d4-w3 (C/zone-search-result-raw-anchor): BOTH trees were raw
+  // <a href={hrefFor(result)}>, i.e. FULL DOCUMENT loads. The search overlay
+  // is mounted by AppShell on EVERY route including the restricted zone, so
+  // a result clicked from inside the unlocked zone re-locked it
+  // (RestrictedProvider re-initializes to locked on every document load) —
+  // the exact mechanism of browser-restricted-settings-F1.
+  it("d4-w3: BOTH trees navigate client-side, never as a document load", () => {
+    view = renderIntoBody(
+      <SearchMusicGrid
+        results={[ALBUM_RESULT]}
+        artistNames={new Map([["artist-1", "Cassette Ghosts"]])}
+        serverUrl="https://loombre.local"
+        accessToken="tok"
+      />,
+    );
+    const links = Array.from(view.container.querySelectorAll('a[href="/items/album/album-1"]'));
+    expect(links.length).toBe(2); // desktop cell + mobile row
+
+    for (const link of links) {
+      expect(click(link).defaultPrevented).toBe(true);
+    }
+    expect(clientNav.pushes).toEqual(["/items/album/album-1", "/items/album/album-1"]);
+  });
+
+  it("d4-w3: leaves a modified (cmd/ctrl) click to the browser", () => {
+    view = renderIntoBody(
+      <SearchMusicGrid results={[ARTIST_RESULT]} artistNames={new Map()} serverUrl="https://loombre.local" accessToken="tok" />,
+    );
+    const link = view.container.querySelector('a[href="/items/artist/artist-1"]') as Element;
+
+    const event = click(link, { ctrlKey: true });
+
+    expect(event.defaultPrevented).toBe(false);
+    expect(clientNav.pushes).toEqual([]);
   });
 });
