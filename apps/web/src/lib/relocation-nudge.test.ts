@@ -7,7 +7,14 @@
 // that folds the restarted run's first segment in well under a second).
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { HARD_SEEK_REFRESH_NUDGE_MS, startRelocationNudge, type PlaylistReloader } from "./relocation-nudge.js";
+import {
+  HARD_SEEK_REFRESH_NUDGE_MS,
+  LEVEL_LOADING_EVENT,
+  pickReloadLevelIndex,
+  requestPlaylistOnlyReload,
+  startRelocationNudge,
+  type PlaylistReloader,
+} from "./relocation-nudge.js";
 
 function makeReloader(levels: { details?: { live: boolean } }[] = []): PlaylistReloader & { calls: string[] } {
   const calls: string[] = [];
@@ -119,5 +126,99 @@ describe("startRelocationNudge", () => {
     expect(() => vi.advanceTimersByTime(HARD_SEEK_REFRESH_NUDGE_MS)).not.toThrow();
     expect(live.live).toBe(true);
     stop();
+  });
+});
+
+// ── d4-a1.112: the playlist-only reload lever ────────────────────────────
+// stopLoad()/startLoad() is a FRAGMENT-pipeline lever: every tick aborts
+// the in-flight fragment load and re-kicks loading at the reload position,
+// which re-requests the fragment under the playhead once per second for
+// the whole relocation (the verify-A 503 hammer on the abandoned old-run
+// tail; the d4-a1.113 at-EOF same-segment re-fetches, observed live at
+// exactly the 1000 ms nudge cadence). A playlist re-read needs none of
+// that: triggering hls.js's own LEVEL_LOADING event drives its
+// playlist-loader directly — the exact request its level-controller's
+// loadingPlaylist() emits — and the response flows through LEVEL_LOADED
+// into the normal merge + LEVEL_UPDATED path the landing watch listens
+// on, leaving the fragment pipeline untouched. The loader also dedupes an
+// in-flight same-URL request, so a 1 Hz nudge can never stack requests.
+describe("requestPlaylistOnlyReload (d4-a1.112)", () => {
+  function makeTriggerReloader(overrides: Partial<PlaylistReloader> = {}): PlaylistReloader & {
+    calls: string[];
+    triggered: { event: string; data: unknown }[];
+  } {
+    const calls: string[] = [];
+    const triggered: { event: string; data: unknown }[] = [];
+    return {
+      calls,
+      triggered,
+      levels: [{ details: { live: true }, uri: "http://localhost:3001/hls/v0/media.m3u8" }],
+      loadLevel: 0,
+      currentLevel: 0,
+      stopLoad: () => calls.push("stopLoad"),
+      startLoad: (pos?: number, skip?: boolean) => calls.push(`startLoad(${pos},${skip})`),
+      trigger: (event: string, data: unknown) => {
+        calls.push(`trigger(${event})`);
+        triggered.push({ event, data });
+      },
+      ...overrides,
+    };
+  }
+
+  it("triggers LEVEL_LOADING with the level's own uri/levelInfo — the payload loadingPlaylist() itself emits", () => {
+    const hls = makeTriggerReloader();
+    expect(requestPlaylistOnlyReload(hls)).toBe(true);
+    expect(hls.triggered).toHaveLength(1);
+    expect(hls.triggered[0]!.event).toBe(LEVEL_LOADING_EVENT);
+    expect(hls.triggered[0]!.data).toEqual({
+      url: "http://localhost:3001/hls/v0/media.m3u8",
+      level: 0,
+      levelInfo: hls.levels[0],
+      id: 0,
+      deliveryDirectives: null,
+    });
+    expect(hls.calls.filter((c) => c === "stopLoad" || c.startsWith("startLoad")), "the playlist-only lever must not touch the fragment pipeline").toEqual([]);
+  });
+
+  it("returns false (caller falls back to the stop/start lever) when the reloader has no trigger surface", () => {
+    const full = makeTriggerReloader();
+    const withoutTrigger = Object.fromEntries(Object.entries(full).filter(([key]) => key !== "trigger")) as typeof full;
+    expect(requestPlaylistOnlyReload(withoutTrigger)).toBe(false);
+    expect(withoutTrigger.triggered).toHaveLength(0);
+  });
+
+  it("returns false when no level carries a playlist uri (nothing addressable to reload)", () => {
+    const hls = makeTriggerReloader({ levels: [{ details: { live: true } }] });
+    expect(requestPlaylistOnlyReload(hls)).toBe(false);
+  });
+
+  // The event name is hls.js public API (Events.LEVEL_LOADING) — pin the
+  // literal against the real enum so a dependency bump that renames it
+  // fails HERE, not silently in the field.
+  it("LEVEL_LOADING_EVENT matches the real hls.js Events enum", async () => {
+    const { default: Hls } = await import("hls.js");
+    expect(LEVEL_LOADING_EVENT).toBe(Hls.Events.LEVEL_LOADING);
+  });
+});
+
+describe("pickReloadLevelIndex (d4-a1.112)", () => {
+  const withUri = { details: { live: true }, uri: "u" };
+  const noUri = { details: { live: true } };
+
+  it("prefers the LOADING level — mid-relocation refreshes belong to it (d3-a1), so that is the playlist to re-read", () => {
+    expect(pickReloadLevelIndex({ levels: [withUri, withUri], loadLevel: 1, currentLevel: 0 })).toBe(1);
+  });
+
+  it("falls back to the current level when the load level has no uri", () => {
+    expect(pickReloadLevelIndex({ levels: [withUri, noUri], loadLevel: 1, currentLevel: 0 })).toBe(0);
+  });
+
+  it("falls back to the first uri-bearing level before any frame has played (both indices -1)", () => {
+    expect(pickReloadLevelIndex({ levels: [noUri, withUri], loadLevel: -1, currentLevel: -1 })).toBe(1);
+  });
+
+  it("-1 when nothing is addressable", () => {
+    expect(pickReloadLevelIndex({ levels: [noUri], loadLevel: -1, currentLevel: -1 })).toBe(-1);
+    expect(pickReloadLevelIndex({ levels: [], loadLevel: 0, currentLevel: 0 })).toBe(-1);
   });
 });
