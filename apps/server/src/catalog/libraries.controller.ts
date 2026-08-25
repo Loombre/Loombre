@@ -4,6 +4,14 @@
 // GET/POST /libraries, GET/PATCH/DELETE /libraries/{id},
 // POST /libraries/{id}/scan, GET/PUT /libraries/{id}/permissions.
 //
+// GET /libraries has TWO scopes (browser-admin-F7 follow-up, d3-d5). The
+// default is viewer-scoped, and before this it was the only one — which
+// meant a restricted library nobody held a grant on was absent from the
+// one listing the product had, the permissions editor is fed by that same
+// listing, and so no grant could ever be issued to it from the UI.
+// `?scope=admin` is the administration-scoped listing (admin-gated below;
+// packages/db's listLibrariesForScope + administrationScope()).
+//
 // Admin gate: every write here (POST/PATCH/DELETE/scan/permissions) checks
 // `req.user.isAdmin` (attached by AuthGuard from the access-token claim,
 // see gateway/auth.guard.ts) and throws 403 Forbidden otherwise — matches
@@ -32,13 +40,14 @@
 
 import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post, Put, Query, Req } from "@nestjs/common";
 import {
+  administrationScope,
   createLibrary,
   deleteLibraryAdmin,
   getLibraryByIdAdmin,
   getLibraryForViewer,
   getLibraryItemCountsForViewer,
   getLibraryPermissionsAdmin,
-  listLibrariesForViewer,
+  listLibrariesForScope,
   putLibraryPermissionsAdmin,
   updateLibraryAdmin,
   type ItemType,
@@ -157,12 +166,32 @@ export class LibrariesController {
 
   @Get("libraries")
   async listLibraries(@Query() query: Record<string, unknown>, @Req() req: AuthenticatedRequest) {
+    // browser-admin-F7 follow-up (d3-d5): `?scope=admin` answers the
+    // administration-scoped listing. STRICT equality on purpose — the
+    // contract documents an unrecognized value as `viewer` (the same
+    // lenient posture `limit`/`sort`/`order` have), and here that leniency
+    // fails CLOSED: no typo can ever widen the scope.
+    const wantsAdminScope = query["scope"] === "admin";
+    if (wantsAdminScope) {
+      // The SAME gate every other admin operation on this controller uses:
+      // the JWT claim, then a FRESH requireLiveAdmin DB re-read (L2). Runs
+      // before any library is read, so a refusal is never an oracle.
+      await requireAdmin(this.dbProvider.db, req);
+    }
+    // Counts always come from the CALLER'S OWN ViewerContext, in both
+    // scopes — never a synthetic "admin sees everything" context (same
+    // posture as updateLibrary below). A library the admin holds no grant
+    // on therefore reports 0 items, not a leaked total.
     const ctx = await resolveViewer(this.viewerContextProvider, req);
     const { cursor, limit } = parseListQuery(query);
-    const page = await listLibrariesForViewer(this.dbProvider.db, ctx, {
-      ...(cursor !== undefined ? { cursor } : {}),
-      ...(limit !== undefined ? { limit } : {}),
-    });
+    const page = await listLibrariesForScope(
+      this.dbProvider.db,
+      wantsAdminScope ? administrationScope(req.user!.userId) : ctx,
+      {
+        ...(cursor !== undefined ? { cursor } : {}),
+        ...(limit !== undefined ? { limit } : {}),
+      },
+    );
     const items = await mapLibrariesWithCounts(this.dbProvider.db, ctx, page.rows);
     return { items, nextCursor: page.nextCursor };
   }

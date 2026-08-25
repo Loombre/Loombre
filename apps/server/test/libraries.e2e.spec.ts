@@ -88,6 +88,29 @@ afterAll(async () => {
   await app.close();
 });
 
+// POST /auth/login is rate-limited PER SOURCE IP (10/min, auth-rate-limiter.
+// service.ts) and every case in this file arrives from the same one — the
+// suite already sits on that ceiling (one admin + the R1 block's per-case
+// casual logins). Cases that only need "a signed-in viewer with no admin
+// rights" therefore share ONE memoized login instead of each minting
+// another the limiter would (correctly) 429 — the same reasoning the R1
+// block's own `sharedCasual` memo already applies further down. Adding a
+// fresh login here without a reason WILL start failing unrelated cases at
+// the bottom of the file.
+let sharedSeedCasual: string | undefined;
+async function seedCasualToken(): Promise<string> {
+  if (sharedSeedCasual !== undefined) return sharedSeedCasual;
+  const login = await request(app.getHttpServer()).post("/auth/login").send({
+    username: "casual",
+    password: "loombre-seed-casual",
+    deviceName: "libraries-e2e-casual",
+    deviceProfile: buildDeviceProfile("libraries-e2e-casual"),
+  });
+  expect(login.status, JSON.stringify(login.body)).toBe(200);
+  sharedSeedCasual = login.body.accessToken as string;
+  return sharedSeedCasual;
+}
+
 describe("POST /libraries creator visibility (gap-closure regression)", () => {
   it("a freshly created GENERAL library is immediately visible to its creator via GET /libraries and GET /libraries/{id}, with no PUT permissions call", async () => {
     const create = await request(app.getHttpServer())
@@ -175,6 +198,89 @@ describe("POST /libraries creator visibility (gap-closure regression)", () => {
   });
 });
 
+// browser-admin-F7 FOLLOW-UP (d3-d5, QA 2026-08-21 remediation dispatch 3,
+// P2): the describe above proves the default-deny is deliberate. What it
+// left unreachable is the RECOVERY — GET /libraries is viewer-scoped, so a
+// restricted library nobody holds a grant on is absent from the ONLY
+// listing the product had, the permissions editor is fed by that same
+// listing, and therefore no grant could ever be issued to it from the UI.
+// (Pre-existing restricted libraries — imported, seeded, or created before
+// AddLibrarySheet's grant step existed — are exactly that population.)
+//
+// `?scope=admin` is the administration-scoped listing that makes those
+// libraries reachable: admin-only, and still a GUARDED query in the
+// packages/db sense — it is a separate, explicitly-named scope
+// (administrationScope()) that listLibrariesForScope understands, never an
+// "unfiltered" flag on a ViewerContext. Counts stay on the caller's OWN
+// ViewerContext (libraries.controller.ts's updateLibrary posture: never a
+// synthetic "admin sees everything" context), so a library this admin
+// cannot read counts 0 rather than leaking one.
+describe("GET /libraries?scope=admin (browser-admin-F7 follow-up, d3-d5)", () => {
+  let orphanId: string;
+
+  beforeAll(async () => {
+    const create = await request(app.getHttpServer())
+      .post("/libraries")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({
+        name: "F7 Followup Orphan",
+        mediaKind: "movie",
+        paths: ["/data/f7-followup-orphan"],
+        contentClass: "restricted",
+      });
+    expect(create.status, JSON.stringify(create.body)).toBe(201);
+    orphanId = create.body.id;
+  });
+
+  it("surfaces a grantless restricted library the viewer-scoped listing withholds — and the viewer-scoped listing keeps withholding it", async () => {
+    const viewerScoped = await request(app.getHttpServer())
+      .get("/libraries?limit=200")
+      .set("Authorization", `Bearer ${adminToken}`);
+    expect(viewerScoped.status, JSON.stringify(viewerScoped.body)).toBe(200);
+    expect(viewerScoped.body.items.map((l: { id: string }) => l.id)).not.toContain(orphanId);
+
+    const adminScoped = await request(app.getHttpServer())
+      .get("/libraries?scope=admin&limit=200")
+      .set("Authorization", `Bearer ${adminToken}`);
+    expect(adminScoped.status, JSON.stringify(adminScoped.body)).toBe(200);
+    const orphan = adminScoped.body.items.find((l: { id: string }) => l.id === orphanId);
+    expect(orphan, JSON.stringify(adminScoped.body.items.map((l: { name: string }) => l.name))).toBeDefined();
+    expect(orphan.contentClass).toBe("restricted");
+    expect(orphan.name).toBe("F7 Followup Orphan");
+    // Guarded count, not a synthetic admin one: this admin cannot read the
+    // library's items, so the honest answer is 0 — never a leaked total.
+    expect(orphan.itemCount).toBe(0);
+    expect(adminScoped.body).toHaveProperty("nextCursor");
+  });
+
+  it("is admin-only: a non-admin asking for scope=admin is refused 403 and never gets the hidden library", async () => {
+    const casualToken = await seedCasualToken();
+
+    const refused = await request(app.getHttpServer())
+      .get("/libraries?scope=admin&limit=200")
+      .set("Authorization", `Bearer ${casualToken}`);
+    expect(refused.status, JSON.stringify(refused.body)).toBe(403);
+    expect(refused.headers["content-type"]).toContain("application/problem+json");
+    expect(JSON.stringify(refused.body)).not.toContain(orphanId);
+    expect(JSON.stringify(refused.body)).not.toContain("F7 Followup Orphan");
+
+    // …and the viewer-scoped default still answers normally for them.
+    const allowed = await request(app.getHttpServer())
+      .get("/libraries?limit=200")
+      .set("Authorization", `Bearer ${casualToken}`);
+    expect(allowed.status, JSON.stringify(allowed.body)).toBe(200);
+    expect(allowed.body.items.map((l: { id: string }) => l.id)).not.toContain(orphanId);
+  });
+
+  it("fails closed on an unrecognized scope value — viewer scope, never the administration listing", async () => {
+    const res = await request(app.getHttpServer())
+      .get("/libraries?scope=ADMIN_TYPO&limit=200")
+      .set("Authorization", `Bearer ${adminToken}`);
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+    expect(res.body.items.map((l: { id: string }) => l.id)).not.toContain(orphanId);
+  });
+});
+
 // Wave 1c (STATE.md Phosphor retheme, "contract enablers" lane): storage-
 // pool meter + restricted zone aggregate count, real HTTP round trip.
 // LOOMBRE_RESTRICTED_ENABLED=true is already set in this file's beforeAll,
@@ -250,14 +356,7 @@ describe("GET /system/info storagePool + GET /restricted/count (Wave 1c)", () =>
   });
 
   it("GET /restricted/count: 404 for a viewer with no restricted-library entitlement at all (seed 'casual' user)", async () => {
-    const casualLogin = await request(app.getHttpServer()).post("/auth/login").send({
-      username: "casual",
-      password: "loombre-seed-casual",
-      deviceName: "libraries-e2e-casual",
-      deviceProfile: buildDeviceProfile("libraries-e2e-casual"),
-    });
-    expect(casualLogin.status, JSON.stringify(casualLogin.body)).toBe(200);
-    const casualToken: string = casualLogin.body.accessToken;
+    const casualToken = await seedCasualToken();
 
     const res = await request(app.getHttpServer())
       .get("/restricted/count")

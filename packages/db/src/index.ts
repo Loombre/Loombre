@@ -166,10 +166,17 @@ export type {
   UpdateLibraryAdminInput,
   // Wave 1c (Phosphor retheme, "contract enablers" lane).
   LibraryItemCountRow,
+  // browser-admin-F7 follow-up (d3-d5) — the administration-scoped
+  // listing's explicit scope type; see its doc in src/query/libraries.js
+  // for why it is a type and not a flag on ViewerContext.
+  LibraryAdministrationScope,
+  LibraryListingScope,
 } from './query/libraries.js';
 export {
   createLibrary,
   listLibrariesForViewer,
+  listLibrariesForScope,
+  administrationScope,
   getLibraryForViewer,
   getLibraryByIdAdmin,
   updateLibraryAdmin,

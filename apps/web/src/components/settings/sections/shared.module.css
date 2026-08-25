@@ -169,6 +169,16 @@
   }
 }
 
+/* d3-d5: a secondary group below a pane's primary list (LibrariesSection's
+   "Not visible to you"). Same vertical rhythm as .form so the group reads
+   as one block rather than three loose elements. */
+.subSection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  margin-top: var(--space-lg);
+}
+
 /* ── Dashed "add" tile (README "+ ADD LIBRARY") ─────────────────────── */
 
 .addTile {

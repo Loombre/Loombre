@@ -525,7 +525,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List libraries visible to the current user */
+        /**
+         * List libraries visible to the current user (or, for an admin, every library)
+         * @description Defaults to the viewer-scoped listing: only libraries the caller holds a `library_permissions` grant on, and — for restricted libraries — only while their live unlock (§6.4 gate 5) holds. `scope=admin` is the administration-scoped listing (admin only, 403 otherwise): every library that exists, including restricted ones nobody has been granted access to yet, so an admin can issue the grant that makes such a library reachable at all. Item counts are always computed through the CALLER'S OWN viewer context, so a library the caller cannot read reports 0 rather than a leaked total.
+         */
         get: operations["listLibraries"];
         put?: never;
         /** Create a library (admin) */
@@ -4902,6 +4905,8 @@ export interface components {
         /** @description Defaults to `added`. `order`'s default depends on which sort is active (title: asc; added/rating/year: desc) unless `order` is explicitly supplied. A cursor from a previous page is only valid for the SAME sort+order pair it was issued under. */
         Sort: "title" | "added" | "rating" | "year";
         Order: "asc" | "desc";
+        /** @description `viewer` (default): libraries this caller may see. `admin`: every library that exists, including restricted libraries with no grants yet — admin only (403 otherwise). Unrecognized values are treated as `viewer`. */
+        LibraryListingScope: "viewer" | "admin";
     };
     requestBodies: never;
     headers: never;
@@ -5965,6 +5970,8 @@ export interface operations {
     listLibraries: {
         parameters: {
             query?: {
+                /** @description `viewer` (default): libraries this caller may see. `admin`: every library that exists, including restricted libraries with no grants yet — admin only (403 otherwise). Unrecognized values are treated as `viewer`. */
+                scope?: components["parameters"]["LibraryListingScope"];
                 /** @description Opaque pagination cursor from a previous page's `nextCursor`. */
                 cursor?: components["parameters"]["Cursor"];
                 limit?: components["parameters"]["Limit"];
@@ -5985,6 +5992,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             default: components["responses"]["Problem"];
         };
     };

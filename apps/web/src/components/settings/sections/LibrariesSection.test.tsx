@@ -122,6 +122,13 @@ async function click(button: HTMLButtonElement): Promise<void> {
   });
 }
 
+/** d3-d5: GET /libraries now takes a `scope` — reads it out of the
+ *  request init the component passed, without asserting on the rest. */
+function scopeOf(init: unknown): string | undefined {
+  const query = (init as { params?: { query?: Record<string, unknown> } } | undefined)?.params?.query;
+  return typeof query?.["scope"] === "string" ? (query["scope"] as string) : undefined;
+}
+
 function setNativeInputValue(el: HTMLInputElement, value: string): void {
   const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
   setter.call(el, value);
@@ -170,6 +177,75 @@ describe("LibrariesSection — browser-admin-F7: the list never shows a library 
     expect(view!.container.querySelector('[aria-label="Manage qa-restricted"]')).toBeNull();
     expect(view!.container.querySelector('[aria-label="Manage Movies"]')).not.toBeNull();
     // …and the list was re-read rather than trusted to local state.
-    expect(apiGetMock.mock.calls.filter(([path]) => path === "/libraries")).toHaveLength(2);
+    // (Scope-qualified: d3-d5 added a SECOND GET /libraries per load, the
+    // administration-scoped one — this assertion is about the viewer-scoped
+    // list being re-read, which is the one that can lie.)
+    expect(apiGetMock.mock.calls.filter(([path, init]) => path === "/libraries" && scopeOf(init) === undefined)).toHaveLength(2);
+  });
+});
+
+// browser-admin-F7 FOLLOW-UP (d3-d5, QA 2026-08-21 remediation dispatch 3,
+// P2): the describe above is the "never show what the server withheld"
+// half. Its cost was that a restricted library nobody holds a grant on is
+// absent from the only listing that existed — and since the permissions
+// editor is fed by that same listing, no grant could ever be issued to it
+// from the UI. GET /libraries?scope=admin (admin-only) is the recovery
+// route; this pane must surface the difference between the two scopes and
+// offer the grant on it.
+describe("LibrariesSection — d3-d5: grantless libraries are reachable from the admin-scoped listing", () => {
+  function mockScopes(viewer: unknown[], admin: unknown[]): void {
+    apiGetMock.mockImplementation((path: string, init?: unknown) => {
+      if (path === "/libraries") {
+        return Promise.resolve({ items: scopeOf(init) === "admin" ? admin : viewer, nextCursor: null });
+      }
+      if (path === "/users/me") return Promise.resolve({ id: "user-admin", username: "admin", isAdmin: true });
+      return Promise.reject(new Error(`unexpected apiGet(${path})`));
+    });
+  }
+
+  it("lists a restricted library the viewer-scoped list withholds, explains why, and offers the grant", async () => {
+    mockScopes(LIBRARIES, [...LIBRARIES, RESTRICTED_LIBRARY]);
+    await render();
+
+    // The main list stays exactly what the viewer-scoped server answer says.
+    expect(view!.container.querySelector("h1")?.textContent).toBe("Libraries · 1");
+    expect(view!.container.querySelector('[aria-label^="Manage qa-restricted"]')).toBeNull();
+
+    const text = view!.container.textContent ?? "";
+    expect(text).toContain("Not visible to you");
+    expect(text).toContain("qa-restricted");
+    expect(text).toContain("/mnt/restricted");
+    expect(buttonFor("Grant yourself access")).toBeTruthy();
+  });
+
+  it("grants the signed-in admin access to a hidden library and re-reads both scopes", async () => {
+    mockScopes(LIBRARIES, [...LIBRARIES, RESTRICTED_LIBRARY]);
+    apiPutMock.mockResolvedValue({ libraryId: "lib-r", permissions: [{ userId: "user-admin", granted: true }] });
+    await render();
+
+    await click(buttonFor("Grant yourself access"));
+
+    expect(apiPutMock).toHaveBeenCalledWith("/libraries/{id}/permissions", {
+      params: { path: { id: "lib-r" } },
+      body: { libraryId: "lib-r", permissions: [{ userId: "user-admin", granted: true }] },
+    });
+    // A grant changes what the server will say — both scopes are re-read.
+    expect(apiGetMock.mock.calls.filter(([path, init]) => path === "/libraries" && scopeOf(init) === undefined)).toHaveLength(2);
+    expect(apiGetMock.mock.calls.filter(([path, init]) => path === "/libraries" && scopeOf(init) === "admin")).toHaveLength(2);
+  });
+
+  it("stays silent when the administration-scoped listing is refused — no group, no error banner", async () => {
+    apiGetMock.mockImplementation((path: string, init?: unknown) => {
+      if (path === "/libraries") {
+        if (scopeOf(init) === "admin") return Promise.reject(new FakeApiError("Admin privileges are required."));
+        return Promise.resolve({ items: LIBRARIES, nextCursor: null });
+      }
+      return Promise.reject(new Error(`unexpected apiGet(${path})`));
+    });
+    await render();
+
+    expect(view!.container.querySelector("h1")?.textContent).toBe("Libraries · 1");
+    expect(view!.container.textContent ?? "").not.toContain("Not visible to you");
+    expect(view!.container.querySelector('[class*="errorBanner"]')).toBeNull();
   });
 });

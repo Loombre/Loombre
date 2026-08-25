@@ -1013,8 +1013,20 @@ paths:
     get:
       operationId: listLibraries
       tags: [libraries]
-      summary: List libraries visible to the current user
+      summary: List libraries visible to the current user (or, for an admin, every library)
+      description: >-
+        Defaults to the viewer-scoped listing: only libraries the caller
+        holds a `library_permissions` grant on, and — for restricted
+        libraries — only while their live unlock (§6.4 gate 5) holds.
+        `scope=admin` is the administration-scoped listing (admin only,
+        403 otherwise): every library that exists, including restricted
+        ones nobody has been granted access to yet, so an admin can issue
+        the grant that makes such a library reachable at all. Item counts
+        are always computed through the CALLER'S OWN viewer context, so a
+        library the caller cannot read reports 0 rather than a leaked
+        total.
       parameters:
+        - $ref: '#/components/parameters/LibraryListingScope'
         - $ref: '#/components/parameters/Cursor'
         - $ref: '#/components/parameters/Limit'
       responses:
@@ -1024,6 +1036,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/LibraryPage' }
         '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
         default: { $ref: '#/components/responses/Problem' }
     post:
       operationId: createLibrary
@@ -4499,6 +4512,22 @@ components:
       in: query
       required: false
       schema: { type: string, enum: [asc, desc] }
+    # browser-admin-F7 follow-up (d3-d5): which SCOPE GET /libraries answers
+    # in. `viewer` (the default, and the only behaviour before this existed)
+    # is the guarded listing; `admin` is the administration-scoped one and
+    # is refused 403 to a non-admin. An unrecognized value falls back to
+    # `viewer` — the same lenient posture `limit`/`sort`/`order` already
+    # have, and it fails CLOSED here (a typo can never widen the scope).
+    LibraryListingScope:
+      name: scope
+      in: query
+      required: false
+      description: >-
+        `viewer` (default): libraries this caller may see. `admin`:
+        every library that exists, including restricted libraries with no
+        grants yet — admin only (403 otherwise). Unrecognized values are
+        treated as `viewer`.
+      schema: { type: string, enum: [viewer, admin], default: viewer }
 
   responses:
     Problem:

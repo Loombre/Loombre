@@ -27,6 +27,16 @@
 // client-side. AddLibrarySheet's post-create step is where an admin
 // grants themselves access to one they just made.
 //
+// d3-d5 (browser-admin-F7 follow-up): "the server withheld it" was still a
+// dead end for libraries created BEFORE that grant step existed (or
+// imported/seeded) — nothing listed them, the permissions editor is fed by
+// this same viewer-scoped list, so no grant could ever be issued and they
+// were unreachable forever. The pane now also reads the ADMINISTRATION-
+// scoped listing (GET /libraries?scope=admin, admin-only) and renders the
+// DIFFERENCE between the two scopes as a separate "Not visible to you"
+// group with the grant attached. The main list above it is untouched: it
+// is still exactly the viewer-scoped answer, never a merge of the two.
+//
 //   - "state"/"last scan" — Library carries neither field (ground-truthed:
 //     packages/contract/openapi.yaml's Library schema has no scan-state/
 //     timestamp). use-library-scan-status.ts derives both LIVE from the
@@ -48,6 +58,7 @@ import { StashModal } from "../../admin/libraries/StashModal.js";
 import { RowMenu } from "../RowMenu.js";
 import { AddLibrarySheet } from "./AddLibrarySheet.js";
 import { useLibraryScanStatus } from "./use-library-scan-status.js";
+import { libraryPathLabel } from "./library-path-label.js";
 import { diffPermissionsToSubmit } from "../../../lib/library-permissions.js";
 import { enumLabel, MEDIA_KIND_LABEL } from "../../../lib/enum-labels.js";
 import { useToast } from "../../ui/Toast.js";
@@ -268,9 +279,52 @@ function LibraryRow({
   );
 }
 
+/** d3-d5: the "Not visible to you" group — the libraries the
+ *  administration-scoped listing knows about that the viewer-scoped one
+ *  withholds. Deliberately NOT a LibraryRow: none of that row's actions
+ *  (scan, provider chain, stash, edit, delete) belong on a library this
+ *  admin cannot see the contents of, and its live scan badge would be
+ *  meaningless here. The one action offered is the one that ENDS this
+ *  state. */
+function HiddenLibraryRow({
+  library,
+  onGrant,
+  granting,
+}: {
+  library: Library;
+  onGrant: () => void;
+  granting: boolean;
+}): React.JSX.Element {
+  return (
+    <div className={styles.row}>
+      <div className={styles.rowMain}>
+        <div className={styles.rowText}>
+          <span className={styles.rowTitle}>{library.name}</span>
+          <span className={styles.rowSub}>{libraryPathLabel(library.paths) ?? "—"}</span>
+        </div>
+      </div>
+      <div className={styles.rowChips}>
+        <Tag>{enumLabel(MEDIA_KIND_LABEL, library.mediaKind)}</Tag>
+        {library.contentClass === "restricted" && <Tag>restricted</Tag>}
+      </div>
+      <div className={styles.rowEnd}>
+        <Button type="button" variant="ghost" onClick={onGrant} disabled={granting}>
+          {granting ? "Granting…" : "Grant yourself access"}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 export function LibrariesSection({ heading }: { heading: string | null }): React.JSX.Element {
   const { showToast } = useToast();
   const [libraries, setLibraries] = useState<Library[] | null>(null);
+  // d3-d5: null = the administration-scoped listing is unavailable to this
+  // caller (403 — not an admin) or failed. That is NOT an error banner:
+  // this pane's primary list is fine, and a viewer who cannot ask the
+  // administration question should simply not be told there is one.
+  const [hidden, setHidden] = useState<Library[] | null>(null);
+  const [granting, setGranting] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<Library | null>(null);
@@ -280,12 +334,56 @@ export function LibrariesSection({ heading }: { heading: string | null }): React
   const scanStatuses = useLibraryScanStatus();
 
   function reload(): void {
+    // The two scopes are read INDEPENDENTLY (never chained): the primary
+    // list must not wait on — or be lost to — the administration one, which
+    // a non-admin is legitimately refused.
     apiGet("/libraries", { params: { query: { limit: 200 } } })
       .then((page) => setLibraries(page.items))
       .catch((err) => setError(err instanceof LoombreApiError ? err.message : "Failed to load libraries."));
+    apiGet("/libraries", { params: { query: { scope: "admin", limit: 200 } } })
+      .then((page) => setHidden(page.items))
+      .catch(() => setHidden(null));
   }
 
   useEffect(reload, []);
+
+  /** d3-d5: the diff is computed at RENDER time off the two server
+   *  answers, never stored — the same "derived data is never a second
+   *  piece of state" rule this file's header states for the header count.
+   *  Both must have arrived for the diff to mean anything: while the
+   *  viewer-scoped list is still loading, EVERY library would look hidden. */
+  const hiddenFromViewer =
+    hidden === null || libraries === null
+      ? []
+      : hidden.filter((lib) => !libraries.some((visible) => visible.id === lib.id));
+
+  /** The grant §6.4 gate 4 wants, issued through the same existence-scoped
+   *  admin route AddLibrarySheet's post-create step uses — it reaches a
+   *  library this admin cannot yet see, and PUT replaces grants only for
+   *  the userIds it names, so nobody else's access is disturbed. */
+  async function handleGrantSelf(lib: Library): Promise<void> {
+    setGranting(lib.id);
+    try {
+      const me = await apiGet("/users/me");
+      await apiPut("/libraries/{id}/permissions", {
+        params: { path: { id: lib.id } },
+        body: { libraryId: lib.id, permissions: [{ userId: me.id, granted: true }] },
+      });
+      // Honest about what a grant does and does not do: gate 4 is now
+      // satisfied, but a RESTRICTED library still needs this device's live
+      // unlock (gate 5) before it joins the list above.
+      showToast(
+        lib.contentClass === "restricted"
+          ? `ACCESS GRANTED — ${lib.name.toUpperCase()} · UNLOCK RESTRICTED CONTENT TO SEE IT`
+          : `ACCESS GRANTED — ${lib.name.toUpperCase()}`,
+      );
+      reload();
+    } catch (err) {
+      showToast(err instanceof LoombreApiError ? err.message : "Failed to grant access.", { variant: "danger" });
+    } finally {
+      setGranting(null);
+    }
+  }
 
   async function handleScan(lib: Library, full: boolean): Promise<void> {
     try {
@@ -350,6 +448,31 @@ export function LibrariesSection({ heading }: { heading: string | null }): React
       <button type="button" className={styles.addTile} onClick={() => setAdding(true)}>
         + Add library
       </button>
+
+      {hiddenFromViewer.length > 0 && (
+        <section className={styles.subSection}>
+          <h2 className={styles.title}>
+            Not visible to you
+            <span className={styles.countMono}> · {hiddenFromViewer.length}</span>
+          </h2>
+          <p className={styles.note}>
+            These libraries exist on this server but are not in your own list — either you hold no access grant on
+            them, or they are restricted and this device is locked (the lock in the header). Granting yourself
+            access is gate 4 of docs/PLAN.md §6.4; a restricted library also needs that unlock before it appears
+            above.
+          </p>
+          <div className={styles.list}>
+            {hiddenFromViewer.map((lib) => (
+              <HiddenLibraryRow
+                key={lib.id}
+                library={lib}
+                granting={granting === lib.id}
+                onGrant={() => void handleGrantSelf(lib)}
+              />
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* browser-admin-F7 (QA 2026-08-21): onCreated used to splice the
           POST /libraries response straight into this state. For a

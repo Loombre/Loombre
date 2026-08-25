@@ -160,6 +160,51 @@ export interface ListLibrariesForViewerResult {
   nextCursor: string | null;
 }
 
+/**
+ * browser-admin-F7 follow-up (d3-d5): the ADMINISTRATION scope of the
+ * library listing — every library that exists, including restricted ones
+ * nobody holds a grant on yet.
+ *
+ * Why this is a distinct TYPE and not a boolean on ViewerContext: gate 4 is
+ * "default-deny, INCLUDING for admins" (§6.4), and a `ctx.isAdmin` escape
+ * hatch on the context every guarded catalog read in this package takes
+ * would be exactly the "unfiltered query" CLAUDE.md invariant 4 forbids —
+ * one forgotten branch anywhere and a restricted TITLE leaks. This scope is
+ * accepted by exactly ONE function (listLibrariesForScope, below), reads
+ * only the `libraries` table (names/paths/kind — library ADMINISTRATION,
+ * the same question getLibraryByIdAdmin/listLibraryPathsAdmin already
+ * answer existence-scoped), and can never reach catalog_items: the item
+ * COUNTS the caller pairs with these rows still come from
+ * getLibraryItemCountsForViewer under the caller's own ViewerContext, so a
+ * library the admin has no grant on counts 0.
+ *
+ * It is only constructible through administrationScope(), so "which call
+ * sites can list every library" is one grep, and the caller must name the
+ * admin whose isAdmin the controller layer verified.
+ */
+export interface LibraryAdministrationScope {
+  readonly kind: 'administration';
+  /** The admin the apps/server controller layer verified via requireAdmin
+   *  (JWT claim + a FRESH requireLiveAdmin DB re-read) before constructing
+   *  this. Recorded so the scope is never a free-floating "no context"
+   *  value — every use names an accountable actor. */
+  readonly adminUserId: string;
+}
+
+/** The only constructor for LibraryAdministrationScope — see its doc. */
+export function administrationScope(adminUserId: string): LibraryAdministrationScope {
+  return { kind: 'administration', adminUserId };
+}
+
+/** Either scope listLibrariesForScope accepts. A ViewerContext is the
+ *  guarded default; the administration scope is the deliberate, named
+ *  exception. There is no third case and no "no scope" case. */
+export type LibraryListingScope = ViewerContext | LibraryAdministrationScope;
+
+function isAdministrationScope(scope: LibraryListingScope): scope is LibraryAdministrationScope {
+  return (scope as LibraryAdministrationScope).kind === 'administration';
+}
+
 interface LibraryCursorPayload {
   createdAtMs: number;
   id: string;
@@ -181,12 +226,33 @@ export async function listLibrariesForViewer(
   ctx: ViewerContext,
   params: ListLibrariesForViewerParams = {}
 ): Promise<ListLibrariesForViewerResult> {
+  return listLibrariesForScope(db, ctx, params);
+}
+
+/**
+ * The library listing, in one of exactly two scopes (see
+ * LibraryAdministrationScope's doc for why the admin one is a type rather
+ * than a flag). A ViewerContext scope compiles in the SAME two filters
+ * listLibrariesForViewer always did — there is no code path here that takes
+ * a ViewerContext and skips them.
+ *
+ * Ordering/cursor semantics are identical in both scopes (created_at_ms
+ * DESC, id DESC), so a cursor is scope-agnostic in shape — but a page taken
+ * in one scope must not be continued in the other, exactly like the
+ * Sort/Order params' documented "same sort+order pair" rule.
+ */
+export async function listLibrariesForScope(
+  db: Kysely<DB>,
+  scope: LibraryListingScope,
+  params: ListLibrariesForViewerParams = {}
+): Promise<ListLibrariesForViewerResult> {
   const limit = params.limit ?? DEFAULT_LIMIT;
 
-  let query = applyContentClassFilter(
-    applyLibraryIdFilter(db.selectFrom('libraries'), ctx, 'libraries.id'),
-    ctx,
-    'libraries.content_class'
+  const base = db.selectFrom('libraries');
+  let query = (
+    isAdministrationScope(scope)
+      ? base
+      : applyContentClassFilter(applyLibraryIdFilter(base, scope, 'libraries.id'), scope, 'libraries.content_class')
   ).selectAll();
 
   if (params.cursor) {
