@@ -265,3 +265,89 @@ describe('listActiveSessionsAdmin — live (non-terminal) statuses (browser-admi
     expect(page.rows.find((r) => r.id === failedId)).toBeUndefined();
   });
 });
+
+// ---------------------------------------------------------------------------
+// d3-e3 (browser-admin-F2 follow-up, P2): widening the status filter above
+// fixed the disappearing-transcode half and created the opposite problem —
+// an ABANDONED session (walked-away viewer) is suspended by the sweeper at
+// 90s and only ENDED at 15 minutes, so for ~13.5 minutes it sat on the admin
+// dashboard looking exactly like a healthy throttle-parked stream. The row
+// carried nothing that could tell the two apart: `suspended` is one enum
+// value with two causes, and the disambiguator the schema has had since
+// migration 0012 (suspended_by_throttle) was never selected. These two
+// derived fields are what the surfaces render/count on.
+// ---------------------------------------------------------------------------
+describe('listActiveSessionsAdmin — presence disambiguation (d3-e3)', () => {
+  async function seedSession(nowMs: number): Promise<string> {
+    const session = await createPlaybackSession(db, adminClearedCtx, {
+      itemId: harborLightsItemId,
+      fileId: harborLightsFileId,
+      deviceId: adminDeviceId,
+      plan: { decision: 'transcode', reasons: [] },
+      engineVersion: 'phase3-engine-1.0.0',
+      nowMs,
+    });
+    expect(session).toBeDefined();
+    return session!.id;
+  }
+
+  it('carries suspended_by_throttle: true for a worker-parked transcode, false for a sweeper heartbeat-suspend', async () => {
+    const nowMs = Date.now();
+    const throttled = await seedSession(nowMs);
+    await rawClient.query(
+      "UPDATE playback_sessions SET status = 'suspended', suspended_by_throttle = true WHERE id = $1",
+      [throttled]
+    );
+    const abandoned = await seedSession(nowMs);
+    await rawClient.query(
+      "UPDATE playback_sessions SET status = 'suspended', suspended_by_throttle = false WHERE id = $1",
+      [abandoned]
+    );
+
+    const page = await listActiveSessionsAdmin(db, adminClearedCtx, { limit: 200 });
+    expect(page.rows.find((r) => r.id === throttled)!.suspendedByThrottle).toBe(true);
+    expect(page.rows.find((r) => r.id === abandoned)!.suspendedByThrottle).toBe(false);
+  });
+
+  it('flags heartbeatStale against the caller-supplied boundary — the same (lastHeartbeatMs ?? startedAtMs) predicate the sweeper suspends on', async () => {
+    const nowMs = Date.now();
+    const fresh = await seedSession(nowMs);
+    await rawClient.query('UPDATE playback_sessions SET last_heartbeat_ms = $2 WHERE id = $1', [fresh, nowMs]);
+    const stale = await seedSession(nowMs);
+    await rawClient.query('UPDATE playback_sessions SET last_heartbeat_ms = $2 WHERE id = $1', [
+      stale,
+      nowMs - 120_000,
+    ]);
+
+    const page = await listActiveSessionsAdmin(db, adminClearedCtx, {
+      limit: 200,
+      heartbeatStaleBeforeMs: nowMs - 90_000,
+    });
+    expect(page.rows.find((r) => r.id === fresh)!.heartbeatStale).toBe(false);
+    expect(page.rows.find((r) => r.id === stale)!.heartbeatStale).toBe(true);
+  });
+
+  it('falls back to startedAtMs for a session that never sent a heartbeat at all (the walked-away-at-the-start case)', async () => {
+    const nowMs = Date.now();
+    const justStarted = await seedSession(nowMs);
+    const longAgo = await seedSession(nowMs - 600_000);
+
+    const page = await listActiveSessionsAdmin(db, adminClearedCtx, {
+      limit: 200,
+      heartbeatStaleBeforeMs: nowMs - 90_000,
+    });
+    const justStartedRow = page.rows.find((r) => r.id === justStarted)!;
+    const longAgoRow = page.rows.find((r) => r.id === longAgo)!;
+    expect(justStartedRow.lastHeartbeatMs).toBeNull();
+    expect(longAgoRow.lastHeartbeatMs).toBeNull();
+    expect(justStartedRow.heartbeatStale).toBe(false);
+    expect(longAgoRow.heartbeatStale).toBe(true);
+  });
+
+  it('claims nothing stale when no boundary is supplied (a caller with no clock/cutoff never gets a guessed answer)', async () => {
+    const ancient = await seedSession(Date.now() - 3_600_000);
+
+    const page = await listActiveSessionsAdmin(db, adminClearedCtx, { limit: 200 });
+    expect(page.rows.find((r) => r.id === ancient)!.heartbeatStale).toBe(false);
+  });
+});

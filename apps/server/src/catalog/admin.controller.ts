@@ -15,6 +15,13 @@
 // AdminSession contract schema — see listActiveSessionsAdmin's own doc
 // comment on AdminSessionRow.plan for the full discovered-gap writeup;
 // they follow the exact same redact-not-omit rule as itemTitle.
+// d3-e3 additionally sends `suspendedByThrottle`/`heartbeatStale` (both now
+// declared in the contract): `suspended` is one enum value with two opposite
+// meanings, and an abandoned session stays listed here for ~13.5 minutes
+// between the sweeper's 90s suspend and its 15-minute end. This controller
+// supplies the staleness BOUNDARY (nowMs minus the live
+// sessions.heartbeatSuspendCutoffMs setting) — the query layer has no clock
+// and no settings access, and the client must not invent either.
 //
 // GET /system/update (STATE.md P4.3/P4.16, release lane): admin-only
 // notify-only update check. Co-located with GET /system/info — both are
@@ -45,7 +52,7 @@ import {
   type HwPlatform,
   type JobRow,
 } from "@loombre/db";
-import { LOOMBRE_VERSION_FULL } from "@loombre/shared";
+import { getSettingsRegistryEntry, LOOMBRE_VERSION_FULL, nowMs as clockNowMs } from "@loombre/shared";
 import os from "node:os";
 import { conflict, forbidden, notFound, unprocessableEntity } from "../gateway/problem.exception.js";
 import { requireUuidParam } from "../gateway/require-uuid-param.js";
@@ -57,6 +64,7 @@ import { ServerPowerService, type PowerAction } from "../common/server-power.ser
 import { ViewerContextProvider } from "../common/viewer-context.provider.js";
 import { JobQueueProvider } from "../common/job-queue.provider.js";
 import { UpdateCheckService } from "../common/update-check/update-check.service.js";
+import { SettingsService } from "../settings/settings.service.js";
 import { resolveAppPaths } from "../cli/app-paths.js";
 import { isValidCrashFileName, listCrashFileMetas, readCrashFileContent } from "./admin-crash-files.js";
 import {
@@ -122,6 +130,12 @@ function mapAdminSession(row: AdminSessionRow) {
     // (packages/db/src/query/admin.ts).
     plan: row.plan,
     engineVersion: row.engineVersion,
+    // d3-e3: the two fields that separate a stream someone is WATCHING
+    // from one they walked away from — both are transport facts, so
+    // neither is redacted with the item (see AdminSessionRow's own doc
+    // comments). Declared in the contract's AdminSession schema.
+    suspendedByThrottle: row.suspendedByThrottle,
+    heartbeatStale: row.heartbeatStale,
   };
 }
 
@@ -135,6 +149,11 @@ function isHwPlatform(platform: NodeJS.Platform): platform is HwPlatform {
   return platform === "darwin" || platform === "linux" || platform === "win32";
 }
 
+/** The settings key whose window decides whether an admin-listed session
+ *  still has anyone on the other end (d3-e3) — the same one the playback
+ *  session sweeper suspends on. */
+const HEARTBEAT_SUSPEND_CUTOFF_KEY = "sessions.heartbeatSuspendCutoffMs";
+
 @Controller()
 export class AdminController {
   constructor(
@@ -143,6 +162,7 @@ export class AdminController {
     private readonly updateCheckService: UpdateCheckService,
     private readonly jobQueueProvider: JobQueueProvider,
     private readonly serverPowerService: ServerPowerService,
+    private readonly settingsService: SettingsService,
   ) {}
 
   @Get("admin/jobs")
@@ -167,6 +187,20 @@ export class AdminController {
     return mapJob(job);
   }
 
+  /** sessions.heartbeatSuspendCutoffMs, resolved exactly as
+   *  playback/session-sweeper.service.ts resolves the same key: the live
+   *  effective value, falling back to the REGISTRY's own default. The
+   *  registry is read rather than importing the sweeper's exported
+   *  constant because catalog/ may not import playback/ (D2, enforced by
+   *  dependency-cruiser) — and the registry is that constant's source
+   *  anyway. */
+  private heartbeatSuspendCutoffMs(): number {
+    const configured = this.settingsService.getEffective(HEARTBEAT_SUSPEND_CUTOFF_KEY)?.value;
+    if (typeof configured === "number") return configured;
+    const registryDefault = getSettingsRegistryEntry(HEARTBEAT_SUSPEND_CUTOFF_KEY)?.default;
+    return typeof registryDefault === "number" ? registryDefault : 90_000;
+  }
+
   @Get("admin/sessions")
   async listSessions(@Query() query: Record<string, unknown>, @Req() req: AuthenticatedRequest) {
     await requireAdmin(this.dbProvider.db, req);
@@ -175,6 +209,11 @@ export class AdminController {
     const page = await listActiveSessionsAdmin(this.dbProvider.db, ctx, {
       ...(cursor !== undefined ? { cursor } : {}),
       ...(limit !== undefined ? { limit } : {}),
+      // d3-e3: the SAME cutoff the sweeper suspends on, read live (it is a
+      // requiresRestart:false setting), so "is anyone still on the other
+      // end of this session" is answered here with the deployment's own
+      // policy rather than a number invented by the client.
+      heartbeatStaleBeforeMs: clockNowMs() - this.heartbeatSuspendCutoffMs(),
     });
     return { items: page.rows.map(mapAdminSession), nextCursor: page.nextCursor };
   }

@@ -4207,6 +4207,10 @@ export interface components {
             } | null;
             /** @description ENGINE_VERSION that produced the stored plan; redacted with it. Additive field. */
             engineVersion?: string | null;
+            /** @description Disambiguates the TWO causes that share `status: suspended` (packages/db/migrations/0012_transcode_sessions.sql's header — PlaybackSessionStatus has no room for a second axis): true when the worker's own segment-ahead throttle parked this session's transcode, which is what a HEALTHY steady-state stream looks like for most of its life (ffmpeg is simply far enough ahead of the player), and false for a server-authored heartbeat-stale suspend, which means the opposite — nobody is watching. Always false while `status` is anything other than `suspended`. Additive field. */
+            suspendedByThrottle?: boolean;
+            /** @description Derived at read time, never stored: true when this session has not been heard from within the configured sessions.heartbeatSuspendCutoffMs window — i.e. nobody is on the other end of it right now, even though it stays non-terminal (and so listed here) until the 15-minute sweep ends it. Uses the SAME predicate the session sweeper suspends on: `lastHeartbeatMs`, or `startedAtMs` for a session that never sent one. An admin now-playing surface should not count these as live. Additive field. */
+            heartbeatStale?: boolean;
         };
         AdminSessionPage: {
             items: components["schemas"]["AdminSession"][];

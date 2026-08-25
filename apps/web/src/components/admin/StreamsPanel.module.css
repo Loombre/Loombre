@@ -31,6 +31,13 @@
   border: 1px solid var(--color-border-subtle);
 }
 
+/* d3-e3: a session nothing has been heard from. Still listed and still
+   readable — dimmed, not hidden, because it is a real row an admin may
+   want to act on; its "No heartbeat" pill carries the actual meaning. */
+.row[data-live="false"] {
+  opacity: 0.65;
+}
+
 .main {
   display: flex;
   align-items: center;

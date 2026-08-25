@@ -680,11 +680,38 @@ export interface AdminSessionRow {
    */
   plan: Record<string, unknown> | null;
   engineVersion: string | null;
+  /**
+   * d3-e3: which of the TWO causes behind `status: 'suspended'` this row is
+   * (migrations/0012_transcode_sessions.sql's header — the enum has no room
+   * for a second axis). True = the worker's own segment-ahead throttle
+   * parked this transcode, i.e. what a HEALTHY steady-state stream looks
+   * like for most of its life; false = a heartbeat-stale suspend the server
+   * wrote, i.e. nobody is watching. Always false for every other status.
+   * NOT restricted content (it describes the transport, not the item), so
+   * it is NOT redacted alongside itemTitle/plan.
+   */
+  suspendedByThrottle: boolean;
+  /**
+   * d3-e3: derived, never stored — true when this session's last heartbeat
+   * (or its start, for one that never sent a heartbeat) is older than the
+   * caller-supplied `heartbeatStaleBeforeMs` boundary. Same predicate as
+   * src/query/playback-sessions.ts's listHeartbeatStalePlaybackSessions,
+   * the sweeper's own; false for every row when the caller supplies no
+   * boundary (this module has no clock and never guesses one).
+   */
+  heartbeatStale: boolean;
 }
 
 export interface ListActiveSessionsAdminParams {
   cursor?: string;
   limit?: number;
+  /**
+   * Instant before which a session counts as heartbeat-stale — i.e.
+   * `nowMs - heartbeatSuspendCutoffMs` at the caller (apps/server reads
+   * that cutoff from SettingsService, so a deployment that widens the
+   * setting widens this too). Omitted = no row is flagged.
+   */
+  heartbeatStaleBeforeMs?: number;
 }
 export interface ListActiveSessionsAdminResult {
   rows: AdminSessionRow[];
@@ -719,10 +746,14 @@ interface RawAdminSessionRow {
   lastHeartbeatMs: number | null;
   rawPlan: Record<string, unknown> | null;
   rawEngineVersion: string | null;
+  suspendedByThrottle: boolean;
 }
 
-function mapAdminSessionRow(row: RawAdminSessionRow): AdminSessionRow {
+function mapAdminSessionRow(row: RawAdminSessionRow, heartbeatStaleBeforeMs: number | undefined): AdminSessionRow {
   const itemVisible = row.itemId !== null && row.itemVisible;
+  // The sweeper's predicate verbatim (listHeartbeatStalePlaybackSessions):
+  // a session that has never sent a heartbeat is measured from its start.
+  const lastSeenMs = row.lastHeartbeatMs ?? row.startedAtMs;
   return {
     id: row.id,
     userId: row.userId,
@@ -742,6 +773,11 @@ function mapAdminSessionRow(row: RawAdminSessionRow): AdminSessionRow {
     // (redaction is keyed on contentHidden, not on itemVisible alone).
     plan: row.itemId === null || itemVisible ? row.rawPlan : null,
     engineVersion: row.itemId === null || itemVisible ? row.rawEngineVersion : null,
+    // Transport facts, not item facts — never redacted (see their doc
+    // comments on AdminSessionRow): an admin who may not know WHAT a
+    // session is playing may still know whether anyone is on the other end.
+    suspendedByThrottle: row.suspendedByThrottle,
+    heartbeatStale: heartbeatStaleBeforeMs !== undefined && lastSeenMs < heartbeatStaleBeforeMs,
   };
 }
 
@@ -788,6 +824,15 @@ const LIVE_SESSION_STATUSES: readonly PlaybackSessionStatus[] = [
  * (with its item redacted), never be silently dropped — dropping it would
  * hide the fact that restricted playback is happening at all, which is a
  * DIFFERENT (and worse) leak than revealing an item title would be.
+ *
+ * d3-e3: widening that filter made the opposite mistake possible — an
+ * ABANDONED session is suspended by the sweeper at 90s and only ended at 15
+ * minutes, so it sat here for ~13.5 minutes looking exactly like a healthy
+ * throttle-parked stream. Two derived fields separate them:
+ * `suspendedByThrottle` (which of the enum value's two causes this is) and
+ * `heartbeatStale` (whether anyone is on the other end, measured against the
+ * caller's `heartbeatStaleBeforeMs`). Neither is redacted — see their doc
+ * comments on AdminSessionRow.
  */
 export async function listActiveSessionsAdmin(
   db: Kysely<DB>,
@@ -833,13 +878,14 @@ export async function listActiveSessionsAdmin(
       'playback_sessions.last_heartbeat_ms as lastHeartbeatMs',
       'playback_sessions.plan as rawPlan',
       'playback_sessions.engine_version as rawEngineVersion',
+      'playback_sessions.suspended_by_throttle as suspendedByThrottle',
     ])
     .orderBy('playback_sessions.started_at_ms', 'desc')
     .orderBy('playback_sessions.id', 'desc')
     .limit(limit)
     .execute();
 
-  const mapped = rows.map((row) => mapAdminSessionRow(row as unknown as RawAdminSessionRow));
+  const mapped = rows.map((row) => mapAdminSessionRow(row as unknown as RawAdminSessionRow, params.heartbeatStaleBeforeMs));
 
   const last = rows[rows.length - 1];
   const nextCursor =

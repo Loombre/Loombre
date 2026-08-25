@@ -182,6 +182,51 @@ describe("AdminSessionsPage — suspended sessions (browser-admin-F2)", () => {
 });
 
 // ---------------------------------------------------------------------------
+// d3-e3 (browser-admin-F2 follow-up, P2): `suspended` is one enum value with
+// two opposite meanings — see StreamsPanel.test.tsx's companion block and
+// lib/admin-session-presence.ts's header. This page renders the same pill.
+// ---------------------------------------------------------------------------
+describe("AdminSessionsPage — abandoned vs parked (d3-e3)", () => {
+  let view: TestRender | null = null;
+
+  beforeEach(() => {
+    apiGetMock.mockReset();
+    subscribeMock.mockReset();
+    subscribeMock.mockReturnValue(() => {});
+  });
+
+  afterEach(() => {
+    view?.unmount();
+    view = null;
+    vi.useRealTimers();
+  });
+
+  it("labels a heartbeat-stale row No heartbeat instead of Suspended", async () => {
+    apiGetMock.mockResolvedValue({
+      items: [session("s1", { status: "suspended", suspendedByThrottle: false, heartbeatStale: true })],
+      nextCursor: null,
+    });
+    view = renderIntoBody(<AdminSessionsPage />);
+    await act(async () => {});
+
+    expect(view.container.textContent).toContain("No heartbeat");
+    expect(view.container.textContent).not.toContain("Suspended");
+  });
+
+  it("labels a throttle-parked transcode Buffered ahead", async () => {
+    apiGetMock.mockResolvedValue({
+      items: [session("s1", { status: "suspended", suspendedByThrottle: true, heartbeatStale: false, plan: { decision: "transcode" } })],
+      nextCursor: null,
+    });
+    view = renderIntoBody(<AdminSessionsPage />);
+    await act(async () => {});
+
+    expect(view.container.textContent).toContain("Buffered ahead");
+    expect(view.container.textContent).not.toContain("Suspended");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // d3-e2 (E/admin-error-surfaces): the last two surfaces still deriving their
 // user-facing text from `err instanceof LoombreApiError ? err.message :
 // fallback` — see StreamsPanel.test.tsx's companion block for the full note.

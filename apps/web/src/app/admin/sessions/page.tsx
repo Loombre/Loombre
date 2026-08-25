@@ -27,6 +27,13 @@
 // exists to show — the segment-ahead throttle's suspended <-> active flip,
 // `seeking` during a seek — emit no event at all, so a socket-only page
 // froze on whatever status was true at mount.
+//
+// d3-e3: each row's pill comes from lib/admin-session-presence.ts, which
+// splits the one `suspended` enum value into the throttle's healthy park
+// ("Buffered ahead") and a session nothing has been heard from ("No
+// heartbeat", dimmed) using the server's suspendedByThrottle/heartbeatStale
+// fields. The "heartbeat <time>" meta line below is the raw evidence behind
+// that pill and predates it.
 
 import { useCallback, useEffect, useState } from "react";
 import { Video } from "lucide-react";
@@ -38,7 +45,7 @@ import { EmptyState } from "../../../components/admin/EmptyState.js";
 import { StatusPill } from "../../../components/admin/StatusPill.js";
 import { ReasonsPanel } from "../../../components/admin/ReasonsPanel.js";
 import { ADMIN_SESSIONS_REFRESH_MS } from "../../../lib/admin-live-refresh.js";
-import { describeSessionStatus } from "../../../lib/admin-status.js";
+import { describeSessionPresence } from "../../../lib/admin-session-presence.js";
 import { apiGet } from "../../../lib/api-client.js";
 import { apiErrorMessage } from "../../../lib/api-error-message.js";
 import { debounce } from "../../../lib/debounce.js";
@@ -59,10 +66,12 @@ function formatTime(ms: number | null): string {
 
 function SessionRow({ session }: { session: AdminSessionWithPlan }): React.JSX.Element {
   const [expanded, setExpanded] = useState(false);
-  const info = describeSessionStatus(session.status);
+  // d3-e3: the pill separates the throttle's healthy park from a session
+  // nothing has been heard from — `suspended` alone cannot say which.
+  const info = describeSessionPresence(session);
 
   return (
-    <div className={styles.row}>
+    <div className={styles.row} data-live={info.live ? "true" : "false"}>
       <button type="button" className={styles.rowHeader} onClick={() => setExpanded((v) => !v)} aria-expanded={expanded}>
         <div className={styles.rowMain}>
           <span className={styles.username}>{session.username}</span>

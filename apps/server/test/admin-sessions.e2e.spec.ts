@@ -258,4 +258,99 @@ describe("GET /admin/sessions (STATE.md P2.8/deliverable E)", () => {
     expect(row.status).toBe("suspended");
     expect(row.itemTitle).toBe("Harbor Lights");
   });
+
+  // d3-e3 (browser-admin-F2 follow-up, P2): the wire half of "an abandoned
+  // session must not look like a healthy one". Two rows, both `suspended`,
+  // both non-terminal, and — before this — byte-identical on the wire apart
+  // from their ids: one is the worker's segment-ahead throttle parking a
+  // stream someone IS watching, the other is the sweeper's 90s heartbeat
+  // suspend on a viewer who walked away 10 minutes ago and whom nothing
+  // will end for another 5.
+  it("distinguishes a throttle-parked session from an abandoned one on the wire (suspendedByThrottle + heartbeatStale)", async () => {
+    const adminLogin = await request(app.getHttpServer()).post("/auth/login").send({
+      username: "admin",
+      password: "loombre-seed-admin",
+      deviceName: "admin-sessions-test-presence",
+      deviceProfile: buildDeviceProfile("admin-sessions-test-presence"),
+    });
+    expect(adminLogin.status, JSON.stringify(adminLogin.body)).toBe(200);
+    const adminToken: string = adminLogin.body.accessToken;
+    const adminDeviceId: string = adminLogin.body.deviceId;
+    const adminUserId: string = JSON.parse(
+      Buffer.from(adminToken.split(".")[1]!, "base64url").toString("utf8"),
+    ).sub;
+
+    const db = createDb(databaseUrl);
+    let watchedSessionId: string;
+    let abandonedSessionId: string;
+    try {
+      const item = await db
+        .selectFrom("catalog_items")
+        .select("id")
+        .where("title", "=", "Harbor Lights")
+        .executeTakeFirstOrThrow();
+      const file = await db.selectFrom("media_files").select("id").where("item_id", "=", item.id).executeTakeFirstOrThrow();
+      const allLibraryIds = (await db.selectFrom("libraries").select("id").execute()).map((r) => r.id);
+      const seedingCtx: ViewerContext = { userId: adminUserId, allowedLibraryIds: allLibraryIds, restrictedCleared: true };
+      const nowMs = Date.now();
+
+      const watched = await createPlaybackSession(db, seedingCtx, {
+        itemId: item.id,
+        fileId: file.id,
+        deviceId: adminDeviceId,
+        plan: { decision: "transcode", reasons: [] },
+        engineVersion: "phase3-engine-1.0.0",
+        nowMs,
+      });
+      const abandoned = await createPlaybackSession(db, seedingCtx, {
+        itemId: item.id,
+        fileId: file.id,
+        deviceId: adminDeviceId,
+        plan: { decision: "direct-play", reasons: [] },
+        engineVersion: "phase3-engine-1.0.0",
+        nowMs: nowMs - 600_000,
+      });
+      expect(watched).toBeDefined();
+      expect(abandoned).toBeDefined();
+      watchedSessionId = watched!.id;
+      abandonedSessionId = abandoned!.id;
+
+      // Worker's SIGSTOP branch (setThrottleSuspended) — heartbeat is
+      // current, someone is watching.
+      await db
+        .updateTable("playback_sessions")
+        .set({ status: "suspended", suspended_by_throttle: true, last_heartbeat_ms: nowMs, updated_at_ms: nowMs })
+        .where("id", "=", watchedSessionId)
+        .execute();
+      // Sweeper's heartbeat-stale branch (suspendStalePlaybackSession) —
+      // nothing has been heard from this one in 10 minutes.
+      await db
+        .updateTable("playback_sessions")
+        .set({
+          status: "suspended",
+          suspended_by_throttle: false,
+          last_heartbeat_ms: nowMs - 600_000,
+          updated_at_ms: nowMs - 600_000,
+        })
+        .where("id", "=", abandonedSessionId)
+        .execute();
+    } finally {
+      await db.destroy();
+    }
+
+    const res = await request(app.getHttpServer()).get("/admin/sessions").set("Authorization", `Bearer ${adminToken}`);
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+    const watchedRow = res.body.items.find((r: { id: string }) => r.id === watchedSessionId);
+    const abandonedRow = res.body.items.find((r: { id: string }) => r.id === abandonedSessionId);
+    expect(watchedRow, JSON.stringify(res.body.items)).toBeDefined();
+    expect(abandonedRow, JSON.stringify(res.body.items)).toBeDefined();
+
+    expect(watchedRow.status).toBe("suspended");
+    expect(watchedRow.suspendedByThrottle).toBe(true);
+    expect(watchedRow.heartbeatStale).toBe(false);
+
+    expect(abandonedRow.status).toBe("suspended");
+    expect(abandonedRow.suspendedByThrottle).toBe(false);
+    expect(abandonedRow.heartbeatStale).toBe(true);
+  });
 });

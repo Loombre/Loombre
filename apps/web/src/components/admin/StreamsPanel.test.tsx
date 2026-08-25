@@ -184,6 +184,68 @@ describe("StreamsPanel — suspended streams (browser-admin-F2)", () => {
 });
 
 // ---------------------------------------------------------------------------
+// d3-e3 (browser-admin-F2 follow-up, P2): with every non-terminal status now
+// listed, a viewer who walked away occupied "Active streams · 1" with a
+// Suspended pill for the ~13.5 minutes between the sweeper's 90s suspend and
+// its 15-minute end — indistinguishable from the segment-ahead throttle
+// parking a stream someone IS watching. Proven live 2026-08-24 on a
+// never-heartbeated session ("DIRECT PLAY / The Commitment / Suspended",
+// nobody watching).
+// ---------------------------------------------------------------------------
+describe("StreamsPanel — abandoned vs parked (d3-e3)", () => {
+  let view: TestRender | null = null;
+
+  beforeEach(() => {
+    apiGetMock.mockReset();
+    subscribeMock.mockReset();
+    subscribeMock.mockReturnValue(() => {});
+  });
+
+  afterEach(() => {
+    view?.unmount();
+    view = null;
+    vi.useRealTimers();
+  });
+
+  it("a heartbeat-stale session is labelled No heartbeat and drops out of the Active streams count", async () => {
+    apiGetMock.mockResolvedValue({
+      items: [session("s1", { status: "suspended", suspendedByThrottle: false, heartbeatStale: true })],
+      nextCursor: null,
+    });
+    view = renderIntoBody(<StreamsPanel />);
+    await act(async () => {});
+
+    expect(view.container.textContent).toContain("Active streams · 0");
+    expect(view.container.textContent).toContain("No heartbeat");
+    expect(view.container.textContent).not.toContain("Suspended");
+    // The row itself is still rendered — it exists, and an admin may want
+    // to act on it; only the "someone is watching" claim is withdrawn.
+    expect(view.container.textContent).toContain("Arrival");
+  });
+
+  it("a throttle-parked transcode still counts as live and says so in its own words", async () => {
+    apiGetMock.mockResolvedValue({
+      items: [
+        session("s1", {
+          status: "suspended",
+          suspendedByThrottle: true,
+          heartbeatStale: false,
+          plan: { decision: "transcode" },
+        }),
+      ],
+      nextCursor: null,
+    });
+    view = renderIntoBody(<StreamsPanel />);
+    await act(async () => {});
+
+    expect(view.container.textContent).toContain("Active streams · 1");
+    expect(view.container.textContent).toContain("TRANSCODE");
+    expect(view.container.textContent).toContain("Buffered ahead");
+    expect(view.container.textContent).not.toContain("Suspended");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // d3-e2 (E/admin-error-surfaces): this panel was one of the last two surfaces
 // still deriving its user-facing text from `err instanceof LoombreApiError ?
 // err.message : fallback` instead of the shared apiErrorMessage() helper

@@ -53,6 +53,13 @@
   overflow: hidden;
 }
 
+/* d3-e3: nothing has been heard from this session inside the configured
+   heartbeat window. Dimmed, never hidden — the row is real and still
+   actionable; its "No heartbeat" pill carries the meaning. */
+.row[data-live="false"] {
+  opacity: 0.65;
+}
+
 .rowHeader {
   width: 100%;
   display: flex;
