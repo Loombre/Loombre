@@ -450,6 +450,73 @@ DOC lane's docs sync re-confirmed green at close (70 routes merged,
 build+CSP checks pass; deploy stays manual). Still-open d3 ids: NONE.
 DO-NOT-PUSH honored — everything is local on main.
 
+## QA remediation dispatch 4 — OPEN-backlog burn-down (2026-08-25, COMPLETE)
+
+Fourth owner-directed remediation dispatch: the 39 remaining OPEN backlog
+items (`d4-*` ids, .remediation/findings-table.md + lanes-d4/). Baseline
+07fb14e → HEAD 3f8bc3f (41 commits; this record lands on top), 8 lanes:
+A-core (player, primary checkout + live stack: seek-landing reload levers
+d4-a1.112, at-EOF segment storm d4-a1.113, EOS-wedge d4-a1.126,
+SegmentedControl key consumption d4-a2.94, native-HLS timer lifecycle
+d4-a2.114, create-failure framing d4-a2.117, progress clamp d4-a2.125),
+B (contract/server validation, d4-b1..b4), DOC (d4-doc1), E (admin
+surfaces + error-copy sweep, d4-e1..e6), F (worker/playback lifecycle +
+events, d4-f1..f5), I (infra/gate independence re-verifications with
+mutation proofs, d4-i1..i6), M (music playback, d4-m1..m2), W (web
+shell/nav/watchlist, d4-w1..w8).
+
+**Outcome: 39/39 fixed and on main; 36 carry a full independent VERIFIED
+ledger entry, 0 reopened, 0 blocked** (per-finding ledger:
+.remediation/status/d4-*.json). The other 3 close at "committed" with
+their proof carried by the close gate instead of a separate re-probe:
+d4-doc1 (e3ba596 — docs-only; its evidence IS the docs-drift tests +
+docs-sync ritual, run twice, website build green) and d4-f2/d4-f3
+(worktree commits rebased onto main as 1e2c54c/92b24da; their RED→GREEN
+suites — playback-hls.e2e 61/61, worker metadata consumer.spec — re-ran
+green inside the close gate at HEAD, no separate live re-probe recorded).
+
+Both INVESTIGATIVE items concluded with root cause + bounded fix, per the
+brief's "no bare could-not-reproduce" protocol:
+- **#122 replaced history entry (d4-w8, 8fdf77e/83a77b7)**: root cause is
+  `next dev`'s on-demand compilation of the DESTINATION route — dev
+  disables Link prefetch, the first click on an uncompiled route commits
+  with pushRef.pendingPush already false, and app-router's HistoryUpdater
+  takes its replaceState branch. NOT app code, NOT next/link, NOT latency
+  (1.5 s added latency on a warm route still pushes, 2/2). Landed: the
+  evidence trail, an app-side invariant guard (history-entries.test.ts)
+  for the half that is ours, and a production-build confirmation that a
+  first-click nav pushes. Cold-route control at HEAD reproduces the dev
+  shape exactly; warm-route repro passes 2×.
+- **#126 never-resumes after ENDED (d4-a1.126, 1d004af)**: root cause is
+  a stale endList media-source entity re-armed mid-relocation EOSing the
+  pipeline AFTER the un-ending merge cancels the eos-watch — currentTime
+  jumps to the truncated duration, spurious pause+ended, and State.ENDED
+  only exits via real seeking. Landed: three wedge detectors (A
+  pre-landing, B mid-lifecycle, C post-evidence mid-film ended) with
+  bounded self-repair + console breadcrumbs for the wild. Live at HEAD:
+  the wedge precondition formed 3/3 on the original repro and
+  self-repaired to PLAYING at the seek target in ≤14 s every time; the
+  never-resumes/pinned-scrubber end state is unreproducible.
+
+d4-e6 sweep follow-up at close (3f8bc3f): lane E's skip-list amounted to
+ONE deferred file — app/home/HomeContent.tsx, lane W's this dispatch;
+the player/music/detail surfaces the brief pre-excluded held no
+old-shape sites by lane E's independent scan. Its 2 sites now use
+apiErrorCopy, the grep-gate's API_ERROR_COPY_KNOWN_REMAINING map is
+EMPTY (the stale-entry check keeps it honest), grep-gates PASS, web
+2336/2336.
+
+Close gates on the settled tree: `pnpm gate` ALL STEPS PASSED
+(.remediation/gate-d4-final.log; first run hit one test-data flake —
+packages/db library-provider-chains.spec duplicate
+plugins_base_url_unique from the spec's random-10k-port baseUrl birthday
+collision — isolate re-run and full gate re-run both green); web
+production build + perf:web-budget within budget (/browse first-load
+174.9 KB gz vs 200 KB, result refreshed as 028c2e9); V8-QUAL PASS all 6
+probes; website build re-confirmed green at close (270 files, 70 docs
+routes merged, CSP checks pass; deploy stays manual). Still-open d4 ids:
+NONE. DO-NOT-PUSH honored — everything is local on main.
+
 ## 0.9.0-rc polish pass — UI polish, IA restructure, scanner/probe fix (2026-08-07, IN PROGRESS)
 
 Driven by owner's annotated screenshots from real Windows 11 ARM VM (Parallels) +
