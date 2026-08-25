@@ -6,6 +6,19 @@
 // manual admin enable/disable, HMAC rotation (LD1), non-secret config
 // updates, and removal (LD9: every keyring entry a plugin owns is removed
 // alongside its row — nothing survives).
+//
+// d3-b7 (remediation dispatch 3): every `instancePath` below is the FULL
+// MOUNTED route of the ONE controller action that calls that method
+// (admin-plugins.controller.ts, `@Controller("admin/plugins")`) — not the
+// `/plugins/{id}` these used to build, which this server does not mount at
+// any prefix. RFC 9457's `instance` identifies the occurrence, so a problem
+// echoing a nonexistent path is worse than useless when an admin pastes it
+// into a bug report. Same convention as this package's other
+// request-less problem raisers (admin-library-provider-chain.service.ts's
+// instancePath(), admin-plugins.controller.ts's own toDto()).
+// apps/server/test/plugins/plugin-problem-instance.e2e.spec.ts pins each
+// route's 404 `instance` against the URL that produced it, so a future
+// route move is caught here rather than shipped.
 
 import { Injectable } from "@nestjs/common";
 import { listTopLevelSecretFieldNames, parseLppManifest } from "@loombre/plugin-protocol";
@@ -37,7 +50,9 @@ export class PluginLifecycleService {
    *  only door out of that state, since re-enabling blindly would apply
    *  none of the new grant validation that state exists to force. */
   async setEnabled(pluginId: string, enabled: boolean, actorUserId: string, nowMs = Date.now()): Promise<PluginRow> {
-    const instancePath = `/plugins/${pluginId}`;
+    // The two routes that reach this method are distinct URLs, and the
+    // caller's own `enabled` tells them apart exactly.
+    const instancePath = `/admin/plugins/${pluginId}/${enabled ? "enable" : "disable"}`;
     await requireLiveAdmin(this.dbProvider.db, actorUserId, instancePath);
 
     const plugin = await getPluginById(this.dbProvider.db, pluginId);
@@ -70,7 +85,7 @@ export class PluginLifecycleService {
    *  returned by VALUE exactly here — callers must surface it to the admin
    *  immediately; it is never re-readable afterward. */
   async rotateHmac(pluginId: string, actorUserId: string, nowMs = Date.now()): Promise<string> {
-    const instancePath = `/plugins/${pluginId}`;
+    const instancePath = `/admin/plugins/${pluginId}/rotate-hmac`;
     await requireLiveAdmin(this.dbProvider.db, actorUserId, instancePath);
 
     const plugin = await getPluginById(this.dbProvider.db, pluginId);
@@ -82,7 +97,7 @@ export class PluginLifecycleService {
   }
 
   async updateConfig(pluginId: string, configValues: Record<string, unknown>, actorUserId: string, nowMs = Date.now()): Promise<PluginRow> {
-    const instancePath = `/plugins/${pluginId}`;
+    const instancePath = `/admin/plugins/${pluginId}/config`;
     await requireLiveAdmin(this.dbProvider.db, actorUserId, instancePath);
 
     const plugin = await getPluginById(this.dbProvider.db, pluginId);
@@ -114,7 +129,7 @@ export class PluginLifecycleService {
    *  keyring entry this plugin owns (the HMAC, every secret config
    *  field) — nothing keyring-side survives a removal. */
   async removePlugin(pluginId: string, actorUserId: string, nowMs = Date.now()): Promise<void> {
-    const instancePath = `/plugins/${pluginId}`;
+    const instancePath = `/admin/plugins/${pluginId}`;
     await requireLiveAdmin(this.dbProvider.db, actorUserId, instancePath);
 
     const plugin = await getPluginById(this.dbProvider.db, pluginId);

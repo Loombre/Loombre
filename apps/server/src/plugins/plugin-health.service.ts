@@ -120,7 +120,14 @@ export class PluginHealthService {
     opts: { manifestTimeoutMs?: number; searchTimeoutMs?: number } = {},
   ): Promise<PluginRow> {
     const plugin = await getPluginById(this.dbProvider.db, pluginId);
-    if (!plugin) throw notFound("Plugin not found.", `/plugins/${pluginId}`);
+    // d3-b7: the plugin RESOURCE path (`/admin/plugins/{id}`, the surface
+    // this server actually mounts — never the unmounted `/plugins/{id}`
+    // this used to echo). Deliberately the resource rather than one route:
+    // three callers reach this line — registerPlugin (POST /admin/plugins),
+    // refreshPlugin (POST /admin/plugins/{id}/refresh) and
+    // plugin-health-scheduler.service.ts, which has no request at all — so
+    // no single request path is the truthful answer for all of them.
+    if (!plugin) throw notFound("Plugin not found.", `/admin/plugins/${pluginId}`);
 
     // C5.1: seed from the row JUST fetched — the durable count as of right
     // now, not stale.
