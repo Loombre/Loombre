@@ -311,6 +311,62 @@ device rows); dev stack left RUNNING for owner re-QA
 sessions, zero stray ffmpeg, no qa- fixtures. Docs synced to the website
 tree (70 routes, build+CSP green; deploy NOT run, stays manual).
 
+## QA remediation dispatch 2 — leftover fixes + owner rulings (2026-08-24, COMPLETE, all verified)
+
+Owner-directed follow-up to the remediation run: the 8 real leftover items
+plus three owner rulings taken 2026-08-24 — (R1) the WHOLE 404 family is
+enriched IDENTICALLY (urn:loombre:problem:not-found + fixed generic detail
++ instance=request path on unknown-route, restricted-zone, unentitled and
+invite-claim 404s alike; per-path byte-identity — the anti-probing
+posture — preserved and re-pinned in 6 suites); (R2) the restricted
+capability in GET /system/capabilities is AUTH-ONLY (anonymous report
+omits the key and is byte-identical whether the setting is on or off);
+(R3) the featured-pool exclusion is scoped to Recently Added's VISIBLE
+first page (RECENTLY_ADDED_VISIBLE_CARDS=10) so the banner is reachable
+on small libraries. 20 agents, 0 errors; 12 commits f14c8d8..ef68da2; all
+lanes gate-PASS on integration; close `pnpm gate:full` ALL PASS + V8 PASS.
+
+Fixed + independently verified (live adversarial re-runs): absorbed-202
+seek lands at response time (cf50106 — the Start-over 20 s pin is gone);
+shared watchlist-id store, 6→1 GET per detail load (d14f618); series+album
+mobile watchlist/seen parity (f12dbb5); ZoneFilterBar in-flow +
+Escape/outside dismissal (3fa34d2) with a verifier-caught mid-press-reflow
+follow-up — outside-dismiss moved pointerdown→completed click (596e2e3);
+featured banner reachable (9c49f83); 404 family (1c319d4); capabilities
+auth-scoping (6fe81ec); apply-match provider validation, builtins +
+lpp:<plugin> exists+enabled (e6e1aad); job.updated carries attempts
+end-to-end, chip renders on live rows (60a70f8); /watch preload-warning
+noise ROOT-CAUSED to the never-rendered not-found boundary's SSR'd CSS
+preload (Next app-router, reproduced in a prod build) and fixed by folding
+that CSS into globals (bd0d943) — 4.5 min /watch soak, zero warnings.
+
+browser-items-F13 (owner's real library undressed) = CONFIG GAP, no code
+defect: no metadata provider key is configured (worker logs 'tmdb disabled
+— LOOMBRE_TMDB_API_KEY not set'; providerKeys all set:false; all 30
+metadata jobs completed as silent no-ops at consumer.ts's
+!provider.enabled skip). OWNER ACTION: set a TMDB key (env or
+Settings→provider keys), RESTART THE WORKER (keys resolve once at boot),
+rescan/re-match the library. Filed: surface 'provider key missing' in the
+job/library UI instead of silent-complete.
+
+NEW_FINDINGS backlog now 91 entries (lanes logged adjacent defects instead
+of scope-creeping). Security-notable, top of the next dispatch:
+restricted-unlock-survives-logout — POST /auth/logout + fresh login do NOT
+clear user_settings.restricted_unlocked_until_ms, so gate 5 re-verifies
+from the stale row until expiry. Also notable: PUT
+/libraries/{id}/permissions + PATCH /users/me accept unknown keys inside
+nested/array members; three zone sibling tiles + Row.tsx 'ALL →' are still
+raw <a> anchors; pre-existing creator-grantless restricted libraries
+remain UI-unreachable; watchlist store won't refetch after a failed first
+GET until listeners drop to zero; home watchlist rail fetches outside the
+shared store. Full list: REMEDIATION-STATE.md NEW_FINDINGS.
+
+Docs re-synced to the website tree after the contract changes (api
+reference: capabilities scoping, 404 envelope, apply-match, job.updated);
+deploy stays manual. Dev stack left RUNNING (one mid-run stack death —
+harness task exit 144 during a lane's web-server restart — was recovered
+by the lane itself; stack confirmed on the seeded compose DB).
+
 ## 0.9.0-rc polish pass — UI polish, IA restructure, scanner/probe fix (2026-08-07, IN PROGRESS)
 
 Driven by owner's annotated screenshots from real Windows 11 ARM VM (Parallels) +
