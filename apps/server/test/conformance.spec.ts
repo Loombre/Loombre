@@ -42,6 +42,7 @@
 import "reflect-metadata";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { spawnSync } from "node:child_process";
+import dgram from "node:dgram";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import request from "supertest";
@@ -586,6 +587,27 @@ const IMPLEMENTED_NON_PUBLIC_EXPECTATIONS: Record<string, number> = {
 let app: INestApplication;
 let adminAccessToken: string;
 
+/** packages/shared's registry default for remote.wireguardPort — the port
+ *  this suite must NOT bind (d4-i3, see the test at the bottom of the file). */
+const DEFAULT_WG_PORT = 51820;
+
+/** The UDP port reserved for THIS process in beforeAll. */
+let suiteWgPort = 0;
+
+/** Asks the OS for a free UDP port and gives it straight back — the same
+ *  "reserve by probing" trick the loopback suite gets for free from
+ *  listenPort:0, which is not available here (the service binds the
+ *  CONFIGURED port, deliberately: see remote-wireguard.service.ts). */
+async function reserveFreeUdpPort(): Promise<number> {
+  const probe = dgram.createSocket("udp4");
+  const port = await new Promise<number>((resolve, reject) => {
+    probe.once("error", reject);
+    probe.bind(0, () => resolve(probe.address().port));
+  });
+  await new Promise<void>((resolve) => probe.close(() => resolve()));
+  return port;
+}
+
 // Factored out of beforeAll (which used this inline) so the authenticated
 // walk can call it again mid-walk — see its own call site's comment for
 // why a second mint is necessary.
@@ -615,6 +637,15 @@ beforeAll(async () => {
   // than let the "daily" default attempt a real fetch against the
   // (placeholder, pre-public-launch) manifest mirror URL during a test run.
   process.env["LOOMBRE_UPDATE_CHECK"] = "off";
+  // d4-i3 (backlog #105): pin remote.wireguardPort to a port reserved for
+  // THIS process, via the registry's own env override, BEFORE the app boots
+  // (SettingsService resolves env-pinned values once, at bootstrap). The
+  // authenticated walk below really calls enableRemoteWireguard, which binds
+  // the configured UDP port — on the shared registry default (51820) that
+  // races every other app-booting suite that enables Remote and 500s the
+  // walk on an expected-200. See the d4-i3 test at the bottom of this file.
+  suiteWgPort = await reserveFreeUdpPort();
+  process.env["LOOMBRE_WG_PORT"] = String(suiteWgPort);
 
   app = await NestFactory.create(AppModule, { logger: false });
   await app.init();
@@ -920,6 +951,45 @@ describe("contract conformance (STATE.md D17/D21)", () => {
       );
       expect(op, `${implementedOperationId} missing from API_OPERATIONS`).toBeTruthy();
       expect(mountedSet.has(op!.path), `${implementedOperationId} (${op!.path}) not mounted`).toBe(true);
+    }
+  });
+
+  // d4-i3 (backlog #105). The authenticated walk above really calls
+  // enableRemoteWireguard, and RemoteWireguardService binds the CONFIGURED
+  // UDP port for the listener's whole lifetime — which used to be the
+  // registry default 51820 here, the same fixed port every other
+  // app-booting suite that enables Remote would ask for. That intermittently
+  // 500s the walk on an expected-200 ("listen udp4 :51820: bind: address
+  // already in use"), observed once in a 3-file run and green on re-run:
+  // the classic port-squat flake. beforeAll now pins LOOMBRE_WG_PORT (the
+  // registry env override for remote.wireguardPort) to a port reserved for
+  // THIS process before the app boots, so the walk cannot collide with
+  // anything.
+  //
+  // This test forces the collision the flake only sometimes produced:
+  // it squats the default port itself and asserts enable still succeeds.
+  it("enables WireGuard on this suite's OWN reserved UDP port, never the fixed default (d4-i3)", async () => {
+    const squatter = dgram.createSocket("udp4");
+    const squatted = await new Promise<boolean>((resolve) => {
+      squatter.once("error", () => resolve(false));
+      squatter.bind(DEFAULT_WG_PORT, () => resolve(true));
+    });
+
+    try {
+      const enable = await request(app.getHttpServer())
+        .post("/admin/remote/wireguard/enable")
+        .set("Authorization", `Bearer ${adminAccessToken}`);
+      expect(
+        enable.status,
+        `default udp/${DEFAULT_WG_PORT} squatted=${squatted}; body=${JSON.stringify(enable.body)}`,
+      ).toBe(200);
+      expect(enable.body.listenPort).toBe(suiteWgPort);
+      expect(enable.body.listenPort).not.toBe(DEFAULT_WG_PORT);
+    } finally {
+      await request(app.getHttpServer())
+        .post("/admin/remote/wireguard/disable")
+        .set("Authorization", `Bearer ${adminAccessToken}`);
+      if (squatted) await new Promise<void>((resolve) => squatter.close(() => resolve()));
     }
   });
 });
