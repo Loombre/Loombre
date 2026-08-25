@@ -41,6 +41,11 @@ export interface ScrubberProps {
   formatTime?: (ms: number) => string;
 }
 
+/** One arrow-key press, in ms — deliberately the same amount
+ *  PlayerControls' skip buttons ("Back/Forward 10 seconds") and
+ *  VideoPlayer's window-level arrow shortcut move (d3-aq1). */
+const KEYBOARD_STEP_MS = 10_000;
+
 export function defaultFormatTime(ms: number): string {
   const totalSeconds = Math.max(0, Math.floor(ms / 1000));
   const hours = Math.floor(totalSeconds / 3600);
@@ -112,6 +117,28 @@ export function Scrubber({
     setDragMs(null);
   }
 
+  // d3-aq1 (verify/browser-player-F4): the rail OWNS the arrow keys while it
+  // is the focused control. Before this, one ArrowRight moved 15 s — this
+  // handler's own step AND VideoPlayer's window-level keydown shortcut
+  // (which only skips INPUT/TEXTAREA) both fired off the same keypress, i.e.
+  // two competing seeks, two POST /seek. Stopping propagation for the keys
+  // handled here — and ONLY those: an unhandled key must still reach the
+  // player's Space/f/m shortcuts — leaves exactly one seek per keypress.
+  //
+  // The step is the SAME ±10 s PlayerControls' skip buttons and that window
+  // shortcut use (LD-12(b): "keyboard and click must always agree on the
+  // actual amount"); the pre-fix ±5 s here meant focusing the rail silently
+  // changed how far an arrow key moved.
+  function handleKeyDown(event: React.KeyboardEvent<HTMLDivElement>): void {
+    // Nothing to seek within: no duration means no target to compute, so the
+    // key was NOT handled here and must keep bubbling.
+    if (duration <= 0) return;
+    if (event.key === "ArrowRight") onSeek(Math.min(duration, positionMs + KEYBOARD_STEP_MS));
+    else if (event.key === "ArrowLeft") onSeek(Math.max(0, positionMs - KEYBOARD_STEP_MS));
+    else return;
+    event.stopPropagation();
+  }
+
   const hoverMs = hoverX !== null && trackRef.current ? (hoverX / trackRef.current.getBoundingClientRect().width) * duration : null;
 
   return (
@@ -131,10 +158,7 @@ export function Scrubber({
       onPointerUp={handlePointerUp}
       onPointerCancel={handlePointerCancel}
       onPointerLeave={() => setHoverX(null)}
-      onKeyDown={(e) => {
-        if (e.key === "ArrowRight") onSeek(Math.min(duration, positionMs + 5000));
-        else if (e.key === "ArrowLeft") onSeek(Math.max(0, positionMs - 5000));
-      }}
+      onKeyDown={handleKeyDown}
     >
       <div className={styles.rail}>
         {buffered.map((range, i) =>

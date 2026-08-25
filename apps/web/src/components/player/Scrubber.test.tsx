@@ -6,7 +6,7 @@
 // zero-chapters/boundary-marker exclusion rules.
 
 import { act } from "react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Scrubber } from "./Scrubber.js";
 import { renderIntoBody, type TestRender } from "../ui/test-render.js";
 
@@ -139,6 +139,93 @@ describe("Scrubber commit-on-release (V8, docs/PLAYBACK.md §9.1.9)", () => {
       el.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
     });
     expect(onSeek).toHaveBeenCalledTimes(1);
-    expect(onSeek).toHaveBeenCalledWith(505_000);
+    expect(onSeek).toHaveBeenCalledWith(510_000);
+  });
+});
+
+// d3-aq1 (verify/browser-player-F4): with the Seek slider focused, ONE
+// ArrowRight moved 15 s live — this component's own ±5 s handler AND
+// VideoPlayer's window-level ±10 s shortcut both fired off the same
+// keypress (the window handler only skips INPUT/TEXTAREA, and this
+// component never stopped propagation), i.e. two competing POST /seek per
+// keypress. The rail is the focused control: a key IT handles is its own,
+// and the amount it moves must equal the one the skip buttons and the
+// window shortcut use.
+describe("Scrubber keyboard ownership (d3-aq1)", () => {
+  let view: TestRender | null = null;
+  let seenAtWindow: string[] = [];
+
+  function windowSpy(event: KeyboardEvent): void {
+    seenAtWindow.push(event.key);
+  }
+
+  beforeEach(() => {
+    seenAtWindow = [];
+    // The exact listener shape VideoPlayer.tsx installs for its player
+    // shortcuts (window, bubble phase).
+    window.addEventListener("keydown", windowSpy);
+  });
+
+  afterEach(() => {
+    window.removeEventListener("keydown", windowSpy);
+    view?.unmount();
+    view = null;
+  });
+
+  function slider(v: TestRender): HTMLElement {
+    const el = v.container.querySelector<HTMLElement>('[role="slider"]');
+    if (!el) throw new Error("no slider rendered");
+    return el;
+  }
+
+  function press(el: HTMLElement, key: string): void {
+    act(() => {
+      el.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true }));
+    });
+  }
+
+  it("a handled arrow never reaches the window shortcut — one keypress, ONE seek of one step", () => {
+    const onSeek = vi.fn();
+    view = renderIntoBody(<Scrubber positionMs={500_000} durationMs={1_000_000} onSeek={onSeek} />);
+    const el = slider(view);
+
+    press(el, "ArrowRight");
+    expect(seenAtWindow, "the defect: VideoPlayer's window handler also seeks +10s off this same keypress").toEqual([]);
+    expect(onSeek).toHaveBeenCalledTimes(1);
+    expect(onSeek).toHaveBeenCalledWith(510_000);
+
+    press(el, "ArrowLeft");
+    expect(seenAtWindow).toEqual([]);
+    expect(onSeek).toHaveBeenCalledTimes(2);
+    expect(onSeek).toHaveBeenLastCalledWith(490_000);
+  });
+
+  it("the step matches PlayerControls' skip buttons and the window shortcut exactly (±10s, LD-12(b))", () => {
+    const onSeek = vi.fn();
+    view = renderIntoBody(<Scrubber positionMs={0} durationMs={1_000_000} onSeek={onSeek} />);
+    const el = slider(view);
+    press(el, "ArrowRight");
+    expect(onSeek).toHaveBeenCalledWith(10_000);
+    // Clamped at both ends, unchanged.
+    press(el, "ArrowLeft");
+    expect(onSeek).toHaveBeenLastCalledWith(0);
+  });
+
+  it("keys it does NOT handle still bubble to the window shortcut (Space must keep toggling play)", () => {
+    const onSeek = vi.fn();
+    view = renderIntoBody(<Scrubber positionMs={500_000} durationMs={1_000_000} onSeek={onSeek} />);
+    const el = slider(view);
+    press(el, " ");
+    press(el, "f");
+    expect(seenAtWindow).toEqual([" ", "f"]);
+    expect(onSeek).not.toHaveBeenCalled();
+  });
+
+  it("with no duration there is nothing to seek, and the key is not swallowed either", () => {
+    const onSeek = vi.fn();
+    view = renderIntoBody(<Scrubber positionMs={0} durationMs={null} onSeek={onSeek} />);
+    press(slider(view), "ArrowRight");
+    expect(onSeek).not.toHaveBeenCalled();
+    expect(seenAtWindow).toEqual(["ArrowRight"]);
   });
 });
