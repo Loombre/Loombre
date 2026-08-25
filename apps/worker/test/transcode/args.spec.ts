@@ -81,4 +81,34 @@ describe("injectReadrate", () => {
     injectReadrate(args, 6);
     expect(args).toEqual(copy);
   });
+
+  // d4-f1: the produce-ahead cap's second half. The burst is what keeps a
+  // capped run's STARTUP (and, on a seek-restart, its discovery latency)
+  // identical to an uncapped one — see this function's own header for the
+  // ffmpeg 8.1 measurements behind the defaults.
+  it("adds -readrate_initial_burst when a burst is supplied, in the same global position", () => {
+    const args = ["-hide_banner", "-loglevel", "warning", "-nostdin", "-noaccurate_seek", "-ss", "6177.232", "-i", "{INPUT}"];
+    expect(injectReadrate(args, 4, 120)).toEqual([
+      "-hide_banner",
+      "-loglevel",
+      "warning",
+      "-nostdin",
+      "-readrate",
+      "4",
+      "-readrate_initial_burst",
+      "120",
+      "-noaccurate_seek",
+      "-ss",
+      "6177.232",
+      "-i",
+      "{INPUT}",
+    ]);
+  });
+
+  it("emits the plain two-element form for an omitted or non-positive burst", () => {
+    const args = ["-hide_banner", "-loglevel", "warning", "-nostdin", "-i", "{INPUT}"];
+    const plain = ["-hide_banner", "-loglevel", "warning", "-nostdin", "-readrate", "4", "-i", "{INPUT}"];
+    expect(injectReadrate(args, 4)).toEqual(plain);
+    expect(injectReadrate(args, 4, 0)).toEqual(plain);
+  });
 });

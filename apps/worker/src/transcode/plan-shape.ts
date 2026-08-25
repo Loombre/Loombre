@@ -112,6 +112,27 @@ export function parseStoredPlan(raw: Record<string, unknown> | null): StoredPlan
   };
 }
 
+/**
+ * d4-f1: is this plan a COPY SHAPE — i.e. is there no video ENCODE pacing
+ * the run?
+ *
+ * `video.action` is the whole question. `'copy'` is the direct-stream
+ * remux the finding names; `'none'` (an audio-only session — a music
+ * track, or a video-less stream) has exactly the same property and the
+ * same hazard, since a 2-channel Opus encode also runs orders of magnitude
+ * faster than realtime. Only `'transcode'` puts a real encoder in the
+ * loop, and an encoder is its own pacing.
+ *
+ * Deliberately keyed on the plan's own field rather than on
+ * `decision`: a session can be `decision: 'transcode'` while video is
+ * COPIED and only audio is re-encoded — that is the V8 4K-HDR shape, the
+ * most common transcode session this server serves, and it is a copy shape
+ * for every purpose this predicate exists for.
+ */
+export function isCopyShapePlan(plan: Pick<StoredPlan, "video">): boolean {
+  return plan.video.action !== "transcode";
+}
+
 /** Mirrors `@loombre/playback-engine`'s `plan.ts` own `topRung` selection
  *  (highest `videoBitrateBps`) EXACTLY — kept in sync intentionally (that
  *  file's own comment names this as the "DEFAULT rung" convention); a

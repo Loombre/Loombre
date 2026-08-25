@@ -6,7 +6,7 @@
 // module's header) and the topRung-selection helper.
 
 import { describe, expect, it } from "vitest";
-import { InvalidStoredPlanError, parseStoredPlan, rungAtIndex, topRungOf } from "../../src/transcode/plan-shape.js";
+import { InvalidStoredPlanError, isCopyShapePlan, parseStoredPlan, rungAtIndex, topRungOf } from "../../src/transcode/plan-shape.js";
 
 function validRawPlan(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
@@ -111,5 +111,29 @@ describe("rungAtIndex", () => {
   it("undefined for a non-integer index (a malformed control value never picks a rung)", () => {
     expect(rungAtIndex(LADDER, 1.5)).toBeUndefined();
     expect(rungAtIndex(LADDER, Number.NaN)).toBeUndefined();
+  });
+});
+
+// d4-f1 (QA backlog #103): which sessions get the produce-ahead cap. The
+// predicate is what stands between "the throttle bounds this run" and "only
+// disk throughput does", so its edges are pinned as a table.
+describe("isCopyShapePlan", () => {
+  it("a video COPY is a copy shape even when the session's decision is 'transcode'", () => {
+    // The V8 4K-HDR shape: video copied, EAC3 audio re-encoded to Opus.
+    // `decision` says 'transcode'; nothing is encoding video, so nothing
+    // paces the remux.
+    const plan = parseStoredPlan(validRawPlan({ decision: "transcode", video: { action: "copy" } }));
+    expect(isCopyShapePlan(plan)).toBe(true);
+  });
+
+  it("a video-less session ('none') is a copy shape too — an audio-only encode outruns realtime just as far", () => {
+    expect(isCopyShapePlan(parseStoredPlan(validRawPlan({ video: { action: "none" } })))).toBe(true);
+  });
+
+  it("a video TRANSCODE is NOT a copy shape — the encoder is its own pacing", () => {
+    const plan = parseStoredPlan(
+      validRawPlan({ video: { action: "transcode", targetCodec: "h264", encoder: "software" } }),
+    );
+    expect(isCopyShapePlan(plan)).toBe(false);
   });
 });

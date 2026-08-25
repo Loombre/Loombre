@@ -133,11 +133,30 @@ export function substituteTokens(args: readonly string[], values: TokenValues): 
  * vs POSIX branching (throttle.ts decides the platform's mechanism; this
  * function is just "insert -readrate N", used by two different, clearly
  * separate callers for two different reasons).
+ *
+ * `initialBurstSec` (d4-f1) adds ffmpeg's `-readrate_initial_burst`: that
+ * many SECONDS OF CONTENT are read at maximum speed before the rate limit
+ * applies at all. It is what makes a produce-ahead cap safe to put on a
+ * COPY-shape run — startup, seek discovery and buffer refill after a
+ * restart all happen inside the burst, so nothing a viewer can perceive is
+ * paced; only the runaway tail is. Measured on the vendored ffmpeg 8.1
+ * (150s fixture, `-readrate 10 -readrate_initial_burst 30`): 12.0s wall,
+ * i.e. exactly 30s free + 120s at 10x, and the burst is relative to the
+ * INPUT's own start — with `-ss 60` the same args finish in 8.5s, so a
+ * seek-restart gets its own full burst rather than inheriting a spent one.
+ * A SIGSTOPped input accrues no catch-up debt on that build (an 8s stop
+ * cost 8s of wall time and produced no burst on SIGCONT), so the throttle
+ * and this cap compose without either amplifying the other. Omitted (or
+ * <= 0) emits the plain, unchanged two-element form.
  */
-export function injectReadrate(args: readonly string[], multiplier: number): string[] {
+export function injectReadrate(args: readonly string[], multiplier: number, initialBurstSec?: number): string[] {
   const GLOBAL_SEGMENT_LENGTH = 4; // "-hide_banner", "-loglevel", "warning", "-nostdin"
   const insertAt = args.length >= GLOBAL_SEGMENT_LENGTH ? GLOBAL_SEGMENT_LENGTH : 0;
   const next = [...args];
-  next.splice(insertAt, 0, "-readrate", String(multiplier));
+  const injected =
+    initialBurstSec !== undefined && initialBurstSec > 0
+      ? ["-readrate", String(multiplier), "-readrate_initial_burst", String(initialBurstSec)]
+      : ["-readrate", String(multiplier)];
+  next.splice(insertAt, 0, ...injected);
   return next;
 }

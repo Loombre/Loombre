@@ -327,13 +327,18 @@ export interface PruneResult {
  * Disk stays bounded exactly as before. Production itself is bounded
  * ahead of the viewer by the segment-ahead throttle (throttle.ts: SIGSTOP
  * at ahead > 10, and a NULL `requested_segment` counts as 0, never as
- * "unbounded ahead is fine"), so the retained set is the retention window
+ * "unbounded ahead is fine") and, on a COPY shape — the one case the
+ * throttle's poll granularity cannot bind, because the whole remux can
+ * finish inside one tick — by the produce-ahead cap config.ts pins into
+ * the ffmpeg args (d4-f1), so the retained set is the retention window
  * behind the viewer plus the throttle's lead ahead of it — a window that
  * now slides WITH the viewer instead of with an edge the viewer may never
- * have reached. The one case where production genuinely outruns the
- * throttle — a whole file remuxed inside one poll interval — already kept
- * its output to session teardown under the §9.1.5 rule-4 prune-freeze,
- * which fires on the same tick.
+ * have reached. The one case where production genuinely outran the
+ * throttle — a whole file remuxed inside one poll interval, whose output
+ * the §9.1.5 rule-4 prune-freeze then kept to session teardown — is closed
+ * at the source by d4-f1's produce-ahead cap: a copy-shape run is paced by
+ * ffmpeg itself after an initial burst of one retention window, so the
+ * staged set is bounded by that window rather than by the source's size.
  */
 export function pruneRetention(
   state: ServedPlaylistState,

@@ -42,7 +42,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { createDb, createPlaybackSession, endPlaybackSession, ensureTestDatabase, requestSeek, resolveTestDatabaseUrl, updateRequestedSegment } from "@loombre/db";
 import type { ViewerContext } from "@loombre/db";
 import { plan, type DeviceProfile, type MediaInfo, type NetworkConditions, type PlanInput, type ServerPolicy, type TrackSelection, type VerifiedCapabilities } from "@loombre/playback-engine";
@@ -577,4 +577,93 @@ describe.skipIf(!ffmpegAvailable)("transcode session runtime integration (real f
       expect(existsSync(row.staging_dir)).toBe(false);
     }
   }, 20_000 * TIME_SCALE);
+
+  // ── d4-f1 (QA backlog #103, P4): NO PRODUCE-AHEAD CAP ON A COPY SHAPE ──
+  //
+  // This suite's own header has stated the defect as a testing inconvenience
+  // since it was written: "this session's plan does video=COPY + a trivial
+  // 2-channel audio transcode, which on any real machine would blast through
+  // the whole 150s source in well under a second". In production that is a
+  // Tier-0 disk hazard, not an inconvenience. The segment-ahead throttle
+  // reacts at POLL granularity (250ms) and so cannot bound a run that
+  // finishes inside one tick; and since d3-f1 floored retention on viewer
+  // evidence, the whole staged file survives until the viewer walks past it
+  // (or the session is torn down) rather than being trimmed to the last
+  // 120s. The cap therefore has to live inside ffmpeg: `-readrate` with an
+  // `-readrate_initial_burst` big enough that startup and seek-discovery
+  // are untouched.
+  //
+  // NOTE the deliberate absence of `testReadrateMultiplier` here: the whole
+  // point is that the PRODUCTION path paces itself. The env vars are
+  // config.ts's real escape hatch, turned down so the test observes in
+  // seconds what the shipped defaults express in minutes.
+  it(
+    "(f) d4-f1: a copy-shape remux is produce-ahead capped — the whole file does not land inside one poll interval",
+    { timeout: 90_000 * TIME_SCALE },
+    async () => {
+      vi.stubEnv("LOOMBRE_TRANSCODE_COPY_READRATE", "10");
+      vi.stubEnv("LOOMBRE_TRANSCODE_COPY_READRATE_BURST_SEC", "12");
+      try {
+        const sessionId = await createSession(fileId);
+        const runPromise = runTranscodeSession(
+          {
+            db,
+            stagingRoot,
+            pollIntervalMs: 100,
+            // The throttle is explicitly NOT what is under test: it acts a
+            // whole poll tick too late for this shape, which IS the finding.
+            suspendAheadThresholdOverride: 100_000,
+            resumeAheadThresholdOverride: 50_000,
+            onRunSpawned: (pid) => spawnedPids.push(pid),
+          },
+          sessionId,
+        );
+
+        // The burst is what keeps startup instant — the first segment must
+        // still appear on the ordinary deadline, not after a paced 6s.
+        await waitFor(
+          async () => {
+            const r = await readRow(sessionId);
+            return r.status === "active" && r.produced_segment !== null ? r : undefined;
+          },
+          { timeoutMs: 20_000 * TIME_SCALE, label: "first segment produced under the cap", diag: () => sessionDiag(raw, sessionId) },
+        );
+
+        // The cap is REALLY on the spawned process, in the global options
+        // position — the same place `ps -axo args` is inspected by
+        // .remediation/v8-qual.sh, and the same place win32's P3.8 pacing
+        // has always gone, so it cannot disturb the `-noaccurate_seek -ss`
+        // adjacency that check greps for.
+        if (process.platform !== "win32") {
+          const argv = execFileSync("ps", ["-o", "args=", "-p", String(spawnedPids[0])], { encoding: "utf8" });
+          expect(argv).toContain("-readrate 10 -readrate_initial_burst 12");
+        }
+
+        // Fixed, NOT time-scaled: the cap is enforced against ffmpeg's own
+        // wall clock, so what it admits in two seconds is the same on a
+        // 3-core runner VM as on real hardware. 12s burst + ~2s x 10 = ~32s
+        // of the fixture's 150s, a handful of its 15 keyframe-aligned
+        // segments — against a final index of 14, which is what an uncapped
+        // run reaches before the FIRST poll tick even fires.
+        await new Promise((r) => setTimeout(r, 2_000));
+        const capped = await readRow(sessionId);
+        expect(
+          capped.produced_segment,
+          "the whole 150s file was staged — a copy-shape remux is not produce-ahead capped",
+        ).toBeLessThan(8);
+
+        // ...and it is a CAP, not a stall: production keeps moving.
+        await new Promise((r) => setTimeout(r, 2_000));
+        const later = await readRow(sessionId);
+        expect(later.produced_segment!, "the cap stalled production instead of pacing it").toBeGreaterThan(
+          capped.produced_segment!,
+        );
+
+        await endPlaybackSession(db, ctx, sessionId, Date.now());
+        await runPromise;
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    },
+  );
 });

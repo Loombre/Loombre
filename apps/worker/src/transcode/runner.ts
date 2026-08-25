@@ -37,6 +37,8 @@ import { substituteTokens, injectReadrate } from "./args.js";
 import {
   SEGMENT_DURATION_SEC,
   SEGMENT_RETENTION_SEC,
+  resolveTranscodeCopyShapeBurstSec,
+  resolveTranscodeCopyShapeReadrate,
   resolveTranscodeMaxSuspendMs,
   resolveTranscodePollIntervalMs,
   resolveTranscodeRungSwitchCooldownMs,
@@ -54,7 +56,7 @@ import {
   softwareFallbackAvailable,
   softwareFallbackPlan,
 } from "./encoder-recovery.js";
-import { InvalidStoredPlanError, parseStoredPlan, topRungOf, type StoredPlan } from "./plan-shape.js";
+import { InvalidStoredPlanError, isCopyShapePlan, parseStoredPlan, topRungOf, type StoredPlan } from "./plan-shape.js";
 import {
   applyRunUpdate,
   emptyServedPlaylistState,
@@ -325,9 +327,35 @@ export async function runTranscodeSession(deps: RunSessionDeps, sessionId: strin
    */
   let viewerSegmentIndex: number | undefined;
 
+  /**
+   * d4-f1: the COPY-SHAPE PRODUCE-AHEAD CAP, resolved ONCE per session at
+   * the same "per transcode admission" boundary as every other knob above.
+   * `undefined` when it does not apply — a video-encoding plan (the encoder
+   * is its own pacing), or the cap explicitly disabled with
+   * `LOOMBRE_TRANSCODE_COPY_READRATE=0`. config.ts's constant has the full
+   * reasoning; the short version is that the segment-ahead throttle bounds
+   * production at POLL granularity and a copy shape finishes inside one
+   * tick, so the only cap that can bind it lives inside ffmpeg.
+   *
+   * `plan` is re-read per spawn rather than captured here for a reason: the
+   * encoder-malfunction ladder can swap `plan` for `softwareFallbackPlan`
+   * mid-session, and a fallback only ever moves video from one ENCODER to
+   * another (never to copy), so a session that starts capped stays capped
+   * and one that starts uncapped stays uncapped — but the predicate is
+   * evaluated where the truth lives either way.
+   */
+  const copyShapeReadrate = resolveTranscodeCopyShapeReadrate();
+  const copyShapeBurstSec = resolveTranscodeCopyShapeBurstSec();
+
   function applyPlatformPacing(args: string[]): string[] {
     if (deps.testReadrateMultiplier !== undefined) return injectReadrate(args, deps.testReadrateMultiplier);
+    // P3.8: win32 is paced unconditionally, which is why the copy-shape
+    // runaway was never reachable there — its cap is strictly tighter than
+    // the one below, so it wins rather than stacking.
     if (process.platform === "win32") return injectReadrate(args, WIN32_READRATE_MULTIPLIER);
+    if (copyShapeReadrate > 0 && isCopyShapePlan(plan)) {
+      return injectReadrate(args, copyShapeReadrate, copyShapeBurstSec);
+    }
     return args;
   }
 

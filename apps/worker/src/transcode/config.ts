@@ -140,6 +140,60 @@ export const HEARTBEAT_END_AFTER_MS = 15 * 60_000;
  *  behind the produced live edge are deleted"). */
 export const SEGMENT_RETENTION_SEC = 120;
 
+/**
+ * d4-f1 (QA backlog #103): THE COPY-SHAPE PRODUCE-AHEAD CAP.
+ *
+ * Every other bound on how far production may run ahead of the viewer is
+ * enforced by the runner's poll loop — the segment-ahead throttle SIGSTOPs
+ * an encode more than `transcode.segmentAheadSuspendThreshold` segments
+ * ahead. That is a bound with a 250ms granularity, and a run that FINISHES
+ * inside one tick is never bounded by it at all. A copy shape does exactly
+ * that: nothing is being video-encoded, so the remux is limited only by
+ * disk throughput and reaches `#EXT-X-ENDLIST` on a whole feature in well
+ * under a second (apps/worker/test/transcode/session.integration.spec.ts's
+ * own header has said so since it was written). The entire file lands in
+ * staging, and since d3-f1 floored retention on VIEWER EVIDENCE it stays
+ * there until the viewer walks past it or the session is torn down — on a
+ * tmpfs staging root, which is the deployment shape docs/PLAYBACK.md §9
+ * recommends, that is the whole film in RAM.
+ *
+ * The only lever with sub-poll-interval granularity is inside ffmpeg, so
+ * the cap is `-readrate` (args.ts's `injectReadrate`) — the same mechanism
+ * P3.8 already applies unconditionally on win32, where this hazard
+ * therefore never existed. `-readrate_initial_burst` is what makes it free:
+ * the first `COPY_SHAPE_READRATE_BURST_SEC` of EACH RUN's own output are
+ * produced at full speed, so startup, seek discovery (V8's 3s budget) and
+ * post-restart buffer refill are untouched, and only the tail is paced.
+ *
+ * The burst is deliberately SEGMENT_RETENTION_SEC: staging then holds at
+ * most one retention window ahead of the viewer plus one behind it —
+ * ~240s of content, INDEPENDENT OF SOURCE SIZE, which is the property the
+ * finding asks for. The multiplier is 4x realtime: comfortably faster than
+ * any client consumes (so a viewer never waits on the cap) while making
+ * the lead grow slowly enough that the ordinary throttle catches it at its
+ * next tick, exactly as it does for a real transcode.
+ *
+ * Set `LOOMBRE_TRANSCODE_COPY_READRATE=0` to disable the cap entirely
+ * (pre-d4-f1 behaviour) on a box with staging space to burn.
+ */
+export const COPY_SHAPE_READRATE = 4;
+export const COPY_SHAPE_READRATE_BURST_SEC = SEGMENT_RETENTION_SEC;
+
+export function resolveTranscodeCopyShapeReadrate(): number {
+  const raw = process.env["LOOMBRE_TRANSCODE_COPY_READRATE"];
+  if (!raw) return COPY_SHAPE_READRATE;
+  const parsed = Number.parseFloat(raw);
+  // >= 0 rather than > 0: zero is the documented "no cap" escape hatch.
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : COPY_SHAPE_READRATE;
+}
+
+export function resolveTranscodeCopyShapeBurstSec(): number {
+  const raw = process.env["LOOMBRE_TRANSCODE_COPY_READRATE_BURST_SEC"];
+  if (!raw) return COPY_SHAPE_READRATE_BURST_SEC;
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : COPY_SHAPE_READRATE_BURST_SEC;
+}
+
 /** `ServerPolicy.segmentDurationSec` is a fixed literal `6` in
  *  @loombre/playback-engine's own type (§2.4: "fixed v1") — this runtime
  *  substitutes `{SEG_DUR}` with this constant directly rather than
