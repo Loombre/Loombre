@@ -363,6 +363,125 @@ describe("MusicPlayerProvider", () => {
     });
   });
 
+  // d3-m2 (browser-player-F10 follow-up): F10 fixed only the session-CREATE
+  // half. A track whose session creates FINE but whose media then fails —
+  // segment 404, decode error, a token that expired on the session file URL
+  // — hit no listener at all: the provider wired timeupdate/loadedmetadata/
+  // ended/play/pause on each <audio> and never 'error', so the mini player
+  // parked at 0:00 in silence with nothing to skip it along.
+  describe("media element failure (d3-m2)", () => {
+    const TWO_TRACKS: PlayableTrackInput[] = [
+      { itemId: TRACK_ID, title: "Low Water" },
+      { itemId: TRACK_2_ID, title: "Second Sun" },
+    ];
+
+    /** MediaError on a real element is read-only and jsdom never populates
+     *  it (it has no decoder), so the failing element declares its own. */
+    function setMediaError(el: HTMLMediaElement, code: number): void {
+      Object.defineProperty(el, "error", { configurable: true, get: () => ({ code }) });
+    }
+
+    it("toasts and skips when the ACTIVE element errors after a healthy session create", async () => {
+      createDirectPlaySession
+        .mockReset()
+        .mockResolvedValueOnce({ ok: true, session: directPlaySession() })
+        .mockResolvedValue({ ok: true, session: { ...directPlaySession(), id: SESSION_2_ID, itemId: TRACK_2_ID } });
+
+      view = await playQueueAndSettle(TWO_TRACKS);
+      expect(capturedCtx!.current?.itemId).toBe(TRACK_ID);
+
+      const active = view.container.querySelectorAll("audio")[0]!;
+      setMediaError(active, 3); // MEDIA_ERR_DECODE
+      await act(async () => {
+        active.dispatchEvent(new Event("error"));
+      });
+      await flush();
+
+      const toast = toastText(view.container);
+      expect(toast).toContain("Low Water");
+      expect(toast).toMatch(/decode/i);
+      expect(view.container.querySelector('[data-variant="danger"]')).not.toBeNull();
+      // Skipped, and the dead track's session did not leak.
+      expect(capturedCtx!.current?.itemId).toBe(TRACK_2_ID);
+      expect(endPlaybackSession).toHaveBeenCalledWith(SESSION_ID);
+    });
+
+    it("names the failure shape: a src the server would not deliver reads differently from a decode error", async () => {
+      createDirectPlaySession.mockReset().mockResolvedValue({ ok: true, session: directPlaySession() });
+      view = await playQueueAndSettle([TWO_TRACKS[0]!]);
+
+      const active = view.container.querySelectorAll("audio")[0]!;
+      setMediaError(active, 4); // MEDIA_ERR_SRC_NOT_SUPPORTED — 404/expired token/unsupported
+      await act(async () => {
+        active.dispatchEvent(new Event("error"));
+      });
+      await flush();
+
+      const toast = toastText(view.container);
+      expect(toast).toContain("Low Water");
+      expect(toast).not.toMatch(/decode/i);
+      // Last track in the queue: the tail says so instead of promising a skip.
+      expect(toast).toMatch(/nothing else in the queue/i);
+      expect(capturedCtx!.current).toBeNull();
+    });
+
+    it("ignores MEDIA_ERR_ABORTED — an aborted fetch is the app's own doing, not a broken track", async () => {
+      createDirectPlaySession.mockReset().mockResolvedValue({ ok: true, session: directPlaySession() });
+      view = await playQueueAndSettle(TWO_TRACKS);
+
+      const active = view.container.querySelectorAll("audio")[0]!;
+      setMediaError(active, 1); // MEDIA_ERR_ABORTED
+      await act(async () => {
+        active.dispatchEvent(new Event("error"));
+      });
+      await flush();
+
+      expect(toastText(view.container)).toBe("");
+      expect(capturedCtx!.current?.itemId).toBe(TRACK_ID);
+    });
+
+    it("keeps a PRELOAD slot's error silent, but un-primes it so `ended` falls back to a fresh load", async () => {
+      createDirectPlaySession
+        .mockReset()
+        .mockResolvedValueOnce({ ok: true, session: directPlaySession() })
+        .mockResolvedValue({ ok: true, session: { ...directPlaySession(), id: SESSION_2_ID, itemId: TRACK_2_ID } });
+
+      view = await playQueueAndSettle([{ ...TWO_TRACKS[0]!, durationMs: 200_000 }, TWO_TRACKS[1]!]);
+
+      // Cross the near-end threshold so track 2 is primed into slot B.
+      const active = view.container.querySelectorAll("audio")[0]!;
+      Object.defineProperty(active, "currentTime", { configurable: true, get: () => 199 });
+      await act(async () => {
+        active.dispatchEvent(new Event("timeupdate"));
+      });
+      await flush();
+      expect(createDirectPlaySession).toHaveBeenCalledTimes(2);
+
+      const preloading = view.container.querySelectorAll("audio")[1]!;
+      setMediaError(preloading, 2); // MEDIA_ERR_NETWORK
+      await act(async () => {
+        preloading.dispatchEvent(new Event("error"));
+      });
+      await flush();
+
+      // Nothing user-visible has failed yet — track 1 is still playing.
+      expect(toastText(view.container)).toBe("");
+      expect(capturedCtx!.current?.itemId).toBe(TRACK_ID);
+      expect(endPlaybackSession).toHaveBeenCalledWith(SESSION_2_ID);
+
+      // The dead slot must not still look primed, or `ended` flips to it and
+      // plays silence. It has to fall back to a fresh load instead.
+      await act(async () => {
+        active.dispatchEvent(new Event("ended"));
+      });
+      await flush();
+
+      expect(capturedCtx!.current?.itemId).toBe(TRACK_2_ID);
+      expect(createDirectPlaySession).toHaveBeenCalledTimes(3);
+      expect(createDirectPlaySession).toHaveBeenNthCalledWith(3, TRACK_2_ID, "stream", undefined);
+    });
+  });
+
   // browser-player-F11: the "current track changed" effect keyed itself on
   // [queueState.currentIndex, queueState.items.length], but REORDER/REMOVE
   // (lib/queue.ts) deliberately MOVE currentIndex so it keeps following the

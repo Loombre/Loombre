@@ -90,6 +90,28 @@ function refusalReason(result: CreateSessionUnavailable): string | null {
   return first === undefined ? null : describeReasonCode(first.code).title;
 }
 
+/** MEDIA_ERR_ABORTED — the app's OWN doing (re-pointing a slot's `src`
+ *  aborts the in-flight fetch), never a broken track. */
+const MEDIA_ERR_ABORTED = 1;
+
+/** Shortest honest "why" for an <audio> element that gave up on media it
+ *  had already been handed (d3-m2). Mirrors `refusalReason` above: a phrase
+ *  for lib/track-load-failure.ts to compose, or null when the element
+ *  reported no code at all — in which case the toast drops its reason
+ *  clause rather than inventing one. */
+function mediaErrorReason(error: MediaError | null): string | null {
+  switch (error?.code) {
+    case 2: // MEDIA_ERR_NETWORK
+      return "The connection dropped while loading it";
+    case 3: // MEDIA_ERR_DECODE
+      return "This track's audio couldn't be decoded";
+    case 4: // MEDIA_ERR_SRC_NOT_SUPPORTED — 404, expired token, unusable format
+      return "The server wouldn't deliver this track's file";
+    default:
+      return null;
+  }
+}
+
 function toQueueTrack(input: PlayableTrackInput): QueueTrack {
   return {
     entryId: (globalThis.crypto?.randomUUID?.() ?? `${input.itemId}-${Date.now()}-${Math.random()}`),
@@ -417,6 +439,40 @@ export function MusicPlayerProvider({ children }: { children: ReactNode }): Reac
         }
       };
 
+      // d3-m2 (browser-player-F10 follow-up): F10 covered only the session
+      // CREATE half. A track whose session creates fine and whose media THEN
+      // fails — the session file 404s, the token on it expired, the bytes
+      // won't decode — reached no listener at all, so the mini player parked
+      // at 0:00 in silence with nothing to move it along. Same exit as every
+      // other load failure: end the slot's session, toast, skip.
+      const onError = (): void => {
+        const mediaError = el.error;
+        if (mediaError?.code === MEDIA_ERR_ABORTED) return;
+
+        // Resolve the failure to the ENTRY this slot was given (the same
+        // identity rule browser-player-F11 established) — never to whatever
+        // happens to be current now.
+        const entryId = slotEntryRef.current[slot];
+        if (entryId === undefined) return; // nothing was ever loaded here
+        const track = queueStateRef.current.items.find((t) => t.entryId === entryId);
+        if (!track) return; // its entry left the queue: nothing to say or skip
+
+        const isPreloadSlot = gaplessStateRef.current.active !== slot;
+        const isCurrent = !isPreloadSlot && currentTrack(queueStateRef.current)?.entryId === entryId;
+        // Free the claim so the dead entry can't read as "already there".
+        delete slotEntryRef.current[slot];
+        if (isPreloadSlot) {
+          // A primed-but-dead slot must stop looking primed, or the `ended`
+          // handler below flips to it and "plays" silence.
+          dispatchGapless({ type: "CLEAR_PRELOAD" });
+        } else if (isCurrent) {
+          setIsPlaying(false);
+        }
+        // Not current => nothing user-visible has happened yet: end the
+        // session, stay quiet (failTrackLoad's preloadOnly contract).
+        failTrackLoad(slot, track, !isCurrent, mediaErrorReason(mediaError));
+      };
+
       const onPlay = (): void => {
         if (gaplessStateRef.current.active === slot) setIsPlaying(true);
       };
@@ -430,12 +486,14 @@ export function MusicPlayerProvider({ children }: { children: ReactNode }): Reac
       el.addEventListener("timeupdate", onTimeUpdate);
       el.addEventListener("loadedmetadata", onLoadedMetadata);
       el.addEventListener("ended", onEnded);
+      el.addEventListener("error", onError);
       el.addEventListener("play", onPlay);
       el.addEventListener("pause", onPause);
       cleanups.push(() => {
         el.removeEventListener("timeupdate", onTimeUpdate);
         el.removeEventListener("loadedmetadata", onLoadedMetadata);
         el.removeEventListener("ended", onEnded);
+        el.removeEventListener("error", onError);
         el.removeEventListener("play", onPlay);
         el.removeEventListener("pause", onPause);
       });
