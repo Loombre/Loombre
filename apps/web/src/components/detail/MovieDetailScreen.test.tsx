@@ -205,6 +205,19 @@ describe("MovieDetailScreen", () => {
     expect(apiGetMock.mock.calls.filter((call) => call[0] === "/users/me")).toHaveLength(1);
   });
 
+  it("browser-items-F9 REGRESSION GUARD: the desktop + mobile WatchlistToggles share ONE GET /watchlist, and the screen fetches /movies/{id} once", async () => {
+    installMatchMedia();
+    installApiGetMock(() => Promise.resolve(MOVIE));
+    view = renderScreen();
+    await flush();
+
+    // Two WatchlistToggle instances mount (desktop + mobile trees coexist
+    // in the DOM, same as MetadataCard above); they read ONE shared id
+    // store (lib/watchlist-id-store.ts), not one fetch each.
+    expect(apiGetMock.mock.calls.filter((call) => call[0] === "/watchlist")).toHaveLength(1);
+    expect(apiGetMock.mock.calls.filter((call) => call[0] === "/movies/{id}")).toHaveLength(1);
+  });
+
   it("browser-items-F10 REGRESSION GUARD: a non-actor credit (performer/guest) still renders in CAST, not just 'actor'", async () => {
     installMatchMedia();
     const withPerformer = {
