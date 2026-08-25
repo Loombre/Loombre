@@ -264,3 +264,121 @@ describe("ZoneFilterBar — the open panel never covers the empty state's remedy
     ).toBeNull();
   });
 });
+
+/* ── d4-w7 (backlog #091, browser-restricted-settings-F7 regression) ──
+   The in-flow rework left the BAR itself unconstrained below 768px. The
+   only rule that ever bounded its width — `flex: 1 1 0` — lives inside
+   `@media (width >= 768px)`, and `.toolbar` (app/restricted/browse/
+   page.module.css) keeps `flex-wrap: wrap` when it turns into a column at
+   767.98px, so `align-items: stretch` stretches the bar to its own FLEX
+   LINE's cross size (its max-content) instead of the column's width. QA
+   measured the bar at 583px inside a 358px column at 390x844; the panel's
+   `width: min(720px, 100%)` then resolved that 100% against 583, so the
+   Rating / Duration / Year "Max" inputs sat at x=315..582 and were clipped
+   at the screen edge — with `main { overflow-x: hidden }` there was no
+   scrollbar to reach them either.
+
+   jsdom computes no layout, so — like the "cannot cover" half above — this
+   is pinned against the stylesheet text: a tiny cascade model that asks
+   which declarations actually APPLY at a given viewport. That distinction
+   is the whole defect (the constraint existed; it was media-gated away
+   from every phone), so a media-blind grep would have passed all along. */
+
+interface CssRule {
+  selectors: string[];
+  declarations: string;
+  media: string | null;
+}
+
+/** One level of @media nesting — all this stylesheet (or any CSS module
+ *  here) uses. Comments are stripped first so a commented-out rule can
+ *  never satisfy an assertion. */
+function parseRules(source: string): CssRule[] {
+  const css = source.replace(/\/\*[\s\S]*?\*\//g, "");
+  const rules: CssRule[] = [];
+  let media: string | null = null;
+  let prelude = "";
+  let i = 0;
+  while (i < css.length) {
+    const ch = css[i]!;
+    if (ch === "{") {
+      const head = prelude.trim();
+      prelude = "";
+      if (head.startsWith("@media")) {
+        media = head.slice("@media".length).trim();
+        i += 1;
+        continue;
+      }
+      let depth = 1;
+      let j = i + 1;
+      while (j < css.length && depth > 0) {
+        if (css[j] === "{") depth += 1;
+        else if (css[j] === "}") depth -= 1;
+        j += 1;
+      }
+      rules.push({ selectors: head.split(",").map((s) => s.trim()), declarations: css.slice(i + 1, j - 1), media });
+      i = j;
+      continue;
+    }
+    if (ch === "}") {
+      media = null;
+      prelude = "";
+      i += 1;
+      continue;
+    }
+    prelude += ch;
+    i += 1;
+  }
+  return rules;
+}
+
+function mediaAppliesAt(media: string | null, viewportPx: number): boolean {
+  if (media === null) return true;
+  const conditions = [...media.matchAll(/\(\s*width\s*(>=|<=|>|<)\s*([\d.]+)px\s*\)/g)];
+  expect(conditions.length, `unhandled media query in ZoneControls.module.css: ${media}`).toBeGreaterThan(0);
+  return conditions.every(([, op, raw]) => {
+    const bound = Number(raw);
+    if (op === ">=") return viewportPx >= bound;
+    if (op === "<=") return viewportPx <= bound;
+    if (op === ">") return viewportPx > bound;
+    return viewportPx < bound;
+  });
+}
+
+describe("ZoneFilterBar — the open panel fits the phone viewport (d4-w7)", () => {
+  const rules = parseRules(readFileSync(path.join(__dirname, "ZoneControls.module.css"), "utf8"));
+
+  /** Everything the cascade actually delivers to `selector` at that viewport. */
+  function declarationsAt(selector: string, viewportPx: number): string {
+    return rules
+      .filter((r) => r.selectors.includes(selector) && mediaAppliesAt(r.media, viewportPx))
+      .map((r) => r.declarations)
+      .join(";");
+  }
+
+  /** A cap resolved against the CONTAINING BLOCK — the only kind that
+   *  helps here. `align-self: stretch` does not: the bar's flex line is
+   *  content-sized (the toolbar column still wraps), so stretching to the
+   *  line is what produced the 583px in the first place. */
+  function capsAgainstContainer(declarations: string): boolean {
+    return /(?:^|[;\s])(?:max-)?width\s*:\s*(?:100%|min\()/.test(declarations);
+  }
+
+  // 390 = the QA repro's phone; 600 and 767 are the widths it measured as
+  // still broken (clean at 768, where `flex: 1 1 0` takes over).
+  it.each([390, 600, 767])("caps .filterBar against its toolbar column at %ipx", (viewport) => {
+    expect(
+      capsAgainstContainer(declarationsAt(".filterBar", viewport)),
+      `nothing bounds .filterBar at ${viewport}px: it stretches to its own max-content (583px measured at 390px) ` +
+        "and the panel's `width: min(720px, 100%)` resolves against THAT, clipping the range inputs off-screen (d4-w7)",
+    ).toBe(true);
+  });
+
+  it("keeps the desktop toolbar rule that stops the panel bumping the sort group onto a second row (F7)", () => {
+    expect(declarationsAt(".filterBar", 1280)).toMatch(/flex:\s*1\s+1\s+0/);
+  });
+
+  it("keeps the panel's own width tied to the bar, so the bar's cap propagates to it", () => {
+    expect(declarationsAt(".filterPanel", 390)).toMatch(/width:\s*min\(720px,\s*100%\)/);
+  });
+});

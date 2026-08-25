@@ -68,9 +68,24 @@
 
 /* The bar is a COLUMN: the toggle row, then the disclosure panel beneath
    it, in flow (browser-restricted-settings-F7 — see .filterPanel below). */
+
+/* max-width, unconditionally (d4-w7): the bar must never be wider than the
+   toolbar column it sits in, and a PERCENTAGE cap is the only kind that
+   guarantees it here, because it resolves against the containing block
+   (the flex container's content box) rather than against the bar's own
+   flex line. `align-self: stretch` would NOT do: app/restricted/browse/
+   page.module.css's `.toolbar` keeps `flex-wrap: wrap` when it becomes a
+   column below 768px, and in a multi-line flex container "stretch" means
+   "to the LINE's cross size", which is itself content-derived — that is
+   exactly how the bar reached 583px inside a 358px column at 390x844 and
+   pushed the panel's Rating/Duration/Year "Max" inputs off the screen
+   edge (with `main { overflow-x: hidden }`, unreachable). The `flex: 1 1 0`
+   below only ever applied from 768px up, so every phone width was
+   unconstrained. */
 .filterBar {
   display: flex;
   min-width: 0;
+  max-width: 100%;
   flex-direction: column;
   align-items: flex-start;
   gap: var(--space-sm);
