@@ -94,6 +94,37 @@ export function resolveTranscodeMaxSuspendMs(): number {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : THROTTLE_MAX_SUSPEND_MS;
 }
 
+/**
+ * d3-f5 (QA 2026-08-24, verify-A): how long a RUNG-DRIVEN restart is
+ * deferred after a SEEK restart of the same session.
+ *
+ * hls.js re-evaluates its ABR level the instant a seek empties the buffer,
+ * and on a marginal link it flaps: one observed POST /seek spawned runs 7
+ * (rung 1) and 8 (rung 0) 0.9s apart, and the session reached 23 runs —
+ * 2-3 full ffmpeg restarts per seek, each killing the previous run before
+ * it could produce anything, while the client 503'd on the abandoned run's
+ * segments and eventually showed a false "Seek timed out" toast. A restart
+ * is the most expensive thing this runtime does; paying it three times for
+ * one intention is how a session produces nothing at all.
+ *
+ * Deferring is also what makes a flap FOLD rather than accumulate:
+ * `requestRungSwitch` absorbs a switch naming the ACTIVE rung, and while
+ * nothing restarts the active rung does not move — so 1 -> 0 -> 1 collapses
+ * to the one pending value the cool-down finally consumes. Long enough to
+ * cover an ABR settle, short enough that a deliberate quality pick right
+ * after a seek still feels immediate; a seek arriving inside the window
+ * still carries the pending rung into its own single restart (§9.1.7), so
+ * nothing is ever merely postponed behind a queue.
+ */
+export const RUNG_SWITCH_SEEK_COOLDOWN_MS = 3_000;
+
+export function resolveTranscodeRungSwitchCooldownMs(): number {
+  const raw = process.env["LOOMBRE_TRANSCODE_RUNG_SWITCH_COOLDOWN_MS"];
+  if (!raw) return RUNG_SWITCH_SEEK_COOLDOWN_MS;
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : RUNG_SWITCH_SEEK_COOLDOWN_MS;
+}
+
 /** Heartbeat thresholds (docs/PLAYBACK.md §9) — DOCUMENTATION ONLY, kept
  *  as the historical fixed numbers this step's spec named; the REAL
  *  effective values now live in packages/shared/src/settings-registry.ts's

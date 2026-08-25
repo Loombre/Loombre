@@ -39,6 +39,7 @@ import {
   SEGMENT_RETENTION_SEC,
   resolveTranscodeMaxSuspendMs,
   resolveTranscodePollIntervalMs,
+  resolveTranscodeRungSwitchCooldownMs,
   resolveTranscodeStagingRoot,
 } from "./config.js";
 import {
@@ -129,6 +130,9 @@ export interface RunSessionDeps {
    *  wiring (consumer.ts) never sets it; the value then comes from
    *  `resolveTranscodeMaxSuspendMs()`. */
   maxSuspendMsOverride?: number;
+  /** TEST-ONLY override for config.ts's RUNG_SWITCH_SEEK_COOLDOWN_MS
+   *  (d3-f5) — production wiring (consumer.ts) never sets it. */
+  rungSwitchCooldownMsOverride?: number;
 }
 
 interface CurrentRun {
@@ -236,6 +240,12 @@ export async function runTranscodeSession(deps: RunSessionDeps, sessionId: strin
    *  physically SIGSTOPped. Resolved ONCE per session, at the same "per
    *  transcode admission" boundary as the throttle thresholds above. */
   const maxSuspendMs = deps.maxSuspendMsOverride ?? resolveTranscodeMaxSuspendMs();
+  /** d3-f5: how long a rung-driven restart is deferred after a seek
+   *  restart (config.ts) — resolved once per session, same boundary. */
+  const rungSwitchCooldownMs = deps.rungSwitchCooldownMsOverride ?? resolveTranscodeRungSwitchCooldownMs();
+  /** d3-f5: when this session last restarted FOR A SEEK, `undefined` until
+   *  it has. The cool-down window above is measured from here. */
+  let lastSeekRestartAtMs: number | undefined;
 
   let suspendAheadThreshold = deps.suspendAheadThresholdOverride ?? THROTTLE_SUSPEND_AHEAD;
   let resumeAheadThreshold = deps.resumeAheadThresholdOverride ?? THROTTLE_RESUME_AHEAD;
@@ -704,6 +714,9 @@ export async function runTranscodeSession(deps: RunSessionDeps, sessionId: strin
           recoveryRung ?? currentRun.ladderRungIndex,
         );
         if (!restarted) return;
+        // d3-f5: a recovery restart that CONSUMED a seek is a seek restart
+        // for cool-down purposes — the ABR flap it triggers is the same one.
+        if (recoverySeek) lastSeekRestartAtMs = now();
         continue;
       }
 
@@ -747,6 +760,22 @@ export async function runTranscodeSession(deps: RunSessionDeps, sessionId: strin
     // rung it wants different ones, so absorption must not fire.
     const pendingRungIndex = row.pending_rung_index;
     const switchPending = pendingRungIndex !== null && pendingRungIndex !== currentRun.ladderRungIndex;
+    // d3-f5: a rung-driven restart is DEFERRED for a short window after a
+    // seek restart (config.ts's RUNG_SWITCH_SEEK_COOLDOWN_MS). hls.js
+    // re-evaluates its level the instant a seek empties the buffer and on a
+    // marginal link flaps 1/0/1, which used to cost a full kill-and-respawn
+    // per flap — 23 runs in one session, the client 503ing on abandoned
+    // runs and toasting a false "Seek timed out". Deferring is also what
+    // makes the flap FOLD: `requestRungSwitch` absorbs a switch naming the
+    // ACTIVE rung, and while nothing restarts the active rung does not
+    // move, so the storm collapses to the single pending value this window
+    // eventually consumes. Nothing is dropped or queued — the column keeps
+    // whatever the client asked for last, a switch that outlives the window
+    // restarts normally, and the seek block below still folds a pending
+    // rung into a coincident seek restart (§9.1.7) whether or not the
+    // window is open, so a real seek never waits behind a deferral.
+    const switchDeferred =
+      switchPending && lastSeekRestartAtMs !== undefined && now() - lastSeekRestartAtMs < rungSwitchCooldownMs;
 
     if (row.seek_target_ms !== null) {
       // DE-DUPLICATION FIRST (process-lifecycle hardening wave, 2026-08-11,
@@ -835,6 +864,9 @@ export async function runTranscodeSession(deps: RunSessionDeps, sessionId: strin
             coincidentRung ?? currentRun.ladderRungIndex,
           );
           if (!restarted) return;
+          // d3-f5: the cool-down runs from HERE — the restart the ABR flap
+          // reacts to.
+          lastSeekRestartAtMs = now();
           continue;
         }
       }
@@ -862,7 +894,10 @@ export async function runTranscodeSession(deps: RunSessionDeps, sessionId: strin
     //
     // The admission slot is untouched throughout: it is held by the
     // SESSION, and the session never goes terminal here.
-    if (switchPending) {
+    // d3-f5: `!switchDeferred` — inside the post-seek cool-down the pending
+    // rung is left in the column, unconsumed, for a later tick to act on
+    // (or for a coincident seek above to fold in first).
+    if (switchPending && !switchDeferred) {
       const consumedRung = await consumePendingRungIndex(db, sessionId, now());
       if (consumedRung !== undefined && consumedRung !== currentRun.ladderRungIndex) {
         const restarted = await restartAt(

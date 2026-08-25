@@ -37,7 +37,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { createDb, createPlaybackSession, endPlaybackSession, ensureTestDatabase, requestSeek, resolveTestDatabaseUrl } from "@loombre/db";
+import { createDb, createPlaybackSession, endPlaybackSession, ensureTestDatabase, requestRungSwitch, requestSeek, resolveTestDatabaseUrl } from "@loombre/db";
 import type { ViewerContext } from "@loombre/db";
 import { plan, type DeviceProfile, type MediaInfo, type NetworkConditions, type PlanInput, type ServerPolicy, type TrackSelection, type VerifiedCapabilities } from "@loombre/playback-engine";
 import { runTranscodeSession } from "../../src/transcode/runner.js";
@@ -731,6 +731,164 @@ describe("seek-restart de-duplication (continuation item 1: livelock)", () => {
 
       await endPlaybackSession(db, ctx, sessionId, Date.now());
       await runPromise;
+    },
+  );
+
+  // ===========================================================================
+  // d3-f5 (QA 2026-08-24, P2 — verify-A): A SEEK DURING AN ABR RUNG FLAP.
+  //
+  // hls.js re-evaluates its level the moment a seek empties the buffer, and
+  // on a marginal link it FLAPS: one POST /seek was observed spawning
+  // transcode_runs 7 (rung 1) and 8 (rung 0) 0.9 s apart, with the whole
+  // session reaching 23 runs — 2-3 full ffmpeg restarts per seek, each one
+  // killing the run before it could produce, while the client re-requested
+  // the abandoned old run's segments (9x 503) and finally showed a false
+  // "Seek timed out" toast at +20 s.
+  //
+  // The server half of the fix (the client half is A-core d3-a1): a
+  // rung-driven restart is DEFERRED for a short cool-down after a seek
+  // restart. The deferral is what makes the flap fold — `requestRungSwitch`
+  // absorbs a switch naming the ACTIVE rung, and while nothing restarts the
+  // active rung does not move, so 1 -> 0 -> 1 collapses into the single
+  // pending value the cool-down eventually consumes. Nothing is dropped: a
+  // switch that outlives the window still restarts, and a real seek landing
+  // inside the window still folds the pending rung into its own single
+  // restart (§9.1.7).
+  // ===========================================================================
+
+  it(
+    "d3-f5: an ABR flap right after a seek restart costs ONE deferred restart, not one per flap",
+    { timeout: 60_000 * TIME_SCALE },
+    async () => {
+      installFakeProcessTable();
+      const sessionId = await createSession(storedLadderPlan, ladderDeviceId);
+      const runPromise = runTranscodeSession(
+        {
+          db,
+          stagingRoot,
+          pollIntervalMs: 25,
+          ffmpegPath: "/nonexistent/ffmpeg-never-executed",
+          spawnFn: fakeSpawnFn(),
+          suspendAheadThresholdOverride: 10_000,
+          resumeAheadThresholdOverride: 5_000,
+          // The real cool-down is seconds (config.ts); a shorter one keeps
+          // this test quick without changing what it proves.
+          rungSwitchCooldownMsOverride: 1_500,
+        },
+        sessionId,
+      );
+
+      try {
+        await waitForSpawnCount(1, 10_000 * TIME_SCALE);
+        await waitForActiveRung(sessionId, 0, 10_000 * TIME_SCALE);
+        fabricateRunPlaylist(sessionId, 0, 4);
+        await waitForProducedSegment(sessionId, 3, 10_000 * TIME_SCALE);
+
+        // The user drags the scrubber: a genuine seek, well outside the live
+        // run's [0, 24 000] window, so it really restarts.
+        await requestSeek(db, ctx, sessionId, 60_000, Date.now());
+        await waitForSpawnCount(2, 10_000 * TIME_SCALE);
+        await waitForRunCount(sessionId, 2, 10_000 * TIME_SCALE);
+
+        // ...and hls.js's ABR flaps while the buffer refills.
+        await requestRungSwitch(db, ctx, sessionId, 1, Date.now());
+        await new Promise((r) => setTimeout(r, 150 * TIME_SCALE));
+        await requestRungSwitch(db, ctx, sessionId, 0, Date.now());
+        await new Promise((r) => setTimeout(r, 150 * TIME_SCALE));
+        await requestRungSwitch(db, ctx, sessionId, 1, Date.now());
+
+        // THE PIN: inside the cool-down the flap has cost NOTHING. Before
+        // d3-f5 each of those three writes killed the in-flight run and
+        // spawned another ~one tick later.
+        await new Promise((r) => setTimeout(r, 400 * TIME_SCALE));
+        expect(children.length, "a rung flap inside the cool-down must not restart anything").toBe(2);
+
+        // Deferred, never dropped: once the window closes the surviving
+        // pending rung is consumed by ONE restart.
+        await waitForSpawnCount(3, 10_000 * TIME_SCALE);
+        await waitForActiveRung(sessionId, 1, 10_000 * TIME_SCALE);
+        await new Promise((r) => setTimeout(r, 400 * TIME_SCALE));
+        expect(children.length, "three flaps, ONE restart").toBe(3);
+
+        const runs = await readRuns(sessionId);
+        expect(runs).toEqual([
+          { run_index: 0, source_origin_ms: 0, ladder_rung_index: 0 },
+          { run_index: 1, source_origin_ms: 60_000, ladder_rung_index: 0 },
+          // A pure switch continues the timeline: run 1 produced nothing
+          // (its playlist is never fabricated), so the handoff origin is its
+          // own origin.
+          { run_index: 2, source_origin_ms: 60_000, ladder_rung_index: 1 },
+        ]);
+        expect((await readRungRow(sessionId)).pending_rung_index).toBeNull();
+
+        await endPlaybackSession(db, ctx, sessionId, Date.now());
+        await runPromise;
+      } finally {
+        await raw.query(`UPDATE playback_sessions SET status = 'ended', updated_at_ms = $1 WHERE id = $2 AND status NOT IN ('ended','failed')`, [
+          Date.now(),
+          sessionId,
+        ]);
+        await runPromise.catch(() => undefined);
+      }
+    },
+  );
+
+  it(
+    "d3-f5: a further seek inside the cool-down FOLDS the deferred rung into its own single restart (§9.1.7)",
+    { timeout: 60_000 * TIME_SCALE },
+    async () => {
+      installFakeProcessTable();
+      const sessionId = await createSession(storedLadderPlan, ladderDeviceId);
+      const runPromise = runTranscodeSession(
+        {
+          db,
+          stagingRoot,
+          pollIntervalMs: 25,
+          ffmpegPath: "/nonexistent/ffmpeg-never-executed",
+          spawnFn: fakeSpawnFn(),
+          suspendAheadThresholdOverride: 10_000,
+          resumeAheadThresholdOverride: 5_000,
+          rungSwitchCooldownMsOverride: 1_500,
+        },
+        sessionId,
+      );
+
+      try {
+        await waitForSpawnCount(1, 10_000 * TIME_SCALE);
+        await waitForActiveRung(sessionId, 0, 10_000 * TIME_SCALE);
+        fabricateRunPlaylist(sessionId, 0, 4);
+        await waitForProducedSegment(sessionId, 3, 10_000 * TIME_SCALE);
+
+        await requestSeek(db, ctx, sessionId, 60_000, Date.now());
+        await waitForSpawnCount(2, 10_000 * TIME_SCALE);
+        await requestRungSwitch(db, ctx, sessionId, 2, Date.now());
+
+        // A second drag while the first switch is still deferred. The seek
+        // restart is happening anyway, so it carries the pending rung —
+        // deferring must never turn into "the client waits twice".
+        await new Promise((r) => setTimeout(r, 150 * TIME_SCALE));
+        await requestSeek(db, ctx, sessionId, 90_000, Date.now());
+        await waitForSpawnCount(3, 10_000 * TIME_SCALE);
+        await waitForActiveRung(sessionId, 2, 10_000 * TIME_SCALE);
+
+        // Past the cool-down: nothing left to fire — the rung was consumed
+        // by the seek restart, not merely postponed behind it.
+        await new Promise((r) => setTimeout(r, 2_000 * TIME_SCALE));
+        expect(children.length, "one seek + one deferred switch is ONE restart").toBe(3);
+
+        const runs = await readRuns(sessionId);
+        expect(runs[2]).toEqual({ run_index: 2, source_origin_ms: 90_000, ladder_rung_index: 2 });
+        expect((await readRungRow(sessionId)).pending_rung_index).toBeNull();
+
+        await endPlaybackSession(db, ctx, sessionId, Date.now());
+        await runPromise;
+      } finally {
+        await raw.query(`UPDATE playback_sessions SET status = 'ended', updated_at_ms = $1 WHERE id = $2 AND status NOT IN ('ended','failed')`, [
+          Date.now(),
+          sessionId,
+        ]);
+        await runPromise.catch(() => undefined);
+      }
     },
   );
 
