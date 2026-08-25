@@ -9,6 +9,7 @@
 // scanning a large zone by facts rather than artwork alone.
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import type { components } from "@loombre/sdk";
 import { blurhashToDataUri } from "../../lib/blurhash-canvas.js";
 import { buildImageUrl } from "../../lib/image-url.js";
@@ -42,7 +43,11 @@ export function ZoneDetailedRow({
   const duration = formatDuration(item.durationMs);
 
   return (
-    <a href={href} className={styles.row}>
+    // next/link, never a raw <a href>: this is the DETAILED-density twin of
+    // ZonePosterCard (ZoneBrowseGrid renders one or the other), so half the
+    // browse wall used to re-lock the zone on every click — same mechanism
+    // as ZoneStudioTile.tsx's note (QA C/zone-sibling-tiles).
+    <Link href={href} className={styles.row}>
       <div className={styles.thumbWrap}>
         {placeholderUri && <img className={styles.placeholder} data-loaded={loaded} src={placeholderUri} alt="" aria-hidden="true" />}
         <img className={styles.thumb} data-loaded={loaded} src={src} alt="" loading="lazy" onLoad={() => setLoaded(true)} />
@@ -58,6 +63,6 @@ export function ZoneDetailedRow({
         </span>
         {item.genres.length > 0 && <span className={styles.genres}>{item.genres.join(", ")}</span>}
       </div>
-    </a>
+    </Link>
   );
 }

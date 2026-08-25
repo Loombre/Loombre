@@ -11,6 +11,7 @@
 // of it) and Row.tsx's `.scroller` needs a fixed-width child, not a grid
 // item.
 
+import Link from "next/link";
 import { Avatar } from "../ui/Card.js";
 import { buildImageUrl } from "../../lib/image-url.js";
 import styles from "./ZoneStudioTile.module.css";
@@ -35,7 +36,13 @@ export function ZoneStudioTile({
   href,
 }: ZoneStudioTileProps): React.JSX.Element {
   return (
-    <a href={href} className={styles.tile}>
+    // next/link, never a raw <a href> (QA browser-restricted-settings-F1 /
+    // C/zone-sibling-tiles): a document navigation inside the zone re-runs
+    // RestrictedProvider from locked=true — it cannot rehydrate the live
+    // server-side unlock — so the destination shows the PIN gate and burns
+    // one of the 5 unlock attempts/min. Guarded by the zone-wide assertion
+    // in app/restricted/scenes/[id]/page.test.tsx.
+    <Link href={href} className={styles.tile}>
       {hasLogo ? (
         <img
           className={styles.logo}
@@ -52,6 +59,6 @@ export function ZoneStudioTile({
       <span className={styles.count}>
         {sceneCount} {sceneCount === 1 ? "scene" : "scenes"}
       </span>
-    </a>
+    </Link>
   );
 }

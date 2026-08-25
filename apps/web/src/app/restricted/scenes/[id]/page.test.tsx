@@ -242,17 +242,12 @@ describe("restricted scene detail — client-side navigation (QA browser-restric
 // zone's own two directories (the route tree and its components) and fails
 // on any anchor with an href that isn't already a known, tracked exception.
 describe("restricted zone — no raw <a href> navigation (QA browser-restricted-settings-F1)", () => {
-  // Same defect, different owner: these three tiles are outside this
-  // finding's file ownership, logged as a follow-up finding
-  // (C/zone-sibling-tiles) rather than fixed here. Listed — not silently
-  // skipped — so the guard still catches every NEW offender, and so this
-  // list is the follow-up's exact worklist. Remove an entry when it is
-  // converted to next/link; the assertion stays green either way.
-  const KNOWN_REMAINING = new Set([
-    "components/restricted/ZoneStudioTile.tsx",
-    "components/restricted/ZonePerformerTile.tsx",
-    "components/restricted/ZoneDetailedRow.tsx",
-  ]);
+  // Follow-up worklist for the same defect in files this finding did not
+  // own. C/zone-sibling-tiles (d3-c1) emptied it: ZoneStudioTile,
+  // ZonePerformerTile and ZoneDetailedRow are next/link now. Kept as an
+  // (empty) seam so the next offender that cannot be fixed in the same
+  // pass is TRACKED here rather than silently skipped.
+  const KNOWN_REMAINING = new Set<string>([]);
 
   it("every in-zone link is a next/link, not a document navigation", () => {
     // fileURLToPath on the STRING form: under the jsdom environment the

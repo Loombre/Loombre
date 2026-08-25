@@ -11,6 +11,7 @@
 // like ZoneStudioTile.tsx renders a logo, falling back to the existing
 // Avatar initials when the performer has no portrait fixture.
 
+import Link from "next/link";
 import { Avatar } from "../ui/Card.js";
 import { buildImageUrl } from "../../lib/image-url.js";
 import styles from "./ZonePerformerTile.module.css";
@@ -35,7 +36,9 @@ export function ZonePerformerTile({
   href,
 }: ZonePerformerTileProps): React.JSX.Element {
   return (
-    <a href={href} className={styles.tile}>
+    // next/link, never a raw <a href> — same zone re-lock mechanism as
+    // ZoneStudioTile.tsx's own note (QA C/zone-sibling-tiles).
+    <Link href={href} className={styles.tile}>
       {hasPortrait ? (
         <img
           className={styles.portrait}
@@ -52,6 +55,6 @@ export function ZonePerformerTile({
       <span className={styles.count}>
         {sceneCount} {sceneCount === 1 ? "scene" : "scenes"}
       </span>
-    </a>
+    </Link>
   );
 }
