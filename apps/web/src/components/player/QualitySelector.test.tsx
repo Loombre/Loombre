@@ -122,3 +122,87 @@ describe("QualitySelector", () => {
     expect(view.container.firstChild).toBeNull();
   });
 });
+
+// d3-aq2 (verify-A/browser-player-F8). A pin is a REQUEST — `hls.nextLevel`
+// — and hls.js only moves `currentLevel` when it actually switches: ~7s
+// after resuming, and never at all while paused. Mirroring `currentLevel`
+// therefore left the click with no visible effect: aria-checked (and the
+// roving tabindex) stayed on the old segment while focus sat on the new
+// one, and the "Currently X" note vanished the instant `autoMode` flipped
+// — a dock showing no selection at all. The checked segment now reflects
+// what the VIEWER asked for; the note reports what is actually playing.
+//
+// Each rerender below is exactly what VideoPlayer.tsx's onSelect does
+// (`hls.nextLevel = level; setHlsAutoMode(level === -1)`) followed by
+// whatever hls.js reported next.
+describe("QualitySelector checked segment = the user's PIN (d3-aq2)", () => {
+  it("checks the clicked level at once, while hls.js is still playing the old one", () => {
+    const onSelect = vi.fn();
+    view = renderIntoBody(<QualitySelector levels={LEVELS} currentLevel={2} autoMode onSelect={onSelect} />);
+
+    act(() => radioNamed(view!.container, "720p").click());
+    expect(onSelect).toHaveBeenCalledWith(1);
+    // Pin taken, no switch yet (paused): autoMode off, currentLevel unmoved.
+    view.rerender(<QualitySelector levels={LEVELS} currentLevel={2} autoMode={false} onSelect={onSelect} />);
+
+    expect(radioNamed(view.container, "720p").getAttribute("aria-checked"), "the defect: aria-checked stayed on 1080p").toBe("true");
+    expect(radioNamed(view.container, "1080p").getAttribute("aria-checked")).toBe("false");
+    // The roving tabindex is the same fact: Tab must land on the pin.
+    expect(radioNamed(view.container, "720p").tabIndex).toBe(0);
+    expect(radios(view.container).filter((el) => el.tabIndex === 0)).toHaveLength(1);
+    // ...and the dock still says what is playing right now, so the window
+    // between pin and switch shows a selection AND the truth.
+    expect(view.container.textContent).toContain("Currently 1080p");
+  });
+
+  it("drops the pending note once hls.js has switched to the pinned level", () => {
+    const onSelect = vi.fn();
+    view = renderIntoBody(<QualitySelector levels={LEVELS} currentLevel={2} autoMode onSelect={onSelect} />);
+    act(() => radioNamed(view!.container, "720p").click());
+    view.rerender(<QualitySelector levels={LEVELS} currentLevel={1} autoMode={false} onSelect={onSelect} />);
+
+    expect(radioNamed(view.container, "720p").getAttribute("aria-checked")).toBe("true");
+    // The checked segment already says 720p — no duplicate note.
+    expect(view.container.textContent).not.toContain("Currently");
+  });
+
+  it("checks Auto the moment Auto is clicked, and keeps naming the level ABR settled on", () => {
+    const onSelect = vi.fn();
+    view = renderIntoBody(<QualitySelector levels={LEVELS} currentLevel={1} autoMode={false} onSelect={onSelect} />);
+    act(() => radioNamed(view!.container, "Auto").click());
+    expect(onSelect).toHaveBeenCalledWith(-1);
+    view.rerender(<QualitySelector levels={LEVELS} currentLevel={1} autoMode onSelect={onSelect} />);
+
+    expect(radioNamed(view.container, "Auto").getAttribute("aria-checked")).toBe("true");
+    expect(view.container.textContent).toContain("Currently 720p");
+  });
+
+  it("yields to the player when hls.js goes back to ABR on its own (a re-attach resets the pin)", () => {
+    const onSelect = vi.fn();
+    view = renderIntoBody(<QualitySelector levels={LEVELS} currentLevel={2} autoMode onSelect={onSelect} />);
+    act(() => radioNamed(view!.container, "720p").click());
+    view.rerender(<QualitySelector levels={LEVELS} currentLevel={2} autoMode={false} onSelect={onSelect} />);
+    expect(radioNamed(view.container, "720p").getAttribute("aria-checked")).toBe("true");
+
+    // Recovery reattached hls.js: autoLevelEnabled is true again and the
+    // pin no longer exists anywhere. A stale pin must not keep claiming it.
+    view.rerender(<QualitySelector levels={LEVELS} currentLevel={2} autoMode onSelect={onSelect} />);
+    expect(radioNamed(view.container, "Auto").getAttribute("aria-checked")).toBe("true");
+    expect(radioNamed(view.container, "720p").getAttribute("aria-checked")).toBe("false");
+    expect(view.container.textContent).toContain("Currently 1080p");
+  });
+
+  it("keyboard selection pins the same way a click does (SegmentedControl moves focus AND selection)", () => {
+    const onSelect = vi.fn();
+    view = renderIntoBody(<QualitySelector levels={LEVELS} currentLevel={2} autoMode onSelect={onSelect} />);
+    // ArrowRight off 1080p moves focus AND selection to the next segment,
+    // 720p — the same pin a click on it makes.
+    act(() => {
+      radioNamed(view!.container, "1080p").dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
+    });
+    expect(onSelect).toHaveBeenLastCalledWith(1);
+    view.rerender(<QualitySelector levels={LEVELS} currentLevel={2} autoMode={false} onSelect={onSelect} />);
+    expect(radioNamed(view.container, "720p").getAttribute("aria-checked")).toBe("true");
+    expect(radioNamed(view.container, "720p").tabIndex).toBe(0);
+  });
+});

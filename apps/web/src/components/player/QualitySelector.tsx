@@ -30,6 +30,7 @@
 // group, and re-implementing that keyboard contract here would be a second
 // copy to drift.
 
+import { useState } from "react";
 import { SegmentedControl } from "../ui/SegmentedControl.js";
 import styles from "./QualitySelector.module.css";
 
@@ -68,6 +69,18 @@ export interface QualitySelectorProps {
 }
 
 export function QualitySelector({ levels, currentLevel, autoMode, onSelect }: QualitySelectorProps): React.JSX.Element | null {
+  // d3-aq2 (verify-A/browser-player-F8): the viewer's own last choice, held
+  // here because a pin is a REQUEST (`hls.nextLevel`) and `currentLevel` is
+  // an OUTCOME — hls.js moves it only when it actually switches, which is
+  // seconds later while playing and NEVER while paused. Checking
+  // `currentLevel` therefore left a click with no visible effect at all:
+  // aria-checked and the roving tabindex stayed on the old segment while
+  // focus sat on the new one, and the "Currently X" note disappeared the
+  // moment `autoMode` flipped — a dock showing no selection whatsoever.
+  //
+  // Declared before the early return below: hook order is unconditional.
+  const [requestedValue, setRequestedValue] = useState<string | null>(null);
+
   // Nothing to choose between: a direct-play session (no hls.js at all), or
   // a single-variant master — which is exactly what a ladder-empty HLS
   // session renders (§9.1.1). Showing a one-option "picker" would be a
@@ -86,19 +99,34 @@ export function QualitySelector({ levels, currentLevel, autoMode, onSelect }: Qu
 
   const current = levels[currentLevel];
 
+  // What hls.js has actually settled on — the pre-d3-aq2 checked value, and
+  // still the answer whenever no request of the viewer's is outstanding.
+  const settledValue = autoMode ? AUTO_VALUE : String(currentLevel);
+  // A request stops being "outstanding" when hls.js reports it (the switch
+  // landed), and is DROPPED when the player goes back to ABR on its own —
+  // a recovery re-attach builds a fresh hls.js in auto mode, and a stale
+  // pin must never keep claiming a level nobody is requesting any more.
+  const pendingValue =
+    requestedValue !== null && requestedValue !== settledValue && !(autoMode && requestedValue !== AUTO_VALUE) ? requestedValue : null;
+  const checkedValue = pendingValue ?? settledValue;
+
   return (
     <div className={styles.group}>
       <span className={styles.groupLabel}>Quality</span>
       <SegmentedControl
         aria-label="Quality"
         options={options}
-        value={autoMode ? AUTO_VALUE : String(currentLevel)}
-        onChange={(value) => onSelect(value === AUTO_VALUE ? -1 : Number(value))}
+        value={checkedValue}
+        onChange={(value) => {
+          setRequestedValue(value);
+          onSelect(value === AUTO_VALUE ? -1 : Number(value));
+        }}
       />
-      {/* Auto is not a black box: while ABR is driving, say which variant
-          it actually settled on. Omitted when a level is pinned, where the
-          checked segment already says it. */}
-      {autoMode && current !== undefined && <span className={styles.note}>Currently {describeLevel(current)}</span>}
+      {/* Neither Auto nor a not-yet-honoured pin is a black box: say which
+          variant is playing RIGHT NOW whenever the checked segment doesn't
+          already say it (ABR driving, or a pin hls.js hasn't switched to
+          yet). Omitted once the checked segment IS the playing level. */}
+      {current !== undefined && checkedValue !== String(currentLevel) && <span className={styles.note}>Currently {describeLevel(current)}</span>}
     </div>
   );
 }
