@@ -31,6 +31,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { plan } from "@loombre/playback-engine";
 import type { DeviceProfile, MediaInfo, NetworkConditions, ServerPolicy, TrackSelection, VerifiedCapabilities } from "@loombre/playback-engine";
 import { describeReasonCode } from "../../lib/playback-reasons.js";
+import { SESSION_FAILED_CODE, sessionFailureReasons } from "../../lib/playback-recovery.js";
 import { isPlanRefused } from "../../lib/playback-fallback.js";
 import { UnavailableScreen } from "./UnavailableScreen.js";
 import { renderIntoBody, type TestRender } from "../ui/test-render.js";
@@ -285,6 +286,73 @@ describe("UnavailableScreen rendering the real engine's refusal (desktop)", () =
       <UnavailableScreen title="Item" backdropUrl={null} dominantColor={null} reasons={[]} fallback={null} onAcceptFallback={vi.fn()} onBack={vi.fn()} />,
     );
     expect(view.container.textContent).toContain("No specific reason was reported.");
+  });
+});
+
+// d3-aq5 (F/client-error-code-map). A session the SERVER marked failed
+// mid-playback reaches this screen carrying `playback_sessions.error_code`
+// — a runtime session-death code, not a §4 PlanReasonCode — so a generic
+// "unrecognized code" row would be the whole story a viewer gets for a
+// crashed transcode. The codes come from ONE place (the worker's
+// exit-classify.ts constants), the copy from lib/playback-recovery.ts's
+// map, consulted before describeReasonCode. This asserts the wiring
+// end-to-end through the screen, with an unmapped code as the negative
+// control so it can never pass vacuously.
+describe("UnavailableScreen rendering a server-side session failure (d3-aq5)", () => {
+  let view: TestRender | null = null;
+
+  afterEach(() => {
+    view?.unmount();
+    view = null;
+    vi.unstubAllGlobals();
+  });
+
+  function renderFailure(errorCode: string | null): TestRender {
+    installMatchMedia(false);
+    return renderIntoBody(
+      <UnavailableScreen
+        title="Glass Orchard"
+        backdropUrl={null}
+        dominantColor={null}
+        reasons={sessionFailureReasons(errorCode)}
+        statusCode={undefined}
+        fallback={null}
+        onAcceptFallback={vi.fn()}
+        onBack={vi.fn()}
+      />,
+    );
+  }
+
+  // The two codes the worker writes, mirrored from
+  // apps/worker/src/transcode/exit-classify.ts's
+  // TRANSCODE_ERROR_CODE_FAILED / _ENCODER_MALFUNCTION (apps/web never
+  // imports from apps/worker — same hand-mirroring convention
+  // playback-reasons.test.ts uses for the contract's closed enum).
+  it.each([
+    ["transcode-failed", /transcoder crashed/i],
+    ["transcode-encoder-malfunction", /hardware video encoder/i],
+  ])("renders dedicated copy for the session errorCode %s, never the generic fallback", (code, detailPattern) => {
+    view = renderFailure(code);
+    const text = view.container.textContent ?? "";
+    expect(text).toContain(code); // the machine code is always shown too
+    expect(text).toMatch(detailPattern);
+    expect(text).not.toMatch(/this build's reason copy map may be behind/i);
+    expect(view.container.querySelector("[data-severity]")?.getAttribute("data-severity")).toBe("blocking");
+  });
+
+  it("renders honest copy when the server marked the session failed but recorded NO errorCode", () => {
+    view = renderFailure(null);
+    const text = view.container.textContent ?? "";
+    expect(text).toContain(SESSION_FAILED_CODE);
+    expect(text).toContain("Playback session failed");
+    expect(text).not.toMatch(/this build's reason copy map may be behind/i);
+  });
+
+  it("an unmapped errorCode still falls through to the honest unrecognized-code row (negative control)", () => {
+    view = renderFailure("some-future-worker-code");
+    const text = view.container.textContent ?? "";
+    expect(text).toContain("some-future-worker-code");
+    expect(text).toMatch(/this build's reason copy map may be behind/i);
   });
 });
 
