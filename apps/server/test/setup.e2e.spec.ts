@@ -223,6 +223,80 @@ describe("POST /setup/first-admin (public until the first user, then permanently
     });
   });
 
+  // d3-b4: FirstAdminRequest.email is `{ type: string, format: email }`
+  // (packages/contract/openapi.yaml) but createFirstAdmin only ever ran
+  // isNonEmptyString on it — no trim, no isValidEmailFormat — while the
+  // OTHER three user-email write paths (createUser, updateMe, updateUser)
+  // have all trimmed-then-validated since R-F4/api-validation-F4. This is
+  // the FIRST admin account, i.e. the mailbox every password-reset goes to,
+  // so a typo'd or whitespace-padded address here is the worst of the four
+  // to get wrong. Same block those three run, minus the null branch (email
+  // is required here, not nullable).
+  describe("email format (FirstAdminRequest.email format: email — d3-b4)", () => {
+    const VALID_BODY = { username: "wizard-admin", password: "correct-horse-battery-staple" };
+
+    async function stillNeedsSetup(): Promise<boolean> {
+      const state = await request(app.getHttpServer()).get("/setup/state");
+      expect(state.status).toBe(200);
+      return state.body.needsSetup === true;
+    }
+
+    it("422s on a value that is not an email shape at all, and creates NO admin", async () => {
+      const res = await request(app.getHttpServer())
+        .post("/setup/first-admin")
+        .send({ ...VALID_BODY, email: "not-an-email" });
+      expect(res.status, JSON.stringify(res.body)).toBe(422);
+      expect(res.headers["content-type"]).toContain("application/problem+json");
+      expect(res.body.type).toBe("urn:loombre:problem:validation");
+      // The same detail createUser/updateMe/updateUser all use — the four
+      // user-email write paths must not drift into four wordings.
+      expect(res.body.detail).toBe("email must be a valid email address.");
+      expect(res.body.instance).toBe("/setup/first-admin");
+      expect(await stillNeedsSetup()).toBe(true);
+    });
+
+    it("422s on a whitespace-only email (non-empty string, but not an address)", async () => {
+      const res = await request(app.getHttpServer())
+        .post("/setup/first-admin")
+        .send({ ...VALID_BODY, email: "   " });
+      expect(res.status, JSON.stringify(res.body)).toBe(422);
+      expect(await stillNeedsSetup()).toBe(true);
+    });
+
+    it("422s on an address carrying a CRLF header-injection payload", async () => {
+      const res = await request(app.getHttpServer())
+        .post("/setup/first-admin")
+        .send({ ...VALID_BODY, email: "admin@loombre.local\r\nBcc: evil@example.test" });
+      expect(res.status, JSON.stringify(res.body)).toBe(422);
+      expect(await stillNeedsSetup()).toBe(true);
+    });
+
+    it("trims a whitespace-padded address instead of storing the padding (R-F4 parity)", async () => {
+      const res = await request(app.getHttpServer())
+        .post("/setup/first-admin")
+        .send({ ...VALID_BODY, email: "  wizard-admin@loombre.local  " });
+      expect(res.status, JSON.stringify(res.body)).toBe(201);
+      expect(res.body.user.email).toBe("wizard-admin@loombre.local");
+    });
+
+    it("still 422s on a non-string email (guard, unchanged)", async () => {
+      const res = await request(app.getHttpServer())
+        .post("/setup/first-admin")
+        .send({ ...VALID_BODY, email: 42 });
+      expect(res.status, JSON.stringify(res.body)).toBe(422);
+      expect(res.body.detail).toBe("email is required.");
+      expect(await stillNeedsSetup()).toBe(true);
+    });
+
+    it("still accepts an ordinary address (guard, unchanged)", async () => {
+      const res = await request(app.getHttpServer())
+        .post("/setup/first-admin")
+        .send({ ...VALID_BODY, email: "wizard-admin@loombre.local" });
+      expect(res.status, JSON.stringify(res.body)).toBe(201);
+      expect(res.body.user.email).toBe("wizard-admin@loombre.local");
+    });
+  });
+
   describe("byte-identical 404 once the instance is configured (P1 restricted-404 pattern)", () => {
     it("matches NotFoundController's *splat catch-all body EXACTLY, byte for byte", async () => {
       const firstAdmin = await request(app.getHttpServer()).post("/setup/first-admin").send({

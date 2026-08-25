@@ -49,13 +49,20 @@
 // carry G1's SurfaceRateLimitGuard + @RateLimit("setup","ip") — per-IP
 // (the only viable key with no identity), default 20/min (LOOMBRE_RATE_SETUP);
 // openapi.yaml already documents 429/Retry-After on getSetupState.
+//
+// d3-b4 (QA 2026-08-21 follow-up backlog, P3): createFirstAdmin's `email`
+// was the fourth and last user-email write path in this server still
+// storing the caller's string with no FORMAT check — see its inline note.
+// The 404-before-validation ordering above is UNCHANGED by that fix: the
+// emptiness check still wins over every body check, so a probe against a
+// configured instance still learns nothing from a malformed body.
 
 import { Body, Controller, Get, HttpCode, HttpStatus, NotFoundException, Post, Req, UseFilters, UseGuards } from "@nestjs/common";
 import type { Request } from "express";
 import { RateLimit, SurfaceRateLimitGuard } from "../common/rate-limit.guard.js";
 import { RateLimitExceptionFilter } from "../common/rate-limit-exception.filter.js";
 import { countUsers, createDevice, createFirstAdminIfEmpty, type UserRow } from "@loombre/db";
-import { nowMs as clockNowMs } from "@loombre/shared";
+import { isValidEmailFormat, nowMs as clockNowMs } from "@loombre/shared";
 import { unprocessableEntity } from "../gateway/problem.exception.js";
 import { DbProvider } from "../common/db.provider.js";
 import { HashService } from "../common/hash.service.js";
@@ -174,6 +181,26 @@ export class SetupController {
     if (!isNonEmptyString(body.email)) {
       throw unprocessableEntity("email is required.", instance);
     }
+    // d3-b4 (QA 2026-08-21 follow-up backlog): isNonEmptyString was the
+    // WHOLE check here, so `not-an-email` — or an address carrying a CRLF
+    // header-injection payload — became the first admin's stored address
+    // verbatim, against a member the contract declares `format: email`
+    // (FirstAdminRequest, packages/contract/openapi.yaml) on an operation
+    // that already declares 422. This is the LAST of the four user-email
+    // write paths to catch up with R-F4: createUser and updateMe have
+    // trimmed-then-validated since that fix wave, updateUser since
+    // api-validation-F4, and this one — the mailbox every password-reset
+    // on a fresh instance goes to — was the one still storing raw input.
+    // Same block as those three (@loombre/shared's isValidEmailFormat,
+    // z.email(), which has no character class admitting a control byte),
+    // minus their null branch: email is REQUIRED here, not nullable. Trim
+    // first for the same reason they do — a padded address normalizes into
+    // the string the CITEXT unique index actually compares, rather than
+    // being stored with its padding.
+    const email = body.email.trim();
+    if (!isValidEmailFormat(email)) {
+      throw unprocessableEntity("email must be a valid email address.", instance);
+    }
     // FirstAdminRequest.password: { minLength: 8 } (openapi.yaml) — a
     // stricter floor than createUserAdmin's other callers (admin-created
     // users only require length >= 1); this is the one account every
@@ -187,7 +214,7 @@ export class SetupController {
 
     const created = await createFirstAdminIfEmpty(db, {
       username: body.username,
-      email: body.email,
+      email,
       passwordHash,
       displayName: typeof body.displayName === "string" && body.displayName.length > 0 ? body.displayName : null,
       nowMs,
