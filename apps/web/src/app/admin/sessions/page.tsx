@@ -34,6 +34,12 @@
 // never have reached. The tick remains underneath at a relaxed cadence for
 // what an event cannot carry (see lib/admin-live-refresh.ts).
 //
+// d4-e2: and that tick now re-reads EVERY loaded page (bounded by
+// SILENT_REFRESH_MAX_PAGES), not just page 1 — otherwise the pages d3-e4
+// taught it to keep were kept forever without ever being corrected, and
+// `heartbeatStale`, the one fact no transition can announce, could sit wrong
+// on a page-2 row until the admin reloaded.
+//
 // d3-e3: each row's pill comes from lib/admin-session-presence.ts, which
 // splits the one `suspended` enum value into the throttle's healthy park
 // ("Buffered ahead") and a session nothing has been heard from ("No
@@ -69,6 +75,15 @@ type AdminSession = components["schemas"]["AdminSession"];
 type AdminSessionWithPlan = AdminSession;
 
 const PAGE_LIMIT = 50;
+
+/** d4-e2: how many of the admin's LOADED pages one silent refresh re-reads.
+ *  A ceiling on the tick's cost, not a target — the walk stops at the first
+ *  null cursor, so a page an admin never opened is never fetched. Past this
+ *  many "Load more" presses the deeper rows keep the retention behaviour
+ *  d3-e4 gave them (kept, untouched) rather than growing the tick without
+ *  bound: mergeAdminSessionFirstPage preserves everything older than the
+ *  last row this walk actually read. */
+const SILENT_REFRESH_MAX_PAGES = 5;
 
 function formatTime(ms: number | null): string {
   if (ms === null) return "—";
@@ -123,13 +138,24 @@ export default function AdminSessionsPage(): React.JSX.Element {
   const sessionsRef = useRef<AdminSessionWithPlan[]>([]);
   sessionsRef.current = sessions;
 
+  // d4-e2: how many keyset pages are ON SCREEN — the silent refresh re-reads
+  // exactly that many (capped), so "Load more" widens what the tick keeps
+  // honest instead of leaving those rows frozen.
+  const loadedPagesRef = useRef(1);
+  // Bumped by every load() and every silent refresh, so a walk whose pages
+  // arrive after a newer read cannot apply stale rows over fresh ones.
+  const refreshSeqRef = useRef(0);
+  useEffect(() => () => void (refreshSeqRef.current += 1), []);
+
   function load(reset: boolean): void {
     if (reset) setLoading(true);
     else setLoadingMore(true);
+    refreshSeqRef.current += 1;
     apiGet("/admin/sessions", { params: { query: { limit: PAGE_LIMIT, ...(reset ? {} : cursor ? { cursor } : {}) } } })
       .then((page) => {
         const items = page.items as AdminSessionWithPlan[];
         setSessions((prev) => (reset ? items : [...prev, ...items]));
+        loadedPagesRef.current = reset ? 1 : loadedPagesRef.current + 1;
         setCursor(page.nextCursor);
         setHasMore(page.nextCursor !== null);
         setLoading(false);
@@ -149,9 +175,9 @@ export default function AdminSessionsPage(): React.JSX.Element {
     load(true);
   }, []);
 
-  // A silent page-1 refetch, distinct from `load` (which flips `loading`
-  // and would re-show the full skeleton on every session start/end).
-  // Shared by the socket subscription and the periodic tick below
+  // A silent refetch of what is on screen, distinct from `load` (which flips
+  // `loading` and would re-show the full skeleton on every session
+  // start/end). Shared by the socket subscription and the periodic tick below
   // (browser-admin-F2).
   //
   // d3-e4: it MERGES page 1 in rather than replacing the list. It used to
@@ -162,26 +188,55 @@ export default function AdminSessionsPage(): React.JSX.Element {
   // cursor is only re-adopted when nothing was kept beyond that window,
   // because otherwise the existing cursor — which continues after the last
   // row actually on screen — is the correct one.
-  const refreshFirstPageSilently = useCallback((): void => {
-    apiGet("/admin/sessions", { params: { query: { limit: PAGE_LIMIT } } })
-      .then((page) => {
-        const items = page.items as AdminSessionWithPlan[];
-        const merged = mergeAdminSessionFirstPage(sessionsRef.current, items, { complete: page.nextCursor === null });
-        setSessions(merged);
-        // Nothing survived beyond page 1's window, so page 1's own cursor
-        // is the one that continues the list. When rows WERE kept, the
-        // existing cursor already points past them and page 1's would
-        // re-fetch what is on screen.
-        if (merged.length === items.length) {
-          setCursor(page.nextCursor);
-          setHasMore(page.nextCursor !== null);
+  //
+  // d4-e2: it walks EVERY loaded page, not just page 1. d3-e4 stopped the
+  // tick discarding a "Load more" page; the residual was that it then never
+  // refreshed one either, and `heartbeatStale` is derived per REQUEST — no
+  // transition fires when a client simply stops sending heartbeats (that is
+  // the whole reason this tick outlived d3-e5's event), so a page-2 row could
+  // claim a live viewer indefinitely. The walk re-reads from the TOP through
+  // the current cursors rather than replaying the ones "Load more" used: that
+  // is self-correcting when sessions start or end underneath, and produces
+  // exactly the rows "Load more" would produce now.
+  const refreshLoadedPagesSilently = useCallback((): void => {
+    const seq = (refreshSeqRef.current += 1);
+    void (async () => {
+      try {
+        const pages = Math.min(loadedPagesRef.current, SILENT_REFRESH_MAX_PAGES);
+        const items: AdminSessionWithPlan[] = [];
+        let pageCursor: string | null = null;
+        let complete = false;
+        for (let page = 0; page < pages; page += 1) {
+          // Annotated: apiGet's result type derives from its argument and
+          // `pageCursor` is assigned back out of that result (TS7022).
+          const query: { limit: number; cursor?: string } =
+            pageCursor === null ? { limit: PAGE_LIMIT } : { limit: PAGE_LIMIT, cursor: pageCursor };
+          // Sequential by necessity — each page needs the previous cursor.
+          const result = await apiGet("/admin/sessions", { params: { query } });
+          if (refreshSeqRef.current !== seq) return;
+          items.push(...(result.items as AdminSessionWithPlan[]));
+          pageCursor = result.nextCursor;
+          complete = pageCursor === null;
+          if (complete) break;
         }
-      })
-      .catch(() => {
+        const merged = mergeAdminSessionFirstPage(sessionsRef.current, items, { complete });
+        setSessions(merged);
+        // Nothing survived beyond the window this walk just read, so the
+        // walk's own trailing cursor is the one that continues the list. When
+        // rows WERE kept (deeper than SILENT_REFRESH_MAX_PAGES), the existing
+        // cursor already points past them and this one would re-fetch what is
+        // on screen.
+        if (merged.length === items.length) {
+          loadedPagesRef.current = Math.max(1, Math.min(pages, Math.ceil(items.length / PAGE_LIMIT)));
+          setCursor(pageCursor);
+          setHasMore(pageCursor !== null);
+        }
+      } catch {
         // A live nudge failing silently is fine — the page already has a
         // committed snapshot on screen; an error banner here would be
         // noisier than useful for a background refresh.
-      });
+      }
+    })();
   }, []);
 
   // d3-e5: a status transition patches its row where it stands, from the
@@ -200,7 +255,7 @@ export default function AdminSessionsPage(): React.JSX.Element {
 
   useEffect(() => {
     const socket = getEventsSocket();
-    const debouncedRefresh = debounce(refreshFirstPageSilently, 500);
+    const debouncedRefresh = debounce(refreshLoadedPagesSilently, 500);
     const unsubStarted = socket.subscribe("playback.started", () => debouncedRefresh());
     const unsubEnded = socket.subscribe("playback.ended", () => debouncedRefresh());
     const unsubStatus = socket.subscribe<PlaybackSessionStatusChangedPayload>("playback.session-status-changed", (event) => {
@@ -212,14 +267,14 @@ export default function AdminSessionsPage(): React.JSX.Element {
       unsubEnded();
       unsubStatus();
     };
-  }, [refreshFirstPageSilently, applyStatusChange]);
+  }, [refreshLoadedPagesSilently, applyStatusChange]);
 
   // Fallback cadence (browser-admin-F2, relaxed by d3-e5): the subscription
   // above now covers every status transition, so this tick is left only with
   // what no transition can announce — `heartbeatStale`, derived per request
   // — plus anything a dropped socket missed. Paused while the tab is hidden,
   // with one refresh on return (d3-e4).
-  useEffect(() => startAdminSessionsRefresh(refreshFirstPageSilently), [refreshFirstPageSilently]);
+  useEffect(() => startAdminSessionsRefresh(refreshLoadedPagesSilently), [refreshLoadedPagesSilently]);
 
   return (
     <Card>

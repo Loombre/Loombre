@@ -480,3 +480,147 @@ describe("AdminSessionsPage — live status transitions (d3-e5)", () => {
     expect(apiGetMock).toHaveBeenCalledTimes(2);
   });
 });
+
+// ---------------------------------------------------------------------------
+// d4-e2 (E/d3-e4 residual, backlog #102): d3-e4 stopped the tick from
+// DISCARDING the pages an admin loaded — but it still only re-fetched page 1,
+// so a page-2 row was retained and never refreshed. `heartbeatStale` is
+// derived per REQUEST (no transition announces a client going quiet, which is
+// exactly why the tick still exists), so a "Load more" row could sit there
+// claiming a live viewer indefinitely. Before d3-e4 that window was 10s
+// because the row was thrown away; keeping the page must not mean freezing it.
+// ---------------------------------------------------------------------------
+describe("AdminSessionsPage — the tick refreshes every loaded page (d4-e2)", () => {
+  let view: TestRender | null = null;
+
+  beforeEach(() => {
+    apiGetMock.mockReset();
+    subscribeMock.mockReset();
+    subscribeMock.mockReturnValue(() => {});
+    Object.defineProperty(document, "hidden", { configurable: true, get: () => false });
+  });
+
+  afterEach(() => {
+    view?.unmount();
+    view = null;
+    vi.useRealTimers();
+  });
+
+  function page1(): ReturnType<typeof session>[] {
+    return [session("s1", { startedAtMs: 10_000, itemTitle: "Newest" })];
+  }
+
+  /** The row an admin reached with "Load more" — its heartbeat is what goes
+   *  quiet mid-session. */
+  function page2(overrides: Record<string, unknown>): ReturnType<typeof session>[] {
+    return [session("s90", { startedAtMs: 5_000, itemTitle: "Older Movie", ...overrides })];
+  }
+
+  function installPagedMock(page2Overrides: Record<string, unknown>): void {
+    apiGetMock.mockImplementation((_path: string, options: { params: { query: Record<string, unknown> } }) => {
+      if (options.params.query["cursor"] === undefined) {
+        return Promise.resolve({ items: page1(), nextCursor: "cursor-page-2" });
+      }
+      return Promise.resolve({ items: page2(page2Overrides), nextCursor: null });
+    });
+  }
+
+  function rowFor(title: string): HTMLElement {
+    const row = Array.from(view!.container.querySelectorAll("[data-live]")).find((el) =>
+      (el.textContent ?? "").includes(title),
+    );
+    if (!row) throw new Error(`no session row for "${title}"`);
+    return row as HTMLElement;
+  }
+
+  async function loadMore(): Promise<void> {
+    const button = Array.from(view!.container.querySelectorAll("button")).find((b) => b.textContent?.includes("Load more"));
+    if (!button) throw new Error("no Load more button");
+    await act(async () => {
+      button.click();
+    });
+  }
+
+  it("a page-2 row that goes heartbeat-stale stops claiming a live viewer on the next tick", async () => {
+    vi.useFakeTimers();
+    installPagedMock({ heartbeatStale: false });
+    view = renderIntoBody(<AdminSessionsPage />);
+    await act(async () => {});
+    await loadMore();
+    expect(rowFor("Older Movie").getAttribute("data-live")).toBe("true");
+
+    // The client went quiet. Nothing transitions, so no event can say so —
+    // only a re-read of the page that row is on.
+    installPagedMock({ heartbeatStale: true });
+    act(() => {
+      vi.advanceTimersByTime(ADMIN_SESSIONS_REFRESH_MS);
+    });
+    await act(async () => {});
+
+    expect(rowFor("Older Movie").getAttribute("data-live")).toBe("false");
+    expect(rowFor("Older Movie").textContent).toContain("No heartbeat");
+    // Page 1 is still there, and still page 1.
+    expect(view.container.textContent).toContain("Newest");
+  });
+
+  it("still costs exactly one request per tick when the admin never paged", async () => {
+    vi.useFakeTimers();
+    apiGetMock.mockResolvedValue({ items: page1(), nextCursor: null });
+    view = renderIntoBody(<AdminSessionsPage />);
+    await act(async () => {});
+    expect(apiGetMock).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      vi.advanceTimersByTime(ADMIN_SESSIONS_REFRESH_MS);
+    });
+    await act(async () => {});
+    // One page loaded, one page refreshed — the unchanged common case.
+    expect(apiGetMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("costs one request per LOADED page once the admin has paged", async () => {
+    vi.useFakeTimers();
+    installPagedMock({ heartbeatStale: false });
+    view = renderIntoBody(<AdminSessionsPage />);
+    await act(async () => {});
+    await loadMore();
+    const afterLoadMore = apiGetMock.mock.calls.length;
+
+    act(() => {
+      vi.advanceTimersByTime(ADMIN_SESSIONS_REFRESH_MS);
+    });
+    await act(async () => {});
+
+    // Two pages on screen, two requests in the tick.
+    expect(apiGetMock.mock.calls.length - afterLoadMore).toBe(2);
+  });
+
+  it("a session that ended on page 2 disappears — the refreshed window is authoritative over all of it", async () => {
+    vi.useFakeTimers();
+    apiGetMock.mockImplementation((_path: string, options: { params: { query: Record<string, unknown> } }) => {
+      if (options.params.query["cursor"] === undefined) {
+        return Promise.resolve({ items: page1(), nextCursor: "cursor-page-2" });
+      }
+      return Promise.resolve({
+        items: [
+          session("s90", { startedAtMs: 5_000, itemTitle: "Older Movie" }),
+          session("s91", { startedAtMs: 4_000, itemTitle: "Ending Soon" }),
+        ],
+        nextCursor: null,
+      });
+    });
+    view = renderIntoBody(<AdminSessionsPage />);
+    await act(async () => {});
+    await loadMore();
+    expect(view.container.textContent).toContain("Ending Soon");
+
+    installPagedMock({});
+    act(() => {
+      vi.advanceTimersByTime(ADMIN_SESSIONS_REFRESH_MS);
+    });
+    await act(async () => {});
+
+    expect(view.container.textContent).not.toContain("Ending Soon");
+    expect(view.container.textContent).toContain("Older Movie");
+  });
+});
