@@ -20,6 +20,7 @@ import type { components } from "@loombre/sdk";
 import { ToastProvider } from "../../../components/ui/Toast.js";
 import { renderIntoBody, type TestRender } from "../../../components/ui/test-render.js";
 import type { ItemSummary } from "../../../lib/item-lookup.js";
+import { describeReasonCode, ITEM_UNAVAILABLE_CODE } from "../../../lib/playback-reasons.js";
 
 type PlaybackSession = components["schemas"]["PlaybackSession"];
 
@@ -62,6 +63,10 @@ let searchParams = new URLSearchParams();
 let summary: ItemSummary = movieSummary();
 /** When set, `fetchItemSummary` rejects with it instead of resolving. */
 let lookupError: Error | null = null;
+/** When set, `fetchItemSummary` waits on it before settling — the "the
+ *  probes are still in flight" window verify/gap-F9 is about (up to four
+ *  sequential kind probes; ~100ms local, seconds on a remote server). */
+let lookupGate: Promise<void> | null = null;
 
 const router = { back: routerBack, replace: routerReplace };
 
@@ -100,6 +105,7 @@ vi.mock("../../../lib/playback-session.js", () => ({
 
 vi.mock("../../../lib/item-lookup.js", () => ({
   fetchItemSummary: async () => {
+    if (lookupGate) await lookupGate;
     if (lookupError) throw lookupError;
     return summary;
   },
@@ -295,6 +301,7 @@ describe("WatchPage", () => {
     searchParams = new URLSearchParams();
     summary = movieSummary();
     lookupError = null;
+    lookupGate = null;
     createPlaybackSession.mockReset().mockResolvedValue({ ok: true, session: directPlaySession() });
     endPlaybackSession.mockReset().mockResolvedValue(undefined);
     findProgressForItem.mockReset().mockResolvedValue(null);
@@ -477,6 +484,23 @@ describe("WatchPage", () => {
       expect(backButton(view)).toBeDefined();
     });
 
+    // C/gap-F9-followup: UnavailableScreen's own copy is session-refusal
+    // shaped ("Session refused · HTTP 404", and "No specific reason was
+    // reported." when `reasons` is empty) — true for a plan the server
+    // refused, a lie for an item that never resolved at all: no session was
+    // ever requested here. lib/playback-reasons.ts's `item-unavailable` is
+    // the same client-synthesized-reason pattern as
+    // transcode-slots-exhausted / client-playback-error.
+    it("says why the item can't be opened instead of 'No specific reason was reported.'", async () => {
+      lookupError = new FakeItemLookupError(ITEM_ID);
+      view = await renderRoute();
+
+      const text = view.container.textContent ?? "";
+      expect(text).not.toContain("No specific reason was reported.");
+      expect(text).toContain(describeReasonCode(ITEM_UNAVAILABLE_CODE).title);
+      expect(text).toContain(ITEM_UNAVAILABLE_CODE);
+    });
+
     // The album branch's own `GET /albums/{id}/tracks` is inside the same
     // promise chain — it must not be able to strand the route either.
     it("renders the unavailable screen when the album's track fetch fails", async () => {
@@ -489,6 +513,53 @@ describe("WatchPage", () => {
 
       expect(view.container.textContent).toContain("This item");
       expect(backButton(view)).toBeDefined();
+    });
+  });
+
+  // verify/gap-F9 (the OTHER half of the same report): even when the lookup
+  // eventually succeeds, this route rendered `null` for the whole probing
+  // window — a blank full-bleed page with no indication anything is
+  // happening. lib/item-lookup.ts probes in parallel now, but a remote server
+  // still makes that a real, visible wait, and a click that paints nothing
+  // reads as a dead app.
+  describe("pending lookup (verify/gap-F9)", () => {
+    /** Renders with the lookup deliberately unsettled, and hands back the
+     *  release valve. */
+    async function renderWhilePending(): Promise<{ view: TestRender; settle: () => Promise<void> }> {
+      let release: () => void = () => undefined;
+      lookupGate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const rendered = await renderRoute();
+      return {
+        view: rendered,
+        settle: async () => {
+          release();
+          await act(async () => undefined);
+          await act(async () => undefined);
+        },
+      };
+    }
+
+    it("REGRESSION GUARD: shows a loading surface while the item is still being resolved, not a blank page", async () => {
+      const pending = await renderWhilePending();
+      view = pending.view;
+
+      expect(view.container.textContent).not.toBe("");
+      expect(view.container.querySelector('[role="status"]')).not.toBeNull();
+      // Still nothing has been started for an item that may not even exist.
+      expect(createPlaybackSession).not.toHaveBeenCalled();
+
+      await pending.settle();
+    });
+
+    it("replaces the loading surface with the player once the lookup resolves", async () => {
+      const pending = await renderWhilePending();
+      view = pending.view;
+      await pending.settle();
+
+      expect(view.container.querySelector('[role="status"]')).toBeNull();
+      expect(createPlaybackSession).toHaveBeenCalled();
     });
   });
 });

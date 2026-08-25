@@ -48,11 +48,14 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { VideoPlayer } from "../../../components/player/VideoPlayer.js";
 import { UnavailableScreen } from "../../../components/player/UnavailableScreen.js";
 import { useMusicPlayer } from "../../../components/music/MusicPlayerProvider.js";
+import { BlazeSpinner } from "../../../components/ui/BlazeSpinner.js";
 import { fetchItemSummary, ItemLookupError } from "../../../lib/item-lookup.js";
 import { apiGet, LoombreApiError } from "../../../lib/api-client.js";
 import { getAuthStore } from "../../../lib/auth-store.js";
+import { itemUnavailableReasons } from "../../../lib/playback-reasons.js";
+import styles from "./page.module.css";
 
-export default function WatchPage(): React.JSX.Element | null {
+export default function WatchPage(): React.JSX.Element {
   const params = useParams<{ itemId: string }>();
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -171,7 +174,14 @@ export default function WatchPage(): React.JSX.Element | null {
         title="This item"
         backdropUrl={null}
         dominantColor={null}
-        reasons={[]}
+        // C/gap-F9-followup: with an empty array this screen says "No
+        // specific reason was reported." — technically true (no plan, no
+        // session, so no server reason exists) and useless to read. The one
+        // client-synthesized `item-unavailable` reason says the honest thing
+        // instead, exactly as transcode-slots-exhausted /
+        // client-playback-error do for their own server-less failures. It
+        // still reveals nothing about the id itself.
+        reasons={itemUnavailableReasons()}
         statusCode={unavailableStatus}
         fallback={null}
         // Unreachable with `fallback={null}` (the screen only calls this
@@ -181,5 +191,17 @@ export default function WatchPage(): React.JSX.Element | null {
       />
     );
   }
-  return null;
+  // verify/gap-F9's other half: resolving what `{itemId}` points at takes a
+  // round trip (lib/item-lookup.ts probes every kind at once now, but a
+  // remote server still makes it a visible wait), and this route used to
+  // render `null` for all of it — a blank full-bleed page that reads as a
+  // dead app. Nothing about the item is known yet, so this says only that
+  // something is happening; role="status" announces it once, without
+  // stealing focus from wherever the click came from.
+  return (
+    <div className={styles.loading} role="status" aria-live="polite">
+      <BlazeSpinner size={48} surface="#000" />
+      <span className={styles.loadingLabel}>Loading…</span>
+    </div>
+  );
 }

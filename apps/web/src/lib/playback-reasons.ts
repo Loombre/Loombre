@@ -276,3 +276,37 @@ function clientPlaybackErrorReason(): PlanReason {
 export function clientPlaybackErrorReasons(): PlanReason[] {
   return [clientPlaybackErrorReason()];
 }
+
+/**
+ * QA C/gap-F9-followup: `/watch/{id}` for an id that resolves to NOTHING —
+ * every kind probe in lib/item-lookup.ts 404s (a deleted item, a mistyped
+ * id, restricted content the query guard filters out), or the lookup fails
+ * outright — renders UnavailableScreen, which is otherwise the screen for a
+ * plan the ENGINE refused. No plan was ever made here and no session was
+ * ever requested, so there are no server reasons to show and the screen fell
+ * back to "No specific reason was reported." — true, and useless to read.
+ * Third client-synthesized reason, same {code,title,detail,severity} shape
+ * and the same out-of-contract-enum caveat as the two above, so
+ * UnavailableScreen.tsx still needs no separate rendering path.
+ *
+ * The copy deliberately says nothing about the item beyond "we couldn't open
+ * it": for a restricted or ungranted id, revealing that it EXISTS would be a
+ * containment leak (the whole point of the guard that hid it).
+ */
+export const ITEM_UNAVAILABLE_CODE = "item-unavailable";
+
+FIXED_REASONS[ITEM_UNAVAILABLE_CODE] = {
+  title: "This link didn't lead to anything playable",
+  detail: "The server returned no movie, episode, track or album for it. It may have been removed, or it may not be available to your account.",
+  severity: "blocking",
+};
+
+function itemUnavailableReason(): PlanReason {
+  return { code: ITEM_UNAVAILABLE_CODE, streamIndex: null, detail: null } as PlanReason;
+}
+
+/** The reasons array app/watch/[itemId]/page.tsx renders when the item never
+ *  resolved — always exactly this one synthesized reason. */
+export function itemUnavailableReasons(): PlanReason[] {
+  return [itemUnavailableReason()];
+}

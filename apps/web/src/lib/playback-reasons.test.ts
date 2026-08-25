@@ -6,6 +6,8 @@ import {
   CLIENT_PLAYBACK_ERROR_CODE,
   clientPlaybackErrorReasons,
   describeReasonCode,
+  ITEM_UNAVAILABLE_CODE,
+  itemUnavailableReasons,
   resolveUnavailableReasons,
   TRANSCODE_SLOTS_EXHAUSTED_CODE,
 } from "./playback-reasons.js";
@@ -55,6 +57,28 @@ describe("clientPlaybackErrorReasons", () => {
     const copy = describeReasonCode(CLIENT_PLAYBACK_ERROR_CODE);
     expect(copy.title).not.toBe(CLIENT_PLAYBACK_ERROR_CODE);
     expect(copy.severity).toBe("blocking");
+  });
+});
+
+// C/gap-F9-followup: /watch/{id} for an id that resolves to NOTHING (every
+// kind probe 404s — a deleted item, a mistyped id, restricted content the
+// query guard filters out) renders UnavailableScreen, whose fixed copy is
+// session-refusal shaped. No session was ever requested there, so the screen
+// has no server reasons to show and printed "No specific reason was
+// reported." — technically true, useless to read. Third client-synthesized
+// reason, same shape and precedent as the two above.
+describe("itemUnavailableReasons", () => {
+  it("synthesizes exactly one dedicated blocking reason, with its own copy distinct from the generic fallback", () => {
+    expect(itemUnavailableReasons()).toEqual([{ code: ITEM_UNAVAILABLE_CODE, streamIndex: null, detail: null }]);
+    const copy = describeReasonCode(ITEM_UNAVAILABLE_CODE);
+    expect(copy.title).not.toBe(ITEM_UNAVAILABLE_CODE);
+    expect(copy.detail).not.toMatch(/this build's reason copy map may be behind/i);
+    expect(copy.severity).toBe("blocking");
+  });
+
+  it("says the item could not be opened — never that a plan or a device refused it", () => {
+    const copy = describeReasonCode(ITEM_UNAVAILABLE_CODE);
+    expect(`${copy.title} ${copy.detail}`).not.toMatch(/device|codec|transcode/i);
   });
 });
 

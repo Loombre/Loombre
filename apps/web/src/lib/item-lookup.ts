@@ -116,18 +116,43 @@ const LOOKUPS: Record<PlayableKind, (id: string) => Promise<ItemSummary | null>>
   album: tryAlbum,
 };
 
-/** Resolves item metadata by id. Pass `hintType` (e.g. from a `?type=`
- *  query param on /watch links a caller controls) to skip probing. */
+/** Precedence when more than one kind could answer (ids are unique across
+ *  kinds, so this is a tie-break that should never be needed — it exists so
+ *  the parallel probe below is deterministic). */
+const KIND_ORDER = ["movie", "episode", "track", "album"] as const;
+
+/**
+ * Resolves item metadata by id. Pass `hintType` (e.g. from a `?type=` query
+ * param on /watch links a caller controls) to go straight to the right
+ * endpoint.
+ *
+ * QA verify/gap-F9: the fallback probe used to be SEQUENTIAL — an album id
+ * cost four round trips (three 404s first) and an unresolvable id cost four
+ * before it could even be reported, all of it while
+ * app/watch/[itemId]/page.tsx rendered nothing. The probes are independent
+ * reads, so they go out together and the first kind in `KIND_ORDER` that
+ * answers wins: one round trip instead of up to four.
+ *
+ * `allSettled`, not `all`: one endpoint failing (a 500 on /movies/{id}, say)
+ * must not be able to hide another kind's hit — with `all` the first
+ * rejection would win the race and lose the answer. When nothing hits, a
+ * real HTTP failure is rethrown as itself so callers can tell "no such item"
+ * (ItemLookupError → 404) from "the server is unwell" (LoombreApiError with
+ * its own status).
+ */
 export async function fetchItemSummary(itemId: string, hintType?: string): Promise<ItemSummary> {
   if (hintType && hintType in LOOKUPS) {
     const hit = await LOOKUPS[hintType as PlayableKind](itemId);
     if (hit) return hit;
   }
-  for (const kind of ["movie", "episode", "track", "album"] as const) {
-    if (kind === hintType) continue; // already tried above
-    const hit = await LOOKUPS[kind](itemId);
-    if (hit) return hit;
+  const kinds = KIND_ORDER.filter((kind) => kind !== hintType); // the hint was already tried above
+  const settled = await Promise.allSettled(kinds.map((kind) => LOOKUPS[kind](itemId)));
+
+  for (const result of settled) {
+    if (result.status === "fulfilled" && result.value) return result.value;
   }
+  const failure = settled.find((result) => result.status === "rejected");
+  if (failure) throw (failure as PromiseRejectedResult).reason;
   throw new ItemLookupError(itemId);
 }
 

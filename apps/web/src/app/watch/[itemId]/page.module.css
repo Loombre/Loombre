@@ -1,0 +1,24 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+
+/* QA verify/gap-F9: this route rendered NOTHING while it worked out what
+   `{itemId}` points at (up to four kind probes — parallel now, but still a
+   real wait against a remote server), so a Play click painted a blank
+   full-bleed page. Same black immersive ground as the player itself, so the
+   handover to VideoPlayer is a fade of content, not a change of surface. */
+.loading {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  background: #000;
+}
+
+.loadingLabel {
+  color: var(--muted);
+  font-size: var(--text-sm);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
