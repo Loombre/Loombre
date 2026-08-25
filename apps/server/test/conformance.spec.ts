@@ -28,6 +28,16 @@
  *      to a documented contract path (no undocumented surface) — replacing
  *      Phase 0's "exactly {/healthz, /*splat}" now that real controllers
  *      are mounted.
+ *
+ * WHAT THIS SUITE CANNOT SEE (d3-b8): every walk above is BODYLESS, so it
+ * can only catch a controller that is LOOSER than the contract. A
+ * controller REJECTING a body the contract calls valid — `POST /users
+ * {"email": null}` answering 422 against a `[string,'null']` member, the
+ * whole d3-b1 class — is invisible here and stayed green for months. The
+ * directed counterpart lives in
+ * apps/server/test/conformance-nullable-members.e2e.spec.ts: it builds a
+ * minimal SCHEMA-VALID body per nullable request member and asserts the
+ * answer is not a 422 naming that member. Keep the two together.
  */
 import "reflect-metadata";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
