@@ -192,7 +192,15 @@ export function MusicPlayerProvider({ children }: { children: ReactNode }): Reac
    *  which MEDIA is primed. See the current-track effect below for why the
    *  distinction matters (browser-player-F11). */
   const slotEntryRef = useRef<Partial<Record<Slot, string>>>({});
-  const loadTokenRef = useRef(0);
+  /** Per-SLOT "is my load still the newest one for this element" counter
+   *  (d3-m3). It used to be one global counter for both slots, which made
+   *  any newer load supersede every older one regardless of which element it
+   *  was for: a PRELOAD into the idle slot cancelled an in-flight ACTIVE
+   *  load, whose invocation then ended its own session and returned without
+   *  ever setting `src` — the track the user asked for silently never
+   *  played. Supersession is a per-element question (whose media is this
+   *  element supposed to be holding?), so the counter is per element. */
+  const loadTokensRef = useRef<Record<Slot, number>>({ A: 0, B: 0 });
   const heartbeatRef = useRef<HeartbeatScheduler | null>(null);
   const positionRef = useRef(0);
   const durationRef = useRef<number | null>(null);
@@ -271,7 +279,7 @@ export function MusicPlayerProvider({ children }: { children: ReactNode }): Reac
    *  and the non-gapless fallback when a preload wasn't ready in time. */
   const loadIntoSlot = useCallback(
     async (slot: Slot, track: QueueTrack, opts: { autoplay: boolean; preloadOnly?: boolean }) => {
-      const myToken = ++loadTokenRef.current;
+      const myToken = ++loadTokensRef.current[slot];
       // Claim the slot for this ENTRY before the first await, so the slot
       // counts as "this entry's" for the whole in-flight window and for a
       // load that never completes at all (browser-player-F11): a create
@@ -290,12 +298,12 @@ export function MusicPlayerProvider({ children }: { children: ReactNode }): Reac
         // `void loadIntoSlot(…)`, so before this catch existed a thrown
         // create was an UNHANDLED rejection — no toast, no skip, the mini
         // player parked at 0:00 with only a console stack to show for it.
-        if (myToken !== loadTokenRef.current) return; // superseded: the newer load owns the UI
+        if (myToken !== loadTokensRef.current[slot]) return; // superseded: the newer load owns the UI
         console.warn(`[music] session create failed for track ${track.itemId}`, err);
         failTrackLoad(slot, track, opts.preloadOnly === true, apiErrorMessage(err, "The server couldn't start playback."));
         return;
       }
-      if (myToken !== loadTokenRef.current) {
+      if (myToken !== loadTokensRef.current[slot]) {
         // Superseded by a later load. AUD-A3g-001: a session created here
         // was never recorded in sessionsRef, so neither slot reuse
         // (endSlotSession) nor the unmount cleanup can ever reach it — end
@@ -320,7 +328,7 @@ export function MusicPlayerProvider({ children }: { children: ReactNode }): Reac
       const el = refs[slot].current;
       const serverUrl = getAuthStore().getSnapshot().serverUrl;
       const token = await getAuthStore().getAccessToken();
-      if (myToken !== loadTokenRef.current || !el || !token) return;
+      if (myToken !== loadTokensRef.current[slot] || !el || !token) return;
 
       el.src = buildSessionFileUrl(serverUrl, result.session.id, token);
       el.load();

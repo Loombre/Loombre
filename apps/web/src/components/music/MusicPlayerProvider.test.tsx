@@ -482,6 +482,125 @@ describe("MusicPlayerProvider", () => {
     });
   });
 
+  // d3-m3 (browser-player-F11 follow-up): ONE `loadTokenRef` guarded BOTH
+  // slots, so any newer load superseded every older one regardless of which
+  // element it was for. A preload into the idle slot therefore cancelled an
+  // in-flight ACTIVE load: the active invocation returned early (ending its
+  // own session, never setting `src`, never dispatching LOAD_ACTIVE) and the
+  // track the user asked for silently never played.
+  //
+  // Reachable: skip to a new track near the end of the current one, and the
+  // still-playing element keeps firing `timeupdate` past the near-end
+  // threshold while the new track's session create is in flight.
+  describe("per-slot load tokens (d3-m3)", () => {
+    // React 19's `act` warns ("environment is not configured to support
+    // act") when the slot-A load settles into a play() that resolves across
+    // act scopes. Scoped to this describe, exactly like VideoPlayer.test
+    // .tsx's StrictMode describe, so the rest of the file keeps its
+    // pre-existing warning behavior.
+    beforeEach(() => {
+      (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    });
+    afterEach(() => {
+      delete (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT;
+    });
+
+    it("does not let a preload into the other slot supersede an in-flight load into the active slot", async () => {
+      let resolveActive: (r: unknown) => void = () => undefined;
+      createDirectPlaySession
+        .mockReset()
+        .mockImplementationOnce(
+          () =>
+            new Promise((res) => {
+              resolveActive = res;
+            }),
+        )
+        .mockResolvedValue({ ok: true, session: { ...directPlaySession(), id: SESSION_2_ID, itemId: TRACK_2_ID } });
+
+      capturedCtx = null;
+      await act(async () => {
+        view = renderPlayer(<CaptureContext />);
+      });
+      await act(async () => {
+        capturedCtx!.playQueue(
+          [
+            { itemId: TRACK_ID, title: "Low Water" },
+            { itemId: TRACK_2_ID, title: "Second Sun" },
+          ],
+          0,
+        );
+      });
+      await flush();
+      expect(createDirectPlaySession).toHaveBeenCalledTimes(1);
+
+      // The still-mounted element crosses the near-end threshold (its
+      // stubbed duration is 214s) while slot A's load is still in flight,
+      // so the provider fires a PRELOAD into slot B.
+      const active = view!.container.querySelectorAll("audio")[0]!;
+      Object.defineProperty(active, "currentTime", { configurable: true, get: () => 213 });
+      await act(async () => {
+        active.dispatchEvent(new Event("timeupdate"));
+      });
+      await flush();
+      expect(createDirectPlaySession).toHaveBeenCalledTimes(2);
+      expect(createDirectPlaySession).toHaveBeenNthCalledWith(2, TRACK_2_ID, "stream", undefined);
+
+      // Slot A's create finally lands. It owns slot A and nothing has
+      // superseded it THERE, so it must finish the load — not end its own
+      // session and walk away.
+      await act(async () => {
+        resolveActive({ ok: true, session: directPlaySession() });
+      });
+      await flush();
+
+      expect(endPlaybackSession).not.toHaveBeenCalledWith(SESSION_ID);
+      expect(active.src).toContain(SESSION_ID);
+      // LOAD_ACTIVE + autoplay actually ran, i.e. the load finished rather
+      // than bailing out at the supersession check.
+      expect(capturedCtx!.isPlaying).toBe(true);
+    });
+
+    it("still supersedes an older load into the SAME slot", async () => {
+      let resolveFirst: (r: unknown) => void = () => undefined;
+      createDirectPlaySession
+        .mockReset()
+        .mockImplementationOnce(
+          () =>
+            new Promise((res) => {
+              resolveFirst = res;
+            }),
+        )
+        .mockResolvedValue({ ok: true, session: { ...directPlaySession(), id: SESSION_2_ID, itemId: TRACK_2_ID } });
+
+      capturedCtx = null;
+      await act(async () => {
+        view = renderPlayer(<CaptureContext />);
+      });
+      await act(async () => {
+        capturedCtx!.playQueue(
+          [
+            { itemId: TRACK_ID, title: "Low Water" },
+            { itemId: TRACK_2_ID, title: "Second Sun" },
+          ],
+          0,
+        );
+      });
+      // Skip while track 1's create is in flight: track 2 loads into the
+      // SAME (still active) slot, so track 1's invocation IS superseded.
+      await act(async () => {
+        capturedCtx!.next();
+      });
+      await flush();
+      await act(async () => {
+        resolveFirst({ ok: true, session: directPlaySession() });
+      });
+      await flush();
+
+      expect(endPlaybackSession).toHaveBeenCalledWith(SESSION_ID);
+      expect(endPlaybackSession).not.toHaveBeenCalledWith(SESSION_2_ID);
+    });
+  });
+
   // browser-player-F11: the "current track changed" effect keyed itself on
   // [queueState.currentIndex, queueState.items.length], but REORDER/REMOVE
   // (lib/queue.ts) deliberately MOVE currentIndex so it keeps following the
