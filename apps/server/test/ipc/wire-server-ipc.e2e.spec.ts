@@ -40,7 +40,7 @@ import { createDb, ensureTestDatabase } from "@loombre/db";
 import { CommonModule } from "../../src/common/common.module.js";
 import { wireServerIpc } from "../../src/ipc/index.js";
 import type { IpcListenerHandle } from "../../src/ipc/listener.js";
-import { IPC_BASE_PATH, IPC_LOOPBACK_HOST } from "@loombre/controller-ipc";
+import { IPC_BASE_PATH, IPC_LOOPBACK_HOST, type IpcStatusResponse } from "@loombre/controller-ipc";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DB_PKG_ROOT = path.resolve(__dirname, "../../../../packages/db");
@@ -100,7 +100,7 @@ describe("wireServerIpc — real NestJS app, real Postgres", () => {
         headers: { Authorization: `Bearer ${handle.token}` },
       });
       expect(res.status).toBe(200);
-      const body = await res.json();
+      const body = (await res.json()) as IpcStatusResponse;
       // A freshly reset+migrated jobs table has zero rows — the real
       // worker-liveness heuristic (worker-liveness.ts) reports 'stopped'
       // for a genuinely empty ledger, exercised here through the real

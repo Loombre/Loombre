@@ -325,7 +325,10 @@ describe("POST /playback/sessions/{id}/seek — the V8 seek control channel", ()
 
   it("422: schema violations — missing/negative/non-integer targetMs, unknown keys, out-of-ladder rungIndex", async () => {
     const session = await createTranscodeSession();
-    const cases: unknown[] = [
+    // `object[]`, not `unknown[]`: every case IS an object (that is the
+    // point — deliberately malformed FIELDS, not malformed JSON), and
+    // supertest's .send() only accepts string | object | undefined.
+    const cases: object[] = [
       {},
       { targetMs: -1 },
       { targetMs: 1.5 },

@@ -40,6 +40,9 @@ import {
   OPEN_WEB_TARGET_RESPONSE_SCHEMA,
   CRASH_FILES_RESPONSE_SCHEMA,
   type IpcStatusResponse,
+  type IpcErrorBody,
+  type OpenWebTargetResponse,
+  type CrashFilesResponse,
 } from "@loombre/controller-ipc";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -118,7 +121,7 @@ describe("IPC listener (real HTTP, ephemeral loopback port)", () => {
   function opUrl(suffix: string): string {
     return `http://${IPC_LOOPBACK_HOST}:${handle.port}${IPC_BASE_PATH}${suffix}`;
   }
-  function authHeaders(): HeadersInit {
+  function authHeaders(): Record<string, string> {
     return { Authorization: `Bearer ${handle.token}` };
   }
 
@@ -229,7 +232,7 @@ describe("IPC listener (real HTTP, ephemeral loopback port)", () => {
     it("always 409s with code 'server-already-running' (decision a)", async () => {
       const res = await fetch(opUrl("/server/start"), { method: "POST", headers: authHeaders() });
       expect(res.status).toBe(409);
-      const body = await res.json();
+      const body = (await res.json()) as IpcErrorBody;
       expect(ERROR_VALIDATOR(body), JSON.stringify(ERROR_VALIDATOR.errors)).toBe(true);
       expect(body.code).toBe("server-already-running");
     });
@@ -252,7 +255,7 @@ describe("IPC listener (real HTTP, ephemeral loopback port)", () => {
     it("200s with the same URL /status reports", async () => {
       const res = await fetch(opUrl("/open-web-target"), { headers: authHeaders() });
       expect(res.status).toBe(200);
-      const body = await res.json();
+      const body = (await res.json()) as OpenWebTargetResponse;
       expect(OPEN_WEB_TARGET_VALIDATOR(body), JSON.stringify(OPEN_WEB_TARGET_VALIDATOR.errors)).toBe(true);
       expect(body.url).toBe("http://localhost:3001");
     });
@@ -274,10 +277,10 @@ describe("IPC listener (real HTTP, ephemeral loopback port)", () => {
       writeFileSync(join(crashDir, "server-2.log"), "y");
 
       const res = await fetch(opUrl("/crash-files"), { headers: authHeaders() });
-      const body = await res.json();
+      const body = (await res.json()) as CrashFilesResponse;
       expect(CRASH_FILES_VALIDATOR(body), JSON.stringify(CRASH_FILES_VALIDATOR.errors)).toBe(true);
       expect(body.files).toHaveLength(2);
-      expect(body.files.map((f: { path: string }) => f.path).sort()).toEqual(
+      expect(body.files.map((f) => f.path).sort()).toEqual(
         [join(crashDir, "server-1.log"), join(crashDir, "server-2.log")].sort(),
       );
     });
@@ -295,7 +298,7 @@ describe("IPC listener (real HTTP, ephemeral loopback port)", () => {
     it.each(ops)("%s %s: 401s with no Authorization header", async (method, path) => {
       const res = await fetch(opUrl(path), { method });
       expect(res.status).toBe(401);
-      const body = await res.json();
+      const body = (await res.json()) as IpcErrorBody;
       expect(ERROR_VALIDATOR(body), JSON.stringify(ERROR_VALIDATOR.errors)).toBe(true);
       expect(body.code).toBe("unauthorized");
     });

@@ -197,12 +197,19 @@ describe("GET /system/capabilities (public)", () => {
   // the map cannot rot the same way twice.
   it("does not claim implemented features are unimplemented", async () => {
     const res = await request(app.getHttpServer()).get("/system/capabilities");
-    const details = res.body.details as Record<string, { enabled: boolean; description: string }>;
+    const details = res.body.details as Record<string, { enabled: boolean; description: string } | undefined>;
+    // A missing flag is a real failure, not a TypeError three lines later —
+    // and it keeps every read below typed under noUncheckedIndexedAccess.
+    const detail = (flag: string): { enabled: boolean; description: string } => {
+      const entry = details[flag];
+      if (!entry) throw new Error(`/system/capabilities details is missing the '${flag}' flag`);
+      return entry;
+    };
 
     // Implemented: packages/contract's exportData/importData, served by
     // apps/server/src/catalog/data-freedom.controller.ts.
-    expect(details["data-export"].enabled).toBe(true);
-    expect(details["data-import"].enabled).toBe(true);
+    expect(detail("data-export").enabled).toBe(true);
+    expect(detail("data-import").enabled).toBe(true);
     expect(res.body.flags).toContain("data-export");
     expect(res.body.flags).toContain("data-import");
 
@@ -210,18 +217,18 @@ describe("GET /system/capabilities (public)", () => {
     // `enabled` may legitimately be false (this route is public and does no
     // I/O, so it cannot consult the probe snapshot) — but it must not tell
     // an operator the feature does not exist.
-    expect(details["hw-transcode"].description).not.toMatch(/not yet implemented/i);
+    expect(detail("hw-transcode").description).not.toMatch(/not yet implemented/i);
 
     // Implemented: LOOMBRE_TLS_MODE=acme (apps/server/src/tls/acme/).
     // Reflects the CURRENT mode, so it is false in this suite's default
     // env — the description must still not deny the feature.
-    expect(details["remote-access"].description).not.toMatch(/not yet implemented/i);
+    expect(detail("remote-access").description).not.toMatch(/not yet implemented/i);
 
     // The control: hls-ll genuinely is not implemented (`lowLatency` is
     // only a device-profile input field; nothing emits EXT-X-PART). If this
     // ever starts failing, the map was flipped wholesale instead of
     // per-flag.
-    expect(details["hls-ll"].description).toMatch(/not yet implemented/i);
+    expect(detail("hls-ll").description).toMatch(/not yet implemented/i);
   });
 });
 

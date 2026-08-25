@@ -626,7 +626,10 @@ describe("RED R-F6: two users racing the same free address must not 500", () => 
         // first rolls back to the savepoint — that's what actually clears
         // the aborted-transaction state; the statement itself is identical
         // to the original test's intent.
-        await trx.rollbackToSavepoint("backstop").execute();
+        // kysely tracks savepoint names in the TYPE of the instance
+        // savepoint() returned ("you must use the same instance"), so the
+        // rollback goes through `sp`; same connection, same SQL.
+        await sp.rollbackToSavepoint("backstop").execute();
         await trx.updateTable("users").set({ display_name: "after-catch" }).where("id", "=", actor.userId).execute();
       }
       await trx.commit().execute();

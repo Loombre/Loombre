@@ -284,7 +284,9 @@ export async function diffUsers(archive: DiffArchiveLike, target: Db): Promise<s
       continue;
     }
     pushIfDiff(out, `users[${u.id}].username`, u.username, row.username);
-    pushIfDiff(out, `users[${u.id}].email`, u.email.toLowerCase(), row.email.toLowerCase());
+    // users.email is NULLABLE in the schema (invite-less local accounts):
+    // a null on either side must show up as a diff, not crash the differ.
+    pushIfDiff(out, `users[${u.id}].email`, u.email.toLowerCase(), row.email?.toLowerCase() ?? null);
     pushIfDiff(out, `users[${u.id}].is_admin`, u.isAdmin, row.is_admin);
   }
   return out;

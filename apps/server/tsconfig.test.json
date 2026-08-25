@@ -1,0 +1,27 @@
+{
+  // Same deviation packages/provisioning/tsconfig.test.json documents at
+  // length, applied to the app that needed it most: tsconfig.json compiles
+  // `include: ["src"]` (that is what ships in dist/), which left
+  // apps/server/test/**/*.ts — ~100 e2e/unit specs — with NO typechecker at
+  // all. vitest's esbuild transform strips their types without checking
+  // them, so a broken type in a spec used to ship green (39 real type errors
+  // across 11 files were sitting in test/ when this project was added).
+  // noEmit-only, chained into this package's own `typecheck` script (see
+  // package.json), so `pnpm gate`'s typecheck step enforces it.
+  //
+  // rootDir widens to the repo root rather than the package: a handful of
+  // specs deliberately import real modules from sibling workspaces
+  // (apps/worker's import consumer for the export/import round-trip,
+  // packages/release-manifest's minisign fixtures), and with noEmit rootDir
+  // only decides which files TS will accept into the program.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": "../..",
+    "declaration": false,
+    // The base config sets sourceMap; harmless with noEmit, but kept off
+    // here so the project stays a pure checker.
+    "sourceMap": false
+  },
+  "include": ["src", "test"]
+}

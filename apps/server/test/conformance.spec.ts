@@ -45,7 +45,7 @@ import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import request from "supertest";
-import Ajv from "ajv";
+import { Ajv } from "ajv";
 import type { ValidateFunction } from "ajv";
 import { NestFactory } from "@nestjs/core";
 import type { INestApplication } from "@nestjs/common";

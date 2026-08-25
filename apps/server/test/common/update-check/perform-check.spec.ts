@@ -56,8 +56,11 @@ function manifestJson(releases: Array<{ version: string; notesUrl?: string }>) {
 }
 
 function fakeFetchFor(manifestBody: string | null, sigBody: string | null, opts: { fail?: boolean; manifestStatus?: number; sigStatus?: number } = {}) {
-  return vi.fn(async (url: string | URL) => {
-    const href = String(url);
+  // The parameter list must be WIDE enough to satisfy `typeof fetch`
+  // (UpdateCheckDeps.fetchImpl): a mock declared `(url: string | URL)` is not
+  // assignable to a fetch that may be handed a Request, and tsc rejects it.
+  return vi.fn(async (url: string | URL | Request) => {
+    const href = typeof url === "string" ? url : url instanceof URL ? url.href : url.url;
     if (opts.fail) throw new Error("simulated network failure");
     if (href.endsWith(".minisig")) {
       return new Response(sigBody ?? "", { status: opts.sigStatus ?? 200 });

@@ -36,7 +36,7 @@
 // convention as every other apps/server e2e file in this package.
 
 import "reflect-metadata";
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi, type MockInstance } from "vitest";
 import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -175,9 +175,13 @@ const UPDATE_ME_VARIABLE_KEYS = ["id", "username", "email", "createdAtMs", "upda
 // Mail-config / ledger manipulation helpers
 // ----------------------------------------------------------------------------
 
+// Typed against the REAL method signatures rather than
+// `ReturnType<typeof vi.spyOn>` (which erases the arguments): noticeCallsTo()
+// below reads `call[0].templateId`/`.to`, and those reads are only checked
+// when the spy carries MailSendInput.
 interface MailSpies {
-  trySendSpy: ReturnType<typeof vi.spyOn>;
-  isConfiguredSpy: ReturnType<typeof vi.spyOn> | null;
+  trySendSpy: MockInstance<MailDispatchService["trySend"]>;
+  isConfiguredSpy: MockInstance<MailConfigService["isConfigured"]> | null;
   restore(): void;
 }
 

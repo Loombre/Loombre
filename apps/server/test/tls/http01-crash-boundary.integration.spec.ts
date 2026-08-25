@@ -20,7 +20,14 @@
 // handlers installed, and drives it with REAL HTTP requests over loopback.
 
 import { spawn } from "node:child_process";
-import type { ChildProcessWithoutNullStreams } from "node:child_process";
+import type { ChildProcessByStdio } from "node:child_process";
+import type { Readable } from "node:stream";
+
+// stdio: ["ignore", "pipe", "pipe"] — stdin is deliberately NOT a stream, so
+// the child is a ChildProcessByStdio<null, Readable, Readable>, not the
+// all-pipes ChildProcessWithoutNullStreams; typing it honestly is what keeps
+// `child.stdout.on(...)` below non-null without an assertion.
+type FixtureChild = ChildProcessByStdio<null, Readable, Readable>;
 import * as http from "node:http";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -45,7 +52,7 @@ function get(port: number, rawPath: string): Promise<{ status: number; body: str
 
 /** Resolves with the port from the fixture's "PORT=<n>" readiness line on
  *  stdout, or rejects if the child exits/errors before printing it. */
-function waitForPort(child: ChildProcessWithoutNullStreams): Promise<number> {
+function waitForPort(child: FixtureChild): Promise<number> {
   return new Promise((resolve, reject) => {
     let buffered = "";
     const onData = (chunk: Buffer): void => {
@@ -64,7 +71,7 @@ function waitForPort(child: ChildProcessWithoutNullStreams): Promise<number> {
 
 describe("Http01ChallengeServer crash boundary (real child process, real HTTP over loopback)", () => {
   let dataDir: string;
-  let child: ChildProcessWithoutNullStreams | undefined;
+  let child: FixtureChild | undefined;
 
   beforeEach(() => {
     dataDir = mkdtempSync(path.join(tmpdir(), "loombre-http01-crash-"));
@@ -79,11 +86,12 @@ describe("Http01ChallengeServer crash boundary (real child process, real HTTP ov
   it(
     "a malformed percent-encoded token 404s instead of killing the server process",
     async () => {
-      child = spawn(process.execPath, ["--import", "tsx", FIXTURE, dataDir], {
+      const spawned = spawn(process.execPath, ["--import", "tsx", FIXTURE, dataDir], {
         env: { ...process.env },
         stdio: ["ignore", "pipe", "pipe"],
       });
-      const port = await waitForPort(child);
+      child = spawned;
+      const port = await waitForPort(spawned);
 
       // This exact request used to take the whole process down.
       const malformed = await get(port, "/.well-known/acme-challenge/%");
@@ -91,7 +99,7 @@ describe("Http01ChallengeServer crash boundary (real child process, real HTTP ov
 
       // The process must still be alive AND still serving — a follow-up,
       // known-good request must succeed against the SAME server instance.
-      expect(child.exitCode).toBeNull();
+      expect(spawned.exitCode).toBeNull();
       const followUp = await get(port, "/.well-known/acme-challenge/known-token");
       expect(followUp.status).toBe(200);
       expect(followUp.body).toBe("known-key-authorization");

@@ -21,7 +21,7 @@ import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import request from "supertest";
-import Ajv from "ajv";
+import { Ajv } from "ajv";
 import type { ValidateFunction } from "ajv";
 import { NestFactory } from "@nestjs/core";
 import type { INestApplication } from "@nestjs/common";
@@ -938,8 +938,12 @@ describe("seeded conformance: images", () => {
     expect(res.headers["cache-control"]).toBe("private, max-age=86400");
     expect(Buffer.isBuffer(res.body) || typeof res.body === "object").toBeTruthy();
 
+    // res.headers is a string-keyed record, so the ETag is string | undefined
+    // — assert it before replaying it (an absent ETag is the interesting
+    // failure here, and "" would silently 200 instead).
     const etag = res.headers["etag"];
-    const cached = await admin().get(`/images/movie/${harborLights.id}/poster`).set("If-None-Match", etag);
+    expect(typeof etag).toBe("string");
+    const cached = await admin().get(`/images/movie/${harborLights.id}/poster`).set("If-None-Match", etag as string);
     expect(cached.status).toBe(304);
   });
 
