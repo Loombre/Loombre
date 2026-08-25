@@ -49,6 +49,20 @@
 // allowlist now; entries are fully validated before any write, so a bad
 // entry rejects the whole request. `libraryId` stays accepted-and-ignored
 // (see PUT_PERMISSIONS_BODY_KEYS).
+//
+// d4-b1 (QA 2026-08-24 backlog #092, P2): d3-b5 taught this handler about
+// unknown KEYS; the VALUE of a known key was still only `typeof === "string"`
+// checked, so every `entry.userId` reached Postgres verbatim and produced two
+// 500s — a non-UUID string blew up the implicit `uuid` cast (22P02) on BOTH
+// the grant (INSERT) and revoke (DELETE … WHERE user_id IN) arms, and a
+// well-formed uuid naming no user violated library_permissions' FK to users
+// (23503). Same defect class as api-validation-F1, one level deeper: an ARRAY
+// MEMBER, which requireUuidParam (a path-param helper) never reaches. Now
+// 422 on shape and 404 on an unknown user, matching remote-wireguard.
+// controller.ts + remote-wireguard.service.ts's enrollDevice, this server's
+// existing precedent for a body-carried userId ("unknown keys -> field
+// validation -> 404 unknown user"). See putLibraryPermissions' inline notes
+// for the ordering and for why BOTH arms are validated identically.
 
 import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post, Put, Query, Req } from "@nestjs/common";
 import {
@@ -59,6 +73,7 @@ import {
   getLibraryForViewer,
   getLibraryItemCountsForViewer,
   getLibraryPermissionsAdmin,
+  getUserById,
   listLibrariesForScope,
   putLibraryPermissionsAdmin,
   updateLibraryAdmin,
@@ -69,7 +84,7 @@ import {
 } from "@loombre/db";
 import { nowMs as clockNowMs } from "@loombre/shared";
 import { forbidden, notFound, unprocessableEntity } from "../gateway/problem.exception.js";
-import { requireUuidParam } from "../gateway/require-uuid-param.js";
+import { isValidUuid, requireUuidParam } from "../gateway/require-uuid-param.js";
 import type { AuthenticatedRequest } from "../gateway/auth.guard.js";
 import { DbProvider, type LoombreDb } from "../common/db.provider.js";
 import { requireLiveAdmin } from "../common/require-live-admin.js";
@@ -449,7 +464,41 @@ export class LibrariesController {
       if (typeof entry["userId"] !== "string" || typeof entry["granted"] !== "boolean") {
         throw unprocessableEntity("Each permission entry requires userId (string) and granted (boolean).", instance);
       }
+      // d4-b1: LibraryPermission.userId is `{type: string, format: uuid}`, and
+      // "is a string" was the whole check — so a non-UUID reached Postgres's
+      // implicit `uuid` cast and 500'd (22P02) on BOTH arms of the delta
+      // below, the DELETE's `user_id IN (…)` as surely as the INSERT. Shape
+      // is checked for the WHOLE array before any existence probe runs, so a
+      // malformed body costs zero DB round-trips and a 422 always wins over
+      // the 404 a later entry might have earned.
+      if (!isValidUuid(entry["userId"])) {
+        throw unprocessableEntity(`permissions[${index}].userId must be a valid UUID.`, instance);
+      }
       entries.push({ userId: entry["userId"], granted: entry["granted"] });
+    }
+
+    // d4-b1: the other half of the same finding — a syntactically valid uuid
+    // naming no user violated library_permissions' FK to users (23503, a 500)
+    // on the grant arm and silently no-op'd on the revoke arm, so the same
+    // typo'd id meant two different things depending on `granted`. One rule
+    // for the member: every referenced user must exist, whichever arm it is
+    // headed for. 404 (not 422) with detail "Unknown userId …" is this
+    // server's existing answer for a body-carried userId that resolves to no
+    // row — remote-wireguard.service.ts's enrollDevice; the `permissions[i]`
+    // locator is d3-b5's nested-detail convention from this same handler, and
+    // the fixed "Library not found." detail keeps this distinguishable from
+    // the route's OWN 404 above. Deduplicated so a long list costs one lookup
+    // per DISTINCT user, and run before putLibraryPermissionsAdmin so an
+    // unknown id anywhere in the array writes none of the good entries — the
+    // same all-or-nothing posture the unknown-key loops above give.
+    const checkedUserIds = new Set<string>();
+    for (const [index, entry] of entries.entries()) {
+      if (checkedUserIds.has(entry.userId)) continue;
+      checkedUserIds.add(entry.userId);
+      const user = await getUserById(this.dbProvider.db, entry.userId);
+      if (!user) {
+        throw notFound(`Unknown userId in permissions[${index}].`, instance);
+      }
     }
 
     const permissions = await putLibraryPermissionsAdmin(this.dbProvider.db, id, entries, clockNowMs());

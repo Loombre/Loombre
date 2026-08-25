@@ -684,3 +684,135 @@ describe("PUT /libraries/{id}/permissions body validation (nested additionalProp
     }
   }, 20_000);
 });
+
+// ───────────── PUT /libraries/{id}/permissions: entry userId (d4-b1) ─────────
+// d3-b5 taught this handler about unknown KEYS; the VALUE of a known key was
+// still only `typeof === "string"`-checked, so every entry.userId reached
+// Postgres verbatim. Two 500s came out of that — the same defect class as
+// api-validation-F1, one level deeper (an array member, which
+// requireUuidParam never reaches): a non-UUID string blew up the implicit
+// `uuid` cast (22P02) on BOTH the grant (INSERT) and revoke (DELETE … WHERE
+// user_id IN) arms, and a well-formed uuid naming no user violated
+// library_permissions' FK to users (23503). Contract: LibraryPermission.userId
+// is `{type: string, format: uuid}` and the op already declares 404 + 422.
+describe("PUT /libraries/{id}/permissions entry userId validation (d4-b1)", () => {
+  let permsLibraryId: string;
+  /** Well-formed and syntactically valid, but no such user on this DB. */
+  const UNKNOWN_USER_ID = "01a01f7a-0000-7000-8000-0000000d4b10";
+
+  beforeAll(async () => {
+    const created = await admin().post("/libraries", {
+      name: "d4-b1 Permissions Library",
+      mediaKind: "movie",
+      paths: ["/data/d4-b1-permissions"],
+    });
+    expect(created.status, JSON.stringify(created.body)).toBe(201);
+    permsLibraryId = created.body.id;
+  }, 30_000);
+
+  async function grantedUserIds(): Promise<string[]> {
+    const res = await admin().get(`/libraries/${permsLibraryId}/permissions`);
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+    return (res.body.permissions as Array<{ userId: string }>).map((p) => p.userId).sort();
+  }
+
+  it("422s (never 500s) on a non-UUID userId being GRANTED", async () => {
+    const before = await grantedUserIds();
+
+    const res = await admin().put(`/libraries/${permsLibraryId}/permissions`, {
+      libraryId: permsLibraryId,
+      permissions: [{ userId: "not-a-uuid", granted: true }],
+    });
+    expectValidationProblem(res);
+    expect(res.body["detail"]).toBe('permissions[0].userId must be a valid UUID.');
+    expect(res.body["instance"]).toBe(`/libraries/${permsLibraryId}/permissions`);
+
+    expect(await grantedUserIds()).toEqual(before);
+  }, 20_000);
+
+  it("422s (never 500s) on a non-UUID userId being REVOKED — the DELETE arm casts too", async () => {
+    const res = await admin().put(`/libraries/${permsLibraryId}/permissions`, {
+      permissions: [{ userId: "not-a-uuid", granted: false }],
+    });
+    expectValidationProblem(res);
+    expect(res.body["detail"]).toBe('permissions[0].userId must be a valid UUID.');
+  }, 20_000);
+
+  it("names the offending ENTRY, not just the body, when a later entry is the bad one", async () => {
+    const res = await admin().put(`/libraries/${permsLibraryId}/permissions`, {
+      permissions: [
+        { userId: targetUserId, granted: true },
+        { userId: "still-not-a-uuid", granted: true },
+      ],
+    });
+    expectValidationProblem(res);
+    expect(res.body["detail"]).toBe('permissions[1].userId must be a valid UUID.');
+    expect(await grantedUserIds()).not.toContain(targetUserId);
+  }, 20_000);
+
+  it("404s (never 500s) on a well-formed userId that names no user — the FK arm", async () => {
+    const before = await grantedUserIds();
+
+    const res = await admin().put(`/libraries/${permsLibraryId}/permissions`, {
+      libraryId: permsLibraryId,
+      permissions: [{ userId: UNKNOWN_USER_ID, granted: true }],
+    });
+    expect(res.status, JSON.stringify(res.body)).toBe(404);
+    expect(res.headers["content-type"]).toContain("application/problem+json");
+    expect(res.body["type"]).toBe("urn:loombre:problem:not-found");
+    expect(res.body["detail"]).toBe('Unknown userId in permissions[0].');
+    expect(res.body["instance"]).toBe(`/libraries/${permsLibraryId}/permissions`);
+
+    expect(await grantedUserIds()).toEqual(before);
+  }, 20_000);
+
+  it("404s on an unknown userId being REVOKED too (one rule for the member, not one per arm)", async () => {
+    const res = await admin().put(`/libraries/${permsLibraryId}/permissions`, {
+      permissions: [{ userId: UNKNOWN_USER_ID, granted: false }],
+    });
+    expect(res.status, JSON.stringify(res.body)).toBe(404);
+    expect(res.body["detail"]).toBe('Unknown userId in permissions[0].');
+  }, 20_000);
+
+  it("rejects atomically: an unknown userId on a LATER entry writes none of the earlier ones", async () => {
+    const before = await grantedUserIds();
+
+    const res = await admin().put(`/libraries/${permsLibraryId}/permissions`, {
+      permissions: [
+        { userId: targetUserId, granted: true },
+        { userId: UNKNOWN_USER_ID, granted: true },
+      ],
+    });
+    expect(res.status, JSON.stringify(res.body)).toBe(404);
+    expect(res.body["detail"]).toBe('Unknown userId in permissions[1].');
+
+    expect(await grantedUserIds()).toEqual(before);
+  }, 20_000);
+
+  it("shape wins over existence: a non-UUID entry is a 422 even when a LATER entry is an unknown user", async () => {
+    const res = await admin().put(`/libraries/${permsLibraryId}/permissions`, {
+      permissions: [
+        { userId: "not-a-uuid", granted: true },
+        { userId: UNKNOWN_USER_ID, granted: true },
+      ],
+    });
+    expectValidationProblem(res);
+    expect(res.body["detail"]).toBe('permissions[0].userId must be a valid UUID.');
+  }, 20_000);
+
+  it("still grants and revokes a real user (the fix is a guard, not a narrowing)", async () => {
+    const grant = await admin().put(`/libraries/${permsLibraryId}/permissions`, {
+      libraryId: permsLibraryId,
+      permissions: [{ userId: targetUserId, granted: true }],
+    });
+    expect(grant.status, JSON.stringify(grant.body)).toBe(200);
+    expect(await grantedUserIds()).toContain(targetUserId);
+
+    const revoke = await admin().put(`/libraries/${permsLibraryId}/permissions`, {
+      libraryId: permsLibraryId,
+      permissions: [{ userId: targetUserId, granted: false }],
+    });
+    expect(revoke.status, JSON.stringify(revoke.body)).toBe(200);
+    expect(await grantedUserIds()).not.toContain(targetUserId);
+  }, 20_000);
+});
