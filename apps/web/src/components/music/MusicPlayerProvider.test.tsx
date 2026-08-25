@@ -35,6 +35,9 @@ const SESSION_2_ID = "01890000-0000-7000-8000-0000000000ac";
 /** A third queued track, so a reorder/removal can shift the CURRENT index
  *  without the current row being first or last (browser-player-F11). */
 const TRACK_3_ID = "01890000-0000-7000-8000-000000000033";
+/** The session a DUPLICATE preload would create (d4-m2) — distinct so a
+ *  test can name the one that must never exist. */
+const SESSION_3_ID = "01890000-0000-7000-8000-0000000000ad";
 /** A NON-default media_files row for the same track — the alternate
  *  (lossless/remaster) version a user picks out of its Versions list. */
 const ALT_FILE_ID = "01890000-0000-7000-8000-0000000000d8";
@@ -919,6 +922,127 @@ describe("MusicPlayerProvider", () => {
       const body = lastProgressBody();
       expect(body.durationMs).toBe(200_000);
       expect(Number.isInteger(body.positionMs)).toBe(true);
+    });
+  });
+
+  // d4-m2 (backlog #124, M/d3-m3-adjacent): `gaplessState.preloadPending`
+  // only latches when PRELOAD_NEXT is dispatched, which happens AFTER the
+  // session create resolves — so every `timeupdate` tick inside that
+  // in-flight window (the element fires ~4/s) started ANOTHER preload for
+  // the same next track. Observed live as POSTs 61+62 for one preload; the
+  // superseded one self-cleaned via DELETE (d3-m3's token discipline), so
+  // it was churn rather than a leak — but it is still a duplicate
+  // POST /playback/sessions per tick against a server whose transcode slots
+  // are counted. The latch has to be taken at REQUEST time, and the
+  // provider already keeps a request-time record: `slotEntryRef` claims a
+  // slot for an entry synchronously, before `loadIntoSlot`'s first await.
+  describe("request-time preload latch (d4-m2)", () => {
+    beforeEach(() => {
+      (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    });
+    afterEach(() => {
+      delete (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT;
+    });
+
+    const TWO_TRACKS: PlayableTrackInput[] = [
+      { itemId: TRACK_ID, title: "Low Water", durationMs: 200_000 },
+      { itemId: TRACK_2_ID, title: "Second Sun" },
+    ];
+
+    /** Plays track 1 and returns its element parked past the near-end
+     *  threshold, so every `timeupdate` dispatched on it asks to preload. */
+    async function playPastThreshold(): Promise<[TestRender, HTMLMediaElement]> {
+      const rendered = await playQueueAndSettle(TWO_TRACKS);
+      const active = rendered.container.querySelectorAll("audio")[0]!;
+      Object.defineProperty(active, "currentTime", { configurable: true, get: () => 199 });
+      return [rendered, active];
+    }
+
+    it("starts ONE preload when two timeupdate ticks land inside the create's in-flight window", async () => {
+      let resolvePreload: (r: unknown) => void = () => undefined;
+      createDirectPlaySession
+        .mockReset()
+        .mockResolvedValueOnce({ ok: true, session: directPlaySession() })
+        .mockImplementationOnce(
+          () =>
+            new Promise((res) => {
+              resolvePreload = res;
+            }),
+        )
+        // Anything after the second call is a DUPLICATE preload — given a
+        // distinct session id so the assertions below can name it.
+        .mockResolvedValue({ ok: true, session: { ...directPlaySession(), id: SESSION_3_ID, itemId: TRACK_2_ID } });
+
+      const [rendered, active] = await playPastThreshold();
+      view = rendered;
+
+      await act(async () => {
+        active.dispatchEvent(new Event("timeupdate"));
+      });
+      await act(async () => {
+        active.dispatchEvent(new Event("timeupdate"));
+      });
+      await flush();
+
+      // 1 active + 1 preload. A third is the duplicate this guards against.
+      expect(createDirectPlaySession).toHaveBeenCalledTimes(2);
+
+      // The in-flight preload lands and primes slot B — nothing superseded
+      // it, so nothing had to be cleaned up after it either.
+      await act(async () => {
+        resolvePreload({ ok: true, session: { ...directPlaySession(), id: SESSION_2_ID, itemId: TRACK_2_ID } });
+      });
+      await flush();
+
+      const preloading = rendered.container.querySelectorAll("audio")[1]!;
+      expect(preloading.src).toContain(SESSION_2_ID);
+      expect(endPlaybackSession).not.toHaveBeenCalled();
+    });
+
+    it("does not re-request a preload on every later tick once the next track is primed", async () => {
+      createDirectPlaySession
+        .mockReset()
+        .mockResolvedValueOnce({ ok: true, session: directPlaySession() })
+        .mockResolvedValue({ ok: true, session: { ...directPlaySession(), id: SESSION_2_ID, itemId: TRACK_2_ID } });
+
+      const [rendered, active] = await playPastThreshold();
+      view = rendered;
+
+      for (let tick = 0; tick < 4; tick += 1) {
+        await act(async () => {
+          active.dispatchEvent(new Event("timeupdate"));
+        });
+        await flush();
+      }
+
+      expect(createDirectPlaySession).toHaveBeenCalledTimes(2);
+    });
+
+    it("does not retry a preload whose create FAILED on every subsequent tick", async () => {
+      createDirectPlaySession
+        .mockReset()
+        .mockResolvedValueOnce({ ok: true, session: directPlaySession() })
+        .mockRejectedValue(apiError(404, "Not Found"));
+
+      const unhandled = await captureUnhandledRejections(async () => {
+        const [rendered, active] = await playPastThreshold();
+        view = rendered;
+        for (let tick = 0; tick < 3; tick += 1) {
+          await act(async () => {
+            active.dispatchEvent(new Event("timeupdate"));
+          });
+          await flush();
+        }
+      });
+
+      // One attempt, not one per tick: a failed preload is surfaced (once)
+      // by the fresh load that runs if that track ever becomes current —
+      // re-POSTing it four times a second is a 404 storm, not a retry.
+      expect(createDirectPlaySession).toHaveBeenCalledTimes(2);
+      expect(unhandled).toHaveLength(0);
+      // Still silent, still playing track 1 (failTrackLoad's preloadOnly contract).
+      expect(toastText(view!.container)).toBe("");
+      expect(capturedCtx!.current?.itemId).toBe(TRACK_ID);
     });
   });
 });

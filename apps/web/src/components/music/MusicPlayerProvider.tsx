@@ -466,8 +466,26 @@ export function MusicPlayerProvider({ children }: { children: ReactNode }): Reac
           const dur = durationRef.current ?? (Number.isFinite(el.duration) ? el.duration * 1000 : null);
           if (shouldPreload(posMs, dur)) {
             const next = peekNextTrack(queueStateRef.current);
-            if (next && gaplessStateRef.current.loaded[otherSlot(slot)] !== next.itemId) {
-              void loadIntoSlot(otherSlot(slot), next, { autoplay: false, preloadOnly: true });
+            // d4-m2: `preloadPending` only latches when PRELOAD_NEXT is
+            // dispatched, which is AFTER the session create resolves — so
+            // every tick inside that in-flight window (an element fires
+            // `timeupdate` ~4x/s) started ANOTHER preload for the same
+            // track: duplicate POST /playback/sessions, the older one
+            // superseded and DELETEd by d3-m3's token discipline. The
+            // latch has to be taken at REQUEST time, and `slotEntryRef`
+            // already is one: `loadIntoSlot` claims the slot for the entry
+            // synchronously, before its first await. Same claim also
+            // survives a FAILED create (failTrackLoad leaves it in place),
+            // so a preload that 404s is attempted once, not once per tick
+            // — it is surfaced by the fresh load that runs if that track
+            // ever becomes current (failTrackLoad's preloadOnly contract).
+            const target = otherSlot(slot);
+            if (
+              next &&
+              gaplessStateRef.current.loaded[target] !== next.itemId &&
+              slotEntryRef.current[target] !== next.entryId
+            ) {
+              void loadIntoSlot(target, next, { autoplay: false, preloadOnly: true });
             }
           }
         }
