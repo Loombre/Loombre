@@ -1498,6 +1498,19 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
     };
   }, [attachStrategy, videoEl, session?.id, serverUrl, listedFragments, clearLandingWatch, goFatal]);
 
+  // ── d4-a2.114: the hard-seek lifecycle dies with the PLAYER, whatever ──
+  // the attach strategy. The hls.js attach effect's cleanup above clears
+  // the landing watch per-attach, but on the direct-play/native-HLS paths
+  // that effect returns before ever producing a cleanup — a mid-relocation
+  // unmount (in-app Back) leaked the 20 s landing timer and the 500 ms
+  // coarse seekable-end poll, and the timeout's "Seek timed out" toast
+  // then fired against a player that no longer existed, surfacing on
+  // whatever page the viewer had moved on to. clearLandingWatch is
+  // identity-stable (useCallback []), so this cleanup runs exactly once,
+  // at unmount; on the hls.js path it is an idempotent no-op after the
+  // attach cleanup already ran.
+  useEffect(() => () => clearLandingWatch(), [clearLandingWatch]);
+
   // ── Subtitles: the hls-vtt side-track (Phase 3 Step 6c, deliverable 3) ──
   // burn-in needs nothing (already baked into the video frames); embed/none
   // have no side-track to attach. Built once per session (a plain <track>

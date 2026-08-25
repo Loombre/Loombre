@@ -2365,6 +2365,73 @@ describe("VideoPlayer", () => {
   // failure of the current seek (fetch rejection / 5xx / 429) surfaces the
   // "Seek failed" toast, and the scrubber always returns to the live
   // position — never a stale pin at a dead target.
+  // ── d4-a2.114: the native-HLS hard-seek lifecycle dies with the player ──
+  // clearLandingWatch is wired into the hls.js attach effect's CLEANUP, but
+  // on the native-HLS path (no MSE, so no hls.js instance) that effect
+  // returns before ever producing a cleanup — a mid-relocation Back leaked
+  // the 20 s landing timer AND the 500 ms coarse seekable-end poll: the
+  // "Seek timed out" toast then fired against a player that no longer
+  // exists, surfacing on whatever page the viewer had moved on to.
+  describe("native-HLS hard-seek lifecycle dies with the player (d4-a2.114)", () => {
+    it("unmounting mid-relocation clears the landing timer and coarse poll — no zombie 'Seek timed out' toast after Back", async () => {
+      // Route attachStrategy to 'native-hls': native HLS claimed, no MSE
+      // (jsdom has none) — the same lever the token-refresh native tests
+      // use; the shared afterEach restores canPlayType unconditionally.
+      Object.defineProperty(HTMLMediaElement.prototype, "canPlayType", { configurable: true, value: () => "maybe" });
+      createPlaybackSession.mockReset().mockResolvedValue({ ok: true, session: hlsTranscodeSession() });
+      // The ToastProvider deliberately OUTLIVES the player (as the app
+      // shell's providers do on an in-app Back) so a zombie toast has a
+      // live surface to appear on.
+      let v: TestRender | null = null;
+      await act(async () => {
+        v = renderIntoBody(
+          <ToastProvider>
+            <VideoPlayer itemId={ITEM_ID} onBack={vi.fn()} />
+          </ToastProvider>,
+        );
+      });
+      view = v;
+      await act(async () => {});
+      const video = videoEl(v!);
+      // Safari's native source clock: PDT at presentation 0 == source 0,
+      // and an EMPTY seekable window, so a +10 s seek classifies HARD
+      // (out of seekable -> POST /seek -> landing timer + coarse poll).
+      Object.defineProperty(video, "getStartDate", { configurable: true, value: () => new Date(0) });
+      Object.defineProperty(video, "seekable", {
+        configurable: true,
+        get: () => ({ length: 0, start: () => 0, end: () => 0 }),
+      });
+      vi.useFakeTimers();
+      apiPost.mockResolvedValueOnce({ targetMs: 10_000 });
+      await act(async () => button(v!, "Forward 10 seconds").click());
+      expect(apiPost, "the +10s seek was expected to classify HARD on the native path").toHaveBeenCalledTimes(1);
+      // The 202 armed the lifecycle under fake timers: the 20 s landing
+      // timer and the 500 ms coarse poll are both pending now.
+      expect(vi.getTimerCount()).toBeGreaterThanOrEqual(2);
+
+      // In-app Back: the player unmounts, the app shell (ToastProvider)
+      // stays.
+      await act(async () => {
+        v!.rerender(
+          <ToastProvider>
+            <div />
+          </ToastProvider>,
+        );
+      });
+      expect(
+        vi.getTimerCount(),
+        "the native hard-seek lifecycle survived unmount — the 20s landing timer/500ms coarse poll leaked (d4-a2.114)",
+      ).toBe(0);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(HARD_SEEK_LANDING_TIMEOUT_MS + 1_000);
+      });
+      expect(
+        document.body.textContent,
+        "the leaked landing timer toasted against an unmounted player",
+      ).not.toContain("Seek timed out");
+    });
+  });
+
   describe("hard-seek failure surface (gap-F5)", () => {
     const SEEK_FAILED = "Seek failed — check the connection and try again.";
 
