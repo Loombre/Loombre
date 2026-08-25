@@ -99,6 +99,19 @@ afterEach(() => {
   view = undefined;
 });
 
+/** GET /admin/plugins/{id} answers `impl`, everything else is the admin. */
+function apiGetImplWithPlugin(impl: () => Promise<unknown>): (path: string, ...rest: unknown[]) => Promise<unknown> {
+  return (path: string) => {
+    if (path === "/users/me") return Promise.resolve({ isAdmin: true });
+    if (path === "/admin/plugins/{id}") return impl();
+    return Promise.reject(new Error(`unexpected path ${path}`));
+  };
+}
+
+function skeletonCount(container: HTMLElement): number {
+  return container.querySelectorAll('[class*="skeleton"]').length;
+}
+
 describe("PluginDetailScreen — admin-only guard", () => {
   it("isAdmin:false — redirects to /profile and renders nothing (never fetches the plugin)", async () => {
     apiGetMock.mockImplementation(apiGetImpl(false));
@@ -128,5 +141,76 @@ describe("PluginDetailScreen — admin-only guard", () => {
     const backLink = Array.from(view.container.querySelectorAll("a")).find((a) => a.textContent?.includes("Plugins"));
     expect(backLink?.getAttribute("href")).toBe("/settings/plugins");
     expect(view.container.textContent).toContain(PLUGIN.name);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// d3-e1 (B/api-validation-F1 residual, web half): the server now 404s a
+// malformed/unknown plugin id (d0bd2cb) instead of 500ing, but this screen
+// had no surface for EITHER outcome that an admin could act on — the only
+// exit from `refetch`'s catch that renders anything is the 404 branch, and
+// every other status set an `error` string that lives INSIDE the loaded-
+// plugin tree (so it can never be reached while `plugin` is still null).
+// A non-404 therefore left the screen pulsing skeletons under a bare
+// "← Plugins" link, forever, with the server's RFC 9457 detail discarded.
+// ---------------------------------------------------------------------------
+describe("PluginDetailScreen — load failures (d3-e1)", () => {
+  it("404 — renders a not-found surface, not an endless skeleton", async () => {
+    apiGetMock.mockImplementation(
+      apiGetImplWithPlugin(() =>
+        Promise.reject(new FakeApiError(404, { type: "urn:loombre:problem:not-found", title: "Not Found", status: 404, detail: "Plugin not found." })),
+      ),
+    );
+    view = renderIntoBody(<PluginDetailScreen id={PLUGIN.id} />);
+    await act(async () => {});
+
+    expect(view.container.textContent).toContain("Plugin not found.");
+    expect(skeletonCount(view.container)).toBe(0);
+  });
+
+  it("500 — surfaces the problem detail with a Retry instead of pulsing skeletons forever", async () => {
+    apiGetMock.mockImplementation(
+      apiGetImplWithPlugin(() =>
+        Promise.reject(
+          new FakeApiError(500, {
+            type: "urn:loombre:problem:internal",
+            title: "Internal Server Error",
+            status: 500,
+            detail: "An unexpected error occurred.",
+          }),
+        ),
+      ),
+    );
+    view = renderIntoBody(<PluginDetailScreen id={PLUGIN.id} />);
+    await act(async () => {});
+
+    expect(view.container.textContent).toContain("An unexpected error occurred.");
+    expect(skeletonCount(view.container)).toBe(0);
+    const retry = Array.from(view.container.querySelectorAll("button")).find((b) => b.textContent?.includes("Retry"));
+    expect(retry).toBeTruthy();
+  });
+
+  it("Retry re-fetches and renders the plugin once the server recovers", async () => {
+    let failNext = true;
+    apiGetMock.mockImplementation(
+      apiGetImplWithPlugin(() => {
+        if (failNext) {
+          failNext = false;
+          return Promise.reject(new FakeApiError(503, { title: "Service Unavailable", status: 503, detail: "The server is restarting." }));
+        }
+        return Promise.resolve(PLUGIN);
+      }),
+    );
+    view = renderIntoBody(<PluginDetailScreen id={PLUGIN.id} />);
+    await act(async () => {});
+    expect(view.container.textContent).toContain("The server is restarting.");
+
+    const retry = Array.from(view.container.querySelectorAll("button")).find((b) => b.textContent?.includes("Retry"));
+    await act(async () => {
+      retry!.click();
+    });
+
+    expect(view.container.textContent).toContain(PLUGIN.name);
+    expect(view.container.textContent).not.toContain("The server is restarting.");
   });
 });

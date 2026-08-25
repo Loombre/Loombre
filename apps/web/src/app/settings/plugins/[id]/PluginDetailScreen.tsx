@@ -63,6 +63,19 @@
 //
 // Live updates: subscribes to the same 6 ADMIN_ONLY plugin.* events as the
 // list panel and refetches — a second open admin tab always converges.
+//
+// LOAD FAILURES (d3-e1, B/api-validation-F1's web residual): the initial
+// GET has THREE outcomes, not two, and each gets its own surface —
+// DetailNotFound (404: the id is gone or was never a plugin), DetailLoadError
+// (any other non-2xx, with a Retry that re-runs the same fetch), or the
+// plugin itself. Before this, only 404 rendered anything: every other status
+// set `error`, which is drawn INSIDE the loaded-plugin tree and so was
+// unreachable while `plugin` was still null — a 500 left this route pulsing
+// text-free skeletons under a bare "← Plugins" link forever. The shared
+// components/detail panels are reused rather than hand-rolled (same posture
+// AlbumDetailScreen took); user-facing copy everywhere on this screen now
+// comes from apiErrorMessage(), so the server's RFC 9457 `detail` is what an
+// admin reads instead of a generic status title.
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -87,7 +100,9 @@ import {
   type PluginConfigSchema,
 } from "../../../../lib/plugin-manifest.js";
 import { describeDeliveryStatus, NEVER_DELIVERED_HEADLINE } from "../../../../lib/plugin-delivery-status.js";
+import { DetailLoadError, DetailNotFound } from "../../../../components/detail/DetailFetchStatus.js";
 import { apiDelete, apiGet, apiPost, apiPut, LoombreApiError } from "../../../../lib/api-client.js";
+import { apiErrorMessage } from "../../../../lib/api-error-message.js";
 import { getEventsSocket } from "../../../../lib/events-socket.js";
 import { useAdminGuard } from "../../../../lib/use-admin-guard.js";
 import styles from "./page.module.css";
@@ -138,7 +153,7 @@ function EventGrantsSection({ plugin, onChanged }: { plugin: AdminPlugin; onChan
       await apiPut("/admin/plugins/{id}/event-grants", { params: { path: { id: plugin.id } }, body: { eventTypeGrants: next } });
       onChanged();
     } catch (err) {
-      setError(err instanceof LoombreApiError ? err.message : "Failed to update event grants.");
+      setError(apiErrorMessage(err, "Failed to update event grants."));
     } finally {
       setSaving(false);
     }
@@ -211,7 +226,7 @@ function PseudonymizationSection({ plugin, onChanged }: { plugin: AdminPlugin; o
       await apiPut("/admin/plugins/{id}/pseudonymization", { params: { path: { id: plugin.id } }, body: { enabled } });
       onChanged();
     } catch (err) {
-      setError(err instanceof LoombreApiError ? err.message : "Failed to update this setting.");
+      setError(apiErrorMessage(err, "Failed to update this setting."));
     } finally {
       setSaving(false);
     }
@@ -251,7 +266,7 @@ function ReapprovalPanel({ plugin, onChanged }: { plugin: AdminPlugin; onChanged
       setSelectedTypes(res.capabilities.map((c) => c.type));
       setEventTypeGrants(plugin.eventGrants.map((g) => g.eventType));
     } catch (err) {
-      setError(err instanceof LoombreApiError ? err.message : "Failed to re-read this plugin's manifest.");
+      setError(apiErrorMessage(err, "Failed to re-read this plugin's manifest."));
     } finally {
       setLoading(false);
     }
@@ -276,7 +291,7 @@ function ReapprovalPanel({ plugin, onChanged }: { plugin: AdminPlugin; onChanged
       });
       onChanged();
     } catch (err) {
-      setError(err instanceof LoombreApiError ? err.message : "Failed to re-approve this plugin.");
+      setError(apiErrorMessage(err, "Failed to re-approve this plugin."));
     } finally {
       setSubmitting(false);
     }
@@ -334,6 +349,7 @@ function DetailContent({ id }: { id: string }): React.JSX.Element {
   const router = useRouter();
   const [plugin, setPlugin] = useState<AdminPlugin | null>(null);
   const [notFound, setNotFound] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [refreshResult, setRefreshResult] = useState<RefreshPluginResponse | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -343,10 +359,17 @@ function DetailContent({ id }: { id: string }): React.JSX.Element {
 
   const refetch = useCallback(() => {
     apiGet("/admin/plugins/{id}", { params: { path: { id } } })
-      .then((res) => setPlugin(res))
+      .then((res) => {
+        setPlugin(res);
+        setNotFound(false);
+        setLoadError(null);
+      })
       .catch((err) => {
         if (err instanceof LoombreApiError && err.status === 404) setNotFound(true);
-        else setError(err instanceof LoombreApiError ? err.message : "Failed to load this plugin.");
+        // A load failure is a SCREEN-level state, not the in-page banner:
+        // the banner renders inside the loaded-plugin tree, so setting it
+        // here while `plugin` is still null showed nothing at all (d3-e1).
+        else setLoadError(apiErrorMessage(err, "Failed to load this plugin."));
       });
   }, [id]);
 
@@ -367,7 +390,7 @@ function DetailContent({ id }: { id: string }): React.JSX.Element {
       await apiPost("/admin/plugins/{id}/enable", { params: { path: { id } } });
       refetch();
     } catch (err) {
-      setError(err instanceof LoombreApiError ? err.message : "Failed to enable this plugin.");
+      setError(apiErrorMessage(err, "Failed to enable this plugin."));
     } finally {
       setBusy(false);
     }
@@ -380,7 +403,7 @@ function DetailContent({ id }: { id: string }): React.JSX.Element {
       await apiPost("/admin/plugins/{id}/disable", { params: { path: { id } } });
       refetch();
     } catch (err) {
-      setError(err instanceof LoombreApiError ? err.message : "Failed to disable this plugin.");
+      setError(apiErrorMessage(err, "Failed to disable this plugin."));
     } finally {
       setBusy(false);
     }
@@ -394,7 +417,7 @@ function DetailContent({ id }: { id: string }): React.JSX.Element {
       setRefreshResult(res);
       refetch();
     } catch (err) {
-      setError(err instanceof LoombreApiError ? err.message : "Failed to refresh this plugin.");
+      setError(apiErrorMessage(err, "Failed to refresh this plugin."));
     } finally {
       setRefreshing(false);
     }
@@ -408,7 +431,7 @@ function DetailContent({ id }: { id: string }): React.JSX.Element {
       const res = await apiPost("/admin/plugins/{id}/rotate-hmac", { params: { path: { id } } });
       setRotatedSecret(res.hmacSecret);
     } catch (err) {
-      setError(err instanceof LoombreApiError ? err.message : "Failed to rotate this plugin's secret.");
+      setError(apiErrorMessage(err, "Failed to rotate this plugin's secret."));
     } finally {
       setBusy(false);
     }
@@ -425,7 +448,7 @@ function DetailContent({ id }: { id: string }): React.JSX.Element {
       // /settings/plugins, not /admin/plugins.
       router.push("/settings/plugins");
     } catch (err) {
-      setError(err instanceof LoombreApiError ? err.message : "Failed to remove this plugin.");
+      setError(apiErrorMessage(err, "Failed to remove this plugin."));
       setBusy(false);
     }
   }
@@ -441,8 +464,19 @@ function DetailContent({ id }: { id: string }): React.JSX.Element {
     }
   }
 
+  // 404 wins over a stale error string: an id that is gone is gone, and the
+  // "← Plugins" link above this content is the way back.
   if (notFound) {
-    return <p className={styles.errorBanner}>This plugin no longer exists.</p>;
+    return <DetailNotFound label="Plugin" />;
+  }
+
+  // Any other non-2xx on the INITIAL load (a still-loading screen has no
+  // plugin to draw the in-page banner over). Once a plugin HAS loaded, a
+  // later failed refetch keeps the last good render and reports through
+  // `error` instead — losing a working screen to a transient blip would be
+  // worse than a slightly stale one.
+  if (!plugin && loadError) {
+    return <DetailLoadError message={loadError} onRetry={refetch} />;
   }
 
   if (!plugin) {
@@ -459,7 +493,10 @@ function DetailContent({ id }: { id: string }): React.JSX.Element {
 
   return (
     <div className={styles.page}>
-      {error && <p className={styles.errorBanner}>{error}</p>}
+      {/* An action failure, or a REFETCH failure once this screen already
+          has a plugin to keep showing (the initial-load case returns the
+          full-screen DetailLoadError above instead). */}
+      {(error ?? loadError) && <p className={styles.errorBanner}>{error ?? loadError}</p>}
 
       <Card>
         <div className={styles.header}>
