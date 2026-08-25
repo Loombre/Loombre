@@ -8,6 +8,7 @@
 // forever, with no error state and no retry short of a full page reload.
 
 import { act } from "react";
+import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderIntoBody, type TestRender } from "../../components/ui/test-render.js";
 
@@ -36,20 +37,86 @@ vi.mock("../../lib/auth-store.js", () => ({
 
 // Home's own live-signal hooks (events-socket subscriptions) — irrelevant
 // to the fetch/error-state behavior under test here.
+// The rail cards (components/home/PosterCard.tsx) call useRouter() for
+// their hover-prefetch/navigation — no app router is mounted under
+// renderIntoBody, so the real hook throws its "expected app router to be
+// mounted" invariant.
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: () => undefined, replace: () => undefined, back: () => undefined, prefetch: () => undefined }),
+}));
+
 vi.mock("../../lib/now-playing.js", () => ({
   useNowPlayingItemIds: () => new Set<string>(),
 }));
 vi.mock("../../lib/watchlist-sync.js", () => ({
   useWatchlistChangeSignal: () => undefined,
+  // The featured banner mounts L3's real WatchlistToggle, which reads the
+  // shared watchlist id store through this module (lib/watchlist-id-store.ts
+  // + the events socket) — stubbed here so the banner's own render is what
+  // these cases exercise.
+  useWatchlistIds: () => ({ ids: new Set<string>(), loading: false, atCapacity: false, markAdded: () => undefined, markRemoved: () => undefined }),
 }));
 
 // Imported AFTER the mocks so the module under test picks them up.
 // HomeContent lives beside page.tsx rather than in it: Next rejects any
 // non-route export from a `page.tsx` (see ./HomeContent.tsx's header).
 const { HomeContent } = await import("./HomeContent.js");
+// Same reason, one step further: MusicPlayerProvider's import chain reaches
+// lib/playback-session.ts -> lib/api-client.js, so a STATIC import of it here
+// would run the api-client mock factory above before this file's own
+// FakeLoombreApiError class is initialized (a TDZ ReferenceError at collect).
+const { ToastProvider } = await import("../../components/ui/Toast.js");
+const { MusicPlayerProvider } = await import("../../components/music/MusicPlayerProvider.js");
 
 function emptyPage(): Promise<{ items: unknown[]; nextCursor: null }> {
   return Promise.resolve({ items: [], nextCursor: null });
+}
+
+function page(items: unknown[]): Promise<{ items: unknown[]; nextCursor: null }> {
+  return Promise.resolve({ items, nextCursor: null });
+}
+
+/** jsdom has no matchMedia (useFeaturedRotation -> useMediaQuery for
+ *  prefers-reduced-motion) — same stub as components/home/FeaturedBanner.test.tsx. */
+function installMatchMedia(): void {
+  vi.stubGlobal(
+    "matchMedia",
+    vi.fn().mockImplementation((query: string) => ({
+      matches: false,
+      media: query,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+      addListener: () => undefined,
+      removeListener: () => undefined,
+      dispatchEvent: () => true,
+    })),
+  );
+}
+
+/** The banner needs the same two providers the real app mounts above Home
+ *  (AppProviders): ToastProvider for WatchlistToggle's useToast(),
+ *  MusicPlayerProvider for the rotation hook's queue-drawer pause signal. */
+function renderHome(node: ReactNode): TestRender {
+  return renderIntoBody(
+    <ToastProvider>
+      <MusicPlayerProvider>{node}</MusicPlayerProvider>
+    </ToastProvider>,
+  );
+}
+
+function movieFixture(index: number): Record<string, unknown> {
+  const id = `m${String(index).padStart(2, "0")}`;
+  return {
+    id,
+    title: `Movie ${index}`,
+    year: 2000 + index,
+    genres: ["Action"],
+    communityRating: 7.5,
+    runtimeMs: 5_400_000,
+    overview: `Overview ${index}`,
+    images: [],
+    addedAtMs: 100_000 - index * 1_000,
+  };
 }
 
 /** Only continue-watching/recently-added are under test — /watchlist and
@@ -68,6 +135,18 @@ function installApiGetMock(overrides: {
     if (path === "/watchlist" || path === "/series") return emptyPage();
     return Promise.reject(new Error(`unexpected apiGet(${path})`));
   });
+}
+
+/** Home's featured pool resolves a fetch chain BEHIND the two rail fetches
+ *  (rails -> exclusion effect -> /movies+/series -> setFeaturedPool), which
+ *  outruns flush()'s three microtasks — same deeper-flush need lane W hit on
+ *  the series detail screen. */
+async function flushDeep(): Promise<void> {
+  for (let i = 0; i < 6; i++) {
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+  }
 }
 
 async function flush(): Promise<void> {
@@ -89,6 +168,7 @@ describe("HomeContent", () => {
     view?.unmount();
     view = null;
     apiGetMock.mockReset();
+    vi.unstubAllGlobals();
   });
 
   it("REGRESSION GUARD: renders an error message with a working Retry instead of an infinite skeleton on a fetch failure", async () => {
@@ -149,5 +229,34 @@ describe("HomeContent", () => {
 
     expect(findRetryButton(view)).toBeUndefined();
     expect(view.container.textContent).toContain("Nothing in progress");
+  });
+
+  // browser-shell-browse-F8 (owner ruling 2026-08-24): on a library smaller
+  // than the featured over-fetch, the Recently Added rail listed every
+  // candidate, the whole-rail exclusion emptied the pool, and the flagship
+  // banner could never render at all. The exclusion is now the rail's
+  // VISIBLE FIRST PAGE only (RECENTLY_ADDED_VISIBLE_CARDS in HomeContent.tsx).
+  it("REGRESSION GUARD: the banner still appears when the Recently Added rail covers the whole candidate over-fetch", async () => {
+    installMatchMedia();
+    const movies = Array.from({ length: 14 }, (_, i) => movieFixture(i + 1));
+    installApiGetMock({
+      recentlyAdded: () => page(movies.map((item) => ({ itemType: "movie", item }))),
+      movies: () => page(movies),
+    });
+
+    view = renderHome(<HomeContent />);
+    await flushDeep();
+
+    expect(view.container.textContent).toContain("FEATURED ·");
+    // Exactly the rail's off-screen tail, most-recently-added first: the
+    // ten cards sharing the fold with the banner stay excluded (the real
+    // README constraint — no duplicate in the same fold).
+    const dotLabels = Array.from(view.container.querySelectorAll('[role="radio"]')).map((dot) => dot.getAttribute("aria-label"));
+    expect(dotLabels).toEqual([
+      "Show featured title: Movie 11",
+      "Show featured title: Movie 12",
+      "Show featured title: Movie 13",
+      "Show featured title: Movie 14",
+    ]);
   });
 });

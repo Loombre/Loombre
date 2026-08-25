@@ -46,7 +46,12 @@
 //     lib/featured-pool.ts's header).
 //   - Server-side featured-pool computation (for cross-device
 //     consistency) is a real README ask this lane can't do client-side —
-//     logged as a follow-up, not this lane's to build.
+//     logged as a follow-up, not this lane's to build. Until it exists the
+//     exclusion is scoped to what each rail actually SHOWS (see
+//     RECENTLY_ADDED_VISIBLE_CARDS below and lib/featured-pool.ts's header,
+//     browser-shell-browse-F8): excluding Recently Added's whole fetch made
+//     the banner structurally unreachable on any library smaller than the
+//     candidate over-fetch.
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { components } from "@loombre/sdk";
@@ -60,7 +65,7 @@ import { apiDelete, apiGet, LoombreApiError } from "../../lib/api-client.js";
 import { getAuthStore } from "../../lib/auth-store.js";
 import { useNowPlayingItemIds } from "../../lib/now-playing.js";
 import { useWatchlistChangeSignal } from "../../lib/watchlist-sync.js";
-import { buildExclusionSet, selectFeaturedPool, type FeaturedPoolCandidate } from "../../lib/featured-pool.js";
+import { buildExclusionSet, selectFeaturedPool, visibleRailIds, type FeaturedPoolCandidate } from "../../lib/featured-pool.js";
 import { buildMovieCandidate, buildSeriesCandidate, initialLetter, type FeaturedCandidate } from "../../lib/featured-fields.js";
 import styles from "./page.module.css";
 
@@ -70,11 +75,6 @@ type RecentlyAddedEntry = components["schemas"]["RecentlyAddedEntry"];
 type Movie = components["schemas"]["Movie"];
 type Series = components["schemas"]["Series"];
 
-/** How many extra /movies + /series (each) to over-fetch as raw featured-
- *  pool candidates before exclusion — needs enough margin to survive the
- *  Set-difference against whatever's already in the rails below (see
- *  lib/featured-pool.ts's header on why a thin/empty pool is an accepted,
- *  logged limitation of client-side-only computation on a small library). */
 type ImageDescriptor = components["schemas"]["ImageDescriptor"];
 
 function posterBlurhash(images: ImageDescriptor[] | undefined): string | null {
@@ -88,8 +88,33 @@ function hasPosterImage(images: ImageDescriptor[] | undefined): boolean {
   return images?.some((img) => img.kind === "poster") ?? false;
 }
 
+/** How many extra /movies + /series (each) to over-fetch as raw featured-
+ *  pool candidates before exclusion — needs enough margin to survive the
+ *  Set-difference against the rails' visible cards below. */
 const POOL_CANDIDATE_FETCH_LIMIT = 25;
 const FEATURED_POOL_MAX = 5;
+
+/* Recently Added's VISIBLE FIRST PAGE — the only part of that rail the
+   featured pool excludes (browser-shell-browse-F8, owner ruling
+   2026-08-24; see lib/featured-pool.ts's header for the whole rule and
+   why excluding the rail's full fetch made the banner unreachable).
+   Derived from the rail's own geometry rather than picked, so a card/gap/
+   sidebar change moves it instead of leaving a stale literal behind. */
+
+/** One card of track in the rail's horizontal scroller: the 160px poster
+ *  tile (components/home/PosterCard.module.css .tile) plus the scroller's
+ *  --space-md gap (16px, styles/tokens.css). */
+const RAIL_CARD_TRACK_PX = 160 + 16;
+
+/** Content width of the desktop shell on a 1920px-wide display — viewport
+ *  minus the 210px sidebar (components/shell/Sidebar.module.css) and
+ *  .main's two --space-xl gutters (32px each, AppShell.module.css). */
+const DESKTOP_CONTENT_WIDTH_PX = 1920 - 210 - 32 * 2;
+
+/** = 10. Cards past this are behind a horizontal scroll at every desktop
+ *  width the shell is built for, i.e. NOT in the same fold as the banner —
+ *  which is the duplicate design/phosphor/README.md actually forbids. */
+const RECENTLY_ADDED_VISIBLE_CARDS = Math.ceil(DESKTOP_CONTENT_WIDTH_PX / RAIL_CARD_TRACK_PX);
 
 /** Bounded — Home's rail shows the most recently added handful, same
  *  posture as Continue Watching/Recently Added (L3's rail, wired into
@@ -258,15 +283,34 @@ export function HomeContent(): React.JSX.Element {
     setWatchlist((prev) => (prev ? prev.filter((entry) => entry.item.id !== itemId) : prev));
   }
 
-  // Featured pool: real Set-difference against whatever's already in the
-  // two rails above (+ the watchlist seam) — only runs once BOTH rail
+  // The two rails /home/recently-added feeds: the Recently Added poster
+  // rail (movies + series) and New in Music (albums). Declared here, above
+  // the featured-pool effect, because that effect's exclusion source is the
+  // catalog rail's own rendered order.
+  const recentlyAddedCatalog = useMemo(
+    () => (recentlyAdded ?? []).filter((e) => e.itemType === "movie" || e.itemType === "series"),
+    [recentlyAdded],
+  );
+  const recentlyAddedAlbums = useMemo(() => (recentlyAdded ?? []).filter((e) => e.itemType === "album"), [recentlyAdded]);
+  const artistNames = useArtistNames(recentlyAddedAlbums);
+
+  // Featured pool: real Set-difference against whatever's already ON SCREEN
+  // in the two rails above (+ the watchlist rail) — only runs once BOTH rail
   // fetches have resolved, since the exclusion set needs their real ids.
   useEffect(() => {
     if (continueWatching === null || recentlyAdded === null || watchlist === null) return;
     let cancelled = false;
+    // Continue Watching and the watchlist rail each fetch a page close to
+    // what they render (the server's own continue-watching default of 20,
+    // WATCHLIST_RAIL_LIMIT). Recently Added does NOT — its fetch can dwarf
+    // the fold, so only its visible first page excludes
+    // (browser-shell-browse-F8).
     const excluded = buildExclusionSet(
       continueWatching.map((e) => e.item.id),
-      recentlyAdded.map((e) => e.item.id),
+      visibleRailIds(
+        recentlyAddedCatalog.map((e) => e.item.id),
+        RECENTLY_ADDED_VISIBLE_CARDS,
+      ),
       watchlist.map((e) => e.item.id),
     );
     fetchFeaturedCandidates(excluded)
@@ -286,14 +330,7 @@ export function HomeContent(): React.JSX.Element {
     return () => {
       cancelled = true;
     };
-  }, [continueWatching, recentlyAdded, watchlist]);
-
-  const recentlyAddedCatalog = useMemo(
-    () => (recentlyAdded ?? []).filter((e) => e.itemType === "movie" || e.itemType === "series"),
-    [recentlyAdded],
-  );
-  const recentlyAddedAlbums = useMemo(() => (recentlyAdded ?? []).filter((e) => e.itemType === "album"), [recentlyAdded]);
-  const artistNames = useArtistNames(recentlyAddedAlbums);
+  }, [continueWatching, recentlyAdded, recentlyAddedCatalog, watchlist]);
 
   const loading = continueWatching === null || recentlyAdded === null || accessToken === null;
 

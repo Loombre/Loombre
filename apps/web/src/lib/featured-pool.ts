@@ -13,6 +13,20 @@
 // prototype revisions leaked a duplicate first from Continue Watching, then
 // from Recently Added).
 //
+// SCOPE OF THE EXCLUSION (browser-shell-browse-F8, owner ruling
+// 2026-08-24). A rail's exclusion source is the ids that rail actually puts
+// ON SCREEN — visibleRailIds() below — not the whole page of rows Home
+// fetched behind it. QA found the banner structurally unreachable on a real
+// 30-movie library: /home/recently-added returned 35 rows, the rail listed
+// them all, and that set was a SUPERSET of the featured candidates' own
+// 25+25 over-fetch, so the Set-difference was empty every single time and
+// no banner could ever render. The README's rule is kept where its own
+// stated reason lives — "shipped a featured item that duplicated a card in
+// the same fold" — so what shares the fold with the banner (Recently
+// Added's first page) is excluded, and what is behind a horizontal scroll
+// is eligible. Raising the candidate over-fetch would NOT have fixed this:
+// it only moves the same collision to a slightly larger library.
+//
 // SIBLING SEAM (Wave 2 lane L3 owns the Watchlist rail + toggle state):
 // buildExclusionSet() takes any number of id SOURCES rather than one
 // pre-merged list, specifically so the orchestrator's reconciliation can
@@ -58,4 +72,20 @@ export function selectFeaturedPool<T extends FeaturedPoolCandidate>(
     .slice()
     .sort((a, b) => b.addedAtMs - a.addedAtMs)
     .slice(0, max);
+}
+
+/**
+ * The ids a rail actually shows without scrolling: its first
+ * `visibleCount` entries, in rail order. Home passes the Recently Added
+ * rail through this before it becomes an exclusion source (see this
+ * module's header and app/home/HomeContent.tsx's
+ * RECENTLY_ADDED_VISIBLE_CARDS, which is where that count is derived from
+ * the rail's real card geometry — this function never invents one).
+ *
+ * A non-positive `visibleCount` yields NO exclusions rather than the whole
+ * rail: "nothing is on screen" must never silently mean "exclude
+ * everything", which is the failure mode this whole change is about.
+ */
+export function visibleRailIds(railIds: readonly string[], visibleCount: number): string[] {
+  return visibleCount > 0 ? railIds.slice(0, visibleCount) : [];
 }

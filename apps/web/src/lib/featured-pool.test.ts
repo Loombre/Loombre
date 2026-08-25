@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { describe, expect, it } from "vitest";
-import { buildExclusionSet, selectFeaturedPool } from "./featured-pool.js";
+import { buildExclusionSet, selectFeaturedPool, visibleRailIds } from "./featured-pool.js";
 
 describe("buildExclusionSet", () => {
   it("merges multiple id sources into one set", () => {
@@ -74,5 +74,46 @@ describe("selectFeaturedPool", () => {
     const excluded = buildExclusionSet(["a", "b", "c", "d"]);
     const pool = selectFeaturedPool(candidates, excluded, 5);
     expect(pool.map((c) => c.id)).toEqual(["f", "e"]);
+  });
+});
+
+// browser-shell-browse-F8 (owner ruling 2026-08-24): the exclusion covers
+// the Recently Added rail's VISIBLE FIRST PAGE, not the whole page of rows
+// Home fetches behind it. Before this, a small/medium library whose rail
+// listed every recently-added title excluded the entire featured-candidate
+// over-fetch and the banner could never appear at all.
+describe("visibleRailIds", () => {
+  const rail = Array.from({ length: 14 }, (_, i) => `ra-${String(i + 1).padStart(2, "0")}`);
+
+  it("keeps only the rail's first page of ids", () => {
+    expect(visibleRailIds(rail, 10)).toEqual(rail.slice(0, 10));
+  });
+
+  it("returns every id when the rail is shorter than one page", () => {
+    expect(visibleRailIds(["a", "b"], 10)).toEqual(["a", "b"]);
+  });
+
+  it("returns nothing for a non-positive page size (never a silent full-rail exclusion)", () => {
+    expect(visibleRailIds(rail, 0)).toEqual([]);
+    expect(visibleRailIds(rail, -3)).toEqual([]);
+  });
+
+  it("never mutates the rail it is given", () => {
+    const copy = [...rail];
+    visibleRailIds(rail, 4);
+    expect(rail).toEqual(copy);
+  });
+
+  it("REGRESSION (browser-shell-browse-F8): candidate #11 of the rail survives exclusion, so the banner has a pool", () => {
+    // The QA shape: the rail lists the SAME titles the featured over-fetch
+    // returns (a library smaller than the over-fetch), so excluding the
+    // whole rail left pool size 0 and no banner ever rendered.
+    const candidates = rail.map((id, i) => ({ id, addedAtMs: 14_000 - i * 1_000 }));
+
+    const wholeRail = selectFeaturedPool(candidates, buildExclusionSet(rail), 5);
+    expect(wholeRail).toEqual([]); // the old rule: structurally no banner
+
+    const firstPageOnly = selectFeaturedPool(candidates, buildExclusionSet(visibleRailIds(rail, 10)), 5);
+    expect(firstPageOnly.map((c) => c.id)).toEqual(["ra-11", "ra-12", "ra-13", "ra-14"]);
   });
 });
