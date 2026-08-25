@@ -12,6 +12,7 @@
 // Topbar/MobileHeader "both rendered, CSS-hidden" convention.
 
 import type { ReactNode } from "react";
+import Link from "next/link";
 import styles from "./Row.module.css";
 
 export interface RowAction {
@@ -46,9 +47,16 @@ export function Row({
         <span className={styles.mobileHeading}>{mobileHeading ?? heading.toUpperCase()}</span>
         {meta && <span className={styles.meta}>{meta}</span>}
         {action && (
-          <a href={action.href} className={styles.action}>
+          // next/link, never a raw <a href> (QA C/zone-row-action-raw-anchor):
+          // app/restricted/page.tsx renders its rails with this component, so
+          // "ALL →" out of the UNLOCKED zone used to be a full document load —
+          // RestrictedProvider starts over at locked=true and cannot rehydrate
+          // the live server-side unlock, so the destination showed the PIN gate
+          // and burned one of the 5 unlock attempts/min. On the public home it
+          // was "only" a full reload of an app that is already loaded.
+          <Link href={action.href} className={styles.action}>
             {action.label}
-          </a>
+          </Link>
         )}
       </div>
       {children.length === 0 ? (

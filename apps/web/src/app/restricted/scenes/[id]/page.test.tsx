@@ -20,7 +20,7 @@
 // what the real component does on an unmodified primary click:
 // preventDefault() then a client-side router navigation.
 
-import { readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Suspense, act } from "react";
@@ -238,40 +238,107 @@ describe("restricted scene detail — client-side navigation (QA browser-restric
 });
 
 // Whole-zone guard for the same defect class: inside the restricted zone a
-// raw <a> is never just a style choice — it is a re-lock. This walks the
-// zone's own two directories (the route tree and its components) and fails
-// on any anchor with an href that isn't already a known, tracked exception.
-describe("restricted zone — no raw <a href> navigation (QA browser-restricted-settings-F1)", () => {
-  // Follow-up worklist for the same defect in files this finding did not
-  // own. C/zone-sibling-tiles (d3-c1) emptied it: ZoneStudioTile,
-  // ZonePerformerTile and ZoneDetailedRow are next/link now. Kept as an
-  // (empty) seam so the next offender that cannot be fixed in the same
-  // pass is TRACKED here rather than silently skipped.
-  const KNOWN_REMAINING = new Set<string>([]);
+// raw <a> is never just a style choice — it is a re-lock.
+//
+// C/zone-row-action-raw-anchor (d3-c2) widened WHAT it walks. The original
+// version walked the zone's own two DIRECTORIES (app/restricted +
+// components/restricted), which is not the same set as "what the zone
+// renders": app/restricted/page.tsx builds its rails out of
+// components/home/Row.tsx, whose "ALL →" action was a raw <a href> — a full
+// document navigation out of the unlocked zone that this guard was
+// structurally unable to see (confirmed live: the window probe was wiped and
+// performance.timeOrigin moved). So the walk now follows the zone's own
+// transitive relative-import closure instead, i.e. every module the zone can
+// actually render, wherever it lives.
+describe("restricted zone — no raw <a href> navigation (QA browser-restricted-settings-F1 / C/zone-row-action-raw-anchor)", () => {
+  /** Raw anchors that are CORRECT where they are, with the reason. Kept as
+   *  data (not a silent skip) so each one has to justify itself. */
+  const ALLOWED = new Map<string, string>([
+    [
+      "components/browse/PosterCell.tsx",
+      "raw <a> by design: its own onClick preventDefault()s and router.push()es inside a view transition, i.e. it already IS a client navigation (the anchor exists for middle-click/copy-link).",
+    ],
+    [
+      "components/shell/SessionEndedNotice.tsx",
+      "deliberate FULL document navigation: the always-available manual way out when the client router has stopped committing (lib/auth-return-path.ts AUTH_REDIRECT_FALLBACK_MS).",
+    ],
+  ]);
 
-  it("every in-zone link is a next/link, not a document navigation", () => {
+  /** Same defect, files this lane does not own — tracked, not skipped, so
+   *  the guard still catches every NEW offender and this list stays the
+   *  follow-up's exact worklist. Remove an entry when it is converted. */
+  const KNOWN_REMAINING = new Map<string, string>([
+    [
+      "components/browse/SearchMovieRow.tsx",
+      "C/zone-search-result-raw-anchor: the search overlay is mounted by AppShell, so a result clicked from inside the zone re-locks it.",
+    ],
+    ["components/browse/SearchMusicGrid.tsx", "C/zone-search-result-raw-anchor (same overlay, music results)."],
+  ]);
+
+  /** Every module the zone can render: the two zone directories plus the
+   *  transitive closure of their RELATIVE imports (bare specifiers are
+   *  packages, never our components). `.js` specifiers are TS source on
+   *  disk; `import(...)` forms count too (next/dynamic children render just
+   *  the same). */
+  function zoneRenderClosure(srcRoot: string): string[] {
+    const seeds: string[] = [];
+    const collect = (dir: string): void => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const full = `${dir}/${entry.name}`;
+        if (entry.isDirectory()) collect(full);
+        else if (/\.tsx?$/.test(entry.name) && !/\.test\.tsx?$/.test(entry.name)) seeds.push(full);
+      }
+    };
+    collect(`${srcRoot}/app/restricted`);
+    collect(`${srcRoot}/components/restricted`);
+
+    const resolveSpecifier = (fromFile: string, specifier: string): string | null => {
+      const base = resolve(dirname(fromFile), specifier).replace(/\.js$/, "");
+      for (const candidate of [`${base}.tsx`, `${base}.ts`, `${base}/index.tsx`, `${base}/index.ts`]) {
+        if (existsSync(candidate)) return candidate;
+      }
+      return null;
+    };
+
+    const seen = new Set<string>();
+    const queue = [...seeds];
+    while (queue.length > 0) {
+      const file = queue.pop() as string;
+      if (seen.has(file)) continue;
+      seen.add(file);
+      for (const match of readFileSync(file, "utf8").matchAll(/(?:from|import)\s*\(?\s*["'](\.[^"']+)["']/g)) {
+        const target = resolveSpecifier(file, match[1] as string);
+        if (target !== null && !seen.has(target)) queue.push(target);
+      }
+    }
+    return [...seen];
+  }
+
+  it("every link the zone can render is a next/link, not a document navigation", () => {
     // fileURLToPath on the STRING form: under the jsdom environment the
     // global URL is jsdom's, and node:url rejects its instances.
     const srcRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../../..");
     const rawAnchorWithHref = /<a\s[^>]*href=/;
-    const offenders: string[] = [];
 
-    const walk = (dir: string): void => {
-      for (const entry of readdirSync(dir, { withFileTypes: true })) {
-        const full = `${dir}/${entry.name}`;
-        if (entry.isDirectory()) {
-          walk(full);
-          continue;
-        }
-        if (!/\.tsx?$/.test(entry.name) || /\.test\.tsx?$/.test(entry.name)) continue;
-        if (rawAnchorWithHref.test(readFileSync(full, "utf8"))) {
-          offenders.push(full.slice(srcRoot.length + 1));
-        }
-      }
-    };
-    walk(`${srcRoot}/app/restricted`);
-    walk(`${srcRoot}/components/restricted`);
+    const offenders = zoneRenderClosure(srcRoot)
+      .filter((file) => rawAnchorWithHref.test(readFileSync(file, "utf8")))
+      .map((file) => file.slice(srcRoot.length + 1))
+      .filter((file) => !ALLOWED.has(file) && !KNOWN_REMAINING.has(file))
+      .sort();
 
-    expect(offenders.filter((f) => !KNOWN_REMAINING.has(f))).toEqual([]);
+    expect(offenders).toEqual([]);
+  });
+
+  // The widening is the point of d3-c2 — pin it, or a future refactor that
+  // silently narrows the walk back to two directories takes the "ALL →"
+  // class of defect right back out of view.
+  it("the closure reaches components the zone renders from OUTSIDE its own directories", () => {
+    const srcRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../../..");
+    const closure = zoneRenderClosure(srcRoot).map((file) => file.slice(srcRoot.length + 1));
+
+    // app/restricted/page.tsx's rails shell — shared with the public home.
+    expect(closure).toContain("components/home/Row.tsx");
+    // Mounted by AppShell around every zone route.
+    expect(closure).toContain("components/shell/AppShell.tsx");
   });
 });
