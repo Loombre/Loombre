@@ -18,6 +18,7 @@ import { act } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { renderIntoBody, type TestRender } from "../../ui/test-render.js";
 import { ToastProvider } from "../../ui/Toast.js";
+import { emitCatalogInvalidation } from "../../../lib/catalog-invalidation.js";
 
 const apiGetMock = vi.fn();
 const apiPostMock = vi.fn();
@@ -247,5 +248,42 @@ describe("LibrariesSection — d3-d5: grantless libraries are reachable from the
     expect(view!.container.querySelector("h1")?.textContent).toBe("Libraries · 1");
     expect(view!.container.textContent ?? "").not.toContain("Not visible to you");
     expect(view!.container.querySelector('[class*="errorBanner"]')).toBeNull();
+  });
+});
+
+// d3-d7 (verify/settings-libraries-no-refresh-on-unlock, QA 2026-08-21
+// remediation dispatch 3, P3): this pane loaded ONCE (useEffect(reload, []))
+// and ignored emitCatalogInvalidation(), which RestrictedProvider fires on
+// every confirmed lock<->unlock transition. Live: after granting access,
+// unlocking flipped the header indicator but the list stayed "Libraries · 4"
+// for 4s+; only a full reload showed 6 — while the F7 panel's own copy
+// tells the admin that unlocking is what makes the library appear here.
+describe("LibrariesSection — d3-d7: honours catalog invalidation", () => {
+  function viewerReads(): unknown[] {
+    return apiGetMock.mock.calls.filter(([path, init]) => path === "/libraries" && scopeOf(init) === undefined);
+  }
+
+  it("re-reads both scopes when a restricted lock/unlock invalidates the catalog", async () => {
+    await render();
+    expect(viewerReads()).toHaveLength(1);
+
+    await act(async () => {
+      emitCatalogInvalidation();
+    });
+
+    expect(viewerReads()).toHaveLength(2);
+    expect(apiGetMock.mock.calls.filter(([path, init]) => path === "/libraries" && scopeOf(init) === "admin")).toHaveLength(2);
+  });
+
+  it("unsubscribes on unmount — a later invalidation must not refetch into a dead component", async () => {
+    await render();
+    view!.unmount();
+    view = undefined;
+
+    await act(async () => {
+      emitCatalogInvalidation();
+    });
+
+    expect(viewerReads()).toHaveLength(1);
   });
 });

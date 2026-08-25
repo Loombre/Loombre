@@ -59,6 +59,7 @@ import { RowMenu } from "../RowMenu.js";
 import { AddLibrarySheet } from "./AddLibrarySheet.js";
 import { useLibraryScanStatus } from "./use-library-scan-status.js";
 import { libraryPathLabel } from "./library-path-label.js";
+import { subscribeCatalogInvalidation } from "../../../lib/catalog-invalidation.js";
 import { diffPermissionsToSubmit } from "../../../lib/library-permissions.js";
 import { enumLabel, MEDIA_KIND_LABEL } from "../../../lib/enum-labels.js";
 import { useToast } from "../../ui/Toast.js";
@@ -346,6 +347,18 @@ export function LibrariesSection({ heading }: { heading: string | null }): React
   }
 
   useEffect(reload, []);
+
+  // d3-d7: RestrictedProvider.unlock()/lock() fire emitCatalogInvalidation()
+  // on every confirmed transition, and BOTH of this pane's answers move
+  // with gate 5 — an unlock adds every granted restricted library to the
+  // viewer-scoped list and removes it from the "Not visible to you" group,
+  // a lock does the reverse. Loading once (useEffect(reload, [])) left the
+  // pane reading "Libraries · 4" for as long as the admin stayed on it
+  // after unlocking, while the F7 panel's own copy told them unlocking is
+  // what makes the library appear HERE. Same seam every other catalog
+  // consumer is meant to use; `reload` only calls stable state setters, so
+  // capturing the first one is deliberate, not a stale closure.
+  useEffect(() => subscribeCatalogInvalidation(reload), []);
 
   /** d3-d5: the diff is computed at RENDER time off the two server
    *  answers, never stored — the same "derived data is never a second
