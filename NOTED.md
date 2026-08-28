@@ -83,3 +83,72 @@ evidence in docs/state/archive/2026-08-27-qa-ld14-ld22-discovery/d1..d4.json.
   must scope to apps/web/src.
 - **Repo-root clutter.** console-full-session.log (2026-08-20),
   .playwright-mcp/ (3397 entries), .DS_Store at the repository root.
+
+## Lane observations (Waves 1–3, out of scope, implemented-as-written)
+
+- **LD-14 (rc.6) has no lower guard.** "Exactly two columns at every width
+  below the breakpoint" is implemented literally — at a hypothetical 280px
+  viewport tracks are 116px, narrower than Watchlist's 132px floor. Flag if a
+  1-column floor is ever wanted.
+- **Browse's JS item width is still hand-synced.** VirtualPosterGrid.tsx
+  DEFAULT_ITEM_WIDTH=168 mirrors --grid-min-poster by comment only (LD-19
+  covered CSS); both sides now cross-reference each other.
+- **479.98px is a second hand-synced breakpoint literal** (module CSS +
+  PHONE_TWO_UP_QUERY), same weakness the 767.98px literal has across five
+  files; nothing mechanical enforces the set.
+- **Compact job cards freeze without socket traffic** — relative time is
+  computed at render (repo convention); an idle queue shows "2h ago"
+  indefinitely. A shared ticker hook would be a new decision.
+- **Two relative-time registers now live in lib/** — relative-time.ts
+  (compact "2h ago", Math.round) vs admin-capability-format.ts (verbose,
+  pinned by tests). Do not let a consolidation sweep merge them.
+- **PIN dialog:** ui/Input's TextInput declares no ref prop (React 19 makes
+  a 2-line widening trivial — would remove PinModal's form-query helper);
+  keypad Enter/Space now lands focus on the hidden field (tabbing users get
+  pulled out of the keypad); :has() is apps/web's first use (support floor
+  for this ring only); the hidden 1×44px box keeps .input's min-height
+  (Toggle recipe doesn't neutralize it; invisible either way); the mobile
+  soft-keyboard hazard lane D flagged was resolved at integration by
+  confining programmatic focus to non-phone widths (f5f39ff) — owner can
+  overrule.
+- **LD-18 siblings still truncate:** LibrariesPanel's .unmatchedPath keeps
+  its own ellipsis (admin surface, explicitly out of LD-18 scope);
+  .path/.specs carry a 0.06em letter-spacing literal where siblings use
+  var(--track-mono).
+- **LD-19 guard is shape-based, not site-based** — any hand-written
+  minmax(min(var(--…), 100%), 1fr) passes the stylelint pattern regardless
+  of which var it names; the utility file needed no overrides exemption
+  (the var() fallback slot doesn't trip the pattern). Recipe classes are
+  kebab-case (.auto-grid-fill/.auto-grid-fit) — value-keyword-case rejects
+  camelCase composes values.
+- **Cascade dependency:** three hand-written non-floor overrides
+  (skeletonGridTwoUp, HealthCards mobile repeat(2,1fr), ChoiceCard 1fr)
+  beat the composed recipe on source order alone (same specificity);
+  verified against a production webpack build + live dev; a chunk-order
+  change is the failure mode to watch.
+- **glass.css follow-ups:** Scrubber's .hoverPreview is the live
+  neutered-blur instance (documented in the new header, not fixed — LD-20
+  forbade it); SceneBanner's .backPill is the same nested-positioning shape,
+  unverified; the header's stale retention sentence was corrected — the
+  other two places asserting the two-surface reservation (README:66-69,
+  tokens.css:221-226) read correctly today but drift the same way.
+- **LD-21 has no mechanical enforcer** — the PR checkbox is the only gate;
+  a CONTRIBUTING.md invariant bullet was deliberately NOT added (that
+  section's pattern requires a mechanical check).
+- **Player mobile gaps parked in the designated block's lap:** 38px touch
+  targets below the 44px mobile floor, no safe-area-inset handling, track
+  picker not phone-adapted (chapters sheet rationale applies equally). All
+  excluded by LD-22's zero-visual-change criterion; the designated block is
+  where the fixes belong.
+- **phosphor-mobile-css.test.ts's greedy EOF-anchored regex** silently
+  swallows anything appended after a mobile block in its five files
+  (ld14-mono-scale-conformance's brace parser is the sound model; the new
+  player-controls-mobile-block.test.ts used it).
+- **jsdom masks StrictMode focus behavior.** Lane D's focus-on-open passed
+  12/12 in jsdom but failed in live Chrome — dev StrictMode remounts a
+  newly-mounted dialog subtree and re-runs its focus trap after the parent's
+  dep-effect. Fixed with a one-frame deferral (5b67eb8); verify focus
+  features in a real browser, not just jsdom.
+- **React act() warnings are disabled repo-wide in web tests**
+  (IS_REACT_ACT_ENVIRONMENT never set; no vitest setupFiles) — pre-existing
+  stderr noise in every component suite.

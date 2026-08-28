@@ -18,10 +18,9 @@ MODEL POLICY (this run): all sub-agents opus; final review by fresh opus agent.
   markdown and Wave 1's build had leaked state/*.html into the local
   website merge, never deployed, scrubbed by re-sync at 70 routes).
   Gate re-run: ALL 17 STEPS PASSED. Exit-gate evidence below.
-- Wave 3 (F: LD-19, G: LD-20+21, H: LD-22): IN FLIGHT — all grid work is
-  merged so F/G/H run parallel; G/H both edit design/phosphor/README.md
-  (disjoint sections) — integrate sequentially.
-- Final review + gate:full + run archive: pending.
+- Wave 3 (F: LD-19, G: LD-20+21, H: LD-22): COMPLETE — merged (G→H→F, README
+  auto-merged), gate ALL 17 STEPS PASSED, pixel evidence below.
+- Final review (fresh opus) + gate:full + run archive: IN FLIGHT.
 
 ## Lane dashboard
 | Lane | LD (rc.6) | Status | Branch @ SHA | Merge |
@@ -31,9 +30,9 @@ MODEL POLICY (this run): all sub-agents opus; final review by fresh opus agent.
 | C | LD-15 /reset GET | DONE | rc6/lane-c-ld15 @ d315f0d (3 commits) | 8bd92a1 |
 | D | LD-17 PIN input | DONE | rc6/lane-d-ld17 @ 144bf61 (+f5f39ff,5b67eb8) | a9ce2b9 |
 | E | LD-18 file paths | DONE | rc6/lane-e-ld18 @ ad796ee | 25f1e9d |
-| F | LD-19 grid tokens | in flight | — | — |
-| G | LD-20+21 docs | in flight | — | — |
-| H | LD-22 player | in flight | — | — |
+| F | LD-19 grid tokens | DONE | rc6/lane-f-ld19 @ a0157ee (2 commits) | 69d4b9e |
+| G | LD-20+21 docs | DONE | rc6/lane-g-ld20-21 @ 4af54a0 | 8535ca0 |
+| H | LD-22 player | DONE | rc6/lane-h-ld22 @ d1e77f6 | afac953 |
 
 ## Wave 1 exit-gate evidence (screenshots: archive/2026-08-27-qa-ld14-ld22-evidence/wave1/)
 - Integration: 3 clean merges, zero conflict markers; `pnpm gate` on merged
@@ -91,23 +90,35 @@ MODEL POLICY (this run): all sub-agents opus; final review by fresh opus agent.
   VersionCard spec red-first; full apps/web suite 232 files / 2364 green;
   ld14-mono-scale-conformance untouched and green.
 
-## Load-bearing pointers for Wave 3 (full detail in d1/d4.json)
-- LD-19 tokens: poster 168 / poster-compact 132 / avatar 112 /
-  avatar-compact 88 / card 200 / card-compact 180 / panel 480 / swatch 84 /
-  detail-sidebar 240 (R4). Utility = styles/grid.css, glass.css pattern,
-  custom-property parameter, fill+fit variants, consumers keep gap.
-  Stylelint declaration-property-value-disallowed-list + first overrides
-  block; permit minmax(0, Nfr) idiom (5 sites). Browse skeleton uses
-  utility above 479.98px only (LD-14 block below).
-- LD-20: evidence = QuickSearch.module.css:11-18 + commit b07fe1a;
-  sanctioned pair MobileTabBar + MiniPlayerBar; 8 other consumers listed in
-  d4.json.
-- LD-21: design/phosphor/README.md "Responsive strategy" (design/ = no docs
-  sync) + .github/PULL_REQUEST_TEMPLATE.md 9th box.
-- LD-22: README Mobile section, bolded "**Player.**" run-in at ~line 644;
-  PlayerControls.module.css existing @media :213-217 becomes the designated
-  mobile home; three CSS-source-reading tests over that file (indented
-  in-media rules safe); zero visual change at phone width.
+## Wave 3 exit-gate evidence (screens: archive/.../wave3/, 9 before/after pairs)
+- LD-19: red-first at scale — commit 7488daa adds ONLY the stylelint rule;
+  stylelint exits 2 with 14 errors across all 12 unmigrated files while the
+  five minmax(0, Nfr) idiom sites stay silent; a0157ee migrates to 0 errors
+  (that red run IS the planted-violation proof, both literal forms fired).
+  Nine tokens landed (incl. R4 detail-sidebar 240); styles/grid.css recipes
+  .auto-grid-fill/.auto-grid-fit (kebab — value-keyword-case rejects camel);
+  no overrides block needed (var() fallback slot doesn't trip the pattern).
+  Grep proof: zero literal-floor minmax declarations left in apps/web/src
+  outside the utility + LD-14 exemption (3 remaining hits are comments).
+  PIXEL PROOF (live dev, element screenshots): watchlist 380+1280,
+  blazegrid 392+1440 IDENTICAL; healthcards 1024+1280 differ only in a
+  10×15px ticking stat value (tracks byte-identical 239.5×4); systemgrid
+  1024+1280 differ only by a live hwprobe banner line + probe-age tick in
+  the capabilities card (crop pair archived; tracks byte-identical 491×2).
+  Full web suite 232 files / 2371 green; production webpack build verified
+  the composes source-order tie the 3 hand-written overrides depend on.
+- LD-20+21: comments/markdown-only diff (glass.css header names the
+  sanctioned pair + 3 positional assumptions + QuickSearch failure w/
+  b07fe1a + Scrubber's live instance described; stale retention sentence
+  corrected). README "Responsive strategy" gains the axis-reset convention
+  (### subhead, matches file conventions); PR template gains box 9 of 9.
+- LD-22: README Mobile "**Player.**" run-in landed (stale desktop facts not
+  repeated); PlayerControls @media block byte-identical rule + designated-
+  home marker as a sibling comment (existing rationale byte-preserved); new
+  brace-aware player-controls-mobile-block.test.ts (red-first on the
+  marker); the 3 pre-existing CSS-source tests untouched and green. ZERO
+  visual change proven: player bar at 380 paused t=0 pixel-IDENTICAL
+  before/after (332×166).
 
 ## Standing hazards
 - Lanes: pnpm install, then `npx turbo run build --filter=@loombre/sdk
