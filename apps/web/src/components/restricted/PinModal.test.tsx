@@ -52,6 +52,26 @@ function installMatchMedia(): void {
   );
 }
 
+/** Phone-width variant: the shared 767.98px mobile query matches, everything
+ *  else does not. Exercises the LD-17 (rc.6) focus-confinement branch — at
+ *  phone widths programmatic focus must stay OFF the hidden field (a numeric
+ *  field grabbing focus would raise the soft keyboard over the keypad the
+ *  sheet flow is built around) while the field itself stays focusable (R3). */
+function installPhoneMatchMedia(): void {
+  vi.stubGlobal(
+    "matchMedia",
+    vi.fn().mockImplementation((query: string) => ({
+      matches: query === "(max-width: 767.98px)",
+      media: query,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      addListener: () => {},
+      removeListener: () => {},
+      dispatchEvent: () => true,
+    })),
+  );
+}
+
 describe("PinModal — desktop field, functional behavior unaffected by the ui/Input consolidation", () => {
   let view: TestRender | null = null;
 
@@ -220,5 +240,26 @@ describe("PinModal — LD-17 (rc.6) hardware-keyboard entry survives hiding the 
 
     await typeIntoFocusedElement("4");
     expect(mocks.unlock).toHaveBeenCalledWith("1234");
+  });
+
+  it("phone widths: programmatic focus stays off the field — open places none, a keypad tap fills a dot without moving focus there, and the field stays focusable (R3)", async () => {
+    installPhoneMatchMedia();
+    view = renderIntoBody(<PinModal />);
+    await flushFocusFrame();
+    expect(pinField()).not.toBeNull();
+    expect(document.activeElement).not.toBe(pinField());
+
+    await act(async () => {
+      keypadKeys()[0]!.click();
+    });
+    expect(filledDots()).toBe(1);
+    expect(document.activeElement).not.toBe(pinField());
+
+    // R3's substance: hidden-but-FOCUSABLE at every width — a deliberate
+    // focus still lands (only the automatic placement is desktop-confined).
+    await act(async () => {
+      pinField().focus();
+    });
+    expect(document.activeElement).toBe(pinField());
   });
 });
