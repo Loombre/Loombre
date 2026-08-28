@@ -237,10 +237,15 @@ function BrowseContent(): React.JSX.Element {
           onLoadMore={() => {}}
           getKey={(item) => item.id}
           renderItem={() => null}
+          phoneTwoUp
           ariaLabel="Library items"
         />
       ) : (
         <>
+          {/* `phoneTwoUp` — LD-14 (rc.6): Browse is the ONLY opt-in. The
+              three restricted-zone poster walls that share
+              VirtualPosterGrid keep today's auto-fit column count, and
+              Watchlist keeps its own denser 132px auto-fill. */}
           <VirtualPosterGrid<BrowseCard>
             items={items}
             hasMore={hasMore}
@@ -250,6 +255,7 @@ function BrowseContent(): React.JSX.Element {
             onLoadMore={loadMore}
             getKey={(item) => item.id}
             emptyMessage={`${activeLibrary.name} is empty — scan this library to add items.`}
+            phoneTwoUp
             ariaLabel={`${activeLibrary.name} items`}
             renderItem={(item, _index, handlers) => (
               <PosterCell

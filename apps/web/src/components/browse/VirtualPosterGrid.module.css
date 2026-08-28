@@ -40,3 +40,22 @@
   flex-direction: column;
   gap: var(--space-2xs);
 }
+
+/* LD-14 (rc.6) — Browse's opt-in phone two-up skeleton, the CSS half of the
+   clamp VirtualPosterGrid.tsx applies to the real (JS-positioned) grid.
+   Added by the component ONLY when its `phoneTwoUp` prop is set, so the
+   three restricted-zone poster walls that share this stylesheet
+   (components/restricted/ZoneBrowseGrid.tsx) keep the unconditional
+   auto-fill above.
+
+   479.98px is the browse two-up breakpoint literal: @media conditions
+   cannot consume var(), so — exactly as the 767.98px mobile literal does —
+   it stays a hand-repeated number with a pointer to styles/tokens.css's
+   "Mobile chrome layout" note, which records it and the files that repeat
+   it. The other copy is PHONE_TWO_UP_QUERY in VirtualPosterGrid.tsx; keep
+   the two in sync by hand. */
+@media (width <= 479.98px) {
+  .skeletonGridTwoUp {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}

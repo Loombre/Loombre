@@ -250,7 +250,15 @@
      (AppShell.module.css, Sidebar.module.css, MobileTabBar.module.css,
      MobileHeader.module.css, MiniPlayerBar.module.css). Keep them in sync
      by hand; this is the same convention Sidebar.module.css already uses
-     for the 1279.98px tablet cutoff. */
+     for the 1279.98px tablet cutoff.
+     SECOND LITERAL (LD-14 (rc.6)): 479.98px, the Browse-only two-up poster
+     breakpoint — below it the Browse grid pins to exactly two columns
+     instead of the 168px auto-fit that yields one jumbo poster at 380px.
+     Same no-var() rule, repeated in exactly two files: components/browse/
+     VirtualPosterGrid.module.css (.skeletonGridTwoUp) and components/browse/
+     VirtualPosterGrid.tsx (PHONE_TWO_UP_QUERY, the real grid's clamp). It is
+     deliberately NOT the 767.98px mobile literal and deliberately does not
+     apply to Watchlist, which keeps its denser 132px auto-fill. */
   --mobile-tabbar-height: 60px; /* icon 24px + mono label + padding, > the 44px touch minimum */
   --mobile-header-height: 112px; /* sized for the taller "title" mode (top row + 31px large title + subtitle), measured ~110px in-browser; "back" mode (~66px) fits with room to spare */
   --mobile-header-height-back: 66px; /* the "back"/"zone-back" chrome height (top row only, no large title) — consumers that clear the header on back-mode routes use THIS instead of over-clearing by the title-mode constant (review R-F7: BannerRegion sat ~46px below a back-mode header) */
