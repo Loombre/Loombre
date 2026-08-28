@@ -94,9 +94,17 @@ export function PinModal(): React.JSX.Element | null {
   // the field is `disabled` while submitting, and a disabled element drops
   // focus, so without this a user could type exactly one wrong PIN and then
   // never type again.
+  // Deferred one frame: the dialog subtree MOUNTS when the modal opens, and
+  // React dev StrictMode double-invokes the new subtree's effects — the focus
+  // trap's cleanup restores focus and its re-run focuses the Done button
+  // AFTER this long-mounted component's dep-effect already ran (verified live
+  // in the dev server; jsdom test renders have no StrictMode and masked it).
+  // A rAF callback runs after that whole remount cycle in dev and after the
+  // single pass in prod, so the field wins in both.
   useEffect(() => {
-    if (!state.modalOpen || state.submitting || isPhone) return;
-    focusPinField(formRef);
+    if (!state.modalOpen || state.submitting || isPhone) return undefined;
+    const frame = requestAnimationFrame(() => focusPinField(formRef));
+    return () => cancelAnimationFrame(frame);
   }, [state.modalOpen, state.submitting, isPhone]);
 
   // Auto-submit on the 4th digit (README, verbatim). Resets the buffer on

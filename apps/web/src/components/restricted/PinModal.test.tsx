@@ -170,6 +170,15 @@ describe("PinModal — LD-17 (rc.6) hardware-keyboard entry survives hiding the 
    *  assertion is that focus is ON the PIN field, so a hardware keystroke
    *  reaches it. Uses the native value setter + a bubbling `input` event,
    *  which is how React's controlled inputs observe real typing. */
+  // The open-focus effect defers one animation frame (see PinModal.tsx —
+  // dev StrictMode remounts the dialog subtree and re-runs the trap's focus
+  // after the dep-effect); tests flush that frame before asserting focus.
+  async function flushFocusFrame(): Promise<void> {
+    await act(async () => {
+      await new Promise((resolve) => requestAnimationFrame(() => resolve(null)));
+    });
+  }
+
   async function typeIntoFocusedElement(digit: string): Promise<void> {
     const target = document.activeElement as HTMLInputElement | null;
     expect(target?.getAttribute("aria-label")).toBe("PIN");
@@ -180,15 +189,17 @@ describe("PinModal — LD-17 (rc.6) hardware-keyboard entry survives hiding the 
     });
   }
 
-  it("focuses the PIN field when the dialog opens, ahead of the focus trap's first-focusable", () => {
+  it("focuses the PIN field when the dialog opens, ahead of the focus trap's first-focusable", async () => {
     installMatchMedia();
     view = renderIntoBody(<PinModal />);
+    await flushFocusFrame();
     expect(document.activeElement).toBe(pinField());
   });
 
   it("fills the dots from hardware-keyboard digits with no click into the field first", async () => {
     installMatchMedia();
     view = renderIntoBody(<PinModal />);
+    await flushFocusFrame();
     await typeIntoFocusedElement("1");
     await typeIntoFocusedElement("2");
     expect(filledDots()).toBe(2);
