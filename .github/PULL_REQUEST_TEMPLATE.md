@@ -12,3 +12,4 @@
 - [ ] STATE.md updated if a decision was made
 - [ ] Provenance recorded in LICENSE-INTENT.md for any third-party code
 - [ ] Docs updated if user/admin/operator-visible behavior changed (right guide, right register — see each guide's audience statement)
+- [ ] Mobile `@media` blocks added or edited in this PR are complete axis resets — each states the whole `display`/`flex-flow`/`position`/`inset` set it overrides, rather than one property inheriting the rest from the desktop rule (LD-21 (rc.6); `design/phosphor/README.md` → *Responsive strategy*)
