@@ -14,8 +14,78 @@
  * a component's own declarations in the cascade.
  *
  * .glass is retained (not removed) — the mobile tab bar and now-playing bar
- * (Wave 1+) both consume it, same as the desktop sidebar/topbar chrome and
- * every modal/popover/sheet today.
+ * (Wave 1+) both consume it. The rest of that original sentence ("same as
+ * the desktop sidebar/topbar chrome and every modal/popover/sheet today")
+ * has since gone stale: those surfaces have each dropped .glass for their
+ * own recipe, every one leaving a standing comment saying why — see
+ * shell/Sidebar.module.css, shell/AppShell.module.css,
+ * shell/QuickSearch.module.css, player/PlayerControls.module.css and
+ * home/PosterCard.module.css.
+ *
+ * ---------------------------------------------------------------------
+ * WARNING — .glass carries positional assumptions it never states.
+ * LD-20 (rc.6). Documentation only: this decision changes no declaration
+ * in this file and no consumer.
+ * ---------------------------------------------------------------------
+ *
+ * SANCTIONED CONSUMERS, exactly two — the reservation AppShell.module.css
+ * already states in its own header ("U8 reserves `.glass` for exactly two
+ * surfaces, the mobile tab bar + now-playing bar"): the mobile tab bar
+ * (shell/MobileTabBar.module.css `.tabBar`, mounted by ShellNav) and the
+ * now-playing bar (music/MiniPlayerBar.module.css `.bar`, mounted by
+ * AppProviders). Both are position: fixed and both mount at the top of the
+ * tree with no backdrop-root ancestor between them and the page, so both
+ * satisfy the three assumptions below by construction. Eight other modules
+ * compose .glass today — they are tolerated, not blessed, and none was
+ * re-verified against these assumptions. Check all three before adding an
+ * eleventh.
+ *
+ * The rule below sets three properties and nothing else. That minimalism
+ * is deliberate, but it makes the recipe correct only on an element that
+ * already satisfies these:
+ *
+ * 1. THE BLUR NEEDS THE PAGE AS ITS BACKDROP ROOT. backdrop-filter
+ *    samples the nearest backdrop root, not the document. Any ancestor
+ *    that itself sets backdrop-filter, filter, transform, opacity or
+ *    will-change forms a NEW backdrop root, and a .glass element nested
+ *    under it samples that ancestor's already-composited output instead
+ *    of the page. The failure is silent and asymmetric: the blur quietly
+ *    does nothing while --chrome-bg's 86% alpha stays translucent, so
+ *    what is behind reads through sharply instead of softened. Nothing
+ *    throws and nothing logs — it only looks wrong. Ancestors forming
+ *    such a root today: AppShell `.topbar` (blur 14px), PlayerControls
+ *    `.bottomBar` (18px), `.pickerPopover` (18px) and `.backButton` (6px).
+ *
+ * 2. THE ELEMENT MUST SUPPLY ITS OWN POSITION AND STACKING. .glass
+ *    contributes no position, no inset and no z-index; nine of the ten
+ *    current consumers declare their own. The reverse direction bites
+ *    too: backdrop-filter makes the element a containing block for its
+ *    fixed/absolute descendants, so a .glass surface silently changes the
+ *    positioning context of everything inside it.
+ *
+ * 3. IT DELIBERATELY OWNS NEITHER RADIUS NOR SHADOW (see above). Every
+ *    consumer wanting a corner or an elevation declares its own, so this
+ *    recipe never fights them in the cascade.
+ *
+ * THE FAILURE MODE, CONCRETELY — QuickSearch. Its results popover is
+ * position: absolute inside the topbar-mounted `.container`, i.e. a DOM
+ * descendant of the backdrop root the topbar forms (AppShell.module.css
+ * `.topbar`, backdrop-filter: blur(14px)). Composing .glass there meant
+ * the popover's blur sampled the topbar's composited output rather than
+ * the page, so nothing blurred at all — and the 86%-alpha chrome fill let
+ * page text and posters ghost through sharply under the results list.
+ * Fixed in b07fe1a by dropping .glass for the raised-popover recipe
+ * (--color-bg-raised + --color-border + --shadow-lg); the standing
+ * comment in shell/QuickSearch.module.css records it at the call site.
+ * That is why QuickSearch is not among the consumers above.
+ *
+ * THE SAME SHAPE IS STILL LIVE in one place: player/Scrubber.module.css
+ * `.hoverPreview` composes .glass while sitting position: absolute inside
+ * PlayerControls `.bottomBar`, itself a backdrop root (blur 18px). Its
+ * blur is neutered exactly as QuickSearch's was; it reads as far less
+ * broken only because the preview is a small tooltip over a near-opaque
+ * bar. Described here on purpose and left alone — LD-20 (rc.6) is a
+ * documentation decision and changes no consumer.
  */
 
 .glass {

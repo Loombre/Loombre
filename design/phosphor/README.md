@@ -112,6 +112,41 @@ Desktop layouts assume **≥ 1280px** content width. Design the middle range (ta
 desktop layout with the sidebar collapsed to icons — it is not drawn in the prototype and
 needs a design decision.
 
+### Mobile blocks are complete axis resets (LD-21 (rc.6))
+
+A mobile `@media` block must declare the **full axis set** for the element it overrides —
+`display`, `flex-flow` (or the `grid-template-*` equivalents), `position` and `inset` —
+never just the one property that looked wrong on the phone. A partial override silently
+keeps every property it did not name at its **desktop leftover** value, and those leftovers
+are invisible from inside the mobile block: the next reader sees `flex-direction: column`
+and reasonably reads a column, while `flex-wrap: wrap` is still in force from a desktop rule
+a hundred lines up. State the whole axis and the block becomes self-describing — what you
+read is what the phone gets.
+
+This is not hypothetical. `RegistryFilterBar.module.css`'s mobile block set
+`flex-direction: column` and inherited `flex-wrap: wrap` from its desktop rule. A *wrapped*
+column container sizes its flex lines to the items' max-content width, so the nowrap pill
+strip blew the line out and both it and the stretched search field rendered ~1699px wide —
+clipped at a 380px viewport, with the input's right edge unreachable. The fix was to state
+the complete axis:
+
+```css
+/* Partial override — flex-wrap survives from the desktop rule. */
+@media (width <= 767.98px) {
+  .row { flex-direction: column; }
+}
+
+/* Complete axis reset — both halves of the axis are stated here. */
+@media (width <= 767.98px) {
+  .row { flex-flow: column nowrap; }
+}
+```
+
+**New or edited mobile blocks must comply.** Existing partial blocks are **grandfathered**:
+LD-21 (rc.6) deliberately did not sweep them, and this rule is not a licence to refactor
+them wholesale. Convert one when you are already editing that block for another reason.
+`.github/PULL_REQUEST_TEMPLATE.md` carries the matching review checkbox.
+
 ---
 
 ## Design tokens
