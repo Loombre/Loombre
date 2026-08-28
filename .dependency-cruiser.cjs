@@ -161,11 +161,16 @@ module.exports = {
     {
       name: "no-orphans",
       comment:
-        "A module with ZERO incoming AND ZERO outgoing edges (dependency-cruiser's `orphan` definition — a CLI entrypoint that imports real code has an outgoing edge and is never flagged, even though nothing imports it back) is either dead code or a mis-wired module that should be reachable from somewhere real — either way it deserves a human look, not silent accumulation. A full apps+packages cruise with this rule in place found exactly 3 orphans, all legitimate and excluded below by construction, not fixed away: *.d.ts ambient type declarations (never imported by an ES import — merged by the compiler; apps/web/src/types/global-css.d.ts) and the two toolchain config files a CLI loads by filename convention rather than an import edge, so genuinely have neither direction (apps/web/next.config.mjs, apps/web/lighthouserc.cjs). Per-package vitest.config.ts files are NOT excluded here because they don't need to be — each imports `vitest/config`, so it already has an outgoing edge and was never flagged in the first place.",
+        "A module with ZERO incoming AND ZERO outgoing edges (dependency-cruiser's `orphan` definition — a CLI entrypoint that imports real code has an outgoing edge and is never flagged, even though nothing imports it back) is either dead code or a mis-wired module that should be reachable from somewhere real — either way it deserves a human look, not silent accumulation. A full apps+packages cruise with this rule in place found exactly 3 orphans, all legitimate and excluded below by construction, not fixed away: *.d.ts ambient type declarations (never imported by an ES import — merged by the compiler; apps/web/src/types/global-css.d.ts) and the two toolchain config files a CLI loads by filename convention rather than an import edge, so genuinely have neither direction (apps/web/next.config.mjs, apps/web/lighthouserc.cjs). Per-package vitest.config.ts files are NOT excluded here because they don't need to be — each imports `vitest/config`, so it already has an outgoing edge and was never flagged in the first place. FOURTH exclusion (2026-08-28, closed the CI-only redness running since 2026-08-12): apps/server/bin/loombre.mjs, the CLI bin entrypoint, whose ONLY outgoing edges are deliberate lazy imports of COMPILED output (../dist/cli/*.js — the H2 design: the CLI runs on plain compiled JS with no tsx requirement, and @loombre/db loads only for the commands that need it). Locally dist/ exists and the edge resolves, so the module was never flagged; on CI the gate's depcruise step runs BEFORE any build, dist/ is absent, the edge vanishes, and the entrypoint reads as a zero-edge orphan. The exclusion names the exact file, not a bin/ glob — a genuinely dead second bin should still be flagged.",
       severity: "error",
       from: {
         orphan: true,
-        pathNot: ["\\.d\\.ts$", "(^|/)next\\.config\\.(js|cjs|mjs|ts)$", "(^|/)lighthouserc\\.(js|cjs|json)$"],
+        pathNot: [
+          "\\.d\\.ts$",
+          "(^|/)next\\.config\\.(js|cjs|mjs|ts)$",
+          "(^|/)lighthouserc\\.(js|cjs|json)$",
+          "^apps/server/bin/loombre\\.mjs$",
+        ],
       },
       to: {},
     },
