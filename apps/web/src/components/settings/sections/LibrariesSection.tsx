@@ -62,6 +62,7 @@ import { libraryNameWithPath, libraryPathLabel } from "./library-path-label.js";
 import { subscribeCatalogInvalidation } from "../../../lib/catalog-invalidation.js";
 import { diffPermissionsToSubmit } from "../../../lib/library-permissions.js";
 import { enumLabel, MEDIA_KIND_LABEL } from "../../../lib/enum-labels.js";
+import { formatRelativeTime } from "../../../lib/relative-time.js";
 import { useToast } from "../../ui/Toast.js";
 import { TextInput } from "../../ui/Input.js";
 import { apiDelete, apiGet, apiPatch, apiPost, apiPut } from "../../../lib/api-client.js";
@@ -71,16 +72,9 @@ import styles from "./shared.module.css";
 type Library = components["schemas"]["Library"];
 type User = components["schemas"]["User"];
 
-function formatRelativeTime(ms: number, nowMs: number): string {
-  const deltaS = Math.max(0, Math.round((nowMs - ms) / 1000));
-  if (deltaS < 60) return "just now";
-  const deltaMin = Math.round(deltaS / 60);
-  if (deltaMin < 60) return `${deltaMin} min ago`;
-  const deltaH = Math.round(deltaMin / 60);
-  if (deltaH < 24) return `${deltaH}h ago`;
-  const deltaD = Math.round(deltaH / 24);
-  return `${deltaD}d ago`;
-}
+// formatRelativeTime moved to lib/relative-time.ts (LD-16 (rc.6)) — the
+// admin dashboard's compact job cards needed the same "2h ago" strings, and
+// this was the only implementation of them. Same function, same output.
 
 function EditLibraryModal({
   library,

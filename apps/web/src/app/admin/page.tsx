@@ -132,7 +132,11 @@ export default function AdminDashboardPage(): React.JSX.Element {
           <details className={styles.collapsibleCard} open>
             <summary className={styles.collapsibleSummary}>Job queue</summary>
             <div className={styles.collapsibleBody}>
-              <JobsPanel maxHeight={360} showHeader={false} />
+              {/* LD-16 (rc.6): `compact` is what makes these cards
+                  mini-cards — type + status + "2h ago". The absolute
+                  timestamps this column was too narrow for live on the
+                  full /admin/jobs page, which takes the defaults. */}
+              <JobsPanel maxHeight={360} showHeader={false} compact />
             </div>
           </details>
 

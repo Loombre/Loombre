@@ -211,3 +211,100 @@ describe("JobsPanel — the attempts chip on live rows (browser-admin-F13)", () 
     expect(view!.container.textContent).toContain("3 attempts");
   });
 });
+
+// LD-16 (rc.6): the /admin dashboard's right-column job-queue embed is
+// ~259px of usable meta width, so `created <toLocaleString>` and
+// `updated <toLocaleString>` both shrank and ellipsized MID-TOKEN there
+// ("created 8/27/2026, 5:5…"). The ruling is subtractive, not a tighter
+// truncation: the compact card carries exactly job.type, the status pill,
+// and one relative time off job.updatedAtMs. The live dot, progress, the
+// attempts chip and lastError are dropped FROM THE EMBED ONLY — the full
+// /admin/jobs page keeps every fact it shows today, which is why this is an
+// opt-in prop (mirroring `showHeader`) rather than an edit to the shared
+// JobRow. The last case below is the guard on that second half.
+describe("JobsPanel — the dashboard's compact job-queue embed (LD-16 (rc.6))", () => {
+  const HOUR_MS = 60 * 60 * 1000;
+
+  beforeEach(() => {
+    apiGetMock.mockReset();
+    subscribeMock.mockReset();
+    subscribeMock.mockReturnValue(() => {});
+  });
+
+  afterEach(() => {
+    view?.unmount();
+    view = null;
+  });
+
+  it("shows exactly the job type, the status, and a relative time — no absolute timestamp", async () => {
+    const now = Date.now();
+    const updatedAtMs = now - 2 * HOUR_MS;
+    apiGetMock.mockResolvedValue({
+      items: [job({ createdAtMs: now - 5 * HOUR_MS, updatedAtMs })],
+      nextCursor: null,
+    });
+    view = renderIntoBody(<JobsPanel compact />);
+    await act(async () => {});
+
+    const [text] = rowTexts();
+    expect(text).toContain("scan");
+    expect(text).toContain("Completed");
+    expect(text).toMatch(/2h ago/);
+
+    // The two facts LD-16 removes, in every form they were rendered.
+    expect(text).not.toContain(new Date(updatedAtMs).toLocaleString());
+    expect(text).not.toContain(new Date(now - 5 * HOUR_MS).toLocaleString());
+    expect(text).not.toContain("created");
+    expect(text).not.toContain("updated");
+  });
+
+  it("carries no absolute timestamp in a title attribute either", async () => {
+    const now = Date.now();
+    apiGetMock.mockResolvedValue({ items: [job({ createdAtMs: now - HOUR_MS, updatedAtMs: now - HOUR_MS })], nextCursor: null });
+    view = renderIntoBody(<JobsPanel compact />);
+    await act(async () => {});
+
+    const absolute = new Date(now - HOUR_MS).toLocaleString();
+    const titles = Array.from(view!.container.querySelectorAll("[title]")).map((el) => el.getAttribute("title") ?? "");
+    for (const title of titles) expect(title).not.toContain(absolute);
+  });
+
+  it("drops the live dot, the progress readout, the attempts chip and lastError", async () => {
+    const id = "77777777-7777-7777-8777-777777777777";
+    apiGetMock.mockResolvedValue({
+      items: [job({ id, status: "active", attempts: 3, lastError: "ffprobe exited 1", updatedAtMs: Date.now() })],
+      nextCursor: null,
+    });
+    view = renderIntoBody(<JobsPanel compact />);
+    await act(async () => {});
+
+    emit({
+      jobId: id,
+      jobType: "scan",
+      status: "active",
+      attempts: 3,
+      progress: { current: 7, total: 10, phase: "hashing" },
+      updatedAtMs: Date.now(),
+    });
+
+    const [text] = rowTexts();
+    expect(text).toContain("just now");
+    expect(text).not.toContain("attempt");
+    expect(text).not.toContain("ffprobe exited 1");
+    expect(text).not.toContain("hashing");
+    expect(text).not.toContain("7 / 10");
+    expect(view!.container.querySelector('[aria-label="Live"]')).toBeNull();
+  });
+
+  it("leaves the default (full /admin/jobs) render alone — absolute timestamps stay, no relative time appears", async () => {
+    apiGetMock.mockResolvedValue({ items: [job({ createdAtMs: 1_000, updatedAtMs: 2_000, attempts: 2 })], nextCursor: null });
+    view = renderIntoBody(<JobsPanel />);
+    await act(async () => {});
+
+    const [text] = rowTexts();
+    expect(text).toContain(`created ${new Date(1_000).toLocaleString()}`);
+    expect(text).toContain(`updated ${new Date(2_000).toLocaleString()}`);
+    expect(text).toContain("2 attempts");
+    expect(text).not.toMatch(/ago/);
+  });
+});
