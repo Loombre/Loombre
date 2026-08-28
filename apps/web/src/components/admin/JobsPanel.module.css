@@ -118,6 +118,21 @@
   text-overflow: ellipsis;
 }
 
+/* LD-16 (rc.6): the dashboard embed's meta line carries ONE short item
+   ("2h ago") instead of three long ones, so it needs no shrink-and-clip at
+   all — and without `overflow: hidden` + `text-overflow: ellipsis` the
+   mid-word ellipsis AUD-A4v6-002 traded for is structurally impossible
+   here, not merely unlikely. `flex-shrink: 0` keeps it off the shrink path
+   entirely; `white-space: nowrap` stays because the height model above
+   still binds — a wrapped meta line overflows the fixed 68px virtualized
+   row. Full values need no title attribute: nothing is truncated. */
+.compactMetaItem {
+  font-size: var(--text-xs);
+  color: var(--color-text-subtle);
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
 .error {
   margin: 0;
   font-size: var(--text-xs);

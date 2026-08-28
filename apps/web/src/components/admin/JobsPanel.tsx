@@ -24,6 +24,7 @@ import { EmptyState } from "./EmptyState.js";
 import { StatusPill } from "./StatusPill.js";
 import { VirtualList } from "./VirtualList.js";
 import { describeJobStatus } from "../../lib/admin-status.js";
+import { formatRelativeTime } from "../../lib/relative-time.js";
 import { mergeJobUpdate, type Job, type JobUpdatedPayload } from "../../lib/admin-jobs-live.js";
 import { apiGet } from "../../lib/api-client.js";
 import { getEventsSocket, type EventEnvelope } from "../../lib/events-socket.js";
@@ -44,9 +45,36 @@ function formatTime(ms: number | null): string {
   return new Date(ms).toLocaleString();
 }
 
-function JobRow({ job, progress }: { job: Job; progress: JobProgress | undefined }): React.JSX.Element {
+function JobRow({ job, progress, compact }: { job: Job; progress: JobProgress | undefined; compact: boolean }): React.JSX.Element {
   const info = describeJobStatus(job.status);
   const isLive = job.status === "queued" || job.status === "active";
+
+  // LD-16 (rc.6): the dashboard embed's card is exactly three facts — job
+  // type (the contract has no job NAME field; `type` is the name), the
+  // status pill, and one relative time off updatedAtMs. The absolute
+  // timestamps are GONE rather than truncated harder: at 1280px the right
+  // column leaves ~259px of meta width and two toLocaleString runs have no
+  // break opportunity, so they ellipsized mid-token. The live dot,
+  // progress, attempts chip and lastError are dropped from THIS surface
+  // only. `Date.now()` at render is the existing convention for these
+  // strings (LibrariesSection's "Last scan"); the row re-renders on every
+  // job.updated event, which is when the age is worth restating anyway.
+  // This returns early on purpose: the default markup below is the full
+  // /admin/jobs page's row and must stay byte-identical.
+  if (compact) {
+    return (
+      <div className={styles.row}>
+        <div className={styles.rowMain}>
+          <span className={styles.jobType}>{job.type}</span>
+          <StatusPill label={info.label} tone={info.tone} />
+        </div>
+        <div className={styles.rowMeta}>
+          <span className={styles.compactMetaItem}>{formatRelativeTime(job.updatedAtMs, Date.now())}</span>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className={styles.row}>
       <div className={styles.rowMain}>
@@ -88,9 +116,16 @@ export interface JobsPanelProps {
   /** Header/subtitle — omit for a compact embed (the dashboard supplies its
    *  own <summary> heading instead). @default true */
   showHeader?: boolean;
+  /** Row anatomy. `false` (the default, and what the standalone
+   *  /admin/jobs page takes) keeps every fact: type, status, live dot,
+   *  progress, both absolute timestamps, the attempts chip and lastError.
+   *  `true` is LD-16 (rc.6)'s dashboard card — type + status + one
+   *  relative time, nothing else — opt-in precisely so the full page's
+   *  rows are untouched. @default false */
+  compact?: boolean;
 }
 
-export function JobsPanel({ maxHeight, showHeader = true }: JobsPanelProps): React.JSX.Element {
+export function JobsPanel({ maxHeight, showHeader = true, compact = false }: JobsPanelProps): React.JSX.Element {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [progressByJobId, setProgressByJobId] = useState<Record<string, JobProgress>>({});
   const [cursor, setCursor] = useState<string | null>(null);
@@ -183,7 +218,7 @@ export function JobsPanel({ maxHeight, showHeader = true }: JobsPanelProps): Rea
           loadingMore={loadingMore}
           onLoadMore={loadMore}
           getKey={(job) => job.id}
-          renderRow={(job) => <JobRow job={job} progress={progressByJobId[job.id]} />}
+          renderRow={(job) => <JobRow job={job} progress={progressByJobId[job.id]} compact={compact} />}
           ariaLabel="Jobs"
           {...(maxHeight !== undefined ? { maxHeight } : {})}
         />
