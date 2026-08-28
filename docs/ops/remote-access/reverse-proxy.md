@@ -54,12 +54,13 @@ noted inline:
 6. **The invite-claim and password-reset API routes are public, and
    already rate-limited inside Loombre itself** —
    `GET /invites/claim/{token}`, `POST /invites/claim/{token}`,
-   `POST /auth/forgot-password`, and `POST /auth/reset-password` have to
-   work with no session at all (a brand-new person has no account yet;
-   someone locked out has no way to sign in). If your setup adds its own
-   gate in front of everything — basic auth, an IP allowlist, a separate
-   rate limiter — exclude these four the same way `/setup/*` already is;
-   anything that blocks or challenges them blocks exactly the people they
+   `POST /auth/forgot-password`, `POST /auth/reset-password`, and
+   `GET /auth/reset-password/{token}` have to work with no session at all
+   (a brand-new person has no account yet; someone locked out has no way
+   to sign in). If your setup adds its own gate in front of everything —
+   basic auth, an IP allowlist, a separate rate limiter — exclude these
+   five the same way `/setup/*` already is; anything that blocks or
+   challenges them blocks exactly the people they
    exist for. Separately: whichever address you set as the public web
    address setting (`LOOMBRE_PUBLIC_URL` — see the Admin Guide's
    [Mail](../../admin-guide/mail.md) page) has to be the address people
@@ -73,22 +74,32 @@ noted inline:
    not the API — while the JSON calls that page makes live under
    `/invites/claim/{token}` (API-side, listed above). `/reset/{token}`
    and `/forgot` are web pages too, same rule: page routes go to the web
-   UI, and only `/auth/forgot-password`/`/auth/reset-password` (the API
-   calls those pages make) go to the API.
+   UI, and only `/auth/forgot-password`, `/auth/reset-password`, and
+   `GET /auth/reset-password/{token}` (the API calls those pages make) go
+   to the API. That last one is the reset page's own token check — it
+   fires when someone opens the link, so a recipe that misroutes it sends
+   every reset link to the web UI's HTML instead, and the page reports
+   perfectly good links as unusable. Its path can't collide with the
+   `/reset/{token}` page the way the claim pair once did — the two live
+   under different prefixes by construction.
 
 ## Caddy (recommended)
 
 ```caddyfile
 media.example.com {
     # API paths -> the server (:3001); everything else -> the web UI (:3000).
-    # /invites/claim/* and the two /auth/*-password routes (requirement 6)
-    # are the public invite-claim and password-reset API calls — bare
-    # paths, not under /v1, so they need listing explicitly like /healthz
-    # and /setup/*. NOTE: bare /claim/* (no /invites prefix) is the human
+    # /invites/claim/* and the /auth/*-password routes (requirement 6) are
+    # the public invite-claim and password-reset API calls — bare paths,
+    # not under /v1, so they need listing explicitly like /healthz and
+    # /setup/*. NOTE: bare /claim/* (no /invites prefix) is the human
     # invite-link PAGE — it deliberately falls through to the web UI catch-
     # all below, not this @api matcher (F1: the two used to collide on the
     # same path before the API's own claim routes moved under /invites).
-    @api path /v1/* /playback/* /images/* /healthz /setup/* /invites/claim/* /auth/forgot-password /auth/reset-password
+    # /auth/reset-password/* (with the trailing wildcard, since Caddy's
+    # `path` is otherwise an exact match) is the reset page's own token
+    # check — distinct from the /reset/{token} PAGE, which stays on the web
+    # UI; omit it and every reset link is reported as unusable.
+    @api path /v1/* /playback/* /images/* /healthz /setup/* /invites/claim/* /auth/forgot-password /auth/reset-password /auth/reset-password/*
     reverse_proxy @api 127.0.0.1:3001
     reverse_proxy 127.0.0.1:3000
 }
@@ -168,7 +179,13 @@ server {
     # here — that's the human invite-link PAGE, and falls through to the
     # web UI location below (F1: the API's own claim routes moved under
     # /invites/claim/* specifically so the two stop colliding).
-    location ~ ^/(invites/claim/[^/]+|auth/(forgot|reset)-password)$ {
+    # The regex is ANCHORED at both ends, so the reset page's own token
+    # check needs its own alternative: without `auth/reset-password/[^/]+`
+    # the `$` rejects it and every reset link falls through to the web UI,
+    # which answers HTML and makes good links look unusable. The
+    # /reset/{token} PAGE is a different path entirely and still falls
+    # through, as it should.
+    location ~ ^/(invites/claim/[^/]+|auth/(forgot|reset)-password|auth/reset-password/[^/]+)$ {
         proxy_pass http://127.0.0.1:3001;
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -203,18 +220,23 @@ than blindly trusts — any inbound value).
 labels:
   - "traefik.enable=true"
   # API router (server, :3001) — higher priority than the catch-all.
-  # PathPrefix(`/invites/claim`) + the two exact /auth/*-password paths
+  # PathPrefix(`/invites/claim`) + the exact /auth/*-password paths
   # (requirement 6) are the public invite-claim and password-reset API
   # calls — bare paths, not under /v1, so they're listed explicitly here
   # the same way /healthz and /setup are. Bare `/claim` (no `/invites`
   # prefix) is deliberately NOT in this rule — that's the human
   # invite-link PAGE, and falls through to the web UI router below (F1:
   # the API's own claim routes moved under /invites/claim/* specifically
-  # so the two stop colliding). PathPrefix(`/images`) (requirement 3) is
-  # the OTHER `?token=`-authed <img>/<video> src target alongside the
-  # playback file route — missing here would silently 404 every
-  # poster/thumbnail through this router.
-  - "traefik.http.routers.loombre-api.rule=Host(`media.example.com`) && (PathPrefix(`/v1`) || PathPrefix(`/playback`) || PathPrefix(`/images`) || PathPrefix(`/setup`) || Path(`/healthz`) || PathPrefix(`/invites/claim`) || Path(`/auth/forgot-password`) || Path(`/auth/reset-password`))"
+  # so the two stop colliding). PathPrefix(`/auth/reset-password/`) — with
+  # the TRAILING SLASH, so it covers the token segment and nothing else —
+  # is the reset page's own token check; `Path` alone is an exact match
+  # and would miss it, sending every reset link to the web UI and making
+  # good links look unusable. The /reset/{token} PAGE is a different path
+  # and still falls through to the web router. PathPrefix(`/images`)
+  # (requirement 3) is the OTHER `?token=`-authed <img>/<video> src target
+  # alongside the playback file route — missing here would silently 404
+  # every poster/thumbnail through this router.
+  - "traefik.http.routers.loombre-api.rule=Host(`media.example.com`) && (PathPrefix(`/v1`) || PathPrefix(`/playback`) || PathPrefix(`/images`) || PathPrefix(`/setup`) || Path(`/healthz`) || PathPrefix(`/invites/claim`) || Path(`/auth/forgot-password`) || Path(`/auth/reset-password`) || PathPrefix(`/auth/reset-password/`))"
   - "traefik.http.routers.loombre-api.tls.certresolver=letsencrypt"
   - "traefik.http.routers.loombre-api.service=loombre-api"
   - "traefik.http.services.loombre-api.loadbalancer.server.port=3001"
