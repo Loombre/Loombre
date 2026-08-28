@@ -2,6 +2,7 @@
 @import "../styles/tokens.css";
 @import "../styles/fonts.css";
 @import "../styles/glass.css";
+@import "../styles/grid.css";
 
 *,
 *::before,

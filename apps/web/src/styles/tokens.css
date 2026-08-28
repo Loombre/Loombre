@@ -263,6 +263,34 @@
   --mobile-header-height: 112px; /* sized for the taller "title" mode (top row + 31px large title + subtitle), measured ~110px in-browser; "back" mode (~66px) fits with room to spare */
   --mobile-header-height-back: 66px; /* the "back"/"zone-back" chrome height (top row only, no large title) — consumers that clear the header on back-mode routes use THIS instead of over-clearing by the title-mode constant (review R-F7: BannerRegion sat ~46px below a back-mode header) */
 
+  /* ── Grid minimums (LD-19 (rc.6)) ───────────────────────────────────────
+     The auto-fill/auto-fit track floors, derived from the code inventory
+     that already existed — these are the SAME nine numbers the modules
+     shipped before, named, not retuned. LD-19 is a refactor: every
+     migrated grid stays pixel-identical at its current breakpoints.
+     Consumed through styles/grid.css's .autoGridFill / .autoGridFit
+     recipes, which a module opts into with `composes: … from global;` and
+     then parameterises with a local `--grid-min: var(--grid-min-<x>);`.
+     A media query swaps ONLY that one line, never the whole template.
+     The recipes always wrap the floor in min(…, 100%) so a track can
+     never be wider than its container (the 2026-08-27 /admin-at-380px
+     clipping bug — see app/admin/page.module.css's .systemGrid comment).
+     Hand-written minmax( with a literal floor is a stylelint error
+     (.stylelintrc.json declaration-property-value-disallowed-list); the
+     one sanctioned hand-written consumer is the fixed 2-track
+     MovieDetailScreen .body, which repeat() cannot emit.
+     The Browse phone two-up grid (LD-14 (rc.6)) is NOT one of these: below
+     479.98px it is repeat(2, 1fr), no floor at all. */
+  --grid-min-poster: 168px; /* 2:3 poster walls — app/watchlist/page.module.css (.grid, >767.98px) and components/browse/VirtualPosterGrid.module.css (.skeletonGrid). Mirrored in JS by VirtualPosterGrid.tsx's DEFAULT_ITEM_WIDTH; keep the pair in sync by hand. */
+  --grid-min-poster-compact: 132px; /* the denser Watchlist phone wall (<=767.98px). Deliberately NOT harmonized with Browse (LD-14 (rc.6)) — named here only so the divergence is legible. */
+  --grid-min-avatar: 112px; /* centered avatar+name cards — app/restricted/performers/page.module.css and app/restricted/studios/page.module.css (.grid, >767.98px) */
+  --grid-min-avatar-compact: 88px; /* the same two avatar grids inside @media (width <= 767.98px) */
+  --grid-min-card: 200px; /* rectangular info tiles — app/restricted/page.module.css (.navGrid) and components/admin/HealthCards.module.css (.grid, whose phone override is repeat(2, 1fr), not a floor) */
+  --grid-min-card-compact: 180px; /* narrow control/choice columns — components/settings/remote-wizard/ChoiceCard.module.css (.cards) and components/restricted/ZoneControls.module.css (.filterPanel) */
+  --grid-min-panel: 480px; /* wide 2-up info panels — app/admin/page.module.css (.systemGrid); the reference site the min() clamp was first proven on */
+  --grid-min-swatch: 84px; /* Blaze-mark swatch cells — app/styleguide/page.module.css (.blazeGrid), dev-only route */
+  --grid-min-detail-sidebar: 240px; /* the metadata sidebar floor on components/detail/MovieDetailScreen.module.css's .body — a fixed 2-track layout, so it is hand-written (LD-19 (rc.6) owner ruling R4), not a .autoGrid* consumer */
+
   /* ── Phosphor texture ── */
 
   /* Scanlines: a user preference, DEFAULT ON (README "Other" + Wave 2 L7).

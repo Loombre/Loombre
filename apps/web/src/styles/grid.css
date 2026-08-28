@@ -1,0 +1,64 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+
+/**
+ * Auto-reflowing grid recipes (LD-19 (rc.6) — "grid minimum guard").
+ *
+ * THE RULE: no module hand-writes `minmax(<length>, 1fr)` any more. Every
+ * auto-fill/auto-fit grid composes one of the two recipes below and passes
+ * its floor in as a custom property:
+ *
+ *   .grid {
+ *     composes: auto-grid-fill from global;
+ *     --grid-min: var(--grid-min-poster);
+ *     gap: var(--space-md);
+ *   }
+ *   @media (width <= 767.98px) {
+ *     .grid { --grid-min: var(--grid-min-poster-compact); }
+ *   }
+ *
+ * `composes:` copies a whole class and cannot take an argument, so the
+ * floor rides in on --grid-min, which inherits and is set by the consuming
+ * rule on the same element. A breakpoint then swaps ONE line instead of
+ * restating the whole template — which is the point: the min() clamp can
+ * never be dropped by accident on the override.
+ *
+ * WHY min(…, 100%): a bare `minmax(480px, 1fr)` keeps its LAST surviving
+ * column at 480px even after auto-fit has collapsed to one, so on a
+ * ~348px phone content column the card overflowed and its right edge was
+ * clipped unreachable (2026-08-27 QA, /admin at 380px). `min(var(--grid-min),
+ * 100%)` lets the lone column shrink to the container while every wider
+ * breakpoint keeps the exact geometry it had — the clamp is inert whenever
+ * the container is wider than the floor.
+ *
+ * TWO recipes, not one: auto-fill and auto-fit differ in how they treat
+ * empty tracks (fill keeps them and leaves a ragged trailing gap; fit
+ * collapses them so the present items stretch), which is a real, visible
+ * behavioural fork the inventory already depends on. It cannot be
+ * expressed as a parameter of a single class.
+ *
+ * THE DISCIPLINE (copied from glass.css): a recipe sets ONLY the
+ * properties it owns. These two set `display` and `grid-template-columns`
+ * and NOTHING else — in particular no `gap`, because every consumer
+ * already has its own and the refactor must stay pixel-identical.
+ *
+ * NOT COVERED, deliberately:
+ *   - `minmax(0, Nfr)` — the min-content-suppression idiom, no floor to
+ *     tokenize (AlbumDetailScreen, MovieDetailScreen's stacked override,
+ *     system-cards' fact grid).
+ *   - fixed N-track layouts. MovieDetailScreen's .body is
+ *     `minmax(0, 1.4fr) minmax(min(var(--grid-min-detail-sidebar), 100%), 1fr)`
+ *     — repeat() cannot emit it, so it stays hand-written in the clamp
+ *     shape (LD-19 (rc.6) owner ruling R4).
+ *   - Browse's phone two-up grid (LD-14 (rc.6)): below 479.98px it is
+ *     `repeat(2, 1fr)`, a fixed count with no floor at all.
+ */
+
+.auto-grid-fill {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(var(--grid-min, 168px), 100%), 1fr));
+}
+
+.auto-grid-fit {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(var(--grid-min, 168px), 100%), 1fr));
+}

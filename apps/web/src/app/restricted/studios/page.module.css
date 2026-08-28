@@ -27,8 +27,12 @@
 }
 
 .grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
+  composes: auto-grid-fill from global;
+
+  /* LD-19 (rc.6): the 112px floor now arrives as a token; the recipe in
+     styles/grid.css emits the auto-fill template. */
+  --grid-min: var(--grid-min-avatar);
+
   gap: var(--space-lg);
 }
 
@@ -97,7 +101,8 @@
 }
 
 @media (width <= 767.98px) {
+  /* LD-19 (rc.6): the breakpoint swaps only the floor. */
   .grid {
-    grid-template-columns: repeat(auto-fill, minmax(88px, 1fr));
+    --grid-min: var(--grid-min-avatar-compact);
   }
 }

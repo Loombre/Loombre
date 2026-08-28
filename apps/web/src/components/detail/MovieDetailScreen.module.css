@@ -96,10 +96,19 @@
         squeezed below its content;
      2. below the floor's viability (the tablet band — 768 is the exact
         worst case: the widest the mobile tree never covers), the grid
-        stacks to one column instead of forcing two unusable ones. */
+        stacks to one column instead of forcing two unusable ones.
+   LD-19 (rc.6), owner ruling R4: that 240px floor is now the shared token
+   --grid-min-detail-sidebar and carries the same min(…, 100%) clamp every
+   other grid minimum does. This rule stays HAND-WRITTEN rather than
+   composing styles/grid.css — .body is a fixed 2-track layout with a
+   1.4fr content column, which repeat(auto-fill|auto-fit, …) cannot emit.
+   The clamp is inert here: the two-column layout only exists above
+   1023.98px (the stacked override below owns everything narrower), where
+   the container always exceeds 240px, so min(240px, 100%) resolves to
+   240px and the rendered geometry is unchanged. */
 .body {
   display: grid;
-  grid-template-columns: minmax(0, 1.4fr) minmax(240px, 1fr);
+  grid-template-columns: minmax(0, 1.4fr) minmax(min(var(--grid-min-detail-sidebar), 100%), 1fr);
   gap: var(--space-lg);
   align-items: start;
 }
