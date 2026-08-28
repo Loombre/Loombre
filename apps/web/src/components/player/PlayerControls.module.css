@@ -202,6 +202,18 @@
   accent-color: var(--color-accent);
 }
 
+/* LD-22 (rc.6): the block below is the single designated home for
+   phone-width rules in this file. Future mobile rules land HERE rather
+   than in a second media query — each written as a complete axis reset
+   (re-declare every property of an axis it touches, never a partial
+   override), per the LD-21 (rc.6) convention in the "Responsive
+   strategy" section of design/phosphor/README.md. Today it holds
+   exactly one rule, the volume-slider drop below; the player is
+   otherwise the same tree at every width, and the only other phone
+   difference is in JS — PlayerControls.tsx swaps the anchored chapter
+   popover for a BottomSheet. Pinned by
+   player-controls-mobile-block.test.ts. */
+
 /* Below the mobile breakpoint the transport cluster (skip/play/skip/mute
    + this 80px slider, ~260px) plus the right icon cluster no longer fit
    the bar's inner width (~282px at 380px viewport) — the fullscreen
