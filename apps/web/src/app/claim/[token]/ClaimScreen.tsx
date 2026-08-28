@@ -35,6 +35,7 @@ import { useRouter } from "next/navigation";
 import { LoombreClient, LoombreApiError } from "@loombre/sdk";
 import type { components } from "@loombre/sdk";
 import { AuthScreen } from "../../../components/auth/AuthScreen.js";
+import { InvalidLinkScreen } from "../../../components/auth/InvalidLinkScreen.js";
 import { Button } from "../../../components/ui/Button.js";
 import { TextInput } from "../../../components/ui/Input.js";
 import { buildDeviceProfile } from "../../../lib/device-profile.js";
@@ -170,16 +171,16 @@ export function ClaimScreen({ token }: { token: string }): React.JSX.Element {
   }
 
   if (phase === "invalid") {
+    // LD-15 (rc.6): the layout/treatment now lives in the shared
+    // InvalidLinkScreen, which /reset/[token] renders too — this screen's
+    // own wording is unchanged, only its markup moved.
     return (
-      <AuthScreen>
-        <p className={styles.formHeading}>This invite link isn&apos;t valid</p>
-        <p className={styles.bodyText}>
-          It may be expired, already used, or mistyped — ask whoever sent it for a new one.
-        </p>
-        <Button type="button" variant="secondary" className={styles.submit} onClick={() => router.push("/login")}>
-          Go to sign in
-        </Button>
-      </AuthScreen>
+      <InvalidLinkScreen
+        heading="This invite link isn't valid"
+        body="It may be expired, already used, or mistyped — ask whoever sent it for a new one."
+        actionLabel="Go to sign in"
+        onAction={() => router.push("/login")}
+      />
     );
   }
 
