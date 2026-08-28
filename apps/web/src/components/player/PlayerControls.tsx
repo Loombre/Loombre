@@ -36,7 +36,7 @@
 //   (c) seekBack10/seekForward10 (components/icon/phosphor-paths.ts)
 //       replace seekBack15/seekForward30 — same arc+arrowhead construction,
 //       numeral swapped to "10".
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ArrowLeft, ListVideo, Maximize, Minimize, SlidersHorizontal, Volume2, VolumeX } from "lucide-react";
 import type { components } from "@loombre/sdk";
 import { Icon } from "../icon/Icon.js";
@@ -113,6 +113,15 @@ export interface PlayerControlsProps {
   onToggleFullscreen: () => void;
   onSelectAudio: (index: number) => void;
   onSelectSubtitle: (index: number | null) => void;
+  /** Reports whether either bottom-bar popover (track picker / chapter
+   *  list) is open. VideoPlayer uses it to hide the quality dock for the
+   *  duration: both surfaces anchor to the bottom-right corner, and the
+   *  dock's pinned z-index 6 (controls-overlay-stacking.test.ts — it must
+   *  beat the bar's 5 so the radios stay clickable) also means it paints
+   *  OVER any popover, striking through its text (2026-08-27 QA). Hiding
+   *  the dock while a popover is open resolves the collision without
+   *  touching that pinned stacking contract. */
+  onPopoverOpenChange?: (open: boolean) => void;
 }
 
 export function PlayerControls(props: PlayerControlsProps): React.JSX.Element {
@@ -121,6 +130,13 @@ export function PlayerControls(props: PlayerControlsProps): React.JSX.Element {
   const hasTracks = props.audioStreams.length > 0 || props.subtitleStreams.length > 0;
   const hasChapters = props.chapters.length > 0;
   const isPhone = useMediaQuery(PHONE_QUERY);
+
+  // See onPopoverOpenChange's doc comment — the quality dock hides while
+  // either popover is open so the two bottom-right surfaces never collide.
+  const { onPopoverOpenChange } = props;
+  useEffect(() => {
+    onPopoverOpenChange?.(pickerOpen || chaptersOpen);
+  }, [onPopoverOpenChange, pickerOpen, chaptersOpen]);
 
   function handleSelectChapter(startMs: number): void {
     props.onSeek(startMs);

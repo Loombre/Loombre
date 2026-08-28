@@ -242,7 +242,14 @@
 .bodyRow {
   position: relative;
   z-index: 3;
-  flex: 1;
+  display: flex;
+  align-items: center;
+
+  /* flex-basis auto (not 0%): the in-flow current content layer below is
+     what lets a long clamped title actually grow the banner between
+     min-height and max-height — a 0% basis would zero its intrinsic
+     contribution and pin the banner at min-height forever. */
+  flex: 1 1 auto;
   min-height: 0;
 }
 
@@ -253,10 +260,13 @@
   }
 }
 
+/* Height comes from the in-flow CURRENT content layer (never `height:100%`:
+   with .banner sized by min-height the percentage chain is indefinite and
+   collapses to 0, which centered the layers on a zero-height line and
+   clipped the poster/title against the banner's top edge). */
 .contentStack {
   position: relative;
   width: 100%;
-  height: 100%;
 }
 
 @media (width <= 767.98px) {
@@ -267,9 +277,11 @@
   }
 }
 
+/* The CURRENT layer (no data-visible attribute, see the crossfade comment
+   in FeaturedBanner.tsx) is IN FLOW so it sizes .contentStack/.bodyRow and
+   the banner's min/max-height growth actually works; only the PREVIOUS
+   layer (which always carries data-visible) overlays it absolutely. */
 .contentLayer {
-  position: absolute;
-  inset: 0;
   display: flex;
   align-items: center;
   gap: 24px;
@@ -280,6 +292,8 @@
 }
 
 .contentLayer[data-visible] {
+  position: absolute;
+  inset: 0;
   z-index: 1;
   transition: opacity 260ms var(--ease-out);
 }
@@ -294,9 +308,19 @@
   .contentLayer {
     /* Bottom-anchored over the art (no poster on mobile — see .poster
        below) — resolves against .banner itself once .bodyRow/.contentStack
-       are position:static above. Shorthand order: top/right/bottom/left. */
+       are position:static above. Shorthand order: top/right/bottom/left.
+       position:absolute is explicit here because the desktop base rule no
+       longer sets it (the current layer is in flow on desktop). */
+    position: absolute;
     inset: auto 15px 14px;
     z-index: 4;
+  }
+
+  /* Higher-specificity re-assert for the PREVIOUS layer: its desktop rule
+     sets inset:0, which would otherwise beat this media block's
+     .contentLayer inset and un-anchor the fading layer mid-crossfade. */
+  .contentLayer[data-visible] {
+    inset: auto 15px 14px;
   }
 }
 

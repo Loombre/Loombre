@@ -348,6 +348,11 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
   const [hlsLevels, setHlsLevels] = useState<QualityLevel[]>([]);
   const [currentHlsLevel, setCurrentHlsLevel] = useState(-1);
   const [hlsAutoMode, setHlsAutoMode] = useState(true);
+  // True while PlayerControls has a bottom-bar popover (track picker /
+  // chapter list) open — the quality dock hides for the duration, since
+  // both anchor bottom-right and the dock's pinned z-index 6 would paint
+  // over the popover's text (see PlayerControlsProps.onPopoverOpenChange).
+  const [controlsPopoverOpen, setControlsPopoverOpen] = useState(false);
   // Task #6 recovery redesign (2026-08-10 opus review finding 1): a
   // SEPARATE ref from any ordinary (non-recovery) attach — the initial
   // attach, a genuinely-new-URL reattach, and the paused-boundary
@@ -2610,6 +2615,7 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
             onToggleFullscreen={toggleFullscreen}
             onSelectAudio={selectAudio}
             onSelectSubtitle={selectSubtitle}
+            onPopoverOpenChange={setControlsPopoverOpen}
           />
           {/* §9.1.9's ONE new piece of player UI. Rendered beside the
               controls and only while they are visible; it returns null by
@@ -2617,7 +2623,7 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
               or a single-variant master), so no extra guard is needed here.
               Pinning a level only sets `hls.nextLevel` — the server learns
               about it purely from the `v{K}` requests that follow. */}
-          {(controlsVisible || !isPlaying) && (
+          {(controlsVisible || !isPlaying) && !controlsPopoverOpen && (
             <div className={styles.qualityDock}>
               <QualitySelector
                 levels={hlsLevels}

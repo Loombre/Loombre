@@ -116,7 +116,14 @@
    the taller sibling's row height. */
 .systemGrid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(480px, 1fr));
+
+  /* min(480px, 100%): auto-fit does collapse to 1 column below ~2*480px,
+     but a bare 480px floor kept that single column at 480px MINIMUM — on
+     phone widths (~348px content column) every System card overflowed the
+     viewport and the right ~130px was clipped unreachable (2026-08-27 QA,
+     /admin at 380px). The min() lets the lone column shrink to the
+     container while desktop keeps the exact 2-up geometry above. */
+  grid-template-columns: repeat(auto-fit, minmax(min(480px, 100%), 1fr));
   gap: var(--space-lg);
 }
 

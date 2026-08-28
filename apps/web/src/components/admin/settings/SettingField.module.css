@@ -262,7 +262,14 @@
 .fact {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-3xs);
+
+  /* --space-2xs, not 3xs: inline-flex swallows the JSX whitespace between
+     the label text node and the value span, so this gap is the ONLY
+     separation — at 2px the pair rendered as one glued token
+     ("DEFAULTtrue", "CURRENT1"; 2026-08-27 QA). 4px + the row's 0.1em
+     mono tracking reads as a proper space while staying clearly tighter
+     than .factRow's 16px fact-to-fact gap. */
+  gap: var(--space-2xs);
   white-space: nowrap;
   max-width: 100%;
 }

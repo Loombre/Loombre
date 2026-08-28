@@ -45,7 +45,13 @@
 
 .factGrid {
   display: grid;
-  grid-template-columns: auto 1fr;
+
+  /* minmax(0, 1fr), not bare 1fr (same reasoning as MovieDetailScreen's
+     AUD-A4v5-001 note): 1fr's implied auto minimum sizes the value track
+     to its widest unbreakable dd — the 64-char GPU id made every dd
+     overflow the card by ~170px at phone widths (2026-08-27 QA, /admin at
+     380px). Paired with overflow-wrap on dd so long ids wrap in place. */
+  grid-template-columns: auto minmax(0, 1fr);
   gap: var(--space-2xs) var(--space-md);
   margin: 0;
 }
@@ -58,6 +64,7 @@
 .factGrid dd {
   margin: 0;
   font-size: var(--text-sm);
+  overflow-wrap: anywhere;
 }
 
 /* S2 fix (Wave-3 fidelity audit, mono-label law): never raw ui-monospace —

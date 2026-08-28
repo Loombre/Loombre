@@ -79,7 +79,11 @@ function DeviceRow({
     <div className={styles.row}>
       <div className={styles.rowMain}>
         <span className={styles.rowTitle}>
-          {device.name || "Unnamed device"}
+          {/* Own shrinkable span, not a bare text node: an anonymous flex
+              item can't take min-width:0 or ellipsize, so a long device
+              name pushed the badges past .rowTitle's clip edge and they
+              rendered cut mid-pill at phone widths (2026-08-27 QA). */}
+          <span className={styles.rowName}>{device.name || "Unnamed device"}</span>
           {isCurrent && <span className={styles.currentBadge}>This device</span>}
           {device.kind === "remote" && (
             <span

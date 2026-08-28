@@ -8,15 +8,25 @@
   width: 100%;
 }
 
+/* Solid raised surface, NOT `composes: glass` (same S6/U8 rule
+   Overlay.module.css's dialog/menu/popover chrome already follows, and the
+   same --color-bg-raised recipe DatePicker's calendar popover uses —
+   tokens.css: "modals, popovers, command palette"). The glass recipe was
+   also visually broken here: this popover is a child of the topbar, whose
+   own backdrop-filter forms a backdrop root, so the popover's blur could
+   never sample the page behind it — the 86%-alpha chrome fill let page
+   text/posters ghost through sharply under the results (2026-08-27 QA). */
 .popover {
-  composes: glass from global;
   position: absolute;
   top: calc(100% + var(--space-xs));
   right: 0;
   width: 380px;
   max-height: 70vh;
   overflow-y: auto;
+  background: var(--color-bg-raised);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
   padding: var(--space-md);
   z-index: 50;
   display: flex;

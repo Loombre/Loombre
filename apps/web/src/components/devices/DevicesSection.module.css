@@ -100,6 +100,15 @@
   text-overflow: ellipsis;
 }
 
+/* The name is the ONE shrinkable item in .rowTitle (see DevicesSection.tsx)
+   — it ellipsizes so the This-device/Remote badges (flex-shrink: 0 below)
+   always render whole instead of being clipped by .rowTitle's overflow. */
+.rowName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .rowSub {
   font-size: var(--text-xs);
   color: var(--muted);

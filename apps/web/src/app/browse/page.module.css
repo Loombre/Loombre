@@ -23,6 +23,17 @@
   margin-right: auto;
 }
 
+/* Below the mobile breakpoint the shell's MobileHeader already renders
+   this route's large title ("Browse", title mode — shell/mobile-header.ts),
+   so the in-page h1 duplicated it. Same suppression SettingsShell does via
+   its isPhone heading={null}, done in CSS here. 767.98px is the shared
+   mobile-breakpoint literal (tokens.css "Mobile chrome layout"). */
+@media (width <= 767.98px) {
+  .title {
+    display: none;
+  }
+}
+
 .emptyLibraries {
   border-radius: var(--radius-lg);
   border: 1px dashed var(--border);

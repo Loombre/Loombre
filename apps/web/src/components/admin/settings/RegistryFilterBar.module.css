@@ -108,7 +108,15 @@
   }
 
   .row {
-    flex-direction: column;
+    /* flex-flow (not bare flex-direction): the nowrap half resets the
+       desktop rule's flex-wrap: wrap — a WRAPPED column container sizes
+       its flex lines to the items' max-content width, so the nowrap pill
+       strip (~1.7k px of chips) blew the line out and both it and the
+       stretched search field rendered ~1699px wide, clipped at the
+       viewport with the input's right edge unreachable (2026-08-27 QA at
+       380px). nowrap restores "cross size = container width" and the
+       pill row scrolls internally as this block intends. */
+    flex-flow: column nowrap;
     align-items: stretch;
   }
 

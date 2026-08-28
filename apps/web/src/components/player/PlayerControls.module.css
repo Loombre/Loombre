@@ -202,6 +202,20 @@
   accent-color: var(--color-accent);
 }
 
+/* Below the mobile breakpoint the transport cluster (skip/play/skip/mute
+   + this 80px slider, ~260px) plus the right icon cluster no longer fit
+   the bar's inner width (~282px at 380px viewport) — the fullscreen
+   button spilled ~40px past the bar and 17px off the viewport entirely
+   (2026-08-27 QA). The slider is the one drop that restores fit; the
+   mute toggle stays, and phones control volume with hardware buttons.
+   767.98px is the shared mobile-breakpoint literal (tokens.css "Mobile
+   chrome layout"). */
+@media (width <= 767.98px) {
+  .volumeSlider {
+    display: none;
+  }
+}
+
 /* Own chrome, not `.glass` (S6) — dc:1476/1490's track/quality popovers:
    `background:rgba(13,14,18,.95);backdrop-filter:blur(18px);
    border:1px solid rgba(255,255,255,.14)`. */
