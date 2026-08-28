@@ -57,25 +57,46 @@
   margin-bottom: var(--space-xs);
 }
 
+/* LD-18 (rc.6): ONE path convention, desktop and mobile — monospace,
+   word-break: break-all, no line clamp, no ellipsis, with a copy button.
+   The filename TAIL must always be fully visible, so the desktop
+   `white-space: nowrap` + `overflow: hidden` + `text-overflow: ellipsis`
+   truncation is DELETED here rather than overridden per-breakpoint (it ate
+   exactly the end of the string an operator needs). The wrap rules that
+   used to live only inside the mobile @media block are now the base rule,
+   which also retires that block's LD-21 partial-override shape.
+
+   `color: var(--color-text-muted)` on a --mono-* tier is the LD-14
+   conforming choice and must stay (ld14-mono-scale-conformance.test.ts
+   enforces it repo-wide). */
+.pathRow {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-xs);
+}
+
 .path {
+  flex: 1;
+  min-width: 0;
   font-family: var(--font-mono);
   font-size: var(--mono-sm);
   letter-spacing: 0.06em;
   color: var(--color-text-muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: normal;
+  word-break: break-all;
+  line-height: var(--leading-dense);
+}
+
+/* The button never shrinks and never overlaps the path — it sits in its own
+   flex track, so the wrapped path text is neither covered nor clipped at
+   any width. */
+.copyButton {
+  flex: 0 0 auto;
 }
 
 @media (width <= 767.98px) {
   .card {
     border-radius: var(--radius-md);
     padding: var(--space-sm) var(--space-md);
-  }
-
-  .path {
-    white-space: normal;
-    word-break: break-all;
-    line-height: var(--leading-dense);
   }
 }
