@@ -1,5 +1,5 @@
 {
-  "recordedAtMs": 1787888039318,
+  "recordedAtMs": 1787889103137,
   "route": "/browse",
   "method": "gzip(level 9) of every external .js file the served /browse HTML references (script src + preload hints, noModule polyfills excluded), summed",
   "totalGzipBytes": 179056,

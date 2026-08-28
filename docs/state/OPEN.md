@@ -5,9 +5,19 @@ ledger (per-run "## Open" sections; the run-summary headings index them). It is
 carried forward unchanged — items are resolved there only when a run actually
 resolves them, and new cross-run items land here from now on.
 
-## Open — v0.9.0-rc.6 QA remediation run (LD-14–LD-22)
+## Open — v0.9.0-rc.6 QA remediation run (LD-14–LD-22, closed 2026-08-28)
 
-- (none yet — populated at wave exit gates / run close)
+- gate:full flake cluster under parallel load (2026-08-27/28, four one-off
+  suite failures, each green in isolation; see the run archive's Gates
+  section): db migrate-reset-guard afterAll DROP timeout, worker VT
+  encoder contention with a live dev worker, db library-provider-chains
+  unique-key collision, server playback-hls 401. All contention shapes on
+  the single compose Postgres / real hardware encoder. Mitigation that
+  produced clean runs: dev stack stopped + TURBO_CONCURRENCY=2. Worth a CI
+  health check: whether GitHub runners see the same shapes, and whether db
+  suites should get per-worker database isolation.
+- LD-15 probe and submit share the 5/min per-IP passwordReset bucket — a
+  self-429 on rapid /reset reloads is possible; revisit if reported.
 
 ## Watch items opened by Phase 0 discovery (candidates for future runs; full
 detail in NOTED.md and archive/2026-08-27-qa-ld14-ld22-discovery/)

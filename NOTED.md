@@ -152,3 +152,21 @@ evidence in docs/state/archive/2026-08-27-qa-ld14-ld22-discovery/d1..d4.json.
 - **React act() warnings are disabled repo-wide in web tests**
   (IS_REACT_ACT_ENVIRONMENT never set; no vitest setupFiles) — pre-existing
   stderr noise in every component suite.
+
+## Final-review findings (approve-with-notes; blockers cleared in 82c8de8)
+
+- **LD-15 probe shares the 5/min passwordReset bucket with the submit** —
+  a viewer reloading /reset a few times can 429 their own POST. Reviewer
+  judged the reuse the smaller deviation (the decision forbade new
+  rate-limit behavior); revisit only if real users hit it.
+- **Contract "shared with" prose under-lists the bucket's consumers**
+  (openapi.yaml ~:320 and ~:362 name two of the now-three operations; the
+  new GET's own description lists all three). Comment-only drift.
+- **:has() is a single point of visibility for the PIN focus ring** — on an
+  engine without :has() the ring never paints and the hidden field's inset
+  ring paints nothing, so keyboard focus goes invisible on that dialog.
+- **Stale PinModal comment survived** (~:199: "keypad is CSS-hidden above
+  767.98px" — never true since H20; flagged pre-run, still uncorrected).
+- **f5f39ff approximates "phone" by the 767.98px viewport literal** — a
+  narrow desktop window also loses auto-focus (still strictly better than
+  pre-run, where the field was display:none at those widths).
