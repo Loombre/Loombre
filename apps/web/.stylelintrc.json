@@ -24,6 +24,12 @@
         "0",
         "inherit"
       ]
+    },
+    "declaration-property-value-disallowed-list": {
+      "/^grid-template(-columns)?$/": [
+        "/minmax\\(\\s*(?!0\\s*[,)])[\\d.]/",
+        "/minmax\\(\\s*min\\(\\s*[\\d.]/"
+      ]
     }
   }
 }
