@@ -36,10 +36,21 @@ import {
   shouldLoadMore,
 } from "../../lib/grid-windowing.js";
 import { Skeleton } from "../skeleton/Skeleton.js";
+import { useMediaQuery } from "../ui/use-media-query.js";
 import styles from "./VirtualPosterGrid.module.css";
 
 const DEFAULT_ITEM_WIDTH = 168;
 const DEFAULT_GAP = 16; // px — matches --space-md
+
+// LD-14 (rc.6): the Browse two-up breakpoint — a SECOND responsive literal,
+// distinct from the 767.98px mobile one every other seam repeats. Recorded
+// in styles/tokens.css's "Mobile chrome layout" note (the single source of
+// truth for these numbers) along with the files that repeat it; @media
+// conditions cannot consume var(), so VirtualPosterGrid.module.css's
+// .skeletonGridTwoUp hand-repeats the same number and must be kept in sync
+// with this constant by hand.
+const PHONE_TWO_UP_QUERY = "(max-width: 479.98px)";
+const PHONE_TWO_UP_COLUMNS = 2;
 const LABEL_HEIGHT = 46; // title + subtitle line, plus the tile's own gap
 const POSTER_ASPECT = 1.5; // 2:3 poster: height = width * 1.5
 
@@ -68,6 +79,16 @@ export interface VirtualPosterGridProps<T> {
   emptyMessage?: string;
   itemWidth?: number;
   gap?: number;
+  /** LD-14 (rc.6) — OPT-IN, and only app/browse/page.tsx opts in. Below the
+   *  479.98px phone breakpoint, pin the layout to exactly two poster
+   *  columns instead of taking the auto-fit count from `computeColumns`:
+   *  at a 380px viewport the shared 168px math yields ONE 348px-wide jumbo
+   *  poster. Deliberately not the default — this component also draws the
+   *  three restricted-zone poster walls (components/restricted/
+   *  ZoneBrowseGrid.tsx), which keep today's behavior unchanged. Watchlist
+   *  is a separate CSS grid entirely and keeps its denser 132px auto-fill;
+   *  the two pages are NOT being harmonized. */
+  phoneTwoUp?: boolean;
   ariaLabel: string;
 }
 
@@ -83,6 +104,7 @@ export function VirtualPosterGrid<T>({
   emptyMessage = "Nothing here yet.",
   itemWidth = DEFAULT_ITEM_WIDTH,
   gap = DEFAULT_GAP,
+  phoneTwoUp = false,
   ariaLabel,
 }: VirtualPosterGridProps<T>): React.JSX.Element {
   // A plain `useRef` + a `useEffect(fn, [])` that reads `.current` would
@@ -140,9 +162,19 @@ export function VirtualPosterGrid<T>({
     };
   }, [scrollEl]);
 
+  // LD-14 (rc.6). The clamp keys off the VIEWPORT, not `containerWidth`:
+  // the decision is written as "below ~480px" about the device, and a
+  // media query is the same signal the CSS side (.skeletonGridTwoUp) reads,
+  // so the skeleton and the real grid can never disagree about which side
+  // of the breakpoint they are on. Kept here rather than in
+  // lib/grid-windowing.ts on purpose — computeColumns stays pure and
+  // keeps its contract (it is quoted verbatim by components/admin/
+  // VirtualList.tsx and unit-tested in isolation).
+  const isPhoneTwoUp = useMediaQuery(PHONE_TWO_UP_QUERY);
+  const twoUp = phoneTwoUp && isPhoneTwoUp;
   const columns = useMemo(
-    () => computeColumns(containerWidth, itemWidth, gap),
-    [containerWidth, itemWidth, gap],
+    () => (twoUp ? PHONE_TWO_UP_COLUMNS : computeColumns(containerWidth, itemWidth, gap)),
+    [twoUp, containerWidth, itemWidth, gap],
   );
   const actualItemWidth = columns > 0 && containerWidth > 0 ? (containerWidth - gap * (columns - 1)) / columns : itemWidth;
   const rowHeight = actualItemWidth * POSTER_ASPECT + LABEL_HEIGHT + gap;
@@ -237,8 +269,15 @@ export function VirtualPosterGrid<T>({
   }
 
   if (loading) {
+    // The two-up variant is applied from the PROP alone — the breakpoint
+    // itself lives in the stylesheet (LD-14 (rc.6)), so the loading state
+    // stays render-deterministic (no matchMedia in the server-rendered
+    // markup) and still matches whatever the real grid resolves to.
     return (
-      <div className={styles.skeletonGrid} aria-hidden="true">
+      <div
+        className={phoneTwoUp ? `${styles.skeletonGrid} ${styles.skeletonGridTwoUp}` : styles.skeletonGrid}
+        aria-hidden="true"
+      >
         {Array.from({ length: 18 }, (_, i) => (
           <div key={i} className={styles.skeletonCell}>
             <Skeleton radius="md" height={itemWidth * POSTER_ASPECT} />

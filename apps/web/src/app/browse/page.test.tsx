@@ -59,6 +59,27 @@ vi.mock("../../components/shell/AppShell.js", () => ({
   AppShell: ({ children }: { children: React.ReactNode }): React.JSX.Element => <>{children}</>,
 }));
 
+// jsdom does not implement window.matchMedia at all (see
+// components/ui/SheetOrModal.test.tsx's header for the verification note),
+// and this page's VirtualPosterGrid now reads it for LD-14 (rc.6)'s
+// phone two-up column clamp — without a fake, rendering the page throws
+// "window.matchMedia is not a function" before any assertion runs. Pinned
+// to the desktop answer (matches: false): this suite asserts sort/URL sync
+// and the libraries error path, never column geometry (that lives in
+// components/browse/VirtualPosterGrid.test.tsx).
+vi.stubGlobal(
+  "matchMedia",
+  vi.fn().mockImplementation((query: string) => ({
+    matches: false,
+    media: query,
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    addListener: () => {},
+    removeListener: () => {},
+    dispatchEvent: () => true,
+  })),
+);
+
 const { default: BrowsePage } = await import("./page.js");
 
 const LIBRARY = { id: "lib1", name: "Movies", mediaKind: "movie" };
