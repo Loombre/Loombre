@@ -1,10 +1,13 @@
 /* SPDX-License-Identifier: AGPL-3.0-only */
 
-/* Wave 2 (lane L8) rebuild — see PinModal.tsx's header. Breakpoint matches
-   the rest of the shell's 767.98px boundary (tokens.css "Mobile chrome
-   layout" is the single source of truth this literal must stay in sync
-   with — same repeated-literal convention SheetOrModal.module.css/
-   MobileTabBar.module.css already follow). */
+/* Wave 2 (lane L8) rebuild — see PinModal.tsx's header.
+   LD-17 (rc.6): this file carries NO media query any more. It used to hold
+   exactly one — a phone-only `display: none` on the PIN field, pinned to the
+   shell's 767.98px boundary — and owner ruling R3 deleted it: the field is
+   visually-hidden-but-focusable at every width now, so there is nothing left
+   here that varies by viewport. The 767.98px literal therefore no longer
+   needs to stay in sync with tokens.css "Mobile chrome layout"; the files
+   that still do are listed there. */
 
 .form {
   display: flex;
@@ -25,9 +28,20 @@
   color: var(--color-warning);
 }
 
+/* LD-17 (rc.6): the dots are now the SOLE visible representation of entry
+   state, so they also carry the keyboard focus ring for the (visually
+   hidden) field below — see the `:has()` rule after `.dot[data-filled]`.
+   The bare dot row is 92x14 with no padding and no radius of its own, which
+   a `--shadow-focus-ring` would hug as a tight rectangle; the padding +
+   pill radius here give the ring a shape to trace. `--space-*`/
+   `--radius-pill` tokens only (the stylelint radius allow-list rejects a
+   literal px value). `.form` centers its children, so the extra box does
+   not disturb the surrounding layout. */
 .dots {
   display: flex;
   gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
+  border-radius: var(--radius-pill);
 }
 
 .dot {
@@ -46,32 +60,50 @@
   border-color: var(--color-warning);
 }
 
-/* Desktop numeric field — real keyboard input, styled to echo the dot
-   row's spacing rather than showing raw digits. Item 2 (Wave A):
-   consolidated onto ui/Input.tsx's TextInput, so the base pill
-   shape/border/color and the inset focus ring now come from
-   Input.module.css's `.input` — only the PIN field's own deliberate
-   overrides live here. The element+class compound selector
-   (input.hiddenInput, specificity 0,1,1) deterministically outranks the
-   shared `.input` rule (0,1,0) for those overrides regardless of CSS
-   bundling/import order — the same technique
-   admin/settings/SettingField.module.css's `input.stringInput` already
-   uses for the identical "outrank the shared base without editing it or
-   reaching for !important" problem. No local :focus-visible rule any
-   more — `.input:focus-visible` (already inset, already un-clippable)
-   applies for free. */
-input.hiddenInput {
-  width: 160px;
-  text-align: center;
-  letter-spacing: 0.6em;
-  font-family: var(--font-mono);
-  font-size: var(--text-lg);
-  padding: var(--space-xs) var(--space-sm);
+/* LD-17 (rc.6): focus-ring transfer. Toggle.module.css:63-65 does this with
+   a sibling combinator (`.input:focus-visible + .track`) because its hidden
+   checkbox PRECEDES the paint. Here the order is reversed — the dots come
+   before the field (LD-17 fixes the field's position "between the dots and
+   the keypad"), and `+`/`~` cannot reach backwards — so the relationship has
+   to be expressed on the common ancestor with `:has()`. `.form` contains
+   exactly ONE input, hence the bare `input:focus-visible` operand rather
+   than a class-qualified one. Non-inset ring on purpose: unlike the
+   full-width field this replaces, the dot row is ~92px wide and centered, so
+   SheetOrModal's `.body { overflow-y: auto }` clip has room to spare — the
+   same reason `.key:focus-visible` below already ships a non-inset ring
+   inside that container. */
+.form:has(input:focus-visible) .dots {
+  box-shadow: var(--shadow-focus-ring);
+}
 
-  /* Deliberately kept distinct from the shared base's --color-surface —
-     a translucent fill reads better against SheetOrModal's own raised
-     background than the base's solid surface tone does here. */
-  background: var(--fill-2);
+/* LD-17 (rc.6): the PIN field is now visually hidden but still FOCUSABLE —
+   the exact eight-declaration recipe from ui/Toggle.module.css:14-26, which
+   is this codebase's only precedent for "real control, pure-paint proxy".
+   Not display:none and not visibility:hidden: both would drop the field out
+   of the tab order and the accessibility tree, and hardware-keyboard entry
+   (PinModal.tsx's only typing path) depends on it staying focusable.
+   Everything the old visible 160px field carried — width, letter-spacing,
+   mono font, padding, translucent fill — is obsolete paint on a 1x1 clipped
+   box and is gone. `border: 0` neutralizes the base `.input` border; the
+   base's own inset `:focus-visible` ring now renders nothing here, which is
+   why the ring moved to `.dots` above.
+   Owner ruling R3: the phone-only `display: none` media branch that used to
+   close this file is DELETED — the field is visually-hidden-but-focusable at
+   EVERY width (no visual change on phones, where it was invisible anyway).
+   The element+class compound selector (specificity 0,1,1) still
+   deterministically outranks the shared `.input` rule (0,1,0) regardless of
+   CSS bundling order — the same technique
+   admin/settings/SettingField.module.css's `input.stringInput` uses. */
+input.hiddenInput {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
 }
 
 /* H20 (W3 fidelity audit): 74px circular keys, 3-column grid — was
@@ -126,10 +158,4 @@ input.hiddenInput {
   color: var(--color-danger);
   font-size: var(--text-sm);
   text-align: center;
-}
-
-@media (width <= 767.98px) {
-  .hiddenInput {
-    display: none;
-  }
 }
