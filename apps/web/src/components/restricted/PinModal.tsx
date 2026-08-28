@@ -39,9 +39,19 @@ import { SheetOrModal } from "../ui/SheetOrModal.js";
 import { TextInput } from "../ui/Input.js";
 import { PIN_LENGTH, appendPinDigit, isPinComplete, sanitizePinInput } from "../../lib/pin-entry.js";
 import { useRestricted } from "./RestrictedProvider.js";
+import { useMediaQuery } from "../ui/use-media-query.js";
 import styles from "./PinModal.module.css";
 
 const KEYPAD_DIGITS = ["1", "2", "3", "4", "5", "6", "7", "8", "9"] as const;
+
+// 767.98px is the shared mobile-breakpoint literal (tokens.css "Mobile
+// chrome layout"; same copy SheetOrModal.tsx keys the sheet/dialog split on).
+// Used here only to CONFINE the LD-17 (rc.6) programmatic-focus calls to the
+// desktop dialog the decision governs: on a phone, focusing the hidden
+// inputMode="numeric" field would raise the soft keyboard over the keypad
+// the sheet flow is built around. The field stays focusable at every width
+// (R3); only the automatic focus placement is desktop-only.
+const PHONE_QUERY = "(max-width: 767.98px)";
 
 /**
  * Puts focus on the (LD-17, rc.6: visually hidden) PIN field.
@@ -62,6 +72,7 @@ export function PinModal(): React.JSX.Element | null {
   const [pin, setPin] = useState("");
   const submittingRef = useRef(false);
   const formRef = useRef<HTMLFormElement>(null);
+  const isPhone = useMediaQuery(PHONE_QUERY);
 
   // Fresh entry every time the modal opens — no residual digits from a
   // previous cancelled/failed attempt.
@@ -84,9 +95,9 @@ export function PinModal(): React.JSX.Element | null {
   // focus, so without this a user could type exactly one wrong PIN and then
   // never type again.
   useEffect(() => {
-    if (!state.modalOpen || state.submitting) return;
+    if (!state.modalOpen || state.submitting || isPhone) return;
     focusPinField(formRef);
-  }, [state.modalOpen, state.submitting]);
+  }, [state.modalOpen, state.submitting, isPhone]);
 
   // Auto-submit on the 4th digit (README, verbatim). Resets the buffer on
   // a failed attempt so the user can immediately retry; on success
@@ -117,13 +128,13 @@ export function PinModal(): React.JSX.Element | null {
   function appendDigit(digit: string): void {
     if (state.submitting) return;
     setPin((prev) => appendPinDigit(prev, digit));
-    focusPinField(formRef);
+    if (!isPhone) focusPinField(formRef);
   }
 
   function backspace(): void {
     if (state.submitting) return;
     setPin((prev) => prev.slice(0, -1));
-    focusPinField(formRef);
+    if (!isPhone) focusPinField(formRef);
   }
 
   function handleKeypadKeyDown(event: KeyboardEvent<HTMLButtonElement>, digit: string): void {
